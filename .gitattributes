@@ -1,0 +1,8 @@
+# Normalize line endings: store as LF in the repo, check out as LF for consistency
+* text=auto eol=lf
+
+# Always LF for shell scripts (avoid CRLF breakage on Windows checkouts)
+*.sh text eol=lf
+
+# Binary / generated lockfiles — don't diff or merge as text
+bun.lockb binary

@@ -1,0 +1,37 @@
+# --- Secrets & environment (never commit) ---
+.env
+.env.*
+!.env.example
+
+# --- Local Claude Code settings — machine-specific (absolute SHIPWRIGHT_CONFIG path) ---
+.claude/settings.local.json
+
+# --- Private staged learnings + build-time export specifics (internal) ---
+CLAUDE.local.md
+
+# --- Internal planning artifacts — build-time only, not for the public repo ---
+planning/
+
+# --- Local JSON task-store state (only written if the github backend isn't active) ---
+state/
+
+# --- Dependencies ---
+node_modules/
+
+# --- Build output ---
+dist/
+build/
+
+# --- Test & coverage artifacts ---
+coverage/
+test-results/
+playwright-report/
+playwright/.cache/
+
+# --- Logs & temp ---
+*.log
+*.tmp
+
+# --- OS cruft ---
+.DS_Store
+Thumbs.db
