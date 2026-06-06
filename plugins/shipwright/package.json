@@ -1,0 +1,14 @@
+{
+  "name": "@shipwright/plugin",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shipwright Claude Code plugin — spec → plan → execute → review → deploy",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "bun-types": "*",
+    "typescript": "*"
+  }
+}

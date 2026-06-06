@@ -1,0 +1,20 @@
+{
+  "name": "shipwright-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "plugins/shipwright",
+    "metrics",
+    "agent"
+  ],
+  "scripts": {
+    "test": "bun test",
+    "lint": "bunx biome lint .",
+    "format": "bunx biome format --write .",
+    "typecheck": "bun run --filter='*' typecheck"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "typescript": "^5.7.3"
+  }
+}
