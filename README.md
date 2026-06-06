@@ -43,6 +43,10 @@ Shipwright is being assembled here in three phases — plugin, then metrics dash
 
 Installation and local-development instructions will land here as the toolchain becomes runnable.
 
+## Test system
+
+Shipwright enforces a four-layer test architecture (unit / integration / smoke / e2e) across all three components. Layer boundaries, per-component run commands, speed budgets, and the test isolation contract are defined in [`docs/test-readiness/test-system.md`](./docs/test-readiness/test-system.md).
+
 ## Contributing
 
 Issues and discussion are welcome. This repository is MIT-licensed and destined to be public — please keep contributions free of any proprietary or confidential material.
