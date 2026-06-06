@@ -1,0 +1,158 @@
+# Shipwright Test System Design
+
+> Gating deliverable for the test-readiness pipeline. Defines the four test layers,
+> per-component run commands, and speed budgets that `plan-session` and `dev-task`
+> Step 2 enforce across Phases B and C.
+
+## Layer definitions
+
+Every test in this repository must be placed in exactly one layer. The layer
+boundary determines which dependencies are permitted in that test.
+
+| Layer | Boundary rule | Framework | When to use |
+|---|---|---|---|
+| **unit** | Pure logic — no I/O of any kind. No filesystem reads, no network calls, no process spawning. | `bun test` | Functions, parsers, validators, data-transformation utilities, any code whose only inputs/outputs are in-memory values. |
+| **integration** | Real dependency behavior via recorded fixtures or injected doubles. Exercises the integration seam without a live external service. | `bun test` + recorded-fixture clients injected via DI | Service classes, client wrappers, anything that reads/writes to an external system — tested via cassette-backed `RecordedXClient` doubles instead of the real service. |
+| **smoke** | Hono endpoints exercised via in-process `app.request()`. No real socket, no port allocation. | `bun test` + Hono `app.request()` | HTTP route contracts: status codes, response shapes, auth checks, error handling. Full middleware + routing pipeline without spinning up a server. |
+| **e2e** | Full browser-driven flows against a real running server. | `@playwright/test` | Multi-step user journeys through the metrics dashboard UI: navigation, rendering, data display, interaction flows. Phase B only. |
+
+### Boundary violations
+
+These patterns indicate a test is in the wrong layer:
+
+- A unit test that reads a file, opens a socket, or spawns a subprocess → move to integration.
+- An integration test that boots a real HTTP server → move to smoke.
+- A smoke test that opens a real browser → move to e2e.
+- A unit test that takes >200 ms → likely a hidden integration test; investigate.
+- A smoke test that takes >15 s → likely an e2e test in smoke's clothing; rebuild.
+
+### Forbidden patterns (all layers)
+
+- No `mock.module()` — Bun runs test files in the same process; module-level mocks leak across suites.
+- No `global.fetch` overrides or any other `global.*` mutation in tests — same reason.
+- No raw `new Date()` / `Date.now()` in tested code paths — inject a `Clock` interface and use `FixedClock(t)` in tests for deterministic time.
+- No live external calls — everything runs offline by default. Live calls only when env explicitly enables them (e.g. `POSTHOG_API_KEY` set for a manual canary run).
+
+## Per-component run commands and speed budgets
+
+### Plugin (`@shipwright/plugin`) — Phase A
+
+The plugin is pure TypeScript — no server, no database, no external HTTP in production code. Tests are unit and integration only.
+
+| Layer | Local run command | Per-test 95p | Per-test hard cap | Suite target |
+|---|---|---|---|---|
+| unit | `bun test --filter plugins/shipwright` | <50 ms | <200 ms | <15 s |
+| integration | `bun test --filter plugins/shipwright` | <500 ms | <2 s | <30 s |
+
+**Notes:**
+- Integration tests inject `RecordedGithubClient` (cassette-backed) for any GitHub API calls (issue reads/writes, label operations).
+- No smoke or e2e layer — the plugin has no HTTP surface.
+- Plugin code must remain repo-agnostic; tests must not hardcode paths to any external repository.
+
+### Metrics dashboard (`@shipwright/metrics`) — Phase B
+
+The metrics service is a stateless Hono app backed by PostHog queries. No database.
+
+| Layer | Local run command | Per-test 95p | Per-test hard cap | Suite target |
+|---|---|---|---|---|
+| unit | `bun test --filter metrics` | <50 ms | <200 ms | <15 s |
+| integration | `bun test --filter metrics` | <500 ms | <2 s | <30 s |
+| smoke | `bun test --filter metrics` | <2 s | <10 s | <30 s |
+
+**Notes:**
+- Integration tests inject `RecordedPostHogClient` (cassette-backed) for query and capture calls. Cassettes live in `metrics/tests/fixtures/posthog/`.
+- Smoke tests drive the Hono app via `app.request()` — no real socket, no `fetch()` to localhost. Import the app factory and call `app.request(new Request(...))` directly.
+- No e2e layer until Phase B ships a browser-rendered dashboard. E2e layer added then via Playwright.
+- `POSTHOG_API_KEY` must be absent (or `POSTHOG_OFFLINE=true` set) for all unit/integration/smoke tests to stay offline.
+
+### Reference agent (`@shipwright/agent`) — Phase C
+
+The agent is a thin runner: no HTTP server, no database. Integration tests cover the task-pick and PR-ship seams.
+
+| Layer | Local run command | Per-test 95p | Per-test hard cap | Suite target |
+|---|---|---|---|---|
+| unit | `bun test --filter agent` | <50 ms | <200 ms | <15 s |
+| integration | `bun test --filter agent` | <500 ms | <2 s | <30 s |
+
+**Notes:**
+- Integration tests inject `RecordedGithubClient` for issue/PR operations and a `RecordedMetricsClient` for forwarding calls.
+- No smoke or e2e layer — the agent has no HTTP surface.
+- The agent's execution loop must accept a `Clock` injection for deterministic scheduling tests.
+
+## Full suite commands
+
+| Scope | Command | Speed budget |
+|---|---|---|
+| All layers, all packages | `bun test` | <2 min |
+| Single package | `bun test --filter <package-name>` | see per-component above |
+| CI gates (lint → typecheck → test) | `task ci` | <5 min |
+
+## CI pipeline shape
+
+```
+┌─────────┐
+│  Lint   │  bunx biome lint .
+└────┬────┘
+     │
+┌────▼──────┐
+│ Typecheck │  bun run --filter="*" typecheck
+└────┬──────┘
+     │
+     ├──────────────┬──────────────┐
+     │              │              │
+┌────▼──────┐ ┌─────▼─────┐ ┌─────▼─────┐   ← parallel, per-package
+│ plugin    │ │ metrics   │ │ agent     │
+│ unit+intg │ │ unit+intg │ │ unit+intg │
+└────┬──────┘ └─────┬─────┘ └─────┬─────┘
+     │              │              │
+     └──────────────┼──────────────┘
+                    │
+              ┌─────▼─────┐
+              │  Smoke    │  metrics smoke suite (Phase B+)
+              │ (metrics) │  bun test --filter metrics smoke/
+              └─────┬─────┘
+                    │
+              ┌─────▼─────┐
+              │   E2E     │  Playwright; Phase B+ only
+              │(dashboard)│  <5 min
+              └─────┬─────┘
+                    │
+              merge → main
+```
+
+- **Layer order:** unit → integration → smoke → e2e. A lower-layer failure skips higher layers (fail-fast).
+- **Parallelism:** unit and integration run in parallel across packages. Smoke and e2e run sequentially after all integration jobs pass.
+
+## Speed budgets (consolidated)
+
+| Layer | Per-test 95p | Per-test hard cap | Suite target |
+|---|---|---|---|
+| Unit | <50 ms | <200 ms | <30 s |
+| Integration | <500 ms | <2 s | <60 s |
+| Smoke | <2 s | <10 s | <30 s |
+| E2E | <30 s | <90 s | <5 min |
+| **Full CI pipeline** | — | — | **<5 min wall** |
+
+**Speed-violation handling:**
+
+- Unit test >200 ms → suspect hidden integration test; audit imports for any I/O. Phase 3 candidate: `rebuild` (re-layer as integration, or extract pure-logic core).
+- Smoke test >10 s → suspect e2e in smoke's clothing; audit for real HTTP or browser interaction. Phase 3 candidate: `rebuild`.
+
+## Test isolation contract
+
+**Time:** Any production code path that calls `new Date()` or `Date.now()` non-trivially must accept a `Clock` interface. Tests inject `FixedClock(t)`. Raw `Date.now()` in a code path under test is a bug — it makes time-sensitive assertions flaky.
+
+**External HTTP:** External service clients (`PostHogClient`, `GithubClient`, etc.) are defined as interfaces with an `Http*Client` production implementation. Tests inject `Recorded*Client` doubles that replay cassettes from `tests/fixtures/<service>/*.json`. Cassette files are versioned JSON committed to the repository.
+
+**No global state:** Tests must not mutate module-level globals, override built-in globals, or rely on test-execution order. Each test is independently runnable.
+
+## Classifying a new test
+
+When `dev-task` Step 2 asks "which layer does this test belong in?", apply in order:
+
+1. Does the code under test perform any I/O? If no → **unit**.
+2. Does it call an external service (PostHog, GitHub, etc.)? → **integration** (inject a recorded double).
+3. Does it test an HTTP route contract? → **smoke** (use `app.request()`).
+4. Does it test a multi-step browser flow? → **e2e** (Playwright).
+
+If none of these fit, escalate — do not invent a fifth layer.
