@@ -1,0 +1,13 @@
+{
+  "name": "@shipwright/agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shipwright reference agent — autonomous task runner: pick → build → ship PR → forward metrics",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "*"
+  }
+}

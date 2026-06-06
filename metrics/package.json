@@ -1,0 +1,13 @@
+{
+  "name": "@shipwright/metrics",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shipwright metrics dashboard — stateless Hono service with PostHog-backed endpoints",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "*"
+  }
+}

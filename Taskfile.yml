@@ -1,0 +1,39 @@
+version: "3"
+
+tasks:
+  setup:
+    desc: Install all dependencies
+    cmds:
+      - bun install
+
+  lint:
+    desc: Run linter across all packages
+    cmds:
+      - bunx biome lint .
+
+  format:
+    desc: Run formatter across all packages
+    cmds:
+      - bunx biome format --write .
+
+  typecheck:
+    desc: Type-check all packages
+    cmds:
+      - bun run --filter="*" typecheck
+
+  test:
+    desc: Run all tests
+    cmds:
+      - bun test
+
+  ci:
+    desc: Run all CI checks (lint → typecheck → test)
+    cmds:
+      - task: lint
+      - task: typecheck
+      - task: test
+
+  secret-scan:
+    desc: Scan for accidentally committed secrets
+    cmds:
+      - echo "Secret scan placeholder — gitleaks/detect-secrets to be wired in SW-1.7"
