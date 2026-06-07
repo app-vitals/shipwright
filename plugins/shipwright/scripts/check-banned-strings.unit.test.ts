@@ -1,0 +1,170 @@
+/**
+ * plugins/shipwright/scripts/check-banned-strings.unit.test.ts
+ *
+ * Unit tests for scanForBannedStrings() — pure filesystem logic, no CLI wrapper.
+ *
+ * All tests use temp directories created via mkdtempSync so they're isolated
+ * and cleaned up after each suite. No mock.module() — real FS only.
+ */
+
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { scanForBannedStrings } from "./check-banned-strings.ts";
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function writeFile(dir: string, relativePath: string, content: string): void {
+  const fullPath = join(dir, relativePath);
+  mkdirSync(join(dir, relativePath, ".."), { recursive: true });
+  writeFileSync(fullPath, content, "utf8");
+}
+
+// ---------------------------------------------------------------------------
+// Suite
+// ---------------------------------------------------------------------------
+
+describe("scanForBannedStrings", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "check-banned-strings-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test("returns empty array for an empty directory", () => {
+    const hits = scanForBannedStrings(tmpDir);
+    expect(hits).toEqual([]);
+  });
+
+  test("returns empty array when files contain no banned strings", () => {
+    writeFile(tmpDir, "clean.ts", "export const foo = 'bar';\n");
+    const hits = scanForBannedStrings(tmpDir);
+    expect(hits).toEqual([]);
+  });
+
+  test("detects app-vitals/marketplace in a file", () => {
+    writeFile(
+      tmpDir,
+      "bad.ts",
+      "// install from app-vitals/marketplace\nexport {};\n",
+    );
+    const hits = scanForBannedStrings(tmpDir);
+    expect(hits).toHaveLength(1);
+    expect(hits[0].pattern).toBe("app-vitals/marketplace");
+    expect(hits[0].lineNum).toBe(1);
+    expect(hits[0].line).toContain("app-vitals/marketplace");
+  });
+
+  test("detects app-vitals/vitals-os in a file", () => {
+    writeFile(
+      tmpDir,
+      "bad.ts",
+      "export const repo = 'app-vitals/vitals-os';\n",
+    );
+    const hits = scanForBannedStrings(tmpDir);
+    expect(hits).toHaveLength(1);
+    expect(hits[0].pattern).toBe("app-vitals/vitals-os");
+  });
+
+  test("detects vitals-os-prod in a file", () => {
+    writeFile(tmpDir, "config.ts", "const env = 'vitals-os-prod';\n");
+    const hits = scanForBannedStrings(tmpDir);
+    expect(hits).toHaveLength(1);
+    expect(hits[0].pattern).toBe("vitals-os-prod");
+  });
+
+  test("detects vitals-os-staging in a file", () => {
+    writeFile(tmpDir, "config.ts", "const env = 'vitals-os-staging';\n");
+    const hits = scanForBannedStrings(tmpDir);
+    expect(hits).toHaveLength(1);
+    expect(hits[0].pattern).toBe("vitals-os-staging");
+  });
+
+  test("detects vitals-os-dev in a file", () => {
+    writeFile(tmpDir, "config.ts", "const env = 'vitals-os-dev';\n");
+    const hits = scanForBannedStrings(tmpDir);
+    expect(hits).toHaveLength(1);
+    expect(hits[0].pattern).toBe("vitals-os-dev");
+  });
+
+  test("detects multiple banned strings across multiple files", () => {
+    writeFile(tmpDir, "a.ts", "const a = 'app-vitals/marketplace';\n");
+    writeFile(tmpDir, "b.ts", "const b = 'vitals-os-prod';\n");
+    const hits = scanForBannedStrings(tmpDir);
+    expect(hits).toHaveLength(2);
+  });
+
+  test("detects multiple hits on different lines of the same file", () => {
+    writeFile(
+      tmpDir,
+      "multi.ts",
+      "const a = 'app-vitals/marketplace';\nconst b = 'vitals-os-staging';\n",
+    );
+    const hits = scanForBannedStrings(tmpDir);
+    expect(hits).toHaveLength(2);
+    expect(hits[0].lineNum).toBe(1);
+    expect(hits[1].lineNum).toBe(2);
+  });
+
+  test("skips .git/ directory", () => {
+    mkdirSync(join(tmpDir, ".git"), { recursive: true });
+    writeFile(
+      tmpDir,
+      ".git/COMMIT_EDITMSG",
+      "refactor: move off app-vitals/marketplace\n",
+    );
+    const hits = scanForBannedStrings(tmpDir);
+    expect(hits).toEqual([]);
+  });
+
+  test("scans files in nested subdirectories", () => {
+    writeFile(
+      tmpDir,
+      "nested/deep/file.ts",
+      "const x = 'app-vitals/vitals-os';\n",
+    );
+    const hits = scanForBannedStrings(tmpDir);
+    expect(hits).toHaveLength(1);
+    expect(hits[0].file).toContain("nested/deep/file.ts");
+  });
+
+  test("includes file, lineNum, line, and pattern fields in each hit", () => {
+    writeFile(tmpDir, "check.ts", "const x = 'app-vitals/marketplace';\n");
+    const hits = scanForBannedStrings(tmpDir);
+    expect(hits).toHaveLength(1);
+    const hit = hits[0];
+    expect(typeof hit.file).toBe("string");
+    expect(typeof hit.lineNum).toBe("number");
+    expect(typeof hit.line).toBe("string");
+    expect(typeof hit.pattern).toBe("string");
+  });
+
+  test("does not crash on binary-like files (null bytes)", () => {
+    // Write a file that contains a null byte — simulates a binary file
+    const binaryPath = join(tmpDir, "binary.bin");
+    writeFileSync(binaryPath, Buffer.from([0x00, 0x01, 0x02, 0xff]));
+    // Should not throw; binary files may return 0 hits
+    expect(() => scanForBannedStrings(tmpDir)).not.toThrow();
+  });
+
+  test("returns the relative path of the matched file", () => {
+    writeFile(tmpDir, "src/config.ts", "const x = 'app-vitals/marketplace';\n");
+    const hits = scanForBannedStrings(tmpDir);
+    expect(hits).toHaveLength(1);
+    // file should be relative to the scanned dir, not absolute
+    expect(hits[0].file).not.toContain(tmpDir);
+    expect(hits[0].file).toBe("src/config.ts");
+  });
+});
