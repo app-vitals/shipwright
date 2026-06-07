@@ -62,5 +62,8 @@ export interface HogQLValidationResult {
   errors: Array<{ message: string; start?: number; end?: number }>;
 }
 
-/** Fetch function type for DI */
-export type FetchFn = typeof globalThis.fetch;
+/** Fetch function type for DI — simplified to allow test doubles without Bun-specific properties */
+export type FetchFn = (
+  input: URL | RequestInfo,
+  init?: RequestInit | BunFetchRequestInit,
+) => Promise<Response>;

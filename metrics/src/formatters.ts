@@ -6,7 +6,7 @@
  * so the response meta agrees with the timezone-aware HogQL queries.
  */
 
-import { type Clock, SystemClock } from "../lib/clock.ts";
+import { type Clock, SystemClock } from "./lib/clock.ts";
 import { DASHBOARD_TZ } from "./queries.ts";
 import type { ResponseMeta } from "./schemas.ts";
 import type { DatePreset, ResolvedDateRange } from "./types.ts";

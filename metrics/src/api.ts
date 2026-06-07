@@ -9,12 +9,12 @@ import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
 import { getCookie } from "hono/cookie";
 import { createMiddleware } from "hono/factory";
 import { verify } from "hono/jwt";
-import type { AccountsClient } from "../lib/accounts-client.ts";
-import { authMiddleware } from "../lib/api-auth.ts";
-import type { AppHandler, AuthEnv, Caller } from "../lib/api-auth.ts";
-import { ErrorSchema } from "../lib/api-schemas.ts";
-import { registerWithAuthz } from "../lib/api-utils.ts";
-import { createSessionMiddleware } from "../lib/session-middleware.ts";
+import type { AccountsClient } from "./lib/accounts-client.ts";
+import { authMiddleware } from "./lib/api-auth.ts";
+import type { AppHandler, AuthEnv, Caller } from "./lib/api-auth.ts";
+import { ErrorSchema } from "./lib/api-schemas.ts";
+import { registerWithAuthz } from "./lib/api-utils.ts";
+import { createSessionMiddleware } from "./lib/session-middleware.ts";
 import { renderDashboardPage } from "./dashboard/dashboard-page.ts";
 import {
   resolveDateRangeForMeta,

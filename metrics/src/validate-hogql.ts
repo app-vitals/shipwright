@@ -8,9 +8,10 @@
  * and PostHog error message.
  *
  * Usage:
- *   POSTHOG_PERSONAL_API_KEY=phx_... POSTHOG_PROJECT_ID=<id> bun run validate:hogql
+ *   POSTHOG_PERSONAL_API_KEY=phx_... POSTHOG_PROJECT_ID=<your-project-id> bun run validate:hogql
  *
- * In CI: set POSTHOG_PERSONAL_API_KEY and POSTHOG_PROJECT_ID as CI secrets.
+ * In CI: set POSTHOG_PERSONAL_API_KEY as a CI secret. POSTHOG_PROJECT_ID defaults
+ * to "" if unset.
  */
 
 import { createPostHogClient } from "./posthog-client.ts";
@@ -113,7 +114,7 @@ if (!apiKey) {
   } else {
     console.error(
       "ERROR: POSTHOG_PERSONAL_API_KEY is not set.\n" +
-        "Set a read-only PostHog personal API key to validate before deploy:\n" +
+        "Set a read-only PostHog personal API key for project <your-project-id> to validate before deploy:\n" +
         "  POSTHOG_PERSONAL_API_KEY=phx_... POSTHOG_PROJECT_ID=<your-project-id> bun run validate:hogql",
     );
   }
@@ -125,7 +126,7 @@ const client = createPostHogClient({ personalApiKey: apiKey, projectId });
 
 const builders = allBuilders();
 console.log(
-  `Validating ${builders.length} HogQL queries via PostHog HogQLMetadata (project ${projectId})...`,
+  `Validating ${builders.length} HogQL queries via PostHog HogQLMetadata (project ${projectId || "<your-project-id>"})...`,
 );
 
 let failures = 0;

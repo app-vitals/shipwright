@@ -37,7 +37,7 @@ export class SecretNotFoundError extends Error {
  * Creates a secrets client that resolves secrets from GCP Secret Manager,
  * falling back to environment variables when GCP is unavailable (local dev).
  *
- * @param gcpProjectId - GCP project ID (defaults to GCP_PROJECT_ID env var or "")
+ * @param gcpProjectId - GCP project ID (defaults to process.env.GCP_PROJECT_ID)
  * @param clientFactory - Optional factory for the GCP SecretManager client (DI for tests)
  */
 export function createSecretsClient(

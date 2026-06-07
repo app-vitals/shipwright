@@ -8,9 +8,9 @@
  *   /health      — Health check (no auth required)
  */
 
-import { HttpAccountsClient } from "../lib/accounts-client.ts";
-import { parseApiKeys } from "../lib/api-auth.ts";
-import { loadEnv } from "../lib/env.ts";
+import { HttpAccountsClient } from "./lib/accounts-client.ts";
+import { parseApiKeys } from "./lib/api-auth.ts";
+import { loadEnv } from "./lib/env.ts";
 import { createMetricsApp } from "./api.ts";
 
 loadEnv();
@@ -46,7 +46,7 @@ app.openAPIRegistry.registerComponent("securitySchemes", "bearerAuth", {
 app.doc("/openapi.json", {
   openapi: "3.1.0",
   info: {
-    title: "Shipwright Metrics API",
+    title: "Vitals Metrics API",
     version: "1.0.0",
     description: "Metrics service — PostHog pipeline analytics and dashboard.",
   },

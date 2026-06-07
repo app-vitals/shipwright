@@ -3,7 +3,7 @@
  * Typed HTTP client for the Accounts API.
  *
  * Usage:
- *   const client = new HttpAccountsClient('http://accounts-api:3458', process.env.VITALS_OS_API_KEY);
+ *   const client = new HttpAccountsClient('http://accounts-api:3458', process.env.METRICS_API_KEY);
  *   const users = await client.listUsers();
  *   const conn = await client.getOAuthConnection(userId, 'GOOGLE');
  */

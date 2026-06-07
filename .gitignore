@@ -18,9 +18,6 @@ state/
 # --- Dependencies ---
 node_modules/
 
-# --- Stale scaffolding from previous iterations (never commit) ---
-metrics/src/lib/
-
 # --- Build output ---
 dist/
 build/

@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { FixedClock } from "../tests/helpers/doubles.ts";
+import { FixedClock } from "./lib/test-helpers.ts";
 import {
   resolveDateRangeForMeta,
   resolvePreset,

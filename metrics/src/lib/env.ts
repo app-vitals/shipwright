@@ -5,10 +5,10 @@ const DEFAULT_ENV_PATH = `${process.env.HOME}/.shipwright/.env`;
 /**
  * Load a .env file into process.env if key vars are missing.
  * Safe to call unconditionally — skips if vars already set (e.g. via cron pre-load).
- * Override default path with METRICS_ENV_FILE env var.
+ * Override default path with SHIPWRIGHT_ENV_FILE env var.
  */
 export function loadEnv(
-  path = process.env.METRICS_ENV_FILE ?? DEFAULT_ENV_PATH,
+  path = process.env.SHIPWRIGHT_ENV_FILE ?? DEFAULT_ENV_PATH,
 ): void {
   if (!existsSync(path)) return;
   const text = readFileSync(path, "utf8");

@@ -38,62 +38,12 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
       letter-spacing: -0.3px;
       flex-shrink: 0;
     }
-    .vos-wordmark:hover { color: #4f46e5; }
     .vos-nav {
       display: flex;
       align-items: center;
       gap: 4px;
       flex: 1;
     }
-    .vos-nav-link {
-      padding: 5px 12px;
-      border-radius: 6px;
-      font-size: 13px;
-      font-weight: 500;
-      color: #6b7280;
-      text-decoration: none;
-      transition: background 0.1s, color 0.1s;
-      white-space: nowrap;
-    }
-    .vos-nav-link:hover { background: #f3f4f6; color: #1a1a2e; }
-    .vos-nav-link.active {
-      background: #eef2ff;
-      color: #4f46e5;
-      font-weight: 600;
-    }
-
-    /* ─── Dropdown ──────────────────────────────────────── */
-    .vos-dropdown {
-      position: relative;
-    }
-    .vos-dropdown-menu {
-      display: none;
-      position: absolute;
-      top: calc(100% + 6px);
-      left: 0;
-      background: #fff;
-      border: 1px solid #e8e8ee;
-      border-radius: 8px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-      padding: 4px;
-      min-width: 140px;
-      z-index: 200;
-    }
-    .vos-dropdown:hover .vos-dropdown-menu { display: block; }
-    .vos-dropdown-item {
-      display: block;
-      padding: 6px 12px;
-      border-radius: 6px;
-      font-size: 13px;
-      font-weight: 500;
-      color: #6b7280;
-      text-decoration: none;
-      white-space: nowrap;
-      transition: background 0.1s, color 0.1s;
-    }
-    .vos-dropdown-item:hover { background: #f3f4f6; color: #1a1a2e; }
-    .vos-dropdown-item.active { background: #eef2ff; color: #4f46e5; font-weight: 600; }
-
     .vos-user {
       display: flex;
       align-items: center;
@@ -119,10 +69,7 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
       padding: 5px 12px;
       cursor: pointer;
       font-family: inherit;
-      transition: background 0.1s, color 0.1s, border-color 0.1s;
-      white-space: nowrap;
     }
-    .vos-signout-btn:hover { background: #f7f7fb; color: #1a1a2e; border-color: #d1d5db; }
 
     /* ─── Page body ─────────────────────────────────────── */
     .vos-page {
@@ -130,39 +77,14 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
       margin: 0 auto;
       padding: 32px 24px 64px;
     }
-
-    @media (max-width: 640px) {
-      .vos-toolbar { padding: 0 16px; gap: 12px; }
-      .vos-username { display: none; }
-      .vos-nav-link { padding: 5px 8px; }
-      .vos-page { padding: 20px 16px 48px; }
-    }
   </style>
   <link rel="stylesheet" href="/dashboard/styles.css" />
 </head>
 <body>
   <nav class="vos-toolbar" aria-label="Site navigation">
-    <a href="/accounts/profile" class="vos-wordmark">Vitals OS</a>
+    <a href="/" class="vos-wordmark">Shipwright</a>
     <div class="vos-nav">
-      <div class="vos-dropdown">
-      <a href="/accounts/profile" class="vos-nav-link">Accounts &#9662;</a>
-      <div class="vos-dropdown-menu">
-        <a href="/accounts/profile" class="vos-dropdown-item">Profile</a>
-        <a href="/accounts/agents" class="vos-dropdown-item">Agents</a>
-        <a href="/accounts/web/clients" class="vos-dropdown-item">Clients</a>
-      </div>
-    </div>
-      <div class="vos-dropdown">
-      <a href="/cal/hub" class="vos-nav-link">Cal &#9662;</a>
-      <div class="vos-dropdown-menu">
-        <a href="/cal/hub" class="vos-dropdown-item">Hub</a>
-        <a href="/cal/overview" class="vos-dropdown-item">Overview</a>
-      </div>
-    </div>
-      <a href="/time/week" class="vos-nav-link">Time</a>
-      <a href="/billing/invoices" class="vos-nav-link">Billing</a>
       <a href="/dashboard" class="vos-nav-link active">Metrics</a>
-      <a href="/podcast" class="vos-nav-link">Podcast</a>
     </div>
     <div class="vos-user">
       <span class="vos-username">Alice</span>
@@ -523,62 +445,12 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
       letter-spacing: -0.3px;
       flex-shrink: 0;
     }
-    .vos-wordmark:hover { color: #4f46e5; }
     .vos-nav {
       display: flex;
       align-items: center;
       gap: 4px;
       flex: 1;
     }
-    .vos-nav-link {
-      padding: 5px 12px;
-      border-radius: 6px;
-      font-size: 13px;
-      font-weight: 500;
-      color: #6b7280;
-      text-decoration: none;
-      transition: background 0.1s, color 0.1s;
-      white-space: nowrap;
-    }
-    .vos-nav-link:hover { background: #f3f4f6; color: #1a1a2e; }
-    .vos-nav-link.active {
-      background: #eef2ff;
-      color: #4f46e5;
-      font-weight: 600;
-    }
-
-    /* ─── Dropdown ──────────────────────────────────────── */
-    .vos-dropdown {
-      position: relative;
-    }
-    .vos-dropdown-menu {
-      display: none;
-      position: absolute;
-      top: calc(100% + 6px);
-      left: 0;
-      background: #fff;
-      border: 1px solid #e8e8ee;
-      border-radius: 8px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-      padding: 4px;
-      min-width: 140px;
-      z-index: 200;
-    }
-    .vos-dropdown:hover .vos-dropdown-menu { display: block; }
-    .vos-dropdown-item {
-      display: block;
-      padding: 6px 12px;
-      border-radius: 6px;
-      font-size: 13px;
-      font-weight: 500;
-      color: #6b7280;
-      text-decoration: none;
-      white-space: nowrap;
-      transition: background 0.1s, color 0.1s;
-    }
-    .vos-dropdown-item:hover { background: #f3f4f6; color: #1a1a2e; }
-    .vos-dropdown-item.active { background: #eef2ff; color: #4f46e5; font-weight: 600; }
-
     .vos-user {
       display: flex;
       align-items: center;
@@ -604,10 +476,7 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
       padding: 5px 12px;
       cursor: pointer;
       font-family: inherit;
-      transition: background 0.1s, color 0.1s, border-color 0.1s;
-      white-space: nowrap;
     }
-    .vos-signout-btn:hover { background: #f7f7fb; color: #1a1a2e; border-color: #d1d5db; }
 
     /* ─── Page body ─────────────────────────────────────── */
     .vos-page {
@@ -615,39 +484,14 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
       margin: 0 auto;
       padding: 32px 24px 64px;
     }
-
-    @media (max-width: 640px) {
-      .vos-toolbar { padding: 0 16px; gap: 12px; }
-      .vos-username { display: none; }
-      .vos-nav-link { padding: 5px 8px; }
-      .vos-page { padding: 20px 16px 48px; }
-    }
   </style>
   <link rel="stylesheet" href="/dashboard/styles.css" />
 </head>
 <body>
   <nav class="vos-toolbar" aria-label="Site navigation">
-    <a href="/accounts/profile" class="vos-wordmark">Vitals OS</a>
+    <a href="/" class="vos-wordmark">Shipwright</a>
     <div class="vos-nav">
-      <div class="vos-dropdown">
-      <a href="/accounts/profile" class="vos-nav-link">Accounts &#9662;</a>
-      <div class="vos-dropdown-menu">
-        <a href="/accounts/profile" class="vos-dropdown-item">Profile</a>
-        <a href="/accounts/agents" class="vos-dropdown-item">Agents</a>
-        <a href="/accounts/web/clients" class="vos-dropdown-item">Clients</a>
-      </div>
-    </div>
-      <div class="vos-dropdown">
-      <a href="/cal/hub" class="vos-nav-link">Cal &#9662;</a>
-      <div class="vos-dropdown-menu">
-        <a href="/cal/hub" class="vos-dropdown-item">Hub</a>
-        <a href="/cal/overview" class="vos-dropdown-item">Overview</a>
-      </div>
-    </div>
-      <a href="/time/week" class="vos-nav-link">Time</a>
-      <a href="/billing/invoices" class="vos-nav-link">Billing</a>
       <a href="/dashboard" class="vos-nav-link active">Metrics</a>
-      <a href="/podcast" class="vos-nav-link">Podcast</a>
     </div>
     <div class="vos-user">
       <span class="vos-username">Alice</span>
@@ -1008,62 +852,12 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
       letter-spacing: -0.3px;
       flex-shrink: 0;
     }
-    .vos-wordmark:hover { color: #4f46e5; }
     .vos-nav {
       display: flex;
       align-items: center;
       gap: 4px;
       flex: 1;
     }
-    .vos-nav-link {
-      padding: 5px 12px;
-      border-radius: 6px;
-      font-size: 13px;
-      font-weight: 500;
-      color: #6b7280;
-      text-decoration: none;
-      transition: background 0.1s, color 0.1s;
-      white-space: nowrap;
-    }
-    .vos-nav-link:hover { background: #f3f4f6; color: #1a1a2e; }
-    .vos-nav-link.active {
-      background: #eef2ff;
-      color: #4f46e5;
-      font-weight: 600;
-    }
-
-    /* ─── Dropdown ──────────────────────────────────────── */
-    .vos-dropdown {
-      position: relative;
-    }
-    .vos-dropdown-menu {
-      display: none;
-      position: absolute;
-      top: calc(100% + 6px);
-      left: 0;
-      background: #fff;
-      border: 1px solid #e8e8ee;
-      border-radius: 8px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-      padding: 4px;
-      min-width: 140px;
-      z-index: 200;
-    }
-    .vos-dropdown:hover .vos-dropdown-menu { display: block; }
-    .vos-dropdown-item {
-      display: block;
-      padding: 6px 12px;
-      border-radius: 6px;
-      font-size: 13px;
-      font-weight: 500;
-      color: #6b7280;
-      text-decoration: none;
-      white-space: nowrap;
-      transition: background 0.1s, color 0.1s;
-    }
-    .vos-dropdown-item:hover { background: #f3f4f6; color: #1a1a2e; }
-    .vos-dropdown-item.active { background: #eef2ff; color: #4f46e5; font-weight: 600; }
-
     .vos-user {
       display: flex;
       align-items: center;
@@ -1089,10 +883,7 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
       padding: 5px 12px;
       cursor: pointer;
       font-family: inherit;
-      transition: background 0.1s, color 0.1s, border-color 0.1s;
-      white-space: nowrap;
     }
-    .vos-signout-btn:hover { background: #f7f7fb; color: #1a1a2e; border-color: #d1d5db; }
 
     /* ─── Page body ─────────────────────────────────────── */
     .vos-page {
@@ -1100,39 +891,14 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
       margin: 0 auto;
       padding: 32px 24px 64px;
     }
-
-    @media (max-width: 640px) {
-      .vos-toolbar { padding: 0 16px; gap: 12px; }
-      .vos-username { display: none; }
-      .vos-nav-link { padding: 5px 8px; }
-      .vos-page { padding: 20px 16px 48px; }
-    }
   </style>
   <link rel="stylesheet" href="/dashboard/styles.css" />
 </head>
 <body>
   <nav class="vos-toolbar" aria-label="Site navigation">
-    <a href="/accounts/profile" class="vos-wordmark">Vitals OS</a>
+    <a href="/" class="vos-wordmark">Shipwright</a>
     <div class="vos-nav">
-      <div class="vos-dropdown">
-      <a href="/accounts/profile" class="vos-nav-link">Accounts &#9662;</a>
-      <div class="vos-dropdown-menu">
-        <a href="/accounts/profile" class="vos-dropdown-item">Profile</a>
-        <a href="/accounts/agents" class="vos-dropdown-item">Agents</a>
-        <a href="/accounts/web/clients" class="vos-dropdown-item">Clients</a>
-      </div>
-    </div>
-      <div class="vos-dropdown">
-      <a href="/cal/hub" class="vos-nav-link">Cal &#9662;</a>
-      <div class="vos-dropdown-menu">
-        <a href="/cal/hub" class="vos-dropdown-item">Hub</a>
-        <a href="/cal/overview" class="vos-dropdown-item">Overview</a>
-      </div>
-    </div>
-      <a href="/time/week" class="vos-nav-link">Time</a>
-      <a href="/billing/invoices" class="vos-nav-link">Billing</a>
       <a href="/dashboard" class="vos-nav-link active">Metrics</a>
-      <a href="/podcast" class="vos-nav-link">Podcast</a>
     </div>
     <div class="vos-user">
       <span class="vos-username">Alice</span>
@@ -1493,62 +1259,12 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
       letter-spacing: -0.3px;
       flex-shrink: 0;
     }
-    .vos-wordmark:hover { color: #4f46e5; }
     .vos-nav {
       display: flex;
       align-items: center;
       gap: 4px;
       flex: 1;
     }
-    .vos-nav-link {
-      padding: 5px 12px;
-      border-radius: 6px;
-      font-size: 13px;
-      font-weight: 500;
-      color: #6b7280;
-      text-decoration: none;
-      transition: background 0.1s, color 0.1s;
-      white-space: nowrap;
-    }
-    .vos-nav-link:hover { background: #f3f4f6; color: #1a1a2e; }
-    .vos-nav-link.active {
-      background: #eef2ff;
-      color: #4f46e5;
-      font-weight: 600;
-    }
-
-    /* ─── Dropdown ──────────────────────────────────────── */
-    .vos-dropdown {
-      position: relative;
-    }
-    .vos-dropdown-menu {
-      display: none;
-      position: absolute;
-      top: calc(100% + 6px);
-      left: 0;
-      background: #fff;
-      border: 1px solid #e8e8ee;
-      border-radius: 8px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-      padding: 4px;
-      min-width: 140px;
-      z-index: 200;
-    }
-    .vos-dropdown:hover .vos-dropdown-menu { display: block; }
-    .vos-dropdown-item {
-      display: block;
-      padding: 6px 12px;
-      border-radius: 6px;
-      font-size: 13px;
-      font-weight: 500;
-      color: #6b7280;
-      text-decoration: none;
-      white-space: nowrap;
-      transition: background 0.1s, color 0.1s;
-    }
-    .vos-dropdown-item:hover { background: #f3f4f6; color: #1a1a2e; }
-    .vos-dropdown-item.active { background: #eef2ff; color: #4f46e5; font-weight: 600; }
-
     .vos-user {
       display: flex;
       align-items: center;
@@ -1574,10 +1290,7 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
       padding: 5px 12px;
       cursor: pointer;
       font-family: inherit;
-      transition: background 0.1s, color 0.1s, border-color 0.1s;
-      white-space: nowrap;
     }
-    .vos-signout-btn:hover { background: #f7f7fb; color: #1a1a2e; border-color: #d1d5db; }
 
     /* ─── Page body ─────────────────────────────────────── */
     .vos-page {
@@ -1585,39 +1298,14 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
       margin: 0 auto;
       padding: 32px 24px 64px;
     }
-
-    @media (max-width: 640px) {
-      .vos-toolbar { padding: 0 16px; gap: 12px; }
-      .vos-username { display: none; }
-      .vos-nav-link { padding: 5px 8px; }
-      .vos-page { padding: 20px 16px 48px; }
-    }
   </style>
   <link rel="stylesheet" href="/dashboard/styles.css" />
 </head>
 <body>
   <nav class="vos-toolbar" aria-label="Site navigation">
-    <a href="/accounts/profile" class="vos-wordmark">Vitals OS</a>
+    <a href="/" class="vos-wordmark">Shipwright</a>
     <div class="vos-nav">
-      <div class="vos-dropdown">
-      <a href="/accounts/profile" class="vos-nav-link">Accounts &#9662;</a>
-      <div class="vos-dropdown-menu">
-        <a href="/accounts/profile" class="vos-dropdown-item">Profile</a>
-        <a href="/accounts/agents" class="vos-dropdown-item">Agents</a>
-        <a href="/accounts/web/clients" class="vos-dropdown-item">Clients</a>
-      </div>
-    </div>
-      <div class="vos-dropdown">
-      <a href="/cal/hub" class="vos-nav-link">Cal &#9662;</a>
-      <div class="vos-dropdown-menu">
-        <a href="/cal/hub" class="vos-dropdown-item">Hub</a>
-        <a href="/cal/overview" class="vos-dropdown-item">Overview</a>
-      </div>
-    </div>
-      <a href="/time/week" class="vos-nav-link">Time</a>
-      <a href="/billing/invoices" class="vos-nav-link">Billing</a>
       <a href="/dashboard" class="vos-nav-link active">Metrics</a>
-      <a href="/podcast" class="vos-nav-link">Podcast</a>
     </div>
     <div class="vos-user">
       <span class="vos-username">Alice</span>

@@ -4,7 +4,7 @@
  * Uses the shared Vitals OS toolbar and light theme.
  */
 
-import { baseStyles, renderToolbar } from "../../lib/web/toolbar.ts";
+import { baseStyles, renderToolbar } from "../lib/web/toolbar.ts";
 
 export interface DashboardPageOptions {
   userName: string;

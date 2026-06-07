@@ -5,8 +5,8 @@
  * and features (per-prefix breakdown via 3-query TypeScript join).
  *
  * Event-name aliasing: the producer does NOT emit `shipwright_task_merged`
- * or `shipwright_task_approved` (those names return zero rows in live PostHog data).
- * Task completion is emitted as
+ * or `shipwright_task_approved` (verified live against PostHog project
+ * <your-project-id> — those names return zero rows). Task completion is emitted as
  * `shipwright_task_complete` (current) / `shipwright_task_completed`
  * (historical); review completion as `shipwright_task_reviewed` (current) /
  * `shipwright_review_complete` (historical). To resolve both current and any
@@ -92,7 +92,7 @@ const SHIPWRIGHT_EVENTS = [
  * Pre-deploy HogQL validation: run `bun run validate:hogql` in metrics/ with
  * POSTHOG_PERSONAL_API_KEY set to confirm query shape is accepted by PostHog
  * HogQLMetadata before deploying. Live result correctness (non-empty feature
- * prefix rows) requires real PostHog events — use the `90d` preset.
+ * prefix rows) requires real events in project <your-project-id> — use the `90d` preset.
  */
 const TASK_KEY =
   "coalesce(toString(properties.task_id), toString(properties.task))";
@@ -191,7 +191,7 @@ WHERE event IN (${EVENT_LIST})
  * Pre-deploy HogQL validation: run `bun run validate:hogql` in metrics/ with
  * POSTHOG_PERSONAL_API_KEY set to confirm query shape is accepted by PostHog
  * HogQLMetadata before deploying. Live result correctness (non-null avg cycle
- * time) requires real PostHog events — use the `90d` preset.
+ * time) requires real events in project <your-project-id> — use the `90d` preset.
  */
 export function buildSummaryCycleTimeQuery(dateRange: QueryDateRange): string {
   const dateFilter = buildDateFilter(dateRange);
