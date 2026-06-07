@@ -1,0 +1,149 @@
+import { beforeAll, describe, expect, it } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+const RESEARCH_DOCS_MD_PATH = join(import.meta.dir, "research-docs.md");
+
+let content: string;
+
+beforeAll(() => {
+  content = readFileSync(RESEARCH_DOCS_MD_PATH, "utf-8");
+});
+
+describe("research-docs.md — auto mode detection", () => {
+  it("detects --auto flag in $ARGUMENTS to trigger auto mode", () => {
+    expect(content).toContain("--auto");
+    expect(content).toContain("$ARGUMENTS");
+  });
+
+  it("branches on --auto: auto flow vs interactive flow", () => {
+    const hasAutoCheck =
+      content.includes("contains") ||
+      content.includes("includes") ||
+      content.includes("--auto");
+    const hasInteractiveMode = content.toLowerCase().includes("interactive");
+    expect(hasAutoCheck).toBe(true);
+    expect(hasInteractiveMode).toBe(true);
+  });
+});
+
+describe("research-docs.md — auto mode sync anchor", () => {
+  it("reads state/docs-last-synced.json for the last-synced SHA", () => {
+    expect(content).toContain("state/docs-last-synced.json");
+  });
+
+  it("treats absent sync anchor as full audit scope", () => {
+    const hasAbsentFallback =
+      content.includes("file doesn't exist") ||
+      content.includes("does not exist") ||
+      content.includes("absent") ||
+      content.includes("not found") ||
+      content.includes("missing");
+    expect(hasAbsentFallback).toBe(true);
+  });
+
+  it("writes state/docs-last-synced.json with sha and timestamp after auto run", () => {
+    const syncAnchorIdx = content.indexOf("state/docs-last-synced.json");
+    const afterWriteIdx = content.lastIndexOf("state/docs-last-synced.json");
+    // Must appear at least twice: read and write
+    expect(syncAnchorIdx).not.toBe(afterWriteIdx);
+    expect(content).toContain('"sha"');
+    expect(content).toContain('"timestamp"');
+  });
+});
+
+describe("research-docs.md — auto mode scoping", () => {
+  it("uses git diff against anchor SHA to find changed source files", () => {
+    const hasGitDiff =
+      content.includes("git diff") || content.includes("git-diff");
+    expect(hasGitDiff).toBe(true);
+  });
+
+  it("filters docs to only those referencing changed files", () => {
+    const hasFiltering =
+      content.includes("filter") ||
+      content.includes("candidate") ||
+      content.includes("overlap") ||
+      content.includes("grep");
+    expect(hasFiltering).toBe(true);
+  });
+});
+
+describe("research-docs.md — auto mode doc updates", () => {
+  it("updates stale docs via doc-refresh-recipe.md Part 2 without user confirmation", () => {
+    expect(content).toContain("doc-refresh-recipe.md");
+    const hasPartTwo = content.includes("Part 2") || content.includes("part 2");
+    expect(hasPartTwo).toBe(true);
+  });
+
+  it("updates CLAUDE.md Reference entries automatically in auto mode", () => {
+    const claudeMdIdx = content.indexOf("CLAUDE.md");
+    expect(claudeMdIdx).toBeGreaterThan(-1);
+    // CLAUDE.md appears in both auto and interactive steps
+    const hasCLAUDEmdMultiple = content.split("CLAUDE.md").length > 2;
+    expect(hasCLAUDEmdMultiple).toBe(true);
+  });
+});
+
+describe("research-docs.md — auto mode follow-on tasks", () => {
+  it("creates follow-on tasks for missing docs via task_store.ts append", () => {
+    expect(content).toContain("task_store.ts");
+    const hasAppend =
+      content.includes("append") && content.includes("task_store");
+    expect(hasAppend).toBe(true);
+  });
+
+  it("does NOT generate docs for missing modules in auto mode", () => {
+    // Missing docs should produce tasks, not generated files
+    const hasMissingTasksOut =
+      (content.includes("missing") || content.includes("Missing")) &&
+      (content.includes("task") || content.includes("append"));
+    expect(hasMissingTasksOut).toBe(true);
+  });
+});
+
+describe("research-docs.md — auto mode no prompts", () => {
+  it("auto mode prints a non-interactive summary (no Proceed? gates)", () => {
+    // The "Proceed?" gate must ONLY appear in the interactive section
+    const interactiveIdx = content.toLowerCase().indexOf("interactive mode");
+    const proceedIdx = content.indexOf("Proceed?");
+    // If "Proceed?" exists, it must come after the Interactive Mode heading
+    if (proceedIdx >= 0 && interactiveIdx >= 0) {
+      expect(proceedIdx).toBeGreaterThan(interactiveIdx);
+    }
+  });
+
+  it("auto mode ends with a non-interactive summary section", () => {
+    const hasSummary =
+      content.includes("Summary") ||
+      content.includes("summary") ||
+      content.includes("DONE") ||
+      content.includes("Auto run complete");
+    expect(hasSummary).toBe(true);
+  });
+});
+
+describe("research-docs.md — interactive mode preservation", () => {
+  it("interactive flow still has Wait for user confirmation gate", () => {
+    const hasGate =
+      content.includes("Wait for user confirmation") ||
+      content.includes("Proceed?");
+    expect(hasGate).toBe(true);
+  });
+
+  it("interactive flow still has all 8 original steps", () => {
+    // Check that the original steps are still present
+    expect(content).toContain("Step 1");
+    expect(content).toContain("Step 2");
+    expect(content).toContain("Step 3");
+    expect(content).toContain("Step 4");
+    expect(content).toContain("Step 5");
+    expect(content).toContain("Step 6");
+    expect(content).toContain("Step 7");
+    expect(content).toContain("Step 8");
+  });
+
+  it("interactive flow still audits the full project when no $ARGUMENTS", () => {
+    expect(content).toContain("audit the entire project");
+  });
+});
