@@ -287,6 +287,19 @@ describe("admin API — env vars", () => {
     expect(body.env.SECRET).toBe("decrypted-value");
   });
 
+  it("PATCH /admin/api/agents/:id/envs updates specific keys (200)", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/admin/api/agents/${AGENT_ID}/envs`, {
+      method: "PATCH",
+      body: JSON.stringify({ FOO: "updated" }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+  });
+
   it("DELETE /admin/api/agents/:id/envs/:key returns 204", async () => {
     const app = createAdminApp(makeMockDeps());
     const res = await app.request(`/admin/api/agents/${AGENT_ID}/envs/FOO`, {
@@ -399,6 +412,22 @@ describe("admin API — tools", () => {
     expect(Array.isArray(body.tools)).toBe(true);
   });
 
+  it("PATCH /admin/api/agents/:id/tools/:toolId toggles enabled (200)", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(
+      `/admin/api/agents/${AGENT_ID}/tools/${TOOL_ID}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ enabled: false }),
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(200);
+  });
+
   it("DELETE /admin/api/agents/:id/tools/:toolId returns 204", async () => {
     const app = createAdminApp(makeMockDeps());
     const res = await app.request(
@@ -496,6 +525,22 @@ describe("admin API — plugins", () => {
     const body = await res.json();
     expect(Array.isArray(body.plugins)).toBe(true);
     expect(body.plugins).toHaveLength(1);
+  });
+
+  it("PATCH /admin/api/agents/:id/plugins/:name updates version (200)", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(
+      `/admin/api/agents/${AGENT_ID}/plugins/@shipwright%2Fplugin`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ version: "2.0.0" }),
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(200);
   });
 
   it("DELETE /admin/api/agents/:id/plugins/:pluginId returns 204", async () => {
