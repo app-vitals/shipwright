@@ -13,7 +13,7 @@
  * Cookie name: admin_session.
  */
 
-import { type Context, Hono, type MiddlewareHandler } from "hono";
+import { Hono, type MiddlewareHandler } from "hono";
 import { getCookie } from "hono/cookie";
 import { verify } from "hono/jwt";
 import type {
@@ -53,7 +53,7 @@ export interface AdminDeps {
 const SESSION_COOKIE = "admin_session";
 
 function createSessionAuthMiddleware(sessionSecret: string): MiddlewareHandler {
-  return async (c: Context, next) => {
+  return async (c, next) => {
     const sessionToken = getCookie(c, SESSION_COOKIE);
     if (!sessionToken) {
       return c.json({ error: "Unauthorized" }, 401);
