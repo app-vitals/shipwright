@@ -1,7 +1,11 @@
 /**
  * metrics/src/secrets.ts
- * GCP Secret Manager client with env var fallback for local dev.
+ * Secrets client: env var first, GCP Secret Manager optional fallback.
  * Uses dependency injection for the SecretManager client (testable without real GCP).
+ *
+ * Resolution order:
+ *   1. process.env[name]  — plain env var, works without GCP credentials
+ *   2. GCP Secret Manager — optional, only tried when env var is absent
  */
 
 const GCP_PROJECT_ID = process.env.GCP_PROJECT_ID ?? "";
@@ -34,8 +38,8 @@ export class SecretNotFoundError extends Error {
 }
 
 /**
- * Creates a secrets client that resolves secrets from GCP Secret Manager,
- * falling back to environment variables when GCP is unavailable (local dev).
+ * Creates a secrets client that resolves secrets env-first, with GCP Secret Manager
+ * as an optional fallback when the env var is absent.
  *
  * @param gcpProjectId - GCP project ID (defaults to process.env.GCP_PROJECT_ID)
  * @param clientFactory - Optional factory for the GCP SecretManager client (DI for tests)
@@ -66,10 +70,17 @@ export function createSecretsClient(
 
   /**
    * Resolves a secret by name.
-   * Order: GCP Secret Manager → process.env[name] → throw SecretNotFoundError
+   * Order: process.env[name] → GCP Secret Manager → throw SecretNotFoundError
+   *
+   * Env var wins — supports plain POSTHOG_PERSONAL_API_KEY without GCP credentials.
+   * GCP Secret Manager is optional: only tried when env var is absent.
    */
   async function getSecret(name: string): Promise<string> {
-    // Try GCP Secret Manager first
+    // Env var wins — no GCP credentials required for plain env usage
+    const envValue = process.env[name];
+    if (envValue !== undefined) return envValue;
+
+    // GCP Secret Manager — optional, only used when env var is absent
     try {
       const client = getClient();
       const secretName = `projects/${gcpProjectId}/secrets/${name}/versions/latest`;
@@ -84,13 +95,7 @@ export function createSecretsClient(
       // Buffer / Uint8Array
       return Buffer.from(data).toString("utf8");
     } catch (err) {
-      // Fall back to env var if GCP is unavailable (local dev, missing credentials, etc.)
-      // Re-throw if it's our own error (secret explicitly missing from GCP)
       if (err instanceof SecretNotFoundError) throw err;
-
-      const envValue = process.env[name];
-      if (envValue !== undefined) return envValue;
-
       throw new SecretNotFoundError(
         name,
         err instanceof Error ? err : undefined,
