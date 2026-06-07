@@ -4,7 +4,7 @@
  * Scoped to only what metrics unit tests need.
  */
 
-import type { Clock } from "../../lib/clock.ts";
+import type { Clock } from "../../src/lib/clock.ts";
 
 // ─── FixedClock ───────────────────────────────────────────────────────────────
 
