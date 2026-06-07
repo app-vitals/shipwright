@@ -1,5 +1,7 @@
 # Shipwright
 
+[![release](https://img.shields.io/github/v/release/app-vitals/shipwright?sort=semver&label=release)](https://github.com/app-vitals/shipwright/releases)
+
 **A Claude Code plugin toolchain for the full delivery loop — spec → plan → execute → review → deploy.** Plus a metrics dashboard and a reference agent for running it autonomously.
 
 > 🚧 **Early development.** Shipwright is being built out in this standalone repository and isn't ready for general installation yet. Follow progress in the [issues](https://github.com/app-vitals/shipwright/issues).
