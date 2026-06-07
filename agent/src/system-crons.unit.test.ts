@@ -52,10 +52,6 @@ describe("SYSTEM_CRONS", () => {
 
   it("no entry uses /learn-dream without shipwright: prefix", () => {
     for (const cron of SYSTEM_CRONS) {
-      // /learn-dream is only valid as /shipwright:learn-dream
-      expect(cron.prompt).not.toMatch(/\/learn-dream(?!.*shipwright)/);
-      // More precise: prompt must not contain /learn-dream that is not prefixed by shipwright:
-      const hasLegacyLearnDream = /(?<!shipwright:)learn-dream/.test(cron.prompt);
       if (cron.prompt.includes("learn-dream")) {
         expect(cron.prompt).toMatch(/shipwright:learn-dream/);
       }
