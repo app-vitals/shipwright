@@ -10,8 +10,8 @@
  * Usage:
  *   POSTHOG_PERSONAL_API_KEY=phx_... POSTHOG_PROJECT_ID=<your-project-id> bun run validate:hogql
  *
- * In CI: set POSTHOG_PERSONAL_API_KEY as a CI secret. POSTHOG_PROJECT_ID defaults
- * to "" if unset.
+ * In CI: set POSTHOG_PERSONAL_API_KEY and POSTHOG_PROJECT_ID as CI secrets.
+ * Both are required — the script exits immediately if either is missing.
  */
 
 import { createPostHogClient } from "./posthog-client.ts";
@@ -121,12 +121,22 @@ if (!apiKey) {
   process.exit(1);
 }
 
-const projectId = process.env.POSTHOG_PROJECT_ID ?? "";
+const projectId = process.env.POSTHOG_PROJECT_ID;
+
+if (!projectId) {
+  console.error(
+    "ERROR: POSTHOG_PROJECT_ID is not set.\n" +
+      "Set the PostHog project ID for HogQL validation:\n" +
+      "  POSTHOG_PERSONAL_API_KEY=phx_... POSTHOG_PROJECT_ID=<your-project-id> bun run validate:hogql",
+  );
+  process.exit(1);
+}
+
 const client = createPostHogClient({ personalApiKey: apiKey, projectId });
 
 const builders = allBuilders();
 console.log(
-  `Validating ${builders.length} HogQL queries via PostHog HogQLMetadata (project ${projectId || "<your-project-id>"})...`,
+  `Validating ${builders.length} HogQL queries via PostHog HogQLMetadata (project ${projectId})...`,
 );
 
 let failures = 0;
