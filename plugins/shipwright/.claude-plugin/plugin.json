@@ -1,0 +1,26 @@
+{
+  "name": "shipwright",
+  "version": "4.26.1",
+  "description": "Shipwright — conversational planning, queue-driven execution, policy-controlled code review, a five-phase test-readiness pipeline, and autonomous deploy (merge → canary → promote) for any software project",
+  "author": {
+    "name": "App Vitals",
+    "url": "https://github.com/app-vitals"
+  },
+  "repository": "https://github.com/app-vitals/marketplace",
+  "license": "MIT",
+  "keywords": [
+    "development",
+    "pipeline",
+    "planning",
+    "autonomous",
+    "code-review",
+    "task-management",
+    "research",
+    "documentation",
+    "testing",
+    "test-readiness",
+    "canary",
+    "coverage",
+    "deploy"
+  ]
+}
