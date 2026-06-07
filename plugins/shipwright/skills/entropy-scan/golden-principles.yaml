@@ -1,0 +1,203 @@
+# Golden Principles — Default Ruleset
+# =====================================
+# These are the default code health rules for entropy-patrol.
+#
+# To customize for your project, copy this file to:
+#   .claude/entropy-patrol/golden-principles.yaml
+# Local config takes priority over this default. See references/customization.md.
+#
+# Top-level fields:
+#   version:            Schema version (currently "1.0")
+#   rules:              List of rule definitions (see per-rule fields below)
+#   todo_max_age_days:  Age threshold for stale_todo rule (default 90)
+#
+# Each rule has these fields:
+#   id:             Unique identifier (snake_case, e.g. dead_exports)
+#   category:       One of: dead_code | missing_tests | inconsistent_patterns | todo_debt | documentation_gaps | security
+#   severity:       low | medium | high
+#   description:    One-line description of what this rule catches
+#   detection_hint: Natural language instruction for the scanning agent — specific enough to act on
+#   pr_worthy:      true = /entropy-fix will open a PR to fix it; false = report only
+#   disabled:       true = skip this rule entirely (omit field or set false to enable)
+#
+# Age threshold for todo_debt rules is configured via:
+#   todo_max_age_days: 90  (default, at the bottom of this file)
+
+version: "1.0"
+
+rules:
+
+  # ---------------------------------------------------------------------------
+  # DEAD CODE
+  # ---------------------------------------------------------------------------
+
+  - id: dead_exports
+    category: dead_code
+    severity: medium
+    description: Exported functions, types, or constants that are never imported anywhere in the codebase
+    detection_hint: |
+      For each TypeScript/JavaScript source file, list all exported symbols (export function, export const,
+      export type, export class, export interface). Then search the entire codebase for import statements
+      that reference each symbol. Flag any export that has zero import sites. Skip index.ts re-export
+      files and test files. Report: file path, export name, export type.
+    pr_worthy: true
+
+  - id: commented_out_blocks
+    category: dead_code
+    severity: low
+    description: Large blocks of commented-out code (5+ consecutive commented lines) that should be deleted or restored
+    detection_hint: |
+      Scan source files for runs of 5 or more consecutive commented-out lines (// or #). Exclude
+      JSDoc/TSDoc blocks (/** ... */), license headers, and section dividers (--- or ===).
+      Flag the file, start line, and approximate line count. Blocks in test files are lower priority.
+    pr_worthy: false
+
+  - id: unreferenced_files
+    category: dead_code
+    severity: medium
+    description: Source files that are never imported or required by any other file and have no entry-point marker
+    detection_hint: |
+      List all .ts/.js source files (excluding *.test.ts, *.spec.ts, index.ts files, and CLI entry points
+      listed in package.json bin/scripts). For each file, check if it appears in any import statement
+      in the codebase. Flag files with zero import sites. These are candidates for deletion.
+    pr_worthy: false
+
+  # ---------------------------------------------------------------------------
+  # MISSING TESTS
+  # ---------------------------------------------------------------------------
+
+  - id: missing_test_file
+    category: missing_tests
+    severity: high
+    description: Source files in src/ that have no corresponding .test.ts file
+    detection_hint: |
+      For each .ts file under src/ (excluding *.test.ts, *.spec.ts, index.ts, and type-only files
+      that export only interfaces/types), check if a corresponding .test.ts file exists in the same
+      directory or a __tests__/ subdirectory. Flag every source file with no test coverage file.
+      Report: file path, file size (lines), approximate complexity (does it export functions?).
+    pr_worthy: false
+
+  - id: empty_test_file
+    category: missing_tests
+    severity: medium
+    description: Test files that exist but contain no actual test cases (describe/it/test blocks)
+    detection_hint: |
+      Scan all *.test.ts and *.spec.ts files. Flag any file that contains no test() or it() or
+      describe() calls with actual test bodies. Stub files with only imports and empty describes count
+      as empty. Report the file path and what it currently contains.
+    pr_worthy: false
+
+  # ---------------------------------------------------------------------------
+  # INCONSISTENT PATTERNS
+  # ---------------------------------------------------------------------------
+
+  - id: duplicated_utility
+    category: inconsistent_patterns
+    severity: medium
+    description: Hand-rolled utility functions that duplicate functionality already in a shared lib
+    detection_hint: |
+      Look for local implementations of: argument parsing (parseArgs, getArg, required),
+      Prisma client instantiation (new PrismaClient()), JSON read/write helpers, logger/log wrapper,
+      environment variable loading, MCP JSON-RPC send/ok/err helpers, date formatting.
+      For each local copy found, check if a canonical implementation exists in lib/ or a shared module.
+      Flag any local copy that duplicates a shared lib function. Report: file, function name, shared lib path.
+    pr_worthy: true
+
+  - id: inconsistent_error_handling
+    category: inconsistent_patterns
+    severity: low
+    description: Inconsistent error handling — some paths throw, some return null, some log and continue
+    detection_hint: |
+      For a given module, identify the dominant error-handling pattern (throw vs. return null/undefined
+      vs. return { error } vs. console.error + continue). Flag functions in the same module that use
+      a different pattern without an obvious reason. Don't flag intentional boundary differences
+      (e.g., CLI entry points that catch and log vs. library functions that throw).
+    pr_worthy: false
+
+  # ---------------------------------------------------------------------------
+  # TODO DEBT
+  # ---------------------------------------------------------------------------
+
+  - id: todo_fixme_hack
+    category: todo_debt
+    severity: medium
+    description: TODO, FIXME, or HACK comments in source code
+    detection_hint: |
+      Search all source files for comments containing TODO, FIXME, HACK, or XXX (case-insensitive).
+      For each match, report: file, line number, comment text, and whether git blame shows the comment
+      is older than todo_max_age_days. Prioritize comments in frequently-modified files. Exclude
+      test files (lower signal there). HACK comments are higher severity than TODOs.
+    pr_worthy: false
+
+  - id: stale_todo
+    category: todo_debt
+    severity: high
+    description: TODO/FIXME comments that have been in the codebase longer than the configured age threshold
+    detection_hint: |
+      For each TODO/FIXME/HACK found, use git log -S"<comment text>" --follow -- <file> to find when
+      that line was introduced. Flag comments older than todo_max_age_days as stale. These are
+      tech debt that has been consciously deferred past any reasonable window. Report: file, line,
+      comment, age in days, original author.
+    pr_worthy: false
+
+  # ---------------------------------------------------------------------------
+  # DOCUMENTATION GAPS
+  # ---------------------------------------------------------------------------
+
+  - id: undocumented_exports
+    category: documentation_gaps
+    severity: low
+    description: Exported functions and classes with no JSDoc comment
+    detection_hint: |
+      For each exported function, class, or interface in TypeScript source files, check if there is a
+      JSDoc comment (/** ... */) immediately preceding it. Flag exports with no JSDoc. Skip very
+      short utility functions (< 5 lines body) and test files. Prioritize: public API modules,
+      functions with complex signatures (3+ params), and functions that have caused bugs before
+      (check CLAUDE.md or commit messages for hints).
+    pr_worthy: false
+
+  - id: missing_readme_section
+    category: documentation_gaps
+    severity: low
+    description: Module directories (packages, services) that have no README.md or have a README missing key sections
+    detection_hint: |
+      For each top-level directory under src/ that contains TypeScript source files, check if a
+      README.md exists. Also check the README has at minimum: a title line (# ...) and at least one
+      of: a "What it does" section, a "Usage" section, or a CLI usage example. Flag missing README
+      files and READMEs with only a title. Report: directory, what's missing.
+    pr_worthy: false
+
+  # ---------------------------------------------------------------------------
+  # SECURITY
+  # ---------------------------------------------------------------------------
+
+  - id: ungated_outbound
+    category: security
+    severity: high
+    description: Outbound HTTP POST/PUT, email sends, or webhook calls without an explicit human-approval gate
+    detection_hint: |
+      Search source files for: fetch() with POST/PUT/PATCH/DELETE methods, axios.post/put/patch/delete,
+      nodemailer.sendMail, sendgrid/resend send calls, Slack WebClient.chat.postMessage,
+      exec/spawn calls that invoke curl or wget with POST flags. For each match, verify there is an
+      explicit human-approval gate nearby (a confirm prompt, a dry-run flag check, a --commit flag,
+      or a human-in-the-loop note). Flag any call that can fire without human confirmation.
+      This is the highest-priority check — a false negative here can send real emails to real clients.
+    pr_worthy: true
+
+  - id: hardcoded_secrets
+    category: security
+    severity: high
+    description: Hardcoded API keys, tokens, passwords, or credentials in source files
+    detection_hint: |
+      Search source files for string literals that look like secrets: patterns matching
+      sk-[a-zA-Z0-9]{20,}, Bearer [a-zA-Z0-9+/]{20,}, password\s*=\s*["'][^"']{8,},
+      api_key\s*=\s*["'][^"']{10,}, token\s*=\s*["'][^"']{10,}. Also flag any direct assignment
+      of environment variable names as string values (e.g., const token = "ghp_...").
+      Skip test files that use obviously fake values (e.g., "test-token", "fake-key").
+    pr_worthy: true
+
+# ---------------------------------------------------------------------------
+# Global config
+# ---------------------------------------------------------------------------
+
+todo_max_age_days: 90
