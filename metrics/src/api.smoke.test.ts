@@ -1624,6 +1624,7 @@ describe("owner gate — /metrics/* API endpoints", () => {
     const deps: MetricsDeps = {
       postHogClient: { query: async () => mockSummaryResult },
       sessionSecret: TEST_SESSION_SECRET,
+      requireOwnerRole: true,
     };
     const app = createMetricsApp(
       apiKeys,
@@ -1645,6 +1646,7 @@ describe("owner gate — /metrics/* API endpoints", () => {
     const deps: MetricsDeps = {
       postHogClient: { query: async () => mockSummaryResult },
       sessionSecret: TEST_SESSION_SECRET,
+      requireOwnerRole: true,
     };
     const app = createMetricsApp(
       apiKeys,
@@ -1664,6 +1666,7 @@ describe("owner gate — /metrics/* API endpoints", () => {
     const deps: MetricsDeps = {
       postHogClient: { query: async () => mockSummaryResult },
       sessionSecret: TEST_SESSION_SECRET,
+      requireOwnerRole: true,
     };
     const app = createMetricsApp(
       apiKeys,
@@ -1716,6 +1719,7 @@ describe("owner gate — /dashboard", () => {
     const cookie = await makeSessionCookie();
     const deps: MetricsDeps = {
       sessionSecret: TEST_SESSION_SECRET,
+      requireOwnerRole: true,
     };
     const app = createMetricsApp(
       apiKeys,
@@ -1734,6 +1738,7 @@ describe("owner gate — /dashboard", () => {
     const cookie = await makeSessionCookie();
     const deps: MetricsDeps = {
       sessionSecret: TEST_SESSION_SECRET,
+      requireOwnerRole: true,
     };
     const app = createMetricsApp(
       apiKeys,

@@ -1,7 +1,8 @@
 /**
  * metrics/src/lib/web/toolbar.ts
- * Stub toolbar for the metrics dashboard.
- * SW-2.3 will replace this with the real implementation.
+ * Toolbar component for the metrics dashboard.
+ * Renders a minimal nav with Shipwright wordmark, Metrics link, user name, and sign-out.
+ * No platform-specific dead links (no Cal/Time/Billing).
  */
 
 export type ActivePage = "metrics";
