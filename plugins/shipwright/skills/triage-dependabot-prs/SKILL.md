@@ -61,8 +61,8 @@ Output a summary table of all active entries (skip `merged` and `closed`):
 
 | Repo | PR | Title | Recommendation | Status |
 |------|-----|-------|---------------|--------|
-| vitals-os | #42 | Bump axios 1.6→1.7 | ✅ merge | staged |
-| vitals-os | #41 | Bump webpack 4→5 | 🛑 hold | staged |
+| my-repo | #42 | Bump axios 1.6→1.7 | ✅ merge | staged |
+| my-repo | #41 | Bump webpack 4→5 | 🛑 hold | staged |
 
 New this run: N staged
 Already staged: M

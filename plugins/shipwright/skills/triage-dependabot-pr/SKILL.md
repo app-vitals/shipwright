@@ -14,7 +14,7 @@ If `--repo` not in arguments:
 gh repo view --json nameWithOwner -q '.nameWithOwner'
 ```
 
-Set REPO (e.g. `app-vitals/vitals-os`) and REPO_SLUG (replace `/` with `_`, e.g. `app-vitals_vitals-os`).
+Set REPO (e.g. `my-org/my-repo`) and REPO_SLUG (replace `/` with `_`, e.g. `my-org_my-repo`).
 
 ## 2. Fetch PR context
 
