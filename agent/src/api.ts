@@ -97,7 +97,12 @@ export function createAgentRuntimeApp(deps: AgentRuntimeDeps): Hono {
       env: bundle?.env ?? {},
       allowedTools: bundle?.allowedTools ?? [],
       plugins: plugins.map((p) => ({
-        marketplace: "shipwright",
+        // Derive the marketplace from the plugin's namespace (scoped names like
+        // "@vitals-os/plugin" install from their own registry); default to
+        // "shipwright" for unscoped names.
+        marketplace: p.name.startsWith("@")
+          ? p.name.split("/")[0].slice(1)
+          : "shipwright",
         plugin: p.name,
       })),
     };

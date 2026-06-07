@@ -176,6 +176,27 @@ describe("GET /agents/:id/config", () => {
     ]);
   });
 
+  test("derives marketplace from the plugin namespace, defaulting to shipwright", async () => {
+    const app = buildApp({
+      plugins: [
+        makePlugin(KNOWN_AGENT_ID, "@vitals-os/plugin"),
+        makePlugin(KNOWN_AGENT_ID, "@shipwright/plugin"),
+        makePlugin(KNOWN_AGENT_ID, "unscoped-plugin"),
+      ],
+    });
+    const res = await app.request(`/agents/${KNOWN_AGENT_ID}/config`, {
+      headers: { Authorization: `Bearer ${VALID_API_KEY}` },
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.plugins).toEqual([
+      { marketplace: "vitals-os", plugin: "@vitals-os/plugin" },
+      { marketplace: "shipwright", plugin: "@shipwright/plugin" },
+      { marketplace: "shipwright", plugin: "unscoped-plugin" },
+    ]);
+  });
+
   test("200 with empty env and tools when agent has no env vars set", async () => {
     const app = buildApp({ bundleOrNull: null });
     const res = await app.request(`/agents/${KNOWN_AGENT_ID}/config`, {
@@ -243,6 +264,17 @@ describe("GET /agents/:id/crons", () => {
   test("401 when no Authorization header", async () => {
     const app = buildApp();
     const res = await app.request(`/agents/${KNOWN_AGENT_ID}/crons`);
+
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.error).toBe("Unauthorized");
+  });
+
+  test("401 when wrong API key", async () => {
+    const app = buildApp();
+    const res = await app.request(`/agents/${KNOWN_AGENT_ID}/crons`, {
+      headers: { Authorization: "Bearer wrong-key" },
+    });
 
     expect(res.status).toBe(401);
     const body = await res.json();
