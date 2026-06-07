@@ -246,11 +246,26 @@ async function cmdUpdate(
 }
 
 /**
- * repos subcommand — prints all known repos (one per line) by scanning
- * workspace/repos/ or SHIPWRIGHT_REPOS_DIR.
+ * Resolve the list of known repos for the configured store.
+ *
+ * Queries the configured adapter first (the GitHub backend resolves its
+ * org/repo from config; the JSON backend reads repo fields off tasks). If the
+ * adapter yields nothing, falls back to scanning workspace/repos/ or
+ * SHIPWRIGHT_REPOS_DIR so a filesystem-only workspace still resolves.
  */
-function cmdRepos(): void {
-  const repos = resolveRepos(process.cwd());
+async function resolveReposForStore(adapter: TaskStore): Promise<string[]> {
+  const repos = await adapter.resolveRepos();
+  if (repos.length > 0) return repos;
+  return resolveRepos(process.cwd());
+}
+
+/**
+ * repos subcommand — prints all known repos (one per line). Queries the
+ * configured store's adapter, falling back to scanning workspace/repos/ or
+ * SHIPWRIGHT_REPOS_DIR.
+ */
+async function cmdRepos(adapter: TaskStore): Promise<void> {
+  const repos = await resolveReposForStore(adapter);
   for (const repo of repos) {
     process.stdout.write(`${repo}\n`);
   }
@@ -260,8 +275,8 @@ function cmdRepos(): void {
  * resolve-repo subcommand — deprecated alias for `repos`, prints only the
  * first repo. Exits non-zero if no repos are found.
  */
-function cmdResolveRepo(): void {
-  const repos = resolveRepos(process.cwd());
+async function cmdResolveRepo(adapter: TaskStore): Promise<void> {
+  const repos = await resolveReposForStore(adapter);
   if (repos.length === 0) {
     process.stderr.write(
       "error: no repos found — add git clones to workspace/repos/ or set SHIPWRIGHT_REPOS_DIR\n",
@@ -345,10 +360,10 @@ async function main(): Promise<void> {
       await cmdUpdate(adapter, flags);
       break;
     case "repos":
-      cmdRepos();
+      await cmdRepos(adapter);
       break;
     case "resolve-repo":
-      cmdResolveRepo();
+      await cmdResolveRepo(adapter);
       break;
     case "setup":
       await cmdSetup(adapter);

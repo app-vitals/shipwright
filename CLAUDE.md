@@ -64,7 +64,7 @@ plus `approved`, `blocked`, `cancelled`.
 
 Driven by Shipwright's own commands: `/shipwright:dev-task` (build + test + PR) → `/shipwright:review` / `/shipwright:patch` → `/shipwright:deploy`.
 
-> ⚠️ **Task-store gotcha:** the backend is selected **only** by the `SHIPWRIGHT_CONFIG` env var pointing at `.shipwright.json` — there is **no auto-discovery**. If it's unset, Shipwright silently falls back to a local JSON store and no issues are filed. Set it in `.claude/settings.local.json` (`env.SHIPWRIGHT_CONFIG`, absolute path, git-ignored) and **restart the session**. If task operations seem to no-op, suspect this first.
+> **Task-store config resolution:** Shipwright auto-discovers `.shipwright.json` by walking up from the process working directory. Place `.shipwright.json` at the repository root and it will be found automatically. If no `.shipwright.json` is found, the `SHIPWRIGHT_CONFIG` env var is checked next; if that is also unset, the JSON backend is used as a fallback. If task operations seem to no-op, run `doctor` to confirm which backend is active.
 
 ## Conventions
 
