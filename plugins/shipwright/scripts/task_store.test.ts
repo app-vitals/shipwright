@@ -1086,6 +1086,21 @@ describe("repos", () => {
     expect(code).toBe(0);
     expect(stdout.trim()).toBe("app-vitals/vitals-os");
   });
+
+  test("github backend resolves repo from config without a repos/ dir", () => {
+    // No repos/ dir and empty todos: the GitHub adapter must be queried for
+    // its configured owner/repo rather than falling back to a filesystem scan.
+    const cfgPath = writeJsonFile(tmpDir, "gh.json", {
+      taskStore: "github",
+      github: { owner: "app-vitals", repo: "shipwright" },
+    });
+    const { code, stdout } = run(["repos"], {
+      cwd: tmpDir,
+      env: { SHIPWRIGHT_CONFIG: cfgPath },
+    });
+    expect(code).toBe(0);
+    expect(stdout.trim()).toBe("app-vitals/shipwright");
+  });
 });
 
 // ---------------------------------------------------------------------------
