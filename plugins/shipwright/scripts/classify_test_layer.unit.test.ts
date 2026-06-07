@@ -20,7 +20,7 @@ describe("PLAN_SESSION_DEFAULTS — generic suffix-only defaults", () => {
   it("unit layer has ONLY suffix patterns (no scripts/** or lib/**)", () => {
     const unit = PLAN_SESSION_DEFAULTS.find((d) => d.name === "unit");
     expect(unit).toBeDefined();
-    // Must not contain vitals-os-specific directory patterns
+    // Must not contain project-specific directory patterns
     expect(unit?.patterns.some((p) => p === "scripts/**")).toBe(false);
     expect(unit?.patterns.some((p) => p === "lib/**")).toBe(false);
     // Must contain only suffix-based patterns
@@ -34,7 +34,7 @@ describe("PLAN_SESSION_DEFAULTS — generic suffix-only defaults", () => {
       (d) => d.name === "integration",
     );
     expect(integration).toBeDefined();
-    // Must not contain vitals-os-specific directory patterns
+    // Must not contain project-specific directory patterns
     expect(integration?.patterns.some((p) => p === "time/**")).toBe(false);
     expect(integration?.patterns.some((p) => p === "accounts/**")).toBe(false);
     expect(integration?.patterns.some((p) => p === "billing/**")).toBe(false);
