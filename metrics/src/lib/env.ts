@@ -25,3 +25,19 @@ export function loadEnv(
     if (key && !process.env[key]) process.env[key] = val;
   }
 }
+
+/**
+ * Fail-fast guard for required environment variables.
+ * Throws with a clear error listing ALL missing vars so the operator knows exactly
+ * what to set before the service can start.
+ *
+ * @param required - list of env var names that must be non-empty strings
+ * @throws Error if any required vars are missing or empty
+ */
+export function validateRequiredEnv(required: string[]): void {
+  const missing = required.filter((k) => !process.env[k]);
+  if (missing.length === 0) return;
+  throw new Error(
+    `Missing required environment variables: ${missing.join(", ")}\nSet them in your .env file or environment before starting the service.`,
+  );
+}

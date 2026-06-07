@@ -10,10 +10,11 @@
 
 import { HttpAccountsClient } from "./lib/accounts-client.ts";
 import { parseApiKeys } from "./lib/api-auth.ts";
-import { loadEnv } from "./lib/env.ts";
+import { loadEnv, validateRequiredEnv } from "./lib/env.ts";
 import { createMetricsApp } from "./api.ts";
 
 loadEnv();
+validateRequiredEnv(["POSTHOG_PERSONAL_API_KEY", "POSTHOG_PROJECT_ID"]);
 
 const port = Number(process.env.METRICS_API_PORT ?? 3460);
 const accountsClient = new HttpAccountsClient(
