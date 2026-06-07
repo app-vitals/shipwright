@@ -5,7 +5,7 @@ Manual test scenarios for each command across different project types.
 ## Prerequisites
 
 - Claude Code installed
-- Shipwright plugin installed (`/plugin install shipwright@app-vitals/marketplace`)
+- Shipwright plugin installed (`/plugin install shipwright@app-vitals/shipwright`)
 - GitHub CLI (`gh`) authenticated
 - A test repository (or use the scenarios below)
 
@@ -1088,7 +1088,7 @@ Imported from the former `test-readiness` plugin. These exercise the six `/test-
 **Expected:** All six commands listed: `/test-inventory`, `/test-design`, `/test-migration`, `/test-roadmap`, `/test-publish`, `/test-debt`. No collision with the existing `/metrics` command.
 
 ### TR-2 — Phase 1 against a small TypeScript repo
-**Steps:** `cd` into a small TS repo (e.g. a Hono service or any vitals-os subdirectory); run `/test-inventory`.
+**Steps:** `cd` into a small TS repo (e.g. a Hono service); run `/test-inventory`.
 **Expected:** `docs/test-readiness/test-inventory.md` created; stack profile identifies TypeScript + package manager; summary table has ≥1 row; critical-path roster populated; no source files modified.
 
 ### TR-3 — Phase 2 requires Phase 1

@@ -153,7 +153,7 @@ export async function run(deps: Deps): Promise<RunResult> {
 async function buildProductionDeps(): Promise<Deps> {
   const workspacePath = resolveWorkspacePath();
   const repos = resolveRepos(workspacePath);
-  const orgRepo = repos[0] ?? "app-vitals/vitals-os";
+  const orgRepo = repos[0] ?? "app-vitals/shipwright";
 
   return {
     getCurrentUser,

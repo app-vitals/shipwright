@@ -223,7 +223,7 @@ async function buildProductionDeps(): Promise<Deps> {
   return {
     getCurrentUser,
     isSelfReviewAllowed: readAllowSelfReview(workspacePath),
-    repos: repos.length > 0 ? repos : ["app-vitals/vitals-os"],
+    repos: repos.length > 0 ? repos : ["app-vitals/shipwright"],
     clock,
     fetchActiveDeployRuns: async (org: string, repo: string) => {
       const [inProgress, queued] = await Promise.all([
@@ -280,7 +280,7 @@ async function buildProductionDeps(): Promise<Deps> {
       if (prOpenTasks.length === 0) return;
 
       const now = clock();
-      const defaultRepo = repos[0] ?? "app-vitals/vitals-os";
+      const defaultRepo = repos[0] ?? "app-vitals/shipwright";
 
       for (const task of prOpenTasks) {
         if (!task.id) continue;

@@ -80,7 +80,7 @@ describe("check-review", () => {
     const pr = makePr({ headRefOid: "sha111" });
     const entry: ReviewEntry = {
       pr: 42,
-      repo: "vitals-os",
+      repo: "example-repo",
       lastReviewedCommit: "sha111",
       status: "posted",
     };
@@ -93,7 +93,7 @@ describe("check-review", () => {
     const pr = makePr({ headRefOid: "newsha999" });
     const entry: ReviewEntry = {
       pr: 42,
-      repo: "vitals-os",
+      repo: "example-repo",
       lastReviewedCommit: "oldsha111",
       status: "posted",
     };
@@ -106,7 +106,7 @@ describe("check-review", () => {
     const pr = makePr({ headRefOid: "sha111" });
     const entry: ReviewEntry = {
       pr: 42,
-      repo: "vitals-os",
+      repo: "example-repo",
       status: "pending",
     };
     const result = await run(makeDeps([pr], [entry]));
@@ -120,8 +120,8 @@ describe("check-review", () => {
       makePr({ number: 2, headRefOid: "sha-B" }),
     ];
     const entries: ReviewEntry[] = [
-      { pr: 1, repo: "vitals-os", lastReviewedCommit: "sha-A" },
-      { pr: 2, repo: "vitals-os", lastReviewedCommit: "sha-B" },
+      { pr: 1, repo: "example-repo", lastReviewedCommit: "sha-A" },
+      { pr: 2, repo: "example-repo", lastReviewedCommit: "sha-B" },
     ];
     const result = await run(makeDeps(prs, entries));
     expect(result.exit).toBe(1);
@@ -134,8 +134,8 @@ describe("check-review", () => {
       makePr({ number: 2, headRefOid: "sha-B-new" }),
     ];
     const entries: ReviewEntry[] = [
-      { pr: 1, repo: "vitals-os", lastReviewedCommit: "sha-A" },
-      { pr: 2, repo: "vitals-os", lastReviewedCommit: "sha-B-old" },
+      { pr: 1, repo: "example-repo", lastReviewedCommit: "sha-A" },
+      { pr: 2, repo: "example-repo", lastReviewedCommit: "sha-B-old" },
     ];
     const result = await run(makeDeps(prs, entries));
     expect(result.exit).toBe(0);
@@ -169,7 +169,7 @@ describe("check-review", () => {
     const pr = makePr({ headRefOid: "sha111" });
     const entry: ReviewEntry = {
       pr: 42,
-      repo: "vitals-os",
+      repo: "example-repo",
       lastReviewedCommit: "sha000",
       status: "cleaned",
     };
@@ -189,7 +189,7 @@ describe("check-review", () => {
     const pr = makePr({ number: 42, headRefOid: "sha-new" });
     const entry: ReviewEntry = {
       pr: 42,
-      repo: "vitals-os",
+      repo: "example-repo",
       lastReviewedCommit: "sha-anchor",
       status: "posted",
     };
@@ -208,7 +208,7 @@ describe("check-review", () => {
     const pr = makePr({ number: 42, headRefOid: "sha-new2" });
     const entry: ReviewEntry = {
       pr: 42,
-      repo: "vitals-os",
+      repo: "example-repo",
       lastReviewedCommit: "sha-anchor",
       status: "posted",
     };
@@ -228,7 +228,7 @@ describe("check-review", () => {
     const pr = makePr({ number: 42, headRefOid: "sha-new" });
     const entry: ReviewEntry = {
       pr: 42,
-      repo: "vitals-os",
+      repo: "example-repo",
       lastReviewedCommit: "sha-anchor",
       status: "posted",
     };
@@ -250,7 +250,7 @@ describe("check-review", () => {
     const pr = makePr({ number: 42, headRefOid: "sha111" });
     const entry: ReviewEntry = {
       pr: 42,
-      repo: "vitals-os",
+      repo: "example-repo",
       status: "pending",
       // no lastReviewedCommit
     };

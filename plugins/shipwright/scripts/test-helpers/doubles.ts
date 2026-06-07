@@ -3,9 +3,8 @@
  *
  * Local test doubles for plugin unit tests.
  *
- * FixedClock is the only double here — it is an inlined copy of the helper
- * from the vitals-os test suite so the plugin tests are fully self-contained
- * and do not depend on any cross-package imports.
+ * FixedClock is the only double here — it is a self-contained helper so the
+ * plugin tests do not depend on any cross-package imports.
  */
 
 import type { Clock } from "../clock.ts";

@@ -13,7 +13,7 @@ operations, and GitHub field mapping see [task-store.md](task-store.md).
   "id": "TS-1.1",
   "source": "shipwright",
   "session": "may-billing-refactor",
-  "repo": "vitals-os",
+  "repo": "shipwright",
   "title": "Add billing schema migration",
   "description": "Add the new invoices table and billing period columns to the Prisma schema.",
   "acceptanceCriteria": [
@@ -61,7 +61,7 @@ pending → in_progress → pr_open → merged → deployed
 | `id` | string | Task ID — `{PREFIX}-{N}.{M}` format |
 | `source` | `"shipwright"` | Distinguishes from `eng-execute` tasks |
 | `session` | string | Planning session slug — groups tasks and PRs |
-| `repo` | string | Repo name (e.g., `vitals-os`) |
+| `repo` | string | Repo name (e.g., `shipwright`) |
 | `title` | string | Short, verb-first task title |
 | `description` | string | What to build |
 | `acceptanceCriteria` | string[] | 2-5 specific, testable criteria |

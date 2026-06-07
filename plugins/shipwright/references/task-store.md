@@ -28,7 +28,7 @@ To use the GitHub backend:
   "taskStore": "github",
   "github": {
     "owner": "app-vitals", // GitHub org or user (required)
-    "repo": "vitals-os"    // Repository for issues (required)
+    "repo": "shipwright"   // Repository for issues (required)
   }
 }
 ```
@@ -151,8 +151,8 @@ ts-store repos
 **Return shape:** Newline-separated repo strings (one per line). Empty output if no repos found.
 
 ```
-app-vitals/vitals-os
-app-vitals/marketplace
+app-vitals/shipwright
+app-vitals/another-repo
 ```
 
 ---
@@ -172,7 +172,7 @@ ts-store setup
 **Return shape:** Setup summary printed to stdout.
 
 ```
-Created 6 status labels in app-vitals/vitals-os.
+Created 6 status labels in app-vitals/shipwright.
 ```
 
 ---

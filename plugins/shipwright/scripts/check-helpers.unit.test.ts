@@ -82,11 +82,11 @@ describe("resolveRepos", () => {
     mkdirSync(reposDir, { recursive: true });
     makeGitClone(
       reposDir,
-      "vitals-os",
-      "https://github.com/app-vitals/vitals-os.git",
+      "example-repo",
+      "https://github.com/acme/example-repo.git",
     );
     const result = resolveRepos(tmpDir);
-    expect(result).toContain("app-vitals/vitals-os");
+    expect(result).toContain("acme/example-repo");
   });
 
   test("parses SSH remote URL from git clone in repos/", () => {
@@ -94,11 +94,11 @@ describe("resolveRepos", () => {
     mkdirSync(reposDir, { recursive: true });
     makeGitClone(
       reposDir,
-      "vitals-os",
-      "git@github.com:app-vitals/vitals-os.git",
+      "example-repo",
+      "git@github.com:acme/example-repo.git",
     );
     const result = resolveRepos(tmpDir);
-    expect(result).toContain("app-vitals/vitals-os");
+    expect(result).toContain("acme/example-repo");
   });
 
   test("parses HTTPS URL without .git suffix", () => {
@@ -114,8 +114,8 @@ describe("resolveRepos", () => {
     mkdirSync(reposDir, { recursive: true });
     makeGitClone(
       reposDir,
-      "vitals-os",
-      "https://github.com/app-vitals/vitals-os.git",
+      "example-repo",
+      "https://github.com/acme/example-repo.git",
     );
     makeGitClone(
       reposDir,
@@ -123,7 +123,7 @@ describe("resolveRepos", () => {
       "https://github.com/app-vitals/patrol.git",
     );
     const result = resolveRepos(tmpDir);
-    expect(result).toContain("app-vitals/vitals-os");
+    expect(result).toContain("acme/example-repo");
     expect(result).toContain("app-vitals/patrol");
     expect(result).toHaveLength(2);
   });
@@ -135,12 +135,12 @@ describe("resolveRepos", () => {
     mkdirSync(join(reposDir, "not-a-repo"));
     makeGitClone(
       reposDir,
-      "vitals-os",
-      "https://github.com/app-vitals/vitals-os.git",
+      "example-repo",
+      "https://github.com/acme/example-repo.git",
     );
     const result = resolveRepos(tmpDir);
     expect(result).toHaveLength(1);
-    expect(result).toContain("app-vitals/vitals-os");
+    expect(result).toContain("acme/example-repo");
   });
 
   test("falls back to SHIPWRIGHT_REPOS_DIR when repos/ is empty", () => {
@@ -151,13 +151,13 @@ describe("resolveRepos", () => {
     mkdirSync(envReposDir, { recursive: true });
     makeGitClone(
       envReposDir,
-      "vitals-os",
-      "https://github.com/app-vitals/vitals-os.git",
+      "example-repo",
+      "https://github.com/acme/example-repo.git",
     );
 
     process.env.SHIPWRIGHT_REPOS_DIR = envReposDir;
     const result = resolveRepos(tmpDir);
-    expect(result).toContain("app-vitals/vitals-os");
+    expect(result).toContain("acme/example-repo");
   });
 
   test("falls back to SHIPWRIGHT_REPOS_DIR when repos/ does not exist", () => {
@@ -166,13 +166,13 @@ describe("resolveRepos", () => {
     mkdirSync(envReposDir, { recursive: true });
     makeGitClone(
       envReposDir,
-      "vitals-os",
-      "git@github.com:app-vitals/vitals-os.git",
+      "example-repo",
+      "git@github.com:acme/example-repo.git",
     );
 
     process.env.SHIPWRIGHT_REPOS_DIR = envReposDir;
     const result = resolveRepos(tmpDir);
-    expect(result).toContain("app-vitals/vitals-os");
+    expect(result).toContain("acme/example-repo");
   });
 
   test("repos/ takes priority over SHIPWRIGHT_REPOS_DIR when non-empty", () => {
@@ -180,8 +180,8 @@ describe("resolveRepos", () => {
     mkdirSync(reposDir, { recursive: true });
     makeGitClone(
       reposDir,
-      "vitals-os",
-      "https://github.com/app-vitals/vitals-os.git",
+      "example-repo",
+      "https://github.com/acme/example-repo.git",
     );
 
     const envReposDir = join(tmpDir, "env-repos");
@@ -195,7 +195,7 @@ describe("resolveRepos", () => {
     process.env.SHIPWRIGHT_REPOS_DIR = envReposDir;
     const result = resolveRepos(tmpDir);
     // repos/ is non-empty, so env var is ignored
-    expect(result).toContain("app-vitals/vitals-os");
+    expect(result).toContain("acme/example-repo");
     expect(result).not.toContain("app-vitals/patrol");
   });
 
@@ -271,9 +271,9 @@ describe("getCurrentUser", () => {
   });
 
   test("handles hyphenated app name in [bot] normalisation", async () => {
-    writeFakeGhBinary(tmpDir, "vitals-os-agent[bot]");
+    writeFakeGhBinary(tmpDir, "example-repo-agent[bot]");
     process.env.PATH = `${tmpDir}:${savedPath}`;
     const result = await getCurrentUser();
-    expect(result).toBe("app/vitals-os-agent");
+    expect(result).toBe("app/example-repo-agent");
   });
 });

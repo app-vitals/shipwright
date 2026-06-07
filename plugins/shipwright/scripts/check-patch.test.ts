@@ -58,7 +58,7 @@ function makeOwnPr(overrides: Partial<OwnPr> = {}): OwnPr {
     title: "My feature",
     headRefName: "feat/my-feature",
     headRefOid: "current-head-sha",
-    repo: "app-vitals/vitals-os",
+    repo: "acme/example-repo",
     ...overrides,
   };
 }

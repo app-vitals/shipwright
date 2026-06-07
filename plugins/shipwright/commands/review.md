@@ -16,7 +16,7 @@ agents — each agent maintains its own.
 ## Arguments
 
 Parse `$ARGUMENTS`:
-- `org/repo#number` (e.g. `app-vitals/vitals-os#123`): target a specific PR. If a staged
+- `org/repo#number` (e.g. `app-vitals/shipwright#123`): target a specific PR. If a staged
   review exists in `state/reviews.json`, post it. Otherwise, review it.
 - `number` or `#number`: same, using the first repo from `task_store.ts repos`
 - No arguments: normal review flow — find the next PR to review from the queue
@@ -85,8 +85,8 @@ Display:
 ## Staged Reviews ({N})
 | PR | Repo | Title | Verdict | Diff | Staged |
 |----|------|-------|---------|------|--------|
-| #123 | vitals-os | Add feature X | APPROVE | +45/-12 (57) | 2h ago |
-| #456 | vitals-os | Fix bug Y | COMMENT | +120/-30 (150) | 1h ago |
+| #123 | example-repo | Add feature X | APPROVE | +45/-12 (57) | 2h ago |
+| #456 | example-repo | Fix bug Y | COMMENT | +120/-30 (150) | 1h ago |
 
 Post staged reviews, or skip to new reviews?
 ```
@@ -625,7 +625,7 @@ python3 "$POSTHOG_SCRIPT" shipwright_task_reviewed \
 
 ## Step 14: Targeted PR (argument provided)
 
-When invoked with a specific PR (e.g. `/shipwright:review app-vitals/vitals-os#123` or
+When invoked with a specific PR (e.g. `/shipwright:review app-vitals/shipwright#123` or
 `/shipwright:review 123`):
 
 1. Parse the argument: extract `org`, `repo`, and `pr` number. For bare numbers,

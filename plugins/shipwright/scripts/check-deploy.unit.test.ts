@@ -60,7 +60,7 @@ interface MakeDepsOptions {
 }
 
 function makeDeps({
-  repos = ["app-vitals/vitals-os"],
+  repos = ["acme/example-repo"],
   prs = {},
   reviews = {},
   ciRuns = {},
@@ -99,7 +99,7 @@ describe("check-deploy (new behaviors)", () => {
     const pr = makeGhPr({ reviewDecision: "APPROVED" });
     const result = await run(
       makeDeps({
-        prs: { "app-vitals/vitals-os": [pr] },
+        prs: { "acme/example-repo": [pr] },
         ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
         activeDeployRuns: [{ name: "Deploy", status: "in_progress" }],
       }),
@@ -113,7 +113,7 @@ describe("check-deploy (new behaviors)", () => {
     const pr = makeGhPr({ reviewDecision: "APPROVED" });
     const result = await run(
       makeDeps({
-        prs: { "app-vitals/vitals-os": [pr] },
+        prs: { "acme/example-repo": [pr] },
         ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
         activeDeployRuns: [{ name: "Deploy", status: "queued" }],
       }),
@@ -126,7 +126,7 @@ describe("check-deploy (new behaviors)", () => {
     const pr = makeGhPr({ reviewDecision: "APPROVED" });
     const result = await run(
       makeDeps({
-        prs: { "app-vitals/vitals-os": [pr] },
+        prs: { "acme/example-repo": [pr] },
         ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
         activeDeployRuns: [],
       }),
@@ -138,7 +138,7 @@ describe("check-deploy (new behaviors)", () => {
     const pr = makeGhPr({ reviewDecision: "APPROVED" });
     const result = await run(
       makeDeps({
-        prs: { "app-vitals/vitals-os": [pr] },
+        prs: { "acme/example-repo": [pr] },
         ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
         activeDeployRuns: [{ name: "Deploy", status: "completed" }],
       }),
@@ -156,7 +156,7 @@ describe("check-deploy (new behaviors)", () => {
     const result = await run(
       makeDeps({
         currentUser: "bodhi-agent",
-        prs: { "app-vitals/vitals-os": [pr] },
+        prs: { "acme/example-repo": [pr] },
         ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
       }),
     );
@@ -172,7 +172,7 @@ describe("check-deploy (new behaviors)", () => {
     const result = await run(
       makeDeps({
         currentUser: "bodhi-agent",
-        prs: { "app-vitals/vitals-os": [pr] },
+        prs: { "acme/example-repo": [pr] },
         ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
       }),
     );
@@ -190,21 +190,21 @@ describe("check-deploy (new behaviors)", () => {
     const result = await run(
       makeDeps({
         currentUser: "bodhi-agent",
-        repos: ["app-vitals/vitals-os"],
-        prs: { "app-vitals/vitals-os": [pr] },
+        repos: ["acme/example-repo"],
+        prs: { "acme/example-repo": [pr] },
         ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
       }),
     );
     expect(result.exit).toBe(0);
     expect(result.candidate).toEqual({
       pr: 42,
-      org: "app-vitals",
-      repo: "vitals-os",
+      org: "acme",
+      repo: "example-repo",
     });
   });
 
   test("candidate is null when no qualifying PR exists", async () => {
-    const result = await run(makeDeps({ repos: ["app-vitals/vitals-os"] }));
+    const result = await run(makeDeps({ repos: ["acme/example-repo"] }));
     expect(result.exit).toBe(1);
     expect(result.candidate).toBeNull();
   });
@@ -242,7 +242,7 @@ describe("check-deploy (new behaviors)", () => {
     const result = await run(
       makeDeps({
         currentUser: "bodhi-agent",
-        prs: { "app-vitals/vitals-os": [pr] },
+        prs: { "acme/example-repo": [pr] },
         ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
       }),
     );
@@ -272,7 +272,7 @@ describe("check-deploy (new behaviors)", () => {
     const pr = makeGhPr({ reviewDecision: "APPROVED" });
     const result = await run({
       ...makeDeps({
-        prs: { "app-vitals/vitals-os": [pr] },
+        prs: { "acme/example-repo": [pr] },
         ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
       }),
       reconcileStalePrOpenTasks: async () => {
@@ -287,7 +287,7 @@ describe("check-deploy (new behaviors)", () => {
     const pr = makeGhPr({ reviewDecision: "APPROVED" });
     const result = await run({
       ...makeDeps({
-        prs: { "app-vitals/vitals-os": [pr] },
+        prs: { "acme/example-repo": [pr] },
         ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
       }),
       reconcileStalePrOpenTasks: async () => {
@@ -305,7 +305,7 @@ describe("check-deploy (new behaviors)", () => {
     const pr = makeGhPr({ reviewDecision: "APPROVED" });
     const result = await run({
       ...makeDeps({
-        prs: { "app-vitals/vitals-os": [pr] },
+        prs: { "acme/example-repo": [pr] },
         ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
       }),
       cleanupStaleIssues: async () => {
@@ -320,7 +320,7 @@ describe("check-deploy (new behaviors)", () => {
     const pr = makeGhPr({ reviewDecision: "APPROVED" });
     const result = await run({
       ...makeDeps({
-        prs: { "app-vitals/vitals-os": [pr] },
+        prs: { "acme/example-repo": [pr] },
         ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
       }),
       cleanupStaleIssues: async () => {
@@ -334,7 +334,7 @@ describe("check-deploy (new behaviors)", () => {
   test("cleanupStaleIssues is called even when reconcile is absent", async () => {
     let cleaned = false;
     const result = await run({
-      ...makeDeps({ repos: ["app-vitals/vitals-os"] }),
+      ...makeDeps({ repos: ["acme/example-repo"] }),
       cleanupStaleIssues: async () => {
         cleaned = true;
       },

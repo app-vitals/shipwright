@@ -28,7 +28,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     id: "SWC-1.1",
     title: "Test task",
     status: "pending",
-    repo: "app-vitals/vitals-os",
+    repo: "acme/example-repo",
     ...overrides,
   };
 }

@@ -54,7 +54,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     id: "TS-1.1",
     source: "shipwright",
     session: "test-session",
-    repo: "vitals-os",
+    repo: "example-repo",
     title: "Test task",
     description: "A test task",
     acceptanceCriteria: [],
@@ -937,13 +937,13 @@ describe("resolve-repo", () => {
     mkdirSync(reposDir, { recursive: true });
     makeGitClone(
       reposDir,
-      "vitals-os",
-      "https://github.com/app-vitals/vitals-os.git",
+      "example-repo",
+      "https://github.com/acme/example-repo.git",
     );
     const { code, stdout } = run(["resolve-repo"], { cwd: tmpDir });
     expect(code).toBe(0);
     const lines = stdout.trim().split("\n");
-    expect(lines).toContain("app-vitals/vitals-os");
+    expect(lines).toContain("acme/example-repo");
     expect(lines).toHaveLength(1);
   });
 
@@ -952,15 +952,15 @@ describe("resolve-repo", () => {
     mkdirSync(envReposDir, { recursive: true });
     makeGitClone(
       envReposDir,
-      "vitals-os",
-      "https://github.com/app-vitals/vitals-os.git",
+      "example-repo",
+      "https://github.com/acme/example-repo.git",
     );
     const { code, stdout } = run(["resolve-repo"], {
       cwd: tmpDir,
       env: { SHIPWRIGHT_REPOS_DIR: envReposDir },
     });
     expect(code).toBe(0);
-    expect(stdout.trim()).toBe("app-vitals/vitals-os");
+    expect(stdout.trim()).toBe("acme/example-repo");
   });
 
   test("exits non-zero when no repos found", () => {
@@ -974,12 +974,12 @@ describe("resolve-repo", () => {
     mkdirSync(reposDir, { recursive: true });
     makeGitClone(
       reposDir,
-      "vitals-os",
-      "https://github.com/app-vitals/vitals-os.git",
+      "example-repo",
+      "https://github.com/acme/example-repo.git",
     );
     const { code, stdout } = run(["resolve-repo"], { cwd: tmpDir });
     expect(code).toBe(0);
-    expect(stdout.trim()).toBe("app-vitals/vitals-os");
+    expect(stdout.trim()).toBe("acme/example-repo");
   });
 });
 
@@ -1004,8 +1004,8 @@ describe("repos", () => {
     mkdirSync(reposDir, { recursive: true });
     makeGitClone(
       reposDir,
-      "vitals-os",
-      "https://github.com/app-vitals/vitals-os.git",
+      "example-repo",
+      "https://github.com/acme/example-repo.git",
     );
     makeGitClone(
       reposDir,
@@ -1015,7 +1015,7 @@ describe("repos", () => {
     const { code, stdout } = run(["repos"], { cwd: tmpDir });
     expect(code).toBe(0);
     const lines = stdout.trim().split("\n");
-    expect(lines).toContain("app-vitals/vitals-os");
+    expect(lines).toContain("acme/example-repo");
     expect(lines).toContain("app-vitals/patrol");
     expect(lines).toHaveLength(2);
   });
@@ -1025,15 +1025,15 @@ describe("repos", () => {
     mkdirSync(envReposDir, { recursive: true });
     makeGitClone(
       envReposDir,
-      "vitals-os",
-      "git@github.com:app-vitals/vitals-os.git",
+      "example-repo",
+      "git@github.com:acme/example-repo.git",
     );
     const { code, stdout } = run(["repos"], {
       cwd: tmpDir,
       env: { SHIPWRIGHT_REPOS_DIR: envReposDir },
     });
     expect(code).toBe(0);
-    expect(stdout.trim()).toBe("app-vitals/vitals-os");
+    expect(stdout.trim()).toBe("acme/example-repo");
   });
 
   test("exits 0 with empty output when no repos found", () => {
@@ -1047,12 +1047,12 @@ describe("repos", () => {
     mkdirSync(reposDir, { recursive: true });
     makeGitClone(
       reposDir,
-      "vitals-os",
-      "https://github.com/app-vitals/vitals-os.git",
+      "example-repo",
+      "https://github.com/acme/example-repo.git",
     );
     const { code, stdout } = run(["repos"], { cwd: tmpDir });
     expect(code).toBe(0);
-    expect(stdout.trim()).toBe("app-vitals/vitals-os");
+    expect(stdout.trim()).toBe("acme/example-repo");
   });
 });
 

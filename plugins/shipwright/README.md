@@ -7,7 +7,7 @@ A shipwright builds ships. This one ships software.
 ## Installation
 
 ```
-/plugin install shipwright@app-vitals/marketplace
+/plugin install shipwright@app-vitals/shipwright
 ```
 
 ## The Pipeline
@@ -319,7 +319,7 @@ Full task metadata (description, acceptance criteria, branch, hours, dependencie
   "taskStore": "github",
   "github": {
     "owner": "app-vitals",   // GitHub org or user (required)
-    "repo": "vitals-os"      // Repository for issues (required)
+    "repo": "shipwright"     // Repository for issues (required)
   }
 }
 ```

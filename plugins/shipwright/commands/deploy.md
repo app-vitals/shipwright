@@ -16,9 +16,9 @@ metrics on success.
 ## Arguments
 
 Parse `$ARGUMENTS` to extract `org`, `repo`, and `pr` number:
-- `org/repo#number` (e.g. `app-vitals/vitals-os#123`): explicit
+- `org/repo#number` (e.g. `app-vitals/shipwright#123`): explicit
 - `number` or `#number`: infer org/repo from the task store (`bun "$PLUGIN_SCRIPTS/task_store.ts" repos`),
-  defaulting to `app-vitals/vitals-os`
+  defaulting to `app-vitals/shipwright`
 - _(no arguments)_: scan mode — find the next ready PR to deploy (see Step 1)
 
 ---
@@ -436,22 +436,22 @@ Stop.
 
 After Promote succeeds, probe the health endpoint:
 ```bash
-curl -sf https://api.vitals-os.com/health
+curl -sf https://<your-service-host>/health
 ```
 
 **If health check passes (HTTP 200):**
 ```
-✓ Health check passed — https://api.vitals-os.com/health
+✓ Health check passed — https://<your-service-host>/health
 ```
 
 **If health check returns 503 or fails:**
 ```
 ⚠ Health check returned {status}. The service may be unhealthy.
 
-  Cloud Logging query (replace PROJECT_ID with vitals-os-prod):
+  Cloud Logging query (replace PROJECT_ID with your GCP project):
     gcloud logging read \
-      'resource.type="k8s_container" AND resource.labels.namespace_name="vitals-os" AND resource.labels.container_name="api" AND severity>=ERROR' \
-      --project=vitals-os-prod \
+      'resource.type="k8s_container" AND resource.labels.namespace_name="<your-namespace>" AND resource.labels.container_name="api" AND severity>=ERROR' \
+      --project=<your-gcp-project> \
       --freshness=10m \
       --format="table(timestamp,textPayload)"
 

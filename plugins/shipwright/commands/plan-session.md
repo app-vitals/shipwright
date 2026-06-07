@@ -2,7 +2,7 @@
 description: Engineer planning pass — reads the product spec, explores the codebase, flags complexity, and produces a task queue
 arguments:
   - name: repo
-    description: The repo to plan work for (e.g., vitals-os)
+    description: The repo to plan work for (e.g., shipwright)
     required: true
   - name: session
     description: A short slug for this planning session (e.g., may-billing-refactor). Used to group tasks and PRs.

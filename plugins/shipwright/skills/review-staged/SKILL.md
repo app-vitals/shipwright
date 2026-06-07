@@ -43,8 +43,8 @@ Staged reviews ({N}) — APPROVEs first, smallest diff first within each group.
 
 | # | PR | Repo | Title | Verdict | Diff |
 |---|----|------|-------|---------|------|
-| 1 | #123 | vitals-os | Add feature X | APPROVE | +45/-12 (57) |
-| 2 | #456 | vitals-os | Fix bug Y | COMMENT | +120/-30 (150) |
+| 1 | #123 | example-repo | Add feature X | APPROVE | +45/-12 (57) |
+| 2 | #456 | example-repo | Fix bug Y | COMMENT | +120/-30 (150) |
 ```
 
 ---

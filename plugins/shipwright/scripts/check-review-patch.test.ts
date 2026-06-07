@@ -99,7 +99,7 @@ function makePatchDepsTriggering() {
         title: "My PR",
         headRefName: "feat/my-pr",
         headRefOid: "sha-xyz",
-        repo: "app-vitals/vitals-os",
+        repo: "acme/example-repo",
       },
     ],
     fetchPrReviews: async (

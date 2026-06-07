@@ -195,7 +195,7 @@ interface GraphqlResponse {
 export async function buildProductionDeps(): Promise<Deps> {
   const workspacePath = resolveWorkspacePath();
   const repos = resolveRepos(workspacePath);
-  const orgRepo = repos[0] ?? "app-vitals/vitals-os";
+  const orgRepo = repos[0] ?? "app-vitals/shipwright";
 
   return {
     listOwnOpenPrs: async (_repo: string) => {

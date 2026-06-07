@@ -53,7 +53,7 @@ interface MakeDepsOptions {
 }
 
 function makeDeps({
-  repos = ["app-vitals/vitals-os"],
+  repos = ["acme/example-repo"],
   prs = {},
   reviews = {},
   ciRuns = {},
@@ -90,7 +90,7 @@ describe("check-deploy", () => {
 
   test("exits 1 when repos are configured but no open PRs exist", async () => {
     const result = await run(
-      makeDeps({ repos: ["app-vitals/vitals-os"], prs: {} }),
+      makeDeps({ repos: ["acme/example-repo"], prs: {} }),
     );
     expect(result.exit).toBe(1);
     expect(result.output).toBe("");
@@ -100,7 +100,7 @@ describe("check-deploy", () => {
     const pr = makeGhPr({ reviewDecision: "APPROVED" });
     const result = await run(
       makeDeps({
-        prs: { "app-vitals/vitals-os": [pr] },
+        prs: { "acme/example-repo": [pr] },
         ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
       }),
     );
@@ -112,7 +112,7 @@ describe("check-deploy", () => {
     const pr = makeGhPr({ reviewDecision: null });
     const result = await run(
       makeDeps({
-        prs: { "app-vitals/vitals-os": [pr] },
+        prs: { "acme/example-repo": [pr] },
         ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
       }),
     );
@@ -131,7 +131,7 @@ describe("check-deploy", () => {
       makeDeps({
         currentUser: "bodhi-agent",
         isSelfReviewAllowed: true,
-        prs: { "app-vitals/vitals-os": [pr] },
+        prs: { "acme/example-repo": [pr] },
         reviews: { 50: reviews },
         ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
       }),
@@ -152,7 +152,7 @@ describe("check-deploy", () => {
       makeDeps({
         currentUser: "bodhi-agent",
         isSelfReviewAllowed: false,
-        prs: { "app-vitals/vitals-os": [pr] },
+        prs: { "acme/example-repo": [pr] },
         reviews: { 50: reviews },
         ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
       }),
@@ -176,7 +176,7 @@ describe("check-deploy", () => {
       makeDeps({
         currentUser: "bodhi-agent",
         isSelfReviewAllowed: true,
-        prs: { "app-vitals/vitals-os": [pr] },
+        prs: { "acme/example-repo": [pr] },
         reviews: { 50: reviews },
         ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
       }),
@@ -188,7 +188,7 @@ describe("check-deploy", () => {
     const pr = makeGhPr({ reviewDecision: "APPROVED" });
     const result = await run(
       makeDeps({
-        prs: { "app-vitals/vitals-os": [pr] },
+        prs: { "acme/example-repo": [pr] },
         ciRuns: { sha50: [{ status: "in_progress", conclusion: null }] },
       }),
     );
@@ -199,7 +199,7 @@ describe("check-deploy", () => {
     const pr = makeGhPr({ reviewDecision: "APPROVED" });
     const result = await run(
       makeDeps({
-        prs: { "app-vitals/vitals-os": [pr] },
+        prs: { "acme/example-repo": [pr] },
         ciRuns: { sha50: [{ status: "completed", conclusion: "failure" }] },
       }),
     );
@@ -210,7 +210,7 @@ describe("check-deploy", () => {
     const pr = makeGhPr({ reviewDecision: "APPROVED" });
     const result = await run(
       makeDeps({
-        prs: { "app-vitals/vitals-os": [pr] },
+        prs: { "acme/example-repo": [pr] },
         ciRuns: {},
       }),
     );
@@ -226,7 +226,7 @@ describe("check-deploy", () => {
     });
     const result = await run(
       makeDeps({
-        prs: { "app-vitals/vitals-os": [pr] },
+        prs: { "acme/example-repo": [pr] },
         ciRuns: { sha999: [{ status: "completed", conclusion: "success" }] },
       }),
     );
@@ -247,9 +247,9 @@ describe("check-deploy", () => {
     });
     const result = await run(
       makeDeps({
-        repos: ["app-vitals/vitals-os", "app-vitals/patrol"],
+        repos: ["acme/example-repo", "app-vitals/patrol"],
         prs: {
-          "app-vitals/vitals-os": [pr1],
+          "acme/example-repo": [pr1],
           "app-vitals/patrol": [pr2],
         },
         ciRuns: { sha20: [{ status: "completed", conclusion: "success" }] },
@@ -277,7 +277,7 @@ describe("check-deploy", () => {
     const deps = {
       getCurrentUser: () => "bodhi-agent",
       isSelfReviewAllowed: true,
-      repos: ["app-vitals/failing-repo", "app-vitals/vitals-os"],
+      repos: ["app-vitals/failing-repo", "acme/example-repo"],
       fetchActiveDeployRuns: async () => [],
       listOpenPrs: async (repo: string): Promise<GhPr[]> => {
         if (repo === "app-vitals/failing-repo") throw new Error("rate limited");
@@ -308,7 +308,7 @@ describe("check-deploy", () => {
     const pr = makeGhPr({ reviewDecision: "APPROVED" });
     const result = await run(
       makeDeps({
-        prs: { "app-vitals/vitals-os": [pr] },
+        prs: { "acme/example-repo": [pr] },
         ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
       }),
     );

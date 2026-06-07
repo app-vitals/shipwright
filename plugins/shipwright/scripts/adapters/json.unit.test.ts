@@ -536,12 +536,12 @@ describe("JsonTaskStore", () => {
           id: "T-1",
           title: "Task",
           status: "pending",
-          repo: "app-vitals/vitals-os",
+          repo: "acme/example-repo",
         },
       ]);
       const adapter = new JsonTaskStore(tmpDir);
       const repo = await adapter.resolveRepo();
-      expect(repo).toBe("app-vitals/vitals-os");
+      expect(repo).toBe("acme/example-repo");
     });
 
     test("throws if no task has a repo field", async () => {
@@ -570,20 +570,20 @@ describe("JsonTaskStore", () => {
           id: "T-1",
           title: "Task 1",
           status: "pending",
-          repo: "app-vitals/vitals-os",
+          repo: "acme/example-repo",
         },
         {
           id: "T-2",
           title: "Task 2",
           status: "pending",
-          repo: "app-vitals/marketplace",
+          repo: "acme/another-repo",
         },
       ]);
       const adapter = new JsonTaskStore(tmpDir);
       const repos = await adapter.resolveRepos();
       expect(repos).toHaveLength(2);
-      expect(repos).toContain("app-vitals/vitals-os");
-      expect(repos).toContain("app-vitals/marketplace");
+      expect(repos).toContain("acme/example-repo");
+      expect(repos).toContain("acme/another-repo");
     });
 
     test("deduplicates repos across tasks", async () => {
@@ -592,19 +592,19 @@ describe("JsonTaskStore", () => {
           id: "T-1",
           title: "Task 1",
           status: "pending",
-          repo: "app-vitals/vitals-os",
+          repo: "acme/example-repo",
         },
         {
           id: "T-2",
           title: "Task 2",
           status: "pending",
-          repo: "app-vitals/vitals-os",
+          repo: "acme/example-repo",
         },
         {
           id: "T-3",
           title: "Task 3",
           status: "pending",
-          repo: "app-vitals/marketplace",
+          repo: "acme/another-repo",
         },
       ]);
       const adapter = new JsonTaskStore(tmpDir);
@@ -818,20 +818,20 @@ describe("JsonTaskStore", () => {
           id: "T-1",
           title: "Task",
           status: "pr_open",
-          issue: "https://github.com/app-vitals/vitals-os/issues/42",
+          issue: "https://github.com/acme/example-repo/issues/42",
         },
       ]);
       const { scriptPath, logPath } = writeFakeGh(tmpDir, {
-        "issue view 42 --repo app-vitals/vitals-os --json state --jq .state":
+        "issue view 42 --repo acme/example-repo --json state --jq .state":
           "OPEN",
-        "issue close 42 --repo app-vitals/vitals-os": "__exit0__",
+        "issue close 42 --repo acme/example-repo": "__exit0__",
       });
       process.env.GH_CMD = scriptPath;
       try {
         const adapter = new JsonTaskStore(tmpDir);
         await adapter.update("T-1", { status: "merged" });
         const calls = readFileSync(logPath, "utf-8").trim();
-        expect(calls).toContain("issue close 42 --repo app-vitals/vitals-os");
+        expect(calls).toContain("issue close 42 --repo acme/example-repo");
       } finally {
         process.env.GH_CMD = undefined;
       }
@@ -843,20 +843,20 @@ describe("JsonTaskStore", () => {
           id: "T-1",
           title: "Task",
           status: "merged",
-          issue: "https://github.com/app-vitals/vitals-os/issues/99",
+          issue: "https://github.com/acme/example-repo/issues/99",
         },
       ]);
       const { scriptPath, logPath } = writeFakeGh(tmpDir, {
-        "issue view 99 --repo app-vitals/vitals-os --json state --jq .state":
+        "issue view 99 --repo acme/example-repo --json state --jq .state":
           "OPEN",
-        "issue close 99 --repo app-vitals/vitals-os": "__exit0__",
+        "issue close 99 --repo acme/example-repo": "__exit0__",
       });
       process.env.GH_CMD = scriptPath;
       try {
         const adapter = new JsonTaskStore(tmpDir);
         await adapter.update("T-1", { status: "deployed" });
         const calls = readFileSync(logPath, "utf-8").trim();
-        expect(calls).toContain("issue close 99 --repo app-vitals/vitals-os");
+        expect(calls).toContain("issue close 99 --repo acme/example-repo");
       } finally {
         process.env.GH_CMD = undefined;
       }
@@ -868,11 +868,11 @@ describe("JsonTaskStore", () => {
           id: "T-1",
           title: "Task",
           status: "merged",
-          issue: "https://github.com/app-vitals/vitals-os/issues/55",
+          issue: "https://github.com/acme/example-repo/issues/55",
         },
       ]);
       const { scriptPath, logPath } = writeFakeGh(tmpDir, {
-        "issue view 55 --repo app-vitals/vitals-os --json state --jq .state":
+        "issue view 55 --repo acme/example-repo --json state --jq .state":
           "CLOSED",
       });
       process.env.GH_CMD = scriptPath;
@@ -905,7 +905,7 @@ describe("JsonTaskStore", () => {
           id: "T-1",
           title: "Task",
           status: "pending",
-          issue: "https://github.com/app-vitals/vitals-os/issues/7",
+          issue: "https://github.com/acme/example-repo/issues/7",
         },
       ]);
       const { scriptPath, logPath } = writeFakeGh(tmpDir, {});
@@ -925,7 +925,7 @@ describe("JsonTaskStore", () => {
           id: "T-1",
           title: "Task",
           status: "pr_open",
-          issue: "https://github.com/app-vitals/vitals-os/issues/5",
+          issue: "https://github.com/acme/example-repo/issues/5",
         },
       ]);
       // No fake-gh — GH_CMD points to a nonexistent binary
@@ -954,19 +954,19 @@ describe("JsonTaskStore", () => {
           id: "T-1",
           title: "Merged",
           status: "merged",
-          issue: "https://github.com/app-vitals/vitals-os/issues/10",
+          issue: "https://github.com/acme/example-repo/issues/10",
         },
         {
           id: "T-2",
           title: "Pending",
           status: "pending",
-          issue: "https://github.com/app-vitals/vitals-os/issues/11",
+          issue: "https://github.com/acme/example-repo/issues/11",
         },
       ]);
       const { scriptPath, logPath } = writeFakeGh(tmpDir, {
-        "issue view 10 --repo app-vitals/vitals-os --json state --jq .state":
+        "issue view 10 --repo acme/example-repo --json state --jq .state":
           "OPEN",
-        "issue close 10 --repo app-vitals/vitals-os": "__exit0__",
+        "issue close 10 --repo acme/example-repo": "__exit0__",
       });
       process.env.GH_CMD = scriptPath;
       try {
@@ -987,11 +987,11 @@ describe("JsonTaskStore", () => {
           id: "T-1",
           title: "Merged",
           status: "merged",
-          issue: "https://github.com/app-vitals/vitals-os/issues/20",
+          issue: "https://github.com/acme/example-repo/issues/20",
         },
       ]);
       const { scriptPath, logPath } = writeFakeGh(tmpDir, {
-        "issue view 20 --repo app-vitals/vitals-os --json state --jq .state":
+        "issue view 20 --repo acme/example-repo --json state --jq .state":
           "CLOSED",
       });
       process.env.GH_CMD = scriptPath;
@@ -1026,23 +1026,23 @@ describe("JsonTaskStore", () => {
           id: "T-1",
           title: "Merged",
           status: "merged",
-          issue: "https://github.com/app-vitals/vitals-os/issues/30",
+          issue: "https://github.com/acme/example-repo/issues/30",
         },
         {
           id: "T-2",
           title: "Deployed",
           status: "deployed",
-          issue: "https://github.com/app-vitals/vitals-os/issues/31",
+          issue: "https://github.com/acme/example-repo/issues/31",
         },
       ]);
       const { scriptPath } = writeFakeGh(tmpDir, {
         // T-1 view fails (bad gh), T-2 view + close succeeds
-        "issue view 30 --repo app-vitals/vitals-os --json state --jq .state":
+        "issue view 30 --repo acme/example-repo --json state --jq .state":
           "OPEN",
         // issue close 30 is missing → gh exits 1
-        "issue view 31 --repo app-vitals/vitals-os --json state --jq .state":
+        "issue view 31 --repo acme/example-repo --json state --jq .state":
           "OPEN",
-        "issue close 31 --repo app-vitals/vitals-os": "__exit0__",
+        "issue close 31 --repo acme/example-repo": "__exit0__",
       });
       process.env.GH_CMD = scriptPath;
       const warnings: string[] = [];
