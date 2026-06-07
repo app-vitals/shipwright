@@ -65,7 +65,7 @@ export class AgentPluginService {
   }
 
   /**
-   * Remove a plugin. Verifies agentId ownership before deleting.
+   * Remove a plugin by ID. Verifies agentId ownership before deleting.
    * Throws NotFoundError if the pluginId doesn't exist or belongs to a different agent.
    */
   async remove(agentId: string, pluginId: string): Promise<void> {
@@ -78,5 +78,21 @@ export class AgentPluginService {
     }
 
     await this.prisma.agentPlugin.delete({ where: { id: pluginId } });
+  }
+
+  /**
+   * Remove a plugin by name. Verifies agentId ownership before deleting.
+   * Throws NotFoundError if no plugin with that name exists for the agent.
+   */
+  async removeByName(agentId: string, name: string): Promise<void> {
+    const existing = await this.prisma.agentPlugin.findUnique({
+      where: { agentId_name: { agentId, name } },
+    });
+
+    if (!existing) {
+      throw new NotFoundError(`plugin ${name} not found`);
+    }
+
+    await this.prisma.agentPlugin.delete({ where: { id: existing.id } });
   }
 }
