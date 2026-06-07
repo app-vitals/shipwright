@@ -1,0 +1,1040 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shipwright Metrics — Workspace Switcher</title>
+<style>
+  :root {
+    --bg-page: #0f1019;
+    --bg-header: #1a1b2e;
+    --bg-card: #1e1f35;
+    --bg-card-hover: #252640;
+    --text-primary: #e4e4ef;
+    --text-secondary: #8b8ba7;
+    --text-muted: #5c5c7a;
+    --green: #4ade80;
+    --green-dim: rgba(74,222,128,0.15);
+    --amber: #fbbf24;
+    --amber-dim: rgba(251,191,36,0.15);
+    --red: #f87171;
+    --red-dim: rgba(248,113,113,0.15);
+    --blue: #60a5fa;
+    --purple: #a78bfa;
+    --border: #2a2b45;
+    --radius: 12px;
+    --mono: 'SF Mono','Cascadia Code','Fira Code','JetBrains Mono',monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    background: var(--bg-page);
+    color: var(--text-primary);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .container { max-width: 1200px; margin: 0 auto; padding: 0 24px 48px; }
+
+  /* Header */
+  header {
+    background: var(--bg-header);
+    border-bottom: 1px solid var(--border);
+    padding: 32px 0 24px;
+    margin-bottom: 32px;
+  }
+  .header-inner { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+  .header-top { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+  .header-top h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.3px; }
+  .header-top .date { color: var(--text-secondary); font-size: 14px; }
+  .header-top .badge {
+    background: rgba(167,139,250,0.15);
+    color: var(--purple);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 100px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    font-family: var(--mono);
+  }
+  .stat-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  .stat-card {
+    background: var(--bg-card);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    border-left: 3px solid var(--border);
+  }
+  .stat-card .value { font-size: 28px; font-weight: 700; font-family: var(--mono); }
+  .stat-card .label { font-size: 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.8px; margin-top: 2px; }
+  .stat-card .sub { font-size: 12px; color: var(--text-muted); font-family: var(--mono); margin-top: 2px; }
+
+  /* Sections */
+  .section { margin-bottom: 32px; }
+  .section-title {
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: var(--text-secondary);
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* Fix Cascade Grid */
+  .cascade-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .card {
+    background: var(--bg-card);
+    border-radius: var(--radius);
+    padding: 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  }
+  .card-title { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--text-secondary); margin-bottom: 16px; }
+
+  /* FTQ Ring */
+  .ftq-container { display: flex; align-items: center; gap: 24px; }
+  .ftq-ring { flex-shrink: 0; }
+  .ftq-detail { font-size: 13px; color: var(--text-secondary); line-height: 1.7; }
+  .ftq-detail strong { color: var(--text-primary); }
+  .ftq-pills { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  .pill {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 100px;
+    font-family: var(--mono);
+    background: rgba(255,255,255,0.05);
+    color: var(--text-secondary);
+  }
+
+  /* Simplify Bars */
+  .bar-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+  .bar-label { width: 90px; font-size: 12px; color: var(--text-secondary); text-align: right; flex-shrink: 0; }
+  .bar-track { flex: 1; height: 22px; background: rgba(255,255,255,0.04); border-radius: 4px; overflow: hidden; position: relative; }
+  .bar-fill { height: 100%; border-radius: 4px; transition: width 0.5s ease; display: flex; align-items: center; padding-left: 8px; }
+  .bar-fill span { font-size: 11px; font-family: var(--mono); color: var(--text-primary); font-weight: 600; }
+
+  /* Donut Legend */
+  .donut-container { display: flex; align-items: center; gap: 24px; }
+  .donut-legend { font-size: 13px; line-height: 2; }
+  .legend-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+
+  /* CI / Coverage mini cards */
+  .mini-stack { display: flex; flex-direction: column; gap: 16px; }
+  .mini-card { background: rgba(255,255,255,0.03); border-radius: 8px; padding: 16px; }
+  .mini-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-muted); margin-bottom: 8px; }
+  .mini-value { font-size: 24px; font-weight: 700; font-family: var(--mono); }
+  .progress-track { height: 6px; background: rgba(255,255,255,0.06); border-radius: 3px; margin-top: 8px; overflow: hidden; }
+  .progress-fill { height: 100%; border-radius: 3px; }
+
+  /* Task Table */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: separate; border-spacing: 0 4px; }
+  thead th {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-muted);
+    text-align: left;
+    padding: 8px 12px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  tbody tr.task-row {
+    background: var(--bg-card);
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  tbody tr.task-row:hover { background: var(--bg-card-hover); }
+  tbody tr.task-row td {
+    padding: 12px;
+    font-size: 13px;
+    white-space: nowrap;
+    border-top: 1px solid transparent;
+    border-bottom: 1px solid transparent;
+  }
+  tbody tr.task-row td:first-child {
+    border-left: 4px solid var(--border);
+    border-radius: 6px 0 0 6px;
+  }
+  tbody tr.task-row td:last-child { border-radius: 0 6px 6px 0; }
+  tbody tr.task-row.quality-green td:first-child { border-left-color: var(--green); }
+  tbody tr.task-row.quality-amber td:first-child { border-left-color: var(--amber); }
+  tbody tr.task-row.quality-red td:first-child { border-left-color: var(--red); }
+
+  .task-id { font-family: var(--mono); font-weight: 600; color: var(--blue); }
+  .complexity-dots span { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 2px; }
+  .complexity-dots .filled { background: var(--purple); }
+  .complexity-dots .empty { background: rgba(255,255,255,0.08); }
+  .verdict-badge {
+    font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px;
+    font-family: var(--mono); display: inline-block;
+  }
+  .verdict-ship { background: var(--green-dim); color: var(--green); }
+  .verdict-fixes { background: var(--amber-dim); color: var(--amber); }
+  .verdict-work { background: var(--red-dim); color: var(--red); }
+  .verdict-pending { background: rgba(255,255,255,0.06); color: var(--text-muted); }
+  .ftq-icon { font-size: 14px; }
+
+  /* Detail row */
+  tr.detail-row { display: none; }
+  tr.detail-row.open { display: table-row; }
+  tr.detail-row td {
+    padding: 0 12px 16px 20px;
+    background: var(--bg-card);
+    border-radius: 0 0 6px 6px;
+  }
+  .detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; padding-top: 8px; }
+  .detail-section h4 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-muted); margin-bottom: 6px; }
+  .detail-section p { font-size: 12px; color: var(--text-secondary); line-height: 1.6; font-family: var(--mono); }
+
+  /* Estimation section */
+  .est-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
+  .deviation-row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .deviation-label { width: 80px; font-size: 12px; color: var(--text-secondary); text-align: right; flex-shrink: 0; }
+  .deviation-track { flex: 1; height: 24px; position: relative; background: rgba(255,255,255,0.03); border-radius: 4px; }
+  .deviation-center { position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--text-muted); }
+  .deviation-bar { position: absolute; top: 3px; bottom: 3px; border-radius: 3px; }
+  .deviation-val { font-size: 12px; font-family: var(--mono); width: 50px; flex-shrink: 0; }
+
+  /* Trends */
+  .trend-table { width: 100%; }
+  .trend-table th, .trend-table td { padding: 10px 16px; font-size: 13px; text-align: left; }
+  .trend-table th { color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; font-weight: 600; border-bottom: 1px solid var(--border); }
+  .trend-table td { border-bottom: 1px solid rgba(255,255,255,0.03); font-family: var(--mono); }
+  .trend-arrow { display: inline-flex; align-items: center; gap: 4px; }
+
+  /* Recommendations */
+  .rec-card {
+    background: var(--bg-card);
+    border-radius: var(--radius);
+    padding: 20px 24px;
+    margin-bottom: 12px;
+    border-left: 4px solid var(--border);
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+  }
+  .rec-icon {
+    width: 32px; height: 32px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; flex-shrink: 0; font-weight: 700;
+  }
+  .rec-body h3 { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+  .rec-body p { font-size: 13px; color: var(--text-secondary); line-height: 1.6; }
+
+  /* Footer */
+  footer {
+    text-align: center;
+    padding: 24px;
+    font-size: 12px;
+    color: var(--text-muted);
+    border-top: 1px solid var(--border);
+    margin-top: 16px;
+    font-family: var(--mono);
+  }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .stat-cards { grid-template-columns: repeat(2, 1fr); }
+    .cascade-grid { grid-template-columns: 1fr; }
+    .est-grid { grid-template-columns: 1fr; }
+    .ftq-container { flex-direction: column; text-align: center; }
+    .donut-container { flex-direction: column; align-items: flex-start; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ HEADER ============ -->
+<header>
+  <div class="header-inner">
+    <div class="header-top">
+      <h1>Shipwright Metrics</h1>
+      <span class="date">workspace-switcher &middot; Mar 28 &ndash; 31, 2026</span>
+      <span class="badge">sonnet 4.6</span>
+    </div>
+    <div class="stat-cards" id="stat-cards">
+      <!-- rendered by JS -->
+    </div>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- ============ FIX CASCADE ============ -->
+  <section class="section">
+    <div class="section-title">Fix Cascade</div>
+    <div class="cascade-grid">
+
+      <!-- B1: First-Time Quality -->
+      <div class="card">
+        <div class="card-title">First-Time Quality</div>
+        <div class="ftq-container">
+          <div class="ftq-ring" id="ftq-ring"></div>
+          <div>
+            <div class="ftq-detail" id="ftq-detail"></div>
+            <div class="ftq-pills">
+              <span class="pill">0 simplify fixes</span>
+              <span class="pill">SHIP IT verdict</span>
+              <span class="pill">CI pass 1st try</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- B2: Simplify Breakdown -->
+      <div class="card">
+        <div class="card-title">Simplify Breakdown</div>
+        <div id="simplify-bars"></div>
+      </div>
+
+      <!-- B3: Review Verdicts -->
+      <div class="card">
+        <div class="card-title">Review Verdicts</div>
+        <div class="donut-container" id="review-donut"></div>
+      </div>
+
+      <!-- B4: CI & Coverage -->
+      <div class="card">
+        <div class="card-title">CI &amp; Coverage</div>
+        <div class="mini-stack" id="ci-coverage"></div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============ TASK TABLE ============ -->
+  <section class="section">
+    <div class="section-title">Task Timeline</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th></th>
+            <th>Task</th>
+            <th>Title</th>
+            <th>Layer</th>
+            <th>Complexity</th>
+            <th>Est / Actual</th>
+            <th>Verdict</th>
+            <th>Simplify</th>
+            <th>CI</th>
+            <th>Quality</th>
+          </tr>
+        </thead>
+        <tbody id="task-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ ESTIMATION ============ -->
+  <section class="section">
+    <div class="section-title">Estimation Accuracy</div>
+    <div class="est-grid">
+      <div class="card">
+        <div class="card-title">Estimated vs Actual Hours</div>
+        <div id="est-chart"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Deviation by Complexity</div>
+        <div id="est-deviation"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ TRENDS ============ -->
+  <section class="section">
+    <div class="section-title">Trends (First Half vs Second Half)</div>
+    <div class="card">
+      <table class="trend-table" id="trend-table"></table>
+    </div>
+  </section>
+
+  <!-- ============ RECOMMENDATIONS ============ -->
+  <section class="section">
+    <div class="section-title">Recommendations</div>
+    <div id="recommendations"></div>
+  </section>
+
+</div>
+
+<footer>
+  Shipwright v1.4.0 &middot; Metrics Schema v1.4.0 &middot; Generated 2026-03-31T18:00:00Z &middot; Demo data &mdash; not a real run
+</footer>
+
+<script>
+// =====================================================================
+// MOCK DATA — matches metrics-schema.md v1.4.0 exactly.
+// All rendering is driven from this array. Replace with real JSONL
+// records (parsed into an array) and the dashboard updates automatically.
+// =====================================================================
+// Two-phase write pattern: dev-task writes all fields except review.
+// /review enriches the line with review data later. Tasks with
+// review:null have been through dev-task but not yet /review'd.
+// =====================================================================
+var DATA = [
+  {
+    task:"WS-1.1", title:"Add workspace model + migration", layer:"Database",
+    estimated_h:2, actual_h:1.5, complexity:3, retries:0, ci_fix_attempts:0,
+    pr:40, hotfixes:0, files_changed:4, ts:"2026-03-28T09:30:00Z", model:"sonnet",
+    simplify:{total:0,dry:0,dead_code:0,naming:0,complexity:0,consistency:0},
+    requirements:{met:3,partial:0,not_met:0,unverifiable:0,total:3},
+    review:{verdict:"SHIP IT",findings:0,fixes_applied:0,agents:["code-reviewer","silent-failure-hunter"]},
+    ci:{fix_attempts:0,failures:[]},
+    coverage:{before:82.1,after:84.5,delta:2.4}
+  },
+  {
+    task:"WS-1.2", title:"Add workspace API routes", layer:"API",
+    estimated_h:3, actual_h:3.4, complexity:3, retries:0, ci_fix_attempts:1,
+    pr:41, hotfixes:0, files_changed:6, ts:"2026-03-28T13:15:00Z", model:"sonnet",
+    simplify:{total:2,dry:1,dead_code:0,naming:1,complexity:0,consistency:0},
+    requirements:{met:5,partial:0,not_met:0,unverifiable:0,total:5},
+    review:{verdict:"NEEDS FIXES",findings:3,fixes_applied:2,agents:["code-reviewer","silent-failure-hunter","test-analyzer"]},
+    ci:{fix_attempts:1,failures:["jest: 1 test suite failed \u2014 missing mock for workspace service"]},
+    coverage:{before:84.5,after:86.2,delta:1.7}
+  },
+  {
+    task:"WS-1.3", title:"Workspace CRUD service layer", layer:"API",
+    estimated_h:4, actual_h:4.8, complexity:4, retries:0, ci_fix_attempts:0,
+    pr:42, hotfixes:0, files_changed:8, ts:"2026-03-28T18:30:00Z", model:"sonnet",
+    simplify:{total:3,dry:0,dead_code:1,naming:1,complexity:0,consistency:1},
+    requirements:{met:4,partial:1,not_met:0,unverifiable:0,total:5},
+    review:{verdict:"NEEDS FIXES",findings:4,fixes_applied:3,agents:["code-reviewer","silent-failure-hunter","test-analyzer","comment-analyzer"]},
+    ci:{fix_attempts:0,failures:[]},
+    coverage:{before:86.2,after:87.0,delta:0.8}
+  },
+  {
+    task:"WS-2.1", title:"Switcher dropdown component", layer:"Frontend",
+    estimated_h:3, actual_h:2.9, complexity:3, retries:0, ci_fix_attempts:0,
+    pr:43, hotfixes:0, files_changed:5, ts:"2026-03-29T10:00:00Z", model:"sonnet",
+    simplify:{total:1,dry:1,dead_code:0,naming:0,complexity:0,consistency:0},
+    requirements:{met:4,partial:0,not_met:0,unverifiable:0,total:4},
+    review:{verdict:"SHIP IT",findings:1,fixes_applied:1,agents:["code-reviewer","silent-failure-hunter"]},
+    ci:{fix_attempts:0,failures:[]},
+    coverage:{before:87.0,after:88.5,delta:1.5}
+  },
+  {
+    task:"WS-2.2", title:"Workspace context provider", layer:"Frontend",
+    estimated_h:1.5, actual_h:1.3, complexity:2, retries:0, ci_fix_attempts:0,
+    pr:44, hotfixes:0, files_changed:3, ts:"2026-03-29T12:00:00Z", model:"sonnet",
+    simplify:{total:0,dry:0,dead_code:0,naming:0,complexity:0,consistency:0},
+    requirements:{met:3,partial:0,not_met:0,unverifiable:0,total:3},
+    review:{verdict:"SHIP IT",findings:0,fixes_applied:0,agents:["code-reviewer","silent-failure-hunter"]},
+    ci:{fix_attempts:0,failures:[]},
+    coverage:{before:88.5,after:89.8,delta:1.3}
+  },
+  {
+    task:"WS-2.3", title:"Workspace settings page", layer:"Frontend",
+    estimated_h:4, actual_h:4.6, complexity:4, retries:1, ci_fix_attempts:1,
+    pr:45, hotfixes:0, files_changed:7, ts:"2026-03-29T18:00:00Z", model:"sonnet",
+    simplify:{total:2,dry:0,dead_code:0,naming:1,complexity:1,consistency:0},
+    requirements:{met:3,partial:1,not_met:1,unverifiable:0,total:5},
+    review:{verdict:"NEEDS WORK",findings:5,fixes_applied:3,agents:["code-reviewer","silent-failure-hunter","test-analyzer","type-design-analyzer"]},
+    ci:{fix_attempts:1,failures:["jest: 2 test suites failed \u2014 settings form validation"]},
+    coverage:{before:89.8,after:87.8,delta:-2.0}
+  },
+  {
+    task:"WS-2.T1", title:"Unit tests for switcher component", layer:"Test",
+    estimated_h:1.5, actual_h:1.4, complexity:2, retries:0, ci_fix_attempts:0,
+    pr:46, hotfixes:0, files_changed:3, ts:"2026-03-30T09:30:00Z", model:"sonnet",
+    simplify:{total:0,dry:0,dead_code:0,naming:0,complexity:0,consistency:0},
+    requirements:{met:4,partial:0,not_met:0,unverifiable:0,total:4},
+    review:{verdict:"SHIP IT",findings:0,fixes_applied:0,agents:["code-reviewer","test-analyzer"]},
+    ci:{fix_attempts:0,failures:[]},
+    coverage:{before:87.8,after:90.1,delta:2.3}
+  },
+  {
+    task:"WS-1.T1", title:"Integration tests for workspace API", layer:"Test",
+    estimated_h:2.5, actual_h:2.8, complexity:3, retries:0, ci_fix_attempts:0,
+    pr:47, hotfixes:0, files_changed:4, ts:"2026-03-30T13:00:00Z", model:"sonnet",
+    simplify:{total:0,dry:0,dead_code:0,naming:0,complexity:0,consistency:0},
+    requirements:{met:5,partial:0,not_met:0,unverifiable:0,total:5},
+    review:{verdict:"SHIP IT",findings:1,fixes_applied:1,agents:["code-reviewer","silent-failure-hunter","test-analyzer"]},
+    ci:{fix_attempts:0,failures:[]},
+    coverage:{before:90.1,after:91.5,delta:1.4}
+  },
+  {
+    task:"WS-2.4", title:"Workspace invitation flow", layer:"Full-stack",
+    estimated_h:3, actual_h:3.5, complexity:4, retries:0, ci_fix_attempts:0,
+    pr:48, hotfixes:0, files_changed:9, ts:"2026-03-31T11:00:00Z", model:"opus",
+    simplify:{total:1,dry:0,dead_code:0,naming:1,complexity:0,consistency:0},
+    requirements:{met:6,partial:0,not_met:0,unverifiable:0,total:6},
+    review:null,
+    ci:{fix_attempts:0,failures:[]},
+    coverage:{before:91.5,after:92.0,delta:0.5}
+  },
+  {
+    task:"WS-2.T2", title:"E2E tests for invitation flow", layer:"Test",
+    estimated_h:1.5, actual_h:1.2, complexity:2, retries:0, ci_fix_attempts:0,
+    pr:49, hotfixes:0, files_changed:3, ts:"2026-03-31T13:30:00Z", model:"sonnet",
+    simplify:{total:0,dry:0,dead_code:0,naming:0,complexity:0,consistency:0},
+    requirements:{met:3,partial:0,not_met:0,unverifiable:0,total:3},
+    review:null,
+    ci:{fix_attempts:0,failures:[]},
+    coverage:{before:92.0,after:93.2,delta:1.2}
+  }
+];
+
+// =====================================================================
+// COMPUTE DERIVED METRICS
+// =====================================================================
+var N = DATA.length;
+var totalEst = DATA.reduce(function(s,d){ return s + d.estimated_h; }, 0);
+var totalAct = DATA.reduce(function(s,d){ return s + d.actual_h; }, 0);
+var totalFiles = DATA.reduce(function(s,d){ return s + d.files_changed; }, 0);
+var ratio = totalAct / totalEst;
+
+// Two-phase write: tasks with review !== null have been through /review
+var reviewedTasks = DATA.filter(function(d){ return d.review !== null; });
+var unreviewedTasks = DATA.filter(function(d){ return d.review === null; });
+var nReviewed = reviewedTasks.length;
+
+// First-time quality — only review-enriched tasks can be assessed
+var ftqTasks = reviewedTasks.filter(function(d){
+  return d.simplify.total === 0 && d.review.verdict === "SHIP IT" && d.ci_fix_attempts === 0;
+});
+var ftqRate = nReviewed > 0 ? ftqTasks.length / nReviewed : 0;
+
+// Partial FTQ (simplify + CI only, for unreviewed tasks)
+var partialFtqTasks = unreviewedTasks.filter(function(d){
+  return d.simplify.total === 0 && d.ci_fix_attempts === 0;
+});
+
+// Simplify totals (all tasks have simplify data)
+var simpCats = ['dry','dead_code','naming','complexity','consistency'];
+var simpTotals = {};
+simpCats.forEach(function(c){ simpTotals[c] = DATA.reduce(function(s,d){ return s + d.simplify[c]; }, 0); });
+var simpMax = Math.max.apply(null, simpCats.map(function(c){ return simpTotals[c]; }).concat([1]));
+
+// Review verdicts — only reviewed tasks
+var verdicts = { "SHIP IT": 0, "NEEDS FIXES": 0, "NEEDS WORK": 0, "PENDING": 0 };
+DATA.forEach(function(d){
+  if (d.review !== null) { verdicts[d.review.verdict]++; }
+  else { verdicts["PENDING"]++; }
+});
+
+// CI first-pass (all tasks have CI data)
+var ciFirstPass = DATA.filter(function(d){ return d.ci_fix_attempts === 0; }).length;
+
+// Coverage
+var avgCovDelta = DATA.reduce(function(s,d){ return s + d.coverage.delta; }, 0) / N;
+
+// Estimation accuracy per complexity tier
+function tierDeviation(minC, maxC) {
+  var t = DATA.filter(function(d){ return d.complexity >= minC && d.complexity <= maxC; });
+  if (!t.length) return 0;
+  return t.reduce(function(s,d){ return s + ((d.actual_h / d.estimated_h) - 1); }, 0) / t.length * 100;
+}
+
+// Trends: first half vs second half
+var half = Math.floor(N / 2);
+var firstHalf = DATA.slice(0, half);
+var secondHalf = DATA.slice(half);
+function sliceMetrics(slice) {
+  var n = slice.length;
+  var reviewed = slice.filter(function(d){ return d.review !== null; });
+  var nRev = reviewed.length || 1; // avoid division by zero
+  var ftq = reviewed.filter(function(d){ return d.simplify.total === 0 && d.review.verdict === "SHIP IT" && d.ci_fix_attempts === 0; }).length / nRev * 100;
+  var simpAvg = slice.reduce(function(s,d){ return s + d.simplify.total; }, 0) / n;
+  var shipRate = reviewed.filter(function(d){ return d.review.verdict === "SHIP IT"; }).length / nRev * 100;
+  var ciRate = slice.filter(function(d){ return d.ci_fix_attempts === 0; }).length / n * 100;
+  return { ftq: ftq, simpAvg: simpAvg, shipRate: shipRate, ciRate: ciRate };
+}
+var trendFirst = sliceMetrics(firstHalf);
+var trendSecond = sliceMetrics(secondHalf);
+
+// =====================================================================
+// SAFE DOM HELPERS
+// =====================================================================
+function h(tag, attrs, children) {
+  var el = document.createElement(tag);
+  if (attrs) Object.keys(attrs).forEach(function(k){
+    if (k === 'style' && typeof attrs[k] === 'object') {
+      Object.keys(attrs[k]).forEach(function(sk){ el.style[sk] = attrs[k][sk]; });
+    } else if (k === 'className') { el.className = attrs[k]; }
+    else { el.setAttribute(k, attrs[k]); }
+  });
+  if (children !== undefined) {
+    if (typeof children === 'string') el.textContent = children;
+    else if (Array.isArray(children)) children.forEach(function(c){ if (c) el.appendChild(c); });
+    else el.appendChild(children);
+  }
+  return el;
+}
+function svg(tag, attrs, children) {
+  var el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  if (attrs) Object.keys(attrs).forEach(function(k){ el.setAttribute(k, attrs[k]); });
+  if (children) {
+    if (typeof children === 'string') el.textContent = children;
+    else if (Array.isArray(children)) children.forEach(function(c){ if (c) el.appendChild(c); });
+    else el.appendChild(children);
+  }
+  return el;
+}
+function appendAll(parent, nodes) { nodes.forEach(function(n){ parent.appendChild(n); }); }
+function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
+
+// =====================================================================
+// RENDER — Header stat cards
+// =====================================================================
+(function() {
+  var container = document.getElementById('stat-cards');
+  var cards = [
+    { value: String(N), label: 'Tasks Completed', sub: DATA.filter(function(d){return d.retries>0;}).length + ' retried', border: 'var(--green)' },
+    { value: totalEst.toFixed(1) + 'h', label: 'Estimated Hours', sub: totalAct.toFixed(1) + 'h actual (' + ratio.toFixed(2) + 'x)', border: 'var(--blue)' },
+    { value: nReviewed + '/' + N, label: 'Reviewed', sub: unreviewedTasks.length > 0 ? unreviewedTasks.length + ' awaiting /review' : 'all reviewed', border: 'var(--purple)' },
+    { value: String(totalFiles), label: 'Files Changed', sub: (totalFiles/N).toFixed(1) + ' avg/task', border: 'var(--text-muted)' }
+  ];
+  cards.forEach(function(c) {
+    var card = h('div', { className: 'stat-card', style: { borderLeftColor: c.border } }, [
+      h('div', { className: 'value' }, c.value),
+      h('div', { className: 'label' }, c.label),
+      h('div', { className: 'sub' }, c.sub)
+    ]);
+    container.appendChild(card);
+  });
+})();
+
+// =====================================================================
+// RENDER — FTQ Ring (SVG)
+// =====================================================================
+(function() {
+  var pct = ftqRate;
+  var r = 50, cx = 60, cy = 60, sw = 10;
+  var circ = 2 * Math.PI * r;
+  var offset = circ * (1 - pct);
+  var color = pct >= 0.7 ? 'var(--green)' : pct >= 0.4 ? 'var(--amber)' : 'var(--red)';
+
+  var ring = svg('svg', { width: '130', height: '130', viewBox: '0 0 120 120' }, [
+    svg('circle', { cx: cx, cy: cy, r: r, fill: 'none', stroke: 'rgba(255,255,255,0.06)', 'stroke-width': sw }),
+    svg('circle', { cx: cx, cy: cy, r: r, fill: 'none', stroke: color, 'stroke-width': sw,
+      'stroke-dasharray': circ, 'stroke-dashoffset': offset, 'stroke-linecap': 'round',
+      transform: 'rotate(-90 ' + cx + ' ' + cy + ')' }),
+    svg('text', { x: cx, y: cy - 2, 'text-anchor': 'middle', fill: 'var(--text-primary)',
+      'font-size': '26', 'font-weight': '700', 'font-family': 'var(--mono)' }, Math.round(pct * 100) + '%'),
+    svg('text', { x: cx, y: Number(cy) + 14, 'text-anchor': 'middle', fill: 'var(--text-muted)', 'font-size': '10' }, 'FTQ')
+  ]);
+
+  var ringEl = document.getElementById('ftq-ring');
+  clearEl(ringEl);
+  ringEl.appendChild(ring);
+
+  var detailEl = document.getElementById('ftq-detail');
+  var strong = h('strong', null, ftqTasks.length + ' of ' + nReviewed);
+  detailEl.appendChild(strong);
+  detailEl.appendChild(document.createTextNode(' reviewed tasks shipped with zero rework'));
+  if (unreviewedTasks.length > 0) {
+    var pendingLine = h('div', { style: { marginTop: '4px', fontSize: '12px', color: 'var(--text-muted)' } },
+      unreviewedTasks.length + ' task' + (unreviewedTasks.length > 1 ? 's' : '') + ' awaiting /review (' + partialFtqTasks.length + ' clean on simplify+CI)');
+    detailEl.appendChild(pendingLine);
+  }
+})();
+
+// =====================================================================
+// RENDER — Simplify Bars
+// =====================================================================
+(function() {
+  var container = document.getElementById('simplify-bars');
+  var labels = { dry:'DRY', dead_code:'Dead Code', naming:'Naming', complexity:'Complexity', consistency:'Consistency' };
+  var colors = { dry:'var(--blue)', dead_code:'var(--red)', naming:'var(--amber)', complexity:'var(--purple)', consistency:'var(--text-secondary)' };
+
+  simpCats.forEach(function(c) {
+    var pct = simpMax > 0 ? (simpTotals[c] / simpMax * 100) : 0;
+    var fill = h('div', { className: 'bar-fill', style: { width: pct + '%', background: colors[c] } });
+    if (simpTotals[c] > 0) fill.appendChild(h('span', null, String(simpTotals[c])));
+
+    container.appendChild(h('div', { className: 'bar-row' }, [
+      h('div', { className: 'bar-label' }, labels[c]),
+      h('div', { className: 'bar-track' }, fill)
+    ]));
+  });
+})();
+
+// =====================================================================
+// RENDER — Review Donut (SVG)
+// =====================================================================
+(function() {
+  var container = document.getElementById('review-donut');
+  var r = 45, cx = 55, cy = 55, sw = 14;
+  var circ = 2 * Math.PI * r;
+  var colorMap = { "SHIP IT": 'var(--green)', "NEEDS FIXES": 'var(--amber)', "NEEDS WORK": 'var(--red)', "PENDING": 'var(--text-muted)' };
+  var order = ["SHIP IT", "NEEDS FIXES", "NEEDS WORK", "PENDING"];
+
+  var activeOrder = order.filter(function(v){ return verdicts[v] > 0; });
+  var cumPct = 0;
+  var arcs = activeOrder.map(function(v) {
+    var pct = verdicts[v] / N;
+    var dash = pct * circ;
+    var off = -cumPct * circ;
+    cumPct += pct;
+    return svg('circle', { cx: cx, cy: cy, r: r, fill: 'none', stroke: colorMap[v], 'stroke-width': sw,
+      'stroke-dasharray': dash + ' ' + (circ - dash), 'stroke-dashoffset': off,
+      transform: 'rotate(-90 ' + cx + ' ' + cy + ')' });
+  });
+
+  var donut = svg('svg', { width: '115', height: '115', viewBox: '0 0 110 110', style: 'flex-shrink:0' }, arcs);
+  container.appendChild(donut);
+
+  var legend = h('div', { className: 'donut-legend' });
+  order.forEach(function(v) {
+    if (verdicts[v] === 0) return;
+    var row = h('div');
+    var dot = h('span', { className: 'legend-dot', style: { background: colorMap[v] } });
+    row.appendChild(dot);
+    var label = v === 'PENDING' ? 'Pending /review' : v;
+    row.appendChild(document.createTextNode(label + ': ' + verdicts[v] + '/' + N + ' (' + Math.round(verdicts[v]/N*100) + '%)'));
+    legend.appendChild(row);
+  });
+  container.appendChild(legend);
+})();
+
+// =====================================================================
+// RENDER — CI & Coverage
+// =====================================================================
+(function() {
+  var container = document.getElementById('ci-coverage');
+  var ciPct = ciFirstPass / N * 100;
+  var ciColor = ciPct >= 80 ? 'var(--green)' : ciPct >= 60 ? 'var(--amber)' : 'var(--red)';
+
+  // CI card
+  var ciCard = h('div', { className: 'mini-card' }, [
+    h('div', { className: 'mini-label' }, 'CI First-Pass Rate'),
+    h('div', { className: 'mini-value', style: { color: ciColor } }, Math.round(ciPct) + '%'),
+    h('div', { className: 'progress-track' }, [
+      h('div', { className: 'progress-fill', style: { width: ciPct + '%', background: ciColor } })
+    ]),
+    h('div', { style: { fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px', fontFamily: 'var(--mono)' } },
+      ciFirstPass + '/' + N + ' tasks passed CI on first try')
+  ]);
+  container.appendChild(ciCard);
+
+  // Coverage card
+  var covPoints = DATA.map(function(d){ return d.coverage.after; });
+  var minCov = Math.min.apply(null, covPoints) - 1;
+  var maxCov = Math.max.apply(null, covPoints) + 1;
+  var range = maxCov - minCov;
+  var sparkW = 180, sparkH = 35;
+
+  var polyPts = covPoints.map(function(v, i) {
+    var x = (i / (covPoints.length - 1)) * sparkW;
+    var y = sparkH - ((v - minCov) / range) * sparkH;
+    return x + ',' + y;
+  }).join(' ');
+
+  var sparkChildren = [svg('polyline', { points: polyPts, fill: 'none', stroke: 'var(--green)', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' })];
+  covPoints.forEach(function(v, i) {
+    var x = (i / (covPoints.length - 1)) * sparkW;
+    var y = sparkH - ((v - minCov) / range) * sparkH;
+    sparkChildren.push(svg('circle', { cx: x, cy: y, r: '3', fill: 'var(--green)' }));
+  });
+  var sparkSvg = svg('svg', { width: sparkW, height: sparkH, viewBox: '0 0 ' + sparkW + ' ' + sparkH }, sparkChildren);
+  sparkSvg.style.marginTop = '8px';
+
+  var valueRow = h('div', { style: { display: 'flex', alignItems: 'baseline', gap: '8px' } }, [
+    h('div', { className: 'mini-value', style: { color: 'var(--green)' } }, '+' + avgCovDelta.toFixed(1) + '%'),
+    h('span', { style: { fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--mono)' } }, 'avg delta/task')
+  ]);
+
+  var covCard = h('div', { className: 'mini-card' }, [
+    h('div', { className: 'mini-label' }, 'Coverage Trend'),
+    valueRow,
+    sparkSvg,
+    h('div', { style: { fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', fontFamily: 'var(--mono)' } },
+      covPoints[0].toFixed(1) + '% \u2192 ' + covPoints[covPoints.length-1].toFixed(1) + '%')
+  ]);
+  container.appendChild(covCard);
+})();
+
+// =====================================================================
+// RENDER — Task Table
+// =====================================================================
+(function() {
+  var tbody = document.getElementById('task-body');
+
+  DATA.forEach(function(d, i) {
+    var hasReview = d.review !== null;
+    var isFtq = hasReview && d.simplify.total === 0 && d.review.verdict === "SHIP IT" && d.ci_fix_attempts === 0;
+    var isRed = (hasReview && d.review.verdict === "NEEDS WORK") || d.simplify.total >= 3 || d.ci_fix_attempts >= 2;
+    var cls = isFtq ? 'quality-green' : isRed ? 'quality-red' : 'quality-amber';
+
+    var row = h('tr', { className: 'task-row ' + cls });
+
+    // # column
+    var numTd = h('td', { style: { width: '20px', textAlign: 'center', fontSize: '12px', color: 'var(--text-muted)' } }, String(i + 1));
+    row.appendChild(numTd);
+
+    // Task ID
+    var idTd = h('td');
+    idTd.appendChild(h('span', { className: 'task-id' }, d.task));
+    row.appendChild(idTd);
+
+    // Title
+    row.appendChild(h('td', { style: { whiteSpace: 'normal', minWidth: '200px' } }, d.title));
+
+    // Layer
+    row.appendChild(h('td', { style: { color: 'var(--text-secondary)' } }, d.layer));
+
+    // Complexity dots
+    var dotsDiv = h('div', { className: 'complexity-dots' });
+    for (var j = 0; j < 5; j++) {
+      dotsDiv.appendChild(h('span', { className: j < d.complexity ? 'filled' : 'empty' }));
+    }
+    var dotsTd = h('td');
+    dotsTd.appendChild(dotsDiv);
+    row.appendChild(dotsTd);
+
+    // Est/Actual
+    row.appendChild(h('td', { style: { fontFamily: 'var(--mono)' } }, d.estimated_h + 'h / ' + d.actual_h + 'h'));
+
+    // Verdict
+    var verdictTd = h('td');
+    if (hasReview) {
+      var verdictCls = d.review.verdict === "SHIP IT" ? 'verdict-ship' :
+                       d.review.verdict === "NEEDS FIXES" ? 'verdict-fixes' : 'verdict-work';
+      verdictTd.appendChild(h('span', { className: 'verdict-badge ' + verdictCls }, d.review.verdict));
+    } else {
+      verdictTd.appendChild(h('span', { className: 'verdict-badge', style: { background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted)' } }, 'PENDING'));
+    }
+    row.appendChild(verdictTd);
+
+    // Simplify
+    row.appendChild(h('td', { style: { fontFamily: 'var(--mono)', textAlign: 'center' } }, String(d.simplify.total)));
+
+    // CI
+    var ciTd = h('td', { style: { fontFamily: 'var(--mono)', textAlign: 'center' } });
+    if (d.ci_fix_attempts === 0) {
+      ciTd.appendChild(h('span', { style: { color: 'var(--green)' } }, 'Pass'));
+    } else {
+      ciTd.appendChild(h('span', { style: { color: 'var(--amber)' } }, d.ci_fix_attempts + ' fix'));
+    }
+    row.appendChild(ciTd);
+
+    // Quality dot
+    var ftqTd = h('td', { className: 'ftq-icon' });
+    if (isFtq) {
+      ftqTd.appendChild(h('span', { style: { color: 'var(--green)' }, title: 'First-time quality' }, '\u25CF'));
+    } else if (!hasReview) {
+      ftqTd.appendChild(h('span', { style: { color: 'var(--text-muted)' }, title: 'Awaiting /review' }, '\u2013'));
+    } else {
+      ftqTd.appendChild(h('span', { style: { color: 'var(--text-muted)' } }, '\u25CB'));
+    }
+    row.appendChild(ftqTd);
+
+    // Detail row (hidden, toggled on click)
+    var detail = h('tr', { className: 'detail-row' });
+    var detailTd = document.createElement('td');
+    detailTd.setAttribute('colspan', '10');
+
+    var simpDetail = simpCats.filter(function(c){ return d.simplify[c] > 0; }).map(function(c){ return c + ': ' + d.simplify[c]; }).join(', ') || 'none';
+    var reqDetail = d.requirements.met + ' met, ' + d.requirements.partial + ' partial, ' + d.requirements.not_met + ' not met';
+    var ciDetail = d.ci.failures.length > 0 ? d.ci.failures.join('; ') : 'All passed';
+
+    var reviewDetail = hasReview
+      ? d.review.findings + ' findings, ' + d.review.fixes_applied + ' auto-fixed \u2014 ' + d.review.agents.join(', ')
+      : 'Awaiting /review \u2014 run /review to enrich this record';
+
+    var grid = h('div', { className: 'detail-grid' }, [
+      h('div', { className: 'detail-section' }, [ h('h4', null, 'Simplify'), h('p', null, simpDetail) ]),
+      h('div', { className: 'detail-section' }, [ h('h4', null, 'Review'), h('p', null, reviewDetail) ]),
+      h('div', { className: 'detail-section' }, [ h('h4', null, 'Requirements'), h('p', null, reqDetail + ' (' + d.requirements.total + ' total AC)') ]),
+      h('div', { className: 'detail-section' }, [ h('h4', null, 'CI'), h('p', null, d.ci.fix_attempts + ' attempts \u2014 ' + ciDetail) ]),
+      h('div', { className: 'detail-section' }, [ h('h4', null, 'Coverage'), h('p', null, d.coverage.before + '% \u2192 ' + d.coverage.after + '% (' + (d.coverage.delta > 0 ? '+' : '') + d.coverage.delta + '%)') ]),
+      h('div', { className: 'detail-section' }, [ h('h4', null, 'Meta'), h('p', null, 'PR #' + d.pr + ' \u00B7 ' + d.files_changed + ' files \u00B7 ' + d.model + (d.retries > 0 ? ' \u00B7 ' + d.retries + ' retries' : '')) ])
+    ]);
+    detailTd.appendChild(grid);
+    detail.appendChild(detailTd);
+
+    row.addEventListener('click', function() { detail.classList.toggle('open'); });
+
+    tbody.appendChild(row);
+    tbody.appendChild(detail);
+  });
+})();
+
+// =====================================================================
+// RENDER — Estimation Chart (SVG bar chart)
+// =====================================================================
+(function() {
+  var container = document.getElementById('est-chart');
+  var pad = 40, barW = 16, gap = 8, groupGap = 24, H = 160;
+  var maxH = Math.max.apply(null, DATA.map(function(d){ return Math.max(d.estimated_h, d.actual_h); }));
+  var scale = (H - pad - 10) / maxH;
+  var totalW = pad + N * (barW * 2 + gap + groupGap);
+  var baseline = H - pad;
+
+  // Legend
+  var legend = h('div', { style: { display: 'flex', gap: '12px', marginBottom: '12px' } }, [
+    h('span', { style: { fontSize: '11px', color: 'var(--text-muted)' } }, [
+      h('span', { style: { display: 'inline-block', width: '10px', height: '10px', background: 'rgba(96,165,250,0.3)', borderRadius: '2px', verticalAlign: 'middle', marginRight: '4px' } }),
+      document.createTextNode('Estimated')
+    ]),
+    h('span', { style: { fontSize: '11px', color: 'var(--text-muted)' } }, [
+      h('span', { style: { display: 'inline-block', width: '10px', height: '10px', background: 'var(--blue)', borderRadius: '2px', verticalAlign: 'middle', marginRight: '4px' } }),
+      document.createTextNode('Actual')
+    ])
+  ]);
+  container.appendChild(legend);
+
+  var chartSvg = svg('svg', { width: '100%', viewBox: '0 0 ' + totalW + ' ' + H, preserveAspectRatio: 'xMinYMid meet' });
+
+  // Y-axis lines
+  for (var yh = 0; yh <= maxH; yh += 1) {
+    var y = baseline - yh * scale;
+    chartSvg.appendChild(svg('line', { x1: pad - 4, y1: y, x2: totalW, y2: y, stroke: 'rgba(255,255,255,0.04)', 'stroke-width': '1' }));
+    if (yh % 2 === 0) {
+      chartSvg.appendChild(svg('text', { x: pad - 8, y: y + 4, 'text-anchor': 'end', fill: 'var(--text-muted)', 'font-size': '9', 'font-family': 'var(--mono)' }, yh + 'h'));
+    }
+  }
+
+  // Bars + labels
+  DATA.forEach(function(d, i) {
+    var x = pad + i * (barW * 2 + gap + groupGap);
+    var estH = d.estimated_h * scale;
+    var actH = d.actual_h * scale;
+    chartSvg.appendChild(svg('rect', { x: x, y: baseline - estH, width: barW, height: estH, rx: '3', fill: 'rgba(96,165,250,0.3)' }));
+    chartSvg.appendChild(svg('rect', { x: x + barW + gap, y: baseline - actH, width: barW, height: actH, rx: '3', fill: 'var(--blue)' }));
+    chartSvg.appendChild(svg('text', { x: x + barW, y: H - 8, 'text-anchor': 'middle', fill: 'var(--text-muted)', 'font-size': '9', 'font-family': 'var(--mono)' }, d.task.replace('WS-', '')));
+  });
+
+  container.appendChild(chartSvg);
+})();
+
+// =====================================================================
+// RENDER — Estimation Deviation
+// =====================================================================
+(function() {
+  var container = document.getElementById('est-deviation');
+  var tiers = [
+    { label: 'Simple (1-2)', dev: tierDeviation(1,2) },
+    { label: 'Standard (3)', dev: tierDeviation(3,3) },
+    { label: 'Complex (4-5)', dev: tierDeviation(4,5) }
+  ];
+  var maxDev = Math.max.apply(null, tiers.map(function(t){ return Math.abs(t.dev); }).concat([20]));
+  var overallDev = DATA.reduce(function(s,d){ return s + ((d.actual_h / d.estimated_h) - 1); }, 0) / N * 100;
+
+  // Overall label
+  var overallRow = h('div', { style: { fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px' } });
+  overallRow.appendChild(document.createTextNode('Overall: '));
+  overallRow.appendChild(h('strong', { style: { color: 'var(--text-primary)', fontFamily: 'var(--mono)' } }, (overallDev > 0 ? '+' : '') + overallDev.toFixed(1) + '%'));
+  overallRow.appendChild(document.createTextNode(' avg error'));
+  container.appendChild(overallRow);
+
+  tiers.forEach(function(t) {
+    var pct = Math.abs(t.dev) / maxDev * 45;
+    var color = Math.abs(t.dev) > 15 ? 'var(--amber)' : 'var(--green)';
+    var left = t.dev > 0 ? '50%' : (50 - pct) + '%';
+
+    var track = h('div', { className: 'deviation-track' }, [
+      h('div', { className: 'deviation-center' }),
+      h('div', { className: 'deviation-bar', style: { left: left, width: pct + '%', background: color } })
+    ]);
+
+    container.appendChild(h('div', { className: 'deviation-row' }, [
+      h('div', { className: 'deviation-label' }, t.label),
+      track,
+      h('div', { className: 'deviation-val', style: { color: color } }, (t.dev > 0 ? '+' : '') + t.dev.toFixed(0) + '%')
+    ]));
+  });
+})();
+
+// =====================================================================
+// RENDER — Trends Table
+// =====================================================================
+(function() {
+  var table = document.getElementById('trend-table');
+  var metrics = [
+    { label: 'First-Time Quality', first: trendFirst.ftq, second: trendSecond.ftq, unit: '%', decimals: 0, higherBetter: true },
+    { label: 'Simplify Fixes / Task', first: trendFirst.simpAvg, second: trendSecond.simpAvg, unit: '', decimals: 1, higherBetter: false },
+    { label: 'Review SHIP IT Rate', first: trendFirst.shipRate, second: trendSecond.shipRate, unit: '%', decimals: 0, higherBetter: true },
+    { label: 'CI First-Pass Rate', first: trendFirst.ciRate, second: trendSecond.ciRate, unit: '%', decimals: 0, higherBetter: true }
+  ];
+
+  var thead = h('thead');
+  var headRow = h('tr', null, [
+    h('th', null, 'Metric'),
+    h('th', null, 'Tasks 1\u20135'),
+    h('th', null, 'Tasks 6\u201310'),
+    h('th', null, 'Trend')
+  ]);
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+
+  var tbodyEl = h('tbody');
+  metrics.forEach(function(m) {
+    var diff = m.second - m.first;
+    var improving = m.higherBetter ? diff > 0 : diff < 0;
+    var stable = Math.abs(diff) < 1;
+    var color = stable ? 'var(--text-muted)' : improving ? 'var(--green)' : 'var(--red)';
+    var arrow = stable ? '\u2192' : improving ? '\u2191' : '\u2193';
+    var labelText = stable ? 'Stable' : improving ? 'Improving' : 'Declining';
+
+    var tr = h('tr', null, [
+      h('td', { style: { color: 'var(--text-secondary)', fontFamily: 'system-ui' } }, m.label),
+      h('td', null, m.first.toFixed(m.decimals) + m.unit),
+      h('td', null, m.second.toFixed(m.decimals) + m.unit),
+      h('td', null, [ h('span', { className: 'trend-arrow', style: { color: color } }, arrow + ' ' + labelText) ])
+    ]);
+    tbodyEl.appendChild(tr);
+  });
+  table.appendChild(tbodyEl);
+})();
+
+// =====================================================================
+// RENDER — Recommendations
+// =====================================================================
+(function() {
+  var container = document.getElementById('recommendations');
+  var recs = [];
+  var ftqPct = ftqRate * 100;
+  var avgSimp = DATA.reduce(function(s,d){ return s + d.simplify.total; }, 0) / N;
+  var avgNaming = DATA.reduce(function(s,d){ return s + d.simplify.naming; }, 0) / N;
+  var ciPct = ciFirstPass / N * 100;
+
+  if (unreviewedTasks.length > 0) {
+    recs.push({
+      icon: '\u21BB', color: 'var(--text-secondary)', bg: 'rgba(255,255,255,0.08)', border: 'var(--text-muted)',
+      title: unreviewedTasks.length + ' task' + (unreviewedTasks.length > 1 ? 's' : '') + ' awaiting /review',
+      body: 'Tasks ' + unreviewedTasks.map(function(d){ return d.task; }).join(', ') + ' have metrics from /dev-task but no review data yet. Run /review on each to complete the fix cascade and enable full FTQ calculation.'
+    });
+  }
+  if (ftqPct < 70 && nReviewed > 0) {
+    var drivers = [];
+    if (avgSimp > 0.5) drivers.push('simplify fixes (' + avgSimp.toFixed(1) + '/task)');
+    if (ciPct < 90) drivers.push('CI failures (' + Math.round(100 - ciPct) + '% fail rate)');
+    recs.push({
+      icon: '!', color: 'var(--amber)', bg: 'var(--amber-dim)', border: 'var(--amber)',
+      title: 'First-time quality is ' + Math.round(ftqPct) + '% \u2014 target 70%+',
+      body: (nReviewed - ftqTasks.length) + ' of ' + nReviewed + ' reviewed tasks needed post-implementation rework. Primary drivers: ' + drivers.join(', ') + '. Focus on reducing these to improve pipeline efficiency.'
+    });
+  }
+  if (avgNaming > 0.3) {
+    recs.push({
+      icon: 'A', color: 'var(--blue)', bg: 'rgba(96,165,250,0.15)', border: 'var(--blue)',
+      title: 'Naming is the top simplify category (' + avgNaming.toFixed(1) + ' avg/task)',
+      body: 'Add explicit naming conventions to your project\'s CLAUDE.md or the task Context field. Include examples of preferred patterns (camelCase, PascalCase for types, etc.) so the implementation step generates consistent names.'
+    });
+  }
+  if (tierDeviation(4,5) > 15) {
+    recs.push({
+      icon: '~', color: 'var(--purple)', bg: 'rgba(167,139,250,0.15)', border: 'var(--purple)',
+      title: 'Complex tasks (4-5) run +' + tierDeviation(4,5).toFixed(0) + '% over estimate',
+      body: 'Consider padding complexity 4-5 estimates by 20%, or break them into smaller subtasks. The estimation error is concentrated in high-complexity work \u2014 simple and standard tasks track well.'
+    });
+  }
+
+  recs.forEach(function(r) {
+    var card = h('div', { className: 'rec-card', style: { borderLeftColor: r.border } }, [
+      h('div', { className: 'rec-icon', style: { background: r.bg, color: r.color } }, r.icon),
+      h('div', { className: 'rec-body' }, [
+        h('h3', null, r.title),
+        h('p', null, r.body)
+      ])
+    ]);
+    container.appendChild(card);
+  });
+})();
+</script>
+</body>
+</html>
