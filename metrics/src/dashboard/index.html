@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Shipwright Metrics</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/dashboard/styles.css" />
+</head>
+<body>
+  <div class="app">
+
+    <!-- Header -->
+    <header class="header">
+      <div class="header-inner">
+        <div class="header-brand">
+          <span class="brand-icon">&#9670;</span>
+          <h1 class="header-title">SHIPWRIGHT</h1>
+          <span class="header-sub">PIPELINE METRICS</span>
+        </div>
+        <div class="header-controls">
+          <div class="date-range-picker" role="group" aria-label="Date range">
+            <button class="date-btn active" data-range="today" type="button">1D</button>
+            <button class="date-btn" data-range="7d" type="button">7D</button>
+            <button class="date-btn" data-range="30d" type="button">30D</button>
+            <button class="date-btn" data-range="90d" type="button">90D</button>
+          </div>
+          <div class="header-meta">
+            <span id="freshness-indicator" class="freshness" aria-live="polite"></span>
+            <span id="refresh-countdown" class="countdown" aria-live="polite"></span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main -->
+    <main class="main">
+
+      <!-- KPI Cards -->
+      <section class="section" aria-label="Key performance indicators">
+        <div class="section-header">
+          <h2 class="section-title">Overview</h2>
+          <span class="section-badge" id="task-count-badge">0 tasks</span>
+        </div>
+        <div class="kpi-grid">
+          <div class="kpi-card" data-metric="tasks-completed">
+            <div class="kpi-label">Tasks Completed</div>
+            <div class="kpi-value" id="kpi-tasks"><span class="skeleton">&nbsp;</span></div>
+            <div class="kpi-meta">shipwright_task_completed events</div>
+          </div>
+          <div class="kpi-card" data-metric="ci-first-pass">
+            <div class="kpi-label">CI First-Pass Rate</div>
+            <div class="kpi-value" id="kpi-ci-rate"><span class="skeleton">&nbsp;</span></div>
+            <div class="kpi-meta">passed_first_try / total gates</div>
+          </div>
+          <div class="kpi-card" data-metric="estimation-accuracy">
+            <div class="kpi-label">Estimation Accuracy</div>
+            <div class="kpi-value" id="kpi-estimation"><span class="skeleton">&nbsp;</span></div>
+            <div class="kpi-meta">mean (actual_h / estimated_h - 1)</div>
+          </div>
+          <div class="kpi-card" data-metric="review-ship-it">
+            <div class="kpi-label">Review SHIP IT Rate</div>
+            <div class="kpi-value" id="kpi-review-rate"><span class="skeleton">&nbsp;</span></div>
+            <div class="kpi-meta">SHIP IT / total reviews</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Pipeline Queue -->
+      <section class="section" aria-label="Pipeline queue">
+        <div class="section-header">
+          <h2 class="section-title">Pipeline Queue</h2>
+        </div>
+        <div class="queue-grid">
+
+          <!-- Throughput -->
+          <div class="quality-panel">
+            <h3 class="panel-title">Throughput</h3>
+            <div class="stat-row">
+              <span class="stat-label">Started</span>
+              <span class="stat-value" id="queue-started">--</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Approved</span>
+              <span class="stat-value" id="queue-approved">--</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Merged</span>
+              <span class="stat-value" id="queue-merged">--</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Blocked</span>
+              <span class="stat-value" id="queue-blocked">--</span>
+            </div>
+          </div>
+
+          <!-- Cycle Time -->
+          <div class="quality-panel">
+            <h3 class="panel-title">Cycle Time</h3>
+            <div class="stat-row">
+              <span class="stat-label">Avg cycle time</span>
+              <span class="stat-value" id="queue-cycle-time">--</span>
+            </div>
+          </div>
+
+          <!-- Block Rate -->
+          <div class="quality-panel">
+            <h3 class="panel-title">Block Rate</h3>
+            <div class="stat-row">
+              <span class="stat-label">Rate</span>
+              <span class="stat-value" id="queue-block-rate">--%</span>
+            </div>
+          </div>
+
+          <!-- Review Findings -->
+          <div class="quality-panel">
+            <h3 class="panel-title">Review Findings</h3>
+            <div class="stat-row">
+              <span class="stat-label">Avg per task</span>
+              <span class="stat-value" id="queue-review-findings">--</span>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- Pipeline Quality -->
+      <section class="section" aria-label="Pipeline quality">
+        <div class="section-header">
+          <h2 class="section-title">Pipeline Quality</h2>
+        </div>
+        <div class="quality-grid">
+
+          <!-- CI Gates -->
+          <div class="quality-panel">
+            <h3 class="panel-title">CI Gates</h3>
+            <div class="stat-row">
+              <span class="stat-label">Total gates</span>
+              <span class="stat-value" id="ci-total">--</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">First-pass</span>
+              <span class="stat-value" id="ci-first">--</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Avg fix attempts</span>
+              <span class="stat-value" id="ci-fix-avg">--</span>
+            </div>
+          </div>
+
+          <!-- Simplify -->
+          <div class="quality-panel">
+            <h3 class="panel-title">Simplify Fixes</h3>
+            <div class="stat-row">
+              <span class="stat-label">Total fixes</span>
+              <span class="stat-value" id="simplify-total">--</span>
+            </div>
+            <div class="simplify-breakdown" id="simplify-breakdown">
+              <div class="bar-item"><span class="bar-label">DRY</span><div class="bar-track"><div class="bar-fill" id="bar-dry"></div></div><span class="bar-val" id="val-dry">--</span></div>
+              <div class="bar-item"><span class="bar-label">Dead code</span><div class="bar-track"><div class="bar-fill" id="bar-dead"></div></div><span class="bar-val" id="val-dead">--</span></div>
+              <div class="bar-item"><span class="bar-label">Naming</span><div class="bar-track"><div class="bar-fill" id="bar-naming"></div></div><span class="bar-val" id="val-naming">--</span></div>
+              <div class="bar-item"><span class="bar-label">Complexity</span><div class="bar-track"><div class="bar-fill" id="bar-complexity"></div></div><span class="bar-val" id="val-complexity">--</span></div>
+              <div class="bar-item"><span class="bar-label">Consistency</span><div class="bar-track"><div class="bar-fill" id="bar-consistency"></div></div><span class="bar-val" id="val-consistency">--</span></div>
+            </div>
+          </div>
+
+          <!-- Reviews -->
+          <div class="quality-panel">
+            <h3 class="panel-title">Reviews</h3>
+            <div class="stat-row">
+              <span class="stat-label">Total reviews</span>
+              <span class="stat-value" id="review-total">--</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">SHIP IT</span>
+              <span class="stat-value good" id="review-ship-it">--</span>
+            </div>
+          </div>
+
+          <!-- Coverage -->
+          <div class="quality-panel">
+            <h3 class="panel-title">Coverage</h3>
+            <div class="stat-row">
+              <span class="stat-label">Reports</span>
+              <span class="stat-value" id="coverage-reports">--</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Avg delta</span>
+              <span class="stat-value" id="coverage-delta">--</span>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- Feature Breakdown -->
+      <section class="section features-section" aria-label="Feature breakdown">
+        <div class="section-header">
+          <h2 class="section-title">Feature Breakdown</h2>
+        </div>
+        <table class="features-table">
+          <thead>
+            <tr>
+              <th>Feature</th>
+              <th>Tasks</th>
+              <th>Avg Hrs</th>
+              <th>CI Pass</th>
+              <th>Review</th>
+            </tr>
+          </thead>
+          <tbody id="features-tbody"></tbody>
+        </table>
+        <p id="features-empty" class="empty-state" style="display:none">No feature data for this period</p>
+      </section>
+
+      <!-- Efficiency -->
+      <section class="section" aria-label="Efficiency">
+        <div class="section-header">
+          <h2 class="section-title">Efficiency</h2>
+        </div>
+        <div class="efficiency-grid">
+          <div class="stat-block">
+            <span class="stat-block-value" id="eff-avg-hours">--</span>
+            <span class="stat-block-label">Avg actual hours</span>
+          </div>
+          <div class="stat-block">
+            <span class="stat-block-value" id="eff-est-hours">--</span>
+            <span class="stat-block-label">Avg estimated hours</span>
+          </div>
+          <div class="stat-block">
+            <span class="stat-block-value" id="eff-retries">--</span>
+            <span class="stat-block-label">Avg retries</span>
+          </div>
+          <div class="stat-block">
+            <span class="stat-block-value" id="eff-files">--</span>
+            <span class="stat-block-label">Avg files changed</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Token Usage -->
+      <section class="section" aria-label="Token usage">
+        <div class="section-header">
+          <h2 class="section-title">Token Usage</h2>
+        </div>
+        <div class="token-kpi-row">
+          <div class="kpi-card" data-metric="token-input">
+            <div class="kpi-label">Input Tokens</div>
+            <div class="kpi-value" id="token-input"><span class="skeleton">&nbsp;</span></div>
+            <div class="kpi-meta">total input tokens</div>
+          </div>
+          <div class="kpi-card" data-metric="token-output">
+            <div class="kpi-label">Output Tokens</div>
+            <div class="kpi-value" id="token-output"><span class="skeleton">&nbsp;</span></div>
+            <div class="kpi-meta">total output tokens</div>
+          </div>
+          <div class="kpi-card" data-metric="token-cache">
+            <div class="kpi-label">Cache Tokens</div>
+            <div class="kpi-value" id="token-cache"><span class="skeleton">&nbsp;</span></div>
+            <div class="kpi-meta">cache read + creation</div>
+          </div>
+        </div>
+        <div class="token-breakdown-grid">
+          <div class="quality-panel">
+            <h3 class="panel-title">By Session Type</h3>
+            <table class="token-table" id="token-session-table">
+              <thead>
+                <tr><th>Session Type</th><th>Total Tokens</th></tr>
+              </thead>
+              <tbody id="token-session-tbody"></tbody>
+            </table>
+            <p id="token-session-empty" class="empty-state" style="display:none">No data</p>
+          </div>
+          <div class="quality-panel">
+            <h3 class="panel-title">By Agent</h3>
+            <table class="token-table" id="token-agent-table">
+              <thead>
+                <tr><th>Agent</th><th>Total Tokens</th></tr>
+              </thead>
+              <tbody id="token-agent-tbody"></tbody>
+            </table>
+            <p id="token-agent-empty" class="empty-state" style="display:none">No data</p>
+          </div>
+        </div>
+        <div class="token-trends-section">
+          <div class="token-trends-toggles" role="group" aria-label="Token series">
+            <button class="token-series-btn active" data-token-series="input" type="button">Input</button>
+            <button class="token-series-btn" data-token-series="output" type="button">Output</button>
+            <button class="token-series-btn" data-token-series="total" type="button">Total</button>
+            <button class="token-series-btn" data-token-series="all" type="button">All</button>
+          </div>
+          <div class="chart-container token-trends-chart-container">
+            <canvas id="token-trends-chart" aria-label="Token usage trends chart"></canvas>
+          </div>
+        </div>
+      </section>
+
+      <!-- Trends -->
+      <section class="section" aria-label="Trends">
+        <div class="section-header">
+          <h2 class="section-title">Trends</h2>
+        </div>
+        <div class="chart-container">
+          <canvas id="trends-chart" aria-label="Pipeline trends chart"></canvas>
+        </div>
+      </section>
+
+    </main>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+  <script src="/dashboard/app.js"></script>
+</body>
+</html>
