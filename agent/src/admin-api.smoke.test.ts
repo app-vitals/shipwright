@@ -42,6 +42,7 @@ function makeMockDeps(): AdminDeps {
   return {
     agentEnvService: {
       upsert: async () => {},
+      patch: async () => {},
       getByAgentId: async () => ({ FOO: "bar", SECRET: "decrypted-value" }),
       deleteKey: async () => {},
     },
@@ -110,6 +111,13 @@ function makeMockDeps(): AdminDeps {
         agentId: AGENT_ID,
         pattern: "Read",
         enabled: true,
+        createdAt: new Date("2024-01-01"),
+      }),
+      toggle: async () => ({
+        id: TOOL_ID,
+        agentId: AGENT_ID,
+        pattern: "Read",
+        enabled: false,
         createdAt: new Date("2024-01-01"),
       }),
       remove: async () => {},
@@ -204,6 +212,24 @@ describe("admin API — auth", () => {
       `/admin/api/agents/${AGENT_ID}/crons/${CRON_ID}`,
       { method: "DELETE" },
     );
+    expect(res.status).toBe(401);
+  });
+
+  it("unauthenticated GET /admin/api/agents/:id/tools returns 401", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/admin/api/agents/${AGENT_ID}/tools`);
+    expect(res.status).toBe(401);
+  });
+
+  it("unauthenticated GET /admin/api/agents/:id/tokens returns 401", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/admin/api/agents/${AGENT_ID}/tokens`);
+    expect(res.status).toBe(401);
+  });
+
+  it("unauthenticated GET /admin/api/agents/:id/plugins returns 401", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/admin/api/agents/${AGENT_ID}/plugins`);
     expect(res.status).toBe(401);
   });
 

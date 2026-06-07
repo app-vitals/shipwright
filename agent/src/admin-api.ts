@@ -33,13 +33,16 @@ import { ApiError } from "./errors.ts";
 export interface AdminDeps {
   agentEnvService: Pick<
     AgentEnvService,
-    "upsert" | "getByAgentId" | "deleteKey"
+    "upsert" | "patch" | "getByAgentId" | "deleteKey"
   >;
   agentCronJobService: Pick<
     AgentCronJobService,
     "list" | "create" | "update" | "delete"
   >;
-  agentToolService: Pick<AgentToolService, "list" | "add" | "remove">;
+  agentToolService: Pick<
+    AgentToolService,
+    "list" | "add" | "remove" | "toggle"
+  >;
   agentTokenService: Pick<
     AgentTokenService,
     "create" | "listForAgent" | "revoke"
@@ -124,6 +127,14 @@ export function createAdminApp(deps: AdminDeps): Hono {
     return c.json({ env: env ?? {} });
   });
 
+  // PATCH /admin/api/agents/:id/envs — update specific keys (without replacing all)
+  app.patch("/admin/api/agents/:id/envs", async (c) => {
+    const agentId = c.req.param("id");
+    const body = await c.req.json<Record<string, string>>();
+    await agentEnvService.patch(agentId, body);
+    return c.json({ ok: true });
+  });
+
   // DELETE /admin/api/agents/:id/envs/:key — delete a single key
   app.delete("/admin/api/agents/:id/envs/:key", async (c) => {
     const agentId = c.req.param("id");
@@ -203,6 +214,19 @@ export function createAdminApp(deps: AdminDeps): Hono {
     return c.json({ tools });
   });
 
+  // PATCH /admin/api/agents/:id/tools/:toolId — enable or disable a tool pattern
+  app.patch("/admin/api/agents/:id/tools/:toolId", async (c) => {
+    const agentId = c.req.param("id");
+    const toolId = c.req.param("toolId");
+    const body = await c.req.json<{ enabled: boolean }>();
+    const tool: AgentTool = await agentToolService.toggle(
+      agentId,
+      toolId,
+      body.enabled,
+    );
+    return c.json({ tool });
+  });
+
   // DELETE /admin/api/agents/:id/tools/:toolId — remove a tool pattern
   app.delete("/admin/api/agents/:id/tools/:toolId", async (c) => {
     const agentId = c.req.param("id");
@@ -264,6 +288,15 @@ export function createAdminApp(deps: AdminDeps): Hono {
     const agentId = c.req.param("id");
     const plugins = await agentPluginService.list(agentId);
     return c.json({ plugins });
+  });
+
+  // PATCH /admin/api/agents/:id/plugins/:name — update plugin version (re-upsert)
+  app.patch("/admin/api/agents/:id/plugins/:name", async (c) => {
+    const agentId = c.req.param("id");
+    const name = c.req.param("name");
+    const body = await c.req.json<{ version?: string | null }>();
+    const plugin = await agentPluginService.add(agentId, name, body.version);
+    return c.json({ plugin });
   });
 
   // DELETE /admin/api/agents/:id/plugins/:pluginId — remove a plugin

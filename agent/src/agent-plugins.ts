@@ -42,6 +42,29 @@ export class AgentPluginService {
   }
 
   /**
+   * Update a plugin's version or enabled state.
+   * Throws NotFoundError if the pluginId doesn't exist or belongs to a different agent.
+   */
+  async update(
+    agentId: string,
+    pluginId: string,
+    fields: { version?: string | null; enabled?: boolean },
+  ): Promise<AgentPlugin> {
+    const existing = await this.prisma.agentPlugin.findUnique({
+      where: { id: pluginId },
+    });
+
+    if (!existing || existing.agentId !== agentId) {
+      throw new NotFoundError(`plugin ${pluginId} not found`);
+    }
+
+    return this.prisma.agentPlugin.update({
+      where: { id: pluginId },
+      data: fields,
+    });
+  }
+
+  /**
    * Remove a plugin. Verifies agentId ownership before deleting.
    * Throws NotFoundError if the pluginId doesn't exist or belongs to a different agent.
    */
