@@ -1,0 +1,179 @@
+/**
+ * agent/src/agent-envs.integration.test.ts
+ * Integration tests for AgentEnvService against a real SQLite DB.
+ *
+ * Requires DATABASE_URL_AGENT_TEST to be set; skips otherwise.
+ */
+
+import { describe, it, expect, beforeEach } from "bun:test";
+import { PrismaClient } from "../prisma/client/index.js";
+import { AgentEnvService } from "./agent-envs.ts";
+import { identityCrypto } from "./token-crypto.ts";
+import { UnprocessableEntityError } from "./errors.ts";
+
+const TEST_DB = process.env.DATABASE_URL_AGENT_TEST;
+
+const describeOrSkip = TEST_DB ? describe : describe.skip;
+
+function makePrisma(): PrismaClient {
+  return new PrismaClient({
+    // TEST_DB is guaranteed set — the describe block is skipped otherwise.
+    datasources: { db: { url: TEST_DB as string } },
+  });
+}
+
+async function createAgent(
+  prisma: PrismaClient,
+  name = "Test Agent",
+): Promise<string> {
+  const agent = await prisma.agent.create({ data: { name } });
+  return agent.id;
+}
+
+describeOrSkip("AgentEnvService (integration)", () => {
+  let prisma: PrismaClient;
+  let service: AgentEnvService;
+
+  beforeEach(async () => {
+    prisma = makePrisma();
+    // Clean all tables in FK dependency order
+    await prisma.agentToken.deleteMany();
+    await prisma.agentCronJob.deleteMany();
+    await prisma.agentTool.deleteMany();
+    await prisma.agentEnv.deleteMany();
+    await prisma.agent.deleteMany();
+    service = new AgentEnvService(prisma, identityCrypto);
+  });
+
+  it("upsert() writes values and getByAgentId() returns them", async () => {
+    const agentId = await createAgent(prisma);
+    await service.upsert(agentId, { FOO: "bar", BAZ: "qux" });
+    const result = await service.getByAgentId(agentId);
+    expect(result).toEqual({ FOO: "bar", BAZ: "qux" });
+  });
+
+  it("upsert() replaces all existing vars (delete + insert)", async () => {
+    const agentId = await createAgent(prisma);
+    await service.upsert(agentId, { FOO: "bar", OLD: "value" });
+    await service.upsert(agentId, { FOO: "new", FRESH: "yes" });
+    const result = await service.getByAgentId(agentId);
+    expect(result).toEqual({ FOO: "new", FRESH: "yes" });
+    expect(result).not.toHaveProperty("OLD");
+  });
+
+  it("upsert() encrypts values (round-trip with real crypto)", async () => {
+    // Use a real crypto instead of identity to verify encrypt→decrypt round-trip
+    const { makeTokenCrypto } = await import("./token-crypto.ts");
+    const realKey =
+      "0000000000000000000000000000000000000000000000000000000000000001";
+    const origKey = process.env.SHIPWRIGHT_ENCRYPTION_KEY;
+    process.env.SHIPWRIGHT_ENCRYPTION_KEY = realKey;
+    const realCrypto = makeTokenCrypto();
+
+    try {
+      const encService = new AgentEnvService(prisma, realCrypto);
+      const agentId = await createAgent(prisma);
+      await encService.upsert(agentId, { SECRET: "my-api-key" });
+
+      // Raw DB value should be encrypted (not plain text)
+      const raw = await prisma.agentEnv.findFirst({
+        where: { agentId, key: "SECRET" },
+      });
+      expect(raw?.value).not.toBe("my-api-key");
+      expect(raw?.value).toContain(":"); // iv:ciphertext:authTag format
+
+      // But getByAgentId should return decrypted
+      const result = await encService.getByAgentId(agentId);
+      expect(result?.SECRET).toBe("my-api-key");
+    } finally {
+      process.env.SHIPWRIGHT_ENCRYPTION_KEY =
+        origKey === undefined ? undefined : origKey;
+    }
+  });
+
+  it("upsert() throws UnprocessableEntityError for unknown agent", async () => {
+    await expect(
+      service.upsert("nonexistent-id", { FOO: "bar" }),
+    ).rejects.toBeInstanceOf(UnprocessableEntityError);
+  });
+
+  it("patch() upserts specific keys without touching others", async () => {
+    const agentId = await createAgent(prisma);
+    await service.upsert(agentId, { A: "1", B: "2" });
+    await service.patch(agentId, { B: "updated", C: "new" });
+    const result = await service.getByAgentId(agentId);
+    expect(result).toEqual({ A: "1", B: "updated", C: "new" });
+  });
+
+  it("patch() throws UnprocessableEntityError for unknown agent", async () => {
+    await expect(
+      service.patch("nonexistent-id", { FOO: "bar" }),
+    ).rejects.toBeInstanceOf(UnprocessableEntityError);
+  });
+
+  it("getByAgentId() returns null when no env vars set", async () => {
+    const agentId = await createAgent(prisma);
+    const result = await service.getByAgentId(agentId);
+    expect(result).toBeNull();
+  });
+
+  it("getConfigBundle() returns env and agentId and allowedTools", async () => {
+    const agentId = await createAgent(prisma);
+    await service.upsert(agentId, { SLACK_BOT_TOKEN: "xoxb-test" });
+
+    const bundle = await service.getConfigBundle(agentId);
+    expect(bundle).not.toBeNull();
+    expect(bundle?.env.SLACK_BOT_TOKEN).toBe("xoxb-test");
+    expect(bundle?.agentId).toBe(agentId);
+    expect(Array.isArray(bundle?.allowedTools)).toBe(true);
+  });
+
+  it("getConfigBundle() returns null when no env vars", async () => {
+    const agentId = await createAgent(prisma);
+    const bundle = await service.getConfigBundle(agentId);
+    expect(bundle).toBeNull();
+  });
+
+  it("getConfigBundle() includes enabled tools in allowedTools", async () => {
+    const agentId = await createAgent(prisma);
+    await service.upsert(agentId, { FOO: "bar" });
+    await prisma.agentTool.create({
+      data: { agentId, pattern: "Read", enabled: true },
+    });
+    await prisma.agentTool.create({
+      data: { agentId, pattern: "Bash", enabled: false },
+    });
+
+    const bundle = await service.getConfigBundle(agentId);
+    expect(bundle?.allowedTools).toContain("Read");
+    expect(bundle?.allowedTools).not.toContain("Bash");
+  });
+
+  it("deleteKey() removes a specific env var", async () => {
+    const agentId = await createAgent(prisma);
+    await service.upsert(agentId, { A: "1", B: "2" });
+    await service.deleteKey(agentId, "A");
+    const result = await service.getByAgentId(agentId);
+    expect(result).toEqual({ B: "2" });
+  });
+
+  it("deleteKey() no-ops for a key that doesn't exist", async () => {
+    const agentId = await createAgent(prisma);
+    await service.upsert(agentId, { B: "2" });
+    await expect(service.deleteKey(agentId, "MISSING")).resolves.toBeUndefined();
+  });
+
+  it("listAll() returns entries for all agents", async () => {
+    const id1 = await createAgent(prisma, "Agent 1");
+    const id2 = await createAgent(prisma, "Agent 2");
+    await service.upsert(id1, { KEY: "val1" });
+    await service.upsert(id2, { KEY: "val2" });
+
+    const all = await service.listAll();
+    expect(all).toHaveLength(2);
+    const entry1 = all.find((e) => e.agentId === id1);
+    const entry2 = all.find((e) => e.agentId === id2);
+    expect(entry1?.env.KEY).toBe("val1");
+    expect(entry2?.env.KEY).toBe("val2");
+  });
+});
