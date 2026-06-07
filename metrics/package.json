@@ -7,7 +7,14 @@
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
+  "dependencies": {
+    "hono": "^4",
+    "@hono/zod-openapi": "^0.18.3",
+    "zod": "^3",
+    "openapi-fetch": "^0.13"
+  },
   "devDependencies": {
+    "bun-types": "^1.3.14",
     "typescript": "*"
   }
 }

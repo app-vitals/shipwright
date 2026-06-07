@@ -2,8 +2,11 @@
   "extends": "../tsconfig.json",
   "compilerOptions": {
     "rootDir": ".",
-    "outDir": "dist"
+    "outDir": "dist",
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "types": ["bun-types"]
   },
-  "include": ["src", "test"],
+  "include": ["src", "lib", "tests"],
   "exclude": ["node_modules", "dist"]
 }
