@@ -5,9 +5,15 @@
   "description": "Shipwright reference agent — autonomous task runner: pick → build → ship PR → forward metrics",
   "scripts": {
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "db:generate": "prisma generate --schema=prisma/schema.prisma",
+    "db:migrate": "prisma migrate deploy --schema=prisma/schema.prisma"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.0.0"
   },
   "devDependencies": {
+    "prisma": "^6.0.0",
     "typescript": "*"
   }
 }

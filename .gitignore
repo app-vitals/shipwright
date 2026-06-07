@@ -15,6 +15,15 @@ planning/
 # --- Local JSON task-store state (only written if the github backend isn't active) ---
 state/
 
+# --- Database files (local dev only — never commit) ---
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# --- Prisma generated client (regenerated from schema on install) ---
+agent/prisma/client/
+
 # --- Dependencies ---
 node_modules/
 

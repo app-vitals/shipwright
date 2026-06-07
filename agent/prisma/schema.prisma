@@ -1,0 +1,121 @@
+// Shipwright — Agent Service Schema
+// Owns: Agent, AgentEnv, AgentCronJob, AgentTool, AgentToken, AgentPlugin.
+// Agent is a first-class model (standalone, not embedded in a User model).
+//
+// WARNING: This schema uses DATABASE_URL_AGENT — a dedicated database separate
+// from any other service DB. Do NOT point this at a shared database.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "./client"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL_AGENT")
+}
+
+// ─── Agent ────────────────────────────────────────────────────────────────────
+// A Shipwright agent: an autonomous runner that picks tasks, builds, and ships PRs.
+
+model Agent {
+  id              String   @id @default(cuid())
+  name            String
+  slackId         String?  @unique
+  slackBotToken   String?  // AES-256-GCM encrypted at the service layer
+  anthropicApiKey String?  // AES-256-GCM encrypted at the service layer
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  envVars   AgentEnv[]
+  cronJobs  AgentCronJob[]
+  tools     AgentTool[]
+  tokens    AgentToken[]
+  plugins   AgentPlugin[]
+}
+
+// ─── Agent Env ────────────────────────────────────────────────────────────────
+// Generic key/value env var store for deployed agents.
+// Keys are env var names (e.g. ANTHROPIC_API_KEY). Values are AES-256-GCM encrypted.
+
+model AgentEnv {
+  id        String   @id @default(cuid())
+  agentId   String
+  agent     Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  key       String   // env var name
+  value     String   // AES-256-GCM encrypted
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([agentId, key])
+}
+
+// ─── Agent Cron Jobs ──────────────────────────────────────────────────────────
+// Scheduled prompts per agent.
+// Delivery target is either a Slack channel ID or a Slack user ID (DM).
+// Validation that exactly one of channel/user is set happens in the service layer.
+
+model AgentCronJob {
+  id        String   @id @default(cuid())
+  agentId   String
+  agent     Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  schedule  String   // cron expression e.g. "0 9 * * 1-5"
+  prompt    String
+  channel   String?  // Slack channel ID (mutually exclusive with user)
+  user      String?  // Slack user ID for DMs
+  silent    Boolean  @default(false)
+  enabled   Boolean  @default(true)
+  preCheck  String?  // optional pre-check script e.g. "shipwright:check-dev-task.ts"
+  name      String?  // stable key for system crons; null for user-created crons
+  system    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─── Agent Tools ──────────────────────────────────────────────────────────────
+// Allowed tool patterns per agent. Each row grants an agent permission to use
+// a specific tool pattern (e.g. "Read", "Bash", "Write"). The unique constraint
+// on [agentId, pattern] prevents duplicates.
+
+model AgentTool {
+  id        String   @id @default(cuid())
+  agentId   String
+  agent     Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  pattern   String
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@unique([agentId, pattern])
+}
+
+// ─── Agent Tokens ─────────────────────────────────────────────────────────────
+// Scoped API tokens for agent authentication. The raw token is returned once at
+// creation; only the SHA-256 hash is stored. Token validation is O(1) via the
+// hash index.
+
+model AgentToken {
+  id        String    @id @default(cuid())
+  agentId   String
+  agent     Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  token     String    @unique // SHA-256 hash of the raw token (hex)
+  label     String?
+  createdAt DateTime  @default(now())
+  revokedAt DateTime?
+}
+
+// ─── Agent Plugins ────────────────────────────────────────────────────────────
+// Claude Code plugins installed per agent. Each row represents one installed
+// plugin package. The unique constraint on [agentId, name] prevents duplicates.
+
+model AgentPlugin {
+  id        String   @id @default(cuid())
+  agentId   String
+  agent     Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  name      String   // plugin package name e.g. "@shipwright/plugin"
+  version   String?  // pinned version; null = latest
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([agentId, name])
+}
