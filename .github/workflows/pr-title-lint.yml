@@ -1,0 +1,35 @@
+name: pr-title-lint
+
+# Enforces Conventional-Commit PR titles so that, with squash-merge, the squashed
+# commit subject (= PR title) is deterministic input for release-please's changelog.
+# See CONTRIBUTING.md for the commit/PR-title convention.
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  lint-pr-title:
+    name: Conventional-Commit PR title
+    runs-on: ubuntu-latest
+    steps:
+      - uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # Allowed Conventional-Commit types — kept in sync with the
+          # changelog-sections in release-please-config.json (REL-1.1).
+          types: |
+            feat
+            fix
+            perf
+            revert
+            docs
+            refactor
+            test
+            build
+            ci
+            chore
