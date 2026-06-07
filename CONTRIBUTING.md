@@ -48,14 +48,16 @@ Follow the guidance in [`CLAUDE.md`](./CLAUDE.md): no new platform coupling, loc
 
 ## Release process
 
-Releases are managed by **release-please**. The bot watches `main` and opens a release PR whenever there are releasable commits. That PR auto-updates `CHANGELOG.md` and version fields based on the commit history.
+Releases are on-demand and driven by **semantic-release** via the `release.yml` workflow. There is no bot watching `main` — a maintainer triggers the release manually.
 
-**Never hand-edit `CHANGELOG.md` or any version field.** Let release-please own those files — manual edits will be overwritten or will break the automation.
+**To cut a release:**
 
-When the release PR is ready:
-- A maintainer reviews and merges it.
-- **Squash-merge is recommended** to keep the release commit clean.
-- Merging the release PR triggers the publish workflow and creates the GitHub release tag.
+1. Go to **Actions → Release** and click **Run workflow**.
+2. Set `dry_run` to `true` first to preview what version and changelog would be generated — no tags or packages are published.
+3. When the preview looks right, re-run with `dry_run` unchecked (`false`).
+4. semantic-release reads the commit history since the last tag, computes the next semver, generates the changelog, and writes back a `chore(release): <version> [skip ci]` commit that updates `CHANGELOG.md` and the version files. CI is skipped on that writeback commit automatically.
+
+**Never hand-edit `CHANGELOG.md` or any version file** (`version.txt`, `package.json` version fields). Let semantic-release own those — manual edits will be overwritten or will break the automation.
 
 ## Submitting a pull request
 
