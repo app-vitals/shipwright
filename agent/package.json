@@ -4,6 +4,7 @@
   "private": true,
   "description": "Shipwright reference agent — autonomous task runner: pick → build → ship PR → forward metrics",
   "scripts": {
+    "postinstall": "prisma generate --schema=prisma/schema.prisma",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "db:generate": "prisma generate --schema=prisma/schema.prisma",

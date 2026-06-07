@@ -131,7 +131,7 @@ export class AgentEnvService {
     return {
       env,
       agentId,
-      allowedTools: tools.map((t) => t.pattern),
+      allowedTools: tools.map((t: { pattern: string }) => t.pattern),
     };
   }
 
