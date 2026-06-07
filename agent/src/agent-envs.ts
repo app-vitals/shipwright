@@ -144,8 +144,7 @@ export class AgentEnvService {
   }
 
   /**
-   * List all agents with their decrypted env vars. Used by the interceptor to
-   * build its routing table on startup.
+   * List all agents with their decrypted env vars.
    */
   async listAll(): Promise<AgentEnvEntry[]> {
     const rows = await this.prisma.agentEnv.findMany();

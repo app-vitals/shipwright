@@ -37,6 +37,23 @@ function isValidCron(schedule: string): boolean {
   return fields.every((f) => fieldPattern.test(f));
 }
 
+function validateDeliveryTarget(
+  channel: string | null,
+  user: string | null,
+  silent: boolean,
+): void {
+  if (channel && user) {
+    throw new UnprocessableEntityError(
+      "channel and user are mutually exclusive — set one or the other, not both",
+    );
+  }
+  if (!silent && !channel && !user) {
+    throw new UnprocessableEntityError(
+      "at least one of channel or user must be set (unless silent=true)",
+    );
+  }
+}
+
 export class AgentCronJobService {
   constructor(private prisma: PrismaClient) {}
 
@@ -93,20 +110,7 @@ export class AgentCronJobService {
     const user = input.user ?? null;
     const silent = input.silent ?? false;
 
-    // Channel and user are mutually exclusive — setting both is ambiguous.
-    if (channel && user) {
-      throw new UnprocessableEntityError(
-        "channel and user are mutually exclusive — set one or the other, not both",
-      );
-    }
-
-    // Silent crons run without posting to Slack, so they don't need a target.
-    // Non-silent crons MUST post somewhere.
-    if (!silent && !channel && !user) {
-      throw new UnprocessableEntityError(
-        "at least one of channel or user must be set (unless silent=true)",
-      );
-    }
+    validateDeliveryTarget(channel, user, silent);
 
     return this.prisma.agentCronJob.create({
       data: {
@@ -173,17 +177,7 @@ export class AgentCronJobService {
     const user = input.user ?? null;
     const silent = input.silent ?? false;
 
-    if (channel && user) {
-      throw new UnprocessableEntityError(
-        "channel and user are mutually exclusive — set one or the other, not both",
-      );
-    }
-
-    if (!silent && !channel && !user) {
-      throw new UnprocessableEntityError(
-        "at least one of channel or user must be set",
-      );
-    }
+    validateDeliveryTarget(channel, user, silent);
 
     return this.prisma.agentCronJob.update({
       where: { id: cronId },
@@ -250,13 +244,7 @@ export class AgentCronJobService {
     cronId: string,
     enabled: boolean,
   ): Promise<AgentCronJob> {
-    const existing = await this.prisma.agentCronJob.findUnique({
-      where: { id: cronId },
-    });
-
-    if (!existing || existing.agentId !== agentId) {
-      throw new NotFoundError(`cron job ${cronId} not found`);
-    }
+    await this.get(agentId, cronId);
 
     return this.prisma.agentCronJob.update({
       where: { id: cronId },
