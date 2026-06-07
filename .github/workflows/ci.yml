@@ -27,6 +27,9 @@ jobs:
       - name: Lint
         run: task lint
 
+      - name: Check banned strings
+        run: task check-strings
+
       - name: Typecheck
         run: task typecheck
 

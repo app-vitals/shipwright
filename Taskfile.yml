@@ -26,10 +26,16 @@ tasks:
     cmds:
       - bun test
 
+  check-strings:
+    desc: Check plugin for banned strings (confidential identifiers)
+    cmds:
+      - bun plugins/shipwright/scripts/check-banned-strings.ts
+
   ci:
-    desc: Run all CI checks (lint → typecheck → test)
+    desc: Run all CI checks (lint → check-strings → typecheck → test)
     cmds:
       - task: lint
+      - task: check-strings
       - task: typecheck
       - task: test
 
