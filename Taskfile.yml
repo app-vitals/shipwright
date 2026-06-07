@@ -33,6 +33,26 @@ tasks:
       - task: typecheck
       - task: test
 
+  db:provision:
+    desc: Create the agent database (idempotent — safe to re-run)
+    cmds:
+      - |
+        if [ -z "$DATABASE_URL_AGENT" ]; then
+          echo "ERROR: DATABASE_URL_AGENT is not set. Export it before running db:provision."
+          exit 1
+        fi
+        cd agent && bunx prisma migrate deploy --schema=prisma/schema.prisma
+
+  db:migrate:
+    desc: Generate and apply a new Prisma migration (dev only)
+    cmds:
+      - |
+        if [ -z "$DATABASE_URL_AGENT" ]; then
+          echo "ERROR: DATABASE_URL_AGENT is not set. Export it before running db:migrate."
+          exit 1
+        fi
+        cd agent && bunx prisma migrate dev --schema=prisma/schema.prisma
+
   secret-scan:
     desc: Scan for accidentally committed secrets
     cmds:
