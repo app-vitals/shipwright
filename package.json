@@ -15,6 +15,14 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
+    "@semantic-release/changelog": "*",
+    "@semantic-release/commit-analyzer": "*",
+    "@semantic-release/exec": "*",
+    "@semantic-release/git": "*",
+    "@semantic-release/github": "*",
+    "@semantic-release/release-notes-generator": "*",
+    "conventional-changelog-conventionalcommits": "*",
+    "semantic-release": "*",
     "typescript": "^5.7.3"
   }
 }
