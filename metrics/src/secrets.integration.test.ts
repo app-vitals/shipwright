@@ -194,10 +194,10 @@ describe("createSecretsClient", () => {
 
   describe("createSecretsClient — real GCP client factory", () => {
     it("creates a real SecretManagerServiceClient when no factory is provided", async () => {
-      // Exercises the require('@google-cloud/secret-manager') path (lines 58-63).
-      // No factory = the lazy-init branch runs. In CI there are no GCP credentials,
-      // so accessSecretVersion() throws — the env var fallback catches it, proving
-      // the real client was constructed and the require() path was exercised.
+      // Exercises the require('@google-cloud/secret-manager') lazy-init path.
+      // With env-first resolution, an env var set before getSecret() is returned
+      // immediately without hitting GCP — this confirms the client construction
+      // path is importable and the factory can be omitted.
       const envKey = "METRICS_GCP_CLIENT_PATH_TEST";
       process.env[envKey] = "real-client-fallback";
       let val: string;
@@ -212,22 +212,29 @@ describe("createSecretsClient", () => {
   });
 
   describe("createSecretsClient — defaults", () => {
-    it("uses GCP_PROJECT_ID env var (or empty string) as default GCP project", async () => {
+    it("uses the gcpProjectId argument for GCP secret path construction", async () => {
+      // When env var is NOT set, GCP is tried using the provided gcpProjectId.
+      const envKey = "METRICS_DEFAULT_PROJECT_SECRET_TEST";
+      delete process.env[envKey]; // ensure env var absent so GCP is tried
+
       let capturedName = "";
-      const client = createSecretsClient(undefined, () => ({
+      const client = createSecretsClient("my-gcp-project", () => ({
         async accessSecretVersion(req) {
           capturedName = req.name;
-          return [{ payload: { data: "value" } }, {}, {}];
+          return [{ payload: { data: "gcp-value" } }, {}, {}];
         },
       }));
 
-      await client.getSecret("posthog-personal-api-key");
+      await client.getSecret(envKey);
       expect(capturedName).toBe(
-        "projects//secrets/posthog-personal-api-key/versions/latest",
+        `projects/my-gcp-project/secrets/${envKey}/versions/latest`,
       );
     });
 
     it("builds correct secret path from project and secret name", async () => {
+      const envKey = "METRICS_PATH_TEST_SECRET";
+      delete process.env[envKey]; // absent from env so GCP is tried
+
       let capturedName = "";
       const client = createSecretsClient("my-project-123", () => ({
         async accessSecretVersion(req) {
@@ -236,10 +243,55 @@ describe("createSecretsClient", () => {
         },
       }));
 
-      await client.getSecret("my-api-key");
+      await client.getSecret(envKey);
       expect(capturedName).toBe(
-        "projects/my-project-123/secrets/my-api-key/versions/latest",
+        `projects/my-project-123/secrets/${envKey}/versions/latest`,
       );
+    });
+  });
+
+  describe("getSecret — env-first resolution", () => {
+    it("returns env var value without calling GCP when env var is set", async () => {
+      const envKey = "METRICS_ENV_FIRST_TEST_SECRET";
+      const originalValue = process.env[envKey];
+      process.env[envKey] = "env-value";
+
+      try {
+        let gcpCalled = false;
+        const client = createSecretsClient(TEST_PROJECT, () => ({
+          async accessSecretVersion(_req) {
+            gcpCalled = true;
+            throw new Error("GCP should not have been called");
+          },
+        }));
+
+        const value = await client.getSecret(envKey);
+        expect(value).toBe("env-value");
+        expect(gcpCalled).toBe(false);
+      } finally {
+        if (originalValue === undefined) {
+          delete process.env[envKey];
+        } else {
+          process.env[envKey] = originalValue;
+        }
+      }
+    });
+
+    it("tries GCP when env var is absent", async () => {
+      const envKey = "METRICS_GCP_FALLBACK_TEST_SECRET";
+      delete process.env[envKey];
+
+      let gcpCalled = false;
+      const client = createSecretsClient(TEST_PROJECT, () => ({
+        async accessSecretVersion(_req) {
+          gcpCalled = true;
+          return [{ payload: { data: "gcp-secret-value" } }, {}, {}];
+        },
+      }));
+
+      const value = await client.getSecret(envKey);
+      expect(value).toBe("gcp-secret-value");
+      expect(gcpCalled).toBe(true);
     });
   });
 });
