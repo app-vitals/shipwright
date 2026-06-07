@@ -26,6 +26,8 @@ const app = createMetricsApp(
   accountsClient,
   {
     sessionSecret: process.env.SESSION_SECRET ?? "",
+    requireOwnerRole: process.env.METRICS_REQUIRE_OWNER_ROLE === "true",
+    dashboardToken: process.env.METRICS_DASHBOARD_TOKEN,
   },
 );
 
