@@ -1,19 +1,17 @@
 /**
  * plugins/shipwright/scripts/clock.ts
  *
- * Vendored copy of lib/clock.ts for standalone plugin execution.
+ * Clock interface and production implementation for injectable time.
  *
  * WHY THIS FILE EXISTS:
  * Precheck scripts (e.g. check-dev-task.ts) are installed into the plugin
  * cache at a path like:
- *   ~/.claude/plugins/cache/vitals-os/shipwright/<version>/scripts/
- * When Bun runs the script from that cache location, a relative import such as
- *   "../../../lib/clock.ts"
- * resolves to a path that does not exist — there is no lib/ directory three
- * levels above the cache. This vendored copy keeps the plugin self-contained so
- * it runs correctly whether invoked from the repo or from the installed cache.
+ *   ~/.claude/plugins/cache/app-vitals/shipwright/<version>/scripts/
+ * The scripts must import Clock from a local path that exists in the cache —
+ * not from a shared lib/ that only exists in the source repo. This file keeps
+ * the plugin fully self-contained so it runs correctly from any install location.
  *
- * SOURCE: lib/clock.ts — do not diverge from that interface.
+ * Test doubles (FixedClock) live in ./test-helpers/doubles.ts.
  */
 
 // ─── Interface ────────────────────────────────────────────────────────────────
