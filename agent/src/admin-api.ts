@@ -47,7 +47,7 @@ export interface AdminDeps {
     AgentTokenService,
     "create" | "listForAgent" | "revoke"
   >;
-  agentPluginService: Pick<AgentPluginService, "list" | "add" | "remove">;
+  agentPluginService: Pick<AgentPluginService, "list" | "add" | "remove" | "removeByName">;
   sessionSecret: string;
 }
 
@@ -299,11 +299,11 @@ export function createAdminApp(deps: AdminDeps): Hono {
     return c.json({ plugin });
   });
 
-  // DELETE /admin/api/agents/:id/plugins/:pluginId — remove a plugin
-  app.delete("/admin/api/agents/:id/plugins/:pluginId", async (c) => {
+  // DELETE /admin/api/agents/:id/plugins/:name — remove a plugin by name
+  app.delete("/admin/api/agents/:id/plugins/:name", async (c) => {
     const agentId = c.req.param("id");
-    const pluginId = c.req.param("pluginId");
-    await agentPluginService.remove(agentId, pluginId);
+    const name = c.req.param("name");
+    await agentPluginService.removeByName(agentId, name);
     return new Response(null, { status: 204 });
   });
 

@@ -176,6 +176,7 @@ function makeMockDeps(): AdminDeps {
         updatedAt: new Date("2024-01-01"),
       }),
       remove: async () => {},
+      removeByName: async () => {},
     },
     sessionSecret: SESSION_SECRET,
   };
@@ -543,10 +544,10 @@ describe("admin API — plugins", () => {
     expect(res.status).toBe(200);
   });
 
-  it("DELETE /admin/api/agents/:id/plugins/:pluginId returns 204", async () => {
+  it("DELETE /admin/api/agents/:id/plugins/:name returns 204", async () => {
     const app = createAdminApp(makeMockDeps());
     const res = await app.request(
-      `/admin/api/agents/${AGENT_ID}/plugins/${PLUGIN_ID}`,
+      `/admin/api/agents/${AGENT_ID}/plugins/@shipwright%2Fplugin`,
       {
         method: "DELETE",
         headers: { Cookie: `admin_session=${cookie}` },
