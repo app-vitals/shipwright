@@ -1,6 +1,6 @@
 # Shipwright — Implementation Plan
 
-Enhancements to shipwright grounded in Anthropic + OpenAI harness engineering research (March 2026). See `app-vitals/strategy/harness-architecture.md` for the full research synthesis.
+Enhancements to shipwright grounded in Anthropic + OpenAI harness engineering research (March 2026).
 
 Implement when the need arises — don't build speculatively. Each item here has a clear source pattern and expected impact.
 
