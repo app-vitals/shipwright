@@ -98,14 +98,18 @@ class MockTaskStore implements TaskStore {
   }
 
   async resolveRepo(): Promise<string> {
-    return "app-vitals/vitals-os";
+    return "acme/example-repo";
   }
 
   async resolveRepos(): Promise<string[]> {
-    return ["app-vitals/vitals-os"];
+    return ["acme/example-repo"];
   }
 
-  async cleanup(): Promise<{ closed: number; milestonesClosed: number; plansClosed: number }> {
+  async cleanup(): Promise<{
+    closed: number;
+    milestonesClosed: number;
+    plansClosed: number;
+  }> {
     return { closed: 0, milestonesClosed: 0, plansClosed: 0 };
   }
 }
@@ -128,7 +132,7 @@ describe("Task type", () => {
       id: "TSR-1.1",
       source: "shipwright",
       session: "tsr-session",
-      repo: "vitals-os",
+      repo: "example-repo",
       title: "Adapter interface",
       description: "Types-only file",
       acceptanceCriteria: ["compiles clean", "biome passes"],
@@ -155,7 +159,7 @@ describe("Task type", () => {
       mergeCommit: "abc123",
       prNumber: 999,
       prOpenedAt: "2026-05-26T02:00:00Z",
-      prUrl: "https://github.com/app-vitals/vitals-os/pull/999",
+      prUrl: "https://github.com/acme/example-repo/pull/999",
     };
 
     expect(task.id).toBe("TSR-1.1");
@@ -216,7 +220,7 @@ describe("TaskStoreConfig type", () => {
       taskStore: "github",
       github: {
         owner: "app-vitals",
-        repo: "vitals-os",
+        repo: "example-repo",
       },
     };
     expect(cfg.taskStore).toBe("github");
