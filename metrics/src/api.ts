@@ -75,6 +75,10 @@ export interface MetricsDeps {
   buildTokensTrendsQueryFn?: typeof buildTokensTrendsQuery;
   dashboardDir?: string;
   sessionSecret?: string;
+  /** Owner-gate: require OWNER role for session-cookie auth. Default false. */
+  requireOwnerRole?: boolean;
+  /** Optional single-token bearer gate (METRICS_DASHBOARD_TOKEN). Default off. */
+  dashboardToken?: string;
 }
 
 // ─── Route definitions (inlined) ─────────────────────────────────────────────
@@ -802,12 +806,19 @@ function createCombinedAuthMiddleware(
   apiKeys: Map<string, Caller>,
   sessionSecret: string,
   accountsClient?: AccountsClient,
+  requireOwnerRole = false,
+  dashboardToken?: string,
 ) {
   return createMiddleware<AuthEnv>(async (c, next) => {
     // 1. Try bearer token first
     const header = c.req.header("Authorization")?.trim();
     const token = header?.startsWith("Bearer ") ? header.slice(7) : undefined;
     if (token) {
+      // dashboardToken is a single admin bearer token (takes priority over apiKeys)
+      if (dashboardToken && token === dashboardToken) {
+        c.set("caller", { name: "dashboard-token", scope: "*" });
+        return next();
+      }
       const caller = apiKeys.get(token);
       if (caller) {
         // Scoped tokens (clientId scope) are forbidden from the metrics API
@@ -838,8 +849,8 @@ function createCombinedAuthMiddleware(
             typeof name === "string" &&
             name
           ) {
-            // Owner role gate — only when accountsClient is wired
-            if (accountsClient) {
+            // Owner role gate — only when requireOwnerRole is true AND accountsClient is wired
+            if (requireOwnerRole && accountsClient) {
               const user = await accountsClient.getUser(userId);
               if (user.role !== "OWNER") {
                 return c.json({ error: "Forbidden" }, 401);
@@ -872,6 +883,8 @@ export function createMetricsApp(
     });
 
   const sessionSecret = deps?.sessionSecret ?? process.env.SESSION_SECRET ?? "";
+  const requireOwnerRole = deps?.requireOwnerRole ?? false;
+  const dashboardToken = deps?.dashboardToken;
 
   const app = new OpenAPIHono<AuthEnv>({
     defaultHook: (result, c) => {
@@ -893,7 +906,7 @@ export function createMetricsApp(
   // /metrics/* — accepts bearer token OR session cookie; returns 401 JSON on failure
   app.use(
     "/metrics/*",
-    createCombinedAuthMiddleware(apiKeys, sessionSecret, accountsClient),
+    createCombinedAuthMiddleware(apiKeys, sessionSecret, accountsClient, requireOwnerRole, dashboardToken),
   );
 
   const handlers = createMetricsHandlers(client, accountsClient, deps);
@@ -961,8 +974,8 @@ export function createMetricsApp(
       }
     }
 
-    // Owner gate: if accountsClient is wired, check that the user is OWNER
-    if (accountsClient && userId) {
+    // Owner gate: only check if requireOwnerRole is explicitly enabled
+    if (requireOwnerRole && accountsClient && userId) {
       const user = await accountsClient.getUser(userId);
       if (user.role !== "OWNER") {
         const body = renderDashboardPage({ userName, isOwner: false });
