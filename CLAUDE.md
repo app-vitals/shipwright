@@ -78,6 +78,22 @@ Driven by Shipwright's own commands: `/shipwright:dev-task` (build + test + PR) 
 - **License:** MIT across all artifacts.
 - **Local-first:** everything runs offline by default (fixtures / injected doubles / scratch queue); live external calls only when env explicitly enables them.
 
+## Database env vars
+
+Each service that uses Prisma reads its own `DATABASE_URL_*` env var — never a shared connection.
+
+| Variable | Service | Schema |
+|----------|---------|--------|
+| `DATABASE_URL_AGENT` | `@shipwright/agent` | `agent/prisma/schema.prisma` |
+
+Set `DATABASE_URL_AGENT` before running `task db:provision` or `task db:migrate`.
+For local development a SQLite URL works: `DATABASE_URL_AGENT="file:./agent/dev.db"`.
+For production use a PostgreSQL URL: `DATABASE_URL_AGENT="postgresql://user:pass@host:5432/agent"`.
+
+> Note: the schema currently uses `sqlite` as the provider for local portability.
+> Swap `provider = "sqlite"` to `provider = "postgresql"` in `agent/prisma/schema.prisma`
+> and regenerate migrations when deploying against a real Postgres instance.
+
 ## Repository layout
 
 This is the standalone home of Shipwright. Product code fills in across phases A → B → C; today the repo holds the open-source foundation — this file, `LICENSE`, `README.md`, `.gitignore`, and `.shipwright.json` — and its planning lives in [GitHub Issues](https://github.com/app-vitals/shipwright/issues).

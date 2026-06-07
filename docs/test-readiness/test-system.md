@@ -67,17 +67,20 @@ The metrics service is a stateless Hono app backed by PostHog queries. No databa
 
 ### Reference agent (`@shipwright/agent`) — Phase C
 
-The agent is a thin runner: no HTTP server, no database. Integration tests cover the task-pick and PR-ship seams.
+The agent is a thin runner with a Prisma-backed SQLite/PostgreSQL database and a Hono HTTP surface for health and admin endpoints. Integration tests cover the task-pick, PR-ship, and DB seams; smoke tests cover the Hono route contracts.
 
 | Layer | Local run command | Per-test 95p | Per-test hard cap | Suite target |
 |---|---|---|---|---|
 | unit | `bun test --filter agent` | <50 ms | <200 ms | <15 s |
 | integration | `bun test --filter agent` | <500 ms | <2 s | <30 s |
+| smoke | `bun test --filter agent` | <2 s | <10 s | <30 s |
 
 **Notes:**
 - Integration tests inject `RecordedGithubClient` for issue/PR operations and a `RecordedMetricsClient` for forwarding calls.
-- No smoke or e2e layer — the agent has no HTTP surface.
+- **DB integration tests** (added in SHE-1.2) run against a real SQLite database (`DATABASE_URL_AGENT="file:./test.db"`). Each test suite provisions the schema via `prisma migrate deploy` and tears down after. No Prisma mocking — service classes own all DB queries.
+- **Smoke tests** drive the Hono app via `app.request()` — no real socket, no port allocation. Import the app factory and call `app.request(new Request(...))` directly. Covers health endpoints, agent CRUD routes, and auth checks.
 - The agent's execution loop must accept a `Clock` injection for deterministic scheduling tests.
+- `DATABASE_URL_AGENT` must be set to a scratch file path (e.g. `file:./test.db`) for all integration/smoke tests to stay offline and isolated from any production DB.
 
 ## Full suite commands
 
@@ -107,10 +110,15 @@ The agent is a thin runner: no HTTP server, no database. Integration tests cover
      │              │              │
      └──────────────┼──────────────┘
                     │
-              ┌─────▼─────┐
-              │  Smoke    │  metrics smoke suite (Phase B+)
-              │ (metrics) │  bun test --filter metrics smoke/
-              └─────┬─────┘
+         ┌──────────┴──────────┐
+         │                     │
+   ┌─────▼─────┐         ┌─────▼─────┐   ← parallel, per-package
+   │  Smoke    │         │  Smoke    │
+   │ (metrics) │         │  (agent)  │   Phase C+
+   │ app.req() │         │ app.req() │
+   └─────┬─────┘         └─────┬─────┘
+         │                     │
+         └──────────┬──────────┘
                     │
               ┌─────▼─────┐
               │   E2E     │  Playwright; Phase B+ only
@@ -121,7 +129,7 @@ The agent is a thin runner: no HTTP server, no database. Integration tests cover
 ```
 
 - **Layer order:** unit → integration → smoke → e2e. A lower-layer failure skips higher layers (fail-fast).
-- **Parallelism:** unit and integration run in parallel across packages. Smoke and e2e run sequentially after all integration jobs pass.
+- **Parallelism:** unit and integration run in parallel across packages. Smoke layers (metrics + agent) run in parallel with each other, sequentially after all integration jobs pass.
 
 ## Speed budgets (consolidated)
 
