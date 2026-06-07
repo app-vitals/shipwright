@@ -5,6 +5,6 @@
     "outDir": "dist",
     "types": ["bun-types"]
   },
-  "include": ["src", "test"],
+  "include": ["src", "test", "scripts"],
   "exclude": ["node_modules", "dist"]
 }
