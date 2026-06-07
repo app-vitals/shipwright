@@ -75,14 +75,14 @@ export const SYSTEM_CRONS: readonly SystemCron[] = [
   {
     name: "learn-dream",
     schedule: "0 3 * * *",
-    prompt: "/learn-dream --since 1d --review",
+    prompt: "/shipwright:learn-dream --since 1d --review",
     silent: true,
     enabled: false,
   },
   {
     name: "dependabot-triage",
     schedule: "0 8 * * *",
-    prompt: "/dependabot-review:triage-dependabot-prs",
+    prompt: "/shipwright:triage-dependabot-prs",
     silent: true,
     enabled: false,
   },
@@ -90,7 +90,7 @@ export const SYSTEM_CRONS: readonly SystemCron[] = [
     name: "entropy-patrol-maintenance",
     schedule: "0 4 * * 1",
     prompt:
-      '/entropy-patrol:entropy-scan\n/entropy-patrol:entropy-fix\nAfter the fix run completes, write state/entropy-patrol-last-run.json: {"lastRun": "<ISO timestamp>"}. Use [silent] if no pr_worthy findings are found.',
+      '/shipwright:entropy-scan\n/shipwright:entropy-fix\nAfter the fix run completes, write state/entropy-patrol-last-run.json: {"lastRun": "<ISO timestamp>"}. Use [silent] if no pr_worthy findings are found.',
     silent: true,
     enabled: false,
   },
