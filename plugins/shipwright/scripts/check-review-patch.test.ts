@@ -10,6 +10,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import type { ReviewEntry } from "./check-helpers.ts";
+import type { PrReviewData } from "./check-patch.ts";
 import { run } from "./check-review-patch.ts";
 
 // ─── Types mirroring check-review's Deps ──────────────────────────────────────
@@ -22,18 +24,7 @@ interface PrInfo {
   headRefOid: string;
 }
 
-interface ReviewEntry {
-  pr: number;
-  lastReviewedCommit?: string;
-  status?: string;
-}
-
 // ─── Types mirroring check-patch's Deps ───────────────────────────────────────
-
-interface RunResult {
-  exit: 0 | 1;
-  output: string;
-}
 
 interface CiCheckStatus {
   hasFailing: boolean;
@@ -50,12 +41,6 @@ interface OwnPr {
   headRefName: string;
   headRefOid: string;
   repo: string;
-}
-
-interface PrReviewData {
-  headRefOid: string;
-  reviews: { nodes: unknown[] };
-  reviewThreads: { nodes: unknown[] };
 }
 
 // ─── Dep builders ─────────────────────────────────────────────────────────────

@@ -30,9 +30,7 @@ function depSatisfied(dep: Task, candidateBranch: string | undefined): boolean {
   if (
     dep.branch &&
     dep.branch === candidateBranch &&
-    (dep.status === "pr_open" ||
-      dep.status === "approved" ||
-      dep.status === "merged")
+    (dep.status === "pr_open" || dep.status === "approved")
   ) {
     return true;
   }
@@ -105,6 +103,14 @@ class MockTaskStore implements TaskStore {
 
   async resolveRepos(): Promise<string[]> {
     return ["acme/example-repo"];
+  }
+
+  async cleanup(): Promise<{
+    closed: number;
+    milestonesClosed: number;
+    plansClosed: number;
+  }> {
+    return { closed: 0, milestonesClosed: 0, plansClosed: 0 };
   }
 }
 

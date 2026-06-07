@@ -35,7 +35,7 @@ interface OwnPr {
   repo: string;
 }
 
-interface ReviewNode {
+export interface ReviewNode {
   author: { login: string };
   state: string;
   submittedAt: string;
@@ -43,12 +43,12 @@ interface ReviewNode {
   body: string;
 }
 
-interface ReviewThread {
+export interface ReviewThread {
   isResolved: boolean;
   comments: { nodes: Array<{ author: { login: string }; body: string }> };
 }
 
-interface PrReviewData {
+export interface PrReviewData {
   headRefOid: string;
   reviews: { nodes: ReviewNode[] };
   reviewThreads: { nodes: ReviewThread[] };
