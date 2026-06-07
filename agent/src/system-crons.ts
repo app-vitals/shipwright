@@ -1,0 +1,105 @@
+/**
+ * agent/src/system-crons.ts
+ * Default cron jobs seeded for a new agent.
+ *
+ * When a preCheck script is set, its stdout becomes the actual prompt sent to
+ * Claude — the stored prompt field is only used as a fallback when the preCheck
+ * script is not found in the plugin cache. Keep both in sync.
+ */
+
+export interface SystemCron {
+  name: string;
+  schedule: string;
+  prompt: string;
+  silent?: boolean;
+  preCheck?: string;
+  enabled: boolean;
+}
+
+export const SYSTEM_CRONS: readonly SystemCron[] = [
+  {
+    name: "shipwright-dev-task",
+    schedule: "*/30 * * * *",
+    prompt: "/shipwright:dev-task",
+    silent: true,
+    preCheck: "shipwright:check-dev-task.ts",
+    enabled: true,
+  },
+  {
+    name: "shipwright-patch",
+    schedule: "*/30 * * * *",
+    prompt: "/shipwright:patch",
+    silent: true,
+    preCheck: "shipwright:check-patch.ts",
+    enabled: false,
+  },
+  {
+    name: "shipwright-review-patch",
+    schedule: "*/30 * * * *",
+    prompt: "/shipwright:review-patch",
+    silent: true,
+    preCheck: "shipwright:check-review-patch.ts",
+    enabled: true,
+  },
+  {
+    name: "shipwright-review",
+    schedule: "*/30 * * * *",
+    prompt: "/shipwright:review",
+    silent: true,
+    preCheck: "shipwright:check-review.ts",
+    enabled: false,
+  },
+  {
+    name: "shipwright-deploy",
+    schedule: "*/30 * * * *",
+    prompt: "/shipwright:deploy",
+    silent: true,
+    preCheck: "shipwright:check-deploy.ts",
+    enabled: false,
+  },
+  {
+    name: "shipwright-test-readiness",
+    schedule: "0 6 * * *",
+    prompt: "/shipwright:test-readiness --full --publish",
+    silent: true,
+    enabled: false,
+  },
+  {
+    name: "shipwright-docs-freshness",
+    schedule: "0 7 * * *",
+    prompt: "/shipwright:research-docs --auto",
+    silent: true,
+    preCheck: "shipwright:check-docs-freshness.ts",
+    enabled: false,
+  },
+  {
+    name: "learn-dream",
+    schedule: "0 3 * * *",
+    prompt: "/shipwright:learn-dream --since 1d --review",
+    silent: true,
+    enabled: false,
+  },
+  {
+    name: "dependabot-triage",
+    schedule: "0 8 * * *",
+    prompt: "/shipwright:triage-dependabot-prs",
+    silent: true,
+    enabled: false,
+  },
+  {
+    name: "entropy-patrol-maintenance",
+    schedule: "0 4 * * 1",
+    prompt:
+      '/shipwright:entropy-scan\n/shipwright:entropy-fix\nAfter the fix run completes, write state/entropy-patrol-last-run.json: {"lastRun": "<ISO timestamp>"}. Use [silent] if no pr_worthy findings are found.',
+    silent: true,
+    enabled: false,
+  },
+  {
+    name: "arc-queue-probe",
+    schedule: "0 9 * * *",
+    prompt:
+      "Run `bun scripts/arc-queue-probe.ts --repo app-vitals/vitals-os --hours 24 --out state/arc-queue-time.jsonl --trend` and share the summary. Use [silent] if gh is unavailable or returns no ARC jobs.",
+    silent: true,
+    enabled: false,
+  },
+] as const;

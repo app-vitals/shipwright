@@ -4,8 +4,12 @@
   "workspaces": {
     "": {
       "name": "shipwright-monorepo",
+      "dependencies": {
+        "@prisma/client": "^6.19.2",
+      },
       "devDependencies": {
         "@biomejs/biome": "^1.9.4",
+        "prisma": "^6.19.2",
         "typescript": "^5.7.3",
       },
     },
