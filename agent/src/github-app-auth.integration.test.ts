@@ -9,6 +9,7 @@
 
 import { describe, it, expect, beforeEach } from "bun:test";
 import { GitHubTokenManager } from "./github-app-auth.ts";
+import { FixedClock } from "./clock.ts";
 
 // ─── Recorded client double ───────────────────────────────────────────────────
 
@@ -164,5 +165,48 @@ describe("GitHubTokenManager — background refresh (integration)", () => {
     await new Promise((r) => setTimeout(r, 50));
     const unique = new Set(tokens);
     expect(unique.size).toBe(5);
+  });
+
+  it("getToken() re-auths when token is near expiry (within 5-minute buffer)", async () => {
+    // Anchor clock to a fixed point in time
+    const now = new Date("2040-06-01T12:00:00Z");
+    const clock = FixedClock(now);
+
+    // Token expires 3 minutes from now — inside the 5-minute REFRESH_BUFFER_MS
+    const nearExpiryDate = new Date(now.getTime() + 3 * 60 * 1000);
+
+    // Override the RecordedGitHubAppClient to return the near-expiry timestamp
+    const nearExpiryClient = {
+      calls: [] as AuthCall[],
+      callCount: 0,
+      async auth(params?: { type: string; installationId?: number }) {
+        nearExpiryClient.callCount += 1;
+        nearExpiryClient.calls.push({ timestamp: Date.now(), params });
+        return {
+          token: `near-expiry-token-${nearExpiryClient.callCount}`,
+          expiresAt: nearExpiryDate.toISOString(),
+          type: "token",
+          tokenType: "installation",
+        };
+      },
+    };
+
+    const nearExpiryManager = new GitHubTokenManager({
+      auth: (params) => nearExpiryClient.auth(params),
+      installationId: 42,
+      setIntervalFn: timers.setIntervalFn,
+      clearIntervalFn: timers.clearIntervalFn,
+      clock,
+    });
+
+    // First call: cache miss, fetches token
+    const token1 = await nearExpiryManager.getToken();
+    expect(token1).toBe("near-expiry-token-1");
+    expect(nearExpiryClient.callCount).toBe(1);
+
+    // Second call: token is near expiry (3 min < 5 min buffer) — must re-auth
+    const token2 = await nearExpiryManager.getToken();
+    expect(token2).toBe("near-expiry-token-2");
+    expect(nearExpiryClient.callCount).toBe(2);
   });
 });
