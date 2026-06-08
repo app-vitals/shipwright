@@ -65,7 +65,7 @@ The metrics service is a stateless Hono app backed by PostHog queries. No databa
 - No e2e layer until Phase B ships a browser-rendered dashboard. E2e layer added then via Playwright.
 - `POSTHOG_API_KEY` must be absent (or `POSTHOG_OFFLINE=true` set) for all unit/integration/smoke tests to stay offline.
 
-### Reference agent (`@shipwright/agent`) — Phase C
+### Shipwright agent (`@shipwright/agent`) — Phase C
 
 The agent is a thin runner with a Prisma-backed SQLite/PostgreSQL database and a Hono HTTP surface for health and admin endpoints. Integration tests cover the task-pick, PR-ship, and DB seams; smoke tests cover the Hono route contracts.
 
