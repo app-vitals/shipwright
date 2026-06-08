@@ -95,9 +95,12 @@ export interface AdminUIDeps {
     AgentEnvService,
     "getByAgentId" | "upsert" | "deleteKey" | "getConfigBundle"
   >;
-  agentCronJobService: Pick<AgentCronJobService, "list">;
-  agentToolService: Pick<AgentToolService, "list">;
-  agentTokenService: Pick<AgentTokenService, "listForAgent">;
+  agentCronJobService: Pick<
+    AgentCronJobService,
+    "list" | "create" | "setEnabled" | "delete"
+  >;
+  agentToolService: Pick<AgentToolService, "list" | "add" | "toggle" | "remove">;
+  agentTokenService: Pick<AgentTokenService, "listForAgent" | "create" | "revoke">;
   agentPluginService: Pick<AgentPluginService, "list">;
   sessionSecret: string;
   adminPassword: string;
@@ -266,6 +269,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
       return new Response("Agent not found", { status: 404 });
     }
 
+    const error = c.req.query("error") ?? undefined;
+
     const [envVars, crons, tools, tokens, plugins] = await Promise.all([
       agentEnvService.getByAgentId(agentId).then((e) => e ?? {}),
       agentCronJobService.list(agentId),
@@ -283,6 +288,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
         tokens,
         plugins,
         ADMIN_USER_NAME,
+        error,
       ),
     );
   });
@@ -318,6 +324,158 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
     }
     if (key) {
       await agentEnvService.deleteKey(agentId, key);
+    }
+    return c.redirect(`/admin/agents/${agentId}`, 302);
+  });
+
+  // ─── Cron job mutations ───────────────────────────────────────────────────
+
+  app.post("/admin/agents/:id/crons", requireAuth, async (c) => {
+    const agentId = c.req.param("id");
+    let schedule: string | undefined;
+    let prompt: string | undefined;
+    let channel: string | null = null;
+    let user: string | null = null;
+    let silent = false;
+    let name: string | null = null;
+    try {
+      const formData = await c.req.formData();
+      schedule = formData.get("schedule")?.toString();
+      prompt = formData.get("prompt")?.toString();
+      channel = formData.get("channel")?.toString() || null;
+      user = formData.get("user")?.toString() || null;
+      silent = formData.get("silent") === "on" || formData.get("silent") === "true";
+      name = formData.get("name")?.toString() || null;
+    } catch {
+      return c.redirect(`/admin/agents/${agentId}`, 302);
+    }
+    if (!schedule || !prompt) {
+      return c.redirect(`/admin/agents/${agentId}`, 302);
+    }
+    try {
+      await agentCronJobService.create(agentId, {
+        schedule,
+        prompt,
+        channel,
+        user,
+        silent,
+        name,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to create cron job";
+      return c.redirect(
+        `/admin/agents/${agentId}?error=${encodeURIComponent(msg)}`,
+        302,
+      );
+    }
+    return c.redirect(`/admin/agents/${agentId}`, 302);
+  });
+
+  app.post("/admin/agents/:id/crons/:cronId/toggle", requireAuth, async (c) => {
+    const agentId = c.req.param("id");
+    const cronId = c.req.param("cronId");
+    let enabled = true;
+    try {
+      const formData = await c.req.formData();
+      enabled = formData.get("enabled") !== "false";
+    } catch {
+      // use default
+    }
+    try {
+      await agentCronJobService.setEnabled(agentId, cronId, enabled);
+    } catch {
+      // ignore errors — redirect back regardless
+    }
+    return c.redirect(`/admin/agents/${agentId}`, 302);
+  });
+
+  app.post("/admin/agents/:id/crons/:cronId/delete", requireAuth, async (c) => {
+    const agentId = c.req.param("id");
+    const cronId = c.req.param("cronId");
+    try {
+      await agentCronJobService.delete(agentId, cronId);
+    } catch {
+      // ignore errors — redirect back regardless
+    }
+    return c.redirect(`/admin/agents/${agentId}`, 302);
+  });
+
+  // ─── Tool mutations ───────────────────────────────────────────────────────
+
+  app.post("/admin/agents/:id/tools", requireAuth, async (c) => {
+    const agentId = c.req.param("id");
+    let pattern: string | undefined;
+    try {
+      const formData = await c.req.formData();
+      pattern = formData.get("pattern")?.toString();
+    } catch {
+      return c.redirect(`/admin/agents/${agentId}`, 302);
+    }
+    if (pattern) {
+      try {
+        await agentToolService.add(agentId, pattern);
+      } catch {
+        // ignore errors — redirect back regardless
+      }
+    }
+    return c.redirect(`/admin/agents/${agentId}`, 302);
+  });
+
+  app.post("/admin/agents/:id/tools/:toolId/toggle", requireAuth, async (c) => {
+    const agentId = c.req.param("id");
+    const toolId = c.req.param("toolId");
+    let enabled = true;
+    try {
+      const formData = await c.req.formData();
+      enabled = formData.get("enabled") !== "false";
+    } catch {
+      // use default
+    }
+    try {
+      await agentToolService.toggle(agentId, toolId, enabled);
+    } catch {
+      // ignore errors — redirect back regardless
+    }
+    return c.redirect(`/admin/agents/${agentId}`, 302);
+  });
+
+  app.post("/admin/agents/:id/tools/:toolId/delete", requireAuth, async (c) => {
+    const agentId = c.req.param("id");
+    const toolId = c.req.param("toolId");
+    try {
+      await agentToolService.remove(agentId, toolId);
+    } catch {
+      // ignore errors — redirect back regardless
+    }
+    return c.redirect(`/admin/agents/${agentId}`, 302);
+  });
+
+  // ─── Token mutations ──────────────────────────────────────────────────────
+
+  app.post("/admin/agents/:id/tokens", requireAuth, async (c) => {
+    const agentId = c.req.param("id");
+    let label: string | undefined;
+    try {
+      const formData = await c.req.formData();
+      label = formData.get("label")?.toString() || undefined;
+    } catch {
+      return c.redirect(`/admin/agents/${agentId}`, 302);
+    }
+    try {
+      await agentTokenService.create(agentId, label);
+    } catch {
+      // ignore errors — redirect back regardless
+    }
+    return c.redirect(`/admin/agents/${agentId}`, 302);
+  });
+
+  app.post("/admin/agents/:id/tokens/:tokenId/revoke", requireAuth, async (c) => {
+    const agentId = c.req.param("id");
+    const tokenId = c.req.param("tokenId");
+    try {
+      await agentTokenService.revoke(tokenId);
+    } catch {
+      // ignore errors — redirect back regardless
     }
     return c.redirect(`/admin/agents/${agentId}`, 302);
   });
