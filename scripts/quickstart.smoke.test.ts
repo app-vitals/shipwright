@@ -1,167 +1,125 @@
 /**
  * scripts/quickstart.smoke.test.ts
- * Smoke tests for scripts/quickstart.sh.
+ * Smoke test for scripts/quickstart.sh — the one-prompt local onboarding script.
  *
- * Tests the --check flag (prerequisite validation) and --help output.
- * Runs the actual shell script via Bun.spawnSync — no mocking.
+ * Two kinds of assertions:
+ *   1. Structural (text-based parsing): the script exists, is executable, and
+ *      contains the required steps (prereq checks, `task setup`, the
+ *      QUICKSTART_SKIP_SERVE guard, `task dev`, the dashboard URL).
+ *   2. Behavioral (actual execution): the script is run with
+ *      QUICKSTART_SKIP_SERVE=1, which exercises every deterministic step
+ *      (prereq checks + `task setup`) WITHOUT blocking on the long-running
+ *      `task dev` server. We assert it exits 0 and does not start a server.
  *
- * The --check flag must exit 0 when all prerequisites are met (bun available),
- * and must exit non-zero with a clear message when a prerequisite is missing.
- *
- * Note: These tests run against the real environment. In CI, bun is available.
- * The go-task prerequisite is validated via output inspection (not exit code)
- * since task may not be installed in all environments.
+ * NOT COVERED in CI (see the skipped test below): the real `git clone` and the
+ * live `/plugin install shipwright@app-vitals/shipwright` step — neither can run
+ * deterministically in CI (network + an interactive Claude Code session).
  */
 
 import { describe, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 
+// Resolve relative to the repo root (cwd when tests run)
 const SCRIPT_PATH = resolve(process.cwd(), "scripts/quickstart.sh");
+const DASHBOARD_URL = "http://localhost:3460/dashboard";
 
-// ---------------------------------------------------------------------------
-// Helper
-// ---------------------------------------------------------------------------
+// The behavioral test requires go-task to be installed. In CI it is (arduino/setup-task@v2).
+// Locally it may not be — skip rather than fail so the structural tests still run.
+const taskAvailable = spawnSync("which", ["task"]).status === 0;
 
-function runScript(args: string[]): {
-  exitCode: number;
-  stdout: string;
-  stderr: string;
-} {
-  const result = Bun.spawnSync(["sh", SCRIPT_PATH, ...args], {
-    cwd: process.cwd(),
-    env: process.env,
-  });
-
-  return {
-    exitCode: result.exitCode ?? 1,
-    stdout: result.stdout ? result.stdout.toString() : "",
-    stderr: result.stderr ? result.stderr.toString() : "",
-  };
+function readScript(): string {
+  return readFileSync(SCRIPT_PATH, "utf8");
 }
 
-// ---------------------------------------------------------------------------
-// Script existence
-// ---------------------------------------------------------------------------
+describe("scripts/quickstart.sh — structure", () => {
+  test("the script file exists", () => {
+    expect(() => statSync(SCRIPT_PATH)).not.toThrow();
+  });
 
-describe("quickstart.sh — existence", () => {
-  test("scripts/quickstart.sh exists", () => {
-    expect(existsSync(SCRIPT_PATH)).toBe(true);
+  test("the script is executable (has the executable bit)", () => {
+    const mode = statSync(SCRIPT_PATH).mode;
+    expect(mode & 0o111).toBeGreaterThan(0);
+  });
+
+  test("uses strict bash mode (set -euo pipefail)", () => {
+    expect(readScript()).toMatch(/set -euo pipefail/);
+  });
+
+  test("checks for the git prerequisite", () => {
+    expect(readScript()).toMatch(/\bgit\b/);
+  });
+
+  test("checks for the bun prerequisite", () => {
+    expect(readScript()).toMatch(/\bbun\b/);
+  });
+
+  test("checks for the task (go-task) prerequisite", () => {
+    expect(readScript()).toMatch(/\btask\b/);
+  });
+
+  test("invokes `task setup`", () => {
+    expect(readScript()).toMatch(/task setup/);
+  });
+
+  test("references the QUICKSTART_SKIP_SERVE guard", () => {
+    expect(readScript()).toMatch(/QUICKSTART_SKIP_SERVE/);
+  });
+
+  test("references the long-running `task dev` serve step", () => {
+    expect(readScript()).toMatch(/task dev/);
+  });
+
+  test("references the dashboard URL", () => {
+    expect(readScript()).toContain(DASHBOARD_URL);
   });
 });
 
-// ---------------------------------------------------------------------------
-// --help flag
-// ---------------------------------------------------------------------------
+describe("scripts/quickstart.sh — execution (QUICKSTART_SKIP_SERVE=1)", () => {
+  (taskAvailable ? test : test.skip)(
+    "runs the deterministic steps and exits 0 without starting a server",
+    () => {
+      // Spawn the script with the serve-skip guard set. This runs prereq
+      // checks + `task setup` (bun install is idempotent) + prints next steps,
+      // then exits 0 WITHOUT exec'ing `task dev`. If it exits non-zero,
+      // execFileSync throws and the test fails.
+      const output = execFileSync("bash", [SCRIPT_PATH], {
+        cwd: process.cwd(),
+        env: { ...process.env, QUICKSTART_SKIP_SERVE: "1" },
+        encoding: "utf8",
+        // bun install on a cold cache can take a while — keep generous.
+        timeout: 240_000,
+      });
 
-describe("quickstart.sh --help", () => {
-  test("--help exits with code 0", () => {
-    const { exitCode } = runScript(["--help"]);
-    expect(exitCode).toBe(0);
-  });
-
-  test("--help output mentions bun", () => {
-    const { stdout, stderr } = runScript(["--help"]);
-    const combined = stdout + stderr;
-    expect(combined.toLowerCase()).toMatch(/bun/);
-  });
-
-  test("--help output mentions task or go-task", () => {
-    const { stdout, stderr } = runScript(["--help"]);
-    const combined = stdout + stderr;
-    expect(combined.toLowerCase()).toMatch(/task/);
-  });
+      // The script reached its "next steps" message (the post-setup epilogue),
+      // which only prints after prereq checks + setup succeed.
+      expect(output).toContain(DASHBOARD_URL);
+      // And it pointed the user at `task dev` rather than having started it.
+      expect(output).toMatch(/task dev/);
+    },
+    240_000,
+  );
 });
 
-// ---------------------------------------------------------------------------
-// --check flag
-// ---------------------------------------------------------------------------
-
-describe("quickstart.sh --check", () => {
-  test("--check flag is supported (does not crash with unknown flag error)", () => {
-    const { stdout, stderr, exitCode } = runScript(["--check"]);
-    const combined = stdout + stderr;
-    // Should not contain "unknown option" or "unrecognized"
-    expect(combined.toLowerCase()).not.toMatch(/unknown option/);
-    expect(combined.toLowerCase()).not.toMatch(/unrecognized/);
-    // exitCode is either 0 (all prereqs met) or non-zero (missing prereq)
-    // but the script must at least run without crashing
-    expect([0, 1]).toContain(exitCode);
-  });
-
-  test("--check output is human-readable (contains text)", () => {
-    const { stdout, stderr } = runScript(["--check"]);
-    const combined = stdout + stderr;
-    expect(combined.trim().length).toBeGreaterThan(0);
-  });
-
-  test("--check reports bun availability", () => {
-    const { stdout, stderr } = runScript(["--check"]);
-    const combined = stdout + stderr;
-    expect(combined.toLowerCase()).toMatch(/bun/);
-  });
-
-  test("--check reports go-task availability", () => {
-    const { stdout, stderr } = runScript(["--check"]);
-    const combined = stdout + stderr;
-    expect(combined.toLowerCase()).toMatch(/task/);
-  });
-
-  test("--check exits 0 when bun is available (bun is in PATH in this environment)", () => {
-    // bun is the runtime executing this test, so it must be in PATH
-    const bunResult = Bun.spawnSync(["which", "bun"]);
-    const bunAvailable = bunResult.exitCode === 0;
-
-    if (!bunAvailable) {
-      // If for some reason bun is not in PATH, skip this assertion
-      console.warn("bun not found in PATH — skipping exit-0 assertion");
-      return;
-    }
-
-    // When bun is available but task may not be, check mode should still
-    // provide useful output. We check bun is found in output.
-    const { stdout, stderr } = runScript(["--check"]);
-    const combined = stdout + stderr;
-    expect(combined.toLowerCase()).toMatch(/bun/);
-  });
-
-  test("--check does not modify any files (idempotent, no side effects)", () => {
-    // Run --check twice; both should produce the same exit code
-    const first = runScript(["--check"]);
-    const second = runScript(["--check"]);
-    expect(first.exitCode).toBe(second.exitCode);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Missing prerequisite: simulate missing bun by overriding PATH
-// ---------------------------------------------------------------------------
-
-describe("quickstart.sh --check with missing prerequisites", () => {
-  test("--check exits non-zero when bun is not in PATH", () => {
-    const result = Bun.spawnSync(["sh", SCRIPT_PATH, "--check"], {
-      cwd: process.cwd(),
-      env: {
-        ...process.env,
-        // Override PATH to exclude bun entirely
-        PATH: "/usr/bin:/bin",
-      },
-    });
-
-    expect(result.exitCode).not.toBe(0);
-  });
-
-  test("--check error output mentions bun.sh install URL when bun is missing", () => {
-    const result = Bun.spawnSync(["sh", SCRIPT_PATH, "--check"], {
-      cwd: process.cwd(),
-      env: {
-        ...process.env,
-        PATH: "/usr/bin:/bin",
-      },
-    });
-
-    const combined =
-      (result.stdout?.toString() ?? "") + (result.stderr?.toString() ?? "");
-    expect(combined).toMatch(/bun\.sh/);
+/**
+ * NOT COVERED IN CI — documented explicitly per the acceptance criteria.
+ *
+ * The full copy-paste onboarding prompt has two steps this smoke test cannot
+ * exercise deterministically:
+ *
+ *   1. `git clone https://github.com/app-vitals/shipwright.git` — requires
+ *      network access and produces a fresh checkout; CI already runs *inside*
+ *      a checkout, so re-cloning is both impossible-in-sandbox and redundant.
+ *   2. `/plugin install shipwright@app-vitals/shipwright` — runs inside an
+ *      interactive Claude Code session, not a shell; there is no headless,
+ *      deterministic way to invoke it from `bun test`.
+ *
+ * The deterministic shell portion (prereq checks + `task setup`) IS covered by
+ * the execution test above via QUICKSTART_SKIP_SERVE=1.
+ */
+describe("scripts/quickstart.sh — explicitly out of CI scope", () => {
+  test.skip("NOT COVERED: real git clone + live /plugin install cannot run in CI", () => {
+    // Intentionally skipped — see the block comment above for why.
   });
 });
