@@ -30,7 +30,7 @@ Store `START_TIME` — it is used in every subsequent iteration to check elapsed
 Resolve the plugin scripts directory from the cache:
 
 ```bash
-CHECK_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "check-patch.ts" -path "*/shipwright/*" 2>/dev/null | head -1 | xargs dirname 2>/dev/null)
+CHECK_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "check-patch.ts" -path "*/shipwright/*" 2>/dev/null | sort -V | tail -1 | xargs dirname 2>/dev/null)
 ```
 
 Run both prechecks to determine if there is anything to do:

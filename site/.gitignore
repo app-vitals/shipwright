@@ -1,0 +1,12 @@
+# build output
+dist/
+# astro generated types
+.astro/
+# dependencies
+node_modules/
+# playwright
+test-results/
+playwright-report/
+playwright/.cache/
+# os cruft
+.DS_Store

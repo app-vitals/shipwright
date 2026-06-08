@@ -104,7 +104,7 @@ processed or skipped, continue to Step 3b.
 If `review_external_prs` is true, resolve the configured repos and fetch open PRs for each:
 
 ```bash
-PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | head -1 | xargs dirname 2>/dev/null)
+PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | sort -V | tail -1 | xargs dirname 2>/dev/null)
 REPOS=$(bun "$PLUGIN_SCRIPTS/task_store.ts" repos)
 ```
 
@@ -631,7 +631,7 @@ When invoked with a specific PR (e.g. `/shipwright:review app-vitals/shipwright#
 1. Parse the argument: extract `org`, `repo`, and `pr` number. For bare numbers,
    infer `org/repo` via:
    ```bash
-   PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | head -1 | xargs dirname 2>/dev/null)
+   PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | sort -V | tail -1 | xargs dirname 2>/dev/null)
    bun "$PLUGIN_SCRIPTS/task_store.ts" repos | head -1
    ```
    Fall back to the current workspace repo if the command fails.
