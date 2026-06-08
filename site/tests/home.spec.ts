@@ -43,13 +43,15 @@ test("home document ships NO runtime JS (zero <script> tags)", async ({
 
 test("primary 'Get started' CTA renders", async ({ page }) => {
   await page.goto("/");
-  const cta = page.getByRole("link", { name: "Get started" });
+  // The hero CTA is the first "Get started" link on the page.
+  const cta = page.getByRole("link", { name: "Get started" }).first();
   await expect(cta).toBeVisible();
   await expect(cta).toHaveAttribute("href", "#install");
 });
 
 test("exact install command string renders", async ({ page }) => {
   await page.goto("/");
+  // The hero install block has id="install" — use that to scope.
   await expect(
     page
       .locator("#install")

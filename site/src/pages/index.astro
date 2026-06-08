@@ -1,8 +1,7 @@
 ---
-// Home page hero + install section (SWW-2.1).
-// Builds the real hero on top of the SWW-1.1 scaffold: agent-led tagline with a
-// gradient on "Claude Code", primary/secondary CTAs, the "Built on Claude Code"
-// eyebrow, and the install command. No pricing, no email form, no runtime JS.
+// Home page — hero, install, problem, how-it-works, differentiators, demo,
+// social proof (SWW-2.1 + SWW-2.2).
+// No runtime JS, no hardcoded hex colors, no competitor names.
 import BaseLayout from "../layouts/BaseLayout.astro";
 
 const taglinePrefix = "The open-source autonomous delivery agent for ";
@@ -78,6 +77,7 @@ $ /shipwright:deploy
 ---
 
 <BaseLayout title="Shipwright Harness" description={tagline}>
+  <!-- ── Hero ── -->
   <section
     class="relative z-10 flex min-h-screen flex-col justify-center py-24"
   >
