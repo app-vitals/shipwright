@@ -1,0 +1,10 @@
+{
+  "createAppManifest": {
+    "appId": "A0123456789",
+    "oauthRedirectUrl": "https://slack.com/oauth/authorize?client_id=1234567890.9876543210&scope=channels:history,chat:write&redirect_uri=https%3A%2F%2Fexample.com%2Fadmin%2Fprovision%2Fcomplete&state=abc123"
+  },
+  "exchangeCodeForAppToken": {
+    "appId": "A0123456789",
+    "signingSecret": "recorded-signing-secret-abc123"
+  }
+}
