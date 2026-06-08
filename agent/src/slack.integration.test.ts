@@ -16,6 +16,7 @@ import { unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ClaudeRunError } from "./claude.ts";
+import type { markdownToBlocks } from "./format.ts";
 import { threadKey } from "./sessions.ts";
 import {
   type SlackFile,
@@ -106,9 +107,7 @@ function createSlackApp(
       messages?: { user?: string; text?: string; ts?: string }[];
     }>;
     getSessionFn?: (key: string) => string | undefined;
-    blocksConverter?: (
-      text: string,
-    ) => { text: string; blocks: unknown[] } | null;
+    blocksConverter?: typeof markdownToBlocks;
   } = {},
 ) {
   mockTracker.mockClear();
@@ -1931,10 +1930,8 @@ describe("invalid_blocks retry — falls back to formatter(cleaned) when blocks.
       sessionId: "sess-ib-empty-dm",
     });
     createSlackApp({
-      blocksConverter: (_text: string) => ({
-        text: "",
-        blocks: [{ type: "section" }],
-      }),
+      // biome-ignore lint/suspicious/noExplicitAny: minimal test stub for SlackBlock
+      blocksConverter: (_text: string) => ({ text: "", blocks: [{ type: "section" }] }) as any,
     });
     const client = makeMockClient();
     const say = mock(async (_args: unknown) => ({ ts: "r.empty.1" }));
@@ -1965,10 +1962,8 @@ describe("invalid_blocks retry — falls back to formatter(cleaned) when blocks.
       sessionId: "sess-ib-empty-mention",
     });
     createSlackApp({
-      blocksConverter: (_text: string) => ({
-        text: "",
-        blocks: [{ type: "section" }],
-      }),
+      // biome-ignore lint/suspicious/noExplicitAny: minimal test stub for SlackBlock
+      blocksConverter: (_text: string) => ({ text: "", blocks: [{ type: "section" }] }) as any,
     });
     const client = makeMockClient();
     const say = mock(async (_args: unknown) => ({ ts: "r.empty.2" }));
@@ -1997,10 +1992,8 @@ describe("invalid_blocks retry — falls back to formatter(cleaned) when blocks.
       sessionId: "sess-ib-empty-reaction",
     });
     createSlackApp({
-      blocksConverter: (_text: string) => ({
-        text: "",
-        blocks: [{ type: "section" }],
-      }),
+      // biome-ignore lint/suspicious/noExplicitAny: minimal test stub for SlackBlock
+      blocksConverter: (_text: string) => ({ text: "", blocks: [{ type: "section" }] }) as any,
     });
     const client = makeMockClient();
     (client.chat.postMessage as ReturnType<typeof mock>).mockRejectedValueOnce(
