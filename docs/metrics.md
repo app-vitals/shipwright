@@ -93,7 +93,11 @@ The **dashboard** is protected by the session cookie middleware; an invalid/abse
 
 ## Testing
 
-Unit + integration + smoke layers (`bun test --filter metrics`). Integration tests inject a `createFixturePostHogClient()` double (from `metrics/src/fixtures/posthog-fixtures.ts`) — pre-recorded sample results, no network calls; smoke tests drive the Hono app via `app.request()`. Keep `POSTHOG_PERSONAL_API_KEY` **unset** so the suite stays offline. See [testing.md](./testing.md).
+Unit + integration + smoke layers (`bun test --filter metrics`). Integration tests inject a `createFixturePostHogClient()` double (from `metrics/src/fixtures/posthog-fixtures.ts`) — pre-recorded sample results, no network calls — or a `RecordedPostHogClient` (cassettes under `metrics/tests/fixtures/posthog/`); smoke tests drive the Hono app via `app.request()`. Keep `POSTHOG_PERSONAL_API_KEY` **unset** so the suite stays offline.
+
+E2E layer (`task e2e` → `cd metrics && bunx playwright test`): Playwright Chromium headless tests against a real running Bun server (`metrics/e2e/test-server.ts`). PostHog API calls are intercepted via Playwright route mocking — no real PostHog key needed. Session cookies are signed with a pinned test secret (`e2e-test-session-secret-32b`). Test file: `metrics/e2e/dashboard.e2e.ts`. Config: `metrics/playwright.config.ts`.
+
+See [testing.md](./testing.md).
 
 ## See also
 
