@@ -1,76 +1,176 @@
 /**
  * agent/src/admin-ui.ts
- * Admin UI — server-rendered HTML routes.
+ * Admin UI — server-rendered Hono app factory.
  *
  * Routes:
- *   GET  /admin/login               → login page
- *   POST /admin/login               → authenticate, set session cookie
- *   POST /admin/logout              → clear cookie, redirect
- *   GET  /admin/agents              → agent list (auth required)
- *   GET  /admin/agents/:id          → agent detail (auth required)
- *   POST /admin/agents/:id/envs     → patch env var, redirect
- *   POST /admin/agents/:id/envs/delete → delete env key, redirect
- *   POST /admin/agents/:id/slack-connect → start Slack OAuth
- *   GET  /admin/oauth/slack/callback    → handle Slack OAuth callback
- *   POST /admin/agents/:id/slack-app-token → store SLACK_APP_TOKEN
+ *   GET  /admin/login                 — login form
+ *   POST /admin/login                 — submit password → set session cookie → redirect
+ *   POST /admin/logout                — clear cookie → redirect to login
+ *   GET  /admin/agents                — list all agents (auth required)
+ *   GET  /admin/agents/:id            — agent detail (auth required)
+ *   POST /admin/agents/:id/envs       — add/update env var (auth required)
+ *   POST /admin/agents/:id/envs/delete — delete env var (auth required)
+ *   GET  /admin/provision             — provision start page (auth required)
+ *   POST /admin/provision/start       — submit xoxp- token → create Slack app
+ *   GET  /admin/provision/complete    — OAuth callback → store credentials
+ *
+ * Auth: httpOnly JWT cookie named "admin_session".
+ * Login is password-only (adminPassword from deps) — no DB user lookup.
  */
 
 import { Hono, type MiddlewareHandler } from "hono";
-import { getCookie, setCookie, deleteCookie } from "hono/cookie";
+import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { sign, verify } from "hono/jwt";
+import type { AgentCronJobService } from "./agent-cron-jobs.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
-import type { SlackProvisionService } from "./slack-provision.ts";
+import type { AgentPluginService } from "./agent-plugins.ts";
+import type { AgentTokenService } from "./agent-tokens.ts";
+import type { AgentToolService } from "./agent-tools.ts";
 import {
-  renderLoginPage,
-  renderAgentsPage,
   renderAgentDetailPage,
-  renderErrorPage,
-  type AgentSummary,
-  type AgentDetail,
-} from "./admin-ui-templates.ts";
+  renderAgentsPage,
+  renderLoginPage,
+  renderProvisionCompletePage,
+  renderProvisionPasteForm,
+  renderProvisionStartPage,
+} from "./admin-ui-pages.ts";
+import type { AppManifest } from "./slack-provisioning-client.ts";
+import { defaultAgentManifest } from "./slack-provisioning-client.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type { AgentSummary, AgentDetail };
+export interface SlackProvisioningClient {
+  createAppManifest(
+    xoxpToken: string,
+    manifest: AppManifest,
+  ): Promise<{ appId: string; oauthRedirectUrl: string }>;
+}
 
-export interface AgentRepository {
-  list(): Promise<AgentSummary[]>;
-  findById(id: string): Promise<AgentDetail | null>;
+interface PrismaAgentLike {
+  findMany(args?: object): Promise<
+    Array<{
+      id: string;
+      name: string;
+      slackId: string | null;
+      createdAt: Date;
+      updatedAt?: Date;
+    }>
+  >;
+  findUnique(args: { where: { id: string } }): Promise<{
+    id: string;
+    name: string;
+    slackId: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+  } | null>;
+  create(args: {
+    data: { name: string; slackId?: string | null };
+  }): Promise<{
+    id: string;
+    name: string;
+    slackId: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+  }>;
+}
+
+interface PrismaLike {
+  agent: PrismaAgentLike;
+  agentPlugin: {
+    findMany(args: {
+      where: { agentId: string; enabled: boolean };
+    }): Promise<Array<{ id: string; name: string; version: string | null; enabled: boolean }>>;
+  };
 }
 
 export interface AdminUIDeps {
-  agentRepo: AgentRepository;
-  agentEnvService: Pick<AgentEnvService, "patch" | "deleteKey" | "getByAgentId">;
-  slackProvisionService?: SlackProvisionService;
+  prisma: PrismaLike;
+  agentEnvService: Pick<
+    AgentEnvService,
+    "getByAgentId" | "upsert" | "deleteKey" | "getConfigBundle"
+  >;
+  agentCronJobService: Pick<AgentCronJobService, "list">;
+  agentToolService: Pick<AgentToolService, "list">;
+  agentTokenService: Pick<AgentTokenService, "listForAgent">;
+  agentPluginService: Pick<AgentPluginService, "list">;
   sessionSecret: string;
   adminPassword: string;
-  baseUrl: string;
+  slackClient: SlackProvisioningClient;
+  appBaseUrl: string;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const SESSION_COOKIE = "admin_session";
-const COOKIE_MAX_AGE = 60 * 60 * 8; // 8 hours
+const SESSION_TTL_SECONDS = 8 * 60 * 60; // 8 hours
+const ADMIN_USER_NAME = "admin";
 
-// ─── Session auth middleware (UI variant — redirects instead of 401) ──────────
+// ─── Timing-safe comparison ───────────────────────────────────────────────────
 
-function createUISessionAuthMiddleware(
-  sessionSecret: string,
-): MiddlewareHandler {
-  return async (c, next) => {
-    const loginRedirect = () =>
-      c.redirect(`/admin/login?returnTo=${encodeURIComponent(c.req.path)}`, 302);
-
-    const sessionToken = getCookie(c, SESSION_COOKIE);
-    if (!sessionToken) return loginRedirect();
-
-    try {
-      const payload = (await verify(sessionToken, sessionSecret, "HS256")) as Record<string, unknown>;
-      if (typeof payload.userId !== "string" || !payload.userId) return loginRedirect();
-    } catch {
-      return loginRedirect();
+/**
+ * Constant-time string comparison to prevent timing attacks on the admin password.
+ */
+function timingSafeEqual(a: string, b: string): boolean {
+  const ab = new TextEncoder().encode(a);
+  const bb = new TextEncoder().encode(b);
+  if (ab.length !== bb.length) {
+    // Still iterate to avoid length-based timing leak
+    let diff = ab.length ^ bb.length;
+    for (let i = 0; i < Math.max(ab.length, bb.length); i++) {
+      diff |= (ab[i] ?? 0) ^ (bb[i] ?? 0);
     }
+    return diff === 0;
+  }
+  let diff = 0;
+  for (let i = 0; i < ab.length; i++) {
+    diff |= ab[i] ^ bb[i];
+  }
+  return diff === 0;
+}
 
+// ─── Auth helpers ─────────────────────────────────────────────────────────────
+
+async function createSessionToken(secret: string): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  return sign(
+    {
+      userId: "admin",
+      email: "admin",
+      iat: now,
+      exp: now + SESSION_TTL_SECONDS,
+    },
+    secret,
+    "HS256",
+  );
+}
+
+async function verifySessionToken(
+  token: string,
+  secret: string,
+): Promise<boolean> {
+  try {
+    const payload = (await verify(token, secret, "HS256")) as Record<
+      string,
+      unknown
+    >;
+    return (
+      typeof payload.userId === "string" &&
+      payload.userId === "admin" &&
+      typeof payload.email === "string"
+    );
+  } catch {
+    return false;
+  }
+}
+
+// ─── Auth middleware ──────────────────────────────────────────────────────────
+
+function createUIAuthMiddleware(sessionSecret: string): MiddlewareHandler {
+  return async (c, next) => {
+    const sessionToken = getCookie(c, SESSION_COOKIE);
+    if (!sessionToken || !(await verifySessionToken(sessionToken, sessionSecret))) {
+      return c.redirect("/admin/login", 302);
+    }
     return next();
   };
 }
@@ -79,52 +179,64 @@ function createUISessionAuthMiddleware(
 
 export function createAdminUIApp(deps: AdminUIDeps): Hono {
   const {
-    agentRepo,
+    prisma,
     agentEnvService,
-    slackProvisionService,
+    agentCronJobService,
+    agentToolService,
+    agentTokenService,
+    agentPluginService,
     sessionSecret,
     adminPassword,
-    baseUrl,
+    slackClient,
+    appBaseUrl,
   } = deps;
 
   const app = new Hono();
 
-  // ─── Login / Logout ─────────────────────────────────────────────────────────
+  const requireAuth = createUIAuthMiddleware(sessionSecret);
+
+  // ─── HTML helper ──────────────────────────────────────────────────────────
+
+  function html(content: string): Response {
+    return new Response(content, {
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+    });
+  }
+
+  // ─── Login / Logout ───────────────────────────────────────────────────────
 
   app.get("/admin/login", (c) => {
-    return c.html(renderLoginPage());
+    return html(renderLoginPage());
   });
 
   app.post("/admin/login", async (c) => {
-    const body = await c.req.parseBody();
-    const password = String(body.password ?? "");
-    const returnTo = (c.req.query("returnTo") as string | undefined) ?? "/admin/agents";
-
-    if (password !== adminPassword) {
-      return c.html(renderLoginPage({ error: "Invalid password." }));
+    let password: string | undefined;
+    try {
+      const formData = await c.req.formData();
+      password = formData.get("password")?.toString();
+    } catch {
+      return html(renderLoginPage({ error: "Invalid form submission." }));
     }
 
-    const now = Math.floor(Date.now() / 1000);
-    const token = await sign(
-      {
-        userId: "admin",
-        email: "admin@shipwright.local",
-        iat: now,
-        exp: now + COOKIE_MAX_AGE,
-      },
-      sessionSecret,
-      "HS256",
-    );
+    if (!password || !timingSafeEqual(password, adminPassword)) {
+      return new Response(
+        renderLoginPage({ error: "Invalid password." }),
+        {
+          status: 401,
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+        },
+      );
+    }
 
+    const token = await createSessionToken(sessionSecret);
     setCookie(c, SESSION_COOKIE, token, {
       httpOnly: true,
-      secure: baseUrl.startsWith("https"),
+      secure: appBaseUrl.startsWith("https://"),
       sameSite: "Lax",
-      maxAge: COOKIE_MAX_AGE,
+      maxAge: SESSION_TTL_SECONDS,
       path: "/",
     });
-
-    return c.redirect(returnTo, 302);
+    return c.redirect("/admin/agents", 302);
   });
 
   app.post("/admin/logout", (c) => {
@@ -132,107 +244,178 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
     return c.redirect("/admin/login", 302);
   });
 
-  // ─── Protected routes ───────────────────────────────────────────────────────
+  // ─── Agents list ──────────────────────────────────────────────────────────
 
-  const auth = createUISessionAuthMiddleware(sessionSecret);
-
-  app.use("/admin/agents", auth);
-  app.use("/admin/agents/*", auth);
-  app.use("/admin/oauth/*", auth);
-
-  // Agents list
-  app.get("/admin/agents", async (c) => {
-    const agents = await agentRepo.list();
-    return c.html(renderAgentsPage(agents));
+  app.get("/admin/agents", requireAuth, async (c) => {
+    const agents = await prisma.agent.findMany();
+    return html(renderAgentsPage(agents, ADMIN_USER_NAME));
   });
 
-  // Agent detail
-  app.get("/admin/agents/:id", async (c) => {
-    const id = c.req.param("id");
-    const agent = await agentRepo.findById(id);
-    if (!agent) {
-      return c.html(renderErrorPage("Agent not found"), 404);
-    }
-    return c.html(renderAgentDetailPage(agent));
-  });
+  // ─── Agent detail ─────────────────────────────────────────────────────────
 
-  // Patch env var (POST with form body containing key + value)
-  app.post("/admin/agents/:id/envs", async (c) => {
+  app.get("/admin/agents/:id", requireAuth, async (c) => {
     const agentId = c.req.param("id");
-    const body = await c.req.parseBody();
-    const key = String(body.key ?? "").trim();
-    const value = String(body.value ?? "");
-
-    if (key) {
-      await agentEnvService.patch(agentId, { [key]: value });
+    const agent = await prisma.agent.findUnique({ where: { id: agentId } });
+    if (!agent) {
+      return new Response("Agent not found", { status: 404 });
     }
 
+    const [envVars, crons, tools, tokens, plugins] = await Promise.all([
+      agentEnvService.getByAgentId(agentId).then((e) => e ?? {}),
+      agentCronJobService.list(agentId),
+      agentToolService.list(agentId),
+      agentTokenService.listForAgent(agentId),
+      agentPluginService.list(agentId),
+    ]);
+
+    return html(
+      renderAgentDetailPage(
+        agent,
+        envVars,
+        crons,
+        tools,
+        tokens,
+        plugins,
+        ADMIN_USER_NAME,
+      ),
+    );
+  });
+
+  // ─── Env var mutations ────────────────────────────────────────────────────
+
+  app.post("/admin/agents/:id/envs", requireAuth, async (c) => {
+    const agentId = c.req.param("id");
+    let key: string | undefined;
+    let value: string | undefined;
+    try {
+      const formData = await c.req.formData();
+      key = formData.get("key")?.toString();
+      value = formData.get("value")?.toString();
+    } catch {
+      return c.redirect(`/admin/agents/${agentId}`, 302);
+    }
+    if (key && value !== undefined) {
+      const existing = (await agentEnvService.getByAgentId(agentId)) ?? {};
+      await agentEnvService.upsert(agentId, { ...existing, [key]: value });
+    }
     return c.redirect(`/admin/agents/${agentId}`, 302);
   });
 
-  // Delete env var (POST with _method=DELETE simulation or dedicated path)
-  app.post("/admin/agents/:id/envs/delete", async (c) => {
+  app.post("/admin/agents/:id/envs/delete", requireAuth, async (c) => {
     const agentId = c.req.param("id");
-    const body = await c.req.parseBody();
-    const key = String(body.key ?? "").trim();
-
+    let key: string | undefined;
+    try {
+      const formData = await c.req.formData();
+      key = formData.get("key")?.toString();
+    } catch {
+      return c.redirect(`/admin/agents/${agentId}`, 302);
+    }
     if (key) {
       await agentEnvService.deleteKey(agentId, key);
     }
-
     return c.redirect(`/admin/agents/${agentId}`, 302);
   });
 
-  // Start Slack OAuth
-  app.post("/admin/agents/:id/slack-connect", async (c) => {
-    const agentId = c.req.param("id");
+  // ─── Provisioning flow ────────────────────────────────────────────────────
 
-    if (!slackProvisionService) {
-      return c.html(renderErrorPage("Slack provisioning not configured"), 503);
-    }
-
-    const body = await c.req.parseBody();
-    const xoxpToken = String(body.xoxpToken ?? "").trim();
-
-    if (!xoxpToken.startsWith("xoxp-")) {
-      return c.html(renderErrorPage("Token must start with xoxp-"), 400);
-    }
-
-    const oauthUrl = await slackProvisionService.startOAuth(agentId, xoxpToken);
-
-    return c.redirect(oauthUrl, 302);
+  app.get("/admin/provision", requireAuth, (c) => {
+    return html(renderProvisionStartPage(ADMIN_USER_NAME));
   });
 
-  // Handle Slack OAuth callback
-  app.get("/admin/oauth/slack/callback", async (c) => {
-    const code = c.req.query("code");
-    const agentId = c.req.query("agent");
-
-    if (!code || !agentId) {
-      return c.html(renderErrorPage("Missing code or agent parameter"), 400);
+  app.post("/admin/provision/start", requireAuth, async (c) => {
+    let xoxpToken: string | undefined;
+    try {
+      const formData = await c.req.formData();
+      xoxpToken = formData.get("xoxpToken")?.toString();
+    } catch {
+      return html(
+        renderProvisionStartPage(ADMIN_USER_NAME, {
+          error: "Invalid form submission.",
+        }),
+      );
     }
 
-    if (!slackProvisionService) {
-      return c.html(renderErrorPage("Slack provisioning not configured"), 503);
+    if (!xoxpToken || !xoxpToken.startsWith("xoxp-")) {
+      return html(
+        renderProvisionStartPage(ADMIN_USER_NAME, {
+          error: "Token must start with xoxp-",
+        }),
+      );
     }
 
-    const redirectUri = `${baseUrl}/admin/oauth/slack/callback?agent=${encodeURIComponent(agentId)}`;
-    await slackProvisionService.handleCallback(agentId, code, redirectUri);
-
-    return c.redirect(`/admin/agents/${agentId}`, 302);
+    try {
+      const redirectUri = `${appBaseUrl}/admin/provision/complete`;
+      const manifest = defaultAgentManifest("Shipwright Agent", redirectUri);
+      const { oauthRedirectUrl } = await slackClient.createAppManifest(
+        xoxpToken,
+        manifest,
+      );
+      return html(
+        renderProvisionStartPage(ADMIN_USER_NAME, { oauthUrl: oauthRedirectUrl }),
+      );
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : "Unknown error creating Slack app.";
+      return html(
+        renderProvisionStartPage(ADMIN_USER_NAME, { error: msg }),
+      );
+    }
   });
 
-  // Store app-level token
-  app.post("/admin/agents/:id/slack-app-token", async (c) => {
-    const agentId = c.req.param("id");
-    const body = await c.req.parseBody();
-    const xappToken = String(body.xappToken ?? "").trim();
+  // GET — OAuth callback → show paste form for credentials
+  app.get("/admin/provision/complete", requireAuth, (c) => {
+    const agentId = c.req.query("agentId");
+    return html(renderProvisionPasteForm(ADMIN_USER_NAME, { agentId }));
+  });
 
-    if (xappToken) {
-      await agentEnvService.patch(agentId, { SLACK_APP_TOKEN: xappToken });
+  // POST — receive pasted credentials → store in AgentEnv
+  app.post("/admin/provision/complete", requireAuth, async (c) => {
+    let agentId: string | undefined;
+    let appId: string | undefined;
+    let signingSecret: string | undefined;
+    try {
+      const formData = await c.req.formData();
+      agentId = formData.get("agentId")?.toString();
+      appId = formData.get("appId")?.toString();
+      signingSecret = formData.get("signingSecret")?.toString();
+    } catch {
+      return html(
+        renderProvisionCompletePage(ADMIN_USER_NAME, {
+          success: false,
+          error: "Invalid form submission.",
+        }),
+      );
     }
 
-    return c.redirect(`/admin/agents/${agentId}`, 302);
+    if (!agentId || !appId || !signingSecret) {
+      return html(
+        renderProvisionPasteForm(ADMIN_USER_NAME, {
+          agentId,
+          error: "Agent ID, App ID, and Signing Secret are all required.",
+        }),
+      );
+    }
+
+    try {
+      const existing = (await agentEnvService.getByAgentId(agentId)) ?? {};
+      await agentEnvService.upsert(agentId, {
+        ...existing,
+        SLACK_APP_ID: appId,
+        SLACK_SIGNING_SECRET: signingSecret,
+      });
+      return html(
+        renderProvisionCompletePage(ADMIN_USER_NAME, {
+          success: true,
+          agentId,
+        }),
+      );
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : "Unknown error storing credentials.";
+      return html(
+        renderProvisionPasteForm(ADMIN_USER_NAME, { agentId, error: msg }),
+      );
+    }
   });
 
   return app;
