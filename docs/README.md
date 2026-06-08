@@ -9,7 +9,7 @@ Shipwright Harness is the open-source autonomous delivery agent for [Claude Code
 - **[Architecture](./architecture.md)** — the three-artifact design (plugin → metrics → agent), supporting surfaces, and workspace layout.
 - **[Testing](./testing.md)** — the four-layer test model (unit / integration / smoke / e2e), run commands, speed budgets, and the isolation contract.
 - **[Metrics dashboard](./metrics.md)** — the stateless PostHog-backed service: JSON endpoints, dashboard, auth, and environment.
-- **[Reference agent](./agent.md)** — the autonomous runner: runtime + admin APIs, data model, and environment.
+- **[Shipwright agent](./agent.md)** — the autonomous runner: runtime + admin APIs, data model, and environment.
 - **[Test system](./test-readiness/test-system.md)** — the full authoritative test blueprint (source for [Testing](./testing.md)).
 
 ## Command reference

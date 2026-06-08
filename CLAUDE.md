@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What Shipwright is
 
-Shipwright Harness is **the open-source (MIT) autonomous delivery agent for Claude Code** — a deployable agent plus the autonomous coding system that powers it. The system is a Claude Code plugin (`shipwright`) covering the full delivery loop — **spec → plan → execute → review → deploy** — alongside a metrics dashboard and a reference agent. The brand is **Shipwright Harness**; the installable package is **`shipwright`**.
+Shipwright Harness is **the open-source (MIT) autonomous delivery agent for Claude Code** — a deployable agent plus the autonomous coding system that powers it. The system is a Claude Code plugin (`shipwright`) covering the full delivery loop — **spec → plan → execute → review → deploy** — alongside a metrics dashboard and a Shipwright agent. The brand is **Shipwright Harness**; the installable package is **`shipwright`**.
 
 > The plugin is repo-agnostic: it runs its planning/execution/review/deploy commands against *any* repository. This repo is both the source of the plugin **and** the codebase it ships against.
 
@@ -14,7 +14,7 @@ Shipwright Harness is **the open-source (MIT) autonomous delivery agent for Clau
 |---|---|---|---|
 | **A** | **Plugin** (the system) | `plugins/shipwright/` | Commands, skills, agents, scripts users `/plugin install`. Repo-agnostic. |
 | **B** | **Metrics dashboard** | `metrics/` | Stateless Hono service: PostHog-backed JSON endpoints + a server-rendered dashboard. No database. |
-| **C** | **Reference agent** | `agent/` | Hono service + Prisma store; a thin autonomous runner: pick next ready task → build → ship PR → forward metrics. |
+| **C** | **Shipwright agent** | `agent/` | Hono service + Prisma store; a thin autonomous runner: pick next ready task → build → ship PR → forward metrics. |
 
 Supporting surfaces (not phased):
 - `site/` — Astro + Tailwind marketing site (**shipwright-harness.com**). Self-contained; **not** a Bun workspace; Playwright smoke tests.
@@ -127,5 +127,5 @@ To load additional context into a session, add `@docs/filename.md` entries here 
 - **docs/architecture.md** — the three-artifact A→B→C design (plugin / metrics / agent), supporting surfaces, and workspace layout
 - **docs/testing.md** — the four-layer test model (unit / integration / smoke / e2e), run commands, speed budgets, and the isolation contract
 - **docs/metrics.md** — metrics service (B): JSON endpoints, server-rendered dashboard, dual auth (Bearer / session), and environment
-- **docs/agent.md** — reference agent (C): runtime + admin CRUD APIs, the six-model Prisma store, and encryption/env notes
+- **docs/agent.md** — Shipwright agent (C): runtime + admin CRUD APIs, the six-model Prisma store, and encryption/env notes
 - **docs/test-readiness/test-system.md** — the authoritative test blueprint: layer matrix, boundary rules, per-component budgets, CI pipeline shape, and the full isolation contract
