@@ -10,6 +10,71 @@ const taglineGradient = "Claude Code";
 const tagline = `${taglinePrefix}${taglineGradient}.`;
 const install = "/plugin install shipwright@app-vitals/shipwright";
 const githubUrl = "https://github.com/app-vitals/shipwright";
+const discoveryUrl = "https://cal.com/app-vitals/discovery";
+
+// How-it-works: the four pipeline stages (plan → build → review → ship).
+const stages = [
+  {
+    name: "Plan",
+    body: "Read the spec, explore the codebase, and emit a sequenced task queue with estimates.",
+  },
+  {
+    name: "Build",
+    body: "Pick the next ready task, branch, write the feature and its tests at the correct layer.",
+  },
+  {
+    name: "Review",
+    body: "Deep single-pass review with inline findings and a recorded verdict before anything merges.",
+  },
+  {
+    name: "Ship",
+    body: "Merge the green PR, deploy, and forward the metrics that close the feedback loop.",
+  },
+];
+
+// Differentiators: generic, no competitor names. Claude Code is the platform.
+const differentiators = [
+  {
+    label: "Own it",
+    title: "Free & open-source (MIT)",
+    body: "No tiers, no seats, no data leaving your control. Clone it, run it in your own cloud, fork it if you want to.",
+  },
+  {
+    label: "Test-readiness",
+    title: "Tests land with the code",
+    body: "Every task ships its tests at the correct layer — unit, integration, smoke, or e2e — in the same PR. No 'tests later'.",
+  },
+  {
+    label: "Metric-first",
+    title: "Measured, not vibes",
+    body: "First-time-quality, estimation accuracy, and review verdicts are tracked per task so the pipeline gets honestly better.",
+  },
+  {
+    label: "Repo-agnostic",
+    title: "Runs on your stack",
+    body: "Node, Rust, Go, Python, Ruby, Make — the plugin drives any repository it's pointed at, not a blessed template.",
+  },
+];
+
+// Static, illustrative pipeline transcript for the demo (no real player, no JS).
+const demoTranscript = `$ /plugin install shipwright@app-vitals/shipwright
+✓ shipwright installed
+
+$ /shipwright:dev-task
+→ picking next ready task … SWW-2.2 (frontend)
+  branch feat/sww-2-2-body-sections
+  writing tests → 7 specs (e2e)
+  implementing … 5 sections
+  ✓ playwright   15 passed
+  ✓ PR #102 opened
+
+$ /shipwright:review
+  deep single-pass review … 0 blocking findings
+  verdict: APPROVE
+
+$ /shipwright:deploy
+  merge --squash … ✓ merged
+  deploy … ✓ live   metrics → forwarded`;
 ---
 
 <BaseLayout title="Shipwright Harness" description={tagline}>
@@ -34,5 +99,125 @@ const githubUrl = "https://github.com/app-vitals/shipwright";
       <p class="sw-label">Install</p>
       <pre class="sw-code mt-3 w-fit"><code>{install}</code></pre>
     </div>
+  </section>
+
+  <!-- 1. Problem -->
+  <section id="problem" class="relative z-10 py-24">
+    <p class="sw-label">The bottleneck</p>
+    <h2 class="mt-4 max-w-2xl text-3xl md:text-4xl">
+      AI tools are fast. Your pipeline isn't.
+    </h2>
+    <p class="mt-5 max-w-2xl text-lg">
+      AI writes a feature in seconds. Then it sits — waiting on planning, code
+      review, test coverage, and the manual steps it takes to actually ship.
+      Generation got cheap; everything around it stayed human-paced. The work
+      didn't disappear, it just moved downstream.
+    </p>
+  </section>
+
+  <!-- 2. How it works -->
+  <section id="how-it-works" class="relative z-10 py-24">
+    <p class="sw-label">How it works</p>
+    <h2 class="mt-4 max-w-2xl text-3xl md:text-4xl">
+      A deployable agent, backed by a system that does the work.
+    </h2>
+    <p class="mt-5 max-w-2xl text-lg">
+      Shipwright Harness is a deployable agent you run on your own codebase, and
+      an autonomous coding system that powers it. The agent picks up ready work
+      and drives it through four stages — end to end, with you in the loop only
+      where it counts.
+    </p>
+
+    <div class="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {
+        stages.map((stage, i) => (
+          <div class="sw-card flex flex-col gap-3">
+            <div class="flex items-center justify-between">
+              <span class="sw-pill sw-pill-progress">{`0${i + 1}`}</span>
+              <span class="sw-label">Stage</span>
+            </div>
+            <h3 class="text-xl">{stage.name}</h3>
+            <p>{stage.body}</p>
+          </div>
+        ))
+      }
+    </div>
+  </section>
+
+  <!-- 3. Differentiators -->
+  <section id="differentiators" class="relative z-10 py-24">
+    <p class="sw-label">Why Shipwright Harness</p>
+    <h2 class="mt-4 max-w-2xl text-3xl md:text-4xl">
+      Built on Claude Code. Owned by you.
+    </h2>
+    <p class="mt-5 max-w-2xl text-lg">
+      It runs on Claude Code — the platform it's built for — and stays entirely
+      in your hands: open-source, self-hosted, and measured.
+    </p>
+
+    <div class="mt-10 grid gap-4 sm:grid-cols-2">
+      {
+        differentiators.map((d) => (
+          <div class="sw-card flex flex-col gap-2">
+            <span class="sw-label">{d.label}</span>
+            <h3 class="text-xl">{d.title}</h3>
+            <p>{d.body}</p>
+          </div>
+        ))
+      }
+    </div>
+
+    <div class="sw-callout mt-6 max-w-3xl">
+      <p>
+        Built on Claude Code, free and open-source under the MIT license — you
+        own it and run it in your own cloud.
+      </p>
+    </div>
+  </section>
+
+  <!-- 4. Demo -->
+  <section id="demo" class="relative z-10 py-24">
+    <p class="sw-label">A run, end to end</p>
+    <h2 class="mt-4 max-w-2xl text-3xl md:text-4xl">
+      Install, then watch it ship.
+    </h2>
+    <p class="mt-5 max-w-2xl text-lg">
+      One install, then plan → build → review → ship from the command line.
+      Here's an illustrative transcript of a single task moving through the
+      pipeline.
+    </p>
+
+    <pre class="sw-code mt-8 max-w-3xl text-sm leading-relaxed"><code>{demoTranscript}</code></pre>
+  </section>
+
+  <!-- 5. Social proof -->
+  <section id="social-proof" class="relative z-10 py-24">
+    <p class="sw-label">Get started</p>
+    <h2 class="mt-4 max-w-2xl text-3xl md:text-4xl">
+      Star it, install it, ship with it.
+    </h2>
+
+    <div class="mt-8 grid gap-4 sm:grid-cols-2">
+      <div class="sw-card flex flex-col gap-3">
+        <span class="sw-label">On GitHub</span>
+        <p>
+          Read the source, file an issue, or star the repo to follow along as it
+          grows.
+        </p>
+        <a class="sw-btn sw-btn-secondary w-fit" href={githubUrl}>
+          Star on GitHub
+        </a>
+      </div>
+      <div class="sw-card flex flex-col gap-3">
+        <span class="sw-label">Install</span>
+        <p>Drop it into Claude Code and point it at any repository.</p>
+        <pre class="sw-code w-fit text-sm"><code>{install}</code></pre>
+      </div>
+    </div>
+
+    <p class="mt-8 max-w-2xl">
+      Want a walkthrough on your own codebase?{" "}
+      <a href={discoveryUrl}>Book a discovery call</a>.
+    </p>
   </section>
 </BaseLayout>
