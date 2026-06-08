@@ -75,6 +75,7 @@ All child models cascade-delete with their `Agent`.
 | `agent/src/agent-envs.ts` | Env service — encrypted key/value store + config bundle assembly. |
 | `agent/src/agent-cron-jobs.ts` | Cron service + system-cron reconciliation. |
 | `agent/src/agent-tools.ts` / `agent-tokens.ts` / `agent-plugins.ts` | Per-resource service classes. |
+| `agent/src/setup.ts` | Workspace bootstrapping — directory scaffolding, identity-file seeding, plugin installation, and mise startup. Safe to call on every agent startup (idempotent). |
 | `agent/src/crypto.ts` / `token-crypto.ts` | AES-256-GCM + token hashing helpers. |
 | `agent/src/system-crons.ts` | System-cron definitions reconciled onto each agent. |
 | `agent/prisma/schema.prisma` | The six-model schema (`DATABASE_URL_AGENT`). |
