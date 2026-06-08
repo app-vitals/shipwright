@@ -9,6 +9,7 @@
  */
 
 import { join } from "node:path";
+import { Hono } from "hono";
 import { createConfig } from "./config.ts";
 import { ensureAgentHome } from "./setup.ts";
 
@@ -27,8 +28,6 @@ export async function startServer(opts?: { port?: number }): Promise<void> {
   console.log(
     `[run-agent] starting agent ${config.shipwright.agentId ?? "(unset)"} on port ${port}`,
   );
-
-  const { Hono } = await import("hono");
 
   const app = new Hono();
 

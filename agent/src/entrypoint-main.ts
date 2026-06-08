@@ -27,12 +27,10 @@ const { agentId, apiUrl, apiKey } = parseCliArgs(
 const agentHome =
   process.env.AGENT_HOME ?? join(process.env.HOME ?? "/root", ".shipwright-agent");
 
-const configClient = apiUrl && apiKey
-  ? new HttpShipwrightConfigClient({ apiUrl, apiKey })
-  : new HttpShipwrightConfigClient({
-      apiUrl: apiUrl ?? "",
-      apiKey: apiKey ?? "",
-    });
+const configClient = new HttpShipwrightConfigClient({
+  apiUrl: apiUrl ?? "",
+  apiKey: apiKey ?? "",
+});
 
 const SCRIPTS_BIN = join(import.meta.dir, "..", "scripts", "bin");
 const TOKEN_PATH = join(agentHome, "gh-token");
