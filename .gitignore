@@ -14,6 +14,8 @@ planning/
 
 # --- Local JSON task-store state (only written if the github backend isn't active) ---
 state/
+# Allow workspace templates that live under agent/workspace/state/
+!agent/workspace/state/
 
 # --- Database files (local dev only — never commit) ---
 *.db
