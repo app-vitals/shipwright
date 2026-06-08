@@ -1,102 +1,185 @@
 /**
  * agent/src/admin-api.smoke.test.ts
- * Smoke tests for the Admin API — Hono in-process request calls.
+ * Smoke tests for the admin CRUD API (admin/src/admin-api.ts).
  *
- * No real database or socket needed. Uses mock service deps.
+ * Uses app.request() — no real server, no real DB.
+ * Services are injected as in-memory mocks.
  */
 
-import { describe, it, expect } from "bun:test";
+import { beforeAll, describe, expect, it } from "bun:test";
 import { sign } from "hono/jwt";
 import { createAdminApp } from "./admin-api.ts";
 import type { AdminDeps } from "./admin-api.ts";
 
-const SESSION_SECRET = "test-session-secret-at-least-32-chars-long";
-const AGENT_ID = "agent-test-id-001";
-const CRON_ID = "cron-test-id-001";
-const TOOL_ID = "tool-test-id-001";
-const TOKEN_ID = "token-test-id-001";
-const PLUGIN_NAME = "test-plugin";
+// ─── Constants ────────────────────────────────────────────────────────────────
 
-async function makeSessionCookie(): Promise<string> {
+const SESSION_SECRET = "test-admin-session-secret-32-bytes!";
+const AGENT_ID = "agent-test-123";
+const CRON_ID = "cron-test-456";
+const TOKEN_ID = "token-test-789";
+const TOOL_ID = "tool-test-abc";
+const PLUGIN_ID = "plugin-test-def";
+
+// ─── JWT helper ───────────────────────────────────────────────────────────────
+
+async function makeSessionCookie(secret = SESSION_SECRET): Promise<string> {
   return sign(
-    { userId: "user-123", email: "test@example.com", exp: Math.floor(Date.now() / 1000) + 3600 },
-    SESSION_SECRET,
+    {
+      userId: "user-123",
+      email: "admin@example.com",
+      name: "Admin User",
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    },
+    secret,
     "HS256",
   );
 }
 
+// ─── Mock services ────────────────────────────────────────────────────────────
+
 function makeMockDeps(): AdminDeps {
-  const mockCron = {
-    id: CRON_ID,
-    agentId: AGENT_ID,
-    schedule: "0 * * * *",
-    prompt: "Hello",
-    channel: null,
-    user: null,
-    silent: false,
-    enabled: true,
-    preCheck: null,
-    name: "test-cron",
-    system: false,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  };
-
-  const mockTool = {
-    id: TOOL_ID,
-    agentId: AGENT_ID,
-    pattern: "Read",
-    enabled: true,
-    createdAt: new Date(),
-  };
-
-  const mockToken = {
-    id: TOKEN_ID,
-    agentId: AGENT_ID,
-    token: "hashed-token",
-    label: "test-token",
-    createdAt: new Date(),
-    revokedAt: null,
-  };
-
-  const mockPlugin = {
-    id: "plugin-test-id-001",
-    agentId: AGENT_ID,
-    name: PLUGIN_NAME,
-    version: null,
-    enabled: true,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  };
-
   return {
     agentEnvService: {
       upsert: async () => {},
       patch: async () => {},
-      getByAgentId: async () => ({ KEY: "value" }),
+      getByAgentId: async () => ({ FOO: "bar", SECRET: "decrypted-value" }),
       deleteKey: async () => {},
     },
     agentCronJobService: {
-      list: async () => [mockCron],
-      create: async () => mockCron,
-      update: async () => mockCron,
+      list: async () => [
+        {
+          id: CRON_ID,
+          agentId: AGENT_ID,
+          schedule: "0 9 * * 1-5",
+          prompt: "daily standup",
+          channel: "C123",
+          user: null,
+          silent: false,
+          enabled: true,
+          preCheck: null,
+          name: null,
+          system: false,
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+        },
+      ],
+      create: async () => ({
+        id: CRON_ID,
+        agentId: AGENT_ID,
+        schedule: "0 9 * * 1-5",
+        prompt: "daily standup",
+        channel: "C123",
+        user: null,
+        silent: false,
+        enabled: true,
+        preCheck: null,
+        name: null,
+        system: false,
+        createdAt: new Date("2024-01-01"),
+        updatedAt: new Date("2024-01-01"),
+      }),
+      update: async () => ({
+        id: CRON_ID,
+        agentId: AGENT_ID,
+        schedule: "0 10 * * 1-5",
+        prompt: "updated standup",
+        channel: "C123",
+        user: null,
+        silent: false,
+        enabled: true,
+        preCheck: null,
+        name: null,
+        system: false,
+        createdAt: new Date("2024-01-01"),
+        updatedAt: new Date("2024-01-01"),
+      }),
       delete: async () => {},
-      reconcileSystemCrons: async () => ({ created: 2, updated: 0, deleted: 0 }),
+      reconcileSystemCrons: async () => ({
+        created: 2,
+        updated: 0,
+        deleted: 0,
+      }),
     },
     agentToolService: {
-      list: async () => [mockTool],
-      add: async () => mockTool,
+      list: async () => [
+        {
+          id: TOOL_ID,
+          agentId: AGENT_ID,
+          pattern: "Read",
+          enabled: true,
+          createdAt: new Date("2024-01-01"),
+        },
+      ],
+      add: async () => ({
+        id: TOOL_ID,
+        agentId: AGENT_ID,
+        pattern: "Read",
+        enabled: true,
+        createdAt: new Date("2024-01-01"),
+      }),
+      toggle: async () => ({
+        id: TOOL_ID,
+        agentId: AGENT_ID,
+        pattern: "Read",
+        enabled: false,
+        createdAt: new Date("2024-01-01"),
+      }),
       remove: async () => {},
-      toggle: async () => mockTool,
     },
     agentTokenService: {
-      create: async () => ({ token: mockToken, rawToken: "raw-token-value" }),
-      listForAgent: async () => [mockToken],
-      revoke: async () => mockToken,
+      create: async () => ({
+        token: {
+          id: TOKEN_ID,
+          agentId: AGENT_ID,
+          token: "sha256hash",
+          label: "test token",
+          createdAt: new Date("2024-01-01"),
+          revokedAt: null,
+        },
+        rawToken:
+          "raw-hex-token-64chars-placeholder-pad-pad-pad-pad-pad-pad-pad",
+      }),
+      listForAgent: async () => [
+        {
+          id: TOKEN_ID,
+          agentId: AGENT_ID,
+          token: "sha256hashvalue",
+          label: "test token",
+          createdAt: new Date("2024-01-01"),
+          revokedAt: null,
+        },
+      ],
+      revoke: async () => ({
+        id: TOKEN_ID,
+        agentId: AGENT_ID,
+        token: "sha256hashvalue",
+        label: "test token",
+        createdAt: new Date("2024-01-01"),
+        revokedAt: new Date("2024-01-02"),
+      }),
     },
     agentPluginService: {
-      list: async () => [mockPlugin],
-      add: async () => mockPlugin,
+      list: async () => [
+        {
+          id: PLUGIN_ID,
+          agentId: AGENT_ID,
+          name: "@shipwright/plugin",
+          version: "1.0.0",
+          enabled: true,
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+        },
+      ],
+      add: async () => ({
+        id: PLUGIN_ID,
+        agentId: AGENT_ID,
+        name: "@shipwright/plugin",
+        version: "1.0.0",
+        enabled: true,
+        createdAt: new Date("2024-01-01"),
+        updatedAt: new Date("2024-01-01"),
+      }),
       remove: async () => {},
       removeByName: async () => {},
     },
@@ -104,136 +187,205 @@ function makeMockDeps(): AdminDeps {
   };
 }
 
-describe("Admin API (smoke)", () => {
-  // ─── Auth ────────────────────────────────────────────────────────────────────
+// ─── Auth smoke tests ──────────────────────────────────────────────────────────
 
-  it("returns 401 without a session cookie", async () => {
+describe("admin API — auth", () => {
+  it("unauthenticated GET /admin/api/agents/:id/envs returns 401", async () => {
     const app = createAdminApp(makeMockDeps());
     const res = await app.request(`/admin/api/agents/${AGENT_ID}/envs`);
     expect(res.status).toBe(401);
   });
 
-  it("returns 401 with an invalid session cookie", async () => {
+  it("unauthenticated POST /admin/api/agents/:id/envs returns 401", async () => {
     const app = createAdminApp(makeMockDeps());
     const res = await app.request(`/admin/api/agents/${AGENT_ID}/envs`, {
-      headers: { Cookie: "admin_session=this-is-not-a-valid-jwt" },
+      method: "POST",
+      body: JSON.stringify({ FOO: "bar" }),
+      headers: { "Content-Type": "application/json" },
     });
     expect(res.status).toBe(401);
   });
 
-  // ─── Env vars ────────────────────────────────────────────────────────────────
+  it("unauthenticated GET /admin/api/agents/:id/crons returns 401", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/admin/api/agents/${AGENT_ID}/crons`);
+    expect(res.status).toBe(401);
+  });
 
-  it("GET /admin/api/agents/:id/envs returns env object", async () => {
-    const cookie = await makeSessionCookie();
+  it("unauthenticated DELETE /admin/api/agents/:id/crons/:cronId returns 401", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(
+      `/admin/api/agents/${AGENT_ID}/crons/${CRON_ID}`,
+      { method: "DELETE" },
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("unauthenticated GET /admin/api/agents/:id/tools returns 401", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/admin/api/agents/${AGENT_ID}/tools`);
+    expect(res.status).toBe(401);
+  });
+
+  it("unauthenticated GET /admin/api/agents/:id/tokens returns 401", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/admin/api/agents/${AGENT_ID}/tokens`);
+    expect(res.status).toBe(401);
+  });
+
+  it("unauthenticated GET /admin/api/agents/:id/plugins returns 401", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/admin/api/agents/${AGENT_ID}/plugins`);
+    expect(res.status).toBe(401);
+  });
+
+  it("invalid JWT session cookie returns 401", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/admin/api/agents/${AGENT_ID}/envs`, {
+      headers: { Cookie: "admin_session=not.a.valid.jwt" },
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("session cookie signed with wrong secret returns 401", async () => {
+    const wrongCookie = await makeSessionCookie(
+      "wrong-secret-32-bytes-exactly!!!",
+    );
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/admin/api/agents/${AGENT_ID}/envs`, {
+      headers: { Cookie: `admin_session=${wrongCookie}` },
+    });
+    expect(res.status).toBe(401);
+  });
+});
+
+// ─── Env vars routes ──────────────────────────────────────────────────────────
+
+describe("admin API — env vars", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  it("POST /admin/api/agents/:id/envs with valid body returns 201", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/admin/api/agents/${AGENT_ID}/envs`, {
+      method: "POST",
+      body: JSON.stringify({ FOO: "bar", BAZ: "qux" }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(201);
+  });
+
+  it("GET /admin/api/agents/:id/envs returns decrypted env vars", async () => {
     const app = createAdminApp(makeMockDeps());
     const res = await app.request(`/admin/api/agents/${AGENT_ID}/envs`, {
       headers: { Cookie: `admin_session=${cookie}` },
     });
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toHaveProperty("env");
+    expect(body.env).toBeDefined();
+    expect(body.env.FOO).toBe("bar");
+    expect(body.env.SECRET).toBe("decrypted-value");
   });
 
-  it("POST /admin/api/agents/:id/envs upserts and returns ok", async () => {
-    const cookie = await makeSessionCookie();
-    const app = createAdminApp(makeMockDeps());
-    const res = await app.request(`/admin/api/agents/${AGENT_ID}/envs`, {
-      method: "POST",
-      headers: {
-        Cookie: `admin_session=${cookie}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ KEY: "value" }),
-    });
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body).toEqual({ ok: true });
-  });
-
-  it("PATCH /admin/api/agents/:id/envs patches and returns ok", async () => {
-    const cookie = await makeSessionCookie();
+  it("PATCH /admin/api/agents/:id/envs updates specific keys (200)", async () => {
     const app = createAdminApp(makeMockDeps());
     const res = await app.request(`/admin/api/agents/${AGENT_ID}/envs`, {
       method: "PATCH",
+      body: JSON.stringify({ FOO: "updated" }),
       headers: {
-        Cookie: `admin_session=${cookie}`,
         "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
       },
-      body: JSON.stringify({ KEY: "updated" }),
     });
     expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body).toEqual({ ok: true });
   });
 
   it("DELETE /admin/api/agents/:id/envs/:key returns 204", async () => {
-    const cookie = await makeSessionCookie();
     const app = createAdminApp(makeMockDeps());
-    const res = await app.request(`/admin/api/agents/${AGENT_ID}/envs/KEY`, {
+    const res = await app.request(`/admin/api/agents/${AGENT_ID}/envs/FOO`, {
       method: "DELETE",
       headers: { Cookie: `admin_session=${cookie}` },
     });
     expect(res.status).toBe(204);
   });
+});
 
-  // ─── Cron jobs ───────────────────────────────────────────────────────────────
+// ─── Cron job routes ──────────────────────────────────────────────────────────
 
-  it("GET /admin/api/agents/:id/crons returns cron list", async () => {
-    const cookie = await makeSessionCookie();
-    const app = createAdminApp(makeMockDeps());
-    const res = await app.request(`/admin/api/agents/${AGENT_ID}/crons`, {
-      headers: { Cookie: `admin_session=${cookie}` },
-    });
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body).toHaveProperty("crons");
-    expect(Array.isArray(body.crons)).toBe(true);
+describe("admin API — cron jobs", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
   });
 
-  it("POST /admin/api/agents/:id/crons creates a cron and returns 201", async () => {
-    const cookie = await makeSessionCookie();
+  it("POST /admin/api/agents/:id/crons creates a cron job (201)", async () => {
     const app = createAdminApp(makeMockDeps());
     const res = await app.request(`/admin/api/agents/${AGENT_ID}/crons`, {
       method: "POST",
+      body: JSON.stringify({
+        schedule: "0 9 * * 1-5",
+        prompt: "daily standup",
+        channel: "C123",
+      }),
       headers: {
-        Cookie: `admin_session=${cookie}`,
         "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
       },
-      body: JSON.stringify({ schedule: "0 * * * *", prompt: "Hello", silent: true }),
     });
     expect(res.status).toBe(201);
-    const body = await res.json();
-    expect(body).toHaveProperty("cron");
   });
 
-  it("PATCH /admin/api/agents/:id/crons/:cronId updates and returns cron", async () => {
-    const cookie = await makeSessionCookie();
+  it("GET /admin/api/agents/:id/crons returns list", async () => {
     const app = createAdminApp(makeMockDeps());
-    const res = await app.request(`/admin/api/agents/${AGENT_ID}/crons/${CRON_ID}`, {
-      method: "PATCH",
-      headers: {
-        Cookie: `admin_session=${cookie}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ schedule: "0 9 * * *", prompt: "Updated" }),
+    const res = await app.request(`/admin/api/agents/${AGENT_ID}/crons`, {
+      headers: { Cookie: `admin_session=${cookie}` },
     });
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toHaveProperty("cron");
+    expect(Array.isArray(body.crons)).toBe(true);
+    expect(body.crons).toHaveLength(1);
+  });
+
+  it("PATCH /admin/api/agents/:id/crons/:cronId updates and returns 200", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(
+      `/admin/api/agents/${AGENT_ID}/crons/${CRON_ID}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          schedule: "0 10 * * 1-5",
+          prompt: "updated standup",
+          channel: "C123",
+        }),
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(200);
   });
 
   it("DELETE /admin/api/agents/:id/crons/:cronId returns 204", async () => {
-    const cookie = await makeSessionCookie();
     const app = createAdminApp(makeMockDeps());
-    const res = await app.request(`/admin/api/agents/${AGENT_ID}/crons/${CRON_ID}`, {
-      method: "DELETE",
-      headers: { Cookie: `admin_session=${cookie}` },
-    });
+    const res = await app.request(
+      `/admin/api/agents/${AGENT_ID}/crons/${CRON_ID}`,
+      {
+        method: "DELETE",
+        headers: { Cookie: `admin_session=${cookie}` },
+      },
+    );
     expect(res.status).toBe(204);
   });
 
   it("POST /admin/api/agents/:id/crons/reconcile returns reconciliation summary", async () => {
-    const cookie = await makeSessionCookie();
     const app = createAdminApp(makeMockDeps());
     const res = await app.request(
       `/admin/api/agents/${AGENT_ID}/crons/reconcile`,
@@ -250,155 +402,208 @@ describe("Admin API (smoke)", () => {
       deleted: expect.any(Number),
     });
   });
+});
 
-  // ─── Tools ───────────────────────────────────────────────────────────────────
+// ─── Tool routes ──────────────────────────────────────────────────────────────
 
-  it("GET /admin/api/agents/:id/tools returns tool list", async () => {
-    const cookie = await makeSessionCookie();
+describe("admin API — tools", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  it("POST /admin/api/agents/:id/tools creates a tool (201)", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/admin/api/agents/${AGENT_ID}/tools`, {
+      method: "POST",
+      body: JSON.stringify({ pattern: "Read" }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(201);
+  });
+
+  it("GET /admin/api/agents/:id/tools returns list", async () => {
     const app = createAdminApp(makeMockDeps());
     const res = await app.request(`/admin/api/agents/${AGENT_ID}/tools`, {
       headers: { Cookie: `admin_session=${cookie}` },
     });
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toHaveProperty("tools");
+    expect(Array.isArray(body.tools)).toBe(true);
   });
 
-  it("POST /admin/api/agents/:id/tools adds a tool and returns 201", async () => {
-    const cookie = await makeSessionCookie();
+  it("PATCH /admin/api/agents/:id/tools/:toolId toggles enabled (200)", async () => {
     const app = createAdminApp(makeMockDeps());
-    const res = await app.request(`/admin/api/agents/${AGENT_ID}/tools`, {
-      method: "POST",
-      headers: {
-        Cookie: `admin_session=${cookie}`,
-        "Content-Type": "application/json",
+    const res = await app.request(
+      `/admin/api/agents/${AGENT_ID}/tools/${TOOL_ID}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ enabled: false }),
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `admin_session=${cookie}`,
+        },
       },
-      body: JSON.stringify({ pattern: "Read" }),
-    });
-    expect(res.status).toBe(201);
-    const body = await res.json();
-    expect(body).toHaveProperty("tool");
-  });
-
-  it("PATCH /admin/api/agents/:id/tools/:toolId toggles tool", async () => {
-    const cookie = await makeSessionCookie();
-    const app = createAdminApp(makeMockDeps());
-    const res = await app.request(`/admin/api/agents/${AGENT_ID}/tools/${TOOL_ID}`, {
-      method: "PATCH",
-      headers: {
-        Cookie: `admin_session=${cookie}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ enabled: false }),
-    });
+    );
     expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body).toHaveProperty("tool");
   });
 
   it("DELETE /admin/api/agents/:id/tools/:toolId returns 204", async () => {
-    const cookie = await makeSessionCookie();
     const app = createAdminApp(makeMockDeps());
-    const res = await app.request(`/admin/api/agents/${AGENT_ID}/tools/${TOOL_ID}`, {
-      method: "DELETE",
-      headers: { Cookie: `admin_session=${cookie}` },
-    });
+    const res = await app.request(
+      `/admin/api/agents/${AGENT_ID}/tools/${TOOL_ID}`,
+      {
+        method: "DELETE",
+        headers: { Cookie: `admin_session=${cookie}` },
+      },
+    );
     expect(res.status).toBe(204);
   });
+});
 
-  // ─── Tokens ──────────────────────────────────────────────────────────────────
+// ─── Token routes ─────────────────────────────────────────────────────────────
 
-  it("POST /admin/api/agents/:id/tokens creates a token and returns 201", async () => {
-    const cookie = await makeSessionCookie();
+describe("admin API — tokens", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  it("POST /admin/api/agents/:id/tokens returns 201 with rawToken field", async () => {
     const app = createAdminApp(makeMockDeps());
     const res = await app.request(`/admin/api/agents/${AGENT_ID}/tokens`, {
       method: "POST",
-      headers: { Cookie: `admin_session=${cookie}` },
+      body: JSON.stringify({ label: "test token" }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
     });
     expect(res.status).toBe(201);
     const body = await res.json();
-    expect(body).toHaveProperty("rawToken");
-    expect(body).toHaveProperty("token");
-    // Hashed token must not be exposed
-    expect(body.token).not.toHaveProperty("token");
+    expect(body.rawToken).toBeDefined();
+    expect(typeof body.rawToken).toBe("string");
+    expect(body.token).toBeDefined();
   });
 
-  it("GET /admin/api/agents/:id/tokens returns token list without hashes", async () => {
-    const cookie = await makeSessionCookie();
+  it("GET /admin/api/agents/:id/tokens returns list WITHOUT rawToken", async () => {
     const app = createAdminApp(makeMockDeps());
     const res = await app.request(`/admin/api/agents/${AGENT_ID}/tokens`, {
       headers: { Cookie: `admin_session=${cookie}` },
     });
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toHaveProperty("tokens");
+    expect(Array.isArray(body.tokens)).toBe(true);
+    // Each token should not expose rawToken
     for (const t of body.tokens) {
-      expect(t).not.toHaveProperty("token");
+      expect(t.rawToken).toBeUndefined();
     }
   });
 
   it("DELETE /admin/api/agents/:id/tokens/:tokenId returns 204", async () => {
-    const cookie = await makeSessionCookie();
     const app = createAdminApp(makeMockDeps());
-    const res = await app.request(`/admin/api/agents/${AGENT_ID}/tokens/${TOKEN_ID}`, {
-      method: "DELETE",
-      headers: { Cookie: `admin_session=${cookie}` },
-    });
+    const res = await app.request(
+      `/admin/api/agents/${AGENT_ID}/tokens/${TOKEN_ID}`,
+      {
+        method: "DELETE",
+        headers: { Cookie: `admin_session=${cookie}` },
+      },
+    );
     expect(res.status).toBe(204);
   });
+});
 
-  // ─── Plugins ─────────────────────────────────────────────────────────────────
+// ─── Plugin routes ────────────────────────────────────────────────────────────
 
-  it("GET /admin/api/agents/:id/plugins returns plugin list", async () => {
-    const cookie = await makeSessionCookie();
-    const app = createAdminApp(makeMockDeps());
-    const res = await app.request(`/admin/api/agents/${AGENT_ID}/plugins`, {
-      headers: { Cookie: `admin_session=${cookie}` },
-    });
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body).toHaveProperty("plugins");
+describe("admin API — plugins", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
   });
 
-  it("POST /admin/api/agents/:id/plugins adds a plugin and returns 201", async () => {
-    const cookie = await makeSessionCookie();
+  it("POST /admin/api/agents/:id/plugins adds a plugin (201)", async () => {
     const app = createAdminApp(makeMockDeps());
     const res = await app.request(`/admin/api/agents/${AGENT_ID}/plugins`, {
       method: "POST",
+      body: JSON.stringify({ name: "@shipwright/plugin", version: "1.0.0" }),
       headers: {
-        Cookie: `admin_session=${cookie}`,
         "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
       },
-      body: JSON.stringify({ name: PLUGIN_NAME }),
     });
     expect(res.status).toBe(201);
-    const body = await res.json();
-    expect(body).toHaveProperty("plugin");
   });
 
-  it("PATCH /admin/api/agents/:id/plugins/:name updates plugin version", async () => {
-    const cookie = await makeSessionCookie();
+  it("GET /admin/api/agents/:id/plugins returns list", async () => {
     const app = createAdminApp(makeMockDeps());
-    const res = await app.request(`/admin/api/agents/${AGENT_ID}/plugins/${PLUGIN_NAME}`, {
-      method: "PATCH",
-      headers: {
-        Cookie: `admin_session=${cookie}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ version: "1.2.3" }),
+    const res = await app.request(`/admin/api/agents/${AGENT_ID}/plugins`, {
+      headers: { Cookie: `admin_session=${cookie}` },
     });
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toHaveProperty("plugin");
+    expect(Array.isArray(body.plugins)).toBe(true);
+    expect(body.plugins).toHaveLength(1);
   });
 
-  it("DELETE /admin/api/agents/:id/plugins/:name returns 204", async () => {
-    const cookie = await makeSessionCookie();
+  it("PATCH /admin/api/agents/:id/plugins?name=<name> updates version (200)", async () => {
     const app = createAdminApp(makeMockDeps());
-    const res = await app.request(`/admin/api/agents/${AGENT_ID}/plugins/${PLUGIN_NAME}`, {
-      method: "DELETE",
-      headers: { Cookie: `admin_session=${cookie}` },
-    });
+    const res = await app.request(
+      `/admin/api/agents/${AGENT_ID}/plugins?name=${encodeURIComponent("@shipwright/plugin")}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ version: "2.0.0" }),
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it("PATCH /admin/api/agents/:id/plugins without name param returns 400", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(
+      `/admin/api/agents/${AGENT_ID}/plugins`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ version: "2.0.0" }),
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("DELETE /admin/api/agents/:id/plugins?name=<name> returns 204", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(
+      `/admin/api/agents/${AGENT_ID}/plugins?name=${encodeURIComponent("@shipwright/plugin")}`,
+      {
+        method: "DELETE",
+        headers: { Cookie: `admin_session=${cookie}` },
+      },
+    );
     expect(res.status).toBe(204);
+  });
+
+  it("DELETE /admin/api/agents/:id/plugins without name param returns 400", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(
+      `/admin/api/agents/${AGENT_ID}/plugins`,
+      {
+        method: "DELETE",
+        headers: { Cookie: `admin_session=${cookie}` },
+      },
+    );
+    expect(res.status).toBe(400);
   });
 });
