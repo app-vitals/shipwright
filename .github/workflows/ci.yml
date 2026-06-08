@@ -30,8 +30,16 @@ jobs:
       - name: Check banned strings
         run: task check-strings
 
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Typecheck
         run: task typecheck
 
       - name: Test
         run: task test
+
+      - name: Task store doctor
+        run: task doctor
