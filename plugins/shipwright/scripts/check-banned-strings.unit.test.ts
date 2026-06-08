@@ -162,6 +162,21 @@ describe("scanForBannedStrings", () => {
     expect(hits).toEqual([]);
   });
 
+  test("skips self-referential excluded filenames (check-banned-strings.ts and its test)", () => {
+    writeFile(
+      tmpDir,
+      "check-banned-strings.ts",
+      "const p = 'app-vitals/vitals-os';\n",
+    );
+    writeFile(
+      tmpDir,
+      "check-banned-strings.unit.test.ts",
+      "const q = 'app-vitals/marketplace';\n",
+    );
+    const hits = scanForBannedStrings(tmpDir);
+    expect(hits).toEqual([]);
+  });
+
   test("scans files in nested subdirectories", () => {
     writeFile(
       tmpDir,
