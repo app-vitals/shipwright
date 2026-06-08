@@ -6,7 +6,18 @@ export default {
   content: ["./src/**/*.{astro,html,js,jsx,md,mdx,svelte,ts,tsx,vue}"],
   theme: {
     extend: {
+      // Preflight emits theme defaults into dist; point them at brand tokens so
+      // brand-lint stays green (Tailwind's stock #e5e7eb border / #9ca3af
+      // placeholder are off-brand hexes).
+      borderColor: {
+        DEFAULT: "#334155", // border.muted
+      },
       colors: {
+        // Preflight placeholders read theme('colors.gray.400'); alias it to a
+        // brand token so no stock #9ca3af leaks into dist.
+        gray: {
+          400: "#475569", // border.strong
+        },
         // Navy bases
         navy: {
           base: "#080E1E",
