@@ -14,10 +14,22 @@
  * own secrets — this patch leaves them empty as placeholders so the operator
  * knows to fill them in.
  */
+const SAFE_VALUE_RE = /^[a-zA-Z0-9._-]+$/;
+
 export function generateCutoverValues(
   agentId: string,
   imageTag: string,
 ): string {
+  if (!SAFE_VALUE_RE.test(agentId)) {
+    throw new Error(
+      `Invalid agentId "${agentId}": must match [a-zA-Z0-9._-]+`,
+    );
+  }
+  if (!SAFE_VALUE_RE.test(imageTag)) {
+    throw new Error(
+      `Invalid imageTag "${imageTag}": must match [a-zA-Z0-9._-]+`,
+    );
+  }
   return `image:
   tag: "${imageTag}"
 env:

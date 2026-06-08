@@ -156,6 +156,23 @@ describe("validateCutover", () => {
     expect(names).toContain("crons");
   });
 
+  it("fails when GH_APP_INSTALLATION_ID is missing (partial App creds)", async () => {
+    const env: Record<string, string> = {
+      SLACK_BOT_TOKEN: "xoxb-test-token",
+      GH_APP_ID: "12345",
+      GH_APP_PRIVATE_KEY: "some-key",
+      // GH_APP_INSTALLATION_ID intentionally omitted
+    };
+    const client = new RecordedShipwrightConfigClient(
+      makeConfig(env),
+      [makeCron("cron-1")],
+    );
+    const results = await validateCutover(client, AGENT_ID);
+    const githubCheck = results.find((r) => r.name === "github_auth");
+    expect(githubCheck).toBeDefined();
+    expect(githubCheck?.passed).toBe(false);
+  });
+
   it("accepts GitHub App creds with only the three required fields", async () => {
     const env: Record<string, string> = {
       SLACK_BOT_TOKEN: "xoxb-test-token",

@@ -63,4 +63,28 @@ describe("generateCutoverValues", () => {
     expect(yaml).toContain("different-agent-xyz");
     expect(yaml).toContain("v2.0.0");
   });
+
+  it("throws when agentId contains a double quote", () => {
+    expect(() => generateCutoverValues('agent"inject', IMAGE_TAG)).toThrow(
+      /Invalid agentId/,
+    );
+  });
+
+  it("throws when imageTag contains a double quote", () => {
+    expect(() => generateCutoverValues(AGENT_ID, 'v1.0"inject')).toThrow(
+      /Invalid imageTag/,
+    );
+  });
+
+  it("throws when agentId contains a backslash", () => {
+    expect(() => generateCutoverValues("agent\\bad", IMAGE_TAG)).toThrow(
+      /Invalid agentId/,
+    );
+  });
+
+  it("throws when imageTag is empty", () => {
+    expect(() => generateCutoverValues(AGENT_ID, "")).toThrow(
+      /Invalid imageTag/,
+    );
+  });
 });
