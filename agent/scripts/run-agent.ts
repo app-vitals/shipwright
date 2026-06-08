@@ -49,10 +49,10 @@ const apiKey = requireEnv("SHIPWRIGHT_INTERNAL_API_KEY");
 
 // ─── Fetch config ─────────────────────────────────────────────────────────────
 
-const configClient = new HttpShipwrightConfigClient(apiUrl, apiKey);
+const configClient = new HttpShipwrightConfigClient({ apiUrl, apiKey });
 
 console.log(`[run-agent] Fetching config for agent ${agentId}...`);
-const bundle = await configClient.getAgentConfig(agentId);
+const bundle = await configClient.getConfig(agentId);
 
 // ─── Build env ────────────────────────────────────────────────────────────────
 
