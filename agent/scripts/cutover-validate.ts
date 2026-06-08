@@ -1,78 +1,86 @@
 /**
  * agent/scripts/cutover-validate.ts
- * CLI entrypoint — validates agent cutover readiness against the shipwright config API.
+ * CLI entry point for validating a shipwright agent is ready for cutover.
+ *
+ * Calls GET /agents/{id}/config and GET /agents/{id}/crons on the shipwright
+ * config service; asserts SLACK_BOT_TOKEN, GitHub auth credentials, and at
+ * least one cron are present. Exits 0 on pass, non-zero with per-check report
+ * on failure.
  *
  * Required env vars:
- *   SHIPWRIGHT_API_URL          — base URL of the shipwright config API
- *   SHIPWRIGHT_INTERNAL_API_KEY — bearer token for the config API
- *   SHIPWRIGHT_AGENT_ID         — the agent ID to validate
+ *   SHIPWRIGHT_API_URL          — base URL of the shipwright agent API
+ *   SHIPWRIGHT_INTERNAL_API_KEY — bearer token for the agent API
+ *   AGENT_ID                    — the agent ID to validate
  *
- * Exits 0 when all checks pass, non-zero with per-check report on failure.
+ * Usage:
+ *   SHIPWRIGHT_API_URL=<url> SHIPWRIGHT_INTERNAL_API_KEY=<key> AGENT_ID=<id> \
+ *     bun agent/scripts/cutover-validate.ts
  */
 
-import { HttpShipwrightConfigClient } from "../src/shipwright-config-client.ts";
-import { validateCutover } from "../src/cutover-validate.ts";
+import {
+  type CheckResult,
+  HttpShipwrightConfigClient,
+  validateCutover,
+} from "../src/cutover-validate.ts";
 
-const USAGE = `
-Usage: SHIPWRIGHT_API_URL=<url> SHIPWRIGHT_INTERNAL_API_KEY=<key> SHIPWRIGHT_AGENT_ID=<id> \\
-         bun run agent/scripts/cutover-validate.ts
+const USAGE = `Usage: SHIPWRIGHT_API_URL=<url> SHIPWRIGHT_INTERNAL_API_KEY=<key> AGENT_ID=<id> bun cutover-validate.ts
 
-Required environment variables:
-  SHIPWRIGHT_API_URL          Base URL of the shipwright config API
-  SHIPWRIGHT_INTERNAL_API_KEY Bearer token for the config API
-  SHIPWRIGHT_AGENT_ID         The agent ID to validate
+Required env vars:
+  SHIPWRIGHT_API_URL          — base URL of the shipwright agent API (e.g. https://shipwright.example.com)
+  SHIPWRIGHT_INTERNAL_API_KEY — bearer token for the agent API
+  AGENT_ID                    — the agent ID to validate
 
 Checks performed:
-  slack-token   SLACK_BOT_TOKEN is present in the agent config
-  github-auth   At least one GitHub auth credential is present
-                (GH_TOKEN, GITHUB_TOKEN, GITHUB_APP_PRIVATE_KEY, or GITHUB_APP_ID)
-  crons         At least one cron job is configured for the agent
+  SLACK_BOT_TOKEN   — present in the agent's env bundle
+  github_auth       — GH_TOKEN or (GH_APP_ID + GH_APP_PRIVATE_KEY + GH_APP_INSTALLATION_ID)
+  crons             — at least one cron job configured
 
-Exits 0 when all checks pass; exits 1 and reports failing checks on failure.
-`.trim();
+Exit codes:
+  0 — all checks passed
+  1 — one or more checks failed (per-check report printed to stdout)`;
 
 if (process.argv.includes("--help")) {
   console.log(USAGE);
   process.exit(0);
 }
 
-function readEnv(name: string): string | undefined {
-  return process.env[name];
+function requireEnv(name: string): string {
+  const val = process.env[name];
+  if (!val) {
+    console.error(`Error: required environment variable ${name} is not set\n`);
+    console.error(USAGE);
+    process.exit(1);
+  }
+  return val;
 }
 
-const apiUrl = readEnv("SHIPWRIGHT_API_URL");
-const apiKey = readEnv("SHIPWRIGHT_INTERNAL_API_KEY");
-const agentId = readEnv("SHIPWRIGHT_AGENT_ID");
-
-const missing = [
-  !apiUrl && "SHIPWRIGHT_API_URL",
-  !apiKey && "SHIPWRIGHT_INTERNAL_API_KEY",
-  !agentId && "SHIPWRIGHT_AGENT_ID",
-].filter(Boolean);
-
-if (missing.length > 0) {
-  console.error(`Error: missing required environment variable(s): ${missing.join(", ")}\n`);
-  console.error(USAGE);
-  process.exit(1);
-}
-
-if (!apiUrl || !apiKey || !agentId) process.exit(1);
+const apiUrl = requireEnv("SHIPWRIGHT_API_URL");
+const apiKey = requireEnv("SHIPWRIGHT_INTERNAL_API_KEY");
+const agentId = requireEnv("AGENT_ID");
 
 const client = new HttpShipwrightConfigClient(apiUrl, apiKey);
-const result = await validateCutover(client, agentId);
 
-for (const check of result.checks) {
-  const status = check.passed ? "PASS" : "FAIL";
-  console.log(`  [${status}] ${check.name}: ${check.message}`);
-}
-
-if (!result.passed) {
-  const failedNames = result.checks
-    .filter((c) => !c.passed)
-    .map((c) => c.name)
-    .join(", ");
-  console.error(`\nCutover validation FAILED — failing checks: ${failedNames}`);
+let results: CheckResult[];
+try {
+  results = await validateCutover(client, agentId);
+} catch (err) {
+  const msg = err instanceof Error ? err.message : String(err);
+  console.error(`Error: failed to fetch agent config — ${msg}`);
   process.exit(1);
 }
 
-console.log("\nCutover validation PASSED — all checks OK");
+let allPassed = true;
+for (const result of results) {
+  const status = result.passed ? "✓" : "✗";
+  console.log(`${status} ${result.name}: ${result.message}`);
+  if (!result.passed) allPassed = false;
+}
+
+if (!allPassed) {
+  console.error(
+    "\nValidation failed. Fix the issues above before cutting over.",
+  );
+  process.exit(1);
+}
+
+console.log("\nAll checks passed. Agent is ready for cutover.");

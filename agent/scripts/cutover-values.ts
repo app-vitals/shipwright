@@ -1,69 +1,66 @@
 /**
  * agent/scripts/cutover-values.ts
- * CLI entrypoint — prints a Helm values patch for the client-agent cutover.
+ * CLI entry point for generating a Helm values patch for client-agent cutover.
  *
  * Required env vars:
- *   AGENT_ID              — the agent ID to patch for
- *   SHIPWRIGHT_IMAGE_TAG  — the shipwright image tag to deploy
- *   SHIPWRIGHT_API_URL    — base URL of the shipwright config API
+ *   AGENT_ID   — the shipwright agent ID to include in the patch
+ *
+ * Required argument:
+ *   <image-tag> — the shipwright container image tag (e.g. v1.2.3)
  *
  * Usage:
- *   AGENT_ID=<id> SHIPWRIGHT_IMAGE_TAG=<tag> SHIPWRIGHT_API_URL=<url> \
- *     bun run agent/scripts/cutover-values.ts
+ *   AGENT_ID=<id> bun agent/scripts/cutover-values.ts <image-tag>
+ *
+ * Output:
+ *   Helm values YAML patch printed to stdout. Apply with:
+ *     helm upgrade <release> <chart> -f <(bun cutover-values.ts v1.2.3)
  */
 
 import { generateCutoverValues } from "../src/cutover-values.ts";
 
-const USAGE = `
-Usage: AGENT_ID=<id> SHIPWRIGHT_IMAGE_TAG=<tag> SHIPWRIGHT_API_URL=<url> \\
-         bun run agent/scripts/cutover-values.ts
+const USAGE = `Usage: AGENT_ID=<id> bun cutover-values.ts <image-tag>
 
-Required environment variables:
-  AGENT_ID              The agent ID to generate the values patch for
-  SHIPWRIGHT_IMAGE_TAG  The shipwright container image tag to deploy
-  SHIPWRIGHT_API_URL    Base URL of the shipwright config API
+Required env vars:
+  AGENT_ID              — the shipwright agent ID to embed in the patch
 
-Example output (yaml):
-  agent:
-    image:
-      repository: ghcr.io/app-vitals/shipwright-agent
-      tag: "sha-abc1234"
-    env:
-      SHIPWRIGHT_API_URL: "https://shipwright.example.com"
-      SHIPWRIGHT_INTERNAL_API_KEY: ""  # populate from secret
-      SHIPWRIGHT_AGENT_ID: "agent-xyz"
-    removeEnv:
+Required argument:
+  <image-tag>           — the shipwright container image tag (e.g. v1.2.3)
+
+Example output:
+  image:
+    tag: "v1.2.3"
+  env:
+    add:
+      SHIPWRIGHT_API_URL: ""
+      SHIPWRIGHT_INTERNAL_API_KEY: ""
+      SHIPWRIGHT_AGENT_ID: "agent-abc123"
+    remove:
       - VITALS_OS_API_URL
       - VITALS_INTERNAL_API_KEY
-      - VITALS_OS_AGENT_USER_ID
-`.trim();
+      - VITALS_OS_AGENT_USER_ID`;
 
 if (process.argv.includes("--help")) {
   console.log(USAGE);
   process.exit(0);
 }
 
-function readEnv(name: string): string | undefined {
-  return process.env[name];
+function requireEnv(name: string): string {
+  const val = process.env[name];
+  if (!val) {
+    console.error(`Error: required environment variable ${name} is not set\n`);
+    console.error(USAGE);
+    process.exit(1);
+  }
+  return val;
 }
 
-const agentId = readEnv("AGENT_ID");
-const imageTag = readEnv("SHIPWRIGHT_IMAGE_TAG");
-const shipwrightApiUrl = readEnv("SHIPWRIGHT_API_URL");
+const agentId = requireEnv("AGENT_ID");
 
-const missing = [
-  !agentId && "AGENT_ID",
-  !imageTag && "SHIPWRIGHT_IMAGE_TAG",
-  !shipwrightApiUrl && "SHIPWRIGHT_API_URL",
-].filter(Boolean);
-
-if (missing.length > 0) {
-  console.error(`Error: missing required environment variable(s): ${missing.join(", ")}\n`);
+const imageTag = process.argv[2];
+if (!imageTag) {
+  console.error("Error: missing required argument <image-tag>\n");
   console.error(USAGE);
   process.exit(1);
 }
 
-if (!agentId || !imageTag || !shipwrightApiUrl) process.exit(1);
-
-const yaml = generateCutoverValues(agentId, imageTag, shipwrightApiUrl);
-process.stdout.write(yaml);
+process.stdout.write(generateCutoverValues(agentId, imageTag));

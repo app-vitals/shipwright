@@ -1,59 +1,66 @@
 /**
  * agent/src/cutover-values.unit.test.ts
- * Unit tests for YAML generation logic — no I/O, pure function.
+ * Unit tests for the cutover-values YAML generation function.
  */
 
-import { describe, it, expect } from "bun:test";
+import { describe, expect, it } from "bun:test";
 import { generateCutoverValues } from "./cutover-values.ts";
 
 describe("generateCutoverValues", () => {
-  const AGENT_ID = "agent-abc-123";
-  const IMAGE_TAG = "sha-deadbeef";
-  const API_URL = "https://shipwright.example.com";
+  const AGENT_ID = "agent-abc123";
+  const IMAGE_TAG = "v1.2.3";
 
-  it("includes the correct image tag", () => {
-    const yaml = generateCutoverValues(AGENT_ID, IMAGE_TAG, API_URL);
-    expect(yaml).toContain(`tag: "${IMAGE_TAG}"`);
-    expect(yaml).toContain("ghcr.io/app-vitals/shipwright-agent");
+  it("includes the image tag", () => {
+    const yaml = generateCutoverValues(AGENT_ID, IMAGE_TAG);
+    expect(yaml).toContain("v1.2.3");
   });
 
-  it("includes SHIPWRIGHT_AGENT_ID set to the given agent ID", () => {
-    const yaml = generateCutoverValues(AGENT_ID, IMAGE_TAG, API_URL);
-    expect(yaml).toContain(`SHIPWRIGHT_AGENT_ID: "${AGENT_ID}"`);
+  it("sets image.tag in YAML", () => {
+    const yaml = generateCutoverValues(AGENT_ID, IMAGE_TAG);
+    expect(yaml).toContain("tag:");
+    expect(yaml).toMatch(/tag:\s*["']?v1\.2\.3["']?/);
   });
 
-  it("includes SHIPWRIGHT_API_URL set to the given URL", () => {
-    const yaml = generateCutoverValues(AGENT_ID, IMAGE_TAG, API_URL);
-    expect(yaml).toContain(`SHIPWRIGHT_API_URL: "${API_URL}"`);
+  it("adds SHIPWRIGHT_API_URL to env", () => {
+    const yaml = generateCutoverValues(AGENT_ID, IMAGE_TAG);
+    expect(yaml).toContain("SHIPWRIGHT_API_URL");
   });
 
-  it("includes SHIPWRIGHT_INTERNAL_API_KEY placeholder", () => {
-    const yaml = generateCutoverValues(AGENT_ID, IMAGE_TAG, API_URL);
-    expect(yaml).toContain("SHIPWRIGHT_INTERNAL_API_KEY:");
+  it("adds SHIPWRIGHT_INTERNAL_API_KEY to env", () => {
+    const yaml = generateCutoverValues(AGENT_ID, IMAGE_TAG);
+    expect(yaml).toContain("SHIPWRIGHT_INTERNAL_API_KEY");
   });
 
-  it("lists the three env vars to remove", () => {
-    const yaml = generateCutoverValues(AGENT_ID, IMAGE_TAG, API_URL);
+  it("adds SHIPWRIGHT_AGENT_ID with the given agent ID", () => {
+    const yaml = generateCutoverValues(AGENT_ID, IMAGE_TAG);
+    expect(yaml).toContain("SHIPWRIGHT_AGENT_ID");
+    expect(yaml).toContain(AGENT_ID);
+  });
+
+  it("removes VITALS_OS_API_URL", () => {
+    const yaml = generateCutoverValues(AGENT_ID, IMAGE_TAG);
     expect(yaml).toContain("VITALS_OS_API_URL");
+  });
+
+  it("removes VITALS_INTERNAL_API_KEY", () => {
+    const yaml = generateCutoverValues(AGENT_ID, IMAGE_TAG);
     expect(yaml).toContain("VITALS_INTERNAL_API_KEY");
+  });
+
+  it("removes VITALS_OS_AGENT_USER_ID", () => {
+    const yaml = generateCutoverValues(AGENT_ID, IMAGE_TAG);
     expect(yaml).toContain("VITALS_OS_AGENT_USER_ID");
   });
 
-  it("produces YAML that contains no parse-breaking syntax", () => {
-    const yaml = generateCutoverValues(AGENT_ID, IMAGE_TAG, API_URL);
-    // Basic structural checks: has at minimum the top-level agent: key
-    expect(yaml).toContain("agent:");
-    // Every line is either blank, a comment, or starts with indentation/key chars
-    const lines = yaml.split("\n");
-    for (const line of lines) {
-      if (line.trim() === "" || line.trimStart().startsWith("#")) continue;
-      // Should not contain tab characters (YAML indentation must be spaces)
-      expect(line).not.toContain("\t");
-    }
+  it("produces valid YAML structure with add and remove sections", () => {
+    const yaml = generateCutoverValues(AGENT_ID, IMAGE_TAG);
+    expect(yaml).toContain("add:");
+    expect(yaml).toContain("remove:");
   });
 
-  it("embeds the agent ID in the header comment", () => {
-    const yaml = generateCutoverValues(AGENT_ID, IMAGE_TAG, API_URL);
-    expect(yaml).toContain(AGENT_ID);
+  it("works with any agent ID", () => {
+    const yaml = generateCutoverValues("different-agent-xyz", "v2.0.0");
+    expect(yaml).toContain("different-agent-xyz");
+    expect(yaml).toContain("v2.0.0");
   });
 });

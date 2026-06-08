@@ -1,32 +1,33 @@
 /**
  * agent/src/cutover-values.ts
- * Pure YAML generation for the client-agent Helm values cutover patch.
+ * Pure function that generates a Helm values patch for cutting an agent over
+ * from vitals-os to shipwright.
+ *
+ * Adds:    SHIPWRIGHT_API_URL, SHIPWRIGHT_INTERNAL_API_KEY, SHIPWRIGHT_AGENT_ID
+ * Removes: VITALS_OS_API_URL, VITALS_INTERNAL_API_KEY, VITALS_OS_AGENT_USER_ID
  */
 
-const REMOVE_ENV_VARS = [
-  "VITALS_OS_API_URL",
-  "VITALS_INTERNAL_API_KEY",
-  "VITALS_OS_AGENT_USER_ID",
-] as const;
-
+/**
+ * Generates a Helm values patch YAML string for a client-agent chart cutover.
+ *
+ * The caller sets SHIPWRIGHT_API_URL and SHIPWRIGHT_INTERNAL_API_KEY via their
+ * own secrets — this patch leaves them empty as placeholders so the operator
+ * knows to fill them in.
+ */
 export function generateCutoverValues(
   agentId: string,
   imageTag: string,
-  shipwrightApiUrl: string,
 ): string {
-  const removeLines = REMOVE_ENV_VARS.map((v) => `    - ${v}`).join("\n");
-
-  return `# Helm values patch for agent: ${agentId}
-# Apply with: helm upgrade <release> <chart> -f values-cutover-${agentId}.yaml
-agent:
-  image:
-    repository: ghcr.io/app-vitals/shipwright-agent
-    tag: "${imageTag}"
-  env:
-    SHIPWRIGHT_API_URL: "${shipwrightApiUrl}"
-    SHIPWRIGHT_INTERNAL_API_KEY: ""  # populate from secret
+  return `image:
+  tag: "${imageTag}"
+env:
+  add:
+    SHIPWRIGHT_API_URL: ""
+    SHIPWRIGHT_INTERNAL_API_KEY: ""
     SHIPWRIGHT_AGENT_ID: "${agentId}"
-  removeEnv:
-${removeLines}
+  remove:
+    - VITALS_OS_API_URL
+    - VITALS_INTERNAL_API_KEY
+    - VITALS_OS_AGENT_USER_ID
 `;
 }
