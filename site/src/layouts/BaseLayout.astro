@@ -16,6 +16,10 @@ const {
 
 const canonicalURL = new URL(Astro.url.pathname, Astro.site);
 
+// OG/social card (SWW-3.1): 1280x640 typographic card in site/public/.
+// MUST be absolute — link-preview crawlers reject relative URLs.
+const ogImage = new URL("/og-default-1280x640.png", Astro.site);
+
 // Footer links (SWW-2.3): repo, license, platform, community.
 const repoUrl = "https://github.com/app-vitals/shipwright";
 const licenseUrl = "https://github.com/app-vitals/shipwright/blob/main/LICENSE";
@@ -41,11 +45,15 @@ const year = new Date().getFullYear();
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:site_name" content="Shipwright Harness" />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:width" content="1280" />
+    <meta property="og:image:height" content="640" />
 
     <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content={title} />
     <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
 
     <!--
       Fonts (no runtime JS): Space Grotesk + JetBrains Mono from Google Fonts,
