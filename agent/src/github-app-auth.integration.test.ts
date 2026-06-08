@@ -38,9 +38,6 @@ class RecordedGitHubAppClient {
     };
   }
 
-  get callCount_(): number {
-    return this.calls.length;
-  }
 }
 
 // ─── Fake timer infrastructure ────────────────────────────────────────────────
@@ -54,13 +51,15 @@ class FakeTimerControl {
   private callbacks: Map<number, () => void> = new Map();
   private nextId = 1;
   clearedIds: number[] = [];
+  registeredIntervalMs: number[] = [];
 
   /** Returns a fake setInterval suitable for constructor injection. */
   get setIntervalFn(): typeof setInterval {
     const self = this;
-    return function fakeSetInterval(fn: unknown, _ms?: unknown): ReturnType<typeof setInterval> {
+    return function fakeSetInterval(fn: unknown, ms?: unknown): ReturnType<typeof setInterval> {
       const id = self.nextId++;
       self.callbacks.set(id, fn as () => void);
+      self.registeredIntervalMs.push(ms as number);
       return id as unknown as ReturnType<typeof setInterval>;
     } as unknown as typeof setInterval;
   }
@@ -135,9 +134,10 @@ describe("GitHubTokenManager — background refresh (integration)", () => {
     expect(client.calls.length).toBe(3);
   });
 
-  it("startBackgroundRefresh() registers exactly one interval", async () => {
+  it("startBackgroundRefresh() registers exactly one interval at 30-minute cadence", async () => {
     manager.startBackgroundRefresh(async () => {});
     expect(timers.activeTimerCount).toBe(1);
+    expect(timers.registeredIntervalMs[0]).toBe(30 * 60 * 1000);
   });
 
   it("stopBackgroundRefresh() clears the interval", async () => {
