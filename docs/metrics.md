@@ -10,6 +10,22 @@ Entrypoint: `metrics/src/server.ts` (standalone Bun server, default port **3460*
 
 ## Running locally
 
+**Preferred — offline mode** (no credentials needed):
+
+```bash
+task api        # or: task ui (same process)
+```
+
+Both targets start the metrics server with `METRICS_OFFLINE=true` and serve the dashboard at http://localhost:3460/dashboard. No PostHog keys required — fixture data is injected automatically.
+
+For a full dev environment with Ctrl-C cleanup:
+
+```bash
+task dev        # supervisor: starts metrics + kills all children on Ctrl-C
+```
+
+**With live PostHog credentials:**
+
 ```bash
 # Required: a PostHog personal API key + project id
 export POSTHOG_PERSONAL_API_KEY=phx_...

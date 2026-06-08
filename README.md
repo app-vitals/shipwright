@@ -56,7 +56,7 @@ Shipwright turns a feature idea into shipped, reviewed code through a sequence o
 | Component | What it does | Status |
 |---|---|---|
 | **Plugin (the system)** | The `shipwright` toolchain you `/plugin install` — planning, queue-based execution, review, a test-readiness pipeline, and deploy commands. | 🔨 Building (Phase A) |
-| **Metrics dashboard** | A stateless service that reads pipeline analytics (task throughput, CI first-pass rate, review verdicts, estimation accuracy) and renders a dashboard. | 📋 Planned (Phase B) |
+| **Metrics dashboard** | A stateless service that reads pipeline analytics (task throughput, CI first-pass rate, review verdicts, estimation accuracy) and renders a dashboard. Run locally with `task api` or `task ui` (offline mode, no secrets needed). | 🔨 Building (Phase B) |
 | **Shipwright agent** | A thin autonomous runner that drives the system on a schedule — pick the next ready task → build → ship a PR → forward metrics — deployable to GitHub Actions or self-hosted. | 📋 Planned (Phase C) |
 
 ## The workflow
@@ -74,7 +74,15 @@ Tasks are tracked as GitHub Issues, so the queue lives where your team already w
 
 ## Project status
 
-Shipwright Harness is being assembled here in three phases — plugin, then metrics dashboard, then Shipwright agent — with merge-blocking CI gates and a single local task runner from the start. See the [`shipwright-oss` milestone](https://github.com/app-vitals/shipwright/milestones) and the [issues](https://github.com/app-vitals/shipwright/issues) for the live roadmap. Installation and local-development instructions will land here as the toolchain becomes runnable.
+Shipwright Harness is being assembled here in three phases — plugin, then metrics dashboard, then Shipwright agent — with merge-blocking CI gates and a single local task runner from the start. See the [`shipwright-oss` milestone](https://github.com/app-vitals/shipwright/milestones) and the [issues](https://github.com/app-vitals/shipwright/issues) for the live roadmap.
+
+The metrics dashboard is runnable locally today:
+
+```bash
+task setup      # bun install
+task api        # start metrics dashboard in offline mode → http://localhost:3460/dashboard
+task dev        # dev supervisor: starts metrics + Ctrl-C kills all children
+```
 
 ## Built on Claude Code
 
