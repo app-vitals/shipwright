@@ -3,40 +3,41 @@
  * markdownToSlack: pure function, no mocking needed.
  *
  * Note on conversion order:
- * The pipeline is: tables → headings(*) → bold(*) → italic(*→_) → code → links → hr
- * Headings and **bold** are first wrapped in *, then the italic pass converts *x* → _x_.
- * So headings and bold both render as _italic_ style in Slack (Slack italic = bold in some clients).
+ * The pipeline is: tables → italic(*→_) → headings(*) → bold(**→*) → code → links → hr
+ * The italic pass runs first (on the original markdown) so that the lookbehind/lookahead
+ * can distinguish *italic* from **bold**. Headings and **bold** become *text* (Slack bold),
+ * while *italic* becomes _text_ (Slack italic).
  */
 
 import { describe, expect, test } from "bun:test";
 import { markdownToBlocks, markdownToSlack } from "./format.ts";
 
 describe("markdownToSlack", () => {
-  // ─── Headings (become _italic_ due to conversion order) ───────────────────
+  // ─── Headings (become *bold* in Slack) ────────────────────────────────────
 
-  test("converts h1 heading — wraps in underscores (italic)", () => {
-    expect(markdownToSlack("# Hello World")).toBe("_Hello World_");
+  test("converts h1 heading — wraps in asterisks (Slack bold)", () => {
+    expect(markdownToSlack("# Hello World")).toBe("*Hello World*");
   });
 
-  test("converts h2 heading — wraps in underscores", () => {
-    expect(markdownToSlack("## Section Title")).toBe("_Section Title_");
+  test("converts h2 heading — wraps in asterisks", () => {
+    expect(markdownToSlack("## Section Title")).toBe("*Section Title*");
   });
 
-  test("converts h6 heading — wraps in underscores", () => {
-    expect(markdownToSlack("###### Deep Heading")).toBe("_Deep Heading_");
+  test("converts h6 heading — wraps in asterisks", () => {
+    expect(markdownToSlack("###### Deep Heading")).toBe("*Deep Heading*");
   });
 
-  // ─── Bold (also becomes _italic_ due to conversion order) ─────────────────
+  // ─── Bold (becomes *bold* in Slack) ───────────────────────────────────────
 
-  test("converts **bold** — becomes _underscored_ in Slack", () => {
+  test("converts **bold** — becomes *bold* in Slack", () => {
     expect(markdownToSlack("This is **bold** text")).toBe(
-      "This is _bold_ text",
+      "This is *bold* text",
     );
   });
 
   test("handles multiple **bold** spans", () => {
     expect(markdownToSlack("**first** and **second**")).toBe(
-      "_first_ and _second_",
+      "*first* and *second*",
     );
   });
 
@@ -116,8 +117,8 @@ describe("markdownToSlack", () => {
     ].join("\n");
 
     const result = markdownToSlack(input);
-    expect(result).toContain("_Report_");
-    expect(result).toContain("_important_");
+    expect(result).toContain("*Report*");
+    expect(result).toContain("*important*");
     expect(result).toContain("<https://docs.example.com|docs>");
   });
 

@@ -5,8 +5,15 @@
  * @slack/web-api directly — keeping the agent package Slack-agnostic.
  */
 
-// In-memory cache — survives for the lifetime of the process
+// In-memory cache — survives for the lifetime of the process.
+// Export clearCache() for test teardown to prevent cross-test leakage
+// when Bun shares the module between test files.
 const cache = new Map<string, string>();
+
+/** Clear the in-memory display name cache. Use in test afterEach teardown. */
+export function clearCache(): void {
+  cache.clear();
+}
 
 export interface UserResolverClient {
   users: {

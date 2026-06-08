@@ -1,4 +1,5 @@
 import { readFileSync, writeFileSync } from "node:fs";
+import { type Clock, SystemClock } from "./clock.ts";
 
 interface SessionEntry {
   sessionId: string;
@@ -21,10 +22,13 @@ export function threadKey(channel: string, threadTs: string): string {
  *
  * Module-level default store removed — callers must wire their own store
  * via createFileSessionStore(config.paths.sessions).
+ *
+ * @param clock - Injectable clock for deterministic testing. Defaults to SystemClock.
  */
 export function createFileSessionStore(
   file: string,
   ttlMs: number = DEFAULT_TTL_MS,
+  clock: Clock = SystemClock(),
 ): {
   get: (key: string) => string | undefined;
   set: (key: string, id: string) => void;
@@ -59,7 +63,7 @@ export function createFileSessionStore(
       const map = load();
       const entry = map[key];
       if (!entry) return undefined;
-      if (isExpired(entry, Date.now())) {
+      if (isExpired(entry, clock.now().getTime())) {
         // Lazy prune: remove expired entry on access
         delete map[key];
         save(map);
@@ -69,7 +73,7 @@ export function createFileSessionStore(
     },
     set: (key, id) => {
       const map = load();
-      map[key] = { sessionId: id, updatedAt: Date.now() };
+      map[key] = { sessionId: id, updatedAt: clock.now().getTime() };
       save(map);
     },
     clear: (key) => {
@@ -80,7 +84,7 @@ export function createFileSessionStore(
     /** Remove all expired sessions. Returns count of pruned entries. */
     prune: () => {
       const map = load();
-      const now = Date.now();
+      const now = clock.now().getTime();
       let pruned = 0;
       for (const key of Object.keys(map)) {
         if (isExpired(map[key], now)) {

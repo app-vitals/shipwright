@@ -85,6 +85,7 @@ export function snapshotMetrics(workspace: string): Map<string, number> {
 export async function forwardNewMetrics(
   workspace: string,
   snapshot: Map<string, number>,
+  fetchFn: typeof fetch = globalThis.fetch,
 ): Promise<void> {
   const apiKey = process.env.POSTHOG_PROJECT_API_KEY;
   if (!apiKey) return;
@@ -130,7 +131,7 @@ export async function forwardNewMetrics(
   }));
 
   try {
-    const res = await fetch(`${host}/batch/`, {
+    const res = await fetchFn(`${host}/batch/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ api_key: apiKey, batch }),
@@ -164,6 +165,7 @@ export async function forwardTokenUsage(
   usage: TokenUsage | undefined,
   sessionType: SessionType,
   model?: string,
+  fetchFn: typeof fetch = globalThis.fetch,
 ): Promise<void> {
   if (!usage) return;
   const apiKey = process.env.POSTHOG_PROJECT_API_KEY;
@@ -194,7 +196,7 @@ export async function forwardTokenUsage(
   };
 
   try {
-    const res = await fetch(`${host}/batch/`, {
+    const res = await fetchFn(`${host}/batch/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ api_key: apiKey, batch: [event] }),

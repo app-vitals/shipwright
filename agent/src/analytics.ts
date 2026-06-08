@@ -9,7 +9,8 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
+import { type Clock, SystemClock } from "./clock.ts";
 
 export interface AnalyticsEvent {
   type:
@@ -62,8 +63,8 @@ interface WeeklyRollup {
   topDay: string | null; // YYYY-MM-DD with highest message count
 }
 
-function todayString(): string {
-  return new Date().toISOString().slice(0, 10);
+function todayString(clock: Clock): string {
+  return clock.now().toISOString().slice(0, 10);
 }
 
 function dateRange(startDate: string, endDate: string): string[] {
@@ -85,7 +86,7 @@ function percentile(sorted: number[], p: number): number {
   return sorted[Math.max(0, idx)];
 }
 
-export function createAnalyticsStore(dir: string) {
+export function createAnalyticsStore(dir: string, clock: Clock = SystemClock()) {
   // Ensure directory exists
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
@@ -110,13 +111,13 @@ export function createAnalyticsStore(dir: string) {
   }
 
   function track(event: Omit<AnalyticsEvent, "timestamp">): void {
-    const date = todayString();
+    const date = todayString(clock);
     const stats = loadDay(date);
-    stats.events.push({ ...event, timestamp: Date.now() });
+    stats.events.push({ ...event, timestamp: clock.now().getTime() });
     saveDay(stats);
   }
 
-  function summarize(date: string = todayString()): AnalyticsSummary {
+  function summarize(date: string = todayString(clock)): AnalyticsSummary {
     const stats = loadDay(date);
     const events = stats.events;
 
@@ -158,7 +159,7 @@ export function createAnalyticsStore(dir: string) {
     return dateRange(startDate, endDate).map((date) => summarize(date));
   }
 
-  function rollupWeek(endDate: string = todayString()): WeeklyRollup {
+  function rollupWeek(endDate: string = todayString(clock)): WeeklyRollup {
     const start = new Date(`${endDate}T00:00:00Z`);
     start.setUTCDate(start.getUTCDate() - 6);
     const startDate = start.toISOString().slice(0, 10);

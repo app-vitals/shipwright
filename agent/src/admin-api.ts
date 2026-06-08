@@ -154,6 +154,13 @@ export function createAdminApp(deps: AdminDeps): Hono {
     return c.json({ crons });
   });
 
+  // POST /admin/api/agents/:id/crons/reconcile — static path must precede /:cronId routes
+  app.post("/admin/api/agents/:id/crons/reconcile", async (c) => {
+    const agentId = c.req.param("id");
+    const result = await agentCronJobService.reconcileSystemCrons(agentId);
+    return c.json(result);
+  });
+
   app.patch("/admin/api/agents/:id/crons/:cronId", async (c) => {
     const agentId = c.req.param("id");
     const cronId = c.req.param("cronId");
@@ -178,13 +185,6 @@ export function createAdminApp(deps: AdminDeps): Hono {
     const cronId = c.req.param("cronId");
     await agentCronJobService.delete(agentId, cronId);
     return new Response(null, { status: 204 });
-  });
-
-  // POST /admin/api/agents/:id/crons/reconcile — reconcile system crons
-  app.post("/admin/api/agents/:id/crons/reconcile", async (c) => {
-    const agentId = c.req.param("id");
-    const result = await agentCronJobService.reconcileSystemCrons(agentId);
-    return c.json(result);
   });
 
   // Tool routes

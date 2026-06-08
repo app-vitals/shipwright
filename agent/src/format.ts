@@ -11,12 +11,15 @@ export function markdownToSlack(text: string): string {
       .replace(TABLE_REGEX, (match) => {
         return `\`\`\`\n${match.trimEnd()}\n\`\`\``;
       })
+      // Italic (but not bold) — must run before heading/bold so the
+      // lookbehind/lookahead can distinguish *italic* from **bold** in
+      // the original markdown input. After the bold pass, **bold** becomes
+      // *bold* and the regex would incorrectly convert it to _bold_ (italic).
+      .replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, "_$1_")
       // Headings → bold
       .replace(/^#{1,6}\s+(.+)$/gm, "*$1*")
       // Bold
       .replace(/\*\*(.+?)\*\*/g, "*$1*")
-      // Italic (but not bold)
-      .replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, "_$1_")
       // Inline code
       .replace(/`([^`]+)`/g, "`$1`")
       // Links

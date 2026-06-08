@@ -1,8 +1,9 @@
 /**
  * Tests for agent/src/posthog.ts — snapshotMetrics and forwardNewMetrics.
  *
- * posthog.ts directly wraps fetch(), so global.fetch mocking is acceptable
- * here per the project's no-global-mock exception for client implementations.
+ * Both forwardNewMetrics and forwardTokenUsage accept an optional fetchFn
+ * parameter for DI — tests pass a mock directly, following the same pattern
+ * as makeWhisperSvcClient in voice.ts.
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
@@ -120,7 +121,6 @@ describe("snapshotMetrics", () => {
 // ─── forwardNewMetrics ────────────────────────────────────────────────────────
 
 describe("forwardNewMetrics", () => {
-  const originalFetch = globalThis.fetch;
   let mockFetch: ReturnType<typeof mock>;
   const originalApiKey = process.env.POSTHOG_PROJECT_API_KEY;
 
@@ -128,12 +128,10 @@ describe("forwardNewMetrics", () => {
     mockFetch = mock(() =>
       Promise.resolve(new Response(null, { status: 200 })),
     );
-    globalThis.fetch = mockFetch as unknown as typeof fetch;
     process.env.POSTHOG_PROJECT_API_KEY = "phc_test-key";
   });
 
   afterEach(() => {
-    globalThis.fetch = originalFetch;
     if (originalApiKey === undefined) {
       process.env.POSTHOG_PROJECT_API_KEY = undefined;
     } else {
@@ -147,7 +145,7 @@ describe("forwardNewMetrics", () => {
     writeFileSync(join(ws, "state", "metrics.jsonl"), `${SAMPLE_ENTRY}\n`);
 
     const snap = new Map<string, number>();
-    await forwardNewMetrics(ws, snap);
+    await forwardNewMetrics(ws, snap, mockFetch as unknown as typeof fetch);
 
     expect(mockFetch).not.toHaveBeenCalled();
     rmSync(ws, { recursive: true });
@@ -159,7 +157,7 @@ describe("forwardNewMetrics", () => {
     writeFileSync(path, `${SAMPLE_ENTRY}\n`);
 
     const snap = new Map([[path, 1]]);
-    await forwardNewMetrics(ws, snap);
+    await forwardNewMetrics(ws, snap, mockFetch as unknown as typeof fetch);
 
     expect(mockFetch).not.toHaveBeenCalled();
     rmSync(ws, { recursive: true });
@@ -168,7 +166,7 @@ describe("forwardNewMetrics", () => {
   test("no-op when workspace has no metrics files at all", async () => {
     const ws = makeTmpWorkspace();
     const snap = new Map<string, number>();
-    await forwardNewMetrics(ws, snap);
+    await forwardNewMetrics(ws, snap, mockFetch as unknown as typeof fetch);
 
     expect(mockFetch).not.toHaveBeenCalled();
     rmSync(ws, { recursive: true });
@@ -180,7 +178,7 @@ describe("forwardNewMetrics", () => {
     writeFileSync(path, `${SAMPLE_ENTRY}\n`);
 
     const snap = new Map([[path, 0]]);
-    await forwardNewMetrics(ws, snap);
+    await forwardNewMetrics(ws, snap, mockFetch as unknown as typeof fetch);
 
     expect(mockFetch).toHaveBeenCalledTimes(1);
     const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
@@ -209,7 +207,7 @@ describe("forwardNewMetrics", () => {
     writeFileSync(path, `${SAMPLE_ENTRY}\n`);
 
     const snap = new Map([[path, 0]]);
-    await forwardNewMetrics(ws, snap);
+    await forwardNewMetrics(ws, snap, mockFetch as unknown as typeof fetch);
 
     const body = JSON.parse(
       (mockFetch.mock.calls[0] as [string, RequestInit])[1].body as string,
@@ -226,7 +224,7 @@ describe("forwardNewMetrics", () => {
     writeFileSync(path, `${SAMPLE_ENTRY}\n${SAMPLE_ENTRY_2}\n`);
 
     const snap = new Map([[path, 0]]);
-    await forwardNewMetrics(ws, snap);
+    await forwardNewMetrics(ws, snap, mockFetch as unknown as typeof fetch);
 
     expect(mockFetch).toHaveBeenCalledTimes(1);
     const body = JSON.parse(
@@ -248,7 +246,7 @@ describe("forwardNewMetrics", () => {
     // snapshot sees 1 line; then a second line is added
     const snap = new Map([[path, 1]]);
     writeFileSync(path, `${SAMPLE_ENTRY}\n${SAMPLE_ENTRY_2}\n`);
-    await forwardNewMetrics(ws, snap);
+    await forwardNewMetrics(ws, snap, mockFetch as unknown as typeof fetch);
 
     expect(mockFetch).toHaveBeenCalledTimes(1);
     const body = JSON.parse(
@@ -267,7 +265,7 @@ describe("forwardNewMetrics", () => {
     writeFileSync(planningPath, `${SAMPLE_ENTRY_2}\n`);
 
     const snap = new Map<string, number>(); // both files unseen
-    await forwardNewMetrics(ws, snap);
+    await forwardNewMetrics(ws, snap, mockFetch as unknown as typeof fetch);
 
     expect(mockFetch).toHaveBeenCalledTimes(1);
     const body = JSON.parse(
@@ -283,7 +281,7 @@ describe("forwardNewMetrics", () => {
     writeFileSync(path, `not-json\n${SAMPLE_ENTRY}\n{broken\n`);
 
     const snap = new Map([[path, 0]]);
-    await forwardNewMetrics(ws, snap);
+    await forwardNewMetrics(ws, snap, mockFetch as unknown as typeof fetch);
 
     expect(mockFetch).toHaveBeenCalledTimes(1);
     const body = JSON.parse(
@@ -294,20 +292,20 @@ describe("forwardNewMetrics", () => {
   });
 
   test("does not throw when fetch fails — silent no-op", async () => {
-    mockFetch.mockImplementationOnce(() =>
-      Promise.reject(new Error("network error")),
-    );
+    const failFetch = mock(() => Promise.reject(new Error("network error")));
     const ws = makeTmpWorkspace();
     const path = join(ws, "state", "metrics.jsonl");
     writeFileSync(path, `${SAMPLE_ENTRY}\n`);
 
     const snap = new Map([[path, 0]]);
-    await expect(forwardNewMetrics(ws, snap)).resolves.toBeUndefined();
+    await expect(
+      forwardNewMetrics(ws, snap, failFetch as unknown as typeof fetch),
+    ).resolves.toBeUndefined();
     rmSync(ws, { recursive: true });
   });
 
   test("does not throw when fetch returns non-200 — silent no-op", async () => {
-    mockFetch.mockImplementationOnce(() =>
+    const errorFetch = mock(() =>
       Promise.resolve(new Response(null, { status: 500 })),
     );
     const ws = makeTmpWorkspace();
@@ -315,7 +313,9 @@ describe("forwardNewMetrics", () => {
     writeFileSync(path, `${SAMPLE_ENTRY}\n`);
 
     const snap = new Map([[path, 0]]);
-    await expect(forwardNewMetrics(ws, snap)).resolves.toBeUndefined();
+    await expect(
+      forwardNewMetrics(ws, snap, errorFetch as unknown as typeof fetch),
+    ).resolves.toBeUndefined();
     rmSync(ws, { recursive: true });
   });
 });
@@ -323,7 +323,6 @@ describe("forwardNewMetrics", () => {
 // ─── forwardTokenUsage ────────────────────────────────────────────────────────
 
 describe("forwardTokenUsage", () => {
-  const originalFetch = globalThis.fetch;
   let mockFetch: ReturnType<typeof mock>;
   const originalApiKey = process.env.POSTHOG_PROJECT_API_KEY;
   const originalAgentId = process.env.SHIPWRIGHT_AGENT_ID;
@@ -339,13 +338,11 @@ describe("forwardTokenUsage", () => {
     mockFetch = mock(() =>
       Promise.resolve(new Response(null, { status: 200 })),
     );
-    globalThis.fetch = mockFetch as unknown as typeof fetch;
     process.env.POSTHOG_PROJECT_API_KEY = "phc_test-key";
     process.env.SHIPWRIGHT_AGENT_ID = "agent-abc-123";
   });
 
   afterEach(() => {
-    globalThis.fetch = originalFetch;
     if (originalApiKey === undefined) {
       process.env.POSTHOG_PROJECT_API_KEY = undefined;
     } else {
@@ -359,7 +356,12 @@ describe("forwardTokenUsage", () => {
   });
 
   test("sends agent_token_usage event with all fields", async () => {
-    await forwardTokenUsage(SAMPLE_USAGE, "slack_dm", "claude-sonnet-4-5");
+    await forwardTokenUsage(
+      SAMPLE_USAGE,
+      "slack_dm",
+      "claude-sonnet-4-5",
+      mockFetch as unknown as typeof fetch,
+    );
 
     expect(mockFetch).toHaveBeenCalledTimes(1);
     const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
@@ -387,21 +389,34 @@ describe("forwardTokenUsage", () => {
 
   test("no-op when POSTHOG_PROJECT_API_KEY is absent", async () => {
     process.env.POSTHOG_PROJECT_API_KEY = undefined;
-    await forwardTokenUsage(SAMPLE_USAGE, "cron");
+    await forwardTokenUsage(
+      SAMPLE_USAGE,
+      "cron",
+      undefined,
+      mockFetch as unknown as typeof fetch,
+    );
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
   test("no-op when usage is undefined", async () => {
-    await forwardTokenUsage(undefined, "slack_mention");
+    await forwardTokenUsage(
+      undefined,
+      "slack_mention",
+      undefined,
+      mockFetch as unknown as typeof fetch,
+    );
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
   test("does not throw when fetch fails", async () => {
-    mockFetch.mockImplementationOnce(() =>
-      Promise.reject(new Error("network error")),
-    );
+    const failFetch = mock(() => Promise.reject(new Error("network error")));
     await expect(
-      forwardTokenUsage(SAMPLE_USAGE, "slack_dm"),
+      forwardTokenUsage(
+        SAMPLE_USAGE,
+        "slack_dm",
+        undefined,
+        failFetch as unknown as typeof fetch,
+      ),
     ).resolves.toBeUndefined();
   });
 });
