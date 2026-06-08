@@ -1,6 +1,6 @@
-# Reference Agent
+# Shipwright Agent
 
-> The reference agent (artifact **C**) is a thin autonomous runner: pick the next ready task → build → ship a PR → forward metrics. It has a Prisma-backed store (SQLite locally, PostgreSQL in production) and two HTTP surfaces — a machine-polled **runtime API** and a human-facing **admin CRUD API**.
+> The Shipwright agent (artifact **C**) is a thin autonomous runner: pick the next ready task → build → ship a PR → forward metrics. It has a Prisma-backed store (SQLite locally, PostgreSQL in production) and two HTTP surfaces — a machine-polled **runtime API** and a human-facing **admin CRUD API**.
 
 ## Overview
 

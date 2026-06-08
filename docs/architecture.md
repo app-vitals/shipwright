@@ -10,7 +10,7 @@ Shipwright Harness is the open-source autonomous delivery agent for [Claude Code
 |---|---|---|---|
 | **A** | **Plugin** (the system) | `plugins/shipwright/` | The Claude Code plugin users `/plugin install` — commands, skills, agents, scripts for the full delivery loop. Repo-agnostic. |
 | **B** | **Metrics dashboard** | `metrics/` | Stateless Hono service: PostHog-backed JSON endpoints + a server-rendered dashboard. No database. |
-| **C** | **Reference agent** | `agent/` | Hono service + Prisma store; a thin autonomous runner: pick next ready task → build → ship PR → forward metrics. |
+| **C** | **Shipwright agent** | `agent/` | Hono service + Prisma store; a thin autonomous runner: pick next ready task → build → ship PR → forward metrics. |
 
 The hard architectural rule: **no new coupling.** The plugin stays repo-agnostic; the metrics service and the agent each stand alone. Everything runs offline by default (fixtures / injected doubles / scratch queue); live external calls happen only when an env var explicitly enables them.
 
@@ -31,7 +31,7 @@ The plugin is pure TypeScript with **no server, no database, and no external HTT
 
 A stateless Hono service that turns the pipeline's PostHog events into analytics. Five read-only JSON endpoints (`/metrics/summary|trends|features|queue|tokens`) plus a session-gated `/dashboard`. No database — every response is computed from a live PostHog query (cached in-process). See **[metrics.md](./metrics.md)**.
 
-## C — Reference agent
+## C — Shipwright agent
 
 A thin autonomous runner with a Prisma-backed store (SQLite locally, PostgreSQL in production) and two HTTP surfaces: a machine-polled **runtime API** (`/agents/:id/config`, `/agents/:id/crons`) and a human-facing **admin CRUD API** (`/admin/api/agents/:id/...` for envs, crons, tools, tokens, plugins). See **[agent.md](./agent.md)**.
 
@@ -53,7 +53,7 @@ The repo is a Bun-workspaces monorepo with **go-task** (`Taskfile.yml`) as the s
 shipwright/
 ├── plugins/shipwright/   A — the plugin (commands, skills, agents, scripts)
 ├── metrics/              B — stateless PostHog-backed Hono service
-├── agent/                C — reference agent (Hono + Prisma)
+├── agent/                C — Shipwright agent (Hono + Prisma)
 ├── site/                 marketing site (Astro, separate toolchain)
 ├── brand/                locked design system
 ├── state/                local task-store / review-cache fallback
@@ -65,5 +65,5 @@ shipwright/
 
 - **[testing.md](./testing.md)** — the four-layer test architecture and isolation contract.
 - **[metrics.md](./metrics.md)** — metrics service API and dashboard.
-- **[agent.md](./agent.md)** — reference agent runtime + admin APIs and data model.
+- **[agent.md](./agent.md)** — Shipwright agent runtime + admin APIs and data model.
 - `CLAUDE.md` — contributor conventions and the pre-public scrub rule.
