@@ -1,74 +1,78 @@
 # Quickstart
 
-Get from zero to a running local Shipwright dashboard in under five minutes.
+> Get the Shipwright Harness metrics dashboard running locally in one prompt — offline by default, no external accounts or secrets.
+
+## What you can run today
+
+The **metrics dashboard** runs locally right now in **offline mode**: it serves from fixtures with **no PostHog key, no accounts, and no database**. That is the core promise of this quickstart — a running dashboard at `http://localhost:3460/dashboard` from a single copy-paste prompt.
+
+The plugin (Phase A) and the Shipwright agent (Phase C) are still being built; see the [README](../README.md) and the [`shipwright-oss` milestone](https://github.com/app-vitals/shipwright/milestones) for live status.
 
 ## Prerequisites
 
-| Tool | Install |
-|---|---|
-| [Bun](https://bun.sh) | `curl -fsSL https://bun.sh/install \| bash` |
-| [go-task](https://taskfile.dev/installation/) | `sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin` |
-| [Claude Code](https://www.anthropic.com/claude-code) | `npm install -g @anthropic-ai/claude-code` |
+| Tool | Why | Install |
+|---|---|---|
+| **Claude Code** | Runs the `/plugin install` step of the prompt. Not needed by `scripts/quickstart.sh`. | <https://www.anthropic.com/claude-code> |
+| **git** | Clone the repo. | <https://git-scm.com/downloads> |
+| **Bun** | Runtime + package manager for all workspaces. | <https://bun.sh> |
+| **go-task** (`task`) | The single local entrypoint (`task setup`, `task dev`). | <https://taskfile.dev/installation/> |
 
-## Steps
+## The one-prompt onboarding
 
-### 1. Clone and run system setup
+Paste this into a **Claude Code** session pointed at where you want to work. It sequences **two execution contexts** — shell steps run in a terminal, and one step runs *inside* the Claude Code session:
+
+```text
+Set up Shipwright Harness locally and open the metrics dashboard.
+
+1. In a terminal, run:
+     git clone https://github.com/app-vitals/shipwright.git && cd shipwright && ./scripts/quickstart.sh
+   This checks prerequisites, installs dependencies (task setup), and starts the
+   metrics dashboard in offline mode (no accounts or secrets needed). Leave it running.
+
+2. Inside this Claude Code session, install the plugin:
+     /plugin install shipwright@app-vitals/shipwright
+
+3. Open the dashboard in your browser:
+     http://localhost:3460/dashboard
+```
+
+### Which lines run where
+
+| Step | Where it runs | Command |
+|---|---|---|
+| 1. Clone + bootstrap + serve | **Terminal** (shell) | `git clone … && cd shipwright && ./scripts/quickstart.sh` |
+| 2. Install the plugin | **Inside the Claude Code session** | `/plugin install shipwright@app-vitals/shipwright` |
+| 3. Open the dashboard | **Browser** | `http://localhost:3460/dashboard` |
+
+The distinction matters: step 1 is a shell command, step 2 is a slash command that only works **inside** an interactive Claude Code session (it is not a terminal command).
+
+## What `scripts/quickstart.sh` does
+
+Run it from **inside** the cloned repo (the prompt's step 1 clones and `cd`s for you first). It is **idempotent** — safe to re-run:
+
+1. Verifies prerequisites (`git`, `bun`, `task`) and fails with an install pointer if any is missing.
+2. Runs `task setup` (idempotent `bun install` across all workspaces).
+3. Starts the dashboard with `task dev` (the dev supervisor; Ctrl-C stops it) and points you at `http://localhost:3460/dashboard`.
+
+## Offline by default
+
+`task dev` (and `task api` / `task ui`) bake in `METRICS_OFFLINE=true`. In offline mode the dashboard serves from fixtures, so you need **no PostHog project, no accounts service, and no database** to run it. Live external calls only happen when you explicitly set the relevant env vars — local-first is the default.
+
+## CI / testing: `QUICKSTART_SKIP_SERVE`
+
+The final `task dev` step is long-running (it blocks while the server runs), which would hang CI. Set the `QUICKSTART_SKIP_SERVE` env var to a non-empty value to run every deterministic step (prereq checks + `task setup` + the next-steps message) and then exit 0 **without** starting the server:
 
 ```bash
-git clone https://github.com/app-vitals/shipwright.git
-cd shipwright
-./scripts/quickstart.sh
+QUICKSTART_SKIP_SERVE=1 ./scripts/quickstart.sh
 ```
 
-`quickstart.sh` checks that `bun` and `task` are installed, then runs `bun install`. It's idempotent — safe to run again at any time.
+This is primarily for CI and the smoke test (`scripts/quickstart.smoke.test.ts`) — it lets the deterministic onboarding path be verified without blocking on a live server. In normal use, leave it unset.
 
-### 2. Open Claude Code and install the plugin
+## What this doesn't cover automatically
 
-Open Claude Code in the repo directory:
+The two networked / interactive steps of the prompt are **not** part of the script (and are not run in CI):
 
-```bash
-claude
-```
+- The `git clone` itself — it lives in the prompt's shell line, before the script runs.
+- The `/plugin install shipwright@app-vitals/shipwright` step — it runs inside an interactive Claude Code session, not a shell.
 
-Inside the Claude Code session, install the Shipwright plugin:
-
-```
-/plugin install shipwright@app-vitals/shipwright
-```
-
-### 3. Start the dev server
-
-Still inside Claude Code (or a terminal in the same directory):
-
-```
-task dev
-```
-
-The dev supervisor starts the metrics API and opens the dashboard at **http://localhost:3460/dashboard**.
-
----
-
-## Copy-paste session prompt
-
-Once the plugin is installed, paste this into a new Claude Code session to orient the agent and start the workflow:
-
-```
-I've just installed the Shipwright plugin. Please:
-1. Run /shipwright:brainstorm to start a new feature idea, OR
-2. Run /shipwright:plan-session if I already have a product spec, OR
-3. Run /shipwright:dev-task to pick up the next ready task from the queue.
-
-Use `task dev` to keep the local dashboard running at http://localhost:3460/dashboard so I can track pipeline metrics as we work.
-```
-
----
-
-## Troubleshooting
-
-**`bun: command not found`** — Install Bun: https://bun.sh
-
-**`task: command not found`** — Install go-task: https://taskfile.dev/installation/
-
-**`/plugin install` not recognized** — Make sure you're inside a Claude Code session (`claude` in your terminal), not a regular shell.
-
-**Dashboard doesn't load** — Confirm `task dev` is running. The metrics API defaults to port 3460; check for port conflicts if it fails to start.
+Both are documented in the prompt above; only the deterministic shell portion is scripted and tested.
