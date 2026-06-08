@@ -6,7 +6,7 @@
 
 The agent owns six first-class Prisma models (`Agent` and its `Env` / `CronJob` / `Tool` / `Token` / `Plugin` children) on a **dedicated database** (`DATABASE_URL_AGENT`). Secrets at rest (env values, Slack/Anthropic keys) are AES-256-GCM encrypted at the service layer; agent API tokens are stored only as SHA-256 hashes.
 
-> The top-level runner (`agent/src/index.ts`) is currently a Phase-C placeholder (`export {}`). The implemented surfaces are the admin CRUD API (`admin-api.ts`), the runtime API (`api.ts`), the server-rendered admin UI (`admin-ui.ts`), the Prisma store + service classes, the Slack event handler (`slack.ts`), and the cron runtime (`cron-handler.ts`). On startup the runner is expected to call `POST /admin/api/agents/:id/crons/reconcile` to sync system crons.
+> The container entrypoint is `agent/src/entrypoint-main.ts`, invoked by the Dockerfile `ENTRYPOINT`. It validates required vars, fetches agent config, applies env, symlinks `~/.claude`, sets up GitHub auth, runs mise, installs plugins, and spawns the agent server (`run-agent.ts`). The legacy `agent/src/index.ts` remains a placeholder (`export {}`). The implemented HTTP surfaces are the admin CRUD API (`admin-api.ts`), the runtime API (`api.ts`), the server-rendered admin UI (`admin-ui.ts`), the Prisma store + service classes, the Slack event handler (`slack.ts`), and the cron runtime (`cron-handler.ts`). On startup the runner calls `POST /admin/api/agents/:id/crons/reconcile` to sync system crons.
 
 ## Running locally
 
@@ -62,7 +62,11 @@ All child models cascade-delete with their `Agent`.
 | Variable | Required | Purpose |
 |---|---|---|
 | `DATABASE_URL_AGENT` | ✅ | Dedicated Prisma datasource (`file:./...` SQLite or a Postgres URL). |
-| `SHIPWRIGHT_INTERNAL_API_KEY` | runtime API | Bearer token for `/agents/*`. |
+| `SHIPWRIGHT_AGENT_ID` | ✅ (entrypoint) | The agent's ID in the Shipwright platform. Also settable via `--agent-id` CLI flag. |
+| `SHIPWRIGHT_API_URL` | ✅ (entrypoint) | Base URL of the Shipwright API used to fetch agent config at startup. Also settable via `--api-url`. |
+| `SHIPWRIGHT_INTERNAL_API_KEY` | ✅ (entrypoint + runtime API) | Bearer token for the config fetch at startup and for `/agents/*`. Also settable via `--api-key`. |
+| `AGENT_HOME` | entrypoint | Persistent storage root (default: `~/.shipwright-agent`). Mount a PVC here in Kubernetes so mise caches, workspace files, and `~/.claude` survive pod restarts. |
+| `PORT` | server | Hono server port (default: `3000`). |
 | `SHIPWRIGHT_SESSION_SECRET` | admin API | Secret for verifying the `admin_session` JWT cookie. |
 | `SHIPWRIGHT_ENCRYPTION_KEY` | secrets at rest | 64-char hex (32 bytes) for AES-256-GCM. **If unset, secrets are stored in plain text** (logged warning) — set it in any real deployment. |
 | `GH_APP_ID` | GitHub App auth | GitHub App ID (integer as string). Required when using the App auth path. |
@@ -83,6 +87,11 @@ All child models cascade-delete with their `Agent`.
 | `agent/src/agent-envs.ts` | Env service — encrypted key/value store + config bundle assembly. |
 | `agent/src/agent-cron-jobs.ts` | Cron service + system-cron reconciliation. |
 | `agent/src/agent-tools.ts` / `agent-tokens.ts` / `agent-plugins.ts` | Per-resource service classes. |
+| `agent/src/entrypoint-main.ts` | Production CLI entry point — wires real deps and calls `runEntrypoint()`. Invoked by the Dockerfile `ENTRYPOINT`. |
+| `agent/src/entrypoint.ts` | Container startup sequence (`runEntrypoint()`) — dependency-injected for testability. Validates vars, fetches config, applies env, symlinks `~/.claude`, runs GitHub auth + mise + plugin install, then spawns the server. |
+| `agent/src/cli-args.ts` | CLI argument parsing (`parseCliArgs()`) — `--agent-id`, `--api-url`, `--api-key` flags with env var fallbacks. Pure, no I/O. |
+| `agent/src/run-agent.ts` | Bootstraps and starts the Hono server (`startServer()`). Called by `entrypoint.ts` after all environment setup is complete. |
+| `agent/src/shipwright-config-client.ts` | `ShipwrightConfigClient` interface + `HttpShipwrightConfigClient` (real HTTP) + `RecordedShipwrightConfigClient` (cassette double for tests). |
 | `agent/src/setup.ts` | Workspace bootstrapping — directory scaffolding, identity-file seeding, plugin installation, and mise startup. Safe to call on every agent startup (idempotent). |
 | `agent/src/crypto.ts` / `token-crypto.ts` | AES-256-GCM + token hashing helpers. |
 | `agent/src/system-crons.ts` | System-cron definitions reconciled onto each agent. |
@@ -90,6 +99,12 @@ All child models cascade-delete with their `Agent`.
 | `agent/src/github-token-store.ts` | Atomic file-based token store (`writeToken` / `readToken` / `resolveTokenPath`) used by the credential helper. |
 | `agent/src/setup-github-auth.ts` | `setupGitHubAuth()` — wires GitHub auth on agent startup: App path (token manager + credential helper + git identity) or PAT path (`gh auth setup-git`). |
 | `agent/scripts/bin/git-credential-shipwright.sh` | Git credential helper that reads the token file written by the App auth path. |
+| `agent/scripts/entrypoint.ts` | Container entrypoint: validates env, fetches config, wires symlinks + GitHub auth, dynamic-imports `index.ts`. |
+| `agent/scripts/run-agent.ts` | Local dev launcher: fetches config, sets env, spawns the agent process. Takes `--agent-id`, `--dry-run`. |
+| `agent/scripts/bootstrap-agent.ts` | One-time agent setup: collects Slack + Anthropic credentials interactively, stores via admin API PATCH `/admin/api/agents/:id/envs`. |
+| `agent/scripts/cli-args.ts` | Pure CLI helpers: `getArg(name, argv)` and `hasFlag(name, argv)` for `--name=value` and `--name value` forms. |
+| `agent/src/shipwright-config-client.ts` | `ShipwrightConfigClient` interface + `HttpShipwrightConfigClient` — calls `GET /agents/:id/config` with Bearer auth. |
+| `agent/src/entrypoint-startup.ts` | Extracted startup logic (`runStartup(agentId, deps)`) — DI-injected for integration testing without real network or filesystem side effects. |
 | `agent/src/cron-handler.ts` | Cron runtime: `handleCronRequest()` — runs a cron prompt through Claude and posts the result to Slack. Supports `preCheck` scripts, `silent` suppression, channel vs. DM delivery, and `onPost`/`onSession` callbacks. |
 | `agent/src/slack.ts` | Slack event handler: `createSlackApp()` — Bolt-based Socket Mode app handling DMs, `app_mention`, `reaction_added`, file attachments, and voice transcription. |
 | `agent/src/slack-manifest.ts` | Typed Slack app manifest builder (`buildManifest()`) used by `agent/scripts/bootstrap-agent.ts` to create per-agent Slack apps via the Manifest API. |
