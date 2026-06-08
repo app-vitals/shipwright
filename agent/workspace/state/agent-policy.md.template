@@ -1,0 +1,52 @@
+# Agent Policy
+
+This file controls the agent's autonomy level. Edit it to adjust review and
+worktree cleanup behavior.
+
+Conservative defaults are set for safety. Relax them as trust grows.
+
+---
+
+## Review Policy
+
+### Posting
+- **auto_post_reviews**: false
+  When false, reviews are staged to `state/reviews/` and a Slack message is
+  sent to the owner. The owner must explicitly approve before the review is
+  posted to GitHub. When true, reviews are posted automatically.
+
+### Event Type
+- **allowed_events**: [COMMENT, APPROVE]
+  Never use REQUEST_CHANGES -- it blocks the PR and requires the reviewer to
+  dismiss. COMMENT for issues that should be fixed. APPROVE for clean PRs or
+  style-only suggestions.
+
+### Scope
+- **review_shipwright_prs**: true
+  Review PRs created by this agent (from state/todos.json with status pr_open).
+
+- **review_external_prs**: true
+  Review open PRs not created by this agent. Safe with auto_post_reviews off
+  since reviews are staged for owner confirmation before posting.
+
+- **allow_self_review**: false
+  Review own open PRs. GitHub blocks self-APPROVE, so own PRs are always posted
+  as COMMENT events. The actual verdict is recorded in state/reviews.json for
+  the deploy command to act on.
+
+### Quality Thresholds
+- **min_confidence**: 75
+  Only surface findings with confidence score >= this value.
+
+- **max_findings**: 5
+  Maximum findings per review. Trim lowest-confidence items first.
+
+---
+
+## Worktree Cleanup
+
+- **cleanup_merged_worktrees**: true
+  Remove worktrees for merged PRs at the start of each cron cycle.
+
+- **cleanup_after_days**: 14
+  Remove worktrees older than this many days, even if the PR is still open.
