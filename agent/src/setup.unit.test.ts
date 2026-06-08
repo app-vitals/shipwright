@@ -94,6 +94,17 @@ describe("loadState", () => {
     const state = loadState(testHome);
     expect(state.bootstrapSeededAt).toBe("2026-01-01T00:00:00.000Z");
   });
+
+  it("returns { version: 1 } when file is corrupted (invalid JSON)", () => {
+    mkdirSync(testHome, { recursive: true });
+    writeFileSync(
+      join(testHome, "workspace-state.json"),
+      '{"version":1,"bootstrapSeededAt":"2026-',
+      "utf8",
+    );
+    const state = loadState(testHome);
+    expect(state).toEqual({ version: 1 });
+  });
 });
 
 describe("saveState", () => {

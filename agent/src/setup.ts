@@ -54,7 +54,7 @@ interface WorkspaceState {
 
 /**
  * Loads workspace state from $AGENT_HOME/workspace-state.json.
- * Returns { version: 1 } when the file is absent.
+ * Returns { version: 1 } when the file is absent or corrupted.
  */
 export function loadState(home: string): WorkspaceState {
   const statePath = join(home, "workspace-state.json");
@@ -62,7 +62,13 @@ export function loadState(home: string): WorkspaceState {
     return { version: 1 };
   }
   const raw = readFileSync(statePath, "utf8");
-  return JSON.parse(raw) as WorkspaceState;
+  try {
+    return JSON.parse(raw) as WorkspaceState;
+  } catch {
+    // Corrupted or truncated file (e.g., partial write from a prior crash) —
+    // fall back to defaults so startup is never blocked.
+    return { version: 1 };
+  }
 }
 
 /**
