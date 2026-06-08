@@ -19,7 +19,7 @@ Auto-detect the project toolchain (run once, reuse throughout). Skip this step u
 **First, check for an interrupted task** — if a prior session left a task `in_progress`, resume it:
 
 ```bash
-PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | head -1 | xargs dirname 2>/dev/null)
+PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | sort -V | tail -1 | xargs dirname 2>/dev/null)
 bun "$PLUGIN_SCRIPTS/task_store.ts" query --status in_progress
 ```
 
@@ -34,7 +34,7 @@ Record `task_started_at` (current ISO timestamp) for metrics.
 **If no in_progress task**, pick the next ready pending task:
 
 ```bash
-PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | head -1 | xargs dirname 2>/dev/null)
+PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | sort -V | tail -1 | xargs dirname 2>/dev/null)
 bun "$PLUGIN_SCRIPTS/task_store.ts" query --ready
 ```
 
@@ -109,7 +109,7 @@ If the task's current status is already `in_progress`:
 ### Mark In-Progress
 
 ```bash
-PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | head -1 | xargs dirname 2>/dev/null)
+PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | sort -V | tail -1 | xargs dirname 2>/dev/null)
 bun "$PLUGIN_SCRIPTS/task_store.ts" update --id {id} --set startedAt={ISO timestamp} --set status=in_progress
 ```
 
@@ -437,7 +437,7 @@ Store these counts for use in Step 10b metrics.
 If any criterion is PARTIAL or NOT MET after the fix loop, mark the task blocked via task_store.ts, then fire `shipwright_task_blocked`:
 
 ```bash
-PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | head -1 | xargs dirname 2>/dev/null)
+PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | sort -V | tail -1 | xargs dirname 2>/dev/null)
 bun "$PLUGIN_SCRIPTS/task_store.ts" update --id {id} --set blockedReason=requirements_not_met --set status=blocked
 ```
 
@@ -663,7 +663,7 @@ If PR creation fails, OR if CI checks fail after max retries (Step 9b.5), after 
 This cleanup ensures no orphaned PRs or branches are left behind. Mark the task blocked via task_store.ts, then fire `shipwright_task_blocked`:
 
 ```bash
-PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | head -1 | xargs dirname 2>/dev/null)
+PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | sort -V | tail -1 | xargs dirname 2>/dev/null)
 bun "$PLUGIN_SCRIPTS/task_store.ts" update --id {id} --set blockedReason=pr_creation_failed --set status=blocked
 ```
 
@@ -854,7 +854,7 @@ Failing checks:
 Run PR Failure Cleanup (Step 9) and stop. Mark the task blocked via task_store.ts, then fire `shipwright_task_blocked`:
 
 ```bash
-PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | head -1 | xargs dirname 2>/dev/null)
+PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | sort -V | tail -1 | xargs dirname 2>/dev/null)
 bun "$PLUGIN_SCRIPTS/task_store.ts" update --id {id} --set blockedReason=ci_max_retries_exhausted --set status=blocked
 ```
 
@@ -869,7 +869,7 @@ POSTHOG_SCRIPT=$(find ~/.claude/plugins/cache -name "posthog_send.py" -path "*/s
 ### 10a. Update Queue
 
 ```bash
-PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | head -1 | xargs dirname 2>/dev/null)
+PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | sort -V | tail -1 | xargs dirname 2>/dev/null)
 bun "$PLUGIN_SCRIPTS/task_store.ts" update --id {id} --set pr={pr_number} --set prCreatedAt={ISO timestamp} --set status=pr_open
 ```
 
