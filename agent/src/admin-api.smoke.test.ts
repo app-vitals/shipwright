@@ -268,7 +268,7 @@ describe("admin API — env vars", () => {
     cookie = await makeSessionCookie();
   });
 
-  it("POST /admin/api/agents/:id/envs with valid body returns 200", async () => {
+  it("POST /admin/api/agents/:id/envs with valid body returns 201", async () => {
     const app = createAdminApp(makeMockDeps());
     const res = await app.request(`/admin/api/agents/${AGENT_ID}/envs`, {
       method: "POST",
@@ -278,7 +278,7 @@ describe("admin API — env vars", () => {
         Cookie: `admin_session=${cookie}`,
       },
     });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(201);
   });
 
   it("GET /admin/api/agents/:id/envs returns decrypted env vars", async () => {
@@ -551,10 +551,10 @@ describe("admin API — plugins", () => {
     expect(body.plugins).toHaveLength(1);
   });
 
-  it("PATCH /admin/api/agents/:id/plugins/:name updates version (200)", async () => {
+  it("PATCH /admin/api/agents/:id/plugins?name=<name> updates version (200)", async () => {
     const app = createAdminApp(makeMockDeps());
     const res = await app.request(
-      `/admin/api/agents/${AGENT_ID}/plugins/@shipwright%2Fplugin`,
+      `/admin/api/agents/${AGENT_ID}/plugins?name=${encodeURIComponent("@shipwright/plugin")}`,
       {
         method: "PATCH",
         body: JSON.stringify({ version: "2.0.0" }),
@@ -567,15 +567,43 @@ describe("admin API — plugins", () => {
     expect(res.status).toBe(200);
   });
 
-  it("DELETE /admin/api/agents/:id/plugins/:name returns 204", async () => {
+  it("PATCH /admin/api/agents/:id/plugins without name param returns 400", async () => {
     const app = createAdminApp(makeMockDeps());
     const res = await app.request(
-      `/admin/api/agents/${AGENT_ID}/plugins/@shipwright%2Fplugin`,
+      `/admin/api/agents/${AGENT_ID}/plugins`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ version: "2.0.0" }),
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("DELETE /admin/api/agents/:id/plugins?name=<name> returns 204", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(
+      `/admin/api/agents/${AGENT_ID}/plugins?name=${encodeURIComponent("@shipwright/plugin")}`,
       {
         method: "DELETE",
         headers: { Cookie: `admin_session=${cookie}` },
       },
     );
     expect(res.status).toBe(204);
+  });
+
+  it("DELETE /admin/api/agents/:id/plugins without name param returns 400", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(
+      `/admin/api/agents/${AGENT_ID}/plugins`,
+      {
+        method: "DELETE",
+        headers: { Cookie: `admin_session=${cookie}` },
+      },
+    );
+    expect(res.status).toBe(400);
   });
 });

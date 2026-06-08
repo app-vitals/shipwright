@@ -120,7 +120,7 @@ export function createAdminApp(deps: AdminDeps): Hono {
     const agentId = c.req.param("id");
     const body = await c.req.json<Record<string, string>>();
     await agentEnvService.upsert(agentId, body);
-    return c.json({ ok: true });
+    return c.json({ ok: true }, 201);
   });
 
   // GET /admin/api/agents/:id/envs — get all env vars (decrypted)
@@ -300,19 +300,29 @@ export function createAdminApp(deps: AdminDeps): Hono {
     return c.json({ plugins });
   });
 
-  // PATCH /admin/api/agents/:id/plugins/:name — update plugin version (re-upsert)
-  app.patch("/admin/api/agents/:id/plugins/:name", async (c) => {
+  // PATCH /admin/api/agents/:id/plugins?name=<name> — update plugin version (re-upsert)
+  // Uses a query param rather than a path segment to support scoped names like
+  // "@shipwright/plugin" which contain a literal "/" that breaks path matching.
+  app.patch("/admin/api/agents/:id/plugins", async (c) => {
     const agentId = c.req.param("id");
-    const name = c.req.param("name");
+    const name = c.req.query("name");
+    if (!name) {
+      return c.json({ error: "Missing required query param: name" }, 400);
+    }
     const body = await c.req.json<{ version?: string | null }>();
     const plugin = await agentPluginService.add(agentId, name, body.version);
     return c.json({ plugin });
   });
 
-  // DELETE /admin/api/agents/:id/plugins/:name — remove a plugin by name
-  app.delete("/admin/api/agents/:id/plugins/:name", async (c) => {
+  // DELETE /admin/api/agents/:id/plugins?name=<name> — remove a plugin by name
+  // Uses a query param rather than a path segment to support scoped names like
+  // "@shipwright/plugin" which contain a literal "/" that breaks path matching.
+  app.delete("/admin/api/agents/:id/plugins", async (c) => {
     const agentId = c.req.param("id");
-    const name = c.req.param("name");
+    const name = c.req.query("name");
+    if (!name) {
+      return c.json({ error: "Missing required query param: name" }, 400);
+    }
     await agentPluginService.removeByName(agentId, name);
     return new Response(null, { status: 204 });
   });
