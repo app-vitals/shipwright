@@ -9,7 +9,7 @@ Shipwright Harness is the open-source autonomous delivery agent for [Claude Code
 | Phase | Artifact | Directory | What it is |
 |---|---|---|---|
 | **A** | **Plugin** (the system) | `plugins/shipwright/` | The Claude Code plugin users `/plugin install` — commands, skills, agents, scripts for the full delivery loop. Repo-agnostic. |
-| **B** | **Metrics dashboard** | `metrics/` | Stateless Hono service: PostHog-backed JSON endpoints + a server-rendered dashboard. No database. |
+| **B** | **Metrics dashboard** | `metrics/` | Hono service: PostHog-backed JSON endpoints + a server-rendered dashboard. Optional local SQLite event store for offline ingest (`POST /batch/`). |
 | **C** | **Shipwright agent** | `agent/` | Hono service + Prisma store; a thin autonomous runner: pick next ready task → build → ship PR → forward metrics. |
 
 The hard architectural rule: **no new coupling.** The plugin stays repo-agnostic; the metrics service and the agent each stand alone. Everything runs offline by default (fixtures / injected doubles / scratch queue); live external calls happen only when an env var explicitly enables them.
@@ -29,7 +29,7 @@ The plugin is pure TypeScript with **no server, no database, and no external HTT
 
 ## B — Metrics dashboard
 
-A stateless Hono service that turns the pipeline's PostHog events into analytics. Five read-only JSON endpoints (`/metrics/summary|trends|features|queue|tokens`) plus a session-gated `/dashboard`. No database — every response is computed from a live PostHog query (cached in-process). See **[metrics.md](./metrics.md)**.
+A Hono service that turns the pipeline's PostHog events into analytics. Five read-only JSON endpoints (`/metrics/summary|trends|features|queue|tokens`) plus a session-gated `/dashboard`. By default every response is computed from a live PostHog query (cached in-process). An optional local SQLite event store (`local-store.ts`) can be injected to enable a `POST /batch/` ingest route for offline event collection. See **[metrics.md](./metrics.md)**.
 
 ## C — Shipwright agent
 
@@ -52,7 +52,7 @@ The repo is a Bun-workspaces monorepo with **go-task** (`Taskfile.yml`) as the s
 ```
 shipwright/
 ├── plugins/shipwright/   A — the plugin (commands, skills, agents, scripts)
-├── metrics/              B — stateless PostHog-backed Hono service
+├── metrics/              B — PostHog-backed Hono service + optional local SQLite store
 ├── agent/                C — Shipwright agent (Hono + Prisma)
 ├── site/                 marketing site (Astro, separate toolchain)
 ├── brand/                locked design system
