@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# gh — wrapper that injects a fresh GH_TOKEN from the file at
+# $GH_TOKEN_FILE before exec'ing the real `gh`. If $GH_TOKEN_FILE is
+# unset or the file is missing, the wrapper passes through without
+# touching GH_TOKEN.
+
+set -euo pipefail
+
+if [[ -n "${GH_TOKEN_FILE:-}" && -f "$GH_TOKEN_FILE" ]]; then
+  GH_TOKEN=$(cat "$GH_TOKEN_FILE")
+  export GH_TOKEN
+fi
+
+source="${BASH_SOURCE[0]}"
+while [[ -L "$source" ]]; do
+  dir=$(cd -P "$(dirname "$source")" && pwd)
+  source=$(readlink "$source")
+  [[ "$source" != /* ]] && source="$dir/$source"
+done
+self_dir=$(cd -P "$(dirname "$source")" && pwd)
+
+new_path=""
+IFS=':' read -r -a path_entries <<< "${PATH:-}"
+for entry in "${path_entries[@]}"; do
+  if [[ "$entry" != "$self_dir" ]]; then
+    if [[ -z "$new_path" ]]; then
+      new_path="$entry"
+    else
+      new_path="$new_path:$entry"
+    fi
+  fi
+done
+export PATH="$new_path"
+
+if ! command -v gh >/dev/null 2>&1; then
+  echo "gh wrapper: no real \`gh\` found on PATH after stripping $self_dir" >&2
+  exit 127
+fi
+
+exec gh "$@"
