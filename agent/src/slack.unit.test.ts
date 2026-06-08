@@ -12,10 +12,8 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { ClaudeRunError } from "./claude.ts";
 import { threadKey } from "./sessions.ts";
 import {
-  type SlackFile,
   createSlackApp,
   dispatchMarkers,
-  downloadFile,
   formatRunErrorForSlack,
 } from "./slack.ts";
 
