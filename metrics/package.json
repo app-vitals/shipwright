@@ -2,6 +2,7 @@
   "name": "@shipwright/metrics",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "description": "Shipwright metrics dashboard — stateless Hono service with PostHog-backed endpoints",
   "scripts": {
     "test": "bun test",
