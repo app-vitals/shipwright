@@ -291,9 +291,9 @@ describe("renderAgentDetailPage — overview", () => {
   });
 
   test("new token alert shown when opts.newToken set", () => {
-    const html = render({ newToken: "sw_tok_abc123" });
+    const html = render({ newToken: "test-token-value" });
     expect(html).toContain("Token created.");
-    expect(html).toContain("sw_tok_abc123");
+    expect(html).toContain("test-token-value");
   });
 
   test("XSS: new token value is escaped", () => {
