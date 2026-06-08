@@ -71,6 +71,12 @@ tasks:
           echo "WARNING: gitleaks not installed locally — skipping secret scan. CI enforces this gate."
         fi
 
+  pre-public:
+    desc: Full pre-public audit gate (check-strings + secret-scan). Run before making the repo public.
+    cmds:
+      - task: check-strings
+      - task: secret-scan
+
   doctor:
     desc: Validate task-store config and report active backend
     cmds:
