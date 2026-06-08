@@ -1,12 +1,12 @@
 # Shipwright Agent
 
-> The Shipwright agent (artifact **C**) is a thin autonomous runner: pick the next ready task → build → ship a PR → forward metrics. It has a Prisma-backed store (SQLite locally, PostgreSQL in production) and two HTTP surfaces — a machine-polled **runtime API** and a human-facing **admin CRUD API**.
+> The Shipwright agent (artifact **C**) is a thin autonomous runner: pick the next ready task → build → ship a PR → forward metrics. It has a Prisma-backed store (SQLite locally, PostgreSQL in production) and three HTTP surfaces — a machine-polled **runtime API**, a human-facing **admin CRUD API**, and a server-rendered **admin UI**.
 
 ## Overview
 
 The agent owns six first-class Prisma models (`Agent` and its `Env` / `CronJob` / `Tool` / `Token` / `Plugin` children) on a **dedicated database** (`DATABASE_URL_AGENT`). Secrets at rest (env values, Slack/Anthropic keys) are AES-256-GCM encrypted at the service layer; agent API tokens are stored only as SHA-256 hashes.
 
-> The top-level runner (`agent/src/index.ts`) is currently a Phase-C placeholder (`export {}`). The implemented surfaces are the admin CRUD API (`admin-api.ts`), the runtime API (`api.ts`), and the Prisma store + service classes. On startup the runner is expected to call `POST /admin/api/agents/:id/crons/reconcile` to sync system crons.
+> The top-level runner (`agent/src/index.ts`) is currently a Phase-C placeholder (`export {}`). The implemented surfaces are the admin CRUD API (`admin-api.ts`), the runtime API (`api.ts`), the server-rendered admin UI (`admin-ui.ts`), and the Prisma store + service classes. On startup the runner is expected to call `POST /admin/api/agents/:id/crons/reconcile` to sync system crons.
 
 ## Running locally
 
@@ -72,6 +72,10 @@ All child models cascade-delete with their `Agent`.
 |---|---|
 | `agent/src/api.ts` | Runtime API factory `createAgentRuntimeApp()` (DI for services). |
 | `agent/src/admin-api.ts` | Admin CRUD factory `createAdminApp()` + session-auth middleware. |
+| `agent/src/admin-ui.ts` | Admin UI factory `createAdminUIApp()` — server-rendered Hono app (login, agent list/detail, Slack provisioning). |
+| `agent/src/admin-ui-pages.ts` | Page rendering functions (`renderLoginPage`, `renderAgentsPage`, `renderAgentDetailPage`, `renderProvision*`). |
+| `agent/src/admin-ui-styles.ts` | Shared CSS helpers (`baseStyles`, `escapeHtml`, `renderAdminToolbar`). |
+| `agent/src/slack-provisioning-client.ts` | `SlackProvisioningClient` interface + `HttpSlackProvisioningClient` — drives the one-time Slack app creation flow. |
 | `agent/src/agent-envs.ts` | Env service — encrypted key/value store + config bundle assembly. |
 | `agent/src/agent-cron-jobs.ts` | Cron service + system-cron reconciliation. |
 | `agent/src/agent-tools.ts` / `agent-tokens.ts` / `agent-plugins.ts` | Per-resource service classes. |
