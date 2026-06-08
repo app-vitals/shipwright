@@ -6,12 +6,19 @@ Shipwright Harness is the open-source autonomous delivery agent for [Claude Code
 
 ## Contents
 
-- **[Test system](./test-readiness/test-system.md)** — the four-layer test architecture (unit / integration / smoke / e2e), per-component run commands, speed budgets, and the test-isolation contract.
+- **[Architecture](./architecture.md)** — the three-artifact design (plugin → metrics → agent), supporting surfaces, and workspace layout.
+- **[Testing](./testing.md)** — the four-layer test model (unit / integration / smoke / e2e), run commands, speed budgets, and the isolation contract.
+- **[Metrics dashboard](./metrics.md)** — the stateless PostHog-backed service: JSON endpoints, dashboard, auth, and environment.
+- **[Reference agent](./agent.md)** — the autonomous runner: runtime + admin APIs, data model, and environment.
+- **[Test system](./test-readiness/test-system.md)** — the full authoritative test blueprint (source for [Testing](./testing.md)).
 
-## Coming as the plugin lands
+## Command reference
+
+The plugin's commands (`brainstorm`, `plan-session`, `dev-task`, `review`, `patch`, `deploy`, the five-phase test-readiness pipeline, and more) are documented at their source: see [`plugins/shipwright/README.md`](../plugins/shipwright/README.md) and [`plugins/shipwright/CLAUDE.md`](../plugins/shipwright/CLAUDE.md).
+
+## Coming as the toolchain matures
 
 - **Getting started** — install, configure the task store, point Shipwright at your repo.
-- **Command reference** — `brainstorm`, `plan-session`, `dev-task`, `review`, `patch`, `deploy`, and the five-phase test-readiness pipeline.
 - **Configuration** — task-store backends (GitHub Issues / local), toolchain detection, environment.
 - **Deploying the agent** — running Shipwright autonomously on GitHub Actions or self-hosted.
 
