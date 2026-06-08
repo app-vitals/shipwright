@@ -43,7 +43,7 @@ const REFRESH_BUFFER_MS = 5 * 60 * 1000; // 5 minutes
 const REFRESH_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 
 export class GitHubTokenManager {
-  auth: AuthFunction;
+  private readonly auth: AuthFunction;
   private readonly installationId: number;
   private readonly setIntervalFn: typeof setInterval;
   private readonly clearIntervalFn: typeof clearInterval;
@@ -146,9 +146,7 @@ async function fetchBotIdentity(
 
   const appResp = await fetchFn("https://api.github.com/app", { headers });
   if (!appResp.ok) {
-    throw new Error(
-      `GET /app failed: ${appResp.status} ${appResp.statusText}`,
-    );
+    throw new Error(`GET /app failed: ${appResp.status} ${appResp.statusText}`);
   }
   const { slug, name } = (await appResp.json()) as {
     slug: string;
