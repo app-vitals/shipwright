@@ -37,7 +37,6 @@ type SpawnFn = (config: ChildConfig) => ChildHandle;
 
 export type Supervisor = {
   start(): Promise<void>;
-  shutdown(): Promise<void>;
   shutdownWithChildren(handles: ChildHandle[]): Promise<void>;
 };
 
@@ -100,12 +99,7 @@ export function createSupervisor(
     await Promise.all(handles.map((h) => h.exited));
   }
 
-  async function shutdown(): Promise<void> {
-    // Called externally — callers should use shutdownWithChildren directly
-    // for injection in tests, or let SIGINT handler do it.
-  }
-
-  return { start, shutdown, shutdownWithChildren };
+  return { start, shutdownWithChildren };
 }
 
 // ---------------------------------------------------------------------------

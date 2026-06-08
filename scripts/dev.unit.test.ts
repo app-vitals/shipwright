@@ -7,7 +7,7 @@
  * shutdown sequencing.
  */
 
-import { describe, expect, test, mock, beforeEach } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { type ChildConfig, createSupervisor } from "./dev.ts";
 
 // ---------------------------------------------------------------------------
@@ -42,10 +42,10 @@ type FakeChild = ReturnType<typeof makeFakeChild>;
 // ---------------------------------------------------------------------------
 
 describe("createSupervisor", () => {
-  test("returns an object with start and shutdown methods", () => {
+  test("returns an object with start and shutdownWithChildren methods", () => {
     const supervisor = createSupervisor([]);
     expect(typeof supervisor.start).toBe("function");
-    expect(typeof supervisor.shutdown).toBe("function");
+    expect(typeof supervisor.shutdownWithChildren).toBe("function");
   });
 
   test("shutdown signals all injected children", async () => {
