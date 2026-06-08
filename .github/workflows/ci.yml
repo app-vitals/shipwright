@@ -45,3 +45,28 @@ jobs:
 
       - name: Task store doctor
         run: task doctor
+
+  site:
+    name: site build / brand-lint / smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.x"
+
+      - name: Install site dependencies
+        run: cd site && bun install
+
+      - name: Build site
+        run: cd site && bunx astro build
+
+      - name: Brand-lint built dist
+        run: cd site && npm run brand-lint
+
+      - name: Install Playwright chromium
+        run: cd site && bunx playwright install --with-deps chromium
+
+      - name: Playwright smoke
+        run: cd site && bunx playwright test
