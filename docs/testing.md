@@ -9,7 +9,7 @@
 | **Unit** | `bun test` | Pure logic — no I/O of any kind (no filesystem, network, or subprocess). | `*.unit.test.ts` |
 | **Integration** | `bun test` + injected recorded doubles | Real dependency behavior via recorded fixtures / injected doubles — exercises the seam without a live external service. | `*.integration.test.ts` |
 | **Smoke** | `bun test` + Hono `app.request()` | HTTP route contracts (status, shape, auth, errors) via in-process `app.request()` — no real socket. | `*.smoke.test.ts` |
-| **E2E** | `@playwright/test` | Full browser-driven flows against a real running server. Phase B (dashboard) only. | `*.spec.ts` (in `site/`) |
+| **E2E** | `@playwright/test` | Full browser-driven flows against a real running server. Marketing site home page (Phase A); metrics dashboard (Phase B+). | `*.spec.ts` (in `site/`) |
 
 The layer is encoded in the filename suffix. When adding a test, classify in order: no I/O → **unit**; calls an external service → **integration** (inject a recorded double); tests an HTTP route → **smoke** (`app.request()`); multi-step browser flow → **e2e**. If none fit, escalate — don't invent a fifth layer.
 
@@ -48,7 +48,7 @@ cd site && npm test                  # playwright (*.spec.ts)
 | Metrics (`metrics`) | unit, integration, smoke | `bun test --filter metrics` |
 | Agent (`agent`) | unit, integration, smoke | `bun test --filter agent` |
 
-The plugin has **no smoke/e2e layer** (no HTTP surface). E2E (Playwright) covers only the metrics dashboard UI in `site/`.
+The plugin has **no smoke/e2e layer** (no HTTP surface). E2E (Playwright) covers the marketing site home page (`site/tests/home.spec.ts`) and, in Phase B+, the metrics dashboard UI.
 
 ## Speed budgets
 
