@@ -129,6 +129,10 @@ export async function run(deps: Deps): Promise<RunResult> {
     }
 
     if (entry.lastReviewedCommit !== pr.headRefOid) {
+      // Staged (unposted) review + new commits = Tier 3: the review skill deliberately
+      // defers these on no-arg runs. Match that behaviour so the cron doesn't spin.
+      if (entry.posted === false) continue;
+
       // New commits since last review — check if they are all merge commits
       const mergeOnly = await isMergeOnlyUpdate(
         pr.number,

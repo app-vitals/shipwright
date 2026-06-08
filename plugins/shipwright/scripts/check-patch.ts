@@ -74,6 +74,7 @@ export interface Deps {
     org: string,
     repo: string,
     pr: number,
+    sha: string,
   ) => Promise<CiCheckStatus>;
   fetchMergeStatus: (
     org: string,
@@ -159,7 +160,12 @@ export async function run(deps: Deps): Promise<RunResult> {
       };
     }
 
-    const ciStatus = await deps.fetchCiStatus(org, repo, pr.number);
+    const ciStatus = await deps.fetchCiStatus(
+      org,
+      repo,
+      pr.number,
+      pr.headRefOid,
+    );
     if (ciStatus.hasFailing) {
       return {
         exit: 0,
@@ -245,28 +251,27 @@ export async function buildProductionDeps(): Promise<Deps> {
       const response = ghGraphql<GraphqlResponse>(query);
       return response.data.repository.pullRequest;
     },
-    fetchCiStatus: async (_org: string, _repo: string, pr: number) => {
-      type CheckItem = { state: string; conclusion: string | null };
+    fetchCiStatus: async (
+      org: string,
+      repo: string,
+      pr: number,
+      sha: string,
+    ) => {
+      type ApiResponse = {
+        workflow_runs: { status: string; conclusion: string | null }[];
+      };
       try {
-        const checks = ghJson<CheckItem[]>([
-          "pr",
-          "checks",
-          String(pr),
-          "--repo",
-          orgRepo,
-          "--json",
-          "name,state,conclusion",
+        const data = ghJson<ApiResponse>([
+          "api",
+          `repos/${org}/${repo}/actions/runs?head_sha=${sha}`,
         ]);
-        const hasFailing = checks.some(
-          (c) =>
-            c.state === "FAILURE" ||
-            c.conclusion === "failure" ||
-            c.conclusion === "timed_out",
+        const hasFailing = data.workflow_runs.some(
+          (r) => r.conclusion === "failure" || r.conclusion === "timed_out",
         );
         return { hasFailing };
       } catch (err) {
         process.stderr.write(
-          `check-patch: gh checks query failed for PR ${pr}: ${String(err)}\n`,
+          `check-patch: actions/runs query failed for PR ${pr} sha ${sha}: ${String(err)}\n`,
         );
         return { hasFailing: false };
       }
