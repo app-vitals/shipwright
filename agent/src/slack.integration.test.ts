@@ -15,7 +15,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ClaudeRunError } from "./claude.ts";
+import { ClaudeRunError, ClaudeTimeoutError } from "./claude.ts";
 import type { markdownToBlocks } from "./format.ts";
 import { threadKey } from "./sessions.ts";
 import {
@@ -1522,6 +1522,45 @@ describe("voice integration — [speak:text] marker dispatch", () => {
   });
 });
 
+// ─── voiceConfig presence vs absence ─────────────────────────────────────────
+
+describe("createSlackApp — voiceConfig option set vs absent", () => {
+  beforeEach(() => {
+    mockRunClaude.mockClear();
+  });
+
+  test("voiceConfig absent — [speak:text] does not upload or error (no synthesizeFn)", async () => {
+    createSlackApp({ synthesizeSpeechFn: async () => null });
+    mockRunClaude.mockResolvedValueOnce({ result: "[speak:hello]", sessionId: "sess-v1" });
+    const client = makeMockClient();
+    const say = makeSay();
+    await capturedMessageHandler?.({
+      message: { channel: "D1", ts: "1.1", text: "hi", channel_type: "im" },
+      say,
+      client,
+    });
+    expect(client.files.uploadV2).not.toHaveBeenCalled();
+  });
+
+  test("voiceConfig present — synthesizeFn called with provided config", async () => {
+    const testVoiceConfig: VoiceConfig = { voiceId: "cfg-voice" };
+    const outPath = join(tmpdir(), `test-vc-present-${Date.now()}.mp3`);
+    writeFileSync(outPath, Buffer.from("audio"));
+    const mockSynthesize = mock(async () => outPath);
+    createSlackApp({ voiceConfig: testVoiceConfig, synthesizeSpeechFn: mockSynthesize });
+    mockRunClaude.mockResolvedValueOnce({ result: "[speak:test]", sessionId: "sess-v2" });
+    const client = makeMockClient();
+    const say = makeSay();
+    await capturedMessageHandler?.({
+      message: { channel: "D1", ts: "1.2", text: "hi", channel_type: "im" },
+      say,
+      client,
+    });
+    expect(mockSynthesize).toHaveBeenCalledWith("test", testVoiceConfig);
+    unlinkSync(outPath);
+  });
+});
+
 // ─── [react:emoji] dispatch — DM message handler ──────────────────────────────
 
 describe("marker dispatch — [react:emoji] in DM message handler", () => {
@@ -2100,6 +2139,21 @@ describe("formatRunErrorForSlack", () => {
     expect(out).toContain("Something went wrong");
     expect(out).toContain("just a string");
     expect(out).not.toContain("```");
+  });
+
+  test("ClaudeTimeoutError includes timeout duration and retry prompt", () => {
+    const err = new ClaudeTimeoutError(30 * 60 * 1000);
+    const out = formatRunErrorForSlack(err);
+    expect(out).toContain("30 minutes");
+    expect(out).toContain("retry");
+    expect(out).not.toContain("```");
+  });
+
+  test("ClaudeRunError with undefined sessionId handled gracefully", () => {
+    const err = new ClaudeRunError("msg", 500, "Internal server error", undefined);
+    const out = formatRunErrorForSlack(err);
+    expect(out).toContain("500");
+    expect(out).not.toThrow;
   });
 });
 
