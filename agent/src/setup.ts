@@ -26,7 +26,7 @@ const WORKSPACE_TEMPLATE_DIR = join(import.meta.dir, "..", "workspace");
 
 // Default plugin installed on all Shipwright agents.
 const DEFAULT_PLUGINS: readonly AgentPlugin[] = [
-  { marketplace: "shipwright", plugin: "shipwright" },
+  { marketplace: "app-vitals/shipwright", plugin: "shipwright" },
 ];
 
 /**

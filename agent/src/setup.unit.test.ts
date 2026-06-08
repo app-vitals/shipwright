@@ -478,7 +478,7 @@ describe("runMiseStartup", () => {
 // ---------------------------------------------------------------------------
 
 describe("installPlugins", () => {
-  it("installs shipwright default plugin first (shipwright@shipwright)", async () => {
+  it("installs shipwright default plugin first (shipwright@app-vitals/shipwright)", async () => {
     const calls: Array<{ cmd: string; args: string[] }> = [];
     const mockExec = async (
       cmd: string,
@@ -493,8 +493,8 @@ describe("installPlugins", () => {
 
     // Should have: 1 install + 1 update for the default plugin
     expect(calls).toHaveLength(2);
-    expect(calls[0].args).toEqual(["plugin", "install", "shipwright@shipwright"]);
-    expect(calls[1].args).toEqual(["plugin", "update", "shipwright@shipwright"]);
+    expect(calls[0].args).toEqual(["plugin", "install", "shipwright@app-vitals/shipwright"]);
+    expect(calls[1].args).toEqual(["plugin", "update", "shipwright@app-vitals/shipwright"]);
   });
 
   it("installs agent-specific plugins after default plugins", async () => {
@@ -519,12 +519,12 @@ describe("installPlugins", () => {
     expect(calls).toHaveLength(6);
 
     // installs: default first, then agent-specific
-    expect(calls[0].args).toEqual(["plugin", "install", "shipwright@shipwright"]);
+    expect(calls[0].args).toEqual(["plugin", "install", "shipwright@app-vitals/shipwright"]);
     expect(calls[1].args).toEqual(["plugin", "install", "custom-plugin@my-marketplace"]);
     expect(calls[2].args).toEqual(["plugin", "install", "another-plugin@other-market"]);
 
     // updates: default first, then agent-specific
-    expect(calls[3].args).toEqual(["plugin", "update", "shipwright@shipwright"]);
+    expect(calls[3].args).toEqual(["plugin", "update", "shipwright@app-vitals/shipwright"]);
     expect(calls[4].args).toEqual(["plugin", "update", "custom-plugin@my-marketplace"]);
     expect(calls[5].args).toEqual(["plugin", "update", "another-plugin@other-market"]);
   });
@@ -544,8 +544,8 @@ describe("installPlugins", () => {
 
     // 1 install + 1 update for just the default plugin
     expect(calls).toHaveLength(2);
-    expect(calls[0].args).toContain("shipwright@shipwright");
-    expect(calls[1].args).toContain("shipwright@shipwright");
+    expect(calls[0].args).toContain("shipwright@app-vitals/shipwright");
+    expect(calls[1].args).toContain("shipwright@app-vitals/shipwright");
   });
 
   it("is non-fatal when the claude binary isn't available", async () => {
