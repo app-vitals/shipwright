@@ -79,6 +79,12 @@ export interface MetricsDeps {
   requireOwnerRole?: boolean;
   /** Optional single-token bearer gate (METRICS_DASHBOARD_TOKEN). Default off. */
   dashboardToken?: string;
+  /**
+   * Offline mode: skip session auth and inject a default local user for /dashboard.
+   * When true, /dashboard is served without a valid session cookie.
+   * Default false.
+   */
+  offlineMode?: boolean;
 }
 
 // ─── Route definitions (inlined) ─────────────────────────────────────────────
@@ -885,6 +891,7 @@ export function createMetricsApp(
   const sessionSecret = deps?.sessionSecret ?? process.env.SESSION_SECRET ?? "";
   const requireOwnerRole = deps?.requireOwnerRole ?? false;
   const dashboardToken = deps?.dashboardToken;
+  const offlineMode = deps?.offlineMode ?? false;
 
   const app = new OpenAPIHono<AuthEnv>({
     defaultHook: (result, c) => {
@@ -902,6 +909,9 @@ export function createMetricsApp(
     console.error("unhandled error:", err);
     return c.json({ error: err.message }, 500);
   });
+
+  // Health check — no auth required
+  app.get("/health", (c) => c.json({ status: "ok" }, 200));
 
   // /metrics/* — accepts bearer token OR session cookie; returns 401 JSON on failure
   app.use(
@@ -946,11 +956,22 @@ export function createMetricsApp(
   };
 
   // Dashboard routes are protected by session cookie — redirect to /auth/login on failure
-  app.use("/dashboard", createSessionMiddleware(sessionSecret));
-  app.use("/dashboard/*", createSessionMiddleware(sessionSecret));
+  // In offline mode: skip session auth entirely and inject a default local user
+  if (!offlineMode) {
+    app.use("/dashboard", createSessionMiddleware(sessionSecret));
+    app.use("/dashboard/*", createSessionMiddleware(sessionSecret));
+  }
 
   // /dashboard — server-rendered with shared toolbar and user name from session
   app.get("/dashboard", async (c) => {
+    // Offline mode: inject a default local user, skip all session/owner checks
+    if (offlineMode) {
+      const body = renderDashboardPage({ userName: "Offline User", isOwner: true });
+      return new Response(body, {
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      });
+    }
+
     const sessionToken = getCookie(c, "vitals_session");
     let userName = "Unknown";
     let userId: string | undefined;
