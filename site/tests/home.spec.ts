@@ -38,3 +38,36 @@ test("home document ships NO runtime JS (zero <script> tags)", async ({
   const scriptCount = await page.locator("script").count();
   expect(scriptCount).toBe(0);
 });
+
+// SWW-2.1: Hero + install section.
+
+test("primary 'Get started' CTA renders", async ({ page }) => {
+  await page.goto("/");
+  const cta = page.getByRole("link", { name: "Get started" });
+  await expect(cta).toBeVisible();
+  await expect(cta).toHaveAttribute("href", "#install");
+});
+
+test("exact install command string renders", async ({ page }) => {
+  await page.goto("/");
+  await expect(
+    page.getByText("/plugin install shipwright@app-vitals/shipwright", {
+      exact: true,
+    }),
+  ).toBeVisible();
+});
+
+test("secondary 'View on GitHub' CTA points at the repo", async ({ page }) => {
+  await page.goto("/");
+  const cta = page.getByRole("link", { name: "View on GitHub" });
+  await expect(cta).toBeVisible();
+  await expect(cta).toHaveAttribute(
+    "href",
+    "https://github.com/app-vitals/shipwright",
+  );
+});
+
+test("eyebrow features 'Built on Claude Code'", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByText(/Built on Claude Code/i)).toBeVisible();
+});
