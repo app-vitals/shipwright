@@ -328,10 +328,6 @@ function makeTrendsResponseWithFullFields(rowCount = 7) {
   };
 }
 
-function makeHourlyTrendsResponse() {
-  return makeTrendsResponseWithFullFields(24);
-}
-
 async function mockMetricsAPIsWithFullTrends(page: Page): Promise<void> {
   await page.route("**/metrics/summary**", (route) => {
     route.fulfill({
