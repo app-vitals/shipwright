@@ -370,8 +370,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
       user = formData.get("user")?.toString() || undefined;
       silent = formData.get("silent")?.toString() === "true";
       preCheck = formData.get("preCheck")?.toString() || undefined;
-      const rawEnabled = formData.get("enabled")?.toString();
-      enabled = rawEnabled !== undefined ? rawEnabled === "true" : true;
+      enabled = formData.get("enabled")?.toString() === "true";
     } catch {
       return c.redirect(`/admin/agents/${agentId}?error=missing_fields`, 302);
     }
