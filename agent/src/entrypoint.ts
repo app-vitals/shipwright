@@ -46,9 +46,12 @@ export interface EntrypointDeps {
   ) => Promise<void>;
   spawnAgentServer: (cmd: string, args: string[]) => void;
   exit: (code: number) => void;
+  startupTimeoutMs?: number;
 }
 
 // ─── Main entrypoint ──────────────────────────────────────────────────────────
+
+const DEFAULT_STARTUP_TIMEOUT_MS = 10_000;
 
 export async function runEntrypoint(deps: EntrypointDeps): Promise<void> {
   const {
@@ -64,6 +67,7 @@ export async function runEntrypoint(deps: EntrypointDeps): Promise<void> {
     installPlugins,
     spawnAgentServer,
     exit,
+    startupTimeoutMs = DEFAULT_STARTUP_TIMEOUT_MS,
   } = deps;
 
   // ─── Step 1: Validate required vars ─────────────────────────────────────────
@@ -81,46 +85,55 @@ export async function runEntrypoint(deps: EntrypointDeps): Promise<void> {
     return;
   }
 
-  // ─── Step 2: Fetch config from Shipwright API ────────────────────────────────
+  // ─── Steps 2–8: run startup sequence with a hard deadline ────────────────────
 
-  let config: Awaited<ReturnType<ShipwrightConfigClient["getConfig"]>>;
-  try {
-    config = await configClient.getConfig(agentId as string);
-    console.log(
-      `[entrypoint] fetched config for agent ${agentId}: ${Object.keys(config.env).length} env vars, ${config.plugins.length} plugins`,
-    );
-  } catch (err) {
-    console.error(`[entrypoint] FATAL: failed to fetch agent config: ${(err as Error).message}`);
-    exit(1);
-    return;
-  }
-
-  // ─── Step 3: Apply env vars ──────────────────────────────────────────────────
-
-  applyEnv(config.env);
-
-  // ─── Step 4: Symlink ~/.claude → $AGENT_HOME/dot-claude ─────────────────────
-
-  const dotClaudeTarget = join(agentHome, "dot-claude");
-  const dotClaudeLinkPath = join(
-    process.env.HOME ?? "/root",
-    ".claude",
+  const timeoutError = new Error(
+    `[entrypoint] FATAL: startup sequence did not complete within ${startupTimeoutMs}ms`,
   );
-  symlinkDotClaude(dotClaudeTarget, dotClaudeLinkPath);
 
-  // ─── Step 5: GitHub auth ─────────────────────────────────────────────────────
+  const startup = async () => {
+    // Step 2: Fetch config from Shipwright API
+    let config: Awaited<ReturnType<ShipwrightConfigClient["getConfig"]>>;
+    try {
+      config = await configClient.getConfig(agentId as string);
+      console.log(
+        `[entrypoint] fetched config for agent ${agentId}: ${Object.keys(config.env).length} env vars, ${config.plugins.length} plugins`,
+      );
+    } catch (err) {
+      console.error(`[entrypoint] FATAL: failed to fetch agent config: ${(err as Error).message}`);
+      exit(1);
+      return;
+    }
 
-  await setupGitHubAuth();
+    // Step 3: Apply env vars
+    applyEnv(config.env);
 
-  // ─── Step 6: Mise startup ────────────────────────────────────────────────────
+    // Step 4: Symlink ~/.claude → $AGENT_HOME/dot-claude
+    const dotClaudeTarget = join(agentHome, "dot-claude");
+    const dotClaudeLinkPath = join(process.env.HOME ?? "/root", ".claude");
+    symlinkDotClaude(dotClaudeTarget, dotClaudeLinkPath);
 
-  await runMiseStartup(agentHome);
+    // Step 5: GitHub auth
+    await setupGitHubAuth();
 
-  // ─── Step 7: Install plugins ─────────────────────────────────────────────────
+    // Step 6: Mise startup
+    await runMiseStartup(agentHome);
 
-  await installPlugins(undefined, undefined, config.plugins);
+    // Step 7: Install plugins
+    await installPlugins(undefined, undefined, config.plugins);
 
-  // ─── Step 8: Spawn agent server ──────────────────────────────────────────────
+    // Step 8: Spawn agent server
+    spawnAgentServer("bun", ["run", join(import.meta.dir, "run-agent.ts")]);
+  };
 
-  spawnAgentServer("bun", ["run", join(import.meta.dir, "run-agent.ts")]);
+  const deadline = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(timeoutError), startupTimeoutMs),
+  );
+
+  try {
+    await Promise.race([startup(), deadline]);
+  } catch (err) {
+    console.error((err as Error).message);
+    exit(1);
+  }
 }

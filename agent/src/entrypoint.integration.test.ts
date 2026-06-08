@@ -256,3 +256,19 @@ describe("runEntrypoint — config with empty env", () => {
     expect(spawnCalls.length).toBe(1);
   });
 });
+
+describe("runEntrypoint — startup timeout", () => {
+  it("exits non-zero when startup exceeds startupTimeoutMs", async () => {
+    const hangingClient: ShipwrightConfigClient = {
+      getConfig: () => new Promise(() => {}), // never resolves
+    };
+    const { deps, exitCodes } = makeDeps(hangingClient, {
+      startupTimeoutMs: 50, // 50ms for fast test
+    });
+
+    await runEntrypoint(deps);
+
+    expect(exitCodes.length).toBe(1);
+    expect(exitCodes[0]).not.toBe(0);
+  });
+});
