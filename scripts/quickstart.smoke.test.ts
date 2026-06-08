@@ -8,9 +8,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { accessSync, constants, readFileSync, statSync } from "node:fs";
-import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+import { constants, accessSync, readFileSync, statSync } from "node:fs";
+import { resolve } from "node:path";
 
 const SCRIPT_PATH = resolve(process.cwd(), "scripts/quickstart.sh");
 
