@@ -13,6 +13,7 @@ import type { App } from "@slack/bolt";
 import type { WebAPIPlatformError } from "@slack/web-api";
 import type { AnalyticsEvent } from "./analytics.ts";
 import { ClaudeRunError, ClaudeTimeoutError } from "./claude.ts";
+import { type Clock, SystemClock } from "./clock.ts";
 import { markdownToBlocks, markdownToSlack } from "./format.ts";
 import { type Marker, parseMarkers } from "./markers.ts";
 import { forwardTokenUsage } from "./posthog.ts";
@@ -314,6 +315,7 @@ export function createSlackApp(
   conversationsRepliesFn: ConversationsRepliesFn = defaultConversationsRepliesFn,
   getSessionFn: GetSessionFn = () => undefined,
   blocksConverter: typeof markdownToBlocks = markdownToBlocks,
+  clock: Clock = SystemClock(),
 ): App {
   const app = appFactory({
     token: slackConfig.botToken,
@@ -377,10 +379,10 @@ export function createSlackApp(
       prompt = `[Thread message — respond normally, or use [silent] if no response is needed]\n${prompt}`;
     }
 
-    const startedAt = new Date();
+    const startedAt = clock.now();
     try {
       const { result, usage } = await runner(prompt, sessionKey);
-      const endedAt = new Date();
+      const endedAt = clock.now();
       await forwardTokenUsage(usage, isDM ? "slack_dm" : "slack_mention");
       const { cleaned, markers } = parseMarkers(result);
 
@@ -445,7 +447,7 @@ export function createSlackApp(
       tracker({
         type: "error",
         sessionKey,
-        durationMs: Date.now() - startedAt.getTime(),
+        durationMs: clock.now().getTime() - startedAt.getTime(),
         error: err instanceof Error ? err.message : String(err),
       });
       await say({
@@ -523,10 +525,10 @@ export function createSlackApp(
       }
     }
 
-    const startedAt = new Date();
+    const startedAt = clock.now();
     try {
       const { result, usage } = await runner(prompt, sessionKey);
-      const endedAt = new Date();
+      const endedAt = clock.now();
       await forwardTokenUsage(usage, "slack_mention");
       const { cleaned, markers } = parseMarkers(result);
 
@@ -582,7 +584,7 @@ export function createSlackApp(
       tracker({
         type: "error",
         sessionKey,
-        durationMs: Date.now() - startedAt.getTime(),
+        durationMs: clock.now().getTime() - startedAt.getTime(),
         error: err instanceof Error ? err.message : String(err),
       });
       await say({ text: formatRunErrorForSlack(err), thread_ts: replyTs });

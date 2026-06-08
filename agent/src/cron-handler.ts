@@ -11,6 +11,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type { WebClient } from "@slack/web-api";
 import type { TokenUsage } from "./claude.ts";
+import { type Clock, SystemClock } from "./clock.ts";
 import { markdownToSlack } from "./format.ts";
 import { parseMarkers } from "./markers.ts";
 import {
@@ -51,6 +52,7 @@ export interface CronHandlerDeps {
   pluginCacheDir?: string;
   pluginManifestPath?: string;
   alertsChannel?: string;
+  clock?: Clock;
 }
 
 export async function handleCronRequest(
@@ -180,7 +182,8 @@ export async function handleCronRequest(
     prompt = output;
   }
 
-  const now = new Date().toLocaleString("en-US", {
+  const clock = deps.clock ?? SystemClock();
+  const now = clock.now().toLocaleString("en-US", {
     timeZone: "America/Los_Angeles",
   });
   const message = `[Cron job: ${jobId}] Current time: ${now}\n\n${prompt}`;

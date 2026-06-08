@@ -240,6 +240,43 @@ describe("handleCronRequest — preCheck", () => {
     expect(runArg).toContain("precheck prompt");
   });
 
+  test("exit >= 2: suppresses session and posts alert to alertsChannel", async () => {
+    const script = join(tmpDir, "crash.ts");
+    writeFileSync(script, `process.stderr.write("something exploded"); process.exit(2);`);
+
+    const mockAlertPost = mock(() =>
+      Promise.resolve({ ok: true, ts: "9999.000001" }),
+    );
+    const mockSlackWithAlerts = {
+      chat: { postMessage: mockAlertPost },
+      conversations: { open: mockConversationsOpen },
+      reactions: { add: mockReactionsAdd },
+      files: { uploadV2: mockFilesUploadV2 },
+    } as unknown as WebClient;
+
+    await handleCronRequest(
+      {
+        jobId: "crash-job",
+        prompt: "hello",
+        channel: "C-TEST",
+        preCheck: script,
+      },
+      { ...deps, slack: mockSlackWithAlerts, alertsChannel: "C-ALERTS" },
+    );
+
+    // Runner must NOT be called when preCheck crashes
+    expect(mockRunner).not.toHaveBeenCalled();
+    // Alert must be posted to alertsChannel
+    expect(mockAlertPost).toHaveBeenCalledTimes(1);
+    const alertCall = (mockAlertPost.mock.calls as unknown as unknown[][])[0][0] as {
+      channel: string;
+      text: string;
+    };
+    expect(alertCall.channel).toBe("C-ALERTS");
+    expect(alertCall.text).toContain("crash-job");
+    expect(alertCall.text).toContain("exit 2");
+  });
+
   test("skips job when preCheck script not found (plugin: format)", async () => {
     await handleCronRequest(
       {
