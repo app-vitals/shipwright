@@ -73,54 +73,6 @@ async function makeSessionCookie(secret = SESSION_SECRET): Promise<string> {
 
 // ─── Mock deps ────────────────────────────────────────────────────────────────
 
-const CRON_ID = "cron-test-1";
-const TOOL_ID = "tool-test-1";
-const TOKEN_ID = "token-test-1";
-
-function makeMockCronJob(overrides?: object) {
-  return {
-    id: CRON_ID,
-    agentId: AGENT_ID,
-    schedule: "0 * * * *",
-    prompt: "Test prompt",
-    channel: null,
-    user: null,
-    silent: false,
-    enabled: true,
-    preCheck: null,
-    name: null,
-    system: false,
-    createdAt: new Date("2024-01-01"),
-    updatedAt: new Date("2024-01-01"),
-    ...overrides,
-  };
-}
-
-function makeMockTool(overrides?: object) {
-  return {
-    id: TOOL_ID,
-    agentId: AGENT_ID,
-    pattern: "Read",
-    enabled: true,
-    createdAt: new Date("2024-01-01"),
-    updatedAt: new Date("2024-01-01"),
-    ...overrides,
-  };
-}
-
-function makeMockToken(overrides?: object) {
-  return {
-    id: TOKEN_ID,
-    agentId: AGENT_ID,
-    token: "hashed-token-value",
-    label: "test-token",
-    revokedAt: null,
-    createdAt: new Date("2024-01-01"),
-    updatedAt: new Date("2024-01-01"),
-    ...overrides,
-  };
-}
-
 function makeMockDeps(): AdminUIDeps {
   return {
     prisma: {
@@ -510,10 +462,6 @@ describe("admin UI — token mutation routes", () => {
     expect(res.headers.get("Location")).toBe(`/admin/agents/${AGENT_ID}`);
   });
 });
-
-// ─── Cron mutations ───────────────────────────────────────────────────────────
-
-describe("admin UI — cron mutations", () => {
   let cookie: string;
 
   beforeAll(async () => {

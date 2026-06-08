@@ -284,7 +284,11 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
       return new Response("Agent not found", { status: 404 });
     }
 
-    const error = c.req.query("error") ?? undefined;
+    const rawError = c.req.query("error") ?? undefined;
+    const error = rawError
+      ? (ERROR_MESSAGES[rawError] ?? rawError)
+      : undefined;
+    const newToken = c.req.query("newToken") ?? undefined;
 
     const [envVars, crons, tools, tokens, plugins] = await Promise.all([
       agentEnvService.getByAgentId(agentId).then((e) => e ?? {}),
@@ -303,7 +307,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
         tokens,
         plugins,
         ADMIN_USER_NAME,
-        error,
+        { error, newToken },
       ),
     );
   });
@@ -365,7 +369,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
       return c.redirect(`/admin/agents/${agentId}`, 302);
     }
     if (!schedule || !prompt) {
-      return c.redirect(`/admin/agents/${agentId}`, 302);
+      return c.redirect(`/admin/agents/${agentId}?error=missing_fields`, 302);
     }
     try {
       await agentCronJobService.create(agentId, {
@@ -426,12 +430,13 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
     } catch {
       return c.redirect(`/admin/agents/${agentId}`, 302);
     }
-    if (pattern) {
-      try {
-        await agentToolService.add(agentId, pattern);
-      } catch {
-        // ignore errors — redirect back regardless
-      }
+    if (!pattern) {
+      return c.redirect(`/admin/agents/${agentId}?error=missing_fields`, 302);
+    }
+    try {
+      await agentToolService.add(agentId, pattern);
+    } catch {
+      // ignore errors — redirect back regardless
     }
     return c.redirect(`/admin/agents/${agentId}`, 302);
   });
@@ -477,11 +482,14 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
       return c.redirect(`/admin/agents/${agentId}`, 302);
     }
     try {
-      await agentTokenService.create(agentId, label);
+      const { rawToken } = await agentTokenService.create(agentId, label);
+      return c.redirect(
+        `/admin/agents/${agentId}?newToken=${encodeURIComponent(rawToken)}`,
+        302,
+      );
     } catch {
-      // ignore errors — redirect back regardless
+      return c.redirect(`/admin/agents/${agentId}?error=create_failed`, 302);
     }
-    return c.redirect(`/admin/agents/${agentId}`, 302);
   });
 
   app.post("/admin/agents/:id/tokens/:tokenId/revoke", requireAuth, async (c) => {

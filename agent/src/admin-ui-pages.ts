@@ -168,11 +168,8 @@ export function renderAgentDetailPage(
   tokens: TokenItem[],
   plugins: PluginItem[],
   userName: string,
-  error?: string,
+  opts?: { error?: string; newToken?: string },
 ): string {
-  const errorBanner = error
-    ? `<div class="alert alert-error" style="margin-bottom:16px">${escapeHtml(error)}</div>`
-    : "";
 
   const envRows =
     Object.keys(envVars).length === 0
@@ -315,8 +312,6 @@ export function renderAgentDetailPage(
     ${errorHtml}
     ${newTokenHtml}
 
-    ${errorBanner}
-
     <!-- Env Vars -->
     <div class="card">
       <div class="card-title">Env Vars</div>
@@ -379,6 +374,10 @@ export function renderAgentDetailPage(
             </div>
             <div class="form-group">
               <input name="channel" type="text" class="form-input" placeholder="Channel ID" />
+            </div>
+            <div class="form-group" style="display:flex;align-items:center;gap:6px;padding-bottom:2px">
+              <input name="enabled" type="checkbox" id="cron-enabled" value="true" checked />
+              <label for="cron-enabled" class="form-label" style="margin-bottom:0">Enabled</label>
             </div>
             <button type="submit" class="btn btn-primary">Add Cron</button>
           </div>
