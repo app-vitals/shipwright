@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@prisma/client": "^6.19.2",
+    "@slack/bolt": "^4.7.3",
+    "@slack/web-api": "^7.16.0",
     "hono": "^4"
   },
   "devDependencies": {
