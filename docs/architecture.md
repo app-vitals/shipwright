@@ -35,7 +35,7 @@ A stateless Hono service that turns the pipeline's PostHog events into analytics
 
 A thin autonomous runner with a Prisma-backed store (SQLite locally, PostgreSQL in production) and three HTTP surfaces: a machine-polled **runtime API** (`/agents/:id/config`, `/agents/:id/crons`), a human-facing **admin CRUD API** (`/admin/api/agents/:id/...` for envs, crons, tools, tokens, plugins), and a server-rendered **admin UI** (`/admin/...` — login, agent list/detail, Slack provisioning). See **[agent.md](./agent.md)**.
 
-> The agent's top-level runner (`agent/src/index.ts`) is currently a Phase-C placeholder; the implemented surfaces are the admin CRUD API, the admin UI, the runtime API, and the Prisma store.
+> The agent's top-level runner (`agent/src/index.ts`) is currently a Phase-C placeholder; the implemented surfaces are the admin CRUD API, the admin UI, the runtime API, the Prisma store, the Slack event handler (`slack.ts`), and the cron runtime (`cron-handler.ts`).
 
 ## Supporting surfaces
 
