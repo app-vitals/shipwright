@@ -341,12 +341,12 @@ describe("resolveAllRepos", () => {
     mkdirSync(reposDir, { recursive: true });
     makeGitClone(
       reposDir,
-      "marketplace",
-      "https://github.com/app-vitals/marketplace.git",
+      "other-repo",
+      "https://github.com/example-org/other-repo.git",
     );
     const result = resolveAllRepos(tmpDir);
     expect(result[0]).toBe("app-vitals/shipwright");
-    expect(result).toContain("app-vitals/marketplace");
+    expect(result).toContain("example-org/other-repo");
   });
 
   test("deduplicates config repo when it also appears in scanned repos", () => {
@@ -367,8 +367,8 @@ describe("resolveAllRepos", () => {
     );
     makeGitClone(
       reposDir,
-      "marketplace",
-      "https://github.com/app-vitals/marketplace.git",
+      "other-repo",
+      "https://github.com/example-org/other-repo.git",
     );
     const result = resolveAllRepos(tmpDir);
     expect(result.filter((r) => r === "app-vitals/shipwright")).toHaveLength(1);
