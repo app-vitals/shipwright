@@ -198,6 +198,49 @@ test("footer links to repo, license (MIT), Claude Code, and community", async ({
   ).toHaveAttribute("href", /github\.com\/app-vitals\/shipwright\/discussions/);
 });
 
+// SWW-3.1: OG/social image + head meta.
+
+test("head wires an absolute og:image (1280x640) for link previews", async ({
+  page,
+}) => {
+  await page.goto("/");
+  // Link-preview crawlers reject relative URLs — og:image must be absolute.
+  const absolutePng = /^https:\/\/shipwrightharness\.com\/.+\.png$/;
+  await expect(page.locator('head meta[property="og:image"]')).toHaveAttribute(
+    "content",
+    absolutePng,
+  );
+  await expect(
+    page.locator('head meta[property="og:image:width"]'),
+  ).toHaveAttribute("content", "1280");
+  await expect(
+    page.locator('head meta[property="og:image:height"]'),
+  ).toHaveAttribute("content", "640");
+  await expect(page.locator('head meta[name="twitter:image"]')).toHaveAttribute(
+    "content",
+    absolutePng,
+  );
+});
+
+test("head wires a canonical URL", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator('head link[rel="canonical"]')).toHaveAttribute(
+    "href",
+    "https://shipwrightharness.com/",
+  );
+});
+
+test("the og:image asset is actually served (1280x640 PNG)", async ({
+  page,
+}) => {
+  // The og:image points at the production origin; locally the same path is
+  // served by the preview server. A 200 PNG proves the asset is committed and
+  // a link-preview check would resolve it (not a 404).
+  const res = await page.request.get("/og-default-1280x640.png");
+  expect(res.status()).toBe(200);
+  expect(res.headers()["content-type"]).toContain("image/png");
+});
+
 test("page markets no pricing anywhere", async ({ page }) => {
   await page.goto("/");
   const text = (await page.locator("body").textContent()) ?? "";
