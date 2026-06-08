@@ -320,7 +320,11 @@ describe("resolveAllRepos", () => {
   test("returns scanned repos when no shipwright config present", () => {
     const reposDir = join(tmpDir, "repos");
     mkdirSync(reposDir, { recursive: true });
-    makeGitClone(reposDir, "patrol", "https://github.com/app-vitals/patrol.git");
+    makeGitClone(
+      reposDir,
+      "patrol",
+      "https://github.com/app-vitals/patrol.git",
+    );
     expect(resolveAllRepos(tmpDir)).toEqual(["app-vitals/patrol"]);
   });
 
@@ -335,7 +339,11 @@ describe("resolveAllRepos", () => {
     );
     const reposDir = join(tmpDir, "repos");
     mkdirSync(reposDir, { recursive: true });
-    makeGitClone(reposDir, "marketplace", "https://github.com/app-vitals/marketplace.git");
+    makeGitClone(
+      reposDir,
+      "marketplace",
+      "https://github.com/app-vitals/marketplace.git",
+    );
     const result = resolveAllRepos(tmpDir);
     expect(result[0]).toBe("app-vitals/shipwright");
     expect(result).toContain("app-vitals/marketplace");
@@ -352,8 +360,16 @@ describe("resolveAllRepos", () => {
     );
     const reposDir = join(tmpDir, "repos");
     mkdirSync(reposDir, { recursive: true });
-    makeGitClone(reposDir, "shipwright", "https://github.com/app-vitals/shipwright.git");
-    makeGitClone(reposDir, "marketplace", "https://github.com/app-vitals/marketplace.git");
+    makeGitClone(
+      reposDir,
+      "shipwright",
+      "https://github.com/app-vitals/shipwright.git",
+    );
+    makeGitClone(
+      reposDir,
+      "marketplace",
+      "https://github.com/app-vitals/marketplace.git",
+    );
     const result = resolveAllRepos(tmpDir);
     expect(result.filter((r) => r === "app-vitals/shipwright")).toHaveLength(1);
     expect(result[0]).toBe("app-vitals/shipwright");
@@ -367,7 +383,11 @@ describe("resolveAllRepos", () => {
     );
     const reposDir = join(tmpDir, "repos");
     mkdirSync(reposDir, { recursive: true });
-    makeGitClone(reposDir, "patrol", "https://github.com/app-vitals/patrol.git");
+    makeGitClone(
+      reposDir,
+      "patrol",
+      "https://github.com/app-vitals/patrol.git",
+    );
     expect(resolveAllRepos(tmpDir)).toEqual(["app-vitals/patrol"]);
   });
 });
