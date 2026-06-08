@@ -32,12 +32,14 @@ tasks:
       - bun plugins/shipwright/scripts/check-banned-strings.ts
 
   ci:
-    desc: Run all CI checks (lint → check-strings → typecheck → test)
+    desc: Run all CI checks (lint → check-strings → typecheck → test → secret-scan → doctor)
     cmds:
       - task: lint
       - task: check-strings
       - task: typecheck
       - task: test
+      - task: secret-scan
+      - task: doctor
 
   db:provision:
     desc: Create the agent database (idempotent — safe to re-run)
@@ -60,6 +62,16 @@ tasks:
         cd agent && bunx prisma migrate dev --schema=prisma/schema.prisma
 
   secret-scan:
-    desc: Scan for accidentally committed secrets
+    desc: Scan for accidentally committed secrets (gitleaks)
     cmds:
-      - echo "Secret scan placeholder — gitleaks/detect-secrets to be wired in SW-1.7"
+      - |
+        if command -v gitleaks &>/dev/null; then
+          gitleaks detect --source . --no-git --redact
+        else
+          echo "WARNING: gitleaks not installed locally — skipping secret scan. CI enforces this gate."
+        fi
+
+  doctor:
+    desc: Validate task-store config and report active backend
+    cmds:
+      - bun plugins/shipwright/scripts/task_store.ts doctor
