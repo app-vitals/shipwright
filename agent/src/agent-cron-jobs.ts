@@ -288,41 +288,45 @@ export class AgentCronJobService {
     let updated = 0;
     let deleted = 0;
 
-    // Reconcile each SYSTEM_CRON entry
-    for (const systemCron of SYSTEM_CRONS) {
-      const existing = existingByName.get(systemCron.name);
-      const enabled = existing ? existing.enabled : systemCron.enabled;
+    // Wrap all mutations in a transaction so a crash mid-loop cannot leave
+    // the agent missing required system crons (e.g. shipwright-dev-task).
+    await this.prisma.$transaction(async (tx) => {
+      // Reconcile each SYSTEM_CRON entry
+      for (const systemCron of SYSTEM_CRONS) {
+        const existing = existingByName.get(systemCron.name);
+        const enabled = existing ? existing.enabled : systemCron.enabled;
 
-      if (existing) {
-        await this.prisma.agentCronJob.delete({ where: { id: existing.id } });
-        updated++;
-      } else {
-        created++;
+        if (existing) {
+          await tx.agentCronJob.delete({ where: { id: existing.id } });
+          updated++;
+        } else {
+          created++;
+        }
+
+        await tx.agentCronJob.create({
+          data: {
+            agentId,
+            name: systemCron.name,
+            system: true,
+            schedule: systemCron.schedule,
+            prompt: systemCron.prompt,
+            silent: systemCron.silent ?? false,
+            preCheck: systemCron.preCheck ?? null,
+            channel: null,
+            user: null,
+            enabled,
+          },
+        });
       }
 
-      await this.prisma.agentCronJob.create({
-        data: {
-          agentId,
-          name: systemCron.name,
-          system: true,
-          schedule: systemCron.schedule,
-          prompt: systemCron.prompt,
-          silent: systemCron.silent ?? false,
-          preCheck: systemCron.preCheck ?? null,
-          channel: null,
-          user: null,
-          enabled,
-        },
-      });
-    }
-
-    // Orphan pass: delete any system cron whose name is not in SYSTEM_CRONS.
-    for (const cron of existingSystemCrons) {
-      if (!cron.name || !systemCronNames.has(cron.name)) {
-        await this.prisma.agentCronJob.delete({ where: { id: cron.id } });
-        deleted++;
+      // Orphan pass: delete any system cron whose name is not in SYSTEM_CRONS.
+      for (const cron of existingSystemCrons) {
+        if (!cron.name || !systemCronNames.has(cron.name)) {
+          await tx.agentCronJob.delete({ where: { id: cron.id } });
+          deleted++;
+        }
       }
-    }
+    });
 
     return { created, updated, deleted };
   }
