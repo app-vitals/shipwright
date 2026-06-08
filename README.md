@@ -24,6 +24,28 @@
 
 Requires [Claude Code](https://www.anthropic.com/claude-code). Point it at your own repository — Shipwright is repo-agnostic.
 
+## Quickstart
+
+```bash
+git clone https://github.com/app-vitals/shipwright.git
+cd shipwright
+./scripts/quickstart.sh
+```
+
+Then open Claude Code in the directory and run:
+
+```
+/plugin install shipwright@app-vitals/shipwright
+```
+
+Start the local dashboard:
+
+```
+task dev
+```
+
+Dashboard opens at **http://localhost:3460/dashboard**. See [docs/quickstart.md](./docs/quickstart.md) for the full guide and the copy-paste session prompt.
+
 ## What is Shipwright Harness?
 
 Two faces, one product:
