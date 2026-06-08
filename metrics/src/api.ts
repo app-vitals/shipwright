@@ -15,6 +15,7 @@ import type { AppHandler, AuthEnv, Caller } from "./lib/api-auth.ts";
 import { ErrorSchema } from "./lib/api-schemas.ts";
 import { registerWithAuthz } from "./lib/api-utils.ts";
 import { createSessionMiddleware } from "./lib/session-middleware.ts";
+import type { LocalEventStore } from "./local-store.ts";
 import { renderDashboardPage } from "./dashboard/dashboard-page.ts";
 import {
   resolveDateRangeForMeta,
@@ -81,6 +82,13 @@ export interface MetricsDeps {
   dashboardToken?: string;
   /** Offline mode: skip session auth and serve /dashboard as a default local user. Default false. */
   offlineMode?: boolean;
+  /**
+   * Local event store. When provided, the PostHog-shaped ingest route
+   * `POST /batch/` is registered and writes batches to this store. When
+   * absent, the route is NOT registered (404) — the default-mode flip is
+   * deferred to a later task.
+   */
+  localStore?: LocalEventStore;
 }
 
 // ─── Route definitions (inlined) ─────────────────────────────────────────────
@@ -912,7 +920,13 @@ export function createMetricsApp(
   // /metrics/* — accepts bearer token OR session cookie; returns 401 JSON on failure
   app.use(
     "/metrics/*",
-    createCombinedAuthMiddleware(apiKeys, sessionSecret, accountsClient, requireOwnerRole, dashboardToken),
+    createCombinedAuthMiddleware(
+      apiKeys,
+      sessionSecret,
+      accountsClient,
+      requireOwnerRole,
+      dashboardToken,
+    ),
   );
 
   const handlers = createMetricsHandlers(client, accountsClient, deps);
@@ -931,6 +945,53 @@ export function createMetricsApp(
   registerWithAuthz(app, featuresRoute, metricsPolicy, handlers.handleFeatures);
   registerWithAuthz(app, queueRoute, metricsPolicy, handlers.handleQueue);
   registerWithAuthz(app, tokensRoute, metricsPolicy, handlers.handleTokens);
+
+  // ─── Ingest: POST /batch/ (local-store mode only) ─────────────────────────
+  //
+  // PostHog-shaped batch ingest. Mounted as a plain route (NOT behind the
+  // /metrics/* combined-auth middleware) to mirror PostHog's unauthenticated
+  // transport — the api_key travels in the body. Registered ONLY when a local
+  // store is injected; otherwise the route is absent (404).
+  const localStore = deps?.localStore;
+  if (localStore) {
+    app.post("/batch/", async (c) => {
+      let body: unknown;
+      try {
+        body = await c.req.json();
+      } catch {
+        return c.json({ error: "invalid JSON body" }, 400);
+      }
+      if (
+        !body ||
+        typeof body !== "object" ||
+        !Array.isArray((body as { batch?: unknown }).batch)
+      ) {
+        return c.json({ error: "body must include a 'batch' array" }, 400);
+      }
+
+      const batch = (body as { batch: unknown[] }).batch;
+      for (const raw of batch) {
+        if (!raw || typeof raw !== "object") continue;
+        const ev = raw as Record<string, unknown>;
+        if (typeof ev.event !== "string" || !ev.event) continue;
+        const properties =
+          ev.properties && typeof ev.properties === "object"
+            ? (ev.properties as Record<string, unknown>)
+            : {};
+        const insertId = properties.$insert_id;
+        localStore.insertEvent({
+          insertId: typeof insertId === "string" ? insertId : null,
+          event: ev.event,
+          distinctId:
+            typeof ev.distinct_id === "string" ? ev.distinct_id : null,
+          timestamp: typeof ev.timestamp === "string" ? ev.timestamp : "",
+          properties,
+        });
+      }
+
+      return c.json({ status: 1 }, 200);
+    });
+  }
 
   // ─── Dashboard static files ───────────────────────────────────────────────
 
@@ -962,7 +1023,10 @@ export function createMetricsApp(
   app.get("/dashboard", async (c) => {
     // Offline mode: inject a default local user, skip all session/owner checks
     if (offlineMode) {
-      const body = renderDashboardPage({ userName: "Offline User", isOwner: true });
+      const body = renderDashboardPage({
+        userName: "Offline User",
+        isOwner: true,
+      });
       return new Response(body, {
         headers: { "Content-Type": "text/html; charset=utf-8" },
       });

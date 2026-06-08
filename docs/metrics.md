@@ -1,10 +1,10 @@
 # Metrics Dashboard
 
-> Stateless Hono service (artifact **B**) that turns Shipwright's pipeline events into analytics. Five read-only JSON endpoints backed by PostHog queries, plus a session-gated server-rendered dashboard. **No database** — every response is computed live from PostHog (cached in-process).
+> Hono service (artifact **B**) that turns Shipwright's pipeline events into analytics. Five read-only JSON endpoints backed by PostHog queries, plus a session-gated server-rendered dashboard, and an optional local SQLite event store for offline ingest (`POST /batch/`).
 
 ## Overview
 
-The metrics service reads pipeline telemetry from PostHog and exposes it two ways: machine-readable JSON under `/metrics/*` (for tooling and the `/shipwright:metrics` command) and a human-facing `/dashboard`. It owns no persistent state — there is no DB and no write path; HogQL queries are validated pre-deploy and their results cached in-process.
+The metrics service reads pipeline telemetry from PostHog and exposes it two ways: machine-readable JSON under `/metrics/*` (for tooling and the `/shipwright:metrics` command) and a human-facing `/dashboard`. By default it owns no persistent state — HogQL queries are validated pre-deploy and results are cached in-process. When a `localStore` is injected, an additional `POST /batch/` ingest route is registered that writes PostHog-shaped events to a local SQLite database (`metrics/src/local-store.ts`); the route is absent (404) otherwise.
 
 Entrypoint: `metrics/src/server.ts` (standalone Bun server, default port **3460**). The app factory `createMetricsApp()` in `metrics/src/api.ts` is what tests drive via `app.request()`.
 
@@ -61,6 +61,7 @@ All metric endpoints are `GET`, return JSON, and accept the same date-window que
 | GET | `/metrics/features` | Per-feature task / CI / review breakdown. |
 | GET | `/metrics/queue` | Shipwright v3 queue metrics: funnel counts, block rate, avg cycle time (days), avg review findings. |
 | GET | `/metrics/tokens` | Token usage — totals, by agent, by session type, and trends. |
+| POST | `/batch/` | PostHog-shaped batch ingest — writes events to the local SQLite store. Only registered when `localStore` is injected via `MetricsDeps`; returns 404 otherwise. |
 | GET | `/dashboard` | Server-rendered dashboard HTML (session-gated). |
 | GET | `/dashboard/*` | Static dashboard assets (`styles.css`, `app.js`). |
 | GET | `/health` | Liveness check — `{ status: "ok" }`, **no auth**. |
@@ -89,6 +90,7 @@ The **dashboard** is protected by the session cookie middleware; an invalid/abse
 | `METRICS_ACCOUNTS_URL` | | `http://localhost:3457` | Accounts service base URL (role lookups). |
 | `METRICS_INTERNAL_API_KEY` | | — | Internal key for the accounts client. |
 | `METRICS_DASHBOARD_TOKEN` | | — | Optional dashboard access token. |
+| `METRICS_DB_PATH` | | `state/metrics.db` | Path for the local SQLite event store used by `POST /batch/`. Only read when a `localStore` is wired in. Pass `:memory:` for ephemeral use. |
 | `GCP_PROJECT_ID` | | — | Optional — enables GCP Secret Manager as an env-absent fallback for secrets. |
 | `SHIPWRIGHT_ENV_FILE` | | `~/.shipwright/.env` | Dotenv file loaded at startup (existing vars win). |
 
@@ -101,6 +103,7 @@ The **dashboard** is protected by the session cookie middleware; an invalid/abse
 | `metrics/src/queries.ts` | HogQL query builders (summary, trends, features, queue, tokens). |
 | `metrics/src/posthog-client.ts` | PostHog client (interface + `Http` impl). |
 | `metrics/src/fixtures/posthog-fixtures.ts` | Fixture PostHog client (`createFixturePostHogClient()`) — pre-recorded sample data for every query type; used in offline mode and integration tests. |
+| `metrics/src/local-store.ts` | Local SQLite event store (`LocalEventStore` interface + `createLocalEventStore()`). Deduplicates on `insert_id`; used by `POST /batch/`. |
 | `metrics/src/validate-hogql.ts` | Pre-deploy HogQL validation runner (`validate:hogql`). |
 | `metrics/src/cache.ts` | In-process query-result cache. |
 | `metrics/src/secrets.ts` | Secrets resolution: env-first, optional GCP Secret Manager fallback. |
