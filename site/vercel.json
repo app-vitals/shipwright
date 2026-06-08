@@ -1,0 +1,20 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "astro",
+  "buildCommand": "astro build",
+  "outputDirectory": "dist",
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "shipwright-harness.com" }],
+      "destination": "https://shipwrightharness.com/:path*",
+      "statusCode": 301
+    },
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "www.shipwright-harness.com" }],
+      "destination": "https://shipwrightharness.com/:path*",
+      "statusCode": 301
+    }
+  ]
+}
