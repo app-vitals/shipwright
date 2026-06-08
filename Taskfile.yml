@@ -26,6 +26,21 @@ tasks:
     cmds:
       - bun test
 
+  api:
+    desc: Start the metrics API in offline mode (http://localhost:3460/dashboard)
+    cmds:
+      - METRICS_OFFLINE=true bun run metrics/src/server.ts
+
+  ui:
+    desc: Start the metrics dashboard UI in offline mode (http://localhost:3460/dashboard)
+    cmds:
+      - METRICS_OFFLINE=true bun run metrics/src/server.ts
+
+  dev:
+    desc: Start all local services (metrics API + future agent) — Ctrl-C stops all cleanly
+    cmds:
+      - bun scripts/dev.ts
+
   check-strings:
     desc: Scan entire repo for banned strings (confidential identifiers, client names)
     cmds:
