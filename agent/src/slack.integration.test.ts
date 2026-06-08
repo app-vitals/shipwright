@@ -1,5 +1,5 @@
 /**
- * Integration tests for agent/src/slack.ts
+ * Tests for agent/src/slack.ts
  *
  * Strategy: inject all dependencies via createSlackApp's params. No mock.module()
  * needed anywhere.
@@ -16,11 +16,13 @@ import { unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ClaudeRunError, ClaudeTimeoutError } from "./claude.ts";
+import type { markdownToBlocks } from "./format.ts";
 import { threadKey } from "./sessions.ts";
 import {
   type SlackFile,
   type SynthesizeSpeechFn,
   type TranscribeAudioFn,
+  createSlackApp as _createSlackApp,
   dispatchMarkers,
   downloadFile,
   formatRunErrorForSlack,
@@ -84,10 +86,6 @@ class MockApp {
   }
 }
 
-// ─── Module under test ────────────────────────────────────────────────────────
-
-const { createSlackApp: _createSlackApp } = await import("./slack.ts");
-
 const mockTracker = mock((_event: unknown) => {});
 
 // Wrap with test deps so all tests call createSlackApp() with no args
@@ -110,8 +108,7 @@ function createSlackApp(
       messages?: { user?: string; text?: string; ts?: string }[];
     }>;
     getSessionFn?: (key: string) => string | undefined;
-    // biome-ignore lint/suspicious/noExplicitAny: test helper — blocks type is opaque here
-    blocksConverter?: (text: string) => { text: string; blocks: any[] } | null;
+    blocksConverter?: typeof markdownToBlocks;
   } = {},
 ) {
   mockTracker.mockClear();
@@ -119,7 +116,8 @@ function createSlackApp(
     mockRunClaude,
     mockMarkdownToSlack,
     threadKey,
-    (cfg) => new MockApp(cfg as Record<string, unknown>),
+    // biome-ignore lint/suspicious/noExplicitAny: mock factory for tests
+    (cfg) => new MockApp(cfg as Record<string, unknown>) as any,
     mockSlackConfig,
     mockTracker,
     overrides.fileDownloaderFn ?? (async () => null),
@@ -1495,10 +1493,7 @@ describe("voice integration — [speak:text] marker dispatch", () => {
   });
 
   test("[speak:text] only response in mention — does not call say, still synthesizes and uploads", async () => {
-    const outPath = join(
-      tmpdir(),
-      `test-speak-only-mention-${Date.now()}.mp3`,
-    );
+    const outPath = join(tmpdir(), `test-speak-only-mention-${Date.now()}.mp3`);
     writeFileSync(outPath, Buffer.from("audio only"));
     const mockSynthesize = mock(async () => outPath);
     createSlackApp({ synthesizeSpeechFn: mockSynthesize });
@@ -1544,6 +1539,45 @@ describe("voice integration — [speak:text] marker dispatch", () => {
     expect(client.chat.postMessage).not.toHaveBeenCalled();
     expect(mockSynthesize).toHaveBeenCalledWith("Noted", {});
     expect(client.files.uploadV2).toHaveBeenCalledTimes(1);
+    unlinkSync(outPath);
+  });
+});
+
+// ─── voiceConfig presence vs absence ─────────────────────────────────────────
+
+describe("createSlackApp — voiceConfig option set vs absent", () => {
+  beforeEach(() => {
+    mockRunClaude.mockClear();
+  });
+
+  test("voiceConfig absent — [speak:text] does not upload or error (no synthesizeFn)", async () => {
+    createSlackApp({ synthesizeSpeechFn: async () => null });
+    mockRunClaude.mockResolvedValueOnce({ result: "[speak:hello]", sessionId: "sess-v1" });
+    const client = makeMockClient();
+    const say = makeSay();
+    await capturedMessageHandler?.({
+      message: { channel: "D1", ts: "1.1", text: "hi", channel_type: "im" },
+      say,
+      client,
+    });
+    expect(client.files.uploadV2).not.toHaveBeenCalled();
+  });
+
+  test("voiceConfig present — synthesizeFn called with provided config", async () => {
+    const testVoiceConfig: VoiceConfig = { voiceId: "cfg-voice" };
+    const outPath = join(tmpdir(), `test-vc-present-${Date.now()}.mp3`);
+    writeFileSync(outPath, Buffer.from("audio"));
+    const mockSynthesize = mock(async () => outPath);
+    createSlackApp({ voiceConfig: testVoiceConfig, synthesizeSpeechFn: mockSynthesize });
+    mockRunClaude.mockResolvedValueOnce({ result: "[speak:test]", sessionId: "sess-v2" });
+    const client = makeMockClient();
+    const say = makeSay();
+    await capturedMessageHandler?.({
+      message: { channel: "D1", ts: "1.2", text: "hi", channel_type: "im" },
+      say,
+      client,
+    });
+    expect(mockSynthesize).toHaveBeenCalledWith("test", testVoiceConfig);
     unlinkSync(outPath);
   });
 });
@@ -1956,10 +1990,8 @@ describe("invalid_blocks retry — falls back to formatter(cleaned) when blocks.
       sessionId: "sess-ib-empty-dm",
     });
     createSlackApp({
-      blocksConverter: (_text: string) => ({
-        text: "",
-        blocks: [{ type: "section" }],
-      }),
+      // biome-ignore lint/suspicious/noExplicitAny: minimal test stub for SlackBlock
+      blocksConverter: (_text: string) => ({ text: "", blocks: [{ type: "section" }] }) as any,
     });
     const client = makeMockClient();
     const say = mock(async (_args: unknown) => ({ ts: "r.empty.1" }));
@@ -1990,10 +2022,8 @@ describe("invalid_blocks retry — falls back to formatter(cleaned) when blocks.
       sessionId: "sess-ib-empty-mention",
     });
     createSlackApp({
-      blocksConverter: (_text: string) => ({
-        text: "",
-        blocks: [{ type: "section" }],
-      }),
+      // biome-ignore lint/suspicious/noExplicitAny: minimal test stub for SlackBlock
+      blocksConverter: (_text: string) => ({ text: "", blocks: [{ type: "section" }] }) as any,
     });
     const client = makeMockClient();
     const say = mock(async (_args: unknown) => ({ ts: "r.empty.2" }));
@@ -2022,10 +2052,8 @@ describe("invalid_blocks retry — falls back to formatter(cleaned) when blocks.
       sessionId: "sess-ib-empty-reaction",
     });
     createSlackApp({
-      blocksConverter: (_text: string) => ({
-        text: "",
-        blocks: [{ type: "section" }],
-      }),
+      // biome-ignore lint/suspicious/noExplicitAny: minimal test stub for SlackBlock
+      blocksConverter: (_text: string) => ({ text: "", blocks: [{ type: "section" }] }) as any,
     });
     const client = makeMockClient();
     (client.chat.postMessage as ReturnType<typeof mock>).mockRejectedValueOnce(
@@ -2052,13 +2080,6 @@ describe("invalid_blocks retry — falls back to formatter(cleaned) when blocks.
 });
 
 describe("formatRunErrorForSlack", () => {
-  test("ClaudeTimeoutError produces timeout message with elapsed minutes", () => {
-    const err = new ClaudeTimeoutError(3 * 60 * 1000); // 3 minutes
-    const out = formatRunErrorForSlack(err);
-    expect(out).toContain("timed out");
-    expect(out).toContain("3 minutes");
-  });
-
   test("monthly usage limit (429 + 'usage limit') gets dedicated message", () => {
     const err = new ClaudeRunError(
       "claude exited 1: api_error_status=429 You've hit your org's monthly usage limit",
@@ -2139,6 +2160,21 @@ describe("formatRunErrorForSlack", () => {
     expect(out).toContain("Something went wrong");
     expect(out).toContain("just a string");
     expect(out).not.toContain("```");
+  });
+
+  test("ClaudeTimeoutError includes timeout duration and retry prompt", () => {
+    const err = new ClaudeTimeoutError(30 * 60 * 1000);
+    const out = formatRunErrorForSlack(err);
+    expect(out).toContain("30 minutes");
+    expect(out).toContain("retry");
+    expect(out).not.toContain("```");
+  });
+
+  test("ClaudeRunError with undefined sessionId handled gracefully", () => {
+    const err = new ClaudeRunError("msg", 500, "Internal server error", undefined);
+    const out = formatRunErrorForSlack(err);
+    expect(out).toContain("500");
+    expect(out).not.toThrow;
   });
 });
 
@@ -2456,7 +2492,6 @@ describe("dispatchMarkers — direct", () => {
       [{ type: "silent" }],
       { client, channel: "C123" },
     );
-    // No error thrown, no calls made
     expect(client.reactions.add).not.toHaveBeenCalled();
   });
 
@@ -2550,7 +2585,7 @@ describe("dispatchMarkers — direct", () => {
   test("react marker without postedTs does not call reactions.add", async () => {
     await dispatchMarkers(
       [{ type: "react", emojis: ["thumbsup"] }],
-      { client, channel: "C1" }, // no postedTs
+      { client, channel: "C1" },
     );
     expect(client.reactions.add).not.toHaveBeenCalled();
   });
