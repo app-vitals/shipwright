@@ -39,7 +39,13 @@ import { defaultAgentManifest } from "./slack-provisioning-client.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export interface SlackProvisioningClient {
+/**
+ * Narrow interface for the admin UI's Slack dependency.
+ * Only `createAppManifest` is needed — signing secret comes from the paste form,
+ * not from an OAuth exchange. Deliberately narrower than the full SlackProvisioningClient
+ * in slack-provisioning-client.ts — only this surface is needed here.
+ */
+export interface AdminUISlackClient {
   createAppManifest(
     xoxpToken: string,
     manifest: AppManifest,
@@ -95,7 +101,7 @@ export interface AdminUIDeps {
   agentPluginService: Pick<AgentPluginService, "list">;
   sessionSecret: string;
   adminPassword: string;
-  slackClient: SlackProvisioningClient;
+  slackClient: AdminUISlackClient;
   appBaseUrl: string;
 }
 

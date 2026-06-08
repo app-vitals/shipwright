@@ -4,7 +4,11 @@
  *
  * Used during the one-time agent provisioning flow:
  *   1. apps.manifest.create — creates the Slack app from a manifest
- *   2. OAuth flow — exchanges the code for an app-level token + signing secret
+ *
+ * Note: signing secret exchange is intentionally omitted. Slack's oauth.v2.access
+ * does not return the signing secret, and apps.auth.external.get requires admin
+ * scopes not available in the user token flow. The provisioning UI collects it
+ * via a paste form instead.
  */
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -66,13 +70,6 @@ export interface SlackProvisioningClient {
     xoxpToken: string,
     manifest: AppManifest,
   ): Promise<{ appId: string; oauthRedirectUrl: string }>;
-
-  /**
-   * Exchange an OAuth authorization code for an app-level token and signing secret.
-   */
-  exchangeCodeForAppToken(
-    code: string,
-  ): Promise<{ appId: string; signingSecret: string }>;
 }
 
 // ─── Default manifest ─────────────────────────────────────────────────────────
@@ -178,46 +175,4 @@ export class HttpSlackProvisioningClient implements SlackProvisioningClient {
     };
   }
 
-  async exchangeCodeForAppToken(
-    code: string,
-  ): Promise<{ appId: string; signingSecret: string }> {
-    const url = `${this.apiBase}/oauth.v2.access`;
-    const resp = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ code }).toString(),
-    });
-
-    if (!resp.ok) {
-      throw new Error(
-        `Slack oauth.v2.access HTTP error: ${resp.status} ${resp.statusText}`,
-      );
-    }
-
-    const data = (await resp.json()) as {
-      ok: boolean;
-      error?: string;
-      app_id?: string;
-      app?: {
-        id?: string;
-      };
-    };
-
-    if (!data.ok) {
-      throw new Error(`Slack oauth.v2.access failed: ${data.error}`);
-    }
-
-    const appId = data.app_id ?? data.app?.id;
-    if (!appId) {
-      throw new Error("Slack oauth.v2.access response missing app_id");
-    }
-
-    // The signing secret is not returned by oauth.v2.access.
-    // After OAuth we need to call apps.auth.external.get or read from app management.
-    // For the provisioning flow, we prompt the user to paste it from the Slack dashboard.
-    // This method is a placeholder — the real signing secret comes from the Slack UI.
-    throw new Error(
-      "exchangeCodeForAppToken not fully implemented: signing secret must be pasted from Slack dashboard",
-    );
-  }
 }

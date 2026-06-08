@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs";
 import { beforeAll, describe, expect, it } from "bun:test";
 import { sign } from "hono/jwt";
 import { createAdminUIApp } from "./admin-ui.ts";
-import type { AdminUIDeps, SlackProvisioningClient } from "./admin-ui.ts";
+import type { AdminUIDeps, AdminUISlackClient } from "./admin-ui.ts";
 import type { AppManifest } from "./slack-provisioning-client.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -28,7 +28,7 @@ interface ProvisionCassette {
   };
 }
 
-class RecordedSlackClient implements SlackProvisioningClient {
+class RecordedSlackClient implements AdminUISlackClient {
   private cassette: ProvisionCassette;
 
   constructor(cassettePath: string) {
@@ -68,7 +68,7 @@ interface UpsertCall {
 // ─── Mock deps factory ────────────────────────────────────────────────────────
 
 function makeMockDeps(
-  slackClient: SlackProvisioningClient,
+  slackClient: AdminUISlackClient,
   upsertCalls: UpsertCall[],
 ): AdminUIDeps {
   return {
