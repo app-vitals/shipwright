@@ -87,28 +87,31 @@ export async function validateCutover(
 
   const { env } = config;
 
+  const hasSlack = Boolean(env.SLACK_BOT_TOKEN);
+  const hasGithub = hasGitHubAuth(env);
+  const hasCrons = crons.length > 0;
+
   return [
     {
       name: "SLACK_BOT_TOKEN",
-      passed: Boolean(env.SLACK_BOT_TOKEN),
-      message: env.SLACK_BOT_TOKEN
+      passed: hasSlack,
+      message: hasSlack
         ? "SLACK_BOT_TOKEN is present"
         : "SLACK_BOT_TOKEN is missing from env bundle",
     },
     {
       name: "github_auth",
-      passed: hasGitHubAuth(env),
-      message: hasGitHubAuth(env)
+      passed: hasGithub,
+      message: hasGithub
         ? "GitHub auth credentials are present"
         : "GitHub auth credentials missing — need GH_TOKEN or GH_APP_ID + GH_APP_PRIVATE_KEY + GH_APP_INSTALLATION_ID",
     },
     {
       name: "crons",
-      passed: crons.length > 0,
-      message:
-        crons.length > 0
-          ? `${crons.length} cron job(s) configured`
-          : "No cron jobs configured — at least one is required",
+      passed: hasCrons,
+      message: hasCrons
+        ? `${crons.length} cron job(s) configured`
+        : "No cron jobs configured — at least one is required",
     },
   ];
 }
