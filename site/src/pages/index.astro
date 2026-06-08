@@ -1,23 +1,38 @@
 ---
-// Minimal on-brand placeholder home page (SWW-1.1).
-// Proves the build, fonts, theme, and dark-premium base layout work.
-// The full Hero/Body/Footer sections land in later tasks (SWW-2.x).
+// Home page hero + install section (SWW-2.1).
+// Builds the real hero on top of the SWW-1.1 scaffold: agent-led tagline with a
+// gradient on "Claude Code", primary/secondary CTAs, the "Built on Claude Code"
+// eyebrow, and the install command. No pricing, no email form, no runtime JS.
 import BaseLayout from "../layouts/BaseLayout.astro";
 
-const tagline = "The open-source autonomous delivery agent for Claude Code.";
+const taglinePrefix = "The open-source autonomous delivery agent for ";
+const taglineGradient = "Claude Code";
+const tagline = `${taglinePrefix}${taglineGradient}.`;
 const install = "/plugin install shipwright@app-vitals/shipwright";
+const githubUrl = "https://github.com/app-vitals/shipwright";
 ---
 
 <BaseLayout title="Shipwright Harness" description={tagline}>
   <section
     class="relative z-10 flex min-h-screen flex-col justify-center py-24"
   >
-    <p class="sw-label">Shipwright Harness</p>
-    <h1 class="sw-display sw-gradient-text max-w-3xl">{tagline}</h1>
-    <p class="sw-editorial mt-2 max-w-xl text-lg">
+    <p class="sw-label">Built on Claude Code</p>
+    <h1 class="sw-display mt-4 max-w-3xl">
+      {taglinePrefix}<span class="sw-gradient-text">{taglineGradient}</span>.
+    </h1>
+    <p class="mt-4 max-w-xl text-lg">
       A deployable cloud agent and the autonomous coding system that powers it —
       running on your own codebase.
     </p>
-    <pre class="sw-code mt-8 w-fit"><code>{install}</code></pre>
+
+    <div class="mt-8 flex flex-wrap items-center gap-4">
+      <a class="sw-btn" href="#install">Get started</a>
+      <a class="sw-btn sw-btn-secondary" href={githubUrl}>View on GitHub</a>
+    </div>
+
+    <div id="install" class="mt-10 max-w-xl">
+      <p class="sw-label">Install</p>
+      <pre class="sw-code mt-3 w-fit"><code>{install}</code></pre>
+    </div>
   </section>
 </BaseLayout>
