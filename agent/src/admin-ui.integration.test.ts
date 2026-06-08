@@ -108,7 +108,7 @@ describe("SlackProvisionService.startOAuth (integration)", () => {
   });
 
   it("calls createApp with the correct manifest and xoxp token", async () => {
-    await service.startOAuth(AGENT_ID, XOXP_TOKEN, REDIRECT_URI);
+    await service.startOAuth(AGENT_ID, XOXP_TOKEN);
 
     expect(slackClient.createAppCalls).toHaveLength(1);
     const call = slackClient.createAppCalls[0];
@@ -124,7 +124,7 @@ describe("SlackProvisionService.startOAuth (integration)", () => {
   });
 
   it("stores SLACK_APP_ID and SLACK_SIGNING_SECRET in AgentEnv after createApp", async () => {
-    await service.startOAuth(AGENT_ID, XOXP_TOKEN, REDIRECT_URI);
+    await service.startOAuth(AGENT_ID, XOXP_TOKEN);
 
     // Should have called patch with SLACK_APP_ID and SLACK_SIGNING_SECRET
     const patchCall = envService.patchCalls.find((c) => c.agentId === AGENT_ID);
@@ -134,7 +134,7 @@ describe("SlackProvisionService.startOAuth (integration)", () => {
   });
 
   it("returns the OAuth redirect URL from createApp result", async () => {
-    const url = await service.startOAuth(AGENT_ID, XOXP_TOKEN, REDIRECT_URI);
+    const url = await service.startOAuth(AGENT_ID, XOXP_TOKEN);
 
     expect(url).toContain("slack.com/oauth/v2/authorize");
     expect(url).toContain("client_id=");
@@ -144,7 +144,7 @@ describe("SlackProvisionService.startOAuth (integration)", () => {
     slackClient.failOnCreateApp();
 
     await expect(
-      service.startOAuth(AGENT_ID, XOXP_TOKEN, REDIRECT_URI),
+      service.startOAuth(AGENT_ID, XOXP_TOKEN),
     ).rejects.toThrow("invalid_auth");
   });
 });

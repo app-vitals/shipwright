@@ -364,3 +364,10 @@ ${slackSection}`;
 
   return layout(agent.name, body);
 }
+
+export function renderErrorPage(message: string): string {
+  return layout(
+    "Error",
+    `<div class="card"><p style="color:#dc2626">${esc(message)}</p><p style="margin-top:12px"><a href="/admin/agents">← Back to agents</a></p></div>`,
+  );
+}

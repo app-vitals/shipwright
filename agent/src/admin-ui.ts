@@ -24,6 +24,7 @@ import {
   renderLoginPage,
   renderAgentsPage,
   renderAgentDetailPage,
+  renderErrorPage,
   type AgentSummary,
   type AgentDetail,
 } from "./admin-ui-templates.ts";
@@ -57,28 +58,19 @@ function createUISessionAuthMiddleware(
   sessionSecret: string,
 ): MiddlewareHandler {
   return async (c, next) => {
+    const loginRedirect = () =>
+      c.redirect(`/admin/login?returnTo=${encodeURIComponent(c.req.path)}`, 302);
+
     const sessionToken = getCookie(c, SESSION_COOKIE);
-    if (!sessionToken) {
-      const returnTo = encodeURIComponent(c.req.path);
-      return c.redirect(`/admin/login?returnTo=${returnTo}`, 302);
-    }
+    if (!sessionToken) return loginRedirect();
+
     try {
-      const payload = (await verify(
-        sessionToken,
-        sessionSecret,
-        "HS256",
-      )) as Record<string, unknown>;
-      if (
-        typeof payload.userId !== "string" ||
-        !payload.userId
-      ) {
-        const returnTo = encodeURIComponent(c.req.path);
-        return c.redirect(`/admin/login?returnTo=${returnTo}`, 302);
-      }
+      const payload = (await verify(sessionToken, sessionSecret, "HS256")) as Record<string, unknown>;
+      if (typeof payload.userId !== "string" || !payload.userId) return loginRedirect();
     } catch {
-      const returnTo = encodeURIComponent(c.req.path);
-      return c.redirect(`/admin/login?returnTo=${returnTo}`, 302);
+      return loginRedirect();
     }
+
     return next();
   };
 }
@@ -159,7 +151,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
     const id = c.req.param("id");
     const agent = await agentRepo.findById(id);
     if (!agent) {
-      return c.html("<h1>Agent not found</h1>", 404);
+      return c.html(renderErrorPage("Agent not found"), 404);
     }
     return c.html(renderAgentDetailPage(agent));
   });
@@ -196,38 +188,17 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
     const agentId = c.req.param("id");
 
     if (!slackProvisionService) {
-      return c.html("<h1>Slack provisioning not configured</h1>", 503);
+      return c.html(renderErrorPage("Slack provisioning not configured"), 503);
     }
 
     const body = await c.req.parseBody();
     const xoxpToken = String(body.xoxpToken ?? "").trim();
 
     if (!xoxpToken.startsWith("xoxp-")) {
-      return c.html(
-        renderAgentDetailPage(
-          (await agentRepo.findById(agentId)) ?? {
-            id: agentId,
-            name: agentId,
-            slackId: null,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-            envVars: {},
-            crons: [],
-            tools: [],
-            tokens: [],
-            plugins: [],
-          },
-        ),
-        400,
-      );
+      return c.html(renderErrorPage("Token must start with xoxp-"), 400);
     }
 
-    const redirectUri = `${baseUrl}/admin/oauth/slack/callback?agent=${encodeURIComponent(agentId)}`;
-    const oauthUrl = await slackProvisionService.startOAuth(
-      agentId,
-      xoxpToken,
-      redirectUri,
-    );
+    const oauthUrl = await slackProvisionService.startOAuth(agentId, xoxpToken);
 
     return c.redirect(oauthUrl, 302);
   });
@@ -238,11 +209,11 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
     const agentId = c.req.query("agent");
 
     if (!code || !agentId) {
-      return c.html("<h1>Missing code or agent parameter</h1>", 400);
+      return c.html(renderErrorPage("Missing code or agent parameter"), 400);
     }
 
     if (!slackProvisionService) {
-      return c.html("<h1>Slack provisioning not configured</h1>", 503);
+      return c.html(renderErrorPage("Slack provisioning not configured"), 503);
     }
 
     const redirectUri = `${baseUrl}/admin/oauth/slack/callback?agent=${encodeURIComponent(agentId)}`;

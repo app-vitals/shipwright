@@ -107,13 +107,9 @@ export class SlackProvisionService {
    * Start the Slack OAuth flow for an agent.
    * 1. Calls apps.manifest.create with the xoxp token.
    * 2. Stores SLACK_APP_ID + SLACK_SIGNING_SECRET in AgentEnv.
-   * 3. Returns the OAuth redirect URL.
+   * 3. Returns the OAuth redirect URL from the createApp response.
    */
-  async startOAuth(
-    agentId: string,
-    xoxpToken: string,
-    _redirectUri: string,
-  ): Promise<string> {
+  async startOAuth(agentId: string, xoxpToken: string): Promise<string> {
     const result = await this.client.createApp(xoxpToken, DEFAULT_MANIFEST);
 
     await this.envService.patch(agentId, {
