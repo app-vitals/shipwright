@@ -36,14 +36,13 @@ export async function runMigration(
 
   for (const agent of agents) {
     const { id: agentId } = agent;
-    let agentFailed = false;
+    const failedBefore = failed.length;
 
-    // 1. Migrate env vars
+    // 1. Migrate env vars + tools
     try {
       const config = await accountsClient.getAgentConfig(agentId);
       await adminClient.upsertEnvs(agentId, config.env);
 
-      // 2. Migrate tools (upsert — inherently idempotent)
       for (const pattern of config.tools) {
         try {
           await adminClient.addTool(agentId, pattern);
@@ -53,7 +52,6 @@ export async function runMigration(
             field: `tool:${pattern}`,
             error: err instanceof Error ? err.message : String(err),
           });
-          agentFailed = true;
         }
       }
     } catch (err) {
@@ -62,10 +60,9 @@ export async function runMigration(
         field: "env",
         error: err instanceof Error ? err.message : String(err),
       });
-      agentFailed = true;
     }
 
-    // 3. Migrate crons (skip duplicates matched by schedule+prompt)
+    // 2. Migrate crons (skip duplicates matched by schedule+prompt)
     try {
       const sourceCrons = await accountsClient.getAgentCrons(agentId);
       const existingCrons = await adminClient.listCrons(agentId);
@@ -87,23 +84,18 @@ export async function runMigration(
               field: `cron:${cronLabel}`,
               error: err instanceof Error ? err.message : String(err),
             });
-            agentFailed = true;
           }
         }
       }
     } catch (err) {
-      // Only record if not already failed on env (avoid double-counting)
-      if (!agentFailed) {
-        failed.push({
-          agentId,
-          field: "crons",
-          error: err instanceof Error ? err.message : String(err),
-        });
-        agentFailed = true;
-      }
+      failed.push({
+        agentId,
+        field: "crons",
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
 
-    if (!agentFailed) {
+    if (failed.length === failedBefore) {
       migrated++;
     }
   }
