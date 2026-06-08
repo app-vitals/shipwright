@@ -98,7 +98,7 @@ export const SYSTEM_CRONS: readonly SystemCron[] = [
     name: "arc-queue-probe",
     schedule: "0 9 * * *",
     prompt:
-      "Run `bun scripts/arc-queue-probe.ts --repo app-vitals/vitals-os --hours 24 --out state/arc-queue-time.jsonl --trend` and share the summary. Use [silent] if gh is unavailable or returns no ARC jobs.",
+      "Run `bun scripts/arc-queue-probe.ts --repo example-org/my-project --hours 24 --out state/arc-queue-time.jsonl --trend` and share the summary. Use [silent] if gh is unavailable or returns no ARC jobs.",
     silent: true,
     enabled: false,
   },

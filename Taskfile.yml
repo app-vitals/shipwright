@@ -27,7 +27,7 @@ tasks:
       - bun test
 
   check-strings:
-    desc: Check plugin for banned strings (confidential identifiers)
+    desc: Scan entire repo for banned strings (confidential identifiers, client names)
     cmds:
       - bun plugins/shipwright/scripts/check-banned-strings.ts
 
@@ -70,6 +70,12 @@ tasks:
         else
           echo "WARNING: gitleaks not installed locally — skipping secret scan. CI enforces this gate."
         fi
+
+  pre-public:
+    desc: Full pre-public audit gate (check-strings + secret-scan). Run before making the repo public.
+    cmds:
+      - task: check-strings
+      - task: secret-scan
 
   doctor:
     desc: Validate task-store config and report active backend
