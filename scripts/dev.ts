@@ -1,88 +1,126 @@
 /**
  * scripts/dev.ts
- * Dev supervisor — spawns child processes and kills all on a single SIGINT.
+ * Local dev supervisor — spawns child services and stops all on a single SIGINT.
  *
- * Currently manages one child (the metrics server in offline mode). Structured
- * so a second child (the agent) can be added to buildChildren() later with no
- * rework to the supervisor loop or shutdown handler.
+ * Usage:
+ *   bun scripts/dev.ts
  *
- * Usage: bun scripts/dev.ts
+ * Architecture:
+ *   Children are declared as a ChildConfig array. The supervisor spawns each
+ *   child, waits for all to exit, and forwards SIGINT to all children on
+ *   Ctrl-C. Adding a second child (e.g. agent) requires only a new entry in
+ *   the CHILDREN array — no structural rework.
+ *
+ * Testability:
+ *   createSupervisor(children, spawnFn?) accepts an optional spawn override so
+ *   unit tests can inject fake child handles without spawning real processes.
+ *   shutdownWithChildren(handles) is exposed for direct injection in tests.
  */
 
-export interface ChildDef {
-  label: string;
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export type ChildConfig = {
   cmd: string[];
+  label: string;
   env?: Record<string, string>;
-}
+};
 
-/**
- * Returns the list of child processes to spawn.
- * Add a new entry here to add a concurrent child to `task dev`.
- */
-export function buildChildren(): ChildDef[] {
-  return [
-    {
-      label: "metrics",
-      cmd: ["bun", "metrics/src/server.ts"],
-      env: { METRICS_OFFLINE: "true" },
+export type ChildHandle = {
+  label: string;
+  kill: (signal?: string) => void;
+  exited: Promise<void>;
+};
+
+type SpawnFn = (config: ChildConfig) => ChildHandle;
+
+export type Supervisor = {
+  start(): Promise<void>;
+  shutdownWithChildren(handles: ChildHandle[]): Promise<void>;
+};
+
+// ---------------------------------------------------------------------------
+// Default spawn implementation using Bun.spawn
+// ---------------------------------------------------------------------------
+
+function defaultSpawn(config: ChildConfig): ChildHandle {
+  const proc = Bun.spawn(config.cmd, {
+    env: {
+      ...process.env,
+      ...(config.env ?? {}),
     },
-  ];
-}
+    stdout: "inherit",
+    stderr: "inherit",
+    stdin: "inherit",
+  });
 
-/**
- * Returns an async cleanup function that kills all passed processes and logs
- * a shutdown message. Safe to call with an empty list.
- */
-export function createShutdownHandler(
-  procs: Array<{ kill(): void; label: string }>,
-): () => Promise<void> {
-  return async () => {
-    console.log("[dev] Shutting down...");
-    for (const proc of procs) {
-      proc.kill();
-    }
+  return {
+    label: config.label,
+    kill: (signal?: string) => {
+      proc.kill(signal as NodeJS.Signals | undefined);
+    },
+    exited: proc.exited.then(() => {}),
   };
 }
 
-/**
- * Spawns all children from buildChildren(), registers SIGINT/SIGTERM shutdown,
- * and awaits all processes.
- */
-export async function runDev(): Promise<void> {
-  const children = buildChildren();
-  const spawned: Array<{ proc: ReturnType<typeof Bun.spawn>; label: string }> =
-    [];
+// ---------------------------------------------------------------------------
+// Supervisor factory
+// ---------------------------------------------------------------------------
 
-  for (const child of children) {
-    const proc = Bun.spawn(child.cmd, {
-      env: { ...process.env, ...(child.env ?? {}) },
-      stdout: "inherit",
-      stderr: "inherit",
-    });
-    spawned.push({ proc, label: child.label });
-    console.log(
-      `[dev] Started ${child.label} — http://localhost:3460/dashboard`,
-    );
+export function createSupervisor(
+  children: ChildConfig[],
+  spawnFn: SpawnFn = defaultSpawn,
+): Supervisor {
+  async function shutdownWithChildren(handles: ChildHandle[]): Promise<void> {
+    if (handles.length === 0) return;
+    for (const handle of handles) {
+      handle.kill("SIGINT");
+    }
+    await Promise.all(handles.map((h) => h.exited));
+    console.log("[dev] all services stopped");
   }
 
-  const shutdown = createShutdownHandler(
-    spawned.map(({ proc, label }) => ({
-      label,
-      kill: () => proc.kill(),
-    })),
-  );
+  async function start(): Promise<void> {
+    const handles: ChildHandle[] = [];
 
-  process.on("SIGINT", () => {
-    shutdown().then(() => process.exit(0));
-  });
-  process.on("SIGTERM", () => {
-    shutdown().then(() => process.exit(0));
-  });
+    for (const config of children) {
+      console.log(`[dev] starting ${config.label}...`);
+      const handle = spawnFn(config);
+      handles.push(handle);
+    }
 
-  // Await all child processes
-  await Promise.all(spawned.map(({ proc }) => proc.exited));
+    process.on("SIGINT", () => {
+      void shutdownWithChildren(handles).then(() => {
+        process.exit(0);
+      });
+    });
+
+    await Promise.all(handles.map((h) => h.exited));
+  }
+
+  return { start, shutdownWithChildren };
 }
 
+// ---------------------------------------------------------------------------
+// Child definitions — add new services here
+// ---------------------------------------------------------------------------
+
+const CHILDREN: ChildConfig[] = [
+  {
+    cmd: ["bun", "run", "metrics/src/server.ts"],
+    label: "metrics-api",
+    env: { METRICS_OFFLINE: "true" },
+  },
+  // Future: agent service will be added here as a second entry
+  // { cmd: ["bun", "run", "agent/src/server.ts"], label: "agent", env: { ... } },
+];
+
+// ---------------------------------------------------------------------------
+// Main entrypoint
+// ---------------------------------------------------------------------------
+
 if (import.meta.main) {
-  runDev().catch(console.error);
+  const supervisor = createSupervisor(CHILDREN);
+  await supervisor.start();
 }

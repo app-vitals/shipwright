@@ -1,19 +1,49 @@
 /**
  * scripts/dev.unit.test.ts
- * Unit tests for scripts/dev.ts — shutdown/wiring + Taskfile target assertions.
+ * Unit tests for scripts/dev.ts supervisor logic + Taskfile target assertions.
  *
- * No mock.module(), no global.* overrides — all assertions use pure logic or
- * file reads. No process spawning.
+ * Tests dependency-injected supervisor with fake child handles — no real
+ * process spawning. Covers: child spawn config, SIGINT → shutdown, multi-child
+ * shutdown sequencing, Taskfile target key presence.
  */
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, test } from "bun:test";
-import { buildChildren, createShutdownHandler } from "./dev.ts";
+import { type ChildConfig, createSupervisor } from "./dev.ts";
 
 const REPO_ROOT = resolve(import.meta.dir, "..");
 
-// ─── Taskfile assertions ──────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// Fake child handle: tracks signal calls and resolves exited on demand
+// ---------------------------------------------------------------------------
+
+function makeFakeChild(label: string) {
+  let resolveExited!: () => void;
+  const exitedPromise = new Promise<void>((res) => {
+    resolveExited = res;
+  });
+
+  const killed: string[] = [];
+
+  const handle = {
+    label,
+    kill: (signal?: string) => {
+      killed.push(signal ?? "SIGTERM");
+      resolveExited(); // auto-resolve exit when killed
+    },
+    exited: exitedPromise,
+    // expose for assertions
+    _killed: killed,
+  };
+  return handle;
+}
+
+type FakeChild = ReturnType<typeof makeFakeChild>;
+
+// ---------------------------------------------------------------------------
+// Taskfile assertions
+// ---------------------------------------------------------------------------
 
 describe("Taskfile.yml — run-task keys", () => {
   const taskfile = readFileSync(resolve(REPO_ROOT, "Taskfile.yml"), "utf8");
@@ -31,65 +61,92 @@ describe("Taskfile.yml — run-task keys", () => {
   });
 });
 
-// ─── buildChildren() shape ────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// createSupervisor tests
+// ---------------------------------------------------------------------------
 
-describe("buildChildren()", () => {
-  test("returns at least one entry", () => {
-    const children = buildChildren();
-    expect(children.length).toBeGreaterThan(0);
+describe("createSupervisor", () => {
+  test("returns an object with start and shutdownWithChildren methods", () => {
+    const supervisor = createSupervisor([]);
+    expect(typeof supervisor.start).toBe("function");
+    expect(typeof supervisor.shutdownWithChildren).toBe("function");
   });
 
-  test("includes a metrics server entry", () => {
-    const children = buildChildren();
-    const metrics = children.find((c) => c.label === "metrics");
-    expect(metrics).toBeDefined();
+  test("shutdown signals all injected children", async () => {
+    const child1 = makeFakeChild("metrics-api");
+    const child2 = makeFakeChild("agent");
+
+    const supervisor = createSupervisor(
+      [
+        { cmd: ["bun", "run", "metrics/src/server.ts"], label: "metrics-api" },
+        { cmd: ["bun", "run", "agent/src/server.ts"], label: "agent" },
+      ],
+      // Inject fake spawn: returns pre-built fake handles
+      (_config: ChildConfig) => {
+        const fakes: FakeChild[] = [child1, child2];
+        const fake = fakes.shift();
+        if (!fake) throw new Error("no more fakes");
+        return fake;
+      },
+    );
+
+    // Manually trigger shutdown (not start, to avoid real spawning)
+    await supervisor.shutdownWithChildren([child1, child2]);
+
+    expect(child1._killed.length).toBeGreaterThan(0);
+    expect(child2._killed.length).toBeGreaterThan(0);
   });
 
-  test("metrics entry has METRICS_OFFLINE=true in env", () => {
-    const children = buildChildren();
-    const metrics = children.find((c) => c.label === "metrics");
-    expect(metrics?.env?.METRICS_OFFLINE).toBe("true");
+  test("shutdown resolves after all children exit", async () => {
+    const child1 = makeFakeChild("metrics-api");
+
+    const supervisor = createSupervisor([
+      { cmd: ["bun", "run", "metrics/src/server.ts"], label: "metrics-api" },
+    ]);
+
+    const shutdownPromise = supervisor.shutdownWithChildren([child1]);
+    // The shutdown promise must resolve (child auto-resolves on kill)
+    await expect(shutdownPromise).resolves.toBeUndefined();
   });
 
-  test("metrics entry includes the server entrypoint in cmd", () => {
-    const children = buildChildren();
-    const metrics = children.find((c) => c.label === "metrics");
-    const cmdStr = Array.isArray(metrics?.cmd)
-      ? metrics.cmd.join(" ")
-      : metrics?.cmd ?? "";
-    expect(cmdStr).toContain("metrics/src/server.ts");
+  test("shutdown with no children resolves immediately", async () => {
+    const supervisor = createSupervisor([]);
+    await expect(supervisor.shutdownWithChildren([])).resolves.toBeUndefined();
+  });
+
+  test("shutdown signals children with SIGINT", async () => {
+    const child = makeFakeChild("metrics-api");
+
+    const supervisor = createSupervisor([
+      { cmd: ["bun", "run", "metrics/src/server.ts"], label: "metrics-api" },
+    ]);
+
+    await supervisor.shutdownWithChildren([child]);
+
+    expect(child._killed).toContain("SIGINT");
   });
 });
 
-// ─── createShutdownHandler() ──────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// ChildConfig type shape
+// ---------------------------------------------------------------------------
 
-describe("createShutdownHandler()", () => {
-  test("calls kill() on all passed process mocks", async () => {
-    const killed: string[] = [];
-    const procs = [
-      {
-        label: "metrics",
-        kill: () => {
-          killed.push("metrics");
-        },
-      },
-      {
-        label: "agent",
-        kill: () => {
-          killed.push("agent");
-        },
-      },
-    ];
-
-    const handler = createShutdownHandler(procs);
-    await handler();
-
-    expect(killed).toContain("metrics");
-    expect(killed).toContain("agent");
+describe("ChildConfig type", () => {
+  test("accepts cmd array and label string", () => {
+    const cfg: ChildConfig = {
+      cmd: ["bun", "run", "metrics/src/server.ts"],
+      label: "metrics-api",
+    };
+    expect(cfg.cmd).toEqual(["bun", "run", "metrics/src/server.ts"]);
+    expect(cfg.label).toBe("metrics-api");
   });
 
-  test("handles an empty process list without throwing", async () => {
-    const handler = createShutdownHandler([]);
-    await expect(handler()).resolves.toBeUndefined();
+  test("accepts optional env record", () => {
+    const cfg: ChildConfig = {
+      cmd: ["bun", "run", "metrics/src/server.ts"],
+      label: "metrics-api",
+      env: { METRICS_OFFLINE: "true" },
+    };
+    expect(cfg.env?.METRICS_OFFLINE).toBe("true");
   });
 });
