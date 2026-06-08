@@ -31,6 +31,7 @@ import {
   renderAgentsPage,
   renderLoginPage,
   renderProvisionCompletePage,
+  renderProvisionPasteForm,
   renderProvisionStartPage,
 } from "./admin-ui-pages.ts";
 import type { AppManifest } from "./slack-provisioning-client.ts";
@@ -43,9 +44,6 @@ export interface SlackProvisioningClient {
     xoxpToken: string,
     manifest: AppManifest,
   ): Promise<{ appId: string; oauthRedirectUrl: string }>;
-  exchangeCodeForAppToken(
-    code: string,
-  ): Promise<{ appId: string; signingSecret: string }>;
 }
 
 interface PrismaAgentLike {
@@ -364,49 +362,58 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
     }
   });
 
-  app.get("/admin/provision/complete", requireAuth, async (c) => {
-    const code = c.req.query("code");
+  // GET — OAuth callback → show paste form for credentials
+  app.get("/admin/provision/complete", requireAuth, (c) => {
     const agentId = c.req.query("agentId");
+    return html(renderProvisionPasteForm(ADMIN_USER_NAME, { agentId }));
+  });
 
-    if (!code) {
+  // POST — receive pasted credentials → store in AgentEnv
+  app.post("/admin/provision/complete", requireAuth, async (c) => {
+    let agentId: string | undefined;
+    let appId: string | undefined;
+    let signingSecret: string | undefined;
+    try {
+      const formData = await c.req.formData();
+      agentId = formData.get("agentId")?.toString();
+      appId = formData.get("appId")?.toString();
+      signingSecret = formData.get("signingSecret")?.toString();
+    } catch {
       return html(
         renderProvisionCompletePage(ADMIN_USER_NAME, {
           success: false,
-          error: "Missing OAuth code parameter.",
+          error: "Invalid form submission.",
+        }),
+      );
+    }
+
+    if (!agentId || !appId || !signingSecret) {
+      return html(
+        renderProvisionPasteForm(ADMIN_USER_NAME, {
+          agentId,
+          error: "Agent ID, App ID, and Signing Secret are all required.",
         }),
       );
     }
 
     try {
-      const { appId, signingSecret } =
-        await slackClient.exchangeCodeForAppToken(code);
-
-      // Store credentials in agent env vars (if agentId provided)
-      if (agentId) {
-        const existing = (await agentEnvService.getByAgentId(agentId)) ?? {};
-        await agentEnvService.upsert(agentId, {
-          ...existing,
-          SLACK_APP_ID: appId,
-          SLACK_SIGNING_SECRET: signingSecret,
-        });
-      }
-
+      const existing = (await agentEnvService.getByAgentId(agentId)) ?? {};
+      await agentEnvService.upsert(agentId, {
+        ...existing,
+        SLACK_APP_ID: appId,
+        SLACK_SIGNING_SECRET: signingSecret,
+      });
       return html(
         renderProvisionCompletePage(ADMIN_USER_NAME, {
           success: true,
-          agentId: agentId ?? undefined,
+          agentId,
         }),
       );
     } catch (err) {
       const msg =
-        err instanceof Error
-          ? err.message
-          : "Unknown error completing provisioning.";
+        err instanceof Error ? err.message : "Unknown error storing credentials.";
       return html(
-        renderProvisionCompletePage(ADMIN_USER_NAME, {
-          success: false,
-          error: msg,
-        }),
+        renderProvisionPasteForm(ADMIN_USER_NAME, { agentId, error: msg }),
       );
     }
   });

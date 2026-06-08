@@ -90,10 +90,6 @@ function makeMockDeps(): AdminUIDeps {
         appId: "A123456",
         oauthRedirectUrl: "https://slack.com/oauth/authorize?client_id=123",
       }),
-      exchangeCodeForAppToken: async () => ({
-        appId: "A123456",
-        signingSecret: "abc123signingsecret",
-      }),
     },
     appBaseUrl: "https://example.com",
   };

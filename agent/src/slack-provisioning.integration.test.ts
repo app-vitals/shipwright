@@ -26,10 +26,6 @@ interface ProvisionCassette {
     appId: string;
     oauthRedirectUrl: string;
   };
-  exchangeCodeForAppToken: {
-    appId: string;
-    signingSecret: string;
-  };
 }
 
 class RecordedSlackClient implements SlackProvisioningClient {
@@ -44,12 +40,6 @@ class RecordedSlackClient implements SlackProvisioningClient {
     _manifest: AppManifest,
   ): Promise<{ appId: string; oauthRedirectUrl: string }> {
     return this.cassette.createAppManifest;
-  }
-
-  async exchangeCodeForAppToken(
-    _code: string,
-  ): Promise<{ appId: string; signingSecret: string }> {
-    return this.cassette.exchangeCodeForAppToken;
   }
 }
 
@@ -167,17 +157,24 @@ describe("admin UI — provisioning flow", () => {
     expect(html).toContain("https://slack.com/oauth/authorize");
   });
 
-  it("GET /admin/provision/complete with valid code exchanges code and stores SLACK_APP_ID and SLACK_SIGNING_SECRET", async () => {
+  it("POST /admin/provision/complete with pasted credentials stores SLACK_APP_ID and SLACK_SIGNING_SECRET", async () => {
     const upsertCalls: UpsertCall[] = [];
     const slackClient = new RecordedSlackClient(CASSETTE_PATH);
     const app = createAdminUIApp(makeMockDeps(slackClient, upsertCalls));
 
-    const res = await app.request(
-      `/admin/provision/complete?code=fake-oauth-code&agentId=${AGENT_ID}`,
-      {
-        headers: { Cookie: `admin_session=${cookie}` },
+    const body = new URLSearchParams({
+      agentId: AGENT_ID,
+      appId: "A0123456789",
+      signingSecret: "s3cr3t-signing-key-from-slack-dashboard",
+    });
+    const res = await app.request("/admin/provision/complete", {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
       },
-    );
+    });
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain("success");
@@ -185,7 +182,7 @@ describe("admin UI — provisioning flow", () => {
     // Verify env vars were stored
     expect(upsertCalls.length).toBeGreaterThan(0);
     const lastCall = upsertCalls[upsertCalls.length - 1];
-    expect(lastCall.env).toHaveProperty("SLACK_APP_ID");
-    expect(lastCall.env).toHaveProperty("SLACK_SIGNING_SECRET");
+    expect(lastCall.env).toHaveProperty("SLACK_APP_ID", "A0123456789");
+    expect(lastCall.env).toHaveProperty("SLACK_SIGNING_SECRET", "s3cr3t-signing-key-from-slack-dashboard");
   });
 });
