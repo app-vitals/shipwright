@@ -6,7 +6,7 @@
 
 The agent owns six first-class Prisma models (`Agent` and its `Env` / `CronJob` / `Tool` / `Token` / `Plugin` children) on a **dedicated database** (`DATABASE_URL_AGENT`). Secrets at rest (env values, Slack/Anthropic keys) are AES-256-GCM encrypted at the service layer; agent API tokens are stored only as SHA-256 hashes.
 
-> The container entrypoint is `agent/src/entrypoint-main.ts`, invoked by the Dockerfile `ENTRYPOINT`. It validates required vars, fetches agent config, applies env, symlinks `~/.claude`, sets up GitHub auth, runs mise, installs plugins, and spawns the agent server (`run-agent.ts`). The legacy `agent/src/index.ts` remains a placeholder (`export {}`). The implemented HTTP surfaces are the admin CRUD API (`admin-api.ts`), the runtime API (`api.ts`), the server-rendered admin UI (`admin-ui.ts`), the Prisma store + service classes, the Slack event handler (`slack.ts`), and the cron runtime (`cron-handler.ts`). On startup the runner calls `POST /admin/api/agents/:id/crons/reconcile` to sync system crons.
+> The container entrypoint is `agent/src/entrypoint-main.ts`, invoked by the Dockerfile `ENTRYPOINT`. It validates required vars, fetches agent config, applies env, symlinks `~/.claude`, sets up GitHub auth, runs mise, installs plugins, and spawns the agent server (`run-agent.ts`). The legacy `agent/src/index.ts` remains a placeholder (`export {}`). The implemented HTTP surfaces are the admin CRUD API (`admin/src/admin-api.ts`), the runtime API (`admin/src/api.ts`), the server-rendered admin UI (`admin/src/admin-ui.ts`), the Prisma store + service classes (all in the `@shipwright/admin` package), the Slack event handler (`slack.ts`), and the cron runtime (`cron-handler.ts`). On startup the runner calls `POST /admin/api/agents/:id/crons/reconcile` to sync system crons.
 
 ## Running locally
 
@@ -78,23 +78,23 @@ All child models cascade-delete with their `Agent`.
 
 | File | Purpose |
 |---|---|
-| `agent/src/api.ts` | Runtime API factory `createAgentRuntimeApp()` (DI for services). |
-| `agent/src/admin-api.ts` | Admin CRUD factory `createAdminApp()` + session-auth middleware. |
-| `agent/src/admin-ui.ts` | Admin UI factory `createAdminUIApp()` — server-rendered Hono app (login, agent list/detail, Slack provisioning) with POST mutation routes for cron jobs, tools, and tokens (create/toggle/delete/revoke). |
-| `agent/src/admin-ui-pages.ts` | Page rendering functions (`renderLoginPage`, `renderAgentsPage`, `renderAgentDetailPage`, `renderProvision*`). |
-| `agent/src/admin-ui-styles.ts` | Shared CSS helpers (`baseStyles`, `escapeHtml`, `renderAdminToolbar`). |
-| `agent/src/slack-provisioning-client.ts` | `SlackProvisioningClient` interface + `HttpSlackProvisioningClient` — drives the one-time Slack app creation flow. |
-| `agent/src/agent-envs.ts` | Env service — encrypted key/value store + config bundle assembly. |
-| `agent/src/agent-cron-jobs.ts` | Cron service + system-cron reconciliation. |
-| `agent/src/agent-tools.ts` / `agent-tokens.ts` / `agent-plugins.ts` | Per-resource service classes. |
+| `admin/src/api.ts` | Runtime API factory `createAgentRuntimeApp()` (DI for services). |
+| `admin/src/admin-api.ts` | Admin CRUD factory `createAdminApp()` + session-auth middleware. |
+| `admin/src/admin-ui.ts` | Admin UI factory `createAdminUIApp()` — server-rendered Hono app (login, agent list/detail, Slack provisioning) with POST mutation routes for cron jobs, tools, and tokens (create/toggle/delete/revoke). |
+| `admin/src/admin-ui-pages.ts` | Page rendering functions (`renderLoginPage`, `renderAgentsPage`, `renderAgentDetailPage`, `renderProvision*`). |
+| `admin/src/admin-ui-styles.ts` | Shared CSS helpers (`baseStyles`, `escapeHtml`, `renderAdminToolbar`). |
+| `admin/src/slack-provisioning-client.ts` | `SlackProvisioningClient` interface + `HttpSlackProvisioningClient` — drives the one-time Slack app creation flow. |
+| `admin/src/agent-envs.ts` | Env service — encrypted key/value store + config bundle assembly. |
+| `admin/src/agent-cron-jobs.ts` | Cron service + system-cron reconciliation. |
+| `admin/src/agent-tools.ts` / `agent-tokens.ts` / `agent-plugins.ts` | Per-resource service classes. |
 | `agent/src/entrypoint-main.ts` | Production CLI entry point — wires real deps and calls `runEntrypoint()`. Invoked by the Dockerfile `ENTRYPOINT`. |
 | `agent/src/entrypoint.ts` | Container startup sequence (`runEntrypoint()`) — dependency-injected for testability. Validates vars, fetches config, applies env, symlinks `~/.claude`, runs GitHub auth + mise + plugin install, then spawns the server. |
 | `agent/src/cli-args.ts` | CLI argument parsing (`parseCliArgs()`) — `--agent-id`, `--api-url`, `--api-key` flags with env var fallbacks. Pure, no I/O. |
 | `agent/src/run-agent.ts` | Bootstraps and starts the Hono server (`startServer()`). Called by `entrypoint.ts` after all environment setup is complete. |
 | `agent/src/shipwright-config-client.ts` | `ShipwrightConfigClient` interface + `HttpShipwrightConfigClient` (real HTTP) + `RecordedShipwrightConfigClient` (cassette double for tests). |
 | `agent/src/setup.ts` | Workspace bootstrapping — directory scaffolding, identity-file seeding, plugin installation, and mise startup. Safe to call on every agent startup (idempotent). |
-| `agent/src/crypto.ts` / `token-crypto.ts` | AES-256-GCM + token hashing helpers. |
-| `agent/src/system-crons.ts` | System-cron definitions reconciled onto each agent. |
+| `admin/src/crypto.ts` / `token-crypto.ts` | AES-256-GCM + token hashing helpers. |
+| `admin/src/system-crons.ts` | System-cron definitions reconciled onto each agent. |
 | `agent/src/github-app-auth.ts` | `GitHubTokenManager` — installation-token cache + proactive 30-min background refresh; `getBotIdentity()` for git author config. |
 | `agent/src/github-token-store.ts` | Atomic file-based token store (`writeToken` / `readToken` / `resolveTokenPath`) used by the credential helper. |
 | `agent/src/setup-github-auth.ts` | `setupGitHubAuth()` — wires GitHub auth on agent startup: App path (token manager + credential helper + git identity) or PAT path (`gh auth setup-git`). |
@@ -108,7 +108,7 @@ All child models cascade-delete with their `Agent`.
 | `agent/src/cron-handler.ts` | Cron runtime: `handleCronRequest()` — runs a cron prompt through Claude and posts the result to Slack. Supports `preCheck` scripts, `silent` suppression, channel vs. DM delivery, and `onPost`/`onSession` callbacks. |
 | `agent/src/slack.ts` | Slack event handler: `createSlackApp()` — Bolt-based Socket Mode app handling DMs, `app_mention`, `reaction_added`, file attachments, and voice transcription. |
 | `agent/src/slack-manifest.ts` | Typed Slack app manifest builder (`buildManifest()`) used by `agent/scripts/bootstrap-agent.ts` to create per-agent Slack apps via the Manifest API. |
-| `agent/prisma/schema.prisma` | The six-model schema (`DATABASE_URL_AGENT`). |
+| `admin/prisma/schema.prisma` | The six-model schema (`DATABASE_URL_AGENT`). |
 
 ## Testing
 
