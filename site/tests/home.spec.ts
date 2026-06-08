@@ -155,3 +155,67 @@ test("social proof links to GitHub and repeats the install command", async ({
     }),
   ).toBeVisible();
 });
+
+// SWW-2.3: Services bridge (COSS) + site footer.
+
+test("services bridge links to the discovery call", async ({ page }) => {
+  await page.goto("/");
+  const section = page.locator("#services");
+  await expect(section).toBeVisible();
+  await expect(
+    section.getByRole("link", { name: /discovery call/i }),
+  ).toHaveAttribute("href", "https://cal.com/app-vitals/discovery");
+});
+
+test("services bridge stays soft — no email-capture form", async ({ page }) => {
+  await page.goto("/");
+  const section = page.locator("#services");
+  // COSS bridge is a single off-page CTA, not a lead-gen form.
+  expect(await section.locator("form, input").count()).toBe(0);
+});
+
+test("footer links to repo, license (MIT), Claude Code, and community", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const footer = page.locator("footer");
+  await expect(footer).toBeVisible();
+  // Repository.
+  await expect(
+    footer.getByRole("link", { name: "GitHub", exact: true }),
+  ).toHaveAttribute("href", "https://github.com/app-vitals/shipwright");
+  // License (MIT).
+  await expect(
+    footer.getByRole("link", { name: /MIT License/i }),
+  ).toHaveAttribute("href", /LICENSE/);
+  // Claude Code — the platform, featured (never a competitor).
+  await expect(
+    footer.getByRole("link", { name: /Claude Code/i }),
+  ).toHaveAttribute("href", "https://claude.com/claude-code");
+  // Community — GitHub Discussions.
+  await expect(
+    footer.getByRole("link", { name: /GitHub Discussions/i }),
+  ).toHaveAttribute("href", /github\.com\/app-vitals\/shipwright\/discussions/);
+});
+
+test("page markets no pricing anywhere", async ({ page }) => {
+  await page.goto("/");
+  const text = (await page.locator("body").textContent()) ?? "";
+  const lower = text.toLowerCase();
+  for (const term of [
+    "pricing",
+    "per month",
+    "per seat",
+    "per user",
+    "/month",
+    "/mo",
+    "subscription",
+    "free trial",
+    "billed annually",
+  ]) {
+    expect(lower).not.toContain(term);
+  }
+  // No dollar-amount price tags. The demo transcript uses "$ " shell prompts
+  // (dollar + space), never "$<digit>", so this only catches real prices.
+  expect(text).not.toMatch(/\$\d/);
+});
