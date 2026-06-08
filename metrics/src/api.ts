@@ -79,11 +79,7 @@ export interface MetricsDeps {
   requireOwnerRole?: boolean;
   /** Optional single-token bearer gate (METRICS_DASHBOARD_TOKEN). Default off. */
   dashboardToken?: string;
-  /**
-   * Offline mode: skip session auth and inject a default local user for /dashboard.
-   * When true, /dashboard is served without a valid session cookie.
-   * Default false.
-   */
+  /** Offline mode: skip session auth and serve /dashboard as a default local user. Default false. */
   offlineMode?: boolean;
 }
 
