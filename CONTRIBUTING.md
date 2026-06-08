@@ -4,7 +4,7 @@ Thanks for your interest. This document covers the conventions, workflow, and re
 
 ## Code of conduct
 
-Be respectful and constructive. Full code of conduct will land at public launch.
+Be respectful and constructive. This project follows our [Code of Conduct](./CODE_OF_CONDUCT.md) — by participating, you agree to uphold it.
 
 ## Conventions
 

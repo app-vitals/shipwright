@@ -1,0 +1,73 @@
+---
+// Dark-premium base layout for Shipwright Harness.
+// Ships ZERO runtime JS: fonts load via plain <link rel="stylesheet">,
+// the glow orb is pure CSS (.sw-orb from brand.css). No <script> tags.
+import "../styles/brand.css";
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const {
+  title = "Shipwright Harness",
+  description = "The open-source autonomous delivery agent for Claude Code.",
+} = Astro.props;
+
+const canonicalURL = new URL(Astro.url.pathname, Astro.site);
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="generator" content={Astro.generator} />
+
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonicalURL} />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content={canonicalURL} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:site_name" content="Shipwright Harness" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+
+    <!--
+      Fonts (no runtime JS): Space Grotesk + JetBrains Mono from Google Fonts,
+      General Sans from Fontshare. Plain stylesheet links only.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="preconnect" href="https://api.fontshare.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://api.fontshare.com/v2/css?f[]=general-sans@400,500,600&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body class="min-h-screen overflow-x-hidden">
+    <!-- Subtle dark-premium glow orb (pure CSS, decorative) -->
+    <div
+      class="sw-orb sw-orb-brand"
+      aria-hidden="true"
+      style="top: -12rem; left: 50%; width: 42rem; height: 42rem; transform: translateX(-50%);"
+    >
+    </div>
+
+    <!-- .sw-container already caps width at --sw-layout-max-width (72rem). -->
+    <main class="sw-container relative">
+      <slot />
+    </main>
+  </body>
+</html>

@@ -1,0 +1,59 @@
+<!doctype html>
+<!--
+  Shipwright Harness — one-pager template.
+  All styling comes from brand.css (generated from brand/tokens.json).
+  For a distributable single file (PDF/email), inline brand.css into the <style> below.
+  Replace the {{...}} placeholders. Keep voice + content rules from BRAND.md §5.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Shipwright Harness — One-Pager</title>
+    <link rel="stylesheet" href="../brand.css" />
+    <style>
+      .wrap { position: relative; padding: 4rem 0; overflow: hidden; }
+      .hero { display: grid; gap: 1rem; max-width: 46rem; }
+      .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-top: 2rem; }
+      .row { display: flex; gap: 0.75rem; align-items: center; margin-top: 1.5rem; flex-wrap: wrap; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="sw-orb sw-orb-brand" style="width: 420px; height: 420px; top: -120px; right: -80px;"></div>
+      <div class="sw-container">
+        <p class="sw-label">Shipwright Harness · Open source · Built on Claude Code</p>
+        <div class="hero">
+          <h1 class="sw-display">The open-source autonomous delivery agent for <span class="sw-gradient-text">Claude Code</span>.</h1>
+          <p class="sw-editorial">{{A deployable cloud agent and the autonomous coding system that powers it — built on the Shipwright plugin, running on your codebase.}}</p>
+          <div class="row">
+            <a class="sw-btn" href="https://shipwrightharness.com">Get started</a>
+            <a class="sw-btn-secondary" href="https://github.com/app-vitals/shipwright">View on GitHub</a>
+          </div>
+          <div class="sw-code">/plugin install shipwright@app-vitals/shipwright</div>
+        </div>
+
+        <div class="grid">
+          <div class="sw-card">
+            <p class="sw-label">Deploy anywhere</p>
+            <p>{{Use it interactively in Claude Code, or deploy the agent to your cloud (GitHub Actions or self-hosted). Repo-agnostic — Node, Rust, Go, Python, Ruby, Make.}}</p>
+          </div>
+          <div class="sw-card">
+            <p class="sw-label">Test-readiness</p>
+            <p>{{A five-phase pipeline classifies every unit and prescribes its test layer — agents you can trust because tests are trusted.}}</p>
+          </div>
+          <div class="sw-card">
+            <p class="sw-label">Pipeline metrics</p>
+            <p>{{First-time-quality rate, estimation accuracy, review verdicts — measured on your own pipeline.}}</p>
+          </div>
+        </div>
+
+        <div class="row">
+          <span class="sw-pill sw-pill-success">shipped</span>
+          <span class="sw-pill sw-pill-progress">in review</span>
+          <p class="sw-muted">{{Built and used by the people who'll help you run it.}}</p>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
