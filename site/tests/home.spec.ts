@@ -51,9 +51,11 @@ test("primary 'Get started' CTA renders", async ({ page }) => {
 test("exact install command string renders", async ({ page }) => {
   await page.goto("/");
   await expect(
-    page.getByText("/plugin install shipwright@app-vitals/shipwright", {
-      exact: true,
-    }),
+    page
+      .locator("#install")
+      .getByText("/plugin install shipwright@app-vitals/shipwright", {
+        exact: true,
+      }),
   ).toBeVisible();
 });
 
@@ -69,5 +71,85 @@ test("secondary 'View on GitHub' CTA points at the repo", async ({ page }) => {
 
 test("eyebrow features 'Built on Claude Code'", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByText(/Built on Claude Code/i)).toBeVisible();
+  await expect(page.getByText(/Built on Claude Code/i).first()).toBeVisible();
+});
+
+// SWW-2.2: Body sections (problem / how-it-works / differentiators / demo / social proof).
+
+test("problem section renders its headline", async ({ page }) => {
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", { name: /pipeline isn't/i }),
+  ).toBeVisible();
+});
+
+test("how-it-works leads with the agent and never headlines 'the loop'", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const section = page.locator("#how-it-works");
+  await expect(section).toBeVisible();
+  // Positively features the deployable agent.
+  await expect(section.getByText(/deployable agent/i).first()).toBeVisible();
+  // Brand rule: the section heading must NOT market "the loop" / "the delivery loop".
+  const heading = section.getByRole("heading").first();
+  await expect(heading).not.toHaveText(/the (delivery )?loop/i);
+});
+
+test("how-it-works presents all four pipeline stages", async ({ page }) => {
+  await page.goto("/");
+  const section = page.locator("#how-it-works");
+  for (const stage of ["Plan", "Build", "Review", "Ship"]) {
+    await expect(
+      section.getByText(new RegExp(`^${stage}$`, "i")).first(),
+    ).toBeVisible();
+  }
+});
+
+test("differentiators feature 'Built on Claude Code' and free/open-source (MIT)", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const section = page.locator("#differentiators");
+  await expect(section).toBeVisible();
+  await expect(section.getByText(/Built on Claude Code/i).first()).toBeVisible();
+  await expect(section.getByText(/open[- ]source/i).first()).toBeVisible();
+  await expect(section.getByText(/MIT/).first()).toBeVisible();
+});
+
+test("differentiators name no competitors", async ({ page }) => {
+  await page.goto("/");
+  const text =
+    (await page.locator("#differentiators").textContent())?.toLowerCase() ?? "";
+  for (const competitor of ["devin", "cursor", "copilot", "windsurf", "github copilot"]) {
+    expect(text).not.toContain(competitor);
+  }
+});
+
+test("demo renders a static terminal block with no runtime JS", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const demo = page.locator("#demo");
+  await expect(demo).toBeVisible();
+  await expect(demo.locator("pre, code").first()).toBeVisible();
+  await expect(demo.getByText(/dev-task/i).first()).toBeVisible();
+  // Reconfirm zero runtime JS (no asciinema player injected).
+  expect(await page.locator("script").count()).toBe(0);
+});
+
+test("social proof links to GitHub and repeats the install command", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const section = page.locator("#social-proof");
+  await expect(section).toBeVisible();
+  await expect(
+    section.getByRole("link", { name: /github/i }).first(),
+  ).toHaveAttribute("href", /github\.com\/app-vitals\/shipwright/);
+  await expect(
+    section.getByText("/plugin install shipwright@app-vitals/shipwright", {
+      exact: true,
+    }),
+  ).toBeVisible();
 });
