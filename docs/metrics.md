@@ -20,6 +20,14 @@ bun metrics/src/server.ts          # serves on :3460 (override with METRICS_API_
 
 `server.ts` calls `validateRequiredEnv(["POSTHOG_PERSONAL_API_KEY", "POSTHOG_PROJECT_ID"])` and **fails fast** listing any missing vars. Env can also be loaded from a dotenv file (`SHIPWRIGHT_ENV_FILE`, default `~/.shipwright/.env`) — set vars are never overwritten.
 
+**Offline mode** — run without any PostHog credentials or external services:
+
+```bash
+METRICS_OFFLINE=true bun metrics/src/server.ts
+```
+
+When `METRICS_OFFLINE=true`, `server.ts` skips the PostHog env gate, injects a fixture PostHog client (pre-recorded sample data for every query type), and bypasses session auth for `/dashboard` (serves as "Offline User"). Safe for local development and CI environments with no secrets configured.
+
 Validate every HogQL query before deploy (metadata-only, read-only key sufficient):
 
 ```bash
@@ -49,14 +57,15 @@ The `/metrics/*` endpoints accept **either** credential:
 - **Bearer API key** — tokens parsed from `METRICS_API_KEYS`. Scoped tokens (scope `!== "*"`) are rejected with `403` on metrics routes.
 - **Session cookie** (`vitals_session`) — when `METRICS_REQUIRE_OWNER_ROLE=true` and an accounts client is configured, the caller's role is checked and non-`OWNER` users get `403`.
 
-The **dashboard** is protected by the session cookie middleware; an invalid/absent session redirects to `/auth/login`. `/health` is always open.
+The **dashboard** is protected by the session cookie middleware; an invalid/absent session redirects to `/auth/login`. In offline mode (`METRICS_OFFLINE=true`), session auth is skipped entirely and `/dashboard` is served as "Offline User". `/health` is always open.
 
 ## Environment
 
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
-| `POSTHOG_PERSONAL_API_KEY` | ✅ | — | PostHog personal API key for queries. |
-| `POSTHOG_PROJECT_ID` | ✅ | — | PostHog project id (no default — must be set explicitly). |
+| `POSTHOG_PERSONAL_API_KEY` | ✅ (not offline) | — | PostHog personal API key for queries. Not required when `METRICS_OFFLINE=true`. |
+| `POSTHOG_PROJECT_ID` | ✅ (not offline) | — | PostHog project id. Not required when `METRICS_OFFLINE=true`. |
+| `METRICS_OFFLINE` | | `false` | When `true`, skips PostHog env gate, injects fixture data, and bypasses dashboard session auth. |
 | `METRICS_API_PORT` | | `3460` | Listen port. |
 | `METRICS_API_KEYS` | | — | Comma-parsed Bearer API keys for `/metrics/*`. |
 | `SESSION_SECRET` | | — | HS256 secret for verifying the `vitals_session` cookie. |
@@ -74,7 +83,8 @@ The **dashboard** is protected by the session cookie middleware; an invalid/abse
 | `metrics/src/server.ts` | Process entrypoint — env validation, wiring, `Bun.serve`. |
 | `metrics/src/api.ts` | App factory `createMetricsApp()`, route + auth middleware registration, dashboard handler. |
 | `metrics/src/queries.ts` | HogQL query builders (summary, trends, features, queue, tokens). |
-| `metrics/src/posthog-client.ts` | PostHog client (interface + `Http` impl; `Recorded` double for tests). |
+| `metrics/src/posthog-client.ts` | PostHog client (interface + `Http` impl). |
+| `metrics/src/fixtures/posthog-fixtures.ts` | Fixture PostHog client (`createFixturePostHogClient()`) — pre-recorded sample data for every query type; used in offline mode and integration tests. |
 | `metrics/src/validate-hogql.ts` | Pre-deploy HogQL validation runner (`validate:hogql`). |
 | `metrics/src/cache.ts` | In-process query-result cache. |
 | `metrics/src/secrets.ts` | Secrets resolution: env-first, optional GCP Secret Manager fallback. |
@@ -83,7 +93,7 @@ The **dashboard** is protected by the session cookie middleware; an invalid/abse
 
 ## Testing
 
-Unit + integration + smoke layers (`bun test --filter metrics`). Integration tests inject a `RecordedPostHogClient` (cassettes under `metrics/tests/fixtures/posthog/`); smoke tests drive the Hono app via `app.request()`. Keep `POSTHOG_PERSONAL_API_KEY` **unset** so the suite stays offline. See [testing.md](./testing.md).
+Unit + integration + smoke layers (`bun test --filter metrics`). Integration tests inject a `createFixturePostHogClient()` double (from `metrics/src/fixtures/posthog-fixtures.ts`) — pre-recorded sample results, no network calls; smoke tests drive the Hono app via `app.request()`. Keep `POSTHOG_PERSONAL_API_KEY` **unset** so the suite stays offline. See [testing.md](./testing.md).
 
 ## See also
 
