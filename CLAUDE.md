@@ -1,48 +1,71 @@
 # CLAUDE.md
 
-Guidance for Claude Code (claude.ai/code) and contributors working in this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## What Shipwright is
 
-Shipwright is a **Claude Code plugin toolchain for the full delivery loop — spec → plan → execute → review → deploy** — plus a metrics dashboard and a reference agent. You install the plugin into Claude Code and drive planning, queue-based execution, policy-controlled review, a test-readiness pipeline, and autonomous deploy against your own repository.
+Shipwright Harness is **the open-source (MIT) autonomous delivery agent for Claude Code** — a deployable agent plus the autonomous coding system that powers it. The system is a Claude Code plugin (`shipwright`) covering the full delivery loop — **spec → plan → execute → review → deploy** — alongside a metrics dashboard and a Shipwright agent. The brand is **Shipwright Harness**; the installable package is **`shipwright`**.
 
-> 🚧 **Early development.** The toolchain is being built out in this repository and isn't ready for general installation yet. Track progress in the [issues](https://github.com/app-vitals/shipwright/issues).
+> The plugin is repo-agnostic: it runs its planning/execution/review/deploy commands against *any* repository. This repo is both the source of the plugin **and** the codebase it ships against.
 
-## Architecture / roadmap (A → B → C)
+## Architecture — three artifacts, sequenced A → B → C
 
-Three artifacts, sequenced so the repo is useful at the end of each phase:
+| Phase | Artifact | Directory | What it is |
+|---|---|---|---|
+| **A** | **Plugin** (the system) | `plugins/shipwright/` | Commands, skills, agents, scripts users `/plugin install`. Repo-agnostic. |
+| **B** | **Metrics dashboard** | `metrics/` | Stateless Hono service: PostHog-backed JSON endpoints + a server-rendered dashboard. No database. |
+| **C** | **Shipwright agent** | `agent/` | Hono service + Prisma store; a thin autonomous runner: pick next ready task → build → ship PR → forward metrics. |
 
-| Phase | Artifact | What it is |
-|---|---|---|
-| **A** | **Plugin** | The toolchain users `/plugin install` (commands, skills, agents, scripts). Repo-agnostic — runs its planning/execution/review/deploy commands against any repo. |
-| **B** | **Metrics dashboard** | A stateless Hono service: PostHog-backed JSON endpoints + a server-rendered dashboard (task throughput, CI first-pass rate, review verdicts, estimation accuracy). No database. |
-| **C** | **Reference agent** | A thin, purpose-built autonomous runner: pick the next ready task → build → ship a PR → forward metrics, on a schedule or as a one-shot. |
+Supporting surfaces (not phased):
+- `site/` — Astro + Tailwind marketing site (**shipwright-harness.com**). Self-contained; **not** a Bun workspace; Playwright smoke tests.
+- `brand/` — locked design system (`BRAND.md`, `tokens.json`) + CSS build + lint, consumed by `site/` and brand artifacts. Editing brand artifacts triggers the `shipwright-brand` skill.
+- `state/` — git-ignored local JSON task-store fallback + cached review state (only written when the GitHub backend isn't active).
 
-Two cross-cutting concerns span all three:
-- **CI gates** (`.github/workflows/ci.yml`) — lint → typecheck → `bun test` → secret-scan → task-store doctor (+ e2e/agent jobs), each merge-blocking, each with a local-parity command.
-- **Local orchestration** (`Taskfile.yml`, go-task) — the single local entrypoint: `task dev` runs UI + API + agent together; `task ui`/`api`/`agent` run them independently; `task test`/`task ci` run the suite/gates.
+## Commands
+
+go-task (`Taskfile.yml`) is the single local entrypoint; the root `package.json` mirrors a subset as `bun run` scripts.
+
+```bash
+task setup        # bun install across all workspaces
+task ci           # lint → check-strings → typecheck → test (the merge-blocking gate; CI runs this exact chain)
+task test         # bun test            (single file: bun test path/to/file.test.ts)
+task lint         # bunx biome lint .
+task format       # bunx biome format --write .
+task typecheck    # bun run --filter='*' typecheck
+task check-strings  # scan the plugin for banned/confidential identifiers
+```
+
+Database (agent only):
+```bash
+export DATABASE_URL_AGENT="file:./agent/dev.db"   # SQLite for local dev; postgres URL for prod
+task db:provision   # prisma migrate deploy (idempotent)
+task db:migrate     # prisma migrate dev (creates a new migration)
+```
+
+Marketing site (run from `site/`, **not** part of `bun test`):
+```bash
+cd site && npm run dev      # astro dev
+cd site && npm run build    # astro build
+cd site && npm test         # playwright test (*.spec.ts)
+```
+
+> `bunfig.toml` excludes `site/**` from the root `bun test` scan — Playwright's `*.spec.ts` files would otherwise crash Bun's runner. Keep site tests as `*.spec.ts` to stay isolated.
+
+There is **no `task dev`/`task api`/`task agent`** yet — services are started directly via their own entrypoints. Don't assume aggregate run tasks exist; check `Taskfile.yml`.
 
 ## Before you commit — this repository is going public
 
-This repo is **private today but destined to be a public, MIT open-source project.** Git history is permanent — anything committed and pushed can't be truly unpublished. **Scrub before the commit, not after the push.**
+This repo is **private today but destined to be a public, MIT open-source project.** Git history is permanent. **Scrub before the commit, not after the push.**
 
-**The rule:** review every change before staging it; never commit content you haven't eyeballed for proprietary material. Stage specific files — never `git add -A`/`-u` blindly. When unsure whether something is proprietary, **ask before committing.**
+**The rule:** review every change before staging it. Stage specific files — **never `git add -A`/`-u` blindly**. When unsure whether something is proprietary, **ask before committing.**
 
-**Scrub for (categories):**
-- **Secrets & credentials** — API keys/tokens (PostHog personal API key, `ANTHROPIC_API_KEY`, `GH_TOKEN`), `SESSION_SECRET`, `.env` contents, private keys, OAuth tokens. Use env vars/placeholders, never literals.
-- **Client / customer / partner names** and identifying engagement details — use generic placeholders.
-- **Internal infrastructure identifiers** — cloud project names, analytics project IDs, cluster/namespace names, internal hostnames/URLs, deployment specifics.
-- **Internal references** — internal PR/issue numbers, Slack/Jira/Linear links, internal-only doc links.
-- **Local filesystem paths** revealing usernames/machine layout (e.g. `/Users/<name>/...`).
-- **Financials, compensation, revenue, and any PII.**
+**Scrub for:** secrets & credentials (PostHog API key, `ANTHROPIC_API_KEY`, `GH_TOKEN`, `SESSION_SECRET`, `.env` contents, private keys) · client/customer/partner names · internal infra identifiers (cloud project names, analytics project IDs, internal hostnames) · internal PR/issue/Slack/Jira links · local filesystem paths revealing usernames (`/Users/<name>/...`) · financials, compensation, PII.
 
-The CI secret scan (`gitleaks`/`detect-secrets`) and a client-name audit are the final backstop — not a substitute for this discipline.
-
-> Internal, build-time-only notes (kept out of public history) live in the git-ignored `CLAUDE.local.md`. Read it for operational context before working in this repo.
+`task check-strings` (banned-strings scan) is the CI backstop — not a substitute for this discipline. Internal, build-time-only notes live in the git-ignored `CLAUDE.local.md`; **read it for operational context before working in this repo.**
 
 ## How work is tracked
 
-The task store is **GitHub Issues** in this repo, configured via `.shipwright.json` (`taskStore: "github"`). Work is planned as issues under the **`shipwright-oss`** milestone, each with a machine-readable ```` ```shipwright ```` YAML block (`id`, `layer`, `branch`, `dependencies`, `hours`, `status`, `pr`) and a `status:*` label.
+The task store is **GitHub Issues** in this repo, configured via `.shipwright.json` (`taskStore: "github"`, owner `app-vitals`, repo `shipwright`). Work is planned as issues under the **`shipwright-oss`** milestone, each with a machine-readable ```` ```shipwright ```` YAML block (`id`, `layer`, `branch`, `dependencies`, `hours`, `status`, `pr`) and a `status:*` label.
 
 **Find the next ready task:**
 ```bash
@@ -55,45 +78,54 @@ pending → in_progress → pr_open → merged → deployed → done
 ```
 plus `approved`, `blocked`, `cancelled`.
 
-### The execution loop
+### Execution loop
 
 1. Pick a `status:pending` task whose every `dependencies` entry is `status:done`.
 2. Branch from the task's YAML `branch` field (`feat/sw-x-y-slug`) — never work on `main`.
 3. Build + land tests **in the same PR, at the correct layer** (no "tests later").
 4. Open a PR; move the status label through its lifecycle.
 
-Driven by Shipwright's own commands: `/shipwright:dev-task` (build + test + PR) → `/shipwright:review` / `/shipwright:patch` → `/shipwright:deploy`.
+Driven by Shipwright's own commands: `/shipwright:dev-task` → `/shipwright:review` / `/shipwright:patch` → `/shipwright:deploy`. The `ship-loop` skill drains the queue autonomously (one pipeline step per call, wrapped by `/loop`).
 
-> **Task-store config resolution:** Shipwright auto-discovers `.shipwright.json` by walking up from the process working directory. Place `.shipwright.json` at the repository root and it will be found automatically. If no `.shipwright.json` is found, the `SHIPWRIGHT_CONFIG` env var is checked next; if that is also unset, the JSON backend is used as a fallback. If task operations seem to no-op, run `doctor` to confirm which backend is active.
+**Task-store config resolution** (`plugins/shipwright/scripts/create-task-store.ts` → `loadConfig`): (1) walk up from cwd for `.shipwright.json`; (2) fall back to `SHIPWRIGHT_CONFIG` env var; (3) fall back to local JSON (`state/`). If task operations seem to no-op, confirm which backend is active.
+
+## Test conventions
+
+Tests land **with** the code, at the correct layer — same PR, no "add tests later" tasks. Layer is encoded in the filename:
+
+| Suffix | Layer | What it covers |
+|---|---|---|
+| `*.unit.test.ts` | unit | pure logic, no I/O |
+| `*.integration.test.ts` | integration | real dependency behavior via recorded fixtures / injected doubles |
+| `*.smoke.test.ts` | smoke | Hono endpoints via in-process `app.request()` (no real socket) |
+| `*.spec.ts` (in `site/`) | e2e | the site in a real browser via Playwright |
+
+**Test isolation (hard rule):** inject time via a `Clock`; test external clients (PostHog, GitHub) with recorded fixtures. **No `mock.module()`, no `global.fetch`/`global.*` overrides** — Bun shares the test process, so leaked globals break sibling suites.
 
 ## Conventions
 
-- **Tests land with the code, at the correct layer** — same PR, no "add tests later" tasks:
-  - **unit** — pure logic, no I/O.
-  - **integration** — real dependency behavior via recorded fixtures / injected doubles.
-  - **smoke** — Hono endpoints via in-process `app.request()` (no real socket).
-  - **e2e** — the dashboard in a real browser via Playwright.
-- **Test isolation:** inject time via a `Clock`; test external clients (PostHog, GitHub) with recorded fixtures. **No `mock.module()`, no `global.fetch`/`global.*` overrides** — Bun shares the test process, so leaked globals break sibling suites.
 - **No new coupling:** the plugin stays repo-agnostic; the metrics service and the agent depend on no external platform service.
-- **License:** MIT across all artifacts.
 - **Local-first:** everything runs offline by default (fixtures / injected doubles / scratch queue); live external calls only when env explicitly enables them.
+- **Conventional Commits** — required (a `pr-title-lint` workflow enforces PR titles); releases are automated via semantic-release.
+- **Lint/format:** Biome (2-space indent, organize-imports). Run `task lint` before committing.
+- **License:** MIT across all artifacts.
 
 ## Database env vars
 
-Each service that uses Prisma reads its own `DATABASE_URL_*` env var — never a shared connection.
+Each Prisma service reads its own `DATABASE_URL_*` — never a shared connection.
 
 | Variable | Service | Schema |
 |----------|---------|--------|
 | `DATABASE_URL_AGENT` | `@shipwright/agent` | `agent/prisma/schema.prisma` |
 
-Set `DATABASE_URL_AGENT` before running `task db:provision` or `task db:migrate`.
-For local development a SQLite URL works: `DATABASE_URL_AGENT="file:./agent/dev.db"`.
-For production use a PostgreSQL URL: `DATABASE_URL_AGENT="postgresql://user:pass@host:5432/agent"`.
+The schema uses `provider = "sqlite"` for local portability. Swap to `postgresql` and regenerate migrations when deploying against real Postgres.
 
-> Note: the schema currently uses `sqlite` as the provider for local portability.
-> Swap `provider = "sqlite"` to `provider = "postgresql"` in `agent/prisma/schema.prisma`
-> and regenerate migrations when deploying against a real Postgres instance.
+## Reference
 
-## Repository layout
+To load additional context into a session, add `@docs/filename.md` entries here — don't create separate `CLAUDE-REFERENCE.md` or similar files.
 
-This is the standalone home of Shipwright. Product code fills in across phases A → B → C; today the repo holds the open-source foundation — this file, `LICENSE`, `README.md`, `.gitignore`, and `.shipwright.json` — and its planning lives in [GitHub Issues](https://github.com/app-vitals/shipwright/issues).
+- **docs/architecture.md** — the three-artifact A→B→C design (plugin / metrics / agent), supporting surfaces, and workspace layout
+- **docs/testing.md** — the four-layer test model (unit / integration / smoke / e2e), run commands, speed budgets, and the isolation contract
+- **docs/metrics.md** — metrics service (B): JSON endpoints, server-rendered dashboard, dual auth (Bearer / session), and environment
+- **docs/agent.md** — Shipwright agent (C): runtime + admin CRUD APIs, the six-model Prisma store, and encryption/env notes
+- **docs/test-readiness/test-system.md** — the authoritative test blueprint: layer matrix, boundary rules, per-component budgets, CI pipeline shape, and the full isolation contract

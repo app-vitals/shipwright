@@ -51,11 +51,24 @@ Shipwright turns a feature idea into shipped, reviewed code through a sequence o
 |---|---|---|
 | **Plugin (the system)** | The `shipwright` toolchain you `/plugin install` — planning, queue-based execution, review, a test-readiness pipeline, and deploy commands. | 🔨 Building (Phase A) |
 | **Metrics dashboard** | A stateless service that reads pipeline analytics (task throughput, CI first-pass rate, review verdicts, estimation accuracy) and renders a dashboard. | 📋 Planned (Phase B) |
-| **The agent** | A thin autonomous runner that drives the system on a schedule — pick the next ready task → build → ship a PR → forward metrics — deployable to GitHub Actions or self-hosted. | 📋 Planned (Phase C) |
+| **Shipwright agent** | A thin autonomous runner that drives the system on a schedule — pick the next ready task → build → ship a PR → forward metrics — deployable to GitHub Actions or self-hosted. | 📋 Planned (Phase C) |
+
+## The workflow
+
+```
+/shipwright:brainstorm     → a product spec
+/shipwright:plan-session   → a dependency-ordered task queue
+/shipwright:dev-task       → build + test + open a PR for the next ready task
+/shipwright:review         → policy-controlled PR review
+/shipwright:patch          → address review findings / failing CI
+/shipwright:deploy         → merge + deploy
+```
+
+Tasks are tracked as GitHub Issues, so the queue lives where your team already works.
 
 ## Project status
 
-Shipwright Harness is being assembled here in three phases — plugin, then metrics dashboard, then the agent — with merge-blocking CI gates and a single local task runner from the start. See the [`shipwright-oss` milestone](https://github.com/app-vitals/shipwright/milestones) and the [issues](https://github.com/app-vitals/shipwright/issues) for the live roadmap. Installation and local-development instructions will land here as the toolchain becomes runnable.
+Shipwright Harness is being assembled here in three phases — plugin, then metrics dashboard, then Shipwright agent — with merge-blocking CI gates and a single local task runner from the start. See the [`shipwright-oss` milestone](https://github.com/app-vitals/shipwright/milestones) and the [issues](https://github.com/app-vitals/shipwright/issues) for the live roadmap. Installation and local-development instructions will land here as the toolchain becomes runnable.
 
 ## Built on Claude Code
 
