@@ -31,9 +31,9 @@ jobs:
         run: task check-strings
 
       - name: Secret scan
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v8.27.2/gitleaks_8.27.2_linux_x64.tar.gz" | tar -xz gitleaks
+          ./gitleaks detect --source . --no-git --redact
 
       - name: Typecheck
         run: task typecheck
