@@ -872,6 +872,40 @@ describe("doctor", () => {
     // [warn] comes via console.warn which goes to stderr in Bun
     expect(stdout + stderr).toContain("[warn]");
   });
+
+  test("doctor reports github backend when .shipwright.json is present in cwd", () => {
+    // Write .shipwright.json with github taskStore config in cwd
+    const shipwrightJsonPath = join(tmpDir, ".shipwright.json");
+    writeFileSync(
+      shipwrightJsonPath,
+      JSON.stringify({
+        taskStore: "github",
+        github: { owner: "example-org", repo: "example-repo" },
+      }),
+    );
+    // Run doctor with cwd=tmpDir and no SHIPWRIGHT_CONFIG — auto-discovery should kick in
+    const result = Bun.spawnSync(["bun", SCRIPT, "doctor"], {
+      cwd: tmpDir,
+      env: {
+        ...Object.fromEntries(
+          Object.entries(process.env).filter(
+            ([k]) => k !== "SHIPWRIGHT_CONFIG",
+          ),
+        ),
+        // Inject a fake gh that fails fast so doctor doesn't hang on auth
+        GH_CMD: "/no/such/gh-binary",
+      },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const combined =
+      new TextDecoder().decode(result.stdout) +
+      new TextDecoder().decode(result.stderr);
+    // The doctor command should report the github backend from the discovered config
+    expect(combined).toContain("backend: github");
+    // configSource should be the discovered .shipwright.json path
+    expect(combined).toContain(shipwrightJsonPath);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1053,6 +1087,21 @@ describe("repos", () => {
     const { code, stdout } = run(["repos"], { cwd: tmpDir });
     expect(code).toBe(0);
     expect(stdout.trim()).toBe("acme/example-repo");
+  });
+
+  test("github backend resolves repo from config without a repos/ dir", () => {
+    // No repos/ dir and empty todos: the GitHub adapter must be queried for
+    // its configured owner/repo rather than falling back to a filesystem scan.
+    const cfgPath = writeJsonFile(tmpDir, "gh.json", {
+      taskStore: "github",
+      github: { owner: "app-vitals", repo: "shipwright" },
+    });
+    const { code, stdout } = run(["repos"], {
+      cwd: tmpDir,
+      env: { SHIPWRIGHT_CONFIG: cfgPath },
+    });
+    expect(code).toBe(0);
+    expect(stdout.trim()).toBe("app-vitals/shipwright");
   });
 });
 

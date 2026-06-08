@@ -95,6 +95,11 @@ function makeMockDeps(): AdminDeps {
         updatedAt: new Date("2024-01-01"),
       }),
       delete: async () => {},
+      reconcileSystemCrons: async () => ({
+        created: 2,
+        updated: 0,
+        deleted: 0,
+      }),
     },
     agentToolService: {
       list: async () => [
@@ -378,6 +383,24 @@ describe("admin API — cron jobs", () => {
       },
     );
     expect(res.status).toBe(204);
+  });
+
+  it("POST /admin/api/agents/:id/crons/reconcile returns reconciliation summary", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(
+      `/admin/api/agents/${AGENT_ID}/crons/reconcile`,
+      {
+        method: "POST",
+        headers: { Cookie: `admin_session=${cookie}` },
+      },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({
+      created: expect.any(Number),
+      updated: expect.any(Number),
+      deleted: expect.any(Number),
+    });
   });
 });
 

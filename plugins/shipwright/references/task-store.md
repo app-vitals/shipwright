@@ -33,20 +33,44 @@ To use the GitHub backend:
 }
 ```
 
-### `SHIPWRIGHT_CONFIG` env var
+### Config resolution chain
 
-Point `task_store.ts` at your config file via the `SHIPWRIGHT_CONFIG` environment variable:
+`task_store.ts` resolves its config via a 3-step chain, in this order:
+
+**1. Auto-discovery — walk up from `cwd` to find `.shipwright.json`**
+
+Starting from the process working directory, Shipwright walks up the directory
+tree until it finds a `.shipwright.json` file or reaches the filesystem root.
+Place `.shipwright.json` at the repository root and it will be found
+automatically from any subdirectory — no env var needed.
+
+**2. `SHIPWRIGHT_CONFIG` env var — explicit path override**
+
+If no `.shipwright.json` is found by walking up, the `SHIPWRIGHT_CONFIG`
+environment variable is consulted. Set it to an absolute path to load config
+from a specific location (useful for CI or non-standard layouts):
 
 ```bash
 export SHIPWRIGHT_CONFIG=/path/to/.shipwright.json
 bun task_store.ts query --ready
 ```
 
-- When `SHIPWRIGHT_CONFIG` is **absent or empty**, `task_store.ts` defaults to the JSON
-  backend (`taskStore: "json"`) with no error.
-- When set, the file must exist and be valid JSON — missing or malformed files exit non-zero.
-- In CI, set `SHIPWRIGHT_CONFIG` as a repository/environment variable pointing at a config
-  committed to the repo (e.g. `SHIPWRIGHT_CONFIG=$GITHUB_WORKSPACE/.shipwright.json`).
+When set, the file must exist and be valid JSON — missing or malformed files
+exit non-zero.
+
+In CI, the env var is an alternative to committing `.shipwright.json` at the
+root (both work; auto-discovery is simpler when the file is already there):
+
+```yaml
+env:
+  SHIPWRIGHT_CONFIG: ${{ github.workspace }}/.shipwright.json
+```
+
+**3. Default — JSON backend**
+
+If neither auto-discovery nor `SHIPWRIGHT_CONFIG` produces a config,
+`task_store.ts` defaults to the JSON backend (`taskStore: "json"`) with no
+error. The JSON backend reads and writes `state/todos.json` relative to `cwd`.
 
 ### `github` sub-object fields
 

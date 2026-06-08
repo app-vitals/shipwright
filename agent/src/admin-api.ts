@@ -37,7 +37,7 @@ export interface AdminDeps {
   >;
   agentCronJobService: Pick<
     AgentCronJobService,
-    "list" | "create" | "update" | "delete"
+    "list" | "create" | "update" | "delete" | "reconcileSystemCrons"
   >;
   agentToolService: Pick<
     AgentToolService,
@@ -47,7 +47,10 @@ export interface AdminDeps {
     AgentTokenService,
     "create" | "listForAgent" | "revoke"
   >;
-  agentPluginService: Pick<AgentPluginService, "list" | "add" | "remove" | "removeByName">;
+  agentPluginService: Pick<
+    AgentPluginService,
+    "list" | "add" | "remove" | "removeByName"
+  >;
   sessionSecret: string;
 }
 
@@ -195,6 +198,13 @@ export function createAdminApp(deps: AdminDeps): Hono {
     const cronId = c.req.param("cronId");
     await agentCronJobService.delete(agentId, cronId);
     return new Response(null, { status: 204 });
+  });
+
+  // POST /admin/api/agents/:id/crons/reconcile — reconcile system crons
+  app.post("/admin/api/agents/:id/crons/reconcile", async (c) => {
+    const agentId = c.req.param("id");
+    const result = await agentCronJobService.reconcileSystemCrons(agentId);
+    return c.json(result);
   });
 
   // ─── Tools ─────────────────────────────────────────────────────────────────
