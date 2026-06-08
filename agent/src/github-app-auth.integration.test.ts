@@ -30,9 +30,11 @@ class RecordedGitHubAppClient {
     this.callCount += 1;
     this.calls.push({ timestamp: Date.now(), params });
     const tokenIndex = this.callCount;
+    // Use a fixed future timestamp so token freshness is not wall-clock dependent
+    const FIXED_FUTURE = new Date("2099-01-01T00:00:00Z");
     return {
       token: `fake-token-${tokenIndex}`,
-      expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      expiresAt: FIXED_FUTURE.toISOString(),
       type: "token",
       tokenType: "installation",
     };

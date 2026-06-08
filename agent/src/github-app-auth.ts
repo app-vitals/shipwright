@@ -9,6 +9,7 @@
  */
 
 import { createAppAuth } from "@octokit/auth-app";
+import { type Clock, SystemClock } from "./clock.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -47,6 +48,7 @@ export class GitHubTokenManager {
   private readonly installationId: number;
   private readonly setIntervalFn: typeof setInterval;
   private readonly clearIntervalFn: typeof clearInterval;
+  private readonly clock: Clock;
   private cache: TokenCache | null = null;
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -55,11 +57,13 @@ export class GitHubTokenManager {
     installationId: number;
     setIntervalFn?: typeof setInterval;
     clearIntervalFn?: typeof clearInterval;
+    clock?: Clock;
   }) {
     this.auth = opts.auth;
     this.installationId = opts.installationId;
     this.setIntervalFn = opts.setIntervalFn ?? setInterval;
     this.clearIntervalFn = opts.clearIntervalFn ?? clearInterval;
+    this.clock = opts.clock ?? SystemClock();
   }
 
   async getToken(): Promise<string> {
@@ -101,7 +105,7 @@ export class GitHubTokenManager {
   }
 
   private isNearExpiry(expiresAt: Date): boolean {
-    return expiresAt.getTime() - Date.now() <= REFRESH_BUFFER_MS;
+    return expiresAt.getTime() - this.clock.now().getTime() <= REFRESH_BUFFER_MS;
   }
 
   private async refreshToken(): Promise<string> {
