@@ -5,5 +5,8 @@
 # runner would otherwise discover those *.spec.ts files and fail trying to run
 # them with the Bun runner. Exclude site/ from the root `bun test` scan so the
 # Astro site stays fully isolated from the monorepo test suite.
+#
+# The metrics/e2e/ subdir contains Playwright *.e2e.ts tests -- also excluded
+# from Bun's runner for the same reason (Playwright imports crash Bun runner).
 [test]
-pathIgnorePatterns = ["**/site/**"]
+pathIgnorePatterns = ["**/site/**", "**/metrics/e2e/**"]

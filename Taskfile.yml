@@ -71,6 +71,11 @@ tasks:
           echo "WARNING: gitleaks not installed locally — skipping secret scan. CI enforces this gate."
         fi
 
+  e2e:
+    desc: Run metrics dashboard e2e tests (Playwright)
+    cmds:
+      - cd metrics && bunx playwright test
+
   doctor:
     desc: Validate task-store config and report active backend
     cmds:
