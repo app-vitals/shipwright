@@ -126,14 +126,17 @@ export async function runEntrypoint(deps: EntrypointDeps): Promise<void> {
     spawnAgentServer("bun", ["run", join(import.meta.dir, "run-agent.ts")]);
   };
 
-  const deadline = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(timeoutError), startupTimeoutMs),
-  );
+  let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    deadlineTimer = setTimeout(() => reject(timeoutError), startupTimeoutMs);
+  });
 
   try {
     await Promise.race([startup(), deadline]);
   } catch (err) {
     console.error((err as Error).message);
     exit(1);
+  } finally {
+    clearTimeout(deadlineTimer);
   }
 }

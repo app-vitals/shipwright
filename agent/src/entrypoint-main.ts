@@ -7,7 +7,7 @@
  * Run via: bun run agent/src/entrypoint-main.ts [--agent-id X] [--api-url Y] [--api-key Z]
  */
 
-import { existsSync, symlinkSync, unlinkSync } from "node:fs";
+import { existsSync, lstatSync, rmSync, symlinkSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { parseCliArgs } from "./cli-args.ts";
 import { runEntrypoint } from "./entrypoint.ts";
@@ -61,7 +61,12 @@ await runEntrypoint({
   symlinkDotClaude: (target: string, linkPath: string) => {
     if (existsSync(linkPath)) {
       // Remove stale symlink or directory before relinking
-      unlinkSync(linkPath);
+      if (lstatSync(linkPath).isSymbolicLink()) {
+        unlinkSync(linkPath);
+      } else {
+        console.warn("[entrypoint] ~/.claude is a real directory — removing before symlinking");
+        rmSync(linkPath, { recursive: true });
+      }
     }
     symlinkSync(target, linkPath);
     console.log(`[entrypoint] symlinked ${linkPath} → ${target}`);

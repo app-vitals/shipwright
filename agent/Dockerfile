@@ -1,13 +1,13 @@
 # Shipwright Agent — container image
 #
 # Environment variables:
-#   AGENT_HOME     — persistent storage root (default: /agent-home)
+#   AGENT_HOME     — persistent storage root (default: /data/agent-home)
 #                    Mount a PVC here so mise tool caches, workspace files,
 #                    and the ~/.claude symlink target all survive restarts.
 #   PORT           — Hono server port (default: 3000)
 #
 # PVC mount point:
-#   /agent-home    — mount a PersistentVolumeClaim (or any durable volume) here.
+#   /data/agent-home — mount a PersistentVolumeClaim (or any durable volume) here.
 #                    The agent symlinks ~/.claude → $AGENT_HOME/dot-claude so
 #                    Claude Code settings and memory persist across pod restarts.
 #
@@ -62,7 +62,7 @@ FROM base AS runtime
 WORKDIR /app
 
 # Set AGENT_HOME — the PVC should be mounted here in Kubernetes
-ENV AGENT_HOME=/agent-home
+ENV AGENT_HOME=/data/agent-home
 
 # Copy installed node_modules and generated Prisma client from build stage
 COPY --from=build /app/node_modules ./node_modules
@@ -77,7 +77,9 @@ RUN chmod +x /app/agent/scripts/bin/git-credential-shipwright.sh \
     && chmod +x /app/agent/scripts/bin/gh
 
 # Create mount point directory (overridden by PVC in Kubernetes)
-RUN mkdir -p /agent-home
+RUN mkdir -p /data/agent-home
+
+VOLUME ["/data/agent-home"]
 
 # Expose the Hono server port
 EXPOSE 3000

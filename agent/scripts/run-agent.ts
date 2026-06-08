@@ -76,7 +76,7 @@ if (bundle.allowedTools.length > 0) {
 
 // ─── Launch ───────────────────────────────────────────────────────────────────
 
-const agentIndex = path.resolve(import.meta.dir, "..", "src", "index.ts");
+const agentIndex = path.resolve(import.meta.dir, "..", "src", "run-agent.ts");
 
 if (dryRun) {
   console.log("[run-agent] Dry run — would spawn:");
