@@ -17,13 +17,17 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 
 // Resolve relative to the repo root (cwd when tests run)
 const SCRIPT_PATH = resolve(process.cwd(), "scripts/quickstart.sh");
 const DASHBOARD_URL = "http://localhost:3460/dashboard";
+
+// The behavioral test requires go-task to be installed. In CI it is (arduino/setup-task@v2).
+// Locally it may not be — skip rather than fail so the structural tests still run.
+const taskAvailable = spawnSync("which", ["task"]).status === 0;
 
 function readScript(): string {
   return readFileSync(SCRIPT_PATH, "utf8");
@@ -73,25 +77,29 @@ describe("scripts/quickstart.sh — structure", () => {
 });
 
 describe("scripts/quickstart.sh — execution (QUICKSTART_SKIP_SERVE=1)", () => {
-  test("runs the deterministic steps and exits 0 without starting a server", () => {
-    // Spawn the script with the serve-skip guard set. This runs prereq
-    // checks + `task setup` (bun install is idempotent) + prints next steps,
-    // then exits 0 WITHOUT exec'ing `task dev`. If it exits non-zero,
-    // execFileSync throws and the test fails.
-    const output = execFileSync("bash", [SCRIPT_PATH], {
-      cwd: process.cwd(),
-      env: { ...process.env, QUICKSTART_SKIP_SERVE: "1" },
-      encoding: "utf8",
-      // bun install on a cold cache can take a while — keep generous.
-      timeout: 240_000,
-    });
+  (taskAvailable ? test : test.skip)(
+    "runs the deterministic steps and exits 0 without starting a server",
+    () => {
+      // Spawn the script with the serve-skip guard set. This runs prereq
+      // checks + `task setup` (bun install is idempotent) + prints next steps,
+      // then exits 0 WITHOUT exec'ing `task dev`. If it exits non-zero,
+      // execFileSync throws and the test fails.
+      const output = execFileSync("bash", [SCRIPT_PATH], {
+        cwd: process.cwd(),
+        env: { ...process.env, QUICKSTART_SKIP_SERVE: "1" },
+        encoding: "utf8",
+        // bun install on a cold cache can take a while — keep generous.
+        timeout: 240_000,
+      });
 
-    // The script reached its "next steps" message (the post-setup epilogue),
-    // which only prints after prereq checks + setup succeed.
-    expect(output).toContain(DASHBOARD_URL);
-    // And it pointed the user at `task dev` rather than having started it.
-    expect(output).toMatch(/task dev/);
-  }, 240_000);
+      // The script reached its "next steps" message (the post-setup epilogue),
+      // which only prints after prereq checks + setup succeed.
+      expect(output).toContain(DASHBOARD_URL);
+      // And it pointed the user at `task dev` rather than having started it.
+      expect(output).toMatch(/task dev/);
+    },
+    240_000,
+  );
 });
 
 /**
