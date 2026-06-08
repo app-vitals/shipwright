@@ -1,41 +1,50 @@
 /**
  * agent/src/entrypoint.integration.test.ts
  *
- * Integration tests for the agent startup sequence.
- * Uses RecordedShipwrightConfigClient (inline cassette) — no real network or fs mutations.
+ * Integration tests for the startup sequence in entrypoint.ts.
+ * Uses RecordedShipwrightConfigClient (cassette-backed) — no real HTTP.
+ * Isolation contract: no mock.module(), no global overrides.
  */
 
-import { describe, it, expect, beforeEach } from "bun:test";
-import * as fs from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
-import type { ShipwrightConfigClient } from "./shipwright-config-client.ts";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { existsSync, mkdirSync, rmSync, symlinkSync } from "node:fs";
+import { join } from "node:path";
 import type { AgentConfigResponse } from "./api.ts";
-import { runStartup, type StartupDeps } from "./entrypoint-startup.ts";
+import { runEntrypoint } from "./entrypoint.ts";
+import type { EntrypointDeps } from "./entrypoint.ts";
+import type { ShipwrightConfigClient } from "./shipwright-config-client.ts";
+import { RecordedShipwrightConfigClient } from "./shipwright-config-client.ts";
 
-// ─── Recorded config client ────────────────────────────────────────────────────
+// ─── Test fixtures ─────────────────────────────────────────────────────────────
 
-const CASSETTE: AgentConfigResponse = {
+const SAMPLE_CONFIG: AgentConfigResponse = {
   env: {
-    ANTHROPIC_API_KEY: "sk-ant-test-123",
-    SLACK_BOT_TOKEN: "xoxb-test-token",
+    ANTHROPIC_MODEL: "claude-sonnet-4-6",
+    CUSTOM_VAR: "custom-value",
   },
   allowedTools: ["Read", "Write", "Bash"],
-  plugins: [{ marketplace: "shipwright", plugin: "shipwright" }],
+  plugins: [{ marketplace: "my-market", plugin: "my-plugin" }],
 };
 
-class RecordedShipwrightConfigClient implements ShipwrightConfigClient {
-  readonly calls: string[] = [];
+// ─── Temp dir helpers ──────────────────────────────────────────────────────────
 
-  async getAgentConfig(agentId: string): Promise<AgentConfigResponse> {
-    this.calls.push(agentId);
-    return {
-      env: { ...CASSETTE.env },
-      allowedTools: [...CASSETTE.allowedTools],
-      plugins: CASSETTE.plugins.map((p) => ({ ...p })),
-    };
+const TMP_BASE = "/tmp/test-entrypoint-home";
+let testHome: string;
+let testClaudeTarget: string;
+
+beforeEach(() => {
+  const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  testHome = `${TMP_BASE}-${id}`;
+  testClaudeTarget = `${testHome}/dot-claude`;
+  mkdirSync(testHome, { recursive: true });
+  mkdirSync(testClaudeTarget, { recursive: true });
+});
+
+afterEach(() => {
+  if (existsSync(testHome)) {
+    rmSync(testHome, { recursive: true, force: true });
   }
-}
+});
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -44,129 +53,222 @@ interface SpawnCall {
   args: string[];
 }
 
-function makeDeps(agentHome: string, homePath: string): {
-  deps: StartupDeps;
-  env: Record<string, string | undefined>;
-  spawnCalls: SpawnCall[];
-  writtenTokens: string[];
-  configClient: RecordedShipwrightConfigClient;
-} {
-  const env: Record<string, string | undefined> = {};
-  const spawnCalls: SpawnCall[] = [];
-  const writtenTokens: string[] = [];
-  const configClient = new RecordedShipwrightConfigClient();
-
-  const deps: StartupDeps = {
-    configClient,
-    env,
-    agentHome,
-    homePath,
-    spawnSync: (cmd, args, _opts) => {
-      spawnCalls.push({ cmd, args });
-      return { status: 0 };
-    },
-    writeToken: (token) => {
-      writtenTokens.push(token);
-    },
-    tokenPath: path.join(homePath, "gh-token"),
-    credentialHelperPath: "/usr/local/bin/git-credential-shipwright",
-    createTokenManager: () => ({
-      async getToken() { return "stub-token"; },
-      startBackgroundRefresh() {},
-    }),
-    getBotIdentity: async () => ({
-      slug: "stub-bot",
-      name: "Stub Bot",
-      userId: 0,
-    }),
-  };
-
-  return { deps, env, spawnCalls, writtenTokens, configClient };
+interface SetupGitHubAuthCall {
+  called: boolean;
 }
 
-// ─── Tests ─────────────────────────────────────────────────────────────────────
+function makeDeps(
+  configClient: ShipwrightConfigClient,
+  overrides: Partial<EntrypointDeps> = {},
+): {
+  deps: EntrypointDeps;
+  spawnCalls: SpawnCall[];
+  appliedEnv: Record<string, string>;
+  symlinkCalls: Array<{ target: string; linkPath: string }>;
+  githubAuthCalled: SetupGitHubAuthCall;
+  miseCalls: string[][];
+  pluginCalls: string[];
+  exitCodes: number[];
+} {
+  const spawnCalls: SpawnCall[] = [];
+  const appliedEnv: Record<string, string> = {};
+  const symlinkCalls: Array<{ target: string; linkPath: string }> = [];
+  const githubAuthCalled: SetupGitHubAuthCall = { called: false };
+  const miseCalls: string[][] = [];
+  const pluginCalls: string[] = [];
+  const exitCodes: number[] = [];
 
-describe("runStartup (integration)", () => {
-  let tmpDir: string;
-  let agentHome: string;
-  let homePath: string;
+  const deps: EntrypointDeps = {
+    agentId: "test-agent-id",
+    apiUrl: "https://api.test.com",
+    apiKey: "test-key",
+    agentHome: testHome,
+    configClient,
+    applyEnv: (env: Record<string, string>) => {
+      Object.assign(appliedEnv, env);
+    },
+    symlinkDotClaude: (target: string, linkPath: string) => {
+      symlinkCalls.push({ target, linkPath });
+    },
+    setupGitHubAuth: async () => {
+      githubAuthCalled.called = true;
+    },
+    runMiseStartup: async (_home: string, execFn) => {
+      miseCalls.push(["runMiseStartup", _home]);
+      return Promise.resolve();
+    },
+    installPlugins: async (_execFn, _cwd, plugins) => {
+      pluginCalls.push(...(plugins ?? []).map((p) => p.plugin));
+      return Promise.resolve();
+    },
+    spawnAgentServer: (cmd: string, args: string[]) => {
+      spawnCalls.push({ cmd, args });
+    },
+    exit: (code: number) => {
+      exitCodes.push(code);
+    },
+    ...overrides,
+  };
 
-  beforeEach(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "shipwright-test-"));
-    agentHome = path.join(tmpDir, "agent-home");
-    homePath = path.join(tmpDir, "fake-home");
-    fs.mkdirSync(agentHome, { recursive: true });
-    fs.mkdirSync(homePath, { recursive: true });
+  return {
+    deps,
+    spawnCalls,
+    appliedEnv,
+    symlinkCalls,
+    githubAuthCalled,
+    miseCalls,
+    pluginCalls,
+    exitCodes,
+  };
+}
+
+// ─── Tests ────────────────────────────────────────────────────────────────────
+
+describe("runEntrypoint — happy path", () => {
+  it("fetches config and applies env vars from the bundle", async () => {
+    const configClient = new RecordedShipwrightConfigClient(SAMPLE_CONFIG);
+    const { deps, appliedEnv } = makeDeps(configClient);
+
+    await runEntrypoint(deps);
+
+    expect(appliedEnv.ANTHROPIC_MODEL).toBe("claude-sonnet-4-6");
+    expect(appliedEnv.CUSTOM_VAR).toBe("custom-value");
   });
 
-  it("fetches config for the given agentId", async () => {
-    const { deps, configClient } = makeDeps(agentHome, homePath);
-    await runStartup("agent-test-1", deps);
-    expect(configClient.calls).toContain("agent-test-1");
+  it("symlinks ~/.claude to $AGENT_HOME/dot-claude", async () => {
+    const configClient = new RecordedShipwrightConfigClient(SAMPLE_CONFIG);
+    const { deps, symlinkCalls } = makeDeps(configClient);
+
+    await runEntrypoint(deps);
+
+    expect(symlinkCalls.length).toBe(1);
+    expect(symlinkCalls[0].target).toBe(join(testHome, "dot-claude"));
   });
 
-  it("applies env vars from the config bundle to the env object", async () => {
-    const { deps, env } = makeDeps(agentHome, homePath);
-    await runStartup("agent-test-1", deps);
-    expect(env.ANTHROPIC_API_KEY).toBe("sk-ant-test-123");
-    expect(env.SLACK_BOT_TOKEN).toBe("xoxb-test-token");
+  it("calls setupGitHubAuth", async () => {
+    const configClient = new RecordedShipwrightConfigClient(SAMPLE_CONFIG);
+    const { deps, githubAuthCalled } = makeDeps(configClient);
+
+    await runEntrypoint(deps);
+
+    expect(githubAuthCalled.called).toBe(true);
   });
 
-  it("sets AGENT_ALLOWED_TOOLS when allowedTools is non-empty", async () => {
-    const { deps, env } = makeDeps(agentHome, homePath);
-    await runStartup("agent-test-1", deps);
-    expect(env.AGENT_ALLOWED_TOOLS).toBe("Read,Write,Bash");
+  it("calls runMiseStartup with agentHome", async () => {
+    const configClient = new RecordedShipwrightConfigClient(SAMPLE_CONFIG);
+    const { deps, miseCalls } = makeDeps(configClient);
+
+    await runEntrypoint(deps);
+
+    expect(miseCalls.length).toBe(1);
+    expect(miseCalls[0][1]).toBe(testHome);
   });
 
-  it("does not set AGENT_ALLOWED_TOOLS when allowedTools is empty", async () => {
-    const { deps, env, configClient } = makeDeps(agentHome, homePath);
-    // Override client to return empty tools
-    (configClient as unknown as { getAgentConfig: (id: string) => Promise<AgentConfigResponse> }).getAgentConfig = async () => ({
+  it("calls installPlugins with plugins from config", async () => {
+    const configClient = new RecordedShipwrightConfigClient(SAMPLE_CONFIG);
+    const { deps, pluginCalls } = makeDeps(configClient);
+
+    await runEntrypoint(deps);
+
+    expect(pluginCalls).toContain("my-plugin");
+  });
+
+  it("spawns the agent server after setup completes", async () => {
+    const configClient = new RecordedShipwrightConfigClient(SAMPLE_CONFIG);
+    const { deps, spawnCalls } = makeDeps(configClient);
+
+    await runEntrypoint(deps);
+
+    expect(spawnCalls.length).toBe(1);
+  });
+
+  it("does not call exit on success", async () => {
+    const configClient = new RecordedShipwrightConfigClient(SAMPLE_CONFIG);
+    const { deps, exitCodes } = makeDeps(configClient);
+
+    await runEntrypoint(deps);
+
+    expect(exitCodes.length).toBe(0);
+  });
+});
+
+describe("runEntrypoint — missing required vars", () => {
+  it("exits non-zero when agentId is missing", async () => {
+    const configClient = new RecordedShipwrightConfigClient(SAMPLE_CONFIG);
+    const { deps, exitCodes } = makeDeps(configClient, { agentId: undefined });
+
+    await runEntrypoint(deps);
+
+    expect(exitCodes.length).toBe(1);
+    expect(exitCodes[0]).not.toBe(0);
+  });
+
+  it("exits non-zero when apiUrl is missing", async () => {
+    const configClient = new RecordedShipwrightConfigClient(SAMPLE_CONFIG);
+    const { deps, exitCodes } = makeDeps(configClient, { apiUrl: undefined });
+
+    await runEntrypoint(deps);
+
+    expect(exitCodes.length).toBe(1);
+    expect(exitCodes[0]).not.toBe(0);
+  });
+
+  it("exits non-zero when apiKey is missing", async () => {
+    const configClient = new RecordedShipwrightConfigClient(SAMPLE_CONFIG);
+    const { deps, exitCodes } = makeDeps(configClient, { apiKey: undefined });
+
+    await runEntrypoint(deps);
+
+    expect(exitCodes.length).toBe(1);
+    expect(exitCodes[0]).not.toBe(0);
+  });
+
+  it("does not fetch config when required vars are missing", async () => {
+    const configClient = new RecordedShipwrightConfigClient(SAMPLE_CONFIG);
+    let fetchCalled = false;
+    const trackingClient: ShipwrightConfigClient = {
+      getConfig: async (agentId: string) => {
+        fetchCalled = true;
+        return configClient.getConfig(agentId);
+      },
+    };
+    const { deps } = makeDeps(trackingClient, { agentId: undefined });
+
+    await runEntrypoint(deps);
+
+    expect(fetchCalled).toBe(false);
+  });
+});
+
+describe("runEntrypoint — config with empty env", () => {
+  it("handles config with no env vars gracefully", async () => {
+    const emptyConfig: AgentConfigResponse = {
       env: {},
       allowedTools: [],
       plugins: [],
+    };
+    const configClient = new RecordedShipwrightConfigClient(emptyConfig);
+    const { deps, exitCodes, spawnCalls } = makeDeps(configClient);
+
+    await runEntrypoint(deps);
+
+    expect(exitCodes.length).toBe(0);
+    expect(spawnCalls.length).toBe(1);
+  });
+});
+
+describe("runEntrypoint — startup timeout", () => {
+  it("exits non-zero when startup exceeds startupTimeoutMs", async () => {
+    const hangingClient: ShipwrightConfigClient = {
+      getConfig: () => new Promise(() => {}), // never resolves
+    };
+    const { deps, exitCodes } = makeDeps(hangingClient, {
+      startupTimeoutMs: 50, // 50ms for fast test
     });
-    await runStartup("agent-test-1", deps);
-    expect(env.AGENT_ALLOWED_TOOLS).toBeUndefined();
-  });
 
-  it("creates AGENT_HOME/dot-claude directory", async () => {
-    const { deps } = makeDeps(agentHome, homePath);
-    await runStartup("agent-test-1", deps);
-    const dotClaudeDir = path.join(agentHome, "dot-claude");
-    expect(fs.existsSync(dotClaudeDir)).toBe(true);
-    expect(fs.statSync(dotClaudeDir).isDirectory()).toBe(true);
-  });
+    await runEntrypoint(deps);
 
-  it("symlinks homePath/.claude to AGENT_HOME/dot-claude", async () => {
-    const { deps } = makeDeps(agentHome, homePath);
-    await runStartup("agent-test-1", deps);
-    const symlinkPath = path.join(homePath, ".claude");
-    expect(fs.existsSync(symlinkPath)).toBe(true);
-    expect(fs.lstatSync(symlinkPath).isSymbolicLink()).toBe(true);
-    expect(fs.readlinkSync(symlinkPath)).toBe(path.join(agentHome, "dot-claude"));
-  });
-
-  it("symlinks homePath/.claude.json to AGENT_HOME/claude.json", async () => {
-    const { deps } = makeDeps(agentHome, homePath);
-    await runStartup("agent-test-1", deps);
-    const symlinkPath = path.join(homePath, ".claude.json");
-    expect(fs.lstatSync(symlinkPath).isSymbolicLink()).toBe(true);
-    expect(fs.readlinkSync(symlinkPath)).toBe(path.join(agentHome, "claude.json"));
-  });
-
-  it("re-runs without error when symlinks already exist (idempotent)", async () => {
-    const { deps } = makeDeps(agentHome, homePath);
-    await runStartup("agent-test-1", deps);
-    // Second run should not throw
-    await expect(runStartup("agent-test-1", deps)).resolves.toBeUndefined();
-  });
-
-  it("prepends agent scripts/bin to PATH", async () => {
-    const { deps, env } = makeDeps(agentHome, homePath);
-    env.PATH = "/usr/bin:/bin";
-    await runStartup("agent-test-1", deps);
-    expect(env.PATH?.startsWith("/")).toBe(true);
-    expect(env.PATH).toContain("/bin");
+    expect(exitCodes.length).toBe(1);
+    expect(exitCodes[0]).not.toBe(0);
   });
 });

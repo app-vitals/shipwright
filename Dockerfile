@@ -78,4 +78,4 @@ RUN cd agent && bunx prisma generate --schema=prisma/schema.prisma
 ENV AGENT_HOME=/data/agent-home
 VOLUME ["/data/agent-home"]
 
-ENTRYPOINT ["bun", "run", "agent/scripts/entrypoint.ts"]
+ENTRYPOINT ["bun", "run", "agent/src/entrypoint-main.ts"]
