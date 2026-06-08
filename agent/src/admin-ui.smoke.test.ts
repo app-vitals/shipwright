@@ -73,6 +73,21 @@ function makeMockDeps(): AdminUIDeps {
     },
     agentCronJobService: {
       list: async () => [],
+      create: async () => ({
+        id: "cron-test-1",
+        agentId: AGENT_ID,
+        schedule: "0 * * * *",
+        prompt: "Test prompt",
+        channel: null,
+        user: null,
+        silent: false,
+        enabled: true,
+        preCheck: null,
+        name: null,
+        system: false,
+        createdAt: new Date("2024-01-01"),
+        updatedAt: new Date("2024-01-01"),
+      }),
     },
     agentToolService: {
       list: async () => [],
@@ -184,5 +199,29 @@ describe("admin UI — authenticated pages", () => {
     expect(html).toContain("Tools");
     expect(html).toContain("Tokens");
     expect(html).toContain("Plugins");
+  });
+
+  it("authenticated GET /admin/agents/:id?error=missing_fields renders an error banner", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request(`/admin/agents/${AGENT_ID}?error=missing_fields`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("alert-error");
+    expect(html).toContain("Required fields are missing");
+  });
+
+  it("authenticated GET /admin/agents/:id includes an add-cron form with enabled checkbox", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request(`/admin/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('action="/admin/agents/');
+    expect(html).toContain('name="schedule"');
+    expect(html).toContain('name="enabled"');
+    expect(html).toContain("Enabled");
   });
 });

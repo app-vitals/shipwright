@@ -163,6 +163,7 @@ export function renderAgentDetailPage(
   tokens: TokenItem[],
   plugins: PluginItem[],
   userName: string,
+  opts?: { error?: string },
 ): string {
   const envRows =
     Object.keys(envVars).length === 0
@@ -234,6 +235,10 @@ export function renderAgentDetailPage(
           )
           .join("\n");
 
+  const errorHtml = opts?.error
+    ? `<div class="alert alert-error">${escapeHtml(opts.error)}</div>`
+    : "";
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -252,6 +257,7 @@ export function renderAgentDetailPage(
         ${agent.slackId ? `<span style="font-size:13px;color:#6b7280">Slack ID: <span class="mono">${escapeHtml(agent.slackId)}</span></span>` : ""}
       </div>
     </div>
+    ${errorHtml}
 
     <!-- Env Vars -->
     <div class="card">
@@ -284,6 +290,24 @@ export function renderAgentDetailPage(
     <!-- Cron Jobs -->
     <div class="card">
       <div class="card-title">Cron Jobs</div>
+      <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/crons" style="margin-bottom:16px">
+        <div class="form-row">
+          <div class="form-group">
+            <input name="schedule" type="text" class="form-input" placeholder="* * * * *" required />
+          </div>
+          <div class="form-group">
+            <input name="prompt" type="text" class="form-input" placeholder="Prompt" required />
+          </div>
+          <div class="form-group">
+            <input name="channel" type="text" class="form-input" placeholder="Channel (optional)" />
+          </div>
+          <div class="form-group" style="display:flex;align-items:center;gap:6px">
+            <input name="enabled" type="checkbox" value="true" checked id="cron-enabled-new" />
+            <label for="cron-enabled-new" class="form-label" style="margin:0">Enabled</label>
+          </div>
+          <button type="submit" class="btn btn-primary">Add</button>
+        </div>
+      </form>
       <table class="data-table">
         <thead>
           <tr>

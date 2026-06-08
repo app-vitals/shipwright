@@ -95,7 +95,7 @@ export interface AdminUIDeps {
     AgentEnvService,
     "getByAgentId" | "upsert" | "deleteKey" | "getConfigBundle"
   >;
-  agentCronJobService: Pick<AgentCronJobService, "list">;
+  agentCronJobService: Pick<AgentCronJobService, "list" | "create">;
   agentToolService: Pick<AgentToolService, "list">;
   agentTokenService: Pick<AgentTokenService, "listForAgent">;
   agentPluginService: Pick<AgentPluginService, "list">;
@@ -259,12 +259,24 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
 
   // ─── Agent detail ─────────────────────────────────────────────────────────
 
+  const ERROR_MESSAGES: Record<string, string> = {
+    missing_fields: "Required fields are missing.",
+    create_failed: "Failed to create — please try again.",
+    invalid_schedule: "Invalid cron schedule expression.",
+    invalid_target: "Invalid delivery target — set channel or user (or enable silent mode).",
+  };
+
   app.get("/admin/agents/:id", requireAuth, async (c) => {
     const agentId = c.req.param("id");
     const agent = await prisma.agent.findUnique({ where: { id: agentId } });
     if (!agent) {
       return new Response("Agent not found", { status: 404 });
     }
+
+    const rawError = c.req.query("error") ?? undefined;
+    const error = rawError
+      ? (ERROR_MESSAGES[rawError] ?? rawError)
+      : undefined;
 
     const [envVars, crons, tools, tokens, plugins] = await Promise.all([
       agentEnvService.getByAgentId(agentId).then((e) => e ?? {}),
@@ -283,6 +295,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
         tokens,
         plugins,
         ADMIN_USER_NAME,
+        { error },
       ),
     );
   });
@@ -319,6 +332,52 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
     if (key) {
       await agentEnvService.deleteKey(agentId, key);
     }
+    return c.redirect(`/admin/agents/${agentId}`, 302);
+  });
+
+  // ─── Cron job mutations ───────────────────────────────────────────────────
+
+  app.post("/admin/agents/:id/crons", requireAuth, async (c) => {
+    const agentId = c.req.param("id");
+    let schedule: string | undefined;
+    let prompt: string | undefined;
+    let channel: string | undefined;
+    let user: string | undefined;
+    let silent: boolean;
+    let preCheck: string | undefined;
+    let enabled: boolean;
+    try {
+      const formData = await c.req.formData();
+      schedule = formData.get("schedule")?.toString();
+      prompt = formData.get("prompt")?.toString();
+      channel = formData.get("channel")?.toString() || undefined;
+      user = formData.get("user")?.toString() || undefined;
+      silent = formData.get("silent")?.toString() === "true";
+      preCheck = formData.get("preCheck")?.toString() || undefined;
+      const rawEnabled = formData.get("enabled")?.toString();
+      enabled = rawEnabled !== undefined ? rawEnabled === "true" : true;
+    } catch {
+      return c.redirect(`/admin/agents/${agentId}?error=missing_fields`, 302);
+    }
+
+    if (!schedule || !prompt) {
+      return c.redirect(`/admin/agents/${agentId}?error=missing_fields`, 302);
+    }
+
+    try {
+      await agentCronJobService.create(agentId, {
+        schedule,
+        prompt,
+        channel: channel ?? null,
+        user: user ?? null,
+        silent,
+        preCheck: preCheck ?? null,
+        enabled,
+      });
+    } catch {
+      return c.redirect(`/admin/agents/${agentId}?error=create_failed`, 302);
+    }
+
     return c.redirect(`/admin/agents/${agentId}`, 302);
   });
 
