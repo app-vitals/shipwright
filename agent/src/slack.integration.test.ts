@@ -15,7 +15,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ClaudeRunError } from "./claude.ts";
+import { ClaudeRunError, ClaudeTimeoutError } from "./claude.ts";
 import { threadKey } from "./sessions.ts";
 import {
   type SlackFile,
@@ -589,6 +589,26 @@ describe("message handler — channel thread routing", () => {
     expect(mockRunClaude).toHaveBeenCalledTimes(1);
     const prompt = mockRunClaude.mock.calls[0][0] as string;
     expect(prompt).not.toContain("[Thread message");
+  });
+
+  test("channel thread: [silent] suppresses say()", async () => {
+    mockRunClaude.mockClear();
+    mockRunClaude.mockResolvedValueOnce({ result: "text [silent]", sessionId: "s1" });
+    createSlackApp({ getSessionFn: mock(() => "sess-xyz") });
+    const client = makeMockClient();
+    const say = makeSay();
+    await capturedMessageHandler?.({
+      message: {
+        channel: "C123",
+        ts: "2.0",
+        thread_ts: "1.0",
+        text: "hi",
+        channel_type: "channel",
+      },
+      say,
+      client,
+    });
+    expect(say).not.toHaveBeenCalled();
   });
 });
 
@@ -2032,6 +2052,13 @@ describe("invalid_blocks retry — falls back to formatter(cleaned) when blocks.
 });
 
 describe("formatRunErrorForSlack", () => {
+  test("ClaudeTimeoutError produces timeout message with elapsed minutes", () => {
+    const err = new ClaudeTimeoutError(3 * 60 * 1000); // 3 minutes
+    const out = formatRunErrorForSlack(err);
+    expect(out).toContain("timed out");
+    expect(out).toContain("3 minutes");
+  });
+
   test("monthly usage limit (429 + 'usage limit') gets dedicated message", () => {
     const err = new ClaudeRunError(
       "claude exited 1: api_error_status=429 You've hit your org's monthly usage limit",
