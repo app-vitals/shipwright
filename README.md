@@ -84,6 +84,28 @@ task api        # start metrics dashboard in offline mode → http://localhost:3
 task dev        # dev supervisor: starts metrics + Ctrl-C kills all children
 ```
 
+## Quickstart
+
+From nothing to a running local dashboard in four copy-paste steps:
+
+```sh
+git clone https://github.com/app-vitals/shipwright.git
+cd shipwright
+./scripts/quickstart.sh   # checks prerequisites (bun, go-task) and runs task setup
+task api                  # start the dashboard → http://localhost:3460/dashboard
+```
+
+Then, in Claude Code (in any repository you want Shipwright to work on):
+
+```
+/plugin install shipwright@app-vitals/shipwright
+```
+
+**Prerequisites:** [bun](https://bun.sh) and [go-task](https://taskfile.dev) must be installed.  
+Run `./scripts/quickstart.sh --check` to verify your environment before setup.
+
+See [`docs/quickstart.md`](./docs/quickstart.md) for the full step-by-step guide.
+
 ## Built on Claude Code
 
 Shipwright Harness is a [Claude Code](https://www.anthropic.com/claude-code) plugin through and through — built on it, for it, and used with it daily. If you already run Claude Code, Shipwright is a `/plugin install` away.
