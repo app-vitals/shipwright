@@ -40,7 +40,7 @@ If `SHIPWRIGHT_CONFIG` is set, read the config file and check the `taskStore` fi
 When `taskStore` is `"github"`, run the task store setup before any context loading:
 
 ```bash
-PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | head -1 | xargs dirname 2>/dev/null)
+PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | sort -V | tail -1 | xargs dirname 2>/dev/null)
 [ -n "$PLUGIN_SCRIPTS" ] && bun "$PLUGIN_SCRIPTS/task_store.ts" setup
 ```
 
@@ -57,7 +57,7 @@ If `SHIPWRIGHT_CONFIG` is not set, or `taskStore` is `"json"` (the default), ski
 2. Glob the repo structure to understand the codebase layout
 3. Check for any existing tasks in this session to avoid duplicates:
    ```bash
-   PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | head -1 | xargs dirname 2>/dev/null)
+   PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | sort -V | tail -1 | xargs dirname 2>/dev/null)
    [ -n "$PLUGIN_SCRIPTS" ] && bun "$PLUGIN_SCRIPTS/task_store.ts" query --session {session}
    ```
    The output is a JSON array. If non-empty, print the existing task IDs and skip re-adding them.
@@ -273,7 +273,7 @@ Write the new tasks to a temp file `/tmp/new-tasks-{session}.json` as a JSON arr
 Append them to `state/todos.json` via task_store.ts (idempotent by id — safe to re-run):
 
 ```bash
-PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | head -1 | xargs dirname 2>/dev/null)
+PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | sort -V | tail -1 | xargs dirname 2>/dev/null)
 bun "$PLUGIN_SCRIPTS/task_store.ts" append --file /tmp/new-tasks-{session}.json
 ```
 
@@ -391,7 +391,7 @@ jq --arg src "$PARENT_REF" \
 **Step 6d — Append tasks to the store:**
 
 ```bash
-PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | head -1 | xargs dirname 2>/dev/null)
+PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | sort -V | tail -1 | xargs dirname 2>/dev/null)
 bun "$PLUGIN_SCRIPTS/task_store.ts" append --file /tmp/new-tasks-{session}-linked.json
 ```
 
