@@ -1,12 +1,24 @@
 # Metrics Dashboard
 
-> Hono service (artifact **B**) that turns Shipwright's pipeline events into analytics. Five read-only JSON endpoints backed by PostHog queries, plus a session-gated server-rendered dashboard, and an optional local SQLite event store for offline ingest (`POST /batch/`).
+> Hono service (artifact **B**) that turns Shipwright's pipeline events into analytics. Five read-only JSON endpoints, a session-gated server-rendered dashboard, and a PostHog-shaped `POST /batch/` ingest route — designed over a **backend-agnostic event-store interface** (PostHog · Postgres · SQLite).
 
 ## Overview
 
-The metrics service reads pipeline telemetry from PostHog and exposes it two ways: machine-readable JSON under `/metrics/*` (for tooling and the `/shipwright:metrics` command) and a human-facing `/dashboard`. By default it owns no persistent state — HogQL queries are validated pre-deploy and results are cached in-process. When a `localStore` is injected, an additional `POST /batch/` ingest route is registered that writes PostHog-shaped events to a local SQLite database (`metrics/src/local-store.ts`); the route is absent (404) otherwise.
+The metrics service reads pipeline telemetry from an **event store** and exposes it two ways: machine-readable JSON under `/metrics/*` (for tooling and the `/shipwright:metrics` command) and a human-facing `/dashboard`. The goal is that the dashboard and API are identical regardless of which store backs them — see [Backends](#backends). When a writable store is active, a `POST /batch/` ingest route accepts PostHog-shaped events; it is absent (404) otherwise.
 
 Entrypoint: `metrics/src/server.ts` (standalone Bun server, default port **3460**). The app factory `createMetricsApp()` in `metrics/src/api.ts` is what tests drive via `app.request()`.
+
+## Backends
+
+Metrics is designed around a backend-agnostic **`MetricsProvider`** seam: the API expresses query *intent* as typed data and each provider renders it to its store's native query, returning a normalized result. Because every supported backend is an **event store** (events-with-properties + arbitrary aggregation), all metrics return identical results across them.
+
+| Backend | Model | Status |
+|---|---|---|
+| **PostHog** (HogQL) | hosted event store | **Live today** — the default when `POSTHOG_PERSONAL_API_KEY` + `POSTHOG_PROJECT_ID` are set. |
+| **SQLite** (SQL) | local event store | Ingest (`POST /batch/`) **live today**; read-side + local-default mode planned (LDS-1.3). |
+| **Postgres** (SQL) | self-hosted event store | Planned (LDS-1.4) — shares the SQLite SQL layer, dialect-parameterized. |
+
+> **Prometheus is intentionally not a backend.** It is a numeric time-series database and cannot store event properties, so it cannot serve event-level delivery analytics (estimation accuracy, complexity distribution, per-feature breakdowns, cycle-time joins). It is the right tool for runtime/operational metrics — a separate concern from this service. See `docs/superpowers/specs/2026-06-08-metrics-backend-interface-design.md`.
 
 ## Running locally
 
