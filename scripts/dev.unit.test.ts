@@ -1,18 +1,17 @@
 /**
  * scripts/dev.unit.test.ts
- * Unit tests for scripts/dev.ts supervisor logic + Taskfile target assertions.
+ * Unit tests for scripts/dev.ts supervisor logic.
  *
  * Tests dependency-injected supervisor with fake child handles — no real
  * process spawning. Covers: child spawn config, SIGINT → shutdown, multi-child
- * shutdown sequencing, Taskfile target key presence.
+ * shutdown sequencing.
+ *
+ * Taskfile structural assertions (filesystem reads) live in
+ * dev.taskfile.integration.test.ts.
  */
 
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { describe, expect, test } from "bun:test";
 import { type ChildConfig, createSupervisor } from "./dev.ts";
-
-const REPO_ROOT = resolve(import.meta.dir, "..");
 
 // ---------------------------------------------------------------------------
 // Fake child handle: tracks signal calls and resolves exited on demand
@@ -40,26 +39,6 @@ function makeFakeChild(label: string) {
 }
 
 type FakeChild = ReturnType<typeof makeFakeChild>;
-
-// ---------------------------------------------------------------------------
-// Taskfile assertions
-// ---------------------------------------------------------------------------
-
-describe("Taskfile.yml — run-task keys", () => {
-  const taskfile = readFileSync(resolve(REPO_ROOT, "Taskfile.yml"), "utf8");
-
-  test("has task 'api'", () => {
-    expect(taskfile).toMatch(/^\s*api\s*:/m);
-  });
-
-  test("has task 'ui'", () => {
-    expect(taskfile).toMatch(/^\s*ui\s*:/m);
-  });
-
-  test("has task 'dev'", () => {
-    expect(taskfile).toMatch(/^\s*dev\s*:/m);
-  });
-});
 
 // ---------------------------------------------------------------------------
 // createSupervisor tests

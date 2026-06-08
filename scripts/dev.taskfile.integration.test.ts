@@ -1,5 +1,5 @@
 /**
- * scripts/dev.taskfile.test.ts
+ * scripts/dev.taskfile.integration.test.ts
  * Asserts that Taskfile.yml has the required api, ui, and dev targets.
  *
  * Uses text-based parsing (key presence + content checks) since bun:yaml
