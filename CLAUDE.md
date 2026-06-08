@@ -27,7 +27,7 @@ go-task (`Taskfile.yml`) is the single local entrypoint; the root `package.json`
 
 ```bash
 task setup        # bun install across all workspaces
-task ci           # lint → check-strings → typecheck → test (the merge-blocking gate; CI runs this exact chain)
+task ci           # lint → check-strings → typecheck → test → secret-scan → doctor (the merge-blocking gate; CI runs this exact chain)
 task test         # bun test            (single file: bun test path/to/file.test.ts)
 task lint         # bunx biome lint .
 task format       # bunx biome format --write .
