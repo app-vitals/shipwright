@@ -1,0 +1,49 @@
+<!doctype html>
+<!--
+  Shipwright Harness — slide-deck template (also the source for video slides).
+  Each <section class="slide"> is one full-viewport slide. Styling from brand.css.
+  Export to video: screen-record while paging, or render each slide to PNG.
+  Replace {{...}} placeholders; keep voice + content rules from BRAND.md §5.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Shipwright Harness — Deck</title>
+    <link rel="stylesheet" href="../brand.css" />
+    <style>
+      .slide { position: relative; min-height: 100vh; display: flex; flex-direction: column; justify-content: center; padding: 6rem; overflow: hidden; }
+      .slide + .slide { border-top: 1px solid var(--sw-color-border-subtle); }
+      .slide .sw-label { margin-bottom: 1rem; }
+      .lead { max-width: 50rem; }
+    </style>
+  </head>
+  <body>
+    <section class="slide">
+      <div class="sw-orb sw-orb-brand" style="width: 520px; height: 520px; top: -140px; left: -100px;"></div>
+      <p class="sw-label">Shipwright Harness</p>
+      <h1 class="sw-display lead">The open-source autonomous delivery agent for <span class="sw-gradient-text">Claude Code</span>.</h1>
+      <p class="sw-editorial lead">{{A deployable cloud agent and the autonomous coding system that powers it — built on the Shipwright plugin, running on your codebase.}}</p>
+    </section>
+
+    <section class="slide">
+      <p class="sw-label">Why Shipwright</p>
+      <h1 class="lead">{{Own the agent. Not rent it.}}</h1>
+      <p class="lead">{{Free and open-source — the own-it alternative to closed, hosted autonomous coding agents. Shipwright runs in your environment, on your codebase, deployed to your cloud, with the same review/test bar as human code.}}</p>
+    </section>
+
+    <section class="slide">
+      <p class="sw-label">The agent + the system</p>
+      <h1 class="lead">{{Use it in Claude Code, or deploy the agent to your cloud}}</h1>
+      <div class="sw-callout"><strong>{{Autonomous coding, on your codebase}}</strong> {{— the Shipwright plugin powers the system; deploy the agent to GitHub Actions or self-hosted to run autonomously. Tracked as GitHub Issues, gated on a test-readiness pipeline.}}</div>
+    </section>
+
+    <section class="slide">
+      <div class="sw-orb sw-orb-support" style="width: 420px; height: 420px; bottom: -120px; right: -80px;"></div>
+      <p class="sw-label">Get started</p>
+      <h1 class="lead">{{Open source. MIT. Two minutes.}}</h1>
+      <div class="sw-code">/plugin install shipwright@app-vitals/shipwright</div>
+      <p class="lead"><a href="https://shipwrightharness.com">shipwrightharness.com</a></p>
+    </section>
+  </body>
+</html>
