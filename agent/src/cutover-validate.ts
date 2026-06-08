@@ -89,7 +89,8 @@ export async function validateCutover(
 
   const hasSlack = Boolean(env.SLACK_BOT_TOKEN);
   const hasGithub = hasGitHubAuth(env);
-  const hasCrons = crons.length > 0;
+  const enabledCrons = crons.filter((c) => c.enabled);
+  const hasCrons = enabledCrons.length > 0;
 
   return [
     {
@@ -110,8 +111,8 @@ export async function validateCutover(
       name: "crons",
       passed: hasCrons,
       message: hasCrons
-        ? `${crons.length} cron job(s) configured`
-        : "No cron jobs configured — at least one is required",
+        ? `${enabledCrons.length} enabled cron job(s) configured`
+        : "No enabled cron jobs configured — at least one is required",
     },
   ];
 }

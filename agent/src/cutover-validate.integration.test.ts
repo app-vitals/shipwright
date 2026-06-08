@@ -173,6 +173,18 @@ describe("validateCutover", () => {
     expect(githubCheck?.passed).toBe(false);
   });
 
+  it("fails when only disabled crons are present", async () => {
+    const disabledCron: AgentCronJob = { ...makeCron("cron-disabled"), enabled: false };
+    const client = new RecordedShipwrightConfigClient(
+      makeConfig(makeAppAuthEnv()),
+      [disabledCron],
+    );
+    const results = await validateCutover(client, AGENT_ID);
+    const cronCheck = results.find((r) => r.name === "crons");
+    expect(cronCheck).toBeDefined();
+    expect(cronCheck?.passed).toBe(false);
+  });
+
   it("accepts GitHub App creds with only the three required fields", async () => {
     const env: Record<string, string> = {
       SLACK_BOT_TOKEN: "xoxb-test-token",
