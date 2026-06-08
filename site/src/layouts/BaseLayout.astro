@@ -15,6 +15,13 @@ const {
 } = Astro.props;
 
 const canonicalURL = new URL(Astro.url.pathname, Astro.site);
+
+// Footer links (SWW-2.3): repo, license, platform, community.
+const repoUrl = "https://github.com/app-vitals/shipwright";
+const licenseUrl = "https://github.com/app-vitals/shipwright/blob/main/LICENSE";
+const claudeCodeUrl = "https://claude.com/claude-code";
+const discussionsUrl = "https://github.com/app-vitals/shipwright/discussions";
+const year = new Date().getFullYear();
 ---
 
 <!doctype html>
@@ -69,5 +76,25 @@ const canonicalURL = new URL(Astro.url.pathname, Astro.site);
     <main class="sw-container relative">
       <slot />
     </main>
+
+    <!--
+      Site footer (SWW-2.3): repo · license · platform · community.
+      Pure markup, zero runtime JS. Border color comes from a brand token var
+      (no raw hex) so brand-lint stays green.
+    -->
+    <footer class="sw-container relative z-10 py-12">
+      <div
+        class="flex flex-col gap-6 pt-8 sm:flex-row sm:items-center sm:justify-between"
+        style="border-top: 1px solid var(--sw-color-border-subtle);"
+      >
+        <p class="sw-label">Shipwright Harness · MIT-licensed · © {year}</p>
+        <nav class="flex flex-wrap gap-x-6 gap-y-2 text-sm" aria-label="Footer">
+          <a href={repoUrl}>GitHub</a>
+          <a href={licenseUrl}>MIT License</a>
+          <a href={claudeCodeUrl}>Claude Code</a>
+          <a href={discussionsUrl}>GitHub Discussions</a>
+        </nav>
+      </div>
+    </footer>
   </body>
 </html>
