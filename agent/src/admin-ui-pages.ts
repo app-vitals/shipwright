@@ -168,8 +168,12 @@ export function renderAgentDetailPage(
   tokens: TokenItem[],
   plugins: PluginItem[],
   userName: string,
-  opts?: { error?: string; newToken?: string },
+  error?: string,
 ): string {
+  const errorBanner = error
+    ? `<div class="alert alert-error" style="margin-bottom:16px">${escapeHtml(error)}</div>`
+    : "";
+
   const envRows =
     Object.keys(envVars).length === 0
       ? `<tr><td colspan="3" class="empty-state">No env vars set.</td></tr>`
@@ -192,40 +196,38 @@ export function renderAgentDetailPage(
   const customCrons = crons.filter((c) => !c.system);
 
   function renderCronRow(c: CronJobItem): string {
-    const toggleForm = `<form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/crons/${escapeHtml(c.id)}/toggle" style="display:inline">
-        <input type="hidden" name="enabled" value="${c.enabled ? "false" : "true"}" />
-        <button type="submit" class="btn btn-secondary" style="font-size:11px;padding:3px 8px">${c.enabled ? "Disable" : "Enable"}</button>
-      </form>`;
-    const deleteForm = c.system
-      ? ""
-      : `<form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/crons/${escapeHtml(c.id)}/delete" style="display:inline;margin-left:4px">
+    const toggleLabel = c.enabled ? "Disable" : "Enable";
+    const toggleTarget = c.enabled ? "false" : "true";
+    const actions = `
+      <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/crons/${escapeHtml(c.id)}/toggle" style="display:inline">
+        <input type="hidden" name="enabled" value="${toggleTarget}" />
+        <button type="submit" class="btn btn-secondary" style="font-size:11px;padding:3px 8px">${toggleLabel}</button>
+      </form>
+      ${
+        !c.system
+          ? `<form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/crons/${escapeHtml(c.id)}/delete" style="display:inline;margin-left:4px">
         <button type="submit" class="btn btn-danger" style="font-size:11px;padding:3px 8px">Delete</button>
-      </form>`;
+      </form>`
+          : ""
+      }`;
     return `<tr>
       <td class="mono">${escapeHtml(c.schedule)}</td>
-      <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis">${escapeHtml(c.prompt)}</td>
+      <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis">${escapeHtml(c.name ? `${c.name}: ${c.prompt}` : c.prompt)}</td>
       <td>${c.channel ? escapeHtml(c.channel) : c.user ? escapeHtml(c.user) : "—"}</td>
       <td><span class="badge ${c.enabled ? "badge-green" : "badge-gray"}">${c.enabled ? "enabled" : "disabled"}</span></td>
-      <td>${toggleForm}${deleteForm}</td>
+      <td style="white-space:nowrap">${actions}</td>
     </tr>`;
   }
 
-  const sectionHeader = (label: string) =>
-    `<tr><td colspan="5" style="padding:8px 12px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:#9ca3af;background:#f9fafb">${label}</td></tr>`;
+  const systemCronRows =
+    systemCrons.length === 0
+      ? `<tr><td colspan="5" class="empty-state">No system crons configured.</td></tr>`
+      : systemCrons.map(renderCronRow).join("\n");
 
-  let cronRows: string;
-  if (crons.length === 0) {
-    cronRows = `<tr><td colspan="5" class="empty-state">No cron jobs configured.</td></tr>`;
-  } else if (systemCrons.length > 0 && customCrons.length > 0) {
-    cronRows = [
-      sectionHeader("System"),
-      ...systemCrons.map(renderCronRow),
-      sectionHeader("Custom"),
-      ...customCrons.map(renderCronRow),
-    ].join("\n");
-  } else {
-    cronRows = crons.map(renderCronRow).join("\n");
-  }
+  const customCronRows =
+    customCrons.length === 0
+      ? `<tr><td colspan="5" class="empty-state">No custom crons yet.</td></tr>`
+      : customCrons.map(renderCronRow).join("\n");
 
   const toolRows =
     tools.length === 0
@@ -235,7 +237,7 @@ export function renderAgentDetailPage(
             (t) => `<tr>
       <td class="mono">${escapeHtml(t.pattern)}</td>
       <td><span class="badge ${t.enabled ? "badge-green" : "badge-gray"}">${t.enabled ? "enabled" : "disabled"}</span></td>
-      <td>
+      <td style="white-space:nowrap">
         <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/tools/${escapeHtml(t.id)}/toggle" style="display:inline">
           <input type="hidden" name="enabled" value="${t.enabled ? "false" : "true"}" />
           <button type="submit" class="btn btn-secondary" style="font-size:11px;padding:3px 8px">${t.enabled ? "Disable" : "Enable"}</button>
@@ -258,11 +260,11 @@ export function renderAgentDetailPage(
       <td>${escapeHtml(t.createdAt.toISOString().split("T")[0])}</td>
       <td>${t.revokedAt ? `<span class="badge badge-gray">Revoked ${escapeHtml(t.revokedAt.toISOString().split("T")[0])}</span>` : '<span class="badge badge-green">Active</span>'}</td>
       <td>${
-        t.revokedAt
-          ? ""
-          : `<form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/tokens/${escapeHtml(t.id)}/revoke" style="display:inline">
+        !t.revokedAt
+          ? `<form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/tokens/${escapeHtml(t.id)}/revoke" style="display:inline">
           <button type="submit" class="btn btn-danger" style="font-size:11px;padding:3px 8px">Revoke</button>
         </form>`
+          : ""
       }</td>
     </tr>`,
           )
@@ -313,6 +315,8 @@ export function renderAgentDetailPage(
     ${errorHtml}
     ${newTokenHtml}
 
+    ${errorBanner}
+
     <!-- Env Vars -->
     <div class="card">
       <div class="card-title">Env Vars</div>
@@ -344,38 +348,56 @@ export function renderAgentDetailPage(
     <!-- Cron Jobs -->
     <div class="card">
       <div class="card-title">Cron Jobs</div>
-      <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/crons" style="margin-bottom:16px">
-        <div class="form-row">
-          <div class="form-group">
-            <input name="schedule" type="text" class="form-input" placeholder="* * * * *" required />
+
+      <div style="margin-bottom:20px">
+        <div style="font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">System</div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Schedule</th>
+              <th>Prompt</th>
+              <th>Target</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${systemCronRows}
+          </tbody>
+        </table>
+      </div>
+
+      <div>
+        <div style="font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Custom</div>
+        <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/crons" style="margin-bottom:12px">
+          <div class="form-row" style="flex-wrap:wrap;gap:8px">
+            <div class="form-group">
+              <input name="schedule" type="text" class="form-input" placeholder="0 * * * *" required title="Cron expression (5 fields)" />
+            </div>
+            <div class="form-group" style="flex:1;min-width:200px">
+              <input name="prompt" type="text" class="form-input" placeholder="Prompt" required />
+            </div>
+            <div class="form-group">
+              <input name="channel" type="text" class="form-input" placeholder="Channel ID" />
+            </div>
+            <button type="submit" class="btn btn-primary">Add Cron</button>
           </div>
-          <div class="form-group">
-            <input name="prompt" type="text" class="form-input" placeholder="Prompt" required />
-          </div>
-          <div class="form-group">
-            <input name="channel" type="text" class="form-input" placeholder="Channel (optional)" />
-          </div>
-          <div class="form-group" style="display:flex;align-items:center;gap:6px">
-            <input name="enabled" type="checkbox" value="true" checked id="cron-enabled-new" />
-            <label for="cron-enabled-new" class="form-label" style="margin:0">Enabled</label>
-          </div>
-          <button type="submit" class="btn btn-primary">Add</button>
-        </div>
-      </form>
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>Schedule</th>
-            <th>Prompt</th>
-            <th>Target</th>
-            <th>Status</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          ${cronRows}
-        </tbody>
-      </table>
+        </form>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Schedule</th>
+              <th>Prompt</th>
+              <th>Target</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${customCronRows}
+          </tbody>
+        </table>
+      </div>
     </div>
 
     <!-- Tools -->
@@ -383,8 +405,8 @@ export function renderAgentDetailPage(
       <div class="card-title">Tools</div>
       <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/tools" style="margin-bottom:16px">
         <div class="form-row">
-          <div class="form-group">
-            <input name="pattern" type="text" class="form-input" placeholder="Tool pattern (e.g. Read)" required />
+          <div class="form-group" style="flex:1">
+            <input name="pattern" type="text" class="form-input" placeholder="Bash(git:*)" required />
           </div>
           <button type="submit" class="btn btn-primary">Add</button>
         </div>
@@ -408,7 +430,7 @@ export function renderAgentDetailPage(
       <div class="card-title">Tokens</div>
       <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/tokens" style="margin-bottom:16px">
         <div class="form-row">
-          <div class="form-group">
+          <div class="form-group" style="flex:1">
             <input name="label" type="text" class="form-input" placeholder="Label (optional)" />
           </div>
           <button type="submit" class="btn btn-primary">Create Token</button>

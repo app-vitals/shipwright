@@ -16,6 +16,45 @@ import type { AdminUIDeps } from "./admin-ui.ts";
 const SESSION_SECRET = "test-admin-session-secret-32-bytes!";
 const ADMIN_PASSWORD = "correct-horse-battery-staple";
 const AGENT_ID = "agent-test-123";
+const CRON_ID = "cron-test-456";
+const TOOL_ID = "tool-test-789";
+const TOKEN_ID = "token-test-abc";
+
+// ─── Mock fixtures ────────────────────────────────────────────────────────────
+
+const MOCK_CRON = {
+  id: CRON_ID,
+  agentId: AGENT_ID,
+  schedule: "0 * * * *",
+  prompt: "check status",
+  channel: "C123456",
+  user: null,
+  enabled: true,
+  name: null,
+  system: false,
+  silent: false,
+  preCheck: null,
+  createdAt: new Date("2024-01-01"),
+  updatedAt: new Date("2024-01-01"),
+};
+
+const MOCK_TOOL = {
+  id: TOOL_ID,
+  agentId: AGENT_ID,
+  pattern: "Bash(git:*)",
+  enabled: true,
+  createdAt: new Date("2024-01-01"),
+  updatedAt: new Date("2024-01-01"),
+};
+
+const MOCK_TOKEN = {
+  id: TOKEN_ID,
+  agentId: AGENT_ID,
+  token: "hashed-token-value",
+  label: "CI token",
+  createdAt: new Date("2024-01-01"),
+  revokedAt: null,
+};
 
 // ─── JWT helper ───────────────────────────────────────────────────────────────
 
@@ -120,24 +159,21 @@ function makeMockDeps(): AdminUIDeps {
       getConfigBundle: async () => null,
     },
     agentCronJobService: {
-      list: async () => [],
-      create: async () => makeMockCronJob(),
+      list: async () => [MOCK_CRON],
+      create: async () => MOCK_CRON,
+      setEnabled: async () => MOCK_CRON,
       delete: async () => {},
-      setEnabled: async () => makeMockCronJob(),
     },
     agentToolService: {
-      list: async () => [],
-      add: async () => makeMockTool(),
+      list: async () => [MOCK_TOOL],
+      add: async () => MOCK_TOOL,
+      toggle: async () => MOCK_TOOL,
       remove: async () => {},
-      toggle: async () => makeMockTool(),
     },
     agentTokenService: {
-      listForAgent: async () => [],
-      create: async () => ({
-        token: makeMockToken(),
-        rawToken: "raw-token-abc123",
-      }),
-      revoke: async () => makeMockToken({ revokedAt: new Date() }),
+      listForAgent: async () => [MOCK_TOKEN],
+      create: async () => ({ token: MOCK_TOKEN, rawToken: "sw_raw123456" }),
+      revoke: async () => MOCK_TOKEN,
     },
     agentPluginService: {
       list: async () => [],
@@ -462,6 +498,160 @@ describe("admin UI — token mutation routes", () => {
   });
 
   it("POST /admin/agents/:id/tokens/:tokenId/revoke redirects to agent detail", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request(
+      `/admin/agents/${AGENT_ID}/tokens/${TOKEN_ID}/revoke`,
+      {
+        method: "POST",
+        headers: { Cookie: `admin_session=${cookie}` },
+      },
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(`/admin/agents/${AGENT_ID}`);
+  });
+});
+
+// ─── Cron mutations ───────────────────────────────────────────────────────────
+
+describe("admin UI — cron mutations", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  it("POST /admin/agents/:id/crons creates cron and redirects back", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const body = new URLSearchParams({
+      schedule: "0 * * * *",
+      prompt: "run task",
+      channel: "C123456",
+    });
+    const res = await app.request(`/admin/agents/${AGENT_ID}/crons`, {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(`/admin/agents/${AGENT_ID}`);
+  });
+
+  it("POST /admin/agents/:id/crons/:cronId/toggle toggles cron and redirects back", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const body = new URLSearchParams({ enabled: "false" });
+    const res = await app.request(
+      `/admin/agents/${AGENT_ID}/crons/${CRON_ID}/toggle`,
+      {
+        method: "POST",
+        body: body.toString(),
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(`/admin/agents/${AGENT_ID}`);
+  });
+
+  it("POST /admin/agents/:id/crons/:cronId/delete deletes cron and redirects back", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request(
+      `/admin/agents/${AGENT_ID}/crons/${CRON_ID}/delete`,
+      {
+        method: "POST",
+        headers: { Cookie: `admin_session=${cookie}` },
+      },
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(`/admin/agents/${AGENT_ID}`);
+  });
+});
+
+// ─── Tool mutations ───────────────────────────────────────────────────────────
+
+describe("admin UI — tool mutations", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  it("POST /admin/agents/:id/tools adds tool and redirects back", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const body = new URLSearchParams({ pattern: "Bash(git:*)" });
+    const res = await app.request(`/admin/agents/${AGENT_ID}/tools`, {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(`/admin/agents/${AGENT_ID}`);
+  });
+
+  it("POST /admin/agents/:id/tools/:toolId/toggle toggles tool and redirects back", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const body = new URLSearchParams({ enabled: "false" });
+    const res = await app.request(
+      `/admin/agents/${AGENT_ID}/tools/${TOOL_ID}/toggle`,
+      {
+        method: "POST",
+        body: body.toString(),
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(`/admin/agents/${AGENT_ID}`);
+  });
+
+  it("POST /admin/agents/:id/tools/:toolId/delete deletes tool and redirects back", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request(
+      `/admin/agents/${AGENT_ID}/tools/${TOOL_ID}/delete`,
+      {
+        method: "POST",
+        headers: { Cookie: `admin_session=${cookie}` },
+      },
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(`/admin/agents/${AGENT_ID}`);
+  });
+});
+
+// ─── Token mutations ──────────────────────────────────────────────────────────
+
+describe("admin UI — token mutations", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  it("POST /admin/agents/:id/tokens creates token and redirects back", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const body = new URLSearchParams({ label: "my-token" });
+    const res = await app.request(`/admin/agents/${AGENT_ID}/tokens`, {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toContain(`/admin/agents/${AGENT_ID}`);
+  });
+
+  it("POST /admin/agents/:id/tokens/:tokenId/revoke revokes token and redirects back", async () => {
     const app = createAdminUIApp(makeMockDeps());
     const res = await app.request(
       `/admin/agents/${AGENT_ID}/tokens/${TOKEN_ID}/revoke`,

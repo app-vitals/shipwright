@@ -104,16 +104,10 @@ export interface AdminUIDeps {
   >;
   agentCronJobService: Pick<
     AgentCronJobService,
-    "list" | "create" | "delete" | "setEnabled"
+    "list" | "create" | "setEnabled" | "delete"
   >;
-  agentToolService: Pick<
-    AgentToolService,
-    "list" | "add" | "remove" | "toggle"
-  >;
-  agentTokenService: Pick<
-    AgentTokenService,
-    "listForAgent" | "create" | "revoke"
-  >;
+  agentToolService: Pick<AgentToolService, "list" | "add" | "toggle" | "remove">;
+  agentTokenService: Pick<AgentTokenService, "listForAgent" | "create" | "revoke">;
   agentPluginService: Pick<AgentPluginService, "list">;
   sessionSecret: string;
   adminPassword: string;
@@ -290,9 +284,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
       return new Response("Agent not found", { status: 404 });
     }
 
-    const rawError = c.req.query("error") ?? undefined;
-    const error = rawError ? (ERROR_MESSAGES[rawError] ?? rawError) : undefined;
-    const newToken = c.req.query("newToken") ?? undefined;
+    const error = c.req.query("error") ?? undefined;
 
     const [envVars, crons, tools, tokens, plugins] = await Promise.all([
       agentEnvService.getByAgentId(agentId).then((e) => e ?? {}),
@@ -311,7 +303,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
         tokens,
         plugins,
         ADMIN_USER_NAME,
-        { error, newToken },
+        error,
       ),
     );
   });
@@ -357,52 +349,39 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
     const agentId = c.req.param("id");
     let schedule: string | undefined;
     let prompt: string | undefined;
-    let channel: string | undefined;
-    let user: string | undefined;
-    let silent: boolean;
-    let preCheck: string | undefined;
-    let enabled: boolean;
+    let channel: string | null = null;
+    let user: string | null = null;
+    let silent = false;
+    let name: string | null = null;
     try {
       const formData = await c.req.formData();
       schedule = formData.get("schedule")?.toString();
       prompt = formData.get("prompt")?.toString();
-      channel = formData.get("channel")?.toString() || undefined;
-      user = formData.get("user")?.toString() || undefined;
-      silent = formData.get("silent")?.toString() === "true";
-      preCheck = formData.get("preCheck")?.toString() || undefined;
-      enabled = formData.get("enabled")?.toString() === "true";
+      channel = formData.get("channel")?.toString() || null;
+      user = formData.get("user")?.toString() || null;
+      silent = formData.get("silent") === "on" || formData.get("silent") === "true";
+      name = formData.get("name")?.toString() || null;
     } catch {
-      return c.redirect(`/admin/agents/${agentId}?error=missing_fields`, 302);
+      return c.redirect(`/admin/agents/${agentId}`, 302);
     }
-
     if (!schedule || !prompt) {
-      return c.redirect(`/admin/agents/${agentId}?error=missing_fields`, 302);
+      return c.redirect(`/admin/agents/${agentId}`, 302);
     }
-
     try {
       await agentCronJobService.create(agentId, {
         schedule,
         prompt,
-        channel: channel ?? null,
-        user: user ?? null,
+        channel,
+        user,
         silent,
-        preCheck: preCheck ?? null,
-        enabled,
+        name,
       });
-    } catch {
-      return c.redirect(`/admin/agents/${agentId}?error=create_failed`, 302);
-    }
-
-    return c.redirect(`/admin/agents/${agentId}`, 302);
-  });
-
-  app.post("/admin/agents/:id/crons/:cronId/delete", requireAuth, async (c) => {
-    const agentId = c.req.param("id");
-    const cronId = c.req.param("cronId");
-    try {
-      await agentCronJobService.delete(agentId, cronId);
-    } catch {
-      // swallow — redirect regardless
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to create cron job";
+      return c.redirect(
+        `/admin/agents/${agentId}?error=${encodeURIComponent(msg)}`,
+        302,
+      );
     }
     return c.redirect(`/admin/agents/${agentId}`, 302);
   });
@@ -413,15 +392,25 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
     let enabled = true;
     try {
       const formData = await c.req.formData();
-      const raw = formData.get("enabled")?.toString();
-      enabled = raw !== "false";
+      enabled = formData.get("enabled") !== "false";
     } catch {
-      // default to enabled=true on parse failure
+      // use default
     }
     try {
       await agentCronJobService.setEnabled(agentId, cronId, enabled);
     } catch {
-      // swallow — redirect regardless
+      // ignore errors — redirect back regardless
+    }
+    return c.redirect(`/admin/agents/${agentId}`, 302);
+  });
+
+  app.post("/admin/agents/:id/crons/:cronId/delete", requireAuth, async (c) => {
+    const agentId = c.req.param("id");
+    const cronId = c.req.param("cronId");
+    try {
+      await agentCronJobService.delete(agentId, cronId);
+    } catch {
+      // ignore errors — redirect back regardless
     }
     return c.redirect(`/admin/agents/${agentId}`, 302);
   });
@@ -435,26 +424,14 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
       const formData = await c.req.formData();
       pattern = formData.get("pattern")?.toString();
     } catch {
-      return c.redirect(`/admin/agents/${agentId}?error=missing_fields`, 302);
+      return c.redirect(`/admin/agents/${agentId}`, 302);
     }
-    if (!pattern) {
-      return c.redirect(`/admin/agents/${agentId}?error=missing_fields`, 302);
-    }
-    try {
-      await agentToolService.add(agentId, pattern);
-    } catch {
-      return c.redirect(`/admin/agents/${agentId}?error=create_failed`, 302);
-    }
-    return c.redirect(`/admin/agents/${agentId}`, 302);
-  });
-
-  app.post("/admin/agents/:id/tools/:toolId/delete", requireAuth, async (c) => {
-    const agentId = c.req.param("id");
-    const toolId = c.req.param("toolId");
-    try {
-      await agentToolService.remove(agentId, toolId);
-    } catch {
-      // swallow — redirect regardless
+    if (pattern) {
+      try {
+        await agentToolService.add(agentId, pattern);
+      } catch {
+        // ignore errors — redirect back regardless
+      }
     }
     return c.redirect(`/admin/agents/${agentId}`, 302);
   });
@@ -465,15 +442,25 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
     let enabled = true;
     try {
       const formData = await c.req.formData();
-      const raw = formData.get("enabled")?.toString();
-      enabled = raw !== "false";
+      enabled = formData.get("enabled") !== "false";
     } catch {
-      // default to enabled=true on parse failure
+      // use default
     }
     try {
       await agentToolService.toggle(agentId, toolId, enabled);
     } catch {
-      // swallow — redirect regardless
+      // ignore errors — redirect back regardless
+    }
+    return c.redirect(`/admin/agents/${agentId}`, 302);
+  });
+
+  app.post("/admin/agents/:id/tools/:toolId/delete", requireAuth, async (c) => {
+    const agentId = c.req.param("id");
+    const toolId = c.req.param("toolId");
+    try {
+      await agentToolService.remove(agentId, toolId);
+    } catch {
+      // ignore errors — redirect back regardless
     }
     return c.redirect(`/admin/agents/${agentId}`, 302);
   });
@@ -487,33 +474,26 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
       const formData = await c.req.formData();
       label = formData.get("label")?.toString() || undefined;
     } catch {
-      return c.redirect(`/admin/agents/${agentId}?error=create_failed`, 302);
+      return c.redirect(`/admin/agents/${agentId}`, 302);
     }
     try {
-      const { rawToken } = await agentTokenService.create(agentId, label);
-      return c.redirect(
-        `/admin/agents/${agentId}?newToken=${encodeURIComponent(rawToken)}`,
-        302,
-      );
+      await agentTokenService.create(agentId, label);
     } catch {
-      return c.redirect(`/admin/agents/${agentId}?error=create_failed`, 302);
+      // ignore errors — redirect back regardless
     }
+    return c.redirect(`/admin/agents/${agentId}`, 302);
   });
 
-  app.post(
-    "/admin/agents/:id/tokens/:tokenId/revoke",
-    requireAuth,
-    async (c) => {
-      const agentId = c.req.param("id");
-      const tokenId = c.req.param("tokenId");
-      try {
-        await agentTokenService.revoke(tokenId);
-      } catch {
-        // swallow — redirect regardless
-      }
-      return c.redirect(`/admin/agents/${agentId}`, 302);
-    },
-  );
+  app.post("/admin/agents/:id/tokens/:tokenId/revoke", requireAuth, async (c) => {
+    const agentId = c.req.param("id");
+    const tokenId = c.req.param("tokenId");
+    try {
+      await agentTokenService.revoke(tokenId);
+    } catch {
+      // ignore errors — redirect back regardless
+    }
+    return c.redirect(`/admin/agents/${agentId}`, 302);
+  });
 
   // ─── Provisioning flow ────────────────────────────────────────────────────
 

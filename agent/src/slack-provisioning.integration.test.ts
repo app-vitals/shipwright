@@ -107,20 +107,20 @@ function makeMockDeps(
       create: async () => {
         throw new Error("not implemented");
       },
-      delete: async () => {},
       setEnabled: async () => {
         throw new Error("not implemented");
       },
+      delete: async () => {},
     },
     agentToolService: {
       list: async () => [],
       add: async () => {
         throw new Error("not implemented");
       },
-      remove: async () => {},
       toggle: async () => {
         throw new Error("not implemented");
       },
+      remove: async () => {},
     },
     agentTokenService: {
       listForAgent: async () => [],
