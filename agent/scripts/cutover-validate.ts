@@ -18,6 +18,7 @@
  */
 
 import {
+  type CheckResult,
   HttpShipwrightConfigClient,
   validateCutover,
 } from "../src/cutover-validate.ts";
@@ -59,7 +60,7 @@ const agentId = requireEnv("AGENT_ID");
 
 const client = new HttpShipwrightConfigClient(apiUrl, apiKey);
 
-let results;
+let results: CheckResult[];
 try {
   results = await validateCutover(client, agentId);
 } catch (err) {
@@ -77,7 +78,7 @@ for (const result of results) {
 
 if (!allPassed) {
   console.error(
-    `\nValidation failed. Fix the issues above before cutting over.`,
+    "\nValidation failed. Fix the issues above before cutting over.",
   );
   process.exit(1);
 }

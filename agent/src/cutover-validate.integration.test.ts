@@ -97,8 +97,7 @@ describe("validateCutover", () => {
   });
 
   it("fails when SLACK_BOT_TOKEN is missing", async () => {
-    const env = makeAppAuthEnv();
-    delete env.SLACK_BOT_TOKEN;
+    const { SLACK_BOT_TOKEN: _s, ...env } = makeAppAuthEnv();
     const client = new RecordedShipwrightConfigClient(
       makeConfig(env),
       [makeCron("cron-1")],
@@ -110,8 +109,7 @@ describe("validateCutover", () => {
   });
 
   it("names the failing check when SLACK_BOT_TOKEN is missing", async () => {
-    const env = makeAppAuthEnv();
-    delete env.SLACK_BOT_TOKEN;
+    const { SLACK_BOT_TOKEN: _s, ...env } = makeAppAuthEnv();
     const client = new RecordedShipwrightConfigClient(
       makeConfig(env),
       [makeCron("cron-1")],
