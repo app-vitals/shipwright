@@ -322,17 +322,38 @@ export function renderAgentDetailPage(agent: AgentDetail): string {
       </tbody>
     </table>`;
 
-  // Slack connect section
+  // Slack connect section — state-aware based on env vars
+  const hasAppId = !!agent.envVars.SLACK_APP_ID;
+  const hasBotToken = !!agent.envVars.SLACK_BOT_TOKEN;
+  const hasAppToken = !!agent.envVars.SLACK_APP_TOKEN;
+  let slackBody: string;
+  if (hasBotToken && hasAppToken) {
+    slackBody = `<p class="badge" style="background:#dcfce7;color:#16a34a">Connected — App ID: <code>${esc(agent.envVars.SLACK_APP_ID ?? "")}</code></p>`;
+  } else if (hasBotToken && !hasAppToken) {
+    slackBody = `
+    <p class="meta" style="margin-bottom:12px">Bot token connected. Paste the App-Level Token (xapp-) to complete setup.</p>
+    <form method="POST" action="/admin/agents/${esc(agent.id)}/slack-app-token">
+      <div class="form-row">
+        <input type="password" name="xappToken" placeholder="xapp-..." style="flex:1" required autocomplete="off">
+        <button type="submit" class="btn btn-primary">Save app token</button>
+      </div>
+    </form>`;
+  } else if (hasAppId && !hasBotToken) {
+    slackBody = `<p class="meta">Slack app created (App ID: <code>${esc(agent.envVars.SLACK_APP_ID ?? "")}</code>). Complete the OAuth flow to obtain a bot token.</p>`;
+  } else {
+    slackBody = `
+    <p class="meta" style="margin-bottom:12px">Provide a user OAuth token (xoxp-) to create a Slack app via the Manifest API and start the OAuth flow.</p>
+    <form method="POST" action="/admin/agents/${esc(agent.id)}/slack-connect">
+      <div class="form-row">
+        <input type="text" name="xoxpToken" placeholder="xoxp-..." style="flex:1" required>
+        <button type="submit" class="btn btn-primary">Connect Slack</button>
+      </div>
+    </form>`;
+  }
   const slackSection = `
 <div class="card">
   <h2>Slack OAuth Provisioning</h2>
-  <p class="meta" style="margin-bottom:12px">Provide a user OAuth token (xoxp-) to create a Slack app via the Manifest API and start the OAuth flow.</p>
-  <form method="POST" action="/admin/agents/${esc(agent.id)}/slack-connect">
-    <div class="form-row">
-      <input type="text" name="xoxpToken" placeholder="xoxp-..." style="flex:1" required>
-      <button type="submit" class="btn btn-primary">Connect Slack</button>
-    </div>
-  </form>
+  ${slackBody}
 </div>`;
 
   const body = `

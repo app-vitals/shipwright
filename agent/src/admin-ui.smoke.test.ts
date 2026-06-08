@@ -227,6 +227,137 @@ describe("admin UI — logout", () => {
   });
 });
 
+// ─── Slack section state rendering ────────────────────────────────────────────
+
+describe("admin UI — Slack section states", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  it("shows xapp- paste form when SLACK_BOT_TOKEN set but SLACK_APP_TOKEN absent", async () => {
+    const deps = makeMockDeps();
+    deps.agentRepo = {
+      ...deps.agentRepo,
+      findById: async (id: string) => {
+        if (id !== AGENT_ID) return null;
+        return {
+          id: AGENT_ID,
+          name: "Test Agent",
+          slackId: null,
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+          envVars: {
+            SLACK_APP_ID: "A123456",
+            SLACK_BOT_TOKEN: "xoxb-test",
+            SLACK_SIGNING_SECRET: "signing-secret",
+          },
+          crons: [],
+          tools: [],
+          tokens: [],
+          plugins: [],
+        };
+      },
+    };
+    const app = createAdminUIApp(deps);
+    const res = await app.request(`/admin/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).toContain("xapp-");
+    expect(text).toContain("slack-app-token");
+  });
+
+  it("shows connected status when both bot and app token are set", async () => {
+    const deps = makeMockDeps();
+    deps.agentRepo = {
+      ...deps.agentRepo,
+      findById: async (id: string) => {
+        if (id !== AGENT_ID) return null;
+        return {
+          id: AGENT_ID,
+          name: "Test Agent",
+          slackId: null,
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+          envVars: {
+            SLACK_APP_ID: "A123456",
+            SLACK_BOT_TOKEN: "xoxb-test",
+            SLACK_APP_TOKEN: "xapp-test",
+          },
+          crons: [],
+          tools: [],
+          tokens: [],
+          plugins: [],
+        };
+      },
+    };
+    const app = createAdminUIApp(deps);
+    const res = await app.request(`/admin/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text.toLowerCase()).toContain("connected");
+  });
+});
+
+// ─── Env var round-trip ────────────────────────────────────────────────────────
+
+describe("admin UI — env var round-trip", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  it("POST /admin/agents/:id/envs calls patch with correct key+value (round-trip via service)", async () => {
+    const patchCalls: { agentId: string; env: Record<string, string> }[] = [];
+    const deps = makeMockDeps();
+    deps.agentEnvService = {
+      patch: async (agentId, env) => { patchCalls.push({ agentId, env: { ...env } }); },
+      deleteKey: async () => {},
+      getByAgentId: async () => ({ FOO: "bar" }),
+    };
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({ key: "MY_VAR", value: "my-value" });
+    await app.request(`/admin/agents/${AGENT_ID}/envs`, {
+      method: "POST",
+      body: body.toString(),
+      headers: { "Content-Type": "application/x-www-form-urlencoded", Cookie: `admin_session=${cookie}` },
+      redirect: "manual",
+    });
+
+    expect(patchCalls).toHaveLength(1);
+    expect(patchCalls[0]?.agentId).toBe(AGENT_ID);
+    expect(patchCalls[0]?.env).toEqual({ MY_VAR: "my-value" });
+  });
+
+  it("POST /admin/agents/:id/envs/delete calls deleteKey with correct key (round-trip via service)", async () => {
+    const deleteKeyCalls: { agentId: string; key: string }[] = [];
+    const deps = makeMockDeps();
+    deps.agentEnvService = {
+      patch: async () => {},
+      deleteKey: async (agentId, key) => { deleteKeyCalls.push({ agentId, key }); },
+      getByAgentId: async () => ({ FOO: "bar" }),
+    };
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({ key: "FOO" });
+    await app.request(`/admin/agents/${AGENT_ID}/envs/delete`, {
+      method: "POST",
+      body: body.toString(),
+      headers: { "Content-Type": "application/x-www-form-urlencoded", Cookie: `admin_session=${cookie}` },
+      redirect: "manual",
+    });
+
+    expect(deleteKeyCalls).toHaveLength(1);
+    expect(deleteKeyCalls[0]?.agentId).toBe(AGENT_ID);
+    expect(deleteKeyCalls[0]?.key).toBe("FOO");
+  });
+});
+
 // ─── Env var mutations ────────────────────────────────────────────────────────
 
 describe("admin UI — env var mutations", () => {
