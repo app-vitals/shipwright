@@ -21,11 +21,6 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { sign, verify } from "hono/jwt";
-import type { AgentCronJobService } from "./agent-cron-jobs.ts";
-import type { AgentEnvService } from "./agent-envs.ts";
-import type { AgentPluginService } from "./agent-plugins.ts";
-import type { AgentTokenService } from "./agent-tokens.ts";
-import type { AgentToolService } from "./agent-tools.ts";
 import {
   renderAgentDetailPage,
   renderAgentsPage,
@@ -34,6 +29,11 @@ import {
   renderProvisionPasteForm,
   renderProvisionStartPage,
 } from "./admin-ui-pages.ts";
+import type { AgentCronJobService } from "./agent-cron-jobs.ts";
+import type { AgentEnvService } from "./agent-envs.ts";
+import type { AgentPluginService } from "./agent-plugins.ts";
+import type { AgentTokenService } from "./agent-tokens.ts";
+import type { AgentToolService } from "./agent-tools.ts";
 import type { AppManifest } from "./slack-provisioning-client.ts";
 import { defaultAgentManifest } from "./slack-provisioning-client.ts";
 
@@ -85,7 +85,14 @@ interface PrismaLike {
   agentPlugin: {
     findMany(args: {
       where: { agentId: string; enabled: boolean };
-    }): Promise<Array<{ id: string; name: string; version: string | null; enabled: boolean }>>;
+    }): Promise<
+      Array<{
+        id: string;
+        name: string;
+        version: string | null;
+        enabled: boolean;
+      }>
+    >;
   };
 }
 
@@ -95,9 +102,18 @@ export interface AdminUIDeps {
     AgentEnvService,
     "getByAgentId" | "upsert" | "deleteKey" | "getConfigBundle"
   >;
-  agentCronJobService: Pick<AgentCronJobService, "list" | "create">;
-  agentToolService: Pick<AgentToolService, "list">;
-  agentTokenService: Pick<AgentTokenService, "listForAgent">;
+  agentCronJobService: Pick<
+    AgentCronJobService,
+    "list" | "create" | "delete" | "setEnabled"
+  >;
+  agentToolService: Pick<
+    AgentToolService,
+    "list" | "add" | "remove" | "toggle"
+  >;
+  agentTokenService: Pick<
+    AgentTokenService,
+    "listForAgent" | "create" | "revoke"
+  >;
   agentPluginService: Pick<AgentPluginService, "list">;
   sessionSecret: string;
   adminPassword: string;
@@ -174,7 +190,10 @@ async function verifySessionToken(
 function createUIAuthMiddleware(sessionSecret: string): MiddlewareHandler {
   return async (c, next) => {
     const sessionToken = getCookie(c, SESSION_COOKIE);
-    if (!sessionToken || !(await verifySessionToken(sessionToken, sessionSecret))) {
+    if (
+      !sessionToken ||
+      !(await verifySessionToken(sessionToken, sessionSecret))
+    ) {
       return c.redirect("/admin/login", 302);
     }
     return next();
@@ -225,13 +244,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
     }
 
     if (!password || !timingSafeEqual(password, adminPassword)) {
-      return new Response(
-        renderLoginPage({ error: "Invalid password." }),
-        {
-          status: 401,
-          headers: { "Content-Type": "text/html; charset=utf-8" },
-        },
-      );
+      return new Response(renderLoginPage({ error: "Invalid password." }), {
+        status: 401,
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      });
     }
 
     const token = await createSessionToken(sessionSecret);
@@ -263,7 +279,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
     missing_fields: "Required fields are missing.",
     create_failed: "Failed to create — please try again.",
     invalid_schedule: "Invalid cron schedule expression.",
-    invalid_target: "Invalid delivery target — set channel or user (or enable silent mode).",
+    invalid_target:
+      "Invalid delivery target — set channel or user (or enable silent mode).",
   };
 
   app.get("/admin/agents/:id", requireAuth, async (c) => {
@@ -274,9 +291,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
     }
 
     const rawError = c.req.query("error") ?? undefined;
-    const error = rawError
-      ? (ERROR_MESSAGES[rawError] ?? rawError)
-      : undefined;
+    const error = rawError ? (ERROR_MESSAGES[rawError] ?? rawError) : undefined;
+    const newToken = c.req.query("newToken") ?? undefined;
 
     const [envVars, crons, tools, tokens, plugins] = await Promise.all([
       agentEnvService.getByAgentId(agentId).then((e) => e ?? {}),
@@ -295,7 +311,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
         tokens,
         plugins,
         ADMIN_USER_NAME,
-        { error },
+        { error, newToken },
       ),
     );
   });
@@ -381,6 +397,125 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
     return c.redirect(`/admin/agents/${agentId}`, 302);
   });
 
+  app.post("/admin/agents/:id/crons/:cronId/delete", requireAuth, async (c) => {
+    const agentId = c.req.param("id");
+    const cronId = c.req.param("cronId");
+    try {
+      await agentCronJobService.delete(agentId, cronId);
+    } catch {
+      // swallow — redirect regardless
+    }
+    return c.redirect(`/admin/agents/${agentId}`, 302);
+  });
+
+  app.post("/admin/agents/:id/crons/:cronId/toggle", requireAuth, async (c) => {
+    const agentId = c.req.param("id");
+    const cronId = c.req.param("cronId");
+    let enabled = true;
+    try {
+      const formData = await c.req.formData();
+      const raw = formData.get("enabled")?.toString();
+      enabled = raw !== "false";
+    } catch {
+      // default to enabled=true on parse failure
+    }
+    try {
+      await agentCronJobService.setEnabled(agentId, cronId, enabled);
+    } catch {
+      // swallow — redirect regardless
+    }
+    return c.redirect(`/admin/agents/${agentId}`, 302);
+  });
+
+  // ─── Tool mutations ───────────────────────────────────────────────────────
+
+  app.post("/admin/agents/:id/tools", requireAuth, async (c) => {
+    const agentId = c.req.param("id");
+    let pattern: string | undefined;
+    try {
+      const formData = await c.req.formData();
+      pattern = formData.get("pattern")?.toString();
+    } catch {
+      return c.redirect(`/admin/agents/${agentId}?error=missing_fields`, 302);
+    }
+    if (!pattern) {
+      return c.redirect(`/admin/agents/${agentId}?error=missing_fields`, 302);
+    }
+    try {
+      await agentToolService.add(agentId, pattern);
+    } catch {
+      return c.redirect(`/admin/agents/${agentId}?error=create_failed`, 302);
+    }
+    return c.redirect(`/admin/agents/${agentId}`, 302);
+  });
+
+  app.post("/admin/agents/:id/tools/:toolId/delete", requireAuth, async (c) => {
+    const agentId = c.req.param("id");
+    const toolId = c.req.param("toolId");
+    try {
+      await agentToolService.remove(agentId, toolId);
+    } catch {
+      // swallow — redirect regardless
+    }
+    return c.redirect(`/admin/agents/${agentId}`, 302);
+  });
+
+  app.post("/admin/agents/:id/tools/:toolId/toggle", requireAuth, async (c) => {
+    const agentId = c.req.param("id");
+    const toolId = c.req.param("toolId");
+    let enabled = true;
+    try {
+      const formData = await c.req.formData();
+      const raw = formData.get("enabled")?.toString();
+      enabled = raw !== "false";
+    } catch {
+      // default to enabled=true on parse failure
+    }
+    try {
+      await agentToolService.toggle(agentId, toolId, enabled);
+    } catch {
+      // swallow — redirect regardless
+    }
+    return c.redirect(`/admin/agents/${agentId}`, 302);
+  });
+
+  // ─── Token mutations ──────────────────────────────────────────────────────
+
+  app.post("/admin/agents/:id/tokens", requireAuth, async (c) => {
+    const agentId = c.req.param("id");
+    let label: string | undefined;
+    try {
+      const formData = await c.req.formData();
+      label = formData.get("label")?.toString() || undefined;
+    } catch {
+      return c.redirect(`/admin/agents/${agentId}?error=create_failed`, 302);
+    }
+    try {
+      const { rawToken } = await agentTokenService.create(agentId, label);
+      return c.redirect(
+        `/admin/agents/${agentId}?newToken=${encodeURIComponent(rawToken)}`,
+        302,
+      );
+    } catch {
+      return c.redirect(`/admin/agents/${agentId}?error=create_failed`, 302);
+    }
+  });
+
+  app.post(
+    "/admin/agents/:id/tokens/:tokenId/revoke",
+    requireAuth,
+    async (c) => {
+      const agentId = c.req.param("id");
+      const tokenId = c.req.param("tokenId");
+      try {
+        await agentTokenService.revoke(tokenId);
+      } catch {
+        // swallow — redirect regardless
+      }
+      return c.redirect(`/admin/agents/${agentId}`, 302);
+    },
+  );
+
   // ─── Provisioning flow ────────────────────────────────────────────────────
 
   app.get("/admin/provision", requireAuth, (c) => {
@@ -416,14 +551,16 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
         manifest,
       );
       return html(
-        renderProvisionStartPage(ADMIN_USER_NAME, { oauthUrl: oauthRedirectUrl }),
+        renderProvisionStartPage(ADMIN_USER_NAME, {
+          oauthUrl: oauthRedirectUrl,
+        }),
       );
     } catch (err) {
       const msg =
-        err instanceof Error ? err.message : "Unknown error creating Slack app.";
-      return html(
-        renderProvisionStartPage(ADMIN_USER_NAME, { error: msg }),
-      );
+        err instanceof Error
+          ? err.message
+          : "Unknown error creating Slack app.";
+      return html(renderProvisionStartPage(ADMIN_USER_NAME, { error: msg }));
     }
   });
 
@@ -476,7 +613,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
       );
     } catch (err) {
       const msg =
-        err instanceof Error ? err.message : "Unknown error storing credentials.";
+        err instanceof Error
+          ? err.message
+          : "Unknown error storing credentials.";
       return html(
         renderProvisionPasteForm(ADMIN_USER_NAME, { agentId, error: msg }),
       );
