@@ -25,6 +25,7 @@ state/
 
 # --- Prisma generated client (regenerated from schema on install) ---
 agent/prisma/client/
+admin/prisma/client/
 
 # --- Dependencies ---
 node_modules/

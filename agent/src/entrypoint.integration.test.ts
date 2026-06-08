@@ -9,7 +9,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { existsSync, mkdirSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
-import type { AgentConfigResponse } from "./api.ts";
+import type { AgentConfigResponse } from "@shipwright/admin";
 import { runEntrypoint } from "./entrypoint.ts";
 import type { EntrypointDeps } from "./entrypoint.ts";
 import type { ShipwrightConfigClient } from "./shipwright-config-client.ts";

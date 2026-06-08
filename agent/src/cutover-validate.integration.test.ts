@@ -5,8 +5,8 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import type { AgentCronJob } from "./agent-cron-jobs.ts";
-import type { AgentConfigResponse } from "./api.ts";
+import type { AgentCronJob } from "@shipwright/admin";
+import type { AgentConfigResponse } from "@shipwright/admin";
 import {
   type ShipwrightConfigClient,
   validateCutover,

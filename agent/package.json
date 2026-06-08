@@ -4,22 +4,18 @@
   "private": true,
   "description": "Shipwright agent — autonomous task runner: pick → build → ship PR → forward metrics",
   "scripts": {
-    "postinstall": "prisma generate --schema=prisma/schema.prisma",
     "test": "bun test",
-    "typecheck": "tsc --noEmit",
-    "db:generate": "prisma generate --schema=prisma/schema.prisma",
-    "db:migrate": "prisma migrate deploy --schema=prisma/schema.prisma"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@octokit/auth-app": "^8.2.0",
-    "@prisma/client": "^6.19.2",
+    "@shipwright/admin": "workspace:*",
     "@slack/bolt": "^4.7.3",
     "@slack/web-api": "^7.16.0",
     "hono": "^4"
   },
   "devDependencies": {
     "bun-types": "^1.3.14",
-    "prisma": "^6.19.2",
     "typescript": "*"
   }
 }

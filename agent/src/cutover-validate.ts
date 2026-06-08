@@ -10,8 +10,8 @@
  *  - At least one cron job configured
  */
 
-import type { AgentCronJob } from "./agent-cron-jobs.ts";
-import type { AgentConfigResponse } from "./api.ts";
+import type { AgentCronJob } from "@shipwright/admin";
+import type { AgentConfigResponse } from "@shipwright/admin";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
