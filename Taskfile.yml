@@ -61,6 +61,12 @@ tasks:
         fi
         cd agent && bunx prisma migrate dev --schema=prisma/schema.prisma
 
+
+  e2e:
+    desc: Run metrics dashboard Playwright e2e tests (requires Playwright chromium installed)
+    cmds:
+      - cd metrics && bunx playwright test
+
   secret-scan:
     desc: Scan for accidentally committed secrets (gitleaks)
     cmds:
