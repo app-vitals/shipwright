@@ -18,6 +18,7 @@ interface PrInfo {
   author: { login: string };
   headRefName: string;
   headRefOid: string;
+  repo?: string;
 }
 
 interface ReviewEntry {
@@ -25,6 +26,7 @@ interface ReviewEntry {
   repo: string;
   lastReviewedCommit?: string;
   status?: string;
+  posted?: boolean;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -41,6 +43,7 @@ function makePr(overrides: Partial<PrInfo> = {}): PrInfo {
     author: { login: "danmcaulay" },
     headRefName: "feat/x",
     headRefOid: "abc123def456",
+    repo: "example-repo",
     ...overrides,
   };
 }
@@ -268,6 +271,68 @@ describe("check-review", () => {
     const result = await run(deps);
     expect(result.exit).toBe(0);
     expect(listPrCommitsCalled).toBe(false);
+  });
+
+  // ─── Tier 3: staged-but-unposted review + new commits → skip on cron ─────
+
+  test("Tier 3: exits 1 (skips PR) when entry has posted=false and head SHA changed (staged review deferred)", async () => {
+    // posted: false = review written to reviews.json but not yet posted to GitHub.
+    // The review skill explicitly defers these on no-arg runs. The cron precheck
+    // must match that behaviour so it doesn't re-trigger the skill.
+    const pr = makePr({ number: 42, headRefOid: "sha-new" });
+    const entry: ReviewEntry = {
+      pr: 42,
+      repo: "example-repo",
+      lastReviewedCommit: "sha-old",
+      posted: false,
+    };
+    const result = await run(makeDeps([pr], [entry]));
+    expect(result.exit).toBe(1);
+    expect(result.output).toBe("");
+  });
+
+  test("Tier 3: exits 0 (triggers review) when entry has posted=true and head SHA changed (new real commits)", async () => {
+    // posted: true = review was already posted. New commits have landed.
+    // This is regular re-review territory — the cron should fire.
+    const pr = makePr({ number: 42, headRefOid: "sha-new" });
+    const entry: ReviewEntry = {
+      pr: 42,
+      repo: "example-repo",
+      lastReviewedCommit: "sha-old",
+      posted: true,
+    };
+    const result = await run(makeDeps([pr], [entry]));
+    expect(result.exit).toBe(0);
+    expect(result.output).toBeTruthy();
+  });
+
+  // ─── Multi-repo: dedup map keyed on "repo:pr" to avoid cross-repo collisions ─
+
+  test("multi-repo: two repos with the same PR number are deduped independently", async () => {
+    // PR #42 in repo-A is reviewed (matches lastReviewedCommit).
+    // PR #42 in repo-B is NOT reviewed (no entry). Without the repo:pr key fix,
+    // repo-A's entry would suppress repo-B and exit 1 (wrong).
+    const prA = makePr({ number: 42, headRefOid: "sha-A", repo: "example-org/repo-a" });
+    const prB = makePr({ number: 42, headRefOid: "sha-B", repo: "example-org/repo-b" });
+    const entries: ReviewEntry[] = [
+      {
+        pr: 42,
+        repo: "example-org/repo-a",
+        lastReviewedCommit: "sha-A",
+        status: "posted",
+      },
+      // No entry for repo-b PR #42 → should trigger
+    ];
+    const deps = {
+      listOpenPrs: async (_repo: string) => [prA, prB],
+      readReviews: () => entries,
+      getCurrentUser: () => "bodhi-agent",
+      isSelfReviewAllowed: false,
+      listPrCommits: async (_prNumber: number): Promise<CommitInfo[]> => [],
+    };
+    const result = await run(deps);
+    expect(result.exit).toBe(0);
+    expect(result.output).toBeTruthy();
   });
 });
 
