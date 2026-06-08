@@ -24,10 +24,10 @@ import type { AgentPlugin } from "./api.ts";
 // Templates live at agent/workspace/ alongside this source file.
 const WORKSPACE_TEMPLATE_DIR = join(import.meta.dir, "..", "workspace");
 
-// The default marketplace and plugin for all Shipwright agents.
-const SHIPWRIGHT_MARKETPLACE = "shipwright";
-const DEFAULT_PLUGINS: ReadonlyArray<{ marketplace: string; plugin: string }> =
-  [{ marketplace: SHIPWRIGHT_MARKETPLACE, plugin: "shipwright" }];
+// Default plugin installed on all Shipwright agents.
+const DEFAULT_PLUGINS: readonly AgentPlugin[] = [
+  { marketplace: "shipwright", plugin: "shipwright" },
+];
 
 /**
  * Reads a template file from agent/workspace/<name>.
