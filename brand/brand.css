@@ -114,6 +114,7 @@ code, .sw-mono { font-family: var(--sw-font-mono); }
 .sw-pill-success { background: var(--sw-color-brand-soft); color: var(--sw-color-brand-default); }
 .sw-pill-progress { background: var(--sw-color-support-patriot); color: var(--sw-color-support-patriot-bright); }
 
+.sw-h1 { font-family: var(--sw-font-display); font-size: var(--sw-text-h1-size); line-height: var(--sw-text-h1-line); font-weight: var(--sw-text-h1-weight); letter-spacing: var(--sw-text-h1-tracking); color: var(--sw-color-text-heading); }
 .sw-code { background: var(--sw-color-bg-overlay); border-radius: var(--sw-radius-md); padding: 0.85rem 1rem; font-family: var(--sw-font-mono); color: var(--sw-color-text-body); overflow: auto; }
 .sw-gradient-text { background: var(--sw-gradient-brand); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .sw-orb { position: absolute; border-radius: 50%; filter: blur(80px); pointer-events: none; z-index: 0; }

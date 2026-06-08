@@ -9,7 +9,9 @@
     "build": "astro build",
     "preview": "astro preview",
     "astro": "astro",
-    "test": "playwright test"
+    "test": "playwright test",
+    "brand-lint": "bun ../brand/brand-lint.ts $(find dist -type f \\( -name '*.html' -o -name '*.css' \\))",
+    "build:check": "astro build && npm run brand-lint"
   },
   "dependencies": {
     "@astrojs/sitemap": "^3.2.1",
