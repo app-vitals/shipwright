@@ -51,7 +51,7 @@ The plugin is pure TypeScript — no server, no database, no external HTTP in pr
 
 ### Metrics dashboard (`@shipwright/metrics`) — Phase B
 
-The metrics service is a stateless Hono app backed by PostHog queries. No database.
+The metrics service is a Hono app backed by PostHog queries. Optional local SQLite event store for offline ingest (`POST /batch/`) — only exposed when a `localStore` dep is injected.
 
 | Layer | Local run command | Per-test 95p | Per-test hard cap | Suite target |
 |---|---|---|---|---|

@@ -61,7 +61,7 @@ All metric endpoints are `GET`, return JSON, and accept the same date-window que
 | GET | `/metrics/features` | Per-feature task / CI / review breakdown. |
 | GET | `/metrics/queue` | Shipwright v3 queue metrics: funnel counts, block rate, avg cycle time (days), avg review findings. |
 | GET | `/metrics/tokens` | Token usage — totals, by agent, by session type, and trends. |
-| POST | `/batch/` | PostHog-shaped batch ingest — writes events to the local SQLite store. Only registered when `localStore` is injected via `MetricsDeps`; returns 404 otherwise. |
+| POST | `/batch/` | PostHog-shaped batch ingest — writes events to the local SQLite store. Only registered when `localStore` is injected via `MetricsDeps`; returns 404 otherwise. **No auth middleware** — only expose on a private/loopback interface. Body capped at 1 MB. |
 | GET | `/dashboard` | Server-rendered dashboard HTML (session-gated). |
 | GET | `/dashboard/*` | Static dashboard assets (`styles.css`, `app.js`). |
 | GET | `/health` | Liveness check — `{ status: "ok" }`, **no auth**. |

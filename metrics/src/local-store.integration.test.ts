@@ -1,7 +1,7 @@
 /**
- * metrics/src/local-store.unit.test.ts
- * Unit tests for the local SQLite event store (insert, dedup, range query).
- * Uses an in-memory (`:memory:`) DB and an injected FixedClock — no real file I/O.
+ * metrics/src/local-store.integration.test.ts
+ * Integration tests for the local SQLite event store (insert, dedup, range query).
+ * Uses an in-memory (`:memory:`) DB and an injected FixedClock — exercises real bun:sqlite I/O.
  */
 
 import { describe, expect, test } from "bun:test";

@@ -13,7 +13,7 @@ Shipwright Harness is **the open-source (MIT) autonomous delivery agent for Clau
 | Phase | Artifact | Directory | What it is |
 |---|---|---|---|
 | **A** | **Plugin** (the system) | `plugins/shipwright/` | Commands, skills, agents, scripts users `/plugin install`. Repo-agnostic. |
-| **B** | **Metrics dashboard** | `metrics/` | Stateless Hono service: PostHog-backed JSON endpoints + a server-rendered dashboard. No database. |
+| **B** | **Metrics dashboard** | `metrics/` | Hono service: PostHog-backed JSON endpoints + a server-rendered dashboard. Optional local SQLite event store for offline ingest (`POST /batch/`). |
 | **C** | **Shipwright agent** | `agent/` | Hono service + Prisma store; a thin autonomous runner: pick next ready task → build → ship PR → forward metrics. |
 
 Supporting surfaces (not phased):

@@ -952,12 +952,33 @@ export function createMetricsApp(
   // /metrics/* combined-auth middleware) to mirror PostHog's unauthenticated
   // transport — the api_key travels in the body. Registered ONLY when a local
   // store is injected; otherwise the route is absent (404).
+  //
+  // SECURITY: This route has no authentication middleware — it is intended for
+  // use on a private/loopback interface only. Do NOT expose it on a public
+  // network interface without adding an auth layer. A 1 MB body size cap is
+  // enforced to prevent unbounded memory buffering.
+  const BATCH_MAX_BYTES = 1 * 1024 * 1024; // 1 MB
   const localStore = deps?.localStore;
   if (localStore) {
     app.post("/batch/", async (c) => {
+      const contentLength = c.req.header("content-length");
+      if (contentLength && Number(contentLength) > BATCH_MAX_BYTES) {
+        return c.json({ error: "request body too large (max 1 MB)" }, 413);
+      }
+
+      let rawText: string;
+      try {
+        rawText = await c.req.text();
+      } catch {
+        return c.json({ error: "failed to read request body" }, 400);
+      }
+      if (rawText.length > BATCH_MAX_BYTES) {
+        return c.json({ error: "request body too large (max 1 MB)" }, 413);
+      }
+
       let body: unknown;
       try {
-        body = await c.req.json();
+        body = JSON.parse(rawText);
       } catch {
         return c.json({ error: "invalid JSON body" }, 400);
       }
