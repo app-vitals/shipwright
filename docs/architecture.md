@@ -33,7 +33,7 @@ A stateless Hono service that turns the pipeline's PostHog events into analytics
 
 ## C — Shipwright agent
 
-A thin autonomous runner with a Prisma-backed store (SQLite locally, PostgreSQL in production) and two HTTP surfaces: a machine-polled **runtime API** (`/agents/:id/config`, `/agents/:id/crons`) and a human-facing **admin CRUD API** (`/admin/api/agents/:id/...` for envs, crons, tools, tokens, plugins). See **[agent.md](./agent.md)**.
+A thin autonomous runner with a Prisma-backed store (SQLite locally, PostgreSQL in production) and three HTTP surfaces: a machine-polled **runtime API** (`/agents/:id/config`, `/agents/:id/crons`), a JSON **admin CRUD API** (`/admin/api/agents/:id/...` for envs, crons, tools, tokens, plugins), and a browser-facing **admin HTML UI** (`/admin/...`) with password login, agent list, agent detail, and Slack OAuth provisioning. See **[agent.md](./agent.md)**.
 
 > The agent's top-level runner (`agent/src/index.ts`) is currently a Phase-C placeholder; the implemented surfaces are the admin CRUD API, the runtime API, and the Prisma store.
 
