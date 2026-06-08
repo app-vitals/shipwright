@@ -38,6 +38,8 @@ brand system — never by hand-picking colors, fonts, or copy. The system lives 
    `bun brand/brand-lint.ts <your-file.html>`  → fix every flagged hex (replace with a token/variable).
 5. **For a single-file deliverable** (PDF, email, embedded): inline `brand/brand.css` into a `<style>` block so the artifact is self-contained. **For a PDF:** open the HTML and print to PDF (or `bunx playwright` screenshot). **For an OG/social PNG:** screenshot the `.og` element at exactly 1280×640.
 
+> **Rendering note:** Playwright is **not** installed at the repo root — it lives in `site/node_modules` (Chromium already cached). Run any render/screenshot script with `site/` as the module-resolution root (`cd site` first, or place the `.mjs` there). `ffmpeg` is available system-wide for GIF/MP4 assembly (e.g. frame capture → looping GIF + MP4 for a terminal demo).
+
 ## Modes
 
 | Mode | Template | Output |
