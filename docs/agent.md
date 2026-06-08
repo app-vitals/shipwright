@@ -6,7 +6,7 @@
 
 The agent owns six first-class Prisma models (`Agent` and its `Env` / `CronJob` / `Tool` / `Token` / `Plugin` children) on a **dedicated database** (`DATABASE_URL_AGENT`). Secrets at rest (env values, Slack/Anthropic keys) are AES-256-GCM encrypted at the service layer; agent API tokens are stored only as SHA-256 hashes.
 
-> The top-level runner (`agent/src/index.ts`) is currently a Phase-C placeholder (`export {}`). The implemented surfaces are the admin CRUD API (`admin-api.ts`), the runtime API (`api.ts`), and the Prisma store + service classes. On startup the runner is expected to call `POST /admin/api/agents/:id/crons/reconcile` to sync system crons.
+> The top-level runner (`agent/src/index.ts`) is currently a Phase-C placeholder (`export {}`). The implemented surfaces are the admin CRUD API (`admin-api.ts`), the runtime API (`api.ts`), the Prisma store + service classes, the Slack event handler (`slack.ts`), and the cron runtime (`cron-handler.ts`). On startup the runner is expected to call `POST /admin/api/agents/:id/crons/reconcile` to sync system crons.
 
 ## Running locally
 
@@ -77,6 +77,9 @@ All child models cascade-delete with their `Agent`.
 | `agent/src/agent-tools.ts` / `agent-tokens.ts` / `agent-plugins.ts` | Per-resource service classes. |
 | `agent/src/crypto.ts` / `token-crypto.ts` | AES-256-GCM + token hashing helpers. |
 | `agent/src/system-crons.ts` | System-cron definitions reconciled onto each agent. |
+| `agent/src/cron-handler.ts` | Cron runtime: `handleCronRequest()` — runs a cron prompt through Claude and posts the result to Slack. Supports `preCheck` scripts, `silent` suppression, channel vs. DM delivery, and `onPost`/`onSession` callbacks. |
+| `agent/src/slack.ts` | Slack event handler: `createSlackApp()` — Bolt-based Socket Mode app handling DMs, `app_mention`, `reaction_added`, file attachments, and voice transcription. |
+| `agent/src/slack-manifest.ts` | Typed Slack app manifest builder (`buildManifest()`) used by `agent/scripts/bootstrap-agent.ts` to create per-agent Slack apps via the Manifest API. |
 | `agent/prisma/schema.prisma` | The six-model schema (`DATABASE_URL_AGENT`). |
 
 ## Testing
