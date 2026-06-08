@@ -104,12 +104,33 @@ function makeMockDeps(
     },
     agentCronJobService: {
       list: async () => [],
+      get: async () => {
+        throw new Error("not implemented");
+      },
+      create: async () => {
+        throw new Error("not implemented");
+      },
+      setEnabled: async () => {
+        throw new Error("not implemented");
+      },
+      delete: async () => {},
     },
     agentToolService: {
       list: async () => [],
+      add: async () => {
+        throw new Error("not implemented");
+      },
+      toggle: async () => {
+        throw new Error("not implemented");
+      },
+      remove: async () => {},
     },
     agentTokenService: {
       listForAgent: async () => [],
+      create: async () => {
+        throw new Error("not implemented");
+      },
+      revoke: async () => null,
     },
     agentPluginService: {
       list: async () => [],
