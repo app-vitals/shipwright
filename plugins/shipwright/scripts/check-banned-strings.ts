@@ -55,6 +55,22 @@ const EXCLUDED_FILENAMES: Set<string> = new Set([
   "check-banned-strings.unit.test.ts",
 ]);
 
+/**
+ * Directory names (basename only) that are skipped entirely during traversal.
+ * These are build outputs, dependency trees, or VCS internals that should
+ * never contain source files requiring the banned-string check.
+ */
+const EXCLUDED_DIRS: Set<string> = new Set([
+  ".git",
+  "node_modules",
+  "worktrees",
+  "dist",
+  ".next",
+  "build",
+  "coverage",
+  ".turbo",
+]);
+
 // ---------------------------------------------------------------------------
 // Core logic
 // ---------------------------------------------------------------------------
@@ -82,8 +98,8 @@ function walkDir(root: string, current: string, hits: Hit[]): void {
   }
 
   for (const entry of entries) {
-    // Skip .git at any depth
-    if (entry === ".git") continue;
+    // Skip excluded directories (build outputs, dependency trees, VCS internals) at any depth
+    if (EXCLUDED_DIRS.has(entry)) continue;
     // Skip the checker script and its test (self-referential by design)
     if (EXCLUDED_FILENAMES.has(entry)) continue;
 
@@ -140,14 +156,14 @@ function scanFile(root: string, filePath: string, hits: Hit[]): void {
 
 function main(): void {
   // Resolve the directory to scan.
-  // Defaults to `plugins/shipwright/` relative to the project root (two levels
-  // up from this script's location: scripts/ → shipwright/ → plugins/ → root).
+  // Defaults to the project root (three levels up from this script's location:
+  // scripts/ → shipwright/ → plugins/ → root).
+  // Pass an explicit path as process.argv[2] to override.
   const scriptDir = import.meta.dirname ?? process.cwd();
   // scripts/ → shipwright/ → plugins/ → project root
   const projectRoot = join(scriptDir, "..", "..", "..");
 
-  const targetDir =
-    process.argv[2] ?? join(projectRoot, "plugins", "shipwright");
+  const targetDir = process.argv[2] ?? projectRoot;
 
   const hits = scanForBannedStrings(targetDir);
 
