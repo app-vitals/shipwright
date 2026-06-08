@@ -25,7 +25,7 @@ import {
   parseAllowSelfReview,
   readAllowSelfReview,
   readReviews,
-  resolveRepos,
+  resolveAllRepos,
   resolveWorkspacePath,
 } from "./check-helpers.ts";
 
@@ -39,6 +39,7 @@ interface PrInfo {
   author: { login: string };
   headRefName: string;
   headRefOid: string;
+  repo?: string;
 }
 
 export interface CommitInfo {
@@ -51,7 +52,7 @@ interface Deps {
   isSelfReviewAllowed: boolean;
   listOpenPrs: (repo: string) => Promise<PrInfo[]>;
   readReviews: () => ReviewEntry[];
-  listPrCommits: (prNumber: number) => Promise<CommitInfo[]>;
+  listPrCommits: (prNumber: number, repo?: string) => Promise<CommitInfo[]>;
 }
 
 // ─── Terminal statuses ────────────────────────────────────────────────────────
@@ -69,9 +70,10 @@ export async function isMergeOnlyUpdate(
   prNumber: number,
   lastReviewedCommit: string,
   deps: Pick<Deps, "listPrCommits">,
+  repo?: string,
 ): Promise<boolean> {
   try {
-    const commits = await deps.listPrCommits(prNumber);
+    const commits = await deps.listPrCommits(prNumber, repo);
     const anchorIndex = commits.findIndex((c) => c.sha === lastReviewedCommit);
     if (anchorIndex === -1) return false;
     const subsequent = commits.slice(anchorIndex + 1);
@@ -138,6 +140,7 @@ export async function run(deps: Deps): Promise<RunResult> {
         pr.number,
         entry.lastReviewedCommit,
         deps,
+        pr.repo,
       );
       if (mergeOnly) continue; // skip: only merge-from-main activity, no real work
       return {
@@ -154,31 +157,41 @@ export async function run(deps: Deps): Promise<RunResult> {
 
 // ─── Production deps ──────────────────────────────────────────────────────────
 
-async function buildProductionDeps(): Promise<Deps> {
+export async function buildProductionDeps(): Promise<Deps> {
   const workspacePath = resolveWorkspacePath();
-  const repos = resolveRepos(workspacePath);
-  const orgRepo = repos[0] ?? "app-vitals/shipwright";
+  const allRepos = resolveAllRepos(workspacePath);
 
   return {
     getCurrentUser,
     isSelfReviewAllowed: readAllowSelfReview(workspacePath),
     listOpenPrs: async (_repo: string) => {
-      return ghJson<PrInfo[]>([
-        "pr",
-        "list",
-        "--state",
-        "open",
-        "--repo",
-        orgRepo,
-        "--json",
-        "number,title,author,headRefName,headRefOid",
-      ]);
+      const allPrs: PrInfo[] = [];
+      for (const repo of allRepos) {
+        const repoPrs = ghJson<PrInfo[]>([
+          "pr",
+          "list",
+          "--state",
+          "open",
+          "--repo",
+          repo,
+          "--json",
+          "number,title,author,headRefName,headRefOid",
+        ]);
+        allPrs.push(...repoPrs.map((pr) => ({ ...pr, repo })));
+      }
+      return allPrs;
     },
     readReviews: () => readReviews(workspacePath),
-    listPrCommits: async (prNumber: number) => {
+    listPrCommits: async (prNumber: number, repo?: string) => {
+      const targetRepo = repo ?? allRepos[0];
+      if (!repo) {
+        process.stderr.write(
+          `warn: listPrCommits called without repo for PR #${prNumber}; falling back to ${targetRepo}\n`,
+        );
+      }
       return ghJson<CommitInfo[]>([
         "api",
-        `repos/${orgRepo}/pulls/${prNumber}/commits`,
+        `repos/${targetRepo}/pulls/${prNumber}/commits`,
         "--paginate",
       ]);
     },
