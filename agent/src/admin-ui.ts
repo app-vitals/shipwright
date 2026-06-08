@@ -31,6 +31,7 @@ import {
 } from "./admin-ui-pages.ts";
 import type { AgentCronJobService } from "./agent-cron-jobs.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
+import { ForbiddenError, UnprocessableEntityError } from "./errors.ts";
 import type { AgentPluginService } from "./agent-plugins.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 import type { AgentToolService } from "./agent-tools.ts";
@@ -104,7 +105,7 @@ export interface AdminUIDeps {
   >;
   agentCronJobService: Pick<
     AgentCronJobService,
-    "list" | "create" | "setEnabled" | "delete"
+    "list" | "create" | "setEnabled" | "delete" | "get"
   >;
   agentToolService: Pick<AgentToolService, "list" | "add" | "toggle" | "remove">;
   agentTokenService: Pick<AgentTokenService, "listForAgent" | "create" | "revoke">;
@@ -356,6 +357,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
     let channel: string | null = null;
     let user: string | null = null;
     let silent = false;
+    let enabled = true;
     let name: string | null = null;
     try {
       const formData = await c.req.formData();
@@ -364,6 +366,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
       channel = formData.get("channel")?.toString() || null;
       user = formData.get("user")?.toString() || null;
       silent = formData.get("silent") === "on" || formData.get("silent") === "true";
+      const enabledVal = formData.get("enabled");
+      // Checkbox: present as "on" when checked, absent (null) when unchecked.
+      // Programmatic callers may send "true"/"false" explicitly.
+      enabled = enabledVal === "on" || enabledVal === "true";
       name = formData.get("name")?.toString() || null;
     } catch {
       return c.redirect(`/admin/agents/${agentId}`, 302);
@@ -378,14 +384,20 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
         channel,
         user,
         silent,
+        enabled,
         name,
       });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to create cron job";
-      return c.redirect(
-        `/admin/agents/${agentId}?error=${encodeURIComponent(msg)}`,
-        302,
-      );
+      if (err instanceof UnprocessableEntityError) {
+        const msg = err.message.toLowerCase();
+        if (msg.includes("invalid cron")) {
+          return c.redirect(`/admin/agents/${agentId}?error=invalid_schedule`, 302);
+        }
+        if (msg.includes("channel") || msg.includes("user") || msg.includes("target")) {
+          return c.redirect(`/admin/agents/${agentId}?error=invalid_target`, 302);
+        }
+      }
+      return c.redirect(`/admin/agents/${agentId}?error=create_failed`, 302);
     }
     return c.redirect(`/admin/agents/${agentId}`, 302);
   });
@@ -412,9 +424,19 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
     const agentId = c.req.param("id");
     const cronId = c.req.param("cronId");
     try {
+      const cron = await agentCronJobService.get(agentId, cronId);
+      if (cron.system) {
+        throw new ForbiddenError("system crons cannot be deleted");
+      }
       await agentCronJobService.delete(agentId, cronId);
-    } catch {
-      // ignore errors — redirect back regardless
+    } catch (err) {
+      if (err instanceof ForbiddenError) {
+        return c.redirect(
+          `/admin/agents/${agentId}?error=${encodeURIComponent(err.message)}`,
+          302,
+        );
+      }
+      // other errors (NotFoundError, etc.) — redirect back silently
     }
     return c.redirect(`/admin/agents/${agentId}`, 302);
   });
@@ -481,11 +503,32 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
     } catch {
       return c.redirect(`/admin/agents/${agentId}`, 302);
     }
+    const agent = await prisma.agent.findUnique({ where: { id: agentId } });
+    if (!agent) {
+      return new Response("Agent not found", { status: 404 });
+    }
     try {
       const { rawToken } = await agentTokenService.create(agentId, label);
-      return c.redirect(
-        `/admin/agents/${agentId}?newToken=${encodeURIComponent(rawToken)}`,
-        302,
+      // Render the page directly (200) rather than redirecting with the token in the URL.
+      // A redirect would expose the raw token in server access logs and browser history.
+      const [envVars, crons, tools, tokens, plugins] = await Promise.all([
+        agentEnvService.getByAgentId(agentId).then((e) => e ?? {}),
+        agentCronJobService.list(agentId),
+        agentToolService.list(agentId),
+        agentTokenService.listForAgent(agentId),
+        agentPluginService.list(agentId),
+      ]);
+      return html(
+        renderAgentDetailPage(
+          agent,
+          envVars,
+          crons,
+          tools,
+          tokens,
+          plugins,
+          ADMIN_USER_NAME,
+          { newToken: rawToken },
+        ),
       );
     } catch {
       return c.redirect(`/admin/agents/${agentId}?error=create_failed`, 302);

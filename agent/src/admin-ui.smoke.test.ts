@@ -112,6 +112,7 @@ function makeMockDeps(): AdminUIDeps {
     },
     agentCronJobService: {
       list: async () => [MOCK_CRON],
+      get: async () => MOCK_CRON,
       create: async () => MOCK_CRON,
       setEnabled: async () => MOCK_CRON,
       delete: async () => {},
@@ -318,6 +319,66 @@ describe("admin UI — cron job mutation routes", () => {
     expect(res.headers.get("Location")).toContain("error=");
   });
 
+  it("POST /admin/agents/:id/crons passes enabled=false to the service when checkbox is unchecked", async () => {
+    let capturedEnabled: boolean | undefined;
+    const deps = makeMockDeps();
+    deps.agentCronJobService = {
+      ...deps.agentCronJobService,
+      create: async (_agentId, input) => {
+        capturedEnabled = input.enabled;
+        return MOCK_CRON;
+      },
+    };
+    const app = createAdminUIApp(deps);
+    // When the checkbox is unchecked, browsers omit the field entirely
+    const body = new URLSearchParams({
+      schedule: "0 * * * *",
+      prompt: "Test prompt",
+      channel: "C123",
+      // enabled field intentionally absent — simulates unchecked checkbox
+    });
+    const res = await app.request(`/admin/agents/${AGENT_ID}/crons`, {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    // When enabled is absent (unchecked), the handler should pass enabled=false
+    expect(capturedEnabled).toBe(false);
+  });
+
+  it("POST /admin/agents/:id/crons passes enabled=true when checkbox is checked", async () => {
+    let capturedEnabled: boolean | undefined;
+    const deps = makeMockDeps();
+    deps.agentCronJobService = {
+      ...deps.agentCronJobService,
+      create: async (_agentId, input) => {
+        capturedEnabled = input.enabled;
+        return MOCK_CRON;
+      },
+    };
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({
+      schedule: "0 * * * *",
+      prompt: "Test prompt",
+      channel: "C123",
+      enabled: "on",
+    });
+    const res = await app.request(`/admin/agents/${AGENT_ID}/crons`, {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    expect(capturedEnabled).toBe(true);
+  });
+
   it("POST /admin/agents/:id/crons/:cronId/delete redirects to agent detail", async () => {
     const app = createAdminUIApp(makeMockDeps());
     const res = await app.request(
@@ -329,6 +390,26 @@ describe("admin UI — cron job mutation routes", () => {
     );
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe(`/admin/agents/${AGENT_ID}`);
+  });
+
+  it("POST /admin/agents/:id/crons/:cronId/delete redirects with error for system crons", async () => {
+    const deps = makeMockDeps();
+    deps.agentCronJobService = {
+      ...deps.agentCronJobService,
+      get: async () => ({ ...MOCK_CRON, system: true }),
+    };
+    const app = createAdminUIApp(deps);
+    const res = await app.request(
+      `/admin/agents/${AGENT_ID}/crons/${CRON_ID}/delete`,
+      {
+        method: "POST",
+        headers: { Cookie: `admin_session=${cookie}` },
+      },
+    );
+    expect(res.status).toBe(302);
+    const location = res.headers.get("Location") ?? "";
+    expect(location).toContain("error=");
+    expect(decodeURIComponent(location)).toContain("system crons cannot be deleted");
   });
 
   it("POST /admin/agents/:id/crons/:cronId/toggle redirects to agent detail", async () => {
@@ -432,7 +513,7 @@ describe("admin UI — token mutation routes", () => {
     cookie = await makeSessionCookie();
   });
 
-  it("POST /admin/agents/:id/tokens creates token and redirects with ?newToken= param", async () => {
+  it("POST /admin/agents/:id/tokens creates token and renders 200 with token inline", async () => {
     const app = createAdminUIApp(makeMockDeps());
     const body = new URLSearchParams({ label: "my-token" });
     const res = await app.request(`/admin/agents/${AGENT_ID}/tokens`, {
@@ -443,10 +524,11 @@ describe("admin UI — token mutation routes", () => {
         Cookie: `admin_session=${cookie}`,
       },
     });
-    expect(res.status).toBe(302);
-    const location = res.headers.get("Location") ?? "";
-    expect(location).toContain(`/admin/agents/${AGENT_ID}`);
-    expect(location).toContain("newToken=");
+    // Token is rendered in a 200 HTML response — not redirected with ?newToken= in the URL,
+    // which would expose the raw token in server access logs and browser history.
+    expect(res.status).toBe(200);
+    const responseHtml = await res.text();
+    expect(responseHtml).toContain("sw_raw123456");
   });
 
   it("POST /admin/agents/:id/tokens/:tokenId/revoke redirects to agent detail", async () => {
