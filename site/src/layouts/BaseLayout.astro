@@ -65,7 +65,8 @@ const canonicalURL = new URL(Astro.url.pathname, Astro.site);
     >
     </div>
 
-    <main class="sw-container relative" style="max-width: 72rem;">
+    <!-- .sw-container already caps width at --sw-layout-max-width (72rem). -->
+    <main class="sw-container relative">
       <slot />
     </main>
   </body>
