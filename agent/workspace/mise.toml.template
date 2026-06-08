@@ -1,0 +1,12 @@
+# mise.toml — declare language runtimes for this agent
+# See https://mise.jdx.dev for supported tools and versions
+#
+# Examples:
+#   python = "3.12"
+#   ruby = "3.3"
+#   go = "1.22"
+#
+# Run `mise install` to apply changes.
+
+[tools]
+# add tools here
