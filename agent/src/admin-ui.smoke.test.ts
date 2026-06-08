@@ -408,8 +408,7 @@ describe("admin UI — cron job mutation routes", () => {
     );
     expect(res.status).toBe(302);
     const location = res.headers.get("Location") ?? "";
-    expect(location).toContain("error=");
-    expect(decodeURIComponent(location)).toContain("system crons cannot be deleted");
+    expect(location).toContain("error=system_cron");
   });
 
   it("POST /admin/agents/:id/crons/:cronId/toggle redirects to agent detail", async () => {

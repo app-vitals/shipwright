@@ -276,6 +276,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
     invalid_schedule: "Invalid cron schedule expression.",
     invalid_target:
       "Invalid delivery target — set channel or user (or enable silent mode).",
+    system_cron: "System crons cannot be deleted.",
   };
 
   app.get("/admin/agents/:id", requireAuth, async (c) => {
@@ -432,7 +433,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
     } catch (err) {
       if (err instanceof ForbiddenError) {
         return c.redirect(
-          `/admin/agents/${agentId}?error=${encodeURIComponent(err.message)}`,
+          `/admin/agents/${agentId}?error=system_cron`,
           302,
         );
       }
