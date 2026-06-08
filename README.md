@@ -2,7 +2,7 @@
 
 [![release](https://img.shields.io/github/v/release/app-vitals/shipwright?sort=semver&label=release)](https://github.com/app-vitals/shipwright/releases)
 
-**A Claude Code plugin toolchain for the full delivery loop — spec → plan → execute → review → deploy.** Plus a metrics dashboard and a reference agent for running it autonomously.
+**A Claude Code plugin toolchain for the full delivery loop — spec → plan → execute → review → deploy.** Plus a metrics dashboard and a Shipwright agent for running it autonomously.
 
 > 🚧 **Early development.** Shipwright is being built out in this standalone repository and isn't ready for general installation yet. Follow progress in the [issues](https://github.com/app-vitals/shipwright/issues).
 
@@ -24,7 +24,7 @@ It's repo-agnostic: install the plugin and point it at your own repository.
 |---|---|---|
 | **Plugin** | The toolchain you `/plugin install` — planning, queue-based execution, review, a test-readiness pipeline, and deploy commands. | 🔨 Building (Phase A) |
 | **Metrics dashboard** | A stateless service that reads pipeline analytics (task throughput, CI first-pass rate, review verdicts, estimation accuracy) and renders a dashboard. | 📋 Planned (Phase B) |
-| **Reference agent** | A thin autonomous runner that drains the task queue on a schedule — pick → build → ship a PR → forward metrics. | 📋 Planned (Phase C) |
+| **Shipwright agent** | A thin autonomous runner that drains the task queue on a schedule — pick → build → ship a PR → forward metrics. | 📋 Planned (Phase C) |
 
 ## The workflow
 
@@ -41,7 +41,7 @@ Tasks are tracked as GitHub Issues, so the queue lives where your team already w
 
 ## Project status
 
-Shipwright is being assembled here in three phases — plugin, then metrics dashboard, then reference agent — with merge-blocking CI gates and a single local task runner from the start. See the [`shipwright-oss` milestone](https://github.com/app-vitals/shipwright/milestones) and the [issues](https://github.com/app-vitals/shipwright/issues) for the live roadmap.
+Shipwright is being assembled here in three phases — plugin, then metrics dashboard, then Shipwright agent — with merge-blocking CI gates and a single local task runner from the start. See the [`shipwright-oss` milestone](https://github.com/app-vitals/shipwright/milestones) and the [issues](https://github.com/app-vitals/shipwright/issues) for the live roadmap.
 
 Installation and local-development instructions will land here as the toolchain becomes runnable.
 

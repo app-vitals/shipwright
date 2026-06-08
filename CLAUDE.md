@@ -4,7 +4,7 @@ Guidance for Claude Code (claude.ai/code) and contributors working in this repos
 
 ## What Shipwright is
 
-Shipwright is a **Claude Code plugin toolchain for the full delivery loop — spec → plan → execute → review → deploy** — plus a metrics dashboard and a reference agent. You install the plugin into Claude Code and drive planning, queue-based execution, policy-controlled review, a test-readiness pipeline, and autonomous deploy against your own repository.
+Shipwright is a **Claude Code plugin toolchain for the full delivery loop — spec → plan → execute → review → deploy** — plus a metrics dashboard and a Shipwright agent. You install the plugin into Claude Code and drive planning, queue-based execution, policy-controlled review, a test-readiness pipeline, and autonomous deploy against your own repository.
 
 > 🚧 **Early development.** The toolchain is being built out in this repository and isn't ready for general installation yet. Track progress in the [issues](https://github.com/app-vitals/shipwright/issues).
 
@@ -16,7 +16,7 @@ Three artifacts, sequenced so the repo is useful at the end of each phase:
 |---|---|---|
 | **A** | **Plugin** | The toolchain users `/plugin install` (commands, skills, agents, scripts). Repo-agnostic — runs its planning/execution/review/deploy commands against any repo. |
 | **B** | **Metrics dashboard** | A stateless Hono service: PostHog-backed JSON endpoints + a server-rendered dashboard (task throughput, CI first-pass rate, review verdicts, estimation accuracy). No database. |
-| **C** | **Reference agent** | A thin, purpose-built autonomous runner: pick the next ready task → build → ship a PR → forward metrics, on a schedule or as a one-shot. |
+| **C** | **Shipwright agent** | A thin, purpose-built autonomous runner: pick the next ready task → build → ship a PR → forward metrics, on a schedule or as a one-shot. |
 
 Two cross-cutting concerns span all three:
 - **CI gates** (`.github/workflows/ci.yml`) — lint → typecheck → `bun test` → secret-scan → task-store doctor (+ e2e/agent jobs), each merge-blocking, each with a local-parity command.
