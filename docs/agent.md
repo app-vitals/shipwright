@@ -80,7 +80,7 @@ All child models cascade-delete with their `Agent`.
 |---|---|
 | `agent/src/api.ts` | Runtime API factory `createAgentRuntimeApp()` (DI for services). |
 | `agent/src/admin-api.ts` | Admin CRUD factory `createAdminApp()` + session-auth middleware. |
-| `agent/src/admin-ui.ts` | Admin UI factory `createAdminUIApp()` — server-rendered Hono app (login, agent list/detail, Slack provisioning). |
+| `agent/src/admin-ui.ts` | Admin UI factory `createAdminUIApp()` — server-rendered Hono app (login, agent list/detail, cron/tool/token mutations, Slack provisioning). |
 | `agent/src/admin-ui-pages.ts` | Page rendering functions (`renderLoginPage`, `renderAgentsPage`, `renderAgentDetailPage`, `renderProvision*`). |
 | `agent/src/admin-ui-styles.ts` | Shared CSS helpers (`baseStyles`, `escapeHtml`, `renderAdminToolbar`). |
 | `agent/src/slack-provisioning-client.ts` | `SlackProvisioningClient` interface + `HttpSlackProvisioningClient` — drives the one-time Slack app creation flow. |
