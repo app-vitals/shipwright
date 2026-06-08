@@ -1,0 +1,30 @@
+<!doctype html>
+<!--
+  Shipwright Harness — social / OG card, fixed 1280×640 (BRAND.md §4 spec).
+  Screenshot the .og element at 1280×640 to produce brand/assets/og/*.png.
+  Styling from brand.css; replace {{...}}. 80px safe margin (the .pad inset).
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Shipwright Harness — OG</title>
+    <link rel="stylesheet" href="../brand.css" />
+    <style>
+      .og { position: relative; width: 1280px; height: 640px; overflow: hidden; background: var(--sw-color-bg-base); }
+      .pad { position: relative; z-index: 1; padding: 80px; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; gap: 20px; }
+      .og h1 { font-size: 72px; line-height: 1.05; max-width: 980px; }
+      .og .sw-label { font-size: 20px; }
+    </style>
+  </head>
+  <body>
+    <div class="og">
+      <div class="sw-orb sw-orb-brand" style="width: 560px; height: 560px; top: -160px; right: -120px;"></div>
+      <div class="sw-orb sw-orb-support" style="width: 360px; height: 360px; bottom: -140px; left: -100px;"></div>
+      <div class="pad">
+        <p class="sw-label">Shipwright Harness · Built on Claude Code · MIT</p>
+        <h1>The open-source autonomous <span class="sw-gradient-text">delivery agent</span> for Claude Code.</h1>
+        <p class="sw-editorial" style="font-size: 26px;">{{Deploy it to your cloud. The own-it alternative to closed agents.}}</p>
+      </div>
+    </div>
+  </body>
+</html>
