@@ -1,0 +1,9 @@
+# Root Bun config.
+#
+# The site/ subproject is a self-contained Astro project with its own
+# Playwright smoke tests named *.spec.ts (Playwright convention). Bun's test
+# runner would otherwise discover those *.spec.ts files and fail trying to run
+# them with the Bun runner. Exclude site/ from the root `bun test` scan so the
+# Astro site stays fully isolated from the monorepo test suite.
+[test]
+pathIgnorePatterns = ["**/site/**"]

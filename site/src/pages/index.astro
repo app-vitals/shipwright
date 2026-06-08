@@ -1,0 +1,23 @@
+---
+// Minimal on-brand placeholder home page (SWW-1.1).
+// Proves the build, fonts, theme, and dark-premium base layout work.
+// The full Hero/Body/Footer sections land in later tasks (SWW-2.x).
+import BaseLayout from "../layouts/BaseLayout.astro";
+
+const tagline = "The open-source autonomous delivery agent for Claude Code.";
+const install = "/plugin install shipwright@app-vitals/shipwright";
+---
+
+<BaseLayout title="Shipwright Harness" description={tagline}>
+  <section
+    class="relative z-10 flex min-h-screen flex-col justify-center py-24"
+  >
+    <p class="sw-label">Shipwright Harness</p>
+    <h1 class="sw-display sw-gradient-text max-w-3xl">{tagline}</h1>
+    <p class="sw-editorial mt-2 max-w-xl text-lg">
+      A deployable cloud agent and the autonomous coding system that powers it —
+      running on your own codebase.
+    </p>
+    <pre class="sw-code mt-8 w-fit"><code>{install}</code></pre>
+  </section>
+</BaseLayout>
