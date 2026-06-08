@@ -1,19 +1,8 @@
-/**
- * agent/src/shipwright-config-client.ts
- *
- * Client interface and HTTP implementation for fetching agent config from the
- * Shipwright server's runtime API (GET /agents/:id/config).
- */
-
 import type { AgentConfigResponse } from "./api.ts";
-
-// ─── Interface ────────────────────────────────────────────────────────────────
 
 export interface ShipwrightConfigClient {
   getAgentConfig(agentId: string): Promise<AgentConfigResponse>;
 }
-
-// ─── HTTP implementation ──────────────────────────────────────────────────────
 
 export class HttpShipwrightConfigClient implements ShipwrightConfigClient {
   private readonly apiUrl: string;
