@@ -27,7 +27,7 @@ tasks:
       - bun test
 
   check-strings:
-    desc: Check plugin for banned strings (confidential identifiers)
+    desc: Scan entire repo for banned strings (confidential identifiers, client names)
     cmds:
       - bun plugins/shipwright/scripts/check-banned-strings.ts
 

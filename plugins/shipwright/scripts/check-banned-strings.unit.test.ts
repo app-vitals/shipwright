@@ -167,4 +167,57 @@ describe("scanForBannedStrings", () => {
     expect(hits[0].file).not.toContain(tmpDir);
     expect(hits[0].file).toBe("src/config.ts");
   });
+
+  // Repo-root scope tests — verifies the scanner catches banned strings anywhere
+  // in the tree (not just under plugins/), matching the expanded default scope.
+
+  test("detects banned string in agent-style deep path (simulating agent/ package)", () => {
+    writeFile(
+      tmpDir,
+      "agent/src/posthog.unit.test.ts",
+      'const SAMPLE = JSON.stringify({ repo: "app-vitals/vitals-os" });\n',
+    );
+    const hits = scanForBannedStrings(tmpDir);
+    expect(hits).toHaveLength(1);
+    expect(hits[0].pattern).toBe("app-vitals/vitals-os");
+    expect(hits[0].file).toBe("agent/src/posthog.unit.test.ts");
+  });
+
+  test("detects banned string in metrics-style deep path (simulating metrics/ package)", () => {
+    writeFile(
+      tmpDir,
+      "metrics/src/secrets.ts",
+      "const env = 'vitals-os-prod';\n",
+    );
+    const hits = scanForBannedStrings(tmpDir);
+    expect(hits).toHaveLength(1);
+    expect(hits[0].pattern).toBe("vitals-os-prod");
+    expect(hits[0].file).toBe("metrics/src/secrets.ts");
+  });
+
+  test("catches banned strings across multiple packages in a single scan", () => {
+    writeFile(
+      tmpDir,
+      "plugins/shipwright/config.ts",
+      "const a = 'app-vitals/marketplace';\n",
+    );
+    writeFile(
+      tmpDir,
+      "agent/src/crons.ts",
+      "const b = 'app-vitals/vitals-os';\n",
+    );
+    writeFile(
+      tmpDir,
+      "metrics/src/secrets.ts",
+      "const c = 'vitals-os-prod';\n",
+    );
+    const hits = scanForBannedStrings(tmpDir);
+    expect(hits).toHaveLength(3);
+    const patterns = hits.map((h) => h.pattern).sort();
+    expect(patterns).toEqual([
+      "app-vitals/marketplace",
+      "app-vitals/vitals-os",
+      "vitals-os-prod",
+    ]);
+  });
 });

@@ -32,7 +32,7 @@ task test         # bun test            (single file: bun test path/to/file.test
 task lint         # bunx biome lint .
 task format       # bunx biome format --write .
 task typecheck    # bun run --filter='*' typecheck
-task check-strings  # scan the plugin for banned/confidential identifiers
+task check-strings  # scan entire repo for banned/confidential identifiers (client names, internal infra IDs)
 ```
 
 Database (agent only):

@@ -140,14 +140,13 @@ function scanFile(root: string, filePath: string, hits: Hit[]): void {
 
 function main(): void {
   // Resolve the directory to scan.
-  // Defaults to `plugins/shipwright/` relative to the project root (two levels
-  // up from this script's location: scripts/ → shipwright/ → plugins/ → root).
-  const scriptDir = import.meta.dirname ?? process.cwd();
   // scripts/ → shipwright/ → plugins/ → project root
+  const scriptDir = import.meta.dirname ?? process.cwd();
   const projectRoot = join(scriptDir, "..", "..", "..");
 
-  const targetDir =
-    process.argv[2] ?? join(projectRoot, "plugins", "shipwright");
+  // Default to repo root so all packages (plugins/, metrics/, agent/, etc.)
+  // are covered by the pre-public audit gate.
+  const targetDir = process.argv[2] ?? projectRoot;
 
   const hits = scanForBannedStrings(targetDir);
 

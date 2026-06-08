@@ -21,7 +21,7 @@ const SAMPLE_ENTRY = JSON.stringify({
   task: "T-009",
   title: "Update test.yml",
   session: "test-readiness",
-  repo: "app-vitals/vitals-os",
+  repo: "acme-org/my-project",
   estimated_h: null,
   pr: 1031,
   files_changed: 1,
@@ -43,7 +43,7 @@ const SAMPLE_ENTRY_2 = JSON.stringify({
   task: "T-010",
   title: "Add canary stub",
   session: "test-readiness",
-  repo: "app-vitals/vitals-os",
+  repo: "acme-org/my-project",
   pr: 1032,
   ts: "2026-05-13T06:00:00.000Z",
 });
@@ -195,7 +195,7 @@ describe("forwardNewMetrics", () => {
     expect(body.batch).toHaveLength(1);
     expect(body.batch[0].event).toBe("shipwright_task_complete");
     expect(body.batch[0].distinct_id).toBe(
-      "shipwright/app-vitals/vitals-os/T-009",
+      "shipwright/acme-org/my-project/T-009",
     );
     expect(body.batch[0].properties.task).toBe("T-009");
     rmSync(ws, { recursive: true });
@@ -213,7 +213,7 @@ describe("forwardNewMetrics", () => {
       (mockFetch.mock.calls[0] as [string, RequestInit])[1].body as string,
     ) as { batch: { properties: { $insert_id: string } }[] };
     expect(body.batch[0].properties.$insert_id).toBe(
-      "shipwright_task_complete/app-vitals/vitals-os/T-009",
+      "shipwright_task_complete/acme-org/my-project/T-009",
     );
     rmSync(ws, { recursive: true });
   });
