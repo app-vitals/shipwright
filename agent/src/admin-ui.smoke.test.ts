@@ -386,6 +386,23 @@ describe("admin UI — tool mutation routes", () => {
     expect(res.headers.get("Location")).toBe(`/admin/agents/${AGENT_ID}`);
   });
 
+  it("POST /admin/agents/:id/tools with missing pattern redirects with error", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const body = new URLSearchParams({ pattern: "" });
+    const res = await app.request(`/admin/agents/${AGENT_ID}/tools`, {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(
+      `/admin/agents/${AGENT_ID}?error=missing_fields`,
+    );
+  });
+
   it("POST /admin/agents/:id/tools/:toolId/delete redirects to agent detail", async () => {
     const app = createAdminUIApp(makeMockDeps());
     const res = await app.request(
