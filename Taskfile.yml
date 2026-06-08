@@ -41,6 +41,25 @@ tasks:
       - task: secret-scan
       - task: doctor
 
+  api:
+    desc: Start the metrics dashboard in offline mode → http://localhost:3460/dashboard
+    env:
+      METRICS_OFFLINE: "true"
+    cmds:
+      - bun metrics/src/server.ts
+
+  ui:
+    desc: Start the metrics dashboard in offline mode (alias for task api) → http://localhost:3460/dashboard
+    env:
+      METRICS_OFFLINE: "true"
+    cmds:
+      - bun metrics/src/server.ts
+
+  dev:
+    desc: Dev supervisor — starts metrics in offline mode; Ctrl-C kills all children → http://localhost:3460/dashboard
+    cmds:
+      - bun scripts/dev.ts
+
   db:provision:
     desc: Create the agent database (idempotent — safe to re-run)
     cmds:

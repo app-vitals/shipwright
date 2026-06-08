@@ -51,7 +51,13 @@ cd site && npm test         # playwright test (*.spec.ts)
 
 > `bunfig.toml` excludes `site/**` from the root `bun test` scan — Playwright's `*.spec.ts` files would otherwise crash Bun's runner. Keep site tests as `*.spec.ts` to stay isolated.
 
-There is **no `task dev`/`task api`/`task agent`** yet — services are started directly via their own entrypoints. Don't assume aggregate run tasks exist; check `Taskfile.yml`.
+Run the metrics service locally:
+
+```bash
+task api        # start metrics dashboard in offline mode → http://localhost:3460/dashboard
+task ui         # same as task api (API and UI are one process)
+task dev        # dev supervisor: starts metrics + Ctrl-C kills all children
+```
 
 ## Before you commit — this repository is going public
 
