@@ -30,6 +30,10 @@ Mounted at `/agents/*`. The harness polls this every ~60s. Auth: **Bearer token*
 | GET | `/agents/:id/config` | Agent config bundle: decrypted `env`, `allowedTools`, and installed `plugins` (with derived marketplace). `404` if the agent doesn't exist. |
 | GET | `/agents/:id/crons` | Enabled cron jobs for the agent. `404` if the agent doesn't exist. |
 
+### Dev chat API (`chat.ts`) — dev-only
+
+Mounted at `POST /chat` only when `SHIPWRIGHT_DEV_CHAT=true`. **Not mounted in production.** No auth — intended for local developer use only. Accepts `{ message: string, session?: string }` and returns `{ result: string, sessionId: string }`. The `sessionId` is a UUID continuity handle; pass it back as `session` to continue the same conversation. `checkDevChatProductionGuard()` emits a startup warning if `SHIPWRIGHT_DEV_CHAT=true` is detected alongside a production config.
+
 ### Admin CRUD API (`admin-api.ts`) — human-facing
 
 Mounted at `/admin/api/*`. Auth: **session cookie** `admin_session` (httpOnly JWT verified with `SHIPWRIGHT_SESSION_SECRET`; absent/invalid → `401`).
@@ -67,6 +71,7 @@ All child models cascade-delete with their `Agent`.
 | `SHIPWRIGHT_INTERNAL_API_KEY` | ✅ (entrypoint + runtime API) | Bearer token for the config fetch at startup and for `/agents/*`. Also settable via `--api-key`. |
 | `AGENT_HOME` | entrypoint | Persistent storage root (default: `~/.shipwright-agent`). Mount a PVC here in Kubernetes so mise caches, workspace files, and `~/.claude` survive pod restarts. |
 | `PORT` | server | Hono server port (default: `3000`). |
+| `SHIPWRIGHT_DEV_CHAT` | dev chat | Set to `true` to mount the dev-only `POST /chat` endpoint. Default: unset (endpoint not mounted). Must not be set to `true` in a production deployment. |
 | `SHIPWRIGHT_SESSION_SECRET` | admin API | Secret for verifying the `admin_session` JWT cookie. |
 | `SHIPWRIGHT_ENCRYPTION_KEY` | secrets at rest | 64-char hex (32 bytes) for AES-256-GCM. **If unset, secrets are stored in plain text** (logged warning) — set it in any real deployment. |
 | `GH_APP_ID` | GitHub App auth | GitHub App ID (integer as string). Required when using the App auth path. |
@@ -90,7 +95,9 @@ All child models cascade-delete with their `Agent`.
 | `agent/src/entrypoint-main.ts` | Production CLI entry point — wires real deps and calls `runEntrypoint()`. Invoked by the Dockerfile `ENTRYPOINT`. |
 | `agent/src/entrypoint.ts` | Container startup sequence (`runEntrypoint()`) — dependency-injected for testability. Validates vars, fetches config, applies env, symlinks `~/.claude`, runs GitHub auth + mise + plugin install, then spawns the server. |
 | `agent/src/cli-args.ts` | CLI argument parsing (`parseCliArgs()`) — `--agent-id`, `--api-url`, `--api-key` flags with env var fallbacks. Pure, no I/O. |
-| `agent/src/run-agent.ts` | Composes all sub-apps into a single Hono root app (`createComposedApp(deps: ComposedAppDeps)`). Exports `PrismaLike` and `ComposedAppDeps` for test injection. `startServer()` wires real deps and calls `createComposedApp`; invoked by `entrypoint.ts` after all environment setup is complete. |
+| `agent/src/run-agent.ts` | Composes all sub-apps into a single Hono root app (`createComposedApp(deps: ComposedAppDeps)`). Exports `PrismaLike` and `ComposedAppDeps` for test injection. `ComposedAppDeps` includes optional `devChat?: boolean` and `runner?: ChatRunner` fields that gate the `/chat` surface. `startServer()` wires real deps and calls `createComposedApp`; invoked by `entrypoint.ts` after all environment setup is complete. |
+| `agent/src/chat.ts` | Dev-only `POST /chat` Hono app factory (`createChatApp({ runner })`). Also exports `checkDevChatProductionGuard(env)` — returns `{ ok, reason }` and is called at startup to warn if `SHIPWRIGHT_DEV_CHAT=true` is set in a production environment. |
+| `agent/src/check-dev-chat-guard.ts` | CLI guard script (`task doctor`). Calls `checkDevChatProductionGuard()` and exits `1` with a descriptive message if the production guard fails. Safe to run in CI. |
 | `agent/src/shipwright-config-client.ts` | `ShipwrightConfigClient` interface + `HttpShipwrightConfigClient` (real HTTP) + `RecordedShipwrightConfigClient` (cassette double for tests). |
 | `agent/src/setup.ts` | Workspace bootstrapping — directory scaffolding, identity-file seeding, plugin installation, and mise startup. Safe to call on every agent startup (idempotent). |
 | `admin/src/crypto.ts` / `token-crypto.ts` | AES-256-GCM + token hashing helpers. |
