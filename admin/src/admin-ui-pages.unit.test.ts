@@ -335,15 +335,17 @@ describe("renderAgentDetailPage — env vars", () => {
     expect(html).toContain("DB_HOST");
   });
 
-  test("env value is rendered (truncated if long)", () => {
+  test("env value is masked — shows •••••••• not the raw value", () => {
     const html = render({ SHORT: "abc" });
-    expect(html).toContain("abc");
+    expect(html).toContain("••••••••");
+    expect(html).not.toContain("abc");
   });
 
-  test("long env value is truncated with ellipsis", () => {
+  test("long env value is masked — not shown even when long", () => {
     const longVal = "x".repeat(45);
     const html = render({ LONG: longVal });
-    expect(html).toContain("…");
+    expect(html).toContain("••••••••");
+    expect(html).not.toContain(longVal.slice(0, 40));
   });
 
   test("delete form action points to /admin/agents/{agentId}/envs/delete", () => {
@@ -370,10 +372,11 @@ describe("renderAgentDetailPage — env vars", () => {
     expect(html).toContain("&lt;script&gt;");
   });
 
-  test("XSS: env value is escaped", () => {
+  test("XSS: env value is masked — raw value never reaches HTML", () => {
     const html = render({ SAFE_KEY: '<img src=x onerror=alert(1)>' });
     expect(html).not.toContain("<img src=x");
-    expect(html).toContain("&lt;img");
+    expect(html).not.toContain("onerror=alert");
+    expect(html).toContain("••••••••");
   });
 });
 

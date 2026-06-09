@@ -221,7 +221,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
 
   app.get("/admin/login", (c) => {
     const error = c.req.query("error") ?? undefined;
-    return html(renderLoginPage({ error }));
+    const returnTo = c.req.query("returnTo") ?? undefined;
+    return html(renderLoginPage({ error, returnTo }));
   });
 
   app.get("/auth/google", (c) => {

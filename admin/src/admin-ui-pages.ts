@@ -63,10 +63,18 @@ export interface PluginItem {
 
 // ─── Login page ───────────────────────────────────────────────────────────────
 
-export function renderLoginPage(opts?: { error?: string }): string {
+export function renderLoginPage(opts?: {
+  error?: string;
+  returnTo?: string;
+}): string {
   const errorHtml = opts?.error
     ? `<div class="alert alert-error">${escapeHtml(opts.error)}</div>`
     : "";
+
+  const googleHref =
+    opts?.returnTo
+      ? `/auth/google?returnTo=${encodeURIComponent(opts.returnTo)}`
+      : "/auth/google";
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -82,7 +90,7 @@ export function renderLoginPage(opts?: { error?: string }): string {
       <h1 class="login-title">Shipwright Admin</h1>
       <p class="login-subtitle">Sign in to manage your agents.</p>
       ${errorHtml}
-      <a href="/auth/google" class="btn btn-primary" style="width:100%;justify-content:center;text-decoration:none">Sign in with Google</a>
+      <a href="${googleHref}" class="btn btn-primary" style="width:100%;justify-content:center;text-decoration:none">Sign in with Google</a>
     </div>
   </div>
 </body>
@@ -162,9 +170,9 @@ export function renderAgentDetailPage(
       ? `<tr><td colspan="3" class="empty-state">No env vars set.</td></tr>`
       : Object.entries(envVars)
           .map(
-            ([k, v]) => `<tr>
+            ([k]) => `<tr>
       <td class="mono">${escapeHtml(k)}</td>
-      <td class="mono" style="color:#6b7280">${escapeHtml(v.length > 40 ? `${v.slice(0, 40)}…` : v)}</td>
+      <td class="mono" style="color:#6b7280">••••••••</td>
       <td>
         <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/envs/delete" style="display:inline">
           <input type="hidden" name="key" value="${escapeHtml(k)}" />
