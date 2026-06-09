@@ -20,7 +20,8 @@ Auto-detect the project toolchain (run once, reuse throughout). Skip this step u
 
 ```bash
 PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | sort -V | tail -1 | xargs dirname 2>/dev/null)
-bun "$PLUGIN_SCRIPTS/task_store.ts" query --status in_progress
+CURRENT_USER=$(gh api graphql -f "query=query{viewer{login}}" --jq '.data.viewer.login' 2>/dev/null)
+bun "$PLUGIN_SCRIPTS/task_store.ts" query --status in_progress ${CURRENT_USER:+--assignee "$CURRENT_USER"}
 ```
 
 If the result is a non-empty array, use the first task returned. The Step 2 orphan check will clean up any stale branch/PR from the prior session before restarting. Print:
@@ -35,7 +36,8 @@ Record `task_started_at` (current ISO timestamp) for metrics.
 
 ```bash
 PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | sort -V | tail -1 | xargs dirname 2>/dev/null)
-bun "$PLUGIN_SCRIPTS/task_store.ts" query --ready
+CURRENT_USER=$(gh api graphql -f "query=query{viewer{login}}" --jq '.data.viewer.login' 2>/dev/null)
+bun "$PLUGIN_SCRIPTS/task_store.ts" query --ready ${CURRENT_USER:+--assignee "$CURRENT_USER"}
 ```
 
 The command returns `pending` shipwright tasks whose dependencies are all satisfied, sorted by `addedAt`. Pick the first result.
