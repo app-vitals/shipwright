@@ -328,11 +328,16 @@ export async function startServer(opts?: { port?: number }): Promise<void> {
 
   const slackClient = new HttpSlackProvisioningClient();
 
-  // Build the runner for the dev chat endpoint (only wired when devChat is true)
+  // Build the runner for the dev chat endpoint (only wired when devChat is true).
+  // Pass an in-memory sessions store so Claude sessions are resumed across calls.
   let chatRunner: Runner | undefined;
   if (devChat) {
     const { createRunClaude } = await import("./claude.ts");
-    chatRunner = createRunClaude();
+    const chatSessionMap = new Map<string, string>();
+    chatRunner = createRunClaude(undefined, {
+      get: (key) => chatSessionMap.get(key),
+      set: (key, id) => { chatSessionMap.set(key, id); },
+    });
   }
 
   const app = createComposedApp({

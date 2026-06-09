@@ -15,8 +15,8 @@
  *   - Response body: { result: string, sessionId: string }
  *   - `session` in the request is the chat-level session key (a UUID).
  *     If absent, a fresh UUID is generated.
- *   - The in-memory Map<sessionKey, claudeSessionId> stores the Claude internal
- *     session ID for continuation — never exposed in the response.
+ *   - Claude session resumption is handled by the injected runner's sessions
+ *     store (passed to createRunClaude in run-agent.ts startServer).
  *   - The `sessionId` in the response is always the chat-level session key
  *     (the UUID), which the caller passes back on the next request.
  */
@@ -62,14 +62,11 @@ export function checkDevChatGuard(
 /**
  * Create the dev chat Hono sub-app.
  *
- * In-memory Map tracks chat sessionKey → Claude internal sessionId.
- * This Map lives for the lifetime of the app instance.
+ * Claude session resumption is handled by the runner's injected sessions store.
+ * The chat-level sessionKey (UUID) is the handle exposed to callers.
  */
 export function createChatApp(deps: ChatAppDeps): Hono {
   const { runner } = deps;
-
-  // chat sessionKey (UUID) → Claude internal session ID
-  const claudeSessions = new Map<string, string>();
 
   const app = new Hono();
 
@@ -95,13 +92,7 @@ export function createChatApp(deps: ChatAppDeps): Hono {
     const sessionKey =
       typeof session === "string" && session.length > 0 ? session : randomUUID();
 
-    // Call runner with the chat-level session key
     const output = await runner(message, sessionKey);
-
-    // Store the Claude internal session ID for future continuation
-    if (output.sessionId) {
-      claudeSessions.set(sessionKey, output.sessionId);
-    }
 
     // Return result + chat-level session key (NOT the Claude internal session ID)
     return c.json({ result: output.result, sessionId: sessionKey });
