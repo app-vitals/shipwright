@@ -80,13 +80,13 @@ describe("composed app — /agents/* (runtime API)", () => {
 // ─── Admin UI routes (/admin/*) ───────────────────────────────────────────────
 
 describe("composed app — /admin/* (admin UI)", () => {
-  it("GET /admin/login returns 200 with HTML login form", async () => {
+  it("GET /admin/login returns 200 with Sign in with Google button (no password form)", async () => {
     const app = createComposedApp(makeMockDeps());
     const res = await app.request("/admin/login");
     expect(res.status).toBe(200);
     const html = await res.text();
-    expect(html).toContain("<form");
-    expect(html).toContain('type="password"');
+    expect(html).toContain("Sign in with Google");
+    expect(html).not.toContain('type="password"');
   });
 
   it("GET /admin/agents without session cookie redirects to /admin/login", async () => {
