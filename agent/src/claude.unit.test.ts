@@ -347,7 +347,9 @@ describe("runClaude", () => {
 
   test("throws ClaudeTimeoutError when process exceeds timeoutMs", async () => {
     const proc = hangingProc();
-    const mockSpawnTimeout = mock(() => proc as ReturnType<typeof Bun.spawn>);
+    const mockSpawnTimeout = mock(
+      () => proc as unknown as ReturnType<typeof Bun.spawn>,
+    );
     const runClaudeWithTimeout = createRunClaude(
       mockSpawnTimeout as typeof Bun.spawn,
       testSessions,
@@ -368,7 +370,9 @@ describe("runClaude", () => {
 
   test("throws ClaudeTimeoutError on stale-session timeout and does not retry (spawn called once)", async () => {
     const proc = hangingProc();
-    const mockSpawnTimeout = mock(() => proc as ReturnType<typeof Bun.spawn>);
+    const mockSpawnTimeout = mock(
+      () => proc as unknown as ReturnType<typeof Bun.spawn>,
+    );
 
     mockGetSession.mockClear();
     mockSetSession.mockClear();
@@ -461,8 +465,8 @@ describe("stale session fallback", () => {
     expect(mockSpawn).toHaveBeenCalledTimes(2);
 
     // Verify first call had -r, second did not
-    const [firstCmd] = mockSpawn.mock.calls[0] as [string[]];
-    const [secondCmd] = mockSpawn.mock.calls[1] as [string[]];
+    const [firstCmd] = mockSpawn.mock.calls[0] as unknown as [string[]];
+    const [secondCmd] = mockSpawn.mock.calls[1] as unknown as [string[]];
     expect(firstCmd).toContain("-r");
     expect(secondCmd).not.toContain("-r");
   });
@@ -535,7 +539,7 @@ describe("stale session fallback", () => {
     await runClaude("my question", "chan:ts");
 
     // Second call (fresh) should have raw message only
-    const [secondCmd] = mockSpawn.mock.calls[1] as [string[]];
+    const [secondCmd] = mockSpawn.mock.calls[1] as unknown as [string[]];
     const lastArg = secondCmd[secondCmd.length - 1];
     expect(lastArg).toBe("my question");
   });
