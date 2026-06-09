@@ -52,6 +52,16 @@ Mounted at `/chat`. **DEFAULT-DENY:** only registered when `SHIPWRIGHT_DEV_CHAT=
 |---|---|---|---|
 | POST | `/chat` | none | Send a message to the Claude runner. Body: `{ message: string, session?: string }`. Returns `{ result: string, sessionId?: string }`. Successive calls with the same `session` resume the same conversation. |
 
+**TUI client (`scripts/chat.ts`):** A terminal REPL that drives this endpoint. Start the agent with `SHIPWRIGHT_DEV_CHAT=true`, then in a second terminal:
+
+```bash
+bun scripts/chat.ts
+# or point at a non-default port:
+AGENT_URL=http://localhost:3000 bun scripts/chat.ts
+```
+
+Each REPL session generates a single `session` UUID so successive messages resume the same Claude conversation. Ctrl-D exits cleanly.
+
 ## Data model
 
 | Model | Owns | Notable fields |
@@ -114,6 +124,7 @@ All child models cascade-delete with their `Agent`.
 | `agent/scripts/run-agent.ts` | Local dev launcher: fetches config, sets env, spawns the agent process. Takes `--agent-id`, `--dry-run`. |
 | `agent/scripts/bootstrap-agent.ts` | One-time agent setup: collects Slack + Anthropic credentials interactively, stores via admin API PATCH `/admin/api/agents/:id/envs`. |
 | `agent/scripts/cli-args.ts` | Pure CLI helpers: `getArg(name, argv)` and `hasFlag(name, argv)` for `--name=value` and `--name value` forms. |
+| `scripts/chat.ts` | TUI REPL client for the dev `/chat` endpoint. Pure functions (`buildChatRequest`, `formatAgentResponse`, `fetchChatResponse`, `formatFetchError`) exported for unit testing; `runRepl()` drives the stdin/stdout loop. Requires `SHIPWRIGHT_DEV_CHAT=true` on the agent. |
 | `agent/src/shipwright-config-client.ts` | `ShipwrightConfigClient` interface + `HttpShipwrightConfigClient` — calls `GET /agents/:id/config` with Bearer auth. |
 | `agent/src/entrypoint-startup.ts` | Extracted startup logic (`runStartup(agentId, deps)`) — DI-injected for integration testing without real network or filesystem side effects. |
 | `agent/src/cron-handler.ts` | Cron runtime: `handleCronRequest()` — runs a cron prompt through Claude and posts the result to Slack. Supports `preCheck` scripts, `silent` suppression, channel vs. DM delivery, and `onPost`/`onSession` callbacks. |
