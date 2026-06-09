@@ -7,7 +7,7 @@
  */
 
 import "./test-env.ts";
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
 import { TEST_AGENT_HOME } from "./test-env.ts";
 
