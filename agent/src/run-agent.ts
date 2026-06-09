@@ -29,6 +29,8 @@ import { createConfig } from "./config.ts";
 import { createHealthApp } from "./health.ts";
 import { ensureAgentHome } from "./setup.ts";
 import { makeTokenCrypto } from "./token-crypto.ts";
+import { PrismaClient } from "../prisma/client/index.js";
+import { HttpSlackProvisioningClient } from "./slack-provisioning-client.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -278,7 +280,6 @@ export async function startServer(opts?: { port?: number }): Promise<void> {
   await runMigrations();
 
   // Construct PrismaClient once at boot
-  const { PrismaClient } = await import("../prisma/client/index.js");
   const prisma = new PrismaClient();
 
   // Construct TokenCrypto — reads SHIPWRIGHT_ENCRYPTION_KEY at call time
@@ -297,11 +298,6 @@ export async function startServer(opts?: { port?: number }): Promise<void> {
   const adminPassword = process.env.SHIPWRIGHT_ADMIN_PASSWORD ?? "";
   const appBaseUrl = process.env.APP_BASE_URL ?? `http://localhost:${port}`;
 
-  // Minimal Slack client for admin UI provisioning flow.
-  // Real implementation is injected here; the type requires createAppManifest.
-  const { HttpSlackProvisioningClient } = await import(
-    "./slack-provisioning-client.ts"
-  );
   const slackClient = new HttpSlackProvisioningClient();
 
   const app = createComposedApp({
