@@ -231,7 +231,18 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
     }
 
     const nonce = crypto.randomUUID();
-    setCookie(c, OAUTH_STATE_COOKIE, nonce, {
+
+    // Carry returnTo through the OAuth flow by encoding it alongside the nonce.
+    // Validate that returnTo is a same-origin relative path (starts with /) to
+    // prevent open redirect attacks. Malformed or absolute values are silently dropped.
+    const rawReturnTo = c.req.query("returnTo");
+    const returnTo =
+      rawReturnTo?.startsWith("/") && !rawReturnTo.startsWith("//")
+        ? rawReturnTo
+        : undefined;
+
+    const oauthState = JSON.stringify({ nonce, returnTo });
+    setCookie(c, OAUTH_STATE_COOKIE, oauthState, {
       httpOnly: true,
       sameSite: "Lax",
       maxAge: OAUTH_STATE_TTL_SECONDS,
@@ -259,9 +270,21 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
       return c.redirect(`/admin/login?error=${slug}`, 302);
     }
 
-    // CSRF: validate state nonce
-    const storedNonce = getCookie(c, OAUTH_STATE_COOKIE);
+    // CSRF: validate state nonce. The oauth_state cookie is JSON: {nonce, returnTo?}.
+    const storedStateCookie = getCookie(c, OAUTH_STATE_COOKIE);
     deleteCookie(c, OAUTH_STATE_COOKIE, { path: "/auth" });
+
+    let storedNonce: string | undefined;
+    let returnTo: string | undefined;
+    try {
+      if (storedStateCookie) {
+        const parsed = JSON.parse(storedStateCookie) as { nonce?: string; returnTo?: string };
+        storedNonce = parsed.nonce;
+        returnTo = parsed.returnTo;
+      }
+    } catch {
+      // Malformed cookie — treat as missing
+    }
 
     if (!storedNonce || !state || storedNonce !== state) {
       return c.redirect("/admin/login?error=invalid_state", 302);
@@ -319,7 +342,12 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
       maxAge: SESSION_TTL_SECONDS,
       path: "/",
     });
-    return c.redirect("/admin/agents", 302);
+    // Redirect to returnTo if it's a valid same-origin relative path, otherwise default.
+    const destination =
+      returnTo?.startsWith("/") && !returnTo.startsWith("//")
+        ? returnTo
+        : "/admin/agents";
+    return c.redirect(destination, 302);
   });
 
   app.post("/admin/logout", (c) => {
