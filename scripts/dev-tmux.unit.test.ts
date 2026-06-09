@@ -14,8 +14,10 @@
 
 import { describe, expect, test } from "bun:test";
 import {
+  ADMIN_PORT,
   AGENT_PORT,
   brewFormulaInstalled,
+  buildLogsBanner,
   buildStackCommands,
   DASHBOARD_URL,
   dbReachable,
@@ -75,27 +77,27 @@ describe("buildStackCommands", () => {
     expect(mouse?.argv).not.toContain("-g");
   });
 
-  test("uses a single window with 4 panes (1 new-session + 3 split-window)", () => {
+  test("uses a single window with 5 panes (1 new-session + 4 split-window)", () => {
     const cmds = buildStackCommands(STACK_PANES);
     const newSessions = cmds.filter((c) => c.argv[0] === "new-session");
     const splits = cmds.filter((c) => c.argv[0] === "split-window");
     expect(newSessions.length).toBe(1);
-    expect(splits.length).toBe(3);
+    expect(splits.length).toBe(4);
   });
 
-  test("runs the migration preflight BEFORE the agent pane is started", () => {
+  test("runs the migration preflight BEFORE the admin pane is started", () => {
     const cmds = buildStackCommands(STACK_PANES);
     const preflightIdx = cmds.findIndex((c) =>
       c.argv.join(" ").includes("migrate deploy"),
     );
-    const agentSendKeysIdx = cmds.findIndex(
+    const adminSendKeysIdx = cmds.findIndex(
       (c) =>
         c.argv[0] === "send-keys" &&
-        c.argv.some((a) => a.includes("agent/src/run-agent.ts")),
+        c.argv.some((a) => a.includes("admin/src/main.ts")),
     );
     expect(preflightIdx).toBeGreaterThanOrEqual(0);
-    expect(agentSendKeysIdx).toBeGreaterThanOrEqual(0);
-    expect(preflightIdx).toBeLessThan(agentSendKeysIdx);
+    expect(adminSendKeysIdx).toBeGreaterThanOrEqual(0);
+    expect(preflightIdx).toBeLessThan(adminSendKeysIdx);
   });
 
   test("the preflight runs prisma migrate deploy", () => {
@@ -129,40 +131,55 @@ describe("runStack — per-pane commands via injected exec", () => {
     expect(sk?.join(" ")).toContain("METRICS_OFFLINE=true");
   });
 
-  test("agent pane runs run-agent.ts with the full dev-chat env", () => {
+  test("admin pane (pane 1) runs admin/src/main.ts with PORT=3001 and DATABASE_URL", () => {
     const { calls, exec } = makeRecorder();
     runStack(STACK_PANES, exec);
     const sk = sendKeysForPane(calls, 1)?.join(" ") ?? "";
+    expect(sk).toContain("admin/src/main.ts");
+    expect(sk).toContain(`PORT=${ADMIN_PORT}`);
+    expect(sk).toContain("DATABASE_URL=");
+  });
+
+  test("agent pane (pane 2) runs run-agent.ts with SHIPWRIGHT_API_URL, no DATABASE_URL", () => {
+    const { calls, exec } = makeRecorder();
+    runStack(STACK_PANES, exec);
+    const sk = sendKeysForPane(calls, 2)?.join(" ") ?? "";
     expect(sk).toContain("agent/src/run-agent.ts");
     expect(sk).toContain(`PORT=${AGENT_PORT}`);
     expect(sk).toContain("SHIPWRIGHT_DEV_CHAT=true");
     expect(sk).toContain("POSTHOG_HOST=http://localhost:3460");
     expect(sk).toContain("POSTHOG_PROJECT_API_KEY=");
-    expect(sk).toContain("DATABASE_URL=");
-    expect(sk).toContain("SHIPWRIGHT_ENCRYPTION_KEY=");
+    expect(sk).toContain(`SHIPWRIGHT_API_URL=http://localhost:${ADMIN_PORT}`);
     expect(sk).toContain("AGENT_HOME=state/agent-home");
+    // thin agent — no direct DB access
+    expect(sk).not.toContain("DATABASE_URL=");
   });
 
-  test("chat pane runs scripts/chat.ts", () => {
+  test("chat pane (pane 3) runs scripts/chat.ts", () => {
     const { calls, exec } = makeRecorder();
     runStack(STACK_PANES, exec);
-    const sk = sendKeysForPane(calls, 2)?.join(" ") ?? "";
+    const sk = sendKeysForPane(calls, 3)?.join(" ") ?? "";
     expect(sk).toContain("scripts/chat.ts");
   });
 
-  test("logs pane is a scratch shell (no server command)", () => {
-    const logs = STACK_PANES[3];
+  test("logs pane (pane 4) is a scratch shell (no server command)", () => {
+    const logs = STACK_PANES[4];
     expect(logs.label).toBe("logs");
     // scratch shell: no long-running bun server entry
     expect(logs.cmd.join(" ")).not.toContain("server.ts");
     expect(logs.cmd.join(" ")).not.toContain("run-agent.ts");
   });
 
-  test("logs pane prints a signpost banner then drops into a shell", () => {
-    const cmd = STACK_PANES[3].cmd.join(" ");
+  test("logs pane (pane 4) prints a signpost banner then drops into a shell", () => {
+    const cmd = STACK_PANES[4].cmd.join(" ");
     expect(cmd).toContain(DASHBOARD_URL); // tells the user where the UI is
     expect(cmd).toContain(`localhost:${AGENT_PORT}`);
     expect(cmd).toContain('exec "$SHELL"'); // remains an interactive scratch shell
+  });
+
+  test("logs banner includes admin service URL", () => {
+    const banner = buildLogsBanner();
+    expect(banner).toContain(`localhost:${ADMIN_PORT}`);
   });
 
   test("exec is invoked once per built command, in order", () => {
@@ -178,9 +195,16 @@ describe("pane env values are obviously dev dummies (public-safe)", () => {
   test("agent pane dummy keys look like dev placeholders", () => {
     const agent = STACK_PANES.find((p) => p.label === "agent") as Pane;
     expect(agent.env?.POSTHOG_PROJECT_API_KEY).toContain("dev");
+    // 64-hex dummy encryption key not needed on thin agent — it's in admin
+    // agent must have SHIPWRIGHT_API_URL pointing at local admin
+    expect(agent.env?.SHIPWRIGHT_API_URL).toContain("localhost");
+  });
+
+  test("admin pane has DATABASE_URL with postgresql scheme", () => {
+    const admin = STACK_PANES.find((p) => p.label === "admin") as Pane;
+    expect(admin.env?.DATABASE_URL).toContain("postgresql:");
     // 64-hex dummy encryption key
-    expect(agent.env?.SHIPWRIGHT_ENCRYPTION_KEY).toMatch(/^[0-9a-f]{64}$/);
-    expect(agent.env?.DATABASE_URL).toContain("postgresql:");
+    expect(admin.env?.SHIPWRIGHT_ENCRYPTION_KEY).toMatch(/^[0-9a-f]{64}$/);
   });
 });
 
