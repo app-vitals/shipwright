@@ -141,8 +141,12 @@ Read `state/reviews.json`. For each candidate PR:
   ```bash
   gh pr view {pr} --repo {org}/{repo} --json headRefOid -q '.headRefOid'
   ```
-  If `headRefOid` differs from `lastReviewedCommit`: eligible for re-review.
-  If same: skip.
+  If `headRefOid` differs from `lastReviewedCommit`: check whether the update is merge-only before marking eligible:
+  ```bash
+  gh api repos/{org}/{repo}/pulls/{pr}/commits --paginate
+  ```
+  Find `lastReviewedCommit` in the commit list. Check if every commit after it has `parents.length >= 2` (i.e., all are merge commits — merge-from-base or merge-from-main). If yes: skip and print `Skipping #{pr} — merge-only update since {lastReviewedCommit[0..7]}`. If no (real code changes exist), or if the anchor commit is not found, or if the API call fails: eligible for re-review.
+  If `headRefOid` is the same as `lastReviewedCommit`: skip.
 - **Entry with `status: "cleaned"` or `"merged"`**: skip.
 
 If a `pending` entry is missing `diffSize` (created before this field was added), populate
@@ -181,8 +185,9 @@ commits since the last review.
 
 **Tier 1 — Re-review of posted reviews** (highest priority)
 Entry has `status: "posted"` (or `posted: true`) AND the current head SHA differs from
-`lastReviewedCommit`. The author pushed changes after seeing our feedback — re-reviewing
-closes the loop and can unblock a merge.
+`lastReviewedCommit`, AND the new commits are not merge-only (as determined by the
+deduplication check above). The author pushed real code changes after seeing our feedback —
+re-reviewing closes the loop and can unblock a merge.
 
 **Tier 2 — First review of pending PRs**
 Entry has `status: "pending"`, or the PR has no entry yet. Never been reviewed — give

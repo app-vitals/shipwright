@@ -25,7 +25,7 @@ import {
   parseAllowSelfReview,
   readAllowSelfReview,
   readReviews,
-  resolveRepos,
+  resolveAllRepos,
   resolveWorkspacePath,
 } from "./check-helpers.ts";
 
@@ -39,6 +39,7 @@ interface PrInfo {
   author: { login: string };
   headRefName: string;
   headRefOid: string;
+  repo?: string;
 }
 
 export interface CommitInfo {
@@ -51,7 +52,7 @@ interface Deps {
   isSelfReviewAllowed: boolean;
   listOpenPrs: (repo: string) => Promise<PrInfo[]>;
   readReviews: () => ReviewEntry[];
-  listPrCommits: (prNumber: number) => Promise<CommitInfo[]>;
+  listPrCommits: (prNumber: number, repo?: string) => Promise<CommitInfo[]>;
 }
 
 // ─── Terminal statuses ────────────────────────────────────────────────────────
@@ -69,9 +70,10 @@ export async function isMergeOnlyUpdate(
   prNumber: number,
   lastReviewedCommit: string,
   deps: Pick<Deps, "listPrCommits">,
+  repo?: string,
 ): Promise<boolean> {
   try {
-    const commits = await deps.listPrCommits(prNumber);
+    const commits = await deps.listPrCommits(prNumber, repo);
     const anchorIndex = commits.findIndex((c) => c.sha === lastReviewedCommit);
     if (anchorIndex === -1) return false;
     const subsequent = commits.slice(anchorIndex + 1);
@@ -93,10 +95,12 @@ export async function run(deps: Deps): Promise<RunResult> {
   const currentUser = await deps.getCurrentUser();
   const reviews = deps.readReviews();
 
-  // Build a lookup from PR number → review entry
-  const reviewByPr = new Map<number, ReviewEntry>();
+  // Build a lookup from "repo:pr-number" → review entry.
+  // Keying on number alone causes cross-repo collisions when multiple repos
+  // are configured — two repos can share PR numbers. Include the repo in the key.
+  const reviewByPr = new Map<string, ReviewEntry>();
   for (const entry of reviews) {
-    reviewByPr.set(entry.pr, entry);
+    reviewByPr.set(`${entry.repo ?? ""}:${entry.pr}`, entry);
   }
 
   // We don't know the repo here without a context — use a placeholder for tests.
@@ -106,7 +110,7 @@ export async function run(deps: Deps): Promise<RunResult> {
   for (const pr of prs) {
     if (!deps.isSelfReviewAllowed && pr.author.login === currentUser) continue;
 
-    const entry = reviewByPr.get(pr.number);
+    const entry = reviewByPr.get(`${pr.repo ?? ""}:${pr.number}`);
 
     // No entry → eligible
     if (!entry) {
@@ -129,11 +133,16 @@ export async function run(deps: Deps): Promise<RunResult> {
     }
 
     if (entry.lastReviewedCommit !== pr.headRefOid) {
+      // Staged (unposted) review + new commits = Tier 3: the review skill deliberately
+      // defers these on no-arg runs. Match that behaviour so the cron doesn't spin.
+      if (entry.posted === false) continue;
+
       // New commits since last review — check if they are all merge commits
       const mergeOnly = await isMergeOnlyUpdate(
         pr.number,
         entry.lastReviewedCommit,
         deps,
+        pr.repo,
       );
       if (mergeOnly) continue; // skip: only merge-from-main activity, no real work
       return {
@@ -150,31 +159,41 @@ export async function run(deps: Deps): Promise<RunResult> {
 
 // ─── Production deps ──────────────────────────────────────────────────────────
 
-async function buildProductionDeps(): Promise<Deps> {
+export async function buildProductionDeps(): Promise<Deps> {
   const workspacePath = resolveWorkspacePath();
-  const repos = resolveRepos(workspacePath);
-  const orgRepo = repos[0] ?? "app-vitals/shipwright";
+  const allRepos = resolveAllRepos(workspacePath);
 
   return {
     getCurrentUser,
     isSelfReviewAllowed: readAllowSelfReview(workspacePath),
     listOpenPrs: async (_repo: string) => {
-      return ghJson<PrInfo[]>([
-        "pr",
-        "list",
-        "--state",
-        "open",
-        "--repo",
-        orgRepo,
-        "--json",
-        "number,title,author,headRefName,headRefOid",
-      ]);
+      const allPrs: PrInfo[] = [];
+      for (const repo of allRepos) {
+        const repoPrs = ghJson<PrInfo[]>([
+          "pr",
+          "list",
+          "--state",
+          "open",
+          "--repo",
+          repo,
+          "--json",
+          "number,title,author,headRefName,headRefOid",
+        ]);
+        allPrs.push(...repoPrs.map((pr) => ({ ...pr, repo })));
+      }
+      return allPrs;
     },
     readReviews: () => readReviews(workspacePath),
-    listPrCommits: async (prNumber: number) => {
+    listPrCommits: async (prNumber: number, repo?: string) => {
+      const targetRepo = repo ?? allRepos[0];
+      if (!repo) {
+        process.stderr.write(
+          `warn: listPrCommits called without repo for PR #${prNumber}; falling back to ${targetRepo}\n`,
+        );
+      }
       return ghJson<CommitInfo[]>([
         "api",
-        `repos/${orgRepo}/pulls/${prNumber}/commits`,
+        `repos/${targetRepo}/pulls/${prNumber}/commits`,
         "--paginate",
       ]);
     },
