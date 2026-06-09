@@ -2,7 +2,7 @@
 
 The admin service provides a web UI and CRUD API for managing Shipwright agents — env vars, cron jobs, tokens, tools, and plugins. It also exposes the runtime API used by deployed agents to fetch their configuration.
 
-The HTTP server is implemented in `agent/src/run-agent.ts` (`startServer()`), which composes the admin UI, admin CRUD API, and agent runtime API into a single Hono app running on port 3000.
+The HTTP server is implemented in `admin/src/main.ts`, which composes the admin UI, admin CRUD API, and agent runtime API into a single Hono app running on port 3000.
 
 ## Running Locally
 
@@ -16,7 +16,7 @@ export SHIPWRIGHT_SESSION_SECRET=...
 # ... (remaining vars)
 
 # Run the admin server
-bun run agent/src/run-agent.ts
+bun run admin/src/main.ts
 ```
 
 The service listens on `http://localhost:3000` by default. Visit `/admin` for the UI.

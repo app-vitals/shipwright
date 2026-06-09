@@ -51,4 +51,4 @@ RUN cd admin && bunx prisma generate --schema=prisma/schema.prisma
 
 EXPOSE 3000
 
-ENTRYPOINT ["bun", "run", "agent/src/run-agent.ts"]
+ENTRYPOINT ["bun", "run", "admin/src/main.ts"]

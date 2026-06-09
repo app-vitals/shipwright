@@ -1,115 +1,56 @@
 /**
  * agent/src/test-helpers/mock-deps.ts
  *
- * Shared in-memory ComposedAppDeps double for smoke tests.
- * No real DB, no network — every service is a deterministic in-memory stub.
+ * Shared ComposedAppDeps double for smoke tests.
+ * Simulates the standalone admin service via an injected mock fetchFn.
+ * No real DB, no real network — every response is deterministic.
  */
 
 import type { ComposedAppDeps } from "../run-agent.ts";
 
-export const TEST_SESSION_SECRET = "test-admin-session-secret-32-bytes!";
-export const TEST_INTERNAL_API_KEY = "test-internal-api-key";
 export const TEST_AGENT_ID = "agent-test-123";
+export const TEST_INTERNAL_API_KEY = "test-internal-api-key";
 
 export function makeMockDeps(): ComposedAppDeps {
-  const mockAgent = {
-    id: TEST_AGENT_ID,
-    name: "Test Agent",
-    slackId: null,
-    createdAt: new Date("2024-01-01"),
-    updatedAt: new Date("2024-01-01"),
+  const mockFetch = async (
+    input: RequestInfo | URL,
+    _init?: RequestInit,
+  ): Promise<Response> => {
+    const req = input instanceof Request ? input : new Request(String(input));
+    const url = req.url;
+
+    // Simulate admin service auth: require Bearer token
+    const auth = req.headers.get("Authorization");
+    if (!auth?.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { "content-type": "application/json" },
+      });
+    }
+
+    if (url.includes("/config")) {
+      return new Response(
+        JSON.stringify({
+          env: { FOO: "bar" },
+          allowedTools: ["Read"],
+          plugins: [],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+
+    if (url.includes("/crons")) {
+      return new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+
+    return new Response("Not Found", { status: 404 });
   };
 
   return {
-    prisma: {
-      agent: {
-        findUnique: async ({ where }: { where: { id: string } }) =>
-          where.id === TEST_AGENT_ID ? mockAgent : null,
-        findMany: async () => [mockAgent],
-        create: async () => mockAgent,
-      },
-      agentPlugin: {
-        findMany: async () => [],
-      },
-    } as never,
-    agentEnvService: {
-      getConfigBundle: async (id: string) =>
-        id === TEST_AGENT_ID
-          ? { agentId: id, env: { FOO: "bar" }, allowedTools: ["Read"] }
-          : null,
-      getByAgentId: async () => ({ FOO: "bar" }),
-      upsert: async () => {},
-      patch: async () => {},
-      deleteKey: async () => {},
-    },
-    agentCronJobService: {
-      list: async () => [],
-      create: async () => {
-        throw new Error("not implemented");
-      },
-      update: async () => {
-        throw new Error("not implemented");
-      },
-      delete: async () => {},
-      reconcileSystemCrons: async () => ({
-        created: 0,
-        updated: 0,
-        deleted: 0,
-      }),
-      get: async () => {
-        throw new Error("not implemented");
-      },
-      setEnabled: async () => {
-        throw new Error("not implemented");
-      },
-    },
-    agentToolService: {
-      list: async () => [],
-      add: async () => {
-        throw new Error("not implemented");
-      },
-      remove: async () => {},
-      toggle: async () => {
-        throw new Error("not implemented");
-      },
-    },
-    agentTokenService: {
-      create: async () => {
-        throw new Error("not implemented");
-      },
-      listForAgent: async () => [],
-      revoke: async () => null,
-    },
-    agentPluginService: {
-      list: async () => [],
-      add: async () => {
-        throw new Error("not implemented");
-      },
-      remove: async () => {},
-      removeByName: async () => {},
-    },
-    internalApiKey: TEST_INTERNAL_API_KEY,
-    sessionSecret: TEST_SESSION_SECRET,
-    googleClientId: "test-google-client-id",
-    googleClientSecret: "test-google-client-secret",
-    adminAllowedEmails: ["admin@example.com"],
-    googleClient: {
-      exchangeCode: async () => ({
-        accessToken: "test-access-token",
-        expiresIn: 3600,
-      }),
-      getUserInfo: async () => ({
-        sub: "google-sub-123",
-        email: "admin@example.com",
-        name: "Admin User",
-      }),
-    },
-    slackClient: {
-      createAppManifest: async () => ({
-        appId: "A123",
-        oauthRedirectUrl: "https://slack.com/oauth",
-      }),
-    },
-    appBaseUrl: "http://localhost:3000",
+    adminApiUrl: "http://mock-admin-service",
+    fetchFn: mockFetch,
   };
 }
