@@ -3,16 +3,21 @@
  * Metrics API process entrypoint — standalone Bun server on port 3460.
  *
  * Serves:
- *   /metrics/*   — API endpoints (PostHog query results, auth-gated)
+ *   /metrics/*   — API endpoints (query results, auth-gated)
  *   /dashboard   — Server-rendered dashboard UI
  *   /health      — Health check (no auth required)
  *
  * Backend mode (pure selector — see select-provider.ts):
- *   METRICS_OFFLINE=true                  → fixtures (PostHogProvider over
- *                                            fixture client; auth bypassed)
- *   POSTHOG read-keys present             → posthog (live PostHogProvider)
- *   otherwise (DEFAULT)                   → sqlite  (SqliteProvider over the
- *                                            local store; POST /batch/ ingest)
+ *
+ *   Priority order (highest first):
+ *   1. METRICS_OFFLINE=true                  → fixtures (fixture client; auth bypassed)
+ *   2. PostHog read keys present             → posthog  (live PostHogProvider)
+ *   3. METRICS_DATABASE_URL / DATABASE_URL_METRICS
+ *      starts with "postgres"               → postgres  (PostgresProvider; POST /batch/ ingest)
+ *   4. otherwise (DEFAULT)                   → sqlite   (SqliteProvider; POST /batch/ ingest)
+ *
+ * Postgres mode wraps the shared SqlEventStoreProvider over a pg.Pool,
+ * giving identical query semantics to SQLite mode.
  */
 
 import { HttpAccountsClient } from "./lib/accounts-client.ts";
@@ -22,7 +27,7 @@ import { createMetricsApp } from "./api.ts";
 import type { MetricsDeps } from "./api.ts";
 import { createLocalEventStore } from "./local-store.ts";
 import { SqliteProvider } from "./providers/sqlite-provider.ts";
-import { selectProviderMode } from "./select-provider.ts";
+import { resolvePostgresUrl, selectProviderMode } from "./select-provider.ts";
 
 loadEnv();
 
@@ -48,6 +53,43 @@ if (mode === "fixtures") {
     offlineMode: true,
   };
   console.log("[metrics-api] Running in OFFLINE mode — fixture data injected");
+} else if (mode === "postgres") {
+  const pgUrl = resolvePostgresUrl(process.env);
+  if (!pgUrl) {
+    console.error(
+      "[metrics-api] FATAL: postgres mode selected but no URL found in METRICS_DATABASE_URL / DATABASE_URL_METRICS",
+    );
+    process.exit(1);
+  }
+  const { createPostgresEventStore } = await import(
+    "./providers/postgres-provider.ts"
+  );
+  const pgStore = await createPostgresEventStore(pgUrl);
+  // Adapt PostgresEventStore.insertEvent (async) to the LocalEventStore interface
+  // expected by MetricsDeps.localStore. We use a compatible shim here.
+  const localStoreShim = {
+    insertEvent: (e: Parameters<typeof pgStore.insertEvent>[0]) => {
+      // Fire-and-forget: the POST /batch/ handler does not await insertEvent when
+      // LocalEventStore.insertEvent is synchronous.  The Postgres path returns a
+      // Promise which Bun resolves in the background.  For strict ordering
+      // guarantees use the dedicated Postgres /batch/ handler in production.
+      pgStore.insertEvent(e).catch((err: unknown) => {
+        console.error("[metrics-api] postgres insertEvent error:", err);
+      });
+    },
+    queryByEvent: () => [],
+    close: () => {},
+  };
+  deps = {
+    provider: pgStore.provider,
+    localStore: localStoreShim,
+    sessionSecret: process.env.SESSION_SECRET ?? "",
+    requireOwnerRole: process.env.METRICS_REQUIRE_OWNER_ROLE === "true",
+    dashboardToken: process.env.METRICS_DASHBOARD_TOKEN,
+  };
+  console.log(
+    "[metrics-api] Running in POSTGRES mode — PostgresProvider + /batch/ ingest",
+  );
 } else if (mode === "sqlite") {
   const store = createLocalEventStore({
     path: process.env.METRICS_DB_PATH ?? "state/metrics.db",
