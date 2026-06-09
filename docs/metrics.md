@@ -1,6 +1,6 @@
 # Metrics Dashboard
 
-> Hono service (artifact **B**) that turns Shipwright's pipeline events into analytics. Five read-only JSON endpoints served by a backend-agnostic `MetricsProvider`, plus a session-gated server-rendered dashboard. Three modes: **fixtures** (offline), **posthog** (live PostHog queries), and **sqlite** (local SQLite store — the default).
+> Hono service (artifact **B**) that turns Shipwright's pipeline events into analytics. Five read-only JSON endpoints served by a backend-agnostic `MetricsProvider`, plus a session-gated server-rendered dashboard. Four modes: **fixtures** (offline), **posthog** (live PostHog queries), **postgres** (Postgres event store), and **sqlite** (local SQLite store — the default).
 
 ## Overview
 
@@ -8,9 +8,12 @@ The metrics service exposes pipeline telemetry two ways: machine-readable JSON u
 
 1. `METRICS_OFFLINE=true` → **fixtures** mode: fixture PostHog client; auth bypassed.
 2. PostHog read keys present → **posthog** mode: live `PostHogProvider` (`metrics/src/providers/posthog-provider.ts`).
-3. Otherwise (default) → **sqlite** mode: `SqliteProvider` (`metrics/src/providers/sqlite-provider.ts`) over a local SQLite event store; `POST /batch/` ingest is always registered in this mode.
+3. `METRICS_DATABASE_URL` (or `DATABASE_URL_METRICS`) starts with `postgres` → **postgres** mode: `PostgresProvider` (`metrics/src/providers/postgres-provider.ts`) over a Postgres event store; `POST /batch/` ingest is registered.
+4. Otherwise (default) → **sqlite** mode: `SqliteProvider` (`metrics/src/providers/sqlite-provider.ts`) over a local SQLite event store; `POST /batch/` ingest is always registered in this mode.
 
 In sqlite mode (the default), the server creates a `LocalEventStore` (`metrics/src/local-store.ts`) at `METRICS_DB_PATH` (`state/metrics.db` by default) and wires it into both the provider and the `POST /batch/` ingest route.
+
+In postgres mode, the server connects to Postgres using `METRICS_DATABASE_URL` (or `DATABASE_URL_METRICS`), provisions the `events` table idempotently (with `insert_id UNIQUE` for dedup), and wires `POST /batch/` ingest to the Postgres store. All aggregation logic is shared with the SQLite provider via `SqlEventStoreProvider` (`metrics/src/providers/sql-provider.ts`) — query results are identical regardless of backend.
 
 Entrypoint: `metrics/src/server.ts` (standalone Bun server, default port **3460**). The app factory `createMetricsApp()` in `metrics/src/api.ts` is what tests drive via `app.request()`.
 
@@ -86,9 +89,11 @@ The **dashboard** is protected by the session cookie middleware; an invalid/abse
 
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
-| `POSTHOG_PERSONAL_API_KEY` | ✅ (not offline) | — | PostHog personal API key for queries. Not required when `METRICS_OFFLINE=true`. |
-| `POSTHOG_PROJECT_ID` | ✅ (not offline) | — | PostHog project id. Not required when `METRICS_OFFLINE=true`. |
+| `POSTHOG_PERSONAL_API_KEY` | ✅ (posthog mode) | — | PostHog personal API key for queries. Not required when `METRICS_OFFLINE=true`. |
+| `POSTHOG_PROJECT_ID` | ✅ (posthog mode) | — | PostHog project id. Not required when `METRICS_OFFLINE=true`. |
 | `METRICS_OFFLINE` | | `false` | When `true`, skips PostHog env gate, injects fixture data, and bypasses dashboard session auth. |
+| `METRICS_DATABASE_URL` | ✅ (postgres mode) | — | Postgres connection URL (`postgres://...`). Selects postgres mode. Takes precedence over `DATABASE_URL_METRICS`. |
+| `DATABASE_URL_METRICS` | | — | Alias for `METRICS_DATABASE_URL`. Accepted when `METRICS_DATABASE_URL` is absent. |
 | `METRICS_API_PORT` | | `3460` | Listen port. |
 | `METRICS_API_KEYS` | | — | Comma-parsed Bearer API keys for `/metrics/*`. |
 | `SESSION_SECRET` | | — | HS256 secret for verifying the `vitals_session` cookie. |
@@ -96,7 +101,7 @@ The **dashboard** is protected by the session cookie middleware; an invalid/abse
 | `METRICS_ACCOUNTS_URL` | | `http://localhost:3457` | Accounts service base URL (role lookups). |
 | `METRICS_INTERNAL_API_KEY` | | — | Internal key for the accounts client. |
 | `METRICS_DASHBOARD_TOKEN` | | — | Optional dashboard access token. |
-| `METRICS_DB_PATH` | | `state/metrics.db` | Path for the local SQLite event store used by `POST /batch/`. Only read when a `localStore` is wired in. Pass `:memory:` for ephemeral use. |
+| `METRICS_DB_PATH` | | `state/metrics.db` | Path for the local SQLite event store (sqlite mode only). Pass `:memory:` for ephemeral use. |
 | `GCP_PROJECT_ID` | | — | Optional — enables GCP Secret Manager as an env-absent fallback for secrets. |
 | `SHIPWRIGHT_ENV_FILE` | | `~/.shipwright/.env` | Dotenv file loaded at startup (existing vars win). |
 
@@ -107,9 +112,11 @@ The **dashboard** is protected by the session cookie middleware; an invalid/abse
 | `metrics/src/server.ts` | Process entrypoint — env validation, provider selection, wiring, `Bun.serve`. |
 | `metrics/src/api.ts` | App factory `createMetricsApp()`, route + auth middleware registration, dashboard handler. |
 | `metrics/src/metrics-provider.ts` | `MetricsProvider` interface + `MetricQuery` / `MetricTable` types — the backend-agnostic read seam. |
-| `metrics/src/select-provider.ts` | Pure env-to-mode selector (`selectProviderMode()`) — maps env vars to `"fixtures" \| "posthog" \| "sqlite"`. |
+| `metrics/src/select-provider.ts` | Pure env-to-mode selector (`selectProviderMode()`) — maps env vars to `"fixtures" \| "posthog" \| "postgres" \| "sqlite"`. |
 | `metrics/src/providers/posthog-provider.ts` | `PostHogProvider` — implements `MetricsProvider` over a `PostHogClient` and HogQL query builders. |
-| `metrics/src/providers/sqlite-provider.ts` | `SqliteProvider` — implements `MetricsProvider` by querying the local `LocalEventStore` directly. |
+| `metrics/src/providers/sql-provider.ts` | `SqlEventStoreProvider` — shared aggregation engine; all 13 query kinds in TypeScript over any `SqlEventStore`. |
+| `metrics/src/providers/sqlite-provider.ts` | `SqliteProvider` — thin wrapper adapting `LocalEventStore` to `SqlEventStoreProvider`. |
+| `metrics/src/providers/postgres-provider.ts` | `PostgresProvider` / `createPostgresEventStore()` — Postgres backend using `pg.Pool`; provisions DDL; wraps `SqlEventStoreProvider`. |
 | `metrics/src/queries.ts` | HogQL query builders (summary, trends, features, queue, tokens); used by `PostHogProvider`. |
 | `metrics/src/posthog-client.ts` | PostHog client (interface + `Http` impl). |
 | `metrics/src/fixtures/posthog-fixtures.ts` | Fixture PostHog client (`createFixturePostHogClient()`) — pre-recorded sample data for every query type; used in offline mode and integration tests. |
