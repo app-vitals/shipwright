@@ -2,6 +2,7 @@
   "name": "@shipwright/admin",
   "version": "0.1.0",
   "private": true,
+  "main": "src/server.ts",
   "description": "Shipwright admin service — CRUD API + UI for agents, env vars, cron jobs, tokens, tools, and plugins",
   "scripts": {
     "postinstall": "prisma generate --schema=prisma/schema.prisma",
