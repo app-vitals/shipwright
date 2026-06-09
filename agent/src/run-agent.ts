@@ -123,18 +123,9 @@ export interface ComposedAppDeps {
   adminPassword: string;
   slackClient: AdminUIDeps["slackClient"];
   appBaseUrl: string;
-  /**
-   * When true, mounts the dev-only POST /chat endpoint.
-   * Default: false (default-deny).
-   * Only set this from SHIPWRIGHT_DEV_CHAT==="true" at startup — never read
-   * the env var inline inside a request handler.
-   */
+  /** Mounts POST /chat when true; read once from SHIPWRIGHT_DEV_CHAT==="true" at startup. */
   devChat?: boolean;
-  /**
-   * Runner injected when devChat is true. Required for /chat to function.
-   * In production startServer(), this is wired to createRunClaude().
-   * In tests, inject a fake runner.
-   */
+  /** Required when devChat:true; injected as a fake in tests. */
   runner?: ChatRunner;
 }
 
@@ -177,9 +168,7 @@ export function createComposedApp(deps: ComposedAppDeps): Hono {
   const healthApp = createHealthApp();
   root.route("/", healthApp);
 
-  // 1a. Dev-only chat endpoint — only mounted when devChat is true (default-deny).
-  //     Read from SHIPWRIGHT_DEV_CHAT==="true" once at startup and passed in via
-  //     deps.devChat. Never read the env var inline in a request handler.
+  // 1a. Dev-only /chat — gated by devChat (default-deny).
   if (devChat && runner) {
     const chatApp = createChatApp({ runner });
     root.route("/", chatApp);

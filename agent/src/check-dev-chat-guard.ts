@@ -1,13 +1,5 @@
 #!/usr/bin/env bun
-/**
- * agent/src/check-dev-chat-guard.ts
- *
- * CLI guard: fails with a non-zero exit code if SHIPWRIGHT_DEV_CHAT is set
- * in a production config. Run as part of `task doctor`.
- *
- * Usage:
- *   bun agent/src/check-dev-chat-guard.ts
- */
+/** CI guard: exits 1 if SHIPWRIGHT_DEV_CHAT is set in a production config. Run via `task doctor`. */
 
 import { checkDevChatProductionGuard } from "./chat.ts";
 

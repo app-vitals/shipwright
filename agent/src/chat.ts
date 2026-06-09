@@ -1,19 +1,4 @@
-/**
- * agent/src/chat.ts
- *
- * Dev-only local chat transport.
- *
- * Exports:
- *   ChatRunner            — the runner type (matches the createRunClaude seam)
- *   createChatApp         — Hono sub-app with POST /chat
- *   checkDevChatProductionGuard — doctor/CI predicate
- *
- * Mount point: root /chat (mounted via run-agent.ts when devChat:true).
- * Session continuity: client passes back the sessionId returned on the first
- * call as the `session` field on subsequent calls. The value is used directly
- * as the sessionKey passed to the runner, which manages Claude session IDs
- * internally via its injected session store.
- */
+/** Dev-only POST /chat transport, gated by devChat:true in ComposedAppDeps. */
 
 import { Hono } from "hono";
 
@@ -30,17 +15,6 @@ interface ChatAppDeps {
 
 // ─── App factory ────────────────────────────────────────────────────────────
 
-/**
- * Creates a Hono app with a single POST /chat route.
- *
- * Request body:  { message: string; session?: string }
- * Response body: { result: string; sessionId: string }
- *
- * The `session` field in the request is the token the client received from a
- * prior call. On the first call, omit it — a new UUID is generated. Pass the
- * returned `sessionId` back as `session` on subsequent calls to continue the
- * same Claude session.
- */
 export function createChatApp({ runner }: ChatAppDeps): Hono {
   const app = new Hono();
 
@@ -77,14 +51,6 @@ export function createChatApp({ runner }: ChatAppDeps): Hono {
 
 // ─── Doctor guard ────────────────────────────────────────────────────────────
 
-/**
- * Validate that SHIPWRIGHT_DEV_CHAT is not enabled in a production config.
- *
- * "Production" is detected by NODE_ENV==="production" OR
- * SHIPWRIGHT_ENV==="production".
- *
- * Returns { ok: true } when safe, { ok: false, reason: string } otherwise.
- */
 export function checkDevChatProductionGuard(
   env: Record<string, string | undefined>,
 ): { ok: boolean; reason?: string } {

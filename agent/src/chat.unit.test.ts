@@ -1,9 +1,4 @@
-/**
- * agent/src/chat.unit.test.ts
- *
- * Unit tests for the doctor guard predicate checkDevChatProductionGuard.
- * Pure logic — no I/O, no env side effects.
- */
+/** agent/src/chat.unit.test.ts — checkDevChatProductionGuard predicate. */
 
 import { describe, expect, it } from "bun:test";
 import { checkDevChatProductionGuard } from "./chat.ts";

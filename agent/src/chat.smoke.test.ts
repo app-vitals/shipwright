@@ -1,9 +1,5 @@
 /**
- * agent/src/chat.smoke.test.ts
- *
- * Smoke tests for the POST /chat endpoint.
- * Uses Hono's in-process app.request() — no real socket, no real Claude.
- * Runner is injected as a fake — no mock.module(), no global.* overrides.
+ * agent/src/chat.smoke.test.ts — POST /chat, in-process app.request(), fake runner.
  */
 
 import { describe, expect, it } from "bun:test";
