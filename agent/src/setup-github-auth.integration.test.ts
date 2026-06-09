@@ -147,26 +147,21 @@ describe("setupGitHubAuth — App path", () => {
     const { getToken, startBackgroundRefresh } = makeTokenManager();
     const spawnSync = makeSpawnSync(1);
     const errorSpy = mock((..._args: unknown[]) => {});
-    const originalError = console.error;
-    console.error = errorSpy;
 
-    try {
-      await setupGitHubAuth({
-        env: {
-          GH_APP_ID: "123",
-          GH_APP_INSTALLATION_ID: "456",
-          GH_APP_PRIVATE_KEY: "fake-private-key",
-        },
-        createTokenManager: mock(() => ({ getToken, startBackgroundRefresh })),
-        getBotIdentity: makeBotIdentity(),
-        spawnSync,
-        writeToken: makeWriteToken(),
-        tokenPath: TEST_TOKEN_PATH,
-        credentialHelperPath: TEST_HELPER_PATH,
-      });
-    } finally {
-      console.error = originalError;
-    }
+    await setupGitHubAuth({
+      env: {
+        GH_APP_ID: "123",
+        GH_APP_INSTALLATION_ID: "456",
+        GH_APP_PRIVATE_KEY: "fake-private-key",
+      },
+      createTokenManager: mock(() => ({ getToken, startBackgroundRefresh })),
+      getBotIdentity: makeBotIdentity(),
+      spawnSync,
+      writeToken: makeWriteToken(),
+      tokenPath: TEST_TOKEN_PATH,
+      credentialHelperPath: TEST_HELPER_PATH,
+      logger: { error: errorSpy },
+    });
 
     expect(errorSpy).toHaveBeenCalled();
     const firstCall = errorSpy.mock.calls[0]?.[0] as string;
