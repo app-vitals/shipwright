@@ -66,16 +66,12 @@ if (mode === "fixtures") {
   );
   const pgStore = await createPostgresEventStore(pgUrl);
   // Adapt PostgresEventStore.insertEvent (async) to the LocalEventStore interface
-  // expected by MetricsDeps.localStore. We use a compatible shim here.
+  // expected by MetricsDeps.localStore. LocalEventStore.insertEvent now returns
+  // void | Promise<void>, so we can return the Promise directly — the POST /batch/
+  // handler awaits it, giving callers exactly-once write semantics.
   const localStoreShim = {
-    insertEvent: (e: Parameters<typeof pgStore.insertEvent>[0]) => {
-      // Fire-and-forget: the POST /batch/ handler does not await insertEvent when
-      // LocalEventStore.insertEvent is synchronous.  The Postgres path returns a
-      // Promise which Bun resolves in the background.  For strict ordering
-      // guarantees use the dedicated Postgres /batch/ handler in production.
-      pgStore.insertEvent(e).catch((err: unknown) => {
-        console.error("[metrics-api] postgres insertEvent error:", err);
-      });
+    insertEvent: (e: Parameters<typeof pgStore.insertEvent>[0]): Promise<void> => {
+      return pgStore.insertEvent(e);
     },
     queryByEvent: () => [],
     close: () => {},

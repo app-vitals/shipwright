@@ -19,7 +19,7 @@
  */
 
 import pg from "pg";
-import type { Clock } from "../lib/clock.ts";
+import { type Clock, SystemClock } from "../lib/clock.ts";
 import type { InsertableEvent } from "../local-store.ts";
 import type { MetricsProvider } from "../metrics-provider.ts";
 import { type SqlEventStore, type SqlStoredEvent, SqlEventStoreProvider } from "./sql-provider.ts";
@@ -113,12 +113,13 @@ export async function createPostgresEventStore(
   clock?: Clock,
 ): Promise<PostgresEventStore> {
   const pool = new Pool({ connectionString: url });
+  const resolvedClock = clock ?? SystemClock();
 
   // Provision schema idempotently
   await pool.query(SCHEMA);
 
   const pgStore = new PostgresEventStoreImpl(pool);
-  const provider = new SqlEventStoreProvider(pgStore, clock);
+  const provider = new SqlEventStoreProvider(pgStore, resolvedClock);
 
   return {
     provider,
@@ -132,7 +133,7 @@ export async function createPostgresEventStore(
           e.insertId ?? null,
           e.event,
           e.distinctId ?? null,
-          e.timestamp || new Date().toISOString(),
+          e.timestamp || resolvedClock.now().toISOString(),
           JSON.stringify(e.properties ?? {}),
         ],
       );
