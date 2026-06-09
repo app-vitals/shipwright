@@ -7,7 +7,7 @@
   "scripts": {
     "postinstall": "prisma generate --schema=prisma/schema.prisma",
     "test": "bun test",
-    "test:e2e": "bunx playwright test --config=admin/playwright.config.ts",
+    "test:e2e": "bunx playwright test",
     "typecheck": "tsc --noEmit",
     "db:generate": "prisma generate --schema=prisma/schema.prisma",
     "db:migrate": "prisma migrate deploy --schema=prisma/schema.prisma"
