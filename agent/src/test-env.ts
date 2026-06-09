@@ -6,14 +6,13 @@ import { join } from "node:path";
 
 export const TEST_AGENT_HOME = join(
   tmpdir(),
-  `shipwright-agent-config-test-${process.pid}`,
+  `shipwright-agent-test-${process.pid}`,
 );
 
-const workspaceDir = join(TEST_AGENT_HOME, "workspace");
-mkdirSync(workspaceDir, { recursive: true });
+mkdirSync(join(TEST_AGENT_HOME, "workspace"), { recursive: true });
 writeFileSync(
-  join(workspaceDir, "CLAUDE.md"),
-  "# CLAUDE.md\n\nTest workspace — do not use in production.\n",
+  join(TEST_AGENT_HOME, "workspace", "CLAUDE.md"),
+  "# Shipwright Agent\n",
 );
 
 process.env.AGENT_HOME = TEST_AGENT_HOME;
