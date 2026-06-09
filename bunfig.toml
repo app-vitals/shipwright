@@ -10,4 +10,4 @@
 # `bunx playwright test` — not via bun test. Exclude them so Bun does not
 # try to execute Playwright test files with the Bun runner.
 [test]
-pathIgnorePatterns = ["**/site/**", "**/metrics/e2e/**"]
+pathIgnorePatterns = ["**/site/**", "**/metrics/e2e/**", "**/admin/e2e/**"]

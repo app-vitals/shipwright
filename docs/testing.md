@@ -9,7 +9,7 @@
 | **Unit** | `bun test` | Pure logic — no I/O of any kind (no filesystem, network, or subprocess). | `*.unit.test.ts` |
 | **Integration** | `bun test` + injected recorded doubles | Real dependency behavior via recorded fixtures / injected doubles — exercises the seam without a live external service. | `*.integration.test.ts` |
 | **Smoke** | `bun test` + Hono `app.request()` | HTTP route contracts (status, shape, auth, errors) via in-process `app.request()` — no real socket. | `*.smoke.test.ts` |
-| **E2E** | `@playwright/test` | Full browser-driven flows against a real running server. Marketing site home page (`site/*.spec.ts`); metrics dashboard (`metrics/e2e/*.e2e.ts`). | `*.spec.ts` (in `site/`), `*.e2e.ts` (in `metrics/e2e/`) |
+| **E2E** | `@playwright/test` | Full browser-driven flows against a real running server. Marketing site home page (`site/*.spec.ts`); metrics dashboard (`metrics/e2e/*.e2e.ts`); admin UI (`admin/e2e/*.e2e.ts`). | `*.spec.ts` (in `site/`), `*.e2e.ts` (in `metrics/e2e/`, `admin/e2e/`) |
 
 The layer is encoded in the filename suffix. When adding a test, classify in order: no I/O → **unit**; calls an external service → **integration** (inject a recorded double); tests an HTTP route → **smoke** (`app.request()`); multi-step browser flow → **e2e**. If none fit, escalate — don't invent a fifth layer.
 
@@ -38,7 +38,7 @@ The marketing site is **not** part of the root `bun test` scan — run its Playw
 cd site && npm test                  # playwright (*.spec.ts)
 ```
 
-> `bunfig.toml` excludes `site/**` from the root runner. Keep site tests as `*.spec.ts` to stay isolated — Bun would otherwise try to execute Playwright specs and crash.
+> `bunfig.toml` excludes `site/**`, `metrics/e2e/**`, and `admin/e2e/**` from the root runner. Keep site tests as `*.spec.ts` and E2E tests as `*.e2e.ts` to stay isolated — Bun would otherwise try to execute Playwright specs and crash.
 
 ### Per-component layers
 
@@ -47,8 +47,9 @@ cd site && npm test                  # playwright (*.spec.ts)
 | Plugin (`plugins/shipwright`) | unit, integration | `bun test --filter plugins/shipwright` |
 | Metrics (`metrics`) | unit, integration, smoke, e2e | `bun test --filter metrics` (unit/integration/smoke); `task e2e` (e2e) |
 | Agent (`agent`) | unit, integration, smoke | `bun test --filter agent` |
+| Admin (`admin`) | unit, integration, smoke, e2e | `bun test --filter admin` (unit/integration/smoke); `cd admin && bunx playwright test` (e2e) |
 
-The plugin has **no smoke/e2e layer** (no HTTP surface). E2E (Playwright) covers the marketing site home page (`site/tests/home.spec.ts`) and the metrics dashboard UI (`metrics/e2e/dashboard.e2e.ts`).
+The plugin has **no smoke/e2e layer** (no HTTP surface). E2E (Playwright) covers the marketing site home page (`site/tests/home.spec.ts`), the metrics dashboard UI (`metrics/e2e/dashboard.e2e.ts`), and the admin UI (`admin/e2e/agents-page.e2e.ts`, `admin/e2e/login-page.e2e.ts`).
 
 ## Speed budgets
 
@@ -71,7 +72,7 @@ A unit test over 200 ms is a suspected hidden integration test (audit its import
 
 ## CI gates
 
-CI runs the exact `task ci` chain: **lint → check-strings → typecheck → test → secret-scan → doctor**, layer order unit → integration → smoke → e2e (a lower-layer failure fails fast and skips higher layers). Unit and integration run in parallel across packages; smoke (metrics + agent) runs after all integration jobs pass; e2e (Playwright dashboard) runs last and only in Phase B+.
+CI runs the exact `task ci` chain: **lint → check-strings → typecheck → test → secret-scan → doctor**, layer order unit → integration → smoke → e2e (a lower-layer failure fails fast and skips higher layers). Unit and integration run in parallel across packages; smoke (metrics + agent) runs after all integration jobs pass; e2e (Playwright — metrics dashboard + admin UI) runs last and only in Phase B+.
 
 ## References
 
