@@ -6,7 +6,7 @@
 
 The agent owns six first-class Prisma models (`Agent` and its `Env` / `CronJob` / `Tool` / `Token` / `Plugin` children) on a **dedicated database** (`DATABASE_URL_AGENT`). Secrets at rest (env values, Slack/Anthropic keys) are AES-256-GCM encrypted at the service layer; agent API tokens are stored only as SHA-256 hashes.
 
-> The container entrypoint is `agent/src/entrypoint-main.ts`, invoked by the Dockerfile `ENTRYPOINT`. It validates required vars, fetches agent config, applies env, symlinks `~/.claude`, sets up GitHub auth, runs mise, installs plugins, and spawns the agent server (`run-agent.ts`). The legacy `agent/src/index.ts` remains a placeholder (`export {}`). The implemented HTTP surfaces are the admin CRUD API (`admin/src/admin-api.ts`), the runtime API (`admin/src/api.ts`), the server-rendered admin UI (`admin/src/admin-ui.ts`), the Prisma store + service classes (all in the `@shipwright/admin` package), the Slack event handler (`slack.ts`), and the cron runtime (`cron-handler.ts`). On startup the runner calls `POST /admin/api/agents/:id/crons/reconcile` to sync system crons.
+> The container entrypoint is `agent/src/entrypoint-main.ts`, invoked by the Dockerfile `ENTRYPOINT`. It validates required vars, fetches agent config, applies env, symlinks `~/.claude`, sets up GitHub auth, runs mise, installs plugins, and spawns the agent server (`run-agent.ts`). The legacy `agent/src/index.ts` remains a placeholder (`export {}`). The implemented HTTP surfaces are the admin CRUD API (`admin/src/admin-api.ts`), the runtime API (`admin/src/api.ts`), the server-rendered admin UI (`admin/src/admin-ui.ts`), the Prisma store + service classes (all in the `@shipwright/admin` package), the Slack event handler (`slack.ts`), and the cron runtime (`cron-handler.ts`). On startup the runner calls `POST /admin/api/agents/:id/crons/reconcile` to sync system crons. A dev-only `POST /chat` transport (`chat.ts`) is available when `SHIPWRIGHT_DEV_CHAT=true`; it is never registered in production (enforced by `check-dev-chat-guard.ts`).
 
 ## Running locally
 
@@ -47,6 +47,14 @@ Mounted at `/admin/api/*`. Auth: **session cookie** `admin_session` (httpOnly JW
 | Plugins | `POST` / `GET` / `PATCH` `/admin/api/agents/:id/plugins`, `DELETE /admin/api/agents/:id/plugins` |
 
 Token creation returns the **raw token once** at creation; only its SHA-256 hash is persisted, so validation is an O(1) hash-index lookup.
+
+### Dev chat transport (`chat.ts`) — local convenience
+
+Mounted at `/chat`. **DEFAULT-DENY:** only registered when `SHIPWRIGHT_DEV_CHAT=true` at server startup. When the env var is absent or false, `POST /chat` returns `404`. This endpoint is **unauthenticated** and must never be enabled in production — `check-dev-chat-guard.ts` enforces this by exiting with an error if `SHIPWRIGHT_DEV_CHAT=true` and `NODE_ENV=production` (or `SHIPWRIGHT_ENV=production`).
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| POST | `/chat` | none | Send a message to the Claude runner. Body: `{ message: string, session?: string }`. Returns `{ result: string, sessionId?: string }`. Successive calls with the same `session` resume the same conversation. |
 
 ## Data model
 
@@ -95,8 +103,8 @@ All child models cascade-delete with their `Agent`.
 | `agent/src/entrypoint-main.ts` | Production CLI entry point — wires real deps and calls `runEntrypoint()`. Invoked by the Dockerfile `ENTRYPOINT`. |
 | `agent/src/entrypoint.ts` | Container startup sequence (`runEntrypoint()`) — dependency-injected for testability. Validates vars, fetches config, applies env, symlinks `~/.claude`, runs GitHub auth + mise + plugin install, then spawns the server. |
 | `agent/src/cli-args.ts` | CLI argument parsing (`parseCliArgs()`) — `--agent-id`, `--api-url`, `--api-key` flags with env var fallbacks. Pure, no I/O. |
-| `agent/src/run-agent.ts` | Composes all sub-apps into a single Hono root app (`createComposedApp(deps: ComposedAppDeps)`). Exports `PrismaLike` and `ComposedAppDeps` for test injection. `ComposedAppDeps` includes optional `devChat?: boolean` and `runner?: ChatRunner` fields that gate the `/chat` surface. `startServer()` wires real deps and calls `createComposedApp`; invoked by `entrypoint.ts` after all environment setup is complete. |
-| `agent/src/chat.ts` | Dev-only `POST /chat` Hono app factory (`createChatApp({ runner })`). Also exports `checkDevChatProductionGuard(env)` — returns `{ ok, reason }` and is called at startup to warn if `SHIPWRIGHT_DEV_CHAT=true` is set in a production environment. |
+| `agent/src/run-agent.ts` | Composes all sub-apps into a single Hono root app (`createComposedApp(deps: ComposedAppDeps)`). Exports `PrismaLike` and `ComposedAppDeps` for test injection. `ComposedAppDeps` includes optional `devChat?: boolean` and `chatRunner?: ChatRunner` fields that gate the `/chat` surface. `startServer()` wires real deps and calls `createComposedApp`; invoked by `entrypoint.ts` after all environment setup is complete. |
+| `agent/src/chat.ts` | Dev-only `POST /chat` Hono app factory (`createChatApp({ runner })`). Also exports `checkDevChatProductionGuard(env)` — returns `{ ok, reason }` and is called at startup to warn if `SHIPWRIGHT_DEV_CHAT=true` is set in a production environment. Maps opaque caller `session` keys to internal runner session keys for conversation continuity. |
 | `agent/src/check-dev-chat-guard.ts` | CLI guard script (`task doctor`). Calls `checkDevChatProductionGuard()` and exits `1` with a descriptive message if the production guard fails. Safe to run in CI. |
 | `agent/src/shipwright-config-client.ts` | `ShipwrightConfigClient` interface + `HttpShipwrightConfigClient` (real HTTP) + `RecordedShipwrightConfigClient` (cassette double for tests). |
 | `agent/src/setup.ts` | Workspace bootstrapping — directory scaffolding, identity-file seeding, plugin installation, and mise startup. Safe to call on every agent startup (idempotent). |

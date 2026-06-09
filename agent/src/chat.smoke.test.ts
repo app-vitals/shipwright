@@ -1,239 +1,129 @@
 /**
- * agent/src/chat.smoke.test.ts — POST /chat, in-process app.request(), fake runner.
+ * agent/src/chat.smoke.test.ts
+ *
+ * Smoke tests for the dev-only POST /chat endpoint via app.request().
+ * Uses an INJECTED fake runner — no real Claude, no globals, no mock.module().
  */
 
 import { describe, expect, it } from "bun:test";
 import { createChatApp } from "./chat.ts";
 import { createComposedApp } from "./run-agent.ts";
-import type { ComposedAppDeps } from "./run-agent.ts";
+import { makeMockDeps } from "./test-helpers/mock-deps.ts";
 
-// ─── Fake runner ──────────────────────────────────────────────────────────────
-
-type FakeRunner = (
-  message: string,
-  sessionKey: string,
-) => Promise<{ result: string; sessionId?: string }>;
-
-function makeFakeRunner(): {
-  runner: FakeRunner;
-  calls: Array<{ message: string; sessionKey: string }>;
-} {
-  const calls: Array<{ message: string; sessionKey: string }> = [];
-  const runner: FakeRunner = async (message, sessionKey) => {
+/**
+ * Build a fake runner mirroring createRunClaude's returned seam:
+ * (message, sessionKey?) => Promise<{ result, sessionId?, usage? }>.
+ *
+ * Records the sessionKey it was invoked with on each call so tests can
+ * assert continuity (the second call resumes the prior Claude session).
+ */
+function makeFakeRunner() {
+  const calls: Array<{ message: string; sessionKey?: string }> = [];
+  let counter = 0;
+  const runner = async (message: string, sessionKey?: string) => {
     calls.push({ message, sessionKey });
-    return { result: `reply:${message}`, sessionId: sessionKey };
+    counter += 1;
+    return {
+      result: `echo:${message}`,
+      sessionId: `claude-session-${counter}`,
+    };
   };
   return { runner, calls };
 }
 
-// ─── Minimal ComposedAppDeps double ───────────────────────────────────────────
-
-function makeMockDeps(
-  overrides: Partial<ComposedAppDeps> = {},
-): ComposedAppDeps {
-  const base: ComposedAppDeps = {
-    prisma: {
-      agent: {
-        findUnique: async () => null,
-        findMany: async () => [],
-        create: async () => {
-          throw new Error("not implemented");
-        },
-      },
-      agentPlugin: {
-        findMany: async () => [],
-      },
-    } as never,
-    agentEnvService: {
-      getConfigBundle: async () => null,
-      getByAgentId: async () => ({}),
-      upsert: async () => {},
-      patch: async () => {},
-      deleteKey: async () => {},
-    },
-    agentCronJobService: {
-      list: async () => [],
-      create: async () => {
-        throw new Error("not implemented");
-      },
-      update: async () => {
-        throw new Error("not implemented");
-      },
-      delete: async () => {},
-      reconcileSystemCrons: async () => ({ created: 0, updated: 0, deleted: 0 }),
-      get: async () => {
-        throw new Error("not implemented");
-      },
-      setEnabled: async () => {
-        throw new Error("not implemented");
-      },
-    },
-    agentToolService: {
-      list: async () => [],
-      add: async () => {
-        throw new Error("not implemented");
-      },
-      remove: async () => {},
-      toggle: async () => {
-        throw new Error("not implemented");
-      },
-    },
-    agentTokenService: {
-      create: async () => {
-        throw new Error("not implemented");
-      },
-      listForAgent: async () => [],
-      revoke: async () => null,
-    },
-    agentPluginService: {
-      list: async () => [],
-      add: async () => {
-        throw new Error("not implemented");
-      },
-      remove: async () => {},
-      removeByName: async () => {},
-    },
-    internalApiKey: "test-key",
-    sessionSecret: "test-session-secret-32-bytes!!!",
-    adminPassword: "test-password",
-    slackClient: {
-      createAppManifest: async () => ({
-        appId: "A123",
-        oauthRedirectUrl: "https://slack.com/oauth",
-      }),
-    },
-    appBaseUrl: "http://localhost:3000",
-  };
-  return { ...base, ...overrides };
-}
-
-// ─── createChatApp standalone tests ──────────────────────────────────────────
-
 describe("createChatApp — POST /chat", () => {
-  it("returns {result, sessionId} from the injected runner", async () => {
+  it("returns { result, sessionId } from the injected runner", async () => {
     const { runner } = makeFakeRunner();
     const app = createChatApp({ runner });
 
     const res = await app.request("/chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "content-type": "application/json" },
       body: JSON.stringify({ message: "hello" }),
     });
 
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { result: string; sessionId: string };
-    expect(body.result).toBe("reply:hello");
-    expect(typeof body.sessionId).toBe("string");
-    expect(body.sessionId.length).toBeGreaterThan(0);
+    const body = await res.json();
+    expect(body.result).toBe("echo:hello");
+    expect(body.sessionId).toBe("claude-session-1");
   });
 
-  it("passes the provided session back as sessionKey on the next call (continuity)", async () => {
+  it("preserves Claude session continuity across calls with the same session", async () => {
     const { runner, calls } = makeFakeRunner();
     const app = createChatApp({ runner });
 
-    // First call — no session provided
+    // First call — no session yet
     const res1 = await app.request("/chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: "first" }),
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: "first", session: "conv-1" }),
     });
-    expect(res1.status).toBe(200);
-    const body1 = (await res1.json()) as { result: string; sessionId: string };
-    const sessionId = body1.sessionId;
-    expect(typeof sessionId).toBe("string");
+    const body1 = await res1.json();
+    expect(body1.sessionId).toBe("claude-session-1");
 
-    // Second call — pass back the returned sessionId
+    // Second call with the SAME opaque session key — runner must be invoked
+    // with the sessionKey resolving to the prior Claude session.
     const res2 = await app.request("/chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: "second", session: sessionId }),
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: "second", session: "conv-1" }),
     });
     expect(res2.status).toBe(200);
-    const body2 = (await res2.json()) as { result: string; sessionId: string };
 
-    // The second call must use the same sessionKey as the first
+    // The runner is given the SAME sessionKey on both calls (continuity).
+    expect(calls[0].sessionKey).toBeDefined();
     expect(calls[1].sessionKey).toBe(calls[0].sessionKey);
-    // The sessionId returned should be stable
-    expect(body2.sessionId).toBe(sessionId);
-  });
-
-  it("generates a new sessionKey when no session is provided", async () => {
-    const { runner, calls } = makeFakeRunner();
-    const app = createChatApp({ runner });
-
-    const res = await app.request("/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: "hi" }),
-    });
-    expect(res.status).toBe(200);
-    expect(calls[0].sessionKey).toBeTruthy();
   });
 
   it("returns 400 when message is missing", async () => {
     const { runner } = makeFakeRunner();
     const app = createChatApp({ runner });
-
     const res = await app.request("/chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ session: "x" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 when message is empty", async () => {
+    const { runner } = makeFakeRunner();
+    const app = createChatApp({ runner });
+    const res = await app.request("/chat", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: "   " }),
     });
     expect(res.status).toBe(400);
   });
 });
 
-// ─── devChat flag via createComposedApp ───────────────────────────────────────
-
-describe("createComposedApp — devChat:true mounts /chat", () => {
-  it("POST /chat returns {result, sessionId} with devChat:true", async () => {
+describe("composed app — /chat gating", () => {
+  it("registers /chat when devChat:true and returns runner result", async () => {
     const { runner } = makeFakeRunner();
     const app = createComposedApp({
       ...makeMockDeps(),
       devChat: true,
-      runner,
+      chatRunner: runner,
     });
 
     const res = await app.request("/chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: "hello from composed app" }),
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: "hi" }),
     });
-
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { result: string; sessionId: string };
-    expect(body.result).toBe("reply:hello from composed app");
-    expect(typeof body.sessionId).toBe("string");
-  });
-});
-
-describe("createComposedApp — devChat:false (default) does NOT mount /chat", () => {
-  it("POST /chat returns 404 when devChat is false", async () => {
-    const { runner } = makeFakeRunner();
-    const app = createComposedApp({
-      ...makeMockDeps(),
-      devChat: false,
-      runner,
-    });
-
-    const res = await app.request("/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: "should be gone" }),
-    });
-
-    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.result).toBe("echo:hi");
   });
 
-  it("POST /chat returns 404 when devChat is not set (default-deny)", async () => {
+  it("does NOT register /chat by default (404)", async () => {
     const app = createComposedApp(makeMockDeps());
-
     const res = await app.request("/chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: "should be gone" }),
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: "hi" }),
     });
-
     expect(res.status).toBe(404);
   });
 });
