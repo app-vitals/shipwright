@@ -31,6 +31,7 @@ export interface GitHubAuthDeps {
   writeToken: (token: string) => void;
   tokenPath: string;
   credentialHelperPath: string;
+  logger?: { error: (...args: unknown[]) => void };
 }
 
 function runOrWarn(
@@ -38,10 +39,11 @@ function runOrWarn(
   cmd: string,
   args: string[],
   env: Record<string, string | undefined>,
+  logger: { error: (...args: unknown[]) => void } = console,
 ): void {
   const { status } = spawnSync(cmd, args, { stdio: "inherit", env });
   if (status !== 0) {
-    console.error(
+    logger.error(
       `[entrypoint] ${cmd} ${args.join(" ")} exited with status ${status} — git auth may be broken`,
     );
   }
@@ -56,6 +58,7 @@ export async function setupGitHubAuth(deps: GitHubAuthDeps): Promise<void> {
     writeToken,
     tokenPath,
     credentialHelperPath,
+    logger,
   } = deps;
 
   const appId = env.GH_APP_ID;
@@ -80,12 +83,13 @@ export async function setupGitHubAuth(deps: GitHubAuthDeps): Promise<void> {
         `!${credentialHelperPath}`,
       ],
       env,
+      logger,
     );
 
     const { slug, userId } = await getBotIdentity();
     const botEmail = `${userId}+${slug}[bot]@users.noreply.github.com`;
-    runOrWarn(spawnSync, "git", ["config", "--global", "user.name", `${slug}[bot]`], env);
-    runOrWarn(spawnSync, "git", ["config", "--global", "user.email", botEmail], env);
+    runOrWarn(spawnSync, "git", ["config", "--global", "user.name", `${slug}[bot]`], env, logger);
+    runOrWarn(spawnSync, "git", ["config", "--global", "user.email", botEmail], env, logger);
 
     manager.startBackgroundRefresh(async (refreshedToken) => {
       writeToken(refreshedToken);
@@ -97,7 +101,7 @@ export async function setupGitHubAuth(deps: GitHubAuthDeps): Promise<void> {
   }
 
   if (env.GH_TOKEN) {
-    runOrWarn(spawnSync, "gh", ["auth", "setup-git"], env);
+    runOrWarn(spawnSync, "gh", ["auth", "setup-git"], env, logger);
     console.log(
       "[entrypoint] GitHub PAT auth configured — git credential helper installed",
     );
