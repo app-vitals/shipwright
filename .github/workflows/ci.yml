@@ -90,6 +90,15 @@ jobs:
       - name: Playwright smoke
         run: cd site && bunx playwright test
 
+  admin-docker-build:
+    name: admin docker build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build admin Docker image
+        run: docker build -f admin/Dockerfile -t shipwright-admin:ci .
+
   e2e:
     name: e2e (metrics dashboard)
     runs-on: ubuntu-latest
