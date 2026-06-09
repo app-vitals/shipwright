@@ -16,6 +16,8 @@ import { ErrorSchema } from "./lib/api-schemas.ts";
 import { registerWithAuthz } from "./lib/api-utils.ts";
 import { createSessionMiddleware } from "./lib/session-middleware.ts";
 import type { LocalEventStore } from "./local-store.ts";
+import type { MetricsProvider } from "./metrics-provider.ts";
+import { PostHogProvider } from "./providers/posthog-provider.ts";
 import { renderDashboardPage } from "./dashboard/dashboard-page.ts";
 import {
   resolveDateRangeForMeta,
@@ -60,6 +62,13 @@ export type PostHogClientLike = {
 };
 
 export interface MetricsDeps {
+  /**
+   * Backend-agnostic read seam. When provided, all handler reads route through
+   * it. When absent, a PostHogProvider is auto-constructed from the resolved
+   * postHogClient + (optionally overridden) builder functions — so existing
+   * `postHogClient` + `buildXQueryFn` DI tests behave identically.
+   */
+  provider?: MetricsProvider;
   postHogClient?: PostHogClientLike;
   buildSummaryQueryFn?: typeof buildSummaryQuery;
   buildSummaryCycleTimeQueryFn?: typeof buildSummaryCycleTimeQuery;
@@ -288,34 +297,45 @@ function handleQueryError(
 
 // ─── Handler factory ─────────────────────────────────────────────────────────
 
+/**
+ * Resolve the active read provider. If `deps.provider` is set it wins;
+ * otherwise a PostHogProvider is constructed over the resolved client +
+ * builder overrides — reproducing the previous client.query(builder(...))
+ * behavior exactly, so existing DI tests route through it unchanged.
+ */
+function resolveProvider(
+  client: PostHogClientLike,
+  deps?: MetricsDeps,
+): MetricsProvider {
+  if (deps?.provider) return deps.provider;
+  return new PostHogProvider(client, {
+    summary: deps?.buildSummaryQueryFn ?? buildSummaryQuery,
+    summaryCycleTime:
+      deps?.buildSummaryCycleTimeQueryFn ?? buildSummaryCycleTimeQuery,
+    trends: deps?.buildTrendsQueryFn ?? buildTrendsQuery,
+    featuresTasks: deps?.buildFeaturesTasksQueryFn ?? buildFeaturesTasksQuery,
+    featuresCi: deps?.buildFeaturesCiQueryFn ?? buildFeaturesCiQuery,
+    featuresReviews:
+      deps?.buildFeaturesReviewsQueryFn ?? buildFeaturesReviewsQuery,
+    queueFunnel: deps?.buildQueueFunnelQueryFn ?? buildQueueFunnelQuery,
+    queueCycleStarted:
+      deps?.buildQueueCycleStartedQueryFn ?? buildQueueCycleStartedQuery,
+    queueCycleMerged:
+      deps?.buildQueueCycleMergedQueryFn ?? buildQueueCycleMergedQuery,
+    tokensTotals: deps?.buildTokensTotalsQueryFn ?? buildTokensTotalsQuery,
+    tokensBySessionType:
+      deps?.buildTokensBySessionTypeQueryFn ?? buildTokensBySessionTypeQuery,
+    tokensByAgent: deps?.buildTokensByAgentQueryFn ?? buildTokensByAgentQuery,
+    tokensTrends: deps?.buildTokensTrendsQueryFn ?? buildTokensTrendsQuery,
+  });
+}
+
 export function createMetricsHandlers(
   client: PostHogClientLike,
   accountsClient: AccountsClient,
   deps?: MetricsDeps,
 ) {
-  const _buildSummary = deps?.buildSummaryQueryFn ?? buildSummaryQuery;
-  const _buildSummaryCycleTime =
-    deps?.buildSummaryCycleTimeQueryFn ?? buildSummaryCycleTimeQuery;
-  const _buildTrends = deps?.buildTrendsQueryFn ?? buildTrendsQuery;
-  const _buildFeaturesTasks =
-    deps?.buildFeaturesTasksQueryFn ?? buildFeaturesTasksQuery;
-  const _buildFeaturesCi = deps?.buildFeaturesCiQueryFn ?? buildFeaturesCiQuery;
-  const _buildFeaturesReviews =
-    deps?.buildFeaturesReviewsQueryFn ?? buildFeaturesReviewsQuery;
-  const _buildQueueFunnel =
-    deps?.buildQueueFunnelQueryFn ?? buildQueueFunnelQuery;
-  const _buildQueueCycleStarted =
-    deps?.buildQueueCycleStartedQueryFn ?? buildQueueCycleStartedQuery;
-  const _buildQueueCycleMerged =
-    deps?.buildQueueCycleMergedQueryFn ?? buildQueueCycleMergedQuery;
-  const _buildTokensTotals =
-    deps?.buildTokensTotalsQueryFn ?? buildTokensTotalsQuery;
-  const _buildTokensBySessionType =
-    deps?.buildTokensBySessionTypeQueryFn ?? buildTokensBySessionTypeQuery;
-  const _buildTokensByAgent =
-    deps?.buildTokensByAgentQueryFn ?? buildTokensByAgentQuery;
-  const _buildTokensTrends =
-    deps?.buildTokensTrendsQueryFn ?? buildTokensTrendsQuery;
+  const provider = resolveProvider(client, deps);
 
   const handleSummary: AppHandler<typeof summaryRoute> = async (c) => {
     const { preset, from, to } = c.req.valid("query");
@@ -334,8 +354,8 @@ export function createMetricsHandlers(
 
     try {
       const [result, cycleTimeResult] = await Promise.all([
-        client.query(_buildSummary(dateRange)),
-        client.query(_buildSummaryCycleTime(dateRange)),
+        provider.query({ kind: "summary", range: dateRange }),
+        provider.query({ kind: "summaryCycleTime", range: dateRange }),
       ]);
       const row = rowToObject(result) ?? {};
       const cycleTimeRow = rowToObject(cycleTimeResult) ?? {};
@@ -440,8 +460,11 @@ export function createMetricsHandlers(
     const startMs = Date.now(); // infra: request timing telemetry
 
     try {
-      const hogql = _buildTrends(dateRange, grouping);
-      const result = await client.query(hogql);
+      const result = await provider.query({
+        kind: "trends",
+        range: dateRange,
+        groupBy: grouping,
+      });
 
       const rows = result.results.map((raw) => {
         const row = Object.fromEntries(
@@ -508,9 +531,9 @@ export function createMetricsHandlers(
 
     try {
       const [tasksResult, ciResult, reviewsResult] = await Promise.all([
-        client.query(_buildFeaturesTasks(dateRange)),
-        client.query(_buildFeaturesCi(dateRange)),
-        client.query(_buildFeaturesReviews(dateRange)),
+        provider.query({ kind: "featuresTasks", range: dateRange }),
+        provider.query({ kind: "featuresCi", range: dateRange }),
+        provider.query({ kind: "featuresReviews", range: dateRange }),
       ]);
 
       // Build lookup maps from CI and reviews results
@@ -612,9 +635,9 @@ export function createMetricsHandlers(
     try {
       const [funnelResult, cycleStartedResult, cycleMergedResult] =
         await Promise.all([
-          client.query(_buildQueueFunnel(dateRange)),
-          client.query(_buildQueueCycleStarted(dateRange)),
-          client.query(_buildQueueCycleMerged(dateRange)),
+          provider.query({ kind: "queueFunnel", range: dateRange }),
+          provider.query({ kind: "queueCycleStarted", range: dateRange }),
+          provider.query({ kind: "queueCycleMerged", range: dateRange }),
         ]);
 
       const funnelRow = rowToObject(funnelResult) ?? {};
@@ -713,10 +736,10 @@ export function createMetricsHandlers(
     try {
       const [totalsResult, bySessionTypeResult, byAgentResult, trendsResult] =
         await Promise.all([
-          client.query(_buildTokensTotals(dateRange)),
-          client.query(_buildTokensBySessionType(dateRange)),
-          client.query(_buildTokensByAgent(dateRange)),
-          client.query(_buildTokensTrends(dateRange)),
+          provider.query({ kind: "tokensTotals", range: dateRange }),
+          provider.query({ kind: "tokensBySessionType", range: dateRange }),
+          provider.query({ kind: "tokensByAgent", range: dateRange }),
+          provider.query({ kind: "tokensTrends", range: dateRange }),
         ]);
 
       const totalsRow = rowToObject(totalsResult) ?? {};

@@ -21,7 +21,7 @@ import {
   ghGraphql,
   ghJson,
   ghRun,
-  resolveRepos,
+  resolveAllRepos,
   resolveWorkspacePath,
 } from "./check-helpers.ts";
 
@@ -74,6 +74,7 @@ export interface Deps {
     org: string,
     repo: string,
     pr: number,
+    sha: string,
   ) => Promise<CiCheckStatus>;
   fetchMergeStatus: (
     org: string,
@@ -159,7 +160,12 @@ export async function run(deps: Deps): Promise<RunResult> {
       };
     }
 
-    const ciStatus = await deps.fetchCiStatus(org, repo, pr.number);
+    const ciStatus = await deps.fetchCiStatus(
+      org,
+      repo,
+      pr.number,
+      pr.headRefOid,
+    );
     if (ciStatus.hasFailing) {
       return {
         exit: 0,
@@ -194,25 +200,28 @@ interface GraphqlResponse {
 
 export async function buildProductionDeps(): Promise<Deps> {
   const workspacePath = resolveWorkspacePath();
-  const repos = resolveRepos(workspacePath);
-  const orgRepo = repos[0] ?? "app-vitals/shipwright";
+  const allRepos = resolveAllRepos(workspacePath);
 
   return {
     listOwnOpenPrs: async (_repo: string) => {
       const user = await getCurrentUser();
-      const items = ghJson<GhPrListItem[]>([
-        "pr",
-        "list",
-        "--state",
-        "open",
-        "--repo",
-        orgRepo,
-        "--author",
-        user,
-        "--json",
-        "number,title,headRefName,headRefOid",
-      ]);
-      return items.map((item) => ({ ...item, repo: orgRepo }));
+      const allPrs: (GhPrListItem & { repo: string })[] = [];
+      for (const repo of allRepos) {
+        const items = ghJson<GhPrListItem[]>([
+          "pr",
+          "list",
+          "--state",
+          "open",
+          "--repo",
+          repo,
+          "--author",
+          user,
+          "--json",
+          "number,title,headRefName,headRefOid",
+        ]);
+        allPrs.push(...items.map((item) => ({ ...item, repo })));
+      }
+      return allPrs;
     },
     fetchPrReviews: async (org: string, repo: string, pr: number) => {
       const query = `{
@@ -245,40 +254,39 @@ export async function buildProductionDeps(): Promise<Deps> {
       const response = ghGraphql<GraphqlResponse>(query);
       return response.data.repository.pullRequest;
     },
-    fetchCiStatus: async (_org: string, _repo: string, pr: number) => {
-      type CheckItem = { state: string; conclusion: string | null };
+    fetchCiStatus: async (
+      org: string,
+      repo: string,
+      pr: number,
+      sha: string,
+    ) => {
+      type ApiResponse = {
+        workflow_runs: { status: string; conclusion: string | null }[];
+      };
       try {
-        const checks = ghJson<CheckItem[]>([
-          "pr",
-          "checks",
-          String(pr),
-          "--repo",
-          orgRepo,
-          "--json",
-          "name,state,conclusion",
+        const data = ghJson<ApiResponse>([
+          "api",
+          `repos/${org}/${repo}/actions/runs?head_sha=${sha}`,
         ]);
-        const hasFailing = checks.some(
-          (c) =>
-            c.state === "FAILURE" ||
-            c.conclusion === "failure" ||
-            c.conclusion === "timed_out",
+        const hasFailing = data.workflow_runs.some(
+          (r) => r.conclusion === "failure" || r.conclusion === "timed_out",
         );
         return { hasFailing };
       } catch (err) {
         process.stderr.write(
-          `check-patch: gh checks query failed for PR ${pr}: ${String(err)}\n`,
+          `check-patch: actions/runs query failed for PR ${pr} sha ${sha}: ${String(err)}\n`,
         );
         return { hasFailing: false };
       }
     },
-    fetchMergeStatus: async (_org: string, _repo: string, pr: number) => {
+    fetchMergeStatus: async (org: string, repo: string, pr: number) => {
       try {
         const data = ghJson<{ mergeStateStatus: string }>([
           "pr",
           "view",
           String(pr),
           "--repo",
-          orgRepo,
+          `${org}/${repo}`,
           "--json",
           "mergeStateStatus",
         ]);
@@ -293,8 +301,8 @@ export async function buildProductionDeps(): Promise<Deps> {
         return { isBehind: false, isDirty: false };
       }
     },
-    updateBranch: async (_org: string, _repo: string, pr: number) => {
-      ghRun(["pr", "update-branch", String(pr), "--repo", orgRepo]);
+    updateBranch: async (org: string, repo: string, pr: number) => {
+      ghRun(["pr", "update-branch", String(pr), "--repo", `${org}/${repo}`]);
     },
   };
 }
