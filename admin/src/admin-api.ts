@@ -26,7 +26,7 @@ import type { AgentEnvService } from "./agent-envs.ts";
 import type { AgentPluginService } from "./agent-plugins.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 import type { AgentToolService } from "./agent-tools.ts";
-import { ApiError } from "./errors.ts";
+import { ApiError, ForbiddenError } from "./errors.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -37,7 +37,7 @@ export interface AdminDeps {
   >;
   agentCronJobService: Pick<
     AgentCronJobService,
-    "list" | "create" | "update" | "delete" | "reconcileSystemCrons"
+    "list" | "create" | "update" | "delete" | "reconcileSystemCrons" | "get"
   >;
   agentToolService: Pick<
     AgentToolService,
@@ -203,6 +203,10 @@ export function createAdminApp(deps: AdminDeps): Hono {
   app.delete("/admin/api/agents/:id/crons/:cronId", async (c) => {
     const agentId = c.req.param("id");
     const cronId = c.req.param("cronId");
+    const cron = await agentCronJobService.get(agentId, cronId);
+    if (cron.system) {
+      throw new ForbiddenError("system crons cannot be deleted");
+    }
     await agentCronJobService.delete(agentId, cronId);
     return new Response(null, { status: 204 });
   });

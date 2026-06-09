@@ -15,7 +15,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import type { AgentPlugin } from "./api.ts";
+import type { AgentPlugin } from "@shipwright/admin";
 
 // ---------------------------------------------------------------------------
 // Template loading

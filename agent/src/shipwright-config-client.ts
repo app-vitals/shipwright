@@ -8,7 +8,7 @@
  * - RecordedShipwrightConfigClient — cassette-backed double for tests
  */
 
-import type { AgentConfigResponse } from "./api.ts";
+import type { AgentConfigResponse } from "@shipwright/admin";
 
 // ─── Interface ────────────────────────────────────────────────────────────────
 

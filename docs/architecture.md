@@ -10,7 +10,7 @@ Shipwright Harness is the open-source autonomous delivery agent for [Claude Code
 |---|---|---|---|
 | **A** | **Plugin** (the system) | `plugins/shipwright/` | The Claude Code plugin users `/plugin install` — commands, skills, agents, scripts for the full delivery loop. Repo-agnostic. |
 | **B** | **Metrics dashboard** | `metrics/` | Hono service: backend-agnostic `MetricsProvider` JSON endpoints + a server-rendered dashboard. Four modes: fixtures (offline), posthog (live), postgres (Postgres event store), sqlite (default — local SQLite store + `POST /batch/` ingest). |
-| **C** | **Shipwright agent** | `agent/` | Hono service + Prisma store; a thin autonomous runner: pick next ready task → build → ship PR → forward metrics. |
+| **C** | **Shipwright agent** | `agent/` + `admin/` | Hono service + Prisma store (in `@shipwright/admin`); a thin autonomous runner: pick next ready task → build → ship PR → forward metrics. |
 
 The hard architectural rule: **no new coupling.** The plugin stays repo-agnostic; the metrics service and the agent each stand alone. Everything runs offline by default (fixtures / injected doubles / scratch queue); live external calls happen only when an env var explicitly enables them.
 
@@ -35,7 +35,7 @@ A Hono service that turns pipeline events into analytics. Five read-only JSON en
 
 A thin autonomous runner with a Prisma-backed store (SQLite locally, PostgreSQL in production) and three HTTP surfaces: a machine-polled **runtime API** (`/agents/:id/config`, `/agents/:id/crons`), a human-facing **admin CRUD API** (`/admin/api/agents/:id/...` for envs, crons, tools, tokens, plugins), and a server-rendered **admin UI** (`/admin/...` — login, agent list/detail, Slack provisioning). See **[agent.md](./agent.md)**.
 
-> The container starts via `agent/src/entrypoint-main.ts` (Dockerfile `ENTRYPOINT`), which runs the full startup sequence (`entrypoint.ts`) and then spawns `run-agent.ts`. Implemented surfaces: the admin CRUD API, the admin UI, the runtime API, the Prisma store, the Slack event handler (`slack.ts`), and the cron runtime (`cron-handler.ts`).
+> The container starts via `agent/src/entrypoint-main.ts` (Dockerfile `ENTRYPOINT`), which runs the full startup sequence (`entrypoint.ts`) and then spawns `run-agent.ts`. Implemented surfaces: the admin CRUD API, the admin UI, and the runtime API (all in `admin/src/` — package `@shipwright/admin`), the Prisma store (`admin/prisma/schema.prisma`), the Slack event handler (`slack.ts`), and the cron runtime (`cron-handler.ts`).
 
 ## Supporting surfaces
 
@@ -47,13 +47,14 @@ A thin autonomous runner with a Prisma-backed store (SQLite locally, PostgreSQL 
 
 ## Workspace layout
 
-The repo is a Bun-workspaces monorepo with **go-task** (`Taskfile.yml`) as the single local entrypoint. Three workspaces — `plugins/shipwright`, `metrics`, `agent` — are wired into the root `package.json`. The `site/` is intentionally excluded from the root `bun test` scan (its Playwright `*.spec.ts` files would crash Bun's runner).
+The repo is a Bun-workspaces monorepo with **go-task** (`Taskfile.yml`) as the single local entrypoint. Four workspaces — `plugins/shipwright`, `metrics`, `agent`, `admin` — are wired into the root `package.json`. The `site/` is intentionally excluded from the root `bun test` scan (its Playwright `*.spec.ts` files would crash Bun's runner).
 
 ```
 shipwright/
 ├── plugins/shipwright/   A — the plugin (commands, skills, agents, scripts)
 ├── metrics/              B — provider-agnostic Hono service (sqlite default / posthog / postgres / fixtures)
-├── agent/                C — Shipwright agent (Hono + Prisma)
+├── agent/                C — Shipwright agent runtime (entrypoint, cron, Slack, GitHub auth)
+├── admin/                C — Admin service: CRUD API, admin UI, Prisma store (@shipwright/admin)
 ├── site/                 marketing site (Astro, separate toolchain)
 ├── brand/                locked design system
 ├── state/                local task-store / review-cache fallback
