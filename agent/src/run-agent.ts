@@ -235,11 +235,33 @@ export function createComposedApp(deps: ComposedAppDeps): Hono {
 // ─── Migration preflight ──────────────────────────────────────────────────────
 
 /**
+ * Options accepted by runMigrations.
+ * `spawn` is injectable for testing — defaults to Bun.spawn in production.
+ * `metaDir` is injectable for testing — defaults to import.meta.dir in production.
+ */
+export interface RunMigrationsOptions {
+  /** Injected spawn function — defaults to Bun.spawn. */
+  spawn?: typeof Bun.spawn;
+  /** Injected source directory — defaults to import.meta.dir. */
+  metaDir?: string;
+  /** Injected env record — defaults to process.env. */
+  env?: NodeJS.ProcessEnv;
+}
+
+/**
  * Runs `prisma migrate deploy` as a boot preflight.
  * Idempotent — safe to call on every startup. Throws on migration failure.
+ *
+ * Accept injected `spawn`, `metaDir`, and `env` for testability — callers
+ * can verify the resolved `cwd` without running real prisma commands.
  */
-async function runMigrations(): Promise<void> {
-  const databaseUrl = process.env.DATABASE_URL_AGENT;
+export async function runMigrations(
+  opts: RunMigrationsOptions = {},
+): Promise<void> {
+  const spawnFn = opts.spawn ?? Bun.spawn;
+  const metaDir = opts.metaDir ?? import.meta.dir;
+  const env = opts.env ?? process.env;
+  const databaseUrl = env.DATABASE_URL_AGENT;
   if (!databaseUrl) {
     console.warn(
       "[run-agent] DATABASE_URL_AGENT not set — skipping prisma migrate deploy",
@@ -249,11 +271,11 @@ async function runMigrations(): Promise<void> {
 
   console.log("[run-agent] running prisma migrate deploy...");
 
-  const proc = Bun.spawn(
+  const proc = spawnFn(
     ["bunx", "prisma", "migrate", "deploy", "--schema=prisma/schema.prisma"],
     {
-      cwd: join(import.meta.dir, "../../admin"),
-      env: { ...process.env, DATABASE_URL_AGENT: databaseUrl },
+      cwd: join(metaDir, "../../admin"),
+      env: { ...env, DATABASE_URL_AGENT: databaseUrl },
       stdout: "pipe",
       stderr: "pipe",
     },
