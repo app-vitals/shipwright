@@ -1,35 +1,22 @@
 /**
  * agent/src/run-agent.ts
  *
- * Bootstraps and starts the Shipwright agent Hono server.
+ * Thin agent server — health + /agents/* proxy only.
  *
  * Called by entrypoint.ts after all environment setup is complete.
  * Exports createComposedApp(deps) for testing and startServer() for programmatic use.
  * Runs startServer() directly when executed as the main entry (bun run run-agent.ts).
  *
- * Route mount order (important — avoids shadowing):
- *   GET  /health                 — health check (no auth)
- *   *    /agents/*               — runtime API  (Bearer SHIPWRIGHT_INTERNAL_API_KEY)
- *   *    /admin/api/*            — admin CRUD API (session JWT) — MUST be before /admin/*
- *   *    /admin/*                — admin UI       (session JWT)
+ * The admin routes (/admin/api/* and /admin/*) are now served by the standalone
+ * admin service (admin/src/main.ts). The /agents/* endpoint proxies transparently
+ * to the admin service via SHIPWRIGHT_API_URL.
+ *
+ * Route mount order:
+ *   GET  /health     — health check (no auth)
+ *   *    /agents/*   — transparent proxy to admin service (preserves all headers)
  */
 
 import { join } from "node:path";
-import {
-  AgentCronJobService,
-  AgentEnvService,
-  AgentPluginService,
-  AgentTokenService,
-  AgentToolService,
-  HttpGoogleAuthClient,
-  HttpSlackProvisioningClient,
-  PrismaClient,
-  createAdminApp,
-  createAdminUIApp,
-  createAgentRuntimeApp,
-  makeTokenCrypto,
-} from "@shipwright/admin";
-import type { AdminUIDeps } from "@shipwright/admin";
 import { Hono } from "hono";
 import type { ChatRunner } from "./chat.ts";
 import { createChatApp } from "./chat.ts";
@@ -41,91 +28,17 @@ import { ensureAgentHome } from "./setup.ts";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 /**
- * Minimal Prisma interface needed by the composed app.
- * Matches what admin-ui.ts and api.ts expect (PrismaLike shapes).
- */
-export interface PrismaLike {
-  agent: {
-    findUnique(args: { where: { id: string } }): Promise<{
-      id: string;
-      name: string;
-      slackId: string | null;
-      createdAt: Date;
-      updatedAt: Date;
-    } | null>;
-    findMany(args?: object): Promise<
-      Array<{
-        id: string;
-        name: string;
-        slackId: string | null;
-        createdAt: Date;
-        updatedAt?: Date;
-      }>
-    >;
-    create(args: {
-      data: { name: string; slackId?: string | null };
-    }): Promise<{
-      id: string;
-      name: string;
-      slackId: string | null;
-      createdAt: Date;
-      updatedAt: Date;
-    }>;
-  };
-  agentPlugin: {
-    findMany(args: {
-      where: { agentId: string; enabled: boolean };
-    }): Promise<
-      Array<{
-        id: string;
-        name: string;
-        version: string | null;
-        enabled: boolean;
-      }>
-    >;
-  };
-}
-
-/**
  * All dependencies the composed app needs.
  * Provided by startServer() for production; injected as doubles in tests.
  */
 export interface ComposedAppDeps {
-  prisma: PrismaLike;
-  agentEnvService: Pick<
-    AgentEnvService,
-    "getConfigBundle" | "getByAgentId" | "upsert" | "patch" | "deleteKey"
-  >;
-  agentCronJobService: Pick<
-    AgentCronJobService,
-    | "list"
-    | "create"
-    | "update"
-    | "delete"
-    | "reconcileSystemCrons"
-    | "get"
-    | "setEnabled"
-  >;
-  agentToolService: Pick<
-    AgentToolService,
-    "list" | "add" | "remove" | "toggle"
-  >;
-  agentTokenService: Pick<
-    AgentTokenService,
-    "create" | "listForAgent" | "revoke"
-  >;
-  agentPluginService: Pick<
-    AgentPluginService,
-    "list" | "add" | "remove" | "removeByName"
-  >;
-  internalApiKey: string;
-  sessionSecret: string;
-  googleClientId: string;
-  googleClientSecret: string;
-  adminAllowedEmails: string[];
-  googleClient: AdminUIDeps["googleClient"];
-  slackClient: AdminUIDeps["slackClient"];
-  appBaseUrl: string;
+  /** Base URL of the standalone admin service (e.g. https://admin.example.com) */
+  adminApiUrl: string;
+  /**
+   * Fetch implementation for proxying requests to the admin service.
+   * Defaults to the global fetch. Inject a mock in tests.
+   */
+  fetchFn?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
   /**
    * Dev-only local chat transport. DEFAULT-DENY: when falsy (the default),
    * the POST /chat route is NOT registered at all (requests 404). Read once
@@ -139,154 +52,49 @@ export interface ComposedAppDeps {
 // ─── App factory ──────────────────────────────────────────────────────────────
 
 /**
- * Composes all sub-apps into a single Hono root app.
+ * Composes the thin agent app: health check + /agents/* proxy + optional /chat.
  *
- * Mount order matters — /admin/api/* (admin CRUD API) must be mounted
- * BEFORE /admin/* (admin UI) so the JSON API routes are not shadowed by the
- * broader HTML catch-all routes in admin-ui.ts.
+ * The /agents/* handler is a transparent proxy to the standalone admin service.
+ * All headers (including Authorization) are forwarded as-is so the admin service
+ * can enforce Bearer auth without the agent duplicating that logic.
  *
- * The runtime API (api.ts) uses app.use("*", ...) for Bearer auth, which
- * would intercept all routes if mounted at root via route("/", ...). To avoid
- * this, the runtime API is gated behind an /agents/* middleware guard at the
- * root level, and the sub-app handles internal path matching.
- *
- * Accepts injected deps so tests can pass doubles without touching real DB or network.
+ * Accepts injected deps so tests can pass a mock fetchFn without touching real network.
  */
 export function createComposedApp(deps: ComposedAppDeps): Hono {
-  const {
-    prisma,
-    agentEnvService,
-    agentCronJobService,
-    agentToolService,
-    agentTokenService,
-    agentPluginService,
-    internalApiKey,
-    sessionSecret,
-    googleClientId,
-    googleClientSecret,
-    adminAllowedEmails,
-    googleClient,
-    slackClient,
-    appBaseUrl,
-    devChat,
-    chatRunner,
-  } = deps;
+  const { adminApiUrl, fetchFn = fetch, devChat, chatRunner } = deps;
 
   const root = new Hono();
 
   // 1. Health check — no auth, mounted at root
-  const healthApp = createHealthApp();
-  root.route("/", healthApp);
+  root.route("/", createHealthApp());
 
-  // 1b. Dev-only chat transport — DEFAULT-DENY. Only registered when devChat
-  //     is true AND a runner is provided; otherwise POST /chat 404s.
+  // 2. Dev-only chat transport — DEFAULT-DENY. Only registered when devChat
+  //    is true AND a runner is provided; otherwise POST /chat 404s.
   if (devChat && chatRunner) {
-    const chatApp = createChatApp({ runner: chatRunner });
-    root.route("/", chatApp);
+    root.route("/", createChatApp({ runner: chatRunner }));
   }
 
-  // 2. Runtime API — Bearer SHIPWRIGHT_INTERNAL_API_KEY
-  //
-  //    createAgentRuntimeApp uses app.use("*", ...) for Bearer auth — a guard
-  //    that runs on every request reaching that sub-app. Mounting it at root
-  //    via route("/", runtimeApp) would cause the "use *" middleware to intercept
-  //    ALL requests (including /health, /admin/*) and return 401.
-  //
-  //    To scope it, we mount a thin agentsShim at /agents. The shim matches
-  //    any /agents/* request at the root level and forwards the raw request to
-  //    runtimeApp (which expects full paths like /agents/:id/config). Hono
-  //    preserves the full URL in the raw Request, so path matching inside
-  //    runtimeApp works correctly without any prefix rewriting.
-  const runtimeApp = createAgentRuntimeApp({
-    agentEnvService,
-    agentCronJobService,
-    prisma: prisma as never,
-    internalApiKey,
+  // 3. /agents/* — transparent proxy to the standalone admin service.
+  //    When Hono routes to agentsProxy, c.req.path is the path AFTER the
+  //    /agents prefix is stripped (e.g. "/:id/config"). We reconstruct the
+  //    full upstream path as /agents + c.req.path.
+  const agentsProxy = new Hono();
+  agentsProxy.all("/*", async (c) => {
+    const targetUrl = `${adminApiUrl}/agents${c.req.path}`;
+    const proxyReq = new Request(targetUrl, {
+      method: c.req.method,
+      headers: c.req.raw.headers,
+      body: c.req.raw.body,
+    });
+    const response = await fetchFn(proxyReq);
+    return new Response(response.body, {
+      status: response.status,
+      headers: response.headers,
+    });
   });
-
-  const agentsShim = new Hono();
-  agentsShim.all("/*", async (c) => runtimeApp.fetch(c.req.raw, c.env));
-
-  root.route("/agents", agentsShim);
-
-  // 3. Admin CRUD API — /admin/api/* — session JWT
-  //    MUST be mounted before admin-ui (/admin/*) to avoid shadowing.
-  const adminApiApp = createAdminApp({
-    agentEnvService,
-    agentCronJobService,
-    agentToolService,
-    agentTokenService,
-    agentPluginService,
-    sessionSecret,
-  });
-  root.route("/", adminApiApp);
-
-  // 4. Admin UI — /admin/* — session JWT
-  const adminUIApp = createAdminUIApp({
-    prisma: prisma as never,
-    agentEnvService,
-    agentCronJobService,
-    agentToolService,
-    agentTokenService,
-    agentPluginService,
-    sessionSecret,
-    googleClientId,
-    googleClientSecret,
-    adminAllowedEmails,
-    googleClient,
-    slackClient,
-    appBaseUrl,
-  });
-  root.route("/", adminUIApp);
+  root.route("/agents", agentsProxy);
 
   return root;
-}
-
-// ─── Migration preflight ──────────────────────────────────────────────────────
-
-/**
- * Runs `prisma migrate deploy` as a boot preflight.
- * Idempotent — safe to call on every startup. Throws on migration failure.
- */
-async function runMigrations(): Promise<void> {
-  const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) {
-    console.warn(
-      "[run-agent] DATABASE_URL not set — skipping prisma migrate deploy",
-    );
-    return;
-  }
-
-  console.log("[run-agent] running prisma migrate deploy...");
-
-  const proc = Bun.spawn(
-    ["bunx", "prisma", "migrate", "deploy", "--schema=prisma/schema.prisma"],
-    {
-      cwd: join(import.meta.dir, "../../admin"),
-      env: { ...process.env, DATABASE_URL: databaseUrl },
-      stdout: "pipe",
-      stderr: "pipe",
-    },
-  );
-
-  const [stdout, stderr] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-  ]);
-
-  await proc.exited;
-
-  if (proc.exitCode !== 0) {
-    console.error("[run-agent] prisma migrate deploy failed:");
-    console.error(stderr);
-    throw new Error(`prisma migrate deploy exited with code ${proc.exitCode}`);
-  }
-
-  if (stdout.trim()) {
-    console.log("[run-agent]", stdout.trim());
-  }
-
-  console.log("[run-agent] migrations complete");
 }
 
 // ─── Server entry ─────────────────────────────────────────────────────────────
@@ -308,35 +116,7 @@ export async function startServer(opts?: { port?: number }): Promise<void> {
     `[run-agent] starting agent ${config.shipwright.agentId ?? "(unset)"} on port ${port}`,
   );
 
-  // Run DB migrations as idempotent preflight
-  await runMigrations();
-
-  // Construct PrismaClient once at boot
-  const prisma = new PrismaClient();
-
-  // Construct TokenCrypto — reads SHIPWRIGHT_ENCRYPTION_KEY at call time
-  const crypto = makeTokenCrypto();
-
-  // Construct all services with injected deps
-  const agentEnvService = new AgentEnvService(prisma, crypto);
-  const agentCronJobService = new AgentCronJobService(prisma);
-  const agentToolService = new AgentToolService(prisma);
-  const agentTokenService = new AgentTokenService(prisma);
-  const agentPluginService = new AgentPluginService(prisma);
-
-  // Read config values at call time (no module-level env reads)
-  const internalApiKey = process.env.SHIPWRIGHT_INTERNAL_API_KEY ?? "";
-  const sessionSecret = process.env.SHIPWRIGHT_SESSION_SECRET ?? "";
-  const googleClientId = process.env.GOOGLE_CLIENT_ID ?? "";
-  const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET ?? "";
-  const adminAllowedEmails = (process.env.ADMIN_ALLOWED_EMAILS ?? "")
-    .split(",")
-    .map((e) => e.trim())
-    .filter(Boolean);
-  const appBaseUrl = process.env.APP_BASE_URL ?? `http://localhost:${port}`;
-
-  const googleClient = new HttpGoogleAuthClient();
-  const slackClient = new HttpSlackProvisioningClient();
+  const adminApiUrl = process.env.SHIPWRIGHT_API_URL ?? "";
 
   // Dev-only chat transport: read the gate ONCE at composition time. When on,
   // construct a real Claude runner; otherwise the route is never registered.
@@ -348,24 +128,7 @@ export async function startServer(opts?: { port?: number }): Promise<void> {
     );
   }
 
-  const app = createComposedApp({
-    prisma,
-    agentEnvService,
-    agentCronJobService,
-    agentToolService,
-    agentTokenService,
-    agentPluginService,
-    internalApiKey,
-    sessionSecret,
-    googleClientId,
-    googleClientSecret,
-    adminAllowedEmails,
-    googleClient,
-    slackClient,
-    appBaseUrl,
-    devChat,
-    chatRunner,
-  });
+  const app = createComposedApp({ adminApiUrl, devChat, chatRunner });
 
   Bun.serve({ fetch: app.fetch, port });
 
