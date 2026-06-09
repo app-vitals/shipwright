@@ -615,31 +615,26 @@ describe("handleCronRequest — preCheck", () => {
 
   test("preCheck script not found → warning logged, runner NOT called, no throw", async () => {
     const warnMessages: string[] = [];
-    const originalWarn = console.warn;
-    console.warn = (...args: unknown[]) => {
+    const warnFn = (...args: unknown[]) => {
       warnMessages.push(args.map(String).join(" "));
     };
 
-    try {
-      await expect(
-        handleCronRequest(
-          {
-            jobId: "precheck-missing",
-            prompt: "original prompt",
-            silent: true,
-            preCheck: "shipwright:check-dev-task.ts",
-          },
-          { ...deps, pluginCacheDir: tmpDir },
-        ),
-      ).resolves.toBeUndefined();
+    await expect(
+      handleCronRequest(
+        {
+          jobId: "precheck-missing",
+          prompt: "original prompt",
+          silent: true,
+          preCheck: "shipwright:check-dev-task.ts",
+        },
+        { ...deps, pluginCacheDir: tmpDir, warnFn },
+      ),
+    ).resolves.toBeUndefined();
 
-      expect(mockRunner).not.toHaveBeenCalled();
-      expect(
-        warnMessages.some((m) => m.includes("preCheck script not found")),
-      ).toBe(true);
-    } finally {
-      console.warn = originalWarn;
-    }
+    expect(mockRunner).not.toHaveBeenCalled();
+    expect(
+      warnMessages.some((m) => m.includes("preCheck script not found")),
+    ).toBe(true);
   });
 
   test("preCheck resolves via installed_plugins.json manifest (production path)", async () => {
@@ -686,41 +681,37 @@ describe("handleCronRequest — preCheck", () => {
 
   test("preCheck manifest path: missing plugins.json → warning logged, runner NOT called", async () => {
     const warnMessages: string[] = [];
-    const originalWarn = console.warn;
-    console.warn = (...args: unknown[]) => {
+    const warnFn = (...args: unknown[]) => {
       warnMessages.push(args.map(String).join(" "));
     };
 
-    try {
-      await expect(
-        handleCronRequest(
-          {
-            jobId: "precheck-nomanifest",
-            prompt: "original prompt",
-            silent: true,
-            preCheck: "shipwright:check-dev-task.ts",
-          },
-          {
-            ...deps,
-            pluginManifestPath: join(
-              tmpDir,
-              "nonexistent_installed_plugins.json",
-            ),
-          },
-        ),
-      ).resolves.toBeUndefined();
+    await expect(
+      handleCronRequest(
+        {
+          jobId: "precheck-nomanifest",
+          prompt: "original prompt",
+          silent: true,
+          preCheck: "shipwright:check-dev-task.ts",
+        },
+        {
+          ...deps,
+          pluginManifestPath: join(
+            tmpDir,
+            "nonexistent_installed_plugins.json",
+          ),
+          warnFn,
+        },
+      ),
+    ).resolves.toBeUndefined();
 
-      expect(mockRunner).not.toHaveBeenCalled();
-      expect(
-        warnMessages.some(
-          (m) =>
-            m.includes("failed to read installed_plugins.json") ||
-            m.includes("preCheck script not found"),
-        ),
-      ).toBe(true);
-    } finally {
-      console.warn = originalWarn;
-    }
+    expect(mockRunner).not.toHaveBeenCalled();
+    expect(
+      warnMessages.some(
+        (m) =>
+          m.includes("failed to read installed_plugins.json") ||
+          m.includes("preCheck script not found"),
+      ),
+    ).toBe(true);
   });
 
   test("relative path (./scripts/check.ts) resolves against workspace, output becomes prompt", async () => {
@@ -780,63 +771,53 @@ describe("handleCronRequest — preCheck", () => {
 
   test("relative path without workspace → warning, runner NOT called", async () => {
     const warnMessages: string[] = [];
-    const originalWarn = console.warn;
-    console.warn = (...args: unknown[]) => {
+    const warnFn = (...args: unknown[]) => {
       warnMessages.push(args.map(String).join(" "));
     };
 
-    try {
-      await expect(
-        handleCronRequest(
-          {
-            jobId: "precheck-relpath-noworkspace",
-            prompt: "original prompt",
-            silent: true,
-            preCheck: "./scripts/check.ts",
-          },
-          { ...deps },
-        ),
-      ).resolves.toBeUndefined();
+    await expect(
+      handleCronRequest(
+        {
+          jobId: "precheck-relpath-noworkspace",
+          prompt: "original prompt",
+          silent: true,
+          preCheck: "./scripts/check.ts",
+        },
+        { ...deps, warnFn },
+      ),
+    ).resolves.toBeUndefined();
 
-      expect(mockRunner).not.toHaveBeenCalled();
-      expect(
-        warnMessages.some(
-          (m) => m.includes("relative") || m.includes("workspace"),
-        ),
-      ).toBe(true);
-    } finally {
-      console.warn = originalWarn;
-    }
+    expect(mockRunner).not.toHaveBeenCalled();
+    expect(
+      warnMessages.some(
+        (m) => m.includes("relative") || m.includes("workspace"),
+      ),
+    ).toBe(true);
   });
 
   test("relative path script not found → warning, runner NOT called", async () => {
     const tmpWorkspace = mkdtempSync(join(tmpdir(), "cron-precheck-notfound-"));
     const warnMessages: string[] = [];
-    const originalWarn = console.warn;
-    console.warn = (...args: unknown[]) => {
+    const warnFn = (...args: unknown[]) => {
       warnMessages.push(args.map(String).join(" "));
     };
 
-    try {
-      await expect(
-        handleCronRequest(
-          {
-            jobId: "precheck-relpath-notfound",
-            prompt: "original prompt",
-            silent: true,
-            preCheck: "./nonexistent.ts",
-          },
-          { ...deps, workspace: tmpWorkspace },
-        ),
-      ).resolves.toBeUndefined();
+    await expect(
+      handleCronRequest(
+        {
+          jobId: "precheck-relpath-notfound",
+          prompt: "original prompt",
+          silent: true,
+          preCheck: "./nonexistent.ts",
+        },
+        { ...deps, workspace: tmpWorkspace, warnFn },
+      ),
+    ).resolves.toBeUndefined();
 
-      expect(mockRunner).not.toHaveBeenCalled();
-      expect(
-        warnMessages.some((m) => m.includes("preCheck script not found")),
-      ).toBe(true);
-    } finally {
-      console.warn = originalWarn;
-    }
+    expect(mockRunner).not.toHaveBeenCalled();
+    expect(
+      warnMessages.some((m) => m.includes("preCheck script not found")),
+    ).toBe(true);
   });
 });
 
@@ -847,8 +828,8 @@ describe("POST /cron HTTP endpoint", () => {
   const servers: Server<any>[] = [];
 
   // biome-ignore lint/suspicious/noExplicitAny: Server type param varies by bun version
-  function serve(port: number): Server<any> {
-    const s = startHealthServer(port, deps);
+  function serve(cronDeps?: typeof deps): Server<any> {
+    const s = startHealthServer(0, cronDeps);
     servers.push(s);
     return s;
   }
@@ -860,9 +841,10 @@ describe("POST /cron HTTP endpoint", () => {
 
   test("200 on valid channel request", async () => {
     mockRunner.mockResolvedValueOnce({ result: "ok", sessionId: "s" });
-    serve(19920);
+    const s = serve(deps);
+    const url = `http://localhost:${s.port}/cron`;
 
-    const res = await fetch("http://localhost:19920/cron", {
+    const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ jobId: "j1", prompt: "hello", channel: "C-X" }),
@@ -875,9 +857,10 @@ describe("POST /cron HTTP endpoint", () => {
 
   test("200 on valid user DM request", async () => {
     mockRunner.mockResolvedValueOnce({ result: "dm reply", sessionId: "s" });
-    serve(19921);
+    const s = serve(deps);
+    const url = `http://localhost:${s.port}/cron`;
 
-    const res = await fetch("http://localhost:19921/cron", {
+    const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ jobId: "j2", prompt: "daily", user: "U-DAN" }),
@@ -887,9 +870,10 @@ describe("POST /cron HTTP endpoint", () => {
   });
 
   test("400 for missing prompt", async () => {
-    serve(19922);
+    const s = serve(deps);
+    const url = `http://localhost:${s.port}/cron`;
 
-    const res = await fetch("http://localhost:19922/cron", {
+    const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ jobId: "j3" }),
@@ -898,9 +882,10 @@ describe("POST /cron HTTP endpoint", () => {
   });
 
   test("422 when neither channel nor user and not silent", async () => {
-    serve(19923);
+    const s = serve(deps);
+    const url = `http://localhost:${s.port}/cron`;
 
-    const res = await fetch("http://localhost:19923/cron", {
+    const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ jobId: "j4", prompt: "hello" }),
@@ -911,9 +896,10 @@ describe("POST /cron HTTP endpoint", () => {
   });
 
   test("400 for invalid JSON body", async () => {
-    serve(19924);
+    const s = serve(deps);
+    const url = `http://localhost:${s.port}/cron`;
 
-    const res = await fetch("http://localhost:19924/cron", {
+    const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: "not json {{",
@@ -922,9 +908,10 @@ describe("POST /cron HTTP endpoint", () => {
   });
 
   test("400 for missing jobId in body", async () => {
-    serve(19925);
+    const s = serve(deps);
+    const url = `http://localhost:${s.port}/cron`;
 
-    const res = await fetch("http://localhost:19925/cron", {
+    const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ prompt: "hello", channel: "C-X" }),
@@ -934,9 +921,10 @@ describe("POST /cron HTTP endpoint", () => {
 
   test("500 when Claude runner throws", async () => {
     mockRunner.mockRejectedValueOnce(new Error("claude down"));
-    serve(19926);
+    const s = serve(deps);
+    const url = `http://localhost:${s.port}/cron`;
 
-    const res = await fetch("http://localhost:19926/cron", {
+    const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ jobId: "j5", prompt: "run", channel: "C-X" }),
@@ -948,9 +936,10 @@ describe("POST /cron HTTP endpoint", () => {
 
   test("200 with silent=true — no Slack post", async () => {
     mockRunner.mockResolvedValueOnce({ result: "done", sessionId: "s" });
-    serve(19927);
+    const s = serve(deps);
+    const url = `http://localhost:${s.port}/cron`;
 
-    const res = await fetch("http://localhost:19927/cron", {
+    const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ jobId: "j6", prompt: "run", silent: true }),
@@ -960,10 +949,11 @@ describe("POST /cron HTTP endpoint", () => {
   });
 
   test("503 when cronDeps not configured", async () => {
-    const s = startHealthServer(19928);
+    const s = startHealthServer(0);
     servers.push(s);
+    const url = `http://localhost:${s.port}/cron`;
 
-    const res = await fetch("http://localhost:19928/cron", {
+    const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ jobId: "j7", prompt: "run", channel: "C-X" }),
@@ -972,9 +962,10 @@ describe("POST /cron HTTP endpoint", () => {
   });
 
   test("405 on GET /cron", async () => {
-    serve(19929);
+    const s = serve(deps);
+    const url = `http://localhost:${s.port}/cron`;
 
-    const res = await fetch("http://localhost:19929/cron", {
+    const res = await fetch(url, {
       method: "GET",
     });
     expect(res.status).toBe(405);

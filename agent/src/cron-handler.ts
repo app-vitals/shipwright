@@ -51,6 +51,8 @@ export interface CronHandlerDeps {
   pluginCacheDir?: string;
   pluginManifestPath?: string;
   alertsChannel?: string;
+  /** Override for console.warn — injected in tests to capture warnings without global mutation. */
+  warnFn?: (...args: unknown[]) => void;
 }
 
 export async function handleCronRequest(
@@ -75,6 +77,7 @@ export async function handleCronRequest(
       "plugins",
       "installed_plugins.json",
     ),
+    warnFn = console.warn,
   } = deps;
 
   if (!prompt) {
@@ -95,7 +98,7 @@ export async function handleCronRequest(
 
     if (isFilePath) {
       if (isRelative && workspace === undefined) {
-        console.warn(
+        warnFn(
           `[agent:cron] preCheck is a relative path but no workspace is set — skipping job "${jobId}"`,
         );
         return;
@@ -127,7 +130,7 @@ export async function handleCronRequest(
             if (existsSync(candidate)) scriptPath = candidate;
           }
         } catch (err) {
-          console.warn(
+          warnFn(
             `[agent:cron] failed to read installed_plugins.json: ${String(err)}`,
           );
         }
@@ -135,7 +138,7 @@ export async function handleCronRequest(
     }
 
     if (!scriptPath) {
-      console.warn(
+      warnFn(
         `[agent:cron] preCheck script not found for "${req.preCheck}" — skipping job "${jobId}"`,
       );
       return;
@@ -213,7 +216,7 @@ export async function handleCronRequest(
 
   if (channel) {
     if (user) {
-      console.warn(
+      warnFn(
         `[agent:cron] job "${jobId}" has both channel and user — posting to channel`,
       );
     }
@@ -223,7 +226,7 @@ export async function handleCronRequest(
       onPost?.(channel, postResult.ts);
       if (onSession && sessionId) onSession(channel, postResult.ts, sessionId);
     } else {
-      console.warn(
+      warnFn(
         `[agent:cron] job "${jobId}" postMessage returned no ts — react markers will be skipped`,
       );
     }
@@ -250,7 +253,7 @@ export async function handleCronRequest(
       if (onSession && sessionId)
         onSession(dmChannel, dmPostResult.ts, sessionId);
     } else {
-      console.warn(
+      warnFn(
         `[agent:cron] job "${jobId}" DM postMessage returned no ts — react markers will be skipped`,
       );
     }
