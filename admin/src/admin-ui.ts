@@ -18,6 +18,7 @@
  * Login is password-only (adminPassword from deps) — no DB user lookup.
  */
 
+import { timingSafeEqual as cryptoTimingSafeEqual } from "node:crypto";
 import { Hono, type MiddlewareHandler } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { sign, verify } from "hono/jwt";
@@ -125,24 +126,15 @@ const ADMIN_USER_NAME = "admin";
 // ─── Timing-safe comparison ───────────────────────────────────────────────────
 
 /**
- * Constant-time string comparison to prevent timing attacks on the admin password.
+ * Constant-time string comparison using node:crypto's timingSafeEqual.
+ * Returns false immediately on length mismatch (length is not secret here —
+ * the admin password length is fixed, so early-exit is fine).
  */
-function timingSafeEqual(a: string, b: string): boolean {
-  const ab = new TextEncoder().encode(a);
-  const bb = new TextEncoder().encode(b);
-  if (ab.length !== bb.length) {
-    // Still iterate to avoid length-based timing leak
-    let diff = ab.length ^ bb.length;
-    for (let i = 0; i < Math.max(ab.length, bb.length); i++) {
-      diff |= (ab[i] ?? 0) ^ (bb[i] ?? 0);
-    }
-    return diff === 0;
-  }
-  let diff = 0;
-  for (let i = 0; i < ab.length; i++) {
-    diff |= ab[i] ^ bb[i];
-  }
-  return diff === 0;
+function safeCompare(a: string, b: string): boolean {
+  const ab = Buffer.from(a, "utf8");
+  const bb = Buffer.from(b, "utf8");
+  if (ab.length !== bb.length) return false;
+  return cryptoTimingSafeEqual(ab, bb);
 }
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
@@ -238,7 +230,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
       return html(renderLoginPage({ error: "Invalid form submission." }));
     }
 
-    if (!password || !timingSafeEqual(password, adminPassword)) {
+    if (!password || !safeCompare(password, adminPassword)) {
       return new Response(renderLoginPage({ error: "Invalid password." }), {
         status: 401,
         headers: { "Content-Type": "text/html; charset=utf-8" },
