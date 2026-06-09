@@ -73,6 +73,7 @@ All child models cascade-delete with their `Agent`.
 | `GH_APP_PRIVATE_KEY` | GitHub App auth | PEM private key for the GitHub App (newlines may be `\n`-escaped). Required when using the App auth path. |
 | `GH_APP_INSTALLATION_ID` | GitHub App auth | Installation ID for the target org/repo. Required when using the App auth path. |
 | `GH_TOKEN` | GitHub PAT auth | Personal Access Token for the legacy `gh auth setup-git` path. Used only if the App env vars are absent. |
+| `SHIPWRIGHT_DEV_CHAT` | dev only | Set to `"true"` to enable the `POST /chat` endpoint. Must **never** be set in production — `task doctor` enforces this via `check-dev-chat-guard.ts`. |
 
 ## Key Files
 
@@ -90,7 +91,9 @@ All child models cascade-delete with their `Agent`.
 | `agent/src/entrypoint-main.ts` | Production CLI entry point — wires real deps and calls `runEntrypoint()`. Invoked by the Dockerfile `ENTRYPOINT`. |
 | `agent/src/entrypoint.ts` | Container startup sequence (`runEntrypoint()`) — dependency-injected for testability. Validates vars, fetches config, applies env, symlinks `~/.claude`, runs GitHub auth + mise + plugin install, then spawns the server. |
 | `agent/src/cli-args.ts` | CLI argument parsing (`parseCliArgs()`) — `--agent-id`, `--api-url`, `--api-key` flags with env var fallbacks. Pure, no I/O. |
-| `agent/src/run-agent.ts` | Composes all sub-apps into a single Hono root app (`createComposedApp(deps: ComposedAppDeps)`). Exports `PrismaLike` and `ComposedAppDeps` for test injection. `startServer()` wires real deps and calls `createComposedApp`; invoked by `entrypoint.ts` after all environment setup is complete. |
+| `agent/src/run-agent.ts` | Composes all sub-apps into a single Hono root app (`createComposedApp(deps: ComposedAppDeps)`). Exports `PrismaLike` and `ComposedAppDeps` for test injection. `ComposedAppDeps` accepts optional `devChat` (boolean) and `runner` fields to mount the dev chat endpoint. `startServer()` wires real deps and calls `createComposedApp`; invoked by `entrypoint.ts` after all environment setup is complete. |
+| `agent/src/chat.ts` | Dev-only chat transport. `createChatApp({ runner })` — Hono sub-app with `POST /chat`. Exports `Runner` and `ChatAppDeps` types. `checkDevChatGuard(env)` — production guard that fails if `SHIPWRIGHT_DEV_CHAT` is set. |
+| `agent/src/check-dev-chat-guard.ts` | Doctor script: runs `checkDevChatGuard` against `process.env` and exits 1 if `SHIPWRIGHT_DEV_CHAT` is set. Invoked by `task doctor`. |
 | `agent/src/shipwright-config-client.ts` | `ShipwrightConfigClient` interface + `HttpShipwrightConfigClient` (real HTTP) + `RecordedShipwrightConfigClient` (cassette double for tests). |
 | `agent/src/setup.ts` | Workspace bootstrapping — directory scaffolding, identity-file seeding, plugin installation, and mise startup. Safe to call on every agent startup (idempotent). |
 | `admin/src/crypto.ts` / `token-crypto.ts` | AES-256-GCM + token hashing helpers. |
