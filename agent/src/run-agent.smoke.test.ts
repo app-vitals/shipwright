@@ -11,14 +11,12 @@
 import { beforeAll, describe, expect, it } from "bun:test";
 import { sign } from "hono/jwt";
 import { createComposedApp } from "./run-agent.ts";
-import type { ComposedAppDeps } from "./run-agent.ts";
-
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const SESSION_SECRET = "test-admin-session-secret-32-bytes!";
-const ADMIN_PASSWORD = "correct-horse-battery-staple";
-const INTERNAL_API_KEY = "test-internal-api-key";
-const AGENT_ID = "agent-test-123";
+import {
+  TEST_AGENT_ID as AGENT_ID,
+  TEST_INTERNAL_API_KEY as INTERNAL_API_KEY,
+  TEST_SESSION_SECRET as SESSION_SECRET,
+  makeMockDeps,
+} from "./test-helpers/mock-deps.ts";
 
 // ─── JWT helper ───────────────────────────────────────────────────────────────
 
@@ -33,98 +31,6 @@ async function makeSessionCookie(secret = SESSION_SECRET): Promise<string> {
     secret,
     "HS256",
   );
-}
-
-// ─── Mock doubles ─────────────────────────────────────────────────────────────
-
-function makeMockDeps(): ComposedAppDeps {
-  const mockAgent = {
-    id: AGENT_ID,
-    name: "Test Agent",
-    slackId: null,
-    createdAt: new Date("2024-01-01"),
-    updatedAt: new Date("2024-01-01"),
-  };
-
-  return {
-    prisma: {
-      agent: {
-        findUnique: async ({ where }: { where: { id: string } }) =>
-          where.id === AGENT_ID ? mockAgent : null,
-        findMany: async () => [mockAgent],
-        create: async () => mockAgent,
-      },
-      agentPlugin: {
-        findMany: async () => [],
-      },
-    } as never,
-    agentEnvService: {
-      getConfigBundle: async (id: string) =>
-        id === AGENT_ID
-          ? { agentId: id, env: { FOO: "bar" }, allowedTools: ["Read"] }
-          : null,
-      getByAgentId: async () => ({ FOO: "bar" }),
-      upsert: async () => {},
-      patch: async () => {},
-      deleteKey: async () => {},
-    },
-    agentCronJobService: {
-      list: async () => [],
-      create: async () => {
-        throw new Error("not implemented");
-      },
-      update: async () => {
-        throw new Error("not implemented");
-      },
-      delete: async () => {},
-      reconcileSystemCrons: async () => ({
-        created: 0,
-        updated: 0,
-        deleted: 0,
-      }),
-      get: async () => {
-        throw new Error("not implemented");
-      },
-      setEnabled: async () => {
-        throw new Error("not implemented");
-      },
-    },
-    agentToolService: {
-      list: async () => [],
-      add: async () => {
-        throw new Error("not implemented");
-      },
-      remove: async () => {},
-      toggle: async () => {
-        throw new Error("not implemented");
-      },
-    },
-    agentTokenService: {
-      create: async () => {
-        throw new Error("not implemented");
-      },
-      listForAgent: async () => [],
-      revoke: async () => null,
-    },
-    agentPluginService: {
-      list: async () => [],
-      add: async () => {
-        throw new Error("not implemented");
-      },
-      remove: async () => {},
-      removeByName: async () => {},
-    },
-    internalApiKey: INTERNAL_API_KEY,
-    sessionSecret: SESSION_SECRET,
-    adminPassword: ADMIN_PASSWORD,
-    slackClient: {
-      createAppManifest: async () => ({
-        appId: "A123",
-        oauthRedirectUrl: "https://slack.com/oauth",
-      }),
-    },
-    appBaseUrl: "http://localhost:3000",
-  };
 }
 
 // ─── Health route ─────────────────────────────────────────────────────────────

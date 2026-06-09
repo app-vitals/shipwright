@@ -15,21 +15,24 @@
  */
 
 import { join } from "node:path";
-import { Hono } from "hono";
 import {
-  createAdminApp,
-  createAdminUIApp,
-  createAgentRuntimeApp,
   AgentCronJobService,
   AgentEnvService,
   AgentPluginService,
   AgentTokenService,
   AgentToolService,
-  makeTokenCrypto,
-  PrismaClient,
   HttpSlackProvisioningClient,
+  PrismaClient,
+  createAdminApp,
+  createAdminUIApp,
+  createAgentRuntimeApp,
+  makeTokenCrypto,
 } from "@shipwright/admin";
 import type { AdminUIDeps } from "@shipwright/admin";
+import { Hono } from "hono";
+import type { ChatRunner } from "./chat.ts";
+import { createChatApp } from "./chat.ts";
+import { createRunClaude } from "./claude.ts";
 import { createConfig } from "./config.ts";
 import { createHealthApp } from "./health.ts";
 import { ensureAgentHome } from "./setup.ts";
@@ -119,6 +122,14 @@ export interface ComposedAppDeps {
   adminPassword: string;
   slackClient: AdminUIDeps["slackClient"];
   appBaseUrl: string;
+  /**
+   * Dev-only local chat transport. DEFAULT-DENY: when falsy (the default),
+   * the POST /chat route is NOT registered at all (requests 404). Read once
+   * from SHIPWRIGHT_DEV_CHAT at composition time in startServer().
+   */
+  devChat?: boolean;
+  /** Claude runner seam for /chat — only used when devChat is true. */
+  chatRunner?: ChatRunner;
 }
 
 // ─── App factory ──────────────────────────────────────────────────────────────
@@ -150,6 +161,8 @@ export function createComposedApp(deps: ComposedAppDeps): Hono {
     adminPassword,
     slackClient,
     appBaseUrl,
+    devChat,
+    chatRunner,
   } = deps;
 
   const root = new Hono();
@@ -157,6 +170,13 @@ export function createComposedApp(deps: ComposedAppDeps): Hono {
   // 1. Health check — no auth, mounted at root
   const healthApp = createHealthApp();
   root.route("/", healthApp);
+
+  // 1b. Dev-only chat transport — DEFAULT-DENY. Only registered when devChat
+  //     is true AND a runner is provided; otherwise POST /chat 404s.
+  if (devChat && chatRunner) {
+    const chatApp = createChatApp({ runner: chatRunner });
+    root.route("/", chatApp);
+  }
 
   // 2. Runtime API — Bearer SHIPWRIGHT_INTERNAL_API_KEY
   //
@@ -302,6 +322,16 @@ export async function startServer(opts?: { port?: number }): Promise<void> {
 
   const slackClient = new HttpSlackProvisioningClient();
 
+  // Dev-only chat transport: read the gate ONCE at composition time. When on,
+  // construct a real Claude runner; otherwise the route is never registered.
+  const devChat = process.env.SHIPWRIGHT_DEV_CHAT === "true";
+  const chatRunner = devChat ? createRunClaude() : undefined;
+  if (devChat) {
+    console.warn(
+      "[run-agent] SHIPWRIGHT_DEV_CHAT=true — dev /chat endpoint enabled (must NOT be used in production)",
+    );
+  }
+
   const app = createComposedApp({
     prisma,
     agentEnvService,
@@ -314,6 +344,8 @@ export async function startServer(opts?: { port?: number }): Promise<void> {
     adminPassword,
     slackClient,
     appBaseUrl,
+    devChat,
+    chatRunner,
   });
 
   Bun.serve({ fetch: app.fetch, port });
