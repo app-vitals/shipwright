@@ -107,6 +107,7 @@ The metrics dashboard is runnable locally today — the [Quickstart](#quickstart
 task setup      # bun install
 task api        # start metrics dashboard in offline mode → http://localhost:3460/dashboard
 task dev        # dev supervisor: starts metrics + Ctrl-C kills all children
+task stack      # full dev stack in tmux: metrics :3460, agent :3000 (chat enabled), chat REPL, logs pane (requires tmux; use task dev without it)
 ```
 
 See [`docs/quickstart.md`](./docs/quickstart.md) for the full onboarding prompt and offline-default behavior.

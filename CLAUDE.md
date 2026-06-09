@@ -57,6 +57,7 @@ Run the metrics service locally:
 task api        # start metrics dashboard in offline mode → http://localhost:3460/dashboard
 task ui         # same as task api (API and UI are one process)
 task dev        # dev supervisor: starts metrics + Ctrl-C kills all children
+task stack      # full dev stack in tmux: metrics :3460 + agent :3000 + chat REPL + logs pane (requires tmux)
 ```
 
 ## Before you commit — this repository is going public
