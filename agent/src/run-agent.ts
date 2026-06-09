@@ -30,6 +30,8 @@ import {
   HttpSlackProvisioningClient,
 } from "@shipwright/admin";
 import type { AdminUIDeps } from "@shipwright/admin";
+import { createChatApp } from "./chat.ts";
+import type { Runner } from "./chat.ts";
 import { createConfig } from "./config.ts";
 import { createHealthApp } from "./health.ts";
 import { ensureAgentHome } from "./setup.ts";
@@ -119,6 +121,17 @@ export interface ComposedAppDeps {
   adminPassword: string;
   slackClient: AdminUIDeps["slackClient"];
   appBaseUrl: string;
+  /**
+   * Enable the dev-only POST /chat endpoint.
+   * Read once from SHIPWRIGHT_DEV_CHAT === "true" in startServer().
+   * Default: false (route not registered).
+   */
+  devChat?: boolean;
+  /**
+   * Runner injected when devChat is true.
+   * Required if devChat is true; ignored otherwise.
+   */
+  runner?: Runner;
 }
 
 // ─── App factory ──────────────────────────────────────────────────────────────
@@ -150,9 +163,18 @@ export function createComposedApp(deps: ComposedAppDeps): Hono {
     adminPassword,
     slackClient,
     appBaseUrl,
+    devChat,
+    runner,
   } = deps;
 
   const root = new Hono();
+
+  // 0. Dev chat endpoint — only when devChat is explicitly enabled.
+  //    Mounted first so POST /chat is not shadowed by any catch-all routes.
+  if (devChat === true && runner !== undefined) {
+    const chatApp = createChatApp({ runner });
+    root.route("/", chatApp);
+  }
 
   // 1. Health check — no auth, mounted at root
   const healthApp = createHealthApp();
@@ -300,7 +322,18 @@ export async function startServer(opts?: { port?: number }): Promise<void> {
   const adminPassword = process.env.SHIPWRIGHT_ADMIN_PASSWORD ?? "";
   const appBaseUrl = process.env.APP_BASE_URL ?? `http://localhost:${port}`;
 
+  // Dev chat endpoint — gated by SHIPWRIGHT_DEV_CHAT. Read once here; never
+  // read inline in route handlers (composition option, not runtime env read).
+  const devChat = process.env.SHIPWRIGHT_DEV_CHAT === "true";
+
   const slackClient = new HttpSlackProvisioningClient();
+
+  // Build the runner for the dev chat endpoint (only wired when devChat is true)
+  let chatRunner: Runner | undefined;
+  if (devChat) {
+    const { createRunClaude } = await import("./claude.ts");
+    chatRunner = createRunClaude();
+  }
 
   const app = createComposedApp({
     prisma,
@@ -314,6 +347,8 @@ export async function startServer(opts?: { port?: number }): Promise<void> {
     adminPassword,
     slackClient,
     appBaseUrl,
+    devChat,
+    runner: chatRunner,
   });
 
   Bun.serve({ fetch: app.fetch, port });
