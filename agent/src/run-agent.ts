@@ -34,6 +34,7 @@ import { createChatApp } from "./chat.ts";
 import type { Runner } from "./chat.ts";
 import { createConfig } from "./config.ts";
 import { createHealthApp } from "./health.ts";
+import { createFileSessionStore } from "./sessions.ts";
 import { ensureAgentHome } from "./setup.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -179,6 +180,12 @@ export function createComposedApp(deps: ComposedAppDeps): Hono {
   // 1. Health check — no auth, mounted at root
   const healthApp = createHealthApp();
   root.route("/", healthApp);
+
+  // 1a. Dev-only /chat — gated by devChat (default-deny).
+  if (devChat && runner) {
+    const chatApp = createChatApp({ runner });
+    root.route("/", chatApp);
+  }
 
   // 2. Runtime API — Bearer SHIPWRIGHT_INTERNAL_API_KEY
   //

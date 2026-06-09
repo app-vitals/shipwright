@@ -30,6 +30,10 @@ Mounted at `/agents/*`. The harness polls this every ~60s. Auth: **Bearer token*
 | GET | `/agents/:id/config` | Agent config bundle: decrypted `env`, `allowedTools`, and installed `plugins` (with derived marketplace). `404` if the agent doesn't exist. |
 | GET | `/agents/:id/crons` | Enabled cron jobs for the agent. `404` if the agent doesn't exist. |
 
+### Dev chat API (`chat.ts`) — dev-only
+
+Mounted at `POST /chat` only when `SHIPWRIGHT_DEV_CHAT=true`. **Not mounted in production.** No auth — intended for local developer use only. Accepts `{ message: string, session?: string }` and returns `{ result: string, sessionId: string }`. The `sessionId` is a UUID continuity handle; pass it back as `session` to continue the same conversation. `checkDevChatProductionGuard()` emits a startup warning if `SHIPWRIGHT_DEV_CHAT=true` is detected alongside a production config.
+
 ### Admin CRUD API (`admin-api.ts`) — human-facing
 
 Mounted at `/admin/api/*`. Auth: **session cookie** `admin_session` (httpOnly JWT verified with `SHIPWRIGHT_SESSION_SECRET`; absent/invalid → `401`).
@@ -67,6 +71,7 @@ All child models cascade-delete with their `Agent`.
 | `SHIPWRIGHT_INTERNAL_API_KEY` | ✅ (entrypoint + runtime API) | Bearer token for the config fetch at startup and for `/agents/*`. Also settable via `--api-key`. |
 | `AGENT_HOME` | entrypoint | Persistent storage root (default: `~/.shipwright-agent`). Mount a PVC here in Kubernetes so mise caches, workspace files, and `~/.claude` survive pod restarts. |
 | `PORT` | server | Hono server port (default: `3000`). |
+| `SHIPWRIGHT_DEV_CHAT` | dev chat | Set to `true` to mount the dev-only `POST /chat` endpoint. Default: unset (endpoint not mounted). Must not be set to `true` in a production deployment. |
 | `SHIPWRIGHT_SESSION_SECRET` | admin API | Secret for verifying the `admin_session` JWT cookie. |
 | `SHIPWRIGHT_ENCRYPTION_KEY` | secrets at rest | 64-char hex (32 bytes) for AES-256-GCM. **If unset, secrets are stored in plain text** (logged warning) — set it in any real deployment. |
 | `GH_APP_ID` | GitHub App auth | GitHub App ID (integer as string). Required when using the App auth path. |
