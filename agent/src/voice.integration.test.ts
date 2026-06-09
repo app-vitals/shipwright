@@ -357,16 +357,6 @@ function makeMockProc(): EventEmitter & {
   return proc;
 }
 
-function makeSuccessSpawn(_output: string): SpawnFn {
-  return (_cmd, _args, _opts) => {
-    const proc = makeMockProc();
-    setImmediate(() => {
-      proc.emit("close", 0);
-    });
-    return proc as unknown as ChildProcess;
-  };
-}
-
 function makeFailExitSpawn(code: number): SpawnFn {
   return (_cmd, _args, _opts) => {
     const proc = makeMockProc();
