@@ -2174,7 +2174,7 @@ describe("formatRunErrorForSlack", () => {
     const err = new ClaudeRunError("msg", 500, "Internal server error", undefined);
     const out = formatRunErrorForSlack(err);
     expect(out).toContain("500");
-    expect(out).not.toThrow;
+    expect(() => formatRunErrorForSlack(err)).not.toThrow();
   });
 });
 
