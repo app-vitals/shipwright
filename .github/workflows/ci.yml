@@ -25,6 +25,9 @@ jobs:
           --health-retries 5
     env:
       METRICS_DATABASE_URL: postgres://metrics:metrics@localhost:5432/metrics_test
+      # The Postgres integration tests gate on METRICS_TEST_POSTGRES_URL (postgres-provider.integration.test.ts);
+      # without it the suite silently skips even though the postgres service is up.
+      METRICS_TEST_POSTGRES_URL: postgres://metrics:metrics@localhost:5432/metrics_test
     steps:
       - uses: actions/checkout@v4
 
