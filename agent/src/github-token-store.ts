@@ -23,6 +23,8 @@ export function writeToken(
   token: string,
   tokenPath: string = resolveTokenPath(),
 ): void {
+  const dir = path.dirname(tokenPath);
+  fs.mkdirSync(dir, { recursive: true });
   const tmp = `${tokenPath}.${process.pid}.${Date.now()}.tmp`;
   fs.writeFileSync(tmp, token, { mode: 0o600 });
   fs.chmodSync(tmp, 0o600);
