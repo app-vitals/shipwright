@@ -43,8 +43,6 @@ export type ExecFn = (cmd: TmuxCommand) => ExecResult | Promise<ExecResult>;
 export type TmuxCommand = {
   /** The full tmux argv, e.g. ["tmux", "new-session", "-d", "-s", "shipwright"] */
   args: string[];
-  /** Optional per-command env vars merged with process.env before exec */
-  env?: Record<string, string>;
 };
 
 // ---------------------------------------------------------------------------
@@ -105,12 +103,9 @@ export function buildTmuxCommands(): TmuxCommand[] {
         "send-keys",
         "-t",
         PANE_METRICS,
-        "bun metrics/src/server.ts",
+        "METRICS_OFFLINE=true bun metrics/src/server.ts",
         "Enter",
       ],
-      env: {
-        METRICS_OFFLINE: "true",
-      },
     },
 
     // 3. Split to create agent pane (pane 1)
@@ -124,24 +119,24 @@ export function buildTmuxCommands(): TmuxCommand[] {
       ],
     },
 
-    // 4. agent pane (pane 1)
+    // 4. agent pane (pane 1) — env vars inlined so they take effect inside the pane shell
     {
       args: [
         "tmux",
         "send-keys",
         "-t",
         PANE_AGENT,
-        "bun agent/src/run-agent.ts",
+        [
+          `SHIPWRIGHT_DEV_CHAT=${DEV_ENV.SHIPWRIGHT_DEV_CHAT}`,
+          `POSTHOG_HOST=${DEV_ENV.POSTHOG_HOST}`,
+          `POSTHOG_PROJECT_API_KEY=${DEV_ENV.POSTHOG_PROJECT_API_KEY}`,
+          `DATABASE_URL_AGENT=${DEV_ENV.DATABASE_URL_AGENT}`,
+          `SHIPWRIGHT_ENCRYPTION_KEY=${DEV_ENV.SHIPWRIGHT_ENCRYPTION_KEY}`,
+          `AGENT_HOME=${DEV_ENV.AGENT_HOME}`,
+          "bun agent/src/run-agent.ts",
+        ].join(" "),
         "Enter",
       ],
-      env: {
-        SHIPWRIGHT_DEV_CHAT: DEV_ENV.SHIPWRIGHT_DEV_CHAT,
-        POSTHOG_HOST: DEV_ENV.POSTHOG_HOST,
-        POSTHOG_PROJECT_API_KEY: DEV_ENV.POSTHOG_PROJECT_API_KEY,
-        DATABASE_URL_AGENT: DEV_ENV.DATABASE_URL_AGENT,
-        SHIPWRIGHT_ENCRYPTION_KEY: DEV_ENV.SHIPWRIGHT_ENCRYPTION_KEY,
-        AGENT_HOME: DEV_ENV.AGENT_HOME,
-      },
     },
 
     // 5. Split to create chat pane (pane 2)
@@ -196,10 +191,7 @@ export function buildTmuxCommands(): TmuxCommand[] {
 
 function defaultExec(cmd: TmuxCommand): ExecResult {
   const result = Bun.spawnSync(cmd.args, {
-    env: {
-      ...process.env,
-      ...(cmd.env ?? {}),
-    },
+    env: process.env as Record<string, string>,
     stdout: "inherit",
     stderr: "pipe",
   });

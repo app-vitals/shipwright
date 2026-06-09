@@ -24,8 +24,8 @@ import {
   PANE_LOGS,
   PANE_METRICS,
   SESSION_NAME,
-  buildTmuxCommands,
   type TmuxCommand,
+  buildTmuxCommands,
 } from "./dev-tmux.ts";
 
 // ---------------------------------------------------------------------------
@@ -42,16 +42,17 @@ function findCmds(cmds: TmuxCommand[], substring: string): TmuxCommand[] {
   return cmds.filter((c) => c.args.some((a) => a.includes(substring)));
 }
 
-/** Find the env object for a pane by matching pane label in send-keys commands. */
-function findEnvForPane(
-  cmds: TmuxCommand[],
-  paneTarget: string,
-): Record<string, string> | undefined {
-  return cmds.find(
+/** Find the command text sent to a pane (the arg before "Enter" in send-keys). */
+function findCommandText(cmds: TmuxCommand[], paneTarget: string): string | undefined {
+  const cmd = cmds.find(
     (c) =>
       c.args.includes("send-keys") &&
       c.args.some((a) => a.includes(paneTarget)),
-  )?.env;
+  );
+  if (!cmd) return undefined;
+  // send-keys args: ["tmux", "send-keys", "-t", pane, commandText, "Enter"]
+  const enterIdx = cmd.args.indexOf("Enter");
+  return enterIdx > 0 ? cmd.args[enterIdx - 1] : undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -134,15 +135,11 @@ describe("buildTmuxCommands — pane commands", () => {
 // ---------------------------------------------------------------------------
 
 describe("buildTmuxCommands — metrics pane env", () => {
-  test("metrics pane sets METRICS_OFFLINE=true", () => {
+  test("metrics pane command includes METRICS_OFFLINE=true inline", () => {
     const cmds = buildTmuxCommands();
-    const metricsCmd = cmds.find(
-      (c) =>
-        c.args.includes("send-keys") &&
-        c.args.some((a) => a.includes("metrics/src/server.ts")),
-    );
-    expect(metricsCmd).toBeDefined();
-    expect(metricsCmd?.env?.METRICS_OFFLINE).toBe("true");
+    const text = findCommandText(cmds, PANE_METRICS);
+    expect(text).toBeDefined();
+    expect(text).toContain("METRICS_OFFLINE=true");
   });
 });
 
@@ -151,54 +148,34 @@ describe("buildTmuxCommands — metrics pane env", () => {
 // ---------------------------------------------------------------------------
 
 describe("buildTmuxCommands — agent pane env", () => {
-  let agentCmd: TmuxCommand | undefined;
-
-  // Find the send-keys command that launches the agent
-  function getAgentCmd() {
-    if (agentCmd) return agentCmd;
-    const cmds = buildTmuxCommands();
-    agentCmd = cmds.find(
-      (c) =>
-        c.args.includes("send-keys") &&
-        c.args.some((a) => a.includes("agent/src/run-agent.ts")),
-    );
-    return agentCmd;
+  // Env vars are inlined in the send-keys command text so they take effect
+  // inside the tmux pane shell (not just in the tmux CLI subprocess).
+  function getAgentText() {
+    return findCommandText(buildTmuxCommands(), PANE_AGENT);
   }
 
-  test("agent pane sets SHIPWRIGHT_DEV_CHAT=true", () => {
-    const cmd = getAgentCmd();
-    expect(cmd).toBeDefined();
-    expect(cmd?.env?.SHIPWRIGHT_DEV_CHAT).toBe("true");
+  test("agent pane command includes SHIPWRIGHT_DEV_CHAT=true", () => {
+    expect(getAgentText()).toContain("SHIPWRIGHT_DEV_CHAT=true");
   });
 
-  test("agent pane sets POSTHOG_HOST to local metrics server", () => {
-    const cmd = getAgentCmd();
-    expect(cmd?.env?.POSTHOG_HOST).toBe("http://localhost:3460");
+  test("agent pane command includes POSTHOG_HOST pointing at local metrics", () => {
+    expect(getAgentText()).toContain("POSTHOG_HOST=http://localhost:3460");
   });
 
-  test("agent pane sets POSTHOG_PROJECT_API_KEY to a dummy dev value", () => {
-    const cmd = getAgentCmd();
-    expect(cmd?.env?.POSTHOG_PROJECT_API_KEY).toBeDefined();
-    // Must be a non-empty string (dummy value for local dev)
-    expect(cmd?.env?.POSTHOG_PROJECT_API_KEY?.length).toBeGreaterThan(0);
+  test("agent pane command includes POSTHOG_PROJECT_API_KEY", () => {
+    expect(getAgentText()).toContain("POSTHOG_PROJECT_API_KEY=");
   });
 
-  test("agent pane sets DATABASE_URL_AGENT to a local SQLite path", () => {
-    const cmd = getAgentCmd();
-    expect(cmd?.env?.DATABASE_URL_AGENT).toMatch(/^file:/);
+  test("agent pane command includes DATABASE_URL_AGENT as a local SQLite path", () => {
+    expect(getAgentText()).toMatch(/DATABASE_URL_AGENT=file:/);
   });
 
-  test("agent pane sets SHIPWRIGHT_ENCRYPTION_KEY to a dummy dev value", () => {
-    const cmd = getAgentCmd();
-    expect(cmd?.env?.SHIPWRIGHT_ENCRYPTION_KEY).toBeDefined();
-    // 64-char hex = 32 bytes AES-256-GCM; dummy value acceptable for local dev
-    expect(cmd?.env?.SHIPWRIGHT_ENCRYPTION_KEY?.length).toBeGreaterThan(0);
+  test("agent pane command includes SHIPWRIGHT_ENCRYPTION_KEY", () => {
+    expect(getAgentText()).toContain("SHIPWRIGHT_ENCRYPTION_KEY=");
   });
 
-  test("agent pane sets AGENT_HOME", () => {
-    const cmd = getAgentCmd();
-    expect(cmd?.env?.AGENT_HOME).toBeDefined();
-    expect(cmd?.env?.AGENT_HOME?.length).toBeGreaterThan(0);
+  test("agent pane command includes AGENT_HOME", () => {
+    expect(getAgentText()).toContain("AGENT_HOME=");
   });
 });
 
@@ -252,18 +229,11 @@ describe("launchTmux — injected exec fn", () => {
     }
   });
 
-  test("passes each command's env to exec", async () => {
-    const { launchTmux } = await import("./dev-tmux.ts");
-    const expected = buildTmuxCommands();
-
-    const capturedEnvs: (Record<string, string> | undefined)[] = [];
-    await launchTmux((cmd) => {
-      capturedEnvs.push(cmd.env);
-      return { exitCode: 0 };
-    });
-
-    for (let i = 0; i < expected.length; i++) {
-      expect(capturedEnvs[i]).toEqual(expected[i].env);
+  test("each command has only args (no env field — env is inlined in command text)", async () => {
+    const cmds = buildTmuxCommands();
+    for (const cmd of cmds) {
+      // TmuxCommand no longer has env — env vars are inline in the args text
+      expect("env" in cmd).toBe(false);
     }
   });
 
