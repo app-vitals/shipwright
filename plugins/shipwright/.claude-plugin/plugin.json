@@ -1,6 +1,6 @@
 {
   "name": "shipwright",
-  "version": "4.26.4",
+  "version": "4.26.5",
   "description": "Shipwright — conversational planning, queue-driven execution, policy-controlled code review, a five-phase test-readiness pipeline, and autonomous deploy (merge → canary → promote) for any software project",
   "author": {
     "name": "App Vitals",

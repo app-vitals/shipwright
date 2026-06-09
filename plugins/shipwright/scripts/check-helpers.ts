@@ -87,7 +87,68 @@ export function readReviews(workspacePath: string): ReviewEntry[] {
   return JSON.parse(readFileSync(reviewsPath, "utf-8")) as ReviewEntry[];
 }
 
+// ─── Shipwright config ────────────────────────────────────────────────────────
+
+export interface ShipwrightGitHubConfig {
+  owner: string;
+  repo: string;
+}
+
+/**
+ * Read state/shipwright.config.json and return the github task store config,
+ * or null if the file is absent, unreadable, or not using the github task store.
+ */
+export function readShipwrightConfig(
+  workspacePath: string,
+): ShipwrightGitHubConfig | null {
+  const configPath = join(workspacePath, "state", "shipwright.config.json");
+  if (!existsSync(configPath)) return null;
+  try {
+    const raw = JSON.parse(readFileSync(configPath, "utf-8")) as unknown;
+    if (typeof raw !== "object" || raw === null) return null;
+    const cfg = raw as Record<string, unknown>;
+    if (cfg.taskStore !== "github") return null;
+    const gh = cfg.github;
+    if (
+      typeof gh === "object" &&
+      gh !== null &&
+      typeof (gh as Record<string, unknown>).owner === "string" &&
+      typeof (gh as Record<string, unknown>).repo === "string"
+    ) {
+      return {
+        owner: (gh as Record<string, unknown>).owner as string,
+        repo: (gh as Record<string, unknown>).repo as string,
+      };
+    }
+  } catch {
+    // unreadable or invalid JSON
+  }
+  return null;
+}
+
 // ─── Repos resolution ────────────────────────────────────────────────────────
+
+/**
+ * Resolve the full ordered list of "owner/repo" strings for this workspace.
+ *
+ * Priority:
+ * 1. shipwright.config.json github repo — placed first, deduped from scanned list
+ * 2. Scanned repos from workspace/repos/ or SHIPWRIGHT_REPOS_DIR
+ * 3. Default "app-vitals/shipwright" if nothing else is found
+ */
+export function resolveAllRepos(workspacePath: string): string[] {
+  const shipwrightConfig = readShipwrightConfig(workspacePath);
+  const scannedRepos = resolveRepos(workspacePath);
+
+  if (shipwrightConfig) {
+    const primary = `${shipwrightConfig.owner}/${shipwrightConfig.repo}`;
+    return [primary, ...scannedRepos.filter((r) => r !== primary)];
+  }
+  if (scannedRepos.length > 0) {
+    return scannedRepos;
+  }
+  return ["app-vitals/shipwright"];
+}
 
 /**
  * Parse a git remote URL into "org/repo" format.
