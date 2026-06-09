@@ -1,6 +1,6 @@
 # Shipwright Agent
 
-> The Shipwright agent (artifact **C**) is a thin autonomous runner: pick the next ready task → build → ship a PR → forward metrics. It has a Prisma-backed store (SQLite locally, PostgreSQL in production) and three HTTP surfaces — a machine-polled **runtime API**, a human-facing **admin CRUD API**, and a server-rendered **admin UI**.
+> The Shipwright agent (artifact **C**) is a thin autonomous runner: pick the next ready task → build → ship a PR → forward metrics. It has a Prisma-backed store (PostgreSQL) and three HTTP surfaces — a machine-polled **runtime API**, a human-facing **admin CRUD API**, and a server-rendered **admin UI**.
 
 ## Overview
 
