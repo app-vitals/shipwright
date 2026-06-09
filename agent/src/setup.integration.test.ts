@@ -1,5 +1,5 @@
 /**
- * Unit tests for agent/src/setup.ts
+ * Integration tests for agent/src/setup.ts
  *
  * Tests use injected execFn — no real claude/mise binaries needed.
  * All file I/O runs against a real temp dir (no mocks needed for fs).
