@@ -1,0 +1,9 @@
+[[allowlists]]
+  description = "Fake keys in test fixtures are not secrets"
+  paths = [
+    '''.*\.test\.ts$''',
+    '''.*\.spec\.ts$''',
+  ]
+  regexes = [
+    '''-----BEGIN [A-Z ]+PRIVATE KEY-----\\nfake\\n-----END [A-Z ]+PRIVATE KEY-----''',
+  ]
