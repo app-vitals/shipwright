@@ -107,7 +107,10 @@ The metrics dashboard is runnable locally today — the [Quickstart](#quickstart
 task setup      # bun install
 task api        # start metrics dashboard in offline mode → http://localhost:3460/dashboard
 task dev        # dev supervisor: starts metrics + Ctrl-C kills all children
+task stack      # full dev stack in a tmux session (4 panes) — requires tmux
 ```
+
+`task stack` brings up a single tmux session (`shipwright`) with a 4-pane dashboard: **metrics** (offline SQLite, :3460), the **agent** with the dev `/chat` endpoint enabled (:3000), the **chat** REPL, and a scratch **logs** shell. It runs a Prisma `migrate deploy` preflight first so the agent's local SQLite DB exists, then a chat message drives real agent work whose events surface on the local dashboard. `task stack` requires `tmux`; if it isn't installed, use `task dev` (the no-tmux fallback that starts the metrics dashboard).
 
 See [`docs/quickstart.md`](./docs/quickstart.md) for the full onboarding prompt and offline-default behavior.
 
