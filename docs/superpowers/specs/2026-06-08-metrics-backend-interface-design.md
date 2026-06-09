@@ -1,7 +1,7 @@
 # Metrics Backend Interface — Pluggable Event-Store Providers
 
 **Date:** 2026-06-08
-**Status:** Implemented — the interface + PostHog & SQLite providers and the default-local mode landed in LDS-1.3 (PR #148). Postgres provider pending LDS-1.4.
+**Status:** Implemented — the interface + PostHog & SQLite providers and the default-local mode landed in LDS-1.3 (PR #148). Postgres provider landed in LDS-1.4.
 **Supersedes:** the read-side approach of LDS-1.2 (`LocalSqlitePostHogClient` implementing the HogQL-string seam) — now cancelled.
 **Tracked by:** LDS-1.3 (interface + PostHog & SQLite providers + default-local mode), LDS-1.4 (Postgres provider).
 
@@ -74,7 +74,7 @@ export interface MetricsProvider {
 | PostHog provider | `metrics/src/providers/posthog-provider.ts` | Maps `MetricQuery` → existing HogQL builders (`queries.ts`) → existing PostHog client. Behavior-preserving wrapper. |
 | Fixture provider | `metrics/src/providers/fixture-provider.ts` | Wraps the existing offline fixtures behind the interface. |
 | SQLite provider | `metrics/src/providers/sqlite-provider.ts` | Maps each `MetricQuery` → SQL aggregation over the LDS-1.1 `events` table. |
-| Postgres provider | `metrics/src/providers/postgres-provider.ts` (LDS-1.4) | Same SQL builders as SQLite, dialect-parameterized; pg execution seam. |
+| Postgres provider | `metrics/src/providers/postgres-provider.ts` | Same SQL builders as SQLite via `SqlEventStoreProvider`; `pg.Pool` execution seam; provisions DDL idempotently. |
 
 The SQL providers share one set of `MetricQuery → SQL` builders parameterized by dialect, with a thin executor seam (`bun:sqlite` vs a pg driver) so SQLite and Postgres cannot drift.
 
@@ -130,8 +130,8 @@ Honors the repo isolation contract: inject doubles, **no `mock.module()`, no glo
 
 ## 9. Build phases
 
-1. **LDS-1.3** — interface + types; PostHog & fixture providers (behavior-preserving); SQLite provider (13 kinds); `createMetricsApp`/`api.ts` switched to the provider seam; mode selection with SQLite default. Verifiable: `task api` with no env renders real local data; existing PostHog tests green.
-2. **LDS-1.4** — Postgres provider (shared dialect-parameterized SQL); Postgres `events` DDL/migration; connection-URL mode selection; result parity with SQLite. Verifiable: same dashboard off a Postgres backend.
+1. **LDS-1.3** ✓ — interface + types; PostHog & fixture providers (behavior-preserving); SQLite provider (13 kinds); `createMetricsApp`/`api.ts` switched to the provider seam; mode selection with SQLite default.
+2. **LDS-1.4** ✓ — Postgres provider (`SqlEventStoreProvider` shared with SQLite via `sql-provider.ts`); Postgres `events` DDL provisioned idempotently; `METRICS_DATABASE_URL`/`DATABASE_URL_METRICS` mode selection; result parity with SQLite verified in integration tests.
 
 ---
 
