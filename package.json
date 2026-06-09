@@ -5,7 +5,8 @@
   "workspaces": [
     "plugins/shipwright",
     "metrics",
-    "agent"
+    "agent",
+    "admin"
   ],
   "scripts": {
     "test": "bun test",

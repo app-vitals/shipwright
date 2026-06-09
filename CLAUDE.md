@@ -122,7 +122,7 @@ Each Prisma service reads its own `DATABASE_URL_*` — never a shared connection
 
 | Variable | Service | Schema |
 |----------|---------|--------|
-| `DATABASE_URL_AGENT` | `@shipwright/agent` | `agent/prisma/schema.prisma` |
+| `DATABASE_URL_AGENT` | `@shipwright/admin` | `admin/prisma/schema.prisma` |
 
 The schema uses `provider = "sqlite"` for local portability. Swap to `postgresql` and regenerate migrations when deploying against real Postgres.
 

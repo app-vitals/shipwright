@@ -68,7 +68,7 @@ tasks:
           echo "ERROR: DATABASE_URL_AGENT is not set. Export it before running db:provision."
           exit 1
         fi
-        cd agent && bunx prisma migrate deploy --schema=prisma/schema.prisma
+        cd admin && bunx prisma migrate deploy --schema=prisma/schema.prisma
 
   db:migrate:
     desc: Generate and apply a new Prisma migration (dev only)
@@ -78,7 +78,7 @@ tasks:
           echo "ERROR: DATABASE_URL_AGENT is not set. Export it before running db:migrate."
           exit 1
         fi
-        cd agent && bunx prisma migrate dev --schema=prisma/schema.prisma
+        cd admin && bunx prisma migrate dev --schema=prisma/schema.prisma
 
 
   e2e:

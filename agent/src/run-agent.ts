@@ -16,21 +16,23 @@
 
 import { join } from "node:path";
 import { Hono } from "hono";
-import { createAdminApp } from "./admin-api.ts";
-import { createAdminUIApp } from "./admin-ui.ts";
-import type { AdminUIDeps } from "./admin-ui.ts";
-import { AgentCronJobService } from "./agent-cron-jobs.ts";
-import { AgentEnvService } from "./agent-envs.ts";
-import { AgentPluginService } from "./agent-plugins.ts";
-import { AgentTokenService } from "./agent-tokens.ts";
-import { AgentToolService } from "./agent-tools.ts";
-import { createAgentRuntimeApp } from "./api.ts";
+import {
+  createAdminApp,
+  createAdminUIApp,
+  createAgentRuntimeApp,
+  AgentCronJobService,
+  AgentEnvService,
+  AgentPluginService,
+  AgentTokenService,
+  AgentToolService,
+  makeTokenCrypto,
+  PrismaClient,
+  HttpSlackProvisioningClient,
+} from "@shipwright/admin";
+import type { AdminUIDeps } from "@shipwright/admin";
 import { createConfig } from "./config.ts";
 import { createHealthApp } from "./health.ts";
 import { ensureAgentHome } from "./setup.ts";
-import { makeTokenCrypto } from "./token-crypto.ts";
-import { PrismaClient } from "../prisma/client/index.js";
-import { HttpSlackProvisioningClient } from "./slack-provisioning-client.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
