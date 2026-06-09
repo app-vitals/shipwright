@@ -1,12 +1,13 @@
 /**
  * scripts/dev-tmux.ts
  * `task stack` launcher — ties the full local dev stack together in a single
- * tmux session ("shipwright") with one window and 4 panes:
+ * tmux session ("shipwright") with one window and 5 panes:
  *
  *   0. metrics — metrics dashboard, offline SQLite mode            (:3460)
- *   1. agent   — Shipwright agent with the dev /chat endpoint       (:3000)
- *   2. chat    — the TUI chat REPL (scripts/chat.ts)
- *   3. logs    — a scratch shell pane
+ *   1. admin   — standalone admin service (CRUD API + UI)          (:3001)
+ *   2. agent   — thin Shipwright agent with the dev /chat endpoint  (:3000)
+ *   3. chat    — the TUI chat REPL (scripts/chat.ts)
+ *   4. logs    — a scratch shell pane
  *
  * `task dev` is deliberately left untouched — it is the no-tmux fallback that
  * the quickstart depends on. This launcher is additive.
@@ -37,6 +38,7 @@ import { connect } from "node:net";
 export const SESSION_NAME = "shipwright";
 export const WINDOW_INDEX = 0;
 export const METRICS_PORT = 3460;
+export const ADMIN_PORT = 3001;
 export const AGENT_PORT = 3000;
 /** The metrics dashboard UI — a browser page (NOT a tmux pane). */
 export const DASHBOARD_URL = `http://localhost:${METRICS_PORT}/dashboard`;
@@ -116,6 +118,7 @@ export function buildLogsBanner(): string {
   const lines = [
     "Shipwright dev stack",
     `  dashboard  ${DASHBOARD_URL}   (opening in your browser)`,
+    `  admin      http://localhost:${ADMIN_PORT}`,
     `  agent      http://localhost:${AGENT_PORT}`,
     "  chat       <- the pane to the left",
     "",
@@ -132,15 +135,27 @@ export const STACK_PANES: Pane[] = [
     env: { METRICS_OFFLINE: "true" },
   },
   {
+    label: "admin",
+    // Standalone admin service: CRUD API + UI + Prisma store. Owns the DB
+    // and runs migrations (via the preflight) before starting.
+    cmd: ["bun", "admin/src/main.ts"],
+    env: {
+      PORT: String(ADMIN_PORT),
+      DATABASE_URL: DEV_DATABASE_URL,
+      SHIPWRIGHT_ENCRYPTION_KEY: DUMMY_ENCRYPTION_KEY,
+    },
+  },
+  {
     label: "agent",
+    // Thin agent: /health + /agents/* proxy to the admin service.
+    // No direct DB access — proxies via SHIPWRIGHT_API_URL instead.
     cmd: ["bun", "agent/src/run-agent.ts"],
     env: {
       PORT: String(AGENT_PORT),
       SHIPWRIGHT_DEV_CHAT: "true",
       POSTHOG_HOST: `http://localhost:${METRICS_PORT}`,
       POSTHOG_PROJECT_API_KEY: DUMMY_POSTHOG_KEY,
-      DATABASE_URL: DEV_DATABASE_URL,
-      SHIPWRIGHT_ENCRYPTION_KEY: DUMMY_ENCRYPTION_KEY,
+      SHIPWRIGHT_API_URL: `http://localhost:${ADMIN_PORT}`,
       AGENT_HOME: DEV_AGENT_HOME,
     },
   },
@@ -186,7 +201,7 @@ function paneTarget(session: string, paneIndex: number): string {
  * Build the ordered list of commands that stand up the stack:
  *   1. new-session (detached) hosting pane 0
  *   2. one split-window per remaining pane (single window, tiled)
- *   3. a migration preflight BEFORE the agent pane's command is sent
+ *   3. a migration preflight BEFORE the admin pane's command is sent
  *   4. send-keys per pane to run its command with inline env
  *
  * Pure: no I/O. runStack() drives the injected exec over this list.
@@ -238,14 +253,14 @@ export function buildStackCommands(
     argv: ["select-layout", "-t", `${session}:${WINDOW_INDEX}`, "tiled"],
   });
 
-  const agentIndex = panes.findIndex((p) => p.label === "agent");
+  const adminIndex = panes.findIndex((p) => p.label === "admin");
 
-  // 3+4. For each pane, send its command. Before the agent pane, run the
-  // preflight: generate the Prisma client (the agent imports it from
-  // admin/prisma/client — `bun install` does NOT generate it) THEN apply
-  // migrations so the agent's Postgres schema is up to date.
+  // 3+4. For each pane, send its command. Before the admin pane, run the
+  // preflight: generate the Prisma client (the admin service owns it —
+  // `bun install` does NOT generate it) THEN apply migrations so the
+  // Postgres schema is up to date before the admin service starts.
   panes.forEach((pane, i) => {
-    if (i === agentIndex) {
+    if (i === adminIndex) {
       cmds.push({
         kind: "preflight",
         argv: [
@@ -312,7 +327,7 @@ export function tmuxIsInstalled(
 }
 
 const NO_TMUX_MESSAGE = [
-  "[stack] tmux is not installed — `task stack` needs it for the 4-pane dashboard.",
+  "[stack] tmux is not installed — `task stack` needs it for the 5-pane dashboard.",
   "[stack] Install tmux (macOS: `brew install tmux`, Debian/Ubuntu: `apt install tmux`),",
   "[stack] or use the no-tmux fallback: `task dev` (starts the metrics dashboard).",
 ].join("\n");
@@ -600,7 +615,7 @@ if (import.meta.main) {
   await ensurePostgresReady(DEV_DATABASE_URL);
 
   console.log(
-    `[stack] launching tmux session "${SESSION_NAME}" — metrics :${METRICS_PORT}, agent :${AGENT_PORT}, chat REPL, logs`,
+    `[stack] launching tmux session "${SESSION_NAME}" — metrics :${METRICS_PORT}, admin :${ADMIN_PORT}, agent :${AGENT_PORT}, chat REPL, logs`,
   );
   try {
     runStack(STACK_PANES, realExec);
