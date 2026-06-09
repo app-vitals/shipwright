@@ -17,6 +17,7 @@ import {
   AGENT_PORT,
   brewFormulaInstalled,
   buildStackCommands,
+  DASHBOARD_URL,
   dbReachable,
   missingWorkspaceDeps,
   type Pane,
@@ -145,6 +146,13 @@ describe("runStack — per-pane commands via injected exec", () => {
     // scratch shell: no long-running bun server entry
     expect(logs.cmd.join(" ")).not.toContain("server.ts");
     expect(logs.cmd.join(" ")).not.toContain("run-agent.ts");
+  });
+
+  test("logs pane prints a signpost banner then drops into a shell", () => {
+    const cmd = STACK_PANES[3].cmd.join(" ");
+    expect(cmd).toContain(DASHBOARD_URL); // tells the user where the UI is
+    expect(cmd).toContain(`localhost:${AGENT_PORT}`);
+    expect(cmd).toContain('exec "$SHELL"'); // remains an interactive scratch shell
   });
 
   test("exec is invoked once per built command, in order", () => {

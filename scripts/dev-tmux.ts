@@ -38,6 +38,8 @@ export const SESSION_NAME = "shipwright";
 export const WINDOW_INDEX = 0;
 export const METRICS_PORT = 3460;
 export const AGENT_PORT = 3000;
+/** The metrics dashboard UI — a browser page (NOT a tmux pane). */
+export const DASHBOARD_URL = `http://localhost:${METRICS_PORT}/dashboard`;
 
 // Obviously-fake dev placeholders — safe for a public/MIT repo. These are NOT
 // secrets: the agent runs against a local Postgres DB and a local offline
@@ -104,6 +106,24 @@ export type BuildOpts = {
 // Pane definitions — the 4-pane stack
 // ---------------------------------------------------------------------------
 
+/**
+ * The logs pane's command: print a signpost banner — where the UI and services
+ * live (the dashboard is a browser page, not a pane) — then drop into an
+ * interactive scratch shell. Returns one shell line for `tmux send-keys`.
+ */
+export function buildLogsBanner(): string {
+  const lines = [
+    "Shipwright dev stack",
+    `  dashboard  ${DASHBOARD_URL}   (opening in your browser)`,
+    `  agent      http://localhost:${AGENT_PORT}`,
+    "  chat       <- the pane to the left",
+    "",
+    "Scratch shell — run ad-hoc commands here.",
+  ];
+  const printf = `printf '%s\\n' ${lines.map((l) => `'${l}'`).join(" ")}`;
+  return `${printf}; exec "$SHELL"`;
+}
+
 export const STACK_PANES: Pane[] = [
   {
     label: "metrics",
@@ -129,8 +149,8 @@ export const STACK_PANES: Pane[] = [
   },
   {
     label: "logs",
-    // Scratch shell — interactive prompt for ad-hoc commands / tailing logs.
-    cmd: ["$SHELL"],
+    // Signpost banner (URLs) then a scratch shell for ad-hoc commands.
+    cmd: [buildLogsBanner()],
   },
 ];
 
@@ -468,6 +488,21 @@ function ensureDepsInstalled(): void {
   }
 }
 
+/**
+ * Surface the dashboard: once the metrics server is listening, open it in the
+ * default browser (macOS `open`). The dashboard is a browser page, not a tmux
+ * pane — auto-opening removes the "where's the UI?" guesswork. Best-effort: if
+ * metrics is slow to boot, print the URL instead of failing the launch.
+ */
+async function openDashboardWhenReady(): Promise<void> {
+  const base = `http://localhost:${METRICS_PORT}`;
+  if (!(await waitForReachable(base, 10_000))) {
+    console.error(`[stack] metrics slow to start — open ${DASHBOARD_URL} once it's up.`);
+    return;
+  }
+  Bun.spawn(["open", DASHBOARD_URL], { stdout: "ignore", stderr: "ignore" });
+}
+
 /** Blocking y/N prompt. Empty/EOF/anything-but-yes ⇒ false (safe default). */
 function askYesNo(question: string): boolean {
   const answer = (prompt(question) ?? "").trim().toLowerCase();
@@ -564,6 +599,10 @@ if (import.meta.main) {
     console.error(`[stack] failed to launch: ${(err as Error).message}`);
     process.exit(1);
   }
+
+  // Surface the dashboard UI (a browser page, not a pane) before we hand the
+  // terminal over to tmux attach (which blocks).
+  await openDashboardWhenReady();
 
   // Attach the user to the freshly-built session.
   const attach = Bun.spawnSync(["tmux", "attach-session", "-t", SESSION_NAME], {
