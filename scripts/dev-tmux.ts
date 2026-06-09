@@ -42,7 +42,7 @@ export const AGENT_PORT = 3000;
 const DUMMY_POSTHOG_KEY = "phc_dev_dummy";
 const DUMMY_ENCRYPTION_KEY =
   "0000000000000000000000000000000000000000000000000000000000000000";
-const DEV_DATABASE_URL_AGENT = "file:./admin/dev.db";
+const DEV_DATABASE_URL = "postgresql://localhost:5432/shipwright_dev";
 const DEV_AGENT_HOME = "state/agent-home";
 
 // ---------------------------------------------------------------------------
@@ -97,7 +97,7 @@ export const STACK_PANES: Pane[] = [
       SHIPWRIGHT_DEV_CHAT: "true",
       POSTHOG_HOST: `http://localhost:${METRICS_PORT}`,
       POSTHOG_PROJECT_API_KEY: DUMMY_POSTHOG_KEY,
-      DATABASE_URL_AGENT: DEV_DATABASE_URL_AGENT,
+      DATABASE_URL: DEV_DATABASE_URL,
       SHIPWRIGHT_ENCRYPTION_KEY: DUMMY_ENCRYPTION_KEY,
       AGENT_HOME: DEV_AGENT_HOME,
     },
@@ -199,7 +199,7 @@ export function buildStackCommands(
         argv: [
           "sh",
           "-c",
-          `cd admin && DATABASE_URL_AGENT=${DEV_DATABASE_URL_AGENT} bunx prisma migrate deploy --schema=prisma/schema.prisma`,
+          `cd admin && DATABASE_URL=${DEV_DATABASE_URL} bunx prisma migrate deploy --schema=prisma/schema.prisma`,
         ],
       });
     }

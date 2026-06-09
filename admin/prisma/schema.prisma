@@ -1,9 +1,9 @@
-// Shipwright — Agent Service Schema
+// Shipwright — Admin Service Schema
 // Owns: Agent, AgentEnv, AgentCronJob, AgentTool, AgentToken, AgentPlugin.
 // Agent is a first-class model (standalone, not embedded in a User model).
 //
-// WARNING: This schema uses DATABASE_URL_AGENT — a dedicated database separate
-// from any other service DB. Do NOT point this at a shared database.
+// WARNING: This schema uses DATABASE_URL — a dedicated database for the admin
+// service. Do NOT point this at a shared database.
 
 generator client {
   provider = "prisma-client-js"
@@ -11,8 +11,8 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL_AGENT")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 // ─── Agent ────────────────────────────────────────────────────────────────────
