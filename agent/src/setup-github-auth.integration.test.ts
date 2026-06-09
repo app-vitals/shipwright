@@ -52,6 +52,8 @@ function neverCalledBotIdentity() {
 
 const TEST_TOKEN_PATH = "/tmp/test-vitals-agent-gh-token";
 const TEST_HELPER_PATH = "/tmp/test-bin/git-credential-vitals.sh";
+// gitleaks:allow — test fixture, not a real private key
+const FAKE_APP_PRIVATE_KEY = "-----BEGIN RSA PRIVATE KEY-----\nfake\n-----END RSA PRIVATE KEY-----";
 
 function makeWriteToken() {
   return mock((_token: string) => {});
@@ -82,7 +84,7 @@ describe("setupGitHubAuth — App path", () => {
         GH_APP_ID: "123",
         GH_APP_INSTALLATION_ID: "456",
         GH_APP_PRIVATE_KEY:
-          "-----BEGIN RSA PRIVATE KEY-----\nfake\n-----END RSA PRIVATE KEY-----",
+          FAKE_APP_PRIVATE_KEY,
       },
       createTokenManager: mock(() => ({ getToken, startBackgroundRefresh })),
       getBotIdentity,
@@ -159,7 +161,7 @@ describe("setupGitHubAuth — App path", () => {
           GH_APP_ID: "123",
           GH_APP_INSTALLATION_ID: "456",
           GH_APP_PRIVATE_KEY:
-            "-----BEGIN RSA PRIVATE KEY-----\nfake\n-----END RSA PRIVATE KEY-----",
+            FAKE_APP_PRIVATE_KEY,
         },
         createTokenManager: mock(() => ({ getToken, startBackgroundRefresh })),
         getBotIdentity: makeBotIdentity(),
@@ -192,7 +194,7 @@ describe("setupGitHubAuth — App path", () => {
         GH_APP_ID: "123",
         GH_APP_INSTALLATION_ID: "456",
         GH_APP_PRIVATE_KEY:
-          "-----BEGIN RSA PRIVATE KEY-----\nfake\n-----END RSA PRIVATE KEY-----",
+          FAKE_APP_PRIVATE_KEY,
       },
       createTokenManager: mock(() => ({ getToken, startBackgroundRefresh })),
       getBotIdentity: makeBotIdentity(),
