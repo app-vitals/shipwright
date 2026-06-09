@@ -19,6 +19,7 @@ const PACKAGE_JSON_PATHS = [
 ] as const;
 
 const VERSION_TXT_PATH = "version.txt";
+const MARKETPLACE_JSON_PATH = ".claude-plugin/marketplace.json";
 
 /**
  * Semver regex: requires X.Y.Z at minimum, allows pre-release and build metadata.
@@ -51,7 +52,19 @@ function writePackageJson(path: string, version: string): void {
 }
 
 /**
- * Syncs `version` into all 4 package.json files and version.txt.
+ * Writes `version` into $.version in the marketplace manifest, preserving
+ * 2-space indent and a trailing newline. All other fields are left unchanged.
+ */
+function writeMarketplaceJson(path: string, version: string): void {
+  const raw = readFileSync(path, "utf8");
+  const manifest = JSON.parse(raw) as Record<string, unknown>;
+  manifest.version = version;
+  writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+}
+
+/**
+ * Syncs `version` into all 4 package.json files, version.txt, and
+ * .claude-plugin/marketplace.json.
  *
  * @param version - A valid semver string (e.g. "1.2.3" or "1.0.0-alpha.1")
  * @param cwd     - Monorepo root directory. Defaults to process.cwd().
@@ -66,6 +79,8 @@ export function syncVersion(version: string, cwd?: string): void {
   }
 
   writeFileSync(resolve(root, VERSION_TXT_PATH), `${version}\n`, "utf8");
+
+  writeMarketplaceJson(resolve(root, MARKETPLACE_JSON_PATH), version);
 }
 
 // CLI entry point

@@ -32,6 +32,22 @@ const PKG_PATHS = [
   "agent/package.json",
 ];
 
+const MARKETPLACE_JSON_PATH = ".claude-plugin/marketplace.json";
+
+// Minimal marketplace.json content
+const INITIAL_MARKETPLACE = `{
+  "owner": "app-vitals",
+  "version": "0.1.0",
+  "plugins": [
+    {
+      "name": "shipwright",
+      "description": "Test description",
+      "source": "./plugins/shipwright"
+    }
+  ]
+}
+`;
+
 function setupTempDir(): string {
   const dir = mkdtempSync(join(tmpdir(), "sync-version-test-"));
   // Create all required package.json files
@@ -43,6 +59,10 @@ function setupTempDir(): string {
   }
   // Create version.txt
   writeFileSync(resolve(dir, "version.txt"), "0.1.0\n", "utf8");
+  // Create .claude-plugin/marketplace.json
+  const marketplaceAbs = resolve(dir, MARKETPLACE_JSON_PATH);
+  mkdirSync(resolve(marketplaceAbs, ".."), { recursive: true });
+  writeFileSync(marketplaceAbs, INITIAL_MARKETPLACE, "utf8");
   return dir;
 }
 
@@ -122,5 +142,41 @@ describe("syncVersion", () => {
       const pkg = JSON.parse(content) as { version: string };
       expect(pkg.version).toBe("1.0.0-alpha.1");
     }
+  });
+
+  it("updates $.version in .claude-plugin/marketplace.json", () => {
+    syncVersion("2.3.4", tmpDir);
+    const content = readFileSync(
+      resolve(tmpDir, MARKETPLACE_JSON_PATH),
+      "utf8",
+    );
+    const manifest = JSON.parse(content) as { version: string };
+    expect(manifest.version).toBe("2.3.4");
+  });
+
+  it("preserves plugins array and owner when updating marketplace.json version", () => {
+    syncVersion("3.0.0", tmpDir);
+    const content = readFileSync(
+      resolve(tmpDir, MARKETPLACE_JSON_PATH),
+      "utf8",
+    );
+    const manifest = JSON.parse(content) as {
+      owner: string;
+      version: string;
+      plugins: Array<{ name: string }>;
+    };
+    expect(manifest.owner).toBe("app-vitals");
+    expect(Array.isArray(manifest.plugins)).toBe(true);
+    expect(manifest.plugins[0].name).toBe("shipwright");
+  });
+
+  it("preserves 2-space indent and trailing newline in marketplace.json", () => {
+    syncVersion("1.5.0", tmpDir);
+    const content = readFileSync(
+      resolve(tmpDir, MARKETPLACE_JSON_PATH),
+      "utf8",
+    );
+    expect(content.endsWith("\n")).toBe(true);
+    expect(content).toContain('  "version": "1.5.0"');
   });
 });
