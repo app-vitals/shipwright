@@ -51,6 +51,7 @@ version: 1.0.0                                        # Optional — semantic ve
   argument-hint: <required-arg> [optional-arg]
   allowed-tools: [Read, Glob, Grep, Bash]
   ```
+  > **Note:** In skill frontmatter, `allowed-tools` is **restrictive** (removes inherited tools, not additive). Sub-agents inherit all parent session tools by default; listing tools here *removes* anything not in the list. Omit `allowed-tools` unless you intentionally want to cap the skill's capabilities. For commands, `allowed-tools` pre-approves those tools and reduces permission prompts — a different effect.
 - Keep SKILL.md under 500 lines; use `references/` for overflow
 
 **Description writing tips**:
