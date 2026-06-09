@@ -65,6 +65,16 @@ describe("buildStackCommands", () => {
     expect(newSession?.argv).toContain(SESSION_NAME);
   });
 
+  test("enables mouse mode scoped to the session (drag-to-resize)", () => {
+    const cmds = buildStackCommands(STACK_PANES);
+    const mouse = cmds.find(
+      (c) => c.kind === "set-option" && c.argv.includes("mouse"),
+    );
+    expect(mouse?.argv).toEqual(["set-option", "-t", SESSION_NAME, "mouse", "on"]);
+    // session-scoped, not global — must not touch the user's tmux config
+    expect(mouse?.argv).not.toContain("-g");
+  });
+
   test("uses a single window with 4 panes (1 new-session + 3 split-window)", () => {
     const cmds = buildStackCommands(STACK_PANES);
     const newSessions = cmds.filter((c) => c.argv[0] === "new-session");

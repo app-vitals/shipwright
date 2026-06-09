@@ -84,6 +84,7 @@ export type Pane = {
 /** Kinds of emitted commands, for ordering assertions and clarity. */
 export type TmuxCommandKind =
   | "new-session"
+  | "set-option"
   | "split-window"
   | "preflight"
   | "send-keys"
@@ -215,6 +216,14 @@ export function buildStackCommands(
       "-y",
       "50",
     ],
+  });
+
+  // 1b. Enable mouse mode — drag pane borders to resize, click to focus,
+  // scroll wheel to scroll. Scoped to THIS session (`-t`), so it does not
+  // touch the user's global tmux config or other sessions.
+  cmds.push({
+    kind: "set-option",
+    argv: ["set-option", "-t", session, "mouse", "on"],
   });
 
   // 2. Split off one pane per remaining pane, then tile evenly.
