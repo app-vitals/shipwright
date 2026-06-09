@@ -207,7 +207,7 @@ describe("setupGitHubAuth — App path", () => {
     const spawnCallsBeforeRefresh = spawnSync.mock.calls.length;
 
     expect(capturedCallback).not.toBeNull();
-    // biome-ignore lint/style/noNonNullAssertion: asserted non-null on prior line
+    // biome-ignore lint/style/noNonNullAssertion: asserted above via expect
     await capturedCallback!("ghs_refreshed_token");
 
     // refresh writes the new token to the file...
