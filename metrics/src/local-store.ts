@@ -27,7 +27,7 @@ export interface InsertableEvent {
 
 export interface LocalEventStore {
   /** Insert a single event; duplicate (non-null) insert_id is silently ignored. */
-  insertEvent(e: InsertableEvent): void;
+  insertEvent(e: InsertableEvent): void | Promise<void>;
   /**
    * Query stored events by name, optionally bounded by an inclusive timestamp
    * range. Rows are returned in timestamp ascending order.

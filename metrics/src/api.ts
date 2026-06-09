@@ -1002,7 +1002,7 @@ export function createMetricsApp(
             ? (ev.properties as Record<string, unknown>)
             : {};
         const insertId = properties.$insert_id;
-        localStore.insertEvent({
+        await localStore.insertEvent({
           insertId: typeof insertId === "string" ? insertId : null,
           event: ev.event,
           distinctId:
