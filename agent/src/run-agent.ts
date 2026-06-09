@@ -239,10 +239,10 @@ export function createComposedApp(deps: ComposedAppDeps): Hono {
  * Idempotent — safe to call on every startup. Throws on migration failure.
  */
 async function runMigrations(): Promise<void> {
-  const databaseUrl = process.env.DATABASE_URL_AGENT;
+  const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
     console.warn(
-      "[run-agent] DATABASE_URL_AGENT not set — skipping prisma migrate deploy",
+      "[run-agent] DATABASE_URL not set — skipping prisma migrate deploy",
     );
     return;
   }
@@ -253,7 +253,7 @@ async function runMigrations(): Promise<void> {
     ["bunx", "prisma", "migrate", "deploy", "--schema=prisma/schema.prisma"],
     {
       cwd: join(import.meta.dir, "../../admin"),
-      env: { ...process.env, DATABASE_URL_AGENT: databaseUrl },
+      env: { ...process.env, DATABASE_URL: databaseUrl },
       stdout: "pipe",
       stderr: "pipe",
     },

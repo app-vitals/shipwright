@@ -109,7 +109,7 @@ describe("runStack — per-pane commands via injected exec", () => {
     expect(sk).toContain("SHIPWRIGHT_DEV_CHAT=true");
     expect(sk).toContain("POSTHOG_HOST=http://localhost:3460");
     expect(sk).toContain("POSTHOG_PROJECT_API_KEY=");
-    expect(sk).toContain("DATABASE_URL_AGENT=");
+    expect(sk).toContain("DATABASE_URL=");
     expect(sk).toContain("SHIPWRIGHT_ENCRYPTION_KEY=");
     expect(sk).toContain("AGENT_HOME=state/agent-home");
   });
@@ -144,7 +144,7 @@ describe("pane env values are obviously dev dummies (public-safe)", () => {
     expect(agent.env?.POSTHOG_PROJECT_API_KEY).toContain("dev");
     // 64-hex dummy encryption key
     expect(agent.env?.SHIPWRIGHT_ENCRYPTION_KEY).toMatch(/^[0-9a-f]{64}$/);
-    expect(agent.env?.DATABASE_URL_AGENT).toContain("file:");
+    expect(agent.env?.DATABASE_URL).toContain("postgresql:");
   });
 });
 
