@@ -27,6 +27,9 @@
  * would be slow and environment-dependent for no added confidence.
  */
 
+import { existsSync } from "node:fs";
+import { connect } from "node:net";
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -37,12 +40,30 @@ export const METRICS_PORT = 3460;
 export const AGENT_PORT = 3000;
 
 // Obviously-fake dev placeholders — safe for a public/MIT repo. These are NOT
-// secrets: the agent runs against a local SQLite DB and a local offline
+// secrets: the agent runs against a local Postgres DB and a local offline
 // metrics endpoint, so no real PostHog/encryption material is ever needed.
 const DUMMY_POSTHOG_KEY = "phc_dev_dummy";
 const DUMMY_ENCRYPTION_KEY =
   "0000000000000000000000000000000000000000000000000000000000000000";
-const DEV_DATABASE_URL = "postgresql://localhost:5432/shipwright_dev";
+// Default the connection user to the current OS account. Homebrew's Postgres
+// creates a superuser role named after the installing user, and Prisma — unlike
+// libpq — does NOT auto-default the username, so an unqualified DSN authenticates
+// as an empty role and fails with P1010. Qualifying it keeps the DSN portable
+// across machines (whatever `whoami` is) without hardcoding a name.
+const DEV_DB_USER = process.env.USER ?? "";
+const DEV_DATABASE_URL = `postgresql://${
+  DEV_DB_USER ? `${DEV_DB_USER}@` : ""
+}localhost:5432/shipwright_dev`;
+/** Homebrew formula `task stack` provisions Postgres from on macOS. */
+const PG_FORMULA = "postgresql@16";
+/**
+ * Workspaces whose code the panes execute (metrics pane, agent pane → agent +
+ * admin). If any lacks `node_modules`, deps were never installed for it — Bun
+ * keeps per-workspace `node_modules`, so a workspace added after a prior
+ * `bun install` (as `admin` was) silently has none, and the pane crashes on a
+ * missing package. The preflight installs deps when any of these is missing.
+ */
+const STACK_WORKSPACE_DIRS = ["metrics", "agent", "admin"];
 const DEV_AGENT_HOME = "state/agent-home";
 
 // ---------------------------------------------------------------------------
@@ -191,7 +212,9 @@ export function buildStackCommands(
   const agentIndex = panes.findIndex((p) => p.label === "agent");
 
   // 3+4. For each pane, send its command. Before the agent pane, run the
-  // migration preflight so the agent's SQLite DB exists.
+  // preflight: generate the Prisma client (the agent imports it from
+  // admin/prisma/client — `bun install` does NOT generate it) THEN apply
+  // migrations so the agent's Postgres schema is up to date.
   panes.forEach((pane, i) => {
     if (i === agentIndex) {
       cmds.push({
@@ -199,7 +222,7 @@ export function buildStackCommands(
         argv: [
           "sh",
           "-c",
-          `cd admin && DATABASE_URL=${DEV_DATABASE_URL} bunx prisma migrate deploy --schema=prisma/schema.prisma`,
+          `cd admin && bunx prisma generate --schema=prisma/schema.prisma && DATABASE_URL=${DEV_DATABASE_URL} bunx prisma migrate deploy --schema=prisma/schema.prisma`,
         ],
       });
     }
@@ -265,6 +288,145 @@ const NO_TMUX_MESSAGE = [
   "[stack] or use the no-tmux fallback: `task dev` (starts the metrics dashboard).",
 ].join("\n");
 
+/**
+ * True if a tmux session of the given name already exists. `new-session` is not
+ * idempotent — it errors with "duplicate session" — so the entrypoint checks
+ * this first and fails fast rather than aborting mid-build. The `has-session`
+ * probe is injectable so the predicate is unit-testable without real tmux.
+ */
+export function sessionExists(
+  name: string,
+  hasSession: (name: string) => number = (n) =>
+    Bun.spawnSync(["tmux", "has-session", "-t", n], {
+      stdout: "ignore",
+      stderr: "ignore",
+    }).exitCode ?? 1,
+): boolean {
+  return hasSession(name) === 0;
+}
+
+/** Guidance shown when a same-named session is already running. */
+export function sessionExistsMessage(name: string): string {
+  return [
+    `[stack] session '${name}' already running — not rebuilding it.`,
+    `[stack]   attach: tmux attach -t ${name}`,
+    `[stack]   reset:  tmux kill-session -t ${name}  (then re-run task stack)`,
+  ].join("\n");
+}
+
+/**
+ * True if a TCP connection to the database host:port succeeds. The agent pane's
+ * migrate-deploy preflight needs a live Postgres; without this probe its failure
+ * surfaces as an opaque Prisma `P1001` mid-launch. A cheap connect() up front
+ * distinguishes "server not running" cleanly. The probe is injectable so the
+ * predicate is unit-testable without a real socket.
+ */
+export async function dbReachable(
+  databaseUrl: string,
+  probe: (host: string, port: number) => Promise<boolean> = tcpProbe,
+): Promise<boolean> {
+  const { hostname, port } = new URL(databaseUrl);
+  return probe(hostname || "localhost", Number(port) || 5432);
+}
+
+/** Opens a short-lived TCP connection; resolves true on connect, false otherwise. */
+function tcpProbe(host: string, port: number, timeoutMs = 1500): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = connect({ host, port });
+    const finish = (ok: boolean) => {
+      socket.destroy();
+      resolve(ok);
+    };
+    socket.setTimeout(timeoutMs);
+    socket.once("connect", () => finish(true));
+    socket.once("timeout", () => finish(false));
+    socket.once("error", () => finish(false));
+  });
+}
+
+/**
+ * Of the given workspace dirs, return those missing `node_modules` (deps never
+ * installed). Pure — the existence check is injected — so it is unit-testable
+ * without touching the filesystem.
+ */
+export function missingWorkspaceDeps(
+  dirs: string[],
+  hasNodeModules: (dir: string) => boolean,
+): string[] {
+  return dirs.filter((dir) => !hasNodeModules(dir));
+}
+
+/** True if a Homebrew formula is installed. Injectable for unit tests. */
+export function brewFormulaInstalled(
+  formula: string,
+  run: (argv: string[]) => number = (argv) =>
+    Bun.spawnSync(argv, { stdout: "ignore", stderr: "ignore" }).exitCode ?? 1,
+): boolean {
+  return run(["brew", "list", "--formula", formula]) === 0;
+}
+
+/** One provisioning command shown to the user and (on yes) executed. */
+export interface SetupStep {
+  /** Human-readable command shown before the y/N prompt. */
+  display: string;
+  /** argv executed to perform the step. */
+  argv: string[];
+}
+
+export interface PostgresPlan {
+  /** True if the server already accepts connections (no bring-up needed). */
+  serverReady: boolean;
+  /** Ordered server bring-up commands (install/start) — empty when ready. */
+  steps: SetupStep[];
+  /** Multi-line message printed before the "Run these now? [y/N]" prompt. */
+  instructions: string;
+}
+
+/**
+ * Decide what (if anything) must run to get Postgres ready, and render the exact
+ * commands for the user. Pure — reachability + formula presence are passed in —
+ * so the branching is unit-tested without touching real brew/sockets. The
+ * database itself is created separately (idempotently) once the server is up,
+ * so it is shown in the instructions but not returned as a bring-up step.
+ */
+export function planPostgresSetup(opts: {
+  databaseUrl: string;
+  reachable: boolean;
+  formulaInstalled: boolean;
+  formula?: string;
+}): PostgresPlan {
+  const { databaseUrl, reachable, formulaInstalled, formula = PG_FORMULA } = opts;
+  const { hostname, port, pathname } = new URL(databaseUrl);
+  const host = hostname || "localhost";
+  const p = port || "5432";
+  const dbName = pathname.replace(/^\//, "") || "shipwright_dev";
+
+  const steps: SetupStep[] = [];
+  if (!reachable && !formulaInstalled) {
+    steps.push({
+      display: `brew install ${formula}`,
+      argv: ["sh", "-c", `brew install ${formula}`],
+    });
+  }
+  if (!reachable) {
+    steps.push({
+      display: `brew services start ${formula}`,
+      argv: ["sh", "-c", `brew services start ${formula}`],
+    });
+  }
+
+  const instructions = [
+    reachable
+      ? `[stack] Postgres is up at ${host}:${p}, but database '${dbName}' is missing.`
+      : `[stack] Postgres is not running at ${host}:${p} — the agent pane needs it.`,
+    "[stack] To get it ready (macOS / Homebrew), this will run:",
+    ...steps.map((s) => `[stack]   ${s.display}`),
+    `[stack]   createdb ${dbName}`,
+  ].join("\n");
+
+  return { serverReady: reachable, steps, instructions };
+}
+
 function realExec(argv: string[]): void {
   const [bin, ...rest] = argv;
   // The preflight is a plain shell command; tmux subcommands go to `tmux`.
@@ -281,6 +443,100 @@ function realExec(argv: string[]): void {
   }
 }
 
+/**
+ * Ensure stack workspace deps are installed. Bun install is fast, safe and
+ * idempotent, so a missing workspace is auto-installed without a prompt (unlike
+ * installing Postgres, which has system-level side effects). Runs from the repo
+ * root — the same cwd the pane commands' relative paths assume.
+ */
+function ensureDepsInstalled(): void {
+  const missing = missingWorkspaceDeps(STACK_WORKSPACE_DIRS, (dir) =>
+    existsSync(`${dir}/node_modules`),
+  );
+  if (missing.length === 0) return;
+  console.log(
+    `[stack] dependencies missing (${missing.join(", ")}) — running bun install…`,
+  );
+  const proc = Bun.spawnSync(["bun", "install"], {
+    env: process.env,
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+  if (proc.exitCode !== 0) {
+    console.error("[stack] bun install failed — run `task setup`, then retry.");
+    process.exit(1);
+  }
+}
+
+/** Blocking y/N prompt. Empty/EOF/anything-but-yes ⇒ false (safe default). */
+function askYesNo(question: string): boolean {
+  const answer = (prompt(question) ?? "").trim().toLowerCase();
+  return answer === "y" || answer === "yes";
+}
+
+/** Poll until the DB accepts connections or the timeout elapses. */
+async function waitForReachable(
+  databaseUrl: string,
+  timeoutMs: number,
+  intervalMs = 500,
+): Promise<boolean> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (await dbReachable(databaseUrl)) return true;
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  return dbReachable(databaseUrl);
+}
+
+/** Create the database if missing. Idempotent: a non-zero exit (already exists) is ignored. */
+function ensureDatabaseExists(databaseUrl: string): void {
+  const { hostname, port, pathname } = new URL(databaseUrl);
+  const db = pathname.replace(/^\//, "") || "shipwright_dev";
+  Bun.spawnSync(
+    ["createdb", "-h", hostname || "localhost", "-p", port || "5432", db],
+    { env: process.env, stdout: "ignore", stderr: "ignore" },
+  );
+}
+
+/**
+ * Ensure Postgres is ready: probe, and if it isn't, show the exact commands and
+ * offer to run them (y/N). On yes, run them and wait for the server; on no, exit
+ * with the commands left on screen so nothing has to be guessed. Always ensures
+ * the database exists once the server is reachable.
+ */
+async function ensurePostgresReady(databaseUrl: string): Promise<void> {
+  if (!(await dbReachable(databaseUrl))) {
+    const plan = planPostgresSetup({
+      databaseUrl,
+      reachable: false,
+      formulaInstalled: brewFormulaInstalled(PG_FORMULA),
+    });
+    console.error(plan.instructions);
+    if (!askYesNo("[stack] Run these now? [y/N] ")) {
+      console.error("[stack] Aborted — run the commands above, then: task stack");
+      process.exit(1);
+    }
+    for (const step of plan.steps) {
+      console.log(`[stack] $ ${step.display}`);
+      try {
+        realExec(step.argv);
+      } catch (err) {
+        console.error((err as Error).message);
+        process.exit(1);
+      }
+    }
+    console.log("[stack] waiting for Postgres to accept connections…");
+    if (!(await waitForReachable(databaseUrl, 20_000))) {
+      console.error(
+        "[stack] Postgres still unreachable after start. Check: brew services list",
+      );
+      process.exit(1);
+    }
+  }
+  // Server is up — make sure the database exists (idempotent, quiet).
+  ensureDatabaseExists(databaseUrl);
+}
+
 // ---------------------------------------------------------------------------
 // Entrypoint
 // ---------------------------------------------------------------------------
@@ -290,6 +546,14 @@ if (import.meta.main) {
     console.error(NO_TMUX_MESSAGE);
     process.exit(1);
   }
+
+  if (sessionExists(SESSION_NAME)) {
+    console.error(sessionExistsMessage(SESSION_NAME));
+    process.exit(1);
+  }
+
+  ensureDepsInstalled();
+  await ensurePostgresReady(DEV_DATABASE_URL);
 
   console.log(
     `[stack] launching tmux session "${SESSION_NAME}" — metrics :${METRICS_PORT}, agent :${AGENT_PORT}, chat REPL, logs`,
