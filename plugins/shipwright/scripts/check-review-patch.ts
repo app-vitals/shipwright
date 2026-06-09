@@ -18,38 +18,18 @@
  */
 
 import {
-  getCurrentUser,
-  ghJson,
-  readAllowSelfReview,
-  readReviews,
-  resolveRepos,
-  resolveWorkspacePath,
-} from "./check-helpers.ts";
-import type { ReviewEntry } from "./check-helpers.ts";
-import {
   type Deps as PatchDeps,
   buildProductionDeps as buildPatchProductionDeps,
   run as runPatch,
 } from "./check-patch.ts";
-import { type CommitInfo, run as runReview } from "./check-review.ts";
+import {
+  buildProductionDeps as buildReviewProductionDeps,
+  run as runReview,
+} from "./check-review.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface PrInfo {
-  number: number;
-  title: string;
-  author: { login: string };
-  headRefName: string;
-  headRefOid: string;
-}
-
-interface ReviewDeps {
-  getCurrentUser: () => string;
-  isSelfReviewAllowed: boolean;
-  listOpenPrs: (repo: string) => Promise<PrInfo[]>;
-  readReviews: () => ReviewEntry[];
-  listPrCommits: (prNumber: number) => Promise<CommitInfo[]>;
-}
+type ReviewDeps = Awaited<ReturnType<typeof buildReviewProductionDeps>>;
 
 export interface Deps {
   reviewDeps: ReviewDeps;
@@ -77,37 +57,10 @@ export async function run(deps: Deps): Promise<RunResult> {
 // ─── Production deps ──────────────────────────────────────────────────────────
 
 async function buildProductionDeps(): Promise<Deps> {
-  const workspacePath = resolveWorkspacePath();
-  const repos = resolveRepos(workspacePath);
-  const orgRepo = repos[0] ?? "app-vitals/shipwright";
-
-  const reviewDeps: ReviewDeps = {
-    getCurrentUser,
-    isSelfReviewAllowed: readAllowSelfReview(workspacePath),
-    listOpenPrs: async (_repo: string) => {
-      return ghJson<PrInfo[]>([
-        "pr",
-        "list",
-        "--state",
-        "open",
-        "--repo",
-        orgRepo,
-        "--json",
-        "number,title,author,headRefName,headRefOid",
-      ]);
-    },
-    readReviews: () => readReviews(workspacePath),
-    listPrCommits: async (prNumber: number) => {
-      return ghJson<CommitInfo[]>([
-        "api",
-        `repos/${orgRepo}/pulls/${prNumber}/commits`,
-        "--paginate",
-      ]);
-    },
-  };
-
-  const patchDeps = await buildPatchProductionDeps();
-
+  const [reviewDeps, patchDeps] = await Promise.all([
+    buildReviewProductionDeps(),
+    buildPatchProductionDeps(),
+  ]);
   return { reviewDeps, patchDeps };
 }
 
