@@ -60,6 +60,11 @@ tasks:
     cmds:
       - bun scripts/dev.ts
 
+  stack:
+    desc: Launch the full dev stack in a tmux session (4 panes — metrics :3460, agent :3000, chat REPL, logs). Requires tmux; falls back to `task dev`.
+    cmds:
+      - bun scripts/dev-tmux.ts
+
   db:provision:
     desc: Create the agent database (idempotent — safe to re-run)
     cmds:
