@@ -82,21 +82,7 @@ export function renderLoginPage(opts?: { error?: string }): string {
       <h1 class="login-title">Shipwright Admin</h1>
       <p class="login-subtitle">Sign in to manage your agents.</p>
       ${errorHtml}
-      <form method="POST" action="/admin/login">
-        <div class="form-group">
-          <label class="form-label" for="password">Password</label>
-          <input
-            id="password"
-            name="password"
-            type="password"
-            class="form-input"
-            placeholder="Enter admin password"
-            autocomplete="current-password"
-            required
-          />
-        </div>
-        <button type="submit" class="btn btn-primary" style="width:100%">Sign in</button>
-      </form>
+      <a href="/auth/google" class="btn btn-primary" style="width:100%;justify-content:center;text-decoration:none">Sign in with Google</a>
     </div>
   </div>
 </body>
