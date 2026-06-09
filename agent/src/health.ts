@@ -31,7 +31,6 @@ export function createHealthApp(): Hono {
  */
 export function startHealthServer(
   port: number,
-  _summarize?: unknown,
   cronDeps?: CronHandlerDeps,
 ): Server<undefined> {
   return Bun.serve({

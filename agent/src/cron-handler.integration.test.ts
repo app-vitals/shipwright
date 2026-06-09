@@ -848,7 +848,7 @@ describe("POST /cron HTTP endpoint", () => {
 
   // biome-ignore lint/suspicious/noExplicitAny: Server type param varies by bun version
   function serve(port: number): Server<any> {
-    const s = startHealthServer(port, undefined, deps);
+    const s = startHealthServer(port, deps);
     servers.push(s);
     return s;
   }
