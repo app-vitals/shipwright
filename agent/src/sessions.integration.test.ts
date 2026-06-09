@@ -1,16 +1,17 @@
 /**
- * Unit tests for createFileSessionStore and threadKey in agent/src/sessions.ts
+ * Integration tests for createFileSessionStore and threadKey in agent/src/sessions.ts
  *
- * Uses a tmp dir — no mocks, pure file I/O.
+ * Uses real file I/O to tmp files — correct by the boundary rule (filesystem = external dependency).
+ * No mocks, no test-env.ts import needed.
  */
 
-import { afterAll, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, afterAll, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFileSessionStore, threadKey } from "./sessions.ts";
 
-const TMP_DIR = mkdtempSync(join(tmpdir(), "sessions-unit-test-"));
+const TMP_DIR = mkdtempSync(join(tmpdir(), "sessions-integration-test-"));
 const SESSIONS_FILE = join(TMP_DIR, "sessions.json");
 
 afterAll(() => {
@@ -29,17 +30,38 @@ describe("threadKey", () => {
   test("different channels produce different keys", () => {
     expect(threadKey("C1", "ts")).not.toBe(threadKey("C2", "ts"));
   });
+
+  test("handles D prefix (DMs)", () => {
+    expect(threadKey("D99999ZZ", "0000001.000001")).toBe(
+      "D99999ZZ:0000001.000001",
+    );
+  });
+
+  test("handles G prefix (group channels)", () => {
+    expect(threadKey("GABCDEF1", "9876543.210000")).toBe(
+      "GABCDEF1:9876543.210000",
+    );
+  });
 });
 
 // ─── createFileSessionStore ────────────────────────────────────────────────
 
 describe("createFileSessionStore", () => {
   let store: ReturnType<typeof createFileSessionStore>;
+  let currentFile: string;
 
   beforeEach(() => {
     // Fresh file path per test group to avoid bleed
-    const file = join(TMP_DIR, `sessions-${Date.now()}-${Math.random()}.json`);
-    store = createFileSessionStore(file, 60_000);
+    currentFile = join(TMP_DIR, `sessions-${Date.now()}-${Math.random()}.json`);
+    store = createFileSessionStore(currentFile, 60_000);
+  });
+
+  afterEach(() => {
+    try {
+      rmSync(currentFile);
+    } catch {
+      // file may not exist
+    }
   });
 
   test("get returns undefined for missing key", () => {
@@ -136,5 +158,17 @@ describe("createFileSessionStore", () => {
     store.clear("k1");
     expect(store.get("k1")).toBeUndefined();
     expect(store.get("k2")).toBe("s2");
+  });
+
+  test("store.get() returns undefined after backing file is deleted and new store constructed on same path", () => {
+    store.set("k1", "session-to-delete");
+    expect(store.get("k1")).toBe("session-to-delete");
+
+    // Delete the backing file
+    rmSync(currentFile);
+
+    // Construct a new store on the same path
+    const freshStore = createFileSessionStore(currentFile, 60_000);
+    expect(freshStore.get("k1")).toBeUndefined();
   });
 });
