@@ -27,3 +27,6 @@ export type { AgentPlugin as AgentPluginRecord } from "./agent-plugins.ts";
 export { makeTokenCrypto, identityCrypto } from "./token-crypto.ts";
 export type { TokenCrypto } from "./token-crypto.ts";
 export { ApiError, NotFoundError, ConflictError, BadRequestError, ForbiddenError, UnprocessableEntityError, BadGatewayError } from "./errors.ts";
+export { HttpSlackProvisioningClient } from "./slack-provisioning-client.ts";
+export type { SlackProvisioningClient } from "./slack-provisioning-client.ts";
+export { PrismaClient } from "../prisma/client/index.js";
