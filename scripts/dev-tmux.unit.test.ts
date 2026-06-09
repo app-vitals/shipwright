@@ -105,6 +105,7 @@ describe("runStack — per-pane commands via injected exec", () => {
     runStack(STACK_PANES, exec);
     const sk = sendKeysForPane(calls, 1)?.join(" ") ?? "";
     expect(sk).toContain("agent/src/run-agent.ts");
+    expect(sk).toContain(`PORT=${AGENT_PORT}`);
     expect(sk).toContain("SHIPWRIGHT_DEV_CHAT=true");
     expect(sk).toContain("POSTHOG_HOST=http://localhost:3460");
     expect(sk).toContain("POSTHOG_PROJECT_API_KEY=");

@@ -76,6 +76,7 @@ async function transcribeGroq(
   audioPath: string,
   fileBuffer: Buffer,
   apiKey: string,
+  fetchFn: typeof fetch = globalThis.fetch,
 ): Promise<string | null> {
   const formData = new FormData();
   const blob = new Blob([new Uint8Array(fileBuffer)]);
@@ -84,7 +85,7 @@ async function transcribeGroq(
 
   let resp: Response;
   try {
-    resp = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+    resp = await fetchFn("https://api.groq.com/openai/v1/audio/transcriptions", {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}` },
       body: formData,
@@ -107,11 +108,13 @@ async function transcribeGroq(
  * Transcribe an audio file.
  * Fallback chain: Groq (if key set) → whisper-svc HTTP (if URL set or client injected) → null
  *
- * Accepts an optional whisperClientFn for DI in tests.
+ * Accepts an optional fetchFn for DI in tests (avoids global.fetch mocking).
+ * Accepts an optional whisperClientFn for tests that inject a custom WhisperClientFn directly.
  */
 export async function transcribeAudio(
   audioPath: string,
   voiceConfig: VoiceConfig = {},
+  fetchFn?: typeof fetch,
   whisperClientFn?: WhisperClientFn,
 ): Promise<string | null> {
   let fileBuffer: Buffer;
@@ -129,9 +132,11 @@ export async function transcribeAudio(
     return null;
   }
 
+  const resolvedFetch = fetchFn ?? globalThis.fetch;
+
   const apiKey = voiceConfig.groqApiKey;
   if (apiKey) {
-    const groqResult = await transcribeGroq(audioPath, fileBuffer, apiKey);
+    const groqResult = await transcribeGroq(audioPath, fileBuffer, apiKey, resolvedFetch);
     if (groqResult !== null) {
       return groqResult;
     }
@@ -143,7 +148,7 @@ export async function transcribeAudio(
   const clientFn =
     whisperClientFn ??
     (voiceConfig.whisperServiceUrl
-      ? makeWhisperSvcClient(voiceConfig.whisperServiceUrl)
+      ? makeWhisperSvcClient(voiceConfig.whisperServiceUrl, resolvedFetch)
       : null);
 
   if (!clientFn) return null;
@@ -153,17 +158,21 @@ export async function transcribeAudio(
 /**
  * Synthesize speech from text using ElevenLabs (if key available) or edge-tts fallback.
  * Returns the path to the generated audio file, or null on failure.
+ *
+ * Accepts an optional fetchFn for DI in tests (avoids global.fetch mocking).
+ * Accepts an optional spawnFn for edge-tts injection in tests.
  */
 export async function synthesizeSpeech(
   text: string,
   voiceConfig: VoiceConfig = {},
+  fetchFn?: typeof fetch,
   spawnFn: SpawnFn = defaultSpawn,
 ): Promise<string | null> {
   mkdirSync(VOICE_DIR, { recursive: true });
 
   const elevenKey = voiceConfig.elevenLabsApiKey;
   if (elevenKey) {
-    return synthesizeElevenLabs(text, elevenKey, voiceConfig.voiceId);
+    return synthesizeElevenLabs(text, elevenKey, voiceConfig.voiceId, fetchFn ?? globalThis.fetch);
   }
 
   return synthesizeEdgeTTS(text, spawnFn);
@@ -173,12 +182,13 @@ async function synthesizeElevenLabs(
   text: string,
   apiKey: string,
   voiceId?: string,
+  fetchFn: typeof fetch = globalThis.fetch,
 ): Promise<string | null> {
   const vid = voiceId ?? "CwhRBWXzGAHq8TQ4Fs17"; // Roger
 
   let resp: Response;
   try {
-    resp = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${vid}`, {
+    resp = await fetchFn(`https://api.elevenlabs.io/v1/text-to-speech/${vid}`, {
       method: "POST",
       headers: {
         "xi-api-key": apiKey,

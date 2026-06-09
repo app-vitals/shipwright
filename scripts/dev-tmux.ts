@@ -73,7 +73,7 @@ export type TmuxCommand = {
 };
 
 /** A function that runs a single built command. Injected for testability. */
-export type ExecFn = (argv: string[], env?: Record<string, string>) => void;
+export type ExecFn = (argv: string[]) => void;
 
 export type BuildOpts = {
   session?: string;
@@ -93,6 +93,7 @@ export const STACK_PANES: Pane[] = [
     label: "agent",
     cmd: ["bun", "agent/src/run-agent.ts"],
     env: {
+      PORT: String(AGENT_PORT),
       SHIPWRIGHT_DEV_CHAT: "true",
       POSTHOG_HOST: `http://localhost:${METRICS_PORT}`,
       POSTHOG_PROJECT_API_KEY: DUMMY_POSTHOG_KEY,
