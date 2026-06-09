@@ -109,4 +109,13 @@ describe("Taskfile.yml — required run targets", () => {
     const block = getTaskBlock(content, "dev");
     expect(block).toMatch(/scripts\/dev\.ts/);
   });
+
+  test("task stack exists with desc + cmds referencing dev-tmux.ts", () => {
+    const content = readTaskfile();
+    const block = getTaskBlock(content, "stack");
+    expect(block).not.toBeNull();
+    expect(block).toMatch(/desc:/);
+    expect(block).toMatch(/cmds:/);
+    expect(block).toMatch(/scripts\/dev-tmux\.ts/);
+  });
 });

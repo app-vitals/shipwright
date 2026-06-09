@@ -35,9 +35,9 @@ task typecheck    # bun run --filter='*' typecheck
 task check-strings  # scan entire repo for banned/confidential identifiers (client names, internal infra IDs)
 ```
 
-Database (agent only):
+Database (admin service):
 ```bash
-export DATABASE_URL_AGENT="file:./agent/dev.db"   # SQLite for local dev; postgres URL for prod
+export DATABASE_URL="postgresql://user:password@localhost:5432/shipwright_admin"
 task db:provision   # prisma migrate deploy (idempotent)
 task db:migrate     # prisma migrate dev (creates a new migration)
 ```
@@ -57,7 +57,10 @@ Run the metrics service locally:
 task api        # start metrics dashboard in offline mode → http://localhost:3460/dashboard
 task ui         # same as task api (API and UI are one process)
 task dev        # dev supervisor: starts metrics + Ctrl-C kills all children
+task stack      # full dev stack in a tmux session (4 panes) — requires tmux
 ```
+
+`task stack` (`scripts/dev-tmux.ts`) launches one tmux session named `shipwright` with a 4-pane dashboard: **metrics** (offline SQLite, :3460), **agent** with the dev `/chat` endpoint enabled (:3000), the **chat** REPL, and a scratch **logs** shell. It runs a Prisma `migrate deploy` preflight before the agent pane so the agent's local SQLite DB exists. Closing the session (`tmux kill-session -t shipwright`) stops every pane. `task stack` is additive — it does not touch `task dev`, which stays the no-tmux fallback the quickstart depends on; if tmux isn't installed, `task stack` fails fast and points you at `task dev`. The command/pane-env sequence is built by a pure, injected-exec builder (mirrors `scripts/dev.ts`) and unit-tested in `scripts/dev-tmux.unit.test.ts`.
 
 ## Before you commit — this repository is going public
 
@@ -122,9 +125,9 @@ Each Prisma service reads its own `DATABASE_URL_*` — never a shared connection
 
 | Variable | Service | Schema |
 |----------|---------|--------|
-| `DATABASE_URL_AGENT` | `@shipwright/admin` | `admin/prisma/schema.prisma` |
+| `DATABASE_URL` | `@shipwright/admin` | `admin/prisma/schema.prisma` |
 
-The schema uses `provider = "sqlite"` for local portability. Swap to `postgresql` and regenerate migrations when deploying against real Postgres.
+The schema uses `provider = "postgresql"`. `DATABASE_URL` must be a Postgres connection string.
 
 ## Reference
 

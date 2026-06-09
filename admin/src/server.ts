@@ -29,4 +29,6 @@ export type { TokenCrypto } from "./token-crypto.ts";
 export { ApiError, NotFoundError, ConflictError, BadRequestError, ForbiddenError, UnprocessableEntityError, BadGatewayError } from "./errors.ts";
 export { HttpSlackProvisioningClient } from "./slack-provisioning-client.ts";
 export type { SlackProvisioningClient } from "./slack-provisioning-client.ts";
+export { HttpGoogleAuthClient } from "./google-auth-client.ts";
+export type { GoogleAuthClient } from "./google-auth-client.ts";
 export { PrismaClient } from "../prisma/client/index.js";

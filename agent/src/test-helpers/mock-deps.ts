@@ -8,7 +8,6 @@
 import type { ComposedAppDeps } from "../run-agent.ts";
 
 export const TEST_SESSION_SECRET = "test-admin-session-secret-32-bytes!";
-export const TEST_ADMIN_PASSWORD = "correct-horse-battery-staple";
 export const TEST_INTERNAL_API_KEY = "test-internal-api-key";
 export const TEST_AGENT_ID = "agent-test-123";
 
@@ -91,7 +90,20 @@ export function makeMockDeps(): ComposedAppDeps {
     },
     internalApiKey: TEST_INTERNAL_API_KEY,
     sessionSecret: TEST_SESSION_SECRET,
-    adminPassword: TEST_ADMIN_PASSWORD,
+    googleClientId: "test-google-client-id",
+    googleClientSecret: "test-google-client-secret",
+    adminAllowedEmails: ["admin@example.com"],
+    googleClient: {
+      exchangeCode: async () => ({
+        accessToken: "test-access-token",
+        expiresIn: 3600,
+      }),
+      getUserInfo: async () => ({
+        sub: "google-sub-123",
+        email: "admin@example.com",
+        name: "Admin User",
+      }),
+    },
     slackClient: {
       createAppManifest: async () => ({
         appId: "A123",

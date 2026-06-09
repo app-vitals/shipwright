@@ -3,8 +3,9 @@
  * Admin UI — server-rendered Hono app factory.
  *
  * Routes:
- *   GET  /admin/login                 — login form
- *   POST /admin/login                 — submit password → set session cookie → redirect
+ *   GET  /admin/login                 — login page (Google sign-in button)
+ *   GET  /auth/google                 — redirect to Google OAuth consent
+ *   GET  /auth/callback               — Google OAuth callback → set session cookie
  *   POST /admin/logout                — clear cookie → redirect to login
  *   GET  /admin/agents                — list all agents (auth required)
  *   GET  /admin/agents/:id            — agent detail (auth required)
@@ -15,10 +16,10 @@
  *   GET  /admin/provision/complete    — OAuth callback → store credentials
  *
  * Auth: httpOnly JWT cookie named "admin_session".
- * Login is password-only (adminPassword from deps) — no DB user lookup.
+ * Login is Google OAuth — no password, no DB user lookup.
+ * Allowed users are controlled by the adminAllowedEmails allowlist in deps.
  */
 
-import { timingSafeEqual as cryptoTimingSafeEqual } from "node:crypto";
 import { Hono, type MiddlewareHandler } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { sign, verify } from "hono/jwt";
@@ -33,6 +34,7 @@ import {
 import type { AgentCronJobService } from "./agent-cron-jobs.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
 import { ForbiddenError, UnprocessableEntityError } from "./errors.ts";
+import type { GoogleAuthClient } from "./google-auth-client.ts";
 import type { AgentPluginService } from "./agent-plugins.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 import type { AgentToolService } from "./agent-tools.ts";
@@ -112,7 +114,10 @@ export interface AdminUIDeps {
   agentTokenService: Pick<AgentTokenService, "listForAgent" | "create" | "revoke">;
   agentPluginService: Pick<AgentPluginService, "list">;
   sessionSecret: string;
-  adminPassword: string;
+  googleClient: GoogleAuthClient;
+  googleClientId: string;
+  googleClientSecret: string;
+  adminAllowedEmails: string[];
   slackClient: AdminUISlackClient;
   appBaseUrl: string;
 }
@@ -120,31 +125,24 @@ export interface AdminUIDeps {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const SESSION_COOKIE = "admin_session";
+const OAUTH_STATE_COOKIE = "oauth_state";
+const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const SESSION_TTL_SECONDS = 8 * 60 * 60; // 8 hours
+const OAUTH_STATE_TTL_SECONDS = 600; // 10 min
 const ADMIN_USER_NAME = "admin";
-
-// ─── Timing-safe comparison ───────────────────────────────────────────────────
-
-/**
- * Constant-time string comparison using node:crypto's timingSafeEqual.
- * Returns false immediately on length mismatch (length is not secret here —
- * the admin password length is fixed, so early-exit is fine).
- */
-function safeCompare(a: string, b: string): boolean {
-  const ab = Buffer.from(a, "utf8");
-  const bb = Buffer.from(b, "utf8");
-  if (ab.length !== bb.length) return false;
-  return cryptoTimingSafeEqual(ab, bb);
-}
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 
-async function createSessionToken(secret: string): Promise<string> {
+async function createSessionToken(
+  secret: string,
+  userId: string,
+  email: string,
+): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   return sign(
     {
-      userId: "admin",
-      email: "admin",
+      userId,
+      email,
       iat: now,
       exp: now + SESSION_TTL_SECONDS,
     },
@@ -164,8 +162,9 @@ async function verifySessionToken(
     >;
     return (
       typeof payload.userId === "string" &&
-      payload.userId === "admin" &&
-      typeof payload.email === "string"
+      payload.userId.length > 0 &&
+      typeof payload.email === "string" &&
+      payload.email.length > 0
     );
   } catch {
     return false;
@@ -198,7 +197,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
     agentTokenService,
     agentPluginService,
     sessionSecret,
-    adminPassword,
+    googleClient,
+    googleClientId,
+    googleClientSecret,
+    adminAllowedEmails,
     slackClient,
     appBaseUrl,
   } = deps;
@@ -215,29 +217,100 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
     });
   }
 
-  // ─── Login / Logout ───────────────────────────────────────────────────────
+  // ─── Login / OAuth / Logout ───────────────────────────────────────────────
 
   app.get("/admin/login", (c) => {
-    return html(renderLoginPage());
+    const error = c.req.query("error") ?? undefined;
+    return html(renderLoginPage({ error }));
   });
 
-  app.post("/admin/login", async (c) => {
-    let password: string | undefined;
+  app.get("/auth/google", (c) => {
+    if (!googleClientId) {
+      return c.redirect("/admin/login?error=server_error", 302);
+    }
+
+    const nonce = crypto.randomUUID();
+    setCookie(c, OAUTH_STATE_COOKIE, nonce, {
+      httpOnly: true,
+      sameSite: "Lax",
+      maxAge: OAUTH_STATE_TTL_SECONDS,
+      path: "/auth",
+    });
+
+    const params = new URLSearchParams({
+      client_id: googleClientId,
+      redirect_uri: `${appBaseUrl}/auth/callback`,
+      response_type: "code",
+      scope: "openid profile email",
+      state: nonce,
+      prompt: "select_account",
+    });
+
+    return c.redirect(`${GOOGLE_AUTH_URL}?${params.toString()}`, 302);
+  });
+
+  app.get("/auth/callback", async (c) => {
+    const { code, state, error: googleError } = c.req.query();
+
+    // Google returned an error (e.g. access_denied)
+    if (googleError) {
+      const slug = googleError === "access_denied" ? "access_denied" : "auth_failed";
+      return c.redirect(`/admin/login?error=${slug}`, 302);
+    }
+
+    // CSRF: validate state nonce
+    const storedNonce = getCookie(c, OAUTH_STATE_COOKIE);
+    deleteCookie(c, OAUTH_STATE_COOKIE, { path: "/auth" });
+
+    if (!storedNonce || !state || storedNonce !== state) {
+      return c.redirect("/admin/login?error=invalid_state", 302);
+    }
+
+    if (!googleClientId || !googleClientSecret) {
+      return c.redirect("/admin/login?error=server_error", 302);
+    }
+
+    if (!code) {
+      return c.redirect("/admin/login?error=auth_failed", 302);
+    }
+
+    // Exchange authorization code for tokens
+    let accessToken: string;
     try {
-      const formData = await c.req.formData();
-      password = formData.get("password")?.toString();
-    } catch {
-      return html(renderLoginPage({ error: "Invalid form submission." }));
-    }
-
-    if (!password || !safeCompare(password, adminPassword)) {
-      return new Response(renderLoginPage({ error: "Invalid password." }), {
-        status: 401,
-        headers: { "Content-Type": "text/html; charset=utf-8" },
+      const tokens = await googleClient.exchangeCode({
+        code,
+        clientId: googleClientId,
+        clientSecret: googleClientSecret,
+        redirectUri: `${appBaseUrl}/auth/callback`,
       });
+      accessToken = tokens.accessToken;
+    } catch {
+      return c.redirect("/admin/login?error=auth_failed", 302);
     }
 
-    const token = await createSessionToken(sessionSecret);
+    // Fetch user info from Google
+    let userInfo: { sub: string; email?: string; email_verified?: boolean; name: string };
+    try {
+      userInfo = await googleClient.getUserInfo(accessToken);
+    } catch {
+      return c.redirect("/admin/login?error=auth_failed", 302);
+    }
+
+    if (!userInfo.email) {
+      return c.redirect("/admin/login?error=auth_failed", 302);
+    }
+
+    if (!userInfo.email_verified) {
+      return c.redirect("/admin/login?error=auth_failed", 302);
+    }
+
+    // Check allowlist
+    if (!adminAllowedEmails.map((e) => e.toLowerCase()).includes(userInfo.email.toLowerCase())) {
+      return new Response("Forbidden", { status: 403 });
+    }
+
+    // Create session
+    const token = await createSessionToken(sessionSecret, userInfo.sub, userInfo.email);
     setCookie(c, SESSION_COOKIE, token, {
       httpOnly: true,
       secure: appBaseUrl.startsWith("https://"),
