@@ -18,7 +18,7 @@ import {
   getCurrentUser,
   ghJson,
   readAllowSelfReview,
-  resolveRepos,
+  resolveAllRepos,
   resolveWorkspacePath,
 } from "./check-helpers.ts";
 import { createTaskStore, loadConfig } from "./create-task-store.ts";
@@ -217,13 +217,13 @@ interface GhWorkflowRunsJson {
 
 async function buildProductionDeps(): Promise<Deps> {
   const workspacePath = resolveWorkspacePath();
-  const repos = resolveRepos(workspacePath);
+  const allRepos = resolveAllRepos(workspacePath);
   const clock = () => new Date().toISOString();
 
   return {
     getCurrentUser,
     isSelfReviewAllowed: readAllowSelfReview(workspacePath),
-    repos: repos.length > 0 ? repos : ["app-vitals/shipwright"],
+    repos: allRepos,
     clock,
     fetchActiveDeployRuns: async (org: string, repo: string) => {
       const [inProgress, queued] = await Promise.all([
@@ -280,7 +280,7 @@ async function buildProductionDeps(): Promise<Deps> {
       if (prOpenTasks.length === 0) return;
 
       const now = clock();
-      const defaultRepo = repos[0] ?? "app-vitals/shipwright";
+      const defaultRepo = allRepos[0] ?? "app-vitals/shipwright";
 
       for (const task of prOpenTasks) {
         if (!task.id) continue;
