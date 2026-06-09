@@ -23,6 +23,7 @@ WORKDIR /app
 # Copy workspace manifests for dependency install
 COPY package.json bun.lock ./
 COPY admin/package.json ./admin/
+COPY admin/prisma ./admin/prisma/
 COPY agent/package.json ./agent/
 COPY metrics/package.json ./metrics/
 COPY plugins/shipwright/package.json ./plugins/shipwright/
