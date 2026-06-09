@@ -136,8 +136,6 @@ export const STACK_PANES: Pane[] = [
   },
   {
     label: "admin",
-    // Standalone admin service: CRUD API + UI + Prisma store. Owns the DB
-    // and runs migrations (via the preflight) before starting.
     cmd: ["bun", "admin/src/main.ts"],
     env: {
       PORT: String(ADMIN_PORT),
@@ -147,8 +145,6 @@ export const STACK_PANES: Pane[] = [
   },
   {
     label: "agent",
-    // Thin agent: /health + /agents/* proxy to the admin service.
-    // No direct DB access — proxies via SHIPWRIGHT_API_URL instead.
     cmd: ["bun", "agent/src/run-agent.ts"],
     env: {
       PORT: String(AGENT_PORT),
