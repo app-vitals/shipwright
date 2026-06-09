@@ -48,7 +48,7 @@ export function buildChatRequest(
   message: string,
   session?: string,
 ): ChatRequestBody {
-  if (session && session !== "") {
+  if (session) {
     return { message, session };
   }
   return { message };
