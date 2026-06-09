@@ -57,10 +57,10 @@ Run the metrics service locally:
 task api        # start metrics dashboard in offline mode → http://localhost:3460/dashboard
 task ui         # same as task api (API and UI are one process)
 task dev        # dev supervisor: starts metrics + Ctrl-C kills all children
-task stack      # full dev stack in a tmux session (4 panes) — requires tmux
+task stack      # full dev stack in a tmux session (5 panes) — requires tmux
 ```
 
-`task stack` (`scripts/dev-tmux.ts`) launches one tmux session named `shipwright` with a 4-pane dashboard: **metrics** (offline SQLite, :3460), **agent** with the dev `/chat` endpoint enabled (:3000), the **chat** REPL, and a scratch **logs** shell. It runs a Prisma `migrate deploy` preflight before the agent pane so the agent's Postgres schema is up to date; the preflight first checks Postgres is reachable and, on macOS, prints the exact `brew`/`createdb` commands and offers to run them (`[y/N]`) before launching. Closing the session (`tmux kill-session -t shipwright`) stops every pane. `task stack` is additive — it does not touch `task dev`, which stays the no-tmux fallback the quickstart depends on; if tmux isn't installed, `task stack` fails fast and points you at `task dev`. The command/pane-env sequence is built by a pure, injected-exec builder (mirrors `scripts/dev.ts`) and unit-tested in `scripts/dev-tmux.unit.test.ts`.
+`task stack` (`scripts/dev-tmux.ts`) launches one tmux session named `shipwright` with a 5-pane dashboard: **metrics** (offline SQLite, :3460), **admin** (CRUD API + UI, :3001), **agent** with the dev `/chat` endpoint enabled (:3000), the **chat** REPL, and a scratch **logs** shell. It runs a Prisma `migrate deploy` preflight before the admin pane so the admin service's Postgres schema is up to date; the preflight first checks Postgres is reachable and, on macOS, prints the exact `brew`/`createdb` commands and offers to run them (`[y/N]`) before launching. Closing the session (`tmux kill-session -t shipwright`) stops every pane. `task stack` is additive — it does not touch `task dev`, which stays the no-tmux fallback the quickstart depends on; if tmux isn't installed, `task stack` fails fast and points you at `task dev`. The command/pane-env sequence is built by a pure, injected-exec builder (mirrors `scripts/dev.ts`) and unit-tested in `scripts/dev-tmux.unit.test.ts`.
 
 ## Before you commit — this repository is going public
 
