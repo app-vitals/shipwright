@@ -61,7 +61,7 @@ tasks:
       - bun scripts/dev.ts
 
   stack:
-    desc: Launch the full dev stack in a tmux session (4 panes — metrics :3460, agent :3000, chat REPL, logs). Requires tmux; falls back to `task dev`.
+    desc: Launch the full dev stack in a tmux session (5 panes — metrics :3460, admin :3001, agent :3000, chat REPL, logs). Requires tmux; falls back to `task dev`.
     cmds:
       - bun scripts/dev-tmux.ts
 
