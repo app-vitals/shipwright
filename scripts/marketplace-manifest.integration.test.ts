@@ -1,5 +1,5 @@
 /**
- * Unit tests for .claude-plugin/marketplace.json
+ * Integration tests for .claude-plugin/marketplace.json
  *
  * Reads the REAL manifest at repo root (process.cwd() when bun test runs).
  * Verifies well-formedness and that each plugin entry's source resolves to a
