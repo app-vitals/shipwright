@@ -35,9 +35,9 @@ task typecheck    # bun run --filter='*' typecheck
 task check-strings  # scan entire repo for banned/confidential identifiers (client names, internal infra IDs)
 ```
 
-Database (agent only):
+Database (admin service):
 ```bash
-export DATABASE_URL_AGENT="file:./agent/dev.db"   # SQLite for local dev; postgres URL for prod
+export DATABASE_URL="postgresql://user:password@localhost:5432/shipwright_admin"
 task db:provision   # prisma migrate deploy (idempotent)
 task db:migrate     # prisma migrate dev (creates a new migration)
 ```
@@ -125,9 +125,9 @@ Each Prisma service reads its own `DATABASE_URL_*` — never a shared connection
 
 | Variable | Service | Schema |
 |----------|---------|--------|
-| `DATABASE_URL_AGENT` | `@shipwright/admin` | `admin/prisma/schema.prisma` |
+| `DATABASE_URL` | `@shipwright/admin` | `admin/prisma/schema.prisma` |
 
-The schema uses `provider = "sqlite"` for local portability. Swap to `postgresql` and regenerate migrations when deploying against real Postgres.
+The schema uses `provider = "postgresql"`. `DATABASE_URL` must be a Postgres connection string.
 
 ## Reference
 
