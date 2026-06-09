@@ -8,13 +8,16 @@
 
 import { beforeAll, describe, expect, it } from "bun:test";
 import { sign } from "hono/jwt";
+import type { GoogleAuthClient, GoogleTokenResponse, GoogleUserInfo } from "./google-auth-client.ts";
 import { createAdminUIApp } from "./admin-ui.ts";
 import type { AdminUIDeps } from "./admin-ui.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const SESSION_SECRET = "test-admin-session-secret-32-bytes!";
-const ADMIN_PASSWORD = "correct-horse-battery-staple";
+const GOOGLE_CLIENT_ID = "test-google-client-id";
+const GOOGLE_CLIENT_SECRET = "test-google-client-secret";
+const ADMIN_ALLOWED_EMAILS = ["admin@example.com", "other@example.com"];
 const AGENT_ID = "agent-test-123";
 const CRON_ID = "cron-test-456";
 const TOOL_ID = "tool-test-789";
@@ -58,11 +61,15 @@ const MOCK_TOKEN = {
 
 // ─── JWT helper ───────────────────────────────────────────────────────────────
 
-async function makeSessionCookie(secret = SESSION_SECRET): Promise<string> {
+async function makeSessionCookie(
+  secret = SESSION_SECRET,
+  userId = "google-sub-123",
+  email = "admin@example.com",
+): Promise<string> {
   return sign(
     {
-      userId: "admin",
-      email: "admin",
+      userId,
+      email,
       iat: Math.floor(Date.now() / 1000),
       exp: Math.floor(Date.now() / 1000) + 3600,
     },
@@ -71,9 +78,36 @@ async function makeSessionCookie(secret = SESSION_SECRET): Promise<string> {
   );
 }
 
+// ─── Mock Google client ───────────────────────────────────────────────────────
+
+function makeGoogleClient(overrides?: {
+  exchangeCode?: (params: unknown) => Promise<GoogleTokenResponse>;
+  getUserInfo?: (accessToken: string) => Promise<GoogleUserInfo>;
+}): GoogleAuthClient {
+  return {
+    exchangeCode:
+      overrides?.exchangeCode ??
+      (() =>
+        Promise.resolve({
+          accessToken: "test-access-token",
+          refreshToken: "test-refresh-token",
+          expiresIn: 3600,
+        })),
+    getUserInfo:
+      overrides?.getUserInfo ??
+      (() =>
+        Promise.resolve({
+          sub: "google-sub-123",
+          email: "admin@example.com",
+          email_verified: true,
+          name: "Admin User",
+        })),
+  };
+}
+
 // ─── Mock deps ────────────────────────────────────────────────────────────────
 
-function makeMockDeps(): AdminUIDeps {
+function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
   return {
     prisma: {
       agent: {
@@ -132,7 +166,10 @@ function makeMockDeps(): AdminUIDeps {
       list: async () => [],
     },
     sessionSecret: SESSION_SECRET,
-    adminPassword: ADMIN_PASSWORD,
+    googleClientId: GOOGLE_CLIENT_ID,
+    googleClientSecret: GOOGLE_CLIENT_SECRET,
+    adminAllowedEmails: ADMIN_ALLOWED_EMAILS,
+    googleClient: makeGoogleClient(),
     slackClient: {
       createAppManifest: async () => ({
         appId: "A123456",
@@ -140,6 +177,7 @@ function makeMockDeps(): AdminUIDeps {
       }),
     },
     appBaseUrl: "https://example.com",
+    ...overrides,
   };
 }
 
@@ -164,40 +202,147 @@ describe("admin UI — unauthenticated redirects", () => {
 // ─── Login page ───────────────────────────────────────────────────────────────
 
 describe("admin UI — login page", () => {
-  it("GET /admin/login returns 200 with login form", async () => {
+  it("GET /admin/login returns 200 with Sign in with Google button (no password form)", async () => {
     const app = createAdminUIApp(makeMockDeps());
     const res = await app.request("/admin/login");
     expect(res.status).toBe(200);
     const html = await res.text();
-    expect(html).toContain("<form");
-    expect(html).toContain('type="password"');
+    expect(html).toContain("Sign in with Google");
+    expect(html).not.toContain('type="password"');
+    expect(html).not.toContain('name="password"');
+  });
+});
+
+// ─── OAuth routes ─────────────────────────────────────────────────────────────
+
+describe("admin UI — GET /auth/google", () => {
+  it("redirects to Google OAuth URL and sets oauth_state cookie", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request("/auth/google");
+    expect(res.status).toBe(302);
+    const location = res.headers.get("Location") ?? "";
+    expect(location).toContain("accounts.google.com");
+    expect(location).toContain("openid");
+    expect(location).toContain("profile");
+    expect(location).toContain("email");
+    const cookie = res.headers.get("Set-Cookie") ?? "";
+    expect(cookie).toContain("oauth_state=");
+    expect(cookie).toContain("HttpOnly");
   });
 
-  it("POST /admin/login with valid password sets session cookie and redirects to /admin/agents", async () => {
-    const app = createAdminUIApp(makeMockDeps());
-    const body = new URLSearchParams({ password: ADMIN_PASSWORD });
-    const res = await app.request("/admin/login", {
-      method: "POST",
-      body: body.toString(),
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+  it("redirects to /admin/login?error=server_error when googleClientId is empty", async () => {
+    const app = createAdminUIApp(makeMockDeps({ googleClientId: "" }));
+    const res = await app.request("/auth/google");
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toContain("error=server_error");
+  });
+});
+
+describe("admin UI — GET /auth/callback", () => {
+  // Helper: set a nonce cookie and matching state query param
+  function callbackRequest(nonce: string, queryOverrides?: Record<string, string>): Request {
+    const params = new URLSearchParams({ state: nonce, code: "auth-code-123", ...queryOverrides });
+    return new Request(`https://example.com/auth/callback?${params.toString()}`, {
+      headers: { Cookie: `oauth_state=${nonce}` },
     });
+  }
+
+  it("happy path — valid state, code exchanged, email in allowlist → sets session cookie and redirects to /admin/agents", async () => {
+    const nonce = "test-nonce-abc";
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request(callbackRequest(nonce));
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe("/admin/agents");
-    const cookie = res.headers.get("Set-Cookie");
-    expect(cookie).toBeTruthy();
+    const cookie = res.headers.get("Set-Cookie") ?? "";
     expect(cookie).toContain("admin_session=");
     expect(cookie).toContain("HttpOnly");
   });
 
-  it("POST /admin/login with wrong password returns 401", async () => {
+  it("state mismatch → redirects to /admin/login?error=invalid_state", async () => {
     const app = createAdminUIApp(makeMockDeps());
-    const body = new URLSearchParams({ password: "wrong-password" });
-    const res = await app.request("/admin/login", {
-      method: "POST",
-      body: body.toString(),
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    });
-    expect(res.status).toBe(401);
+    const res = await app.request(
+      new Request("https://example.com/auth/callback?state=wrong-state&code=auth-code", {
+        headers: { Cookie: "oauth_state=stored-nonce" },
+      }),
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toContain("error=invalid_state");
+  });
+
+  it("missing oauth_state cookie → redirects to /admin/login?error=invalid_state", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request(
+      new Request("https://example.com/auth/callback?state=some-state&code=code"),
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toContain("error=invalid_state");
+  });
+
+  it("missing GOOGLE_CLIENT_ID → redirects to /admin/login?error=server_error", async () => {
+    const nonce = "test-nonce-abc";
+    const app = createAdminUIApp(makeMockDeps({ googleClientId: "" }));
+    const res = await app.request(callbackRequest(nonce));
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toContain("error=server_error");
+  });
+
+  it("access_denied param → redirects to /admin/login?error=access_denied", async () => {
+    const nonce = "test-nonce-abc";
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request(
+      new Request(`https://example.com/auth/callback?error=access_denied&state=${nonce}`, {
+        headers: { Cookie: `oauth_state=${nonce}` },
+      }),
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toContain("error=access_denied");
+  });
+
+  it("token exchange failure → redirects to /admin/login?error=auth_failed", async () => {
+    const nonce = "test-nonce-abc";
+    const app = createAdminUIApp(
+      makeMockDeps({
+        googleClient: makeGoogleClient({
+          exchangeCode: () => Promise.reject(new Error("token exchange failed")),
+        }),
+      }),
+    );
+    const res = await app.request(callbackRequest(nonce));
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toContain("error=auth_failed");
+  });
+
+  it("userinfo fetch failure → redirects to /admin/login?error=auth_failed", async () => {
+    const nonce = "test-nonce-abc";
+    const app = createAdminUIApp(
+      makeMockDeps({
+        googleClient: makeGoogleClient({
+          getUserInfo: () => Promise.reject(new Error("userinfo failed")),
+        }),
+      }),
+    );
+    const res = await app.request(callbackRequest(nonce));
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toContain("error=auth_failed");
+  });
+
+  it("email not in allowlist → returns 403", async () => {
+    const nonce = "test-nonce-abc";
+    const app = createAdminUIApp(
+      makeMockDeps({
+        googleClient: makeGoogleClient({
+          getUserInfo: () =>
+            Promise.resolve({
+              sub: "google-sub-999",
+              email: "notallowed@example.com",
+              email_verified: true,
+              name: "Not Allowed",
+            }),
+        }),
+      }),
+    );
+    const res = await app.request(callbackRequest(nonce));
+    expect(res.status).toBe(403);
   });
 });
 

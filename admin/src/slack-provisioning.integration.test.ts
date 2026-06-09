@@ -16,7 +16,6 @@ import type { AppManifest } from "./slack-provisioning-client.ts";
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const SESSION_SECRET = "test-admin-session-secret-32-bytes!";
-const ADMIN_PASSWORD = "correct-horse-battery-staple";
 const AGENT_ID = "agent-test-123";
 
 // ─── Cassette fixture ─────────────────────────────────────────────────────────
@@ -136,7 +135,20 @@ function makeMockDeps(
       list: async () => [],
     },
     sessionSecret: SESSION_SECRET,
-    adminPassword: ADMIN_PASSWORD,
+    googleClientId: "test-google-client-id",
+    googleClientSecret: "test-google-client-secret",
+    adminAllowedEmails: ["admin@example.com"],
+    googleClient: {
+      exchangeCode: async () => ({
+        accessToken: "test-access-token",
+        expiresIn: 3600,
+      }),
+      getUserInfo: async () => ({
+        sub: "google-sub-123",
+        email: "admin@example.com",
+        name: "Admin User",
+      }),
+    },
     slackClient,
     appBaseUrl: "https://example.com",
   };

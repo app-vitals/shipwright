@@ -21,6 +21,7 @@ import {
   AgentPluginService,
   AgentTokenService,
   AgentToolService,
+  HttpGoogleAuthClient,
   HttpSlackProvisioningClient,
   PrismaClient,
   createAdminApp,
@@ -119,7 +120,10 @@ export interface ComposedAppDeps {
   >;
   internalApiKey: string;
   sessionSecret: string;
-  adminPassword: string;
+  googleClientId: string;
+  googleClientSecret: string;
+  adminAllowedEmails: string[];
+  googleClient: AdminUIDeps["googleClient"];
   slackClient: AdminUIDeps["slackClient"];
   appBaseUrl: string;
   /**
@@ -158,7 +162,10 @@ export function createComposedApp(deps: ComposedAppDeps): Hono {
     agentPluginService,
     internalApiKey,
     sessionSecret,
-    adminPassword,
+    googleClientId,
+    googleClientSecret,
+    adminAllowedEmails,
+    googleClient,
     slackClient,
     appBaseUrl,
     devChat,
@@ -223,7 +230,10 @@ export function createComposedApp(deps: ComposedAppDeps): Hono {
     agentTokenService,
     agentPluginService,
     sessionSecret,
-    adminPassword,
+    googleClientId,
+    googleClientSecret,
+    adminAllowedEmails,
+    googleClient,
     slackClient,
     appBaseUrl,
   });
@@ -317,9 +327,15 @@ export async function startServer(opts?: { port?: number }): Promise<void> {
   // Read config values at call time (no module-level env reads)
   const internalApiKey = process.env.SHIPWRIGHT_INTERNAL_API_KEY ?? "";
   const sessionSecret = process.env.SHIPWRIGHT_SESSION_SECRET ?? "";
-  const adminPassword = process.env.SHIPWRIGHT_ADMIN_PASSWORD ?? "";
+  const googleClientId = process.env.GOOGLE_CLIENT_ID ?? "";
+  const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET ?? "";
+  const adminAllowedEmails = (process.env.ADMIN_ALLOWED_EMAILS ?? "")
+    .split(",")
+    .map((e) => e.trim())
+    .filter(Boolean);
   const appBaseUrl = process.env.APP_BASE_URL ?? `http://localhost:${port}`;
 
+  const googleClient = new HttpGoogleAuthClient();
   const slackClient = new HttpSlackProvisioningClient();
 
   // Dev-only chat transport: read the gate ONCE at composition time. When on,
@@ -341,7 +357,10 @@ export async function startServer(opts?: { port?: number }): Promise<void> {
     agentPluginService,
     internalApiKey,
     sessionSecret,
-    adminPassword,
+    googleClientId,
+    googleClientSecret,
+    adminAllowedEmails,
+    googleClient,
     slackClient,
     appBaseUrl,
     devChat,
