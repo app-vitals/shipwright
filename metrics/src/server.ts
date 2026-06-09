@@ -7,26 +7,27 @@
  *   /dashboard   — Server-rendered dashboard UI
  *   /health      — Health check (no auth required)
  *
- * Offline mode (METRICS_OFFLINE=true):
- *   - Skips the POSTHOG_* required-env gate
- *   - Injects a fixture PostHog client via deps.postHogClient
- *   - Bypasses session auth for /dashboard (serves as "Offline User")
- *   - Safe to run with no secrets or external services configured
+ * Backend mode (pure selector — see select-provider.ts):
+ *   METRICS_OFFLINE=true                  → fixtures (PostHogProvider over
+ *                                            fixture client; auth bypassed)
+ *   POSTHOG read-keys present             → posthog (live PostHogProvider)
+ *   otherwise (DEFAULT)                   → sqlite  (SqliteProvider over the
+ *                                            local store; POST /batch/ ingest)
  */
 
 import { HttpAccountsClient } from "./lib/accounts-client.ts";
 import { parseApiKeys } from "./lib/api-auth.ts";
-import { loadEnv, validateRequiredEnv } from "./lib/env.ts";
+import { loadEnv } from "./lib/env.ts";
 import { createMetricsApp } from "./api.ts";
 import type { MetricsDeps } from "./api.ts";
+import { createLocalEventStore } from "./local-store.ts";
+import { SqliteProvider } from "./providers/sqlite-provider.ts";
+import { selectProviderMode } from "./select-provider.ts";
 
 loadEnv();
 
-const offlineMode = process.env.METRICS_OFFLINE === "true";
-
-if (!offlineMode) {
-  validateRequiredEnv(["POSTHOG_PERSONAL_API_KEY", "POSTHOG_PROJECT_ID"]);
-}
+const mode = selectProviderMode(process.env);
+const offlineMode = mode === "fixtures";
 
 const port = Number(process.env.METRICS_API_PORT ?? 3460);
 const accountsClient = new HttpAccountsClient(
@@ -36,7 +37,7 @@ const accountsClient = new HttpAccountsClient(
 
 let deps: MetricsDeps;
 
-if (offlineMode) {
+if (mode === "fixtures") {
   const { createFixturePostHogClient } = await import(
     "./fixtures/posthog-fixtures.ts"
   );
@@ -47,6 +48,20 @@ if (offlineMode) {
     offlineMode: true,
   };
   console.log("[metrics-api] Running in OFFLINE mode — fixture data injected");
+} else if (mode === "sqlite") {
+  const store = createLocalEventStore({
+    path: process.env.METRICS_DB_PATH ?? "state/metrics.db",
+  });
+  deps = {
+    provider: new SqliteProvider(store),
+    localStore: store,
+    sessionSecret: process.env.SESSION_SECRET ?? "",
+    requireOwnerRole: process.env.METRICS_REQUIRE_OWNER_ROLE === "true",
+    dashboardToken: process.env.METRICS_DASHBOARD_TOKEN,
+  };
+  console.log(
+    "[metrics-api] Running in LOCAL mode — SQLite provider + /batch/ ingest",
+  );
 } else {
   deps = {
     sessionSecret: process.env.SESSION_SECRET ?? "",

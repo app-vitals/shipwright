@@ -1,10 +1,16 @@
 # Metrics Dashboard
 
-> Hono service (artifact **B**) that turns Shipwright's pipeline events into analytics. Five read-only JSON endpoints backed by PostHog queries, plus a session-gated server-rendered dashboard, and an optional local SQLite event store for offline ingest (`POST /batch/`).
+> Hono service (artifact **B**) that turns Shipwright's pipeline events into analytics. Five read-only JSON endpoints served by a backend-agnostic `MetricsProvider`, plus a session-gated server-rendered dashboard. Three modes: **fixtures** (offline), **posthog** (live PostHog queries), and **sqlite** (local SQLite store — the default).
 
 ## Overview
 
-The metrics service reads pipeline telemetry from PostHog and exposes it two ways: machine-readable JSON under `/metrics/*` (for tooling and the `/shipwright:metrics` command) and a human-facing `/dashboard`. By default it owns no persistent state — HogQL queries are validated pre-deploy and results are cached in-process. When a `localStore` is injected, an additional `POST /batch/` ingest route is registered that writes PostHog-shaped events to a local SQLite database (`metrics/src/local-store.ts`); the route is absent (404) otherwise.
+The metrics service exposes pipeline telemetry two ways: machine-readable JSON under `/metrics/*` (for tooling and the `/shipwright:metrics` command) and a human-facing `/dashboard`. All read endpoints are served by a backend-agnostic `MetricsProvider` interface (`metrics/src/metrics-provider.ts`). The active backend is selected at startup by `selectProviderMode()` (`metrics/src/select-provider.ts`) based on env vars, in priority order:
+
+1. `METRICS_OFFLINE=true` → **fixtures** mode: fixture PostHog client; auth bypassed.
+2. PostHog read keys present → **posthog** mode: live `PostHogProvider` (`metrics/src/providers/posthog-provider.ts`).
+3. Otherwise (default) → **sqlite** mode: `SqliteProvider` (`metrics/src/providers/sqlite-provider.ts`) over a local SQLite event store; `POST /batch/` ingest is always registered in this mode.
+
+In sqlite mode (the default), the server creates a `LocalEventStore` (`metrics/src/local-store.ts`) at `METRICS_DB_PATH` (`state/metrics.db` by default) and wires it into both the provider and the `POST /batch/` ingest route.
 
 Entrypoint: `metrics/src/server.ts` (standalone Bun server, default port **3460**). The app factory `createMetricsApp()` in `metrics/src/api.ts` is what tests drive via `app.request()`.
 
@@ -98,12 +104,16 @@ The **dashboard** is protected by the session cookie middleware; an invalid/abse
 
 | File | Purpose |
 |---|---|
-| `metrics/src/server.ts` | Process entrypoint — env validation, wiring, `Bun.serve`. |
+| `metrics/src/server.ts` | Process entrypoint — env validation, provider selection, wiring, `Bun.serve`. |
 | `metrics/src/api.ts` | App factory `createMetricsApp()`, route + auth middleware registration, dashboard handler. |
-| `metrics/src/queries.ts` | HogQL query builders (summary, trends, features, queue, tokens). |
+| `metrics/src/metrics-provider.ts` | `MetricsProvider` interface + `MetricQuery` / `MetricTable` types — the backend-agnostic read seam. |
+| `metrics/src/select-provider.ts` | Pure env-to-mode selector (`selectProviderMode()`) — maps env vars to `"fixtures" \| "posthog" \| "sqlite"`. |
+| `metrics/src/providers/posthog-provider.ts` | `PostHogProvider` — implements `MetricsProvider` over a `PostHogClient` and HogQL query builders. |
+| `metrics/src/providers/sqlite-provider.ts` | `SqliteProvider` — implements `MetricsProvider` by querying the local `LocalEventStore` directly. |
+| `metrics/src/queries.ts` | HogQL query builders (summary, trends, features, queue, tokens); used by `PostHogProvider`. |
 | `metrics/src/posthog-client.ts` | PostHog client (interface + `Http` impl). |
 | `metrics/src/fixtures/posthog-fixtures.ts` | Fixture PostHog client (`createFixturePostHogClient()`) — pre-recorded sample data for every query type; used in offline mode and integration tests. |
-| `metrics/src/local-store.ts` | Local SQLite event store (`LocalEventStore` interface + `createLocalEventStore()`). Deduplicates on `insert_id`; used by `POST /batch/`. |
+| `metrics/src/local-store.ts` | Local SQLite event store (`LocalEventStore` interface + `createLocalEventStore()`). Deduplicates on `insert_id`; used by `POST /batch/` and `SqliteProvider`. |
 | `metrics/src/validate-hogql.ts` | Pre-deploy HogQL validation runner (`validate:hogql`). |
 | `metrics/src/cache.ts` | In-process query-result cache. |
 | `metrics/src/secrets.ts` | Secrets resolution: env-first, optional GCP Secret Manager fallback. |
