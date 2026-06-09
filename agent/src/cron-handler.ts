@@ -197,7 +197,14 @@ export async function handleCronRequest(
   const { cleaned, markers } = parseMarkers(result);
   const isSilentMarker = markers.some((m) => m.type === "silent");
 
-  if (silent || isSilentMarker) {
+  if (silent) {
+    console.log(`[agent:cron] job "${jobId}" completed (silent — no post)`);
+    return;
+  }
+  const isDmOnly = !!user && !channel;
+  if (isSilentMarker && !isDmOnly) {
+    // [silent] marker suppresses channel posts (and channel-wins-over-user posts)
+    // DMs always get a reply — [silent] is ignored when routing to a DM
     console.log(`[agent:cron] job "${jobId}" completed (silent — no post)`);
     return;
   }
