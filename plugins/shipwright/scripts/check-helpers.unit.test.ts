@@ -14,7 +14,12 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getCurrentUser, resolveRepos } from "./check-helpers.ts";
+import {
+  getCurrentUser,
+  readShipwrightConfig,
+  resolveAllRepos,
+  resolveRepos,
+} from "./check-helpers.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -218,6 +223,172 @@ describe("resolveRepos", () => {
 
     const result = resolveRepos(tmpDir);
     expect(result).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// readShipwrightConfig
+// ---------------------------------------------------------------------------
+
+describe("readShipwrightConfig", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "shipwright-config-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test("returns null when config file does not exist", () => {
+    expect(readShipwrightConfig(tmpDir)).toBeNull();
+  });
+
+  test("returns null when config file has non-github taskStore", () => {
+    mkdirSync(join(tmpDir, "state"), { recursive: true });
+    writeFileSync(
+      join(tmpDir, "state", "shipwright.config.json"),
+      JSON.stringify({ taskStore: "todos" }),
+    );
+    expect(readShipwrightConfig(tmpDir)).toBeNull();
+  });
+
+  test("returns null when config has github taskStore but missing owner/repo", () => {
+    mkdirSync(join(tmpDir, "state"), { recursive: true });
+    writeFileSync(
+      join(tmpDir, "state", "shipwright.config.json"),
+      JSON.stringify({ taskStore: "github", github: {} }),
+    );
+    expect(readShipwrightConfig(tmpDir)).toBeNull();
+  });
+
+  test("returns null when config file contains invalid JSON", () => {
+    mkdirSync(join(tmpDir, "state"), { recursive: true });
+    writeFileSync(
+      join(tmpDir, "state", "shipwright.config.json"),
+      "not valid json",
+    );
+    expect(readShipwrightConfig(tmpDir)).toBeNull();
+  });
+
+  test("returns owner and repo for valid github taskStore config", () => {
+    mkdirSync(join(tmpDir, "state"), { recursive: true });
+    writeFileSync(
+      join(tmpDir, "state", "shipwright.config.json"),
+      JSON.stringify({
+        taskStore: "github",
+        github: { owner: "app-vitals", repo: "shipwright" },
+      }),
+    );
+    expect(readShipwrightConfig(tmpDir)).toEqual({
+      owner: "app-vitals",
+      repo: "shipwright",
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveAllRepos
+// ---------------------------------------------------------------------------
+
+describe("resolveAllRepos", () => {
+  let tmpDir: string;
+  let savedEnv: string | undefined;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "resolve-all-repos-test-"));
+    savedEnv = process.env.SHIPWRIGHT_REPOS_DIR;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SHIPWRIGHT_REPOS_DIR;
+  });
+
+  afterEach(() => {
+    if (savedEnv !== undefined) {
+      process.env.SHIPWRIGHT_REPOS_DIR = savedEnv;
+    } else {
+      // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+      delete process.env.SHIPWRIGHT_REPOS_DIR;
+    }
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test("returns default fallback when no config and no scanned repos", () => {
+    expect(resolveAllRepos(tmpDir)).toEqual(["app-vitals/shipwright"]);
+  });
+
+  test("returns scanned repos when no shipwright config present", () => {
+    const reposDir = join(tmpDir, "repos");
+    mkdirSync(reposDir, { recursive: true });
+    makeGitClone(
+      reposDir,
+      "patrol",
+      "https://github.com/app-vitals/patrol.git",
+    );
+    expect(resolveAllRepos(tmpDir)).toEqual(["app-vitals/patrol"]);
+  });
+
+  test("places config repo first when shipwright config is present", () => {
+    mkdirSync(join(tmpDir, "state"), { recursive: true });
+    writeFileSync(
+      join(tmpDir, "state", "shipwright.config.json"),
+      JSON.stringify({
+        taskStore: "github",
+        github: { owner: "app-vitals", repo: "shipwright" },
+      }),
+    );
+    const reposDir = join(tmpDir, "repos");
+    mkdirSync(reposDir, { recursive: true });
+    makeGitClone(
+      reposDir,
+      "other-repo",
+      "https://github.com/example-org/other-repo.git",
+    );
+    const result = resolveAllRepos(tmpDir);
+    expect(result[0]).toBe("app-vitals/shipwright");
+    expect(result).toContain("example-org/other-repo");
+  });
+
+  test("deduplicates config repo when it also appears in scanned repos", () => {
+    mkdirSync(join(tmpDir, "state"), { recursive: true });
+    writeFileSync(
+      join(tmpDir, "state", "shipwright.config.json"),
+      JSON.stringify({
+        taskStore: "github",
+        github: { owner: "app-vitals", repo: "shipwright" },
+      }),
+    );
+    const reposDir = join(tmpDir, "repos");
+    mkdirSync(reposDir, { recursive: true });
+    makeGitClone(
+      reposDir,
+      "shipwright",
+      "https://github.com/app-vitals/shipwright.git",
+    );
+    makeGitClone(
+      reposDir,
+      "other-repo",
+      "https://github.com/example-org/other-repo.git",
+    );
+    const result = resolveAllRepos(tmpDir);
+    expect(result.filter((r) => r === "app-vitals/shipwright")).toHaveLength(1);
+    expect(result[0]).toBe("app-vitals/shipwright");
+  });
+
+  test("falls back to scanned repos when config has non-github taskStore", () => {
+    mkdirSync(join(tmpDir, "state"), { recursive: true });
+    writeFileSync(
+      join(tmpDir, "state", "shipwright.config.json"),
+      JSON.stringify({ taskStore: "todos" }),
+    );
+    const reposDir = join(tmpDir, "repos");
+    mkdirSync(reposDir, { recursive: true });
+    makeGitClone(
+      reposDir,
+      "patrol",
+      "https://github.com/app-vitals/patrol.git",
+    );
+    expect(resolveAllRepos(tmpDir)).toEqual(["app-vitals/patrol"]);
   });
 });
 

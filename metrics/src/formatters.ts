@@ -8,6 +8,7 @@
 
 import { type Clock, SystemClock } from "./lib/clock.ts";
 import { DASHBOARD_TZ } from "./queries.ts";
+import type { QueryDateRange } from "./queries.ts";
 import type { ResponseMeta } from "./schemas.ts";
 import type { DatePreset, ResolvedDateRange } from "./types.ts";
 
@@ -145,6 +146,27 @@ export function resolveDateRangeForMeta(
     };
   }
   return resolvePreset("today");
+}
+
+/**
+ * Resolve a typed QueryDateRange (preset or custom from/to) to concrete UTC
+ * instants on LA day boundaries. This is the single window-semantics source
+ * the SqliteProvider uses for `WHERE timestamp BETWEEN`, so local SQL and the
+ * PostHog HogQL date filters agree on what "today" / "7d" / a custom range
+ * mean.
+ */
+export function resolveQueryRange(
+  range: QueryDateRange,
+  clock: Clock = SystemClock(),
+): { from: string; to: string } {
+  if (typeof range === "string") {
+    const r = resolvePreset(range, clock);
+    return { from: r.from, to: r.to };
+  }
+  return {
+    from: laMidnightUtc(range.from).toISOString(),
+    to: laEndOfDayUtc(range.to).toISOString(),
+  };
 }
 
 // ─── Response envelope ────────────────────────────────────────────────────────
