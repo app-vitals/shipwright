@@ -10,8 +10,10 @@ The HTTP server is implemented in `agent/src/run-agent.ts` (`startServer()`), wh
 # From repo root — install all workspace deps
 bun install
 
-# Copy and fill in env vars
-cp admin/.env.example .env   # or export them directly
+# Export required env vars (see Environment Variables table below)
+export DATABASE_URL=postgresql://...
+export SHIPWRIGHT_SESSION_SECRET=...
+# ... (remaining vars)
 
 # Run the admin server
 bun run agent/src/run-agent.ts
