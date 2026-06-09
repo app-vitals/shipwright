@@ -154,24 +154,11 @@ describe("writeToken() / readToken() round-trip", () => {
     writeToken(token, p);
     expect(readToken(p)).toBe(token);
   });
-
-  it("writes a token and reads it back", () => {
-    const p = track(uniqueTmpPath());
-    writeToken("my-secret-token", p);
-    expect(readToken(p)).toBe("my-secret-token");
-  });
 });
 
 // ─── writeToken atomic / mode 0600 ────────────────────────────────────────────
 
 describe("writeToken() file mode and atomicity", () => {
-  it("writes with mode 0o600", () => {
-    const p = track(uniqueTmpPath());
-    writeToken("tok", p);
-    const mode = statSync(p).mode & 0o777;
-    expect(mode).toBe(0o600);
-  });
-
   test("written file has mode 0600", () => {
     const p = track(uniqueTmpPath());
     writeToken("ghs_secret", p);
@@ -235,12 +222,6 @@ describe("writeToken() file mode and atomicity", () => {
 // ─── readToken — missing file ─────────────────────────────────────────────────
 
 describe("readToken() — missing file", () => {
-  it("returns null when token file does not exist", () => {
-    const p = uniqueTmpPath(); // not tracked, never created
-    expect(existsSync(p)).toBe(false);
-    expect(readToken(p)).toBeNull();
-  });
-
   test("returns null when the token file does not exist", () => {
     const p = uniqueTmpPath(); // not tracked, never created
     expect(existsSync(p)).toBe(false);
@@ -252,13 +233,6 @@ describe("readToken() — missing file", () => {
     expect(readToken(p)).toBeNull();
     writeToken("post-miss-token", p);
     expect(readToken(p)).toBe("post-miss-token");
-  });
-
-  it("throws for non-ENOENT errors (e.g. permission denied)", () => {
-    // Create a directory where the file should be — reading a directory throws EISDIR
-    const dir = track(uniqueTmpPath());
-    mkdirSync(dir);
-    expect(() => readToken(dir)).toThrow();
   });
 
   test("propagates non-ENOENT errors (e.g. EACCES)", () => {
