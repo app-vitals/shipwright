@@ -6,7 +6,7 @@
 
 The agent owns six first-class Prisma models (`Agent` and its `Env` / `CronJob` / `Tool` / `Token` / `Plugin` children) on a **dedicated database** (`DATABASE_URL_AGENT`). Secrets at rest (env values, Slack/Anthropic keys) are AES-256-GCM encrypted at the service layer; agent API tokens are stored only as SHA-256 hashes.
 
-> The container entrypoint is `agent/src/entrypoint-main.ts`, invoked by the Dockerfile `ENTRYPOINT`. It validates required vars, fetches agent config, applies env, symlinks `~/.claude`, sets up GitHub auth, runs mise, installs plugins, and spawns the agent server (`run-agent.ts`). The legacy `agent/src/index.ts` remains a placeholder (`export {}`). The implemented HTTP surfaces are the admin CRUD API (`admin/src/admin-api.ts`), the runtime API (`admin/src/api.ts`), the server-rendered admin UI (`admin/src/admin-ui.ts`), the Prisma store + service classes (all in the `@shipwright/admin` package), the Slack event handler (`slack.ts`), and the cron runtime (`cron-handler.ts`). On startup the runner calls `POST /admin/api/agents/:id/crons/reconcile` to sync system crons.
+> The container entrypoint is `agent/src/entrypoint-main.ts`, invoked by the Dockerfile `ENTRYPOINT`. It validates required vars, fetches agent config, applies env, symlinks `~/.claude`, sets up GitHub auth, runs mise, installs plugins, and spawns the agent server (`run-agent.ts`). The legacy `agent/src/index.ts` remains a placeholder (`export {}`). The implemented HTTP surfaces are the admin CRUD API (`admin/src/admin-api.ts`), the runtime API (`admin/src/api.ts`), the server-rendered admin UI (`admin/src/admin-ui.ts`), the Prisma store + service classes (all in the `@shipwright/admin` package), the Slack event handler (`slack.ts`), and the cron runtime (`cron-handler.ts`). On startup the runner calls `POST /admin/api/agents/:id/crons/reconcile` to sync system crons. A dev-only `POST /chat` transport (`chat.ts`) is available when `SHIPWRIGHT_DEV_CHAT=true`; it is never registered in production (enforced by `chat-guard.ts`).
 
 ## Running locally
 
@@ -44,6 +44,14 @@ Mounted at `/admin/api/*`. Auth: **session cookie** `admin_session` (httpOnly JW
 
 Token creation returns the **raw token once** at creation; only its SHA-256 hash is persisted, so validation is an O(1) hash-index lookup.
 
+### Dev chat transport (`chat.ts`) — local convenience
+
+Mounted at `/chat`. **DEFAULT-DENY:** only registered when `SHIPWRIGHT_DEV_CHAT=true` at server startup. When the env var is absent or false, `POST /chat` returns `404`. This endpoint is **unauthenticated** and must never be enabled in production — `chat-guard.ts` enforces this by exiting with an error if `SHIPWRIGHT_DEV_CHAT=true` and `NODE_ENV=production`.
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| POST | `/chat` | none | Send a message to the Claude runner. Body: `{ message: string, session?: string }`. Returns `{ result: string, sessionId?: string }`. Successive calls with the same `session` resume the same conversation. |
+
 ## Data model
 
 | Model | Owns | Notable fields |
@@ -73,6 +81,7 @@ All child models cascade-delete with their `Agent`.
 | `GH_APP_PRIVATE_KEY` | GitHub App auth | PEM private key for the GitHub App (newlines may be `\n`-escaped). Required when using the App auth path. |
 | `GH_APP_INSTALLATION_ID` | GitHub App auth | Installation ID for the target org/repo. Required when using the App auth path. |
 | `GH_TOKEN` | GitHub PAT auth | Personal Access Token for the legacy `gh auth setup-git` path. Used only if the App env vars are absent. |
+| `SHIPWRIGHT_DEV_CHAT` | dev only | Set to `"true"` to enable the unauthenticated `POST /chat` endpoint (local dev convenience). Must **not** be set in production (`NODE_ENV=production`). |
 
 ## Key Files
 
@@ -90,7 +99,9 @@ All child models cascade-delete with their `Agent`.
 | `agent/src/entrypoint-main.ts` | Production CLI entry point — wires real deps and calls `runEntrypoint()`. Invoked by the Dockerfile `ENTRYPOINT`. |
 | `agent/src/entrypoint.ts` | Container startup sequence (`runEntrypoint()`) — dependency-injected for testability. Validates vars, fetches config, applies env, symlinks `~/.claude`, runs GitHub auth + mise + plugin install, then spawns the server. |
 | `agent/src/cli-args.ts` | CLI argument parsing (`parseCliArgs()`) — `--agent-id`, `--api-url`, `--api-key` flags with env var fallbacks. Pure, no I/O. |
-| `agent/src/run-agent.ts` | Composes all sub-apps into a single Hono root app (`createComposedApp(deps: ComposedAppDeps)`). Exports `PrismaLike` and `ComposedAppDeps` for test injection. `startServer()` wires real deps and calls `createComposedApp`; invoked by `entrypoint.ts` after all environment setup is complete. |
+| `agent/src/run-agent.ts` | Composes all sub-apps into a single Hono root app (`createComposedApp(deps: ComposedAppDeps)`). Exports `PrismaLike` and `ComposedAppDeps` for test injection. `startServer()` wires real deps and calls `createComposedApp`; invoked by `entrypoint.ts` after all environment setup is complete. Accepts optional `devChat` / `chatRunner` deps to register the dev `/chat` route (DEFAULT-DENY). |
+| `agent/src/chat.ts` | Dev-only chat transport: `createChatApp(deps)` — thin Hono sub-app exposing `POST /chat`. Maps opaque caller `session` keys to internal runner session keys for conversation continuity. |
+| `agent/src/chat-guard.ts` | Doctor/CI guard: `devChatGuardViolation(env)` — pure predicate that returns a violation reason string when `SHIPWRIGHT_DEV_CHAT=true` and `NODE_ENV=production`, otherwise `null`. Executable as a CLI script. |
 | `agent/src/shipwright-config-client.ts` | `ShipwrightConfigClient` interface + `HttpShipwrightConfigClient` (real HTTP) + `RecordedShipwrightConfigClient` (cassette double for tests). |
 | `agent/src/setup.ts` | Workspace bootstrapping — directory scaffolding, identity-file seeding, plugin installation, and mise startup. Safe to call on every agent startup (idempotent). |
 | `admin/src/crypto.ts` / `token-crypto.ts` | AES-256-GCM + token hashing helpers. |
