@@ -71,7 +71,6 @@ export function makeWhisperSvcClient(
 /**
  * Transcribe an audio file via Groq Whisper API.
  * Returns the transcription text, or null on any error.
- * Accepts an optional fetchFn for dependency injection in tests.
  */
 async function transcribeGroq(
   audioPath: string,
@@ -107,15 +106,16 @@ async function transcribeGroq(
 
 /**
  * Transcribe an audio file.
- * Fallback chain: Groq (if key set) → whisper-svc HTTP (if URL set) → null
+ * Fallback chain: Groq (if key set) → whisper-svc HTTP (if URL set or client injected) → null
  *
- * Accepts an optional fetchFn for DI in tests (avoids global.fetch mutation).
- * fetchFn is used for both the Groq API call and the whisper-svc HTTP client.
+ * Accepts an optional fetchFn for DI in tests (avoids global.fetch mocking).
+ * Accepts an optional whisperClientFn for tests that inject a custom WhisperClientFn directly.
  */
 export async function transcribeAudio(
   audioPath: string,
   voiceConfig: VoiceConfig = {},
-  fetchFn: typeof fetch = globalThis.fetch,
+  fetchFn?: typeof fetch,
+  whisperClientFn?: WhisperClientFn,
 ): Promise<string | null> {
   let fileBuffer: Buffer;
   try {
@@ -132,9 +132,11 @@ export async function transcribeAudio(
     return null;
   }
 
+  const resolvedFetch = fetchFn ?? globalThis.fetch;
+
   const apiKey = voiceConfig.groqApiKey;
   if (apiKey) {
-    const groqResult = await transcribeGroq(audioPath, fileBuffer, apiKey, fetchFn);
+    const groqResult = await transcribeGroq(audioPath, fileBuffer, apiKey, resolvedFetch);
     if (groqResult !== null) {
       return groqResult;
     }
@@ -143,9 +145,11 @@ export async function transcribeAudio(
     );
   }
 
-  const clientFn = voiceConfig.whisperServiceUrl
-    ? makeWhisperSvcClient(voiceConfig.whisperServiceUrl, fetchFn)
-    : null;
+  const clientFn =
+    whisperClientFn ??
+    (voiceConfig.whisperServiceUrl
+      ? makeWhisperSvcClient(voiceConfig.whisperServiceUrl, resolvedFetch)
+      : null);
 
   if (!clientFn) return null;
   return clientFn(fileBuffer, audioPath);
@@ -155,20 +159,20 @@ export async function transcribeAudio(
  * Synthesize speech from text using ElevenLabs (if key available) or edge-tts fallback.
  * Returns the path to the generated audio file, or null on failure.
  *
- * fetchFn: optional fetch override for DI in tests (used for ElevenLabs HTTP calls).
- * spawnFn: optional spawn override for DI in tests (used for edge-tts fallback).
+ * Accepts an optional fetchFn for DI in tests (avoids global.fetch mocking).
+ * Accepts an optional spawnFn for edge-tts injection in tests.
  */
 export async function synthesizeSpeech(
   text: string,
   voiceConfig: VoiceConfig = {},
-  fetchFn: typeof fetch = globalThis.fetch,
+  fetchFn?: typeof fetch,
   spawnFn: SpawnFn = defaultSpawn,
 ): Promise<string | null> {
   mkdirSync(VOICE_DIR, { recursive: true });
 
   const elevenKey = voiceConfig.elevenLabsApiKey;
   if (elevenKey) {
-    return synthesizeElevenLabs(text, elevenKey, voiceConfig.voiceId, fetchFn);
+    return synthesizeElevenLabs(text, elevenKey, voiceConfig.voiceId, fetchFn ?? globalThis.fetch);
   }
 
   return synthesizeEdgeTTS(text, spawnFn);
