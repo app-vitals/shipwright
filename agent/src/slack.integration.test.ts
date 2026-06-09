@@ -23,6 +23,7 @@ import {
   type SynthesizeSpeechFn,
   type TranscribeAudioFn,
   createSlackApp as _createSlackApp,
+  dispatchMarkers,
   downloadFile,
   formatRunErrorForSlack,
 } from "./slack.ts";
@@ -586,6 +587,26 @@ describe("message handler — channel thread routing", () => {
     expect(mockRunClaude).toHaveBeenCalledTimes(1);
     const prompt = mockRunClaude.mock.calls[0][0] as string;
     expect(prompt).not.toContain("[Thread message");
+  });
+
+  test("channel thread: [silent] suppresses say()", async () => {
+    mockRunClaude.mockClear();
+    mockRunClaude.mockResolvedValueOnce({ result: "text [silent]", sessionId: "s1" });
+    createSlackApp({ getSessionFn: mock(() => "sess-xyz") });
+    const client = makeMockClient();
+    const say = makeSay();
+    await capturedMessageHandler?.({
+      message: {
+        channel: "C123",
+        ts: "2.0",
+        thread_ts: "1.0",
+        text: "hi",
+        channel_type: "channel",
+      },
+      say,
+      client,
+    });
+    expect(say).not.toHaveBeenCalled();
   });
 });
 
@@ -2433,5 +2454,139 @@ describe("app_mention handler — thread history on first mention", () => {
     expect(threadContextMatch).not.toBeNull();
     // The triggering message must not be inside [Thread context]
     expect(threadContextMatch?.[1]).not.toContain("@bot help");
+  });
+});
+
+// ─── dispatchMarkers (direct) ─────────────────────────────────────────────────
+//
+// These tests call dispatchMarkers directly (not through a handler) to cover
+// the full marker surface at the function boundary.
+
+describe("dispatchMarkers — direct", () => {
+  // biome-ignore lint/suspicious/noExplicitAny: mock Slack client
+  let client: any;
+
+  beforeEach(() => {
+    client = {
+      reactions: { add: mock(() => Promise.resolve()) },
+      files: { uploadV2: mock(() => Promise.resolve()) },
+      chat: { postMessage: mock(() => Promise.resolve({ ts: "999.000" })) },
+    };
+  });
+
+  test("adds react emoji for react markers", async () => {
+    await dispatchMarkers(
+      [{ type: "react", emojis: ["thumbsup"] }],
+      { client, channel: "C123", postedTs: "1.0" },
+    );
+
+    expect(client.reactions.add).toHaveBeenCalledWith({
+      channel: "C123",
+      timestamp: "1.0",
+      name: "thumbsup",
+    });
+  });
+
+  test("silent marker is skipped gracefully", async () => {
+    await dispatchMarkers(
+      [{ type: "silent" }],
+      { client, channel: "C123" },
+    );
+    expect(client.reactions.add).not.toHaveBeenCalled();
+  });
+
+  test("upload marker — skips when file does not exist", async () => {
+    await dispatchMarkers(
+      [{ type: "upload", path: "/nonexistent/file.txt" }],
+      { client, channel: "C123" },
+    );
+    expect(client.files.uploadV2).not.toHaveBeenCalled();
+  });
+
+  test("upload marker — uploads when file exists", async () => {
+    const tmpPath = join(tmpdir(), `test-dispatch-upload-${Date.now()}.txt`);
+    writeFileSync(tmpPath, "dispatch upload content");
+
+    await dispatchMarkers(
+      [{ type: "upload", path: tmpPath }],
+      { client, channel: "C456" },
+    );
+
+    expect(client.files.uploadV2).toHaveBeenCalledTimes(1);
+    const uploadArgs = (
+      client.files.uploadV2.mock.calls[0] as [Record<string, unknown>]
+    )[0];
+    expect(uploadArgs.channel_id).toBe("C456");
+    expect(uploadArgs.filename).toBe(tmpPath.split("/").pop());
+    unlinkSync(tmpPath);
+  });
+
+  test("speak marker — calls synthesizeSpeechFn and uploads result", async () => {
+    const outPath = join(tmpdir(), `test-dispatch-speak-${Date.now()}.mp3`);
+    writeFileSync(outPath, Buffer.from("audio data"));
+    const mockSynthesize = mock(async () => outPath);
+
+    await dispatchMarkers(
+      [{ type: "speak", text: "Hello there" }],
+      {
+        client,
+        channel: "D1",
+        synthesizeSpeechFn: mockSynthesize,
+        voiceConfig: {},
+      },
+    );
+
+    expect(mockSynthesize).toHaveBeenCalledWith("Hello there", {});
+    expect(client.files.uploadV2).toHaveBeenCalledTimes(1);
+    unlinkSync(outPath);
+  });
+
+  test("speak marker — skips upload when synthesis returns null", async () => {
+    const mockSynthesize = mock(async () => null);
+
+    await dispatchMarkers(
+      [{ type: "speak", text: "Hello" }],
+      {
+        client,
+        channel: "D1",
+        synthesizeSpeechFn: mockSynthesize,
+        voiceConfig: {},
+      },
+    );
+
+    expect(client.files.uploadV2).not.toHaveBeenCalled();
+  });
+
+  test("speak marker — skipped gracefully when synthesizeSpeechFn is absent", async () => {
+    await expect(
+      dispatchMarkers(
+        [{ type: "speak", text: "Hello" }],
+        { client, channel: "D1" },
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(client.files.uploadV2).not.toHaveBeenCalled();
+  });
+
+  test("multiple react emojis all dispatched", async () => {
+    await dispatchMarkers(
+      [{ type: "react", emojis: ["thumbsup", "tada", "rocket"] }],
+      { client, channel: "C1", postedTs: "2.0" },
+    );
+
+    expect(client.reactions.add).toHaveBeenCalledTimes(3);
+    // biome-ignore lint/suspicious/noExplicitAny: mock call args are untyped
+    const names = (client.reactions.add.mock.calls as any[][]).map(
+      (c) => (c[0] as { name: string }).name,
+    );
+    expect(names).toEqual(["thumbsup", "tada", "rocket"]);
+  });
+
+  test("react marker without postedTs does not call reactions.add", async () => {
+    await dispatchMarkers(
+      [{ type: "react", emojis: ["thumbsup"] }],
+      { client, channel: "C1" },
+    );
+    expect(client.reactions.add).not.toHaveBeenCalled();
   });
 });
