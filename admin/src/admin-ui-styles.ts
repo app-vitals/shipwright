@@ -331,6 +331,31 @@ export function baseStyles(): string {
       font-family: "SF Mono", "Fira Code", Menlo, monospace;
       font-size: 12px;
     }
+
+    /* ─── Responsive ────────────────────────────────────── */
+    html, body {
+      overflow-x: hidden;
+      max-width: 100%;
+    }
+    .data-table-wrapper {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    @media (max-width: 600px) {
+      .vos-page {
+        padding: 16px 12px 48px;
+      }
+      .card {
+        padding: 14px 12px;
+      }
+      .form-row {
+        flex-wrap: wrap;
+      }
+      .vos-toolbar {
+        padding: 0 12px;
+        gap: 12px;
+      }
+    }
   `;
 }
 

@@ -239,11 +239,18 @@ describe("admin UI — GET /auth/google", () => {
 });
 
 describe("admin UI — GET /auth/callback", () => {
-  // Helper: set a nonce cookie and matching state query param
-  function callbackRequest(nonce: string, queryOverrides?: Record<string, string>): Request {
+  // Helper: set a nonce cookie (encoded as JSON alongside optional returnTo) and matching state query param.
+  // Hono's setCookie URL-encodes cookie values; getCookie URL-decodes them on read.
+  // The test helper must percent-encode the JSON so getCookie returns the original JSON string.
+  function callbackRequest(
+    nonce: string,
+    queryOverrides?: Record<string, string>,
+    returnTo?: string,
+  ): Request {
     const params = new URLSearchParams({ state: nonce, code: "auth-code-123", ...queryOverrides });
+    const oauthState = encodeURIComponent(JSON.stringify({ nonce, returnTo }));
     return new Request(`https://example.com/auth/callback?${params.toString()}`, {
-      headers: { Cookie: `oauth_state=${nonce}` },
+      headers: { Cookie: `oauth_state=${oauthState}` },
     });
   }
 
@@ -258,11 +265,22 @@ describe("admin UI — GET /auth/callback", () => {
     expect(cookie).toContain("HttpOnly");
   });
 
+  it("happy path with returnTo — redirects to the stored returnTo path after auth", async () => {
+    const nonce = "test-nonce-abc";
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request(callbackRequest(nonce, {}, "/admin/agents/agent-test-123"));
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/admin/agents/agent-test-123");
+    const cookie = res.headers.get("Set-Cookie") ?? "";
+    expect(cookie).toContain("admin_session=");
+  });
+
   it("state mismatch → redirects to /admin/login?error=invalid_state", async () => {
     const app = createAdminUIApp(makeMockDeps());
+    const oauthState = encodeURIComponent(JSON.stringify({ nonce: "stored-nonce" }));
     const res = await app.request(
       new Request("https://example.com/auth/callback?state=wrong-state&code=auth-code", {
-        headers: { Cookie: "oauth_state=stored-nonce" },
+        headers: { Cookie: `oauth_state=${oauthState}` },
       }),
     );
     expect(res.status).toBe(302);
@@ -289,9 +307,10 @@ describe("admin UI — GET /auth/callback", () => {
   it("access_denied param → redirects to /admin/login?error=access_denied", async () => {
     const nonce = "test-nonce-abc";
     const app = createAdminUIApp(makeMockDeps());
+    const oauthState = encodeURIComponent(JSON.stringify({ nonce }));
     const res = await app.request(
       new Request(`https://example.com/auth/callback?error=access_denied&state=${nonce}`, {
-        headers: { Cookie: `oauth_state=${nonce}` },
+        headers: { Cookie: `oauth_state=${oauthState}` },
       }),
     );
     expect(res.status).toBe(302);
