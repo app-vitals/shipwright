@@ -1,5 +1,5 @@
 /**
- * lib/google-auth-client.ts
+ * admin/src/google-auth-client.ts
  * Typed client for Google OAuth2 token exchange and user profile lookup.
  *
  * Interface + HTTP implementation following the project's client DI pattern.
