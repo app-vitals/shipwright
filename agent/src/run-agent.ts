@@ -30,8 +30,12 @@ import {
   HttpSlackProvisioningClient,
 } from "@shipwright/admin";
 import type { AdminUIDeps } from "@shipwright/admin";
+import { createChatApp, checkDevChatProductionGuard } from "./chat.ts";
+import type { ChatRunner } from "./chat.ts";
+import { createRunClaude } from "./claude.ts";
 import { createConfig } from "./config.ts";
 import { createHealthApp } from "./health.ts";
+import { createFileSessionStore } from "./sessions.ts";
 import { ensureAgentHome } from "./setup.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -119,6 +123,19 @@ export interface ComposedAppDeps {
   adminPassword: string;
   slackClient: AdminUIDeps["slackClient"];
   appBaseUrl: string;
+  /**
+   * When true, mounts the dev-only POST /chat endpoint.
+   * Default: false (default-deny).
+   * Only set this from SHIPWRIGHT_DEV_CHAT==="true" at startup — never read
+   * the env var inline inside a request handler.
+   */
+  devChat?: boolean;
+  /**
+   * Runner injected when devChat is true. Required for /chat to function.
+   * In production startServer(), this is wired to createRunClaude().
+   * In tests, inject a fake runner.
+   */
+  runner?: ChatRunner;
 }
 
 // ─── App factory ──────────────────────────────────────────────────────────────
@@ -150,6 +167,8 @@ export function createComposedApp(deps: ComposedAppDeps): Hono {
     adminPassword,
     slackClient,
     appBaseUrl,
+    devChat = false,
+    runner,
   } = deps;
 
   const root = new Hono();
@@ -157,6 +176,14 @@ export function createComposedApp(deps: ComposedAppDeps): Hono {
   // 1. Health check — no auth, mounted at root
   const healthApp = createHealthApp();
   root.route("/", healthApp);
+
+  // 1a. Dev-only chat endpoint — only mounted when devChat is true (default-deny).
+  //     Read from SHIPWRIGHT_DEV_CHAT==="true" once at startup and passed in via
+  //     deps.devChat. Never read the env var inline in a request handler.
+  if (devChat && runner) {
+    const chatApp = createChatApp({ runner });
+    root.route("/", chatApp);
+  }
 
   // 2. Runtime API — Bearer SHIPWRIGHT_INTERNAL_API_KEY
   //
@@ -300,7 +327,29 @@ export async function startServer(opts?: { port?: number }): Promise<void> {
   const adminPassword = process.env.SHIPWRIGHT_ADMIN_PASSWORD ?? "";
   const appBaseUrl = process.env.APP_BASE_URL ?? `http://localhost:${port}`;
 
+  // Dev chat — read once at startup, never inside a request handler
+  const devChat = process.env.SHIPWRIGHT_DEV_CHAT === "true";
+
+  // Doctor guard: warn if dev chat is enabled in production config
+  const guardResult = checkDevChatProductionGuard(process.env as Record<string, string | undefined>);
+  if (!guardResult.ok) {
+    console.warn(`[run-agent] WARNING: ${guardResult.reason}`);
+  }
+
   const slackClient = new HttpSlackProvisioningClient();
+
+  // Wire up a real runner for the /chat endpoint when devChat is enabled
+  let chatRunner: ChatRunner | undefined;
+  if (devChat) {
+    const chatSessionFile = join(agentHome, "chat-sessions.json");
+    const chatSessions = createFileSessionStore(chatSessionFile);
+    chatRunner = createRunClaude(
+      Bun.spawn,
+      chatSessions,
+      undefined,
+      config.paths.workspace,
+    );
+  }
 
   const app = createComposedApp({
     prisma,
@@ -314,6 +363,8 @@ export async function startServer(opts?: { port?: number }): Promise<void> {
     adminPassword,
     slackClient,
     appBaseUrl,
+    devChat,
+    runner: chatRunner,
   });
 
   Bun.serve({ fetch: app.fetch, port });

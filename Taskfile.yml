@@ -103,6 +103,7 @@ tasks:
       - task: secret-scan
 
   doctor:
-    desc: Validate task-store config and report active backend
+    desc: Validate task-store config and report active backend; check dev-chat production guard
     cmds:
       - bun plugins/shipwright/scripts/task_store.ts doctor
+      - bun agent/src/check-dev-chat-guard.ts
