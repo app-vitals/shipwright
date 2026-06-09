@@ -5,8 +5,8 @@
  * This is an integration test by boundary rule: it exercises the real fs module.
  */
 
-import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { afterEach, describe, expect, test } from "bun:test";
+import { rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFileSessionStore, threadKey } from "./sessions.ts";
@@ -113,13 +113,10 @@ describe("createFileSessionStore — TTL and prune", () => {
     const shortTtlFile = join(tmpdir(), `sessions-ttl-${process.pid}-${Date.now()}.json`);
     const shortStore = createFileSessionStore(shortTtlFile, 1); // 1ms TTL
     shortStore.set("k", "session-xyz");
-    // The set() writes updatedAt = Date.now(). We need it to expire.
-    // Spin until enough time has passed (should be near-instant).
-    const deadline = Date.now() + 1000;
-    while (Date.now() < deadline) {
-      const val = shortStore.get("k");
-      if (val === undefined) break;
-    }
+    expect(shortStore.get("k")).toBe("session-xyz");
+    // Busy-wait 50ms — well above the 1ms TTL, guarantees expiry
+    const start = Date.now();
+    while (Date.now() - start < 50) {}
     expect(shortStore.get("k")).toBeUndefined();
     try {
       rmSync(shortTtlFile, { force: true });
@@ -131,13 +128,11 @@ describe("createFileSessionStore — TTL and prune", () => {
     const pruneStore = createFileSessionStore(pruneFile, 1); // 1ms TTL
     pruneStore.set("k1", "s1");
     pruneStore.set("k2", "s2");
-    // Wait for TTL to expire
-    const deadline = Date.now() + 1000;
-    while (Date.now() < deadline) {
-      if (pruneStore.size() === 0) break;
-      const pruned = pruneStore.prune();
-      if (pruned > 0) break;
-    }
+    // Busy-wait 50ms — well above the 1ms TTL, guarantees all entries expired
+    const start = Date.now();
+    while (Date.now() - start < 50) {}
+    const pruned = pruneStore.prune();
+    expect(pruned).toBe(2);
     expect(pruneStore.size()).toBe(0);
     try {
       rmSync(pruneFile, { force: true });
