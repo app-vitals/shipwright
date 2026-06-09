@@ -79,8 +79,7 @@ describe("setupGitHubAuth — App path", () => {
       env: {
         GH_APP_ID: "123",
         GH_APP_INSTALLATION_ID: "456",
-        GH_APP_PRIVATE_KEY:
-          "-----BEGIN RSA PRIVATE KEY-----\nfake\n-----END RSA PRIVATE KEY-----",
+        GH_APP_PRIVATE_KEY: "fake-private-key",
       },
       createTokenManager: mock(() => ({ getToken, startBackgroundRefresh })),
       getBotIdentity,
@@ -156,8 +155,7 @@ describe("setupGitHubAuth — App path", () => {
         env: {
           GH_APP_ID: "123",
           GH_APP_INSTALLATION_ID: "456",
-          GH_APP_PRIVATE_KEY:
-            "-----BEGIN RSA PRIVATE KEY-----\nfake\n-----END RSA PRIVATE KEY-----",
+          GH_APP_PRIVATE_KEY: "fake-private-key",
         },
         createTokenManager: mock(() => ({ getToken, startBackgroundRefresh })),
         getBotIdentity: makeBotIdentity(),
@@ -189,8 +187,7 @@ describe("setupGitHubAuth — App path", () => {
       env: {
         GH_APP_ID: "123",
         GH_APP_INSTALLATION_ID: "456",
-        GH_APP_PRIVATE_KEY:
-          "-----BEGIN RSA PRIVATE KEY-----\nfake\n-----END RSA PRIVATE KEY-----",
+        GH_APP_PRIVATE_KEY: "fake-private-key",
       },
       createTokenManager: mock(() => ({ getToken, startBackgroundRefresh })),
       getBotIdentity: makeBotIdentity(),
