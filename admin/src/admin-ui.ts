@@ -289,7 +289,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
     }
 
     // Fetch user info from Google
-    let userInfo: { sub: string; email?: string; name: string };
+    let userInfo: { sub: string; email?: string; email_verified?: boolean; name: string };
     try {
       userInfo = await googleClient.getUserInfo(accessToken);
     } catch {
@@ -300,8 +300,12 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
       return c.redirect("/admin/login?error=auth_failed", 302);
     }
 
+    if (!userInfo.email_verified) {
+      return c.redirect("/admin/login?error=auth_failed", 302);
+    }
+
     // Check allowlist
-    if (!adminAllowedEmails.includes(userInfo.email)) {
+    if (!adminAllowedEmails.map((e) => e.toLowerCase()).includes(userInfo.email.toLowerCase())) {
       return new Response("Forbidden", { status: 403 });
     }
 

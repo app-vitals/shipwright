@@ -23,6 +23,7 @@ export interface GoogleTokenResponse {
 export interface GoogleUserInfo {
   sub: string;
   email?: string;
+  email_verified?: boolean;
   name: string;
   picture?: string;
 }

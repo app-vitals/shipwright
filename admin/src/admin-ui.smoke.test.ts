@@ -99,6 +99,7 @@ function makeGoogleClient(overrides?: {
         Promise.resolve({
           sub: "google-sub-123",
           email: "admin@example.com",
+          email_verified: true,
           name: "Admin User",
         })),
   };
@@ -334,6 +335,7 @@ describe("admin UI — GET /auth/callback", () => {
             Promise.resolve({
               sub: "google-sub-999",
               email: "notallowed@example.com",
+              email_verified: true,
               name: "Not Allowed",
             }),
         }),
