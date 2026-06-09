@@ -15,10 +15,17 @@
 import { describe, expect, test } from "bun:test";
 import {
   AGENT_PORT,
+  brewFormulaInstalled,
   buildStackCommands,
+  DASHBOARD_URL,
+  dbReachable,
+  missingWorkspaceDeps,
   type Pane,
+  planPostgresSetup,
   runStack,
   SESSION_NAME,
+  sessionExists,
+  sessionExistsMessage,
   STACK_PANES,
 } from "./dev-tmux.ts";
 
@@ -58,6 +65,16 @@ describe("buildStackCommands", () => {
     expect(newSession?.argv).toContain(SESSION_NAME);
   });
 
+  test("enables mouse mode scoped to the session (drag-to-resize)", () => {
+    const cmds = buildStackCommands(STACK_PANES);
+    const mouse = cmds.find(
+      (c) => c.kind === "set-option" && c.argv.includes("mouse"),
+    );
+    expect(mouse?.argv).toEqual(["set-option", "-t", SESSION_NAME, "mouse", "on"]);
+    // session-scoped, not global — must not touch the user's tmux config
+    expect(mouse?.argv).not.toContain("-g");
+  });
+
   test("uses a single window with 4 panes (1 new-session + 3 split-window)", () => {
     const cmds = buildStackCommands(STACK_PANES);
     const newSessions = cmds.filter((c) => c.argv[0] === "new-session");
@@ -88,6 +105,18 @@ describe("buildStackCommands", () => {
     );
     expect(preflight).toBeDefined();
     expect(preflight?.kind).toBe("preflight");
+  });
+
+  test("the preflight generates the Prisma client BEFORE migrating", () => {
+    // The agent imports admin/prisma/client — `bun install` does not generate
+    // it, so the preflight must, or the agent pane crashes on a missing module.
+    const cmds = buildStackCommands(STACK_PANES);
+    const preflight = cmds.find((c) => c.kind === "preflight");
+    const cmd = preflight?.argv.join(" ") ?? "";
+    expect(cmd).toContain("prisma generate");
+    expect(cmd.indexOf("prisma generate")).toBeLessThan(
+      cmd.indexOf("migrate deploy"),
+    );
   });
 });
 
@@ -129,6 +158,13 @@ describe("runStack — per-pane commands via injected exec", () => {
     expect(logs.cmd.join(" ")).not.toContain("run-agent.ts");
   });
 
+  test("logs pane prints a signpost banner then drops into a shell", () => {
+    const cmd = STACK_PANES[3].cmd.join(" ");
+    expect(cmd).toContain(DASHBOARD_URL); // tells the user where the UI is
+    expect(cmd).toContain(`localhost:${AGENT_PORT}`);
+    expect(cmd).toContain('exec "$SHELL"'); // remains an interactive scratch shell
+  });
+
   test("exec is invoked once per built command, in order", () => {
     const { calls, exec } = makeRecorder();
     const built = buildStackCommands(STACK_PANES);
@@ -151,5 +187,135 @@ describe("pane env values are obviously dev dummies (public-safe)", () => {
 describe("ports", () => {
   test("agent pane is wired for :3000", () => {
     expect(AGENT_PORT).toBe(3000);
+  });
+});
+
+describe("sessionExists — pre-flight guard against duplicate sessions", () => {
+  test("true when has-session probe exits 0 (session present)", () => {
+    const probed: string[] = [];
+    const exists = sessionExists(SESSION_NAME, (n) => {
+      probed.push(n);
+      return 0;
+    });
+    expect(exists).toBe(true);
+    expect(probed).toEqual([SESSION_NAME]);
+  });
+
+  test("false when has-session probe exits non-zero (no session)", () => {
+    expect(sessionExists(SESSION_NAME, () => 1)).toBe(false);
+  });
+
+  test("guidance message offers both attach and reset paths", () => {
+    const msg = sessionExistsMessage(SESSION_NAME);
+    expect(msg).toContain(`tmux attach -t ${SESSION_NAME}`);
+    expect(msg).toContain(`tmux kill-session -t ${SESSION_NAME}`);
+  });
+});
+
+describe("dbReachable — pre-flight guard for the migrate preflight", () => {
+  const URL_STR = "postgresql://localhost:5432/shipwright_dev";
+
+  test("parses host + port from the database URL and passes them to the probe", async () => {
+    let seen: { host: string; port: number } | undefined;
+    await dbReachable(URL_STR, async (host, port) => {
+      seen = { host, port };
+      return true;
+    });
+    expect(seen).toEqual({ host: "localhost", port: 5432 });
+  });
+
+  test("true when the probe connects", async () => {
+    expect(await dbReachable(URL_STR, async () => true)).toBe(true);
+  });
+
+  test("false when the probe cannot connect", async () => {
+    expect(await dbReachable(URL_STR, async () => false)).toBe(false);
+  });
+
+});
+
+describe("missingWorkspaceDeps — deps guard", () => {
+  const DIRS = ["metrics", "agent", "admin"];
+
+  test("none missing when every workspace has node_modules", () => {
+    expect(missingWorkspaceDeps(DIRS, () => true)).toEqual([]);
+  });
+
+  test("reports exactly the workspaces lacking node_modules", () => {
+    // Mirrors the real bug: admin added after a prior install has no deps.
+    const installed = new Set(["metrics", "agent"]);
+    expect(missingWorkspaceDeps(DIRS, (d) => installed.has(d))).toEqual([
+      "admin",
+    ]);
+  });
+
+  test("reports all when nothing is installed (fresh clone)", () => {
+    expect(missingWorkspaceDeps(DIRS, () => false)).toEqual(DIRS);
+  });
+});
+
+describe("brewFormulaInstalled", () => {
+  test("true when `brew list` exits 0", () => {
+    expect(brewFormulaInstalled("postgresql@16", () => 0)).toBe(true);
+  });
+  test("false when `brew list` exits non-zero", () => {
+    expect(brewFormulaInstalled("postgresql@16", () => 1)).toBe(false);
+  });
+  test("queries the named formula", () => {
+    let seen: string[] = [];
+    brewFormulaInstalled("postgresql@16", (argv) => {
+      seen = argv;
+      return 0;
+    });
+    expect(seen).toEqual(["brew", "list", "--formula", "postgresql@16"]);
+  });
+});
+
+describe("planPostgresSetup — auto vs guide ladder", () => {
+  const URL_STR = "postgresql://me@localhost:5432/shipwright_dev";
+
+  test("reachable: no bring-up steps, but flags the missing DB + createdb", () => {
+    const plan = planPostgresSetup({
+      databaseUrl: URL_STR,
+      reachable: true,
+      formulaInstalled: true,
+    });
+    expect(plan.serverReady).toBe(true);
+    expect(plan.steps).toEqual([]);
+    expect(plan.instructions).toContain("createdb shipwright_dev");
+  });
+
+  test("not running but installed: start only (no install step)", () => {
+    const plan = planPostgresSetup({
+      databaseUrl: URL_STR,
+      reachable: false,
+      formulaInstalled: true,
+    });
+    const displays = plan.steps.map((s) => s.display);
+    expect(displays).toEqual(["brew services start postgresql@16"]);
+    expect(plan.instructions).toContain("not running");
+  });
+
+  test("not installed: install then start, in that order", () => {
+    const plan = planPostgresSetup({
+      databaseUrl: URL_STR,
+      reachable: false,
+      formulaInstalled: false,
+    });
+    expect(plan.steps.map((s) => s.display)).toEqual([
+      "brew install postgresql@16",
+      "brew services start postgresql@16",
+    ]);
+    // every step carries an executable argv
+    expect(plan.steps.every((s) => s.argv[0] === "sh")).toBe(true);
+  });
+
+  test("instructions always show the createdb line for the user", () => {
+    const plan = planPostgresSetup({
+      databaseUrl: URL_STR,
+      reachable: false,
+      formulaInstalled: false,
+    });
+    expect(plan.instructions).toContain("createdb shipwright_dev");
   });
 });
