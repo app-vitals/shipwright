@@ -69,8 +69,8 @@ tasks:
     desc: Create the admin database (idempotent — safe to re-run)
     cmds:
       - |
-        if [ -z "$DATABASE_URL" ]; then
-          echo "ERROR: DATABASE_URL is not set. Export it before running db:provision."
+        if [ -z "$DATABASE_URL_SHIPWRIGHT_ADMIN" ]; then
+          echo "ERROR: DATABASE_URL_SHIPWRIGHT_ADMIN is not set. Export it before running db:provision."
           exit 1
         fi
         cd admin && bunx prisma migrate deploy --schema=prisma/schema.prisma
@@ -79,8 +79,8 @@ tasks:
     desc: Generate and apply a new Prisma migration (dev only)
     cmds:
       - |
-        if [ -z "$DATABASE_URL" ]; then
-          echo "ERROR: DATABASE_URL is not set. Export it before running db:migrate."
+        if [ -z "$DATABASE_URL_SHIPWRIGHT_ADMIN" ]; then
+          echo "ERROR: DATABASE_URL_SHIPWRIGHT_ADMIN is not set. Export it before running db:migrate."
           exit 1
         fi
         cd admin && bunx prisma migrate dev --schema=prisma/schema.prisma
