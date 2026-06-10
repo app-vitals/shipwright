@@ -140,7 +140,7 @@ function issueToTask(issue: GhIssue): TaskWithMeta {
   }
 
   // Fall back to GitHub issue assignee when not set in the YAML block
-  if (task.assignee === undefined && issue.assignees.length > 0) {
+  if (task.assignee === undefined && issue.assignees?.[0]) {
     task.assignee = issue.assignees[0].login;
   }
 
