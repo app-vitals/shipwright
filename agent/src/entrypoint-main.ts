@@ -7,16 +7,19 @@
  * Run via: bun run agent/src/entrypoint-main.ts [--agent-id X] [--api-url Y] [--api-key Z]
  */
 
-import { existsSync, lstatSync, rmSync, symlinkSync, unlinkSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  rmSync,
+  symlinkSync,
+  unlinkSync,
+} from "node:fs";
 import { join } from "node:path";
 import { parseCliArgs } from "./cli-args.ts";
 import { runEntrypoint } from "./entrypoint.ts";
-import {
-  createGitHubTokenManager,
-  getBotIdentity,
-} from "./github-app-auth.ts";
-import { installPlugins, runMiseStartup } from "./setup.ts";
+import { createGitHubTokenManager, getBotIdentity } from "./github-app-auth.ts";
 import { setupGitHubAuth } from "./setup-github-auth.ts";
+import { installPlugins, runMiseStartup } from "./setup.ts";
 import { HttpShipwrightConfigClient } from "./shipwright-config-client.ts";
 
 const { agentId, apiUrl, apiKey } = parseCliArgs(
@@ -25,7 +28,8 @@ const { agentId, apiUrl, apiKey } = parseCliArgs(
 );
 
 const agentHome =
-  process.env.AGENT_HOME ?? join(process.env.HOME ?? "/root", ".shipwright-agent");
+  process.env.AGENT_HOME ??
+  join(process.env.HOME ?? "/root", ".shipwright-agent");
 
 const configClient = new HttpShipwrightConfigClient({
   apiUrl: apiUrl ?? "",
@@ -41,7 +45,10 @@ const spawnSyncFn: Parameters<typeof setupGitHubAuth>[0]["spawnSync"] = (
   opts,
 ) => {
   const proc = Bun.spawnSync([cmd, ...args], {
-    stdio: opts.stdio === "inherit" ? ["inherit", "inherit", "inherit"] : ["pipe", "pipe", "pipe"],
+    stdio:
+      opts.stdio === "inherit"
+        ? ["inherit", "inherit", "inherit"]
+        : ["pipe", "pipe", "pipe"],
     env: opts.env as Record<string, string>,
   });
   return { status: proc.exitCode };
@@ -64,7 +71,9 @@ await runEntrypoint({
       if (lstatSync(linkPath).isSymbolicLink()) {
         unlinkSync(linkPath);
       } else {
-        console.warn("[entrypoint] ~/.claude is a real directory — removing before symlinking");
+        console.warn(
+          "[entrypoint] ~/.claude is a real directory — removing before symlinking",
+        );
         rmSync(linkPath, { recursive: true });
       }
     }

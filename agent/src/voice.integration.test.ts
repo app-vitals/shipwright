@@ -105,7 +105,11 @@ describe("transcribeAudio", () => {
       return Response.json({ text: "test" });
     });
 
-    await transcribeAudio(tmpFile, testConfig, mockFetch as unknown as typeof fetch);
+    await transcribeAudio(
+      tmpFile,
+      testConfig,
+      mockFetch as unknown as typeof fetch,
+    );
 
     expect(capturedHeaders[0]?.Authorization).toBe("Bearer test-groq-key");
   });

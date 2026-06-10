@@ -45,7 +45,9 @@ export function tokensToCss(t: BrandTokens): string {
     }
   }
   for (const [key, stops] of Object.entries(t.gradient)) {
-    vars.push(`  --sw-gradient-${kebab(key)}: linear-gradient(135deg, ${stops.join(", ")});`);
+    vars.push(
+      `  --sw-gradient-${kebab(key)}: linear-gradient(135deg, ${stops.join(", ")});`,
+    );
   }
   for (const [key, value] of Object.entries(t.glow)) {
     vars.push(`  --sw-glow-${kebab(key)}: ${value};`);

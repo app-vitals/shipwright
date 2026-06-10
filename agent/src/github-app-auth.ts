@@ -105,7 +105,9 @@ export class GitHubTokenManager {
   }
 
   private isNearExpiry(expiresAt: Date): boolean {
-    return expiresAt.getTime() - this.clock.now().getTime() <= REFRESH_BUFFER_MS;
+    return (
+      expiresAt.getTime() - this.clock.now().getTime() <= REFRESH_BUFFER_MS
+    );
   }
 
   private async refreshToken(): Promise<string> {

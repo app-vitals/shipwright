@@ -75,7 +75,10 @@ describe("handleCronRequest — validation", () => {
   });
 
   test("runs runner but skips posting when silent=true", async () => {
-    await handleCronRequest({ jobId: "j1", prompt: "hello", silent: true }, deps);
+    await handleCronRequest(
+      { jobId: "j1", prompt: "hello", silent: true },
+      deps,
+    );
     expect(mockRunner).toHaveBeenCalledTimes(1);
     expect(mockPostMessage).not.toHaveBeenCalled();
   });
@@ -98,7 +101,9 @@ describe("handleCronRequest — channel delivery", () => {
     expect(runArg).toContain("Summarise the day");
 
     expect(mockPostMessage).toHaveBeenCalledTimes(1);
-    expect((mockPostMessage.mock.calls as unknown as unknown[][])[0][0]).toMatchObject({
+    expect(
+      (mockPostMessage.mock.calls as unknown as unknown[][])[0][0],
+    ).toMatchObject({
       channel: "C-REPORTS",
       text: "the report",
     });
@@ -111,7 +116,9 @@ describe("handleCronRequest — channel delivery", () => {
     );
 
     expect(mockPostMessage).toHaveBeenCalledTimes(1);
-    expect((mockPostMessage.mock.calls as unknown as unknown[][])[0][0]).toMatchObject({ channel: "C-MAIN" });
+    expect(
+      (mockPostMessage.mock.calls as unknown as unknown[][])[0][0],
+    ).toMatchObject({ channel: "C-MAIN" });
     expect(mockConversationsOpen).not.toHaveBeenCalled();
   });
 
@@ -128,7 +135,10 @@ describe("handleCronRequest — channel delivery", () => {
 
   test("calls onSession callback when sessionId is returned", async () => {
     const onSession = mock((_ch: string, _ts: string, _sid: string) => {});
-    mockRunner.mockResolvedValueOnce({ result: "reply", sessionId: "sess-xyz" });
+    mockRunner.mockResolvedValueOnce({
+      result: "reply",
+      sessionId: "sess-xyz",
+    });
 
     await handleCronRequest(
       { jobId: "j1", prompt: "hello", channel: "C-TEST" },
@@ -136,12 +146,19 @@ describe("handleCronRequest — channel delivery", () => {
     );
 
     expect(onSession).toHaveBeenCalledTimes(1);
-    expect(onSession.mock.calls[0]).toEqual(["C-TEST", "1234567890.000001", "sess-xyz"]);
+    expect(onSession.mock.calls[0]).toEqual([
+      "C-TEST",
+      "1234567890.000001",
+      "sess-xyz",
+    ]);
   });
 
   test("formatter applied to Claude result before posting", async () => {
     const upperFormatter = (text: string) => text.toUpperCase();
-    mockRunner.mockResolvedValueOnce({ result: "lower case result", sessionId: "s1" });
+    mockRunner.mockResolvedValueOnce({
+      result: "lower case result",
+      sessionId: "s1",
+    });
 
     await handleCronRequest(
       { jobId: "fmt-job", prompt: "run", channel: "C-TEST" },
@@ -149,7 +166,9 @@ describe("handleCronRequest — channel delivery", () => {
     );
 
     expect(mockPostMessage).toHaveBeenCalledTimes(1);
-    expect((mockPostMessage.mock.calls as unknown as unknown[][])[0][0]).toMatchObject({
+    expect(
+      (mockPostMessage.mock.calls as unknown as unknown[][])[0][0],
+    ).toMatchObject({
       channel: "C-TEST",
       text: "LOWER CASE RESULT",
     });
@@ -182,10 +201,14 @@ describe("handleCronRequest — user DM delivery", () => {
     );
 
     expect(mockConversationsOpen).toHaveBeenCalledTimes(1);
-    expect((mockConversationsOpen.mock.calls as unknown as unknown[][])[0][0]).toMatchObject({ users: "U-DAN" });
+    expect(
+      (mockConversationsOpen.mock.calls as unknown as unknown[][])[0][0],
+    ).toMatchObject({ users: "U-DAN" });
 
     expect(mockPostMessage).toHaveBeenCalledTimes(1);
-    expect((mockPostMessage.mock.calls as unknown as unknown[][])[0][0]).toMatchObject({
+    expect(
+      (mockPostMessage.mock.calls as unknown as unknown[][])[0][0],
+    ).toMatchObject({
       channel: "D_DM_CHANNEL",
       text: "dm reply",
     });
@@ -215,7 +238,10 @@ describe("handleCronRequest — user DM delivery", () => {
   });
 
   test("calls onPost AND onSession for DM posts", async () => {
-    mockRunner.mockResolvedValueOnce({ result: "digest", sessionId: "sess-dm-1" });
+    mockRunner.mockResolvedValueOnce({
+      result: "digest",
+      sessionId: "sess-dm-1",
+    });
     const onPost = mock(() => {});
     const onSession = mock(() => {});
 
@@ -239,7 +265,10 @@ describe("handleCronRequest — user DM delivery", () => {
 
 describe("handleCronRequest — [silent] marker", () => {
   test("[silent] in result suppresses channel post", async () => {
-    mockRunner.mockResolvedValueOnce({ result: "text [silent]", sessionId: "s3" });
+    mockRunner.mockResolvedValueOnce({
+      result: "text [silent]",
+      sessionId: "s3",
+    });
 
     await handleCronRequest(
       { jobId: "j1", prompt: "hello", channel: "C-MAIN" },
@@ -250,7 +279,10 @@ describe("handleCronRequest — [silent] marker", () => {
   });
 
   test("[silent] in result is IGNORED for DM — DM always gets a reply", async () => {
-    mockRunner.mockResolvedValueOnce({ result: "text [silent]", sessionId: "s4" });
+    mockRunner.mockResolvedValueOnce({
+      result: "text [silent]",
+      sessionId: "s4",
+    });
 
     await handleCronRequest(
       { jobId: "j1", prompt: "hello", user: "U-DAN" },
@@ -289,7 +321,10 @@ describe("handleCronRequest — [silent] marker", () => {
 
 describe("handleCronRequest — onSession callback", () => {
   test("calls onSession with channel, ts, and sessionId after channel post", async () => {
-    mockRunner.mockResolvedValueOnce({ result: "report", sessionId: "sess-cron-1" });
+    mockRunner.mockResolvedValueOnce({
+      result: "report",
+      sessionId: "sess-cron-1",
+    });
     const onSession = mock(() => {});
 
     await handleCronRequest(
@@ -408,7 +443,9 @@ describe("handleCronRequest — marker dispatch", () => {
     );
 
     expect(mockFilesUploadV2).toHaveBeenCalledTimes(1);
-    const uploadCall = (mockFilesUploadV2.mock.calls as unknown as unknown[][])[0][0] as {
+    const uploadCall = (
+      mockFilesUploadV2.mock.calls as unknown as unknown[][]
+    )[0][0] as {
       channel_id: string;
       filename: string;
     };
@@ -437,7 +474,9 @@ describe("handleCronRequest — marker dispatch", () => {
     );
 
     expect(mockSynthesize).toHaveBeenCalledTimes(1);
-    expect((mockSynthesize.mock.calls as unknown as string[][])[0][0]).toBe("hello world");
+    expect((mockSynthesize.mock.calls as unknown as string[][])[0][0]).toBe(
+      "hello world",
+    );
     expect(mockFilesUploadV2).toHaveBeenCalledTimes(1);
   });
 
@@ -469,7 +508,9 @@ describe("handleCronRequest — marker dispatch", () => {
     );
 
     expect(mockPostMessage).toHaveBeenCalledTimes(1);
-    const postArg = (mockPostMessage.mock.calls as unknown as unknown[][])[0][0] as {
+    const postArg = (
+      mockPostMessage.mock.calls as unknown as unknown[][]
+    )[0][0] as {
       text: string;
     };
     expect(postArg.text).not.toContain("[react:thumbsup]");
@@ -544,7 +585,12 @@ describe("handleCronRequest — preCheck", () => {
   });
 
   test("preCheck exits 2 → session skipped, runner NOT called, alert posted to alertsChannel", async () => {
-    const scriptPath = join(tmpDir, "shipwright", "scripts", "check-dev-task.ts");
+    const scriptPath = join(
+      tmpDir,
+      "shipwright",
+      "scripts",
+      "check-dev-task.ts",
+    );
     writeFileSync(
       scriptPath,
       `#!/usr/bin/env bun\nprocess.stderr.write("something blew up\\n");\nprocess.exit(2);\n`,
@@ -563,7 +609,9 @@ describe("handleCronRequest — preCheck", () => {
 
     expect(mockRunner).not.toHaveBeenCalled();
     expect(mockPostMessage).toHaveBeenCalledTimes(1);
-    const call = (mockPostMessage.mock.calls as unknown as unknown[][])[0][0] as {
+    const call = (
+      mockPostMessage.mock.calls as unknown as unknown[][]
+    )[0][0] as {
       channel: string;
       text: string;
     };
@@ -573,7 +621,12 @@ describe("handleCronRequest — preCheck", () => {
   });
 
   test("preCheck exits 2 with no alertsChannel → session skipped, no alert, no throw", async () => {
-    const scriptPath = join(tmpDir, "shipwright", "scripts", "check-dev-task.ts");
+    const scriptPath = join(
+      tmpDir,
+      "shipwright",
+      "scripts",
+      "check-dev-task.ts",
+    );
     writeFileSync(scriptPath, "#!/usr/bin/env bun\nprocess.exit(2);\n", {
       mode: 0o755,
     });
@@ -595,7 +648,12 @@ describe("handleCronRequest — preCheck", () => {
   });
 
   test("preCheck exits 0 with no output → session skipped, runner NOT called", async () => {
-    const scriptPath = join(tmpDir, "shipwright", "scripts", "check-dev-task.ts");
+    const scriptPath = join(
+      tmpDir,
+      "shipwright",
+      "scripts",
+      "check-dev-task.ts",
+    );
     writeFileSync(scriptPath, "#!/usr/bin/env bun\nprocess.exit(0);\n", {
       mode: 0o755,
     });

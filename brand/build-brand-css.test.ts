@@ -28,7 +28,13 @@ test("generated CSS exposes the required brand custom properties", () => {
 });
 
 test("generated CSS ships the on-brand utility classes", () => {
-  for (const cls of [".sw-btn", ".sw-card", ".sw-callout", ".sw-pill", ".sw-container"]) {
+  for (const cls of [
+    ".sw-btn",
+    ".sw-card",
+    ".sw-callout",
+    ".sw-pill",
+    ".sw-container",
+  ]) {
     expect(css).toContain(cls);
   }
 });

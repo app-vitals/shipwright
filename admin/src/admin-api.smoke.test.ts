@@ -584,17 +584,14 @@ describe("admin API — plugins", () => {
 
   it("PATCH /admin/api/agents/:id/plugins without name param returns 400", async () => {
     const app = createAdminApp(makeMockDeps());
-    const res = await app.request(
-      `/admin/api/agents/${AGENT_ID}/plugins`,
-      {
-        method: "PATCH",
-        body: JSON.stringify({ version: "2.0.0" }),
-        headers: {
-          "Content-Type": "application/json",
-          Cookie: `admin_session=${cookie}`,
-        },
+    const res = await app.request(`/admin/api/agents/${AGENT_ID}/plugins`, {
+      method: "PATCH",
+      body: JSON.stringify({ version: "2.0.0" }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
       },
-    );
+    });
     expect(res.status).toBe(400);
   });
 
@@ -612,13 +609,10 @@ describe("admin API — plugins", () => {
 
   it("DELETE /admin/api/agents/:id/plugins without name param returns 400", async () => {
     const app = createAdminApp(makeMockDeps());
-    const res = await app.request(
-      `/admin/api/agents/${AGENT_ID}/plugins`,
-      {
-        method: "DELETE",
-        headers: { Cookie: `admin_session=${cookie}` },
-      },
-    );
+    const res = await app.request(`/admin/api/agents/${AGENT_ID}/plugins`, {
+      method: "DELETE",
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
     expect(res.status).toBe(400);
   });
 });

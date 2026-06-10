@@ -19,8 +19,8 @@
  */
 
 import * as fs from "node:fs";
-import * as readline from "node:readline/promises";
 import { stdin, stdout } from "node:process";
+import * as readline from "node:readline/promises";
 import { getArg } from "./cli-args.ts";
 
 // ─── Args ──────────────────────────────────────────────────────────────────────
@@ -56,7 +56,10 @@ if (envFile) {
     const eqIdx = trimmed.indexOf("=");
     if (eqIdx === -1) continue;
     const key = trimmed.slice(0, eqIdx).trim();
-    const value = trimmed.slice(eqIdx + 1).trim().replace(/^["']|["']$/g, "");
+    const value = trimmed
+      .slice(eqIdx + 1)
+      .trim()
+      .replace(/^["']|["']$/g, "");
     process.env[key] = value;
   }
 }
@@ -148,7 +151,10 @@ const envPayload: Record<string, string> = {
   ANTHROPIC_API_KEY: anthropicApiKey,
 };
 
-const response = await adminPatch(`/admin/api/agents/${agentId}/envs`, envPayload);
+const response = await adminPatch(
+  `/admin/api/agents/${agentId}/envs`,
+  envPayload,
+);
 
 if (!response.ok) {
   const body = await response.text();
@@ -159,9 +165,7 @@ if (!response.ok) {
   process.exit(1);
 }
 
-console.log(
-  `[bootstrap] Agent ${agentId} bootstrapped successfully.`,
-);
+console.log(`[bootstrap] Agent ${agentId} bootstrapped successfully.`);
 console.log(
   `  Start the agent with: SHIPWRIGHT_AGENT_ID=${agentId} bun run agent/scripts/entrypoint.ts`,
 );

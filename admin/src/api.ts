@@ -7,8 +7,8 @@
  */
 
 import { Hono } from "hono";
-import type { AgentEnvBundle } from "./agent-envs.ts";
 import type { AgentCronJob } from "./agent-cron-jobs.ts";
+import type { AgentEnvBundle } from "./agent-envs.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

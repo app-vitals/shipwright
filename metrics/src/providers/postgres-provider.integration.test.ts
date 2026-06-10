@@ -101,13 +101,23 @@ async function seedAll() {
   await seed(
     "shipwright_ci_result",
     "2026-06-02T10:00:00.000Z",
-    { task_id: "QS-1.1", passed_first_try: true, fix_attempts: 0, first_pass: true },
+    {
+      task_id: "QS-1.1",
+      passed_first_try: true,
+      fix_attempts: 0,
+      first_pass: true,
+    },
     "pg-ci1",
   );
   await seed(
     "shipwright_ci_result",
     "2026-06-03T10:00:00.000Z",
-    { task_id: "QS-1.2", passed_first_try: false, fix_attempts: 2, first_pass: false },
+    {
+      task_id: "QS-1.2",
+      passed_first_try: false,
+      fix_attempts: 2,
+      first_pass: false,
+    },
     "pg-ci2",
   );
 
@@ -203,26 +213,29 @@ async function q(query: MetricQuery) {
 }
 
 describe("PostgresProvider — summary", () => {
-  maybeSkip("aggregates completion / ci / simplify / review metrics", async () => {
-    const table = await q({ kind: "summary", range: RANGE });
-    const r = row0(table);
-    expect(r.tasks_completed).toBe(2);
-    expect(r.tasks_blocked).toBe(1);
-    expect(Number(r.avg_actual_hours)).toBeCloseTo(5, 5);
-    expect(Number(r.avg_estimated_hours)).toBeCloseTo(5, 5);
-    expect(Number(r.avg_retries)).toBeCloseTo(2, 5);
-    expect(Number(r.avg_files_changed)).toBeCloseTo(8, 5);
-    expect(r.ci_gates_total).toBe(2);
-    expect(r.ci_first_pass).toBe(1);
-    expect(Number(r.avg_fix_attempts)).toBeCloseTo(1, 5);
-    expect(r.simplify_total).toBe(1);
-    expect(Number(r.simplify_total_fixes)).toBeCloseTo(5, 5);
-    expect(r.reviews_total).toBe(2);
-    expect(r.reviews_ship_it).toBe(1);
-    expect(r.complexity_3).toBe(1);
-    expect(r.complexity_5).toBe(1);
-    expect(Number(r.avg_fix_cascade_depth)).toBeCloseTo(3, 5);
-  });
+  maybeSkip(
+    "aggregates completion / ci / simplify / review metrics",
+    async () => {
+      const table = await q({ kind: "summary", range: RANGE });
+      const r = row0(table);
+      expect(r.tasks_completed).toBe(2);
+      expect(r.tasks_blocked).toBe(1);
+      expect(Number(r.avg_actual_hours)).toBeCloseTo(5, 5);
+      expect(Number(r.avg_estimated_hours)).toBeCloseTo(5, 5);
+      expect(Number(r.avg_retries)).toBeCloseTo(2, 5);
+      expect(Number(r.avg_files_changed)).toBeCloseTo(8, 5);
+      expect(r.ci_gates_total).toBe(2);
+      expect(r.ci_first_pass).toBe(1);
+      expect(Number(r.avg_fix_attempts)).toBeCloseTo(1, 5);
+      expect(r.simplify_total).toBe(1);
+      expect(Number(r.simplify_total_fixes)).toBeCloseTo(5, 5);
+      expect(r.reviews_total).toBe(2);
+      expect(r.reviews_ship_it).toBe(1);
+      expect(r.complexity_3).toBe(1);
+      expect(r.complexity_5).toBe(1);
+      expect(Number(r.avg_fix_cascade_depth)).toBeCloseTo(3, 5);
+    },
+  );
 
   maybeSkip("date range outside seeded events yields zero counts", async () => {
     const table = await q({
@@ -250,9 +263,15 @@ describe("PostgresProvider — trends", () => {
     expect(all.length).toBeGreaterThanOrEqual(2);
     expect(table.columns).toContain("period");
     expect(table.columns).toContain("tasks_completed");
-    const totalCompleted = all.reduce((acc, x) => acc + Number(x.tasks_completed ?? 0), 0);
+    const totalCompleted = all.reduce(
+      (acc, x) => acc + Number(x.tasks_completed ?? 0),
+      0,
+    );
     expect(totalCompleted).toBe(2);
-    const totalStarted = all.reduce((acc, x) => acc + Number(x.tasks_started ?? 0), 0);
+    const totalStarted = all.reduce(
+      (acc, x) => acc + Number(x.tasks_started ?? 0),
+      0,
+    );
     expect(totalStarted).toBe(2);
   });
 });
@@ -358,28 +377,31 @@ describe("PostgresProvider — tokens", () => {
 });
 
 describe("PostgresProvider — dedup", () => {
-  maybeSkip("inserting same insert_id twice produces only one row", async () => {
-    await pgStore.truncateForTest();
+  maybeSkip(
+    "inserting same insert_id twice produces only one row",
+    async () => {
+      await pgStore.truncateForTest();
 
-    await pgStore.insertEvent({
-      insertId: "dedup-test-id",
-      event: "shipwright_task_complete",
-      timestamp: "2026-06-04T10:00:00.000Z",
-      properties: { task: "DD-1.1", actual_h: 2 },
-    });
-    // Second insert with same insertId — should be silently ignored
-    await pgStore.insertEvent({
-      insertId: "dedup-test-id",
-      event: "shipwright_task_complete",
-      timestamp: "2026-06-04T10:00:00.000Z",
-      properties: { task: "DD-1.1", actual_h: 99 },
-    });
+      await pgStore.insertEvent({
+        insertId: "dedup-test-id",
+        event: "shipwright_task_complete",
+        timestamp: "2026-06-04T10:00:00.000Z",
+        properties: { task: "DD-1.1", actual_h: 2 },
+      });
+      // Second insert with same insertId — should be silently ignored
+      await pgStore.insertEvent({
+        insertId: "dedup-test-id",
+        event: "shipwright_task_complete",
+        timestamp: "2026-06-04T10:00:00.000Z",
+        properties: { task: "DD-1.1", actual_h: 99 },
+      });
 
-    const table = await q({
-      kind: "summary",
-      range: { from: "2026-06-04", to: "2026-06-04" },
-    });
-    const r = row0(table);
-    expect(r.tasks_completed).toBe(1);
-  });
+      const table = await q({
+        kind: "summary",
+        range: { from: "2026-06-04", to: "2026-06-04" },
+      });
+      const r = row0(table);
+      expect(r.tasks_completed).toBe(1);
+    },
+  );
 });

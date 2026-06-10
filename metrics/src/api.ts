@@ -9,6 +9,12 @@ import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
 import { getCookie } from "hono/cookie";
 import { createMiddleware } from "hono/factory";
 import { verify } from "hono/jwt";
+import { renderDashboardPage } from "./dashboard/dashboard-page.ts";
+import {
+  resolveDateRangeForMeta,
+  validateCustomRange,
+  wrapResponse,
+} from "./formatters.ts";
 import type { AccountsClient } from "./lib/accounts-client.ts";
 import { authMiddleware } from "./lib/api-auth.ts";
 import type { AppHandler, AuthEnv, Caller } from "./lib/api-auth.ts";
@@ -17,14 +23,8 @@ import { registerWithAuthz } from "./lib/api-utils.ts";
 import { createSessionMiddleware } from "./lib/session-middleware.ts";
 import type { LocalEventStore } from "./local-store.ts";
 import type { MetricsProvider } from "./metrics-provider.ts";
-import { PostHogProvider } from "./providers/posthog-provider.ts";
-import { renderDashboardPage } from "./dashboard/dashboard-page.ts";
-import {
-  resolveDateRangeForMeta,
-  validateCustomRange,
-  wrapResponse,
-} from "./formatters.ts";
 import { PostHogClientError, createPostHogClient } from "./posthog-client.ts";
+import { PostHogProvider } from "./providers/posthog-provider.ts";
 import {
   buildFeaturesCiQuery,
   buildFeaturesReviewsQuery,

@@ -13,8 +13,8 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { syncVersion } from "./sync-version";
 
 // Minimal package.json content with 2-space indent + trailing newline

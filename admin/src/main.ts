@@ -12,20 +12,20 @@
  */
 
 import { join } from "node:path";
+import { Hono } from "hono";
+import { PrismaClient } from "../prisma/client/index.js";
+import { createAdminApp } from "./admin-api.ts";
+import { createAdminUIApp } from "./admin-ui.ts";
 import { AgentCronJobService } from "./agent-cron-jobs.ts";
 import { AgentEnvService } from "./agent-envs.ts";
 import { AgentPluginService } from "./agent-plugins.ts";
 import { AgentTokenService } from "./agent-tokens.ts";
 import { AgentToolService } from "./agent-tools.ts";
-import { createAdminApp } from "./admin-api.ts";
-import { createAdminUIApp } from "./admin-ui.ts";
 import { createAgentRuntimeApp } from "./api.ts";
 import { isDevAuthAllowed } from "./dev-auth-guard.ts";
 import { HttpGoogleAuthClient } from "./google-auth-client.ts";
 import { HttpSlackProvisioningClient } from "./slack-provisioning-client.ts";
 import { makeTokenCrypto } from "./token-crypto.ts";
-import { PrismaClient } from "../prisma/client/index.js";
-import { Hono } from "hono";
 
 // ─── Migration preflight ──────────────────────────────────────────────────────
 

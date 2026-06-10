@@ -18,8 +18,8 @@ test("hero heading renders the brand tagline", async ({ page }) => {
 test("dark-premium navy base background is applied", async ({ page }) => {
   await page.goto("/");
   // brand.css sets body background to --sw-color-bg-base (#080E1E => rgb(8, 14, 30)).
-  const bg = await page.evaluate(() =>
-    getComputedStyle(document.body).backgroundColor,
+  const bg = await page.evaluate(
+    () => getComputedStyle(document.body).backgroundColor,
   );
   expect(bg).toBe("rgb(8, 14, 30)");
   // The brand CSS variable must be present on :root.
@@ -114,7 +114,9 @@ test("differentiators feature 'Built on Claude Code' and free/open-source (MIT)"
   await page.goto("/");
   const section = page.locator("#differentiators");
   await expect(section).toBeVisible();
-  await expect(section.getByText(/Built on Claude Code/i).first()).toBeVisible();
+  await expect(
+    section.getByText(/Built on Claude Code/i).first(),
+  ).toBeVisible();
   await expect(section.getByText(/open[- ]source/i).first()).toBeVisible();
   await expect(section.getByText(/MIT/).first()).toBeVisible();
 });
@@ -123,7 +125,13 @@ test("differentiators name no competitors", async ({ page }) => {
   await page.goto("/");
   const text =
     (await page.locator("#differentiators").textContent())?.toLowerCase() ?? "";
-  for (const competitor of ["devin", "cursor", "copilot", "windsurf", "github copilot"]) {
+  for (const competitor of [
+    "devin",
+    "cursor",
+    "copilot",
+    "windsurf",
+    "github copilot",
+  ]) {
     expect(text).not.toContain(competitor);
   }
 });

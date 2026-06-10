@@ -71,10 +71,9 @@ export function renderLoginPage(opts?: {
     ? `<div class="alert alert-error">${escapeHtml(opts.error)}</div>`
     : "";
 
-  const googleHref =
-    opts?.returnTo
-      ? `/auth/google?returnTo=${encodeURIComponent(opts.returnTo)}`
-      : "/auth/google";
+  const googleHref = opts?.returnTo
+    ? `/admin/auth/google?returnTo=${encodeURIComponent(opts.returnTo)}`
+    : "/admin/auth/google";
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -164,7 +163,6 @@ export function renderAgentDetailPage(
   userName: string,
   opts?: { error?: string; newToken?: string },
 ): string {
-
   const envRows =
     Object.keys(envVars).length === 0
       ? `<tr><td colspan="3" class="empty-state">No env vars set.</td></tr>`

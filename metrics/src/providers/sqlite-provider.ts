@@ -10,11 +10,15 @@
 
 import { type Clock, SystemClock } from "../lib/clock.ts";
 import type { LocalEventStore, StoredEvent } from "../local-store.ts";
-import type { MetricQuery, MetricTable, MetricsProvider } from "../metrics-provider.ts";
+import type {
+  MetricQuery,
+  MetricTable,
+  MetricsProvider,
+} from "../metrics-provider.ts";
 import {
   type SqlEventStore,
-  type SqlStoredEvent,
   SqlEventStoreProvider,
+  type SqlStoredEvent,
 } from "./sql-provider.ts";
 
 // ─── Adapter: LocalEventStore → SqlEventStore ─────────────────────────────────
@@ -52,10 +56,7 @@ class LocalStoreAdapter implements SqlEventStore {
 export class SqliteProvider implements MetricsProvider {
   private readonly inner: SqlEventStoreProvider;
 
-  constructor(
-    store: LocalEventStore,
-    clock: Clock = SystemClock(),
-  ) {
+  constructor(store: LocalEventStore, clock: Clock = SystemClock()) {
     this.inner = new SqlEventStoreProvider(new LocalStoreAdapter(store), clock);
   }
 

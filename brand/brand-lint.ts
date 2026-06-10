@@ -20,7 +20,8 @@ export function allowedHexes(t: typeof tokens = tokens): Set<string> {
   for (const group of Object.values(t.color)) {
     if (typeof group !== "object") continue;
     for (const value of Object.values(group)) {
-      for (const hex of String(value).match(HEX_RE) ?? []) set.add(hex.toUpperCase());
+      for (const hex of String(value).match(HEX_RE) ?? [])
+        set.add(hex.toUpperCase());
     }
   }
   for (const stops of Object.values(t.gradient)) {
@@ -34,7 +35,10 @@ export interface LintResult {
 }
 
 /** Pure: report any hex in `content` that isn't allowed. Exported for tests. */
-export function lintBrand(content: string, allowed: Set<string> = allowedHexes()): LintResult {
+export function lintBrand(
+  content: string,
+  allowed: Set<string> = allowedHexes(),
+): LintResult {
   const found = content.match(HEX_RE) ?? [];
   const offBrandHexes = [...new Set(found.map((h) => h.toUpperCase()))].filter(
     (h) => !allowed.has(h),
@@ -54,7 +58,9 @@ if (import.meta.main) {
     const { offBrandHexes } = lintBrand(text);
     if (offBrandHexes.length > 0) {
       failures++;
-      console.error(`✗ ${file}: off-brand colors → ${offBrandHexes.join(", ")}`);
+      console.error(
+        `✗ ${file}: off-brand colors → ${offBrandHexes.join(", ")}`,
+      );
     } else {
       console.log(`✓ ${file}: on-brand`);
     }

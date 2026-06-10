@@ -51,14 +51,19 @@ export class HttpAccountsMigrationClient implements AccountsMigrationClient {
     const url = `${this.baseUrl}/accounts/agents?role=AGENT`;
     const res = await globalThis.fetch(url, { headers: this.headers });
     if (!res.ok) {
-      throw new Error(
-        `listAgents failed: ${res.status} ${await res.text()}`,
-      );
+      throw new Error(`listAgents failed: ${res.status} ${await res.text()}`);
     }
-    const data = await res.json() as { agents?: VitalsAgentRecord[] } | VitalsAgentRecord[];
+    const data = (await res.json()) as
+      | { agents?: VitalsAgentRecord[] }
+      | VitalsAgentRecord[];
     // Handle both array response and wrapped { agents: [] } response
     if (Array.isArray(data)) return data;
-    if (data && typeof data === "object" && "agents" in data && Array.isArray(data.agents)) {
+    if (
+      data &&
+      typeof data === "object" &&
+      "agents" in data &&
+      Array.isArray(data.agents)
+    ) {
       return data.agents;
     }
     return data as VitalsAgentRecord[];
@@ -83,9 +88,16 @@ export class HttpAccountsMigrationClient implements AccountsMigrationClient {
         `getAgentCrons(${agentId}) failed: ${res.status} ${await res.text()}`,
       );
     }
-    const data = await res.json() as { crons?: VitalsAgentCron[] } | VitalsAgentCron[];
+    const data = (await res.json()) as
+      | { crons?: VitalsAgentCron[] }
+      | VitalsAgentCron[];
     if (Array.isArray(data)) return data;
-    if (data && typeof data === "object" && "crons" in data && Array.isArray(data.crons)) {
+    if (
+      data &&
+      typeof data === "object" &&
+      "crons" in data &&
+      Array.isArray(data.crons)
+    ) {
       return data.crons;
     }
     return data as VitalsAgentCron[];
