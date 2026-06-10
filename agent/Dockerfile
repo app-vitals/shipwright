@@ -24,14 +24,11 @@ FROM oven/bun:1.3 AS base
 #   - curl         — used by mise installer and gh keyring setup
 #   - ca-certificates — TLS trust for API calls
 #   - unzip        — needed by some mise-managed tools
-#   - nodejs npm   — required to install Claude Code via npm
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     curl \
     ca-certificates \
     unzip \
-    nodejs \
-    npm \
     && rm -rf /var/lib/apt/lists/*
 
 # Install gh CLI via official GitHub apt keyring
@@ -46,6 +43,11 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 # Install mise (polyglot runtime manager)
 RUN curl https://mise.run | sh && \
     ln -s /root/.local/bin/mise /usr/local/bin/mise
+
+# Install Node.js 20 LTS via mise (Debian bookworm's apt provides Node 18 which is EOL)
+# mise shims live in ~/.local/share/mise/shims — add to PATH so npm/node are found
+ENV PATH="/root/.local/share/mise/shims:${PATH}"
+RUN mise use --global node@20
 
 # ─── Build stage ──────────────────────────────────────────────────────────────
 
