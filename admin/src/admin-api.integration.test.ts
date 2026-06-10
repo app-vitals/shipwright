@@ -2,7 +2,7 @@
  * agent/src/admin-api.integration.test.ts
  * Integration tests for the admin CRUD API against a real SQLite DB.
  *
- * Requires DATABASE_URL_AGENT_TEST to be set; skips otherwise.
+ * Requires DATABASE_URL_ADMIN_TEST to be set; skips otherwise.
  *
  * Key assertions:
  * - POST /admin/api/agents/:id/envs encrypts values at rest
@@ -22,7 +22,7 @@ import { AgentTokenService } from "./agent-tokens.ts";
 import { AgentToolService } from "./agent-tools.ts";
 import { makeTokenCrypto } from "./token-crypto.ts";
 
-const TEST_DB = process.env.DATABASE_URL_AGENT_TEST;
+const TEST_DB = process.env.DATABASE_URL_ADMIN_TEST;
 const describeOrSkip = TEST_DB ? describe : describe.skip;
 
 const SESSION_SECRET = "test-admin-session-secret-32-bytes!";
