@@ -2123,7 +2123,7 @@ describe("formatRunErrorForSlack", () => {
     const err = new ClaudeRunError("overloaded", 529, "Overloaded", undefined);
     const out = formatRunErrorForSlack(err);
     expect(out).toContain("overloaded");
-    expect(out).toContain("status.anthropic.com");
+    expect(out).toContain("status.claude.com");
   });
 
   test("500 gets transient hiccup message", () => {
@@ -2135,7 +2135,7 @@ describe("formatRunErrorForSlack", () => {
     );
     const out = formatRunErrorForSlack(err);
     expect(out).toContain("500");
-    expect(out).toContain("status.anthropic.com");
+    expect(out).toContain("status.claude.com");
   });
 
   test("401 gets auth-failure message", () => {

@@ -231,19 +231,19 @@ function _classifyError(err: unknown): { lead: string; known: boolean } {
     }
     if (status === 529) {
       return {
-        lead: ":warning: Anthropic's API is overloaded. This is usually transient — try again in ~30s. Status: https://status.anthropic.com",
+        lead: ":warning: Anthropic's API is overloaded. This is usually transient — try again in ~30s. Status: https://status.claude.com",
         known: true,
       };
     }
     if (status === 500 || status === 502 || status === 503 || status === 504) {
       return {
-        lead: `:warning: Anthropic API hiccup (${status}). This is server-side and usually transient — please retry. Status: https://status.anthropic.com`,
+        lead: `:warning: Anthropic API hiccup (${status}). This is server-side and usually transient — please retry. Status: https://status.claude.com`,
         known: true,
       };
     }
     if (status === 401 || status === 403) {
       return {
-        lead: `:warning: Auth failure with Anthropic (${status}). The agent's API key may need to be refreshed.`,
+        lead: `:warning: Auth failure with Anthropic (${status}). The agent's API key or OAuth token may need to be refreshed.`,
         known: true,
       };
     }
