@@ -6,10 +6,15 @@
  * Runs unconditionally.
  */
 
-import { describe, it, expect, beforeEach } from "bun:test";
-import type { AccountsMigrationClient, VitalsAgentRecord, VitalsAgentConfig, VitalsAgentCron } from "./accounts-migration-client.ts";
-import type { ShipwrightAdminMigrationClient } from "./shipwright-admin-client.ts";
+import { beforeEach, describe, expect, it } from "bun:test";
+import type {
+  AccountsMigrationClient,
+  VitalsAgentConfig,
+  VitalsAgentCron,
+  VitalsAgentRecord,
+} from "./accounts-migration-client.ts";
 import { runMigration } from "./migrate.ts";
+import type { ShipwrightAdminMigrationClient } from "./shipwright-admin-client.ts";
 
 // ─── Fixture data ─────────────────────────────────────────────────────────────
 
@@ -64,9 +69,18 @@ class RecordedAccountsClient implements AccountsMigrationClient {
   }
 }
 
-interface UpsertEnvsCall { agentId: string; env: Record<string, string>; }
-interface AddToolCall { agentId: string; pattern: string; }
-interface CreateCronCall { agentId: string; cron: VitalsAgentCron; }
+interface UpsertEnvsCall {
+  agentId: string;
+  env: Record<string, string>;
+}
+interface AddToolCall {
+  agentId: string;
+  pattern: string;
+}
+interface CreateCronCall {
+  agentId: string;
+  cron: VitalsAgentCron;
+}
 
 class RecordedShipwrightAdminClient implements ShipwrightAdminMigrationClient {
   upsertEnvsCalls: UpsertEnvsCall[] = [];
@@ -78,7 +92,10 @@ class RecordedShipwrightAdminClient implements ShipwrightAdminMigrationClient {
 
   private cronStore: Map<string, VitalsAgentCron[]> = new Map();
 
-  async upsertEnvs(agentId: string, env: Record<string, string>): Promise<void> {
+  async upsertEnvs(
+    agentId: string,
+    env: Record<string, string>,
+  ): Promise<void> {
     if (this.failNextEnvsForAgent === agentId) {
       this.failNextEnvsForAgent = null;
       throw new Error(`Simulated upsertEnvs failure for agent ${agentId}`);

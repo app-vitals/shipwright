@@ -7,9 +7,9 @@
  */
 
 import { createHash, randomBytes } from "node:crypto";
+import type { AgentToken, PrismaClient } from "../prisma/client/index.js";
 import { type Clock, SystemClock } from "./clock.ts";
 import { UnprocessableEntityError } from "./errors.ts";
-import type { AgentToken, PrismaClient } from "../prisma/client/index.js";
 
 export type { AgentToken };
 
@@ -40,7 +40,9 @@ export class AgentTokenService {
     agentId: string,
     label?: string,
   ): Promise<{ token: AgentToken; rawToken: string }> {
-    const agent = await this.prisma.agent.findUnique({ where: { id: agentId } });
+    const agent = await this.prisma.agent.findUnique({
+      where: { id: agentId },
+    });
     if (!agent) {
       throw new UnprocessableEntityError("agentId not found");
     }

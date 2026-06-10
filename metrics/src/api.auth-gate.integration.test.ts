@@ -8,10 +8,10 @@
 
 import { describe, expect, test } from "bun:test";
 import { sign } from "hono/jwt";
+import { type MetricsDeps, createMetricsApp } from "./api.ts";
 import type { AccountsClient, UserRecord } from "./lib/accounts-client.ts";
 import { parseApiKeys } from "./lib/api-auth.ts";
 import { makeAccountsClientMock } from "./lib/test-helpers.ts";
-import { type MetricsDeps, createMetricsApp } from "./api.ts";
 import type { HogQLResult } from "./types.ts";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -66,14 +66,19 @@ function makeResult(columns: string[], rows: unknown[][]): HogQLResult {
 }
 
 const mockSummaryResult = makeResult(summaryColumns, [
-  [10, 2, 2.5, 3.0, 1.2, 5.0, 8, 6, 0.5, 4, 12, 3.1, 2.0, 1.5, 0.8, 1.0, 5, 4, 2, 3, 4, 1, 0, 1.5],
+  [
+    10, 2, 2.5, 3.0, 1.2, 5.0, 8, 6, 0.5, 4, 12, 3.1, 2.0, 1.5, 0.8, 1.0, 5, 4,
+    2, 3, 4, 1, 0, 1.5,
+  ],
 ]);
 
 function authHeader(key: string): { Authorization: string } {
   return { Authorization: `Bearer ${key}` };
 }
 
-function makeAccountsClientStub(role: "OWNER" | "MEMBER" | "AGENT"): AccountsClient {
+function makeAccountsClientStub(
+  role: "OWNER" | "MEMBER" | "AGENT",
+): AccountsClient {
   const user: UserRecord = {
     id: "user-123",
     email: "test@example.com",
@@ -82,7 +87,9 @@ function makeAccountsClientStub(role: "OWNER" | "MEMBER" | "AGENT"): AccountsCli
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
-  const notImpl = async (): Promise<never> => { throw new Error("not implemented"); };
+  const notImpl = async (): Promise<never> => {
+    throw new Error("not implemented");
+  };
   return {
     getUser: async (_id: string) => user,
     listUsers: async () => [],
@@ -145,7 +152,11 @@ describe("owner gate — off by default", () => {
       sessionSecret: TEST_SESSION_SECRET,
       // requireOwnerRole not set — defaults to off
     };
-    const app = createMetricsApp(apiKeys, makeAccountsClientStub("MEMBER"), deps);
+    const app = createMetricsApp(
+      apiKeys,
+      makeAccountsClientStub("MEMBER"),
+      deps,
+    );
 
     const res = await app.request("/metrics/summary", {
       headers: { Cookie: `vitals_session=${cookie}` },
@@ -160,7 +171,11 @@ describe("owner gate — off by default", () => {
       postHogClient: { query: async () => mockSummaryResult },
       sessionSecret: TEST_SESSION_SECRET,
     };
-    const app = createMetricsApp(apiKeys, makeAccountsClientStub("AGENT"), deps);
+    const app = createMetricsApp(
+      apiKeys,
+      makeAccountsClientStub("AGENT"),
+      deps,
+    );
 
     const res = await app.request("/metrics/summary", {
       headers: { Cookie: `vitals_session=${cookie}` },
@@ -175,7 +190,11 @@ describe("owner gate — off by default", () => {
       postHogClient: { query: async () => mockSummaryResult },
       sessionSecret: TEST_SESSION_SECRET,
     };
-    const app = createMetricsApp(apiKeys, makeAccountsClientStub("OWNER"), deps);
+    const app = createMetricsApp(
+      apiKeys,
+      makeAccountsClientStub("OWNER"),
+      deps,
+    );
 
     const res = await app.request("/metrics/summary", {
       headers: { Cookie: `vitals_session=${cookie}` },
@@ -209,7 +228,11 @@ describe("owner gate — on when requireOwnerRole: true", () => {
       sessionSecret: TEST_SESSION_SECRET,
       requireOwnerRole: true,
     };
-    const app = createMetricsApp(apiKeys, makeAccountsClientStub("MEMBER"), deps);
+    const app = createMetricsApp(
+      apiKeys,
+      makeAccountsClientStub("MEMBER"),
+      deps,
+    );
 
     const res = await app.request("/metrics/summary", {
       headers: { Cookie: `vitals_session=${cookie}` },
@@ -227,7 +250,11 @@ describe("owner gate — on when requireOwnerRole: true", () => {
       sessionSecret: TEST_SESSION_SECRET,
       requireOwnerRole: true,
     };
-    const app = createMetricsApp(apiKeys, makeAccountsClientStub("OWNER"), deps);
+    const app = createMetricsApp(
+      apiKeys,
+      makeAccountsClientStub("OWNER"),
+      deps,
+    );
 
     const res = await app.request("/metrics/summary", {
       headers: { Cookie: `vitals_session=${cookie}` },

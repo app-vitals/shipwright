@@ -16,7 +16,9 @@ export interface ShipwrightAdminMigrationClient {
 
 // ─── HTTP implementation ──────────────────────────────────────────────────────
 
-export class HttpShipwrightAdminClient implements ShipwrightAdminMigrationClient {
+export class HttpShipwrightAdminClient
+  implements ShipwrightAdminMigrationClient
+{
   constructor(
     private readonly baseUrl: string,
     private readonly sessionToken: string,
@@ -54,7 +56,7 @@ export class HttpShipwrightAdminClient implements ShipwrightAdminMigrationClient
         `listCrons(${agentId}) failed: ${res.status} ${await res.text()}`,
       );
     }
-    const data = await res.json() as { crons: VitalsAgentCron[] };
+    const data = (await res.json()) as { crons: VitalsAgentCron[] };
     return data.crons;
   }
 

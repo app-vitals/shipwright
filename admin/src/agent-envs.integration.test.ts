@@ -5,11 +5,11 @@
  * Requires DATABASE_URL_AGENT_TEST to be set; skips otherwise.
  */
 
-import { describe, it, expect, beforeEach } from "bun:test";
+import { beforeEach, describe, expect, it } from "bun:test";
 import { PrismaClient } from "../prisma/client/index.js";
 import { AgentEnvService } from "./agent-envs.ts";
-import { identityCrypto } from "./token-crypto.ts";
 import { UnprocessableEntityError } from "./errors.ts";
+import { identityCrypto } from "./token-crypto.ts";
 
 const TEST_DB = process.env.DATABASE_URL_AGENT_TEST;
 
@@ -160,7 +160,9 @@ describeOrSkip("AgentEnvService (integration)", () => {
   it("deleteKey() no-ops for a key that doesn't exist", async () => {
     const agentId = await createAgent(prisma);
     await service.upsert(agentId, { B: "2" });
-    await expect(service.deleteKey(agentId, "MISSING")).resolves.toBeUndefined();
+    await expect(
+      service.deleteKey(agentId, "MISSING"),
+    ).resolves.toBeUndefined();
   });
 
   it("listAll() returns entries for all agents", async () => {

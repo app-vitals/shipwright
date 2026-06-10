@@ -13,8 +13,8 @@
  */
 
 import { HttpAccountsMigrationClient } from "../src/accounts-migration-client.ts";
-import { HttpShipwrightAdminClient } from "../src/shipwright-admin-client.ts";
 import { runMigration } from "../src/migrate.ts";
+import { HttpShipwrightAdminClient } from "../src/shipwright-admin-client.ts";
 
 function requireEnv(name: string): string {
   const val = process.env[name];
@@ -48,7 +48,9 @@ console.log(`Migration complete: ${result.migrated} agent(s) migrated.`);
 if (result.failed.length > 0) {
   console.error(`\n${result.failed.length} failure(s):`);
   for (const failure of result.failed) {
-    console.error(`  agent=${failure.agentId} field=${failure.field}: ${failure.error}`);
+    console.error(
+      `  agent=${failure.agentId} field=${failure.field}: ${failure.error}`,
+    );
   }
   process.exit(1);
 }

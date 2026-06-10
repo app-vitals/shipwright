@@ -22,7 +22,11 @@ import pg from "pg";
 import { type Clock, SystemClock } from "../lib/clock.ts";
 import type { InsertableEvent } from "../local-store.ts";
 import type { MetricsProvider } from "../metrics-provider.ts";
-import { type SqlEventStore, type SqlStoredEvent, SqlEventStoreProvider } from "./sql-provider.ts";
+import {
+  type SqlEventStore,
+  SqlEventStoreProvider,
+  type SqlStoredEvent,
+} from "./sql-provider.ts";
 
 const { Pool } = pg;
 

@@ -140,7 +140,9 @@ export async function assertEngagementScope(
   accountsClient: AccountsClient,
 ): Promise<void> {
   if (caller.scope === "*") return;
-  const engagement = await accountsClient.getEngagement(engagementId) as { clientId: string };
+  const engagement = (await accountsClient.getEngagement(engagementId)) as {
+    clientId: string;
+  };
   if (engagement.clientId !== caller.scope) {
     throw new ForbiddenError("Not authorized for this engagement");
   }
@@ -156,9 +158,9 @@ export async function getEngagementIdsForScope(
   accountsClient: AccountsClient,
 ): Promise<string[] | undefined> {
   if (caller.scope === "*") return undefined;
-  const engagements = await accountsClient.listEngagements({
+  const engagements = (await accountsClient.listEngagements({
     clientId: caller.scope,
-  }) as Array<{ id: string }>;
+  })) as Array<{ id: string }>;
   return engagements.map((e) => e.id);
 }
 

@@ -13,11 +13,11 @@ import type { App } from "@slack/bolt";
 import type { WebAPIPlatformError } from "@slack/web-api";
 import type { AnalyticsEvent } from "./analytics.ts";
 import { ClaudeRunError, ClaudeTimeoutError } from "./claude.ts";
+import type { TokenUsage } from "./claude.ts";
 import { markdownToBlocks, markdownToSlack } from "./format.ts";
 import { type Marker, parseMarkers } from "./markers.ts";
 import { forwardTokenUsage } from "./posthog.ts";
 import { threadKey as defaultThreadKey } from "./sessions.ts";
-import type { TokenUsage } from "./claude.ts";
 import type { VoiceConfig } from "./voice.ts";
 import { synthesizeSpeech, transcribeAudio } from "./voice.ts";
 
@@ -53,14 +53,18 @@ export async function downloadFile(
 
   let resp: Response;
   try {
-    resp = await fetch(url, { headers: { Authorization: `Bearer ${botToken}` } });
+    resp = await fetch(url, {
+      headers: { Authorization: `Bearer ${botToken}` },
+    });
   } catch (err) {
     console.warn(`[slack] file fetch error for ${file.name}:`, err);
     return null;
   }
 
   if (!resp.ok) {
-    console.warn(`[slack] file download failed for ${file.name}: ${resp.status}`);
+    console.warn(
+      `[slack] file download failed for ${file.name}: ${resp.status}`,
+    );
     return null;
   }
 
@@ -90,7 +94,10 @@ const defaultAppFactory: AppFactory = (cfg) =>
 export type Tracker = (event: Omit<AnalyticsEvent, "timestamp">) => void;
 const noopTracker: Tracker = () => {};
 
-type FileDownloaderFn = (file: SlackFile, botToken: string) => Promise<string | null>;
+type FileDownloaderFn = (
+  file: SlackFile,
+  botToken: string,
+) => Promise<string | null>;
 
 type ConversationsRepliesFn = (
   // biome-ignore lint/suspicious/noExplicitAny: Bolt client type is complex
@@ -143,7 +150,9 @@ export async function dispatchMarkers(
         for (const emoji of marker.emojis) {
           await client.reactions
             .add({ channel, timestamp: postedTs, name: emoji })
-            .catch((err: unknown) => console.warn("[markers] react failed:", err));
+            .catch((err: unknown) =>
+              console.warn("[markers] react failed:", err),
+            );
         }
       }
     } else if (marker.type === "upload") {
@@ -160,7 +169,9 @@ export async function dispatchMarkers(
             file: readFileSync(absPath),
             filename: absPath.split("/").pop() ?? "file",
           })
-          .catch((err: unknown) => console.warn("[markers] upload failed:", err));
+          .catch((err: unknown) =>
+            console.warn("[markers] upload failed:", err),
+          );
       } else {
         console.warn(`[markers] upload: file not found: ${absPath}`);
       }
@@ -185,7 +196,9 @@ export async function dispatchMarkers(
               console.warn("[markers] speak upload failed:", err),
             );
         } else {
-          console.warn("[markers] speak synthesis returned null — no audio uploaded");
+          console.warn(
+            "[markers] speak synthesis returned null — no audio uploaded",
+          );
         }
       } catch (err) {
         console.warn("[markers] speak synthesis failed:", err);
@@ -281,7 +294,9 @@ async function buildPromptWithFiles(
           try {
             const transcript = await transcribeAudioFn(filePath, voiceConfig);
             fileParts.push(
-              transcript ? `[voice transcript: ${transcript}]` : `[file: ${filePath}]`,
+              transcript
+                ? `[voice transcript: ${transcript}]`
+                : `[file: ${filePath}]`,
             );
           } catch (err) {
             console.warn("[voice] transcription error:", err);
@@ -557,7 +572,10 @@ export function createSlackApp(
             });
           }
         } else {
-          sayResult = await say({ text: formatter(cleaned), thread_ts: replyTs });
+          sayResult = await say({
+            text: formatter(cleaned),
+            thread_ts: replyTs,
+          });
         }
         postedMentionTs = (sayResult as { ts?: string } | undefined)?.ts;
       } else if (!isSilent) {
@@ -638,7 +656,10 @@ export function createSlackApp(
                   text: blocks.text || formatter(cleaned),
                 })
                 .catch((err2: unknown) => {
-                  console.warn("[slack] reaction_added: postMessage failed:", err2);
+                  console.warn(
+                    "[slack] reaction_added: postMessage failed:",
+                    err2,
+                  );
                   return undefined;
                 });
             } else {

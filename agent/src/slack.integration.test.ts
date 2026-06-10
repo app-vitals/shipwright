@@ -591,7 +591,10 @@ describe("message handler — channel thread routing", () => {
 
   test("channel thread: [silent] suppresses say()", async () => {
     mockRunClaude.mockClear();
-    mockRunClaude.mockResolvedValueOnce({ result: "text [silent]", sessionId: "s1" });
+    mockRunClaude.mockResolvedValueOnce({
+      result: "text [silent]",
+      sessionId: "s1",
+    });
     createSlackApp({ getSessionFn: mock(() => "sess-xyz") });
     const client = makeMockClient();
     const say = makeSay();
@@ -1552,7 +1555,10 @@ describe("createSlackApp — voiceConfig option set vs absent", () => {
 
   test("voiceConfig absent — [speak:text] does not upload or error (no synthesizeFn)", async () => {
     createSlackApp({ synthesizeSpeechFn: async () => null });
-    mockRunClaude.mockResolvedValueOnce({ result: "[speak:hello]", sessionId: "sess-v1" });
+    mockRunClaude.mockResolvedValueOnce({
+      result: "[speak:hello]",
+      sessionId: "sess-v1",
+    });
     const client = makeMockClient();
     const say = makeSay();
     await capturedMessageHandler?.({
@@ -1568,8 +1574,14 @@ describe("createSlackApp — voiceConfig option set vs absent", () => {
     const outPath = join(tmpdir(), `test-vc-present-${Date.now()}.mp3`);
     writeFileSync(outPath, Buffer.from("audio"));
     const mockSynthesize = mock(async () => outPath);
-    createSlackApp({ voiceConfig: testVoiceConfig, synthesizeSpeechFn: mockSynthesize });
-    mockRunClaude.mockResolvedValueOnce({ result: "[speak:test]", sessionId: "sess-v2" });
+    createSlackApp({
+      voiceConfig: testVoiceConfig,
+      synthesizeSpeechFn: mockSynthesize,
+    });
+    mockRunClaude.mockResolvedValueOnce({
+      result: "[speak:test]",
+      sessionId: "sess-v2",
+    });
     const client = makeMockClient();
     const say = makeSay();
     await capturedMessageHandler?.({
@@ -1991,7 +2003,8 @@ describe("invalid_blocks retry — falls back to formatter(cleaned) when blocks.
     });
     createSlackApp({
       // biome-ignore lint/suspicious/noExplicitAny: minimal test stub for SlackBlock
-      blocksConverter: (_text: string) => ({ text: "", blocks: [{ type: "section" }] }) as any,
+      blocksConverter: (_text: string) =>
+        ({ text: "", blocks: [{ type: "section" }] }) as any,
     });
     const client = makeMockClient();
     const say = mock(async (_args: unknown) => ({ ts: "r.empty.1" }));
@@ -2023,7 +2036,8 @@ describe("invalid_blocks retry — falls back to formatter(cleaned) when blocks.
     });
     createSlackApp({
       // biome-ignore lint/suspicious/noExplicitAny: minimal test stub for SlackBlock
-      blocksConverter: (_text: string) => ({ text: "", blocks: [{ type: "section" }] }) as any,
+      blocksConverter: (_text: string) =>
+        ({ text: "", blocks: [{ type: "section" }] }) as any,
     });
     const client = makeMockClient();
     const say = mock(async (_args: unknown) => ({ ts: "r.empty.2" }));
@@ -2053,7 +2067,8 @@ describe("invalid_blocks retry — falls back to formatter(cleaned) when blocks.
     });
     createSlackApp({
       // biome-ignore lint/suspicious/noExplicitAny: minimal test stub for SlackBlock
-      blocksConverter: (_text: string) => ({ text: "", blocks: [{ type: "section" }] }) as any,
+      blocksConverter: (_text: string) =>
+        ({ text: "", blocks: [{ type: "section" }] }) as any,
     });
     const client = makeMockClient();
     (client.chat.postMessage as ReturnType<typeof mock>).mockRejectedValueOnce(
@@ -2171,7 +2186,12 @@ describe("formatRunErrorForSlack", () => {
   });
 
   test("ClaudeRunError with undefined sessionId handled gracefully", () => {
-    const err = new ClaudeRunError("msg", 500, "Internal server error", undefined);
+    const err = new ClaudeRunError(
+      "msg",
+      500,
+      "Internal server error",
+      undefined,
+    );
     const out = formatRunErrorForSlack(err);
     expect(out).toContain("500");
     expect(() => formatRunErrorForSlack(err)).not.toThrow();
@@ -2475,10 +2495,11 @@ describe("dispatchMarkers — direct", () => {
   });
 
   test("adds react emoji for react markers", async () => {
-    await dispatchMarkers(
-      [{ type: "react", emojis: ["thumbsup"] }],
-      { client, channel: "C123", postedTs: "1.0" },
-    );
+    await dispatchMarkers([{ type: "react", emojis: ["thumbsup"] }], {
+      client,
+      channel: "C123",
+      postedTs: "1.0",
+    });
 
     expect(client.reactions.add).toHaveBeenCalledWith({
       channel: "C123",
@@ -2488,18 +2509,15 @@ describe("dispatchMarkers — direct", () => {
   });
 
   test("silent marker is skipped gracefully", async () => {
-    await dispatchMarkers(
-      [{ type: "silent" }],
-      { client, channel: "C123" },
-    );
+    await dispatchMarkers([{ type: "silent" }], { client, channel: "C123" });
     expect(client.reactions.add).not.toHaveBeenCalled();
   });
 
   test("upload marker — skips when file does not exist", async () => {
-    await dispatchMarkers(
-      [{ type: "upload", path: "/nonexistent/file.txt" }],
-      { client, channel: "C123" },
-    );
+    await dispatchMarkers([{ type: "upload", path: "/nonexistent/file.txt" }], {
+      client,
+      channel: "C123",
+    });
     expect(client.files.uploadV2).not.toHaveBeenCalled();
   });
 
@@ -2507,10 +2525,10 @@ describe("dispatchMarkers — direct", () => {
     const tmpPath = join(tmpdir(), `test-dispatch-upload-${Date.now()}.txt`);
     writeFileSync(tmpPath, "dispatch upload content");
 
-    await dispatchMarkers(
-      [{ type: "upload", path: tmpPath }],
-      { client, channel: "C456" },
-    );
+    await dispatchMarkers([{ type: "upload", path: tmpPath }], {
+      client,
+      channel: "C456",
+    });
 
     expect(client.files.uploadV2).toHaveBeenCalledTimes(1);
     const uploadArgs = (
@@ -2526,15 +2544,12 @@ describe("dispatchMarkers — direct", () => {
     writeFileSync(outPath, Buffer.from("audio data"));
     const mockSynthesize = mock(async () => outPath);
 
-    await dispatchMarkers(
-      [{ type: "speak", text: "Hello there" }],
-      {
-        client,
-        channel: "D1",
-        synthesizeSpeechFn: mockSynthesize,
-        voiceConfig: {},
-      },
-    );
+    await dispatchMarkers([{ type: "speak", text: "Hello there" }], {
+      client,
+      channel: "D1",
+      synthesizeSpeechFn: mockSynthesize,
+      voiceConfig: {},
+    });
 
     expect(mockSynthesize).toHaveBeenCalledWith("Hello there", {});
     expect(client.files.uploadV2).toHaveBeenCalledTimes(1);
@@ -2544,25 +2559,22 @@ describe("dispatchMarkers — direct", () => {
   test("speak marker — skips upload when synthesis returns null", async () => {
     const mockSynthesize = mock(async () => null);
 
-    await dispatchMarkers(
-      [{ type: "speak", text: "Hello" }],
-      {
-        client,
-        channel: "D1",
-        synthesizeSpeechFn: mockSynthesize,
-        voiceConfig: {},
-      },
-    );
+    await dispatchMarkers([{ type: "speak", text: "Hello" }], {
+      client,
+      channel: "D1",
+      synthesizeSpeechFn: mockSynthesize,
+      voiceConfig: {},
+    });
 
     expect(client.files.uploadV2).not.toHaveBeenCalled();
   });
 
   test("speak marker — skipped gracefully when synthesizeSpeechFn is absent", async () => {
     await expect(
-      dispatchMarkers(
-        [{ type: "speak", text: "Hello" }],
-        { client, channel: "D1" },
-      ),
+      dispatchMarkers([{ type: "speak", text: "Hello" }], {
+        client,
+        channel: "D1",
+      }),
     ).resolves.toBeUndefined();
 
     expect(client.files.uploadV2).not.toHaveBeenCalled();
@@ -2583,10 +2595,10 @@ describe("dispatchMarkers — direct", () => {
   });
 
   test("react marker without postedTs does not call reactions.add", async () => {
-    await dispatchMarkers(
-      [{ type: "react", emojis: ["thumbsup"] }],
-      { client, channel: "C1" },
-    );
+    await dispatchMarkers([{ type: "react", emojis: ["thumbsup"] }], {
+      client,
+      channel: "C1",
+    });
     expect(client.reactions.add).not.toHaveBeenCalled();
   });
 });

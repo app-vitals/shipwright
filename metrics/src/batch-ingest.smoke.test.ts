@@ -5,9 +5,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { type MetricsDeps, createMetricsApp } from "./api.ts";
 import { parseApiKeys } from "./lib/api-auth.ts";
 import { makeAccountsClientMock } from "./lib/test-helpers.ts";
-import { type MetricsDeps, createMetricsApp } from "./api.ts";
 import { createLocalEventStore } from "./local-store.ts";
 
 const apiKeys = parseApiKeys("admin:sk_admin:*");

@@ -6,8 +6,13 @@
  * No mock.module(), no global overrides, no real DB or filesystem I/O.
  */
 
-import { describe, it, expect, beforeEach } from "bun:test";
-import { DEFAULT_TOOLS, parseEnvFile, seedDevAgent, type SeedDeps } from "./seed-dev-agent.ts";
+import { beforeEach, describe, expect, it } from "bun:test";
+import {
+  DEFAULT_TOOLS,
+  type SeedDeps,
+  parseEnvFile,
+  seedDevAgent,
+} from "./seed-dev-agent.ts";
 
 // ─── Prisma double factory ────────────────────────────────────────────────────
 
@@ -96,8 +101,12 @@ describe("seedDevAgent", () => {
     // Agent upsert
     expect(double.agentUpserts).toHaveLength(1);
     expect(double.agentUpserts[0].where).toEqual({ id: "dev-agent" });
-    expect((double.agentUpserts[0].create as { id: string }).id).toBe("dev-agent");
-    expect((double.agentUpserts[0].create as { name: string }).name).toBe("Dev Agent");
+    expect((double.agentUpserts[0].create as { id: string }).id).toBe(
+      "dev-agent",
+    );
+    expect((double.agentUpserts[0].create as { name: string }).name).toBe(
+      "Dev Agent",
+    );
 
     // AgentEnv upserts — CLAUDE_CODE_OAUTH_TOKEN + GH_TOKEN
     expect(double.agentEnvUpserts.length).toBeGreaterThanOrEqual(2);
@@ -109,13 +118,17 @@ describe("seedDevAgent", () => {
 
     // AgentPlugin upsert — "shipwright"
     expect(double.agentPluginUpserts).toHaveLength(1);
-    const pluginCreate = double.agentPluginUpserts[0].create as { name: string };
+    const pluginCreate = double.agentPluginUpserts[0].create as {
+      name: string;
+    };
     expect(pluginCreate.name).toBe("shipwright");
 
     // AgentTool upserts — all DEFAULT_TOOLS
     expect(double.agentToolUpserts).toHaveLength(DEFAULT_TOOLS.length);
     const toolPatterns = double.agentToolUpserts.map(
-      (u) => (u.where as { agentId_pattern: { pattern: string } }).agentId_pattern.pattern,
+      (u) =>
+        (u.where as { agentId_pattern: { pattern: string } }).agentId_pattern
+          .pattern,
     );
     for (const tool of DEFAULT_TOOLS) {
       expect(toolPatterns).toContain(tool);
@@ -263,7 +276,11 @@ describe("parseEnvFile", () => {
 
   it("handles mixed \\n and \\r\\n line endings", () => {
     const content = "FOO=bar\r\nBAZ=qux\nQUX=quux\r\n";
-    expect(parseEnvFile(content)).toEqual({ FOO: "bar", BAZ: "qux", QUX: "quux" });
+    expect(parseEnvFile(content)).toEqual({
+      FOO: "bar",
+      BAZ: "qux",
+      QUX: "quux",
+    });
   });
 
   it("ignores blank lines", () => {
@@ -271,7 +288,9 @@ describe("parseEnvFile", () => {
   });
 
   it("ignores comment lines starting with #", () => {
-    expect(parseEnvFile("# comment\nFOO=bar\n# another comment")).toEqual({ FOO: "bar" });
+    expect(parseEnvFile("# comment\nFOO=bar\n# another comment")).toEqual({
+      FOO: "bar",
+    });
   });
 
   it("ignores lines without = separator", () => {

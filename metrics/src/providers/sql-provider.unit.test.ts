@@ -68,7 +68,9 @@ beforeEach(() => {
     started_at: "2026-06-03T06:00:00.000Z",
     ts: "2026-06-03T12:00:00.000Z",
   });
-  seed("shipwright_task_blocked", "2026-06-02T15:00:00.000Z", { task_id: "QS-1.3" });
+  seed("shipwright_task_blocked", "2026-06-02T15:00:00.000Z", {
+    task_id: "QS-1.3",
+  });
   seed("shipwright_ci_result", "2026-06-02T10:00:00.000Z", {
     task_id: "QS-1.1",
     passed_first_try: true,
@@ -100,8 +102,12 @@ beforeEach(() => {
     verdict: "REVISE",
     findings: 3,
   });
-  seed("shipwright_task_started", "2026-06-02T08:00:00.000Z", { task_id: "QS-1.1" });
-  seed("shipwright_task_started", "2026-06-03T06:00:00.000Z", { task_id: "QS-1.2" });
+  seed("shipwright_task_started", "2026-06-02T08:00:00.000Z", {
+    task_id: "QS-1.1",
+  });
+  seed("shipwright_task_started", "2026-06-03T06:00:00.000Z", {
+    task_id: "QS-1.2",
+  });
   seed("agent_token_usage", "2026-06-02T09:00:00.000Z", {
     input_tokens: 1000,
     output_tokens: 500,
@@ -155,7 +161,10 @@ describe("SqlEventStoreProvider.trends", () => {
     const table = await q({ kind: "trends", range: RANGE, groupBy: "day" });
     const all = rows(table);
     expect(all.length).toBeGreaterThanOrEqual(2);
-    const total = all.reduce((acc, x) => acc + Number(x.tasks_completed ?? 0), 0);
+    const total = all.reduce(
+      (acc, x) => acc + Number(x.tasks_completed ?? 0),
+      0,
+    );
     expect(total).toBe(2);
   });
 });

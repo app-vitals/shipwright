@@ -4,7 +4,7 @@
  * Unit tests for getArg() and hasFlag() CLI parsing helpers.
  */
 
-import { describe, it, expect } from "bun:test";
+import { describe, expect, it } from "bun:test";
 import { getArg, hasFlag } from "./cli-args.ts";
 
 describe("getArg", () => {
@@ -29,7 +29,9 @@ describe("getArg", () => {
   });
 
   it("handles --name=value with equals sign in the value", () => {
-    expect(getArg("--env-file", ["--env-file=path/to/file=1"])).toBe("path/to/file=1");
+    expect(getArg("--env-file", ["--env-file=path/to/file=1"])).toBe(
+      "path/to/file=1",
+    );
   });
 
   it("does not confuse a similar prefix", () => {
@@ -37,7 +39,9 @@ describe("getArg", () => {
   });
 
   it("returns the first match when the flag appears multiple times", () => {
-    expect(getArg("--env-file", ["--env-file=first", "--env-file=second"])).toBe("first");
+    expect(
+      getArg("--env-file", ["--env-file=first", "--env-file=second"]),
+    ).toBe("first");
   });
 });
 

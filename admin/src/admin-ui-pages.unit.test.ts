@@ -224,19 +224,8 @@ describe("renderAgentsPage", () => {
 // ─── renderAgentDetailPage — overview ────────────────────────────────────────
 
 describe("renderAgentDetailPage — overview", () => {
-  function render(
-    opts?: Parameters<typeof renderAgentDetailPage>[7],
-  ): string {
-    return renderAgentDetailPage(
-      AGENT,
-      {},
-      [],
-      [],
-      [],
-      [],
-      USER_NAME,
-      opts,
-    );
+  function render(opts?: Parameters<typeof renderAgentDetailPage>[7]): string {
+    return renderAgentDetailPage(AGENT, {}, [], [], [], [], USER_NAME, opts);
   }
 
   test("returns a valid HTML document", () => {
@@ -256,15 +245,7 @@ describe("renderAgentDetailPage — overview", () => {
       ...AGENT,
       name: '<script>alert("xss")</script>',
     };
-    const html = renderAgentDetailPage(
-      xssAgent,
-      {},
-      [],
-      [],
-      [],
-      [],
-      USER_NAME,
-    );
+    const html = renderAgentDetailPage(xssAgent, {}, [], [], [], [], USER_NAME);
     expect(html).not.toContain("<script>");
     expect(html).toContain("&lt;script&gt;");
   });
@@ -281,7 +262,7 @@ describe("renderAgentDetailPage — overview", () => {
   });
 
   test("XSS: error message is escaped", () => {
-    const html = render({ error: '<script>bad()</script>' });
+    const html = render({ error: "<script>bad()</script>" });
     expect(html).not.toContain("<script>");
     expect(html).toContain("&lt;script&gt;");
   });
@@ -313,15 +294,7 @@ describe("renderAgentDetailPage — overview", () => {
 
 describe("renderAgentDetailPage — env vars", () => {
   function render(envVars: Record<string, string>): string {
-    return renderAgentDetailPage(
-      AGENT,
-      envVars,
-      [],
-      [],
-      [],
-      [],
-      USER_NAME,
-    );
+    return renderAgentDetailPage(AGENT, envVars, [], [], [], [], USER_NAME);
   }
 
   test("empty envVars shows 'No env vars set.' empty state", () => {
@@ -350,9 +323,7 @@ describe("renderAgentDetailPage — env vars", () => {
 
   test("delete form action points to /admin/agents/{agentId}/envs/delete", () => {
     const html = render(ENV_VARS);
-    expect(html).toContain(
-      `action="/admin/agents/${AGENT.id}/envs/delete"`,
-    );
+    expect(html).toContain(`action="/admin/agents/${AGENT.id}/envs/delete"`);
   });
 
   test("delete form contains hidden key input", () => {
@@ -367,13 +338,13 @@ describe("renderAgentDetailPage — env vars", () => {
   });
 
   test("XSS: env key is escaped", () => {
-    const html = render({ '<script>': "val" });
+    const html = render({ "<script>": "val" });
     expect(html).not.toContain("<script>");
     expect(html).toContain("&lt;script&gt;");
   });
 
   test("XSS: env value is masked — raw value never reaches HTML", () => {
-    const html = render({ SAFE_KEY: '<img src=x onerror=alert(1)>' });
+    const html = render({ SAFE_KEY: "<img src=x onerror=alert(1)>" });
     expect(html).not.toContain("<img src=x");
     expect(html).not.toContain("onerror=alert");
     expect(html).toContain("••••••••");
@@ -384,15 +355,7 @@ describe("renderAgentDetailPage — env vars", () => {
 
 describe("renderAgentDetailPage — crons", () => {
   function render(crons: CronJobItem[]): string {
-    return renderAgentDetailPage(
-      AGENT,
-      {},
-      crons,
-      [],
-      [],
-      [],
-      USER_NAME,
-    );
+    return renderAgentDetailPage(AGENT, {}, crons, [], [], [], USER_NAME);
   }
 
   test("empty crons: 'No system crons configured.' shown", () => {
@@ -469,7 +432,7 @@ describe("renderAgentDetailPage — crons", () => {
   test("XSS: cron schedule is escaped", () => {
     const xssCron: CronJobItem = {
       ...CUSTOM_CRON,
-      schedule: '<script>bad()</script>',
+      schedule: "<script>bad()</script>",
     };
     const html = render([xssCron]);
     expect(html).not.toContain("<script>");
@@ -479,7 +442,7 @@ describe("renderAgentDetailPage — crons", () => {
   test("XSS: cron prompt is escaped", () => {
     const xssCron: CronJobItem = {
       ...CUSTOM_CRON,
-      prompt: '<img src=x onerror=bad()>',
+      prompt: "<img src=x onerror=bad()>",
     };
     const html = render([xssCron]);
     expect(html).not.toContain("<img src=x");
@@ -491,15 +454,7 @@ describe("renderAgentDetailPage — crons", () => {
 
 describe("renderAgentDetailPage — tools", () => {
   function render(tools: ToolItem[]): string {
-    return renderAgentDetailPage(
-      AGENT,
-      {},
-      [],
-      tools,
-      [],
-      [],
-      USER_NAME,
-    );
+    return renderAgentDetailPage(AGENT, {}, [], tools, [], [], USER_NAME);
   }
 
   test("empty tools: 'No tools configured.' empty state", () => {
@@ -546,7 +501,7 @@ describe("renderAgentDetailPage — tools", () => {
   test("XSS: tool pattern is escaped", () => {
     const xssTool: ToolItem = {
       ...TOOL_ENABLED,
-      pattern: '<script>alert(1)</script>',
+      pattern: "<script>alert(1)</script>",
     };
     const html = render([xssTool]);
     expect(html).not.toContain("<script>");
@@ -558,15 +513,7 @@ describe("renderAgentDetailPage — tools", () => {
 
 describe("renderAgentDetailPage — tokens", () => {
   function render(tokens: TokenItem[]): string {
-    return renderAgentDetailPage(
-      AGENT,
-      {},
-      [],
-      [],
-      tokens,
-      [],
-      USER_NAME,
-    );
+    return renderAgentDetailPage(AGENT, {}, [], [], tokens, [], USER_NAME);
   }
 
   test("empty tokens: 'No tokens created.' empty state", () => {
@@ -627,7 +574,7 @@ describe("renderAgentDetailPage — tokens", () => {
   test("XSS: token label is escaped", () => {
     const xssToken: TokenItem = {
       ...TOKEN_ACTIVE,
-      label: '<script>steal()</script>',
+      label: "<script>steal()</script>",
     };
     const html = render([xssToken]);
     expect(html).not.toContain("<script>");
@@ -639,15 +586,7 @@ describe("renderAgentDetailPage — tokens", () => {
 
 describe("renderAgentDetailPage — plugins", () => {
   function render(plugins: PluginItem[]): string {
-    return renderAgentDetailPage(
-      AGENT,
-      {},
-      [],
-      [],
-      [],
-      plugins,
-      USER_NAME,
-    );
+    return renderAgentDetailPage(AGENT, {}, [], [], [], plugins, USER_NAME);
   }
 
   test("empty plugins: 'No plugins installed.' empty state", () => {
@@ -685,7 +624,7 @@ describe("renderAgentDetailPage — plugins", () => {
   test("XSS: plugin name is escaped", () => {
     const xssPlugin: PluginItem = {
       ...PLUGIN_ENABLED,
-      name: '<script>bad()</script>',
+      name: "<script>bad()</script>",
     };
     const html = render([xssPlugin]);
     expect(html).not.toContain("<script>");
@@ -750,7 +689,7 @@ describe("renderProvisionStartPage", () => {
 
   test("XSS: error is escaped", () => {
     const html = renderProvisionStartPage(USER_NAME, {
-      error: '<script>xss()</script>',
+      error: "<script>xss()</script>",
     });
     expect(html).not.toContain("<script>");
     expect(html).toContain("&lt;script&gt;");
@@ -815,7 +754,7 @@ describe("renderProvisionPasteForm", () => {
 
   test("XSS: error is escaped", () => {
     const html = renderProvisionPasteForm(USER_NAME, {
-      error: '<script>bad()</script>',
+      error: "<script>bad()</script>",
     });
     expect(html).not.toContain("<script>");
     expect(html).toContain("&lt;script&gt;");
@@ -883,7 +822,7 @@ describe("renderProvisionCompletePage", () => {
   test("XSS: error message is escaped", () => {
     const html = renderProvisionCompletePage(USER_NAME, {
       success: false,
-      error: '<script>steal()</script>',
+      error: "<script>steal()</script>",
     });
     expect(html).not.toContain("<script>");
     expect(html).toContain("&lt;script&gt;");

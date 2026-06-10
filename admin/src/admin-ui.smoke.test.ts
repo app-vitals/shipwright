@@ -8,9 +8,13 @@
 
 import { beforeAll, describe, expect, it } from "bun:test";
 import { sign } from "hono/jwt";
-import type { GoogleAuthClient, GoogleTokenResponse, GoogleUserInfo } from "./google-auth-client.ts";
 import { createAdminUIApp } from "./admin-ui.ts";
 import type { AdminUIDeps } from "./admin-ui.ts";
+import type {
+  GoogleAuthClient,
+  GoogleTokenResponse,
+  GoogleUserInfo,
+} from "./google-auth-client.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -247,11 +251,18 @@ describe("admin UI — GET /admin/auth/callback", () => {
     queryOverrides?: Record<string, string>,
     returnTo?: string,
   ): Request {
-    const params = new URLSearchParams({ state: nonce, code: "auth-code-123", ...queryOverrides });
-    const oauthState = encodeURIComponent(JSON.stringify({ nonce, returnTo }));
-    return new Request(`https://example.com/admin/auth/callback?${params.toString()}`, {
-      headers: { Cookie: `oauth_state=${oauthState}` },
+    const params = new URLSearchParams({
+      state: nonce,
+      code: "auth-code-123",
+      ...queryOverrides,
     });
+    const oauthState = encodeURIComponent(JSON.stringify({ nonce, returnTo }));
+    return new Request(
+      `https://example.com/admin/auth/callback?${params.toString()}`,
+      {
+        headers: { Cookie: `oauth_state=${oauthState}` },
+      },
+    );
   }
 
   it("happy path — valid state, code exchanged, email in allowlist → sets session cookie and redirects to /admin/agents", async () => {
@@ -268,7 +279,9 @@ describe("admin UI — GET /admin/auth/callback", () => {
   it("happy path with returnTo — redirects to the stored returnTo path after auth", async () => {
     const nonce = "test-nonce-abc";
     const app = createAdminUIApp(makeMockDeps());
-    const res = await app.request(callbackRequest(nonce, {}, "/admin/agents/agent-test-123"));
+    const res = await app.request(
+      callbackRequest(nonce, {}, "/admin/agents/agent-test-123"),
+    );
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe("/admin/agents/agent-test-123");
     const cookie = res.headers.get("Set-Cookie") ?? "";
@@ -277,11 +290,16 @@ describe("admin UI — GET /admin/auth/callback", () => {
 
   it("state mismatch → redirects to /admin/login?error=invalid_state", async () => {
     const app = createAdminUIApp(makeMockDeps());
-    const oauthState = encodeURIComponent(JSON.stringify({ nonce: "stored-nonce" }));
+    const oauthState = encodeURIComponent(
+      JSON.stringify({ nonce: "stored-nonce" }),
+    );
     const res = await app.request(
-      new Request("https://example.com/admin/auth/callback?state=wrong-state&code=auth-code", {
-        headers: { Cookie: `oauth_state=${oauthState}` },
-      }),
+      new Request(
+        "https://example.com/admin/auth/callback?state=wrong-state&code=auth-code",
+        {
+          headers: { Cookie: `oauth_state=${oauthState}` },
+        },
+      ),
     );
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toContain("error=invalid_state");
@@ -290,7 +308,9 @@ describe("admin UI — GET /admin/auth/callback", () => {
   it("missing oauth_state cookie → redirects to /admin/login?error=invalid_state", async () => {
     const app = createAdminUIApp(makeMockDeps());
     const res = await app.request(
-      new Request("https://example.com/admin/auth/callback?state=some-state&code=code"),
+      new Request(
+        "https://example.com/admin/auth/callback?state=some-state&code=code",
+      ),
     );
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toContain("error=invalid_state");
@@ -309,9 +329,12 @@ describe("admin UI — GET /admin/auth/callback", () => {
     const app = createAdminUIApp(makeMockDeps());
     const oauthState = encodeURIComponent(JSON.stringify({ nonce }));
     const res = await app.request(
-      new Request(`https://example.com/admin/auth/callback?error=access_denied&state=${nonce}`, {
-        headers: { Cookie: `oauth_state=${oauthState}` },
-      }),
+      new Request(
+        `https://example.com/admin/auth/callback?error=access_denied&state=${nonce}`,
+        {
+          headers: { Cookie: `oauth_state=${oauthState}` },
+        },
+      ),
     );
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toContain("error=access_denied");
@@ -322,7 +345,8 @@ describe("admin UI — GET /admin/auth/callback", () => {
     const app = createAdminUIApp(
       makeMockDeps({
         googleClient: makeGoogleClient({
-          exchangeCode: () => Promise.reject(new Error("token exchange failed")),
+          exchangeCode: () =>
+            Promise.reject(new Error("token exchange failed")),
         }),
       }),
     );
@@ -573,7 +597,9 @@ describe("admin UI — cron job mutation routes", () => {
     expect(res.status).toBe(302);
     const location = res.headers.get("Location") ?? "";
     expect(location).toContain("error=");
-    expect(decodeURIComponent(location)).toContain("system crons cannot be deleted");
+    expect(decodeURIComponent(location)).toContain(
+      "system crons cannot be deleted",
+    );
   });
 
   it("POST /admin/agents/:id/crons/:cronId/toggle redirects to agent detail", async () => {

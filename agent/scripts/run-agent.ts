@@ -12,11 +12,11 @@
  * Env: Bun auto-loads .env from CWD — no dotenv dep needed.
  */
 
+import { spawnSync } from "node:child_process";
 import * as os from "node:os";
 import * as path from "node:path";
-import { spawnSync } from "node:child_process";
-import { getArg, hasFlag } from "./cli-args.ts";
 import { HttpShipwrightConfigClient } from "../src/shipwright-config-client.ts";
+import { getArg, hasFlag } from "./cli-args.ts";
 
 // ─── Args ──────────────────────────────────────────────────────────────────────
 
@@ -26,7 +26,9 @@ function requireArg(name: string): string {
   const val = getArg(name, argv);
   if (!val) {
     console.error(`Error: ${name} is required`);
-    console.error("Usage: bun run agent/scripts/run-agent.ts --agent-id <id> [--dry-run]");
+    console.error(
+      "Usage: bun run agent/scripts/run-agent.ts --agent-id <id> [--dry-run]",
+    );
     process.exit(1);
   }
   return val;
@@ -62,7 +64,7 @@ const agentHome = path.join(
 );
 
 const agentEnv: Record<string, string> = {
-  ...process.env as Record<string, string>,
+  ...(process.env as Record<string, string>),
   ...bundle.env,
   SHIPWRIGHT_AGENT_ID: agentId,
   SHIPWRIGHT_API_URL: apiUrl,

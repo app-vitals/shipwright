@@ -4,10 +4,10 @@
  * Uses injected mocks — no real DB or encryption needed.
  */
 
-import { describe, test, expect } from "bun:test";
-import { createAgentRuntimeApp } from "./api.ts";
-import type { AgentEnvBundle } from "./agent-envs.ts";
+import { describe, expect, test } from "bun:test";
 import type { AgentCronJob } from "./agent-cron-jobs.ts";
+import type { AgentEnvBundle } from "./agent-envs.ts";
+import { createAgentRuntimeApp } from "./api.ts";
 
 // ─── Mock types ───────────────────────────────────────────────────────────────
 
@@ -28,9 +28,9 @@ interface MockAgent {
 
 // ─── Mock factories ───────────────────────────────────────────────────────────
 
-function makeMockAgentEnvService(
-  bundles: Map<string, AgentEnvBundle | null>,
-): { getConfigBundle: (id: string) => Promise<AgentEnvBundle | null> } {
+function makeMockAgentEnvService(bundles: Map<string, AgentEnvBundle | null>): {
+  getConfigBundle: (id: string) => Promise<AgentEnvBundle | null>;
+} {
   return {
     async getConfigBundle(id: string): Promise<AgentEnvBundle | null> {
       if (!bundles.has(id)) return null;
@@ -39,9 +39,9 @@ function makeMockAgentEnvService(
   };
 }
 
-function makeMockAgentCronJobService(
-  crons: Map<string, AgentCronJob[]>,
-): { list: (id: string) => Promise<AgentCronJob[]> } {
+function makeMockAgentCronJobService(crons: Map<string, AgentCronJob[]>): {
+  list: (id: string) => Promise<AgentCronJob[]>;
+} {
   return {
     async list(id: string): Promise<AgentCronJob[]> {
       return crons.get(id) ?? [];
@@ -53,12 +53,20 @@ function makeMockPrisma(
   agents: Map<string, MockAgent>,
   plugins: Map<string, MockPlugin[]>,
 ): {
-  agent: { findUnique: (args: { where: { id: string } }) => Promise<MockAgent | null> };
-  agentPlugin: { findMany: (args: { where: { agentId: string; enabled: boolean } }) => Promise<MockPlugin[]> };
+  agent: {
+    findUnique: (args: { where: { id: string } }) => Promise<MockAgent | null>;
+  };
+  agentPlugin: {
+    findMany: (args: {
+      where: { agentId: string; enabled: boolean };
+    }) => Promise<MockPlugin[]>;
+  };
 } {
   return {
     agent: {
-      async findUnique({ where }: { where: { id: string } }): Promise<MockAgent | null> {
+      async findUnique({
+        where,
+      }: { where: { id: string } }): Promise<MockAgent | null> {
         return agents.get(where.id) ?? null;
       },
     },
@@ -132,7 +140,9 @@ function buildApp(opts?: {
           env: { SLACK_BOT_TOKEN: "xoxb-secret", ANTHROPIC_API_KEY: "sk-ant" },
           allowedTools: ["Read", "Write", "Bash"],
         };
-  const plugins = opts?.plugins ?? [makePlugin(KNOWN_AGENT_ID, "@shipwright/plugin")];
+  const plugins = opts?.plugins ?? [
+    makePlugin(KNOWN_AGENT_ID, "@shipwright/plugin"),
+  ];
   const crons = opts?.crons ?? [makeCron(KNOWN_AGENT_ID, "cron-1")];
 
   const agents = new Map<string, MockAgent>();
