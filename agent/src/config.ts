@@ -18,6 +18,24 @@ function buildConfig(agentHome: string) {
       apiKey: optional("SHIPWRIGHT_INTERNAL_API_KEY"),
       agentId: optional("SHIPWRIGHT_AGENT_ID"),
     },
+    slack: {
+      botToken: optional("SLACK_BOT_TOKEN"),
+      appToken: optional("SLACK_APP_TOKEN"),
+      signingSecret: optional("SLACK_SIGNING_SECRET"),
+      adminToken: optional("SLACK_ADMIN_TOKEN"),
+    },
+    alerts: {
+      channel: optional("SLACK_ALERT_CHANNEL"),
+    },
+    owner: {
+      user: optional("SLACK_OWNER_USER"),
+    },
+    voice: {
+      groqApiKey: optional("GROQ_API_KEY"),
+      elevenLabsApiKey: optional("ELEVENLABS_API_KEY"),
+      voiceId: optional("ELEVENLABS_VOICE_ID"),
+      whisperServiceUrl: optional("WHISPER_SERVICE_URL"),
+    },
     paths: {
       home: agentHome,
       workspace: join(agentHome, "workspace"),

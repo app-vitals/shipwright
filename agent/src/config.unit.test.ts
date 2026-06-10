@@ -125,3 +125,149 @@ describe("config.paths", () => {
     expect(config.paths.sessions).toBe(join(AGENT_HOME, "sessions.json"));
   });
 });
+
+// ─── config.slack ─────────────────────────────────────────────────────────────
+
+describe("config.slack", () => {
+  test("botToken from SLACK_BOT_TOKEN", () => {
+    process.env.SLACK_BOT_TOKEN = "xoxb-test-bot";
+    const { config: cfg } = createConfig(AGENT_HOME);
+    expect(cfg.slack.botToken).toBe("xoxb-test-bot");
+    process.env.SLACK_BOT_TOKEN = undefined;
+  });
+
+  test("botToken is undefined when SLACK_BOT_TOKEN not set", () => {
+    process.env.SLACK_BOT_TOKEN = undefined;
+    const { config: cfg } = createConfig(AGENT_HOME);
+    expect(cfg.slack.botToken).toBeUndefined();
+  });
+
+  test("appToken from SLACK_APP_TOKEN", () => {
+    process.env.SLACK_APP_TOKEN = "xapp-test-token";
+    const { config: cfg } = createConfig(AGENT_HOME);
+    expect(cfg.slack.appToken).toBe("xapp-test-token");
+    process.env.SLACK_APP_TOKEN = undefined;
+  });
+
+  test("appToken is undefined when SLACK_APP_TOKEN not set", () => {
+    process.env.SLACK_APP_TOKEN = undefined;
+    const { config: cfg } = createConfig(AGENT_HOME);
+    expect(cfg.slack.appToken).toBeUndefined();
+  });
+
+  test("signingSecret from SLACK_SIGNING_SECRET", () => {
+    process.env.SLACK_SIGNING_SECRET = "abc123secret";
+    const { config: cfg } = createConfig(AGENT_HOME);
+    expect(cfg.slack.signingSecret).toBe("abc123secret");
+    process.env.SLACK_SIGNING_SECRET = undefined;
+  });
+
+  test("signingSecret is undefined when SLACK_SIGNING_SECRET not set", () => {
+    process.env.SLACK_SIGNING_SECRET = undefined;
+    const { config: cfg } = createConfig(AGENT_HOME);
+    expect(cfg.slack.signingSecret).toBeUndefined();
+  });
+
+  test("adminToken from SLACK_ADMIN_TOKEN", () => {
+    process.env.SLACK_ADMIN_TOKEN = "xoxp-admin-token";
+    const { config: cfg } = createConfig(AGENT_HOME);
+    expect(cfg.slack.adminToken).toBe("xoxp-admin-token");
+    process.env.SLACK_ADMIN_TOKEN = undefined;
+  });
+
+  test("adminToken is undefined when SLACK_ADMIN_TOKEN not set", () => {
+    process.env.SLACK_ADMIN_TOKEN = undefined;
+    const { config: cfg } = createConfig(AGENT_HOME);
+    expect(cfg.slack.adminToken).toBeUndefined();
+  });
+});
+
+// ─── config.alerts ────────────────────────────────────────────────────────────
+
+describe("config.alerts", () => {
+  test("channel from SLACK_ALERT_CHANNEL", () => {
+    process.env.SLACK_ALERT_CHANNEL = "#alerts";
+    const { config: cfg } = createConfig(AGENT_HOME);
+    expect(cfg.alerts.channel).toBe("#alerts");
+    process.env.SLACK_ALERT_CHANNEL = undefined;
+  });
+
+  test("channel is undefined when SLACK_ALERT_CHANNEL not set", () => {
+    process.env.SLACK_ALERT_CHANNEL = undefined;
+    const { config: cfg } = createConfig(AGENT_HOME);
+    expect(cfg.alerts.channel).toBeUndefined();
+  });
+});
+
+// ─── config.owner ─────────────────────────────────────────────────────────────
+
+describe("config.owner", () => {
+  test("user from SLACK_OWNER_USER", () => {
+    process.env.SLACK_OWNER_USER = "U012AB3CD";
+    const { config: cfg } = createConfig(AGENT_HOME);
+    expect(cfg.owner.user).toBe("U012AB3CD");
+    process.env.SLACK_OWNER_USER = undefined;
+  });
+
+  test("user is undefined when SLACK_OWNER_USER not set", () => {
+    process.env.SLACK_OWNER_USER = undefined;
+    const { config: cfg } = createConfig(AGENT_HOME);
+    expect(cfg.owner.user).toBeUndefined();
+  });
+});
+
+// ─── config.voice ─────────────────────────────────────────────────────────────
+
+describe("config.voice", () => {
+  test("groqApiKey from GROQ_API_KEY", () => {
+    process.env.GROQ_API_KEY = "gsk-test-key";
+    const { config: cfg } = createConfig(AGENT_HOME);
+    expect(cfg.voice.groqApiKey).toBe("gsk-test-key");
+    process.env.GROQ_API_KEY = undefined;
+  });
+
+  test("groqApiKey is undefined when GROQ_API_KEY not set", () => {
+    process.env.GROQ_API_KEY = undefined;
+    const { config: cfg } = createConfig(AGENT_HOME);
+    expect(cfg.voice.groqApiKey).toBeUndefined();
+  });
+
+  test("elevenLabsApiKey from ELEVENLABS_API_KEY", () => {
+    process.env.ELEVENLABS_API_KEY = "eleven-test-key";
+    const { config: cfg } = createConfig(AGENT_HOME);
+    expect(cfg.voice.elevenLabsApiKey).toBe("eleven-test-key");
+    process.env.ELEVENLABS_API_KEY = undefined;
+  });
+
+  test("elevenLabsApiKey is undefined when ELEVENLABS_API_KEY not set", () => {
+    process.env.ELEVENLABS_API_KEY = undefined;
+    const { config: cfg } = createConfig(AGENT_HOME);
+    expect(cfg.voice.elevenLabsApiKey).toBeUndefined();
+  });
+
+  test("voiceId from ELEVENLABS_VOICE_ID", () => {
+    process.env.ELEVENLABS_VOICE_ID = "voice-abc";
+    const { config: cfg } = createConfig(AGENT_HOME);
+    expect(cfg.voice.voiceId).toBe("voice-abc");
+    process.env.ELEVENLABS_VOICE_ID = undefined;
+  });
+
+  test("voiceId is undefined when ELEVENLABS_VOICE_ID not set", () => {
+    process.env.ELEVENLABS_VOICE_ID = undefined;
+    const { config: cfg } = createConfig(AGENT_HOME);
+    expect(cfg.voice.voiceId).toBeUndefined();
+  });
+
+  test("whisperServiceUrl from WHISPER_SERVICE_URL", () => {
+    process.env.WHISPER_SERVICE_URL = "http://localhost:9000";
+    const { config: cfg } = createConfig(AGENT_HOME);
+    expect(cfg.voice.whisperServiceUrl).toBe("http://localhost:9000");
+    process.env.WHISPER_SERVICE_URL = undefined;
+  });
+
+  test("whisperServiceUrl is undefined when WHISPER_SERVICE_URL not set", () => {
+    process.env.WHISPER_SERVICE_URL = undefined;
+    const { config: cfg } = createConfig(AGENT_HOME);
+    expect(cfg.voice.whisperServiceUrl).toBeUndefined();
+  });
+});
