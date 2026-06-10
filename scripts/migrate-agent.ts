@@ -52,8 +52,8 @@ export function buildVitalsOsClient(
   }
 
   return {
-    async getConfig(this: void): Promise<AgentConfig["config"]> {
-      const data = (await apiFetch(`${baseUrl}/accounts/agents/config`)) as {
+    async getConfig(): Promise<AgentConfig["config"]> {
+      const data = (await apiFetch(`${baseUrl}/config`)) as {
         env?: Record<string, string>;
         tools?: string[];
       };
@@ -63,7 +63,7 @@ export function buildVitalsOsClient(
       };
     },
 
-    async getCrons(this: void): Promise<AgentConfig["crons"]> {
+    async getCrons(): Promise<AgentConfig["crons"]> {
       const data = (await apiFetch(`${baseUrl}/crons`)) as
         | { crons?: VitalsAgentCron[] }
         | VitalsAgentCron[];
@@ -71,7 +71,7 @@ export function buildVitalsOsClient(
       return data.crons ?? [];
     },
 
-    async getPlugins(this: void): Promise<AgentConfig["plugins"]> {
+    async getPlugins(): Promise<AgentConfig["plugins"]> {
       const data = (await apiFetch(`${baseUrl}/plugins`)) as
         | { plugins?: AgentConfig["plugins"] }
         | AgentConfig["plugins"];
@@ -107,42 +107,35 @@ export function buildAdminClient(
   }
 
   return {
-    async upsertEnvs(this: void, env: Record<string, string>): Promise<void> {
+    async upsertEnvs(env: Record<string, string>): Promise<void> {
       await apiFetch(`${baseUrl}/envs`, {
         method: "POST",
         body: JSON.stringify(env),
       });
     },
 
-    async listCrons(this: void): Promise<AgentConfig["crons"]> {
+    async listCrons(): Promise<AgentConfig["crons"]> {
       const data = (await apiFetch(`${baseUrl}/crons`)) as {
         crons: VitalsAgentCron[];
       };
       return data.crons;
     },
 
-    async createCron(
-      this: void,
-      cron: AgentConfig["crons"][number],
-    ): Promise<void> {
+    async createCron(cron: AgentConfig["crons"][number]): Promise<void> {
       await apiFetch(`${baseUrl}/crons`, {
         method: "POST",
         body: JSON.stringify(cron),
       });
     },
 
-    async addTool(this: void, pattern: string): Promise<void> {
+    async addTool(pattern: string): Promise<void> {
       await apiFetch(`${baseUrl}/tools`, {
         method: "POST",
         body: JSON.stringify({ pattern }),
       });
     },
 
-    async addPlugin(
-      this: void,
-      name: string,
-      version: string | null | undefined,
-    ): Promise<void> {
+    async addPlugin(name: string, version: string | null | undefined): Promise<void> {
       await apiFetch(`${baseUrl}/plugins`, {
         method: "POST",
         body: JSON.stringify({ name, version: version ?? null }),
