@@ -3,7 +3,7 @@
  * Shared Hono middleware factory for session cookie verification.
  *
  * Usage:
- *   app.use('*', createSessionMiddleware(process.env.SHIPWRIGHT_METRICS_SESSION_SECRET ?? ''))
+ *   app.use('*', createSessionMiddleware(process.env.SHIPWRIGHT_SESSION_SECRET ?? ''))
  *
  * On success: sets c.get('session') with { userId, email, name } and calls next().
  * On Bearer token present: calls next() without setting session (API calls bypass
@@ -11,7 +11,7 @@
  * On missing/invalid session: redirects to /auth/login?returnTo=<encoded-path>.
  * On missing secret: returns 500 Internal Server Error (not a redirect).
  *
- * The session cookie is "vitals_session" — a HS256 JWT signed with SHIPWRIGHT_METRICS_SESSION_SECRET
+ * The session cookie is "vitals_session" — a HS256 JWT signed with SHIPWRIGHT_SESSION_SECRET
  * containing { userId, email, name, iat, exp }.
  */
 
@@ -35,7 +35,7 @@ export type SessionEnv = { Variables: { session: SessionPayload } };
 /**
  * Creates a Hono middleware that reads and verifies the vitals_session cookie.
  *
- * @param secret - The JWT signing secret (SHIPWRIGHT_METRICS_SESSION_SECRET). Pass empty string to
+ * @param secret - The JWT signing secret (SHIPWRIGHT_SESSION_SECRET). Pass empty string to
  *                 trigger a 500 response (guards against missing env var at call site).
  */
 export function createSessionMiddleware(secret: string) {
@@ -50,7 +50,7 @@ export function createSessionMiddleware(secret: string) {
 
     // Missing secret is a server misconfiguration — return 500, not a login redirect
     if (!secret) {
-      console.error("[session-middleware] SHIPWRIGHT_METRICS_SESSION_SECRET is not set");
+      console.error("[session-middleware] SHIPWRIGHT_SESSION_SECRET is not set");
       return c.text("Internal Server Error", 500);
     }
 
