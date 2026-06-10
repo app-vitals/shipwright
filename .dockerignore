@@ -1,0 +1,32 @@
+# Dependency trees — installed in each image's deps stage and copied
+# stage-to-stage. Never copy them from the host build context (a host
+# node_modules would clobber the correctly-installed deps via `COPY . .`).
+node_modules
+**/node_modules
+
+# VCS + CI metadata — not needed in any image
+.git
+.github
+
+# Build outputs / caches
+dist
+**/dist
+.next
+**/.next
+build
+**/build
+coverage
+**/coverage
+.turbo
+test-results
+**/test-results
+playwright-report
+**/playwright-report
+
+# Local env files — never bake secrets into an image
+.env
+.env.*
+
+# Editor / OS cruft
+.DS_Store
+*.log

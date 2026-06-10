@@ -10,6 +10,9 @@
 #   /data/agent-home — mount a PersistentVolumeClaim (or any durable volume) here.
 #                    The agent symlinks ~/.claude → $AGENT_HOME/dot-claude so
 #                    Claude Code settings and memory persist across pod restarts.
+#                    The container runs as uid 1000, so the pod must set
+#                    `securityContext.fsGroup: 1000` for the mounted volume to be
+#                    writable.
 #
 # Required env vars at runtime:
 #   SHIPWRIGHT_AGENT_ID            — the agent's ID in the Shipwright platform
@@ -17,11 +20,13 @@
 #   SHIPWRIGHT_INTERNAL_API_KEY    — bearer token for the config endpoint
 #   ANTHROPIC_API_KEY              — Anthropic API key (or CLAUDE_CODE_OAUTH_TOKEN)
 
-FROM oven/bun:1.3 AS base
+# ─── Base: system tooling installed as root ───────────────────────────────────
+
+FROM oven/bun:1-slim AS base
 
 # Install system dependencies:
 #   - git          — required by Claude Code and mise
-#   - curl         — used by mise installer and gh keyring setup
+#   - curl         — used by the mise installer and gh keyring setup
 #   - ca-certificates — TLS trust for API calls
 #   - unzip        — needed by some mise-managed tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -40,14 +45,9 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && apt-get install -y --no-install-recommends gh \
     && rm -rf /var/lib/apt/lists/*
 
-# Install mise (polyglot runtime manager)
-RUN curl https://mise.run | sh && \
-    ln -s /root/.local/bin/mise /usr/local/bin/mise
-
-# Install Node.js 20 LTS via mise (Debian bookworm's apt provides Node 18 which is EOL)
-# mise shims live in ~/.local/share/mise/shims — add to PATH so npm/node are found
-ENV PATH="/root/.local/share/mise/shims:${PATH}"
-RUN mise use --global node@20
+# Install the mise binary to a world-executable location (NOT /root, so the
+# non-root runtime user can invoke it).
+RUN curl https://mise.run | MISE_INSTALL_PATH=/usr/local/bin/mise sh
 
 # ─── Build stage ──────────────────────────────────────────────────────────────
 
@@ -69,7 +69,7 @@ RUN bun install --frozen-lockfile
 # Copy the rest of the agent source
 COPY agent/ ./agent/
 
-# ─── Runtime stage ────────────────────────────────────────────────────────────
+# ─── Runtime stage (non-root) ─────────────────────────────────────────────────
 
 FROM base AS runtime
 
@@ -78,24 +78,39 @@ WORKDIR /app
 # Set AGENT_HOME — the PVC should be mounted here in Kubernetes
 ENV AGENT_HOME=/data/agent-home
 
-# Copy installed node_modules from build stage
-COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/agent ./agent
+# Create the persistent-volume mount point and hand it to uid 1000 so the agent
+# can write when no PVC is mounted. A mounted PVC needs `fsGroup: 1000` in the
+# pod securityContext to be writable.
+RUN mkdir -p /data/agent-home && chown 1000:1000 /data/agent-home
 
-# Install Claude Code globally — after COPY layers so a Claude Code version bump
-# does not invalidate the node_modules/agent copy in this stage
-RUN npm install -g @anthropic-ai/claude-code@2.1.170
+# Switch to the non-root `bun` user (uid 1000, baked into the oven/bun base) for
+# all tool installs below, so mise, node, and Claude Code land under /home/bun
+# (owned by uid 1000) and are usable at runtime. The GKE deployment sets
+# `runAsNonRoot: true`, which the kubelet can only verify against a numeric UID.
+USER 1000
+ENV HOME=/home/bun
 
-# Add scripts/bin to PATH so the git-credential-shipwright.sh wrapper
-# and gh wrapper are available to subprocesses
-ENV PATH="/app/agent/scripts/bin:${PATH}"
+# mise-managed tool shims (node, npm, claude) live under the user's data dir.
+# /app/agent/scripts/bin holds the git-credential-shipwright.sh and gh wrappers.
+ENV PATH="/home/bun/.local/share/mise/shims:/app/agent/scripts/bin:${PATH}"
 
-# Make credential helper executable
+# Node.js 20 LTS via mise (Debian bookworm's apt provides Node 18 which is EOL).
+RUN mise use --global node@20
+
+# Install Claude Code globally via the mise-managed node's npm, then reshim so
+# the `claude` shim is created on PATH.
+RUN npm install -g @anthropic-ai/claude-code@2.1.170 \
+    && mise reshim
+
+# Copy installed node_modules + agent source from the build stage, owned by the
+# runtime user. (The agent dir carries its own workspace node_modules symlinks;
+# the root node_modules holds bun's content-addressed store they point into.)
+COPY --from=build --chown=1000:1000 /app/node_modules ./node_modules
+COPY --from=build --chown=1000:1000 /app/agent ./agent
+
+# Make the credential helper and gh wrapper executable
 RUN chmod +x /app/agent/scripts/bin/git-credential-shipwright.sh \
     && chmod +x /app/agent/scripts/bin/gh
-
-# Create mount point directory (overridden by PVC in Kubernetes)
-RUN mkdir -p /data/agent-home
 
 VOLUME ["/data/agent-home"]
 
