@@ -144,14 +144,37 @@ export interface QueryFilters {
  *
  * `taskStore: "json"` uses a local state/todos.json file.
  * `taskStore: "github"` uses GitHub Issues as the backing store.
+ * `taskStore: "jira"` uses a Jira project as the backing store.
  */
 export interface TaskStoreConfig {
-  taskStore: "json" | "github";
+  taskStore: "json" | "github" | "jira";
 
   /** Required when taskStore === "github". */
   github?: {
     owner: string;
     repo: string;
+  };
+
+  /** Required when taskStore === "jira". */
+  jira?: {
+    /** Base URL of the Jira instance, e.g. "https://example.atlassian.net". */
+    baseUrl: string;
+
+    /** Jira project key, e.g. "SHIP". */
+    projectKey: string;
+
+    /**
+     * Optional JQL filter to identify "ready" tasks.
+     * Defaults to the adapter's built-in ready query when not set.
+     */
+    readyJql?: string;
+
+    /**
+     * Optional mapping from Jira status names to Shipwright TaskStatus values.
+     * Keys are Jira status names; values are Shipwright status strings.
+     * Example: { "In Progress": "in_progress", "Done": "merged" }
+     */
+    statusMap?: Record<string, string>;
   };
 }
 
