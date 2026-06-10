@@ -39,15 +39,19 @@ export interface ShipwrightRuntimeClient {
 
 export class HttpShipwrightRuntimeClient implements ShipwrightRuntimeClient {
   private readonly apiUrl: string;
+  private readonly adminApiUrl: string;
   private readonly apiKey: string;
   private readonly fetchFn: FetchFn;
 
   constructor(opts: {
     apiUrl: string;
+    /** Base URL for admin-tier endpoints (e.g. /admin/api/...). Defaults to apiUrl when the unified admin service serves both namespaces. */
+    adminApiUrl?: string;
     apiKey: string;
     fetchFn?: FetchFn;
   }) {
     this.apiUrl = opts.apiUrl;
+    this.adminApiUrl = opts.adminApiUrl ?? opts.apiUrl;
     this.apiKey = opts.apiKey;
     this.fetchFn = opts.fetchFn ?? fetch;
   }
@@ -92,7 +96,7 @@ export class HttpShipwrightRuntimeClient implements ShipwrightRuntimeClient {
   }
 
   async reconcileSystemCrons(agentId: string): Promise<void> {
-    const url = `${this.apiUrl}/admin/api/agents/${encodeURIComponent(agentId)}/crons/reconcile`;
+    const url = `${this.adminApiUrl}/admin/api/agents/${encodeURIComponent(agentId)}/crons/reconcile`;
     const response = await this.fetchFn(url, {
       method: "POST",
       headers: this.authHeaders,
@@ -101,7 +105,7 @@ export class HttpShipwrightRuntimeClient implements ShipwrightRuntimeClient {
     if (!response.ok) {
       throw new ShipwrightClientError(
         response.status,
-        `POST /admin/api/agents/${agentId}/crons/reconcile failed: ${response.status} ${response.statusText}`,
+        `POST ${this.adminApiUrl}/admin/api/agents/${agentId}/crons/reconcile failed: ${response.status} ${response.statusText}`,
       );
     }
   }

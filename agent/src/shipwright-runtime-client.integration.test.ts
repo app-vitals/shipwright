@@ -291,4 +291,21 @@ describe("HttpShipwrightRuntimeClient.reconcileSystemCrons", () => {
     );
     expect(calls[0].init?.method).toBe("POST");
   });
+
+  it("uses adminApiUrl for reconcile when provided separately", async () => {
+    const ADMIN_URL = "https://admin.test.shipwright.dev";
+    const { fn, calls } = capturingFetch(200, { created: 0, updated: 0, deleted: 0 });
+    const client = new HttpShipwrightRuntimeClient({
+      apiUrl: API_URL,
+      adminApiUrl: ADMIN_URL,
+      apiKey: API_KEY,
+      fetchFn: fn,
+    });
+
+    await client.reconcileSystemCrons(AGENT_ID);
+
+    expect(calls[0].url).toBe(
+      `${ADMIN_URL}/admin/api/agents/${AGENT_ID}/crons/reconcile`,
+    );
+  });
 });
