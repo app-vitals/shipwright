@@ -51,8 +51,8 @@ export interface AgentRuntimeDeps {
 
 // ─── openapi-fetch paths type ─────────────────────────────────────────────────
 
-/** Typed paths for use with openapi-fetch createClient<AdminApiPaths>(). Covers the 3 agent-facing admin API endpoints. */
-export interface AdminApiPaths {
+/** Typed paths for the two runtime GET endpoints — use with createClient<RuntimeApiPaths>(). */
+export interface RuntimeApiPaths {
   "/agents/{agentId}/config": {
     get: {
       parameters: { path: { agentId: string } };
@@ -73,6 +73,10 @@ export interface AdminApiPaths {
       };
     };
   };
+}
+
+/** Typed paths for the admin POST endpoint — use with createClient<AdminApiPaths>(). */
+export interface AdminApiPaths {
   "/admin/api/agents/{agentId}/crons/reconcile": {
     post: {
       parameters: { path: { agentId: string } };

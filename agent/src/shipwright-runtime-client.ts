@@ -9,7 +9,7 @@
  */
 
 import createClient from "openapi-fetch";
-import type { AdminApiPaths, AgentConfigResponse, AgentCronJob } from "@shipwright/admin";
+import type { AdminApiPaths, AgentConfigResponse, AgentCronJob, RuntimeApiPaths } from "@shipwright/admin";
 
 type FetchFn = (url: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -36,7 +36,7 @@ export interface ShipwrightRuntimeClient {
 // ─── HttpShipwrightRuntimeClient ──────────────────────────────────────────────
 
 export class HttpShipwrightRuntimeClient implements ShipwrightRuntimeClient {
-  private readonly client: ReturnType<typeof createClient<AdminApiPaths>>;
+  private readonly client: ReturnType<typeof createClient<RuntimeApiPaths>>;
   private readonly adminClient: ReturnType<typeof createClient<AdminApiPaths>>;
 
   constructor(opts: {
@@ -53,7 +53,7 @@ export class HttpShipwrightRuntimeClient implements ShipwrightRuntimeClient {
       },
       ...(opts.fetchFn ? { fetch: opts.fetchFn } : {}),
     };
-    this.client = createClient<AdminApiPaths>({
+    this.client = createClient<RuntimeApiPaths>({
       baseUrl: opts.apiUrl,
       ...commonOpts,
     });
