@@ -13,9 +13,12 @@ CLAUDE.local.md
 planning/
 
 # --- Local JSON task-store state (only written if the github backend isn't active) ---
-state/
+# Use state/* (not state/) so per-file negations below can take effect.
+state/*
 # Allow workspace templates that live under agent/workspace/state/
 !agent/workspace/state/
+# Allow the dev-agent env example (the actual env file stays ignored)
+!state/dev-agent.env.example
 
 # --- Dev agent credentials (never commit) ---
 state/dev-agent.env

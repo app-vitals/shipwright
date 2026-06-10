@@ -437,6 +437,14 @@ describe("agent pane — docker run", () => {
     const envKeys = Object.keys(agent.env ?? {});
     expect(envKeys.length).toBe(0);
   });
+
+  test("agent pane docker run loads state/dev-agent.env via --env-file", () => {
+    // Secrets (CLAUDE_CODE_OAUTH_TOKEN / ANTHROPIC_API_KEY) must NOT be hardcoded
+    // in the pane definition — they are injected via the developer's local env file.
+    const agent = STACK_PANES.find((p) => p.label === "agent") as Pane;
+    const cmdStr = agent.cmd.join(" ");
+    expect(cmdStr).toContain("--env-file state/dev-agent.env");
+  });
 });
 
 describe("buildStackCommands — docker build + seed preflights", () => {
