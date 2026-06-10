@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, beforeEach } from "bun:test";
-import { seedDevAgent, type SeedDeps } from "./seed-dev-agent.ts";
+import { DEFAULT_TOOLS, seedDevAgent, type SeedDeps } from "./seed-dev-agent.ts";
 
 // ─── Prisma double factory ────────────────────────────────────────────────────
 
@@ -25,9 +25,6 @@ function makePrismaDouble() {
     agent: {
       upsert: async (args: UpsertCall) => {
         agentUpserts.push(args);
-        return { id: "dev-agent", name: "Dev Agent" };
-      },
-      findUnique: async (_args: unknown) => {
         return { id: "dev-agent", name: "Dev Agent" };
       },
     },
@@ -70,21 +67,6 @@ function makePrismaDouble() {
     transactions,
   };
 }
-
-// ─── Default tools constant (matches script) ─────────────────────────────────
-
-const DEFAULT_TOOLS = [
-  "Read",
-  "Write",
-  "Edit",
-  "Glob",
-  "Grep",
-  "Bash",
-  "WebSearch",
-  "WebFetch",
-  "Skill",
-  "Agent",
-];
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 

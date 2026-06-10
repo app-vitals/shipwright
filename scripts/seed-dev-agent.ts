@@ -50,7 +50,6 @@ export interface SeedPrisma {
       create: { id: string; name: string };
       update: Record<string, never>;
     }): Promise<unknown>;
-    findUnique(args: { where: { id: string } }): Promise<unknown>;
   };
   agentEnv: {
     upsert(args: {
