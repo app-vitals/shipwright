@@ -81,7 +81,7 @@ if (mode === "fixtures") {
   deps = {
     provider: pgStore.provider,
     localStore: localStoreShim,
-    sessionSecret: process.env.SHIPWRIGHT_METRICS_SESSION_SECRET ?? "",
+    sessionSecret: process.env.SHIPWRIGHT_SESSION_SECRET ?? "",
     requireOwnerRole: process.env.METRICS_REQUIRE_OWNER_ROLE === "true",
     dashboardToken: process.env.METRICS_DASHBOARD_TOKEN,
   };
@@ -95,7 +95,7 @@ if (mode === "fixtures") {
   deps = {
     provider: new SqliteProvider(store),
     localStore: store,
-    sessionSecret: process.env.SHIPWRIGHT_METRICS_SESSION_SECRET ?? "",
+    sessionSecret: process.env.SHIPWRIGHT_SESSION_SECRET ?? "",
     requireOwnerRole: process.env.METRICS_REQUIRE_OWNER_ROLE === "true",
     dashboardToken: process.env.METRICS_DASHBOARD_TOKEN,
   };
@@ -104,7 +104,7 @@ if (mode === "fixtures") {
   );
 } else {
   deps = {
-    sessionSecret: process.env.SHIPWRIGHT_METRICS_SESSION_SECRET ?? "",
+    sessionSecret: process.env.SHIPWRIGHT_SESSION_SECRET ?? "",
     requireOwnerRole: process.env.METRICS_REQUIRE_OWNER_ROLE === "true",
     dashboardToken: process.env.METRICS_DASHBOARD_TOKEN,
   };
