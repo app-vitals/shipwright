@@ -1,15 +1,15 @@
-import { beforeEach, describe, expect, it, spyOn } from "bun:test";
+import { describe, expect, it } from "bun:test";
 import {
-  type MigrateOptions,
   type AgentConfig,
-  buildVitalsOsClient,
   buildAdminClient,
+  buildVitalsOsClient,
   migrateAgent,
 } from "./migrate-agent.ts";
 
 // ─── Fixture data ─────────────────────────────────────────────────────────────
 
 const AGENT_ID = "agent-test-001";
+const VITALS_AGENT: AgentConfig["agent"] = { id: AGENT_ID, name: "Test Agent" };
 
 const VITALS_CONFIG: AgentConfig["config"] = {
   env: { SLACK_BOT_TOKEN: "xoxb-test", ANTHROPIC_API_KEY: "sk-ant-test" },
@@ -38,6 +38,7 @@ const ADMIN_CRONS_EMPTY: AgentConfig["crons"] = [];
 // ─── Client doubles ───────────────────────────────────────────────────────────
 
 interface VitalsOsClientDouble {
+  getAgent: () => Promise<AgentConfig["agent"]>;
   getConfig: () => Promise<AgentConfig["config"]>;
   getCrons: () => Promise<AgentConfig["crons"]>;
   getPlugins: () => Promise<AgentConfig["plugins"]>;
@@ -83,6 +84,7 @@ function makeAdminDouble(existingCrons: AgentConfig["crons"] = []): RecordedAdmi
 
 function makeVitalsDouble(): VitalsOsClientDouble {
   return {
+    getAgent: async () => ({ ...VITALS_AGENT }),
     getConfig: async () => ({ ...VITALS_CONFIG, env: { ...VITALS_CONFIG.env }, tools: [...VITALS_CONFIG.tools] }),
     getCrons: async () => VITALS_CRONS.map((c) => ({ ...c })),
     getPlugins: async () => VITALS_PLUGINS.map((p) => ({ ...p })),
@@ -107,6 +109,7 @@ describe("migrateAgent — dry-run", () => {
 
     const logText = logs.join("\n");
     expect(logText).toContain("dry-run");
+    expect(logText).toContain("Test Agent");
     expect(logText).toContain("SLACK_BOT_TOKEN");
     expect(logText).toContain("morning-brief");
     expect(logText).toContain("shipwright");
@@ -203,8 +206,23 @@ describe("migrateAgent — idempotent second run", () => {
 });
 
 describe("migrateAgent — error handling", () => {
+  it("throws with clear message when vitals-os agent record call fails", async () => {
+    const vitals: VitalsOsClientDouble = {
+      getAgent: async () => { throw new Error("ECONNREFUSED"); },
+      getConfig: async () => VITALS_CONFIG,
+      getCrons: async () => [],
+      getPlugins: async () => [],
+    };
+    const admin = makeAdminDouble();
+
+    await expect(
+      migrateAgent(AGENT_ID, vitals, admin.client, { dryRun: false, log: () => {} }),
+    ).rejects.toThrow(/vitals-os|agent record|ECONNREFUSED/i);
+  });
+
   it("throws with clear message when vitals-os config call fails", async () => {
     const vitals: VitalsOsClientDouble = {
+      getAgent: async () => VITALS_AGENT,
       getConfig: async () => { throw new Error("ECONNREFUSED"); },
       getCrons: async () => [],
       getPlugins: async () => [],
@@ -232,6 +250,7 @@ describe("migrateAgent — error handling", () => {
 describe("buildVitalsOsClient", () => {
   it("constructs a client with expected methods", () => {
     const client = buildVitalsOsClient("https://example.com", "test-key");
+    expect(typeof client.getAgent).toBe("function");
     expect(typeof client.getConfig).toBe("function");
     expect(typeof client.getCrons).toBe("function");
     expect(typeof client.getPlugins).toBe("function");

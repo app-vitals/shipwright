@@ -1,8 +1,12 @@
-import type { VitalsAgentCron } from "../agent/src/accounts-migration-client.ts";
+import type {
+  VitalsAgentCron,
+  VitalsAgentRecord,
+} from "../agent/src/accounts-migration-client.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface AgentConfig {
+  agent: VitalsAgentRecord;
   config: {
     env: Record<string, string>;
     tools: string[];
@@ -17,6 +21,7 @@ export interface MigrateOptions {
 }
 
 export interface VitalsOsClient {
+  getAgent(): Promise<AgentConfig["agent"]>;
   getConfig(): Promise<AgentConfig["config"]>;
   getCrons(): Promise<AgentConfig["crons"]>;
   getPlugins(): Promise<AgentConfig["plugins"]>;
@@ -52,6 +57,10 @@ export function buildVitalsOsClient(
   }
 
   return {
+    async getAgent(): Promise<AgentConfig["agent"]> {
+      return (await apiFetch(baseUrl)) as VitalsAgentRecord;
+    },
+
     async getConfig(): Promise<AgentConfig["config"]> {
       const data = (await apiFetch(`${baseUrl}/config`)) as {
         env?: Record<string, string>;
@@ -154,35 +163,42 @@ export async function migrateAgent(
 ): Promise<void> {
   const { dryRun, log } = opts;
 
+  function wrapErr(resource: string, err: unknown): Error {
+    return new Error(
+      `Failed to read ${resource} from vitals-os for agent ${agentId}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  let agent: AgentConfig["agent"];
+  try {
+    agent = await vitals.getAgent();
+  } catch (err) {
+    throw wrapErr("agent record", err);
+  }
+
   let config: AgentConfig["config"];
   try {
     config = await vitals.getConfig();
   } catch (err) {
-    throw new Error(
-      `Failed to read config from vitals-os for agent ${agentId}: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    throw wrapErr("config", err);
   }
 
   let crons: AgentConfig["crons"];
   try {
     crons = await vitals.getCrons();
   } catch (err) {
-    throw new Error(
-      `Failed to read crons from vitals-os for agent ${agentId}: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    throw wrapErr("crons", err);
   }
 
   let plugins: AgentConfig["plugins"];
   try {
     plugins = await vitals.getPlugins();
   } catch (err) {
-    throw new Error(
-      `Failed to read plugins from vitals-os for agent ${agentId}: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    throw wrapErr("plugins", err);
   }
 
   if (dryRun) {
-    log(`[dry-run] agent: ${agentId}`);
+    log(`[dry-run] agent: ${agent.id} (${agent.name})`);
     log(`[dry-run] env vars (${Object.keys(config.env).length}): ${Object.keys(config.env).join(", ")}`);
     log(`[dry-run] tools (${config.tools.length}): ${config.tools.join(", ")}`);
     log(`[dry-run] plugins (${plugins.length}): ${plugins.map((p) => p.name).join(", ")}`);
@@ -223,7 +239,7 @@ export async function migrateAgent(
   }
 
   log(`[migrate-agent] crons: ${cronsCreated} created, ${cronsSkipped} skipped (already exist)`);
-  log(`[migrate-agent] done — agent ${agentId} migrated`);
+  log(`[migrate-agent] done — ${agent.name} (${agentId}) migrated`);
 }
 
 // ─── CLI flag parsing ─────────────────────────────────────────────────────────
