@@ -184,9 +184,15 @@ export async function installPlugins(
   try {
     const allPlugins = [...DEFAULT_PLUGINS, ...agentPlugins];
 
+    // When SHIPWRIGHT_LOCAL_MARKETPLACE is set, use the local path instead of
+    // the GitHub marketplace slug so uncommitted plugin edits run inside the
+    // container. When unset, behavior is identical to before.
+    const localMarketplace = process.env.SHIPWRIGHT_LOCAL_MARKETPLACE;
+
     // Install all plugins (defaults then agent-specific)
     for (const plugin of allPlugins) {
-      const spec = `${plugin.plugin}@${plugin.marketplace}`;
+      const marketplace = localMarketplace ?? plugin.marketplace;
+      const spec = `${plugin.plugin}@${marketplace}`;
       const install = await execFn("claude", ["plugin", "install", spec], {
         cwd,
       });
@@ -199,7 +205,8 @@ export async function installPlugins(
 
     // Update all plugins (defaults then agent-specific)
     for (const plugin of allPlugins) {
-      const spec = `${plugin.plugin}@${plugin.marketplace}`;
+      const marketplace = localMarketplace ?? plugin.marketplace;
+      const spec = `${plugin.plugin}@${marketplace}`;
       const update = await execFn("claude", ["plugin", "update", spec], {
         cwd,
       });

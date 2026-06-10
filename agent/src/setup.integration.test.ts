@@ -597,4 +597,30 @@ describe("installPlugins", () => {
     ).resolves.toBeUndefined();
     expect(calls).toHaveLength(2);
   });
+
+  it("uses SHIPWRIGHT_LOCAL_MARKETPLACE path when env var is set", async () => {
+    const originalLocalMarketplace = process.env.SHIPWRIGHT_LOCAL_MARKETPLACE;
+    process.env.SHIPWRIGHT_LOCAL_MARKETPLACE = "/local/marketplace";
+
+    try {
+      const calls: Array<{ cmd: string; args: string[] }> = [];
+      const mockExec = async (
+        cmd: string,
+        args: string[],
+        _opts: { cwd: string },
+      ) => {
+        calls.push({ cmd, args });
+        return { stdout: "", exitCode: 0 };
+      };
+
+      await installPlugins(mockExec, testHome, []);
+
+      // install and update should both use the local path
+      expect(calls[0].args).toEqual(["plugin", "install", "shipwright@/local/marketplace"]);
+      expect(calls[1].args).toEqual(["plugin", "update", "shipwright@/local/marketplace"]);
+    } finally {
+      // Restore env var regardless of test outcome
+      process.env.SHIPWRIGHT_LOCAL_MARKETPLACE = originalLocalMarketplace;
+    }
+  });
 });
