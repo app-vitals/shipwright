@@ -120,6 +120,8 @@ export interface AdminUIDeps {
   adminAllowedEmails: string[];
   slackClient: AdminUISlackClient;
   appBaseUrl: string;
+  /** Enable the /admin/dev-login route. Hard-blocked in production regardless of this value. */
+  devAuthEnabled?: boolean;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -203,6 +205,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
     adminAllowedEmails,
     slackClient,
     appBaseUrl,
+    devAuthEnabled = false,
   } = deps;
 
   const app = new Hono();
@@ -353,6 +356,26 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
   app.post("/admin/logout", (c) => {
     deleteCookie(c, SESSION_COOKIE, { path: "/" });
     return c.redirect("/admin/login", 302);
+  });
+
+  // ─── Dev auto-login (non-prod only) ──────────────────────────────────────
+
+  app.get("/admin/dev-login", async (c) => {
+    // Hard-blocked: devAuthEnabled must be true AND we must not be in production.
+    // The devAuthEnabled flag is pre-computed from isDevAuthAllowed() at startup;
+    // this route simply trusts the injected value.
+    if (!devAuthEnabled) {
+      return new Response("Not Found", { status: 404 });
+    }
+    const token = await createSessionToken(sessionSecret, "dev", "dev@localhost");
+    setCookie(c, SESSION_COOKIE, token, {
+      httpOnly: true,
+      secure: appBaseUrl.startsWith("https://"),
+      sameSite: "Lax",
+      maxAge: SESSION_TTL_SECONDS,
+      path: "/",
+    });
+    return c.redirect("/admin/agents", 302);
   });
 
   // ─── Agents list ──────────────────────────────────────────────────────────
