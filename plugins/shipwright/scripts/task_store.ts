@@ -252,11 +252,17 @@ async function cmdUpdate(
  * org/repo from config; the JSON backend reads repo fields off tasks). If the
  * adapter yields nothing, falls back to scanning workspace/repos/ or
  * SHIPWRIGHT_REPOS_DIR so a filesystem-only workspace still resolves.
+ *
+ * The optional `reposDir` parameter passes the resolved config value through
+ * so callers with a ShiprightConfig can avoid redundant env-var reads.
  */
-async function resolveReposForStore(adapter: TaskStore): Promise<string[]> {
+async function resolveReposForStore(
+  adapter: TaskStore,
+  reposDir?: string,
+): Promise<string[]> {
   const repos = await adapter.resolveRepos();
   if (repos.length > 0) return repos;
-  return resolveRepos(process.cwd());
+  return resolveRepos(process.cwd(), reposDir);
 }
 
 /**
@@ -264,8 +270,8 @@ async function resolveReposForStore(adapter: TaskStore): Promise<string[]> {
  * configured store's adapter, falling back to scanning workspace/repos/ or
  * SHIPWRIGHT_REPOS_DIR.
  */
-async function cmdRepos(adapter: TaskStore): Promise<void> {
-  const repos = await resolveReposForStore(adapter);
+async function cmdRepos(adapter: TaskStore, reposDir?: string): Promise<void> {
+  const repos = await resolveReposForStore(adapter, reposDir);
   for (const repo of repos) {
     process.stdout.write(`${repo}\n`);
   }
@@ -275,8 +281,11 @@ async function cmdRepos(adapter: TaskStore): Promise<void> {
  * resolve-repo subcommand — deprecated alias for `repos`, prints only the
  * first repo. Exits non-zero if no repos are found.
  */
-async function cmdResolveRepo(adapter: TaskStore): Promise<void> {
-  const repos = await resolveReposForStore(adapter);
+async function cmdResolveRepo(
+  adapter: TaskStore,
+  reposDir?: string,
+): Promise<void> {
+  const repos = await resolveReposForStore(adapter, reposDir);
   if (repos.length === 0) {
     process.stderr.write(
       "error: no repos found — add git clones to workspace/repos/ or set SHIPWRIGHT_REPOS_DIR\n",
@@ -360,10 +369,10 @@ async function main(): Promise<void> {
       await cmdUpdate(adapter, flags);
       break;
     case "repos":
-      await cmdRepos(adapter);
+      await cmdRepos(adapter, config.reposDir);
       break;
     case "resolve-repo":
-      await cmdResolveRepo(adapter);
+      await cmdResolveRepo(adapter, config.reposDir);
       break;
     case "setup":
       await cmdSetup(adapter);

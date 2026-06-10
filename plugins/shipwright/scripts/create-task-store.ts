@@ -18,12 +18,13 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { GitHubTaskStore } from "./adapters/github";
 import { JsonTaskStore } from "./adapters/json";
-import type { TaskStore, TaskStoreConfig } from "./store";
+import { resolvePluginConfig, type ShiprightConfig } from "./load-config";
+import type { TaskStore } from "./store";
 
 // ─── Config loading ───────────────────────────────────────────────────────────
 
 export interface LoadedConfig {
-  config: TaskStoreConfig;
+  config: ShiprightConfig;
   configSource: string;
 }
 
@@ -53,7 +54,7 @@ export function findShipwrightJson(startDir: string): string | null {
  * Read and parse a JSON config file. Exits with code 1 on file-not-found or
  * invalid JSON.
  */
-function readConfigFile(cfgPath: string): TaskStoreConfig {
+function readConfigFile(cfgPath: string): ShiprightConfig {
   if (!existsSync(cfgPath)) {
     process.stderr.write(
       `error: SHIPWRIGHT_CONFIG file not found: ${cfgPath}\n`,
@@ -61,7 +62,10 @@ function readConfigFile(cfgPath: string): TaskStoreConfig {
     process.exit(1);
   }
   try {
-    return JSON.parse(readFileSync(cfgPath, "utf-8")) as TaskStoreConfig;
+    const parsed = JSON.parse(
+      readFileSync(cfgPath, "utf-8"),
+    ) as Partial<ShiprightConfig>;
+    return resolvePluginConfig(parsed, process.env);
   } catch (e) {
     process.stderr.write(
       `error: SHIPWRIGHT_CONFIG is not valid JSON: ${String(e)}\n`,
@@ -86,9 +90,10 @@ export function loadConfig(cwd: string = process.cwd()): LoadedConfig {
   const discovered = findShipwrightJson(cwd);
   if (discovered !== null) {
     try {
-      const config = JSON.parse(
+      const parsed = JSON.parse(
         readFileSync(discovered, "utf-8"),
-      ) as TaskStoreConfig;
+      ) as Partial<ShiprightConfig>;
+      const config = resolvePluginConfig(parsed, process.env);
       return { config, configSource: discovered };
     } catch (e) {
       process.stderr.write(
@@ -106,7 +111,10 @@ export function loadConfig(cwd: string = process.cwd()): LoadedConfig {
   }
 
   // Step 3: default to JSON backend
-  return { config: { taskStore: "json" }, configSource: "default" };
+  return {
+    config: resolvePluginConfig({ taskStore: "json" }, process.env),
+    configSource: "default",
+  };
 }
 
 // ─── Factory ──────────────────────────────────────────────────────────────────
@@ -117,7 +125,7 @@ export function loadConfig(cwd: string = process.cwd()): LoadedConfig {
  * - `taskStore: "json"` → JsonTaskStore backed by state/todos.json in process.cwd()
  * - `taskStore: "github"` → GitHubTaskStore backed by GitHub Issues via gh CLI
  */
-export function createTaskStore(config: TaskStoreConfig): TaskStore {
+export function createTaskStore(config: ShiprightConfig): TaskStore {
   if (config.taskStore === "github") {
     if (!config.github) {
       process.stderr.write(

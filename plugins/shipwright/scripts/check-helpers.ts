@@ -207,19 +207,24 @@ function scanReposDir(dir: string): string[] {
  *
  * Priority:
  * 1. workspace/repos/ — scans for git clones, reads remote origin URLs
- * 2. SHIPWRIGHT_REPOS_DIR env var — same scan on an external directory
+ * 2. reposDir parameter (if provided) or SHIPWRIGHT_REPOS_DIR env var — same
+ *    scan on an external directory
  * 3. Returns [] if nothing found
+ *
+ * The optional `reposDir` parameter allows callers with a resolved
+ * ShiprightConfig to pass config.reposDir directly instead of relying on the
+ * process environment.
  */
-export function resolveRepos(workspacePath: string): string[] {
+export function resolveRepos(workspacePath: string, reposDir?: string): string[] {
   // 1. Try workspace/repos/ directory
-  const reposDir = join(workspacePath, "repos");
-  if (existsSync(reposDir)) {
-    const repos = scanReposDir(reposDir);
+  const localReposDir = join(workspacePath, "repos");
+  if (existsSync(localReposDir)) {
+    const repos = scanReposDir(localReposDir);
     if (repos.length > 0) return repos;
   }
 
-  // 2. Fall back to SHIPWRIGHT_REPOS_DIR env var
-  const envReposDir = (process.env.SHIPWRIGHT_REPOS_DIR ?? "").trim();
+  // 2. Fall back to configured reposDir or SHIPWRIGHT_REPOS_DIR env var
+  const envReposDir = (reposDir ?? process.env.SHIPWRIGHT_REPOS_DIR ?? "").trim();
   if (envReposDir && existsSync(envReposDir)) {
     const repos = scanReposDir(envReposDir);
     if (repos.length > 0) return repos;
