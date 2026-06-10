@@ -10,7 +10,7 @@ When the same option can be set multiple ways, resolution order is:
 env var  >  .shipwright.json  >  built-in default
 ```
 
-**Env vars are the primary configuration path.** Managed Shipwright agents must use env vars — they are injected by the admin service and are the only supported config mechanism for deployed agents. `.shipwright.json` is a local fallback for vanilla Claude Code sessions (running the plugin directly from your workstation without the Shipwright agent). Do not commit or rely on `.shipwright.json` in a managed agent deployment.
+**Env vars are the primary configuration path.** Managed Shipwright agents must use env vars — they are injected by the admin service and are the only supported config mechanism for deployed agents. `.shipwright.json` is a local fallback for use when you install and run the Shipwright plugin directly in Claude Code (or a compatible system) without a managed agent. Do not commit or rely on `.shipwright.json` in a managed agent deployment.
 
 ---
 
@@ -35,7 +35,7 @@ Configuration for the Shipwright Claude Code plugin (`plugins/shipwright/`). The
 
 ### `.shipwright.json`
 
-`.shipwright.json` is for **vanilla Claude Code sessions only** — when you're running the plugin directly from your workstation without a managed Shipwright agent. Managed agents receive all configuration via env vars from the admin service; they do not read `.shipwright.json`.
+`.shipwright.json` is for use when you **install and run the Shipwright plugin in Claude Code (or a compatible system)** directly — without a managed Shipwright agent. Managed agents receive all configuration via env vars from the admin service; they do not read `.shipwright.json`.
 
 Config-file resolution (`create-task-store.ts` → `loadConfig`):
 1. Walk up from `cwd` looking for `.shipwright.json`.
