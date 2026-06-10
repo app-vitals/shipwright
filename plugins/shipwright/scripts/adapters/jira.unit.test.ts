@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { TaskStoreConfig } from "../store.ts";
+import type { TaskStatus, TaskStoreConfig } from "../store.ts";
 import { JiraTaskStore } from "./jira.ts";
 
 const BASE_URL = "https://example.atlassian.net";
@@ -646,5 +646,56 @@ describe("JiraTaskStore custom statusMap", () => {
     const tasks = await store.query({});
     expect(tasks.find((t) => t.id === "JTS-19.1")?.status).toBe("in_progress");
     expect(tasks.find((t) => t.id === "JTS-19.2")?.status).toBe("merged");
+  });
+});
+
+describe("JiraTaskStore default statusMap — full coverage", () => {
+  const ALL_MAP_ENTRIES: Array<[string, TaskStatus]> = [
+    ["To Do", "pending"],
+    ["Backlog", "pending"],
+    ["Open", "pending"],
+    ["In Progress", "in_progress"],
+    ["In Review", "pr_open"],
+    ["PR Open", "pr_open"],
+    ["Done", "done"],
+    ["Closed", "done"],
+    ["Resolved", "done"],
+    ["Blocked", "blocked"],
+    ["On Hold", "blocked"],
+    ["Won't Do", "cancelled"],
+    ["Cancelled", "cancelled"],
+  ];
+
+  for (const [jiraStatus, expected] of ALL_MAP_ENTRIES) {
+    test(`maps "${jiraStatus}" to "${expected}"`, async () => {
+      const issues = [
+        makeJiraIssue("SHIP-1", "t1", jiraStatus, { id: `JTS-MAP-${jiraStatus.replace(/\W/g, "")}`, title: "t1", status: "pending" }),
+      ];
+      const fakeFetch = makeFakeFetch({ "POST /rest/api/3/issue/search": { status: 200, body: { issues, total: 1 } } });
+      const store = new JiraTaskStore(CONFIG, fakeFetch, "user@example.com", "token");
+      const tasks = await store.query({});
+      expect(tasks[0].status).toBe(expected);
+    });
+  }
+});
+
+describe("JiraTaskStore fetch error propagation", () => {
+  const throwingFetch: FetchFn = async () => {
+    throw new TypeError("Network error");
+  };
+
+  test("query() propagates fetch errors", async () => {
+    const store = new JiraTaskStore(CONFIG, throwingFetch, "user@example.com", "token");
+    await expect(store.query({})).rejects.toThrow("Network error");
+  });
+
+  test("append() propagates fetch errors", async () => {
+    const store = new JiraTaskStore(CONFIG, throwingFetch, "user@example.com", "token");
+    await expect(store.append([{ id: "JTS-ERR.1", title: "task", status: "pending" }])).rejects.toThrow("Network error");
+  });
+
+  test("update() propagates fetch errors", async () => {
+    const store = new JiraTaskStore(CONFIG, throwingFetch, "user@example.com", "token");
+    await expect(store.update("JTS-ERR.1", { status: "in_progress" })).rejects.toThrow("Network error");
   });
 });
