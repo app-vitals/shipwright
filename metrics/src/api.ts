@@ -915,7 +915,7 @@ export function createMetricsApp(
       projectId: process.env.POSTHOG_PROJECT_ID ?? "",
     });
 
-  const sessionSecret = deps?.sessionSecret ?? process.env.SESSION_SECRET ?? "";
+  const sessionSecret = deps?.sessionSecret ?? process.env.SHIPWRIGHT_METRICS_SESSION_SECRET ?? "";
   const requireOwnerRole = deps?.requireOwnerRole ?? false;
   const dashboardToken = deps?.dashboardToken;
   const offlineMode = deps?.offlineMode ?? false;
