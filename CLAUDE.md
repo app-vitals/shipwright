@@ -124,7 +124,7 @@ Tests land **with** the code, at the correct layer — same PR, no "add tests la
 Env vars read by Shipwright services are namespaced so each service is portable across any infra:
 
 - **Suite-wide:** `SHIPWRIGHT_<THING>` — e.g. `SHIPWRIGHT_SESSION_SECRET`, `SHIPWRIGHT_ENCRYPTION_KEY`, `SHIPWRIGHT_INTERNAL_API_KEY`.
-- **Per-subservice:** `SHIPWRIGHT_<SUBSERVICE>_<THING>` — e.g. `SHIPWRIGHT_ADMIN_ALLOWED_EMAILS`, `SHIPWRIGHT_ADMIN_APP_BASE_URL`, `SHIPWRIGHT_METRICS_SESSION_SECRET`.
+- **Per-subservice:** `SHIPWRIGHT_<SUBSERVICE>_<THING>` — e.g. `SHIPWRIGHT_ADMIN_ALLOWED_EMAILS`, `SHIPWRIGHT_ADMIN_APP_BASE_URL`.
 - **DB connection strings:** `DATABASE_URL_SHIPWRIGHT_<SUBSERVICE>` — never bare `DATABASE_URL` (collides with the host's own DB var).
 - **Universally-meaningful third-party vars** keep conventional names: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `PORT`.
 - **Secret manager IDs** map 1:1 to env var names: lowercase-kebab ↔ uppercase-snake (e.g. `shipwright-admin-allowed-emails` ↔ `SHIPWRIGHT_ADMIN_ALLOWED_EMAILS`).
