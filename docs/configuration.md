@@ -118,8 +118,8 @@ Provide either the GitHub App vars (recommended) or `GH_TOKEN` (PAT). App auth i
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `PORT` | `number` | `3001` | Hono server port. |
-| `HEALTH_PORT` | `number` | `PORT ?? 3001` | Health server port for the K8s liveness probe. Set separately to expose the probe on a different port from the main server. |
+| `PORT` | `number` | `3000` | Hono server port. Applies to both the admin service (`admin/src/main.ts`) and the agent runtime server (`agent/src/run-agent.ts`); each defaults independently to `3000`. |
+| `HEALTH_PORT` | `number` | `PORT ?? 3001` | Agent health server port for the K8s liveness probe. Defaults to `PORT` when set, otherwise `3001`. Set separately to expose the probe on a different port from the main server. |
 | `NODE_ENV` | `string` | — | Runtime environment. Set to `production` to enforce production-safety guards (blocks `SHIPWRIGHT_DEV_CHAT`, `ADMIN_DEV_AUTH`). |
 
 ### Metrics & Admin service
