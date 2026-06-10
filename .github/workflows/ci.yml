@@ -108,6 +108,15 @@ jobs:
       - name: Build agent Docker image
         run: docker build -f agent/Dockerfile -t shipwright-agent:ci .
 
+  metrics-docker-build:
+    name: metrics docker build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build metrics Docker image
+        run: docker build -f metrics/Dockerfile -t shipwright-metrics:ci .
+
   e2e:
     name: e2e (metrics dashboard)
     runs-on: ubuntu-latest
