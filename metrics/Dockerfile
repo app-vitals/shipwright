@@ -44,12 +44,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Copy node_modules from deps stage
+# Copy hoisted + workspace-local node_modules from the deps stage. bun workspaces
+# install package-specific deps under the workspace dir (/app/metrics/node_modules),
+# NOT the hoisted root — both are required at runtime.
 COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/metrics/node_modules ./metrics/node_modules
 
 # Copy entire monorepo source
 COPY . .
 
 EXPOSE 3460
+
+# Run as a non-root user. The GKE deployment sets `runAsNonRoot: true`, and the
+# kubelet can only verify that when the image's USER is a numeric UID. uid 1000
+# is the `bun` user baked into the oven/bun base image.
+USER 1000
 
 ENTRYPOINT ["bun", "run", "metrics/src/server.ts"]
