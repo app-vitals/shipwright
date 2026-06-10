@@ -52,8 +52,11 @@ FROM base AS build
 WORKDIR /app
 
 # Copy workspace manifests first (layer caching for deps)
-COPY package.json bunfig.toml* ./
+COPY package.json bun.lock bunfig.toml* ./
 COPY agent/package.json ./agent/
+COPY admin/package.json ./admin/
+COPY metrics/package.json ./metrics/
+COPY plugins/shipwright/package.json ./plugins/shipwright/
 
 # Install all dependencies (including devDependencies for typecheck)
 RUN bun install --frozen-lockfile
