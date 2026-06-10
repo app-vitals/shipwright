@@ -4,6 +4,7 @@
  * Factory for creating TaskStore instances based on config discovery.
  *
  * Config resolution order:
+ *   0. SHIPWRIGHT_TASK_STORE env var (and related vars) — highest precedence
  *   1. Walk up from cwd to find .shipwright.json
  *   2. Fall back to SHIPWRIGHT_CONFIG env var
  *   3. Default to JSON backend
@@ -72,8 +73,9 @@ function readConfigFile(cfgPath: string): TaskStoreConfig {
 }
 
 /**
- * Resolve the TaskStoreConfig using the 3-step discovery chain:
+ * Resolve the TaskStoreConfig using the 4-step discovery chain:
  *
+ * 0. Check env vars (SHIPWRIGHT_TASK_STORE, etc.) → highest precedence.
  * 1. Walk up from `cwd` to find `.shipwright.json` → use it if found.
  * 2. Fall back to `SHIPWRIGHT_CONFIG` env var → use it if set and non-empty.
  * 3. Default to JSON backend with no config file.
@@ -83,6 +85,29 @@ function readConfigFile(cfgPath: string): TaskStoreConfig {
  * In production, omit it and the process working directory is used.
  */
 export function loadConfig(cwd: string = process.cwd()): LoadedConfig {
+  // Step 0: check SHIPWRIGHT_TASK_STORE env var — takes full precedence
+  const taskStoreEnv = (process.env.SHIPWRIGHT_TASK_STORE ?? "").trim();
+  if (taskStoreEnv === "github") {
+    const owner = process.env.SHIPWRIGHT_GITHUB_OWNER;
+    const repo = process.env.SHIPWRIGHT_GITHUB_REPO;
+    // Include github sub-config only when both vars are present; otherwise let
+    // createTaskStore surface the missing-fields error at instantiation time.
+    const config: TaskStoreConfig =
+      owner !== undefined && repo !== undefined
+        ? { taskStore: "github", github: { owner, repo } }
+        : { taskStore: "github" };
+    return { config, configSource: "env" };
+  }
+  if (taskStoreEnv === "jira") {
+    const baseUrl = process.env.JIRA_BASE_URL ?? "";
+    const projectKey = process.env.JIRA_PROJECT_KEY ?? "";
+    const config: TaskStoreConfig = {
+      taskStore: "jira",
+      jira: { baseUrl, projectKey },
+    };
+    return { config, configSource: "env" };
+  }
+
   // Step 1: walk up from cwd looking for .shipwright.json
   const discovered = findShipwrightJson(cwd);
   if (discovered !== null) {
