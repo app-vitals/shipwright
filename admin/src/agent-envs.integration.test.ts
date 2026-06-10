@@ -2,7 +2,7 @@
  * agent/src/agent-envs.integration.test.ts
  * Integration tests for AgentEnvService against a real SQLite DB.
  *
- * Requires DATABASE_URL_AGENT_TEST to be set; skips otherwise.
+ * Requires DATABASE_URL_ADMIN_TEST to be set; skips otherwise.
  */
 
 import { beforeEach, describe, expect, it } from "bun:test";
@@ -11,7 +11,7 @@ import { AgentEnvService } from "./agent-envs.ts";
 import { UnprocessableEntityError } from "./errors.ts";
 import { identityCrypto } from "./token-crypto.ts";
 
-const TEST_DB = process.env.DATABASE_URL_AGENT_TEST;
+const TEST_DB = process.env.DATABASE_URL_ADMIN_TEST;
 
 const describeOrSkip = TEST_DB ? describe : describe.skip;
 
