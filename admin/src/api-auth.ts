@@ -20,16 +20,64 @@ const SESSION_COOKIE = "admin_session";
 // Matches /admin/api/agents/{agentId}/... routes — used for per-agent scope enforcement.
 const AGENT_ROUTE_RE = /^\/admin\/api\/agents\/([^/]+)/;
 
+// ─── Admin API key parsing ────────────────────────────────────────────────────
+
+/**
+ * Represents a parsed admin API key entry.
+ * scope === "*" → admin (bypasses all per-agent scope checks)
+ * scope === "<agentId>" → scoped to a single agent
+ */
+export interface AdminApiKey {
+  name: string;
+  scope: string;
+}
+
+/**
+ * Parse the SHIPWRIGHT_ADMIN_API_KEYS env var into a Map<token, AdminApiKey>.
+ * Format: comma-separated "name:token:scope" tuples.
+ * Example: "bodhi:sk_bodhi_abc:*,svc:sk_svc_xyz:agent-id-123"
+ *
+ * Tokens may contain embedded colons — first segment is name, last is scope,
+ * everything in between is the token.
+ *
+ * Returns an empty map if the env var is missing or empty.
+ */
+export function parseAdminApiKeys(
+  envStr: string | undefined,
+): Map<string, AdminApiKey> {
+  const map = new Map<string, AdminApiKey>();
+  if (!envStr) return map;
+
+  for (const entry of envStr.split(",")) {
+    const trimmed = entry.trim();
+    if (!trimmed) continue;
+    const parts = trimmed.split(":");
+    // parts[0]=name, parts[1..n-1]=token (may contain colons), parts[n]=scope
+    if (parts.length < 3) continue;
+    const name = parts[0];
+    const scope = parts[parts.length - 1];
+    const token = parts.slice(1, parts.length - 1).join(":");
+    if (name && token && scope) {
+      map.set(token, { name, scope });
+    }
+  }
+
+  return map;
+}
+
 // ─── Middleware factory ───────────────────────────────────────────────────────
 
 /**
  * Returns a Hono middleware that accepts either:
  * (a) a valid session cookie (JWT in admin_session cookie), OR
- * (b) a valid bearer token (validated via agentTokenService.validate())
+ * (b) a valid bearer token — checked in this order:
+ *     1. Matches a SHIPWRIGHT_ADMIN_API_KEYS env key with scope=* → isAdmin, bypass
+ *     2. Matches a SHIPWRIGHT_ADMIN_API_KEYS env key with scope=<agentId> → enforce agentId
+ *     3. Validates via agentTokenService.validate() (DB token path)
  *
  * Decision tree:
  *   1. Authorization header present?
- *      - Yes, starts with "Bearer " → validate token → pass or 401
+ *      - Yes, starts with "Bearer " → check env keys, then DB token → pass or 401
  *      - Yes, malformed → 401 (no cookie fallback)
  *      - No → try session cookie
  *   2. Cookie present?
@@ -39,8 +87,9 @@ const AGENT_ROUTE_RE = /^\/admin\/api\/agents\/([^/]+)/;
 export function createAdminAuthMiddleware(deps: {
   sessionSecret: string;
   agentTokenService: Pick<AgentTokenService, "validate">;
+  adminApiKeys?: Map<string, AdminApiKey>;
 }): MiddlewareHandler {
-  const { sessionSecret, agentTokenService } = deps;
+  const { sessionSecret, agentTokenService, adminApiKeys } = deps;
 
   return async (c, next) => {
     const authHeader = c.req.header("Authorization");
@@ -54,6 +103,25 @@ export function createAdminAuthMiddleware(deps: {
         });
       }
       const raw = authHeader.slice(7);
+
+      // (1) Check admin API keys first (env-based, no DB round-trip).
+      if (adminApiKeys?.size) {
+        const envKey = adminApiKeys.get(raw);
+        if (envKey) {
+          if (envKey.scope === "*") {
+            // Admin key — bypass all scope checks.
+            return next();
+          }
+          // Scoped key — enforce route agentId matches key scope.
+          const match = AGENT_ROUTE_RE.exec(c.req.path);
+          if (match && envKey.scope !== match[1]) {
+            return c.json({ error: "Forbidden" }, 403);
+          }
+          return next();
+        }
+      }
+
+      // (2) Fall through to DB token path (AgentTokenService).
       const result = await agentTokenService.validate(raw);
       if (!result) {
         return c.json({ error: "Unauthorized" }, 401, {
