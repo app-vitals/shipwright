@@ -226,12 +226,12 @@ if (import.meta.main) {
       if (argv[i]?.startsWith("--db-url="))
         return argv[i].slice("--db-url=".length);
     }
-    return process.env.DATABASE_URL;
+    return process.env.DATABASE_URL_SHIPWRIGHT_ADMIN;
   })();
 
   if (!dbUrl) {
     console.error(
-      "Error: DATABASE_URL is not set. Pass --db-url <url> or set the DATABASE_URL env var.",
+      "Error: DATABASE_URL_SHIPWRIGHT_ADMIN is not set. Pass --db-url <url> or set the DATABASE_URL_SHIPWRIGHT_ADMIN env var.",
     );
     process.exit(1);
   }

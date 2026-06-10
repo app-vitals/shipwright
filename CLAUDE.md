@@ -37,7 +37,7 @@ task check-strings  # scan entire repo for banned/confidential identifiers (clie
 
 Database (admin service):
 ```bash
-export DATABASE_URL="postgresql://user:password@localhost:5432/shipwright_admin"
+export DATABASE_URL_SHIPWRIGHT_ADMIN="postgresql://user:password@localhost:5432/shipwright_admin"
 task db:provision   # prisma migrate deploy (idempotent)
 task db:migrate     # prisma migrate dev (creates a new migration)
 ```
@@ -119,15 +119,25 @@ Tests land **with** the code, at the correct layer — same PR, no "add tests la
 - **Lint/format:** Biome (2-space indent, organize-imports). Run `task lint` before committing.
 - **License:** MIT across all artifacts.
 
+## Env var namespacing convention
+
+Env vars read by Shipwright services are namespaced so each service is portable across any infra:
+
+- **Suite-wide:** `SHIPWRIGHT_<THING>` — e.g. `SHIPWRIGHT_SESSION_SECRET`, `SHIPWRIGHT_ENCRYPTION_KEY`, `SHIPWRIGHT_INTERNAL_API_KEY`.
+- **Per-subservice:** `SHIPWRIGHT_<SUBSERVICE>_<THING>` — e.g. `SHIPWRIGHT_ADMIN_ALLOWED_EMAILS`, `SHIPWRIGHT_ADMIN_APP_BASE_URL`, `SHIPWRIGHT_METRICS_SESSION_SECRET`.
+- **DB connection strings:** `DATABASE_URL_SHIPWRIGHT_<SUBSERVICE>` — never bare `DATABASE_URL` (collides with the host's own DB var).
+- **Universally-meaningful third-party vars** keep conventional names: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `PORT`.
+- **Secret manager IDs** map 1:1 to env var names: lowercase-kebab ↔ uppercase-snake (e.g. `shipwright-admin-allowed-emails` ↔ `SHIPWRIGHT_ADMIN_ALLOWED_EMAILS`).
+
 ## Database env vars
 
 Each Prisma service reads its own `DATABASE_URL_*` — never a shared connection.
 
 | Variable | Service | Schema |
 |----------|---------|--------|
-| `DATABASE_URL` | `@shipwright/admin` | `admin/prisma/schema.prisma` |
+| `DATABASE_URL_SHIPWRIGHT_ADMIN` | `@shipwright/admin` | `admin/prisma/schema.prisma` |
 
-The schema uses `provider = "postgresql"`. `DATABASE_URL` must be a Postgres connection string.
+The schema uses `provider = "postgresql"`. `DATABASE_URL_SHIPWRIGHT_ADMIN` must be a Postgres connection string.
 
 ## Reference
 

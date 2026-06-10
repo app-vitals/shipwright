@@ -34,10 +34,10 @@ import { makeTokenCrypto } from "./token-crypto.ts";
  * Idempotent — safe to call on every startup. Throws on migration failure.
  */
 async function runMigrations(): Promise<void> {
-  const databaseUrl = process.env.DATABASE_URL;
+  const databaseUrl = process.env.DATABASE_URL_SHIPWRIGHT_ADMIN;
   if (!databaseUrl) {
     console.warn(
-      "[admin] DATABASE_URL not set — skipping prisma migrate deploy",
+      "[admin] DATABASE_URL_SHIPWRIGHT_ADMIN not set — skipping prisma migrate deploy",
     );
     return;
   }
@@ -48,7 +48,7 @@ async function runMigrations(): Promise<void> {
     ["bunx", "prisma", "migrate", "deploy", "--schema=prisma/schema.prisma"],
     {
       cwd: join(import.meta.dir, ".."),
-      env: { ...process.env, DATABASE_URL: databaseUrl },
+      env: { ...process.env, DATABASE_URL_SHIPWRIGHT_ADMIN: databaseUrl },
       stdout: "pipe",
       stderr: "pipe",
     },
@@ -104,11 +104,12 @@ async function startServer(): Promise<void> {
   const sessionSecret = process.env.SHIPWRIGHT_SESSION_SECRET ?? "";
   const googleClientId = process.env.GOOGLE_CLIENT_ID ?? "";
   const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET ?? "";
-  const adminAllowedEmails = (process.env.ADMIN_ALLOWED_EMAILS ?? "")
+  const adminAllowedEmails = (process.env.SHIPWRIGHT_ADMIN_ALLOWED_EMAILS ?? "")
     .split(",")
     .map((e) => e.trim())
     .filter(Boolean);
-  const appBaseUrl = process.env.APP_BASE_URL ?? `http://localhost:${port}`;
+  const appBaseUrl =
+    process.env.SHIPWRIGHT_ADMIN_APP_BASE_URL ?? `http://localhost:${port}`;
 
   const googleClient = new HttpGoogleAuthClient();
   const slackClient = new HttpSlackProvisioningClient();

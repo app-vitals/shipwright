@@ -2,8 +2,8 @@
 // Owns: Agent, AgentEnv, AgentCronJob, AgentTool, AgentToken, AgentPlugin.
 // Agent is a first-class model (standalone, not embedded in a User model).
 //
-// WARNING: This schema uses DATABASE_URL — a dedicated database for the admin
-// service. Do NOT point this at a shared database.
+// WARNING: This schema uses DATABASE_URL_SHIPWRIGHT_ADMIN — a dedicated database
+// for the admin service. Do NOT point this at a shared database.
 
 generator client {
   provider = "prisma-client-js"
@@ -12,7 +12,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  url      = env("DATABASE_URL_SHIPWRIGHT_ADMIN")
 }
 
 // ─── Agent ────────────────────────────────────────────────────────────────────

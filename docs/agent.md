@@ -4,20 +4,20 @@
 
 ## Overview
 
-The agent owns six first-class Prisma models (`Agent` and its `Env` / `CronJob` / `Tool` / `Token` / `Plugin` children) on a **dedicated database** (`DATABASE_URL`). Secrets at rest (env values, Slack/Anthropic keys) are AES-256-GCM encrypted at the service layer; agent API tokens are stored only as SHA-256 hashes.
+The agent owns six first-class Prisma models (`Agent` and its `Env` / `CronJob` / `Tool` / `Token` / `Plugin` children) on a **dedicated database** (`DATABASE_URL_SHIPWRIGHT_ADMIN`). Secrets at rest (env values, Slack/Anthropic keys) are AES-256-GCM encrypted at the service layer; agent API tokens are stored only as SHA-256 hashes.
 
 > The Dockerfile `ENTRYPOINT` is `bun run admin/src/main.ts`, which runs migrations, constructs all services, and mounts all admin + runtime routes. For a full agent startup sequence (env validation, config fetch, `~/.claude` symlink, GitHub auth, mise, plugin install) use `agent/src/entrypoint-main.ts` — it validates required vars, fetches agent config, applies env, symlinks `~/.claude`, sets up GitHub auth, runs mise, installs plugins, and then spawns `run-agent.ts`. The legacy `agent/src/index.ts` remains a placeholder (`export {}`). The implemented HTTP surfaces are the admin CRUD API (`admin/src/admin-api.ts`), the runtime API (`admin/src/api.ts`), the server-rendered admin UI (`admin/src/admin-ui.ts`), the Prisma store + service classes (all in the `@shipwright/admin` package), the Slack event handler (`slack.ts`), and the cron runtime (`cron-handler.ts`). On startup the runner calls `POST /admin/api/agents/:id/crons/reconcile` to sync system crons. A dev-only `POST /chat` transport (`chat.ts`) is available when `SHIPWRIGHT_DEV_CHAT=true`; it is never registered in production (enforced by `chat-guard.ts`).
 
 ## Running locally
 
 ```bash
-export DATABASE_URL="postgresql://user:password@localhost:5432/shipwright_admin"
+export DATABASE_URL_SHIPWRIGHT_ADMIN="postgresql://user:password@localhost:5432/shipwright_admin"
 
 task db:provision          # prisma migrate deploy (idempotent)
 task db:migrate            # prisma migrate dev (create a new migration)
 ```
 
-The schema uses `provider = "postgresql"`. `DATABASE_URL` must be a Postgres connection string. Never point this at a shared database.
+The schema uses `provider = "postgresql"`. `DATABASE_URL_SHIPWRIGHT_ADMIN` must be a Postgres connection string. Never point this at a shared database.
 
 ## HTTP surfaces
 
@@ -83,7 +83,7 @@ All child models cascade-delete with their `Agent`.
 
 | Variable | Required | Purpose |
 |---|---|---|
-| `DATABASE_URL` | ✅ | Dedicated Postgres datasource for the admin service (e.g. `postgresql://user:pass@host:5432/db`). |
+| `DATABASE_URL_SHIPWRIGHT_ADMIN` | ✅ | Dedicated Postgres datasource for the admin service (e.g. `postgresql://user:pass@host:5432/db`). |
 | `SHIPWRIGHT_AGENT_ID` | ✅ (entrypoint) | The agent's ID in the Shipwright platform. Also settable via `--agent-id` CLI flag. |
 | `SHIPWRIGHT_API_URL` | ✅ (entrypoint) | Base URL of the Shipwright API used to fetch agent config at startup. Also settable via `--api-url`. |
 | `SHIPWRIGHT_INTERNAL_API_KEY` | ✅ (entrypoint + runtime API) | Bearer token for the config fetch at startup and for `/agents/*`. Also settable via `--api-key`. |
@@ -92,8 +92,8 @@ All child models cascade-delete with their `Agent`.
 | `SHIPWRIGHT_SESSION_SECRET` | admin API | Secret for verifying the `admin_session` JWT cookie. |
 | `GOOGLE_CLIENT_ID` | admin UI (OAuth) | Google OAuth 2.0 client ID. Required for the admin login flow. |
 | `GOOGLE_CLIENT_SECRET` | admin UI (OAuth) | Google OAuth 2.0 client secret. Required for the admin login flow. |
-| `ADMIN_ALLOWED_EMAILS` | admin UI (OAuth) | Comma-separated list of Google email addresses permitted to log in to the admin UI. |
-| `APP_BASE_URL` | admin UI (OAuth) | Public base URL of the server (e.g. `https://shipwright.example.com`). Used to construct the OAuth redirect URI. Defaults to `http://localhost:{PORT}`. |
+| `SHIPWRIGHT_ADMIN_ALLOWED_EMAILS` | admin UI (OAuth) | Comma-separated list of Google email addresses permitted to log in to the admin UI. |
+| `SHIPWRIGHT_ADMIN_APP_BASE_URL` | admin UI (OAuth) | Public base URL of the server (e.g. `https://shipwright.example.com`). Used to construct the OAuth redirect URI. Defaults to `http://localhost:{PORT}`. |
 | `SHIPWRIGHT_ENCRYPTION_KEY` | secrets at rest | 64-char hex (32 bytes) for AES-256-GCM. **If unset, secrets are stored in plain text** (logged warning) — set it in any real deployment. |
 | `GH_APP_ID` | GitHub App auth | GitHub App ID (integer as string). Required when using the App auth path. |
 | `GH_APP_PRIVATE_KEY` | GitHub App auth | PEM private key for the GitHub App (newlines may be `\n`-escaped). Required when using the App auth path. |
@@ -143,7 +143,7 @@ All child models cascade-delete with their `Agent`.
 | `agent/src/cron-handler.ts` | Cron runtime: `handleCronRequest()` — runs a cron prompt through Claude and posts the result to Slack. Supports `preCheck` scripts, `silent` suppression, channel vs. DM delivery, and `onPost`/`onSession` callbacks. |
 | `agent/src/slack.ts` | Slack event handler: `createSlackApp()` — Bolt-based Socket Mode app handling DMs, `app_mention`, `reaction_added`, file attachments, and voice transcription. |
 | `agent/src/slack-manifest.ts` | Typed Slack app manifest builder (`buildManifest()`) used by `agent/scripts/bootstrap-agent.ts` to create per-agent Slack apps via the Manifest API. |
-| `admin/prisma/schema.prisma` | The six-model schema (`DATABASE_URL`). |
+| `admin/prisma/schema.prisma` | The six-model schema (`DATABASE_URL_SHIPWRIGHT_ADMIN`). |
 
 ## Testing
 
