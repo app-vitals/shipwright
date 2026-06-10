@@ -54,16 +54,12 @@ WORKDIR /app
 # Copy workspace manifests first (layer caching for deps)
 COPY package.json bunfig.toml* ./
 COPY agent/package.json ./agent/
-COPY agent/prisma ./agent/prisma/
 
 # Install all dependencies (including devDependencies for typecheck)
 RUN bun install --frozen-lockfile
 
 # Copy the rest of the agent source
 COPY agent/ ./agent/
-
-# Generate Prisma client
-RUN cd agent && bunx prisma generate --schema=prisma/schema.prisma
 
 # ─── Runtime stage ────────────────────────────────────────────────────────────
 
