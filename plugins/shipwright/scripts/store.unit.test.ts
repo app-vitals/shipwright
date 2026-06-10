@@ -237,6 +237,45 @@ describe("TaskStoreConfig type", () => {
     };
     expect(cfg.github?.repo).toBe("my-repo");
   });
+
+  test("jira backend config is valid with required fields", () => {
+    const cfg: TaskStoreConfig = {
+      taskStore: "jira",
+      jira: {
+        baseUrl: "https://example.atlassian.net",
+        projectKey: "SHIP",
+      },
+    };
+    expect(cfg.taskStore).toBe("jira");
+    expect(cfg.jira?.baseUrl).toBe("https://example.atlassian.net");
+    expect(cfg.jira?.projectKey).toBe("SHIP");
+  });
+
+  test("jira backend config accepts optional readyJql and statusMap", () => {
+    const cfg: TaskStoreConfig = {
+      taskStore: "jira",
+      jira: {
+        baseUrl: "https://example.atlassian.net",
+        projectKey: "SHIP",
+        readyJql: 'status = "Ready for Dev"',
+        statusMap: { "In Progress": "in_progress", Done: "merged" },
+      },
+    };
+    expect(cfg.jira?.readyJql).toBe('status = "Ready for Dev"');
+    expect(cfg.jira?.statusMap?.Done).toBe("merged");
+  });
+
+  test("jira backend config without optional fields is valid", () => {
+    const cfg: TaskStoreConfig = {
+      taskStore: "jira",
+      jira: {
+        baseUrl: "https://acme.atlassian.net",
+        projectKey: "ACME",
+      },
+    };
+    expect(cfg.jira?.readyJql).toBeUndefined();
+    expect(cfg.jira?.statusMap).toBeUndefined();
+  });
 });
 
 // ─── TaskStore interface (via MockTaskStore) ──────────────────────────────────
