@@ -100,7 +100,9 @@ export async function runEntrypoint(deps: EntrypointDeps): Promise<void> {
         `[entrypoint] fetched config for agent ${agentId}: ${Object.keys(config.env).length} env vars, ${config.plugins.length} plugins`,
       );
     } catch (err) {
-      console.error(`[entrypoint] FATAL: failed to fetch agent config: ${(err as Error).message}`);
+      console.error(
+        `[entrypoint] FATAL: failed to fetch agent config: ${(err as Error).message}`,
+      );
       exit(1);
       return;
     }

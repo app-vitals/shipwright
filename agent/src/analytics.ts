@@ -86,7 +86,10 @@ function percentile(sorted: number[], p: number): number {
   return sorted[Math.max(0, idx)];
 }
 
-export function createAnalyticsStore(dir: string, clock: Clock = SystemClock()) {
+export function createAnalyticsStore(
+  dir: string,
+  clock: Clock = SystemClock(),
+) {
   // Ensure directory exists
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });

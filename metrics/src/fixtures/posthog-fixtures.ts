@@ -72,7 +72,8 @@ const SUMMARY_FIXTURE = makeResult(SUMMARY_COLUMNS, [
     // simplify_total, simplify_total_fixes
     8, 22,
     // simplify_avg_dry, simplify_avg_dead_code, simplify_avg_naming, simplify_avg_complexity, simplify_avg_consistency
-    2.5, 1.8, 1.2, 0.6, 0.9,
+    2.5,
+    1.8, 1.2, 0.6, 0.9,
     // reviews_total, reviews_ship_it
     12, 10,
     // complexity_1, 2, 3, 4, 5
@@ -116,13 +117,188 @@ const TRENDS_COLUMNS = [
 ];
 
 const TRENDS_FIXTURE = makeResult(TRENDS_COLUMNS, [
-  ["2026-06-01", 3, 4, 3, 2, 1, 5, 0, 2, 4, 2, 3.1, 3.5, 1.0, 6.0, 0.3, 4.5, 0.89, 2.2, 1.5, 1.0, 0.5, 0.8, 1.8],
-  ["2026-06-02", 4, 5, 4, 3, 2, 7, 1, 3, 5, 2, 3.4, 3.5, 1.2, 5.5, 0.5, 5.0, 0.97, 2.8, 2.0, 1.3, 0.7, 1.1, 2.0],
-  ["2026-06-03", 2, 3, 2, 1, 0, 0, 0, 1, 3, 1, 2.9, 3.0, null, null, null, null, null, null, null, null, null, null, null],
-  ["2026-06-04", 5, 6, 5, 4, 3, 10, 1, 4, 6, 3, 3.6, 3.8, 0.8, 7.0, 0.2, 5.2, 0.95, 3.1, 2.2, 1.5, 0.9, 1.2, 1.5],
-  ["2026-06-05", 4, 4, 4, 3, 2, 8, 0, 2, 5, 2, 3.0, 3.2, 1.0, 5.0, 0.4, 4.8, 0.94, 2.5, 1.8, 1.1, 0.6, 0.9, 2.2],
-  ["2026-06-06", 3, 5, 3, 2, 1, 3, 0, 3, 4, 3, 3.3, 3.5, 1.1, 6.5, 0.5, 5.5, 0.94, 2.0, 1.6, 1.2, 0.8, 1.0, 1.9],
-  ["2026-06-07", 3, 4, 3, 2, 1, 4, 0, 2, 4, 2, 3.2, 3.4, 1.0, 6.0, 0.4, 4.9, 0.94, 2.3, 1.7, 1.1, 0.7, 0.9, 2.1],
+  [
+    "2026-06-01",
+    3,
+    4,
+    3,
+    2,
+    1,
+    5,
+    0,
+    2,
+    4,
+    2,
+    3.1,
+    3.5,
+    1.0,
+    6.0,
+    0.3,
+    4.5,
+    0.89,
+    2.2,
+    1.5,
+    1.0,
+    0.5,
+    0.8,
+    1.8,
+  ],
+  [
+    "2026-06-02",
+    4,
+    5,
+    4,
+    3,
+    2,
+    7,
+    1,
+    3,
+    5,
+    2,
+    3.4,
+    3.5,
+    1.2,
+    5.5,
+    0.5,
+    5.0,
+    0.97,
+    2.8,
+    2.0,
+    1.3,
+    0.7,
+    1.1,
+    2.0,
+  ],
+  [
+    "2026-06-03",
+    2,
+    3,
+    2,
+    1,
+    0,
+    0,
+    0,
+    1,
+    3,
+    1,
+    2.9,
+    3.0,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+  ],
+  [
+    "2026-06-04",
+    5,
+    6,
+    5,
+    4,
+    3,
+    10,
+    1,
+    4,
+    6,
+    3,
+    3.6,
+    3.8,
+    0.8,
+    7.0,
+    0.2,
+    5.2,
+    0.95,
+    3.1,
+    2.2,
+    1.5,
+    0.9,
+    1.2,
+    1.5,
+  ],
+  [
+    "2026-06-05",
+    4,
+    4,
+    4,
+    3,
+    2,
+    8,
+    0,
+    2,
+    5,
+    2,
+    3.0,
+    3.2,
+    1.0,
+    5.0,
+    0.4,
+    4.8,
+    0.94,
+    2.5,
+    1.8,
+    1.1,
+    0.6,
+    0.9,
+    2.2,
+  ],
+  [
+    "2026-06-06",
+    3,
+    5,
+    3,
+    2,
+    1,
+    3,
+    0,
+    3,
+    4,
+    3,
+    3.3,
+    3.5,
+    1.1,
+    6.5,
+    0.5,
+    5.5,
+    0.94,
+    2.0,
+    1.6,
+    1.2,
+    0.8,
+    1.0,
+    1.9,
+  ],
+  [
+    "2026-06-07",
+    3,
+    4,
+    3,
+    2,
+    1,
+    4,
+    0,
+    2,
+    4,
+    2,
+    3.2,
+    3.4,
+    1.0,
+    6.0,
+    0.4,
+    4.9,
+    0.94,
+    2.3,
+    1.7,
+    1.1,
+    0.7,
+    0.9,
+    2.1,
+  ],
 ]);
 
 // ─── Features tasks fixture ───────────────────────────────────────────────────
@@ -273,9 +449,7 @@ const GENERIC_FALLBACK = makeResult([], []);
 
 // ─── Query pattern detection ─────────────────────────────────────────────────
 
-function detectQueryType(
-  hogql: string,
-): keyof typeof FIXTURES | "generic" {
+function detectQueryType(hogql: string): keyof typeof FIXTURES | "generic" {
   // Summary cycle time: single column avg, completion events with started_at/ts dateDiff
   if (
     hogql.includes("avg_cycle_time_hours") &&
@@ -294,7 +468,11 @@ function detectQueryType(
     return "trends";
   }
   // Queue funnel: aggregates over tasks_started/approved/merged in a single query
-  if (hogql.includes("tasks_started") && hogql.includes("tasks_approved") && hogql.includes("tasks_merged")) {
+  if (
+    hogql.includes("tasks_started") &&
+    hogql.includes("tasks_approved") &&
+    hogql.includes("tasks_merged")
+  ) {
     return "queueFunnel";
   }
   // Queue cycle started: WHERE clause targets only shipwright_task_started
@@ -307,15 +485,25 @@ function detectQueryType(
   }
   // Features tasks: SELECT feature_prefix, tasks_completed, avg_actual_h
   // Must check before queueCycleMerged since both target completion events
-  if (hogql.includes("GROUP BY feature_prefix") && hogql.includes("avg_actual_h")) {
+  if (
+    hogql.includes("GROUP BY feature_prefix") &&
+    hogql.includes("avg_actual_h")
+  ) {
     return "featuresTasks";
   }
   // Features CI: per-prefix CI first pass
-  if (hogql.includes("GROUP BY feature_prefix") && hogql.includes("ci_first_pass") && hogql.includes("ci_total")) {
+  if (
+    hogql.includes("GROUP BY feature_prefix") &&
+    hogql.includes("ci_first_pass") &&
+    hogql.includes("ci_total")
+  ) {
     return "featuresCi";
   }
   // Features reviews: per-prefix reviews
-  if (hogql.includes("GROUP BY feature_prefix") && hogql.includes("reviews_ship_it")) {
+  if (
+    hogql.includes("GROUP BY feature_prefix") &&
+    hogql.includes("reviews_ship_it")
+  ) {
     return "featuresReviews";
   }
   // Queue cycle merged: completion events with task_id + timestamp (no GROUP BY feature_prefix)
@@ -329,11 +517,18 @@ function detectQueryType(
     return "queueCycleMerged";
   }
   // Tokens totals: aggregate sums, agent_token_usage, no GROUP BY
-  if (hogql.includes("agent_token_usage") && hogql.includes("total_tokens") && !hogql.includes("GROUP BY")) {
+  if (
+    hogql.includes("agent_token_usage") &&
+    hogql.includes("total_tokens") &&
+    !hogql.includes("GROUP BY")
+  ) {
     return "tokensTotals";
   }
   // Tokens by session type: GROUP BY session_type
-  if (hogql.includes("session_type") && hogql.includes("GROUP BY session_type")) {
+  if (
+    hogql.includes("session_type") &&
+    hogql.includes("GROUP BY session_type")
+  ) {
     return "tokensBySessionType";
   }
   // Tokens by agent: GROUP BY agent_id
@@ -341,7 +536,10 @@ function detectQueryType(
     return "tokensByAgent";
   }
   // Tokens trends: agent_token_usage with GROUP BY period
-  if (hogql.includes("agent_token_usage") && hogql.includes("GROUP BY period")) {
+  if (
+    hogql.includes("agent_token_usage") &&
+    hogql.includes("GROUP BY period")
+  ) {
     return "tokensTrends";
   }
   return "generic";

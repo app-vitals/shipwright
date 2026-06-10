@@ -367,7 +367,13 @@ async function mockMetricsAPIsWithFullTrends(page: Page): Promise<void> {
       contentType: "application/json",
       body: JSON.stringify({
         data: {
-          totals: { input: 500_000, output: 100_000, cacheRead: 0, cacheCreation: 0, total: 600_000 },
+          totals: {
+            input: 500_000,
+            output: 100_000,
+            cacheRead: 0,
+            cacheCreation: 0,
+            total: 600_000,
+          },
           bySessionType: [],
           byAgent: [],
           trends: makeTrendsResponseWithFullFields().data.rows.map((r) => ({
@@ -379,7 +385,11 @@ async function mockMetricsAPIsWithFullTrends(page: Page): Promise<void> {
             total: 12600,
           })),
         },
-        meta: { dateRange: "today", generatedAt: new Date().toISOString(), queryTimeMs: 20 },
+        meta: {
+          dateRange: "today",
+          generatedAt: new Date().toISOString(),
+          queryTimeMs: 20,
+        },
       }),
     });
   });
@@ -406,7 +416,9 @@ test.afterAll(async () => {
 // ─── Dashboard — page load ────────────────────────────────────────────────────
 
 test.describe("Dashboard — page load", () => {
-  test("redirects unauthenticated requests to /auth/login", async ({ page }) => {
+  test("redirects unauthenticated requests to /auth/login", async ({
+    page,
+  }) => {
     const response = await page.goto(`${BASE_URL}/dashboard`, {
       waitUntil: "domcontentloaded",
     });
@@ -440,7 +452,9 @@ test.describe("Dashboard — page load", () => {
     await page.goto(`${BASE_URL}/dashboard`, { waitUntil: "networkidle" });
 
     await expect(page.locator('[aria-label="Pipeline quality"]')).toBeVisible();
-    const panels = page.locator('[aria-label="Pipeline quality"] .quality-panel');
+    const panels = page.locator(
+      '[aria-label="Pipeline quality"] .quality-panel',
+    );
     await expect(panels).toHaveCount(4);
   });
 
@@ -469,7 +483,9 @@ test.describe("Dashboard — page load", () => {
     await page.goto(`${BASE_URL}/dashboard`, { waitUntil: "networkidle" });
 
     // Chart stub sets window.Chart — confirm it's present
-    const hasChart = await page.evaluate(() => typeof window.Chart !== "undefined");
+    const hasChart = await page.evaluate(
+      () => typeof window.Chart !== "undefined",
+    );
     expect(hasChart).toBe(true);
   });
 
@@ -524,7 +540,9 @@ test.describe("Dashboard — date range picker", () => {
 // ─── Dashboard — feature breakdown panel ─────────────────────────────────────
 
 test.describe("Dashboard — feature breakdown panel", () => {
-  test("renders 2 feature rows when API returns 2 features", async ({ page }) => {
+  test("renders 2 feature rows when API returns 2 features", async ({
+    page,
+  }) => {
     const featureRows = [
       {
         prefix: "SW",
@@ -558,7 +576,9 @@ test.describe("Dashboard — feature breakdown panel", () => {
     await expect(emptyMsg).toBeVisible();
   });
 
-  test("feature row shows percentage formatting for CI pass rate", async ({ page }) => {
+  test("feature row shows percentage formatting for CI pass rate", async ({
+    page,
+  }) => {
     const featureRows = [
       {
         prefix: "SW",
@@ -589,21 +609,67 @@ test.describe("Dashboard — error handling", () => {
       route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ error: "PostHog query failed", data: null, meta: {} }),
+        body: JSON.stringify({
+          error: "PostHog query failed",
+          data: null,
+          meta: {},
+        }),
       });
     });
     await page.route("**/metrics/trends**", (route) => {
       route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ error: "PostHog query failed", data: null, meta: {} }),
+        body: JSON.stringify({
+          error: "PostHog query failed",
+          data: null,
+          meta: {},
+        }),
       });
     });
     // Allow other routes to pass through
-    await page.route("**/metrics/features**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(makeFeaturesResponse()) }));
-    await page.route("**/metrics/queue**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(makeQueueResponse()) }));
-    await page.route("**/metrics/tokens**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { totals: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, total: 0 }, bySessionType: [], byAgent: [], trends: [] }, meta: {} }) }));
-    await page.route("**/chart.js**", (route) => route.fulfill({ status: 200, contentType: "application/javascript", body: "window.Chart = class Chart { constructor() {} destroy() {} update() {} }; Chart.defaults = {};" }));
+    await page.route("**/metrics/features**", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(makeFeaturesResponse()),
+      }),
+    );
+    await page.route("**/metrics/queue**", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(makeQueueResponse()),
+      }),
+    );
+    await page.route("**/metrics/tokens**", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          data: {
+            totals: {
+              input: 0,
+              output: 0,
+              cacheRead: 0,
+              cacheCreation: 0,
+              total: 0,
+            },
+            bySessionType: [],
+            byAgent: [],
+            trends: [],
+          },
+          meta: {},
+        }),
+      }),
+    );
+    await page.route("**/chart.js**", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/javascript",
+        body: "window.Chart = class Chart { constructor() {} destroy() {} update() {} }; Chart.defaults = {};",
+      }),
+    );
 
     await injectSessionCookie(page);
     await page.goto(`${BASE_URL}/dashboard`, { waitUntil: "networkidle" });
@@ -616,10 +682,48 @@ test.describe("Dashboard — error handling", () => {
   test("shows error toast on network failure", async ({ page }) => {
     await page.route("**/metrics/summary**", (route) => route.abort("failed"));
     await page.route("**/metrics/trends**", (route) => route.abort("failed"));
-    await page.route("**/metrics/features**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(makeFeaturesResponse()) }));
-    await page.route("**/metrics/queue**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(makeQueueResponse()) }));
-    await page.route("**/metrics/tokens**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { totals: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, total: 0 }, bySessionType: [], byAgent: [], trends: [] }, meta: {} }) }));
-    await page.route("**/chart.js**", (route) => route.fulfill({ status: 200, contentType: "application/javascript", body: "window.Chart = class Chart { constructor() {} destroy() {} update() {} }; Chart.defaults = {};" }));
+    await page.route("**/metrics/features**", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(makeFeaturesResponse()),
+      }),
+    );
+    await page.route("**/metrics/queue**", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(makeQueueResponse()),
+      }),
+    );
+    await page.route("**/metrics/tokens**", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          data: {
+            totals: {
+              input: 0,
+              output: 0,
+              cacheRead: 0,
+              cacheCreation: 0,
+              total: 0,
+            },
+            bySessionType: [],
+            byAgent: [],
+            trends: [],
+          },
+          meta: {},
+        }),
+      }),
+    );
+    await page.route("**/chart.js**", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/javascript",
+        body: "window.Chart = class Chart { constructor() {} destroy() {} update() {} }; Chart.defaults = {};",
+      }),
+    );
 
     await injectSessionCookie(page);
     await page.goto(`${BASE_URL}/dashboard`, { waitUntil: "domcontentloaded" });
@@ -721,7 +825,9 @@ test.describe("Dashboard — metric graph modal", () => {
 
     // Modal should now be visible
     await expect(modal).not.toHaveAttribute("hidden");
-    await expect(page.locator("#metric-modal-title")).toContainText("Tasks Completed");
+    await expect(page.locator("#metric-modal-title")).toContainText(
+      "Tasks Completed",
+    );
   });
 
   test("pressing Escape closes the modal", async ({ page }) => {
@@ -778,7 +884,9 @@ test.describe("Dashboard — static assets", () => {
 // ─── Dashboard — MG-1.2 clickable metric graphs ───────────────────────────────
 
 test.describe("Dashboard — MG-1.2 clickable metric graphs", () => {
-  test("clicking ci-first-pass KPI card opens modal with chart title", async ({ page }) => {
+  test("clicking ci-first-pass KPI card opens modal with chart title", async ({
+    page,
+  }) => {
     await mockMetricsAPIsWithFullTrends(page);
     await injectSessionCookie(page);
     await page.goto(`${BASE_URL}/dashboard`, { waitUntil: "networkidle" });
@@ -788,10 +896,14 @@ test.describe("Dashboard — MG-1.2 clickable metric graphs", () => {
 
     const modal = page.locator("#metric-modal");
     await expect(modal).not.toHaveAttribute("hidden");
-    await expect(page.locator("#metric-modal-title")).toContainText("CI First-Pass Rate");
+    await expect(page.locator("#metric-modal-title")).toContainText(
+      "CI First-Pass Rate",
+    );
   });
 
-  test("clicking estimation-accuracy KPI card opens modal", async ({ page }) => {
+  test("clicking estimation-accuracy KPI card opens modal", async ({
+    page,
+  }) => {
     await mockMetricsAPIsWithFullTrends(page);
     await injectSessionCookie(page);
     await page.goto(`${BASE_URL}/dashboard`, { waitUntil: "networkidle" });
@@ -801,7 +913,9 @@ test.describe("Dashboard — MG-1.2 clickable metric graphs", () => {
 
     const modal = page.locator("#metric-modal");
     await expect(modal).not.toHaveAttribute("hidden");
-    await expect(page.locator("#metric-modal-title")).toContainText("Estimation Accuracy");
+    await expect(page.locator("#metric-modal-title")).toContainText(
+      "Estimation Accuracy",
+    );
   });
 
   test("clicking review-ship-it KPI card opens modal", async ({ page }) => {
@@ -814,7 +928,9 @@ test.describe("Dashboard — MG-1.2 clickable metric graphs", () => {
 
     const modal = page.locator("#metric-modal");
     await expect(modal).not.toHaveAttribute("hidden");
-    await expect(page.locator("#metric-modal-title")).toContainText("Review SHIP IT Rate");
+    await expect(page.locator("#metric-modal-title")).toContainText(
+      "Review SHIP IT Rate",
+    );
   });
 
   test("clicking ci-gates stat opens modal", async ({ page }) => {
@@ -839,7 +955,9 @@ test.describe("Dashboard — MG-1.2 clickable metric graphs", () => {
 
     const modal = page.locator("#metric-modal");
     await expect(modal).not.toHaveAttribute("hidden");
-    await expect(page.locator("#metric-modal-title")).toContainText("Tasks Started");
+    await expect(page.locator("#metric-modal-title")).toContainText(
+      "Tasks Started",
+    );
   });
 
   test("modal renders the metric-chart canvas", async ({ page }) => {

@@ -133,7 +133,10 @@ describe("analytics — summarize", () => {
 
   test("metadata is stored on events", () => {
     const store = createAnalyticsStore(ANALYTICS_DIR);
-    store.track({ type: "message", metadata: { channel: "C1", isThread: true } });
+    store.track({
+      type: "message",
+      metadata: { channel: "C1", isThread: true },
+    });
     const today = new Date().toISOString().slice(0, 10);
     const events = store.loadDay(today).events;
     expect(events[0].metadata).toEqual({ channel: "C1", isThread: true });
@@ -158,7 +161,11 @@ describe("analytics — summarizeRange", () => {
     const store = createAnalyticsStore(ANALYTICS_DIR);
     const result = store.summarizeRange("2099-01-01", "2099-01-03");
     expect(result).toHaveLength(3);
-    expect(result.map((s) => s.date)).toEqual(["2099-01-01", "2099-01-02", "2099-01-03"]);
+    expect(result.map((s) => s.date)).toEqual([
+      "2099-01-01",
+      "2099-01-02",
+      "2099-01-03",
+    ]);
   });
 
   test("empty days return zero counts", () => {
@@ -199,10 +206,17 @@ describe("analytics — rollupWeek", () => {
     const store = createAnalyticsStore(ANALYTICS_DIR);
     mkdirSync(ANALYTICS_DIR, { recursive: true });
     const makeDay = (date: string, events: object[]) =>
-      writeFileSync(`${ANALYTICS_DIR}/${date}.json`, JSON.stringify({ date, events }));
-    makeDay("2099-01-01", [{ type: "message", timestamp: 1000, durationMs: 100 }]);
+      writeFileSync(
+        `${ANALYTICS_DIR}/${date}.json`,
+        JSON.stringify({ date, events }),
+      );
+    makeDay("2099-01-01", [
+      { type: "message", timestamp: 1000, durationMs: 100 },
+    ]);
     makeDay("2099-01-02", [{ type: "cron", timestamp: 2000 }]);
-    makeDay("2099-01-03", [{ type: "mention", timestamp: 3000, durationMs: 200 }]);
+    makeDay("2099-01-03", [
+      { type: "mention", timestamp: 3000, durationMs: 200 },
+    ]);
     const rollup = store.rollupWeek("2099-01-07");
     expect(rollup.activeDays).toBe(2);
     expect(rollup.totalCronJobs).toBe(1);

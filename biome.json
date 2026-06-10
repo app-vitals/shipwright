@@ -15,6 +15,15 @@
     "indentWidth": 2
   },
   "files": {
-    "ignore": ["node_modules", "dist", "build", "coverage", "agent/prisma/client", "admin/prisma/client", "site/.astro", "site/dist"]
+    "ignore": [
+      "node_modules",
+      "dist",
+      "build",
+      "coverage",
+      "agent/prisma/client",
+      "admin/prisma/client",
+      "site/.astro",
+      "site/dist"
+    ]
   }
 }

@@ -7,9 +7,9 @@
  * Isolation contract: no mock.module(), no global overrides, no real network.
  */
 
-import { describe, it, expect, beforeEach } from "bun:test";
-import { GitHubTokenManager } from "./github-app-auth.ts";
+import { beforeEach, describe, expect, it } from "bun:test";
 import { FixedClock } from "./clock.ts";
+import { GitHubTokenManager } from "./github-app-auth.ts";
 
 // ─── Recorded client double ───────────────────────────────────────────────────
 
@@ -40,7 +40,6 @@ class RecordedGitHubAppClient {
       tokenType: "installation",
     };
   }
-
 }
 
 // ─── Fake timer infrastructure ────────────────────────────────────────────────
@@ -59,7 +58,10 @@ class FakeTimerControl {
   /** Returns a fake setInterval suitable for constructor injection. */
   get setIntervalFn(): typeof setInterval {
     const self = this;
-    return function fakeSetInterval(fn: unknown, ms?: unknown): ReturnType<typeof setInterval> {
+    return function fakeSetInterval(
+      fn: unknown,
+      ms?: unknown,
+    ): ReturnType<typeof setInterval> {
       const id = self.nextId++;
       self.callbacks.set(id, fn as () => void);
       self.registeredIntervalMs.push(ms as number);
@@ -160,7 +162,9 @@ describe("GitHubTokenManager — background refresh (integration)", () => {
 
   it("onRefresh receives distinct tokens across multiple ticks", async () => {
     const tokens: string[] = [];
-    manager.startBackgroundRefresh(async (t) => { tokens.push(t); });
+    manager.startBackgroundRefresh(async (t) => {
+      tokens.push(t);
+    });
     timers.tick(5);
     await new Promise((r) => setTimeout(r, 50));
     const unique = new Set(tokens);

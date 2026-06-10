@@ -4,8 +4,8 @@
  * Provides FixedClock and makeAccountsClientMock for use in tests.
  */
 
-import type { Clock } from "./clock.ts";
 import type { AccountsClient, UserRecord } from "./accounts-client.ts";
+import type { Clock } from "./clock.ts";
 
 // ─── FixedClock ───────────────────────────────────────────────────────────────
 
@@ -18,7 +18,9 @@ import type { AccountsClient, UserRecord } from "./accounts-client.ts";
  *
  * @param t - Starting time as a `Date` or ISO 8601 string.
  */
-export function FixedClock(t: Date | string): Clock & { advance(ms: number): void } {
+export function FixedClock(
+  t: Date | string,
+): Clock & { advance(ms: number): void } {
   let current = typeof t === "string" ? new Date(t) : new Date(t.getTime());
   return {
     now(): Date {
@@ -99,4 +101,3 @@ export function makeAccountsClientMock(
     validateAgentToken: async () => null,
   };
 }
-

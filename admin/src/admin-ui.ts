@@ -4,8 +4,8 @@
  *
  * Routes:
  *   GET  /admin/login                 — login page (Google sign-in button)
- *   GET  /auth/google                 — redirect to Google OAuth consent
- *   GET  /auth/callback               — Google OAuth callback → set session cookie
+ *   GET  /admin/auth/google           — redirect to Google OAuth consent
+ *   GET  /admin/auth/callback         — Google OAuth callback → set session cookie
  *   POST /admin/logout                — clear cookie → redirect to login
  *   GET  /admin/agents                — list all agents (auth required)
  *   GET  /admin/agents/:id            — agent detail (auth required)
@@ -33,11 +33,11 @@ import {
 } from "./admin-ui-pages.ts";
 import type { AgentCronJobService } from "./agent-cron-jobs.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
-import { ForbiddenError, UnprocessableEntityError } from "./errors.ts";
-import type { GoogleAuthClient } from "./google-auth-client.ts";
 import type { AgentPluginService } from "./agent-plugins.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 import type { AgentToolService } from "./agent-tools.ts";
+import { ForbiddenError, UnprocessableEntityError } from "./errors.ts";
+import type { GoogleAuthClient } from "./google-auth-client.ts";
 import type { AppManifest } from "./slack-provisioning-client.ts";
 import { defaultAgentManifest } from "./slack-provisioning-client.ts";
 
@@ -110,8 +110,14 @@ export interface AdminUIDeps {
     AgentCronJobService,
     "list" | "create" | "setEnabled" | "delete" | "get"
   >;
-  agentToolService: Pick<AgentToolService, "list" | "add" | "toggle" | "remove">;
-  agentTokenService: Pick<AgentTokenService, "listForAgent" | "create" | "revoke">;
+  agentToolService: Pick<
+    AgentToolService,
+    "list" | "add" | "toggle" | "remove"
+  >;
+  agentTokenService: Pick<
+    AgentTokenService,
+    "listForAgent" | "create" | "revoke"
+  >;
   agentPluginService: Pick<AgentPluginService, "list">;
   sessionSecret: string;
   googleClient: GoogleAuthClient;
@@ -120,6 +126,8 @@ export interface AdminUIDeps {
   adminAllowedEmails: string[];
   slackClient: AdminUISlackClient;
   appBaseUrl: string;
+  /** Enable the /admin/dev-login route. Hard-blocked in production regardless of this value. */
+  devAuthEnabled?: boolean;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -203,6 +211,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
     adminAllowedEmails,
     slackClient,
     appBaseUrl,
+    devAuthEnabled = false,
   } = deps;
 
   const app = new Hono();
@@ -225,7 +234,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
     return html(renderLoginPage({ error, returnTo }));
   });
 
-  app.get("/auth/google", (c) => {
+  app.get("/admin/auth/google", (c) => {
     if (!googleClientId) {
       return c.redirect("/admin/login?error=server_error", 302);
     }
@@ -246,12 +255,12 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
       httpOnly: true,
       sameSite: "Lax",
       maxAge: OAUTH_STATE_TTL_SECONDS,
-      path: "/auth",
+      path: "/admin/auth",
     });
 
     const params = new URLSearchParams({
       client_id: googleClientId,
-      redirect_uri: `${appBaseUrl}/auth/callback`,
+      redirect_uri: `${appBaseUrl}/admin/auth/callback`,
       response_type: "code",
       scope: "openid profile email",
       state: nonce,
@@ -261,24 +270,28 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
     return c.redirect(`${GOOGLE_AUTH_URL}?${params.toString()}`, 302);
   });
 
-  app.get("/auth/callback", async (c) => {
+  app.get("/admin/auth/callback", async (c) => {
     const { code, state, error: googleError } = c.req.query();
 
     // Google returned an error (e.g. access_denied)
     if (googleError) {
-      const slug = googleError === "access_denied" ? "access_denied" : "auth_failed";
+      const slug =
+        googleError === "access_denied" ? "access_denied" : "auth_failed";
       return c.redirect(`/admin/login?error=${slug}`, 302);
     }
 
     // CSRF: validate state nonce. The oauth_state cookie is JSON: {nonce, returnTo?}.
     const storedStateCookie = getCookie(c, OAUTH_STATE_COOKIE);
-    deleteCookie(c, OAUTH_STATE_COOKIE, { path: "/auth" });
+    deleteCookie(c, OAUTH_STATE_COOKIE, { path: "/admin/auth" });
 
     let storedNonce: string | undefined;
     let returnTo: string | undefined;
     try {
       if (storedStateCookie) {
-        const parsed = JSON.parse(storedStateCookie) as { nonce?: string; returnTo?: string };
+        const parsed = JSON.parse(storedStateCookie) as {
+          nonce?: string;
+          returnTo?: string;
+        };
         storedNonce = parsed.nonce;
         returnTo = parsed.returnTo;
       }
@@ -305,7 +318,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
         code,
         clientId: googleClientId,
         clientSecret: googleClientSecret,
-        redirectUri: `${appBaseUrl}/auth/callback`,
+        redirectUri: `${appBaseUrl}/admin/auth/callback`,
       });
       accessToken = tokens.accessToken;
     } catch {
@@ -313,7 +326,12 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
     }
 
     // Fetch user info from Google
-    let userInfo: { sub: string; email?: string; email_verified?: boolean; name: string };
+    let userInfo: {
+      sub: string;
+      email?: string;
+      email_verified?: boolean;
+      name: string;
+    };
     try {
       userInfo = await googleClient.getUserInfo(accessToken);
     } catch {
@@ -329,12 +347,20 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
     }
 
     // Check allowlist
-    if (!adminAllowedEmails.map((e) => e.toLowerCase()).includes(userInfo.email.toLowerCase())) {
+    if (
+      !adminAllowedEmails
+        .map((e) => e.toLowerCase())
+        .includes(userInfo.email.toLowerCase())
+    ) {
       return new Response("Forbidden", { status: 403 });
     }
 
     // Create session
-    const token = await createSessionToken(sessionSecret, userInfo.sub, userInfo.email);
+    const token = await createSessionToken(
+      sessionSecret,
+      userInfo.sub,
+      userInfo.email,
+    );
     setCookie(c, SESSION_COOKIE, token, {
       httpOnly: true,
       secure: appBaseUrl.startsWith("https://"),
@@ -353,6 +379,26 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
   app.post("/admin/logout", (c) => {
     deleteCookie(c, SESSION_COOKIE, { path: "/" });
     return c.redirect("/admin/login", 302);
+  });
+
+  // ─── Dev auto-login (non-prod only) ──────────────────────────────────────
+
+  app.get("/admin/dev-login", async (c) => {
+    // Hard-blocked: devAuthEnabled must be true AND we must not be in production.
+    // The devAuthEnabled flag is pre-computed from isDevAuthAllowed() at startup;
+    // this route simply trusts the injected value.
+    if (!devAuthEnabled) {
+      return new Response("Not Found", { status: 404 });
+    }
+    const token = await createSessionToken(sessionSecret, "dev", "dev@localhost");
+    setCookie(c, SESSION_COOKIE, token, {
+      httpOnly: true,
+      secure: appBaseUrl.startsWith("https://"),
+      sameSite: "Lax",
+      maxAge: SESSION_TTL_SECONDS,
+      path: "/",
+    });
+    return c.redirect("/admin/agents", 302);
   });
 
   // ─── Agents list ──────────────────────────────────────────────────────────
@@ -380,9 +426,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
     }
 
     const rawError = c.req.query("error") ?? undefined;
-    const error = rawError
-      ? (ERROR_MESSAGES[rawError] ?? rawError)
-      : undefined;
+    const error = rawError ? (ERROR_MESSAGES[rawError] ?? rawError) : undefined;
     const newToken = c.req.query("newToken") ?? undefined;
 
     const [envVars, crons, tools, tokens, plugins] = await Promise.all([
@@ -459,7 +503,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
       prompt = formData.get("prompt")?.toString();
       channel = formData.get("channel")?.toString() || null;
       user = formData.get("user")?.toString() || null;
-      silent = formData.get("silent") === "on" || formData.get("silent") === "true";
+      silent =
+        formData.get("silent") === "on" || formData.get("silent") === "true";
       const enabledVal = formData.get("enabled");
       // Checkbox: present as "on" when checked, absent (null) when unchecked.
       // Programmatic callers may send "true"/"false" explicitly.
@@ -485,10 +530,20 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
       if (err instanceof UnprocessableEntityError) {
         const msg = err.message.toLowerCase();
         if (msg.includes("invalid cron")) {
-          return c.redirect(`/admin/agents/${agentId}?error=invalid_schedule`, 302);
+          return c.redirect(
+            `/admin/agents/${agentId}?error=invalid_schedule`,
+            302,
+          );
         }
-        if (msg.includes("channel") || msg.includes("user") || msg.includes("target")) {
-          return c.redirect(`/admin/agents/${agentId}?error=invalid_target`, 302);
+        if (
+          msg.includes("channel") ||
+          msg.includes("user") ||
+          msg.includes("target")
+        ) {
+          return c.redirect(
+            `/admin/agents/${agentId}?error=invalid_target`,
+            302,
+          );
         }
       }
       return c.redirect(`/admin/agents/${agentId}?error=create_failed`, 302);
@@ -629,16 +684,20 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
     }
   });
 
-  app.post("/admin/agents/:id/tokens/:tokenId/revoke", requireAuth, async (c) => {
-    const agentId = c.req.param("id");
-    const tokenId = c.req.param("tokenId");
-    try {
-      await agentTokenService.revoke(tokenId);
-    } catch {
-      // ignore errors — redirect back regardless
-    }
-    return c.redirect(`/admin/agents/${agentId}`, 302);
-  });
+  app.post(
+    "/admin/agents/:id/tokens/:tokenId/revoke",
+    requireAuth,
+    async (c) => {
+      const agentId = c.req.param("id");
+      const tokenId = c.req.param("tokenId");
+      try {
+        await agentTokenService.revoke(tokenId);
+      } catch {
+        // ignore errors — redirect back regardless
+      }
+      return c.redirect(`/admin/agents/${agentId}`, 302);
+    },
+  );
 
   // ─── Provisioning flow ────────────────────────────────────────────────────
 

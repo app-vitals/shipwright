@@ -142,10 +142,8 @@ function buildMockDeps(): AdminUIDeps {
     googleClientSecret: "e2e-google-client-secret",
     adminAllowedEmails: ["admin@example.com"],
     googleClient: {
-      exchangeCode: () =>
-        Promise.reject(new Error("not used in e2e tests")),
-      getUserInfo: () =>
-        Promise.reject(new Error("not used in e2e tests")),
+      exchangeCode: () => Promise.reject(new Error("not used in e2e tests")),
+      getUserInfo: () => Promise.reject(new Error("not used in e2e tests")),
     },
     slackClient: {
       createAppManifest: async () => ({
@@ -196,7 +194,9 @@ const port = Number.parseInt(
 // Re-read secret at runtime in case it was overridden via env
 const app = buildTestApp();
 Bun.serve({ port, fetch: app.fetch });
-console.log(`[admin-e2e-server] Test server running on http://localhost:${port}`);
+console.log(
+  `[admin-e2e-server] Test server running on http://localhost:${port}`,
+);
 
 process.on("SIGTERM", () => process.exit(0));
 process.on("SIGINT", () => process.exit(0));

@@ -9,10 +9,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { parseApiKeys } from "./lib/api-auth.ts";
-import { makeAccountsClientMock } from "./lib/test-helpers.ts";
 import { type MetricsDeps, createMetricsApp } from "./api.ts";
 import { Cache } from "./cache.ts";
+import { parseApiKeys } from "./lib/api-auth.ts";
+import { makeAccountsClientMock } from "./lib/test-helpers.ts";
 import { createPostHogClient } from "./posthog-client.ts";
 import type { FetchFn, HogQLResponse } from "./types.ts";
 
@@ -172,7 +172,9 @@ describe("integration: GET /metrics/summary", () => {
     });
 
     expect(capturedAuthHeader).toBeTruthy();
-    expect(capturedAuthHeader as unknown as string).toBe(`Bearer ${TEST_CONFIG.personalApiKey}`);
+    expect(capturedAuthHeader as unknown as string).toBe(
+      `Bearer ${TEST_CONFIG.personalApiKey}`,
+    );
   });
 });
 
