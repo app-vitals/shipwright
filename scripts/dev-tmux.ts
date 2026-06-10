@@ -42,6 +42,8 @@ export const ADMIN_PORT = 3001;
 export const AGENT_PORT = 3000;
 /** The metrics dashboard UI — a browser page (NOT a tmux pane). */
 export const DASHBOARD_URL = `http://localhost:${METRICS_PORT}/dashboard`;
+/** The admin dev-login page — auto-opened after stack launch. */
+export const ADMIN_DEV_LOGIN_URL = `http://localhost:${ADMIN_PORT}/admin/dev-login`;
 
 // Obviously-fake dev placeholders — safe for a public/MIT repo. These are NOT
 // secrets: the agent runs against a local Postgres DB and a local offline
@@ -49,6 +51,11 @@ export const DASHBOARD_URL = `http://localhost:${METRICS_PORT}/dashboard`;
 const DUMMY_POSTHOG_KEY = "phc_dev_dummy";
 const DUMMY_ENCRYPTION_KEY =
   "0000000000000000000000000000000000000000000000000000000000000000";
+const DUMMY_INTERNAL_API_KEY = "dev-internal-key";
+/** Docker image tag for the agent container. */
+const DEV_DOCKER_IMAGE = "shipwright-agent-dev";
+/** Named Docker volume that persists agent-home across container restarts. */
+const DEV_AGENT_VOLUME = "shipwright-agent-home";
 // Default the connection user to the current OS account. Homebrew's Postgres
 // creates a superuser role named after the installing user, and Prisma — unlike
 // libpq — does NOT auto-default the username, so an unqualified DSN authenticates
@@ -103,6 +110,12 @@ export type ExecFn = (argv: string[]) => void;
 
 export type BuildOpts = {
   session?: string;
+  /**
+   * Absolute path to the repo root, mounted read-only into the agent container
+   * as /repo. Defaults to process.cwd() at runtime; injected in unit tests for
+   * deterministic assertions (no I/O in the pure builder).
+   */
+  repoPath?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -132,28 +145,59 @@ export const STACK_PANES: Pane[] = [
   {
     label: "metrics",
     cmd: ["bun", "metrics/src/server.ts"],
-    env: { METRICS_OFFLINE: "true" },
+    // SQLite persistence mode: no METRICS_OFFLINE, no POSTHOG_PROJECT_API_KEY,
+    // no METRICS_DATABASE_URL → service defaults to sqlite mode.
+    env: { METRICS_DB_PATH: "state/metrics.db" },
   },
   {
     label: "admin",
     cmd: ["bun", "admin/src/main.ts"],
     env: {
       PORT: String(ADMIN_PORT),
-      DATABASE_URL: DEV_DATABASE_URL,
+      DATABASE_URL_SHIPWRIGHT_ADMIN: DEV_DATABASE_URL,
       SHIPWRIGHT_ENCRYPTION_KEY: DUMMY_ENCRYPTION_KEY,
+      SHIPWRIGHT_INTERNAL_API_KEY: DUMMY_INTERNAL_API_KEY,
+      ADMIN_DEV_AUTH: "true",
     },
   },
   {
     label: "agent",
-    cmd: ["bun", "agent/src/run-agent.ts"],
-    env: {
-      PORT: String(AGENT_PORT),
-      SHIPWRIGHT_DEV_CHAT: "true",
-      POSTHOG_HOST: `http://localhost:${METRICS_PORT}`,
-      POSTHOG_PROJECT_API_KEY: DUMMY_POSTHOG_KEY,
-      SHIPWRIGHT_API_URL: `http://localhost:${ADMIN_PORT}`,
-      AGENT_HOME: DEV_AGENT_HOME,
-    },
+    // All env is passed via -e flags inside cmd; pane env stays empty so
+    // paneShellLine() emits no inline prefix — docker manages its own env.
+    cmd: [
+      "docker",
+      "run",
+      "--rm",
+      "--name",
+      DEV_DOCKER_IMAGE,
+      "-p",
+      `${AGENT_PORT}:${AGENT_PORT}`,
+      "-v",
+      `${DEV_AGENT_VOLUME}:/data/agent-home`,
+      // Repo is mounted read-only at build time; the exact host path is
+      // substituted in buildStackCommands (repoPath opt, default process.cwd()).
+      // Placeholder replaced in buildStackCommands — see note there.
+      "__REPO_VOLUME_PLACEHOLDER__",
+      "--add-host=host.docker.internal:host-gateway",
+      "-e",
+      "SHIPWRIGHT_DEV_CHAT=true",
+      "-e",
+      "SHIPWRIGHT_LOCAL_MARKETPLACE=/repo/plugins/shipwright",
+      "-e",
+      `SHIPWRIGHT_API_URL=http://host.docker.internal:${ADMIN_PORT}`,
+      "-e",
+      `POSTHOG_HOST=http://host.docker.internal:${METRICS_PORT}`,
+      "-e",
+      `POSTHOG_PROJECT_API_KEY=${DUMMY_POSTHOG_KEY}`,
+      "-e",
+      "SHIPWRIGHT_AGENT_ID=dev-agent",
+      "-e",
+      `SHIPWRIGHT_INTERNAL_API_KEY=${DUMMY_INTERNAL_API_KEY}`,
+      "-e",
+      `PORT=${AGENT_PORT}`,
+      DEV_DOCKER_IMAGE,
+    ],
+    env: {},
   },
   {
     label: "chat",
@@ -197,10 +241,15 @@ function paneTarget(session: string, paneIndex: number): string {
  * Build the ordered list of commands that stand up the stack:
  *   1. new-session (detached) hosting pane 0
  *   2. one split-window per remaining pane (single window, tiled)
- *   3. a migration preflight BEFORE the admin pane's command is sent
- *   4. send-keys per pane to run its command with inline env
+ *   3. migration preflight BEFORE the admin pane's command is sent
+ *   4. seed + docker build preflights BEFORE the agent pane's command is sent
+ *   5. send-keys per pane to run its command with inline env
  *
  * Pure: no I/O. runStack() drives the injected exec over this list.
+ *
+ * The `repoPath` option allows unit tests to inject a deterministic path
+ * instead of calling process.cwd() (which would be I/O in a pure builder).
+ * The entrypoint passes `process.cwd()` explicitly.
  */
 export function buildStackCommands(
   panes: Pane[],
@@ -210,6 +259,7 @@ export function buildStackCommands(
     throw new Error("buildStackCommands: at least one pane is required");
   }
   const session = opts.session ?? SESSION_NAME;
+  const repoPath = opts.repoPath ?? process.cwd();
   const cmds: TmuxCommand[] = [];
 
   // 1. Create the session (detached) with pane 0.
@@ -250,29 +300,65 @@ export function buildStackCommands(
   });
 
   const adminIndex = panes.findIndex((p) => p.label === "admin");
+  const agentIndex = panes.findIndex((p) => p.label === "agent");
 
-  // 3+4. For each pane, send its command. Before the admin pane, run the
-  // preflight: generate the Prisma client (the admin service owns it —
-  // `bun install` does NOT generate it) THEN apply migrations so the
-  // Postgres schema is up to date before the admin service starts.
+  // 3+4+5. For each pane, send its command.
+  //   - Before the admin pane: prisma generate + migrate deploy preflight.
+  //   - Before the agent pane: seed-dev-agent + docker build preflights.
   panes.forEach((pane, i) => {
     if (i === adminIndex) {
+      // Preflight: generate the Prisma client then apply migrations so the
+      // admin service's Postgres schema is up to date before it starts.
       cmds.push({
         kind: "preflight",
         argv: [
           "sh",
           "-c",
-          `cd admin && bunx prisma generate --schema=prisma/schema.prisma && DATABASE_URL=${DEV_DATABASE_URL} bunx prisma migrate deploy --schema=prisma/schema.prisma`,
+          `cd admin && bunx prisma generate --schema=prisma/schema.prisma && DATABASE_URL_SHIPWRIGHT_ADMIN=${DEV_DATABASE_URL} bunx prisma migrate deploy --schema=prisma/schema.prisma`,
         ],
       });
     }
+    if (i === agentIndex) {
+      // Preflight: seed the dev agent record (upsert agent + env + plugin + tools).
+      cmds.push({
+        kind: "preflight",
+        argv: [
+          "sh",
+          "-c",
+          `bun run scripts/seed-dev-agent.ts --db-url ${DEV_DATABASE_URL}`,
+        ],
+      });
+      // Preflight: build the Docker image that the agent pane will run.
+      cmds.push({
+        kind: "preflight",
+        argv: [
+          "sh",
+          "-c",
+          `docker build -t ${DEV_DOCKER_IMAGE} -f agent/Dockerfile .`,
+        ],
+      });
+    }
+
+    // Resolve the repo-volume placeholder in the agent pane's docker run cmd.
+    const resolvedPane: Pane =
+      pane.label === "agent"
+        ? {
+            ...pane,
+            cmd: pane.cmd.map((token) =>
+              token === "__REPO_VOLUME_PLACEHOLDER__"
+                ? `-v ${repoPath}:/repo:ro`
+                : token,
+            ),
+          }
+        : pane;
+
     cmds.push({
       kind: "send-keys",
       argv: [
         "send-keys",
         "-t",
         paneTarget(session, i),
-        paneShellLine(pane),
+        paneShellLine(resolvedPane),
         "Enter",
       ],
     });
@@ -518,20 +604,23 @@ function ensureDepsInstalled(): void {
 }
 
 /**
- * Surface the dashboard: once the metrics server is listening, open it in the
- * default browser (macOS `open`). The dashboard is a browser page, not a tmux
- * pane — auto-opening removes the "where's the UI?" guesswork. Best-effort: if
- * metrics is slow to boot, print the URL instead of failing the launch.
+ * Surface the admin dev-login page: once the admin service is listening, open
+ * it in the default browser (macOS `open`). Auto-opening removes the
+ * "where's the UI?" guesswork. Best-effort: if admin is slow to boot, print
+ * the URL instead of failing the launch.
  */
 async function openDashboardWhenReady(): Promise<void> {
-  const base = `http://localhost:${METRICS_PORT}`;
+  const base = `http://localhost:${ADMIN_PORT}`;
   if (!(await waitForReachable(base, 10_000))) {
     console.error(
-      `[stack] metrics slow to start — open ${DASHBOARD_URL} once it's up.`,
+      `[stack] admin slow to start — open ${ADMIN_DEV_LOGIN_URL} once it's up.`,
     );
     return;
   }
-  Bun.spawn(["open", DASHBOARD_URL], { stdout: "ignore", stderr: "ignore" });
+  Bun.spawn(["open", ADMIN_DEV_LOGIN_URL], {
+    stdout: "ignore",
+    stderr: "ignore",
+  });
 }
 
 /** Blocking y/N prompt. Empty/EOF/anything-but-yes ⇒ false (safe default). */
@@ -627,7 +716,7 @@ if (import.meta.main) {
     `[stack] launching tmux session "${SESSION_NAME}" — metrics :${METRICS_PORT}, admin :${ADMIN_PORT}, agent :${AGENT_PORT}, chat REPL, logs`,
   );
   try {
-    runStack(STACK_PANES, realExec);
+    runStack(STACK_PANES, realExec, { repoPath: process.cwd() });
   } catch (err) {
     console.error(`[stack] failed to launch: ${(err as Error).message}`);
     process.exit(1);

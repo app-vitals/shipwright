@@ -14,9 +14,11 @@
 
 import { describe, expect, test } from "bun:test";
 import {
+  ADMIN_DEV_LOGIN_URL,
   ADMIN_PORT,
   AGENT_PORT,
   DASHBOARD_URL,
+  METRICS_PORT,
   type Pane,
   SESSION_NAME,
   STACK_PANES,
@@ -129,35 +131,38 @@ describe("buildStackCommands", () => {
 });
 
 describe("runStack — per-pane commands via injected exec", () => {
-  test("metrics pane runs the metrics server with METRICS_OFFLINE=true", () => {
+  test("metrics pane runs the metrics server in sqlite mode with METRICS_DB_PATH", () => {
     const { calls, exec } = makeRecorder();
     runStack(STACK_PANES, exec);
     const sk = sendKeysForPane(calls, 0);
     expect(sk?.join(" ")).toContain("metrics/src/server.ts");
-    expect(sk?.join(" ")).toContain("METRICS_OFFLINE=true");
+    expect(sk?.join(" ")).toContain("METRICS_DB_PATH=state/metrics.db");
+    expect(sk?.join(" ")).not.toContain("METRICS_OFFLINE=true");
   });
 
-  test("admin pane (pane 1) runs admin/src/main.ts with PORT=3001 and DATABASE_URL", () => {
+  test("admin pane (pane 1) runs admin/src/main.ts with PORT=3001 and DATABASE_URL_SHIPWRIGHT_ADMIN", () => {
     const { calls, exec } = makeRecorder();
     runStack(STACK_PANES, exec);
     const sk = sendKeysForPane(calls, 1)?.join(" ") ?? "";
     expect(sk).toContain("admin/src/main.ts");
     expect(sk).toContain(`PORT=${ADMIN_PORT}`);
-    expect(sk).toContain("DATABASE_URL=");
+    expect(sk).toContain("DATABASE_URL_SHIPWRIGHT_ADMIN=");
   });
 
-  test("agent pane (pane 2) runs run-agent.ts with SHIPWRIGHT_API_URL, no DATABASE_URL", () => {
+  test("agent pane (pane 2) runs docker container with SHIPWRIGHT_API_URL via host.docker.internal", () => {
     const { calls, exec } = makeRecorder();
     runStack(STACK_PANES, exec);
     const sk = sendKeysForPane(calls, 2)?.join(" ") ?? "";
-    expect(sk).toContain("agent/src/run-agent.ts");
+    expect(sk).toContain("docker run");
+    expect(sk).not.toContain("agent/src/run-agent.ts");
     expect(sk).toContain(`PORT=${AGENT_PORT}`);
     expect(sk).toContain("SHIPWRIGHT_DEV_CHAT=true");
-    expect(sk).toContain("POSTHOG_HOST=http://localhost:3460");
+    expect(sk).toContain(`POSTHOG_HOST=http://host.docker.internal:${METRICS_PORT}`);
     expect(sk).toContain("POSTHOG_PROJECT_API_KEY=");
-    expect(sk).toContain(`SHIPWRIGHT_API_URL=http://localhost:${ADMIN_PORT}`);
-    expect(sk).toContain("AGENT_HOME=state/agent-home");
-    // thin agent — no direct DB access
+    expect(sk).toContain(
+      `SHIPWRIGHT_API_URL=http://host.docker.internal:${ADMIN_PORT}`,
+    );
+    // container is isolated — no direct DB access
     expect(sk).not.toContain("DATABASE_URL=");
   });
 
@@ -198,17 +203,19 @@ describe("runStack — per-pane commands via injected exec", () => {
 });
 
 describe("pane env values are obviously dev dummies (public-safe)", () => {
-  test("agent pane dummy keys look like dev placeholders", () => {
+  test("agent pane dummy keys look like dev placeholders (embedded in docker run cmd)", () => {
     const agent = STACK_PANES.find((p) => p.label === "agent") as Pane;
-    expect(agent.env?.POSTHOG_PROJECT_API_KEY).toContain("dev");
+    // All env is embedded in docker run -e flags within cmd, not in pane.env
+    const cmdStr = agent.cmd.join(" ");
+    expect(cmdStr).toContain("phc_dev_dummy");
     // 64-hex dummy encryption key not needed on thin agent — it's in admin
-    // agent must have SHIPWRIGHT_API_URL pointing at local admin
-    expect(agent.env?.SHIPWRIGHT_API_URL).toContain("localhost");
+    // agent must have SHIPWRIGHT_API_URL pointing at host.docker.internal
+    expect(cmdStr).toContain("host.docker.internal");
   });
 
-  test("admin pane has DATABASE_URL with postgresql scheme", () => {
+  test("admin pane has DATABASE_URL_SHIPWRIGHT_ADMIN with postgresql scheme", () => {
     const admin = STACK_PANES.find((p) => p.label === "admin") as Pane;
-    expect(admin.env?.DATABASE_URL).toContain("postgresql:");
+    expect(admin.env?.DATABASE_URL_SHIPWRIGHT_ADMIN).toContain("postgresql:");
     // 64-hex dummy encryption key
     expect(admin.env?.SHIPWRIGHT_ENCRYPTION_KEY).toMatch(/^[0-9a-f]{64}$/);
   });
@@ -346,5 +353,194 @@ describe("planPostgresSetup — auto vs guide ladder", () => {
       formulaInstalled: false,
     });
     expect(plan.instructions).toContain("createdb shipwright_dev");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Docker agent stack — new tests (additive)
+// ---------------------------------------------------------------------------
+
+describe("metrics pane — sqlite mode", () => {
+  test("metrics pane runs in sqlite mode with METRICS_DB_PATH (no METRICS_OFFLINE)", () => {
+    const metrics = STACK_PANES.find((p) => p.label === "metrics") as Pane;
+    expect(metrics.env?.METRICS_OFFLINE).toBeUndefined();
+    expect(metrics.env?.METRICS_DB_PATH).toBe("state/metrics.db");
+  });
+});
+
+describe("admin pane — dev auth + internal key", () => {
+  test("admin pane has ADMIN_DEV_AUTH=true", () => {
+    const admin = STACK_PANES.find((p) => p.label === "admin") as Pane;
+    expect(admin.env?.ADMIN_DEV_AUTH).toBe("true");
+  });
+
+  test("admin pane has SHIPWRIGHT_INTERNAL_API_KEY", () => {
+    const admin = STACK_PANES.find((p) => p.label === "admin") as Pane;
+    expect(admin.env?.SHIPWRIGHT_INTERNAL_API_KEY).toBeDefined();
+    expect(admin.env?.SHIPWRIGHT_INTERNAL_API_KEY?.length).toBeGreaterThan(0);
+  });
+});
+
+describe("agent pane — docker run", () => {
+  test("agent pane runs docker run (not bun run-agent.ts)", () => {
+    const agent = STACK_PANES.find((p) => p.label === "agent") as Pane;
+    expect(agent.cmd[0]).toBe("docker");
+    expect(agent.cmd[1]).toBe("run");
+    expect(agent.cmd.join(" ")).not.toContain("run-agent.ts");
+  });
+
+  test("agent pane docker run includes port -p 3000:3000", () => {
+    const agent = STACK_PANES.find((p) => p.label === "agent") as Pane;
+    const cmdStr = agent.cmd.join(" ");
+    expect(cmdStr).toContain("-p 3000:3000");
+  });
+
+  test("agent pane docker run mounts named volume shipwright-agent-home at /data/agent-home", () => {
+    const agent = STACK_PANES.find((p) => p.label === "agent") as Pane;
+    const cmdStr = agent.cmd.join(" ");
+    expect(cmdStr).toContain("shipwright-agent-home:/data/agent-home");
+  });
+
+  test("agent pane docker run passes SHIPWRIGHT_DEV_CHAT=true via -e flag", () => {
+    const agent = STACK_PANES.find((p) => p.label === "agent") as Pane;
+    const cmdStr = agent.cmd.join(" ");
+    expect(cmdStr).toContain("SHIPWRIGHT_DEV_CHAT=true");
+  });
+
+  test("agent pane docker run passes SHIPWRIGHT_LOCAL_MARKETPLACE=/repo/plugins/shipwright", () => {
+    const agent = STACK_PANES.find((p) => p.label === "agent") as Pane;
+    const cmdStr = agent.cmd.join(" ");
+    expect(cmdStr).toContain(
+      "SHIPWRIGHT_LOCAL_MARKETPLACE=/repo/plugins/shipwright",
+    );
+  });
+
+  test("agent pane docker run passes SHIPWRIGHT_API_URL pointing at host.docker.internal", () => {
+    const agent = STACK_PANES.find((p) => p.label === "agent") as Pane;
+    const cmdStr = agent.cmd.join(" ");
+    expect(cmdStr).toContain(
+      `SHIPWRIGHT_API_URL=http://host.docker.internal:${ADMIN_PORT}`,
+    );
+  });
+
+  test("agent pane docker run passes POSTHOG_HOST pointing at host.docker.internal", () => {
+    const agent = STACK_PANES.find((p) => p.label === "agent") as Pane;
+    const cmdStr = agent.cmd.join(" ");
+    expect(cmdStr).toContain(
+      `POSTHOG_HOST=http://host.docker.internal:${METRICS_PORT}`,
+    );
+  });
+
+  test("agent pane cmd has no inline env (all env in -e flags within cmd)", () => {
+    const agent = STACK_PANES.find((p) => p.label === "agent") as Pane;
+    // env field should be empty / undefined — all env is embedded in docker run -e flags
+    const envKeys = Object.keys(agent.env ?? {});
+    expect(envKeys.length).toBe(0);
+  });
+});
+
+describe("buildStackCommands — docker build + seed preflights", () => {
+  test("buildStackCommands includes docker build preflight before agent pane", () => {
+    const cmds = buildStackCommands(STACK_PANES, {
+      repoPath: "/fake/repo",
+    });
+    const dockerBuildIdx = cmds.findIndex((c) =>
+      c.argv.join(" ").includes("docker build"),
+    );
+    const agentSendKeysIdx = cmds.findIndex(
+      (c) =>
+        c.kind === "send-keys" &&
+        c.argv.some((a) => a.includes(`${SESSION_NAME}:0.2`)),
+    );
+    expect(dockerBuildIdx).toBeGreaterThanOrEqual(0);
+    expect(agentSendKeysIdx).toBeGreaterThanOrEqual(0);
+    expect(dockerBuildIdx).toBeLessThan(agentSendKeysIdx);
+  });
+
+  test("docker build preflight builds the agent image with correct tag and Dockerfile", () => {
+    const cmds = buildStackCommands(STACK_PANES, {
+      repoPath: "/fake/repo",
+    });
+    const dockerBuild = cmds.find((c) =>
+      c.argv.join(" ").includes("docker build"),
+    );
+    expect(dockerBuild).toBeDefined();
+    expect(dockerBuild?.kind).toBe("preflight");
+    const cmdStr = dockerBuild?.argv.join(" ") ?? "";
+    expect(cmdStr).toContain("shipwright-agent-dev");
+    expect(cmdStr).toContain("agent/Dockerfile");
+  });
+
+  test("buildStackCommands includes seed preflight after migrate and before agent pane", () => {
+    const cmds = buildStackCommands(STACK_PANES, {
+      repoPath: "/fake/repo",
+    });
+    const migrateIdx = cmds.findIndex((c) =>
+      c.argv.join(" ").includes("migrate deploy"),
+    );
+    const seedIdx = cmds.findIndex((c) =>
+      c.argv.join(" ").includes("seed-dev-agent"),
+    );
+    const agentSendKeysIdx = cmds.findIndex(
+      (c) =>
+        c.kind === "send-keys" &&
+        c.argv.some((a) => a.includes(`${SESSION_NAME}:0.2`)),
+    );
+    expect(seedIdx).toBeGreaterThanOrEqual(0);
+    expect(migrateIdx).toBeGreaterThanOrEqual(0);
+    expect(agentSendKeysIdx).toBeGreaterThanOrEqual(0);
+    expect(migrateIdx).toBeLessThan(seedIdx);
+    expect(seedIdx).toBeLessThan(agentSendKeysIdx);
+  });
+
+  test("seed preflight uses bun to run seed-dev-agent.ts", () => {
+    const cmds = buildStackCommands(STACK_PANES, {
+      repoPath: "/fake/repo",
+    });
+    const seed = cmds.find((c) =>
+      c.argv.join(" ").includes("seed-dev-agent"),
+    );
+    expect(seed).toBeDefined();
+    expect(seed?.kind).toBe("preflight");
+    const cmdStr = seed?.argv.join(" ") ?? "";
+    expect(cmdStr).toContain("bun");
+    expect(cmdStr).toContain("seed-dev-agent.ts");
+  });
+
+  test("docker run in agent pane uses repoPath for the host volume mount", () => {
+    const cmds = buildStackCommands(STACK_PANES, {
+      repoPath: "/fake/repo",
+    });
+    const agentSendKeys = cmds.find(
+      (c) =>
+        c.kind === "send-keys" &&
+        c.argv.some((a) => a.includes(`${SESSION_NAME}:0.2`)),
+    );
+    const shellLine = agentSendKeys?.argv.join(" ") ?? "";
+    expect(shellLine).toContain("/fake/repo:/repo:ro");
+  });
+
+  test("docker run has exactly two -v mounts (agent-home volume + repo read-only)", () => {
+    // Isolation: only the named volume and the repo are bound — host home dir is never mounted.
+    const cmds = buildStackCommands(STACK_PANES, { repoPath: "/fake/repo" });
+    const agentSendKeys = cmds.find(
+      (c) =>
+        c.kind === "send-keys" &&
+        c.argv.some((a) => a.includes(`${SESSION_NAME}:0.2`)),
+    );
+    const shellLine = agentSendKeys?.argv.join(" ") ?? "";
+    // Exactly the named volume and the read-only repo — no host home paths.
+    const volumeMatches = shellLine.match(/-v\s+\S+/g) ?? [];
+    expect(volumeMatches.length).toBe(2);
+    expect(shellLine).not.toContain("/root");
+    expect(shellLine).not.toContain("/home");
+  });
+});
+
+describe("ADMIN_DEV_LOGIN_URL", () => {
+  test("ADMIN_DEV_LOGIN_URL is exported and points to admin port /admin/dev-login", () => {
+    expect(ADMIN_DEV_LOGIN_URL).toBe(
+      `http://localhost:${ADMIN_PORT}/admin/dev-login`,
+    );
   });
 });
