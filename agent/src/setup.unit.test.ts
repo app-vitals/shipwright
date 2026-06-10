@@ -4,15 +4,22 @@
  * Pure logic tests: no I/O, no real binaries, injected exec doubles only.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
 import { installPlugins } from "./setup.ts";
 
 describe("installPlugins — SHIPWRIGHT_LOCAL_MARKETPLACE seam", () => {
   const originalLocalMarketplace = process.env.SHIPWRIGHT_LOCAL_MARKETPLACE;
 
   afterEach(() => {
-    // Restore env var so tests don't bleed into each other
-    process.env.SHIPWRIGHT_LOCAL_MARKETPLACE = originalLocalMarketplace;
+    // Restore env var so tests don't bleed into each other.
+    // Use delete when the var was originally unset — assigning undefined coerces
+    // to the string "undefined" in Node.js-compatible runtimes, breaking the ?? fallback.
+    if (originalLocalMarketplace === undefined) {
+      // biome-ignore lint/performance/noDelete: intentional env-var removal (not object property)
+      delete process.env.SHIPWRIGHT_LOCAL_MARKETPLACE;
+    } else {
+      process.env.SHIPWRIGHT_LOCAL_MARKETPLACE = originalLocalMarketplace;
+    }
   });
 
   it("uses local path when SHIPWRIGHT_LOCAL_MARKETPLACE is set", async () => {
@@ -39,7 +46,8 @@ describe("installPlugins — SHIPWRIGHT_LOCAL_MARKETPLACE seam", () => {
   });
 
   it("uses GitHub marketplace slug when SHIPWRIGHT_LOCAL_MARKETPLACE is unset", async () => {
-    process.env.SHIPWRIGHT_LOCAL_MARKETPLACE = undefined;
+    // biome-ignore lint/performance/noDelete: intentional env-var removal (not object property)
+    delete process.env.SHIPWRIGHT_LOCAL_MARKETPLACE;
 
     const calls: Array<{ cmd: string; args: string[] }> = [];
     const mockExec = async (
