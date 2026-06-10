@@ -519,6 +519,22 @@ describe("buildStackCommands — docker build + seed preflights", () => {
     const shellLine = agentSendKeys?.argv.join(" ") ?? "";
     expect(shellLine).toContain("/fake/repo:/repo:ro");
   });
+
+  test("docker run has exactly two -v mounts (agent-home volume + repo read-only)", () => {
+    // Isolation: only the named volume and the repo are bound — host home dir is never mounted.
+    const cmds = buildStackCommands(STACK_PANES, { repoPath: "/fake/repo" });
+    const agentSendKeys = cmds.find(
+      (c) =>
+        c.kind === "send-keys" &&
+        c.argv.some((a) => a.includes(`${SESSION_NAME}:0.2`)),
+    );
+    const shellLine = agentSendKeys?.argv.join(" ") ?? "";
+    // Exactly the named volume and the read-only repo — no host home paths.
+    const volumeMatches = shellLine.match(/-v\s+\S+/g) ?? [];
+    expect(volumeMatches.length).toBe(2);
+    expect(shellLine).not.toContain("/root");
+    expect(shellLine).not.toContain("/home");
+  });
 });
 
 describe("ADMIN_DEV_LOGIN_URL", () => {
