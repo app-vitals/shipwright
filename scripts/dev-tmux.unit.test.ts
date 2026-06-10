@@ -85,6 +85,41 @@ describe("buildStackCommands", () => {
     expect(mouse?.argv).not.toContain("-g");
   });
 
+  test("enables a titled top pane border, session-scoped", () => {
+    const cmds = buildStackCommands(STACK_PANES);
+    const status = cmds.find(
+      (c) => c.kind === "set-option" && c.argv.includes("pane-border-status"),
+    );
+    expect(status?.argv).toEqual([
+      "set-option",
+      "-w",
+      "-t",
+      SESSION_NAME,
+      "pane-border-status",
+      "top",
+    ]);
+    // window-scoped (`-w`) but not global (`-g`) — must not touch user config
+    expect(status?.argv).not.toContain("-g");
+  });
+
+  test("border format renders each pane's title", () => {
+    const cmds = buildStackCommands(STACK_PANES);
+    const format = cmds.find(
+      (c) => c.kind === "set-option" && c.argv.includes("pane-border-format"),
+    );
+    expect(format?.argv.at(-1)).toBe(" #{pane_title} ");
+  });
+
+  test("titles every pane with its label", () => {
+    const cmds = buildStackCommands(STACK_PANES);
+    const titled = cmds.filter(
+      (c) => c.kind === "select-pane" && c.argv.includes("-T"),
+    );
+    // one title command per pane, carrying that pane's label
+    const titles = titled.map((c) => c.argv.at(-1));
+    expect(titles).toEqual(STACK_PANES.map((p) => p.label));
+  });
+
   test("uses a single window with 5 panes (1 new-session + 4 split-window)", () => {
     const cmds = buildStackCommands(STACK_PANES);
     const newSessions = cmds.filter((c) => c.argv[0] === "new-session");

@@ -307,6 +307,33 @@ export function buildStackCommands(
     argv: ["select-layout", "-t", `${session}:${WINDOW_INDEX}`, "tiled"],
   });
 
+  // 2b. Label every pane with its service name via a titled top border.
+  // pane-border-status/format are WINDOW options (set once with `-w`); each
+  // pane's title comes from its `label`. Scoped to THIS session via `-t`, so
+  // the user's global tmux config is untouched. The final chat-focus
+  // select-pane below runs after these, so it still wins the active pane.
+  cmds.push({
+    kind: "set-option",
+    argv: ["set-option", "-w", "-t", session, "pane-border-status", "top"],
+  });
+  cmds.push({
+    kind: "set-option",
+    argv: [
+      "set-option",
+      "-w",
+      "-t",
+      session,
+      "pane-border-format",
+      " #{pane_title} ",
+    ],
+  });
+  panes.forEach((pane, i) => {
+    cmds.push({
+      kind: "select-pane",
+      argv: ["select-pane", "-t", paneTarget(session, i), "-T", pane.label],
+    });
+  });
+
   const adminIndex = panes.findIndex((p) => p.label === "admin");
   const agentIndex = panes.findIndex((p) => p.label === "agent");
 
