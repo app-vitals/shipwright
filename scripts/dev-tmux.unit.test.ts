@@ -140,13 +140,13 @@ describe("runStack — per-pane commands via injected exec", () => {
     expect(sk?.join(" ")).not.toContain("METRICS_OFFLINE=true");
   });
 
-  test("admin pane (pane 1) runs admin/src/main.ts with PORT=3001 and DATABASE_URL", () => {
+  test("admin pane (pane 1) runs admin/src/main.ts with PORT=3001 and DATABASE_URL_SHIPWRIGHT_ADMIN", () => {
     const { calls, exec } = makeRecorder();
     runStack(STACK_PANES, exec);
     const sk = sendKeysForPane(calls, 1)?.join(" ") ?? "";
     expect(sk).toContain("admin/src/main.ts");
     expect(sk).toContain(`PORT=${ADMIN_PORT}`);
-    expect(sk).toContain("DATABASE_URL=");
+    expect(sk).toContain("DATABASE_URL_SHIPWRIGHT_ADMIN=");
   });
 
   test("agent pane (pane 2) runs docker container with SHIPWRIGHT_API_URL via host.docker.internal", () => {
@@ -213,9 +213,9 @@ describe("pane env values are obviously dev dummies (public-safe)", () => {
     expect(cmdStr).toContain("host.docker.internal");
   });
 
-  test("admin pane has DATABASE_URL with postgresql scheme", () => {
+  test("admin pane has DATABASE_URL_SHIPWRIGHT_ADMIN with postgresql scheme", () => {
     const admin = STACK_PANES.find((p) => p.label === "admin") as Pane;
-    expect(admin.env?.DATABASE_URL).toContain("postgresql:");
+    expect(admin.env?.DATABASE_URL_SHIPWRIGHT_ADMIN).toContain("postgresql:");
     // 64-hex dummy encryption key
     expect(admin.env?.SHIPWRIGHT_ENCRYPTION_KEY).toMatch(/^[0-9a-f]{64}$/);
   });

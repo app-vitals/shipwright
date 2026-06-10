@@ -154,7 +154,7 @@ export const STACK_PANES: Pane[] = [
     cmd: ["bun", "admin/src/main.ts"],
     env: {
       PORT: String(ADMIN_PORT),
-      DATABASE_URL: DEV_DATABASE_URL,
+      DATABASE_URL_SHIPWRIGHT_ADMIN: DEV_DATABASE_URL,
       SHIPWRIGHT_ENCRYPTION_KEY: DUMMY_ENCRYPTION_KEY,
       SHIPWRIGHT_INTERNAL_API_KEY: DUMMY_INTERNAL_API_KEY,
       ADMIN_DEV_AUTH: "true",
@@ -314,7 +314,7 @@ export function buildStackCommands(
         argv: [
           "sh",
           "-c",
-          `cd admin && bunx prisma generate --schema=prisma/schema.prisma && DATABASE_URL=${DEV_DATABASE_URL} bunx prisma migrate deploy --schema=prisma/schema.prisma`,
+          `cd admin && bunx prisma generate --schema=prisma/schema.prisma && DATABASE_URL_SHIPWRIGHT_ADMIN=${DEV_DATABASE_URL} bunx prisma migrate deploy --schema=prisma/schema.prisma`,
         ],
       });
     }
