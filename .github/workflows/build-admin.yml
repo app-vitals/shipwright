@@ -32,17 +32,17 @@ jobs:
           service_account: ${{ secrets.GCP_SA_EMAIL }}
 
       - name: Configure Docker for Artifact Registry
-        run: gcloud auth configure-docker us-west1-docker.pkg.dev --quiet
+        run: gcloud auth configure-docker ${{ secrets.ARTIFACT_REGISTRY_HOST }} --quiet
 
       - name: Build Docker image
         run: |
           docker build \
             -f admin/Dockerfile \
-            -t us-west1-docker.pkg.dev/vitals-os-prod/vitals-os/shipwright-admin:${{ steps.tag.outputs.new_tag }} \
-            -t us-west1-docker.pkg.dev/vitals-os-prod/vitals-os/shipwright-admin:latest \
+            -t ${{ secrets.ARTIFACT_REGISTRY_REPO }}/shipwright-admin:${{ steps.tag.outputs.new_tag }} \
+            -t ${{ secrets.ARTIFACT_REGISTRY_REPO }}/shipwright-admin:latest \
             .
 
       - name: Push Docker image
         run: |
-          docker push us-west1-docker.pkg.dev/vitals-os-prod/vitals-os/shipwright-admin:${{ steps.tag.outputs.new_tag }}
-          docker push us-west1-docker.pkg.dev/vitals-os-prod/vitals-os/shipwright-admin:latest
+          docker push ${{ secrets.ARTIFACT_REGISTRY_REPO }}/shipwright-admin:${{ steps.tag.outputs.new_tag }}
+          docker push ${{ secrets.ARTIFACT_REGISTRY_REPO }}/shipwright-admin:latest
