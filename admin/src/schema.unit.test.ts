@@ -1,6 +1,6 @@
+import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, test } from "bun:test";
 
 // Reads the schema file and asserts it uses the postgresql provider and DATABASE_URL env var.
 // This test is intentionally narrow — it guards against accidental provider regression.

@@ -2,12 +2,7 @@
   "name": "shipwright-monorepo",
   "version": "0.1.0",
   "private": true,
-  "workspaces": [
-    "plugins/shipwright",
-    "metrics",
-    "agent",
-    "admin"
-  ],
+  "workspaces": ["plugins/shipwright", "metrics", "agent", "admin"],
   "scripts": {
     "test": "bun test",
     "lint": "bunx biome lint .",

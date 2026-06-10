@@ -5,7 +5,7 @@
  * Requires DATABASE_URL_AGENT_TEST to be set; skips otherwise.
  */
 
-import { describe, it, expect, beforeEach } from "bun:test";
+import { beforeEach, describe, expect, it } from "bun:test";
 import { PrismaClient } from "../prisma/client/index.js";
 import { AgentTokenService } from "./agent-tokens.ts";
 import { UnprocessableEntityError } from "./errors.ts";

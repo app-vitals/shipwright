@@ -16,19 +16,19 @@ import { describe, expect, test } from "bun:test";
 import {
   ADMIN_PORT,
   AGENT_PORT,
+  DASHBOARD_URL,
+  type Pane,
+  SESSION_NAME,
+  STACK_PANES,
   brewFormulaInstalled,
   buildLogsBanner,
   buildStackCommands,
-  DASHBOARD_URL,
   dbReachable,
   missingWorkspaceDeps,
-  type Pane,
   planPostgresSetup,
   runStack,
-  SESSION_NAME,
   sessionExists,
   sessionExistsMessage,
-  STACK_PANES,
 } from "./dev-tmux.ts";
 
 // ---------------------------------------------------------------------------
@@ -72,7 +72,13 @@ describe("buildStackCommands", () => {
     const mouse = cmds.find(
       (c) => c.kind === "set-option" && c.argv.includes("mouse"),
     );
-    expect(mouse?.argv).toEqual(["set-option", "-t", SESSION_NAME, "mouse", "on"]);
+    expect(mouse?.argv).toEqual([
+      "set-option",
+      "-t",
+      SESSION_NAME,
+      "mouse",
+      "on",
+    ]);
     // session-scoped, not global — must not touch the user's tmux config
     expect(mouse?.argv).not.toContain("-g");
   });
@@ -255,7 +261,6 @@ describe("dbReachable — pre-flight guard for the migrate preflight", () => {
   test("false when the probe cannot connect", async () => {
     expect(await dbReachable(URL_STR, async () => false)).toBe(false);
   });
-
 });
 
 describe("missingWorkspaceDeps — deps guard", () => {

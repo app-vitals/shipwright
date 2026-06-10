@@ -85,11 +85,14 @@ async function transcribeGroq(
 
   let resp: Response;
   try {
-    resp = await fetchFn("https://api.groq.com/openai/v1/audio/transcriptions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}` },
-      body: formData,
-    });
+    resp = await fetchFn(
+      "https://api.groq.com/openai/v1/audio/transcriptions",
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}` },
+        body: formData,
+      },
+    );
   } catch (err) {
     console.error("[voice] Groq STT request failed:", err);
     return null;
@@ -136,7 +139,12 @@ export async function transcribeAudio(
 
   const apiKey = voiceConfig.groqApiKey;
   if (apiKey) {
-    const groqResult = await transcribeGroq(audioPath, fileBuffer, apiKey, resolvedFetch);
+    const groqResult = await transcribeGroq(
+      audioPath,
+      fileBuffer,
+      apiKey,
+      resolvedFetch,
+    );
     if (groqResult !== null) {
       return groqResult;
     }
@@ -172,7 +180,12 @@ export async function synthesizeSpeech(
 
   const elevenKey = voiceConfig.elevenLabsApiKey;
   if (elevenKey) {
-    return synthesizeElevenLabs(text, elevenKey, voiceConfig.voiceId, fetchFn ?? globalThis.fetch);
+    return synthesizeElevenLabs(
+      text,
+      elevenKey,
+      voiceConfig.voiceId,
+      fetchFn ?? globalThis.fetch,
+    );
   }
 
   return synthesizeEdgeTTS(text, spawnFn);

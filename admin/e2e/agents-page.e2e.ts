@@ -182,9 +182,7 @@ test.describe("GET /admin/agents/:id — authenticated", () => {
 
   test("cron job prompt is visible", async ({ page, context }) => {
     await loadAgentDetailPage(page, context);
-    await expect(page.locator("body")).toContainText(
-      "Send the weekly standup",
-    );
+    await expect(page.locator("body")).toContainText("Send the weekly standup");
   });
 
   test('token label "Production token" is visible', async ({

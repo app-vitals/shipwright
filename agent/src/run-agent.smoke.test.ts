@@ -56,9 +56,11 @@ describe("composed app — /agents/* (proxy to admin service)", () => {
     const trackingDeps = {
       ...base,
       fetchFn: async (input: RequestInfo | URL, init?: RequestInit) => {
-        calledUrl =
-          input instanceof Request ? input.url : String(input);
-        return base.fetchFn?.(input, init) ?? new Response("Not Found", { status: 404 });
+        calledUrl = input instanceof Request ? input.url : String(input);
+        return (
+          base.fetchFn?.(input, init) ??
+          new Response("Not Found", { status: 404 })
+        );
       },
     };
     const app = createComposedApp(trackingDeps);

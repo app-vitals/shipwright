@@ -370,7 +370,11 @@ export async function dbReachable(
 }
 
 /** Opens a short-lived TCP connection; resolves true on connect, false otherwise. */
-function tcpProbe(host: string, port: number, timeoutMs = 1500): Promise<boolean> {
+function tcpProbe(
+  host: string,
+  port: number,
+  timeoutMs = 1500,
+): Promise<boolean> {
   return new Promise((resolve) => {
     const socket = connect({ host, port });
     const finish = (ok: boolean) => {
@@ -435,7 +439,12 @@ export function planPostgresSetup(opts: {
   formulaInstalled: boolean;
   formula?: string;
 }): PostgresPlan {
-  const { databaseUrl, reachable, formulaInstalled, formula = PG_FORMULA } = opts;
+  const {
+    databaseUrl,
+    reachable,
+    formulaInstalled,
+    formula = PG_FORMULA,
+  } = opts;
   const { hostname, port, pathname } = new URL(databaseUrl);
   const host = hostname || "localhost";
   const p = port || "5432";
@@ -517,7 +526,9 @@ function ensureDepsInstalled(): void {
 async function openDashboardWhenReady(): Promise<void> {
   const base = `http://localhost:${METRICS_PORT}`;
   if (!(await waitForReachable(base, 10_000))) {
-    console.error(`[stack] metrics slow to start — open ${DASHBOARD_URL} once it's up.`);
+    console.error(
+      `[stack] metrics slow to start — open ${DASHBOARD_URL} once it's up.`,
+    );
     return;
   }
   Bun.spawn(["open", DASHBOARD_URL], { stdout: "ignore", stderr: "ignore" });
@@ -568,7 +579,9 @@ async function ensurePostgresReady(databaseUrl: string): Promise<void> {
     });
     console.error(plan.instructions);
     if (!askYesNo("[stack] Run these now? [y/N] ")) {
-      console.error("[stack] Aborted — run the commands above, then: task stack");
+      console.error(
+        "[stack] Aborted — run the commands above, then: task stack",
+      );
       process.exit(1);
     }
     for (const step of plan.steps) {

@@ -5,8 +5,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { createLocalEventStore } from "./local-store.ts";
 import { FixedClock } from "./lib/test-doubles.ts";
+import { createLocalEventStore } from "./local-store.ts";
 
 const CLOCK = FixedClock("2026-06-08T00:00:00.000Z");
 

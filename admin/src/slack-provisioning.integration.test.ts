@@ -6,8 +6,8 @@
  * Services are injected as in-memory test doubles.
  */
 
-import { readFileSync } from "node:fs";
 import { beforeAll, describe, expect, it } from "bun:test";
+import { readFileSync } from "node:fs";
 import { sign } from "hono/jwt";
 import { createAdminUIApp } from "./admin-ui.ts";
 import type { AdminUIDeps, AdminUISlackClient } from "./admin-ui.ts";
@@ -216,6 +216,9 @@ describe("admin UI — provisioning flow", () => {
     expect(upsertCalls.length).toBeGreaterThan(0);
     const lastCall = upsertCalls[upsertCalls.length - 1];
     expect(lastCall.env).toHaveProperty("SLACK_APP_ID", "A0123456789");
-    expect(lastCall.env).toHaveProperty("SLACK_SIGNING_SECRET", "s3cr3t-signing-key-from-slack-dashboard");
+    expect(lastCall.env).toHaveProperty(
+      "SLACK_SIGNING_SECRET",
+      "s3cr3t-signing-key-from-slack-dashboard",
+    );
   });
 });

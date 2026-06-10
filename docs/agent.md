@@ -44,6 +44,10 @@ Mounted at `/admin/api/*`. Auth: **session cookie** `admin_session` (httpOnly JW
 
 Token creation returns the **raw token once** at creation; only its SHA-256 hash is persisted, so validation is an O(1) hash-index lookup.
 
+### Dev auto-login (`admin-ui.ts`) — local convenience
+
+Mounted at `/admin/dev-login`. **DEFAULT-DENY:** only registered (and only returns a session) when `devAuthEnabled=true` is injected into `createAdminUIApp()`. The flag is pre-computed from `isDevAuthAllowed()` in `dev-auth-guard.ts`, which hard-blocks the route when `NODE_ENV=production` regardless of the `ADMIN_DEV_AUTH` env var. When disabled, `GET /admin/dev-login` returns `404`. When enabled, it mints an `admin_session` JWT cookie (userId `"dev"`, email `"dev@localhost"`) and redirects to `/admin/agents` — no Google OAuth required.
+
 ### Dev chat transport (`chat.ts`) — local convenience
 
 Mounted at `/chat`. **DEFAULT-DENY:** only registered when `SHIPWRIGHT_DEV_CHAT=true` at server startup. When the env var is absent or false, `POST /chat` returns `404`. This endpoint is **unauthenticated** and must never be enabled in production — `chat-guard.ts` enforces this by exiting with an error if `SHIPWRIGHT_DEV_CHAT=true` and `NODE_ENV=production`.
@@ -97,6 +101,7 @@ All child models cascade-delete with their `Agent`.
 | `GH_TOKEN` | GitHub PAT auth | Personal Access Token for the legacy `gh auth setup-git` path. Used only if the App env vars are absent. |
 | `SHIPWRIGHT_DEV_CHAT` | dev only | Set to `"true"` to enable the unauthenticated `POST /chat` endpoint (local dev convenience). Must **not** be set in production (`NODE_ENV=production`). |
 | `SHIPWRIGHT_LOCAL_MARKETPLACE` | dev only | Absolute path to a local marketplace checkout (e.g. `/workspace/marketplace`). When set, `installPlugins` uses this path instead of the GitHub slug for every plugin install and update, so uncommitted marketplace edits take effect inside the container. |
+| `ADMIN_DEV_AUTH` | dev only | Set to `"true"` to enable `GET /admin/dev-login` (bypasses Google OAuth, mints a dev session). Hard-blocked when `NODE_ENV=production` by `dev-auth-guard.ts`. |
 
 ## Key Files
 
@@ -105,7 +110,8 @@ All child models cascade-delete with their `Agent`.
 | `admin/src/main.ts` | Standalone admin service entrypoint — runs `prisma migrate deploy`, constructs all services, and mounts health + runtime API + admin CRUD API + admin UI. Dockerfile `ENTRYPOINT`. |
 | `admin/src/api.ts` | Runtime API factory `createAgentRuntimeApp()` (DI for services). |
 | `admin/src/admin-api.ts` | Admin CRUD factory `createAdminApp()` + session-auth middleware. |
-| `admin/src/admin-ui.ts` | Admin UI factory `createAdminUIApp()` — server-rendered Hono app (login, agent list/detail, Slack provisioning) with POST mutation routes for cron jobs, tools, and tokens (create/toggle/delete/revoke). |
+| `admin/src/admin-ui.ts` | Admin UI factory `createAdminUIApp()` — server-rendered Hono app (login, agent list/detail, Slack provisioning) with POST mutation routes for cron jobs, tools, and tokens (create/toggle/delete/revoke). Accepts `devAuthEnabled` in `AdminUIDeps`; when true, registers `GET /admin/dev-login` (dev auto-login). |
+| `admin/src/dev-auth-guard.ts` | `isDevAuthAllowed(env)` — pure predicate over an injected env object (`DevAuthGuardEnv`). Returns `true` only when `ADMIN_DEV_AUTH=true` and `NODE_ENV !== "production"`. Mirrors the `chat-guard.ts` safety pattern. |
 | `admin/src/admin-ui-pages.ts` | Page rendering functions (`renderLoginPage`, `renderAgentsPage`, `renderAgentDetailPage`, `renderProvision*`). |
 | `admin/src/admin-ui-styles.ts` | Shared CSS helpers (`baseStyles`, `escapeHtml`, `renderAdminToolbar`). |
 | `admin/src/google-auth-client.ts` | `GoogleAuthClient` interface + `HttpGoogleAuthClient` — typed Google OAuth2 token exchange and user profile lookup; injected into the admin UI for testability. |

@@ -21,9 +21,7 @@ export function generateCutoverValues(
   imageTag: string,
 ): string {
   if (!SAFE_VALUE_RE.test(agentId)) {
-    throw new Error(
-      `Invalid agentId "${agentId}": must match [a-zA-Z0-9._-]+`,
-    );
+    throw new Error(`Invalid agentId "${agentId}": must match [a-zA-Z0-9._-]+`);
   }
   if (!SAFE_VALUE_RE.test(imageTag)) {
     throw new Error(

@@ -13,10 +13,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { parseApiKeys } from "./lib/api-auth.ts";
-import { makeAccountsClientMock } from "./lib/test-helpers.ts";
 import { type MetricsDeps, createMetricsApp } from "./api.ts";
 import { createFixturePostHogClient } from "./fixtures/posthog-fixtures.ts";
+import { parseApiKeys } from "./lib/api-auth.ts";
+import { makeAccountsClientMock } from "./lib/test-helpers.ts";
 
 const ADMIN_KEY = "sk_admin_offline";
 const apiKeys = parseApiKeys(`admin:${ADMIN_KEY}:*`);
@@ -32,7 +32,11 @@ function makeOfflineDeps(): MetricsDeps {
 
 describe("offline mode — /health", () => {
   test("returns 200 { status: ok }", async () => {
-    const app = createMetricsApp(apiKeys, noopAccountsClient, makeOfflineDeps());
+    const app = createMetricsApp(
+      apiKeys,
+      noopAccountsClient,
+      makeOfflineDeps(),
+    );
     const res = await app.request("/health");
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -42,7 +46,11 @@ describe("offline mode — /health", () => {
 
 describe("offline mode — /metrics/summary", () => {
   test("returns 200 with fixture data (no auth header required for offline)", async () => {
-    const app = createMetricsApp(apiKeys, noopAccountsClient, makeOfflineDeps());
+    const app = createMetricsApp(
+      apiKeys,
+      noopAccountsClient,
+      makeOfflineDeps(),
+    );
     const res = await app.request("/metrics/summary", {
       headers: { Authorization: `Bearer ${ADMIN_KEY}` },
     });
@@ -56,7 +64,11 @@ describe("offline mode — /metrics/summary", () => {
 
 describe("offline mode — /metrics/trends", () => {
   test("returns 200 with fixture rows array", async () => {
-    const app = createMetricsApp(apiKeys, noopAccountsClient, makeOfflineDeps());
+    const app = createMetricsApp(
+      apiKeys,
+      noopAccountsClient,
+      makeOfflineDeps(),
+    );
     const res = await app.request("/metrics/trends?preset=7d", {
       headers: { Authorization: `Bearer ${ADMIN_KEY}` },
     });
@@ -71,7 +83,11 @@ describe("offline mode — /metrics/trends", () => {
 
 describe("offline mode — /metrics/features", () => {
   test("returns 200 with fixture features array", async () => {
-    const app = createMetricsApp(apiKeys, noopAccountsClient, makeOfflineDeps());
+    const app = createMetricsApp(
+      apiKeys,
+      noopAccountsClient,
+      makeOfflineDeps(),
+    );
     const res = await app.request("/metrics/features?preset=7d", {
       headers: { Authorization: `Bearer ${ADMIN_KEY}` },
     });
@@ -87,7 +103,11 @@ describe("offline mode — /metrics/features", () => {
 
 describe("offline mode — /metrics/queue", () => {
   test("returns 200 with fixture queue data", async () => {
-    const app = createMetricsApp(apiKeys, noopAccountsClient, makeOfflineDeps());
+    const app = createMetricsApp(
+      apiKeys,
+      noopAccountsClient,
+      makeOfflineDeps(),
+    );
     const res = await app.request("/metrics/queue?preset=7d", {
       headers: { Authorization: `Bearer ${ADMIN_KEY}` },
     });
@@ -100,7 +120,11 @@ describe("offline mode — /metrics/queue", () => {
 
 describe("offline mode — /metrics/tokens", () => {
   test("returns 200 with fixture token data", async () => {
-    const app = createMetricsApp(apiKeys, noopAccountsClient, makeOfflineDeps());
+    const app = createMetricsApp(
+      apiKeys,
+      noopAccountsClient,
+      makeOfflineDeps(),
+    );
     const res = await app.request("/metrics/tokens?preset=7d", {
       headers: { Authorization: `Bearer ${ADMIN_KEY}` },
     });
@@ -117,7 +141,11 @@ describe("offline mode — /metrics/tokens", () => {
 
 describe("offline mode — /dashboard", () => {
   test("returns 200 with real HTML (not JSON placeholder)", async () => {
-    const app = createMetricsApp(apiKeys, noopAccountsClient, makeOfflineDeps());
+    const app = createMetricsApp(
+      apiKeys,
+      noopAccountsClient,
+      makeOfflineDeps(),
+    );
     const res = await app.request("/dashboard");
     expect(res.status).toBe(200);
     const ct = res.headers.get("content-type");
@@ -132,7 +160,11 @@ describe("offline mode — /dashboard", () => {
   });
 
   test("renders with offline user name", async () => {
-    const app = createMetricsApp(apiKeys, noopAccountsClient, makeOfflineDeps());
+    const app = createMetricsApp(
+      apiKeys,
+      noopAccountsClient,
+      makeOfflineDeps(),
+    );
     const res = await app.request("/dashboard");
     expect(res.status).toBe(200);
     const body = await res.text();

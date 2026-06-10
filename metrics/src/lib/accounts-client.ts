@@ -70,16 +70,29 @@ export interface AccountsClient {
   patchAgentEnv(agentId: string, input: unknown): Promise<unknown>;
   getAgentConfigBundle(agentId: string): Promise<unknown>;
   listAgentEnvs(): Promise<unknown[]>;
-  createAgentToken(userId: string, clientId: string, label?: string): Promise<unknown>;
+  createAgentToken(
+    userId: string,
+    clientId: string,
+    label?: string,
+  ): Promise<unknown>;
   getTeam(id: string): Promise<unknown | null>;
   listTeams(): Promise<unknown[]>;
   listEnabledCronJobs(): Promise<unknown[]>;
   listAgentCronJobs(agentId: string): Promise<unknown[]>;
   createAgentCronJob(agentId: string, input: unknown): Promise<unknown>;
   deleteAgentCronJob(agentId: string, cronId: string): Promise<void>;
-  setAgentCronJobEnabled(agentId: string, cronId: string, enabled: boolean): Promise<unknown>;
-  reconcileSystemCrons(agentId: string, input: unknown): Promise<{ created: number; updated: number; deleted: number }>;
-  validateAgentToken(token: string): Promise<{ userId: string; clientId: string } | null>;
+  setAgentCronJobEnabled(
+    agentId: string,
+    cronId: string,
+    enabled: boolean,
+  ): Promise<unknown>;
+  reconcileSystemCrons(
+    agentId: string,
+    input: unknown,
+  ): Promise<{ created: number; updated: number; deleted: number }>;
+  validateAgentToken(
+    token: string,
+  ): Promise<{ userId: string; clientId: string } | null>;
 }
 
 // ─── HTTP implementation ──────────────────────────────────────────────────────
@@ -105,7 +118,10 @@ export class HttpAccountsClient implements AccountsClient {
       headers: this.headers(),
     });
     if (!res.ok) {
-      throw new AccountsClientError(res.status, await res.text().catch(() => "unknown error"));
+      throw new AccountsClientError(
+        res.status,
+        await res.text().catch(() => "unknown error"),
+      );
     }
     return res.json() as Promise<T>;
   }
@@ -170,11 +186,17 @@ export class HttpAccountsClient implements AccountsClient {
     throw new AccountsClientError(501, "not implemented");
   }
 
-  async getOAuthConnection(userId: string, provider: string): Promise<unknown | null> {
+  async getOAuthConnection(
+    userId: string,
+    provider: string,
+  ): Promise<unknown | null> {
     throw new AccountsClientError(501, "not implemented");
   }
 
-  async deleteOAuthConnection(userId: string, provider: string): Promise<unknown> {
+  async deleteOAuthConnection(
+    userId: string,
+    provider: string,
+  ): Promise<unknown> {
     throw new AccountsClientError(501, "not implemented");
   }
 
@@ -210,7 +232,11 @@ export class HttpAccountsClient implements AccountsClient {
     throw new AccountsClientError(501, "not implemented");
   }
 
-  async createAgentToken(userId: string, clientId: string, label?: string): Promise<unknown> {
+  async createAgentToken(
+    userId: string,
+    clientId: string,
+    label?: string,
+  ): Promise<unknown> {
     throw new AccountsClientError(501, "not implemented");
   }
 
@@ -238,15 +264,24 @@ export class HttpAccountsClient implements AccountsClient {
     throw new AccountsClientError(501, "not implemented");
   }
 
-  async setAgentCronJobEnabled(agentId: string, cronId: string, enabled: boolean): Promise<unknown> {
+  async setAgentCronJobEnabled(
+    agentId: string,
+    cronId: string,
+    enabled: boolean,
+  ): Promise<unknown> {
     throw new AccountsClientError(501, "not implemented");
   }
 
-  async reconcileSystemCrons(agentId: string, input: unknown): Promise<{ created: number; updated: number; deleted: number }> {
+  async reconcileSystemCrons(
+    agentId: string,
+    input: unknown,
+  ): Promise<{ created: number; updated: number; deleted: number }> {
     throw new AccountsClientError(501, "not implemented");
   }
 
-  async validateAgentToken(token: string): Promise<{ userId: string; clientId: string } | null> {
+  async validateAgentToken(
+    token: string,
+  ): Promise<{ userId: string; clientId: string } | null> {
     throw new AccountsClientError(501, "not implemented");
   }
 }

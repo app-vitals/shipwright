@@ -8,9 +8,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { type MetricsDeps, createMetricsApp } from "../api.ts";
 import { parseApiKeys } from "../lib/api-auth.ts";
 import { makeAccountsClientMock } from "../lib/test-helpers.ts";
-import { type MetricsDeps, createMetricsApp } from "../api.ts";
 import {
   buildFeaturesCiQuery,
   buildFeaturesReviewsQuery,
@@ -49,7 +49,10 @@ describe("createFixturePostHogClient — summary query", () => {
     const result = await client.query(hogql);
     expect(result.results.length).toBeGreaterThan(0);
     const row = Object.fromEntries(
-      result.columns.map((col, i) => [col, (result.results[0] as unknown[])[i]]),
+      result.columns.map((col, i) => [
+        col,
+        (result.results[0] as unknown[])[i],
+      ]),
     );
     expect(typeof row.tasks_completed).toBe("number");
     expect(typeof row.ci_gates_total).toBe("number");

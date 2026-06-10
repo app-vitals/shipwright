@@ -47,7 +47,10 @@ function mockFetch(
 
 /** Helper: create a fetch that rejects with network error */
 function failingFetch(error: Error): FetchFn {
-  return async (_input: URL | RequestInfo, _init?: RequestInit | BunFetchRequestInit) => {
+  return async (
+    _input: URL | RequestInfo,
+    _init?: RequestInit | BunFetchRequestInit,
+  ) => {
     throw error;
   };
 }

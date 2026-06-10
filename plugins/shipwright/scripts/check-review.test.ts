@@ -312,8 +312,16 @@ describe("check-review", () => {
     // PR #42 in repo-A is reviewed (matches lastReviewedCommit).
     // PR #42 in repo-B is NOT reviewed (no entry). Without the repo:pr key fix,
     // repo-A's entry would suppress repo-B and exit 1 (wrong).
-    const prA = makePr({ number: 42, headRefOid: "sha-A", repo: "example-org/repo-a" });
-    const prB = makePr({ number: 42, headRefOid: "sha-B", repo: "example-org/repo-b" });
+    const prA = makePr({
+      number: 42,
+      headRefOid: "sha-A",
+      repo: "example-org/repo-a",
+    });
+    const prB = makePr({
+      number: 42,
+      headRefOid: "sha-B",
+      repo: "example-org/repo-b",
+    });
     const entries: ReviewEntry[] = [
       {
         pr: 42,

@@ -110,7 +110,10 @@ describe("createFileSessionStore — basic operations", () => {
 
 describe("createFileSessionStore — TTL and prune", () => {
   test("TTL-based expiry: expired entry returns undefined", () => {
-    const shortTtlFile = join(tmpdir(), `sessions-ttl-${process.pid}-${Date.now()}.json`);
+    const shortTtlFile = join(
+      tmpdir(),
+      `sessions-ttl-${process.pid}-${Date.now()}.json`,
+    );
     const shortStore = createFileSessionStore(shortTtlFile, 1); // 1ms TTL
     shortStore.set("k", "session-xyz");
     expect(shortStore.get("k")).toBe("session-xyz");
@@ -124,7 +127,10 @@ describe("createFileSessionStore — TTL and prune", () => {
   });
 
   test("prune removes expired entries and returns count", () => {
-    const pruneFile = join(tmpdir(), `sessions-prune-${process.pid}-${Date.now()}.json`);
+    const pruneFile = join(
+      tmpdir(),
+      `sessions-prune-${process.pid}-${Date.now()}.json`,
+    );
     const pruneStore = createFileSessionStore(pruneFile, 1); // 1ms TTL
     pruneStore.set("k1", "s1");
     pruneStore.set("k2", "s2");
@@ -148,7 +154,10 @@ describe("createFileSessionStore — TTL and prune", () => {
 
   test("legacy string format support: get returns sessionId string", () => {
     // Write a legacy-format file manually
-    const legacyFile = join(tmpdir(), `sessions-legacy-${process.pid}-${Date.now()}.json`);
+    const legacyFile = join(
+      tmpdir(),
+      `sessions-legacy-${process.pid}-${Date.now()}.json`,
+    );
     writeFileSync(
       legacyFile,
       JSON.stringify({ "C1:ts1": "legacy-session-id" }),

@@ -88,8 +88,20 @@ export async function setupGitHubAuth(deps: GitHubAuthDeps): Promise<void> {
 
     const { slug, userId } = await getBotIdentity();
     const botEmail = `${userId}+${slug}[bot]@users.noreply.github.com`;
-    runOrWarn(spawnSync, "git", ["config", "--global", "user.name", `${slug}[bot]`], env, logger);
-    runOrWarn(spawnSync, "git", ["config", "--global", "user.email", botEmail], env, logger);
+    runOrWarn(
+      spawnSync,
+      "git",
+      ["config", "--global", "user.name", `${slug}[bot]`],
+      env,
+      logger,
+    );
+    runOrWarn(
+      spawnSync,
+      "git",
+      ["config", "--global", "user.email", botEmail],
+      env,
+      logger,
+    );
 
     manager.startBackgroundRefresh(async (refreshedToken) => {
       writeToken(refreshedToken);
