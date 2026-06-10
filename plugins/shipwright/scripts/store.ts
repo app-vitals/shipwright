@@ -174,7 +174,7 @@ export interface TaskStoreConfig {
      * Keys are Jira status names; values are Shipwright status strings.
      * Example: { "In Progress": "in_progress", "Done": "merged" }
      */
-    statusMap?: Record<string, string>;
+    statusMap?: Record<string, TaskStatus>;
   };
 }
 

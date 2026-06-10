@@ -116,6 +116,7 @@ export function loadConfig(cwd: string = process.cwd()): LoadedConfig {
  *
  * - `taskStore: "json"` → JsonTaskStore backed by state/todos.json in process.cwd()
  * - `taskStore: "github"` → GitHubTaskStore backed by GitHub Issues via gh CLI
+ * - `taskStore: "jira"` → not yet implemented; exits with an actionable error
  */
 export function createTaskStore(config: TaskStoreConfig): TaskStore {
   if (config.taskStore === "github") {
@@ -126,6 +127,12 @@ export function createTaskStore(config: TaskStoreConfig): TaskStore {
       process.exit(1);
     }
     return new GitHubTaskStore(config);
+  }
+  if (config.taskStore === "jira") {
+    process.stderr.write(
+      "error: Jira adapter is not yet implemented. The 'jira' taskStore value is reserved for a future release.\n",
+    );
+    process.exit(1);
   }
   return new JsonTaskStore(process.cwd());
 }
