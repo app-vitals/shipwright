@@ -4,8 +4,8 @@
  *
  * Routes:
  *   GET  /admin/login                 — login page (Google sign-in button)
- *   GET  /auth/google                 — redirect to Google OAuth consent
- *   GET  /auth/callback               — Google OAuth callback → set session cookie
+ *   GET  /admin/auth/google           — redirect to Google OAuth consent
+ *   GET  /admin/auth/callback         — Google OAuth callback → set session cookie
  *   POST /admin/logout                — clear cookie → redirect to login
  *   GET  /admin/agents                — list all agents (auth required)
  *   GET  /admin/agents/:id            — agent detail (auth required)
@@ -225,7 +225,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
     return html(renderLoginPage({ error, returnTo }));
   });
 
-  app.get("/auth/google", (c) => {
+  app.get("/admin/auth/google", (c) => {
     if (!googleClientId) {
       return c.redirect("/admin/login?error=server_error", 302);
     }
@@ -246,12 +246,12 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
       httpOnly: true,
       sameSite: "Lax",
       maxAge: OAUTH_STATE_TTL_SECONDS,
-      path: "/auth",
+      path: "/admin/auth",
     });
 
     const params = new URLSearchParams({
       client_id: googleClientId,
-      redirect_uri: `${appBaseUrl}/auth/callback`,
+      redirect_uri: `${appBaseUrl}/admin/auth/callback`,
       response_type: "code",
       scope: "openid profile email",
       state: nonce,
@@ -261,7 +261,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
     return c.redirect(`${GOOGLE_AUTH_URL}?${params.toString()}`, 302);
   });
 
-  app.get("/auth/callback", async (c) => {
+  app.get("/admin/auth/callback", async (c) => {
     const { code, state, error: googleError } = c.req.query();
 
     // Google returned an error (e.g. access_denied)
@@ -272,7 +272,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
 
     // CSRF: validate state nonce. The oauth_state cookie is JSON: {nonce, returnTo?}.
     const storedStateCookie = getCookie(c, OAUTH_STATE_COOKIE);
-    deleteCookie(c, OAUTH_STATE_COOKIE, { path: "/auth" });
+    deleteCookie(c, OAUTH_STATE_COOKIE, { path: "/admin/auth" });
 
     let storedNonce: string | undefined;
     let returnTo: string | undefined;
@@ -305,7 +305,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
         code,
         clientId: googleClientId,
         clientSecret: googleClientSecret,
-        redirectUri: `${appBaseUrl}/auth/callback`,
+        redirectUri: `${appBaseUrl}/admin/auth/callback`,
       });
       accessToken = tokens.accessToken;
     } catch {

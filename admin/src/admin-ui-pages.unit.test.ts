@@ -123,10 +123,10 @@ describe("renderLoginPage", () => {
     expect(html).toContain("Admin Login");
   });
 
-  test("includes Sign in with Google link pointing at /auth/google", () => {
+  test("includes Sign in with Google link pointing at /admin/auth/google", () => {
     const html = renderLoginPage();
     expect(html).toContain("Sign in with Google");
-    expect(html).toContain('href="/auth/google"');
+    expect(html).toContain('href="/admin/auth/google"');
   });
 
   test("no error div when no error provided", () => {

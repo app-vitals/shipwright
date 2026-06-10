@@ -215,10 +215,10 @@ describe("admin UI — login page", () => {
 
 // ─── OAuth routes ─────────────────────────────────────────────────────────────
 
-describe("admin UI — GET /auth/google", () => {
+describe("admin UI — GET /admin/auth/google", () => {
   it("redirects to Google OAuth URL and sets oauth_state cookie", async () => {
     const app = createAdminUIApp(makeMockDeps());
-    const res = await app.request("/auth/google");
+    const res = await app.request("/admin/auth/google");
     expect(res.status).toBe(302);
     const location = res.headers.get("Location") ?? "";
     expect(location).toContain("accounts.google.com");
@@ -232,13 +232,13 @@ describe("admin UI — GET /auth/google", () => {
 
   it("redirects to /admin/login?error=server_error when googleClientId is empty", async () => {
     const app = createAdminUIApp(makeMockDeps({ googleClientId: "" }));
-    const res = await app.request("/auth/google");
+    const res = await app.request("/admin/auth/google");
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toContain("error=server_error");
   });
 });
 
-describe("admin UI — GET /auth/callback", () => {
+describe("admin UI — GET /admin/auth/callback", () => {
   // Helper: set a nonce cookie (encoded as JSON alongside optional returnTo) and matching state query param.
   // Hono's setCookie URL-encodes cookie values; getCookie URL-decodes them on read.
   // The test helper must percent-encode the JSON so getCookie returns the original JSON string.
@@ -249,7 +249,7 @@ describe("admin UI — GET /auth/callback", () => {
   ): Request {
     const params = new URLSearchParams({ state: nonce, code: "auth-code-123", ...queryOverrides });
     const oauthState = encodeURIComponent(JSON.stringify({ nonce, returnTo }));
-    return new Request(`https://example.com/auth/callback?${params.toString()}`, {
+    return new Request(`https://example.com/admin/auth/callback?${params.toString()}`, {
       headers: { Cookie: `oauth_state=${oauthState}` },
     });
   }
@@ -279,7 +279,7 @@ describe("admin UI — GET /auth/callback", () => {
     const app = createAdminUIApp(makeMockDeps());
     const oauthState = encodeURIComponent(JSON.stringify({ nonce: "stored-nonce" }));
     const res = await app.request(
-      new Request("https://example.com/auth/callback?state=wrong-state&code=auth-code", {
+      new Request("https://example.com/admin/auth/callback?state=wrong-state&code=auth-code", {
         headers: { Cookie: `oauth_state=${oauthState}` },
       }),
     );
@@ -290,7 +290,7 @@ describe("admin UI — GET /auth/callback", () => {
   it("missing oauth_state cookie → redirects to /admin/login?error=invalid_state", async () => {
     const app = createAdminUIApp(makeMockDeps());
     const res = await app.request(
-      new Request("https://example.com/auth/callback?state=some-state&code=code"),
+      new Request("https://example.com/admin/auth/callback?state=some-state&code=code"),
     );
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toContain("error=invalid_state");
@@ -309,7 +309,7 @@ describe("admin UI — GET /auth/callback", () => {
     const app = createAdminUIApp(makeMockDeps());
     const oauthState = encodeURIComponent(JSON.stringify({ nonce }));
     const res = await app.request(
-      new Request(`https://example.com/auth/callback?error=access_denied&state=${nonce}`, {
+      new Request(`https://example.com/admin/auth/callback?error=access_denied&state=${nonce}`, {
         headers: { Cookie: `oauth_state=${oauthState}` },
       }),
     );

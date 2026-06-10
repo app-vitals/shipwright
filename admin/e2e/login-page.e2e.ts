@@ -10,7 +10,7 @@
  *   5. Error banner visible for ?error=server_error
  *   6. No error banner when no ?error= param
  *   7. ?returnTo= param is preserved in the OAuth button href
- *   8. No ?returnTo= → OAuth button href is plain /auth/google
+ *   8. No ?returnTo= → OAuth button href is plain /admin/auth/google
  *
  * Architecture:
  *   - Spawns admin/e2e/test-server.ts via Bun as a child process.
@@ -131,11 +131,11 @@ test.describe("GET /admin/login — static render", () => {
     const href = await btn.getAttribute("href");
 
     expect(href).not.toBeNull();
-    expect(href).toContain("/auth/google");
+    expect(href).toContain("/admin/auth/google");
     expect(href).toContain(`returnTo=${encodeURIComponent(returnTo)}`);
   });
 
-  test("no ?returnTo= → OAuth button href is plain /auth/google", async ({
+  test("no ?returnTo= → OAuth button href is plain /admin/auth/google", async ({
     page,
   }) => {
     await page.goto(`${BASE_URL}/admin/login`);
@@ -143,6 +143,6 @@ test.describe("GET /admin/login — static render", () => {
     const btn = page.locator(".btn.btn-primary");
     const href = await btn.getAttribute("href");
 
-    expect(href).toBe("/auth/google");
+    expect(href).toBe("/admin/auth/google");
   });
 });

@@ -73,8 +73,8 @@ export function renderLoginPage(opts?: {
 
   const googleHref =
     opts?.returnTo
-      ? `/auth/google?returnTo=${encodeURIComponent(opts.returnTo)}`
-      : "/auth/google";
+      ? `/admin/auth/google?returnTo=${encodeURIComponent(opts.returnTo)}`
+      : "/admin/auth/google";
 
   return `<!DOCTYPE html>
 <html lang="en">
