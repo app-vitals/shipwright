@@ -42,12 +42,10 @@ const SAMPLE_CRONS: AgentCronJob[] = [
   },
 ];
 
-type FetchFn = (
-  url: string | URL | Request,
-  init?: RequestInit,
-) => Promise<Response>;
-
 // ─── Fake fetch helpers ────────────────────────────────────────────────────────
+
+type FetchFn = (url: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+type CapturedCall = { url: string; method: string; headers: Headers };
 
 function fakeFetch(statusCode: number, body: unknown): FetchFn {
   return async (_url, _init) => {
@@ -61,14 +59,16 @@ function fakeFetch(statusCode: number, body: unknown): FetchFn {
 function capturingFetch(
   statusCode: number,
   body: unknown,
-): {
-  fn: FetchFn;
-  calls: Array<{ url: string; init: RequestInit | undefined }>;
-} {
-  const calls: Array<{ url: string; init: RequestInit | undefined }> = [];
+): { fn: FetchFn; calls: CapturedCall[] } {
+  const calls: CapturedCall[] = [];
   return {
-    fn: async (url, init) => {
-      calls.push({ url: url.toString(), init });
+    fn: async (urlOrReq, init) => {
+      // openapi-fetch v0.13 passes a Request object as the first argument
+      const req =
+        urlOrReq instanceof Request
+          ? urlOrReq
+          : new Request(urlOrReq as string, init);
+      calls.push({ url: req.url, method: req.method, headers: req.headers });
       return new Response(JSON.stringify(body), {
         status: statusCode,
         headers: { "Content-Type": "application/json" },
@@ -130,9 +130,7 @@ describe("HttpShipwrightRuntimeClient.getAgentConfigBundle", () => {
     await client.getAgentConfigBundle(AGENT_ID);
 
     expect(calls.length).toBe(1);
-    const authHeader = (calls[0].init?.headers as Record<string, string>)
-      ?.Authorization;
-    expect(authHeader).toBe(`Bearer ${API_KEY}`);
+    expect(calls[0].headers.get("Authorization")).toBe(`Bearer ${API_KEY}`);
   });
 
   it("calls the correct URL", async () => {
@@ -202,9 +200,7 @@ describe("HttpShipwrightRuntimeClient.listAgentCronJobs", () => {
     await client.listAgentCronJobs(AGENT_ID);
 
     expect(calls.length).toBe(1);
-    const authHeader = (calls[0].init?.headers as Record<string, string>)
-      ?.Authorization;
-    expect(authHeader).toBe(`Bearer ${API_KEY}`);
+    expect(calls[0].headers.get("Authorization")).toBe(`Bearer ${API_KEY}`);
   });
 
   it("calls the correct URL", async () => {
@@ -271,9 +267,7 @@ describe("HttpShipwrightRuntimeClient.reconcileSystemCrons", () => {
     await client.reconcileSystemCrons(AGENT_ID);
 
     expect(calls.length).toBe(1);
-    const authHeader = (calls[0].init?.headers as Record<string, string>)
-      ?.Authorization;
-    expect(authHeader).toBe(`Bearer ${API_KEY}`);
+    expect(calls[0].headers.get("Authorization")).toBe(`Bearer ${API_KEY}`);
   });
 
   it("calls the correct URL with POST method", async () => {
@@ -289,7 +283,7 @@ describe("HttpShipwrightRuntimeClient.reconcileSystemCrons", () => {
     expect(calls[0].url).toBe(
       `${API_URL}/admin/api/agents/${AGENT_ID}/crons/reconcile`,
     );
-    expect(calls[0].init?.method).toBe("POST");
+    expect(calls[0].method).toBe("POST");
   });
 
   it("uses adminApiUrl for reconcile when provided separately", async () => {
