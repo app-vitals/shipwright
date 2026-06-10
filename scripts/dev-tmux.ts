@@ -164,6 +164,8 @@ export const STACK_PANES: Pane[] = [
     label: "agent",
     // All env is passed via -e flags inside cmd; pane env stays empty so
     // paneShellLine() emits no inline prefix — docker manages its own env.
+    // Secrets (CLAUDE_CODE_OAUTH_TOKEN / ANTHROPIC_API_KEY) come from the
+    // developer's local state/dev-agent.env — see state/dev-agent.env.example.
     cmd: [
       "docker",
       "run",
@@ -179,6 +181,8 @@ export const STACK_PANES: Pane[] = [
       // Placeholder replaced in buildStackCommands — see note there.
       "__REPO_VOLUME_PLACEHOLDER__",
       "--add-host=host.docker.internal:host-gateway",
+      "--env-file",
+      "state/dev-agent.env",
       "-e",
       "SHIPWRIGHT_DEV_CHAT=true",
       "-e",
