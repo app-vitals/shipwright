@@ -221,6 +221,104 @@ describe("JiraTaskStore.query", () => {
   });
 });
 
+describe("JiraTaskStore fetchAllIssues — readyJql config", () => {
+  test("uses config.jira.readyJql when set instead of the default label-based JQL", async () => {
+    const capturedJqls: string[] = [];
+    const configWithJql: TaskStoreConfig = {
+      taskStore: "jira",
+      jira: { baseUrl: BASE_URL, projectKey: PROJECT_KEY, readyJql: "project = SHIP AND assignee = currentUser() ORDER BY priority ASC" },
+    };
+    const fakeFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = typeof input === "string" ? input : input.toString();
+      const path = url.startsWith(BASE_URL) ? url.slice(BASE_URL.length) : url;
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (method === "POST" && path === "/rest/api/3/issue/search") {
+        const body = JSON.parse(init?.body as string) as { jql: string };
+        capturedJqls.push(body.jql);
+        return new Response(JSON.stringify({ issues: [], total: 0 }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      throw new Error(`fake fetch: unexpected ${method} ${path}`);
+    };
+    const store = new JiraTaskStore(configWithJql, fakeFetch, "user@example.com", "token");
+    await store.query({});
+    expect(capturedJqls).toHaveLength(1);
+    expect(capturedJqls[0]).toBe("project = SHIP AND assignee = currentUser() ORDER BY priority ASC");
+  });
+
+  test("uses default label-based JQL when readyJql is not set", async () => {
+    const capturedJqls: string[] = [];
+    const fakeFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = typeof input === "string" ? input : input.toString();
+      const path = url.startsWith(BASE_URL) ? url.slice(BASE_URL.length) : url;
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (method === "POST" && path === "/rest/api/3/issue/search") {
+        const body = JSON.parse(init?.body as string) as { jql: string };
+        capturedJqls.push(body.jql);
+        return new Response(JSON.stringify({ issues: [], total: 0 }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      throw new Error(`fake fetch: unexpected ${method} ${path}`);
+    };
+    const store = new JiraTaskStore(CONFIG, fakeFetch, "user@example.com", "token");
+    await store.query({});
+    expect(capturedJqls).toHaveLength(1);
+    expect(capturedJqls[0]).toContain("shipwright-session");
+    expect(capturedJqls[0]).toContain(PROJECT_KEY);
+  });
+});
+
+describe("JiraTaskStore fetchAllIssues — pagination", () => {
+  test("paginates when total exceeds page size", async () => {
+    const page1Issues = [
+      makeJiraIssue("SHIP-1", "Task 1", "To Do", { id: "JTS-PAG-1", title: "Task 1", status: "pending" }),
+    ];
+    const page2Issues = [
+      makeJiraIssue("SHIP-2", "Task 2", "In Progress", { id: "JTS-PAG-2", title: "Task 2", status: "in_progress" }),
+    ];
+    const fetchedStartAts: number[] = [];
+    const fakeFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = typeof input === "string" ? input : input.toString();
+      const path = url.startsWith(BASE_URL) ? url.slice(BASE_URL.length) : url;
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (method === "POST" && path === "/rest/api/3/issue/search") {
+        const body = JSON.parse(init?.body as string) as { startAt: number; maxResults: number };
+        fetchedStartAts.push(body.startAt);
+        const issues = body.startAt === 0 ? page1Issues : page2Issues;
+        return new Response(JSON.stringify({ issues, total: 2 }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      throw new Error(`fake fetch: unexpected ${method} ${path}`);
+    };
+    const store = new JiraTaskStore(CONFIG, fakeFetch, "user@example.com", "token");
+    const tasks = await store.query({});
+    expect(tasks).toHaveLength(2);
+    expect(tasks[0].id).toBe("JTS-PAG-1");
+    expect(tasks[1].id).toBe("JTS-PAG-2");
+    expect(fetchedStartAts).toHaveLength(2);
+    expect(fetchedStartAts[0]).toBe(0);
+    expect(fetchedStartAts[1]).toBe(1);
+  });
+
+  test("single page fetch when total matches page results", async () => {
+    const issues = [
+      makeJiraIssue("SHIP-1", "Only task", "To Do", { id: "JTS-PAG-3", title: "Only task", status: "pending" }),
+    ];
+    let fetchCount = 0;
+    const fakeFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = typeof input === "string" ? input : input.toString();
+      const path = url.startsWith(BASE_URL) ? url.slice(BASE_URL.length) : url;
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (method === "POST" && path === "/rest/api/3/issue/search") {
+        fetchCount++;
+        return new Response(JSON.stringify({ issues, total: 1 }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      throw new Error(`fake fetch: unexpected ${method} ${path}`);
+    };
+    const store = new JiraTaskStore(CONFIG, fakeFetch, "user@example.com", "token");
+    const tasks = await store.query({});
+    expect(tasks).toHaveLength(1);
+    expect(fetchCount).toBe(1);
+  });
+});
+
 describe("JiraTaskStore.append", () => {
   test("creates new issue for a new task", async () => {
     const capturedRequests: Array<{ path: string; body: unknown }> = [];
@@ -247,22 +345,27 @@ describe("JiraTaskStore.append", () => {
     expect(fields.labels).toContain("shipwright-session");
   });
 
-  test("skips existing tasks (idempotent)", async () => {
+  test("does not create a duplicate issue for an existing task (upserts instead)", async () => {
     const existingIssue = makeJiraIssue("SHIP-1", "JTS-11.1: Existing task", "To Do", { id: "JTS-11.1", title: "Existing task", status: "pending" });
     let createCount = 0;
+    let putCount = 0;
     const fakeFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const url = typeof input === "string" ? input : input.toString();
       const path = url.startsWith(BASE_URL) ? url.slice(BASE_URL.length) : url;
       const method = (init?.method ?? "GET").toUpperCase();
       if (method === "POST" && path === "/rest/api/3/issue/search") return new Response(JSON.stringify({ issues: [existingIssue], total: 1 }), { status: 200, headers: { "Content-Type": "application/json" } });
+      if (method === "PUT" && path === "/rest/api/3/issue/SHIP-1") { putCount++; return new Response("{}", { status: 204 }); }
       if (method === "POST" && path === "/rest/api/3/issue") { createCount++; return new Response(JSON.stringify({ key: "SHIP-2" }), { status: 201, headers: { "Content-Type": "application/json" } }); }
       throw new Error(`fake fetch: unexpected ${method} ${path}`);
     };
     const store = new JiraTaskStore(CONFIG, fakeFetch, "user@example.com", "token");
     const result = await store.append([{ id: "JTS-11.1", title: "Existing task", status: "pending" }]);
-    expect(result.inserted).toBe(0);
-    expect(result.updated).toBe(0);
+    // No new issue is created
     expect(createCount).toBe(0);
+    // The existing issue is updated via PUT
+    expect(putCount).toBe(1);
+    expect(result.inserted).toBe(0);
+    expect(result.updated).toBe(1);
   });
 
   test("issue description contains shipwright fenced block with task metadata", async () => {
@@ -285,6 +388,49 @@ describe("JiraTaskStore.append", () => {
     const descStr = JSON.stringify(capturedDescription);
     expect(descStr).toContain("shipwright");
     expect(descStr).toContain("JTS-12.1");
+  });
+
+  test("upserts existing task: PUTs updated description and increments updated count", async () => {
+    const existingIssue = makeJiraIssue("SHIP-1", "JTS-APP-U.1: Existing task", "To Do", { id: "JTS-APP-U.1", title: "Existing task", status: "pending", note: "old note" });
+    let putBody: unknown = null;
+    let createCount = 0;
+    const fakeFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = typeof input === "string" ? input : input.toString();
+      const path = url.startsWith(BASE_URL) ? url.slice(BASE_URL.length) : url;
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (method === "POST" && path === "/rest/api/3/issue/search") return new Response(JSON.stringify({ issues: [existingIssue], total: 1 }), { status: 200, headers: { "Content-Type": "application/json" } });
+      if (method === "PUT" && path === "/rest/api/3/issue/SHIP-1") { putBody = JSON.parse(init?.body as string); return new Response("{}", { status: 204 }); }
+      if (method === "POST" && path === "/rest/api/3/issue") { createCount++; return new Response(JSON.stringify({ key: "SHIP-2" }), { status: 201, headers: { "Content-Type": "application/json" } }); }
+      throw new Error(`fake fetch: unexpected ${method} ${path}`);
+    };
+    const store = new JiraTaskStore(CONFIG, fakeFetch, "user@example.com", "token");
+    const result = await store.append([{ id: "JTS-APP-U.1", title: "Existing task", status: "pending", note: "updated note", branch: "feat/my-branch" }]);
+    expect(result.inserted).toBe(0);
+    expect(result.updated).toBe(1);
+    expect(createCount).toBe(0);
+    expect(putBody).toBeDefined();
+    // Updated fields should appear in the body
+    const bodyStr = JSON.stringify(putBody);
+    expect(bodyStr).toContain("updated note");
+    expect(bodyStr).toContain("feat/my-branch");
+  });
+
+  test("upsert does not perform a status transition during append", async () => {
+    const existingIssue = makeJiraIssue("SHIP-1", "JTS-APP-U.2: Task", "To Do", { id: "JTS-APP-U.2", title: "Task", status: "pending" });
+    const transitionCalls: unknown[] = [];
+    const fakeFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = typeof input === "string" ? input : input.toString();
+      const path = url.startsWith(BASE_URL) ? url.slice(BASE_URL.length) : url;
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (method === "POST" && path === "/rest/api/3/issue/search") return new Response(JSON.stringify({ issues: [existingIssue], total: 1 }), { status: 200, headers: { "Content-Type": "application/json" } });
+      if (method === "PUT" && path === "/rest/api/3/issue/SHIP-1") return new Response("{}", { status: 204 });
+      if (method === "POST" && path.endsWith("/transitions")) { transitionCalls.push(JSON.parse(init?.body as string)); return new Response("{}", { status: 204 }); }
+      throw new Error(`fake fetch: unexpected ${method} ${path}`);
+    };
+    const store = new JiraTaskStore(CONFIG, fakeFetch, "user@example.com", "token");
+    // Even if the incoming task has a different status, append should NOT transition
+    await store.append([{ id: "JTS-APP-U.2", title: "Task", status: "in_progress", branch: "feat/wip" }]);
+    expect(transitionCalls).toHaveLength(0);
   });
 });
 
@@ -351,6 +497,31 @@ describe("JiraTaskStore.update", () => {
     await store.update("JTS-15.1", { status: "in_progress", pr: 99, prUrl: "https://github.com/org/repo/pull/99" });
     expect(commentBodies).toHaveLength(1);
     expect(JSON.stringify(commentBodies[0])).toContain("https://github.com/org/repo/pull/99");
+  });
+
+  test("PUTs description body even when only status changes (body block stays in sync)", async () => {
+    const issue = makeJiraIssue("SHIP-1", "JTS-STATUS-BODY.1: Task", "To Do", { id: "JTS-STATUS-BODY.1", title: "Task", status: "pending" });
+    let putCount = 0;
+    let putBody: unknown = null;
+    const fakeFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = typeof input === "string" ? input : input.toString();
+      const path = url.startsWith(BASE_URL) ? url.slice(BASE_URL.length) : url;
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (method === "POST" && path === "/rest/api/3/issue/search") return new Response(JSON.stringify({ issues: [issue], total: 1 }), { status: 200, headers: { "Content-Type": "application/json" } });
+      if (method === "GET" && path === "/rest/api/3/issue/SHIP-1/transitions") return new Response(JSON.stringify(makeTransitions([{ id: "21", name: "In Progress" }])), { status: 200, headers: { "Content-Type": "application/json" } });
+      if (method === "POST" && path === "/rest/api/3/issue/SHIP-1/transitions") return new Response("{}", { status: 204 });
+      if (method === "PUT" && path === "/rest/api/3/issue/SHIP-1") { putCount++; putBody = JSON.parse(init?.body as string); return new Response("{}", { status: 204 }); }
+      throw new Error(`fake fetch: unexpected ${method} ${path}`);
+    };
+    const store = new JiraTaskStore(CONFIG, fakeFetch, "user@example.com", "token");
+    // Only status is changing — no other fields
+    const updated = await store.update("JTS-STATUS-BODY.1", { status: "in_progress" });
+    expect(updated.status).toBe("in_progress");
+    // The body must have been written so the body block reflects the new status
+    expect(putCount).toBe(1);
+    expect(putBody).toBeDefined();
+    const bodyStr = JSON.stringify(putBody);
+    expect(bodyStr).toContain("in_progress");
   });
 
   test("does NOT add a comment when pr field is not set", async () => {

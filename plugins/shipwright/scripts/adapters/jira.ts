@@ -249,27 +249,44 @@ export class JiraTaskStore implements TaskStore {
   }
 
   private async fetchAllIssues(): Promise<JiraIssue[]> {
-    const jql = `project = "${this.projectKey}" AND labels = "shipwright-session" ORDER BY created ASC`;
-    const body = JSON.stringify({
-      jql,
-      maxResults: 500,
-      fields: ["summary", "status", "description"],
-    });
+    const jql =
+      this.config.jira?.readyJql ??
+      `project = "${this.projectKey}" AND labels = "shipwright-session" ORDER BY created ASC`;
 
-    const res = await this.jiraFetch("/rest/api/3/issue/search", {
-      method: "POST",
-      body,
-    });
+    const allIssues: JiraIssue[] = [];
+    let startAt = 0;
+    const maxResults = 100;
 
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(
-        `Jira issue search failed (${res.status}): ${text}`,
-      );
+    for (;;) {
+      const body = JSON.stringify({
+        jql,
+        startAt,
+        maxResults,
+        fields: ["summary", "status", "description"],
+      });
+
+      const res = await this.jiraFetch("/rest/api/3/issue/search", {
+        method: "POST",
+        body,
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(
+          `Jira issue search failed (${res.status}): ${text}`,
+        );
+      }
+
+      const data = (await res.json()) as { issues: JiraIssue[]; total: number };
+      allIssues.push(...data.issues);
+
+      if (startAt + data.issues.length >= data.total) {
+        break;
+      }
+      startAt += data.issues.length;
     }
 
-    const data = (await res.json()) as { issues: JiraIssue[] };
-    return data.issues;
+    return allIssues;
   }
 
   private async getTransitions(issueKey: string): Promise<JiraTransition[]> {
@@ -418,20 +435,48 @@ export class JiraTaskStore implements TaskStore {
 
   async append(tasks: Task[]): Promise<{ inserted: number; updated: number }> {
     const issues = await this.fetchAllIssues();
-    const existingIds = new Set<string>();
+
+    // Build a map from task id → existing TaskWithMeta for upsert lookups
+    const existingByTaskId = new Map<string, TaskWithMeta>();
     for (const issue of issues) {
       const task = issueToTask(issue, this.effectiveStatusMap);
-      if (task.id) existingIds.add(task.id);
+      if (task.id) existingByTaskId.set(task.id, task);
     }
 
     let inserted = 0;
-    const updated = 0;
+    let updated = 0;
 
     for (const task of tasks) {
       if (!task.id) continue;
-      if (existingIds.has(task.id)) {
-        // Insert-only: existing issues are never updated via append.
-        // Use update() for targeted field changes on existing tasks.
+
+      const existing = existingByTaskId.get(task.id);
+
+      if (existing) {
+        // Upsert: merge incoming fields over existing task and rewrite the body.
+        // Status transitions are intentionally skipped during append — append is
+        // a metadata sync operation, not a status change. Use update() to drive
+        // status transitions.
+        const issueKey = existing._issueKey;
+        if (!issueKey) {
+          this.warn(
+            `[shipwright] append: task ${task.id} exists but has no issue key — skipping update`,
+          );
+          continue;
+        }
+
+        const merged: TaskWithMeta = { ...existing, ...task, _issueKey: issueKey };
+        const newDescription = buildIssueDescription(stripInternal(merged));
+        const putRes = await this.jiraFetch(`/rest/api/3/issue/${issueKey}`, {
+          method: "PUT",
+          body: JSON.stringify({ fields: { description: newDescription } }),
+        });
+        if (!putRes.ok && putRes.status !== 204) {
+          const text = await putRes.text();
+          throw new Error(
+            `Failed to update Jira issue ${issueKey} for task ${task.id} (${putRes.status}): ${text}`,
+          );
+        }
+        updated++;
         continue;
       }
 
@@ -500,8 +545,10 @@ export class JiraTaskStore implements TaskStore {
       this.warn,
     );
 
-    // Update issue body if there are non-status fields
-    if (Object.keys(nonStatusFields).length > 0) {
+    // Update issue body whenever any fields are changing (including status-only changes).
+    // cleanup() treats the body block as the authoritative status record, so the body
+    // must always reflect the latest status even when no other fields are being written.
+    if (Object.keys(nonStatusFields).length > 0 || newStatus !== undefined) {
       if (newStatus !== undefined) {
         targetTask.status = newStatus;
       }
