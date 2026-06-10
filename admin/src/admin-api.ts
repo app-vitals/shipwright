@@ -20,7 +20,7 @@ import type {
   AgentTool,
 } from "../prisma/client/index.js";
 import { createAdminAuthMiddleware, parseAdminApiKeys } from "./api-auth.ts";
-import type { AdminApiKey } from "./api-auth.ts"; // re-exported below for callers
+import type { AdminApiKey } from "./api-auth.ts";
 import type { AgentCronJobService } from "./agent-cron-jobs.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
 import type { AgentPluginService } from "./agent-plugins.ts";
@@ -58,6 +58,7 @@ export interface AdminDeps {
 
 // Re-export for callers that need to build the map from an env string.
 export { parseAdminApiKeys };
+export type { AdminApiKey };
 
 // ─── App factory ──────────────────────────────────────────────────────────────
 
