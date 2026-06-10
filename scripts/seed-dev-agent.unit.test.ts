@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, beforeEach } from "bun:test";
-import { DEFAULT_TOOLS, seedDevAgent, type SeedDeps } from "./seed-dev-agent.ts";
+import { DEFAULT_TOOLS, parseEnvFile, seedDevAgent, type SeedDeps } from "./seed-dev-agent.ts";
 
 // ─── Prisma double factory ────────────────────────────────────────────────────
 
@@ -217,5 +217,76 @@ describe("seedDevAgent", () => {
     for (const upsert of double.agentUpserts) {
       expect((upsert.where as { id: string }).id).toBe("dev-agent");
     }
+  });
+});
+
+// ─── parseEnvFile unit tests ──────────────────────────────────────────────────
+
+describe("parseEnvFile", () => {
+  it("parses a basic key=value pair", () => {
+    expect(parseEnvFile("FOO=bar")).toEqual({ FOO: "bar" });
+  });
+
+  it("handles values containing = signs (KEY=abc=def)", () => {
+    // Only the first = is treated as the delimiter; everything after is the value
+    expect(parseEnvFile("KEY=abc=def")).toEqual({ KEY: "abc=def" });
+  });
+
+  it("handles multiple = in a value (BASE64-style values)", () => {
+    expect(parseEnvFile("TOKEN=abc==")).toEqual({ TOKEN: "abc==" });
+  });
+
+  it("strips surrounding double quotes from value", () => {
+    expect(parseEnvFile('FOO="bar baz"')).toEqual({ FOO: "bar baz" });
+  });
+
+  it("strips surrounding single quotes from value", () => {
+    expect(parseEnvFile("FOO='bar baz'")).toEqual({ FOO: "bar baz" });
+  });
+
+  it("strips an unmatched leading quote without crashing (regex acts independently on each end)", () => {
+    // The replace regex /^["']|["']$/g strips a leading " and a trailing " independently —
+    // not as a matched pair. So a lone leading " is still stripped.
+    const result = parseEnvFile('FOO="unmatched');
+    expect(result.FOO).toBe("unmatched");
+  });
+
+  it("strips an unmatched trailing quote without crashing (regex acts independently on each end)", () => {
+    const result = parseEnvFile('FOO=unmatched"');
+    expect(result.FOO).toBe("unmatched");
+  });
+
+  it("handles \\r\\n line endings (Windows-style)", () => {
+    const content = "FOO=bar\r\nBAZ=qux\r\n";
+    expect(parseEnvFile(content)).toEqual({ FOO: "bar", BAZ: "qux" });
+  });
+
+  it("handles mixed \\n and \\r\\n line endings", () => {
+    const content = "FOO=bar\r\nBAZ=qux\nQUX=quux\r\n";
+    expect(parseEnvFile(content)).toEqual({ FOO: "bar", BAZ: "qux", QUX: "quux" });
+  });
+
+  it("ignores blank lines", () => {
+    expect(parseEnvFile("\n\nFOO=bar\n\n")).toEqual({ FOO: "bar" });
+  });
+
+  it("ignores comment lines starting with #", () => {
+    expect(parseEnvFile("# comment\nFOO=bar\n# another comment")).toEqual({ FOO: "bar" });
+  });
+
+  it("ignores lines without = separator", () => {
+    expect(parseEnvFile("NOEQUALS\nFOO=bar")).toEqual({ FOO: "bar" });
+  });
+
+  it("trims whitespace around key name", () => {
+    expect(parseEnvFile("  FOO  =bar")).toEqual({ FOO: "bar" });
+  });
+
+  it("returns empty object for empty string", () => {
+    expect(parseEnvFile("")).toEqual({});
+  });
+
+  it("returns empty object for only comments and blank lines", () => {
+    expect(parseEnvFile("# just a comment\n\n# another")).toEqual({});
   });
 });
