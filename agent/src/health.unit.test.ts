@@ -7,6 +7,7 @@
 
 import { afterEach, describe, expect, it, test } from "bun:test";
 import type { Server } from "bun";
+import type { AnalyticsSummary } from "./analytics.ts";
 import { FixedClock } from "./clock.ts";
 import {
   SLACK_DOWN_GRACE_MS,
@@ -63,7 +64,7 @@ describe("startHealthServer", () => {
 
   function serve(
     port: number,
-    summarize?: (date?: string) => unknown,
+    summarize?: (date?: string) => AnalyticsSummary,
   ): Server<undefined> {
     const s = startHealthServer(port, summarize);
     servers.push(s);
@@ -145,7 +146,7 @@ describe("startHealthServer", () => {
     let receivedDate: string | undefined;
     serve(19907, (date) => {
       receivedDate = date;
-      return { date: date ?? "today", totalEvents: 0 };
+      return { date: date ?? "today", totalEvents: 0 } as AnalyticsSummary;
     });
     await fetch("http://localhost:19907/stats?date=2026-03-30");
     expect(receivedDate).toBe("2026-03-30");
