@@ -2002,8 +2002,8 @@ describe("invalid_blocks retry — falls back to formatter(cleaned) when blocks.
       sessionId: "sess-ib-empty-dm",
     });
     createSlackApp({
-      // biome-ignore lint/suspicious/noExplicitAny: minimal test stub for SlackBlock
       blocksConverter: (_text: string) =>
+        // biome-ignore lint/suspicious/noExplicitAny: minimal test stub for SlackBlock
         ({ text: "", blocks: [{ type: "section" }] }) as any,
     });
     const client = makeMockClient();
@@ -2035,8 +2035,8 @@ describe("invalid_blocks retry — falls back to formatter(cleaned) when blocks.
       sessionId: "sess-ib-empty-mention",
     });
     createSlackApp({
-      // biome-ignore lint/suspicious/noExplicitAny: minimal test stub for SlackBlock
       blocksConverter: (_text: string) =>
+        // biome-ignore lint/suspicious/noExplicitAny: minimal test stub for SlackBlock
         ({ text: "", blocks: [{ type: "section" }] }) as any,
     });
     const client = makeMockClient();
@@ -2066,8 +2066,8 @@ describe("invalid_blocks retry — falls back to formatter(cleaned) when blocks.
       sessionId: "sess-ib-empty-reaction",
     });
     createSlackApp({
-      // biome-ignore lint/suspicious/noExplicitAny: minimal test stub for SlackBlock
       blocksConverter: (_text: string) =>
+        // biome-ignore lint/suspicious/noExplicitAny: minimal test stub for SlackBlock
         ({ text: "", blocks: [{ type: "section" }] }) as any,
     });
     const client = makeMockClient();
