@@ -10,7 +10,7 @@ import { makeAccountsClientMock } from "../src/lib/test-doubles.ts";
 const port = Number.parseInt(process.env.METRICS_E2E_PORT ?? "3461", 10);
 const apiKeys = parseApiKeys("e2e:sk_e2e_test_key:*");
 const sessionSecret =
-  process.env.SHIPWRIGHT_METRICS_SESSION_SECRET ?? "e2e-test-session-secret-32b";
+  process.env.SHIPWRIGHT_SESSION_SECRET ?? "e2e-test-session-secret-32b";
 const noopAccountsClient = makeAccountsClientMock(async () => []);
 const app = createMetricsApp(apiKeys, noopAccountsClient, { sessionSecret });
 
