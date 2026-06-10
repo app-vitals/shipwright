@@ -1,1 +1,319 @@
-export {};
+/**
+ * agent/src/index.ts
+ * Shipwright agent startup entrypoint.
+ *
+ * Boot order:
+ *  1. ensureAgentHome + runMiseStartup + installPlugins (defaults)
+ *  2. Config sync — fetch AgentConfigBundle, apply env, install agent plugins (await first)
+ *  3. reconcileSystemCrons — best-effort, non-fatal
+ *  4. Health server
+ *  5. Cron sync loop (60s)
+ *  6. Slack Bolt Socket Mode app
+ *  7. Graceful SIGTERM/SIGINT shutdown
+ */
+
+import { join } from "node:path";
+import { WebClient } from "@slack/web-api";
+import nodeCron from "node-cron";
+import { createAnalyticsStore } from "./analytics.ts";
+import { createRunClaude, setLiveClaudeConfig } from "./claude.ts";
+import { SystemClock } from "./clock.ts";
+import { createConfig } from "./config.ts";
+import { handleCronRequest } from "./cron-handler.ts";
+import type { CronHandlerDeps } from "./cron-handler.ts";
+import { markdownToSlack } from "./format.ts";
+import {
+  markSlackConnected,
+  markSlackDisconnected,
+  startHealthServer,
+} from "./health.ts";
+import { createFileSessionStore, threadKey } from "./sessions.ts";
+import { ensureAgentHome, installPlugins, runMiseStartup } from "./setup.ts";
+import { HttpShipwrightRuntimeClient } from "./shipwright-runtime-client.ts";
+import { createSlackApp } from "./slack.ts";
+import { resolveDisplayName } from "./users.ts";
+import { synthesizeSpeech } from "./voice.ts";
+
+// ─── Config ───────────────────────────────────────────────────────────────────
+
+const agentHome =
+  process.env.AGENT_HOME ??
+  join(process.env.HOME ?? "/root", ".shipwright-agent");
+const { config } = createConfig(agentHome);
+
+// ─── Timestamp prefix ─────────────────────────────────────────────────────────
+
+for (const level of ["log", "warn", "error"] as const) {
+  const orig = console[level].bind(console);
+  console[level] = (...args: unknown[]) =>
+    orig(`[${new Date().toISOString()}]`, ...args);
+}
+
+// ─── Step 1: Agent home + mise + default plugins ──────────────────────────────
+
+ensureAgentHome(config.paths.home);
+console.log(`[agent] agent home initialized: ${config.paths.home}`);
+
+await runMiseStartup(config.paths.home);
+console.log("[agent] mise startup complete");
+
+await installPlugins();
+console.log("[agent] default plugin install complete");
+
+// ─── Runtime client ───────────────────────────────────────────────────────────
+
+const agentId = config.shipwright.agentId;
+const runtimeClient =
+  config.shipwright.apiUrl && config.shipwright.apiKey
+    ? new HttpShipwrightRuntimeClient({
+        apiUrl: config.shipwright.apiUrl,
+        apiKey: config.shipwright.apiKey,
+      })
+    : null;
+
+// ─── Step 2: Config sync ──────────────────────────────────────────────────────
+
+if (runtimeClient && agentId) {
+  let configNotFoundLogged = false;
+
+  async function syncConfig() {
+    if (!runtimeClient || !agentId) return;
+    try {
+      const bundle = await runtimeClient.getAgentConfigBundle(agentId);
+      configNotFoundLogged = false;
+
+      // Apply env vars — log changed keys (mask values)
+      const changed: string[] = [];
+      for (const key of Object.keys(bundle.env)) {
+        if (bundle.env[key] !== process.env[key]) changed.push(key);
+      }
+      Object.assign(process.env, bundle.env);
+      if (changed.length > 0) {
+        console.log(`[config-sync] updated: ${changed.join(", ")}`);
+      }
+
+      // Sync allowed tools
+      const allowedTools = bundle.allowedTools ?? [];
+      if (allowedTools.length > 0) {
+        process.env.AGENT_ALLOWED_TOOLS = JSON.stringify(allowedTools);
+      }
+
+      // Push new config into the live claude runner
+      setLiveClaudeConfig({
+        model: process.env.ANTHROPIC_MODEL ?? config.claude.model,
+        fallbackModel: process.env.ANTHROPIC_FALLBACK_MODEL,
+        effortLevel: process.env.ANTHROPIC_EFFORT_LEVEL,
+        allowedTools,
+      });
+
+      // Install agent-specific plugins from bundle (non-fatal)
+      if (bundle.plugins?.length) {
+        await installPlugins(undefined, undefined, bundle.plugins).catch(
+          (err) =>
+            console.warn(
+              "[config-sync] agent plugin install failed (non-fatal):",
+              (err as Error).message,
+            ),
+        );
+      }
+    } catch (err) {
+      if (
+        (err as { statusCode?: number }).statusCode === 404 &&
+        !configNotFoundLogged
+      ) {
+        console.log("[config-sync] no config bundle found — skipping env sync");
+        configNotFoundLogged = true;
+        return;
+      }
+      console.error(
+        "[config-sync] failed to fetch config bundle:",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
+
+  // Await first sync so ANTHROPIC_API_KEY is set before Slack starts
+  await syncConfig();
+  setInterval(() => void syncConfig(), 60_000);
+  console.log("[agent] config sync started (60s interval)");
+}
+
+// ─── Step 3: reconcileSystemCrons — best-effort ────────────────────────────────
+
+if (runtimeClient && agentId) {
+  try {
+    await runtimeClient.reconcileSystemCrons(agentId);
+    console.log("[agent] system crons reconciled");
+  } catch (err) {
+    console.error(
+      "[agent] reconcileSystemCrons failed (non-fatal):",
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+}
+
+// ─── Step 4: Health server ────────────────────────────────────────────────────
+
+const slackClock = SystemClock();
+const sessions = createFileSessionStore(config.paths.sessions);
+const analytics = createAnalyticsStore(join(config.paths.home, "analytics"));
+analytics.track({ type: "session_start" });
+
+const slack = new WebClient(config.slack.botToken ?? "");
+const runner = createRunClaude(
+  Bun.spawn,
+  sessions,
+  undefined,
+  config.paths.workspace,
+  analytics.track,
+);
+
+const cronDeps: CronHandlerDeps = {
+  slack,
+  runner,
+  formatter: markdownToSlack,
+  onSession: (channel: string, ts: string, sessionId: string) => {
+    sessions.set(threadKey(channel, ts), sessionId);
+  },
+  synthesizeSpeechFn: synthesizeSpeech,
+  voiceConfig: config.voice,
+  workspace: config.paths.workspace,
+  alertsChannel: config.alerts.channel,
+};
+
+const healthPort = Number(process.env.HEALTH_PORT ?? process.env.PORT ?? 3001);
+startHealthServer(healthPort, analytics.summarize, cronDeps, slackClock);
+console.log(`[agent] health server on port ${healthPort}`);
+
+// ─── Step 5: Cron sync loop ───────────────────────────────────────────────────
+
+const cronTasks = new Map<string, ReturnType<typeof nodeCron.schedule>>();
+
+if (runtimeClient && agentId) {
+  async function syncCrons() {
+    if (!runtimeClient || !agentId) return;
+    let jobs: Awaited<ReturnType<typeof runtimeClient.listAgentCronJobs>>;
+    try {
+      jobs = await runtimeClient.listAgentCronJobs(agentId);
+    } catch (err) {
+      console.error(
+        "[cron-sync] failed to fetch cron jobs:",
+        err instanceof Error ? err.message : String(err),
+      );
+      return;
+    }
+
+    // Build desired map of enabled jobs
+    const desired = new Map<string, (typeof jobs)[number]>();
+    for (const job of jobs) {
+      if (job.enabled) desired.set(job.id, job);
+    }
+
+    // Cancel removed/disabled jobs
+    for (const [id, task] of cronTasks) {
+      if (!desired.has(id)) {
+        task.stop();
+        cronTasks.delete(id);
+        console.log(`[cron-sync] unscheduled ${id}`);
+      }
+    }
+
+    // Schedule new jobs
+    for (const [id, job] of desired) {
+      if (!cronTasks.has(id)) {
+        const task = nodeCron.schedule(job.schedule, async () => {
+          console.log(`[cron] firing job ${id}`);
+          try {
+            await handleCronRequest(
+              {
+                jobId: id,
+                prompt: job.prompt,
+                channel: job.channel ?? undefined,
+                user: job.user ?? undefined,
+                silent: job.silent,
+                preCheck: job.preCheck ?? undefined,
+              },
+              cronDeps,
+            );
+          } catch (err) {
+            console.error(
+              `[cron] job ${id} failed:`,
+              err instanceof Error ? err.message : String(err),
+            );
+          }
+        });
+        cronTasks.set(id, task);
+        console.log(`[cron-sync] scheduled ${id} (${job.schedule})`);
+      }
+    }
+  }
+
+  void syncCrons();
+  setInterval(() => void syncCrons(), 60_000);
+  console.log("[agent] cron sync started (60s interval)");
+}
+
+// ─── Step 6: Slack Bolt Socket Mode ──────────────────────────────────────────
+
+const app = createSlackApp(
+  runner,
+  markdownToSlack,
+  threadKey,
+  undefined, // appFactory — default Bolt App
+  {
+    botToken: config.slack.botToken ?? "",
+    appToken: config.slack.appToken ?? "",
+    signingSecret: config.slack.signingSecret ?? "",
+  },
+  analytics.track,
+  undefined, // fileDownloaderFn — default
+  config.voice,
+  undefined, // transcribeAudioFn — default
+  synthesizeSpeech,
+  (userId, client) => resolveDisplayName(userId, client),
+  undefined, // botUserId — resolved by Bolt
+  undefined, // conversationsRepliesFn — default
+  (key) => sessions.get(key),
+);
+
+await app.start();
+markSlackConnected();
+console.log("[agent] Slack app started — running");
+
+// ─── Step 7: Graceful shutdown ────────────────────────────────────────────────
+
+let shuttingDown = false;
+
+async function shutdown(signal: string) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[agent] received ${signal}, beginning graceful shutdown`);
+  markSlackDisconnected(slackClock);
+
+  // Stop cron tasks so no new Claude work fires during drain
+  for (const [id, task] of cronTasks) {
+    task.stop();
+    console.log(`[agent] cron unscheduled on shutdown: ${id}`);
+  }
+  cronTasks.clear();
+
+  // Close the Slack socket (bounded — don't let Bolt hang indefinitely)
+  try {
+    await Promise.race([
+      app.stop(),
+      new Promise<void>((resolve) => setTimeout(resolve, 15_000)),
+    ]);
+    console.log("[agent] Slack app stopped");
+  } catch (err) {
+    console.error(
+      "[agent] app.stop() failed:",
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+
+  console.log("[agent] shutdown complete");
+  process.exit(0);
+}
+
+process.on("SIGTERM", () => void shutdown("SIGTERM"));
+process.on("SIGINT", () => void shutdown("SIGINT"));
