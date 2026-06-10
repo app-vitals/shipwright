@@ -6,7 +6,7 @@
 
 The agent owns six first-class Prisma models (`Agent` and its `Env` / `CronJob` / `Tool` / `Token` / `Plugin` children) on a **dedicated database** (`DATABASE_URL`). Secrets at rest (env values, Slack/Anthropic keys) are AES-256-GCM encrypted at the service layer; agent API tokens are stored only as SHA-256 hashes.
 
-> The Dockerfile `ENTRYPOINT` is `bun run admin/src/main.ts`, which runs migrations, constructs all services, and mounts all admin + runtime routes. For a full agent startup sequence (env validation, config fetch, `~/.claude` symlink, GitHub auth, mise, plugin install) use `agent/src/entrypoint-main.ts` — it validates required vars, fetches agent config, applies env, symlinks `~/.claude`, sets up GitHub auth, runs mise, installs plugins, and then spawns `run-agent.ts`. The legacy `agent/src/index.ts` remains a placeholder (`export {}`). The implemented HTTP surfaces are the admin CRUD API (`admin/src/admin-api.ts`), the runtime API (`admin/src/api.ts`), the server-rendered admin UI (`admin/src/admin-ui.ts`), the Prisma store + service classes (all in the `@shipwright/admin` package), the Slack event handler (`slack.ts`), and the cron runtime (`cron-handler.ts`). On startup the runner calls `POST /admin/api/agents/:id/crons/reconcile` to sync system crons. A dev-only `POST /chat` transport (`chat.ts`) is available when `SHIPWRIGHT_DEV_CHAT=true`; it is never registered in production (enforced by `chat-guard.ts`).
+> The Dockerfile `ENTRYPOINT` is `bun run admin/src/main.ts`, which runs migrations, constructs all services, and mounts all admin + runtime routes. For a full agent startup sequence (env validation, config fetch, `~/.claude` symlink, GitHub auth, mise, plugin install) use `agent/src/entrypoint-main.ts` — it validates required vars, fetches agent config, applies env, symlinks `~/.claude`, sets up GitHub auth, runs mise, installs plugins, and then spawns `run-agent.ts`. The legacy `agent/src/index.ts` remains a placeholder (`export {}`). The implemented HTTP surfaces are the admin CRUD API (`admin/src/admin-api.ts`, auth via `api-auth.ts`), the runtime API (`admin/src/api.ts`), the server-rendered admin UI (`admin/src/admin-ui.ts`), the Prisma store + service classes (all in the `@shipwright/admin` package), the Slack event handler (`slack.ts`), and the cron runtime (`cron-handler.ts`). On startup the runner calls `POST /admin/api/agents/:id/crons/reconcile` to sync system crons. A dev-only `POST /chat` transport (`chat.ts`) is available when `SHIPWRIGHT_DEV_CHAT=true`; it is never registered in production (enforced by `chat-guard.ts`).
 
 ## Running locally
 
@@ -32,7 +32,7 @@ Mounted at `/agents/*`. The harness polls this every ~60s. Auth: **Bearer token*
 
 ### Admin CRUD API (`admin-api.ts`) — human-facing
 
-Mounted at `/admin/api/*`. Auth: **session cookie** `admin_session` (httpOnly JWT verified with `SHIPWRIGHT_SESSION_SECRET`; absent/invalid → `401`).
+Mounted at `/admin/api/*`. Auth: **session cookie** `admin_session` (httpOnly JWT verified with `SHIPWRIGHT_SESSION_SECRET`) **or** a valid **bearer token** validated via `agentTokenService.validate()`. If an `Authorization` header is present but the token is invalid, the request is rejected immediately (401) — it does not fall through to the cookie path. Absent auth → `401`.
 
 | Resource | Endpoints |
 |---|---|
@@ -109,7 +109,8 @@ All child models cascade-delete with their `Agent`.
 |---|---|
 | `admin/src/main.ts` | Standalone admin service entrypoint — runs `prisma migrate deploy`, constructs all services, and mounts health + runtime API + admin CRUD API + admin UI. Dockerfile `ENTRYPOINT`. |
 | `admin/src/api.ts` | Runtime API factory `createAgentRuntimeApp()` (DI for services). |
-| `admin/src/admin-api.ts` | Admin CRUD factory `createAdminApp()` + session-auth middleware. |
+| `admin/src/admin-api.ts` | Admin CRUD factory `createAdminApp()`. |
+| `admin/src/api-auth.ts` | Combined admin auth middleware (`createAdminAuthMiddleware()`) — accepts bearer token OR session cookie; bearer check runs first and does not fall through to cookie on failure. |
 | `admin/src/admin-ui.ts` | Admin UI factory `createAdminUIApp()` — server-rendered Hono app (login, agent list/detail, Slack provisioning) with POST mutation routes for cron jobs, tools, and tokens (create/toggle/delete/revoke). Accepts `devAuthEnabled` in `AdminUIDeps`; when true, registers `GET /admin/dev-login` (dev auto-login). |
 | `admin/src/dev-auth-guard.ts` | `isDevAuthAllowed(env)` — pure predicate over an injected env object (`DevAuthGuardEnv`). Returns `true` only when `ADMIN_DEV_AUTH=true` and `NODE_ENV !== "production"`. Mirrors the `chat-guard.ts` safety pattern. |
 | `admin/src/admin-ui-pages.ts` | Page rendering functions (`renderLoginPage`, `renderAgentsPage`, `renderAgentDetailPage`, `renderProvision*`). |
