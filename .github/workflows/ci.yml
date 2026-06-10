@@ -99,6 +99,15 @@ jobs:
       - name: Build admin Docker image
         run: docker build -f admin/Dockerfile -t shipwright-admin:ci .
 
+  agent-docker-build:
+    name: agent docker build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build agent Docker image
+        run: docker build -f agent/Dockerfile -t shipwright-agent:ci .
+
   e2e:
     name: e2e (metrics dashboard)
     runs-on: ubuntu-latest

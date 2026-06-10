@@ -21,14 +21,26 @@ FROM oven/bun:1.3 AS base
 
 # Install system dependencies:
 #   - git          — required by Claude Code and mise
-#   - curl         — used by mise installer
+#   - curl         — used by mise installer and gh keyring setup
 #   - ca-certificates — TLS trust for API calls
 #   - unzip        — needed by some mise-managed tools
+#   - nodejs npm   — required to install Claude Code via npm
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     curl \
     ca-certificates \
     unzip \
+    nodejs \
+    npm \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install gh CLI via official GitHub apt keyring
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+      | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+      > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends gh \
     && rm -rf /var/lib/apt/lists/*
 
 # Install mise (polyglot runtime manager)
@@ -67,6 +79,10 @@ ENV AGENT_HOME=/data/agent-home
 # Copy installed node_modules and generated Prisma client from build stage
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/agent ./agent
+
+# Install Claude Code globally — placed after COPY layers so bun install
+# cache is not invalidated by changes to Claude Code version
+RUN npm install -g @anthropic-ai/claude-code
 
 # Add scripts/bin to PATH so the git-credential-shipwright.sh wrapper
 # and gh wrapper are available to subprocesses
