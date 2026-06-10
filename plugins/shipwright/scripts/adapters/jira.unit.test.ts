@@ -317,6 +317,33 @@ describe("JiraTaskStore fetchAllIssues — pagination", () => {
     expect(tasks).toHaveLength(1);
     expect(fetchCount).toBe(1);
   });
+
+  test("terminates pagination when a non-terminal page returns empty issues (race/server quirk guard)", async () => {
+    const page1Issues = [
+      makeJiraIssue("SHIP-1", "Task 1", "To Do", { id: "JTS-PAG-4", title: "Task 1", status: "pending" }),
+    ];
+    let fetchCount = 0;
+    const fakeFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = typeof input === "string" ? input : input.toString();
+      const path = url.startsWith(BASE_URL) ? url.slice(BASE_URL.length) : url;
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (method === "POST" && path === "/rest/api/3/issue/search") {
+        fetchCount++;
+        const body = JSON.parse(init?.body as string) as { startAt: number };
+        // Page 1 returns 1 issue; page 2 returns empty (simulating race/deletion mid-fetch)
+        // total=5 ensures the normal terminal guard wouldn't fire on page 2
+        const issues = body.startAt === 0 ? page1Issues : [];
+        return new Response(JSON.stringify({ issues, total: 5 }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      throw new Error(`fake fetch: unexpected ${method} ${path}`);
+    };
+    const store = new JiraTaskStore(CONFIG, fakeFetch, "user@example.com", "token");
+    const tasks = await store.query({});
+    // Should return the first page's tasks and break out of the loop instead of spinning
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0].id).toBe("JTS-PAG-4");
+    expect(fetchCount).toBe(2);
+  });
 });
 
 describe("JiraTaskStore.append", () => {

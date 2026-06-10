@@ -280,6 +280,10 @@ export class JiraTaskStore implements TaskStore {
       const data = (await res.json()) as { issues: JiraIssue[]; total: number };
       allIssues.push(...data.issues);
 
+      if (data.issues.length === 0) {
+        break;
+      }
+
       if (startAt + data.issues.length >= data.total) {
         break;
       }
