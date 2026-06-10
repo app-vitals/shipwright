@@ -43,7 +43,7 @@ A thin autonomous runner with a Prisma-backed store (PostgreSQL) and four HTTP s
 |---|---|---|
 | Marketing site | `site/` | Astro + Tailwind (**shipwright-harness.com**). **Not** a Bun workspace; Playwright smoke tests (`*.spec.ts`). |
 | Brand system | `brand/` | Locked design system (`BRAND.md`, `tokens.json`) + CSS build + lint, consumed by `site/`. |
-| Local state | `state/` | Git-ignored JSON task-store fallback + cached review state (only written when the GitHub backend isn't active). |
+| Local state | `state/` | Mostly git-ignored: JSON task-store fallback + cached review state (only written when the GitHub backend isn't active). `state/dev-agent.env.example` is committed as a credentials template; the actual `state/dev-agent.env` is git-ignored. |
 
 ## Workspace layout
 
@@ -57,7 +57,7 @@ shipwright/
 ├── admin/                C — Admin service: CRUD API, admin UI, Prisma store (@shipwright/admin)
 ├── site/                 marketing site (Astro, separate toolchain)
 ├── brand/                locked design system
-├── state/                local task-store / review-cache fallback
+├── state/                local task-store / review-cache fallback (dev-agent.env.example committed; dev-agent.env git-ignored)
 ├── docs/                 this documentation
 └── Taskfile.yml          single local entrypoint (task setup / ci / test / …)
 ```
