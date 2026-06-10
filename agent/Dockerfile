@@ -21,7 +21,7 @@ FROM oven/bun:1.3 AS base
 
 # Install system dependencies:
 #   - git          — required by Claude Code and mise
-#   - curl         — used by mise installer
+#   - curl         — used by mise installer and gh keyring setup
 #   - ca-certificates — TLS trust for API calls
 #   - unzip        — needed by some mise-managed tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -29,6 +29,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
     unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install gh CLI from GitHub's official apt repository
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+    | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+    | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends gh \
     && rm -rf /var/lib/apt/lists/*
 
 # Install mise (polyglot runtime manager)
@@ -68,9 +78,15 @@ ENV AGENT_HOME=/data/agent-home
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/agent ./agent
 
-# Add scripts/bin to PATH so the git-credential-shipwright.sh wrapper
-# and gh wrapper are available to subprocesses
-ENV PATH="/app/agent/scripts/bin:${PATH}"
+# Install Claude Code CLI globally via bun.
+# Runs AFTER the COPY --from=build steps so it doesn't bust the bun dep-install
+# cache layer when node_modules change.
+RUN bun install --global @anthropic-ai/claude-code
+
+# Add bun global bin and scripts/bin to PATH.
+# /root/.bun/bin — bun global installs (claude, etc.)
+# /app/agent/scripts/bin — git-credential-shipwright.sh and gh wrapper
+ENV PATH="/root/.bun/bin:/app/agent/scripts/bin:${PATH}"
 
 # Make credential helper executable
 RUN chmod +x /app/agent/scripts/bin/git-credential-shipwright.sh \
