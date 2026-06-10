@@ -32,7 +32,7 @@ Mounted at `/agents/*`. The harness polls this every ~60s. Auth: **Bearer token*
 
 ### Admin CRUD API (`admin-api.ts`) — human-facing
 
-Mounted at `/admin/api/*`. Auth: **session cookie** `admin_session` (httpOnly JWT verified with `SHIPWRIGHT_SESSION_SECRET`) **or** a valid **bearer token** validated via `agentTokenService.validate()`. If an `Authorization` header is present but the token is invalid, the request is rejected immediately (401) — it does not fall through to the cookie path. Absent auth → `401`.
+Mounted at `/admin/api/*`. Auth: **session cookie** `admin_session` (httpOnly JWT verified with `SHIPWRIGHT_SESSION_SECRET`) **or** a valid **bearer token** checked in this order: (1) matched against `SHIPWRIGHT_ADMIN_API_KEYS` env keys (scope `*` → admin bypass; scope `<agentId>` → enforces route agentId), then (2) validated via `agentTokenService.validate()` (DB token path). If an `Authorization` header is present but the token is invalid in both paths, the request is rejected immediately (401) — it does not fall through to the cookie path. Absent auth → `401`.
 
 | Resource | Endpoints |
 |---|---|
@@ -91,6 +91,7 @@ All child models cascade-delete with their `Agent`.
 | `PORT` | server | Hono server port (default: `3000`). |
 | `HEALTH_PORT` | server | Health server port for `index.ts` (default: falls back to `PORT`, then `3001`). Set in Kubernetes to expose the liveness probe on a separate port from the main Hono server. |
 | `SHIPWRIGHT_SESSION_SECRET` | admin API | Secret for verifying the `admin_session` JWT cookie. |
+| `SHIPWRIGHT_ADMIN_API_KEYS` | admin API | Comma-separated `name:token:scope` tuples for env-based bearer auth on `/admin/api/*`. Scope `*` → admin (bypasses per-agent checks); scope `<agentId>` → restricted to that agent's routes. Optional — absent means env key auth is disabled and only DB tokens and session cookies are accepted. Example: `bodhi:sk_bodhi_abc:*,svc:sk_svc_xyz:agent-id-123`. |
 | `GOOGLE_CLIENT_ID` | admin UI (OAuth) | Google OAuth 2.0 client ID. Required for the admin login flow. |
 | `GOOGLE_CLIENT_SECRET` | admin UI (OAuth) | Google OAuth 2.0 client secret. Required for the admin login flow. |
 | `SHIPWRIGHT_ADMIN_ALLOWED_EMAILS` | admin UI (OAuth) | Comma-separated list of Google email addresses permitted to log in to the admin UI. |
@@ -111,7 +112,7 @@ All child models cascade-delete with their `Agent`.
 | `admin/src/main.ts` | Standalone admin service entrypoint — runs `prisma migrate deploy`, constructs all services, and mounts health + runtime API + admin CRUD API + admin UI. Dockerfile `ENTRYPOINT`. |
 | `admin/src/api.ts` | Runtime API factory `createAgentRuntimeApp()` (DI for services). |
 | `admin/src/admin-api.ts` | Admin CRUD factory `createAdminApp()`. |
-| `admin/src/api-auth.ts` | Combined admin auth middleware (`createAdminAuthMiddleware()`) — accepts bearer token OR session cookie; bearer check runs first and does not fall through to cookie on failure. |
+| `admin/src/api-auth.ts` | Combined admin auth middleware (`createAdminAuthMiddleware()`) and env-key parser (`parseAdminApiKeys()`) — bearer check order: env API keys (scope enforcement), then DB token via `agentTokenService`; bearer path does not fall through to session cookie on failure. |
 | `admin/src/admin-ui.ts` | Admin UI factory `createAdminUIApp()` — server-rendered Hono app (login, agent list/detail, Slack provisioning) with POST mutation routes for cron jobs, tools, and tokens (create/toggle/delete/revoke). Accepts `devAuthEnabled` in `AdminUIDeps`; when true, registers `GET /admin/dev-login` (dev auto-login). |
 | `admin/src/dev-auth-guard.ts` | `isDevAuthAllowed(env)` — pure predicate over an injected env object (`DevAuthGuardEnv`). Returns `true` only when `ADMIN_DEV_AUTH=true` and `NODE_ENV !== "production"`. Mirrors the `chat-guard.ts` safety pattern. |
 | `admin/src/admin-ui-pages.ts` | Page rendering functions (`renderLoginPage`, `renderAgentsPage`, `renderAgentDetailPage`, `renderProvision*`). |
