@@ -21,7 +21,7 @@ FROM oven/bun:1.3 AS base
 
 # Install system dependencies:
 #   - git          — required by Claude Code and mise
-#   - curl         — used by mise installer
+#   - curl         — used by mise installer and gh keyring setup
 #   - ca-certificates — TLS trust for API calls
 #   - unzip        — needed by some mise-managed tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -31,9 +31,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unzip \
     && rm -rf /var/lib/apt/lists/*
 
+# Install gh CLI via official GitHub apt keyring
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+      | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+      > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends gh \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install mise (polyglot runtime manager)
 RUN curl https://mise.run | sh && \
     ln -s /root/.local/bin/mise /usr/local/bin/mise
+
+# Install Node.js 20 LTS via mise (Debian bookworm's apt provides Node 18 which is EOL)
+# mise shims live in ~/.local/share/mise/shims — add to PATH so npm/node are found
+ENV PATH="/root/.local/share/mise/shims:${PATH}"
+RUN mise use --global node@20
 
 # ─── Build stage ──────────────────────────────────────────────────────────────
 
@@ -42,18 +56,18 @@ FROM base AS build
 WORKDIR /app
 
 # Copy workspace manifests first (layer caching for deps)
-COPY package.json bunfig.toml* ./
+COPY package.json bunfig.toml* bun.lock ./
 COPY agent/package.json ./agent/
-COPY agent/prisma ./agent/prisma/
+COPY metrics/package.json ./metrics/
+COPY admin/package.json ./admin/
+COPY admin/prisma ./admin/prisma/
+COPY plugins/shipwright/package.json ./plugins/shipwright/
 
 # Install all dependencies (including devDependencies for typecheck)
 RUN bun install --frozen-lockfile
 
 # Copy the rest of the agent source
 COPY agent/ ./agent/
-
-# Generate Prisma client
-RUN cd agent && bunx prisma generate --schema=prisma/schema.prisma
 
 # ─── Runtime stage ────────────────────────────────────────────────────────────
 
@@ -64,9 +78,13 @@ WORKDIR /app
 # Set AGENT_HOME — the PVC should be mounted here in Kubernetes
 ENV AGENT_HOME=/data/agent-home
 
-# Copy installed node_modules and generated Prisma client from build stage
+# Copy installed node_modules from build stage
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/agent ./agent
+
+# Install Claude Code globally — after COPY layers so a Claude Code version bump
+# does not invalidate the node_modules/agent copy in this stage
+RUN npm install -g @anthropic-ai/claude-code@2.1.170
 
 # Add scripts/bin to PATH so the git-credential-shipwright.sh wrapper
 # and gh wrapper are available to subprocesses

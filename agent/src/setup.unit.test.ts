@@ -94,4 +94,31 @@ describe("installPlugins — SHIPWRIGHT_LOCAL_MARKETPLACE seam", () => {
     expect(calls[1].args[1]).toBe("update");
     expect(calls[1].args[2]).toBe("shipwright@/local/path");
   });
+
+  it("does not apply SHIPWRIGHT_LOCAL_MARKETPLACE to agentPlugins", async () => {
+    process.env.SHIPWRIGHT_LOCAL_MARKETPLACE = "/local/path";
+
+    const calls: Array<{ cmd: string; args: string[] }> = [];
+    const mockExec = async (
+      cmd: string,
+      args: string[],
+      _opts: { cwd: string },
+    ) => {
+      calls.push({ cmd, args });
+      return { stdout: "", exitCode: 0 };
+    };
+
+    await installPlugins(mockExec, "/tmp/test-cwd", [
+      { plugin: "my-agent-plugin", marketplace: "org/my-marketplace" },
+    ]);
+
+    // DEFAULT_PLUGINS (shipwright) uses the local path; agentPlugins use their own marketplace
+    const specs = calls.map((c) => c.args[2]);
+    expect(specs).toEqual([
+      "shipwright@/local/path",         // default plugin: local override applies
+      "my-agent-plugin@org/my-marketplace", // agent plugin: own marketplace preserved
+      "shipwright@/local/path",         // default plugin update: local override applies
+      "my-agent-plugin@org/my-marketplace", // agent plugin update: own marketplace preserved
+    ]);
+  });
 });
