@@ -52,6 +52,9 @@ const DUMMY_POSTHOG_KEY = "phc_dev_dummy";
 const DUMMY_ENCRYPTION_KEY =
   "0000000000000000000000000000000000000000000000000000000000000000";
 const DUMMY_INTERNAL_API_KEY = "dev-internal-key";
+// Session-cookie signing key (HS256). Must be non-empty — Web Crypto rejects a
+// zero-length HMAC key with "DataError", which surfaces as a 500 on first login.
+const DUMMY_SESSION_SECRET = "dev-session-secret-not-for-production-use!";
 /** Docker image tag for the agent container. */
 const DEV_DOCKER_IMAGE = "shipwright-agent-dev";
 /** Named Docker volume that persists agent-home across container restarts. */
@@ -157,6 +160,7 @@ export const STACK_PANES: Pane[] = [
       DATABASE_URL_SHIPWRIGHT_ADMIN: DEV_DATABASE_URL,
       SHIPWRIGHT_ENCRYPTION_KEY: DUMMY_ENCRYPTION_KEY,
       SHIPWRIGHT_INTERNAL_API_KEY: DUMMY_INTERNAL_API_KEY,
+      SHIPWRIGHT_SESSION_SECRET: DUMMY_SESSION_SECRET,
       ADMIN_DEV_AUTH: "true",
     },
   },

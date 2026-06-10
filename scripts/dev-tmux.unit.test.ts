@@ -379,6 +379,15 @@ describe("admin pane — dev auth + internal key", () => {
     expect(admin.env?.SHIPWRIGHT_INTERNAL_API_KEY).toBeDefined();
     expect(admin.env?.SHIPWRIGHT_INTERNAL_API_KEY?.length).toBeGreaterThan(0);
   });
+
+  // A zero-length HS256 secret makes Web Crypto throw "DataError" the moment
+  // the admin service signs a session cookie — the service boots green but 500s
+  // on first login. The dev stack must inject a non-empty secret.
+  test("admin pane has a non-empty SHIPWRIGHT_SESSION_SECRET", () => {
+    const admin = STACK_PANES.find((p) => p.label === "admin") as Pane;
+    expect(admin.env?.SHIPWRIGHT_SESSION_SECRET).toBeDefined();
+    expect(admin.env?.SHIPWRIGHT_SESSION_SECRET?.length).toBeGreaterThan(0);
+  });
 });
 
 describe("agent pane — docker run", () => {
