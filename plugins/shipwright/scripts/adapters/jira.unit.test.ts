@@ -648,3 +648,49 @@ describe("JiraTaskStore custom statusMap", () => {
     expect(tasks.find((t) => t.id === "JTS-19.2")?.status).toBe("merged");
   });
 });
+
+describe("JiraTaskStore default statusMap — full coverage", () => {
+  const ALL_MAP_ENTRIES: Array<[string, string]> = [
+    ["Backlog", "pending"],
+    ["Open", "pending"],
+    ["PR Open", "pr_open"],
+    ["Closed", "done"],
+    ["Resolved", "done"],
+    ["On Hold", "blocked"],
+    ["Won't Do", "cancelled"],
+    ["Cancelled", "cancelled"],
+  ];
+
+  for (const [jiraStatus, expected] of ALL_MAP_ENTRIES) {
+    test(`maps "${jiraStatus}" to "${expected}"`, async () => {
+      const issues = [
+        makeJiraIssue("SHIP-1", "t1", jiraStatus, { id: `JTS-MAP-${jiraStatus.replace(/\W/g, "")}`, title: "t1", status: "pending" }),
+      ];
+      const fakeFetch = makeFakeFetch({ "POST /rest/api/3/issue/search": { status: 200, body: { issues, total: 1 } } });
+      const store = new JiraTaskStore(CONFIG, fakeFetch, "user@example.com", "token");
+      const tasks = await store.query({});
+      expect(tasks[0].status).toBe(expected);
+    });
+  }
+});
+
+describe("JiraTaskStore fetch error propagation", () => {
+  const throwingFetch: FetchFn = async () => {
+    throw new TypeError("Network error");
+  };
+
+  test("query() propagates fetch errors", async () => {
+    const store = new JiraTaskStore(CONFIG, throwingFetch, "user@example.com", "token");
+    await expect(store.query({})).rejects.toThrow("Network error");
+  });
+
+  test("append() propagates fetch errors", async () => {
+    const store = new JiraTaskStore(CONFIG, throwingFetch, "user@example.com", "token");
+    await expect(store.append([{ id: "JTS-ERR.1", title: "task", status: "pending" }])).rejects.toThrow("Network error");
+  });
+
+  test("update() propagates fetch errors", async () => {
+    const store = new JiraTaskStore(CONFIG, throwingFetch, "user@example.com", "token");
+    await expect(store.update("JTS-ERR.1", { status: "in_progress" })).rejects.toThrow("Network error");
+  });
+});
