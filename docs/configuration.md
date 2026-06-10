@@ -122,12 +122,12 @@ Provide either the GitHub App vars (recommended) or `GH_TOKEN` (PAT). App auth i
 | `HEALTH_PORT` | `number` | `PORT ?? 3001` | Health server port for the K8s liveness probe. Set separately to expose the probe on a different port from the main server. |
 | `NODE_ENV` | `string` | — | Runtime environment. Set to `production` to enforce production-safety guards (blocks `SHIPWRIGHT_DEV_CHAT`, `ADMIN_DEV_AUTH`). |
 
-### Admin service
+### Metrics & Admin service
 
 | Name | Type | Default | Description |
 |---|---|---|---|
 | `DATABASE_URL_SHIPWRIGHT_ADMIN` | `string` | required | Postgres connection string for the admin service schema (e.g. `postgresql://user:pass@host:5432/db`). |
-| `SHIPWRIGHT_SESSION_SECRET` | `string` | — | Secret for signing the `admin_session` JWT cookie. |
+| `SHIPWRIGHT_SESSION_SECRET` | `string` | — | Secret for signing the `vitals_session` JWT cookie (used by both the metrics dashboard and the admin service). |
 | `SHIPWRIGHT_ENCRYPTION_KEY` | `string` | — | 64-char hex (32 bytes) for AES-256-GCM encryption of secrets at rest. **If unset, secrets are stored in plain text** — always set this in any real deployment. |
 | `SHIPWRIGHT_ADMIN_ALLOWED_EMAILS` | `string` | — | Comma-separated list of Google email addresses permitted to log in to the admin UI. |
 | `SHIPWRIGHT_ADMIN_APP_BASE_URL` | `string` | `http://localhost:{PORT}` | Public base URL of the admin service, used to construct the Google OAuth redirect URI. |
