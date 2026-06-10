@@ -207,6 +207,8 @@ project = "PROJECT_KEY" AND labels = "shipwright-session" ORDER BY created ASC
 
 The `readyJql` field overrides this entire query. Use it to narrow scope (e.g. a specific sprint or fix version), add status filters, or change the sort order.
 
+> **Important:** The default JQL has no status clause — status filtering is applied client-side after the fetch. If you provide `readyJql`, include explicit status clauses (e.g. `AND status in ("To Do", "In Progress")`). Without them, the query will fetch **all** issues labelled `shipwright-session` regardless of status, which can be expensive on large Jira instances.
+
 Example — limit to the current sprint and only pending tasks:
 
 ```json
