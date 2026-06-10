@@ -51,6 +51,10 @@ function buildApp(
     }),
   );
   app.get("/test", (c) => c.json({ ok: true }));
+  // Scoped agent route — mirrors real admin API pattern
+  app.get("/admin/api/agents/:id/envs", (c) =>
+    c.json({ agentId: c.req.param("id") }),
+  );
   return app;
 }
 
@@ -161,6 +165,63 @@ describe("createAdminAuthMiddleware — bearer token", () => {
     const jwt = await makeSessionJwt();
     const res = await app.request("/test", {
       headers: { Cookie: `admin_session=${jwt}` },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("returns 401 with WWW-Authenticate when Authorization header is malformed", async () => {
+    const app = buildApp(async () => null);
+    const res = await app.request("/test", {
+      headers: { Authorization: "Basic dXNlcjpwYXNz" },
+    });
+    expect(res.status).toBe(401);
+    expect(res.headers.get("WWW-Authenticate")).toBe("Bearer");
+  });
+
+  it("returns 401 with WWW-Authenticate when bearer token is invalid", async () => {
+    const app = buildApp(async () => null);
+    const res = await app.request("/test", {
+      headers: { Authorization: "Bearer bad-token" },
+    });
+    expect(res.status).toBe(401);
+    expect(res.headers.get("WWW-Authenticate")).toBe(
+      'Bearer error="invalid_token"',
+    );
+  });
+});
+
+describe("createAdminAuthMiddleware — bearer token scope enforcement", () => {
+  it("passes when token agentId matches the :id route param", async () => {
+    const app = buildApp(async (raw) =>
+      raw === VALID_RAW_TOKEN ? { agentId: AGENT_ID } : null,
+    );
+    const res = await app.request(`/admin/api/agents/${AGENT_ID}/envs`, {
+      headers: { Authorization: `Bearer ${VALID_RAW_TOKEN}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.agentId).toBe(AGENT_ID);
+  });
+
+  it("returns 403 when token agentId does not match the :id route param", async () => {
+    const app = buildApp(async (raw) =>
+      raw === VALID_RAW_TOKEN ? { agentId: AGENT_ID } : null,
+    );
+    const res = await app.request("/admin/api/agents/agent-different-id/envs", {
+      headers: { Authorization: `Bearer ${VALID_RAW_TOKEN}` },
+    });
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error).toBe("Forbidden");
+  });
+
+  it("passes for routes without an :id param (no scope to enforce)", async () => {
+    // Unscoped route — token is valid, no :id to compare against
+    const app = buildApp(async (raw) =>
+      raw === VALID_RAW_TOKEN ? { agentId: AGENT_ID } : null,
+    );
+    const res = await app.request("/test", {
+      headers: { Authorization: `Bearer ${VALID_RAW_TOKEN}` },
     });
     expect(res.status).toBe(200);
   });

@@ -17,6 +17,9 @@ import type { AgentTokenService } from "./agent-tokens.ts";
 
 const SESSION_COOKIE = "admin_session";
 
+// Matches /admin/api/agents/{agentId}/... routes — used for per-agent scope enforcement.
+const AGENT_ROUTE_RE = /^\/admin\/api\/agents\/([^/]+)/;
+
 // ─── Middleware factory ───────────────────────────────────────────────────────
 
 /**
@@ -46,12 +49,23 @@ export function createAdminAuthMiddleware(deps: {
       // Authorization header is present — bearer token path.
       // Do NOT fall through to cookie check on failure.
       if (!authHeader.startsWith("Bearer ")) {
-        return c.json({ error: "Unauthorized" }, 401);
+        return c.json({ error: "Unauthorized" }, 401, {
+          "WWW-Authenticate": "Bearer",
+        });
       }
       const raw = authHeader.slice(7);
       const result = await agentTokenService.validate(raw);
       if (!result) {
-        return c.json({ error: "Unauthorized" }, 401);
+        return c.json({ error: "Unauthorized" }, 401, {
+          "WWW-Authenticate": 'Bearer error="invalid_token"',
+        });
+      }
+      // Enforce per-agent scope: token must belong to the agent being accessed.
+      // c.req.param() is not available in global middleware (params resolve only at
+      // handler dispatch), so we extract the agent ID directly from the URL path.
+      const match = AGENT_ROUTE_RE.exec(c.req.path);
+      if (match && result.agentId !== match[1]) {
+        return c.json({ error: "Forbidden" }, 403);
       }
       return next();
     }
