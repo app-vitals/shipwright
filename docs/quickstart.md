@@ -85,6 +85,8 @@ tmux kill-session -t shipwright
 
 ---
 
+## Option A — Metrics dashboard only (no secrets needed)
+
 ### Prerequisites
 
 | Tool | Why | Install |
