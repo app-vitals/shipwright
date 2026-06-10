@@ -22,6 +22,7 @@ import { AgentPluginService } from "./agent-plugins.ts";
 import { AgentTokenService } from "./agent-tokens.ts";
 import { AgentToolService } from "./agent-tools.ts";
 import { createAgentRuntimeApp } from "./api.ts";
+import { isDevAuthAllowed } from "./dev-auth-guard.ts";
 import { HttpGoogleAuthClient } from "./google-auth-client.ts";
 import { HttpSlackProvisioningClient } from "./slack-provisioning-client.ts";
 import { makeTokenCrypto } from "./token-crypto.ts";
@@ -157,6 +158,7 @@ async function startServer(): Promise<void> {
     googleClient,
     slackClient,
     appBaseUrl,
+    devAuthEnabled: isDevAuthAllowed(process.env),
   });
   root.route("/", adminUIApp);
 
