@@ -96,7 +96,7 @@ The **dashboard** is protected by the session cookie middleware; an invalid/abse
 | `DATABASE_URL_METRICS` | | — | Alias for `METRICS_DATABASE_URL`. Accepted when `METRICS_DATABASE_URL` is absent. |
 | `METRICS_API_PORT` | | `3460` | Listen port. |
 | `METRICS_API_KEYS` | | — | Comma-parsed Bearer API keys for `/metrics/*`. |
-| `SHIPWRIGHT_METRICS_SESSION_SECRET` | | — | HS256 secret for verifying the `vitals_session` cookie. |
+| `SHIPWRIGHT_SESSION_SECRET` | | — | HS256 secret for verifying the `vitals_session` cookie. |
 | `METRICS_REQUIRE_OWNER_ROLE` | | `false` | When `true`, gate dashboard/API on `OWNER` role via the accounts client. |
 | `METRICS_ACCOUNTS_URL` | | `http://localhost:3457` | Accounts service base URL (role lookups). |
 | `METRICS_INTERNAL_API_KEY` | | — | Internal key for the accounts client. |
