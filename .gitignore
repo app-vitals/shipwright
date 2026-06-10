@@ -17,6 +17,9 @@ state/
 # Allow workspace templates that live under agent/workspace/state/
 !agent/workspace/state/
 
+# --- Dev agent credentials (never commit) ---
+state/dev-agent.env
+
 # --- Database files (local dev only — never commit) ---
 *.db
 *.db-journal
