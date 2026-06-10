@@ -293,4 +293,20 @@ describe("loadConfig env var fallbacks", () => {
     expect(result.config.github?.repo).toBeUndefined();
     expect(result.configSource).toBe("env");
   });
+
+  // Test 11: SHIPWRIGHT_TASK_STORE=json → json config with configSource="env", skips file walk-up
+  test("SHIPWRIGHT_TASK_STORE=json → json config with configSource=env, skips .shipwright.json walk-up", () => {
+    // Place a .shipwright.json that would otherwise be picked up by the walk-up
+    writeFileSync(
+      join(isolatedDir, ".shipwright.json"),
+      JSON.stringify({
+        taskStore: "github",
+        github: { owner: "example-org", repo: "example-repo" },
+      }),
+    );
+    process.env.SHIPWRIGHT_TASK_STORE = "json";
+    const result = loadConfig(isolatedDir);
+    expect(result.config.taskStore).toBe("json");
+    expect(result.configSource).toBe("env");
+  });
 });

@@ -107,6 +107,9 @@ export function loadConfig(cwd: string = process.cwd()): LoadedConfig {
     };
     return { config, configSource: "env" };
   }
+  if (taskStoreEnv === "json") {
+    return { config: { taskStore: "json" }, configSource: "env" };
+  }
 
   // Step 1: walk up from cwd looking for .shipwright.json
   const discovered = findShipwrightJson(cwd);
