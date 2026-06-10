@@ -65,6 +65,7 @@ function makeIssue(
   statusLabel: string,
   bodyMeta: Record<string, unknown>,
   state: "OPEN" | "CLOSED" = "OPEN",
+  assignees: { login: string }[] = [],
 ) {
   const meta = JSON.stringify(bodyMeta, null, 2);
   const body = `Task description\n\n\`\`\`shipwright\n${meta}\n\`\`\``;
@@ -76,6 +77,7 @@ function makeIssue(
     labels: [{ name: `status:${statusLabel}` }],
     url: `https://github.com/test-owner/test-repo/issues/${number}`,
     milestone: null,
+    assignees,
   };
 }
 
@@ -194,7 +196,7 @@ describe("GitHubTaskStore.query", () => {
     ];
 
     const fakeGh = await writeFakeGh(tmpDir, {
-      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone --limit 500":
+      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone,assignees --limit 500":
         issues,
     });
     process.env.GH_CMD = fakeGh;
@@ -223,7 +225,7 @@ describe("GitHubTaskStore.query", () => {
     ];
 
     const fakeGh = await writeFakeGh(tmpDir, {
-      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone --limit 500":
+      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone,assignees --limit 500":
         issues,
     });
     process.env.GH_CMD = fakeGh;
@@ -251,7 +253,7 @@ describe("GitHubTaskStore.query", () => {
     ];
 
     const fakeGh = await writeFakeGh(tmpDir, {
-      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone --limit 500":
+      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone,assignees --limit 500":
         issues,
     });
     process.env.GH_CMD = fakeGh;
@@ -277,7 +279,7 @@ describe("GitHubTaskStore.query", () => {
     ];
 
     const fakeGh = await writeFakeGh(tmpDir, {
-      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone --limit 500":
+      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone,assignees --limit 500":
         issues,
     });
     process.env.GH_CMD = fakeGh;
@@ -306,7 +308,7 @@ describe("GitHubTaskStore.query", () => {
     ];
 
     const fakeGh = await writeFakeGh(tmpDir, {
-      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone --limit 500":
+      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone,assignees --limit 500":
         issues,
     });
     process.env.GH_CMD = fakeGh;
@@ -341,7 +343,7 @@ describe("GitHubTaskStore.query", () => {
     ];
 
     const fakeGh = await writeFakeGh(tmpDir, {
-      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone --limit 500":
+      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone,assignees --limit 500":
         issues,
     });
     process.env.GH_CMD = fakeGh;
@@ -375,7 +377,7 @@ describe("GitHubTaskStore.query", () => {
     ];
 
     const fakeGh = await writeFakeGh(tmpDir, {
-      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone --limit 500":
+      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone,assignees --limit 500":
         issues,
     });
     process.env.GH_CMD = fakeGh;
@@ -410,7 +412,7 @@ describe("GitHubTaskStore.query", () => {
     ];
 
     const fakeGh = await writeFakeGh(tmpDir, {
-      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone --limit 500":
+      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone,assignees --limit 500":
         issues,
     });
     process.env.GH_CMD = fakeGh;
@@ -432,7 +434,7 @@ describe("GitHubTaskStore.query", () => {
     ];
 
     const fakeGh = await writeFakeGh(tmpDir, {
-      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone --limit 500":
+      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone,assignees --limit 500":
         issues,
     });
     process.env.GH_CMD = fakeGh;
@@ -462,7 +464,7 @@ describe("GitHubTaskStore.query", () => {
     ];
 
     const fakeGh = await writeFakeGh(tmpDir, {
-      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone --limit 500":
+      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone,assignees --limit 500":
         issues,
     });
     process.env.GH_CMD = fakeGh;
@@ -492,7 +494,7 @@ describe("GitHubTaskStore.query", () => {
     ];
 
     const fakeGh = await writeFakeGh(tmpDir, {
-      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone --limit 500":
+      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone,assignees --limit 500":
         issues,
     });
     process.env.GH_CMD = fakeGh;
@@ -528,7 +530,7 @@ describe("GitHubTaskStore.query", () => {
     ];
 
     const fakeGh = await writeFakeGh(tmpDir, {
-      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone --limit 500":
+      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone,assignees --limit 500":
         issues,
     });
     process.env.GH_CMD = fakeGh;
@@ -537,6 +539,58 @@ describe("GitHubTaskStore.query", () => {
     const tasks = await adapter.query({ ready: true, assignee: "dmcaulay" });
     expect(tasks).toHaveLength(2);
     expect(tasks.map((t) => t.id).sort()).toEqual(["TSR-1.1", "TSR-1.2"]);
+  });
+
+  test("query --ready --assignee falls back to GitHub issue assignee when not in YAML block", async () => {
+    const issues = [
+      // Mine — YAML has assignee
+      makeIssue(1, "TSR-1.1: Mine", "pending", {
+        id: "TSR-1.1",
+        title: "Mine",
+        status: "pending",
+        assignee: "dmcaulay",
+        dependencies: [],
+      }),
+      // Theirs — no YAML assignee, but GitHub issue assignee is dodizzle
+      makeIssue(
+        2,
+        "TSR-1.2: Theirs",
+        "pending",
+        {
+          id: "TSR-1.2",
+          title: "Theirs",
+          status: "pending",
+          dependencies: [],
+        },
+        "OPEN",
+        [{ login: "dodizzle" }],
+      ),
+      // Mine via fallback — no YAML assignee, but GitHub issue assignee is dmcaulay
+      makeIssue(
+        3,
+        "TSR-1.3: Mine via fallback",
+        "pending",
+        {
+          id: "TSR-1.3",
+          title: "Mine via fallback",
+          status: "pending",
+          dependencies: [],
+        },
+        "OPEN",
+        [{ login: "dmcaulay" }],
+      ),
+    ];
+
+    const fakeGh = await writeFakeGh(tmpDir, {
+      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone,assignees --limit 500":
+        issues,
+    });
+    process.env.GH_CMD = fakeGh;
+
+    const adapter = new GitHubTaskStore(CONFIG);
+    const tasks = await adapter.query({ ready: true, assignee: "dmcaulay" });
+    expect(tasks).toHaveLength(2);
+    expect(tasks.map((t) => t.id).sort()).toEqual(["TSR-1.1", "TSR-1.3"]);
   });
 });
 
@@ -704,7 +758,7 @@ process.exit(0);
 describe("GitHubTaskStore.update", () => {
   test("throws if task not found", async () => {
     const fakeGh = await writeFakeGh(tmpDir, {
-      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone --limit 500":
+      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone,assignees --limit 500":
         [],
     });
     process.env.GH_CMD = fakeGh;
@@ -1029,7 +1083,7 @@ process.exit(0);
 describe("GH_CMD injection", () => {
   test("uses GH_CMD env var instead of 'gh'", async () => {
     const fakeGh = await writeFakeGh(tmpDir, {
-      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone --limit 500":
+      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone,assignees --limit 500":
         [],
     });
     process.env.GH_CMD = fakeGh;
@@ -1187,7 +1241,7 @@ describe("GitHubTaskStore.query assignee filter", () => {
     ];
 
     const fakeGh = await writeFakeGh(tmpDir, {
-      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone --limit 500":
+      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone,assignees --limit 500":
         issues,
     });
     process.env.GH_CMD = fakeGh;
@@ -1216,7 +1270,7 @@ describe("GitHubTaskStore.query assignee filter", () => {
     ];
 
     const fakeGh = await writeFakeGh(tmpDir, {
-      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone --limit 500":
+      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone,assignees --limit 500":
         issues,
     });
     process.env.GH_CMD = fakeGh;
@@ -1639,7 +1693,7 @@ process.exit(0);
     ];
 
     const fakeGh = await writeFakeGh(tmpDir, {
-      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone --limit 500":
+      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone,assignees --limit 500":
         issues,
       "api repos/test-owner/test-repo/milestones?per_page=100": [],
     });
@@ -1767,7 +1821,7 @@ process.exit(0);
 
 describe("GitHubTaskStore.cleanup (plan issues)", () => {
   const TASK_LIST_KEY =
-    "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone --limit 500";
+    "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone,assignees --limit 500";
   const PLAN_LIST_KEY =
     "issue list --repo test-owner/test-repo --state open --search [plan] in:title --json number,title --limit 100";
   const MILESTONES_KEY =
@@ -2259,7 +2313,7 @@ describe("GitHubTaskStore.query ready+assignee filter", () => {
     issues: ReturnType<typeof makeIssue>[],
   ): Promise<string> {
     return writeFakeGh(dir, {
-      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone --limit 500":
+      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone,assignees --limit 500":
         issues,
     });
   }
