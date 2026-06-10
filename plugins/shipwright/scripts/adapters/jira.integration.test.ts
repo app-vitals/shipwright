@@ -38,18 +38,24 @@ const CONFIG: TaskStoreConfig = {
 type FetchFn = (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
 type CassetteMap = Record<string, { status: number; body: unknown }>;
 
+function resolveRequest(input: RequestInfo | URL, init?: RequestInit): { method: string; path: string } {
+  const url = typeof input === "string" ? input : input.toString();
+  const method = (init?.method ?? "GET").toUpperCase();
+  const path = url.startsWith(BASE_URL) ? url.slice(BASE_URL.length) : url;
+  return { method, path };
+}
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+}
+
 function makeCassetteFetch(cassette: CassetteMap): FetchFn {
   return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const url = typeof input === "string" ? input : input.toString();
-    const method = (init?.method ?? "GET").toUpperCase();
-    const path = url.startsWith(BASE_URL) ? url.slice(BASE_URL.length) : url;
+    const { method, path } = resolveRequest(input, init);
     const key = `${method} ${path}`;
     const entry = cassette[key];
     if (!entry) throw new Error(`cassette: no entry for "${key}"`);
-    return new Response(JSON.stringify(entry.body), {
-      status: entry.status,
-      headers: { "Content-Type": "application/json" },
-    });
+    return jsonResponse(entry.body, entry.status);
   };
 }
 
@@ -93,16 +99,10 @@ describe("JiraTaskStore integration — create-issue flow", () => {
   test("append([newTask]) creates a Jira issue and returns inserted:1", async () => {
     const capturedPaths: string[] = [];
     const fetchFn: FetchFn = async (input, init) => {
-      const url = typeof input === "string" ? input : input.toString();
-      const method = (init?.method ?? "GET").toUpperCase();
-      const path = url.startsWith(BASE_URL) ? url.slice(BASE_URL.length) : url;
+      const { method, path } = resolveRequest(input, init);
       capturedPaths.push(`${method} ${path}`);
-      if (method === "POST" && path === "/rest/api/3/issue/search") {
-        return new Response(JSON.stringify({ issues: [], total: 0 }), { status: 200, headers: { "Content-Type": "application/json" } });
-      }
-      if (method === "POST" && path === "/rest/api/3/issue") {
-        return new Response(JSON.stringify(CREATE_ISSUE_FIXTURE), { status: 201, headers: { "Content-Type": "application/json" } });
-      }
+      if (method === "POST" && path === "/rest/api/3/issue/search") return jsonResponse({ issues: [], total: 0 });
+      if (method === "POST" && path === "/rest/api/3/issue") return jsonResponse(CREATE_ISSUE_FIXTURE, 201);
       throw new Error(`cassette: unexpected ${method} ${path}`);
     };
     const store = new JiraTaskStore(CONFIG, fetchFn, "user@test.com", "token");
@@ -128,15 +128,13 @@ describe("JiraTaskStore integration — transition-status flow", () => {
   test("update(id, {status:'in_progress'}) transitions to In Progress (id=21)", async () => {
     const transitionCalls: unknown[] = [];
     const fetchFn: FetchFn = async (input, init) => {
-      const url = typeof input === "string" ? input : input.toString();
-      const method = (init?.method ?? "GET").toUpperCase();
-      const path = url.startsWith(BASE_URL) ? url.slice(BASE_URL.length) : url;
-      if (method === "POST" && path === "/rest/api/3/issue/search") return new Response(JSON.stringify(SEARCH_FIXTURE), { status: 200, headers: { "Content-Type": "application/json" } });
-      if (method === "PUT" && path === "/rest/api/3/issue/SHIP-1") return new Response("{}", { status: 204 });
-      if (method === "GET" && path === "/rest/api/3/issue/SHIP-1/transitions") return new Response(JSON.stringify(TRANSITIONS_FIXTURE), { status: 200, headers: { "Content-Type": "application/json" } });
+      const { method, path } = resolveRequest(input, init);
+      if (method === "POST" && path === "/rest/api/3/issue/search") return jsonResponse(SEARCH_FIXTURE);
+      if (method === "PUT" && path === "/rest/api/3/issue/SHIP-1") return jsonResponse({}, 204);
+      if (method === "GET" && path === "/rest/api/3/issue/SHIP-1/transitions") return jsonResponse(TRANSITIONS_FIXTURE);
       if (method === "POST" && path === "/rest/api/3/issue/SHIP-1/transitions") {
         transitionCalls.push(JSON.parse(init?.body as string));
-        return new Response("{}", { status: 204 });
+        return jsonResponse({}, 204);
       }
       throw new Error(`cassette: unexpected ${method} ${path}`);
     };
@@ -150,16 +148,14 @@ describe("JiraTaskStore integration — transition-status flow", () => {
   test("update(id, {status:'done'}) transitions to Done (id=41)", async () => {
     const transitionIds: string[] = [];
     const fetchFn: FetchFn = async (input, init) => {
-      const url = typeof input === "string" ? input : input.toString();
-      const method = (init?.method ?? "GET").toUpperCase();
-      const path = url.startsWith(BASE_URL) ? url.slice(BASE_URL.length) : url;
-      if (method === "POST" && path === "/rest/api/3/issue/search") return new Response(JSON.stringify(SEARCH_FIXTURE), { status: 200, headers: { "Content-Type": "application/json" } });
-      if (method === "PUT" && path === "/rest/api/3/issue/SHIP-1") return new Response("{}", { status: 204 });
-      if (method === "GET" && path === "/rest/api/3/issue/SHIP-1/transitions") return new Response(JSON.stringify(TRANSITIONS_FIXTURE), { status: 200, headers: { "Content-Type": "application/json" } });
+      const { method, path } = resolveRequest(input, init);
+      if (method === "POST" && path === "/rest/api/3/issue/search") return jsonResponse(SEARCH_FIXTURE);
+      if (method === "PUT" && path === "/rest/api/3/issue/SHIP-1") return jsonResponse({}, 204);
+      if (method === "GET" && path === "/rest/api/3/issue/SHIP-1/transitions") return jsonResponse(TRANSITIONS_FIXTURE);
       if (method === "POST" && path === "/rest/api/3/issue/SHIP-1/transitions") {
         const body = JSON.parse(init?.body as string) as { transition: { id: string } };
         transitionIds.push(body.transition.id);
-        return new Response("{}", { status: 204 });
+        return jsonResponse({}, 204);
       }
       throw new Error(`cassette: unexpected ${method} ${path}`);
     };
@@ -174,16 +170,14 @@ describe("JiraTaskStore integration — add-comment flow", () => {
   test("update with pr + prUrl posts a comment containing the PR URL", async () => {
     const commentBodies: string[] = [];
     const fetchFn: FetchFn = async (input, init) => {
-      const url = typeof input === "string" ? input : input.toString();
-      const method = (init?.method ?? "GET").toUpperCase();
-      const path = url.startsWith(BASE_URL) ? url.slice(BASE_URL.length) : url;
-      if (method === "POST" && path === "/rest/api/3/issue/search") return new Response(JSON.stringify(SEARCH_FIXTURE), { status: 200, headers: { "Content-Type": "application/json" } });
-      if (method === "PUT" && path === "/rest/api/3/issue/SHIP-1") return new Response("{}", { status: 204 });
-      if (method === "GET" && path === "/rest/api/3/issue/SHIP-1/transitions") return new Response(JSON.stringify(TRANSITIONS_FIXTURE), { status: 200, headers: { "Content-Type": "application/json" } });
-      if (method === "POST" && path === "/rest/api/3/issue/SHIP-1/transitions") return new Response("{}", { status: 204 });
+      const { method, path } = resolveRequest(input, init);
+      if (method === "POST" && path === "/rest/api/3/issue/search") return jsonResponse(SEARCH_FIXTURE);
+      if (method === "PUT" && path === "/rest/api/3/issue/SHIP-1") return jsonResponse({}, 204);
+      if (method === "GET" && path === "/rest/api/3/issue/SHIP-1/transitions") return jsonResponse(TRANSITIONS_FIXTURE);
+      if (method === "POST" && path === "/rest/api/3/issue/SHIP-1/transitions") return jsonResponse({}, 204);
       if (method === "POST" && path === "/rest/api/3/issue/SHIP-1/comment") {
         commentBodies.push(init?.body as string);
-        return new Response(JSON.stringify(ADD_COMMENT_FIXTURE), { status: 201, headers: { "Content-Type": "application/json" } });
+        return jsonResponse(ADD_COMMENT_FIXTURE, 201);
       }
       throw new Error(`cassette: unexpected ${method} ${path}`);
     };
@@ -196,14 +190,12 @@ describe("JiraTaskStore integration — add-comment flow", () => {
   test("update without pr field does not post a comment", async () => {
     const commentPaths: string[] = [];
     const fetchFn: FetchFn = async (input, init) => {
-      const url = typeof input === "string" ? input : input.toString();
-      const method = (init?.method ?? "GET").toUpperCase();
-      const path = url.startsWith(BASE_URL) ? url.slice(BASE_URL.length) : url;
-      if (method === "POST" && path === "/rest/api/3/issue/search") return new Response(JSON.stringify(SEARCH_FIXTURE), { status: 200, headers: { "Content-Type": "application/json" } });
-      if (method === "PUT" && path === "/rest/api/3/issue/SHIP-1") return new Response("{}", { status: 204 });
-      if (method === "GET" && path === "/rest/api/3/issue/SHIP-1/transitions") return new Response(JSON.stringify(TRANSITIONS_FIXTURE), { status: 200, headers: { "Content-Type": "application/json" } });
-      if (method === "POST" && path === "/rest/api/3/issue/SHIP-1/transitions") return new Response("{}", { status: 204 });
-      if (method === "POST" && path.endsWith("/comment")) { commentPaths.push(path); return new Response("{}", { status: 201 }); }
+      const { method, path } = resolveRequest(input, init);
+      if (method === "POST" && path === "/rest/api/3/issue/search") return jsonResponse(SEARCH_FIXTURE);
+      if (method === "PUT" && path === "/rest/api/3/issue/SHIP-1") return jsonResponse({}, 204);
+      if (method === "GET" && path === "/rest/api/3/issue/SHIP-1/transitions") return jsonResponse(TRANSITIONS_FIXTURE);
+      if (method === "POST" && path === "/rest/api/3/issue/SHIP-1/transitions") return jsonResponse({}, 204);
+      if (method === "POST" && path.endsWith("/comment")) { commentPaths.push(path); return jsonResponse({}, 201); }
       throw new Error(`cassette: unexpected ${method} ${path}`);
     };
     const store = new JiraTaskStore(CONFIG, fetchFn, "user@test.com", "token");

@@ -651,11 +651,16 @@ describe("JiraTaskStore custom statusMap", () => {
 
 describe("JiraTaskStore default statusMap — full coverage", () => {
   const ALL_MAP_ENTRIES: Array<[string, string]> = [
+    ["To Do", "pending"],
     ["Backlog", "pending"],
     ["Open", "pending"],
+    ["In Progress", "in_progress"],
+    ["In Review", "pr_open"],
     ["PR Open", "pr_open"],
+    ["Done", "done"],
     ["Closed", "done"],
     ["Resolved", "done"],
+    ["Blocked", "blocked"],
     ["On Hold", "blocked"],
     ["Won't Do", "cancelled"],
     ["Cancelled", "cancelled"],
