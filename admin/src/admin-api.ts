@@ -13,14 +13,13 @@
  * Cookie name: admin_session.
  */
 
-import { Hono, type MiddlewareHandler } from "hono";
-import { getCookie } from "hono/cookie";
-import { verify } from "hono/jwt";
+import { Hono } from "hono";
 import type {
   AgentCronJob,
   AgentToken,
   AgentTool,
 } from "../prisma/client/index.js";
+import { createAdminAuthMiddleware } from "./api-auth.ts";
 import type { AgentCronJobService } from "./agent-cron-jobs.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
 import type { AgentPluginService } from "./agent-plugins.ts";
@@ -45,44 +44,13 @@ export interface AdminDeps {
   >;
   agentTokenService: Pick<
     AgentTokenService,
-    "create" | "listForAgent" | "revoke"
+    "create" | "listForAgent" | "revoke" | "validate"
   >;
   agentPluginService: Pick<
     AgentPluginService,
     "list" | "add" | "remove" | "removeByName"
   >;
   sessionSecret: string;
-}
-
-// ─── Session auth middleware ──────────────────────────────────────────────────
-
-const SESSION_COOKIE = "admin_session";
-
-function createSessionAuthMiddleware(sessionSecret: string): MiddlewareHandler {
-  return async (c, next) => {
-    const sessionToken = getCookie(c, SESSION_COOKIE);
-    if (!sessionToken) {
-      return c.json({ error: "Unauthorized" }, 401);
-    }
-    try {
-      const payload = (await verify(
-        sessionToken,
-        sessionSecret,
-        "HS256",
-      )) as Record<string, unknown>;
-      if (
-        typeof payload.userId !== "string" ||
-        !payload.userId ||
-        typeof payload.email !== "string" ||
-        !payload.email
-      ) {
-        return c.json({ error: "Unauthorized" }, 401);
-      }
-    } catch {
-      return c.json({ error: "Unauthorized" }, 401);
-    }
-    return next();
-  };
 }
 
 // ─── App factory ──────────────────────────────────────────────────────────────
@@ -110,8 +78,11 @@ export function createAdminApp(deps: AdminDeps): Hono {
     return c.json({ error: "Internal server error" }, 500);
   });
 
-  // Apply session auth to all /admin/api/* routes
-  app.use("/admin/api/*", createSessionAuthMiddleware(sessionSecret));
+  // Apply combined auth (bearer token OR session cookie) to all /admin/api/* routes
+  app.use(
+    "/admin/api/*",
+    createAdminAuthMiddleware({ sessionSecret, agentTokenService }),
+  );
 
   // ─── Env vars ──────────────────────────────────────────────────────────────
 

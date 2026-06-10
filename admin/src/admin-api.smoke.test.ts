@@ -10,6 +10,7 @@ import { beforeAll, describe, expect, it } from "bun:test";
 import { sign } from "hono/jwt";
 import { createAdminApp } from "./admin-api.ts";
 import type { AdminDeps } from "./admin-api.ts";
+import type { AgentTokenService } from "./agent-tokens.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -173,6 +174,7 @@ function makeMockDeps(): AdminDeps {
         createdAt: new Date("2024-01-01"),
         revokedAt: new Date("2024-01-02"),
       }),
+      validate: async () => ({ agentId: AGENT_ID }),
     },
     agentPluginService: {
       list: async () => [
@@ -614,5 +616,73 @@ describe("admin API — plugins", () => {
       headers: { Cookie: `admin_session=${cookie}` },
     });
     expect(res.status).toBe(400);
+  });
+});
+
+// ─── Bearer token auth smoke tests ───────────────────────────────────────────
+
+const VALID_BEARER_TOKEN = "valid-bearer-token-value";
+
+function makeDepsWithTokenValidation(
+  validateFn: AgentTokenService["validate"],
+): AdminDeps {
+  return {
+    ...makeMockDeps(),
+    agentTokenService: {
+      ...makeMockDeps().agentTokenService,
+      validate: validateFn,
+    },
+  };
+}
+
+describe("admin API — bearer token auth", () => {
+  it("GET /admin/api/agents/:id/envs accepts a valid bearer token (200)", async () => {
+    const deps = makeDepsWithTokenValidation(async () => ({ agentId: AGENT_ID }));
+    const app = createAdminApp(deps);
+    const res = await app.request(`/admin/api/agents/${AGENT_ID}/envs`, {
+      headers: { Authorization: `Bearer ${VALID_BEARER_TOKEN}` },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("GET /admin/api/agents/:id/crons accepts a valid bearer token (200)", async () => {
+    const deps = makeDepsWithTokenValidation(async () => ({ agentId: AGENT_ID }));
+    const app = createAdminApp(deps);
+    const res = await app.request(`/admin/api/agents/${AGENT_ID}/crons`, {
+      headers: { Authorization: `Bearer ${VALID_BEARER_TOKEN}` },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("returns 401 when bearer token is invalid (validate returns null)", async () => {
+    const deps = makeDepsWithTokenValidation(async () => null);
+    const app = createAdminApp(deps);
+    const res = await app.request(`/admin/api/agents/${AGENT_ID}/envs`, {
+      headers: { Authorization: "Bearer invalid-token" },
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("does NOT fall through to cookie when Authorization header is present but invalid", async () => {
+    // Valid session cookie present, but invalid bearer → should still 401
+    const cookie = await makeSessionCookie();
+    const deps = makeDepsWithTokenValidation(async () => null);
+    const app = createAdminApp(deps);
+    const res = await app.request(`/admin/api/agents/${AGENT_ID}/envs`, {
+      headers: {
+        Authorization: "Bearer invalid-token",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("session cookie auth still works after middleware update", async () => {
+    const cookie = await makeSessionCookie();
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/admin/api/agents/${AGENT_ID}/envs`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
   });
 });
