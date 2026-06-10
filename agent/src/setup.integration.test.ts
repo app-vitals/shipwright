@@ -651,8 +651,15 @@ describe("installPlugins", () => {
       expect(calls[0].args).toEqual(["plugin", "install", "shipwright@/local/marketplace"]);
       expect(calls[1].args).toEqual(["plugin", "update", "shipwright@/local/marketplace"]);
     } finally {
-      // Restore env var regardless of test outcome
-      process.env.SHIPWRIGHT_LOCAL_MARKETPLACE = originalLocalMarketplace;
+      // Restore env var regardless of test outcome.
+      // Use delete when the var was originally unset — assigning undefined coerces
+      // to the string "undefined" in Node.js-compatible runtimes, breaking the ?? fallback.
+      if (originalLocalMarketplace === undefined) {
+        // biome-ignore lint/performance/noDelete: intentional env-var removal (not object property)
+        delete process.env.SHIPWRIGHT_LOCAL_MARKETPLACE;
+      } else {
+        process.env.SHIPWRIGHT_LOCAL_MARKETPLACE = originalLocalMarketplace;
+      }
     }
   });
 });
