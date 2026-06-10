@@ -8,10 +8,18 @@
  * - HttpShipwrightRuntimeClient — typed HTTP implementation via openapi-fetch
  */
 
+import type {
+  AdminApiPaths,
+  AgentConfigResponse,
+  AgentCronJob,
+  RuntimeApiPaths,
+} from "@shipwright/admin";
 import createClient from "openapi-fetch";
-import type { AdminApiPaths, AgentConfigResponse, AgentCronJob, RuntimeApiPaths } from "@shipwright/admin";
 
-type FetchFn = (url: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+type FetchFn = (
+  url: RequestInfo | URL,
+  init?: RequestInit,
+) => Promise<Response>;
 
 // ─── Error ────────────────────────────────────────────────────────────────────
 

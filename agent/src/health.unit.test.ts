@@ -7,7 +7,9 @@
 import { describe, expect, test } from "bun:test";
 import { createHealthApp } from "./health.ts";
 
-describe("GET /health", () => {
+// ─── createHealthApp ──────────────────────────────────────────────────────────
+
+describe("GET /health (createHealthApp)", () => {
   test("returns 200 with { status: 'ok' }", async () => {
     const app = createHealthApp();
     const res = await app.request("/health");
@@ -23,7 +25,7 @@ describe("GET /health", () => {
   });
 });
 
-describe("unknown routes", () => {
+describe("unknown routes (createHealthApp)", () => {
   test("GET /other returns 404", async () => {
     const app = createHealthApp();
     const res = await app.request("/other");
