@@ -76,3 +76,105 @@ The two networked / interactive steps of the prompt are **not** part of the scri
 - The `/plugin install shipwright@app-vitals/shipwright` step — it runs inside an interactive Claude Code session, not a shell.
 
 Both are documented in the prompt above; only the deterministic shell portion is scripted and tested.
+
+---
+
+## Full dev stack (`task stack`)
+
+This section gets you from a fresh clone to a **working chat turn** against the local Shipwright agent. The full stack runs the metrics dashboard, admin service, agent (in Docker), and a chat REPL — all in one tmux session.
+
+### Prerequisites
+
+| Tool | Why | Install |
+|---|---|---|
+| **tmux** | 5-pane session manager — `task stack` fails fast without it. | `brew install tmux` / `apt install tmux` |
+| **Docker** | Runs the Shipwright agent container. | <https://docs.docker.com/get-docker/> |
+| **Postgres** | Admin service database. The stack launcher detects if it is missing and offers to install it. | `brew install postgresql@16` or see the prompt on first `task stack` run. |
+| **Bun** | Runtime + package manager. | <https://bun.sh> |
+| **go-task** (`task`) | Single local entrypoint. | <https://taskfile.dev/installation/> |
+| **Claude Code** | Provides the OAuth token used by the agent. | <https://www.anthropic.com/claude-code> |
+
+### Step 1 — Clone and install dependencies
+
+```bash
+git clone https://github.com/app-vitals/shipwright.git
+cd shipwright
+task setup
+```
+
+`task setup` runs `bun install` across all workspaces. It is idempotent — safe to re-run.
+
+### Step 2 — Create your credentials file
+
+```bash
+cp state/dev-agent.env.example state/dev-agent.env
+```
+
+`state/dev-agent.env` is git-ignored and never committed. `state/dev-agent.env.example` (committed) documents every variable.
+
+### Step 3 — Fill in `CLAUDE_CODE_OAUTH_TOKEN`
+
+Open `state/dev-agent.env` in an editor. The only **required** value is `CLAUDE_CODE_OAUTH_TOKEN`.
+
+Get it from a Claude Code session:
+
+```bash
+cat ~/.claude/.credentials.json
+# copy the value of "accessToken"
+```
+
+Paste it into `state/dev-agent.env`:
+
+```
+CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oaut01-...
+```
+
+`GH_TOKEN` is optional — add it if you want the agent to open PRs or push branches.
+
+### Step 4 — Launch the stack
+
+```bash
+task stack
+```
+
+This command:
+
+1. Checks that tmux is installed.
+2. Verifies Postgres is reachable — if not, it prints the exact `brew` commands and asks `[y/N]` before running them.
+3. Runs `prisma migrate deploy` (idempotent) so the admin schema is up to date.
+4. Runs `scripts/seed-dev-agent.ts` — upserts a `dev-agent` record in the admin DB with your `CLAUDE_CODE_OAUTH_TOKEN`.
+5. Builds the `shipwright-agent-dev` Docker image.
+6. Attaches you to a tmux session named `shipwright` with five panes:
+
+| Pane | Service | URL |
+|---|---|---|
+| metrics | Metrics dashboard (offline SQLite) | `http://localhost:3460/dashboard` |
+| admin | Admin CRUD API + UI | `http://localhost:3001` |
+| agent | Shipwright agent (Docker) | `http://localhost:3000` |
+| chat | Chat REPL (`scripts/chat.ts`) | _(terminal TUI)_ |
+| logs | Scratch shell | _(ad-hoc commands)_ |
+
+The admin dev-login page opens automatically in your browser: `http://localhost:3001/admin/dev-login`.
+
+### Step 5 — Send a chat turn
+
+The `chat` pane is focused on attach. Type a message and press Enter to get a response from the local agent. A successful reply confirms the full stack is working.
+
+### Teardown
+
+```bash
+tmux kill-session -t shipwright
+```
+
+This stops all five panes. Re-run `task stack` to start a fresh session.
+
+### Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `tmux is not installed` | `brew install tmux` / `apt install tmux`, then re-run `task stack`. |
+| `session 'shipwright' already running` | Run `tmux kill-session -t shipwright`, then `task stack` again. |
+| `state/dev-agent.env not found` | Run `cp state/dev-agent.env.example state/dev-agent.env` and fill in `CLAUDE_CODE_OAUTH_TOKEN`. |
+| `CLAUDE_CODE_OAUTH_TOKEN is missing` | Open `state/dev-agent.env` and add the token (see Step 3). |
+| Docker build fails | Ensure Docker Desktop is running: `docker info`. |
+| Postgres unreachable | Follow the `[y/N]` prompt on `task stack`, or run `brew services start postgresql@16` manually. |

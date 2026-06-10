@@ -13,12 +13,11 @@ CLAUDE.local.md
 planning/
 
 # --- Local JSON task-store state (only written if the github backend isn't active) ---
-state/
+state/*
 # Allow workspace templates that live under agent/workspace/state/
 !agent/workspace/state/
-
-# --- Dev agent credentials (never commit) ---
-state/dev-agent.env
+# Allow the committed example file for dev-agent credentials
+!state/dev-agent.env.example
 
 # --- Database files (local dev only — never commit) ---
 *.db
