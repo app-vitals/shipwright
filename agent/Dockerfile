@@ -76,13 +76,13 @@ WORKDIR /app
 # Set AGENT_HOME — the PVC should be mounted here in Kubernetes
 ENV AGENT_HOME=/data/agent-home
 
-# Copy installed node_modules and generated Prisma client from build stage
+# Copy installed node_modules from build stage
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/agent ./agent
 
-# Install Claude Code globally — placed after COPY layers so bun install
-# cache is not invalidated by changes to Claude Code version
-RUN npm install -g @anthropic-ai/claude-code
+# Install Claude Code globally — after COPY layers so a Claude Code version bump
+# does not invalidate the node_modules/agent copy in this stage
+RUN npm install -g @anthropic-ai/claude-code@2.1.170
 
 # Add scripts/bin to PATH so the git-credential-shipwright.sh wrapper
 # and gh wrapper are available to subprocesses
