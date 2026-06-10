@@ -713,6 +713,13 @@ if (import.meta.main) {
     process.exit(1);
   }
 
+  if (!existsSync("state/dev-agent.env")) {
+    console.error(
+      "[stack] state/dev-agent.env not found — copy state/dev-agent.env.example and fill in CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY",
+    );
+    process.exit(1);
+  }
+
   ensureDepsInstalled();
   await ensurePostgresReady(DEV_DATABASE_URL);
 
