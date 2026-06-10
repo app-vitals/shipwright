@@ -77,10 +77,10 @@ The agent is a thin runner with a Prisma-backed SQLite/PostgreSQL database and a
 
 **Notes:**
 - Integration tests inject `RecordedGithubClient` for issue/PR operations and a `RecordedMetricsClient` for forwarding calls.
-- **DB integration tests** (added in SHE-1.2) run against a real SQLite database (`DATABASE_URL_AGENT="file:./test.db"`). Each test suite provisions the schema via `prisma migrate deploy` and tears down after. No Prisma mocking — service classes own all DB queries.
+- **DB integration tests** (added in SHE-1.2) run against a real Postgres database (`DATABASE_URL_ADMIN_TEST="postgresql://user:password@localhost:5432/shipwright_admin_test"`). Each test suite provisions the schema via `prisma migrate deploy` and tears down after. No Prisma mocking — service classes own all DB queries.
 - **Smoke tests** drive the Hono app via `app.request()` — no real socket, no port allocation. Import the app factory and call `app.request(new Request(...))` directly. Covers health endpoints, agent CRUD routes, and auth checks.
 - The agent's execution loop must accept a `Clock` injection for deterministic scheduling tests.
-- `DATABASE_URL_AGENT` must be set to a scratch file path (e.g. `file:./test.db`) for all integration/smoke tests to stay offline and isolated from any production DB.
+- `DATABASE_URL_ADMIN_TEST` must be set to a Postgres connection string (e.g. `postgresql://user:password@localhost:5432/shipwright_admin_test`) for DB integration tests to run; suites skip automatically when the var is absent.
 
 ## Full suite commands
 

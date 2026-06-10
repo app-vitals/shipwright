@@ -2,7 +2,7 @@
  * agent/src/agent-tools.integration.test.ts
  * Integration tests for AgentToolService against a real SQLite DB.
  *
- * Requires DATABASE_URL_AGENT_TEST to be set; skips otherwise.
+ * Requires DATABASE_URL_ADMIN_TEST to be set; skips otherwise.
  */
 
 import { beforeEach, describe, expect, it } from "bun:test";
@@ -10,7 +10,7 @@ import { PrismaClient } from "../prisma/client/index.js";
 import { AgentToolService } from "./agent-tools.ts";
 import { NotFoundError } from "./errors.ts";
 
-const TEST_DB = process.env.DATABASE_URL_AGENT_TEST;
+const TEST_DB = process.env.DATABASE_URL_ADMIN_TEST;
 
 const describeOrSkip = TEST_DB ? describe : describe.skip;
 
