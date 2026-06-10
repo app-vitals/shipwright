@@ -43,7 +43,7 @@ A thin autonomous runner with a Prisma-backed store (PostgreSQL) and four HTTP s
 |---|---|---|
 | Marketing site | `site/` | Astro + Tailwind (**shipwright-harness.com**). **Not** a Bun workspace; Playwright smoke tests (`*.spec.ts`). |
 | Brand system | `brand/` | Locked design system (`BRAND.md`, `tokens.json`) + CSS build + lint, consumed by `site/`. |
-| Local state | `state/` | Git-ignored JSON task-store fallback + cached review state (only written when the GitHub backend isn't active). |
+| Local state | `state/` | Git-ignored JSON task-store fallback + cached review state (only written when neither the GitHub nor the Jira backend is active). |
 
 ## Workspace layout
 

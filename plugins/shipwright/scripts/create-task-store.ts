@@ -17,6 +17,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { GitHubTaskStore } from "./adapters/github";
+import { JiraTaskStore } from "./adapters/jira";
 import { JsonTaskStore } from "./adapters/json";
 import type { TaskStore, TaskStoreConfig } from "./store";
 
@@ -116,6 +117,7 @@ export function loadConfig(cwd: string = process.cwd()): LoadedConfig {
  *
  * - `taskStore: "json"` → JsonTaskStore backed by state/todos.json in process.cwd()
  * - `taskStore: "github"` → GitHubTaskStore backed by GitHub Issues via gh CLI
+ * - `taskStore: "jira"` → JiraTaskStore backed by Jira REST API v3
  */
 export function createTaskStore(config: TaskStoreConfig): TaskStore {
   if (config.taskStore === "github") {
@@ -126,6 +128,20 @@ export function createTaskStore(config: TaskStoreConfig): TaskStore {
       process.exit(1);
     }
     return new GitHubTaskStore(config);
+  }
+  if (config.taskStore === "jira") {
+    if (!config.jira?.baseUrl || !config.jira?.projectKey) {
+      process.stderr.write(
+        "error: jira.baseUrl and jira.projectKey are required when taskStore is 'jira'\n",
+      );
+      process.exit(1);
+    }
+    try {
+      return new JiraTaskStore(config, fetch);
+    } catch (e) {
+      process.stderr.write(`error: ${String(e)}\n`);
+      process.exit(1);
+    }
   }
   return new JsonTaskStore(process.cwd());
 }

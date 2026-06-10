@@ -20,7 +20,7 @@ The plugin's commands (`brainstorm`, `plan-session`, `dev-task`, `review`, `patc
 ## Coming as the toolchain matures
 
 - **Getting started** — install, configure the task store, point Shipwright at your repo.
-- **Configuration** — task-store backends (GitHub Issues / local), toolchain detection, environment.
+- **Configuration** — task-store backends (GitHub Issues / Jira / local), toolchain detection, environment.
 - **Deploying the agent** — running Shipwright autonomously on GitHub Actions or self-hosted.
 
 Track progress on the [`shipwright-oss` milestone](https://github.com/app-vitals/shipwright/milestones).
