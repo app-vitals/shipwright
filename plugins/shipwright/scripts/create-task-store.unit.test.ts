@@ -15,7 +15,8 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadConfig } from "./create-task-store";
+import { JiraTaskStore } from "./adapters/jira";
+import { createTaskStore, loadConfig } from "./create-task-store";
 
 describe("loadConfig discovery", () => {
   let tmpDir: string;
@@ -117,5 +118,57 @@ describe("loadConfig discovery", () => {
     } finally {
       rmSync(isolatedDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("createTaskStore — jira factory branch", () => {
+  // Save and restore JIRA env vars around each test
+  const savedEmail = process.env.JIRA_EMAIL;
+  const savedToken = process.env.JIRA_API_TOKEN;
+
+  afterEach(() => {
+    if (savedEmail !== undefined) {
+      process.env.JIRA_EMAIL = savedEmail;
+    } else {
+      // biome-ignore lint/performance/noDelete: process.env deletion is intentional
+      delete process.env.JIRA_EMAIL;
+    }
+    if (savedToken !== undefined) {
+      process.env.JIRA_API_TOKEN = savedToken;
+    } else {
+      // biome-ignore lint/performance/noDelete: process.env deletion is intentional
+      delete process.env.JIRA_API_TOKEN;
+    }
+  });
+
+  // Test: valid config → returns JiraTaskStore instance
+  test("returns JiraTaskStore when taskStore is 'jira' with valid config", () => {
+    process.env.JIRA_EMAIL = "test@example.com";
+    process.env.JIRA_API_TOKEN = "test-token";
+    const store = createTaskStore({
+      taskStore: "jira",
+      jira: { baseUrl: "https://example.atlassian.net", projectKey: "SHIP" },
+    });
+    expect(store).toBeInstanceOf(JiraTaskStore);
+  });
+
+  // Test: missing config.jira → exits non-zero with a clear error
+  test("exits non-zero with clear error when taskStore is 'jira' but jira config is missing", () => {
+    // Run in a subprocess so process.exit(1) doesn't terminate the test runner.
+    // Derive the factory module path by replacing the test file suffix.
+    const testFilePath = new URL(import.meta.url).pathname;
+    const factoryPath = testFilePath.replace(".unit.test.ts", ".ts");
+    const proc = Bun.spawnSync(
+      [
+        "bun",
+        "--eval",
+        `import { createTaskStore } from ${JSON.stringify(factoryPath)}; createTaskStore({ taskStore: "jira" });`,
+      ],
+      { env: { ...process.env } },
+    );
+    expect(proc.exitCode).toBe(1);
+    const stderr = proc.stderr.toString();
+    expect(stderr).toContain("jira.baseUrl");
+    expect(stderr).toContain("jira.projectKey");
   });
 });
