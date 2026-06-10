@@ -22,10 +22,11 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
+import { JiraTaskStore } from "./adapters/jira";
 import { JsonTaskStore } from "./adapters/json";
 import { resolveRepos } from "./check-helpers";
 import { createTaskStore, loadConfig } from "./create-task-store";
-import type { Task, TaskStore } from "./store";
+import type { Task, TaskStore, TaskStoreConfig } from "./store";
 
 const NUMERIC_FIELDS = new Set(["pr", "hours"]);
 
@@ -309,9 +310,26 @@ async function cmdCleanup(adapter: TaskStore): Promise<void> {
   );
 }
 
-function cmdDoctor(adapter: TaskStore, configSource: string): void {
+function cmdDoctor(
+  adapter: TaskStore,
+  configSource: string,
+  config: TaskStoreConfig,
+): void {
   if (adapter instanceof JsonTaskStore) {
     adapter.doctor(configSource);
+  } else if (adapter instanceof JiraTaskStore) {
+    console.log("backend: jira");
+    if (configSource === "default") {
+      console.log("config: default (no SHIPWRIGHT_CONFIG set)");
+    } else {
+      console.log(`config: ${configSource}`);
+    }
+    if (config.jira?.baseUrl) {
+      console.log(`baseUrl: ${config.jira.baseUrl}`);
+    }
+    if (config.jira?.projectKey) {
+      console.log(`projectKey: ${config.jira.projectKey}`);
+    }
   } else {
     console.log("backend: github");
     if (configSource === "default") {
@@ -372,7 +390,7 @@ async function main(): Promise<void> {
       await cmdCleanup(adapter);
       break;
     case "doctor":
-      cmdDoctor(adapter, configSource);
+      cmdDoctor(adapter, configSource, config);
       break;
   }
 }
