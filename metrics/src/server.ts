@@ -20,11 +20,11 @@
  * giving identical query semantics to SQLite mode.
  */
 
+import { createMetricsApp } from "./api.ts";
+import type { MetricsDeps } from "./api.ts";
 import { HttpAccountsClient } from "./lib/accounts-client.ts";
 import { parseApiKeys } from "./lib/api-auth.ts";
 import { loadEnv } from "./lib/env.ts";
-import { createMetricsApp } from "./api.ts";
-import type { MetricsDeps } from "./api.ts";
 import { createLocalEventStore } from "./local-store.ts";
 import { SqliteProvider } from "./providers/sqlite-provider.ts";
 import { resolvePostgresUrl, selectProviderMode } from "./select-provider.ts";
@@ -70,7 +70,9 @@ if (mode === "fixtures") {
   // void | Promise<void>, so we can return the Promise directly — the POST /batch/
   // handler awaits it, giving callers exactly-once write semantics.
   const localStoreShim = {
-    insertEvent: (e: Parameters<typeof pgStore.insertEvent>[0]): Promise<void> => {
+    insertEvent: (
+      e: Parameters<typeof pgStore.insertEvent>[0],
+    ): Promise<void> => {
       return pgStore.insertEvent(e);
     },
     queryByEvent: () => [],
@@ -108,7 +110,11 @@ if (mode === "fixtures") {
   };
 }
 
-const app = createMetricsApp(parseApiKeys(process.env.METRICS_API_KEYS), accountsClient, deps);
+const app = createMetricsApp(
+  parseApiKeys(process.env.METRICS_API_KEYS),
+  accountsClient,
+  deps,
+);
 
 // OpenAPI doc for standalone mode
 app.openAPIRegistry.registerComponent("securitySchemes", "bearerAuth", {

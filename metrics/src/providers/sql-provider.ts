@@ -14,8 +14,8 @@
  *     wrapper.
  */
 
-import { type Clock, SystemClock } from "../lib/clock.ts";
 import { resolveQueryRange } from "../formatters.ts";
+import { type Clock, SystemClock } from "../lib/clock.ts";
 import type {
   MetricQuery,
   MetricTable,
@@ -179,7 +179,10 @@ export class SqlEventStoreProvider implements MetricsProvider {
 
   // ─ Summary ─
 
-  private async summary(win: { from: string; to: string }): Promise<MetricTable> {
+  private async summary(win: {
+    from: string;
+    to: string;
+  }): Promise<MetricTable> {
     const [completed, blocked, ci, simplify, reviews] = await Promise.all([
       this.eventsAny(TASK_COMPLETED_EVENTS, win),
       this.events("shipwright_task_blocked", win),
@@ -336,60 +339,58 @@ export class SqlEventStoreProvider implements MetricsProvider {
     const inP = <T extends SqlStoredEvent>(arr: T[], p: string) =>
       arr.filter((e) => bucketOf(e) === p);
 
-    const rows = [...periods]
-      .sort()
-      .map((p) => {
-        const c = inP(completed, p);
-        const cCi = inP(ci, p);
-        const cSimplify = inP(simplify, p);
-        const cReviews = inP(reviews, p);
+    const rows = [...periods].sort().map((p) => {
+      const c = inP(completed, p);
+      const cCi = inP(ci, p);
+      const cSimplify = inP(simplify, p);
+      const cReviews = inP(reviews, p);
 
-        const positiveCycle = c
-          .map(cycleHours)
-          .filter((h): h is number => h !== null && h > 0);
-        const avgCycle = positiveCycle.length
-          ? positiveCycle.reduce((a, b) => a + b, 0) / positiveCycle.length
-          : null;
+      const positiveCycle = c
+        .map(cycleHours)
+        .filter((h): h is number => h !== null && h > 0);
+      const avgCycle = positiveCycle.length
+        ? positiveCycle.reduce((a, b) => a + b, 0) / positiveCycle.length
+        : null;
 
-        const estAcc = c
-          .map((e) => {
-            const est = num(e.properties.estimated_h);
-            const act = num(e.properties.actual_h);
-            if (est === null || act === null || est <= 0) return null;
-            return act / est;
-          })
-          .filter((v): v is number => v !== null);
+      const estAcc = c
+        .map((e) => {
+          const est = num(e.properties.estimated_h);
+          const act = num(e.properties.actual_h);
+          if (est === null || act === null || est <= 0) return null;
+          return act / est;
+        })
+        .filter((v): v is number => v !== null);
 
-        return [
-          p,
-          c.length,
-          cCi.length,
-          cCi.filter((e) => String(e.properties.passed_first_try) === "true")
-            .length,
-          cCi.filter((e) => String(e.properties.first_pass) === "true").length,
-          cSimplify.length,
-          sum(cSimplify.map((e) => num(e.properties.total_fixes))),
-          inP(blocked, p).length,
-          cReviews.length,
-          inP(started, p).length,
-          cReviews.filter((e) => e.properties.verdict === "SHIP IT").length,
-          avg(c.map((e) => num(e.properties.actual_h) ?? cycleHours(e))),
-          avg(c.map((e) => num(e.properties.estimated_h))),
-          avg(c.map((e) => num(e.properties.retries))),
-          avg(c.map((e) => num(e.properties.files_changed))),
-          avg(cCi.map((e) => num(e.properties.fix_attempts))),
-          avgCycle,
-          estAcc.length
-            ? estAcc.reduce((a, b) => a + b, 0) / estAcc.length
-            : null,
-          avg(cSimplify.map((e) => num(e.properties.dry))),
-          avg(cSimplify.map((e) => num(e.properties.dead_code))),
-          avg(cSimplify.map((e) => num(e.properties.naming))),
-          avg(cSimplify.map((e) => num(e.properties.complexity_fixes))),
-          avg(cSimplify.map((e) => num(e.properties.consistency))),
-          avg(cReviews.map((e) => num(e.properties.findings))),
-        ];
-      });
+      return [
+        p,
+        c.length,
+        cCi.length,
+        cCi.filter((e) => String(e.properties.passed_first_try) === "true")
+          .length,
+        cCi.filter((e) => String(e.properties.first_pass) === "true").length,
+        cSimplify.length,
+        sum(cSimplify.map((e) => num(e.properties.total_fixes))),
+        inP(blocked, p).length,
+        cReviews.length,
+        inP(started, p).length,
+        cReviews.filter((e) => e.properties.verdict === "SHIP IT").length,
+        avg(c.map((e) => num(e.properties.actual_h) ?? cycleHours(e))),
+        avg(c.map((e) => num(e.properties.estimated_h))),
+        avg(c.map((e) => num(e.properties.retries))),
+        avg(c.map((e) => num(e.properties.files_changed))),
+        avg(cCi.map((e) => num(e.properties.fix_attempts))),
+        avgCycle,
+        estAcc.length
+          ? estAcc.reduce((a, b) => a + b, 0) / estAcc.length
+          : null,
+        avg(cSimplify.map((e) => num(e.properties.dry))),
+        avg(cSimplify.map((e) => num(e.properties.dead_code))),
+        avg(cSimplify.map((e) => num(e.properties.naming))),
+        avg(cSimplify.map((e) => num(e.properties.complexity_fixes))),
+        avg(cSimplify.map((e) => num(e.properties.consistency))),
+        avg(cReviews.map((e) => num(e.properties.findings))),
+      ];
+    });
 
     return table(columns, rows);
   }
@@ -416,7 +417,12 @@ export class SqlEventStoreProvider implements MetricsProvider {
   }): Promise<MetricTable> {
     const completed = await this.eventsAny(TASK_COMPLETED_EVENTS, win);
     const groups = this.groupByPrefix(completed);
-    const columns = ["feature_prefix", "tasks_completed", "avg_actual_h", "avg_estimated_h"];
+    const columns = [
+      "feature_prefix",
+      "tasks_completed",
+      "avg_actual_h",
+      "avg_estimated_h",
+    ];
     const rows = [...groups.entries()]
       .map(([prefix, group]) => [
         prefix,

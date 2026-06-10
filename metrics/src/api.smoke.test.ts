@@ -8,11 +8,11 @@
 
 import { describe, expect, test } from "bun:test";
 import { sign } from "hono/jwt";
+import { type MetricsDeps, createMetricsApp } from "./api.ts";
 import type { AccountsClient, UserRecord } from "./lib/accounts-client.ts";
 import { parseApiKeys } from "./lib/api-auth.ts";
 import { runCanaryMode } from "./lib/test-helpers.ts";
 import { makeAccountsClientMock } from "./lib/test-helpers.ts";
-import { type MetricsDeps, createMetricsApp } from "./api.ts";
 import { PostHogClientError } from "./posthog-client.ts";
 import type { QueryDateRange } from "./queries.ts";
 import type { HogQLResult } from "./types.ts";

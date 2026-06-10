@@ -4,9 +4,9 @@
  * Pure logic — no I/O, no DB, no network.
  */
 
-import { describe, expect, it, beforeEach, afterEach } from "bun:test";
-import { encrypt, decrypt } from "./crypto.ts";
-import { makeTokenCrypto, identityCrypto } from "./token-crypto.ts";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { decrypt, encrypt } from "./crypto.ts";
+import { identityCrypto, makeTokenCrypto } from "./token-crypto.ts";
 
 // ─── Test key ─────────────────────────────────────────────────────────────────
 // A known 64-char hex key (32 bytes) for deterministic tests.
@@ -58,7 +58,9 @@ describe("encrypt / decrypt (AES-256-GCM)", () => {
   });
 
   it("throws on invalid encrypted format (wrong part count)", () => {
-    expect(() => decrypt("notvalid", TEST_KEY)).toThrow("Invalid encrypted format");
+    expect(() => decrypt("notvalid", TEST_KEY)).toThrow(
+      "Invalid encrypted format",
+    );
   });
 
   it("throws when auth tag is wrong (tampered ciphertext)", () => {

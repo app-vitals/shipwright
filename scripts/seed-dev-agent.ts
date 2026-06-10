@@ -61,7 +61,12 @@ export interface SeedPrisma {
   agentPlugin: {
     upsert(args: {
       where: { agentId_name: { agentId: string; name: string } };
-      create: { agentId: string; name: string; version: null; enabled: boolean };
+      create: {
+        agentId: string;
+        name: string;
+        version: null;
+        enabled: boolean;
+      };
       update: { version: null; enabled: boolean };
     }): Promise<unknown>;
   };
@@ -100,7 +105,10 @@ export function parseEnvFile(content: string): Record<string, string> {
     const eqIdx = trimmed.indexOf("=");
     if (eqIdx === -1) continue;
     const key = trimmed.slice(0, eqIdx).trim();
-    const value = trimmed.slice(eqIdx + 1).trim().replace(/^["']|["']$/g, "");
+    const value = trimmed
+      .slice(eqIdx + 1)
+      .trim()
+      .replace(/^["']|["']$/g, "");
     if (key) result[key] = value;
   }
   return result;
@@ -179,7 +187,12 @@ export async function seedDevAgent(deps: SeedDeps): Promise<void> {
   // 5. Upsert plugin
   await prisma.agentPlugin.upsert({
     where: { agentId_name: { agentId: DEV_AGENT_ID, name: DEV_PLUGIN_NAME } },
-    create: { agentId: DEV_AGENT_ID, name: DEV_PLUGIN_NAME, version: null, enabled: true },
+    create: {
+      agentId: DEV_AGENT_ID,
+      name: DEV_PLUGIN_NAME,
+      version: null,
+      enabled: true,
+    },
     update: { version: null, enabled: true },
   });
   console.log(`[seed-dev-agent] upserted plugin: ${DEV_PLUGIN_NAME}`);
@@ -210,7 +223,8 @@ if (import.meta.main) {
   const dbUrl = (() => {
     for (let i = 0; i < argv.length; i++) {
       if (argv[i] === "--db-url" && argv[i + 1]) return argv[i + 1];
-      if (argv[i]?.startsWith("--db-url=")) return argv[i].slice("--db-url=".length);
+      if (argv[i]?.startsWith("--db-url="))
+        return argv[i].slice("--db-url=".length);
     }
     return process.env.DATABASE_URL;
   })();

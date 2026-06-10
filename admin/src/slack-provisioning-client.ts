@@ -174,5 +174,4 @@ export class HttpSlackProvisioningClient implements SlackProvisioningClient {
       oauthRedirectUrl: data.oauth_authorize_url,
     };
   }
-
 }

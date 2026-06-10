@@ -164,7 +164,10 @@ export async function handleCronRequest(
             text: `[cron] preCheck for \`${jobId}\` crashed (exit ${checkExitCode}) — session suppressed${detail ? `\n\`\`\`\n${detail}\n\`\`\`` : ""}`,
           });
         } catch (alertErr) {
-          console.error("[agent:cron] failed to post preCheck alert:", alertErr);
+          console.error(
+            "[agent:cron] failed to post preCheck alert:",
+            alertErr,
+          );
         }
       }
       return;
@@ -217,7 +220,10 @@ export async function handleCronRequest(
         `[agent:cron] job "${jobId}" has both channel and user — posting to channel`,
       );
     }
-    const postResult = await slack.chat.postMessage({ channel, text: formatted });
+    const postResult = await slack.chat.postMessage({
+      channel,
+      text: formatted,
+    });
     console.log(`[agent:cron] job "${jobId}" posted to channel ${channel}`);
     if (postResult.ts) {
       onPost?.(channel, postResult.ts);

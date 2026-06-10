@@ -1,6 +1,10 @@
 import type { Server } from "bun";
 import { Hono } from "hono";
-import { type CronHandlerDeps, ValidationError, handleCronRequest } from "./cron-handler.ts";
+import {
+  type CronHandlerDeps,
+  ValidationError,
+  handleCronRequest,
+} from "./cron-handler.ts";
 
 /**
  * Create a minimal Hono health app for container liveness probes.

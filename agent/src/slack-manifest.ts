@@ -94,7 +94,9 @@ export function buildManifest(
     : (scopesOrOpts ?? {});
   const scopes = opts.scopes ?? [];
   const botName = opts.botName;
-  const redirectUrl = Array.isArray(scopesOrOpts) ? undefined : opts.redirectUrl;
+  const redirectUrl = Array.isArray(scopesOrOpts)
+    ? undefined
+    : opts.redirectUrl;
   const allScopes = Array.from(new Set([...DEFAULT_BOT_SCOPES, ...scopes]));
 
   return {

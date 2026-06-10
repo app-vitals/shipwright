@@ -6,9 +6,9 @@
  * using SHIPWRIGHT_ENCRYPTION_KEY (AES-256-GCM).
  */
 
+import type { PrismaClient } from "../prisma/client/index.js";
 import { type Clock, SystemClock } from "./clock.ts";
 import { ApiError, UnprocessableEntityError } from "./errors.ts";
-import type { PrismaClient } from "../prisma/client/index.js";
 import type { TokenCrypto } from "./token-crypto.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -40,7 +40,9 @@ export class AgentEnvService {
    * Validates that agentId references an existing Agent.
    */
   async upsert(agentId: string, env: Record<string, string>): Promise<void> {
-    const agent = await this.prisma.agent.findUnique({ where: { id: agentId } });
+    const agent = await this.prisma.agent.findUnique({
+      where: { id: agentId },
+    });
     if (!agent) {
       throw new UnprocessableEntityError("agent not found");
     }
@@ -73,7 +75,9 @@ export class AgentEnvService {
    * Validates that agentId references an existing Agent.
    */
   async patch(agentId: string, env: Record<string, string>): Promise<void> {
-    const agent = await this.prisma.agent.findUnique({ where: { id: agentId } });
+    const agent = await this.prisma.agent.findUnique({
+      where: { id: agentId },
+    });
     if (!agent) {
       throw new UnprocessableEntityError("agent not found");
     }

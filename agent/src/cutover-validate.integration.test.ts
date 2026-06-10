@@ -34,9 +34,7 @@ function makeCron(id: string): AgentCronJob {
   };
 }
 
-function makeConfig(
-  env: Record<string, string>,
-): AgentConfigResponse {
+function makeConfig(env: Record<string, string>): AgentConfigResponse {
   return { env, allowedTools: [], plugins: [] };
 }
 
@@ -63,7 +61,8 @@ function makeAppAuthEnv(): Record<string, string> {
   return {
     SLACK_BOT_TOKEN: "xoxb-test-token",
     GH_APP_ID: "12345",
-    GH_APP_PRIVATE_KEY: "-----BEGIN RSA PRIVATE KEY-----\nfake\n-----END RSA PRIVATE KEY-----",
+    GH_APP_PRIVATE_KEY:
+      "-----BEGIN RSA PRIVATE KEY-----\nfake\n-----END RSA PRIVATE KEY-----",
     GH_APP_INSTALLATION_ID: "67890",
   };
 }
@@ -98,10 +97,9 @@ describe("validateCutover", () => {
 
   it("fails when SLACK_BOT_TOKEN is missing", async () => {
     const { SLACK_BOT_TOKEN: _s, ...env } = makeAppAuthEnv();
-    const client = new RecordedShipwrightConfigClient(
-      makeConfig(env),
-      [makeCron("cron-1")],
-    );
+    const client = new RecordedShipwrightConfigClient(makeConfig(env), [
+      makeCron("cron-1"),
+    ]);
     const results = await validateCutover(client, AGENT_ID);
     const slackCheck = results.find((r) => r.name === "SLACK_BOT_TOKEN");
     expect(slackCheck).toBeDefined();
@@ -110,10 +108,9 @@ describe("validateCutover", () => {
 
   it("names the failing check when SLACK_BOT_TOKEN is missing", async () => {
     const { SLACK_BOT_TOKEN: _s, ...env } = makeAppAuthEnv();
-    const client = new RecordedShipwrightConfigClient(
-      makeConfig(env),
-      [makeCron("cron-1")],
-    );
+    const client = new RecordedShipwrightConfigClient(makeConfig(env), [
+      makeCron("cron-1"),
+    ]);
     const results = await validateCutover(client, AGENT_ID);
     const failed = results.filter((r) => !r.passed);
     expect(failed.length).toBe(1);
@@ -143,10 +140,7 @@ describe("validateCutover", () => {
   });
 
   it("reports all failing checks when multiple checks fail", async () => {
-    const client = new RecordedShipwrightConfigClient(
-      makeConfig({}),
-      [],
-    );
+    const client = new RecordedShipwrightConfigClient(makeConfig({}), []);
     const results = await validateCutover(client, AGENT_ID);
     const failed = results.filter((r) => !r.passed);
     expect(failed.length).toBeGreaterThanOrEqual(3);
@@ -163,10 +157,9 @@ describe("validateCutover", () => {
       GH_APP_PRIVATE_KEY: "some-key",
       // GH_APP_INSTALLATION_ID intentionally omitted
     };
-    const client = new RecordedShipwrightConfigClient(
-      makeConfig(env),
-      [makeCron("cron-1")],
-    );
+    const client = new RecordedShipwrightConfigClient(makeConfig(env), [
+      makeCron("cron-1"),
+    ]);
     const results = await validateCutover(client, AGENT_ID);
     const githubCheck = results.find((r) => r.name === "github_auth");
     expect(githubCheck).toBeDefined();
@@ -174,7 +167,10 @@ describe("validateCutover", () => {
   });
 
   it("fails when only disabled crons are present", async () => {
-    const disabledCron: AgentCronJob = { ...makeCron("cron-disabled"), enabled: false };
+    const disabledCron: AgentCronJob = {
+      ...makeCron("cron-disabled"),
+      enabled: false,
+    };
     const client = new RecordedShipwrightConfigClient(
       makeConfig(makeAppAuthEnv()),
       [disabledCron],
@@ -192,10 +188,9 @@ describe("validateCutover", () => {
       GH_APP_PRIVATE_KEY: "some-key",
       GH_APP_INSTALLATION_ID: "11111",
     };
-    const client = new RecordedShipwrightConfigClient(
-      makeConfig(env),
-      [makeCron("cron-1")],
-    );
+    const client = new RecordedShipwrightConfigClient(makeConfig(env), [
+      makeCron("cron-1"),
+    ]);
     const results = await validateCutover(client, AGENT_ID);
     expect(results.every((r) => r.passed)).toBe(true);
   });
