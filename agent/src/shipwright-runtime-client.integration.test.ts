@@ -42,12 +42,14 @@ const SAMPLE_CRONS: AgentCronJob[] = [
   },
 ];
 
+type FetchFn = (
+  url: string | URL | Request,
+  init?: RequestInit,
+) => Promise<Response>;
+
 // ─── Fake fetch helpers ────────────────────────────────────────────────────────
 
-function fakeFetch(
-  statusCode: number,
-  body: unknown,
-): (url: string | URL | Request, init?: RequestInit) => Promise<Response> {
+function fakeFetch(statusCode: number, body: unknown): FetchFn {
   return async (_url, _init) => {
     return new Response(JSON.stringify(body), {
       status: statusCode,
@@ -60,7 +62,7 @@ function capturingFetch(
   statusCode: number,
   body: unknown,
 ): {
-  fn: (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
+  fn: FetchFn;
   calls: Array<{ url: string; init: RequestInit | undefined }>;
 } {
   const calls: Array<{ url: string; init: RequestInit | undefined }> = [];

@@ -10,6 +10,11 @@
 
 import type { AgentConfigResponse, AgentCronJob } from "@shipwright/admin";
 
+type FetchFn = (
+  url: string | URL | Request,
+  init?: RequestInit,
+) => Promise<Response>;
+
 // ─── Error ────────────────────────────────────────────────────────────────────
 
 export class ShipwrightClientError extends Error {
@@ -35,12 +40,12 @@ export interface ShipwrightRuntimeClient {
 export class HttpShipwrightRuntimeClient implements ShipwrightRuntimeClient {
   private readonly apiUrl: string;
   private readonly apiKey: string;
-  private readonly fetchFn: typeof fetch;
+  private readonly fetchFn: FetchFn;
 
   constructor(opts: {
     apiUrl: string;
     apiKey: string;
-    fetchFn?: typeof fetch;
+    fetchFn?: FetchFn;
   }) {
     this.apiUrl = opts.apiUrl;
     this.apiKey = opts.apiKey;
