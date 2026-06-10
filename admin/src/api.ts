@@ -49,6 +49,54 @@ export interface AgentRuntimeDeps {
   internalApiKey: string;
 }
 
+// ─── openapi-fetch paths type ─────────────────────────────────────────────────
+
+/** Typed paths for the two runtime GET endpoints — use with createClient<RuntimeApiPaths>(). */
+export interface RuntimeApiPaths {
+  "/agents/{agentId}/config": {
+    get: {
+      parameters: { path: { agentId: string } };
+      responses: {
+        200: { content: { "application/json": AgentConfigResponse } };
+        401: { content: { "application/json": { error: string } } };
+        404: { content: { "application/json": { error: string } } };
+      };
+    };
+  };
+  "/agents/{agentId}/crons": {
+    get: {
+      parameters: { path: { agentId: string } };
+      responses: {
+        200: { content: { "application/json": AgentCronJob[] } };
+        401: { content: { "application/json": { error: string } } };
+        404: { content: { "application/json": { error: string } } };
+      };
+    };
+  };
+}
+
+/** Typed paths for the admin POST endpoint — use with createClient<AdminApiPaths>(). */
+export interface AdminApiPaths {
+  "/admin/api/agents/{agentId}/crons/reconcile": {
+    post: {
+      parameters: { path: { agentId: string } };
+      responses: {
+        200: {
+          content: {
+            "application/json": {
+              created: number;
+              updated: number;
+              deleted: number;
+            };
+          };
+        };
+        401: { content: { "application/json": { error: string } } };
+        404: { content: { "application/json": { error: string } } };
+      };
+    };
+  };
+}
+
 // ─── Factory ──────────────────────────────────────────────────────────────────
 
 /**

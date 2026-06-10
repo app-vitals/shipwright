@@ -15,7 +15,7 @@
 import { spawnSync } from "node:child_process";
 import * as os from "node:os";
 import * as path from "node:path";
-import { HttpShipwrightConfigClient } from "../src/shipwright-config-client.ts";
+import { HttpShipwrightRuntimeClient } from "../src/shipwright-runtime-client.ts";
 import { getArg, hasFlag } from "./cli-args.ts";
 
 // ─── Args ──────────────────────────────────────────────────────────────────────
@@ -51,7 +51,10 @@ const apiKey = requireEnv("SHIPWRIGHT_INTERNAL_API_KEY");
 
 // ─── Fetch config ─────────────────────────────────────────────────────────────
 
-const configClient = new HttpShipwrightConfigClient({ apiUrl, apiKey });
+const runtimeClient = new HttpShipwrightRuntimeClient({ apiUrl, apiKey });
+const configClient = {
+  getConfig: (id: string) => runtimeClient.getAgentConfigBundle(id),
+};
 
 console.log(`[run-agent] Fetching config for agent ${agentId}...`);
 const bundle = await configClient.getConfig(agentId);

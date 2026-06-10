@@ -5,13 +5,19 @@
  *
  * - ShipwrightClientError — typed error with statusCode
  * - ShipwrightRuntimeClient — interface for DI
- * - HttpShipwrightRuntimeClient — real HTTP implementation with injected fetchFn
+ * - HttpShipwrightRuntimeClient — typed HTTP implementation via openapi-fetch
  */
 
-import type { AgentConfigResponse, AgentCronJob } from "@shipwright/admin";
+import type {
+  AdminApiPaths,
+  AgentConfigResponse,
+  AgentCronJob,
+  RuntimeApiPaths,
+} from "@shipwright/admin";
+import createClient from "openapi-fetch";
 
 type FetchFn = (
-  url: string | URL | Request,
+  url: RequestInfo | URL,
   init?: RequestInit,
 ) => Promise<Response>;
 
@@ -38,70 +44,70 @@ export interface ShipwrightRuntimeClient {
 // ─── HttpShipwrightRuntimeClient ──────────────────────────────────────────────
 
 export class HttpShipwrightRuntimeClient implements ShipwrightRuntimeClient {
-  private readonly apiUrl: string;
-  private readonly apiKey: string;
-  private readonly fetchFn: FetchFn;
+  private readonly client: ReturnType<typeof createClient<RuntimeApiPaths>>;
+  private readonly adminClient: ReturnType<typeof createClient<AdminApiPaths>>;
 
   constructor(opts: {
     apiUrl: string;
+    /** Base URL for admin-tier endpoints (e.g. /admin/api/...). Defaults to apiUrl when the unified admin service serves both namespaces. */
+    adminApiUrl?: string;
     apiKey: string;
     fetchFn?: FetchFn;
   }) {
-    this.apiUrl = opts.apiUrl;
-    this.apiKey = opts.apiKey;
-    this.fetchFn = opts.fetchFn ?? fetch;
-  }
-
-  private get authHeaders(): Record<string, string> {
-    return {
-      Authorization: `Bearer ${this.apiKey}`,
-      "Content-Type": "application/json",
+    const commonOpts = {
+      headers: {
+        Authorization: `Bearer ${opts.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      ...(opts.fetchFn ? { fetch: opts.fetchFn } : {}),
     };
+    this.client = createClient<RuntimeApiPaths>({
+      baseUrl: opts.apiUrl,
+      ...commonOpts,
+    });
+    this.adminClient = createClient<AdminApiPaths>({
+      baseUrl: opts.adminApiUrl ?? opts.apiUrl,
+      ...commonOpts,
+    });
   }
 
   async getAgentConfigBundle(agentId: string): Promise<AgentConfigResponse> {
-    const url = `${this.apiUrl}/agents/${encodeURIComponent(agentId)}/config`;
-    const response = await this.fetchFn(url, {
-      headers: this.authHeaders,
-    });
-
-    if (!response.ok) {
+    const { data, error, response } = await this.client.GET(
+      "/agents/{agentId}/config",
+      { params: { path: { agentId } } },
+    );
+    if (error) {
       throw new ShipwrightClientError(
         response.status,
-        `GET /agents/${agentId}/config failed: ${response.status} ${response.statusText}`,
+        `GET /agents/${agentId}/config failed: ${response.status}`,
       );
     }
-
-    return response.json() as Promise<AgentConfigResponse>;
+    return data;
   }
 
   async listAgentCronJobs(agentId: string): Promise<AgentCronJob[]> {
-    const url = `${this.apiUrl}/agents/${encodeURIComponent(agentId)}/crons`;
-    const response = await this.fetchFn(url, {
-      headers: this.authHeaders,
-    });
-
-    if (!response.ok) {
+    const { data, error, response } = await this.client.GET(
+      "/agents/{agentId}/crons",
+      { params: { path: { agentId } } },
+    );
+    if (error) {
       throw new ShipwrightClientError(
         response.status,
-        `GET /agents/${agentId}/crons failed: ${response.status} ${response.statusText}`,
+        `GET /agents/${agentId}/crons failed: ${response.status}`,
       );
     }
-
-    return response.json() as Promise<AgentCronJob[]>;
+    return data;
   }
 
   async reconcileSystemCrons(agentId: string): Promise<void> {
-    const url = `${this.apiUrl}/admin/api/agents/${encodeURIComponent(agentId)}/crons/reconcile`;
-    const response = await this.fetchFn(url, {
-      method: "POST",
-      headers: this.authHeaders,
-    });
-
-    if (!response.ok) {
+    const { error, response } = await this.adminClient.POST(
+      "/admin/api/agents/{agentId}/crons/reconcile",
+      { params: { path: { agentId } } },
+    );
+    if (error) {
       throw new ShipwrightClientError(
         response.status,
-        `POST /admin/api/agents/${agentId}/crons/reconcile failed: ${response.status} ${response.statusText}`,
+        `POST /admin/api/agents/${agentId}/crons/reconcile failed: ${response.status}`,
       );
     }
   }

@@ -17,6 +17,8 @@ export type {
   AgentRuntimeDeps,
   AgentConfigResponse,
   AgentPlugin,
+  AdminApiPaths,
+  RuntimeApiPaths,
 } from "./api.ts";
 export { AgentEnvService } from "./agent-envs.ts";
 export type { AgentEnvBundle, AgentEnvEntry } from "./agent-envs.ts";

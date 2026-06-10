@@ -13,7 +13,8 @@
     "@slack/bolt": "^4.7.3",
     "@slack/web-api": "^7.16.0",
     "hono": "^4",
-    "node-cron": "^3.0.3"
+    "node-cron": "^3.0.3",
+    "openapi-fetch": "^0.13"
   },
   "devDependencies": {
     "@types/node-cron": "^3.0.11",
