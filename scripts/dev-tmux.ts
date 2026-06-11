@@ -471,8 +471,38 @@ export function sessionExistsMessage(name: string): string {
   return [
     `[stack] session '${name}' already running — not rebuilding it.`,
     `[stack]   attach: tmux attach -t ${name}`,
-    `[stack]   reset:  tmux kill-session -t ${name}  (then re-run task stack)`,
+    `[stack]   reset:  tmux kill-session -t ${name}  (or: task stack:down, then re-run task stack)`,
   ].join("\n");
+}
+
+/**
+ * Teardown commands for `task stack:down`: kill the tmux session, then stop and
+ * remove the agent Docker container. The container is started by `docker run`
+ * inside a pane, so killing the tmux session orphans it — the daemon keeps it
+ * running. This explicitly removes it. Pure (returns argv lists); runTeardown()
+ * drives the injected exec. Reuses SESSION_NAME / DEV_DOCKER_IMAGE so the names
+ * never drift from the launch side.
+ */
+export function buildTeardownCommands(
+  session: string = SESSION_NAME,
+  container: string = DEV_DOCKER_IMAGE,
+): string[][] {
+  return [
+    ["tmux", "kill-session", "-t", session],
+    ["docker", "rm", "-f", container],
+  ];
+}
+
+/**
+ * Runs each teardown command via the injected exec. Best-effort: a non-zero
+ * exit just means that resource was already gone, so `stack:down` is safe to
+ * run when nothing is up. Returns one result per command for logging.
+ */
+export function runTeardown(
+  commands: string[][],
+  exec: (argv: string[]) => number,
+): Array<{ argv: string[]; ok: boolean }> {
+  return commands.map((argv) => ({ argv, ok: exec(argv) === 0 }));
 }
 
 /**
@@ -734,6 +764,21 @@ async function ensurePostgresReady(databaseUrl: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 if (import.meta.main) {
+  // `task stack:down` — tear down the session AND remove the orphaned agent
+  // container. Runs before any tmux/postgres checks so it works even when the
+  // session is half-gone. Best-effort: argv arrays, no shell (no injection).
+  if (Bun.argv.includes("--down")) {
+    const exec = (argv: string[]): number =>
+      Bun.spawnSync(argv, { stdout: "ignore", stderr: "ignore" }).exitCode ?? 1;
+    for (const { argv, ok } of runTeardown(buildTeardownCommands(), exec)) {
+      console.log(
+        `[stack:down] ${argv.join(" ")} ${ok ? "✓" : "(nothing to do)"}`,
+      );
+    }
+    console.log("[stack:down] dev stack stopped.");
+    process.exit(0);
+  }
+
   if (!tmuxIsInstalled()) {
     console.error(NO_TMUX_MESSAGE);
     process.exit(1);

@@ -25,10 +25,12 @@ import {
   brewFormulaInstalled,
   buildLogsBanner,
   buildStackCommands,
+  buildTeardownCommands,
   dbReachable,
   missingWorkspaceDeps,
   planPostgresSetup,
   runStack,
+  runTeardown,
   sessionExists,
   sessionExistsMessage,
 } from "./dev-tmux.ts";
@@ -59,6 +61,55 @@ function sendKeysForPane(
         argv.some((a) => a === `${SESSION_NAME}:0.${paneIndex}`),
     );
 }
+
+describe("buildTeardownCommands (stack:down)", () => {
+  test("kills the tmux session and force-removes the agent container", () => {
+    const cmds = buildTeardownCommands();
+    expect(cmds).toEqual([
+      ["tmux", "kill-session", "-t", SESSION_NAME],
+      ["docker", "rm", "-f", "shipwright-agent-dev"],
+    ]);
+  });
+
+  test("removes the container (not just the session) — the orphan tmux leaves", () => {
+    const cmds = buildTeardownCommands();
+    const dockerRm = cmds.find((c) => c[0] === "docker");
+    expect(dockerRm).toEqual(["docker", "rm", "-f", "shipwright-agent-dev"]);
+  });
+
+  test("honors injected session/container names", () => {
+    expect(buildTeardownCommands("sess", "cont")).toEqual([
+      ["tmux", "kill-session", "-t", "sess"],
+      ["docker", "rm", "-f", "cont"],
+    ]);
+  });
+});
+
+describe("runTeardown", () => {
+  test("runs every command via the injected exec, in order", () => {
+    const seen: string[][] = [];
+    const results = runTeardown(
+      [
+        ["a", "1"],
+        ["b", "2"],
+      ],
+      (argv) => {
+        seen.push(argv);
+        return 0;
+      },
+    );
+    expect(seen).toEqual([
+      ["a", "1"],
+      ["b", "2"],
+    ]);
+    expect(results.every((r) => r.ok)).toBe(true);
+  });
+
+  test("maps a non-zero exit to ok:false (best-effort — already gone)", () => {
+    const results = runTeardown([["x"]], () => 1);
+    expect(results).toEqual([{ argv: ["x"], ok: false }]);
+  });
+});
 
 describe("buildStackCommands", () => {
   test("creates a session named 'shipwright'", () => {
