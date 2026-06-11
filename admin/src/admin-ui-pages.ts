@@ -600,6 +600,63 @@ export function renderProvisionStartPage(
 </html>`;
 }
 
+// xapp-token page shown after OAuth callback completes — user pastes the Socket Mode app token.
+export function renderProvisionXappTokenPage(
+  userName: string,
+  opts: { agentId: string; error?: string },
+): string {
+  const errorHtml = opts.error
+    ? `<div class="alert alert-error">${escapeHtml(opts.error)}</div>`
+    : "";
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Complete Provisioning — Shipwright Admin</title>
+  <style>${baseStyles()}</style>
+</head>
+<body>
+  ${renderAdminToolbar(userName, "/admin/provision")}
+  <div class="vos-page">
+    <div class="page-header">
+      <h1 class="page-title">Provision Agent</h1>
+    </div>
+    <div class="provision-steps">
+      <span class="provision-step">1. Create Slack App</span>
+      <span class="provision-step">2. Authorize</span>
+      <span class="provision-step">3. Bot Token</span>
+      <span class="provision-step active">4. Add Socket Token</span>
+    </div>
+    <div class="card">
+      <p style="font-size:14px;margin-bottom:16px;color:#6b7280">
+        Open your Slack App's <strong>Socket Mode</strong> settings, enable Socket Mode,
+        and generate an <strong>App-Level Token</strong> with <code class="mono">connections:write</code> scope.
+        Paste the <code class="mono">xapp-</code> token below.
+      </p>
+      ${errorHtml}
+      <form method="POST" action="/admin/provision/xapp-token">
+        <input type="hidden" name="agentId" value="${escapeHtml(opts.agentId)}" />
+        <div class="form-group">
+          <label class="form-label" for="xappToken">App-Level Token (xapp-)</label>
+          <input
+            id="xappToken"
+            name="xappToken"
+            type="password"
+            class="form-input"
+            placeholder="xapp-..."
+            required
+          />
+        </div>
+        <button type="submit" class="btn btn-primary">Save Token →</button>
+      </form>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
 // Paste form shown after OAuth callback — user enters SLACK_APP_ID and SLACK_SIGNING_SECRET
 // from the Slack App Credentials page (signing secret is not returned by Slack's OAuth API).
 export function renderProvisionPasteForm(
@@ -654,15 +711,35 @@ export function renderProvisionPasteForm(
 
 export function renderProvisionCompletePage(
   userName: string,
-  opts: { success: boolean; agentId?: string; error?: string },
+  opts: { success: boolean; agentId?: string; error?: string; rawToken?: string },
 ): string {
+  const rawTokenHtml = opts.rawToken
+    ? `<div class="alert alert-success" style="margin-top:16px">
+        <strong>Internal API Key — copy it now, it will not be shown again.</strong><br />
+        <code
+          id="raw-token"
+          class="mono"
+          style="display:block;margin-top:8px;font-size:13px;word-break:break-all;padding:8px;background:#f0fdf4;border-radius:4px"
+        >${escapeHtml(opts.rawToken)}</code>
+        <button
+          type="button"
+          onclick="navigator.clipboard.writeText(document.getElementById('raw-token').textContent)"
+          class="btn btn-secondary"
+          style="margin-top:8px;font-size:12px"
+        >Copy to clipboard</button>
+        <p style="font-size:12px;color:#6b7280;margin-top:8px">
+          Store this as <code class="mono">SHIPWRIGHT_AGENT_API_KEY</code> in your agent configuration.
+        </p>
+      </div>`
+    : "";
+
   const bodyHtml = opts.success
     ? `<div class="alert alert-success">
-        <strong>success</strong> — Slack app provisioned and credentials stored.
+        <strong>Provisioning complete!</strong> — Slack app credentials and tokens stored.
       </div>
-      <p style="font-size:14px;margin-bottom:16px">
-        The <code class="mono">SLACK_APP_ID</code> and <code class="mono">SLACK_SIGNING_SECRET</code>
-        have been saved to the agent's env vars.
+      ${rawTokenHtml}
+      <p style="font-size:14px;margin-bottom:16px;margin-top:16px">
+        All credentials have been saved to the agent's env vars and system crons have been seeded.
       </p>
       ${opts.agentId ? `<a href="/admin/agents/${escapeHtml(opts.agentId)}" class="btn btn-primary">View Agent →</a>` : ""}
       <a href="/admin/agents" class="btn btn-secondary" style="margin-left:8px">Back to Agents</a>`
@@ -686,7 +763,8 @@ export function renderProvisionCompletePage(
     <div class="provision-steps">
       <span class="provision-step">1. Create Slack App</span>
       <span class="provision-step">2. Authorize</span>
-      <span class="provision-step active">3. Complete</span>
+      <span class="provision-step">3. Bot Token</span>
+      <span class="provision-step active">4. Complete</span>
     </div>
     <div class="card">
       ${bodyHtml}

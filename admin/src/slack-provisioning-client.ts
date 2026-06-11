@@ -74,6 +74,16 @@ export interface SlackProvisioningClient {
     clientSecret: string;
     signingSecret: string;
   }>;
+
+  /**
+   * Exchange an OAuth authorization code for a bot token via oauth.v2.access.
+   */
+  exchangeOAuthCode(
+    code: string,
+    clientId: string,
+    clientSecret: string,
+    redirectUri: string,
+  ): Promise<{ botToken: string }>;
 }
 
 // ─── Default manifest ─────────────────────────────────────────────────────────
@@ -134,6 +144,55 @@ export class HttpSlackProvisioningClient implements SlackProvisioningClient {
 
   constructor(opts?: { apiBase?: string }) {
     this.apiBase = opts?.apiBase ?? "https://slack.com/api";
+  }
+
+  async exchangeOAuthCode(
+    code: string,
+    clientId: string,
+    clientSecret: string,
+    redirectUri: string,
+  ): Promise<{ botToken: string }> {
+    const url = `${this.apiBase}/oauth.v2.access`;
+    const params = new URLSearchParams({
+      code,
+      redirect_uri: redirectUri,
+    });
+
+    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString(
+      "base64",
+    );
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${credentials}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: params.toString(),
+    });
+
+    if (!resp.ok) {
+      throw new Error(
+        `Slack oauth.v2.access HTTP error: ${resp.status} ${resp.statusText}`,
+      );
+    }
+
+    const data = (await resp.json()) as {
+      ok: boolean;
+      error?: string;
+      access_token?: string;
+    };
+
+    if (!data.ok) {
+      throw new Error(`Slack oauth.v2.access failed: ${data.error}`);
+    }
+
+    if (!data.access_token) {
+      throw new Error(
+        "Slack oauth.v2.access response missing access_token",
+      );
+    }
+
+    return { botToken: data.access_token };
   }
 
   async createAppManifest(

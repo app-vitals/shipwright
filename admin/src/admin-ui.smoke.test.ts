@@ -9,7 +9,7 @@
 import { beforeAll, describe, expect, it } from "bun:test";
 import { sign } from "hono/jwt";
 import { createAdminUIApp } from "./admin-ui.ts";
-import type { AdminUIDeps } from "./admin-ui.ts";
+import type { AdminUIDeps, AdminUISlackClient } from "./admin-ui.ts";
 import type {
   GoogleAuthClient,
   GoogleTokenResponse,
@@ -111,7 +111,23 @@ function makeGoogleClient(overrides?: {
 
 // ─── Mock deps ────────────────────────────────────────────────────────────────
 
-function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
+const BASE_SLACK_CLIENT: AdminUISlackClient = {
+  createAppManifest: async () => ({
+    appId: "A123456",
+    oauthRedirectUrl: "https://slack.com/oauth/authorize?client_id=123",
+    clientId: "test-client-id",
+    clientSecret: "test-client-secret",
+    signingSecret: "test-signing-secret",
+  }),
+  exchangeOAuthCode: async () => ({ botToken: "xoxb-mock-bot-token" }),
+};
+
+function makeMockDeps(
+  overrides?: Partial<Omit<AdminUIDeps, "slackClient">> & {
+    slackClient?: Partial<AdminUISlackClient>;
+  },
+): AdminUIDeps {
+  const { slackClient: slackClientOverride, ...rest } = overrides ?? {};
   return {
     prisma: {
       agent: {
@@ -154,6 +170,7 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
       create: async () => MOCK_CRON,
       setEnabled: async () => MOCK_CRON,
       delete: async () => {},
+      reconcileSystemCrons: async () => ({ created: 0, updated: 0, deleted: 0 }),
     },
     agentToolService: {
       list: async () => [MOCK_TOOL],
@@ -174,17 +191,9 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
     googleClientSecret: GOOGLE_CLIENT_SECRET,
     adminAllowedEmails: ADMIN_ALLOWED_EMAILS,
     googleClient: makeGoogleClient(),
-    slackClient: {
-      createAppManifest: async () => ({
-        appId: "A123456",
-        oauthRedirectUrl: "https://slack.com/oauth/authorize?client_id=123",
-        clientId: "test-client-id",
-        clientSecret: "test-client-secret",
-        signingSecret: "test-signing-secret",
-      }),
-    },
+    slackClient: { ...BASE_SLACK_CLIENT, ...slackClientOverride },
     appBaseUrl: "https://example.com",
-    ...overrides,
+    ...rest,
   };
 }
 
