@@ -1041,20 +1041,13 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }
 
     try {
-      // Store SLACK_APP_TOKEN
+      // Create scoped token first so both secrets land in one upsert
+      const { rawToken } = await agentTokenService.create(agentId, "provision");
+
       const existing = (await agentEnvService.getByAgentId(agentId)) ?? {};
       await agentEnvService.upsert(agentId, {
         ...existing,
         SLACK_APP_TOKEN: xappToken,
-      });
-
-      // Create scoped token for internal API access
-      const { rawToken } = await agentTokenService.create(agentId, "provision");
-
-      // Store SHIPWRIGHT_INTERNAL_API_KEY
-      const existing2 = (await agentEnvService.getByAgentId(agentId)) ?? {};
-      await agentEnvService.upsert(agentId, {
-        ...existing2,
         SHIPWRIGHT_INTERNAL_API_KEY: rawToken,
       });
 
