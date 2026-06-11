@@ -17,7 +17,7 @@ import {
   installPlugins,
   runMiseStartup,
 } from "./setup.ts";
-import { HttpShipwrightConfigClient } from "./shipwright-config-client.ts";
+import { HttpShipwrightRuntimeClient } from "./shipwright-runtime-client.ts";
 
 const { agentId, apiUrl, apiKey } = parseCliArgs(
   process.argv.slice(2),
@@ -28,10 +28,13 @@ const agentHome =
   process.env.AGENT_HOME ??
   join(process.env.HOME ?? "/root", ".shipwright-agent");
 
-const configClient = new HttpShipwrightConfigClient({
+const runtimeClient = new HttpShipwrightRuntimeClient({
   apiUrl: apiUrl ?? "",
   apiKey: apiKey ?? "",
 });
+const configClient = {
+  getConfig: (id: string) => runtimeClient.getAgentConfigBundle(id),
+};
 
 const SCRIPTS_BIN = join(import.meta.dir, "..", "scripts", "bin");
 const TOKEN_PATH = join(agentHome, "gh-token");

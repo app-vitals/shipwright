@@ -1,5 +1,14 @@
 import { expect, test } from "@playwright/test";
 
+// Fulfill external font CDN requests immediately so the page's 'load' event
+// fires even when CI can't reach external networks (fonts.googleapis.com, fontshare.com).
+test.beforeEach(async ({ page }) => {
+  await page.route(
+    /fonts\.googleapis\.com|fonts\.gstatic\.com|api\.fontshare\.com/,
+    (route) => route.fulfill({ status: 200, contentType: "text/css", body: "" }),
+  );
+});
+
 // Smoke test for the Shipwright Harness marketing site (SWW-1.1).
 // Relies on playwright.config.ts `webServer` to build + preview the site.
 

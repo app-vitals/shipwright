@@ -17,11 +17,8 @@
  *     bun agent/scripts/cutover-validate.ts
  */
 
-import {
-  type CheckResult,
-  HttpShipwrightConfigClient,
-  validateCutover,
-} from "../src/cutover-validate.ts";
+import { type CheckResult, validateCutover } from "../src/cutover-validate.ts";
+import { HttpShipwrightRuntimeClient } from "../src/shipwright-runtime-client.ts";
 
 const USAGE = `Usage: SHIPWRIGHT_API_URL=<url> SHIPWRIGHT_INTERNAL_API_KEY=<key> AGENT_ID=<id> bun cutover-validate.ts
 
@@ -58,7 +55,11 @@ const apiUrl = requireEnv("SHIPWRIGHT_API_URL");
 const apiKey = requireEnv("SHIPWRIGHT_INTERNAL_API_KEY");
 const agentId = requireEnv("AGENT_ID");
 
-const client = new HttpShipwrightConfigClient(apiUrl, apiKey);
+const runtimeClient = new HttpShipwrightRuntimeClient({ apiUrl, apiKey });
+const client = {
+  getConfig: (id: string) => runtimeClient.getAgentConfigBundle(id),
+  getCrons: (id: string) => runtimeClient.listAgentCronJobs(id),
+};
 
 let results: CheckResult[];
 try {

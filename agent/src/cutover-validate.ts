@@ -26,45 +26,6 @@ export interface CheckResult {
   message: string;
 }
 
-// ─── HTTP implementation ──────────────────────────────────────────────────────
-
-export class HttpShipwrightConfigClient implements ShipwrightConfigClient {
-  constructor(
-    private readonly baseUrl: string,
-    private readonly apiKey: string,
-  ) {}
-
-  private get headers(): Record<string, string> {
-    return { Authorization: `Bearer ${this.apiKey}` };
-  }
-
-  async getConfig(agentId: string): Promise<AgentConfigResponse> {
-    const res = await globalThis.fetch(
-      `${this.baseUrl}/agents/${agentId}/config`,
-      { headers: this.headers },
-    );
-    if (!res.ok) {
-      throw new Error(
-        `getConfig(${agentId}) failed: ${res.status} ${await res.text()}`,
-      );
-    }
-    return res.json() as Promise<AgentConfigResponse>;
-  }
-
-  async getCrons(agentId: string): Promise<AgentCronJob[]> {
-    const res = await globalThis.fetch(
-      `${this.baseUrl}/agents/${agentId}/crons`,
-      { headers: this.headers },
-    );
-    if (!res.ok) {
-      throw new Error(
-        `getCrons(${agentId}) failed: ${res.status} ${await res.text()}`,
-      );
-    }
-    return res.json() as Promise<AgentCronJob[]>;
-  }
-}
-
 // ─── Validation ───────────────────────────────────────────────────────────────
 
 function hasGitHubAuth(env: Record<string, string>): boolean {

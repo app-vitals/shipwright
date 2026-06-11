@@ -32,7 +32,7 @@ Mounted at `/agents/*`. The harness polls this every ~60s. Auth: **Bearer token*
 
 ### Admin CRUD API (`admin-api.ts`) — human-facing
 
-Mounted at `/admin/api/*`. Auth: **session cookie** `admin_session` (httpOnly JWT verified with `SHIPWRIGHT_SESSION_SECRET`) **or** a valid **bearer token** validated via `agentTokenService.validate()`. If an `Authorization` header is present but the token is invalid, the request is rejected immediately (401) — it does not fall through to the cookie path. Absent auth → `401`.
+Mounted at `/admin/api/*`. Auth: **session cookie** `admin_session` (httpOnly JWT verified with `SHIPWRIGHT_SESSION_SECRET`) **or** a valid **bearer token** checked in this order: (1) matched against `SHIPWRIGHT_ADMIN_API_KEYS` env keys (scope `*` → admin bypass; scope `<agentId>` → enforces route agentId), then (2) validated via `agentTokenService.validate()` (DB token path). If an `Authorization` header is present but the token is invalid in both paths, the request is rejected immediately (401) — it does not fall through to the cookie path. Absent auth → `401`.
 
 | Resource | Endpoints |
 |---|---|
@@ -91,6 +91,7 @@ All child models cascade-delete with their `Agent`.
 | `PORT` | server | Hono server port (default: `3000`). |
 | `HEALTH_PORT` | server | Health server port for `index.ts` (default: falls back to `PORT`, then `3001`). Set in Kubernetes to expose the liveness probe on a separate port from the main Hono server. |
 | `SHIPWRIGHT_SESSION_SECRET` | admin API | Secret for verifying the `admin_session` JWT cookie. |
+| `SHIPWRIGHT_ADMIN_API_KEYS` | admin API | Comma-separated `name:token:scope` tuples for env-based bearer auth on `/admin/api/*`. Scope `*` → admin (bypasses per-agent checks); scope `<agentId>` → restricted to that agent's routes. Optional — absent means env key auth is disabled and only DB tokens and session cookies are accepted. Example: `bodhi:sk_bodhi_abc:*,svc:sk_svc_xyz:agent-id-123`. |
 | `GOOGLE_CLIENT_ID` | admin UI (OAuth) | Google OAuth 2.0 client ID. Required for the admin login flow. |
 | `GOOGLE_CLIENT_SECRET` | admin UI (OAuth) | Google OAuth 2.0 client secret. Required for the admin login flow. |
 | `SHIPWRIGHT_ADMIN_ALLOWED_EMAILS` | admin UI (OAuth) | Comma-separated list of Google email addresses permitted to log in to the admin UI. |
@@ -103,6 +104,9 @@ All child models cascade-delete with their `Agent`.
 | `SHIPWRIGHT_DEV_CHAT` | dev only | Set to `"true"` to enable the unauthenticated `POST /chat` endpoint (local dev convenience). Must **not** be set in production (`NODE_ENV=production`). |
 | `SHIPWRIGHT_LOCAL_MARKETPLACE` | dev only | Absolute path to a local marketplace checkout (e.g. `/workspace/marketplace`). When set, `installPlugins` uses this path instead of the GitHub slug for every plugin install and update, so uncommitted marketplace edits take effect inside the container. |
 | `ADMIN_DEV_AUTH` | dev only | Set to `"true"` to enable `GET /admin/dev-login` (bypasses Google OAuth, mints a dev session). Hard-blocked when `NODE_ENV=production` by `dev-auth-guard.ts`. |
+| `VITALS_OS_API_URL` | migration CLI | Base URL of the vitals-os accounts API (e.g. `https://vitals-os.com`). Required by `agent/src/run-migration.ts`. |
+| `VITALS_OS_API_KEY` | migration CLI | Admin API key for the vitals-os accounts API. Required by `agent/src/run-migration.ts`. |
+| `SHIPWRIGHT_ADMIN_API_KEY` | migration CLI | Admin session token (JWT) for the Shipwright admin API (`admin_session` cookie). Required by `agent/src/run-migration.ts`. |
 
 ## Key Files
 
@@ -111,7 +115,7 @@ All child models cascade-delete with their `Agent`.
 | `admin/src/main.ts` | Standalone admin service entrypoint — runs `prisma migrate deploy`, constructs all services, and mounts health + runtime API + admin CRUD API + admin UI. Dockerfile `ENTRYPOINT`. |
 | `admin/src/api.ts` | Runtime API factory `createAgentRuntimeApp()` (DI for services). |
 | `admin/src/admin-api.ts` | Admin CRUD factory `createAdminApp()`. |
-| `admin/src/api-auth.ts` | Combined admin auth middleware (`createAdminAuthMiddleware()`) — accepts bearer token OR session cookie; bearer check runs first and does not fall through to cookie on failure. |
+| `admin/src/api-auth.ts` | Combined admin auth middleware (`createAdminAuthMiddleware()`) and env-key parser (`parseAdminApiKeys()`) — bearer check order: env API keys (scope enforcement), then DB token via `agentTokenService`; bearer path does not fall through to session cookie on failure. |
 | `admin/src/admin-ui.ts` | Admin UI factory `createAdminUIApp()` — server-rendered Hono app (login, agent list/detail, Slack provisioning) with POST mutation routes for cron jobs, tools, and tokens (create/toggle/delete/revoke). Accepts `devAuthEnabled` in `AdminUIDeps`; when true, registers `GET /admin/dev-login` (dev auto-login). |
 | `admin/src/dev-auth-guard.ts` | `isDevAuthAllowed(env)` — pure predicate over an injected env object (`DevAuthGuardEnv`). Returns `true` only when `ADMIN_DEV_AUTH=true` and `NODE_ENV !== "production"`. Mirrors the `chat-guard.ts` safety pattern. |
 | `admin/src/admin-ui-pages.ts` | Page rendering functions (`renderLoginPage`, `renderAgentsPage`, `renderAgentDetailPage`, `renderProvision*`). |
@@ -142,6 +146,9 @@ All child models cascade-delete with their `Agent`.
 | `agent/scripts/cli-args.ts` | Pure CLI helpers: `getArg(name, argv)` and `hasFlag(name, argv)` for `--name=value` and `--name value` forms. |
 | `scripts/chat.ts` | TUI REPL client for the dev `/chat` endpoint. Pure functions (`buildChatRequest`, `formatAgentResponse`, `fetchChatResponse`, `formatFetchError`) exported for unit testing; `runRepl()` drives the stdin/stdout loop. Requires `SHIPWRIGHT_DEV_CHAT=true` on the agent. |
 | `scripts/migrate-agent.ts` | One-shot agent migration script: reads env vars, tools, plugins, and crons from a source vitals-os agent via `VitalsOsClient`, then writes them to the Shipwright admin API via `AdminClient`. Idempotent — cron deduplication by `schedule+prompt`; env upsert is replace-all. Flags: `--agent-id`, `--vitals-os-url`, `--vitals-os-api-key`, `--admin-url`, `--admin-token`, `--dry-run`. |
+| `agent/src/run-migration.ts` | Bulk migration CLI entrypoint — reads `VITALS_OS_API_URL` / `VITALS_OS_API_KEY` / `SHIPWRIGHT_API_URL` / `SHIPWRIGHT_ADMIN_API_KEY` from env, constructs `HttpAccountsMigrationClient` and `HttpShipwrightAdminClient`, calls `runMigration()`, and exits non-zero on any per-agent failure. |
+| `agent/src/migrate.ts` | Core bulk migration logic (`runMigration(accountsClient, adminClient)`) — enumerates all agents from vitals-os, migrates env vars + tools + crons to Shipwright admin API. Idempotent: env replace-all, tools upsert internally, crons skip duplicates by `schedule+prompt`. Continues on per-agent failure; returns `MigrationResult` with counts and `AgentMigrationFailure[]`. |
+| `agent/src/accounts-migration-client.ts` | `AccountsMigrationClient` interface + `HttpAccountsMigrationClient` — reads agent list, config (env + tools), and crons from the vitals-os accounts API. Used by `migrate.ts`. |
 | `agent/src/shipwright-config-client.ts` | `ShipwrightConfigClient` interface + `HttpShipwrightConfigClient` — calls `GET /agents/:id/config` with Bearer auth. |
 | `agent/src/entrypoint-startup.ts` | Extracted startup logic (`runStartup(agentId, deps)`) — DI-injected for integration testing without real network or filesystem side effects. |
 | `agent/src/cron-handler.ts` | Cron runtime: `handleCronRequest()` — runs a cron prompt through Claude and posts the result to Slack. Supports `preCheck` scripts, `silent` suppression, channel vs. DM delivery, and `onPost`/`onSession` callbacks. |

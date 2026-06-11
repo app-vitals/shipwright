@@ -9,7 +9,7 @@
 import { describe, expect, it } from "bun:test";
 import { Hono } from "hono";
 import { sign } from "hono/jwt";
-import { createAdminAuthMiddleware } from "./api-auth.ts";
+import { createAdminAuthMiddleware, parseAdminApiKeys } from "./api-auth.ts";
 import type { AgentTokenService, AgentTokenValidated } from "./agent-tokens.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -37,6 +37,7 @@ async function makeSessionJwt(secret = SESSION_SECRET): Promise<string> {
 /** Build a minimal Hono app protected by the middleware under test */
 function buildApp(
   validateFn: (raw: string) => Promise<AgentTokenValidated | null>,
+  adminApiKeys?: Map<string, { name: string; scope: string }>,
 ): Hono {
   const mockTokenService: Pick<AgentTokenService, "validate"> = {
     validate: validateFn,
@@ -48,6 +49,7 @@ function buildApp(
     createAdminAuthMiddleware({
       sessionSecret: SESSION_SECRET,
       agentTokenService: mockTokenService,
+      adminApiKeys,
     }),
   );
   app.get("/test", (c) => c.json({ ok: true }));
@@ -224,5 +226,145 @@ describe("createAdminAuthMiddleware — bearer token scope enforcement", () => {
       headers: { Authorization: `Bearer ${VALID_RAW_TOKEN}` },
     });
     expect(res.status).toBe(200);
+  });
+});
+
+// ─── Admin API key tests ───────────────────────────────────────────────────────
+
+const ADMIN_TOKEN = "admin-key-scope-star";
+const SCOPED_TOKEN = "scoped-key-for-agent";
+
+describe("parseAdminApiKeys", () => {
+  it("returns empty map for undefined input", () => {
+    const map = parseAdminApiKeys(undefined);
+    expect(map.size).toBe(0);
+  });
+
+  it("returns empty map for empty string", () => {
+    const map = parseAdminApiKeys("");
+    expect(map.size).toBe(0);
+  });
+
+  it("parses a single admin key with scope=*", () => {
+    const map = parseAdminApiKeys("admin:admin-key-scope-star:*");
+    expect(map.size).toBe(1);
+    const entry = map.get("admin-key-scope-star");
+    expect(entry).toEqual({ name: "admin", scope: "*" });
+  });
+
+  it("parses a scoped key with agentId scope", () => {
+    const map = parseAdminApiKeys(`svc:${SCOPED_TOKEN}:${AGENT_ID}`);
+    expect(map.size).toBe(1);
+    expect(map.get(SCOPED_TOKEN)).toEqual({ name: "svc", scope: AGENT_ID });
+  });
+
+  it("parses multiple keys from comma-separated string", () => {
+    const map = parseAdminApiKeys(
+      `admin:${ADMIN_TOKEN}:*,svc:${SCOPED_TOKEN}:${AGENT_ID}`,
+    );
+    expect(map.size).toBe(2);
+    expect(map.get(ADMIN_TOKEN)).toEqual({ name: "admin", scope: "*" });
+    expect(map.get(SCOPED_TOKEN)).toEqual({ name: "svc", scope: AGENT_ID });
+  });
+
+  it("handles tokens with embedded colons", () => {
+    const map = parseAdminApiKeys("admin:sk:abc:def:*");
+    expect(map.size).toBe(1);
+    expect(map.get("sk:abc:def")).toEqual({ name: "admin", scope: "*" });
+  });
+
+  it("skips malformed entries with fewer than 3 parts", () => {
+    const map = parseAdminApiKeys("bad-entry,admin:token:*");
+    expect(map.size).toBe(1);
+    expect(map.get("token")).toEqual({ name: "admin", scope: "*" });
+  });
+});
+
+describe("createAdminAuthMiddleware — admin API keys", () => {
+  it("admin key with scope=* bypasses all scope enforcement", async () => {
+    const adminApiKeys = new Map([
+      [ADMIN_TOKEN, { name: "admin", scope: "*" }],
+    ]);
+    // validateFn always returns null — should NOT be called
+    let validateCalled = false;
+    const app = buildApp(async () => {
+      validateCalled = true;
+      return null;
+    }, adminApiKeys);
+
+    const res = await app.request(`/admin/api/agents/${AGENT_ID}/envs`, {
+      headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+    });
+    expect(res.status).toBe(200);
+    expect(validateCalled).toBe(false);
+  });
+
+  it("admin key accepted for any route (no agent ID in path)", async () => {
+    const adminApiKeys = new Map([
+      [ADMIN_TOKEN, { name: "admin", scope: "*" }],
+    ]);
+    const app = buildApp(async () => null, adminApiKeys);
+
+    const res = await app.request("/test", {
+      headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("scoped admin key enforces agentId match on agent routes", async () => {
+    const adminApiKeys = new Map([
+      [SCOPED_TOKEN, { name: "svc", scope: AGENT_ID }],
+    ]);
+    const app = buildApp(async () => null, adminApiKeys);
+
+    const res = await app.request("/admin/api/agents/different-agent/envs", {
+      headers: { Authorization: `Bearer ${SCOPED_TOKEN}` },
+    });
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error).toBe("Forbidden");
+  });
+
+  it("scoped admin key allows access when agentId matches scope", async () => {
+    const adminApiKeys = new Map([
+      [SCOPED_TOKEN, { name: "svc", scope: AGENT_ID }],
+    ]);
+    const app = buildApp(async () => null, adminApiKeys);
+
+    const res = await app.request(`/admin/api/agents/${AGENT_ID}/envs`, {
+      headers: { Authorization: `Bearer ${SCOPED_TOKEN}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.agentId).toBe(AGENT_ID);
+  });
+
+  it("invalid bearer 401 when neither env key nor DB token matches", async () => {
+    const adminApiKeys = new Map([
+      [ADMIN_TOKEN, { name: "admin", scope: "*" }],
+    ]);
+    const app = buildApp(async () => null, adminApiKeys);
+
+    const res = await app.request("/test", {
+      headers: { Authorization: "Bearer unknown-token" },
+    });
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.error).toBe("Unauthorized");
+  });
+
+  it("absent SHIPWRIGHT_ADMIN_API_KEYS env var is a no-op (falls through to DB path)", async () => {
+    // No adminApiKeys provided — should fall through to validateFn (DB path)
+    let validateCalled = false;
+    const app = buildApp(async (raw) => {
+      validateCalled = true;
+      return raw === VALID_RAW_TOKEN ? { agentId: AGENT_ID } : null;
+    });
+
+    const res = await app.request("/test", {
+      headers: { Authorization: `Bearer ${VALID_RAW_TOKEN}` },
+    });
+    expect(res.status).toBe(200);
+    expect(validateCalled).toBe(true);
   });
 });
