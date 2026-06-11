@@ -78,6 +78,8 @@ FROM base AS runtime
 
 WORKDIR /app
 
+ENV NODE_ENV=production
+
 # Set AGENT_HOME — the PVC should be mounted here in Kubernetes
 ENV AGENT_HOME=/data/agent-home
 

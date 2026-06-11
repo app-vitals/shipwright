@@ -45,6 +45,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
+ENV NODE_ENV=production
+
 # Copy hoisted + workspace-local node_modules from the deps stage. bun workspaces
 # install package-specific deps under the workspace dir (/app/metrics/node_modules),
 # NOT the hoisted root — both are required at runtime.

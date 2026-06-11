@@ -94,6 +94,14 @@ export interface MetricsDeps {
   dashboardToken?: string;
   /** Offline mode: skip session auth and serve /dashboard as a default local user. Default false. */
   offlineMode?: boolean;
+  /**
+   * Local-development auth bypass. Unlike offlineMode (which swaps in fixture
+   * data), this keeps the real injected provider but relaxes auth so both
+   * /dashboard AND /metrics/* are reachable with no session cookie and no
+   * Bearer token — there is no login flow in the local `task stack`. The
+   * metrics analogue of the admin service's ADMIN_DEV_AUTH. Default false.
+   */
+  dashboardDevAuth?: boolean;
   /** URL path prefix the app is mounted at (e.g. "/sw"). Injected into dashboard HTML for asset + API fetch URLs. */
   basePath?: string;
   /**
@@ -928,6 +936,9 @@ export function createMetricsApp(
   }
   const dashboardToken = deps?.dashboardToken;
   const offlineMode = deps?.offlineMode ?? false;
+  // Local-dev auth bypass for both /dashboard and /metrics/* (no login flow in
+  // `task stack`). Keeps the real provider — only relaxes auth.
+  const dashboardDevAuth = deps?.dashboardDevAuth ?? false;
   const basePath = deps?.basePath ?? process.env.METRICS_BASE_PATH ?? "";
 
   const app = new OpenAPIHono<AuthEnv>({
@@ -950,16 +961,23 @@ export function createMetricsApp(
   // Health check — no auth required
   app.get("/health", (c) => c.json({ status: "ok" }, 200));
 
-  // /metrics/* — accepts bearer token OR session cookie; returns 401 JSON on failure
+  // /metrics/* — accepts bearer token OR session cookie; returns 401 JSON on failure.
+  // In local-dev mode (dashboardDevAuth), bypass auth entirely with a synthetic
+  // caller so the browser dashboard can fetch data without a cookie or token.
   app.use(
     "/metrics/*",
-    createCombinedAuthMiddleware(
-      apiKeys,
-      sessionSecret,
-      accountsClient,
-      requireOwnerRole,
-      dashboardToken,
-    ),
+    dashboardDevAuth
+      ? createMiddleware<AuthEnv>(async (c, next) => {
+          c.set("caller", { name: "dev-auth", scope: "*" });
+          return next();
+        })
+      : createCombinedAuthMiddleware(
+          apiKeys,
+          sessionSecret,
+          accountsClient,
+          requireOwnerRole,
+          dashboardToken,
+        ),
   );
 
   const handlers = createMetricsHandlers(client, accountsClient, deps);
@@ -1045,19 +1063,19 @@ export function createMetricsApp(
     },
   };
 
-  // Dashboard routes are protected by session cookie — redirect to /admin/login on failure
-  // In offline mode: skip session auth entirely and inject a default local user
-  if (!offlineMode) {
+  // Dashboard routes are protected by session cookie — redirect to /auth/login on failure
+  // In offline / local-dev mode: skip session auth entirely and inject a default local user
+  if (!offlineMode && !dashboardDevAuth) {
     app.use("/dashboard", createSessionMiddleware(sessionSecret));
     app.use("/dashboard/*", createSessionMiddleware(sessionSecret));
   }
 
   // /dashboard — server-rendered with shared toolbar and user name from session
   app.get("/dashboard", async (c) => {
-    // Offline mode: inject a default local user, skip all session/owner checks
-    if (offlineMode) {
+    // Offline / local-dev mode: inject a default local user, skip all session/owner checks
+    if (offlineMode || dashboardDevAuth) {
       const body = renderDashboardPage({
-        userName: "Offline User",
+        userName: offlineMode ? "Offline User" : "Dev User",
         isOwner: true,
         basePath,
       });
