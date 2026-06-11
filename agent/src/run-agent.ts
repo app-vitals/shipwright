@@ -24,7 +24,6 @@ import { createChatApp } from "./chat.ts";
 import { createRunClaude } from "./claude.ts";
 import { startConfigSync } from "./config-sync.ts";
 import { createConfig } from "./config.ts";
-import { DEFAULT_HEALTH_PORT, startHealthServer } from "./health.ts";
 import { ensureAgentHome } from "./setup.ts";
 import { HttpShipwrightRuntimeClient } from "./shipwright-runtime-client.ts";
 
@@ -83,19 +82,10 @@ export async function startServer(opts?: { port?: number }): Promise<void> {
 
   const { config } = createConfig(agentHome);
 
-  // ─── Health server on dedicated port ────────────────────────────────────────
-  // The health server runs on SHIPWRIGHT_HEALTH_PORT (default 3459) — separate
-  // from the chat server so K8s liveness probes are always reachable even when
-  // chat is disabled.
-  const healthPort =
-    opts?.port !== undefined
-      ? undefined // When port is overridden (tests), skip health server to avoid port conflicts
-      : Number(process.env.SHIPWRIGHT_HEALTH_PORT ?? DEFAULT_HEALTH_PORT);
-
-  if (healthPort !== undefined) {
-    startHealthServer(healthPort);
-    console.log(`[run-agent] health server listening on port ${healthPort}`);
-  }
+  // NOTE: The health server is NOT started here.
+  // entrypoint-main.ts starts it in-process on SHIPWRIGHT_HEALTH_PORT before
+  // spawning this file as a subprocess. Starting it again here would cause
+  // EADDRINUSE — the parent process already holds the port for the pod lifetime.
 
   console.log(
     `[run-agent] starting agent ${config.shipwright.agentId ?? "(unset)"}`,

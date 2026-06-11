@@ -298,8 +298,8 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
         </thead>
         <tbody>
           {[
-            { name: "PORT", type: "number", def: "3000", desc: "Hono server port. Applies to both the admin service and the agent runtime server." },
-            { name: "HEALTH_PORT", type: "number", def: "PORT ?? 3001", desc: "Agent health server port for the K8s liveness probe." },
+            { name: "PORT", type: "number", def: "3000", desc: "Dev-only chat server port (SHIPWRIGHT_DEV_CHAT gate, DEFAULT-DENY). Not used in production." },
+            { name: "SHIPWRIGHT_HEALTH_PORT", type: "number", def: "3459", desc: "Agent health server port for the K8s liveness probe. Served in-process by entrypoint-main.ts on a dedicated port separate from the chat server." },
             { name: "NODE_ENV", type: "string", def: "—", desc: "Runtime environment. Set to production to enforce production-safety guards." },
           ].map((row) => (
             <tr style="border-bottom: 1px solid var(--sw-color-border-subtle);">
