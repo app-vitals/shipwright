@@ -14,7 +14,7 @@
 import { join } from "node:path";
 import { Hono } from "hono";
 import { PrismaClient } from "../prisma/client/index.js";
-import { createAdminApp } from "./admin-api.ts";
+import { createAdminApp, parseAdminApiKeys } from "./admin-api.ts";
 import { createAdminUIApp } from "./admin-ui.ts";
 import { AgentCronJobService } from "./agent-cron-jobs.ts";
 import { AgentEnvService } from "./agent-envs.ts";
@@ -110,6 +110,9 @@ async function startServer(): Promise<void> {
     .filter(Boolean);
   const appBaseUrl =
     process.env.SHIPWRIGHT_ADMIN_APP_BASE_URL ?? `http://localhost:${port}`;
+  const adminApiKeys = parseAdminApiKeys(
+    process.env.SHIPWRIGHT_ADMIN_API_KEYS,
+  );
 
   const googleClient = new HttpGoogleAuthClient();
   const slackClient = new HttpSlackProvisioningClient();
@@ -141,6 +144,7 @@ async function startServer(): Promise<void> {
     agentTokenService,
     agentPluginService,
     sessionSecret,
+    adminApiKeys,
   });
   root.route("/", adminApiApp);
 
