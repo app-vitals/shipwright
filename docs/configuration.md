@@ -155,10 +155,11 @@ Used only by `agent/src/run-migration.ts` when migrating agents from the Vitals 
 | Name | Type | Default | Description |
 |---|---|---|---|
 | `AGENT_HOME` | `string` | `~/.shipwright-agent` | Persistent storage root. Mount a PVC here in Kubernetes so mise caches, workspace files, and `~/.claude` survive pod restarts. |
-| `MISE_DATA_DIR` | `string` | `<AGENT_HOME>/.mise` | Override the mise data directory. Auto-derived from `AGENT_HOME`; override only if needed. |
-| `MISE_CACHE_DIR` | `string` | `<AGENT_HOME>/.mise/cache` | Override the mise cache directory. Auto-derived from `AGENT_HOME`. |
-| `XDG_CACHE_HOME` | `string` | `<AGENT_HOME>/.cache` | Override the XDG cache directory. Auto-derived from `AGENT_HOME`. |
-| `XDG_DATA_HOME` | `string` | `$HOME/.local/share` | Override the XDG data directory. Used to locate the mise data dir (`$XDG_DATA_HOME/mise`) when `MISE_DATA_DIR` is not set. |
+| `MISE_DATA_DIR` | `string` | `<AGENT_HOME>/mise` | Mise data directory. On first startup, seeded from the image's default mise location so baked tools survive pod restarts. Override only if needed. |
+| `MISE_CACHE_DIR` | `string` | `<AGENT_HOME>/mise/cache` | Override the mise cache directory. Auto-derived from `AGENT_HOME`. |
+| `XDG_CACHE_HOME` | `string` | `<AGENT_HOME>/cache` | Override the XDG cache directory. Auto-derived from `AGENT_HOME`. |
+| `XDG_DATA_HOME` | `string` | `$HOME/.local/share` | Override the XDG data directory. Used to locate the mise data dir (`$XDG_DATA_HOME/mise`) when seeding a fresh PVC. |
+| `SHIPWRIGHT_STARTUP_TIMEOUT_MS` | `number` | `60000` | Maximum milliseconds the entrypoint startup sequence may take before the agent exits. Override to a lower value (e.g. `10000`) in dev for faster fail-fast feedback. |
 | `AGENT_ALLOWED_TOOLS` | `string` (JSON array) | — | JSON array of allowed Claude tool patterns. Set by the admin service config sync; do not set manually in production. |
 
 ### Analytics
