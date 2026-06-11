@@ -19,14 +19,19 @@ export interface ShipwrightAdminMigrationClient {
 export class HttpShipwrightAdminClient
   implements ShipwrightAdminMigrationClient
 {
+  private readonly fetch: typeof globalThis.fetch;
+
   constructor(
     private readonly baseUrl: string,
-    private readonly sessionToken: string,
-  ) {}
+    private readonly apiKey: string,
+    fetch: typeof globalThis.fetch = globalThis.fetch,
+  ) {
+    this.fetch = fetch;
+  }
 
   private get headers(): Record<string, string> {
     return {
-      Cookie: `admin_session=${this.sessionToken}`,
+      Authorization: `Bearer ${this.apiKey}`,
       "Content-Type": "application/json",
     };
   }
@@ -36,7 +41,7 @@ export class HttpShipwrightAdminClient
     env: Record<string, string>,
   ): Promise<void> {
     const url = `${this.baseUrl}/admin/api/agents/${agentId}/envs`;
-    const res = await globalThis.fetch(url, {
+    const res = await this.fetch(url, {
       method: "POST",
       headers: this.headers,
       body: JSON.stringify(env),
@@ -50,7 +55,7 @@ export class HttpShipwrightAdminClient
 
   async listCrons(agentId: string): Promise<VitalsAgentCron[]> {
     const url = `${this.baseUrl}/admin/api/agents/${agentId}/crons`;
-    const res = await globalThis.fetch(url, { headers: this.headers });
+    const res = await this.fetch(url, { headers: this.headers });
     if (!res.ok) {
       throw new Error(
         `listCrons(${agentId}) failed: ${res.status} ${await res.text()}`,
@@ -62,7 +67,7 @@ export class HttpShipwrightAdminClient
 
   async createCron(agentId: string, cron: VitalsAgentCron): Promise<void> {
     const url = `${this.baseUrl}/admin/api/agents/${agentId}/crons`;
-    const res = await globalThis.fetch(url, {
+    const res = await this.fetch(url, {
       method: "POST",
       headers: this.headers,
       body: JSON.stringify(cron),
@@ -76,7 +81,7 @@ export class HttpShipwrightAdminClient
 
   async addTool(agentId: string, pattern: string): Promise<void> {
     const url = `${this.baseUrl}/admin/api/agents/${agentId}/tools`;
-    const res = await globalThis.fetch(url, {
+    const res = await this.fetch(url, {
       method: "POST",
       headers: this.headers,
       body: JSON.stringify({ pattern }),
