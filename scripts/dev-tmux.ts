@@ -154,7 +154,13 @@ export const STACK_PANES: Pane[] = [
     cmd: ["bun", "metrics/src/server.ts"],
     // SQLite persistence mode: no METRICS_OFFLINE, no POSTHOG_PROJECT_API_KEY,
     // no METRICS_DATABASE_URL → service defaults to sqlite mode.
-    env: { METRICS_DB_PATH: "state/metrics.db" },
+    // METRICS_DASHBOARD_DEV_AUTH bypasses dashboard/login auth (there is no login
+    // flow in the stack) while KEEPING the real sqlite provider — so the dashboard
+    // shows the metrics the agent actually forwards, not fixtures.
+    env: {
+      METRICS_DB_PATH: "state/metrics.db",
+      METRICS_DASHBOARD_DEV_AUTH: "true",
+    },
   },
   {
     label: "admin",
@@ -169,6 +175,10 @@ export const STACK_PANES: Pane[] = [
       // to this agent; use "*" for an admin bypass key.
       SHIPWRIGHT_ADMIN_API_KEYS: `dev-agent:${DUMMY_AGENT_API_KEY}:dev-agent`,
       ADMIN_DEV_AUTH: "true",
+      // Point the admin toolbar's "Metrics" link at the running metrics
+      // dashboard (:3460). Without this it falls back to /sw/dashboard on the
+      // admin host (:3001) and 404s.
+      METRICS_DASHBOARD_URL: `http://localhost:${METRICS_PORT}/dashboard`,
     },
   },
   {
