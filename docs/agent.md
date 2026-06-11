@@ -144,7 +144,6 @@ All child models cascade-delete with their `Agent`.
 | `agent/scripts/bin/git-credential-shipwright.sh` | Git credential helper that reads the token file written by the App auth path. |
 | `agent/scripts/entrypoint.ts` | Container entrypoint: validates env, fetches config, wires symlinks + GitHub auth, dynamic-imports `index.ts`. |
 | `agent/scripts/run-agent.ts` | Local dev launcher: fetches config, sets env, spawns the agent process. Takes `--agent-id`, `--dry-run`. |
-| `agent/scripts/bootstrap-agent.ts` | One-time agent setup: collects Slack + Anthropic credentials interactively, stores via admin API PATCH `/agents/:id/envs`. |
 | `agent/scripts/cli-args.ts` | Pure CLI helpers: `getArg(name, argv)` and `hasFlag(name, argv)` for `--name=value` and `--name value` forms. |
 | `scripts/chat.ts` | TUI REPL client for the dev `/chat` endpoint. Pure functions (`buildChatRequest`, `formatAgentResponse`, `fetchChatResponse`, `formatFetchError`) exported for unit testing; `runRepl()` drives the stdin/stdout loop. Requires `SHIPWRIGHT_DEV_CHAT=true` on the agent. |
 | `scripts/migrate-agent.ts` | One-shot agent migration script: reads env vars, tools, plugins, and crons from a source vitals-os agent via `VitalsOsClient`, then writes them to the Shipwright admin API via `AdminClient`. Idempotent — cron deduplication by `schedule+prompt`; env upsert is replace-all. Flags: `--agent-id`, `--vitals-os-url`, `--vitals-os-api-key`, `--admin-url`, `--admin-token`, `--dry-run`. |
@@ -156,7 +155,7 @@ All child models cascade-delete with their `Agent`.
 | `agent/src/cron-handler.ts` | Cron runtime: `handleCronRequest()` — runs a cron prompt through Claude and posts the result to Slack. Supports `preCheck` scripts, `silent` suppression, channel vs. DM delivery, and `onPost`/`onSession` callbacks. |
 | `agent/src/slack.ts` | Slack event handler: `createSlackApp()` — Bolt-based Socket Mode app handling DMs, `app_mention`, `reaction_added`, file attachments, and voice transcription. |
 | `agent/src/health.ts` | Health server: `startHealthServer(port, summarize?, cronDeps?, clock?, graceMs?)` — K8s liveness probe server. `GET /health` returns `{ ok: true, slack: "connected"\|"disconnected" }` (200) or `{ ok: false, slack: "disconnected" }` (500) when the Slack socket has been continuously down longer than `graceMs` (default 90 s). `GET /stats` returns an `AnalyticsSummary` when a `summarize` function is injected (404 otherwise). `POST /cron` dispatches cron prompts via `cron-handler.ts`. Exports `slackState`, `markSlackConnected()`, and `markSlackDisconnected(clock)` for Slack socket lifecycle wiring. |
-| `agent/src/slack-manifest.ts` | Typed Slack app manifest builder (`buildManifest()`) used by `agent/scripts/bootstrap-agent.ts` to create per-agent Slack apps via the Manifest API. |
+| `agent/src/slack-manifest.ts` | Typed Slack app manifest builder (`buildManifest()`) — constructs per-agent Slack app manifests via the Manifest API shape. |
 | `admin/prisma/schema.prisma` | The six-model schema (`DATABASE_URL_SHIPWRIGHT_ADMIN`). |
 
 ## Testing
