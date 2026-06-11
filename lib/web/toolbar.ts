@@ -11,6 +11,8 @@ export interface ShipwrightToolbarOptions {
   logoutAction: string;
   /** Full URL of the metrics dashboard. Defaults to "/sw/dashboard". */
   metricsUrl?: string;
+  /** Base URL of the admin service. Defaults to empty string (same origin). */
+  adminBaseUrl?: string;
 }
 
 export function baseStyles(): string {
@@ -127,13 +129,14 @@ export function renderShipwrightToolbar(
 ): string {
   const { userName, activePath, logoutAction } = opts;
   const metricsUrl = opts.metricsUrl ?? "/sw/dashboard";
+  const adminBase = opts.adminBaseUrl ?? "";
   const active = (prefix: string) =>
     activePath.startsWith(prefix) ? " active" : "";
   return `<nav class="vos-toolbar" aria-label="Site navigation">
-    <a href="/admin/agents" class="vos-wordmark">Shipwright</a>
+    <a href="${adminBase}/admin/agents" class="vos-wordmark">Shipwright</a>
     <div class="vos-nav">
-      <a href="/admin/agents" class="vos-nav-link${active("/admin/agents")}">Agents</a>
-      <a href="/admin/provision" class="vos-nav-link${active("/admin/provision")}">Provision</a>
+      <a href="${adminBase}/admin/agents" class="vos-nav-link${active("/admin/agents")}">Agents</a>
+      <a href="${adminBase}/admin/provision" class="vos-nav-link${active("/admin/provision")}">Provision</a>
       <a href="${metricsUrl}" class="vos-nav-link${active(metricsUrl)}">Metrics</a>
     </div>
     <div class="vos-user">

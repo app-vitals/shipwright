@@ -37,8 +37,14 @@ const offlineMode = mode === "fixtures";
 
 const port = Number(process.env.METRICS_API_PORT ?? 3460);
 const basePath = process.env.METRICS_BASE_PATH ?? "";
+
+if (!process.env.METRICS_ADMIN_URL && process.env.METRICS_ACCOUNTS_URL) {
+  console.warn(
+    "[metrics-api] DEPRECATION: METRICS_ACCOUNTS_URL is deprecated — rename it to METRICS_ADMIN_URL. Support will be removed in a future release.",
+  );
+}
 const accountsClient = new HttpAccountsClient(
-  process.env.METRICS_ADMIN_URL ?? "http://localhost:3000",
+  process.env.METRICS_ADMIN_URL ?? process.env.METRICS_ACCOUNTS_URL ?? "http://localhost:3000",
   process.env.METRICS_INTERNAL_API_KEY ?? "",
 );
 
