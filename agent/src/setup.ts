@@ -29,10 +29,16 @@ import type { AgentPlugin } from "@shipwright/admin";
 // Templates live at agent/workspace/ alongside this source file.
 const WORKSPACE_TEMPLATE_DIR = join(import.meta.dir, "..", "workspace");
 
+// Repo root — two levels up from agent/src/. In Docker this is /app; on the Pi
+// it resolves to the checkout root. Mirrors the vitals-os approach so the local
+// marketplace is always used regardless of whether the GitHub repo is accessible.
+const SHIPWRIGHT_REPO_ROOT = join(import.meta.dir, "..", "..");
+
+// Local marketplace name — matches the `owner` field in .claude-plugin/marketplace.json.
+const SHIPWRIGHT_MARKETPLACE = "app-vitals";
+
 // Default plugin installed on all Shipwright agents.
-const DEFAULT_PLUGINS: readonly AgentPlugin[] = [
-  { marketplace: "app-vitals/shipwright", plugin: "shipwright" },
-];
+const DEFAULT_PLUGINS: readonly string[] = ["shipwright"];
 
 /**
  * Reads a template file from agent/workspace/<name>.
@@ -185,23 +191,32 @@ export async function installPlugins(
   execFn: ExecFn = defaultExec,
   cwd: string = process.cwd(),
   agentPlugins: AgentPlugin[] = [],
+  shipwrightRepoRoot: string = SHIPWRIGHT_REPO_ROOT,
 ): Promise<void> {
   try {
-    // SHIPWRIGHT_LOCAL_MARKETPLACE: use a local path instead of the GitHub slug
-    // so uncommitted plugin edits run inside the container.
-    // Scoped to DEFAULT_PLUGINS only — agent-specific plugins always resolve
-    // their own marketplace to avoid silent redirection of unrelated installs.
-    const localMarketplace = process.env.SHIPWRIGHT_LOCAL_MARKETPLACE;
+    // Register the local marketplace so `claude plugin install` can resolve
+    // plugins by name. Idempotent — safe to call on every startup.
+    const add = await execFn(
+      "claude",
+      ["plugin", "marketplace", "add", shipwrightRepoRoot],
+      { cwd },
+    );
+    if (add.exitCode !== 0) {
+      console.warn(
+        `[agent] claude plugin marketplace add exited ${add.exitCode}: ${add.stdout}`,
+      );
+    }
 
-    const resolvedDefaultPlugins = DEFAULT_PLUGINS.map((p) => ({
-      ...p,
-      marketplace: localMarketplace ?? p.marketplace,
-    }));
-    const allPlugins = [...resolvedDefaultPlugins, ...agentPlugins];
+    const defaultPluginSpecs = DEFAULT_PLUGINS.map(
+      (name) => `${name}@${SHIPWRIGHT_MARKETPLACE}`,
+    );
+    const agentPluginSpecs = agentPlugins.map(
+      (p) => `${p.plugin}@${p.marketplace}`,
+    );
+    const allSpecs = [...defaultPluginSpecs, ...agentPluginSpecs];
 
     // Install all plugins (defaults then agent-specific)
-    for (const plugin of allPlugins) {
-      const spec = `${plugin.plugin}@${plugin.marketplace}`;
+    for (const spec of allSpecs) {
       const install = await execFn("claude", ["plugin", "install", spec], {
         cwd,
       });
@@ -213,8 +228,7 @@ export async function installPlugins(
     }
 
     // Update all plugins (defaults then agent-specific)
-    for (const plugin of allPlugins) {
-      const spec = `${plugin.plugin}@${plugin.marketplace}`;
+    for (const spec of allSpecs) {
       const update = await execFn("claude", ["plugin", "update", spec], {
         cwd,
       });
@@ -431,7 +445,10 @@ export async function runMiseStartup(
       cpSync(imageMiseDir, pvMiseDir, { recursive: true });
       console.log("[agent] seeded MISE_DATA_DIR from image on fresh PVC");
     } catch (err) {
-      console.warn("[agent] failed to seed MISE_DATA_DIR from image — continuing without PVC shims", err);
+      console.warn(
+        "[agent] failed to seed MISE_DATA_DIR from image — continuing without PVC shims",
+        err,
+      );
     }
   }
   process.env.MISE_DATA_DIR = pvMiseDir;
