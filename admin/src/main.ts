@@ -6,7 +6,7 @@
  *
  * Route mount order (important — avoids shadowing):
  *   GET  /health                 — health check (no auth)
- *   *    /agents/*               — runtime API  (Bearer SHIPWRIGHT_INTERNAL_API_KEY)
+ *   *    /agents/*               — runtime API  (admin key | per-agent bearer | session JWT)
  *                                  + admin CRUD API (admin key | per-agent bearer | session JWT)
  *   *    /admin/*                — admin UI       (session JWT)
  *
@@ -105,7 +105,6 @@ async function startServer(): Promise<void> {
   const agentPluginService = new AgentPluginService(prisma);
 
   // Read config values at call time (no module-level env reads)
-  const internalApiKey = process.env.SHIPWRIGHT_INTERNAL_API_KEY ?? "";
   const sessionSecret = process.env.SHIPWRIGHT_SESSION_SECRET ?? "";
   const googleClientId = process.env.GOOGLE_CLIENT_ID ?? "";
   const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET ?? "";
@@ -125,7 +124,7 @@ async function startServer(): Promise<void> {
   // 1. Health check — no auth
   root.get("/health", (c) => c.json({ status: "ok" }));
 
-  // 2. Runtime API — Bearer SHIPWRIGHT_INTERNAL_API_KEY
+  // 2. Runtime API — admin key | per-agent bearer | session JWT
   //    Mounted via root.route("/agents", runtimeApp). Hono v4 strips the prefix
   //    before dispatching, so runtimeApp routes are registered as /:id/config
   //    and /:id/crons (without the /agents prefix) and resolve correctly at
@@ -134,7 +133,9 @@ async function startServer(): Promise<void> {
     agentEnvService,
     agentCronJobService,
     prisma: prisma as never,
-    internalApiKey,
+    sessionSecret,
+    adminApiKeys,
+    agentTokenService,
   });
 
   root.route("/agents", runtimeApp);

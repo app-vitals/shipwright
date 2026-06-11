@@ -11,7 +11,6 @@
 #     -e GOOGLE_CLIENT_SECRET=... \
 #     -e SHIPWRIGHT_ADMIN_ALLOWED_EMAILS=admin@example.com \
 #     -e SHIPWRIGHT_ADMIN_APP_BASE_URL=https://admin.example.com \
-#     -e SHIPWRIGHT_INTERNAL_API_KEY=... \
 #     -p 3000:3000 \
 #     shipwright-admin
 

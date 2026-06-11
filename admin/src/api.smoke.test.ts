@@ -5,6 +5,9 @@
  * mounted via root.route("/agents", runtimeApp) — Hono v4 strips the prefix
  * before dispatching, so root-level paths are /agents/:id/config etc.
  * Uses injected mocks — no real DB or encryption needed.
+ *
+ * Auth: routes are now protected by the same admin-key/per-agent-token/cookie
+ * auth as the CRUD routes (SHIPWRIGHT_INTERNAL_API_KEY removed, UNI-1.2).
  */
 
 import { describe, expect, test } from "bun:test";
@@ -93,7 +96,8 @@ function makeMockPrisma(
 
 const KNOWN_AGENT_ID = "agent-123";
 const UNKNOWN_AGENT_ID = "agent-999";
-const VALID_API_KEY = "test-internal-key";
+const VALID_ADMIN_KEY = "test-admin-key";
+const SESSION_SECRET = "test-session-secret-32bytes!!!!";
 
 function makeDate(offset = 0): Date {
   return new Date(Date.now() + offset);
@@ -167,7 +171,9 @@ function buildApp(opts?: {
     agentEnvService: makeMockAgentEnvService(bundles),
     agentCronJobService: makeMockAgentCronJobService(cronMap),
     prisma: makeMockPrisma(agents, pluginMap) as never,
-    internalApiKey: VALID_API_KEY,
+    adminApiKeys: parseAdminApiKeys(`admin:${VALID_ADMIN_KEY}:*`),
+    agentTokenService: { validate: async () => null },
+    sessionSecret: SESSION_SECRET,
   });
 }
 
@@ -177,7 +183,7 @@ describe("GET /:id/config (mounted as GET /agents/:id/config from root)", () => 
   test("200 with full bundle when agent exists with env vars, tools, plugins", async () => {
     const app = buildApp();
     const res = await app.request(`/${KNOWN_AGENT_ID}/config`, {
-      headers: { Authorization: `Bearer ${VALID_API_KEY}` },
+      headers: { Authorization: `Bearer ${VALID_ADMIN_KEY}` },
     });
 
     expect(res.status).toBe(200);
@@ -201,7 +207,7 @@ describe("GET /:id/config (mounted as GET /agents/:id/config from root)", () => 
       ],
     });
     const res = await app.request(`/${KNOWN_AGENT_ID}/config`, {
-      headers: { Authorization: `Bearer ${VALID_API_KEY}` },
+      headers: { Authorization: `Bearer ${VALID_ADMIN_KEY}` },
     });
 
     expect(res.status).toBe(200);
@@ -216,7 +222,7 @@ describe("GET /:id/config (mounted as GET /agents/:id/config from root)", () => 
   test("200 with empty env and tools when agent has no env vars set", async () => {
     const app = buildApp({ bundleOrNull: null });
     const res = await app.request(`/${KNOWN_AGENT_ID}/config`, {
-      headers: { Authorization: `Bearer ${VALID_API_KEY}` },
+      headers: { Authorization: `Bearer ${VALID_ADMIN_KEY}` },
     });
 
     expect(res.status).toBe(200);
@@ -252,7 +258,7 @@ describe("GET /:id/config (mounted as GET /agents/:id/config from root)", () => 
   test("404 for unknown agent ID", async () => {
     const app = buildApp();
     const res = await app.request(`/${UNKNOWN_AGENT_ID}/config`, {
-      headers: { Authorization: `Bearer ${VALID_API_KEY}` },
+      headers: { Authorization: `Bearer ${VALID_ADMIN_KEY}` },
     });
 
     expect(res.status).toBe(404);
@@ -265,7 +271,7 @@ describe("GET /:id/crons (mounted as GET /agents/:id/crons from root)", () => {
   test("200 with cron list for known agent", async () => {
     const app = buildApp();
     const res = await app.request(`/${KNOWN_AGENT_ID}/crons`, {
-      headers: { Authorization: `Bearer ${VALID_API_KEY}` },
+      headers: { Authorization: `Bearer ${VALID_ADMIN_KEY}` },
     });
 
     expect(res.status).toBe(200);
@@ -300,7 +306,7 @@ describe("GET /:id/crons (mounted as GET /agents/:id/crons from root)", () => {
   test("404 for unknown agent ID", async () => {
     const app = buildApp();
     const res = await app.request(`/${UNKNOWN_AGENT_ID}/crons`, {
-      headers: { Authorization: `Bearer ${VALID_API_KEY}` },
+      headers: { Authorization: `Bearer ${VALID_ADMIN_KEY}` },
     });
 
     expect(res.status).toBe(404);
@@ -318,7 +324,6 @@ describe("GET /:id/crons (mounted as GET /agents/:id/crons from root)", () => {
 // Before the fix, runtimeApp.use("*") was hoisted as a /agents/* guard in root,
 // causing all admin CRUD requests to 401 before reaching adminApiApp handlers.
 
-const COMBINED_INTERNAL_KEY = "combined-test-internal-key";
 const COMBINED_ADMIN_KEY = "combined-test-admin-key";
 const COMBINED_SESSION_SECRET = "combined-test-session-secret-32b!";
 const COMBINED_AGENT_ID = "combined-agent-123";
@@ -347,7 +352,9 @@ function buildCombinedApp() {
         },
       },
     } as never,
-    internalApiKey: COMBINED_INTERNAL_KEY,
+    adminApiKeys: parseAdminApiKeys(`admin:${COMBINED_ADMIN_KEY}:*`),
+    agentTokenService: { validate: async () => null },
+    sessionSecret: COMBINED_SESSION_SECRET,
   });
 
   const adminApp = createAdminApp({
@@ -498,22 +505,20 @@ describe("combined server — regression guard: runtime middleware must not bloc
         Authorization: `Bearer ${COMBINED_ADMIN_KEY}`,
       },
     });
-    // Before the fix: runtime app.use("*") intercepted with 401
-    // After the fix: per-route middleware means only /:id/config and /:id/crons
-    // check the internal key; admin CRUD reaches the admin handler → 201
+    // Both runtimeApp and adminApp use the same admin auth — admin key works for all routes.
     expect(res.status).toBe(201);
   });
 
-  test("runtime GET /agents/:id/config still requires internal key (401 without it)", async () => {
+  test("runtime GET /agents/:id/config still requires auth (401 without it)", async () => {
     const root = buildCombinedApp();
     const res = await root.request(`/agents/${COMBINED_AGENT_ID}/config`);
     expect(res.status).toBe(401);
   });
 
-  test("runtime GET /agents/:id/config succeeds with correct internal key (200)", async () => {
+  test("runtime GET /agents/:id/config succeeds with admin key (200)", async () => {
     const root = buildCombinedApp();
     const res = await root.request(`/agents/${COMBINED_AGENT_ID}/config`, {
-      headers: { Authorization: `Bearer ${COMBINED_INTERNAL_KEY}` },
+      headers: { Authorization: `Bearer ${COMBINED_ADMIN_KEY}` },
     });
     expect(res.status).toBe(200);
   });

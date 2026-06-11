@@ -26,7 +26,6 @@ export class HttpShipwrightAdminClient
   constructor(
     private readonly baseUrl: string,
     private readonly adminApiKey: string,
-    private readonly internalApiKey: string,
     fetch: FetchFn = globalThis.fetch,
   ) {
     this.fetch = fetch;
@@ -57,15 +56,11 @@ export class HttpShipwrightAdminClient
   }
 
   async listCrons(agentId: string): Promise<VitalsAgentCron[]> {
-    // GET /agents/:id/crons is the runtime endpoint — it requires the internal
-    // API key (Bearer SHIPWRIGHT_INTERNAL_API_KEY), not the admin key.
+    // GET /agents/:id/crons now uses the same admin key as other admin routes.
     // The runtime endpoint returns a flat AgentCronJob[] (not { crons: [...] }).
     const url = `${this.baseUrl}/agents/${agentId}/crons`;
     const res = await this.fetch(url, {
-      headers: {
-        Authorization: `Bearer ${this.internalApiKey}`,
-        "Content-Type": "application/json",
-      },
+      headers: this.headers,
     });
     if (!res.ok) {
       throw new Error(

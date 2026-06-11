@@ -23,5 +23,5 @@ process.env.ANTHROPIC_MODEL = "claude-opus-4-6";
 process.env.SLACK_ALERT_CHANNEL = "#alerts";
 process.env.SLACK_OWNER_USER = "U12345";
 process.env.SHIPWRIGHT_API_URL = "https://api.shipwright.app";
-process.env.SHIPWRIGHT_INTERNAL_API_KEY = "key-123";
+process.env.SHIPWRIGHT_AGENT_API_KEY = "key-123";
 process.env.SHIPWRIGHT_AGENT_ID = "agent-test-123";

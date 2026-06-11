@@ -44,6 +44,6 @@ export function parseCliArgs(
   return {
     agentId: flags.agentId ?? env.SHIPWRIGHT_AGENT_ID,
     apiUrl: flags.apiUrl ?? env.SHIPWRIGHT_API_URL,
-    apiKey: flags.apiKey ?? env.SHIPWRIGHT_INTERNAL_API_KEY,
+    apiKey: flags.apiKey ?? env.SHIPWRIGHT_AGENT_API_KEY,
   };
 }
