@@ -415,6 +415,23 @@ describe("renderDashboardPage — MG-1.2 clickable metric graphs", () => {
   });
 });
 
+describe("renderDashboardPage — basePath", () => {
+  test("sets window.__METRICS_BASE__ to the provided basePath", () => {
+    const html = renderDashboardPage({ userName: "Alice", basePath: "/sw" });
+    expect(html).toContain("window.__METRICS_BASE__ = '/sw'");
+  });
+
+  test("prefixes the stylesheet href with basePath", () => {
+    const html = renderDashboardPage({ userName: "Alice", basePath: "/sw" });
+    expect(html).toContain('href="/sw/dashboard/styles.css"');
+  });
+
+  test("prefixes the app script src with basePath", () => {
+    const html = renderDashboardPage({ userName: "Alice", basePath: "/sw" });
+    expect(html).toContain('src="/sw/dashboard/app.js"');
+  });
+});
+
 describe("renderDashboardPage — TK-1.2 token trends chart", () => {
   test("includes token trends chart canvas in Token Usage section", () => {
     const html = renderDashboardPage(BASE_OPTS);
