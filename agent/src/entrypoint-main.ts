@@ -7,19 +7,16 @@
  * Run via: bun run agent/src/entrypoint-main.ts [--agent-id X] [--api-url Y] [--api-key Z]
  */
 
-import {
-  existsSync,
-  lstatSync,
-  rmSync,
-  symlinkSync,
-  unlinkSync,
-} from "node:fs";
 import { join } from "node:path";
 import { parseCliArgs } from "./cli-args.ts";
 import { runEntrypoint } from "./entrypoint.ts";
 import { createGitHubTokenManager, getBotIdentity } from "./github-app-auth.ts";
 import { setupGitHubAuth } from "./setup-github-auth.ts";
-import { installPlugins, runMiseStartup } from "./setup.ts";
+import {
+  ensureDotClaudeSymlink,
+  installPlugins,
+  runMiseStartup,
+} from "./setup.ts";
 import { HttpShipwrightRuntimeClient } from "./shipwright-runtime-client.ts";
 
 const { agentId, apiUrl, apiKey } = parseCliArgs(
@@ -68,21 +65,7 @@ await runEntrypoint({
       process.env[k] = v;
     }
   },
-  symlinkDotClaude: (target: string, linkPath: string) => {
-    if (existsSync(linkPath)) {
-      // Remove stale symlink or directory before relinking
-      if (lstatSync(linkPath).isSymbolicLink()) {
-        unlinkSync(linkPath);
-      } else {
-        console.warn(
-          "[entrypoint] ~/.claude is a real directory — removing before symlinking",
-        );
-        rmSync(linkPath, { recursive: true });
-      }
-    }
-    symlinkSync(target, linkPath);
-    console.log(`[entrypoint] symlinked ${linkPath} → ${target}`);
-  },
+  symlinkDotClaude: ensureDotClaudeSymlink,
   setupGitHubAuth: async () => {
     await setupGitHubAuth({
       env: process.env as Record<string, string | undefined>,
