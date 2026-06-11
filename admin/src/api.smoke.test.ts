@@ -1,6 +1,9 @@
 /**
  * agent/src/api.smoke.test.ts
- * Smoke tests for the Hono runtime API — GET /agents/:id/config and GET /agents/:id/crons.
+ * Smoke tests for the Hono runtime API — GET /:id/config and GET /:id/crons.
+ * Routes are registered without the /agents prefix because the sub-app is
+ * mounted via root.route("/agents", runtimeApp) — Hono v4 strips the prefix
+ * before dispatching, so root-level paths are /agents/:id/config etc.
  * Uses injected mocks — no real DB or encryption needed.
  */
 
@@ -167,10 +170,10 @@ function buildApp(opts?: {
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
-describe("GET /agents/:id/config", () => {
+describe("GET /:id/config (mounted as GET /agents/:id/config from root)", () => {
   test("200 with full bundle when agent exists with env vars, tools, plugins", async () => {
     const app = buildApp();
-    const res = await app.request(`/agents/${KNOWN_AGENT_ID}/config`, {
+    const res = await app.request(`/${KNOWN_AGENT_ID}/config`, {
       headers: { Authorization: `Bearer ${VALID_API_KEY}` },
     });
 
@@ -194,7 +197,7 @@ describe("GET /agents/:id/config", () => {
         makePlugin(KNOWN_AGENT_ID, "unscoped-plugin"),
       ],
     });
-    const res = await app.request(`/agents/${KNOWN_AGENT_ID}/config`, {
+    const res = await app.request(`/${KNOWN_AGENT_ID}/config`, {
       headers: { Authorization: `Bearer ${VALID_API_KEY}` },
     });
 
@@ -209,7 +212,7 @@ describe("GET /agents/:id/config", () => {
 
   test("200 with empty env and tools when agent has no env vars set", async () => {
     const app = buildApp({ bundleOrNull: null });
-    const res = await app.request(`/agents/${KNOWN_AGENT_ID}/config`, {
+    const res = await app.request(`/${KNOWN_AGENT_ID}/config`, {
       headers: { Authorization: `Bearer ${VALID_API_KEY}` },
     });
 
@@ -225,7 +228,7 @@ describe("GET /agents/:id/config", () => {
 
   test("401 when no Authorization header", async () => {
     const app = buildApp();
-    const res = await app.request(`/agents/${KNOWN_AGENT_ID}/config`);
+    const res = await app.request(`/${KNOWN_AGENT_ID}/config`);
 
     expect(res.status).toBe(401);
     const body = await res.json();
@@ -234,7 +237,7 @@ describe("GET /agents/:id/config", () => {
 
   test("401 when wrong API key", async () => {
     const app = buildApp();
-    const res = await app.request(`/agents/${KNOWN_AGENT_ID}/config`, {
+    const res = await app.request(`/${KNOWN_AGENT_ID}/config`, {
       headers: { Authorization: "Bearer wrong-key" },
     });
 
@@ -245,7 +248,7 @@ describe("GET /agents/:id/config", () => {
 
   test("404 for unknown agent ID", async () => {
     const app = buildApp();
-    const res = await app.request(`/agents/${UNKNOWN_AGENT_ID}/config`, {
+    const res = await app.request(`/${UNKNOWN_AGENT_ID}/config`, {
       headers: { Authorization: `Bearer ${VALID_API_KEY}` },
     });
 
@@ -255,10 +258,10 @@ describe("GET /agents/:id/config", () => {
   });
 });
 
-describe("GET /agents/:id/crons", () => {
+describe("GET /:id/crons (mounted as GET /agents/:id/crons from root)", () => {
   test("200 with cron list for known agent", async () => {
     const app = buildApp();
-    const res = await app.request(`/agents/${KNOWN_AGENT_ID}/crons`, {
+    const res = await app.request(`/${KNOWN_AGENT_ID}/crons`, {
       headers: { Authorization: `Bearer ${VALID_API_KEY}` },
     });
 
@@ -273,7 +276,7 @@ describe("GET /agents/:id/crons", () => {
 
   test("401 when no Authorization header", async () => {
     const app = buildApp();
-    const res = await app.request(`/agents/${KNOWN_AGENT_ID}/crons`);
+    const res = await app.request(`/${KNOWN_AGENT_ID}/crons`);
 
     expect(res.status).toBe(401);
     const body = await res.json();
@@ -282,7 +285,7 @@ describe("GET /agents/:id/crons", () => {
 
   test("401 when wrong API key", async () => {
     const app = buildApp();
-    const res = await app.request(`/agents/${KNOWN_AGENT_ID}/crons`, {
+    const res = await app.request(`/${KNOWN_AGENT_ID}/crons`, {
       headers: { Authorization: "Bearer wrong-key" },
     });
 
@@ -293,7 +296,7 @@ describe("GET /agents/:id/crons", () => {
 
   test("404 for unknown agent ID", async () => {
     const app = buildApp();
-    const res = await app.request(`/agents/${UNKNOWN_AGENT_ID}/crons`, {
+    const res = await app.request(`/${UNKNOWN_AGENT_ID}/crons`, {
       headers: { Authorization: `Bearer ${VALID_API_KEY}` },
     });
 

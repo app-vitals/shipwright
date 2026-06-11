@@ -145,13 +145,6 @@ export function createAdminApp(deps: AdminDeps): Hono {
     return c.json({ cron }, 201);
   });
 
-  // GET /agents/:id/crons — list cron jobs
-  app.get("/agents/:id/crons", async (c) => {
-    const agentId = c.req.param("id");
-    const crons: AgentCronJob[] = await agentCronJobService.list(agentId);
-    return c.json({ crons });
-  });
-
   // POST /agents/:id/crons/reconcile — static path must precede /:cronId routes
   app.post("/agents/:id/crons/reconcile", async (c) => {
     const agentId = c.req.param("id");

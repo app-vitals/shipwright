@@ -128,7 +128,10 @@ async function startServer(): Promise<void> {
   root.get("/health", (c) => c.json({ status: "ok" }));
 
   // 2. Runtime API — Bearer SHIPWRIGHT_INTERNAL_API_KEY
-  //    Mounted directly at /agents so its routes coexist with admin CRUD routes.
+  //    Mounted via root.route("/agents", runtimeApp). Hono v4 strips the prefix
+  //    before dispatching, so runtimeApp routes are registered as /:id/config
+  //    and /:id/crons (without the /agents prefix) and resolve correctly at
+  //    GET /agents/:id/config and GET /agents/:id/crons from root.
   const runtimeApp = createAgentRuntimeApp({
     agentEnvService,
     agentCronJobService,

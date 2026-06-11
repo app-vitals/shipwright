@@ -223,12 +223,6 @@ describe("admin API — auth", () => {
     expect(res.status).toBe(401);
   });
 
-  it("unauthenticated GET /agents/:id/crons returns 401", async () => {
-    const app = createAdminApp(makeMockDeps());
-    const res = await app.request(`/agents/${AGENT_ID}/crons`);
-    expect(res.status).toBe(401);
-  });
-
   it("unauthenticated DELETE /agents/:id/crons/:cronId returns 401", async () => {
     const app = createAdminApp(makeMockDeps());
     const res = await app.request(
@@ -357,17 +351,6 @@ describe("admin API — cron jobs", () => {
       },
     });
     expect(res.status).toBe(201);
-  });
-
-  it("GET /agents/:id/crons returns list", async () => {
-    const app = createAdminApp(makeMockDeps());
-    const res = await app.request(`/agents/${AGENT_ID}/crons`, {
-      headers: { Cookie: `admin_session=${cookie}` },
-    });
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(Array.isArray(body.crons)).toBe(true);
-    expect(body.crons).toHaveLength(1);
   });
 
   it("PATCH /agents/:id/crons/:cronId updates and returns 200", async () => {
@@ -640,15 +623,6 @@ describe("admin API — bearer token auth", () => {
     const deps = makeDepsWithTokenValidation(async () => ({ agentId: AGENT_ID }));
     const app = createAdminApp(deps);
     const res = await app.request(`/agents/${AGENT_ID}/envs`, {
-      headers: { Authorization: `Bearer ${VALID_BEARER_TOKEN}` },
-    });
-    expect(res.status).toBe(200);
-  });
-
-  it("GET /agents/:id/crons accepts a valid bearer token (200)", async () => {
-    const deps = makeDepsWithTokenValidation(async () => ({ agentId: AGENT_ID }));
-    const app = createAdminApp(deps);
-    const res = await app.request(`/agents/${AGENT_ID}/crons`, {
       headers: { Authorization: `Bearer ${VALID_BEARER_TOKEN}` },
     });
     expect(res.status).toBe(200);

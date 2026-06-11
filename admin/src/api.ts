@@ -1,8 +1,12 @@
 /**
  * agent/src/api.ts
- * Hono runtime API — GET /agents/:id/config and GET /agents/:id/crons.
+ * Hono runtime API — GET /:id/config and GET /:id/crons.
  *
- * Mounted at /agents/*. Auth via SHIPWRIGHT_INTERNAL_API_KEY bearer token.
+ * Mounted at /agents/* via root.route("/agents", runtimeApp).
+ * Hono v4's .route() strips the prefix before dispatching — routes must be
+ * registered without the /agents prefix so they resolve correctly at
+ * GET /agents/:id/config and GET /agents/:id/crons from the root.
+ * Auth via SHIPWRIGHT_INTERNAL_API_KEY bearer token.
  * This is the endpoint the harness polls every 60s.
  */
 
@@ -51,7 +55,12 @@ export interface AgentRuntimeDeps {
 
 // ─── openapi-fetch paths type ─────────────────────────────────────────────────
 
-/** Typed paths for the two runtime GET endpoints — use with createClient<RuntimeApiPaths>(). */
+/**
+ * Typed paths for the two runtime GET endpoints — use with createClient<RuntimeApiPaths>().
+ *
+ * These paths reflect the full URL as seen by clients (root-level paths),
+ * not the sub-app registration paths (which omit the /agents prefix).
+ */
 export interface RuntimeApiPaths {
   "/agents/{agentId}/config": {
     get: {
@@ -124,9 +133,10 @@ export function createAgentRuntimeApp(deps: AgentRuntimeDeps): Hono {
     await next();
   });
 
-  // ─── GET /agents/:id/config ───────────────────────────────────────────────
+  // ─── GET /:id/config ─────────────────────────────────────────────────────
+  //     Reachable from root as GET /agents/:id/config (Hono v4 strips prefix)
 
-  app.get("/agents/:id/config", async (c) => {
+  app.get("/:id/config", async (c) => {
     const id = c.req.param("id");
 
     // Check agent existence
@@ -158,9 +168,10 @@ export function createAgentRuntimeApp(deps: AgentRuntimeDeps): Hono {
     return c.json(response, 200);
   });
 
-  // ─── GET /agents/:id/crons ────────────────────────────────────────────────
+  // ─── GET /:id/crons ──────────────────────────────────────────────────────
+  //     Reachable from root as GET /agents/:id/crons (Hono v4 strips prefix)
 
-  app.get("/agents/:id/crons", async (c) => {
+  app.get("/:id/crons", async (c) => {
     const id = c.req.param("id");
 
     // Check agent existence
