@@ -1,6 +1,6 @@
 /**
- * agent/src/admin-api.smoke.test.ts
- * Smoke tests for the admin CRUD API (admin/src/admin-api.ts).
+ * agent/src/agents-api.smoke.test.ts
+ * Smoke tests for the admin CRUD API (admin/src/agents-api.ts).
  *
  * Uses app.request() — no real server, no real DB.
  * Services are injected as in-memory mocks.
@@ -8,8 +8,8 @@
 
 import { beforeAll, describe, expect, it } from "bun:test";
 import { sign } from "hono/jwt";
-import { createAdminApp, parseAdminApiKeys } from "./admin-api.ts";
-import type { AdminDeps } from "./admin-api.ts";
+import { createAdminApp, parseAdminApiKeys } from "./agents-api.ts";
+import type { AdminDeps } from "./agents-api.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
