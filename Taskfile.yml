@@ -67,9 +67,15 @@ tasks:
       - bun scripts/dev.ts
 
   stack:
+    aliases: [stack:up]
     desc: Launch the full dev stack in a tmux session (5 panes — metrics :3460, admin :3001, agent :3000, chat REPL, logs). Requires tmux; falls back to `task dev`.
     cmds:
       - bun scripts/dev-tmux.ts
+
+  stack:down:
+    desc: Tear down the dev stack — kill the tmux session and stop/remove the agent Docker container (which `tmux kill-session` alone leaves running).
+    cmds:
+      - bun scripts/dev-tmux.ts --down
 
   db:provision:
     desc: Create the admin database (idempotent — safe to re-run)

@@ -52,6 +52,9 @@ const DUMMY_POSTHOG_KEY = "phc_dev_dummy";
 const DUMMY_ENCRYPTION_KEY =
   "0000000000000000000000000000000000000000000000000000000000000000";
 const DUMMY_INTERNAL_API_KEY = "dev-internal-key";
+// Session-cookie signing key (HS256). Must be non-empty — Web Crypto rejects a
+// zero-length HMAC key with "DataError", which surfaces as a 500 on first login.
+const DUMMY_SESSION_SECRET = "dev-session-secret-not-for-production-use!";
 /** Docker image tag for the agent container. */
 const DEV_DOCKER_IMAGE = "shipwright-agent-dev";
 /** Named Docker volume that persists agent-home across container restarts. */
@@ -157,6 +160,7 @@ export const STACK_PANES: Pane[] = [
       DATABASE_URL_SHIPWRIGHT_ADMIN: DEV_DATABASE_URL,
       SHIPWRIGHT_ENCRYPTION_KEY: DUMMY_ENCRYPTION_KEY,
       SHIPWRIGHT_INTERNAL_API_KEY: DUMMY_INTERNAL_API_KEY,
+      SHIPWRIGHT_SESSION_SECRET: DUMMY_SESSION_SECRET,
       ADMIN_DEV_AUTH: "true",
     },
   },
@@ -303,6 +307,33 @@ export function buildStackCommands(
     argv: ["select-layout", "-t", `${session}:${WINDOW_INDEX}`, "tiled"],
   });
 
+  // 2b. Label every pane with its service name via a titled top border.
+  // pane-border-status/format are WINDOW options (set once with `-w`); each
+  // pane's title comes from its `label`. Scoped to THIS session via `-t`, so
+  // the user's global tmux config is untouched. The final chat-focus
+  // select-pane below runs after these, so it still wins the active pane.
+  cmds.push({
+    kind: "set-option",
+    argv: ["set-option", "-w", "-t", session, "pane-border-status", "top"],
+  });
+  cmds.push({
+    kind: "set-option",
+    argv: [
+      "set-option",
+      "-w",
+      "-t",
+      session,
+      "pane-border-format",
+      " #{pane_title} ",
+    ],
+  });
+  panes.forEach((pane, i) => {
+    cmds.push({
+      kind: "select-pane",
+      argv: ["select-pane", "-t", paneTarget(session, i), "-T", pane.label],
+    });
+  });
+
   const adminIndex = panes.findIndex((p) => p.label === "admin");
   const agentIndex = panes.findIndex((p) => p.label === "agent");
 
@@ -440,8 +471,38 @@ export function sessionExistsMessage(name: string): string {
   return [
     `[stack] session '${name}' already running — not rebuilding it.`,
     `[stack]   attach: tmux attach -t ${name}`,
-    `[stack]   reset:  tmux kill-session -t ${name}  (then re-run task stack)`,
+    `[stack]   reset:  tmux kill-session -t ${name}  (or: task stack:down, then re-run task stack)`,
   ].join("\n");
+}
+
+/**
+ * Teardown commands for `task stack:down`: kill the tmux session, then stop and
+ * remove the agent Docker container. The container is started by `docker run`
+ * inside a pane, so killing the tmux session orphans it — the daemon keeps it
+ * running. This explicitly removes it. Pure (returns argv lists); runTeardown()
+ * drives the injected exec. Reuses SESSION_NAME / DEV_DOCKER_IMAGE so the names
+ * never drift from the launch side.
+ */
+export function buildTeardownCommands(
+  session: string = SESSION_NAME,
+  container: string = DEV_DOCKER_IMAGE,
+): string[][] {
+  return [
+    ["tmux", "kill-session", "-t", session],
+    ["docker", "rm", "-f", container],
+  ];
+}
+
+/**
+ * Runs each teardown command via the injected exec. Best-effort: a non-zero
+ * exit just means that resource was already gone, so `stack:down` is safe to
+ * run when nothing is up. Returns one result per command for logging.
+ */
+export function runTeardown(
+  commands: string[][],
+  exec: (argv: string[]) => number,
+): Array<{ argv: string[]; ok: boolean }> {
+  return commands.map((argv) => ({ argv, ok: exec(argv) === 0 }));
 }
 
 /**
@@ -703,6 +764,21 @@ async function ensurePostgresReady(databaseUrl: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 if (import.meta.main) {
+  // `task stack:down` — tear down the session AND remove the orphaned agent
+  // container. Runs before any tmux/postgres checks so it works even when the
+  // session is half-gone. Best-effort: argv arrays, no shell (no injection).
+  if (Bun.argv.includes("--down")) {
+    const exec = (argv: string[]): number =>
+      Bun.spawnSync(argv, { stdout: "ignore", stderr: "ignore" }).exitCode ?? 1;
+    for (const { argv, ok } of runTeardown(buildTeardownCommands(), exec)) {
+      console.log(
+        `[stack:down] ${argv.join(" ")} ${ok ? "✓" : "(nothing to do)"}`,
+      );
+    }
+    console.log("[stack:down] dev stack stopped.");
+    process.exit(0);
+  }
+
   if (!tmuxIsInstalled()) {
     console.error(NO_TMUX_MESSAGE);
     process.exit(1);

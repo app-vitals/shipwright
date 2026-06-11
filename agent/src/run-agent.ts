@@ -21,9 +21,11 @@ import { Hono } from "hono";
 import type { ChatRunner } from "./chat.ts";
 import { createChatApp } from "./chat.ts";
 import { createRunClaude } from "./claude.ts";
+import { startConfigSync } from "./config-sync.ts";
 import { createConfig } from "./config.ts";
 import { createHealthApp } from "./health.ts";
 import { ensureAgentHome } from "./setup.ts";
+import { HttpShipwrightRuntimeClient } from "./shipwright-runtime-client.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -117,6 +119,23 @@ export async function startServer(opts?: { port?: number }): Promise<void> {
   );
 
   const adminApiUrl = process.env.SHIPWRIGHT_API_URL ?? "";
+
+  // Restore the 60s config-sync poll (see config-sync.ts). Without it the agent
+  // only ever sees the entrypoint's one-shot config fetch, so config changes
+  // made after startup — e.g. a newly-added GH_TOKEN — never reach the running
+  // process. Disabled (logged) when the runtime API coordinates aren't all set.
+  const { agentId, apiUrl, apiKey } = config.shipwright;
+  if (apiUrl && apiKey && agentId) {
+    await startConfigSync({
+      source: new HttpShipwrightRuntimeClient({ apiUrl, apiKey }),
+      agentId,
+      defaultModel: config.claude.model,
+    });
+  } else {
+    console.log(
+      "[run-agent] config sync disabled — SHIPWRIGHT_API_URL / SHIPWRIGHT_INTERNAL_API_KEY / SHIPWRIGHT_AGENT_ID not all set",
+    );
+  }
 
   // Dev-only chat transport: read the gate ONCE at composition time. When on,
   // construct a real Claude runner; otherwise the route is never registered.
