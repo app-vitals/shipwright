@@ -26,7 +26,7 @@ import type { AgentPluginService } from "./agent-plugins.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 import type { AgentToolService } from "./agent-tools.ts";
 import { createAdminAuthMiddleware, parseAdminApiKeys } from "./api-auth.ts";
-import type { AdminApiKey } from "./api-auth.ts";
+import type { AdminApiKey, AdminAuthEnv } from "./api-auth.ts";
 import { ApiError, BadRequestError, ForbiddenError } from "./errors.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -64,7 +64,7 @@ export type { AdminApiKey };
 
 // ─── App factory ──────────────────────────────────────────────────────────────
 
-export function createAdminApp(deps: AdminDeps): Hono {
+export function createAdminApp(deps: AdminDeps): Hono<AdminAuthEnv> {
   const {
     agentEnvService,
     agentCronJobService,
@@ -76,7 +76,7 @@ export function createAdminApp(deps: AdminDeps): Hono {
     adminApiKeys,
   } = deps;
 
-  const app = new Hono();
+  const app = new Hono<AdminAuthEnv>();
 
   app.onError((err, c) => {
     if (err instanceof ApiError) {

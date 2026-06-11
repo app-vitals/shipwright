@@ -212,7 +212,7 @@ function makeMockDeps(): AdminDeps {
           updatedAt: new Date("2024-01-01"),
         }),
       },
-    } as AdminDeps["prisma"],
+    } as unknown as AdminDeps["prisma"],
     sessionSecret: SESSION_SECRET,
   };
 }

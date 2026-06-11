@@ -9,6 +9,8 @@
  */
 
 import type { MiddlewareHandler } from "hono";
+
+export type AdminAuthEnv = { Variables: { isAdmin: boolean } };
 import { getCookie } from "hono/cookie";
 import { verify } from "hono/jwt";
 import type { AgentTokenService } from "./agent-tokens.ts";
@@ -88,7 +90,7 @@ export function createAdminAuthMiddleware(deps: {
   sessionSecret: string;
   agentTokenService: Pick<AgentTokenService, "validate">;
   adminApiKeys?: Map<string, AdminApiKey>;
-}): MiddlewareHandler {
+}): MiddlewareHandler<AdminAuthEnv> {
   const { sessionSecret, agentTokenService, adminApiKeys } = deps;
 
   return async (c, next) => {
