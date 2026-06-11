@@ -120,7 +120,6 @@ console.log("  Use the manifest from the Shipwright admin UI for this agent.");
 
 const slackBotToken = await prompt("  Paste the Bot OAuth token (xoxb-...): ");
 const slackAppToken = await prompt("  Paste the App-level token (xapp-...): ");
-const slackTeamId = await prompt("  Paste the Slack workspace ID (T...): ");
 
 if (!slackBotToken.startsWith("xoxb-")) {
   console.error("Error: Bot token must start with xoxb-");
@@ -147,7 +146,6 @@ console.log("\n[bootstrap] Storing credentials...");
 const envPayload: Record<string, string> = {
   SLACK_BOT_TOKEN: slackBotToken,
   SLACK_APP_TOKEN: slackAppToken,
-  SLACK_TEAM_ID: slackTeamId,
   ANTHROPIC_API_KEY: anthropicApiKey,
 };
 
