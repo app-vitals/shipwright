@@ -71,7 +71,21 @@ describe("HttpShipwrightAdminClient", () => {
         }
       }
       capturedHeaders.push(headers);
-      return new Response(JSON.stringify([{ id: "cron-1" }]), { status: 200 });
+      return new Response(
+        JSON.stringify([
+          {
+            schedule: "0 9 * * 1-5",
+            prompt: "standup",
+            channel: null,
+            user: null,
+            silent: false,
+            enabled: true,
+            preCheck: null,
+            name: null,
+          },
+        ]),
+        { status: 200 },
+      );
     };
 
     const client = new HttpShipwrightAdminClient(
@@ -85,6 +99,17 @@ describe("HttpShipwrightAdminClient", () => {
 
     expect(capturedHeaders).toHaveLength(1);
     expect(capturedHeaders[0]?.Authorization).toBe("Bearer internal-api-key");
-    expect(crons).toEqual([{ id: "cron-1" }]);
+    expect(crons).toEqual([
+      {
+        schedule: "0 9 * * 1-5",
+        prompt: "standup",
+        channel: null,
+        user: null,
+        silent: false,
+        enabled: true,
+        preCheck: null,
+        name: null,
+      },
+    ]);
   });
 });
