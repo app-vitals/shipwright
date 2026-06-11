@@ -4,7 +4,10 @@
  * Uses the shared Vitals OS toolbar and light theme.
  */
 
-import { baseStyles, renderToolbar } from "../lib/web/toolbar.ts";
+import {
+  baseStyles,
+  renderShipwrightToolbar,
+} from "@shipwright/lib/web/toolbar.ts";
 
 export interface DashboardPageOptions {
   userName: string;
@@ -29,7 +32,7 @@ export function renderDashboardPage(opts: DashboardPageOptions): string {
   <link rel="stylesheet" href="${base}/dashboard/styles.css" />
 </head>
 <body>
-  ${renderToolbar({ userName: opts.userName, activePage: "metrics", isOwner: opts.isOwner })}
+  ${renderShipwrightToolbar({ userName: opts.userName, activePath: `${base}/dashboard`, logoutAction: "/auth/logout", metricsUrl: `${base}/dashboard` })}
   <div class="app">
 
     <!-- Page Controls -->

@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@hono/zod-openapi": "^0.18.3",
+    "@shipwright/lib": "*",
     "hono": "^4",
     "openapi-fetch": "^0.13",
     "pg": "^8.21.0",
