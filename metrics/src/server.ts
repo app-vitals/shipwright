@@ -40,6 +40,10 @@ const basePath = process.env.METRICS_BASE_PATH ?? "";
 // Local-dev auth bypass for /dashboard + /metrics/* (no login flow in `task stack`).
 // Keeps the real provider — only relaxes auth. Never enable in production.
 const dashboardDevAuth = process.env.METRICS_DASHBOARD_DEV_AUTH === "true";
+if (dashboardDevAuth && process.env.NODE_ENV === "production") {
+  console.error("[metrics-api] FATAL: METRICS_DASHBOARD_DEV_AUTH cannot be enabled in production");
+  process.exit(1);
+}
 
 if (!process.env.METRICS_ADMIN_URL && process.env.METRICS_ACCOUNTS_URL) {
   console.warn(

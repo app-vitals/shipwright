@@ -101,6 +101,7 @@ The **dashboard** is protected by the session cookie middleware; an invalid/abse
 | `METRICS_ADMIN_URL` | | `http://localhost:3000` | Shipwright admin service base URL (agent name lookups). |
 | `METRICS_INTERNAL_API_KEY` | | — | Internal key for the accounts client. |
 | `METRICS_DASHBOARD_TOKEN` | | — | Optional dashboard access token. |
+| `METRICS_DASHBOARD_DEV_AUTH` | | `false` | Bypasses `/dashboard` and `/metrics/*` auth for local dev (no login flow in `task stack`). Must not be enabled in production. |
 | `METRICS_DB_PATH` | | `state/metrics.db` | Path for the local SQLite event store (sqlite mode only). Pass `:memory:` for ephemeral use. |
 | `GCP_PROJECT_ID` | | — | Optional — enables GCP Secret Manager as an env-absent fallback for secrets. |
 | `SHIPWRIGHT_ENV_FILE` | | `~/.shipwright/.env` | Dotenv file loaded at startup (existing vars win). |
