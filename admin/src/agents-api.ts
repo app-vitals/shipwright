@@ -140,6 +140,27 @@ export function createAdminApp(deps: AdminDeps): Hono<AdminAuthEnv> {
     },
   );
 
+  // GET /agents — list all agents (id + name) for metrics name resolution.
+  // Not covered by /agents/* middleware — auth applied explicitly like POST /agents.
+  app.get(
+    "/agents",
+    createAdminAuthMiddleware({
+      sessionSecret,
+      agentTokenService,
+      adminApiKeys,
+    }),
+    async (c) => {
+      if (c.get("isAdmin") !== true) {
+        throw new ForbiddenError("Admin access required to list agents");
+      }
+      const agents = await prisma.agent.findMany({
+        select: { id: true, name: true },
+        orderBy: { name: "asc" },
+      });
+      return c.json(agents);
+    },
+  );
+
   // ─── Env vars ──────────────────────────────────────────────────────────────
 
   // POST /agents/:id/envs — replace all env vars (bulk upsert)

@@ -26,6 +26,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@prisma/client": "^6.19.2",
+        "@shipwright/lib": "*",
         "hono": "^4",
       },
       "devDependencies": {
@@ -53,11 +54,16 @@
         "typescript": "*",
       },
     },
+    "lib": {
+      "name": "@shipwright/lib",
+      "version": "0.1.0",
+    },
     "metrics": {
       "name": "@shipwright/metrics",
       "version": "0.1.0",
       "dependencies": {
         "@hono/zod-openapi": "^0.18.3",
+        "@shipwright/lib": "*",
         "hono": "^4",
         "openapi-fetch": "^0.13",
         "pg": "^8.21.0",
@@ -195,6 +201,8 @@
     "@shipwright/admin": ["@shipwright/admin@workspace:admin"],
 
     "@shipwright/agent": ["@shipwright/agent@workspace:agent"],
+
+    "@shipwright/lib": ["@shipwright/lib@workspace:lib"],
 
     "@shipwright/metrics": ["@shipwright/metrics@workspace:metrics"],
 

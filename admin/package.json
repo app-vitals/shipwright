@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@prisma/client": "^6.19.2",
+    "@shipwright/lib": "*",
     "hono": "^4"
   },
   "devDependencies": {

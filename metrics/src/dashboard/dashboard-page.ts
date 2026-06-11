@@ -4,11 +4,16 @@
  * Uses the shared Vitals OS toolbar and light theme.
  */
 
-import { baseStyles, renderToolbar } from "../lib/web/toolbar.ts";
+import {
+  baseStyles,
+  renderShipwrightToolbar,
+} from "@shipwright/lib/web/toolbar.ts";
 
 export interface DashboardPageOptions {
   userName: string;
   isOwner?: boolean;
+  /** Path prefix the app is mounted at (e.g. "/sw"). Empty string or undefined = root. */
+  basePath?: string;
 }
 
 function infoIcon(tip: string): string {
@@ -16,6 +21,7 @@ function infoIcon(tip: string): string {
 }
 
 export function renderDashboardPage(opts: DashboardPageOptions): string {
+  const base = opts.basePath ?? "";
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -23,10 +29,10 @@ export function renderDashboardPage(opts: DashboardPageOptions): string {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Metrics — Vitals OS</title>
   <style>${baseStyles()}</style>
-  <link rel="stylesheet" href="/dashboard/styles.css" />
+  <link rel="stylesheet" href="${base}/dashboard/styles.css" />
 </head>
 <body>
-  ${renderToolbar({ userName: opts.userName, activePage: "metrics", isOwner: opts.isOwner })}
+  ${renderShipwrightToolbar({ userName: opts.userName, activePath: `${base}/dashboard`, logoutAction: "/auth/logout", metricsUrl: `${base}/dashboard` })}
   <div class="app">
 
     <!-- Page Controls -->
@@ -335,8 +341,9 @@ export function renderDashboardPage(opts: DashboardPageOptions): string {
 
   </div>
 
+  <script>window.__METRICS_BASE__ = '${base}';</script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
-  <script src="/dashboard/app.js"></script>
+  <script src="${base}/dashboard/app.js"></script>
 </body>
 </html>`;
 }

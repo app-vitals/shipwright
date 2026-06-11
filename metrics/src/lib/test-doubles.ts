@@ -4,7 +4,11 @@
  * Provides FixedClock and makeAccountsClientMock for use in tests.
  */
 
-import type { AccountsClient, UserRecord } from "./accounts-client.ts";
+import type {
+  AccountsClient,
+  AgentRecord,
+  UserRecord,
+} from "./accounts-client.ts";
 import type { Clock } from "./clock.ts";
 
 // ─── FixedClock ───────────────────────────────────────────────────────────────
@@ -35,9 +39,9 @@ export function FixedClock(
 // ─── makeAccountsClientMock ──────────────────────────────────────────────────
 
 /**
- * Minimal AccountsClient stub for tests that need to control listUsers output
- * but don't exercise any other accounts methods. All other methods throw
- * "not implemented".
+ * Minimal AccountsClient stub for tests that need to control listUsers /
+ * listAgents output but don't exercise any other accounts methods. All other
+ * methods throw "not implemented".
  *
  * Usage:
  *   makeAccountsClientMock(async () => [])          // no users
@@ -45,12 +49,14 @@ export function FixedClock(
  */
 export function makeAccountsClientMock(
   listUsersImpl: () => Promise<UserRecord[]>,
+  listAgentsImpl?: () => Promise<AgentRecord[]>,
 ): AccountsClient {
   const notImplemented = async (): Promise<never> => {
     throw new Error("not implemented");
   };
   return {
     listUsers: listUsersImpl,
+    listAgents: listAgentsImpl ?? (async () => []),
     getUser: async (id: string) => ({
       id,
       name: "noop",

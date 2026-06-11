@@ -93,6 +93,7 @@ function makeAccountsClientStub(
   return {
     getUser: async (_id: string) => user,
     listUsers: async () => [],
+    listAgents: async () => [],
     createUser: notImpl,
     updateUser: notImpl,
     listClients: async () => [],

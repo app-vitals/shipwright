@@ -20,6 +20,7 @@
  * giving identical query semantics to SQLite mode.
  */
 
+import { Hono } from "hono";
 import { createMetricsApp } from "./api.ts";
 import type { MetricsDeps } from "./api.ts";
 import { HttpAccountsClient } from "./lib/accounts-client.ts";
@@ -35,8 +36,15 @@ const mode = selectProviderMode(process.env);
 const offlineMode = mode === "fixtures";
 
 const port = Number(process.env.METRICS_API_PORT ?? 3460);
+const basePath = process.env.METRICS_BASE_PATH ?? "";
+
+if (!process.env.METRICS_ADMIN_URL && process.env.METRICS_ACCOUNTS_URL) {
+  console.warn(
+    "[metrics-api] DEPRECATION: METRICS_ACCOUNTS_URL is deprecated — rename it to METRICS_ADMIN_URL. Support will be removed in a future release.",
+  );
+}
 const accountsClient = new HttpAccountsClient(
-  process.env.METRICS_ACCOUNTS_URL ?? "http://localhost:3457",
+  process.env.METRICS_ADMIN_URL ?? process.env.METRICS_ACCOUNTS_URL ?? "http://localhost:3000",
   process.env.METRICS_INTERNAL_API_KEY ?? "",
 );
 
@@ -51,6 +59,7 @@ if (mode === "fixtures") {
     sessionSecret: "",
     requireOwnerRole: false,
     offlineMode: true,
+    basePath,
   };
   console.log("[metrics-api] Running in OFFLINE mode — fixture data injected");
 } else if (mode === "postgres") {
@@ -84,6 +93,7 @@ if (mode === "fixtures") {
     sessionSecret: process.env.SHIPWRIGHT_SESSION_SECRET ?? "",
     requireOwnerRole: process.env.METRICS_REQUIRE_OWNER_ROLE === "true",
     dashboardToken: process.env.METRICS_DASHBOARD_TOKEN,
+    basePath,
   };
   console.log(
     "[metrics-api] Running in POSTGRES mode — PostgresProvider + /batch/ ingest",
@@ -98,6 +108,7 @@ if (mode === "fixtures") {
     sessionSecret: process.env.SHIPWRIGHT_SESSION_SECRET ?? "",
     requireOwnerRole: process.env.METRICS_REQUIRE_OWNER_ROLE === "true",
     dashboardToken: process.env.METRICS_DASHBOARD_TOKEN,
+    basePath,
   };
   console.log(
     "[metrics-api] Running in LOCAL mode — SQLite provider + /batch/ ingest",
@@ -107,21 +118,22 @@ if (mode === "fixtures") {
     sessionSecret: process.env.SHIPWRIGHT_SESSION_SECRET ?? "",
     requireOwnerRole: process.env.METRICS_REQUIRE_OWNER_ROLE === "true",
     dashboardToken: process.env.METRICS_DASHBOARD_TOKEN,
+    basePath,
   };
 }
 
-const app = createMetricsApp(
+const metricsApp = createMetricsApp(
   parseApiKeys(process.env.METRICS_API_KEYS),
   accountsClient,
   deps,
 );
 
 // OpenAPI doc for standalone mode
-app.openAPIRegistry.registerComponent("securitySchemes", "bearerAuth", {
+metricsApp.openAPIRegistry.registerComponent("securitySchemes", "bearerAuth", {
   type: "http",
   scheme: "bearer",
 });
-app.doc("/openapi.json", {
+metricsApp.doc("/openapi.json", {
   openapi: "3.1.0",
   info: {
     title: "Vitals Metrics API",
@@ -131,5 +143,13 @@ app.doc("/openapi.json", {
   security: [{ bearerAuth: [] }],
 });
 
-Bun.serve({ port, fetch: app.fetch });
-console.log(`[metrics-api] Server running on :${port}`);
+// When METRICS_BASE_PATH is set, mount the app under that prefix so all routes
+// (dashboard, metrics/*, static assets) are served at e.g. /sw/dashboard.
+const serverApp = basePath
+  ? new Hono().route(basePath, metricsApp)
+  : metricsApp;
+
+Bun.serve({ port, fetch: serverApp.fetch });
+console.log(
+  `[metrics-api] Server running on :${port}${basePath ? ` (base: ${basePath})` : ""}`,
+);
