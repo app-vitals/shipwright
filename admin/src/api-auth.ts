@@ -117,6 +117,8 @@ export function createAdminAuthMiddleware(deps: {
           if (match && envKey.scope !== match[1]) {
             return c.json({ error: "Forbidden" }, 403);
           }
+          // Non-agent routes: scoped keys are permitted (no agentId to enforce against).
+          // All current /admin/api/* routes match AGENT_ROUTE_RE — revisit if that changes.
           return next();
         }
       }
