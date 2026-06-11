@@ -408,6 +408,16 @@ describe("admin UI — authenticated pages", () => {
     expect(html).toContain("Test Agent");
   });
 
+  it("authenticated GET /admin/agents shows the session user's email in the navbar", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request("/admin/agents", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("admin@example.com");
+  });
+
   it("authenticated GET /admin/agents/:id returns 200 with agent detail sections", async () => {
     const app = createAdminUIApp(makeMockDeps());
     const res = await app.request(`/admin/agents/${AGENT_ID}`, {
@@ -420,6 +430,17 @@ describe("admin UI — authenticated pages", () => {
     expect(html).toContain("Tools");
     expect(html).toContain("Tokens");
     expect(html).toContain("Plugins");
+    expect(html).toContain("admin@example.com");
+  });
+
+  it("authenticated GET /admin/provision shows the session user's email in the navbar", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request("/admin/provision", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("admin@example.com");
   });
 
   it("authenticated GET /admin/agents/:id?error=missing_fields renders an error banner", async () => {
