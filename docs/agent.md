@@ -87,7 +87,7 @@ All child models cascade-delete with their `Agent`.
 | `DATABASE_URL_SHIPWRIGHT_ADMIN` | ✅ | Dedicated Postgres datasource for the admin service (e.g. `postgresql://user:pass@host:5432/db`). |
 | `SHIPWRIGHT_AGENT_ID` | ✅ (entrypoint) | The agent's ID in the Shipwright platform. Also settable via `--agent-id` CLI flag. |
 | `SHIPWRIGHT_API_URL` | ✅ (entrypoint) | Base URL of the Shipwright API used to fetch agent config at startup. Also settable via `--api-url`. |
-| `SHIPWRIGHT_AGENT_API_KEY` | ✅ (entrypoint) | Bearer token for the config fetch at startup (`/agents/:id/config` and `/agents/:id/crons`). Also settable via `--api-key`. |
+| `SHIPWRIGHT_AGENT_API_KEY` | ✅ (entrypoint) | Bearer token for the config fetch at startup (`/agents/:id/config` and `/agents/:id/crons`). Also settable via `--api-key`. The value must be registered in `SHIPWRIGHT_ADMIN_API_KEYS` on the server with scope `<agentId>` (or `*` for admin bypass) — an agent key not listed there will receive a 401 at startup. |
 | `AGENT_HOME` | entrypoint | Persistent storage root (default: `~/.shipwright-agent`). Mount a PVC here in Kubernetes so mise caches, workspace files, and `~/.claude` survive pod restarts. |
 | `PORT` | server | Hono server port (default: `3000`). |
 | `HEALTH_PORT` | server | Health server port for `index.ts` (default: falls back to `PORT`, then `3001`). Set in Kubernetes to expose the liveness probe on a separate port from the main Hono server. |
