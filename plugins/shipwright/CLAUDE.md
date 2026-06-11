@@ -137,4 +137,4 @@ System crons are the crons defined in `SYSTEM_CRONS` — they cover both the cor
 
 ## Environment Variables
 
-See [`docs/configuration.md`](../../docs/configuration.md) for the full reference — plugin env vars (`SHIPWRIGHT_REPOS_DIR`, `SHIPWRIGHT_WORKTREE_DIR`, task-store vars, etc.), agent env vars, and policy config.
+See [`docs/configuration.md`](../../docs/configuration.md) for the full reference — plugin env vars (`SHIPWRIGHT_REPO_DIR`, `SHIPWRIGHT_WORKTREE_DIR`, task-store vars, etc.), agent env vars, and policy config.
