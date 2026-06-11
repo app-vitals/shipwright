@@ -42,7 +42,10 @@ export function makeAccountsClientMock(
   };
   return {
     listUsers: listUsersImpl,
-    listAgents: async () => [],
+    listAgents: async () => {
+      const users = await listUsersImpl();
+      return users.map(({ id, name }) => ({ id, name }));
+    },
     getUser: async (id: string) => ({
       id,
       name: "noop",
