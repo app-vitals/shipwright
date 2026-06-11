@@ -10,8 +10,8 @@
 
 export { createAdminUIApp } from "./admin-ui.ts";
 export type { AdminUIDeps } from "./admin-ui.ts";
-export { createAdminApp } from "./admin-api.ts";
-export type { AdminDeps } from "./admin-api.ts";
+export { createAdminApp } from "./agents-api.ts";
+export type { AdminDeps } from "./agents-api.ts";
 export { createAgentRuntimeApp } from "./api.ts";
 export type {
   AgentRuntimeDeps,
