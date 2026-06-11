@@ -54,7 +54,7 @@ function buildApp(
   );
   app.get("/test", (c) => c.json({ ok: true }));
   // Scoped agent route — mirrors real admin API pattern
-  app.get("/admin/api/agents/:id/envs", (c) =>
+  app.get("/agents/:id/envs", (c) =>
     c.json({ agentId: c.req.param("id") }),
   );
   return app;
@@ -197,7 +197,7 @@ describe("createAdminAuthMiddleware — bearer token scope enforcement", () => {
     const app = buildApp(async (raw) =>
       raw === VALID_RAW_TOKEN ? { agentId: AGENT_ID } : null,
     );
-    const res = await app.request(`/admin/api/agents/${AGENT_ID}/envs`, {
+    const res = await app.request(`/agents/${AGENT_ID}/envs`, {
       headers: { Authorization: `Bearer ${VALID_RAW_TOKEN}` },
     });
     expect(res.status).toBe(200);
@@ -209,7 +209,7 @@ describe("createAdminAuthMiddleware — bearer token scope enforcement", () => {
     const app = buildApp(async (raw) =>
       raw === VALID_RAW_TOKEN ? { agentId: AGENT_ID } : null,
     );
-    const res = await app.request("/admin/api/agents/agent-different-id/envs", {
+    const res = await app.request("/agents/agent-different-id/envs", {
       headers: { Authorization: `Bearer ${VALID_RAW_TOKEN}` },
     });
     expect(res.status).toBe(403);
@@ -292,7 +292,7 @@ describe("createAdminAuthMiddleware — admin API keys", () => {
       return null;
     }, adminApiKeys);
 
-    const res = await app.request(`/admin/api/agents/${AGENT_ID}/envs`, {
+    const res = await app.request(`/agents/${AGENT_ID}/envs`, {
       headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
     });
     expect(res.status).toBe(200);
@@ -317,7 +317,7 @@ describe("createAdminAuthMiddleware — admin API keys", () => {
     ]);
     const app = buildApp(async () => null, adminApiKeys);
 
-    const res = await app.request("/admin/api/agents/different-agent/envs", {
+    const res = await app.request("/agents/different-agent/envs", {
       headers: { Authorization: `Bearer ${SCOPED_TOKEN}` },
     });
     expect(res.status).toBe(403);
@@ -331,7 +331,7 @@ describe("createAdminAuthMiddleware — admin API keys", () => {
     ]);
     const app = buildApp(async () => null, adminApiKeys);
 
-    const res = await app.request(`/admin/api/agents/${AGENT_ID}/envs`, {
+    const res = await app.request(`/agents/${AGENT_ID}/envs`, {
       headers: { Authorization: `Bearer ${SCOPED_TOKEN}` },
     });
     expect(res.status).toBe(200);
