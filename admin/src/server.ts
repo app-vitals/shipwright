@@ -4,7 +4,7 @@
  *
  * Mounts:
  *   - Admin UI routes at /admin/* (server-rendered)
- *   - Admin CRUD API at /admin/api/* (JSON)
+ *   - Admin CRUD API at /agents/:id/* (JSON)
  *   - Agent runtime API at /agents/* (JSON, internal)
  */
 

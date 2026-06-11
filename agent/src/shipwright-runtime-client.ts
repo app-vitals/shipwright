@@ -49,7 +49,7 @@ export class HttpShipwrightRuntimeClient implements ShipwrightRuntimeClient {
 
   constructor(opts: {
     apiUrl: string;
-    /** Base URL for admin-tier endpoints (e.g. /admin/api/...). Defaults to apiUrl when the unified admin service serves both namespaces. */
+    /** Base URL for admin-tier endpoints (e.g. /agents/:id/...). Defaults to apiUrl when the unified admin service serves both namespaces. */
     adminApiUrl?: string;
     apiKey: string;
     fetchFn?: FetchFn;
@@ -101,13 +101,13 @@ export class HttpShipwrightRuntimeClient implements ShipwrightRuntimeClient {
 
   async reconcileSystemCrons(agentId: string): Promise<void> {
     const { error, response } = await this.adminClient.POST(
-      "/admin/api/agents/{agentId}/crons/reconcile",
+      "/agents/{agentId}/crons/reconcile",
       { params: { path: { agentId } } },
     );
     if (error) {
       throw new ShipwrightClientError(
         response.status,
-        `POST /admin/api/agents/${agentId}/crons/reconcile failed: ${response.status}`,
+        `POST /agents/${agentId}/crons/reconcile failed: ${response.status}`,
       );
     }
   }

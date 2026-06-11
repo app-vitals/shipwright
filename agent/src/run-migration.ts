@@ -7,6 +7,7 @@ const REQUIRED_VARS = [
   "VITALS_OS_API_KEY",
   "SHIPWRIGHT_API_URL",
   "SHIPWRIGHT_ADMIN_API_KEY",
+  "SHIPWRIGHT_INTERNAL_API_KEY",
 ] as const;
 
 for (const varName of REQUIRED_VARS) {
@@ -24,6 +25,7 @@ const accountsClient = new HttpAccountsMigrationClient(
 const adminClient = new HttpShipwrightAdminClient(
   process.env.SHIPWRIGHT_API_URL as string,
   process.env.SHIPWRIGHT_ADMIN_API_KEY as string,
+  process.env.SHIPWRIGHT_INTERNAL_API_KEY as string,
 );
 
 const result = await runMigration(accountsClient, adminClient);
