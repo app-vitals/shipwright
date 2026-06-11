@@ -5,10 +5,8 @@
  * Used during the one-time agent provisioning flow:
  *   1. apps.manifest.create — creates the Slack app from a manifest
  *
- * Note: signing secret exchange is intentionally omitted. Slack's oauth.v2.access
- * does not return the signing secret, and apps.auth.external.get requires admin
- * scopes not available in the user token flow. The provisioning UI collects it
- * via a paste form instead.
+ * apps.manifest.create returns credentials (client_id, client_secret, signing_secret)
+ * directly in the response — no separate oauth.v2.access exchange needed.
  */
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -64,12 +62,18 @@ export interface AppManifest {
 export interface SlackProvisioningClient {
   /**
    * Call apps.manifest.create with the given xoxp- user token and manifest.
-   * Returns the new app's ID and the OAuth redirect URL for the next step.
+   * Returns the new app's ID, OAuth redirect URL, and OAuth credentials.
    */
   createAppManifest(
     xoxpToken: string,
     manifest: AppManifest,
-  ): Promise<{ appId: string; oauthRedirectUrl: string }>;
+  ): Promise<{
+    appId: string;
+    oauthRedirectUrl: string;
+    clientId: string;
+    clientSecret: string;
+    signingSecret: string;
+  }>;
 }
 
 // ─── Default manifest ─────────────────────────────────────────────────────────
@@ -135,7 +139,13 @@ export class HttpSlackProvisioningClient implements SlackProvisioningClient {
   async createAppManifest(
     xoxpToken: string,
     manifest: AppManifest,
-  ): Promise<{ appId: string; oauthRedirectUrl: string }> {
+  ): Promise<{
+    appId: string;
+    oauthRedirectUrl: string;
+    clientId: string;
+    clientSecret: string;
+    signingSecret: string;
+  }> {
     const url = `${this.apiBase}/apps.manifest.create`;
     const resp = await fetch(url, {
       method: "POST",
@@ -157,6 +167,11 @@ export class HttpSlackProvisioningClient implements SlackProvisioningClient {
       error?: string;
       app_id?: string;
       oauth_authorize_url?: string;
+      credentials?: {
+        client_id?: string;
+        client_secret?: string;
+        signing_secret?: string;
+      };
     };
 
     if (!data.ok) {
@@ -169,9 +184,22 @@ export class HttpSlackProvisioningClient implements SlackProvisioningClient {
       );
     }
 
+    if (
+      !data.credentials?.client_id ||
+      !data.credentials?.client_secret ||
+      !data.credentials?.signing_secret
+    ) {
+      throw new Error(
+        "Slack apps.manifest.create response missing credentials (client_id, client_secret, or signing_secret)",
+      );
+    }
+
     return {
       appId: data.app_id,
       oauthRedirectUrl: data.oauth_authorize_url,
+      clientId: data.credentials.client_id,
+      clientSecret: data.credentials.client_secret,
+      signingSecret: data.credentials.signing_secret,
     };
   }
 }
