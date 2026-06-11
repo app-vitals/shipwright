@@ -31,12 +31,18 @@ tasks:
     cmds:
       - bun plugins/shipwright/scripts/check-banned-strings.ts
 
+  check-config-docs:
+    desc: Verify all process.env.* vars in agent/src/ and plugins/shipwright/scripts/ are documented in docs/configuration.md
+    cmds:
+      - bun scripts/check-config-docs.ts
+
   ci:
-    desc: Run all CI checks (lint → check-strings → typecheck → test → secret-scan → doctor)
+    desc: Run all CI checks (lint → check-strings → typecheck → check-config-docs → test → secret-scan → doctor)
     cmds:
       - task: lint
       - task: check-strings
       - task: typecheck
+      - task: check-config-docs
       - task: test
       - task: secret-scan
       - task: doctor
