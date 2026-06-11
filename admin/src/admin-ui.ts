@@ -948,19 +948,20 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       );
     }
 
-    deleteCookie(c, PROVISION_STATE_COOKIE);
-
-    // Read the OAuth code param
+    // Read the OAuth code param before consuming the cookie — if code is absent
+    // the cookie must remain intact so the user can restart the provision flow.
     const code = c.req.query("code");
     if (!code) {
       return html(
         renderProvisionCompletePage(userEmail, {
           success: false,
           error:
-            "OAuth code not found in callback URL. Please try authorizing again.",
+            "Authorization was not completed (no OAuth code received). Please restart the provisioning flow from the beginning.",
         }),
       );
     }
+
+    deleteCookie(c, PROVISION_STATE_COOKIE);
 
     // Exchange the OAuth code for a bot token
     let botToken: string;

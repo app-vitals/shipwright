@@ -298,6 +298,32 @@ describe("GET /admin/provision/complete — OAuth callback", () => {
     expect(html.toLowerCase()).toContain("error");
     expect(state.upsertCalls.length).toBe(0);
   });
+
+  it("valid state cookie but no code param (e.g. user denied OAuth) → renders error page without consuming session", async () => {
+    const state: MockState = {
+      upsertCalls: [],
+      reconcileCalls: [],
+      createTokenCalls: [],
+    };
+    const app = createAdminUIApp(makeMockDeps(state));
+
+    const validProvisionState = await makeProvisionStateCookie();
+
+    // No ?code= param — simulates user denying the OAuth prompt (?error=access_denied)
+    const res = await app.request("/admin/provision/complete", {
+      headers: {
+        Cookie: `admin_session=${sessionCookie}; ${PROVISION_STATE_COOKIE}=${validProvisionState}`,
+      },
+    });
+
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html.toLowerCase()).toContain("error");
+    // Should instruct restart, not "try authorizing again" (cookie was already consumed)
+    expect(html.toLowerCase()).toContain("restart");
+    // No bot token or credentials should be stored
+    expect(state.upsertCalls.length).toBe(0);
+  });
 });
 
 describe("POST /admin/provision/complete — removed route", () => {
