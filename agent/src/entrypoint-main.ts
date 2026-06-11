@@ -8,7 +8,7 @@
  *
  * The health server is started in-process on SHIPWRIGHT_HEALTH_PORT (default 3459)
  * BEFORE the startup sequence so K8s liveness probes are reachable during init.
- * The agent server (run-agent.ts) runs as a subprocess — spawnAgentServer.
+ * The agent server (index.ts) runs as a subprocess — spawnAgentServer.
  */
 
 import { join } from "node:path";
