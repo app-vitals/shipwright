@@ -309,4 +309,37 @@ describe("loadConfig env var fallbacks", () => {
     expect(result.config.taskStore).toBe("json");
     expect(result.configSource).toBe("env");
   });
+
+  // Test 12: unrecognized SHIPWRIGHT_TASK_STORE value → warning on stderr, falls through to file config
+  test("unrecognized SHIPWRIGHT_TASK_STORE value emits a warning and falls through to file config", () => {
+    writeFileSync(
+      join(isolatedDir, ".shipwright.json"),
+      JSON.stringify({ taskStore: "json" }),
+    );
+    process.env.SHIPWRIGHT_TASK_STORE = "GitHub"; // casing typo
+
+    const stderrWrites: string[] = [];
+    const origWrite = process.stderr.write.bind(process.stderr);
+    // biome-ignore lint/suspicious/noExplicitAny: intercepting stderr.write for test assertion
+    (process.stderr as any).write = (chunk: string, ...rest: unknown[]) => {
+      stderrWrites.push(chunk);
+      return true;
+    };
+
+    let result: ReturnType<typeof loadConfig>;
+    try {
+      result = loadConfig(isolatedDir);
+    } finally {
+      // biome-ignore lint/suspicious/noExplicitAny: restoring original stderr.write
+      (process.stderr as any).write = origWrite;
+    }
+
+    // Should have emitted the warning
+    expect(stderrWrites.some((s) => s.includes("unrecognized SHIPWRIGHT_TASK_STORE value"))).toBe(true);
+    expect(stderrWrites.some((s) => s.includes('"GitHub"'))).toBe(true);
+
+    // Should have fallen through to the .shipwright.json file config
+    expect(result?.config.taskStore).toBe("json");
+    expect(result?.configSource).toContain(".shipwright.json");
+  });
 });

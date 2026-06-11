@@ -110,6 +110,11 @@ export function loadConfig(cwd: string = process.cwd()): LoadedConfig {
   if (taskStoreEnv === "json") {
     return { config: { taskStore: "json" }, configSource: "env" };
   }
+  if (taskStoreEnv !== "") {
+    process.stderr.write(
+      `warning: unrecognized SHIPWRIGHT_TASK_STORE value: "${taskStoreEnv}" — expected github, jira, or json. Falling through to file config.\n`,
+    );
+  }
 
   // Step 1: walk up from cwd looking for .shipwright.json
   const discovered = findShipwrightJson(cwd);
