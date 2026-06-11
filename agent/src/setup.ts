@@ -427,8 +427,12 @@ export async function runMiseStartup(
     "mise",
   );
   if (!existsSync(pvShimsDir) && existsSync(imageMiseDir)) {
-    cpSync(imageMiseDir, pvMiseDir, { recursive: true });
-    console.log("[agent] seeded MISE_DATA_DIR from image on fresh PVC");
+    try {
+      cpSync(imageMiseDir, pvMiseDir, { recursive: true });
+      console.log("[agent] seeded MISE_DATA_DIR from image on fresh PVC");
+    } catch (err) {
+      console.warn("[agent] failed to seed MISE_DATA_DIR from image — continuing without PVC shims", err);
+    }
   }
   process.env.MISE_DATA_DIR = pvMiseDir;
 
@@ -457,6 +461,6 @@ export async function runMiseStartup(
 
   // Prepend MISE_DATA_DIR/shims to PATH so workspace-declared tools are found
   // in non-interactive bash sessions.
-  const shimsDir = join(process.env.MISE_DATA_DIR ?? pvMiseDir, "shims");
+  const shimsDir = join(pvMiseDir, "shims");
   process.env.PATH = [shimsDir, process.env.PATH ?? ""].join(":");
 }
