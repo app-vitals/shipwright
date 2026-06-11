@@ -94,6 +94,7 @@ The **dashboard** is protected by the session cookie middleware; an invalid/abse
 | `METRICS_OFFLINE` | | `false` | When `true`, skips PostHog env gate, injects fixture data, and bypasses dashboard session auth. |
 | `METRICS_DATABASE_URL` | ✅ (postgres mode) | — | Postgres connection URL (`postgres://...`). Selects postgres mode. Takes precedence over `DATABASE_URL_METRICS`. |
 | `DATABASE_URL_METRICS` | | — | Alias for `METRICS_DATABASE_URL`. Accepted when `METRICS_DATABASE_URL` is absent. |
+| `METRICS_BASE_PATH` | | — | URL path prefix the app is mounted at (e.g. `/sw`). All routes including `/dashboard` and `/metrics/*` are served under this prefix. |
 | `METRICS_API_PORT` | | `3460` | Listen port. |
 | `METRICS_API_KEYS` | | — | Comma-parsed Bearer API keys for `/metrics/*`. |
 | `SHIPWRIGHT_SESSION_SECRET` | | — | HS256 secret for verifying the `admin_session` cookie. |
