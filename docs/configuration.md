@@ -120,6 +120,26 @@ Provide either the GitHub App vars (recommended) or `GH_TOKEN` (PAT). App auth i
 | `SHIPWRIGHT_AGENT_ID` | `string` | — | The agent's ID in the Shipwright platform. Also settable via `--agent-id` CLI flag. |
 | `SHIPWRIGHT_INTERNAL_API_KEY` | `string` | — | Bearer token for the runtime API (`/agents/*`) and the config fetch at startup. Env-var-only (secret). |
 
+### Migration (one-time cutover)
+
+Used only by `agent/src/run-migration.ts` when migrating agents from the Vitals OS platform to the Shipwright admin service. Not needed in a fresh deployment.
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `VITALS_OS_API_URL` | `string` | — | Base URL of the source Vitals OS accounts service. Used by the migration script only. |
+| `VITALS_OS_API_KEY` | `string` | — | API key for the source Vitals OS accounts service. Migration script only. Env-var-only (secret). |
+| `SHIPWRIGHT_ADMIN_API_KEY` | `string` | — | API key for the destination Shipwright admin service. Migration script only. Env-var-only (secret). |
+
+### Ops scripts
+
+Used only by one-time operator scripts in `agent/scripts/` (e.g. `bootstrap-agent.ts`). Not needed for the running agent.
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `SHIPWRIGHT_ADMIN_URL` | `string` | required | Base URL of the Shipwright admin API. Required by `bootstrap-agent.ts` to store credentials via the admin service. Env-var-only. |
+| `SHIPWRIGHT_SESSION_TOKEN` | `string` | required | Value of the `admin_session` JWT cookie for authenticating against the admin API. Required by `bootstrap-agent.ts`. Env-var-only (secret). |
+| `SLACK_TEAM_ID` | `string` | required | Slack workspace ID (`T...`). Collected interactively by `bootstrap-agent.ts` and stored as an agent env var. |
+
 ### Server
 
 | Name | Type | Default | Description |

@@ -8,7 +8,7 @@
 
 import { beforeAll, describe, expect, it } from "bun:test";
 import { sign } from "hono/jwt";
-import { createAdminApp } from "./admin-api.ts";
+import { createAdminApp, parseAdminApiKeys } from "./admin-api.ts";
 import type { AdminDeps } from "./admin-api.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 
@@ -200,6 +200,19 @@ function makeMockDeps(): AdminDeps {
       remove: async () => {},
       removeByName: async () => {},
     },
+    prisma: {
+      agent: {
+        create: async (args: {
+          data: { name: string; slackId: string | null };
+        }) => ({
+          id: "agent-new-id",
+          name: args.data.name,
+          slackId: args.data.slackId,
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+        }),
+      },
+    } as unknown as AdminDeps["prisma"],
     sessionSecret: SESSION_SECRET,
   };
 }
@@ -225,10 +238,9 @@ describe("admin API — auth", () => {
 
   it("unauthenticated DELETE /agents/:id/crons/:cronId returns 401", async () => {
     const app = createAdminApp(makeMockDeps());
-    const res = await app.request(
-      `/agents/${AGENT_ID}/crons/${CRON_ID}`,
-      { method: "DELETE" },
-    );
+    const res = await app.request(`/agents/${AGENT_ID}/crons/${CRON_ID}`, {
+      method: "DELETE",
+    });
     expect(res.status).toBe(401);
   });
 
@@ -355,45 +367,36 @@ describe("admin API — cron jobs", () => {
 
   it("PATCH /agents/:id/crons/:cronId updates and returns 200", async () => {
     const app = createAdminApp(makeMockDeps());
-    const res = await app.request(
-      `/agents/${AGENT_ID}/crons/${CRON_ID}`,
-      {
-        method: "PATCH",
-        body: JSON.stringify({
-          schedule: "0 10 * * 1-5",
-          prompt: "updated standup",
-          channel: "C123",
-        }),
-        headers: {
-          "Content-Type": "application/json",
-          Cookie: `admin_session=${cookie}`,
-        },
+    const res = await app.request(`/agents/${AGENT_ID}/crons/${CRON_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        schedule: "0 10 * * 1-5",
+        prompt: "updated standup",
+        channel: "C123",
+      }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
       },
-    );
+    });
     expect(res.status).toBe(200);
   });
 
   it("DELETE /agents/:id/crons/:cronId returns 204", async () => {
     const app = createAdminApp(makeMockDeps());
-    const res = await app.request(
-      `/agents/${AGENT_ID}/crons/${CRON_ID}`,
-      {
-        method: "DELETE",
-        headers: { Cookie: `admin_session=${cookie}` },
-      },
-    );
+    const res = await app.request(`/agents/${AGENT_ID}/crons/${CRON_ID}`, {
+      method: "DELETE",
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
     expect(res.status).toBe(204);
   });
 
   it("POST /agents/:id/crons/reconcile returns reconciliation summary", async () => {
     const app = createAdminApp(makeMockDeps());
-    const res = await app.request(
-      `/agents/${AGENT_ID}/crons/reconcile`,
-      {
-        method: "POST",
-        headers: { Cookie: `admin_session=${cookie}` },
-      },
-    );
+    const res = await app.request(`/agents/${AGENT_ID}/crons/reconcile`, {
+      method: "POST",
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toMatchObject({
@@ -438,29 +441,23 @@ describe("admin API — tools", () => {
 
   it("PATCH /agents/:id/tools/:toolId toggles enabled (200)", async () => {
     const app = createAdminApp(makeMockDeps());
-    const res = await app.request(
-      `/agents/${AGENT_ID}/tools/${TOOL_ID}`,
-      {
-        method: "PATCH",
-        body: JSON.stringify({ enabled: false }),
-        headers: {
-          "Content-Type": "application/json",
-          Cookie: `admin_session=${cookie}`,
-        },
+    const res = await app.request(`/agents/${AGENT_ID}/tools/${TOOL_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({ enabled: false }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
       },
-    );
+    });
     expect(res.status).toBe(200);
   });
 
   it("DELETE /agents/:id/tools/:toolId returns 204", async () => {
     const app = createAdminApp(makeMockDeps());
-    const res = await app.request(
-      `/agents/${AGENT_ID}/tools/${TOOL_ID}`,
-      {
-        method: "DELETE",
-        headers: { Cookie: `admin_session=${cookie}` },
-      },
-    );
+    const res = await app.request(`/agents/${AGENT_ID}/tools/${TOOL_ID}`, {
+      method: "DELETE",
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
     expect(res.status).toBe(204);
   });
 });
@@ -507,13 +504,10 @@ describe("admin API — tokens", () => {
 
   it("DELETE /agents/:id/tokens/:tokenId returns 204", async () => {
     const app = createAdminApp(makeMockDeps());
-    const res = await app.request(
-      `/agents/${AGENT_ID}/tokens/${TOKEN_ID}`,
-      {
-        method: "DELETE",
-        headers: { Cookie: `admin_session=${cookie}` },
-      },
-    );
+    const res = await app.request(`/agents/${AGENT_ID}/tokens/${TOKEN_ID}`, {
+      method: "DELETE",
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
     expect(res.status).toBe(204);
   });
 });
@@ -602,6 +596,77 @@ describe("admin API — plugins", () => {
   });
 });
 
+// ─── Create agent smoke tests ─────────────────────────────────────────────────
+
+const ADMIN_API_KEY = "admin-key-for-create-tests";
+
+describe("admin API — create agent", () => {
+  it("POST /admin/api/agents with admin bearer → 201 with agent object", async () => {
+    const deps: AdminDeps = {
+      ...makeMockDeps(),
+      adminApiKeys: parseAdminApiKeys(`admin:${ADMIN_API_KEY}:*`),
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({ name: "Test Agent", slackId: "U123456" }),
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${ADMIN_API_KEY}`,
+      },
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body).toMatchObject({ id: "agent-new-id", name: "Test Agent" });
+  });
+
+  it("POST /admin/api/agents with per-agent bearer → 403", async () => {
+    const deps = makeDepsWithTokenValidation(async () => ({
+      agentId: AGENT_ID,
+    }));
+    const app = createAdminApp(deps);
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({ name: "Test Agent" }),
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${VALID_BEARER_TOKEN}`,
+      },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("POST /admin/api/agents with valid session cookie → 201", async () => {
+    const cookie = await makeSessionCookie();
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({ name: "Cookie Agent" }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body).toMatchObject({ id: "agent-new-id", name: "Cookie Agent" });
+  });
+
+  it("POST /admin/api/agents missing name → 400", async () => {
+    const cookie = await makeSessionCookie();
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({ slackId: "U999" }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
 // ─── Bearer token auth smoke tests ───────────────────────────────────────────
 
 const VALID_BEARER_TOKEN = "valid-bearer-token-value";
@@ -620,9 +685,22 @@ function makeDepsWithTokenValidation(
 
 describe("admin API — bearer token auth", () => {
   it("GET /agents/:id/envs accepts a valid bearer token (200)", async () => {
-    const deps = makeDepsWithTokenValidation(async () => ({ agentId: AGENT_ID }));
+    const deps = makeDepsWithTokenValidation(async () => ({
+      agentId: AGENT_ID,
+    }));
     const app = createAdminApp(deps);
     const res = await app.request(`/agents/${AGENT_ID}/envs`, {
+      headers: { Authorization: `Bearer ${VALID_BEARER_TOKEN}` },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("GET /agents/:id/tools accepts a valid bearer token (200)", async () => {
+    const deps = makeDepsWithTokenValidation(async () => ({
+      agentId: AGENT_ID,
+    }));
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}/tools`, {
       headers: { Authorization: `Bearer ${VALID_BEARER_TOKEN}` },
     });
     expect(res.status).toBe(200);

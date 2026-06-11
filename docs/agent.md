@@ -32,10 +32,11 @@ Mounted at `/agents/*`. The harness polls this every ~60s. Auth: **Bearer token*
 
 ### Admin CRUD API (`admin-api.ts`) — human-facing
 
-Mounted at `/agents/:id/*` (unified with the runtime API surface). Auth: **admin key** (`SHIPWRIGHT_ADMIN_API_KEYS` env key with scope `*` → bypasses all checks; scope `<agentId>` → enforces route agentId) **or** a valid **per-agent bearer token** (DB token scoped to its own `:id`) **or** **session cookie** `admin_session` (httpOnly JWT verified with `SHIPWRIGHT_SESSION_SECRET`). Admin key checked first, then DB token path, then cookie. If an `Authorization` header is present but the token is invalid in all paths, the request is rejected immediately (401) — it does not fall through to the cookie path. Absent auth → `401`. Per-agent bearer tokens are scoped to their own `:id` — cross-agent access returns `403`.
+Mounted at `/agents/*` (unified with the runtime API surface). Auth: **admin key** (`SHIPWRIGHT_ADMIN_API_KEYS` env key with scope `*` → bypasses all checks, sets `isAdmin=true`; scope `<agentId>` → enforces route agentId, sets `isAdmin=false`) **or** a valid **per-agent bearer token** (DB token scoped to its own `:id`, sets `isAdmin=false`) **or** **session cookie** `admin_session` (httpOnly JWT verified with `SHIPWRIGHT_SESSION_SECRET`, sets `isAdmin=true`). Admin key checked first, then DB token path, then cookie. If an `Authorization` header is present but the token is invalid in all paths, the request is rejected immediately (401) — it does not fall through to the cookie path. Absent auth → `401`. Per-agent bearer tokens are scoped to their own `:id` — cross-agent access returns `403`. Routes that require admin access (e.g. agent creation) check `c.get("isAdmin")` and return `403` for scoped bearer tokens.
 
 | Resource | Endpoints |
 |---|---|
+| Agents | `POST /agents` (admin-only: creates agent, returns `{id, name, slackId, createdAt}` with `201`) |
 | Envs | `POST` / `GET` / `PATCH` `/agents/:id/envs`, `DELETE /agents/:id/envs/:key` |
 | Crons | `POST` / `GET` `/agents/:id/crons`, `PATCH` / `DELETE` `/agents/:id/crons/:cronId`, `POST /agents/:id/crons/reconcile` |
 | Tools | `POST` / `GET` `/agents/:id/tools`, `PATCH` / `DELETE` `/agents/:id/tools/:toolId` |

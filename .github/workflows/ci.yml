@@ -52,6 +52,9 @@ jobs:
       - name: Typecheck
         run: task typecheck
 
+      - name: Check config docs
+        run: task check-config-docs
+
       - name: Test
         run: task test
 

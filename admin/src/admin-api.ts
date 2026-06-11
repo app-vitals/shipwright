@@ -2,7 +2,8 @@
  * agent/src/admin-api.ts
  * Admin CRUD API — Hono app factory.
  *
- * Routes mounted at /agents/:id/*. Full CRUD for:
+ * Routes mounted at /agents/*. Full CRUD for:
+ *   - Agent (create)
  *   - AgentEnv
  *   - AgentCronJob
  *   - AgentTool
@@ -19,15 +20,16 @@ import type {
   AgentCronJob,
   AgentToken,
   AgentTool,
+  PrismaClient,
 } from "../prisma/client/index.js";
-import { createAdminAuthMiddleware, parseAdminApiKeys } from "./api-auth.ts";
-import type { AdminApiKey } from "./api-auth.ts";
 import type { AgentCronJobService } from "./agent-cron-jobs.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
 import type { AgentPluginService } from "./agent-plugins.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 import type { AgentToolService } from "./agent-tools.ts";
-import { ApiError, ForbiddenError } from "./errors.ts";
+import { createAdminAuthMiddleware, parseAdminApiKeys } from "./api-auth.ts";
+import type { AdminApiKey, AdminAuthEnv } from "./api-auth.ts";
+import { ApiError, BadRequestError, ForbiddenError } from "./errors.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -52,6 +54,7 @@ export interface AdminDeps {
     AgentPluginService,
     "list" | "add" | "remove" | "removeByName"
   >;
+  prisma: Pick<PrismaClient, "agent">;
   sessionSecret: string;
   /** Parsed SHIPWRIGHT_ADMIN_API_KEYS — optional; absent means env key auth is disabled. */
   adminApiKeys?: Map<string, AdminApiKey>;
@@ -63,18 +66,19 @@ export type { AdminApiKey };
 
 // ─── App factory ──────────────────────────────────────────────────────────────
 
-export function createAdminApp(deps: AdminDeps): Hono {
+export function createAdminApp(deps: AdminDeps): Hono<AdminAuthEnv> {
   const {
     agentEnvService,
     agentCronJobService,
     agentToolService,
     agentTokenService,
     agentPluginService,
+    prisma,
     sessionSecret,
     adminApiKeys,
   } = deps;
 
-  const app = new Hono();
+  const app = new Hono<AdminAuthEnv>();
 
   app.onError((err, c) => {
     if (err instanceof ApiError) {
@@ -90,7 +94,50 @@ export function createAdminApp(deps: AdminDeps): Hono {
   // Apply combined auth (bearer token OR session cookie) to all /agents/* routes
   app.use(
     "/agents/*",
-    createAdminAuthMiddleware({ sessionSecret, agentTokenService, adminApiKeys }),
+    createAdminAuthMiddleware({
+      sessionSecret,
+      agentTokenService,
+      adminApiKeys,
+    }),
+  );
+
+  // ─── Agents ────────────────────────────────────────────────────────────────
+
+  // POST /agents — create a new agent (admin only)
+  // Note: /agents route without :id — not covered by /agents/* middleware above.
+  // Auth is checked manually in the handler via c.get("isAdmin").
+  // The middleware is applied to /agents/* (with trailing path), so POST /agents
+  // does NOT go through auth middleware — we re-apply it here explicitly.
+  app.post(
+    "/agents",
+    createAdminAuthMiddleware({
+      sessionSecret,
+      agentTokenService,
+      adminApiKeys,
+    }),
+    async (c) => {
+      if (c.get("isAdmin") !== true) {
+        throw new ForbiddenError(
+          "Only admin bearers and session users can create agents",
+        );
+      }
+      const body = await c.req.json<{ name?: string; slackId?: string }>();
+      if (!body.name || typeof body.name !== "string") {
+        throw new BadRequestError("name is required");
+      }
+      const agent = await prisma.agent.create({
+        data: { name: body.name, slackId: body.slackId ?? null },
+      });
+      return c.json(
+        {
+          id: agent.id,
+          name: agent.name,
+          slackId: agent.slackId,
+          createdAt: agent.createdAt,
+        },
+        201,
+      );
+    },
   );
 
   // ─── Env vars ──────────────────────────────────────────────────────────────
