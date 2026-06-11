@@ -57,6 +57,10 @@ interface GhMilestone {
   number: number;
 }
 
+interface GhAssignee {
+  login: string;
+}
+
 interface GhIssue {
   number: number;
   title: string;
@@ -65,6 +69,7 @@ interface GhIssue {
   labels: GhLabel[];
   url: string;
   milestone: GhMilestone | null;
+  assignees: GhAssignee[];
 }
 
 // Internal task with issue number attached for writes
@@ -132,6 +137,11 @@ function issueToTask(issue: GhIssue): TaskWithMeta {
   if (labelStatus !== undefined) {
     task.status = labelStatus;
     task._labelStatus = labelStatus;
+  }
+
+  // Fall back to GitHub issue assignee when not set in the YAML block
+  if (task.assignee === undefined && issue.assignees?.[0]) {
+    task.assignee = issue.assignees[0].login;
   }
 
   // Attach issue number for internal use
@@ -207,7 +217,7 @@ export class GitHubTaskStore implements TaskStore {
       "--state",
       "all",
       "--json",
-      "number,title,body,labels,state,url,milestone",
+      "number,title,body,labels,state,url,milestone,assignees",
       "--limit",
       "500",
     ]);
