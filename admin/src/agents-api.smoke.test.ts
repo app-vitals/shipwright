@@ -96,7 +96,7 @@ function makeMockDeps(): AdminDeps {
         updatedAt: new Date("2024-01-01"),
       }),
       delete: async () => {},
-      get: async () => ({
+      get: async (_agentId, _cronId) => ({
         id: CRON_ID,
         agentId: AGENT_ID,
         schedule: "0 9 * * 1-5",
@@ -104,8 +104,8 @@ function makeMockDeps(): AdminDeps {
         channel: "C123",
         user: null,
         silent: false,
-        enabled: true,
-        preCheck: null,
+        enabled: false,
+        preCheck: "shipwright:check-dev-task.ts",
         name: null,
         system: false,
         createdAt: new Date("2024-01-01"),
@@ -489,6 +489,10 @@ describe("admin API — cron jobs", () => {
       },
     });
     expect(res.status).toBe(200);
+    const body = await res.json();
+    // Response must come from get() so both writes are reflected
+    expect(body.cron.preCheck).toBe("shipwright:check-dev-task.ts");
+    expect(body.cron.enabled).toBe(false);
   });
 
   it("PATCH /agents/:id/crons/:cronId with only schedule returns 400", async () => {

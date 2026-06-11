@@ -289,6 +289,10 @@ export function createAdminApp(deps: AdminDeps): Hono<AdminAuthEnv> {
           body.enabled as boolean,
         );
       }
+      // When both ran, fetch final state so the response reflects all writes.
+      if (hasPreCheck && hasEnabled) {
+        cron = await agentCronJobService.get(agentId, cronId);
+      }
     }
 
     // Narrowing: cron is always set here since at least one update ran (guarded
