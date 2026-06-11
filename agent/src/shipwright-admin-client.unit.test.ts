@@ -10,7 +10,7 @@ describe("HttpShipwrightAdminClient", () => {
   it("sends Authorization: Bearer header (not Cookie)", async () => {
     const capturedRequests: Request[] = [];
 
-    const fakeFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const fakeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       capturedRequests.push(new Request(input, init));
       return new Response(JSON.stringify({ crons: [] }), { status: 200 });
     };
@@ -32,7 +32,7 @@ describe("HttpShipwrightAdminClient", () => {
   it("uses the provided apiKey in the Bearer token", async () => {
     const capturedHeaders: Record<string, string>[] = [];
 
-    const fakeFetch = async (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const fakeFetch = async (_input: RequestInfo | URL, init?: RequestInit) => {
       const headers: Record<string, string> = {};
       if (init?.headers) {
         const h = init.headers as Record<string, string>;

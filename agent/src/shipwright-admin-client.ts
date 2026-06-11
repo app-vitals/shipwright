@@ -16,15 +16,17 @@ export interface ShipwrightAdminMigrationClient {
 
 // ─── HTTP implementation ──────────────────────────────────────────────────────
 
+type FetchFn = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+
 export class HttpShipwrightAdminClient
   implements ShipwrightAdminMigrationClient
 {
-  private readonly fetch: typeof globalThis.fetch;
+  private readonly fetch: FetchFn;
 
   constructor(
     private readonly baseUrl: string,
     private readonly apiKey: string,
-    fetch: typeof globalThis.fetch = globalThis.fetch,
+    fetch: FetchFn = globalThis.fetch,
   ) {
     this.fetch = fetch;
   }
