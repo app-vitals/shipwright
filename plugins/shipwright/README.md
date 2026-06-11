@@ -1,4 +1,4 @@
-# Shipwright v4.26.7
+# Shipwright v4.27.0
 
 A structured dev pipeline plugin for Claude Code. Plan sessions, execute tasks, run autonomous dev loops, perform multi-agent code reviews, and conduct integrated project research — for any software project.
 
@@ -356,6 +356,8 @@ shipwright/
 │   ├── research-docs.md         # Generate/update project documentation
 │   └── review.md                # Multi-agent code review
 ├── skills/
+│   ├── agent-admin/
+│   │   └── SKILL.md             # Manage Shipwright agents — crons, env vars, tools, tokens, plugins
 │   └── review-staged/
 │       └── SKILL.md             # Conversational walkthrough of staged reviews
 ├── references/
