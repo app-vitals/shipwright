@@ -110,6 +110,7 @@ export function createAdminAuthMiddleware(deps: {
         if (envKey) {
           if (envKey.scope === "*") {
             // Admin key — bypass all scope checks.
+            c.set("isAdmin", true);
             return next();
           }
           // Scoped key — enforce route agentId matches key scope.
@@ -119,6 +120,7 @@ export function createAdminAuthMiddleware(deps: {
           }
           // Non-agent routes: scoped keys are permitted (no agentId to enforce against).
           // All current /admin/api/* routes match AGENT_ROUTE_RE — revisit if that changes.
+          c.set("isAdmin", false);
           return next();
         }
       }
@@ -137,6 +139,8 @@ export function createAdminAuthMiddleware(deps: {
       if (match && result.agentId !== match[1]) {
         return c.json({ error: "Forbidden" }, 403);
       }
+      // DB token path — per-agent bearer, not an admin.
+      c.set("isAdmin", false);
       return next();
     }
 
@@ -162,6 +166,8 @@ export function createAdminAuthMiddleware(deps: {
     } catch {
       return c.json({ error: "Unauthorized" }, 401);
     }
+    // Session cookie — admin.
+    c.set("isAdmin", true);
     return next();
   };
 }

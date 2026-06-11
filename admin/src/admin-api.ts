@@ -18,15 +18,16 @@ import type {
   AgentCronJob,
   AgentToken,
   AgentTool,
+  PrismaClient,
 } from "../prisma/client/index.js";
-import { createAdminAuthMiddleware, parseAdminApiKeys } from "./api-auth.ts";
-import type { AdminApiKey } from "./api-auth.ts";
 import type { AgentCronJobService } from "./agent-cron-jobs.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
 import type { AgentPluginService } from "./agent-plugins.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 import type { AgentToolService } from "./agent-tools.ts";
-import { ApiError, ForbiddenError } from "./errors.ts";
+import { createAdminAuthMiddleware, parseAdminApiKeys } from "./api-auth.ts";
+import type { AdminApiKey } from "./api-auth.ts";
+import { ApiError, BadRequestError, ForbiddenError } from "./errors.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -51,6 +52,7 @@ export interface AdminDeps {
     AgentPluginService,
     "list" | "add" | "remove" | "removeByName"
   >;
+  prisma: Pick<PrismaClient, "agent">;
   sessionSecret: string;
   /** Parsed SHIPWRIGHT_ADMIN_API_KEYS — optional; absent means env key auth is disabled. */
   adminApiKeys?: Map<string, AdminApiKey>;
@@ -69,6 +71,7 @@ export function createAdminApp(deps: AdminDeps): Hono {
     agentToolService,
     agentTokenService,
     agentPluginService,
+    prisma,
     sessionSecret,
     adminApiKeys,
   } = deps;
@@ -89,8 +92,39 @@ export function createAdminApp(deps: AdminDeps): Hono {
   // Apply combined auth (bearer token OR session cookie) to all /admin/api/* routes
   app.use(
     "/admin/api/*",
-    createAdminAuthMiddleware({ sessionSecret, agentTokenService, adminApiKeys }),
+    createAdminAuthMiddleware({
+      sessionSecret,
+      agentTokenService,
+      adminApiKeys,
+    }),
   );
+
+  // ─── Agents ────────────────────────────────────────────────────────────────
+
+  // POST /admin/api/agents — create a new agent (admin only)
+  app.post("/admin/api/agents", async (c) => {
+    if (c.get("isAdmin") !== true) {
+      throw new ForbiddenError(
+        "Only admin bearers and session users can create agents",
+      );
+    }
+    const body = await c.req.json<{ name?: string; slackId?: string }>();
+    if (!body.name || typeof body.name !== "string") {
+      throw new BadRequestError("name is required");
+    }
+    const agent = await prisma.agent.create({
+      data: { name: body.name, slackId: body.slackId ?? null },
+    });
+    return c.json(
+      {
+        id: agent.id,
+        name: agent.name,
+        slackId: agent.slackId,
+        createdAt: agent.createdAt,
+      },
+      201,
+    );
+  });
 
   // ─── Env vars ──────────────────────────────────────────────────────────────
 
