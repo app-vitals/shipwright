@@ -40,7 +40,14 @@ export interface AdminDeps {
   >;
   agentCronJobService: Pick<
     AgentCronJobService,
-    "list" | "create" | "update" | "delete" | "reconcileSystemCrons" | "get"
+    | "list"
+    | "create"
+    | "update"
+    | "delete"
+    | "reconcileSystemCrons"
+    | "get"
+    | "setEnabled"
+    | "updatePreCheck"
   >;
   agentToolService: Pick<
     AgentToolService,
@@ -221,22 +228,81 @@ export function createAdminApp(deps: AdminDeps): Hono<AdminAuthEnv> {
   });
 
   // PATCH /agents/:id/crons/:cronId — update a cron job
+  //
+  // schedule and prompt must be provided together (content update).
+  // enabled and preCheck are orthogonal — each may be sent alone or combined
+  // with a content update or with each other. Empty body returns 400.
   app.patch("/agents/:id/crons/:cronId", async (c) => {
     const agentId = c.req.param("id");
     const cronId = c.req.param("cronId");
     const body = await c.req.json<{
-      schedule: string;
-      prompt: string;
+      schedule?: string;
+      prompt?: string;
       channel?: string | null;
       user?: string | null;
       silent?: boolean;
       preCheck?: string | null;
+      enabled?: boolean;
     }>();
-    const cron: AgentCronJob = await agentCronJobService.update(
-      agentId,
-      cronId,
-      body,
-    );
+
+    const hasSchedule = body.schedule != null;
+    const hasPrompt = body.prompt != null;
+    const hasEnabled = body.enabled !== undefined;
+    const hasPreCheck = body.preCheck !== undefined;
+
+    if (!hasSchedule && !hasPrompt && !hasEnabled && !hasPreCheck) {
+      throw new BadRequestError(
+        "provide at least one field: schedule+prompt, enabled, or preCheck",
+      );
+    }
+    if (hasSchedule !== hasPrompt) {
+      throw new BadRequestError(
+        "schedule and prompt must be provided together",
+      );
+    }
+
+    let cron: AgentCronJob | undefined;
+    if (hasSchedule && hasPrompt) {
+      // Content update — preCheck and enabled are folded into update()
+      cron = await agentCronJobService.update(agentId, cronId, {
+        schedule: body.schedule as string,
+        prompt: body.prompt as string,
+        channel: body.channel,
+        user: body.user,
+        silent: body.silent,
+        preCheck: body.preCheck,
+        enabled: body.enabled,
+      });
+    } else {
+      // Orthogonal-field-only update — apply each independently
+      if (hasPreCheck) {
+        cron = await agentCronJobService.updatePreCheck(
+          agentId,
+          cronId,
+          body.preCheck as string | null,
+        );
+      }
+      if (hasEnabled) {
+        cron = await agentCronJobService.setEnabled(
+          agentId,
+          cronId,
+          body.enabled as boolean,
+        );
+      }
+      // When both ran, fetch final state so the response reflects all writes.
+      if (hasPreCheck && hasEnabled) {
+        cron = await agentCronJobService.get(agentId, cronId);
+      }
+    }
+
+    // Narrowing: cron is always set here since at least one update ran (guarded
+    // above), but TypeScript cannot prove it through the disjoint if-blocks.
+    if (cron === undefined) {
+      throw new BadRequestError(
+        "provide at least one field: schedule+prompt, enabled, or preCheck",
+      );
+    }
+
     return c.json({ cron });
   });
 
