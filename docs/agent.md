@@ -32,10 +32,11 @@ Mounted at `/agents/*`. The harness polls this every ~60s. Auth: **Bearer token*
 
 ### Admin CRUD API (`admin-api.ts`) — human-facing
 
-Mounted at `/admin/api/*`. Auth: **session cookie** `admin_session` (httpOnly JWT verified with `SHIPWRIGHT_SESSION_SECRET`) **or** a valid **bearer token** checked in this order: (1) matched against `SHIPWRIGHT_ADMIN_API_KEYS` env keys (scope `*` → admin bypass; scope `<agentId>` → enforces route agentId), then (2) validated via `agentTokenService.validate()` (DB token path). If an `Authorization` header is present but the token is invalid in both paths, the request is rejected immediately (401) — it does not fall through to the cookie path. Absent auth → `401`.
+Mounted at `/admin/api/*`. Auth: **session cookie** `admin_session` (httpOnly JWT verified with `SHIPWRIGHT_SESSION_SECRET`) **or** a valid **bearer token** checked in this order: (1) matched against `SHIPWRIGHT_ADMIN_API_KEYS` env keys (scope `*` → admin bypass, sets `isAdmin=true`; scope `<agentId>` → enforces route agentId, sets `isAdmin=false`), then (2) validated via `agentTokenService.validate()` (DB token path, sets `isAdmin=false`). Session cookie path always sets `isAdmin=true`. If an `Authorization` header is present but the token is invalid in both paths, the request is rejected immediately (401) — it does not fall through to the cookie path. Absent auth → `401`. Routes that require admin access (e.g. agent creation) check `c.get("isAdmin")` and return `403` for scoped bearer tokens.
 
 | Resource | Endpoints |
 |---|---|
+| Agents | `POST /admin/api/agents` (admin-only: creates agent, returns `{id, name, slackId, createdAt}` with `201`) |
 | Envs | `POST` / `GET` / `PATCH` `/admin/api/agents/:id/envs`, `DELETE /admin/api/agents/:id/envs/:key` |
 | Crons | `POST` / `GET` `/admin/api/agents/:id/crons`, `PATCH` / `DELETE` `/admin/api/agents/:id/crons/:cronId`, `POST /admin/api/agents/:id/crons/reconcile` |
 | Tools | `POST` / `GET` `/admin/api/agents/:id/tools`, `PATCH` / `DELETE` `/admin/api/agents/:id/tools/:toolId` |
