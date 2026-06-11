@@ -21,8 +21,6 @@
  */
 
 import { Hono, type MiddlewareHandler } from "hono";
-
-type AdminUIEnv = { Variables: { userEmail: string } };
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { sign, verify } from "hono/jwt";
 import {
@@ -42,6 +40,8 @@ import { ForbiddenError, UnprocessableEntityError } from "./errors.ts";
 import type { GoogleAuthClient } from "./google-auth-client.ts";
 import type { AppManifest } from "./slack-provisioning-client.ts";
 import { defaultAgentManifest } from "./slack-provisioning-client.ts";
+
+type AdminUIEnv = { Variables: { userEmail: string } };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
