@@ -5,12 +5,17 @@
  *
  * Wires all real dependencies and calls runEntrypoint().
  * Run via: bun run agent/src/entrypoint-main.ts [--agent-id X] [--api-url Y] [--api-key Z]
+ *
+ * The health server is started in-process on SHIPWRIGHT_HEALTH_PORT (default 3459)
+ * BEFORE the startup sequence so K8s liveness probes are reachable during init.
+ * The agent server (run-agent.ts) runs as a subprocess — spawnAgentServer.
  */
 
 import { join } from "node:path";
 import { parseCliArgs } from "./cli-args.ts";
 import { runEntrypoint } from "./entrypoint.ts";
 import { createGitHubTokenManager, getBotIdentity } from "./github-app-auth.ts";
+import { DEFAULT_HEALTH_PORT, startHealthServer } from "./health.ts";
 import { setupGitHubAuth } from "./setup-github-auth.ts";
 import {
   ensureDotClaudeSymlink,
@@ -18,6 +23,15 @@ import {
   runMiseStartup,
 } from "./setup.ts";
 import { HttpShipwrightRuntimeClient } from "./shipwright-runtime-client.ts";
+
+// ─── Health server (in-process, before startup sequence) ─────────────────────
+// Start the health server immediately so liveness probes are reachable during
+// the full startup sequence (config fetch, mise, plugin install, etc.).
+const healthPort = Number(
+  process.env.SHIPWRIGHT_HEALTH_PORT ?? DEFAULT_HEALTH_PORT,
+);
+console.log(`[entrypoint-main] starting health server on port ${healthPort}`);
+startHealthServer(healthPort);
 
 const { agentId, apiUrl, apiKey } = parseCliArgs(
   process.argv.slice(2),

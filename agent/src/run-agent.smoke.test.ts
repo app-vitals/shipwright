@@ -2,71 +2,61 @@
  * agent/src/run-agent.smoke.test.ts
  * Smoke tests for the composed Hono app from run-agent.ts.
  *
- * Tests the thin agent: health + /agents/* proxy only.
- * Uses an injected mock fetchFn — no real DB, no real network.
+ * After UNI-1.3: the composed app is a minimal chat-only server.
+ * - /health is NOT mounted here — it runs on the dedicated health server
+ *   (startHealthServer on SHIPWRIGHT_HEALTH_PORT). See health.integration.test.ts.
+ * - /agents/* proxy is REMOVED — no proxy routes remain.
+ * - /chat is only registered when devChat=true (DEFAULT-DENY).
  *
  * No mock.module(), no global.* overrides.
  */
 
 import { describe, expect, it } from "bun:test";
 import { createComposedApp } from "./run-agent.ts";
-import {
-  TEST_AGENT_ID as AGENT_ID,
-  makeMockDeps,
-} from "./test-helpers/mock-deps.ts";
+import { makeMockDeps } from "./test-helpers/mock-deps.ts";
 
-// ─── Health route ─────────────────────────────────────────────────────────────
+// ─── /health is NOT served by the composed app ───────────────────────────────
+// Health is served by the dedicated health server (startHealthServer).
+// Regression guard: make sure createComposedApp never re-mounts it.
 
-describe("composed app — /health", () => {
-  it("GET /health returns 200 { status: 'ok' }", async () => {
+describe("composed app — /health not mounted", () => {
+  it("GET /health returns 404 from composed app", async () => {
     const app = createComposedApp(makeMockDeps());
     const res = await app.request("/health");
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body).toEqual({ status: "ok" });
+    expect(res.status).toBe(404);
   });
 });
 
-// ─── /agents/* proxy to admin service ────────────────────────────────────────
+// ─── /agents/* proxy removed ─────────────────────────────────────────────────
+// The transparent proxy to the admin service was removed in UNI-1.3.
 
-describe("composed app — /agents/* (proxy to admin service)", () => {
-  it("GET /agents/:id/config without Bearer returns 401", async () => {
+describe("composed app — /agents/* not proxied", () => {
+  it("GET /agents/* returns 404 — no proxy routes", async () => {
     const app = createComposedApp(makeMockDeps());
-    const res = await app.request(`/agents/${AGENT_ID}/config`);
-    expect(res.status).toBe(401);
-    const body = await res.json();
-    expect(body.error).toBe("Unauthorized");
+    const res = await app.request("/agents/agent-test-123/config");
+    expect(res.status).toBe(404);
   });
 
-  it("GET /agents/:id/config with valid Bearer returns 200", async () => {
+  it("POST /agents/* returns 404", async () => {
     const app = createComposedApp(makeMockDeps());
-    const res = await app.request(`/agents/${AGENT_ID}/config`, {
-      headers: { Authorization: "Bearer some-key" },
+    const res = await app.request("/agents/agent-test-123/config", {
+      method: "POST",
+      body: JSON.stringify({}),
     });
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.env).toBeDefined();
-    expect(body.allowedTools).toBeDefined();
-    expect(body.plugins).toBeDefined();
+    expect(res.status).toBe(404);
   });
+});
 
-  it("GET /agents/:id/config proxies to correct admin URL", async () => {
-    let calledUrl = "";
-    const base = makeMockDeps();
-    const trackingDeps = {
-      ...base,
-      fetchFn: async (input: RequestInfo | URL, init?: RequestInit) => {
-        calledUrl = input instanceof Request ? input.url : String(input);
-        return (
-          base.fetchFn?.(input, init) ??
-          new Response("Not Found", { status: 404 })
-        );
-      },
-    };
-    const app = createComposedApp(trackingDeps);
-    await app.request(`/agents/${AGENT_ID}/config`, {
-      headers: { Authorization: "Bearer some-key" },
+// ─── /chat — DEFAULT-DENY ────────────────────────────────────────────────────
+
+describe("composed app — /chat (DEFAULT-DENY)", () => {
+  it("POST /chat returns 404 when devChat is false (default)", async () => {
+    const app = createComposedApp(makeMockDeps());
+    const res = await app.request("/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "hello" }),
     });
-    expect(calledUrl).toContain(`/agents/${AGENT_ID}/config`);
+    expect(res.status).toBe(404);
   });
 });

@@ -29,6 +29,9 @@ export const slackState = {
  */
 export const SLACK_DOWN_GRACE_MS = 90_000;
 
+/** Default port for the dedicated health server (SHIPWRIGHT_HEALTH_PORT). */
+export const DEFAULT_HEALTH_PORT = 3459;
+
 /** Mark the Slack socket as connected and clear the down-timer. */
 export function markSlackConnected(): void {
   slackState.connected = true;

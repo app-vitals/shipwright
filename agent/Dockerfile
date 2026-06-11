@@ -1,10 +1,12 @@
 # Shipwright Agent — container image
 #
 # Environment variables:
-#   AGENT_HOME     — persistent storage root (default: /data/agent-home)
-#                    Mount a PVC here so mise tool caches, workspace files,
-#                    and the ~/.claude symlink target all survive restarts.
-#   PORT           — Hono server port (default: 3000)
+#   AGENT_HOME              — persistent storage root (default: /data/agent-home)
+#                             Mount a PVC here so mise tool caches, workspace files,
+#                             and the ~/.claude symlink target all survive restarts.
+#   PORT                    — dev-only chat server port (default: 3000, DEFAULT-DENY)
+#                             Only used when SHIPWRIGHT_DEV_CHAT=true. Not used in production.
+#   SHIPWRIGHT_HEALTH_PORT  — K8s liveness probe port (default: 3459)
 #
 # PVC mount point:
 #   /data/agent-home — mount a PersistentVolumeClaim (or any durable volume) here.
@@ -114,7 +116,8 @@ RUN chmod +x /app/agent/scripts/bin/git-credential-shipwright.sh \
 
 VOLUME ["/data/agent-home"]
 
-# Expose the Hono server port
+# Expose the health probe port (always active) and the dev-only chat port
+EXPOSE 3459
 EXPOSE 3000
 
 # Entrypoint: run the startup sequence then hand off to the agent server
