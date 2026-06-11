@@ -341,7 +341,7 @@ describe("POST /admin/provision/xapp-token", () => {
     sessionCookie = await makeSessionCookie();
   });
 
-  it("valid data → 200, SLACK_APP_TOKEN stored, SHIPWRIGHT_INTERNAL_API_KEY stored, crons reconciled, raw token shown", async () => {
+  it("valid data → 200, SLACK_APP_TOKEN stored, SHIPWRIGHT_AGENT_API_KEY stored, crons reconciled, raw token shown", async () => {
     const state: MockState = {
       upsertCalls: [],
       reconcileCalls: [],
@@ -375,12 +375,12 @@ describe("POST /admin/provision/xapp-token", () => {
       "xapp-1-TEST-fake-socket-token",
     );
 
-    // SHIPWRIGHT_INTERNAL_API_KEY should be stored
+    // SHIPWRIGHT_AGENT_API_KEY should be stored
     const apiKeyUpsert = state.upsertCalls.find((c) =>
-      "SHIPWRIGHT_INTERNAL_API_KEY" in c.env,
+      "SHIPWRIGHT_AGENT_API_KEY" in c.env,
     );
     expect(apiKeyUpsert).toBeDefined();
-    expect(apiKeyUpsert?.env.SHIPWRIGHT_INTERNAL_API_KEY).toBe(
+    expect(apiKeyUpsert?.env.SHIPWRIGHT_AGENT_API_KEY).toBe(
       "raw_test_token_abc123def456",
     );
 

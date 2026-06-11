@@ -728,7 +728,7 @@ export function renderProvisionCompletePage(
           style="margin-top:8px;font-size:12px"
         >Copy to clipboard</button>
         <p style="font-size:12px;color:#6b7280;margin-top:8px">
-          Store this as <code class="mono">SHIPWRIGHT_INTERNAL_API_KEY</code> in your agent configuration.
+          Store this as <code class="mono">SHIPWRIGHT_AGENT_API_KEY</code> in your agent configuration.
         </p>
       </div>`
     : "";

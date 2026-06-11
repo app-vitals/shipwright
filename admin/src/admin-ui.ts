@@ -1048,7 +1048,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       await agentEnvService.upsert(agentId, {
         ...existing,
         SLACK_APP_TOKEN: xappToken,
-        SHIPWRIGHT_INTERNAL_API_KEY: rawToken,
+        SHIPWRIGHT_AGENT_API_KEY: rawToken,
       });
 
       // Seed system crons
