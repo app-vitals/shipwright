@@ -126,6 +126,21 @@ function makeMockDeps(): AdminDeps {
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
       }),
+      updatePreCheck: async (_agentId, _cronId, preCheck) => ({
+        id: CRON_ID,
+        agentId: AGENT_ID,
+        schedule: "0 9 * * 1-5",
+        prompt: "daily standup",
+        channel: "C123",
+        user: null,
+        silent: false,
+        enabled: true,
+        preCheck,
+        name: null,
+        system: false,
+        createdAt: new Date("2024-01-01"),
+        updatedAt: new Date("2024-01-01"),
+      }),
       reconcileSystemCrons: async () => ({
         created: 2,
         updated: 0,
@@ -420,6 +435,52 @@ describe("admin API — cron jobs", () => {
         schedule: "0 10 * * 1-5",
         prompt: "updated standup",
         channel: "C123",
+        enabled: false,
+      }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("PATCH /agents/:id/crons/:cronId with preCheck-only sets preCheck and returns 200", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}/crons/${CRON_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({ preCheck: "shipwright:check-review.ts" }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.cron.preCheck).toBe("shipwright:check-review.ts");
+  });
+
+  it("PATCH /agents/:id/crons/:cronId with preCheck null clears preCheck and returns 200", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}/crons/${CRON_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({ preCheck: null }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.cron.preCheck).toBeNull();
+  });
+
+  it("PATCH /agents/:id/crons/:cronId with preCheck+enabled updates both and returns 200", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}/crons/${CRON_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        preCheck: "shipwright:check-dev-task.ts",
         enabled: false,
       }),
       headers: {

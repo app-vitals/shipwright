@@ -47,6 +47,7 @@ export interface AdminDeps {
     | "reconcileSystemCrons"
     | "get"
     | "setEnabled"
+    | "updatePreCheck"
   >;
   agentToolService: Pick<
     AgentToolService,
@@ -228,9 +229,9 @@ export function createAdminApp(deps: AdminDeps): Hono<AdminAuthEnv> {
 
   // PATCH /agents/:id/crons/:cronId — update a cron job
   //
-  // Two modes:
-  //   Content update: schedule + prompt required together; channel/user/silent/preCheck/enabled optional.
-  //   Enabled-only:   only enabled provided (no schedule/prompt) — toggles without touching content.
+  // schedule and prompt must be provided together (content update).
+  // enabled and preCheck are orthogonal — each may be sent alone or combined
+  // with a content update or with each other. Empty body returns 400.
   app.patch("/agents/:id/crons/:cronId", async (c) => {
     const agentId = c.req.param("id");
     const cronId = c.req.param("cronId");
@@ -247,10 +248,11 @@ export function createAdminApp(deps: AdminDeps): Hono<AdminAuthEnv> {
     const hasSchedule = body.schedule != null;
     const hasPrompt = body.prompt != null;
     const hasEnabled = body.enabled !== undefined;
+    const hasPreCheck = body.preCheck !== undefined;
 
-    if (!hasSchedule && !hasPrompt && !hasEnabled) {
+    if (!hasSchedule && !hasPrompt && !hasEnabled && !hasPreCheck) {
       throw new BadRequestError(
-        "provide at least schedule+prompt (content update) or enabled (toggle)",
+        "provide at least one field: schedule+prompt, enabled, or preCheck",
       );
     }
     if (hasSchedule !== hasPrompt) {
@@ -261,6 +263,7 @@ export function createAdminApp(deps: AdminDeps): Hono<AdminAuthEnv> {
 
     let cron: AgentCronJob;
     if (hasSchedule && hasPrompt) {
+      // Content update — preCheck and enabled are folded into update()
       cron = await agentCronJobService.update(agentId, cronId, {
         schedule: body.schedule as string,
         prompt: body.prompt as string,
@@ -271,14 +274,24 @@ export function createAdminApp(deps: AdminDeps): Hono<AdminAuthEnv> {
         enabled: body.enabled,
       });
     } else {
-      cron = await agentCronJobService.setEnabled(
-        agentId,
-        cronId,
-        body.enabled as boolean,
-      );
+      // Orthogonal-field-only update — apply each independently
+      if (hasPreCheck) {
+        cron = await agentCronJobService.updatePreCheck(
+          agentId,
+          cronId,
+          body.preCheck as string | null,
+        );
+      }
+      if (hasEnabled) {
+        cron = await agentCronJobService.setEnabled(
+          agentId,
+          cronId,
+          body.enabled as boolean,
+        );
+      }
     }
 
-    return c.json({ cron });
+    return c.json({ cron: cron! });
   });
 
   // DELETE /agents/:id/crons/:cronId — delete a cron job
