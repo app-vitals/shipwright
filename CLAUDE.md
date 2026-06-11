@@ -141,6 +141,8 @@ Each Prisma service reads its own `DATABASE_URL_*` — never a shared connection
 
 The schema uses `provider = "postgresql"`. `DATABASE_URL_SHIPWRIGHT_ADMIN` must be a Postgres connection string.
 
+For the full configuration reference (all env vars, agent config, policy config), see [`docs/configuration.md`](./docs/configuration.md).
+
 ## Reference
 
 To load additional context into a session, add `@docs/filename.md` entries here — don't create separate `CLAUDE-REFERENCE.md` or similar files.
