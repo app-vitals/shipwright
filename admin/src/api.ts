@@ -118,25 +118,25 @@ export function createAgentRuntimeApp(deps: AgentRuntimeDeps): Hono {
 
   const app = new Hono();
 
-  // ─── Auth middleware ───────────────────────────────────────────────────────
-
-  app.use("*", async (c, next) => {
-    const authHeader = c.req.header("Authorization");
-    const token = authHeader?.startsWith("Bearer ")
-      ? authHeader.slice(7)
-      : null;
-
-    if (!token || token !== internalApiKey) {
-      return c.json({ error: "Unauthorized" }, 401);
-    }
-
-    await next();
-  });
+  // Auth is checked per-route (not via middleware) so that mounting this app
+  // via root.route("/agents", runtimeApp) does not hoist a /agents/* guard
+  // into root — which would 401 all admin CRUD routes using admin keys or
+  // session cookies. Each runtime route validates SHIPWRIGHT_INTERNAL_API_KEY
+  // inline at the top of its handler.
 
   // ─── GET /:id/config ─────────────────────────────────────────────────────
   //     Reachable from root as GET /agents/:id/config (Hono v4 strips prefix)
 
   app.get("/:id/config", async (c) => {
+    // Auth: Bearer SHIPWRIGHT_INTERNAL_API_KEY required
+    const authHeader = c.req.header("Authorization");
+    const token = authHeader?.startsWith("Bearer ")
+      ? authHeader.slice(7)
+      : null;
+    if (!token || token !== internalApiKey) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
     const id = c.req.param("id");
 
     // Check agent existence
@@ -172,6 +172,15 @@ export function createAgentRuntimeApp(deps: AgentRuntimeDeps): Hono {
   //     Reachable from root as GET /agents/:id/crons (Hono v4 strips prefix)
 
   app.get("/:id/crons", async (c) => {
+    // Auth: Bearer SHIPWRIGHT_INTERNAL_API_KEY required
+    const authHeader = c.req.header("Authorization");
+    const token = authHeader?.startsWith("Bearer ")
+      ? authHeader.slice(7)
+      : null;
+    if (!token || token !== internalApiKey) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
     const id = c.req.param("id");
 
     // Check agent existence
