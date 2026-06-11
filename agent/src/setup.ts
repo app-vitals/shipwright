@@ -9,9 +9,13 @@
 
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
+  rmSync,
   statSync,
+  symlinkSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -240,6 +244,69 @@ export async function installPlugins(
  *
  * Throws if required directories cannot be created.
  */
+/** Filesystem ops used by ensureDotClaudeSymlink — injectable for tests. */
+export interface DotClaudeFs {
+  mkdirSync: typeof mkdirSync;
+  lstatSync: typeof lstatSync;
+  unlinkSync: typeof unlinkSync;
+  rmSync: typeof rmSync;
+  symlinkSync: typeof symlinkSync;
+}
+
+const DEFAULT_DOT_CLAUDE_FS: DotClaudeFs = {
+  mkdirSync,
+  lstatSync,
+  unlinkSync,
+  rmSync,
+  symlinkSync,
+};
+
+/**
+ * Symlink `linkPath` (~/.claude) → `target` ($AGENT_HOME/dot-claude), ensuring
+ * the TARGET directory exists first.
+ *
+ * The target MUST be created before symlinking: on a fresh PVC the target does
+ * not exist, so without this the symlink dangles and every write under
+ * ~/.claude — Claude Code's `session-env`, plugin installs — fails (the Bash
+ * tool can't initialize, plugin installs exit 1).
+ *
+ * Existence is probed with `lstatSync`, not `existsSync`: `existsSync` follows
+ * the link and returns false for a DANGLING symlink, which would then make
+ * `symlinkSync` throw EEXIST on a re-run. `lstatSync` sees the link itself, so
+ * a stale/dangling symlink is detected and replaced. A real directory at
+ * `linkPath` is removed (logged) before relinking.
+ */
+export function ensureDotClaudeSymlink(
+  target: string,
+  linkPath: string,
+  fs: DotClaudeFs = DEFAULT_DOT_CLAUDE_FS,
+  log: (msg: string) => void = console.log,
+): void {
+  // Create the symlink target first so the link never dangles.
+  fs.mkdirSync(target, { recursive: true });
+
+  let existing: ReturnType<typeof lstatSync> | null = null;
+  try {
+    existing = fs.lstatSync(linkPath);
+  } catch {
+    existing = null; // linkPath does not exist yet — nothing to remove
+  }
+
+  if (existing) {
+    if (existing.isSymbolicLink()) {
+      fs.unlinkSync(linkPath);
+    } else {
+      log(
+        "[entrypoint] ~/.claude is a real directory — removing before symlinking",
+      );
+      fs.rmSync(linkPath, { recursive: true });
+    }
+  }
+
+  fs.symlinkSync(target, linkPath);
+  log(`[entrypoint] symlinked ${linkPath} → ${target}`);
+}
+
 export function ensureAgentHome(home: string): void {
   const workspaceDir = join(home, "workspace");
   const stateDir = join(workspaceDir, "state");

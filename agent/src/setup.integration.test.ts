@@ -8,16 +8,19 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
 import type { AgentPlugin } from "@shipwright/admin";
 import {
   ensureAgentHome,
+  ensureDotClaudeSymlink,
   installPlugins,
   isNewWorkspace,
   loadState,
@@ -38,6 +41,75 @@ afterEach(() => {
   if (existsSync(testHome)) {
     rmSync(testHome, { recursive: true, force: true });
   }
+});
+
+// ---------------------------------------------------------------------------
+// ensureDotClaudeSymlink
+// ---------------------------------------------------------------------------
+
+describe("ensureDotClaudeSymlink", () => {
+  it("creates the target dir so the symlink is NOT dangling", () => {
+    mkdirSync(testHome, { recursive: true });
+    const target = join(testHome, "dot-claude"); // does not exist yet
+    const link = join(testHome, "home-claude");
+
+    ensureDotClaudeSymlink(target, link, undefined, () => {});
+
+    // Target was created, link is a symlink, and it resolves (not dangling).
+    expect(existsSync(target)).toBe(true);
+    expect(lstatSync(link).isSymbolicLink()).toBe(true);
+    expect(existsSync(link)).toBe(true);
+    // A write THROUGH the link succeeds — this is the session-env path.
+    mkdirSync(join(link, "session-env"), { recursive: true });
+    expect(existsSync(join(target, "session-env"))).toBe(true);
+  });
+
+  it("replaces a stale DANGLING symlink without throwing (idempotent re-run)", () => {
+    mkdirSync(testHome, { recursive: true });
+    const target = join(testHome, "dot-claude");
+    const link = join(testHome, "home-claude");
+
+    // Simulate the original bug's leftover: a symlink to a missing target.
+    symlinkSync(join(testHome, "missing-target"), link);
+    expect(existsSync(link)).toBe(false); // dangling
+
+    ensureDotClaudeSymlink(target, link, undefined, () => {});
+
+    expect(lstatSync(link).isSymbolicLink()).toBe(true);
+    expect(existsSync(link)).toBe(true); // now resolves
+  });
+
+  it("replaces a real directory at the link path", () => {
+    mkdirSync(testHome, { recursive: true });
+    const target = join(testHome, "dot-claude");
+    const link = join(testHome, "home-claude");
+
+    // A real directory (with a file) sits where the symlink should go.
+    mkdirSync(link, { recursive: true });
+    writeFileSync(join(link, "stale.txt"), "x", "utf8");
+
+    let warned = false;
+    ensureDotClaudeSymlink(target, link, undefined, (m) => {
+      if (m.includes("real directory")) warned = true;
+    });
+
+    expect(warned).toBe(true);
+    expect(lstatSync(link).isSymbolicLink()).toBe(true);
+    expect(existsSync(join(link, "stale.txt"))).toBe(false);
+  });
+
+  it("is idempotent — calling twice leaves a valid symlink", () => {
+    mkdirSync(testHome, { recursive: true });
+    const target = join(testHome, "dot-claude");
+    const link = join(testHome, "home-claude");
+
+    ensureDotClaudeSymlink(target, link, undefined, () => {});
+    expect(() =>
+      ensureDotClaudeSymlink(target, link, undefined, () => {}),
+    ).not.toThrow();
+    expect(lstatSync(link).isSymbolicLink()).toBe(true);
+    expect(existsSync(link)).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
