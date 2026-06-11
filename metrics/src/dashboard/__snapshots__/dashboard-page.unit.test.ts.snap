@@ -38,11 +38,28 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
       letter-spacing: -0.3px;
       flex-shrink: 0;
     }
+    .vos-wordmark:hover { color: #4f46e5; }
     .vos-nav {
       display: flex;
       align-items: center;
       gap: 4px;
       flex: 1;
+    }
+    .vos-nav-link {
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      color: #6b7280;
+      text-decoration: none;
+      transition: background 0.1s, color 0.1s;
+      white-space: nowrap;
+    }
+    .vos-nav-link:hover { background: #f3f4f6; color: #1a1a2e; }
+    .vos-nav-link.active {
+      background: #eef2ff;
+      color: #4f46e5;
+      font-weight: 600;
     }
     .vos-user {
       display: flex;
@@ -69,7 +86,10 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
       padding: 5px 12px;
       cursor: pointer;
       font-family: inherit;
+      transition: background 0.1s, color 0.1s, border-color 0.1s;
+      white-space: nowrap;
     }
+    .vos-signout-btn:hover { background: #f7f7fb; color: #1a1a2e; border-color: #d1d5db; }
 
     /* ─── Page body ─────────────────────────────────────── */
     .vos-page {
@@ -77,13 +97,22 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
       margin: 0 auto;
       padding: 32px 24px 64px;
     }
+
+    @media (max-width: 640px) {
+      .vos-toolbar { padding: 0 16px; gap: 12px; }
+      .vos-username { display: none; }
+      .vos-nav-link { padding: 5px 8px; }
+      .vos-page { padding: 20px 16px 48px; }
+    }
   </style>
   <link rel="stylesheet" href="/dashboard/styles.css" />
 </head>
 <body>
   <nav class="vos-toolbar" aria-label="Site navigation">
-    <a href="/" class="vos-wordmark">Shipwright</a>
+    <a href="/admin/agents" class="vos-wordmark">Shipwright</a>
     <div class="vos-nav">
+      <a href="/admin/agents" class="vos-nav-link">Agents</a>
+      <a href="/admin/provision" class="vos-nav-link">Provision</a>
       <a href="/dashboard" class="vos-nav-link active">Metrics</a>
     </div>
     <div class="vos-user">
@@ -401,6 +430,7 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
 
   </div>
 
+  <script>window.__METRICS_BASE__ = '';</script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
   <script src="/dashboard/app.js"></script>
 </body>
@@ -445,11 +475,28 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
       letter-spacing: -0.3px;
       flex-shrink: 0;
     }
+    .vos-wordmark:hover { color: #4f46e5; }
     .vos-nav {
       display: flex;
       align-items: center;
       gap: 4px;
       flex: 1;
+    }
+    .vos-nav-link {
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      color: #6b7280;
+      text-decoration: none;
+      transition: background 0.1s, color 0.1s;
+      white-space: nowrap;
+    }
+    .vos-nav-link:hover { background: #f3f4f6; color: #1a1a2e; }
+    .vos-nav-link.active {
+      background: #eef2ff;
+      color: #4f46e5;
+      font-weight: 600;
     }
     .vos-user {
       display: flex;
@@ -476,7 +523,10 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
       padding: 5px 12px;
       cursor: pointer;
       font-family: inherit;
+      transition: background 0.1s, color 0.1s, border-color 0.1s;
+      white-space: nowrap;
     }
+    .vos-signout-btn:hover { background: #f7f7fb; color: #1a1a2e; border-color: #d1d5db; }
 
     /* ─── Page body ─────────────────────────────────────── */
     .vos-page {
@@ -484,13 +534,22 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
       margin: 0 auto;
       padding: 32px 24px 64px;
     }
+
+    @media (max-width: 640px) {
+      .vos-toolbar { padding: 0 16px; gap: 12px; }
+      .vos-username { display: none; }
+      .vos-nav-link { padding: 5px 8px; }
+      .vos-page { padding: 20px 16px 48px; }
+    }
   </style>
   <link rel="stylesheet" href="/dashboard/styles.css" />
 </head>
 <body>
   <nav class="vos-toolbar" aria-label="Site navigation">
-    <a href="/" class="vos-wordmark">Shipwright</a>
+    <a href="/admin/agents" class="vos-wordmark">Shipwright</a>
     <div class="vos-nav">
+      <a href="/admin/agents" class="vos-nav-link">Agents</a>
+      <a href="/admin/provision" class="vos-nav-link">Provision</a>
       <a href="/dashboard" class="vos-nav-link active">Metrics</a>
     </div>
     <div class="vos-user">
@@ -808,6 +867,7 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
 
   </div>
 
+  <script>window.__METRICS_BASE__ = '';</script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
   <script src="/dashboard/app.js"></script>
 </body>
@@ -852,11 +912,28 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
       letter-spacing: -0.3px;
       flex-shrink: 0;
     }
+    .vos-wordmark:hover { color: #4f46e5; }
     .vos-nav {
       display: flex;
       align-items: center;
       gap: 4px;
       flex: 1;
+    }
+    .vos-nav-link {
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      color: #6b7280;
+      text-decoration: none;
+      transition: background 0.1s, color 0.1s;
+      white-space: nowrap;
+    }
+    .vos-nav-link:hover { background: #f3f4f6; color: #1a1a2e; }
+    .vos-nav-link.active {
+      background: #eef2ff;
+      color: #4f46e5;
+      font-weight: 600;
     }
     .vos-user {
       display: flex;
@@ -883,7 +960,10 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
       padding: 5px 12px;
       cursor: pointer;
       font-family: inherit;
+      transition: background 0.1s, color 0.1s, border-color 0.1s;
+      white-space: nowrap;
     }
+    .vos-signout-btn:hover { background: #f7f7fb; color: #1a1a2e; border-color: #d1d5db; }
 
     /* ─── Page body ─────────────────────────────────────── */
     .vos-page {
@@ -891,13 +971,22 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
       margin: 0 auto;
       padding: 32px 24px 64px;
     }
+
+    @media (max-width: 640px) {
+      .vos-toolbar { padding: 0 16px; gap: 12px; }
+      .vos-username { display: none; }
+      .vos-nav-link { padding: 5px 8px; }
+      .vos-page { padding: 20px 16px 48px; }
+    }
   </style>
   <link rel="stylesheet" href="/dashboard/styles.css" />
 </head>
 <body>
   <nav class="vos-toolbar" aria-label="Site navigation">
-    <a href="/" class="vos-wordmark">Shipwright</a>
+    <a href="/admin/agents" class="vos-wordmark">Shipwright</a>
     <div class="vos-nav">
+      <a href="/admin/agents" class="vos-nav-link">Agents</a>
+      <a href="/admin/provision" class="vos-nav-link">Provision</a>
       <a href="/dashboard" class="vos-nav-link active">Metrics</a>
     </div>
     <div class="vos-user">
@@ -1215,6 +1304,7 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
 
   </div>
 
+  <script>window.__METRICS_BASE__ = '';</script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
   <script src="/dashboard/app.js"></script>
 </body>
@@ -1259,11 +1349,28 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
       letter-spacing: -0.3px;
       flex-shrink: 0;
     }
+    .vos-wordmark:hover { color: #4f46e5; }
     .vos-nav {
       display: flex;
       align-items: center;
       gap: 4px;
       flex: 1;
+    }
+    .vos-nav-link {
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      color: #6b7280;
+      text-decoration: none;
+      transition: background 0.1s, color 0.1s;
+      white-space: nowrap;
+    }
+    .vos-nav-link:hover { background: #f3f4f6; color: #1a1a2e; }
+    .vos-nav-link.active {
+      background: #eef2ff;
+      color: #4f46e5;
+      font-weight: 600;
     }
     .vos-user {
       display: flex;
@@ -1290,7 +1397,10 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
       padding: 5px 12px;
       cursor: pointer;
       font-family: inherit;
+      transition: background 0.1s, color 0.1s, border-color 0.1s;
+      white-space: nowrap;
     }
+    .vos-signout-btn:hover { background: #f7f7fb; color: #1a1a2e; border-color: #d1d5db; }
 
     /* ─── Page body ─────────────────────────────────────── */
     .vos-page {
@@ -1298,13 +1408,22 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
       margin: 0 auto;
       padding: 32px 24px 64px;
     }
+
+    @media (max-width: 640px) {
+      .vos-toolbar { padding: 0 16px; gap: 12px; }
+      .vos-username { display: none; }
+      .vos-nav-link { padding: 5px 8px; }
+      .vos-page { padding: 20px 16px 48px; }
+    }
   </style>
   <link rel="stylesheet" href="/dashboard/styles.css" />
 </head>
 <body>
   <nav class="vos-toolbar" aria-label="Site navigation">
-    <a href="/" class="vos-wordmark">Shipwright</a>
+    <a href="/admin/agents" class="vos-wordmark">Shipwright</a>
     <div class="vos-nav">
+      <a href="/admin/agents" class="vos-nav-link">Agents</a>
+      <a href="/admin/provision" class="vos-nav-link">Provision</a>
       <a href="/dashboard" class="vos-nav-link active">Metrics</a>
     </div>
     <div class="vos-user">
@@ -1622,6 +1741,7 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
 
   </div>
 
+  <script>window.__METRICS_BASE__ = '';</script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
   <script src="/dashboard/app.js"></script>
 </body>
