@@ -3,11 +3,11 @@
  * CLI entry point for the data migration script.
  *
  * Reads env vars:
- *   VITALS_OS_API_URL         — base URL of the vitals-os accounts API
- *   VITALS_OS_API_KEY         — bearer token for the accounts API
- *   SHIPWRIGHT_ADMIN_URL      — base URL of the shipwright admin API
- *   SHIPWRIGHT_ADMIN_API_KEY  — bearer API key for the shipwright admin API
- *   SHIPWRIGHT_INTERNAL_API_KEY — bearer token for the shipwright runtime API (used for cron dedup)
+ *   VITALS_OS_API_URL            — base URL of the vitals-os accounts API
+ *   VITALS_OS_API_KEY            — bearer token for the accounts API
+ *   SHIPWRIGHT_ADMIN_URL         — base URL of the shipwright admin API
+ *   SHIPWRIGHT_ADMIN_API_KEY     — bearer API key for the shipwright admin API
+ *   SHIPWRIGHT_INTERNAL_API_KEY  — bearer API key for the shipwright runtime API (used by listCrons)
  *
  * Exits 0 on full success, non-zero if any agent migration failed.
  * Reports failing agent IDs and fields to stderr.
