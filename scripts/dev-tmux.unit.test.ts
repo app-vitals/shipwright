@@ -457,12 +457,28 @@ describe("metrics pane — sqlite mode", () => {
     expect(metrics.env?.METRICS_OFFLINE).toBeUndefined();
     expect(metrics.env?.METRICS_DB_PATH).toBe("state/metrics.db");
   });
+
+  test("metrics pane enables the dashboard dev-auth bypass (real data, no login)", () => {
+    // task stack has no login flow; this lets the dashboard + /metrics/* be
+    // viewed in the browser while keeping the real sqlite provider (not fixtures).
+    const metrics = STACK_PANES.find((p) => p.label === "metrics") as Pane;
+    expect(metrics.env?.METRICS_DASHBOARD_DEV_AUTH).toBe("true");
+  });
 });
 
 describe("admin pane — dev auth", () => {
   test("admin pane has ADMIN_DEV_AUTH=true", () => {
     const admin = STACK_PANES.find((p) => p.label === "admin") as Pane;
     expect(admin.env?.ADMIN_DEV_AUTH).toBe("true");
+  });
+
+  test("admin pane points the toolbar Metrics link at the running metrics dashboard", () => {
+    // Without this the toolbar's Metrics link falls back to /sw/dashboard on the
+    // admin host (:3001), which 404s — the dashboard actually lives on :3460.
+    const admin = STACK_PANES.find((p) => p.label === "admin") as Pane;
+    expect(admin.env?.METRICS_DASHBOARD_URL).toBe(
+      `http://localhost:${METRICS_PORT}/dashboard`,
+    );
   });
 
   test("admin pane does not include SHIPWRIGHT_INTERNAL_API_KEY (removed in UNI-1.2)", () => {
