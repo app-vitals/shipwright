@@ -9,9 +9,13 @@
 
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
+  rmSync,
   statSync,
+  symlinkSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -240,6 +244,69 @@ export async function installPlugins(
  *
  * Throws if required directories cannot be created.
  */
+/** Filesystem ops used by ensureDotClaudeSymlink — injectable for tests. */
+export interface DotClaudeFs {
+  mkdirSync: typeof mkdirSync;
+  lstatSync: typeof lstatSync;
+  unlinkSync: typeof unlinkSync;
+  rmSync: typeof rmSync;
+  symlinkSync: typeof symlinkSync;
+}
+
+const DEFAULT_DOT_CLAUDE_FS: DotClaudeFs = {
+  mkdirSync,
+  lstatSync,
+  unlinkSync,
+  rmSync,
+  symlinkSync,
+};
+
+/**
+ * Symlink `linkPath` (~/.claude) → `target` ($AGENT_HOME/dot-claude), ensuring
+ * the TARGET directory exists first.
+ *
+ * The target MUST be created before symlinking: on a fresh PVC the target does
+ * not exist, so without this the symlink dangles and every write under
+ * ~/.claude — Claude Code's `session-env`, plugin installs — fails (the Bash
+ * tool can't initialize, plugin installs exit 1).
+ *
+ * Existence is probed with `lstatSync`, not `existsSync`: `existsSync` follows
+ * the link and returns false for a DANGLING symlink, which would then make
+ * `symlinkSync` throw EEXIST on a re-run. `lstatSync` sees the link itself, so
+ * a stale/dangling symlink is detected and replaced. A real directory at
+ * `linkPath` is removed (logged) before relinking.
+ */
+export function ensureDotClaudeSymlink(
+  target: string,
+  linkPath: string,
+  fs: DotClaudeFs = DEFAULT_DOT_CLAUDE_FS,
+  log: (msg: string) => void = console.log,
+): void {
+  // Create the symlink target first so the link never dangles.
+  fs.mkdirSync(target, { recursive: true });
+
+  let existing: ReturnType<typeof lstatSync> | null = null;
+  try {
+    existing = fs.lstatSync(linkPath);
+  } catch {
+    existing = null; // linkPath does not exist yet — nothing to remove
+  }
+
+  if (existing) {
+    if (existing.isSymbolicLink()) {
+      fs.unlinkSync(linkPath);
+    } else {
+      log(
+        "[entrypoint] ~/.claude is a real directory — removing before symlinking",
+      );
+      fs.rmSync(linkPath, { recursive: true });
+    }
+  }
+
+  fs.symlinkSync(target, linkPath);
+  log(`[entrypoint] symlinked ${linkPath} → ${target}`);
+}
+
 export function ensureAgentHome(home: string): void {
   const workspaceDir = join(home, "workspace");
   const stateDir = join(workspaceDir, "state");
@@ -347,9 +414,13 @@ export async function runMiseStartup(
 ): Promise<void> {
   const workspaceDir = join(home, "workspace");
 
-  // Pin mise + XDG cache dirs to the PVC before any mise calls so installs and
-  // download tarballs land on persistent storage, not ephemeral.
-  process.env.MISE_DATA_DIR = join(home, "mise");
+  // Pin only the mise + XDG *cache* dirs to the PVC so download tarballs land
+  // on persistent storage. We deliberately do NOT relocate MISE_DATA_DIR: the
+  // base toolchain (node, claude) is baked into the image at mise's default
+  // data dir ($HOME/.local/share/mise), and the image already puts that shims
+  // dir on PATH. Repointing MISE_DATA_DIR at the (initially empty) PVC orphans
+  // those baked tools — mise then reports the `claude` shim as dangling and
+  // every agent run fails. Caches are safe to persist; installs stay in the image.
   process.env.MISE_CACHE_DIR = join(home, "mise", "cache");
   process.env.XDG_CACHE_HOME = join(home, "cache");
   mkdirSync(process.env.MISE_CACHE_DIR, { recursive: true });
@@ -371,9 +442,17 @@ export async function runMiseStartup(
     return;
   }
 
-  // Prepend the shims directory to PATH — this is the reliable way to make
-  // mise-installed tools available in non-interactive bash sessions.
-  // MISE_DATA_DIR/shims is always the shims location.
-  const shimsDir = join(process.env.MISE_DATA_DIR, "shims");
+  // Prepend mise's default shims dir to PATH so workspace-declared tools are
+  // found in non-interactive bash sessions. mise's default data dir is
+  // $HOME/.local/share/mise (we intentionally don't override MISE_DATA_DIR);
+  // honor an explicit MISE_DATA_DIR/XDG_DATA_HOME if the environment sets one.
+  const miseDataDir =
+    process.env.MISE_DATA_DIR ??
+    join(
+      process.env.XDG_DATA_HOME ??
+        join(process.env.HOME ?? home, ".local", "share"),
+      "mise",
+    );
+  const shimsDir = join(miseDataDir, "shims");
   process.env.PATH = [shimsDir, process.env.PATH ?? ""].join(":");
 }

@@ -25,10 +25,12 @@ import {
   brewFormulaInstalled,
   buildLogsBanner,
   buildStackCommands,
+  buildTeardownCommands,
   dbReachable,
   missingWorkspaceDeps,
   planPostgresSetup,
   runStack,
+  runTeardown,
   sessionExists,
   sessionExistsMessage,
 } from "./dev-tmux.ts";
@@ -60,6 +62,55 @@ function sendKeysForPane(
     );
 }
 
+describe("buildTeardownCommands (stack:down)", () => {
+  test("kills the tmux session and force-removes the agent container", () => {
+    const cmds = buildTeardownCommands();
+    expect(cmds).toEqual([
+      ["tmux", "kill-session", "-t", SESSION_NAME],
+      ["docker", "rm", "-f", "shipwright-agent-dev"],
+    ]);
+  });
+
+  test("removes the container (not just the session) — the orphan tmux leaves", () => {
+    const cmds = buildTeardownCommands();
+    const dockerRm = cmds.find((c) => c[0] === "docker");
+    expect(dockerRm).toEqual(["docker", "rm", "-f", "shipwright-agent-dev"]);
+  });
+
+  test("honors injected session/container names", () => {
+    expect(buildTeardownCommands("sess", "cont")).toEqual([
+      ["tmux", "kill-session", "-t", "sess"],
+      ["docker", "rm", "-f", "cont"],
+    ]);
+  });
+});
+
+describe("runTeardown", () => {
+  test("runs every command via the injected exec, in order", () => {
+    const seen: string[][] = [];
+    const results = runTeardown(
+      [
+        ["a", "1"],
+        ["b", "2"],
+      ],
+      (argv) => {
+        seen.push(argv);
+        return 0;
+      },
+    );
+    expect(seen).toEqual([
+      ["a", "1"],
+      ["b", "2"],
+    ]);
+    expect(results.every((r) => r.ok)).toBe(true);
+  });
+
+  test("maps a non-zero exit to ok:false (best-effort — already gone)", () => {
+    const results = runTeardown([["x"]], () => 1);
+    expect(results).toEqual([{ argv: ["x"], ok: false }]);
+  });
+});
+
 describe("buildStackCommands", () => {
   test("creates a session named 'shipwright'", () => {
     const cmds = buildStackCommands(STACK_PANES);
@@ -83,6 +134,41 @@ describe("buildStackCommands", () => {
     ]);
     // session-scoped, not global — must not touch the user's tmux config
     expect(mouse?.argv).not.toContain("-g");
+  });
+
+  test("enables a titled top pane border, session-scoped", () => {
+    const cmds = buildStackCommands(STACK_PANES);
+    const status = cmds.find(
+      (c) => c.kind === "set-option" && c.argv.includes("pane-border-status"),
+    );
+    expect(status?.argv).toEqual([
+      "set-option",
+      "-w",
+      "-t",
+      SESSION_NAME,
+      "pane-border-status",
+      "top",
+    ]);
+    // window-scoped (`-w`) but not global (`-g`) — must not touch user config
+    expect(status?.argv).not.toContain("-g");
+  });
+
+  test("border format renders each pane's title", () => {
+    const cmds = buildStackCommands(STACK_PANES);
+    const format = cmds.find(
+      (c) => c.kind === "set-option" && c.argv.includes("pane-border-format"),
+    );
+    expect(format?.argv.at(-1)).toBe(" #{pane_title} ");
+  });
+
+  test("titles every pane with its label", () => {
+    const cmds = buildStackCommands(STACK_PANES);
+    const titled = cmds.filter(
+      (c) => c.kind === "select-pane" && c.argv.includes("-T"),
+    );
+    // one title command per pane, carrying that pane's label
+    const titles = titled.map((c) => c.argv.at(-1));
+    expect(titles).toEqual(STACK_PANES.map((p) => p.label));
   });
 
   test("uses a single window with 5 panes (1 new-session + 4 split-window)", () => {
@@ -378,6 +464,15 @@ describe("admin pane — dev auth + internal key", () => {
     const admin = STACK_PANES.find((p) => p.label === "admin") as Pane;
     expect(admin.env?.SHIPWRIGHT_INTERNAL_API_KEY).toBeDefined();
     expect(admin.env?.SHIPWRIGHT_INTERNAL_API_KEY?.length).toBeGreaterThan(0);
+  });
+
+  // A zero-length HS256 secret makes Web Crypto throw "DataError" the moment
+  // the admin service signs a session cookie — the service boots green but 500s
+  // on first login. The dev stack must inject a non-empty secret.
+  test("admin pane has a non-empty SHIPWRIGHT_SESSION_SECRET", () => {
+    const admin = STACK_PANES.find((p) => p.label === "admin") as Pane;
+    expect(admin.env?.SHIPWRIGHT_SESSION_SECRET).toBeDefined();
+    expect(admin.env?.SHIPWRIGHT_SESSION_SECRET?.length).toBeGreaterThan(0);
   });
 });
 
