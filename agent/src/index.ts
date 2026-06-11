@@ -23,6 +23,7 @@ import { handleCronRequest } from "./cron-handler.ts";
 import type { CronHandlerDeps } from "./cron-handler.ts";
 import { markdownToSlack } from "./format.ts";
 import {
+  DEFAULT_HEALTH_PORT,
   markSlackConnected,
   markSlackDisconnected,
   startHealthServer,
@@ -181,7 +182,7 @@ const cronDeps: CronHandlerDeps = {
   alertsChannel: config.alerts.channel,
 };
 
-const healthPort = Number(process.env.HEALTH_PORT ?? process.env.PORT ?? 3001);
+const healthPort = Number(process.env.SHIPWRIGHT_HEALTH_PORT ?? DEFAULT_HEALTH_PORT);
 startHealthServer(healthPort, analytics.summarize, cronDeps, slackClock);
 console.log(`[agent] health server on port ${healthPort}`);
 
