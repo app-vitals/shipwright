@@ -8,8 +8,9 @@ The Shipwright task store is the backing database for the plan-execute-review lo
 | `github` | GitHub Issues in a repo | Team collaboration with GitHub as the source of truth |
 | `jira` | Jira project issues | Teams already using Jira for project tracking |
 
-Config is resolved at startup using a three-step discovery chain:
+Config is resolved at startup using a four-step discovery chain:
 
+0. Check `SHIPWRIGHT_TASK_STORE` env var — takes full precedence when set (see [docs/configuration.md](configuration.md))
 1. Walk up from `cwd` looking for `.shipwright.json`
 2. Fall back to the `SHIPWRIGHT_CONFIG` env var (path to a JSON config file)
 3. Default to the JSON backend (no config needed)
