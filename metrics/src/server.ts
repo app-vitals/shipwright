@@ -37,6 +37,9 @@ const offlineMode = mode === "fixtures";
 
 const port = Number(process.env.METRICS_API_PORT ?? 3460);
 const basePath = process.env.METRICS_BASE_PATH ?? "";
+// Local-dev auth bypass for /dashboard + /metrics/* (no login flow in `task stack`).
+// Keeps the real provider — only relaxes auth. Never enable in production.
+const dashboardDevAuth = process.env.METRICS_DASHBOARD_DEV_AUTH === "true";
 
 if (!process.env.METRICS_ADMIN_URL && process.env.METRICS_ACCOUNTS_URL) {
   console.warn(
@@ -93,6 +96,7 @@ if (mode === "fixtures") {
     sessionSecret: process.env.SHIPWRIGHT_SESSION_SECRET ?? "",
     requireOwnerRole: process.env.METRICS_REQUIRE_OWNER_ROLE === "true",
     dashboardToken: process.env.METRICS_DASHBOARD_TOKEN,
+    dashboardDevAuth,
     basePath,
   };
   console.log(
@@ -108,6 +112,7 @@ if (mode === "fixtures") {
     sessionSecret: process.env.SHIPWRIGHT_SESSION_SECRET ?? "",
     requireOwnerRole: process.env.METRICS_REQUIRE_OWNER_ROLE === "true",
     dashboardToken: process.env.METRICS_DASHBOARD_TOKEN,
+    dashboardDevAuth,
     basePath,
   };
   console.log(
@@ -118,6 +123,7 @@ if (mode === "fixtures") {
     sessionSecret: process.env.SHIPWRIGHT_SESSION_SECRET ?? "",
     requireOwnerRole: process.env.METRICS_REQUIRE_OWNER_ROLE === "true",
     dashboardToken: process.env.METRICS_DASHBOARD_TOKEN,
+    dashboardDevAuth,
     basePath,
   };
 }
