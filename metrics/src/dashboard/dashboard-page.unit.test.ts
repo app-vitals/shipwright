@@ -418,7 +418,7 @@ describe("renderDashboardPage — MG-1.2 clickable metric graphs", () => {
 describe("renderDashboardPage — basePath", () => {
   test("sets window.__METRICS_BASE__ to the provided basePath", () => {
     const html = renderDashboardPage({ userName: "Alice", basePath: "/sw" });
-    expect(html).toContain("window.__METRICS_BASE__ = '/sw'");
+    expect(html).toContain('window.__METRICS_BASE__ = "/sw";');
   });
 
   test("prefixes the stylesheet href with basePath", () => {

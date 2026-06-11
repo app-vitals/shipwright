@@ -117,7 +117,7 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
     </div>
     <div class="vos-user">
       <span class="vos-username">Alice</span>
-      <form method="POST" action="/auth/logout" style="margin:0">
+      <form method="POST" action="/admin/logout" style="margin:0">
         <button type="submit" class="vos-signout-btn">Sign out</button>
       </form>
     </div>
@@ -430,7 +430,7 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
 
   </div>
 
-  <script>window.__METRICS_BASE__ = '';</script>
+  <script>window.__METRICS_BASE__ = "";</script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
   <script src="/dashboard/app.js"></script>
 </body>
@@ -554,7 +554,7 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
     </div>
     <div class="vos-user">
       <span class="vos-username">Alice</span>
-      <form method="POST" action="/auth/logout" style="margin:0">
+      <form method="POST" action="/admin/logout" style="margin:0">
         <button type="submit" class="vos-signout-btn">Sign out</button>
       </form>
     </div>
@@ -867,7 +867,7 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
 
   </div>
 
-  <script>window.__METRICS_BASE__ = '';</script>
+  <script>window.__METRICS_BASE__ = "";</script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
   <script src="/dashboard/app.js"></script>
 </body>
@@ -991,7 +991,7 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
     </div>
     <div class="vos-user">
       <span class="vos-username">Alice</span>
-      <form method="POST" action="/auth/logout" style="margin:0">
+      <form method="POST" action="/admin/logout" style="margin:0">
         <button type="submit" class="vos-signout-btn">Sign out</button>
       </form>
     </div>
@@ -1304,7 +1304,7 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
 
   </div>
 
-  <script>window.__METRICS_BASE__ = '';</script>
+  <script>window.__METRICS_BASE__ = "";</script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
   <script src="/dashboard/app.js"></script>
 </body>
@@ -1428,7 +1428,7 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
     </div>
     <div class="vos-user">
       <span class="vos-username">Alice</span>
-      <form method="POST" action="/auth/logout" style="margin:0">
+      <form method="POST" action="/admin/logout" style="margin:0">
         <button type="submit" class="vos-signout-btn">Sign out</button>
       </form>
     </div>
@@ -1741,7 +1741,7 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
 
   </div>
 
-  <script>window.__METRICS_BASE__ = '';</script>
+  <script>window.__METRICS_BASE__ = "";</script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
   <script src="/dashboard/app.js"></script>
 </body>

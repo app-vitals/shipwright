@@ -143,7 +143,7 @@ Used only by `agent/src/run-migration.ts` when migrating agents from the Vitals 
 | Name | Type | Default | Description |
 |---|---|---|---|
 | `DATABASE_URL_SHIPWRIGHT_ADMIN` | `string` | required | Postgres connection string for the admin service schema (e.g. `postgresql://user:pass@host:5432/db`). |
-| `SHIPWRIGHT_SESSION_SECRET` | `string` | — | HS256 secret for signing session cookies. Used by the metrics service (`vitals_session` cookie) and the admin service (`admin_session` cookie). |
+| `SHIPWRIGHT_SESSION_SECRET` | `string` | — | HS256 secret for the `admin_session` cookie. The admin service signs it on Google-OAuth login; the metrics service verifies it to reuse the same session (the two must share the value). |
 | `SHIPWRIGHT_ENCRYPTION_KEY` | `string` | — | 64-char hex (32 bytes) for AES-256-GCM encryption of secrets at rest. **If unset, secrets are stored in plain text** — always set this in any real deployment. |
 | `SHIPWRIGHT_ADMIN_ALLOWED_EMAILS` | `string` | — | Comma-separated list of Google email addresses permitted to log in to the admin UI. |
 | `SHIPWRIGHT_ADMIN_APP_BASE_URL` | `string` | `http://localhost:{PORT}` | Public base URL of the admin service, used to construct the Google OAuth redirect URI. |

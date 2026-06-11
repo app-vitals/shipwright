@@ -8,16 +8,23 @@
  * On success: sets c.get('session') with { userId, email, name } and calls next().
  * On Bearer token present: calls next() without setting session (API calls bypass
  *   session auth — the JSON API layer handles authentication via its own middleware).
- * On missing/invalid session: redirects to /auth/login?returnTo=<encoded-path>.
+ * On missing/invalid session: redirects to /admin/login?returnTo=<encoded-path>.
  * On missing secret: returns 500 Internal Server Error (not a redirect).
  *
- * The session cookie is "vitals_session" — a HS256 JWT signed with SHIPWRIGHT_SESSION_SECRET
- * containing { userId, email, name, iat, exp }.
+ * The session cookie is "admin_session" — the JWT issued by the admin service on
+ * Google-OAuth login, a HS256 JWT signed with SHIPWRIGHT_SESSION_SECRET containing
+ * { userId, email, iat, exp }. Metrics reuses the admin session directly (the admin
+ * is the suite's auth provider); `name` is optional and falls back to `email`.
  */
 
 import { getCookie } from "hono/cookie";
 import { createMiddleware } from "hono/factory";
 import { verify } from "hono/jwt";
+
+// The session cookie + login path are owned by the admin service — metrics
+// consumes the admin's session rather than issuing its own.
+export const SESSION_COOKIE = "admin_session";
+export const ADMIN_LOGIN_PATH = "/admin/login";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -33,7 +40,7 @@ export type SessionEnv = { Variables: { session: SessionPayload } };
 // ─── Factory ──────────────────────────────────────────────────────────────────
 
 /**
- * Creates a Hono middleware that reads and verifies the vitals_session cookie.
+ * Creates a Hono middleware that reads and verifies the admin_session cookie.
  *
  * @param secret - The JWT signing secret (SHIPWRIGHT_SESSION_SECRET). Pass empty string to
  *                 trigger a 500 response (guards against missing env var at call site).
@@ -50,13 +57,15 @@ export function createSessionMiddleware(secret: string) {
 
     // Missing secret is a server misconfiguration — return 500, not a login redirect
     if (!secret) {
-      console.error("[session-middleware] SHIPWRIGHT_SESSION_SECRET is not set");
+      console.error(
+        "[session-middleware] SHIPWRIGHT_SESSION_SECRET is not set",
+      );
       return c.text("Internal Server Error", 500);
     }
 
-    const token = getCookie(c, "vitals_session");
+    const token = getCookie(c, SESSION_COOKIE);
     const returnTo = encodeURIComponent(c.req.path);
-    const loginRedirect = `/auth/login?returnTo=${returnTo}`;
+    const loginRedirect = `${ADMIN_LOGIN_PATH}?returnTo=${returnTo}`;
 
     // Missing or empty cookie → redirect to login
     if (!token) {
@@ -77,21 +86,22 @@ export function createSessionMiddleware(secret: string) {
       return c.redirect(loginRedirect, 302);
     }
 
-    // Validate required fields are present — treat partial payloads as invalid
+    // Validate required fields are present — treat partial payloads as invalid.
+    // `name` is optional (the admin session omits it); fall back to email so the
+    // dashboard always has a display value.
     const { userId, email, name } = payload;
     if (
       typeof userId !== "string" ||
       !userId ||
       typeof email !== "string" ||
-      !email ||
-      typeof name !== "string" ||
-      !name
+      !email
     ) {
       console.debug("[session-middleware] JWT missing required fields");
       return c.redirect(loginRedirect, 302);
     }
 
-    c.set("session", { userId, email, name });
+    const displayName = typeof name === "string" && name ? name : email;
+    c.set("session", { userId, email, name: displayName });
     await next();
   });
 }
