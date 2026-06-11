@@ -137,6 +137,20 @@ curl -sf -X PATCH \
   "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/crons/{cronId}" \
   -d '{"enabled": false}' | jq .
 
+# Set or clear preCheck without touching schedule/prompt — preCheck-only toggle
+curl -sf -X PATCH \
+  -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/crons/{cronId}" \
+  -d '{"preCheck": "shipwright:check-review.ts"}' | jq .
+
+# Clear preCheck (pass null)
+curl -sf -X PATCH \
+  -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/crons/{cronId}" \
+  -d '{"preCheck": null}' | jq .
+
 # Update content and toggle enabled in one request
 curl -sf -X PATCH \
   -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
