@@ -24,6 +24,9 @@ interface ProvisionCassette {
   createAppManifest: {
     appId: string;
     oauthRedirectUrl: string;
+    clientId: string;
+    clientSecret: string;
+    signingSecret: string;
   };
 }
 
@@ -37,7 +40,13 @@ class RecordedSlackClient implements AdminUISlackClient {
   async createAppManifest(
     _xoxpToken: string,
     _manifest: AppManifest,
-  ): Promise<{ appId: string; oauthRedirectUrl: string }> {
+  ): Promise<{
+    appId: string;
+    oauthRedirectUrl: string;
+    clientId: string;
+    clientSecret: string;
+    signingSecret: string;
+  }> {
     return this.cassette.createAppManifest;
   }
 }
@@ -160,6 +169,16 @@ const CASSETTE_PATH = new URL(
   "./fixtures/slack-provision-cassette.json",
   import.meta.url,
 ).pathname;
+
+describe("SlackProvisioningClient — cassette", () => {
+  it("createAppManifest returns clientId, clientSecret, and signingSecret from cassette", async () => {
+    const slackClient = new RecordedSlackClient(CASSETTE_PATH);
+    const result = await slackClient.createAppManifest("xoxp-fake", {} as AppManifest);
+    expect(result.clientId).toBe("1234567890.9876543210");
+    expect(result.clientSecret).toBe("test-client-secret-value");
+    expect(result.signingSecret).toBe("test-signing-secret-value");
+  });
+});
 
 describe("admin UI — provisioning flow", () => {
   let cookie: string;

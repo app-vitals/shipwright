@@ -299,7 +299,7 @@ if (import.meta.main) {
   const args = parseArgs(process.argv.slice(2));
 
   const agentBase = `${args.vitalsOsUrl}/accounts/agents/${args.agentId}`;
-  const adminBase = `${args.adminUrl}/admin/api/agents/${args.agentId}`;
+  const adminBase = `${args.adminUrl}/agents/${args.agentId}`;
 
   const vitalsClient = buildVitalsOsClient(agentBase, args.vitalsOsApiKey);
   const adminClient = buildAdminClient(adminBase, args.adminToken);

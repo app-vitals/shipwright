@@ -6,7 +6,7 @@
 
 The agent owns six first-class Prisma models (`Agent` and its `Env` / `CronJob` / `Tool` / `Token` / `Plugin` children) on a **dedicated database** (`DATABASE_URL_SHIPWRIGHT_ADMIN`). Secrets at rest (env values, Slack/Anthropic keys) are AES-256-GCM encrypted at the service layer; agent API tokens are stored only as SHA-256 hashes.
 
-> The Dockerfile `ENTRYPOINT` is `bun run admin/src/main.ts`, which runs migrations, constructs all services, and mounts all admin + runtime routes. For a full agent startup sequence (env validation, config fetch, `~/.claude` symlink, GitHub auth, mise, plugin install) use `agent/src/entrypoint-main.ts` — it validates required vars, fetches agent config, applies env, symlinks `~/.claude`, sets up GitHub auth, runs mise, installs plugins, and then spawns `run-agent.ts`. `agent/src/index.ts` is the production agent startup entrypoint — it wires all runtime dependencies (health server, config sync, cron sync loop, Slack Bolt app) and handles graceful shutdown. The implemented HTTP surfaces are the admin CRUD API (`admin/src/admin-api.ts`, auth via `api-auth.ts`), the runtime API (`admin/src/api.ts`), the server-rendered admin UI (`admin/src/admin-ui.ts`), the Prisma store + service classes (all in the `@shipwright/admin` package), the Slack event handler (`slack.ts`), and the cron runtime (`cron-handler.ts`). On startup the runner calls `POST /admin/api/agents/:id/crons/reconcile` to sync system crons. A dev-only `POST /chat` transport (`chat.ts`) is available when `SHIPWRIGHT_DEV_CHAT=true`; it is never registered in production (enforced by `chat-guard.ts`).
+> The Dockerfile `ENTRYPOINT` is `bun run admin/src/main.ts`, which runs migrations, constructs all services, and mounts all admin + runtime routes. For a full agent startup sequence (env validation, config fetch, `~/.claude` symlink, GitHub auth, mise, plugin install) use `agent/src/entrypoint-main.ts` — it validates required vars, fetches agent config, applies env, symlinks `~/.claude`, sets up GitHub auth, runs mise, installs plugins, and then spawns `run-agent.ts`. `agent/src/index.ts` is the production agent startup entrypoint — it wires all runtime dependencies (health server, config sync, cron sync loop, Slack Bolt app) and handles graceful shutdown. The implemented HTTP surfaces are the admin CRUD API (`admin/src/admin-api.ts`, auth via `api-auth.ts`), the runtime API (`admin/src/api.ts`), the server-rendered admin UI (`admin/src/admin-ui.ts`), the Prisma store + service classes (all in the `@shipwright/admin` package), the Slack event handler (`slack.ts`), and the cron runtime (`cron-handler.ts`). On startup the runner calls `POST /agents/:id/crons/reconcile` to sync system crons. A dev-only `POST /chat` transport (`chat.ts`) is available when `SHIPWRIGHT_DEV_CHAT=true`; it is never registered in production (enforced by `chat-guard.ts`).
 
 ## Running locally
 
@@ -32,16 +32,16 @@ Mounted at `/agents/*`. The harness polls this every ~60s. Auth: **Bearer token*
 
 ### Admin CRUD API (`admin-api.ts`) — human-facing
 
-Mounted at `/admin/api/*`. Auth: **session cookie** `admin_session` (httpOnly JWT verified with `SHIPWRIGHT_SESSION_SECRET`) **or** a valid **bearer token** checked in this order: (1) matched against `SHIPWRIGHT_ADMIN_API_KEYS` env keys (scope `*` → admin bypass, sets `isAdmin=true`; scope `<agentId>` → enforces route agentId, sets `isAdmin=false`), then (2) validated via `agentTokenService.validate()` (DB token path, sets `isAdmin=false`). Session cookie path always sets `isAdmin=true`. If an `Authorization` header is present but the token is invalid in both paths, the request is rejected immediately (401) — it does not fall through to the cookie path. Absent auth → `401`. Routes that require admin access (e.g. agent creation) check `c.get("isAdmin")` and return `403` for scoped bearer tokens.
+Mounted at `/agents/*` (unified with the runtime API surface). Auth: **admin key** (`SHIPWRIGHT_ADMIN_API_KEYS` env key with scope `*` → bypasses all checks, sets `isAdmin=true`; scope `<agentId>` → enforces route agentId, sets `isAdmin=false`) **or** a valid **per-agent bearer token** (DB token scoped to its own `:id`, sets `isAdmin=false`) **or** **session cookie** `admin_session` (httpOnly JWT verified with `SHIPWRIGHT_SESSION_SECRET`, sets `isAdmin=true`). Admin key checked first, then DB token path, then cookie. If an `Authorization` header is present but the token is invalid in all paths, the request is rejected immediately (401) — it does not fall through to the cookie path. Absent auth → `401`. Per-agent bearer tokens are scoped to their own `:id` — cross-agent access returns `403`. Routes that require admin access (e.g. agent creation) check `c.get("isAdmin")` and return `403` for scoped bearer tokens.
 
 | Resource | Endpoints |
 |---|---|
-| Agents | `POST /admin/api/agents` (admin-only: creates agent, returns `{id, name, slackId, createdAt}` with `201`) |
-| Envs | `POST` / `GET` / `PATCH` `/admin/api/agents/:id/envs`, `DELETE /admin/api/agents/:id/envs/:key` |
-| Crons | `POST` / `GET` `/admin/api/agents/:id/crons`, `PATCH` / `DELETE` `/admin/api/agents/:id/crons/:cronId`, `POST /admin/api/agents/:id/crons/reconcile` |
-| Tools | `POST` / `GET` `/admin/api/agents/:id/tools`, `PATCH` / `DELETE` `/admin/api/agents/:id/tools/:toolId` |
-| Tokens | `POST` / `GET` `/admin/api/agents/:id/tokens`, `DELETE /admin/api/agents/:id/tokens/:tokenId` |
-| Plugins | `POST` / `GET` / `PATCH` `/admin/api/agents/:id/plugins`, `DELETE /admin/api/agents/:id/plugins` |
+| Agents | `POST /agents` (admin-only: creates agent, returns `{id, name, slackId, createdAt}` with `201`) |
+| Envs | `POST` / `GET` / `PATCH` `/agents/:id/envs`, `DELETE /agents/:id/envs/:key` |
+| Crons | `POST` `/agents/:id/crons`, `PATCH` / `DELETE` `/agents/:id/crons/:cronId`, `POST /agents/:id/crons/reconcile` |
+| Tools | `POST` / `GET` `/agents/:id/tools`, `PATCH` / `DELETE` `/agents/:id/tools/:toolId` |
+| Tokens | `POST` / `GET` `/agents/:id/tokens`, `DELETE /agents/:id/tokens/:tokenId` |
+| Plugins | `POST` / `GET` / `PATCH` `/agents/:id/plugins`, `DELETE /agents/:id/plugins` |
 
 Token creation returns the **raw token once** at creation; only its SHA-256 hash is persisted, so validation is an O(1) hash-index lookup.
 
@@ -92,7 +92,7 @@ All child models cascade-delete with their `Agent`.
 | `PORT` | server | Hono server port (default: `3000`). |
 | `HEALTH_PORT` | server | Health server port for `index.ts` (default: falls back to `PORT`, then `3001`). Set in Kubernetes to expose the liveness probe on a separate port from the main Hono server. |
 | `SHIPWRIGHT_SESSION_SECRET` | admin API | Secret for verifying the `admin_session` JWT cookie. |
-| `SHIPWRIGHT_ADMIN_API_KEYS` | admin API | Comma-separated `name:token:scope` tuples for env-based bearer auth on `/admin/api/*`. Scope `*` → admin (bypasses per-agent checks); scope `<agentId>` → restricted to that agent's routes. Optional — absent means env key auth is disabled and only DB tokens and session cookies are accepted. Example: `bodhi:sk_bodhi_abc:*,svc:sk_svc_xyz:agent-id-123`. |
+| `SHIPWRIGHT_ADMIN_API_KEYS` | admin API | Comma-separated `name:token:scope` tuples for env-based bearer auth on `/agents/*`. Scope `*` → admin (bypasses per-agent checks); scope `<agentId>` → restricted to that agent's routes. Optional — absent means env key auth is disabled and only DB tokens and session cookies are accepted. Example: `bodhi:sk_bodhi_abc:*,svc:sk_svc_xyz:agent-id-123`. |
 | `GOOGLE_CLIENT_ID` | admin UI (OAuth) | Google OAuth 2.0 client ID. Required for the admin login flow. |
 | `GOOGLE_CLIENT_SECRET` | admin UI (OAuth) | Google OAuth 2.0 client secret. Required for the admin login flow. |
 | `SHIPWRIGHT_ADMIN_ALLOWED_EMAILS` | admin UI (OAuth) | Comma-separated list of Google email addresses permitted to log in to the admin UI. |
@@ -108,6 +108,7 @@ All child models cascade-delete with their `Agent`.
 | `VITALS_OS_API_URL` | migration CLI | Base URL of the vitals-os accounts API (e.g. `https://vitals-os.com`). Required by `agent/src/run-migration.ts`. |
 | `VITALS_OS_API_KEY` | migration CLI | Admin API key for the vitals-os accounts API. Required by `agent/src/run-migration.ts`. |
 | `SHIPWRIGHT_ADMIN_API_KEY` | migration CLI | Bearer API key for the Shipwright admin API (`Authorization: Bearer`). Required by `agent/src/run-migration.ts`. |
+| `SHIPWRIGHT_INTERNAL_API_KEY` | migration CLI | Bearer token for the runtime API (`GET /agents/:id/crons`). Required by `agent/src/run-migration.ts` for cron dedup. |
 
 ## Key Files
 
@@ -122,7 +123,7 @@ All child models cascade-delete with their `Agent`.
 | `admin/src/admin-ui-pages.ts` | Page rendering functions (`renderLoginPage`, `renderAgentsPage`, `renderAgentDetailPage`, `renderProvision*`). |
 | `admin/src/admin-ui-styles.ts` | Shared CSS helpers (`baseStyles`, `escapeHtml`, `renderAdminToolbar`). |
 | `admin/src/google-auth-client.ts` | `GoogleAuthClient` interface + `HttpGoogleAuthClient` — typed Google OAuth2 token exchange and user profile lookup; injected into the admin UI for testability. |
-| `admin/src/slack-provisioning-client.ts` | `SlackProvisioningClient` interface + `HttpSlackProvisioningClient` — drives the one-time Slack app creation flow. |
+| `admin/src/slack-provisioning-client.ts` | `SlackProvisioningClient` interface + `HttpSlackProvisioningClient` — drives the one-time Slack app creation flow. `createAppManifest()` returns `appId`, `oauthRedirectUrl`, `clientId`, `clientSecret`, and `signingSecret` directly from the `apps.manifest.create` response — no separate OAuth exchange needed. |
 | `admin/src/agent-envs.ts` | Env service — encrypted key/value store + config bundle assembly. |
 | `admin/src/agent-cron-jobs.ts` | Cron service + system-cron reconciliation. |
 | `admin/src/agent-tools.ts` / `agent-tokens.ts` / `agent-plugins.ts` | Per-resource service classes. |

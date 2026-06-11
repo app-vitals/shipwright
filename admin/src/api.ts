@@ -1,12 +1,24 @@
 /**
  * agent/src/api.ts
- * Hono runtime API — GET /agents/:id/config and GET /agents/:id/crons.
+ * Hono runtime API — GET /:id/config and GET /:id/crons.
  *
- * Mounted at /agents/*. Auth via SHIPWRIGHT_INTERNAL_API_KEY bearer token.
+ * Mounted at /agents/* via root.route("/agents", runtimeApp).
+ * Hono v4's .route() strips the prefix before dispatching — routes must be
+ * registered without the /agents prefix so they resolve correctly at
+ * GET /agents/:id/config and GET /agents/:id/crons from the root.
+ * Auth via SHIPWRIGHT_INTERNAL_API_KEY bearer token.
  * This is the endpoint the harness polls every 60s.
+ *
+ * NOTE: The internal key middleware is scoped per-route (not global app.use("*")).
+ * Using app.use("*") in a sub-app mounted via root.route("/agents", runtimeApp)
+ * causes Hono v4 to hoist the middleware as a /agents/* guard in root — which
+ * blocks all admin CRUD requests (POST/PATCH/DELETE /agents/:id/*) before they
+ * reach the admin handlers. Per-route middleware confines the check to only the
+ * two routes that need it.
  */
 
 import { Hono } from "hono";
+import type { Context, Next } from "hono";
 import type { AgentCronJob } from "./agent-cron-jobs.ts";
 import type { AgentEnvBundle } from "./agent-envs.ts";
 
@@ -51,7 +63,12 @@ export interface AgentRuntimeDeps {
 
 // ─── openapi-fetch paths type ─────────────────────────────────────────────────
 
-/** Typed paths for the two runtime GET endpoints — use with createClient<RuntimeApiPaths>(). */
+/**
+ * Typed paths for the two runtime GET endpoints — use with createClient<RuntimeApiPaths>().
+ *
+ * These paths reflect the full URL as seen by clients (root-level paths),
+ * not the sub-app registration paths (which omit the /agents prefix).
+ */
 export interface RuntimeApiPaths {
   "/agents/{agentId}/config": {
     get: {
@@ -77,7 +94,7 @@ export interface RuntimeApiPaths {
 
 /** Typed paths for the admin POST endpoint — use with createClient<AdminApiPaths>(). */
 export interface AdminApiPaths {
-  "/admin/api/agents/{agentId}/crons/reconcile": {
+  "/agents/{agentId}/crons/reconcile": {
     post: {
       parameters: { path: { agentId: string } };
       responses: {
@@ -109,9 +126,9 @@ export function createAgentRuntimeApp(deps: AgentRuntimeDeps): Hono {
 
   const app = new Hono();
 
-  // ─── Auth middleware ───────────────────────────────────────────────────────
-
-  app.use("*", async (c, next) => {
+  // Internal key check — applied per-route, NOT as app.use("*").
+  // See file-level comment for why global middleware is avoided here.
+  const requireInternalKey = async (c: Context, next: Next) => {
     const authHeader = c.req.header("Authorization");
     const token = authHeader?.startsWith("Bearer ")
       ? authHeader.slice(7)
@@ -122,12 +139,16 @@ export function createAgentRuntimeApp(deps: AgentRuntimeDeps): Hono {
     }
 
     await next();
-  });
+  };
 
-  // ─── GET /agents/:id/config ───────────────────────────────────────────────
+  // ─── GET /:id/config ─────────────────────────────────────────────────────
+  //     Reachable from root as GET /agents/:id/config (Hono v4 strips prefix)
 
-  app.get("/agents/:id/config", async (c) => {
+  app.get("/:id/config", requireInternalKey, async (c) => {
     const id = c.req.param("id");
+    if (!id) {
+      return c.json({ error: "Not found" }, 404);
+    }
 
     // Check agent existence
     const agent = await prisma.agent.findUnique({ where: { id } });
@@ -158,10 +179,14 @@ export function createAgentRuntimeApp(deps: AgentRuntimeDeps): Hono {
     return c.json(response, 200);
   });
 
-  // ─── GET /agents/:id/crons ────────────────────────────────────────────────
+  // ─── GET /:id/crons ──────────────────────────────────────────────────────
+  //     Reachable from root as GET /agents/:id/crons (Hono v4 strips prefix)
 
-  app.get("/agents/:id/crons", async (c) => {
+  app.get("/:id/crons", requireInternalKey, async (c) => {
     const id = c.req.param("id");
+    if (!id) {
+      return c.json({ error: "Not found" }, 404);
+    }
 
     // Check agent existence
     const agent = await prisma.agent.findUnique({ where: { id } });

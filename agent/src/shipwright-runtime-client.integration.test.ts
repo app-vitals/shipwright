@@ -281,7 +281,7 @@ describe("HttpShipwrightRuntimeClient.reconcileSystemCrons", () => {
     await client.reconcileSystemCrons(AGENT_ID);
 
     expect(calls[0].url).toBe(
-      `${API_URL}/admin/api/agents/${AGENT_ID}/crons/reconcile`,
+      `${API_URL}/agents/${AGENT_ID}/crons/reconcile`,
     );
     expect(calls[0].method).toBe("POST");
   });
@@ -299,7 +299,7 @@ describe("HttpShipwrightRuntimeClient.reconcileSystemCrons", () => {
     await client.reconcileSystemCrons(AGENT_ID);
 
     expect(calls[0].url).toBe(
-      `${ADMIN_URL}/admin/api/agents/${AGENT_ID}/crons/reconcile`,
+      `${ADMIN_URL}/agents/${AGENT_ID}/crons/reconcile`,
     );
   });
 });

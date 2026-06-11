@@ -25,7 +25,7 @@ export class HttpShipwrightAdminClient
 
   constructor(
     private readonly baseUrl: string,
-    private readonly apiKey: string,
+    private readonly adminApiKey: string,
     private readonly internalApiKey: string,
     fetch: FetchFn = globalThis.fetch,
   ) {
@@ -34,7 +34,7 @@ export class HttpShipwrightAdminClient
 
   private get headers(): Record<string, string> {
     return {
-      Authorization: `Bearer ${this.apiKey}`,
+      Authorization: `Bearer ${this.adminApiKey}`,
       "Content-Type": "application/json",
     };
   }
