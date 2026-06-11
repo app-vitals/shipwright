@@ -63,17 +63,12 @@ codebase (`admin/src/system-crons.ts`). Important rules:
 
 - **Cannot be deleted via the API** — the server returns 403. They are recreated on the
   next `reconcile` call.
-- **Cannot have `enabled` toggled via `PATCH`** — the update endpoint does not accept an
-  `enabled` field. To permanently disable a system cron, this requires a code change or
-  a dedicated endpoint (not yet implemented). As a workaround, note which system crons
-  should be disabled and call `reconcile` only after updating `SYSTEM_CRONS.enabled` in code.
+- **Can be enabled/disabled via `PATCH {"enabled": bool}`** — the enabled-only toggle works
+  for both custom and system crons. The enabled state persists across reconcile calls.
 - **Content updates go through code** — submit a PR to change `SYSTEM_CRONS`, then call
-  `POST .../crons/reconcile` to apply the new definition. The existing enabled state is
-  preserved across reconcile.
+  `POST .../crons/reconcile` to apply the new definition.
 
 Custom crons (user-created, `"system": false`) can be freely created, updated, and deleted.
-To toggle a custom cron's enabled state, delete it and recreate it with the desired `enabled`
-value — the PATCH endpoint does not accept `enabled`.
 
 ```bash
 # List all crons for an agent
@@ -123,7 +118,7 @@ curl -sf -X POST \
     "enabled": true
   }' | jq .
 
-# Update a custom cron — schedule and prompt are always required together
+# Update a cron's content — schedule and prompt required together; enabled is optional
 curl -sf -X PATCH \
   -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
   -H "Content-Type: application/json" \
@@ -133,6 +128,24 @@ curl -sf -X PATCH \
     "prompt": "Updated prompt text here",
     "channel": "C123456",
     "preCheck": "shipwright:check-review.ts"
+  }' | jq .
+
+# Enable or disable any cron (custom or system) — enabled-only toggle
+curl -sf -X PATCH \
+  -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/crons/{cronId}" \
+  -d '{"enabled": false}' | jq .
+
+# Update content and toggle enabled in one request
+curl -sf -X PATCH \
+  -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/crons/{cronId}" \
+  -d '{
+    "schedule": "0 8 * * 1-5",
+    "prompt": "Updated prompt text here",
+    "enabled": true
   }' | jq .
 
 # Delete a custom cron (system crons cannot be deleted — 403)
@@ -157,7 +170,7 @@ curl -sf -X POST \
 | `channel` | One of† | Slack channel ID for output |
 | `user` | One of† | Slack user ID (posts as DM) |
 | `silent` | No | `true` = run Claude but post nothing to Slack |
-| `enabled` | No | Default `true`. Set at create time; not patchable afterward |
+| `enabled` | No | Default `true`. Patchable via enabled-only or full-content PATCH |
 | `preCheck` | No | Script — stdout becomes the live prompt; non-0 exit skips the tick |
 | `name` | No | Human-readable label (required for system crons) |
 
@@ -324,8 +337,8 @@ local JSONL fallback, trends, and produces a formatted report.
 ## Safety Rules
 
 - **Confirm before any DELETE** — token revocations and plugin removals are not easily reversed.
-- **Never attempt to delete system crons** — the API returns 403, and they're recreated on reconcile anyway. Note which ones to disable and handle via code if needed.
-- **PATCH on crons requires `schedule` + `prompt` together** — you must resend both even when changing only one. `enabled` cannot be patched.
+- **Never attempt to delete system crons** — the API returns 403. Use `PATCH {"enabled": false}` to disable them instead.
+- **Content PATCH requires `schedule` + `prompt` together** — you must resend both even when changing only one. For toggling only enabled, use `{"enabled": bool}` with no schedule/prompt.
 - **POST to `/envs` replaces everything** — use PATCH to update specific keys without wiping others.
 - **Token raw values are shown once** — save `rawToken` from the create response before closing the session.
 - **If the API isn't responding**, stop and tell the user — don't guess or retry blindly.
