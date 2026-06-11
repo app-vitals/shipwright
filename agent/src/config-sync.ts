@@ -115,9 +115,12 @@ export async function startConfigSync(
     }
 
     const allowedTools = bundle.allowedTools ?? [];
-    if (allowedTools.length > 0) {
-      env.AGENT_ALLOWED_TOOLS = JSON.stringify(allowedTools);
-    }
+    // Always write AGENT_ALLOWED_TOOLS — even when the list is cleared — so a
+    // previously-set value doesn't linger as a stale env var after tools are
+    // removed. undefined removes the key; applyClaudeConfig always receives the
+    // current (possibly empty) array and is the authoritative live source.
+    env.AGENT_ALLOWED_TOOLS =
+      allowedTools.length > 0 ? JSON.stringify(allowedTools) : undefined;
 
     // Push the refreshed config into the live claude runner.
     applyClaudeConfig({

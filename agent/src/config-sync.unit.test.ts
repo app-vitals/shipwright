@@ -163,6 +163,23 @@ describe("startConfigSync", () => {
     expect(patch?.allowedTools).toEqual(["Read", "Bash"]);
   });
 
+  it("clears AGENT_ALLOWED_TOOLS when allowedTools is empty (prevents stale env)", async () => {
+    // Seed a stale value as if tools had been set in a prior sync cycle.
+    const env: Record<string, string | undefined> = {
+      AGENT_ALLOWED_TOOLS: JSON.stringify(["Read", "Bash"]),
+    };
+    await startConfigSync({
+      source: fixedSource(makeBundle({ allowedTools: [] })),
+      agentId: "a1",
+      defaultModel: DEFAULT_MODEL,
+      env,
+      applyClaudeConfig: () => {},
+      ...fakeTimers(),
+      log: () => {},
+    });
+    expect(env.AGENT_ALLOWED_TOOLS).toBeUndefined();
+  });
+
   it("honors env.ANTHROPIC_MODEL over the default model", async () => {
     let patch: Partial<LiveClaudeConfig> | undefined;
     await startConfigSync({
