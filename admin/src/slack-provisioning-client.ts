@@ -5,10 +5,8 @@
  * Used during the one-time agent provisioning flow:
  *   1. apps.manifest.create — creates the Slack app from a manifest
  *
- * Note: signing secret exchange is intentionally omitted. Slack's oauth.v2.access
- * does not return the signing secret, and apps.auth.external.get requires admin
- * scopes not available in the user token flow. The provisioning UI collects it
- * via a paste form instead.
+ * apps.manifest.create returns credentials (client_id, client_secret, signing_secret)
+ * directly in the response — no separate oauth.v2.access exchange needed.
  */
 
 // ─── Types ────────────────────────────────────────────────────────────────────
