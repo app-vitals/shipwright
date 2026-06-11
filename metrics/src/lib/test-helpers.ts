@@ -42,6 +42,7 @@ export function makeAccountsClientMock(
   };
   return {
     listUsers: listUsersImpl,
+    listAgents: async () => [],
     getUser: async (id: string) => ({
       id,
       name: "noop",

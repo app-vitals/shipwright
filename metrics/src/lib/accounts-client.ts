@@ -29,6 +29,11 @@ export interface UserRecord {
   updatedAt: string;
 }
 
+export interface AgentRecord {
+  id: string;
+  name: string;
+}
+
 // ─── Error type ───────────────────────────────────────────────────────────────
 
 export class AccountsClientError extends Error {
@@ -46,6 +51,7 @@ export class AccountsClientError extends Error {
 export interface AccountsClient {
   getUser(id: string): Promise<UserRecord>;
   listUsers(): Promise<UserRecord[]>;
+  listAgents(): Promise<AgentRecord[]>;
   // Stub methods for interface completeness (used in test doubles)
   createUser(input: unknown): Promise<UserRecord>;
   updateUser(id: string, input: unknown): Promise<UserRecord>;
@@ -132,6 +138,10 @@ export class HttpAccountsClient implements AccountsClient {
 
   async listUsers(): Promise<UserRecord[]> {
     return this.fetch<UserRecord[]>("/accounts/users");
+  }
+
+  async listAgents(): Promise<AgentRecord[]> {
+    return this.fetch<AgentRecord[]>("/agents");
   }
 
   async createUser(input: unknown): Promise<UserRecord> {

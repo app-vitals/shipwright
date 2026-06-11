@@ -47,6 +47,7 @@ function makeAccountsClientStub(
     getUser: async (_id: string) => user,
     // Unused methods — satisfy the interface with stubs
     listUsers: async () => [],
+    listAgents: async () => [],
     createUser: async () => user,
     updateUser: async () => user,
     listClients: async () => [],
