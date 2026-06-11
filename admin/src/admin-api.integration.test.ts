@@ -5,8 +5,8 @@
  * Requires DATABASE_URL_ADMIN_TEST to be set; skips otherwise.
  *
  * Key assertions:
- * - POST /admin/api/agents/:id/envs encrypts values at rest
- * - POST /admin/api/agents/:id/tokens stores hash not raw token
+ * - POST /agents/:id/envs encrypts values at rest
+ * - POST /agents/:id/tokens stores hash not raw token
  * - GET /tokens shows hash metadata only (no rawToken)
  */
 
@@ -103,7 +103,7 @@ describeOrSkip("admin CRUD API (integration)", () => {
     process.env.SHIPWRIGHT_ENCRYPTION_KEY = REAL_KEY;
 
     try {
-      const res = await app.request(`/admin/api/agents/${agentId}/envs`, {
+      const res = await app.request(`/agents/${agentId}/envs`, {
         method: "POST",
         body: JSON.stringify({ SECRET: "my-api-key" }),
         headers: {
@@ -130,7 +130,7 @@ describeOrSkip("admin CRUD API (integration)", () => {
 
     try {
       // First write via POST
-      await app.request(`/admin/api/agents/${agentId}/envs`, {
+      await app.request(`/agents/${agentId}/envs`, {
         method: "POST",
         body: JSON.stringify({ SECRET: "my-api-key" }),
         headers: {
@@ -140,7 +140,7 @@ describeOrSkip("admin CRUD API (integration)", () => {
       });
 
       // Then read via GET
-      const res = await app.request(`/admin/api/agents/${agentId}/envs`, {
+      const res = await app.request(`/agents/${agentId}/envs`, {
         headers: { Cookie: `admin_session=${cookie}` },
       });
       expect(res.status).toBe(200);
@@ -154,7 +154,7 @@ describeOrSkip("admin CRUD API (integration)", () => {
   // ─── Token hash storage ───────────────────────────────────────────────────────
 
   it("POST /tokens stores hash not raw token; GET /tokens shows hash metadata only", async () => {
-    const res = await app.request(`/admin/api/agents/${agentId}/tokens`, {
+    const res = await app.request(`/agents/${agentId}/tokens`, {
       method: "POST",
       body: JSON.stringify({ label: "ci-token" }),
       headers: {
@@ -179,7 +179,7 @@ describeOrSkip("admin CRUD API (integration)", () => {
     expect(dbRecord?.token).toHaveLength(64);
 
     // GET /tokens should not expose rawToken
-    const listRes = await app.request(`/admin/api/agents/${agentId}/tokens`, {
+    const listRes = await app.request(`/agents/${agentId}/tokens`, {
       headers: { Cookie: `admin_session=${cookie}` },
     });
     expect(listRes.status).toBe(200);
