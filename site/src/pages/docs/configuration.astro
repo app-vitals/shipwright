@@ -1,0 +1,533 @@
+---
+// Configuration reference page — mirrors docs/configuration.md for the web.
+// Zero runtime JS. All content is static HTML inlined at build time.
+import BaseLayout from "../../layouts/BaseLayout.astro";
+---
+
+<BaseLayout
+  title="Configuration — Shipwright Harness"
+  description="Single authoritative reference for all Shipwright configuration options: Plugin Config, Agent Config, and Policy Config."
+>
+  <!-- Page header -->
+  <section class="relative z-10 pt-20 pb-12">
+    <p class="sw-label">Reference</p>
+    <h1 class="sw-h1 mt-4">Configuration</h1>
+    <p class="mt-4 max-w-2xl text-lg">
+      Single authoritative reference for all Shipwright configuration options,
+      organized by scope:
+      <a href="#plugin-config">Plugin Config</a>,
+      <a href="#agent-config">Agent Config</a>, and
+      <a href="#policy-config">Policy Config</a>.
+    </p>
+  </section>
+
+  <!-- Precedence -->
+  <section class="relative z-10 pb-12">
+    <h2 id="precedence">Precedence</h2>
+    <p class="mt-3 max-w-2xl">
+      When the same option can be set multiple ways, resolution order is:
+    </p>
+    <pre class="sw-code mt-4 w-fit"><code>env var  &gt;  .shipwright.json  &gt;  built-in default</code></pre>
+    <div class="sw-callout mt-6 max-w-3xl">
+      <p>
+        <strong>Env vars are the primary configuration path.</strong> Managed
+        Shipwright agents must use env vars — they are injected by the admin
+        service and are the only supported config mechanism for deployed agents.
+        <code>.shipwright.json</code> is a local fallback for use when you
+        install and run the Shipwright plugin directly in Claude Code without a
+        managed agent. Do not commit or rely on <code>.shipwright.json</code> in
+        a managed agent deployment.
+      </p>
+    </div>
+  </section>
+
+  <!-- ── Plugin Config ── -->
+  <section id="plugin-config" class="relative z-10 py-12" style="border-top: 1px solid var(--sw-color-border-subtle);">
+    <p class="sw-label">Section 1</p>
+    <h2 class="sw-h1 mt-4">Plugin Config</h2>
+    <p class="mt-3 max-w-2xl">
+      Configuration for the Shipwright Claude Code plugin
+      (<code>plugins/shipwright/</code>). These options control workspace
+      discovery, task-store backend, and GitHub CLI integration.
+    </p>
+
+    <h3 class="mt-10">Env vars</h3>
+    <div class="mt-4 overflow-x-auto">
+      <table style="width:100%; border-collapse:collapse;">
+        <thead>
+          <tr style="border-bottom: 1px solid var(--sw-color-border-muted);">
+            <th style="text-align:left; padding:0.6rem 1rem 0.6rem 0; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Name</th>
+            <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Type</th>
+            <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Default</th>
+            <th style="text-align:left; padding:0.6rem 0 0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          {[
+            { name: "SHIPWRIGHT_TASK_STORE", type: "string", def: "—", desc: "Selects the task store backend (github, jira, or json). When set, takes precedence over all file-based config — the .shipwright.json walk-up and SHIPWRIGHT_CONFIG are skipped entirely." },
+            { name: "SHIPWRIGHT_GITHUB_OWNER", type: "string", def: "—", desc: "GitHub organization or user name. Required when SHIPWRIGHT_TASK_STORE=github." },
+            { name: "SHIPWRIGHT_GITHUB_REPO", type: "string", def: "—", desc: "GitHub repository name. Required when SHIPWRIGHT_TASK_STORE=github." },
+            { name: "JIRA_BASE_URL", type: "string", def: "—", desc: "Base URL of the Jira instance (e.g. https://example.atlassian.net). Required when SHIPWRIGHT_TASK_STORE=jira." },
+            { name: "JIRA_PROJECT_KEY", type: "string", def: "—", desc: "Jira project key (e.g. SHIP). Required when SHIPWRIGHT_TASK_STORE=jira." },
+            { name: "SHIPWRIGHT_REPOS_DIR", type: "string", def: "<AGENT_HOME>/workspace/repos", desc: "Override the workspace repos directory." },
+            { name: "SHIPWRIGHT_WORKTREE_DIR", type: "string", def: "<AGENT_HOME>/workspace/worktrees", desc: "Override the workspace worktrees directory." },
+            { name: "SHIPWRIGHT_LOCAL_MARKETPLACE", type: "string", def: "—", desc: "Absolute path to a local marketplace checkout. Dev-only — do not set in production." },
+            { name: "SHIPWRIGHT_DEV_CHAT", type: "bool", def: "false", desc: "Enables the unauthenticated POST /chat endpoint. Must not be set in production." },
+            { name: "SHIPWRIGHT_CONFIG", type: "string", def: "—", desc: "Explicit path to .shipwright.json when auto-discovery is not suitable." },
+            { name: "GH_CMD", type: "string", def: "gh", desc: "Override the gh CLI executable. Useful in environments where gh is installed to a non-default path." },
+            { name: "AGENT_HOME", type: "string", def: "~/.shipwright-agent", desc: "Persistent storage root for workspace files, mise caches, and ~/.claude." },
+            { name: "WORKSPACE_PATH", type: "string", def: "—", desc: "Direct workspace path override. Takes precedence over AGENT_HOME-based discovery when set." },
+            { name: "JIRA_API_TOKEN", type: "string", def: "—", desc: "API token for Jira authentication. Required when taskStore is jira. Env-var-only (secret)." },
+            { name: "JIRA_EMAIL", type: "string", def: "—", desc: "Email address for Jira authentication. Required when taskStore is jira." },
+          ].map((row) => (
+            <tr style="border-bottom: 1px solid var(--sw-color-border-subtle);">
+              <td style="padding:0.7rem 1rem 0.7rem 0; vertical-align:top;"><code class="sw-mono" style="color:var(--sw-color-support-cyan); font-size:0.875rem;">{row.name}</code></td>
+              <td style="padding:0.7rem 1rem; vertical-align:top;"><code class="sw-mono" style="color:var(--sw-color-text-editorial); font-size:0.875rem;">{row.type}</code></td>
+              <td style="padding:0.7rem 1rem; vertical-align:top; white-space:nowrap;"><code class="sw-mono" style="color:var(--sw-color-text-muted); font-size:0.875rem;">{row.def}</code></td>
+              <td style="padding:0.7rem 0 0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">{row.desc}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+
+    <h3 class="mt-12">.shipwright.json</h3>
+    <p class="mt-3 max-w-2xl">
+      <code>.shipwright.json</code> is for use when you install and run the
+      Shipwright plugin in Claude Code directly — without a managed Shipwright
+      agent. Managed agents receive all configuration via env vars from the
+      admin service; they do not read <code>.shipwright.json</code>.
+    </p>
+    <p class="mt-3 max-w-2xl sw-editorial">
+      Config-file resolution order: (1) check <code>SHIPWRIGHT_TASK_STORE</code>
+      env var; (2) walk up from cwd looking for <code>.shipwright.json</code>;
+      (3) fall back to <code>SHIPWRIGHT_CONFIG</code> env var; (4) fall back to
+      local JSON state.
+    </p>
+
+    <h4 class="mt-8" style="font-size:1.1rem; font-weight:600; color:var(--sw-color-text-heading);">Task store keys</h4>
+    <div class="mt-4 overflow-x-auto">
+      <table style="width:100%; border-collapse:collapse;">
+        <thead>
+          <tr style="border-bottom: 1px solid var(--sw-color-border-muted);">
+            <th style="text-align:left; padding:0.6rem 1rem 0.6rem 0; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Key</th>
+            <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Type</th>
+            <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Default</th>
+            <th style="text-align:left; padding:0.6rem 0 0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          {[
+            { name: "taskStore", type: '"json" | "github" | "jira"', def: "required", desc: "Backend for the task store." },
+            { name: "github.owner", type: "string", def: "required if taskStore=github", desc: "GitHub org or user that owns the issues repo." },
+            { name: "github.repo", type: "string", def: "required if taskStore=github", desc: "GitHub repo name containing issues used as tasks." },
+            { name: "jira.baseUrl", type: "string", def: "required if taskStore=jira", desc: "Base URL of the Jira instance." },
+            { name: "jira.projectKey", type: "string", def: "required if taskStore=jira", desc: "Jira project key (e.g. SHIP)." },
+            { name: "jira.readyJql", type: "string", def: "—", desc: "Custom JQL to filter ready tasks. Overrides the default status-based query." },
+            { name: "jira.statusMap", type: "Record<string, TaskStatus>", def: "—", desc: "Maps Jira status names to Shipwright task statuses." },
+          ].map((row) => (
+            <tr style="border-bottom: 1px solid var(--sw-color-border-subtle);">
+              <td style="padding:0.7rem 1rem 0.7rem 0; vertical-align:top;"><code class="sw-mono" style="color:var(--sw-color-support-cyan); font-size:0.875rem;">{row.name}</code></td>
+              <td style="padding:0.7rem 1rem; vertical-align:top;"><code class="sw-mono" style="color:var(--sw-color-text-editorial); font-size:0.875rem;">{row.type}</code></td>
+              <td style="padding:0.7rem 1rem; vertical-align:top;"><code class="sw-mono" style="color:var(--sw-color-text-muted); font-size:0.875rem;">{row.def}</code></td>
+              <td style="padding:0.7rem 0 0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">{row.desc}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+
+    <h4 class="mt-8" style="font-size:1.1rem; font-weight:600; color:var(--sw-color-text-heading);">Minimal example</h4>
+    <pre class="sw-code mt-4 max-w-xl text-sm"><code>{`{
+  "taskStore": "github",
+  "github": {
+    "owner": "your-org",
+    "repo": "your-repo"
+  }
+}`}</code></pre>
+  </section>
+
+  <!-- ── Agent Config ── -->
+  <section id="agent-config" class="relative z-10 py-12" style="border-top: 1px solid var(--sw-color-border-subtle);">
+    <p class="sw-label">Section 2</p>
+    <h2 class="sw-h1 mt-4">Agent Config</h2>
+    <p class="mt-3 max-w-2xl">
+      Configuration for the Shipwright agent runtime (<code>agent/</code> and
+      <code>admin/</code>). All options are env vars — there is no file-based
+      fallback for agent config. Secrets must be supplied as env vars and are
+      never stored in config files.
+    </p>
+
+    <h3 class="mt-10">Claude / Anthropic</h3>
+    <div class="mt-4 overflow-x-auto">
+      <table style="width:100%; border-collapse:collapse;">
+        <thead>
+          <tr style="border-bottom: 1px solid var(--sw-color-border-muted);">
+            <th style="text-align:left; padding:0.6rem 1rem 0.6rem 0; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Name</th>
+            <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Type</th>
+            <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Default</th>
+            <th style="text-align:left; padding:0.6rem 0 0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          {[
+            { name: "ANTHROPIC_MODEL", type: "string", def: "claude-sonnet-4-6", desc: "Claude model used for each agent invocation." },
+            { name: "ANTHROPIC_FALLBACK_MODEL", type: "string", def: "—", desc: "Fallback model if the primary is unavailable." },
+            { name: "ANTHROPIC_EFFORT_LEVEL", type: "string", def: "—", desc: "Effort/thinking level passed to Claude (e.g. extended, auto, none)." },
+            { name: "ANTHROPIC_API_KEY", type: "string", def: "—", desc: "Anthropic API key. Env-var-only (secret)." },
+            { name: "CLAUDE_CODE_OAUTH_TOKEN", type: "string", def: "—", desc: "Claude Code OAuth token (alternative to ANTHROPIC_API_KEY). Env-var-only (secret)." },
+          ].map((row) => (
+            <tr style="border-bottom: 1px solid var(--sw-color-border-subtle);">
+              <td style="padding:0.7rem 1rem 0.7rem 0; vertical-align:top;"><code class="sw-mono" style="color:var(--sw-color-support-cyan); font-size:0.875rem;">{row.name}</code></td>
+              <td style="padding:0.7rem 1rem; vertical-align:top;"><code class="sw-mono" style="color:var(--sw-color-text-editorial); font-size:0.875rem;">{row.type}</code></td>
+              <td style="padding:0.7rem 1rem; vertical-align:top; white-space:nowrap;"><code class="sw-mono" style="color:var(--sw-color-text-muted); font-size:0.875rem;">{row.def}</code></td>
+              <td style="padding:0.7rem 0 0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">{row.desc}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+
+    <h3 class="mt-10">Slack</h3>
+    <p class="mt-2 sw-editorial max-w-2xl">
+      All Slack vars are env-var-only (secrets). The agent does not function as a
+      Slack bot without them.
+    </p>
+    <div class="mt-4 overflow-x-auto">
+      <table style="width:100%; border-collapse:collapse;">
+        <thead>
+          <tr style="border-bottom: 1px solid var(--sw-color-border-muted);">
+            <th style="text-align:left; padding:0.6rem 1rem 0.6rem 0; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Name</th>
+            <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Type</th>
+            <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Default</th>
+            <th style="text-align:left; padding:0.6rem 0 0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          {[
+            { name: "SLACK_BOT_TOKEN", type: "string", def: "required for Slack", desc: "Slack bot user OAuth token (xoxb-...)." },
+            { name: "SLACK_APP_TOKEN", type: "string", def: "required for Slack", desc: "Slack app-level token for Socket Mode (xapp-...)." },
+            { name: "SLACK_SIGNING_SECRET", type: "string", def: "required for Slack", desc: "Used to verify incoming Slack request signatures." },
+            { name: "SLACK_ADMIN_TOKEN", type: "string", def: "—", desc: "Optional admin-level token for privileged Slack operations." },
+            { name: "SLACK_ALERT_CHANNEL", type: "string", def: "—", desc: "Slack channel ID to post system alerts (e.g. startup errors)." },
+            { name: "SLACK_OWNER_USER", type: "string", def: "—", desc: "Slack user ID of the agent owner, used for DM fallback." },
+          ].map((row) => (
+            <tr style="border-bottom: 1px solid var(--sw-color-border-subtle);">
+              <td style="padding:0.7rem 1rem 0.7rem 0; vertical-align:top;"><code class="sw-mono" style="color:var(--sw-color-support-cyan); font-size:0.875rem;">{row.name}</code></td>
+              <td style="padding:0.7rem 1rem; vertical-align:top;"><code class="sw-mono" style="color:var(--sw-color-text-editorial); font-size:0.875rem;">{row.type}</code></td>
+              <td style="padding:0.7rem 1rem; vertical-align:top;"><code class="sw-mono" style="color:var(--sw-color-text-muted); font-size:0.875rem;">{row.def}</code></td>
+              <td style="padding:0.7rem 0 0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">{row.desc}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+
+    <h3 class="mt-10">GitHub</h3>
+    <p class="mt-2 sw-editorial max-w-2xl">
+      Provide either the GitHub App vars (recommended) or <code>GH_TOKEN</code>
+      (PAT). App auth is used when the App env vars are present;
+      <code>GH_TOKEN</code> is the fallback.
+    </p>
+    <div class="mt-4 overflow-x-auto">
+      <table style="width:100%; border-collapse:collapse;">
+        <thead>
+          <tr style="border-bottom: 1px solid var(--sw-color-border-muted);">
+            <th style="text-align:left; padding:0.6rem 1rem 0.6rem 0; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Name</th>
+            <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Type</th>
+            <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Default</th>
+            <th style="text-align:left; padding:0.6rem 0 0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          {[
+            { name: "GH_APP_ID", type: "string", def: "required for App auth", desc: "GitHub App ID (integer as string). Env-var-only (secret)." },
+            { name: "GH_APP_INSTALLATION_ID", type: "string", def: "required for App auth", desc: "Installation ID for the target org/repo. Env-var-only (secret)." },
+            { name: "GH_APP_PRIVATE_KEY", type: "string", def: "required for App auth", desc: "PEM private key for the GitHub App. Env-var-only (secret)." },
+            { name: "GH_TOKEN", type: "string", def: "—", desc: "Personal Access Token. Used only when GitHub App vars are absent. Env-var-only (secret)." },
+          ].map((row) => (
+            <tr style="border-bottom: 1px solid var(--sw-color-border-subtle);">
+              <td style="padding:0.7rem 1rem 0.7rem 0; vertical-align:top;"><code class="sw-mono" style="color:var(--sw-color-support-cyan); font-size:0.875rem;">{row.name}</code></td>
+              <td style="padding:0.7rem 1rem; vertical-align:top;"><code class="sw-mono" style="color:var(--sw-color-text-editorial); font-size:0.875rem;">{row.type}</code></td>
+              <td style="padding:0.7rem 1rem; vertical-align:top;"><code class="sw-mono" style="color:var(--sw-color-text-muted); font-size:0.875rem;">{row.def}</code></td>
+              <td style="padding:0.7rem 0 0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">{row.desc}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+
+    <h3 class="mt-10">Shipwright platform</h3>
+    <div class="mt-4 overflow-x-auto">
+      <table style="width:100%; border-collapse:collapse;">
+        <thead>
+          <tr style="border-bottom: 1px solid var(--sw-color-border-muted);">
+            <th style="text-align:left; padding:0.6rem 1rem 0.6rem 0; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Name</th>
+            <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Type</th>
+            <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Default</th>
+            <th style="text-align:left; padding:0.6rem 0 0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          {[
+            { name: "SHIPWRIGHT_API_URL", type: "string", def: "—", desc: "Base URL of the Shipwright admin service, used by the agent entrypoint to fetch config at startup." },
+            { name: "SHIPWRIGHT_AGENT_ID", type: "string", def: "—", desc: "The agent's ID in the Shipwright platform. Also settable via --agent-id CLI flag." },
+            { name: "SHIPWRIGHT_INTERNAL_API_KEY", type: "string", def: "—", desc: "Bearer token for the runtime API (/agents/*) and the config fetch at startup. Env-var-only (secret)." },
+          ].map((row) => (
+            <tr style="border-bottom: 1px solid var(--sw-color-border-subtle);">
+              <td style="padding:0.7rem 1rem 0.7rem 0; vertical-align:top;"><code class="sw-mono" style="color:var(--sw-color-support-cyan); font-size:0.875rem;">{row.name}</code></td>
+              <td style="padding:0.7rem 1rem; vertical-align:top;"><code class="sw-mono" style="color:var(--sw-color-text-editorial); font-size:0.875rem;">{row.type}</code></td>
+              <td style="padding:0.7rem 1rem; vertical-align:top;"><code class="sw-mono" style="color:var(--sw-color-text-muted); font-size:0.875rem;">{row.def}</code></td>
+              <td style="padding:0.7rem 0 0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">{row.desc}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+
+    <h3 class="mt-10">Server</h3>
+    <div class="mt-4 overflow-x-auto">
+      <table style="width:100%; border-collapse:collapse;">
+        <thead>
+          <tr style="border-bottom: 1px solid var(--sw-color-border-muted);">
+            <th style="text-align:left; padding:0.6rem 1rem 0.6rem 0; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Name</th>
+            <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Type</th>
+            <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Default</th>
+            <th style="text-align:left; padding:0.6rem 0 0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          {[
+            { name: "PORT", type: "number", def: "3000", desc: "Hono server port. Applies to both the admin service and the agent runtime server." },
+            { name: "HEALTH_PORT", type: "number", def: "PORT ?? 3001", desc: "Agent health server port for the K8s liveness probe." },
+            { name: "NODE_ENV", type: "string", def: "—", desc: "Runtime environment. Set to production to enforce production-safety guards." },
+          ].map((row) => (
+            <tr style="border-bottom: 1px solid var(--sw-color-border-subtle);">
+              <td style="padding:0.7rem 1rem 0.7rem 0; vertical-align:top;"><code class="sw-mono" style="color:var(--sw-color-support-cyan); font-size:0.875rem;">{row.name}</code></td>
+              <td style="padding:0.7rem 1rem; vertical-align:top;"><code class="sw-mono" style="color:var(--sw-color-text-editorial); font-size:0.875rem;">{row.type}</code></td>
+              <td style="padding:0.7rem 1rem; vertical-align:top;"><code class="sw-mono" style="color:var(--sw-color-text-muted); font-size:0.875rem;">{row.def}</code></td>
+              <td style="padding:0.7rem 0 0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">{row.desc}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+
+    <h3 class="mt-10">Metrics &amp; Admin service</h3>
+    <div class="mt-4 overflow-x-auto">
+      <table style="width:100%; border-collapse:collapse;">
+        <thead>
+          <tr style="border-bottom: 1px solid var(--sw-color-border-muted);">
+            <th style="text-align:left; padding:0.6rem 1rem 0.6rem 0; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Name</th>
+            <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Type</th>
+            <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Default</th>
+            <th style="text-align:left; padding:0.6rem 0 0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          {[
+            { name: "DATABASE_URL_SHIPWRIGHT_ADMIN", type: "string", def: "required", desc: "Postgres connection string for the admin service schema." },
+            { name: "SHIPWRIGHT_SESSION_SECRET", type: "string", def: "—", desc: "HS256 secret for signing session cookies. Used by the metrics service (vitals_session cookie) and the admin service (admin_session cookie)." },
+            { name: "SHIPWRIGHT_ENCRYPTION_KEY", type: "string", def: "—", desc: "64-char hex (32 bytes) for AES-256-GCM encryption of secrets at rest. If unset, secrets are stored in plain text." },
+            { name: "SHIPWRIGHT_ADMIN_ALLOWED_EMAILS", type: "string", def: "—", desc: "Comma-separated list of Google email addresses permitted to log in to the admin UI." },
+            { name: "SHIPWRIGHT_ADMIN_APP_BASE_URL", type: "string", def: "http://localhost:{PORT}", desc: "Public base URL of the admin service, used to construct the Google OAuth redirect URI." },
+            { name: "GOOGLE_CLIENT_ID", type: "string", def: "—", desc: "Google OAuth 2.0 client ID. Required for the admin UI login flow." },
+            { name: "GOOGLE_CLIENT_SECRET", type: "string", def: "—", desc: "Google OAuth 2.0 client secret. Required for the admin UI login flow." },
+          ].map((row) => (
+            <tr style="border-bottom: 1px solid var(--sw-color-border-subtle);">
+              <td style="padding:0.7rem 1rem 0.7rem 0; vertical-align:top;"><code class="sw-mono" style="color:var(--sw-color-support-cyan); font-size:0.875rem;">{row.name}</code></td>
+              <td style="padding:0.7rem 1rem; vertical-align:top;"><code class="sw-mono" style="color:var(--sw-color-text-editorial); font-size:0.875rem;">{row.type}</code></td>
+              <td style="padding:0.7rem 1rem; vertical-align:top;"><code class="sw-mono" style="color:var(--sw-color-text-muted); font-size:0.875rem;">{row.def}</code></td>
+              <td style="padding:0.7rem 0 0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">{row.desc}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+
+    <h3 class="mt-10">Workspace and tooling</h3>
+    <div class="mt-4 overflow-x-auto">
+      <table style="width:100%; border-collapse:collapse;">
+        <thead>
+          <tr style="border-bottom: 1px solid var(--sw-color-border-muted);">
+            <th style="text-align:left; padding:0.6rem 1rem 0.6rem 0; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Name</th>
+            <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Type</th>
+            <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Default</th>
+            <th style="text-align:left; padding:0.6rem 0 0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          {[
+            { name: "AGENT_HOME", type: "string", def: "~/.shipwright-agent", desc: "Persistent storage root. Mount a PVC here in Kubernetes so mise caches and workspace files survive pod restarts." },
+            { name: "MISE_DATA_DIR", type: "string", def: "<AGENT_HOME>/.mise", desc: "Override the mise data directory. Auto-derived from AGENT_HOME." },
+            { name: "MISE_CACHE_DIR", type: "string", def: "<AGENT_HOME>/.mise/cache", desc: "Override the mise cache directory." },
+            { name: "XDG_CACHE_HOME", type: "string", def: "<AGENT_HOME>/.cache", desc: "Override the XDG cache directory." },
+            { name: "AGENT_ALLOWED_TOOLS", type: "string (JSON array)", def: "—", desc: "JSON array of allowed Claude tool patterns. Set by the admin service config sync; do not set manually in production." },
+          ].map((row) => (
+            <tr style="border-bottom: 1px solid var(--sw-color-border-subtle);">
+              <td style="padding:0.7rem 1rem 0.7rem 0; vertical-align:top;"><code class="sw-mono" style="color:var(--sw-color-support-cyan); font-size:0.875rem;">{row.name}</code></td>
+              <td style="padding:0.7rem 1rem; vertical-align:top;"><code class="sw-mono" style="color:var(--sw-color-text-editorial); font-size:0.875rem;">{row.type}</code></td>
+              <td style="padding:0.7rem 1rem; vertical-align:top;"><code class="sw-mono" style="color:var(--sw-color-text-muted); font-size:0.875rem;">{row.def}</code></td>
+              <td style="padding:0.7rem 0 0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">{row.desc}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+
+    <h3 class="mt-10">Analytics</h3>
+    <p class="mt-2 sw-editorial max-w-2xl">All analytics vars are env-var-only (secrets/infra identifiers).</p>
+    <div class="mt-4 overflow-x-auto">
+      <table style="width:100%; border-collapse:collapse;">
+        <thead>
+          <tr style="border-bottom: 1px solid var(--sw-color-border-muted);">
+            <th style="text-align:left; padding:0.6rem 1rem 0.6rem 0; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Name</th>
+            <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Type</th>
+            <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Default</th>
+            <th style="text-align:left; padding:0.6rem 0 0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          {[
+            { name: "POSTHOG_PROJECT_API_KEY", type: "string", def: "—", desc: "PostHog project API key for event ingest. Env-var-only (secret)." },
+            { name: "POSTHOG_HOST", type: "string", def: "https://us.i.posthog.com", desc: "PostHog ingest host. Override for self-hosted PostHog deployments." },
+          ].map((row) => (
+            <tr style="border-bottom: 1px solid var(--sw-color-border-subtle);">
+              <td style="padding:0.7rem 1rem 0.7rem 0; vertical-align:top;"><code class="sw-mono" style="color:var(--sw-color-support-cyan); font-size:0.875rem;">{row.name}</code></td>
+              <td style="padding:0.7rem 1rem; vertical-align:top;"><code class="sw-mono" style="color:var(--sw-color-text-editorial); font-size:0.875rem;">{row.type}</code></td>
+              <td style="padding:0.7rem 1rem; vertical-align:top;"><code class="sw-mono" style="color:var(--sw-color-text-muted); font-size:0.875rem;">{row.def}</code></td>
+              <td style="padding:0.7rem 0 0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">{row.desc}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+
+    <h3 class="mt-10">Voice</h3>
+    <p class="mt-2 sw-editorial max-w-2xl">Optional. When unset, voice transcription and synthesis are disabled.</p>
+    <div class="mt-4 overflow-x-auto">
+      <table style="width:100%; border-collapse:collapse;">
+        <thead>
+          <tr style="border-bottom: 1px solid var(--sw-color-border-muted);">
+            <th style="text-align:left; padding:0.6rem 1rem 0.6rem 0; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Name</th>
+            <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Type</th>
+            <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Default</th>
+            <th style="text-align:left; padding:0.6rem 0 0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          {[
+            { name: "GROQ_API_KEY", type: "string", def: "—", desc: "Groq API key for voice processing. Env-var-only (secret)." },
+            { name: "ELEVENLABS_API_KEY", type: "string", def: "—", desc: "ElevenLabs API key for speech synthesis. Env-var-only (secret)." },
+            { name: "ELEVENLABS_VOICE_ID", type: "string", def: "—", desc: "ElevenLabs voice ID to use for synthesis." },
+            { name: "WHISPER_SERVICE_URL", type: "string", def: "—", desc: "URL of a Whisper transcription service for voice input." },
+          ].map((row) => (
+            <tr style="border-bottom: 1px solid var(--sw-color-border-subtle);">
+              <td style="padding:0.7rem 1rem 0.7rem 0; vertical-align:top;"><code class="sw-mono" style="color:var(--sw-color-support-cyan); font-size:0.875rem;">{row.name}</code></td>
+              <td style="padding:0.7rem 1rem; vertical-align:top;"><code class="sw-mono" style="color:var(--sw-color-text-editorial); font-size:0.875rem;">{row.type}</code></td>
+              <td style="padding:0.7rem 1rem; vertical-align:top;"><code class="sw-mono" style="color:var(--sw-color-text-muted); font-size:0.875rem;">{row.def}</code></td>
+              <td style="padding:0.7rem 0 0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">{row.desc}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+
+    <h3 class="mt-10">Dev-only</h3>
+    <div class="sw-callout sw-callout-warn mt-3 max-w-2xl">
+      <p><strong>Do not set these in production.</strong></p>
+    </div>
+    <div class="mt-4 overflow-x-auto">
+      <table style="width:100%; border-collapse:collapse;">
+        <thead>
+          <tr style="border-bottom: 1px solid var(--sw-color-border-muted);">
+            <th style="text-align:left; padding:0.6rem 1rem 0.6rem 0; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Name</th>
+            <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Type</th>
+            <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Default</th>
+            <th style="text-align:left; padding:0.6rem 0 0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          {[
+            { name: "SHIPWRIGHT_DEV_CHAT", type: "bool", def: "false", desc: "Enables the unauthenticated POST /chat endpoint. Blocked at startup when NODE_ENV=production." },
+            { name: "ADMIN_DEV_AUTH", type: "bool", def: "false", desc: "Enables GET /admin/dev-login (bypasses Google OAuth, mints a dev session). Blocked when NODE_ENV=production." },
+          ].map((row) => (
+            <tr style="border-bottom: 1px solid var(--sw-color-border-subtle);">
+              <td style="padding:0.7rem 1rem 0.7rem 0; vertical-align:top;"><code class="sw-mono" style="color:var(--sw-color-support-cyan); font-size:0.875rem;">{row.name}</code></td>
+              <td style="padding:0.7rem 1rem; vertical-align:top;"><code class="sw-mono" style="color:var(--sw-color-text-editorial); font-size:0.875rem;">{row.type}</code></td>
+              <td style="padding:0.7rem 1rem; vertical-align:top;"><code class="sw-mono" style="color:var(--sw-color-text-muted); font-size:0.875rem;">{row.def}</code></td>
+              <td style="padding:0.7rem 0 0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">{row.desc}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── Policy Config ── -->
+  <section id="policy-config" class="relative z-10 py-12" style="border-top: 1px solid var(--sw-color-border-subtle);">
+    <p class="sw-label">Section 3</p>
+    <h2 class="sw-h1 mt-4">Policy Config</h2>
+    <p class="mt-3 max-w-2xl">
+      Agent behavior is controlled by <code>state/agent-policy.md</code>. This
+      is a Markdown file with a YAML front-matter block. Edit it directly to
+      change review posting, merge permissions, and autonomy levels without
+      reconfiguring crons or restarting the agent.
+    </p>
+
+    <h3 class="mt-10">Fields</h3>
+    <div class="mt-4 overflow-x-auto">
+      <table style="width:100%; border-collapse:collapse;">
+        <thead>
+          <tr style="border-bottom: 1px solid var(--sw-color-border-muted);">
+            <th style="text-align:left; padding:0.6rem 1rem 0.6rem 0; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Field</th>
+            <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Type</th>
+            <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Default</th>
+            <th style="text-align:left; padding:0.6rem 0 0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          {[
+            { name: "auto_post_reviews", type: "bool", def: "false", desc: "Post review comments to GitHub automatically without manual approval." },
+            { name: "allowed_events", type: "string[]", def: '["COMMENT", "APPROVE"]', desc: "GitHub review event types the agent may emit." },
+            { name: "review_external_prs", type: "bool", def: "true", desc: "Review PRs opened by users other than the agent." },
+            { name: "allow_self_review", type: "bool", def: "true", desc: "Allow the agent to review its own PRs. Set to false to require a human reviewer on agent-authored PRs." },
+            { name: "min_confidence", type: "number", def: "75", desc: "Minimum confidence score (0–100) for a finding to be included in a review." },
+            { name: "max_findings", type: "number", def: "5", desc: "Maximum number of findings to include in a single review." },
+            { name: "cleanup_merged_worktrees", type: "bool", def: "true", desc: "Automatically remove worktrees for merged branches." },
+            { name: "cleanup_after_days", type: "number", def: "14", desc: "Age threshold (days) before a merged-branch worktree is eligible for cleanup." },
+          ].map((row) => (
+            <tr style="border-bottom: 1px solid var(--sw-color-border-subtle);">
+              <td style="padding:0.7rem 1rem 0.7rem 0; vertical-align:top;"><code class="sw-mono" style="color:var(--sw-color-support-cyan); font-size:0.875rem;">{row.name}</code></td>
+              <td style="padding:0.7rem 1rem; vertical-align:top;"><code class="sw-mono" style="color:var(--sw-color-text-editorial); font-size:0.875rem;">{row.type}</code></td>
+              <td style="padding:0.7rem 1rem; vertical-align:top;"><code class="sw-mono" style="color:var(--sw-color-text-muted); font-size:0.875rem;">{row.def}</code></td>
+              <td style="padding:0.7rem 0 0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">{row.desc}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+
+    <h3 class="mt-10">Example</h3>
+    <pre class="sw-code mt-4 max-w-xl text-sm"><code>{`---
+auto_post_reviews: false
+allowed_events: [COMMENT, APPROVE]
+review_external_prs: true
+allow_self_review: true
+min_confidence: 75
+max_findings: 5
+cleanup_merged_worktrees: true
+cleanup_after_days: 14
+---`}</code></pre>
+  </section>
+
+  <!-- See also -->
+  <section class="relative z-10 py-12 pb-20" style="border-top: 1px solid var(--sw-color-border-subtle);">
+    <h2>See also</h2>
+    <ul class="mt-4 flex flex-col gap-2">
+      <li><a href="https://github.com/app-vitals/shipwright/blob/main/docs/architecture.md">architecture.md</a> — the three-artifact A→B→C design.</li>
+      <li><a href="https://github.com/app-vitals/shipwright/blob/main/docs/agent.md">agent.md</a> — Shipwright agent runtime, admin CRUD APIs, and data model.</li>
+      <li><a href="https://github.com/app-vitals/shipwright/blob/main/docs/quickstart.md">quickstart.md</a> — how to get the full dev stack running locally.</li>
+    </ul>
+  </section>
+</BaseLayout>
