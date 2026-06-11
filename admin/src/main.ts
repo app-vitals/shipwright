@@ -19,7 +19,7 @@
 import { join } from "node:path";
 import { Hono } from "hono";
 import { PrismaClient } from "../prisma/client/index.js";
-import { createAdminApp, parseAdminApiKeys } from "./admin-api.ts";
+import { createAdminApp, parseAdminApiKeys } from "./agents-api.ts";
 import { createAdminUIApp } from "./admin-ui.ts";
 import { AgentCronJobService } from "./agent-cron-jobs.ts";
 import { AgentEnvService } from "./agent-envs.ts";
