@@ -310,12 +310,8 @@ describe("loadConfig env var fallbacks", () => {
     expect(result.configSource).toBe("env");
   });
 
-  // Test 12: unrecognized SHIPWRIGHT_TASK_STORE value → warning on stderr, falls through to file config
-  test("unrecognized SHIPWRIGHT_TASK_STORE value emits a warning and falls through to file config", () => {
-    writeFileSync(
-      join(isolatedDir, ".shipwright.json"),
-      JSON.stringify({ taskStore: "json" }),
-    );
+  // Test 12: unrecognized SHIPWRIGHT_TASK_STORE value → error on stderr and process.exit(1)
+  test("unrecognized SHIPWRIGHT_TASK_STORE value emits an error and exits with code 1", () => {
     process.env.SHIPWRIGHT_TASK_STORE = "GitHub"; // casing typo
 
     const stderrWrites: string[] = [];
@@ -326,20 +322,25 @@ describe("loadConfig env var fallbacks", () => {
       return true;
     };
 
-    let result: ReturnType<typeof loadConfig>;
+    let exitCode: number | undefined;
+    const origExit = process.exit.bind(process);
+    // biome-ignore lint/suspicious/noExplicitAny: intercepting process.exit for test assertion
+    (process as any).exit = (code?: number) => {
+      exitCode = code;
+      throw new Error(`process.exit(${code})`);
+    };
+
     try {
-      result = loadConfig(isolatedDir);
+      expect(() => loadConfig(isolatedDir)).toThrow("process.exit(1)");
     } finally {
-      // biome-ignore lint/suspicious/noExplicitAny: restoring original stderr.write
+      // biome-ignore lint/suspicious/noExplicitAny: restoring originals
       (process.stderr as any).write = origWrite;
+      // biome-ignore lint/suspicious/noExplicitAny: restoring originals
+      (process as any).exit = origExit;
     }
 
-    // Should have emitted the warning
+    expect(exitCode).toBe(1);
     expect(stderrWrites.some((s) => s.includes("unrecognized SHIPWRIGHT_TASK_STORE value"))).toBe(true);
     expect(stderrWrites.some((s) => s.includes('"GitHub"'))).toBe(true);
-
-    // Should have fallen through to the .shipwright.json file config
-    expect(result?.config.taskStore).toBe("json");
-    expect(result?.configSource).toContain(".shipwright.json");
   });
 });

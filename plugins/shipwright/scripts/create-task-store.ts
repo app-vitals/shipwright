@@ -112,8 +112,9 @@ export function loadConfig(cwd: string = process.cwd()): LoadedConfig {
   }
   if (taskStoreEnv !== "") {
     process.stderr.write(
-      `warning: unrecognized SHIPWRIGHT_TASK_STORE value: "${taskStoreEnv}" — expected github, jira, or json. Falling through to file config.\n`,
+      `error: unrecognized SHIPWRIGHT_TASK_STORE value: "${taskStoreEnv}". Valid values: github, jira, json\n`,
     );
+    process.exit(1);
   }
 
   // Step 1: walk up from cwd looking for .shipwright.json
