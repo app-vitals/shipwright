@@ -180,6 +180,7 @@ describe("runEntrypoint — happy path", () => {
     await runEntrypoint(deps);
 
     expect(spawnCalls.length).toBe(1);
+    expect(spawnCalls[0].args[1]).toContain("index.ts");
   });
 
   it("does not call exit on success", async () => {
@@ -254,6 +255,7 @@ describe("runEntrypoint — config with empty env", () => {
 
     expect(exitCodes.length).toBe(0);
     expect(spawnCalls.length).toBe(1);
+    expect(spawnCalls[0].args[1]).toContain("index.ts");
   });
 });
 
