@@ -21,12 +21,13 @@ export class HttpShipwrightAdminClient
 {
   constructor(
     private readonly baseUrl: string,
-    private readonly sessionToken: string,
+    private readonly adminApiKey: string,
+    private readonly internalApiKey: string,
   ) {}
 
   private get headers(): Record<string, string> {
     return {
-      Cookie: `admin_session=${this.sessionToken}`,
+      Authorization: `Bearer ${this.adminApiKey}`,
       "Content-Type": "application/json",
     };
   }
@@ -49,15 +50,22 @@ export class HttpShipwrightAdminClient
   }
 
   async listCrons(agentId: string): Promise<VitalsAgentCron[]> {
+    // GET /agents/:id/crons is the runtime endpoint — it requires the internal
+    // API key (Bearer SHIPWRIGHT_INTERNAL_API_KEY), not the admin key.
+    // The runtime endpoint returns a flat AgentCronJob[] (not { crons: [...] }).
     const url = `${this.baseUrl}/agents/${agentId}/crons`;
-    const res = await globalThis.fetch(url, { headers: this.headers });
+    const res = await globalThis.fetch(url, {
+      headers: {
+        Authorization: `Bearer ${this.internalApiKey}`,
+        "Content-Type": "application/json",
+      },
+    });
     if (!res.ok) {
       throw new Error(
         `listCrons(${agentId}) failed: ${res.status} ${await res.text()}`,
       );
     }
-    const data = (await res.json()) as { crons: VitalsAgentCron[] };
-    return data.crons;
+    return (await res.json()) as VitalsAgentCron[];
   }
 
   async createCron(agentId: string, cron: VitalsAgentCron): Promise<void> {

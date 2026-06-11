@@ -107,7 +107,8 @@ All child models cascade-delete with their `Agent`.
 | `ADMIN_DEV_AUTH` | dev only | Set to `"true"` to enable `GET /admin/dev-login` (bypasses Google OAuth, mints a dev session). Hard-blocked when `NODE_ENV=production` by `dev-auth-guard.ts`. |
 | `VITALS_OS_API_URL` | migration CLI | Base URL of the vitals-os accounts API (e.g. `https://vitals-os.com`). Required by `agent/src/run-migration.ts`. |
 | `VITALS_OS_API_KEY` | migration CLI | Admin API key for the vitals-os accounts API. Required by `agent/src/run-migration.ts`. |
-| `SHIPWRIGHT_ADMIN_API_KEY` | migration CLI | Admin session token (JWT) for the Shipwright admin API (`admin_session` cookie). Required by `agent/src/run-migration.ts`. |
+| `SHIPWRIGHT_ADMIN_API_KEY` | migration CLI | Bearer API key for the Shipwright admin API (`Authorization: Bearer`). Required by `agent/src/run-migration.ts`. |
+| `SHIPWRIGHT_INTERNAL_API_KEY` | migration CLI | Bearer token for the runtime API (`GET /agents/:id/crons`). Required by `agent/src/run-migration.ts` for cron dedup. |
 
 ## Key Files
 
