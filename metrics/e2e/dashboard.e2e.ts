@@ -82,7 +82,7 @@ async function stopTestServer(): Promise<void> {
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 
 /**
- * Inject a valid vitals_session cookie into the page context.
+ * Inject a valid admin_session cookie into the page context.
  * Signs with E2E_SESSION_SECRET — must match the SESSION_SECRET the server uses.
  */
 async function injectSessionCookie(page: Page): Promise<void> {
@@ -95,7 +95,7 @@ async function injectSessionCookie(page: Page): Promise<void> {
   const token = await sign(payload, E2E_SESSION_SECRET, "HS256");
   await page.context().addCookies([
     {
-      name: "vitals_session",
+      name: "admin_session",
       value: token,
       domain: "localhost",
       path: "/",
@@ -416,14 +416,14 @@ test.afterAll(async () => {
 // ─── Dashboard — page load ────────────────────────────────────────────────────
 
 test.describe("Dashboard — page load", () => {
-  test("redirects unauthenticated requests to /auth/login", async ({
+  test("redirects unauthenticated requests to /admin/login", async ({
     page,
   }) => {
     const response = await page.goto(`${BASE_URL}/dashboard`, {
       waitUntil: "domcontentloaded",
     });
     // Should redirect to login
-    expect(page.url()).toContain("/auth/login");
+    expect(page.url()).toContain("/admin/login");
   });
 
   test("renders toolbar with Shipwright wordmark", async ({ page }) => {

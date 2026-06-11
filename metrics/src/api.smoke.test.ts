@@ -931,7 +931,7 @@ describe("combined auth middleware (/metrics/*)", () => {
     const app = createMetricsApp(apiKeys, noopAccountsClient, deps);
 
     const res = await app.request("/metrics/summary", {
-      headers: { Cookie: `vitals_session=${cookie}` },
+      headers: { Cookie: `admin_session=${cookie}` },
     });
 
     expect(res.status).toBe(200);
@@ -966,7 +966,7 @@ describe("combined auth middleware (/metrics/*)", () => {
     const app = createMetricsApp(apiKeys, noopAccountsClient, deps);
 
     const res = await app.request("/metrics/summary", {
-      headers: { Cookie: "vitals_session=not.a.valid.jwt" },
+      headers: { Cookie: "admin_session=not.a.valid.jwt" },
     });
 
     expect(res.status).toBe(401);
@@ -980,7 +980,7 @@ describe("combined auth middleware (/metrics/*)", () => {
     const app = createMetricsApp(apiKeys, noopAccountsClient, deps);
 
     const res = await app.request("/metrics/summary", {
-      headers: { Cookie: `vitals_session=${cookie}` },
+      headers: { Cookie: `admin_session=${cookie}` },
     });
 
     expect(res.status).toBe(401);
@@ -990,14 +990,14 @@ describe("combined auth middleware (/metrics/*)", () => {
 // ─── Dashboard static routes ──────────────────────────────────────────────────
 
 describe("GET /dashboard static routes", () => {
-  test("GET /dashboard — redirects to /auth/login without session cookie", async () => {
+  test("GET /dashboard — redirects to /admin/login without session cookie", async () => {
     const deps: MetricsDeps = { sessionSecret: TEST_SESSION_SECRET };
     const app = createMetricsApp(apiKeys, noopAccountsClient, deps);
 
     const res = await app.request("/dashboard");
 
     expect(res.status).toBe(302);
-    expect(res.headers.get("location")).toContain("/auth/login");
+    expect(res.headers.get("location")).toContain("/admin/login");
   });
 
   test("GET /dashboard — returns HTML with correct Content-Type when session valid", async () => {
@@ -1006,7 +1006,7 @@ describe("GET /dashboard static routes", () => {
     const app = createMetricsApp(apiKeys, noopAccountsClient, deps);
 
     const res = await app.request("/dashboard", {
-      headers: { Cookie: `vitals_session=${cookie}` },
+      headers: { Cookie: `admin_session=${cookie}` },
     });
 
     expect(res.status).toBe(200);
@@ -1021,7 +1021,7 @@ describe("GET /dashboard static routes", () => {
     const app = createMetricsApp(apiKeys, noopAccountsClient, deps);
 
     const res = await app.request("/dashboard", {
-      headers: { Cookie: `vitals_session=${cookie}` },
+      headers: { Cookie: `admin_session=${cookie}` },
     });
     const body = await res.text();
 
@@ -1043,7 +1043,7 @@ describe("GET /dashboard static routes", () => {
     const app = createMetricsApp(apiKeys, noopAccountsClient, deps);
 
     const res = await app.request("/dashboard/styles.css", {
-      headers: { Cookie: `vitals_session=${cookie}` },
+      headers: { Cookie: `admin_session=${cookie}` },
     });
 
     expect(res.status).toBe(200);
@@ -1057,7 +1057,7 @@ describe("GET /dashboard static routes", () => {
     const app = createMetricsApp(apiKeys, noopAccountsClient, deps);
 
     const res = await app.request("/dashboard/app.js", {
-      headers: { Cookie: `vitals_session=${cookie}` },
+      headers: { Cookie: `admin_session=${cookie}` },
     });
 
     expect(res.status).toBe(200);
@@ -1071,7 +1071,7 @@ describe("GET /dashboard static routes", () => {
     const app = createMetricsApp(apiKeys, noopAccountsClient, deps);
 
     const res = await app.request("/dashboard", {
-      headers: { Cookie: `vitals_session=${cookie}` },
+      headers: { Cookie: `admin_session=${cookie}` },
     });
 
     expect(res.status).toBe(200);
@@ -1089,7 +1089,7 @@ describe("GET /dashboard static routes", () => {
     const app = createMetricsApp(apiKeys, noopAccountsClient, deps);
 
     const res = await app.request("/dashboard", {
-      headers: { Cookie: `vitals_session=${cookie}` },
+      headers: { Cookie: `admin_session=${cookie}` },
     });
 
     expect(res.status).toBe(200);
@@ -1634,7 +1634,7 @@ describe("owner gate — /metrics/* API endpoints", () => {
     );
 
     const res = await app.request("/metrics/summary", {
-      headers: { Cookie: `vitals_session=${cookie}` },
+      headers: { Cookie: `admin_session=${cookie}` },
     });
 
     expect(res.status).toBe(401);
@@ -1656,7 +1656,7 @@ describe("owner gate — /metrics/* API endpoints", () => {
     );
 
     const res = await app.request("/metrics/summary", {
-      headers: { Cookie: `vitals_session=${cookie}` },
+      headers: { Cookie: `admin_session=${cookie}` },
     });
 
     expect(res.status).toBe(401);
@@ -1676,7 +1676,7 @@ describe("owner gate — /metrics/* API endpoints", () => {
     );
 
     const res = await app.request("/metrics/summary", {
-      headers: { Cookie: `vitals_session=${cookie}` },
+      headers: { Cookie: `admin_session=${cookie}` },
     });
 
     expect(res.status).toBe(200);
@@ -1729,7 +1729,7 @@ describe("owner gate — /dashboard", () => {
     );
 
     const res = await app.request("/dashboard", {
-      headers: { Cookie: `vitals_session=${cookie}` },
+      headers: { Cookie: `admin_session=${cookie}` },
     });
 
     expect(res.status).toBe(403);
@@ -1748,7 +1748,7 @@ describe("owner gate — /dashboard", () => {
     );
 
     const res = await app.request("/dashboard", {
-      headers: { Cookie: `vitals_session=${cookie}` },
+      headers: { Cookie: `admin_session=${cookie}` },
     });
 
     expect(res.status).toBe(200);
@@ -1763,7 +1763,7 @@ describe("owner gate — /dashboard", () => {
     const app = createMetricsApp(apiKeys, noopAccountsClient, deps);
 
     const res = await app.request("/dashboard", {
-      headers: { Cookie: `vitals_session=${cookie}` },
+      headers: { Cookie: `admin_session=${cookie}` },
     });
 
     expect(res.status).toBe(200);
@@ -1912,7 +1912,7 @@ describe("dashboard HTML — default range button", () => {
     const app = createMetricsApp(apiKeys, noopAccountsClient, deps);
 
     const res = await app.request("/dashboard", {
-      headers: { Cookie: `vitals_session=${cookie}` },
+      headers: { Cookie: `admin_session=${cookie}` },
     });
     const body = await res.text();
 
