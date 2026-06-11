@@ -49,6 +49,15 @@ class RecordedSlackClient implements AdminUISlackClient {
   }> {
     return this.cassette.createAppManifest;
   }
+
+  async exchangeOAuthCode(
+    _code: string,
+    _clientId: string,
+    _clientSecret: string,
+    _redirectUri: string,
+  ): Promise<{ botToken: string }> {
+    return { botToken: "xoxb-test-cassette-bot-token" };
+  }
 }
 
 // ─── JWT helper ───────────────────────────────────────────────────────────────
@@ -122,6 +131,7 @@ function makeMockDeps(
         throw new Error("not implemented");
       },
       delete: async () => {},
+      reconcileSystemCrons: async () => ({ created: 0, updated: 0, deleted: 0 }),
     },
     agentToolService: {
       list: async () => [],
@@ -212,7 +222,7 @@ describe("admin UI — provisioning flow", () => {
     expect(html).toContain("https://slack.com/oauth/authorize");
   });
 
-  it("POST /admin/provision/complete with pasted credentials stores SLACK_APP_ID and SLACK_SIGNING_SECRET", async () => {
+  it("POST /admin/provision/complete returns 404 (route removed in BP-2.2)", async () => {
     const upsertCalls: UpsertCall[] = [];
     const slackClient = new RecordedSlackClient(CASSETTE_PATH);
     const app = createAdminUIApp(makeMockDeps(slackClient, upsertCalls));
@@ -230,17 +240,6 @@ describe("admin UI — provisioning flow", () => {
         Cookie: `admin_session=${cookie}`,
       },
     });
-    expect(res.status).toBe(200);
-    const html = await res.text();
-    expect(html).toContain("success");
-
-    // Verify env vars were stored
-    expect(upsertCalls.length).toBeGreaterThan(0);
-    const lastCall = upsertCalls[upsertCalls.length - 1];
-    expect(lastCall.env).toHaveProperty("SLACK_APP_ID", "A0123456789");
-    expect(lastCall.env).toHaveProperty(
-      "SLACK_SIGNING_SECRET",
-      "s3cr3t-signing-key-from-slack-dashboard",
-    );
+    expect(res.status).toBe(404);
   });
 });

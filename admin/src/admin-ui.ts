@@ -28,8 +28,8 @@ import {
   renderAgentsPage,
   renderLoginPage,
   renderProvisionCompletePage,
-  renderProvisionPasteForm,
   renderProvisionStartPage,
+  renderProvisionXappTokenPage,
 } from "./admin-ui-pages.ts";
 import type { AgentCronJobService } from "./agent-cron-jobs.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
@@ -47,8 +47,7 @@ type AdminUIEnv = { Variables: { userEmail: string } };
 
 /**
  * Narrow interface for the admin UI's Slack dependency.
- * Only `createAppManifest` is needed — signing secret comes from the paste form,
- * not from an OAuth exchange. Deliberately narrower than the full SlackProvisioningClient
+ * Deliberately narrower than the full SlackProvisioningClient
  * in slack-provisioning-client.ts — only this surface is needed here.
  */
 export interface AdminUISlackClient {
@@ -62,6 +61,12 @@ export interface AdminUISlackClient {
     clientSecret: string;
     signingSecret: string;
   }>;
+  exchangeOAuthCode(
+    code: string,
+    clientId: string,
+    clientSecret: string,
+    redirectUri: string,
+  ): Promise<{ botToken: string }>;
 }
 
 interface PrismaAgentLike {
@@ -116,7 +121,7 @@ export interface AdminUIDeps {
   >;
   agentCronJobService: Pick<
     AgentCronJobService,
-    "list" | "create" | "setEnabled" | "delete" | "get"
+    "list" | "create" | "setEnabled" | "delete" | "get" | "reconcileSystemCrons"
   >;
   agentToolService: Pick<
     AgentToolService,
@@ -886,60 +891,191 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     );
   });
 
-  // GET — OAuth callback → show paste form for credentials
-  app.get("/admin/provision/complete", requireAuth, (c) => {
-    const agentId = c.req.query("agentId");
-    return html(renderProvisionPasteForm(c.var.userEmail, { agentId }));
+  // GET — OAuth callback → exchange code, store SLACK_BOT_TOKEN, show xapp-token page
+  app.get("/admin/provision/complete", requireAuth, async (c) => {
+    const userEmail = c.var.userEmail;
+
+    // Read and validate the provision state cookie
+    const rawStateCookie = getCookie(c, PROVISION_STATE_COOKIE);
+    if (!rawStateCookie) {
+      deleteCookie(c, PROVISION_STATE_COOKIE);
+      return html(
+        renderProvisionCompletePage(userEmail, {
+          success: false,
+          error:
+            "Provision session expired or missing. Please start the provisioning flow again.",
+        }),
+      );
+    }
+
+    let provisionState: {
+      agentId: string;
+      clientId: string;
+      clientSecret: string;
+      signingSecret: string;
+      appId: string;
+    };
+    try {
+      const payload = (await verify(
+        rawStateCookie,
+        sessionSecret,
+        "HS256",
+      )) as Record<string, unknown>;
+      if (
+        typeof payload.agentId !== "string" ||
+        typeof payload.clientId !== "string" ||
+        typeof payload.clientSecret !== "string" ||
+        typeof payload.signingSecret !== "string" ||
+        typeof payload.appId !== "string"
+      ) {
+        throw new Error("invalid payload shape");
+      }
+      provisionState = {
+        agentId: payload.agentId,
+        clientId: payload.clientId,
+        clientSecret: payload.clientSecret,
+        signingSecret: payload.signingSecret,
+        appId: payload.appId,
+      };
+    } catch {
+      deleteCookie(c, PROVISION_STATE_COOKIE);
+      return html(
+        renderProvisionCompletePage(userEmail, {
+          success: false,
+          error:
+            "Provision session expired or invalid. Please start the provisioning flow again.",
+        }),
+      );
+    }
+
+    deleteCookie(c, PROVISION_STATE_COOKIE);
+
+    // Read the OAuth code param
+    const code = c.req.query("code");
+    if (!code) {
+      return html(
+        renderProvisionCompletePage(userEmail, {
+          success: false,
+          error:
+            "OAuth code not found in callback URL. Please try authorizing again.",
+        }),
+      );
+    }
+
+    // Exchange the OAuth code for a bot token
+    let botToken: string;
+    try {
+      const result = await slackClient.exchangeOAuthCode(
+        code,
+        provisionState.clientId,
+        provisionState.clientSecret,
+        `${appBaseUrl}/admin/provision/complete`,
+      );
+      botToken = result.botToken;
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : "Unknown error exchanging OAuth code.";
+      return html(
+        renderProvisionCompletePage(userEmail, {
+          success: false,
+          error: `OAuth exchange failed: ${msg}`,
+        }),
+      );
+    }
+
+    // Store SLACK_BOT_TOKEN in agent env
+    const existing = (await agentEnvService.getByAgentId(provisionState.agentId)) ?? {};
+    await agentEnvService.upsert(provisionState.agentId, {
+      ...existing,
+      SLACK_BOT_TOKEN: botToken,
+    });
+
+    // Render xapp-token page
+    return html(
+      renderProvisionXappTokenPage(userEmail, {
+        agentId: provisionState.agentId,
+      }),
+    );
   });
 
-  // POST — receive pasted credentials → store in AgentEnv
-  app.post("/admin/provision/complete", requireAuth, async (c) => {
+  // POST /admin/provision/complete — removed; returns 404
+  app.post("/admin/provision/complete", (c) => {
+    return new Response("Not Found", { status: 404 });
+  });
+
+  // POST /admin/provision/xapp-token — save xapp token, create scoped token, seed crons
+  app.post("/admin/provision/xapp-token", requireAuth, async (c) => {
+    const userEmail = c.var.userEmail;
+
     let agentId: string | undefined;
-    let appId: string | undefined;
-    let signingSecret: string | undefined;
+    let xappToken: string | undefined;
     try {
       const formData = await c.req.formData();
       agentId = formData.get("agentId")?.toString();
-      appId = formData.get("appId")?.toString();
-      signingSecret = formData.get("signingSecret")?.toString();
+      xappToken = formData.get("xappToken")?.toString();
     } catch {
       return html(
-        renderProvisionCompletePage(c.var.userEmail, {
-          success: false,
+        renderProvisionXappTokenPage(userEmail, {
+          agentId: agentId ?? "",
           error: "Invalid form submission.",
         }),
       );
     }
 
-    if (!agentId || !appId || !signingSecret) {
+    if (!agentId) {
       return html(
-        renderProvisionPasteForm(c.var.userEmail, {
+        renderProvisionXappTokenPage(userEmail, {
+          agentId: "",
+          error: "Agent ID is required.",
+        }),
+      );
+    }
+
+    if (!xappToken || !xappToken.startsWith("xapp-")) {
+      return html(
+        renderProvisionXappTokenPage(userEmail, {
           agentId,
-          error: "Agent ID, App ID, and Signing Secret are all required.",
+          error: "App-Level Token must start with xapp-",
         }),
       );
     }
 
     try {
+      // Store SLACK_APP_TOKEN
       const existing = (await agentEnvService.getByAgentId(agentId)) ?? {};
       await agentEnvService.upsert(agentId, {
         ...existing,
-        SLACK_APP_ID: appId,
-        SLACK_SIGNING_SECRET: signingSecret,
+        SLACK_APP_TOKEN: xappToken,
       });
+
+      // Create scoped token for internal API access
+      const { rawToken } = await agentTokenService.create(agentId, "provision");
+
+      // Store SHIPWRIGHT_INTERNAL_API_KEY
+      const existing2 = (await agentEnvService.getByAgentId(agentId)) ?? {};
+      await agentEnvService.upsert(agentId, {
+        ...existing2,
+        SHIPWRIGHT_INTERNAL_API_KEY: rawToken,
+      });
+
+      // Seed system crons
+      await agentCronJobService.reconcileSystemCrons(agentId);
+
       return html(
-        renderProvisionCompletePage(c.var.userEmail, {
+        renderProvisionCompletePage(userEmail, {
           success: true,
           agentId,
+          rawToken,
         }),
       );
     } catch (err) {
       const msg =
-        err instanceof Error
-          ? err.message
-          : "Unknown error storing credentials.";
+        err instanceof Error ? err.message : "Unknown error completing provisioning.";
       return html(
-        renderProvisionPasteForm(c.var.userEmail, { agentId, error: msg }),
+        renderProvisionXappTokenPage(userEmail, {
+          agentId,
+          error: msg,
+        }),
       );
     }
   });

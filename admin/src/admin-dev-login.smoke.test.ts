@@ -87,6 +87,7 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
         throw new Error("not found");
       },
       delete: async () => {},
+      reconcileSystemCrons: async () => ({ created: 0, updated: 0, deleted: 0 }),
     },
     agentToolService: {
       list: async () => [],
@@ -123,6 +124,7 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
         clientSecret: "test-client-secret",
         signingSecret: "test-signing-secret",
       }),
+      exchangeOAuthCode: async () => ({ botToken: "xoxb-mock-bot-token" }),
     },
     appBaseUrl: "https://example.com",
     devAuthEnabled: false,
