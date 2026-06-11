@@ -26,6 +26,7 @@ export class HttpShipwrightAdminClient
   constructor(
     private readonly baseUrl: string,
     private readonly apiKey: string,
+    private readonly internalApiKey: string,
     fetch: FetchFn = globalThis.fetch,
   ) {
     this.fetch = fetch;
@@ -42,7 +43,7 @@ export class HttpShipwrightAdminClient
     agentId: string,
     env: Record<string, string>,
   ): Promise<void> {
-    const url = `${this.baseUrl}/admin/api/agents/${agentId}/envs`;
+    const url = `${this.baseUrl}/agents/${agentId}/envs`;
     const res = await this.fetch(url, {
       method: "POST",
       headers: this.headers,
@@ -56,19 +57,26 @@ export class HttpShipwrightAdminClient
   }
 
   async listCrons(agentId: string): Promise<VitalsAgentCron[]> {
-    const url = `${this.baseUrl}/admin/api/agents/${agentId}/crons`;
-    const res = await this.fetch(url, { headers: this.headers });
+    // GET /agents/:id/crons is the runtime endpoint — it requires the internal
+    // API key (Bearer SHIPWRIGHT_INTERNAL_API_KEY), not the admin key.
+    // The runtime endpoint returns a flat AgentCronJob[] (not { crons: [...] }).
+    const url = `${this.baseUrl}/agents/${agentId}/crons`;
+    const res = await this.fetch(url, {
+      headers: {
+        Authorization: `Bearer ${this.internalApiKey}`,
+        "Content-Type": "application/json",
+      },
+    });
     if (!res.ok) {
       throw new Error(
         `listCrons(${agentId}) failed: ${res.status} ${await res.text()}`,
       );
     }
-    const data = (await res.json()) as { crons: VitalsAgentCron[] };
-    return data.crons;
+    return (await res.json()) as VitalsAgentCron[];
   }
 
   async createCron(agentId: string, cron: VitalsAgentCron): Promise<void> {
-    const url = `${this.baseUrl}/admin/api/agents/${agentId}/crons`;
+    const url = `${this.baseUrl}/agents/${agentId}/crons`;
     const res = await this.fetch(url, {
       method: "POST",
       headers: this.headers,
@@ -82,7 +90,7 @@ export class HttpShipwrightAdminClient
   }
 
   async addTool(agentId: string, pattern: string): Promise<void> {
-    const url = `${this.baseUrl}/admin/api/agents/${agentId}/tools`;
+    const url = `${this.baseUrl}/agents/${agentId}/tools`;
     const res = await this.fetch(url, {
       method: "POST",
       headers: this.headers,
