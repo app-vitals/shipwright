@@ -95,4 +95,7 @@ await runEntrypoint({
   exit: (code: number) => {
     process.exit(code);
   },
+  startupTimeoutMs: process.env.SHIPWRIGHT_STARTUP_TIMEOUT_MS
+    ? Number(process.env.SHIPWRIGHT_STARTUP_TIMEOUT_MS)
+    : undefined,
 });

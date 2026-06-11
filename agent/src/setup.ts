@@ -8,6 +8,7 @@
  */
 
 import {
+  cpSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -414,13 +415,25 @@ export async function runMiseStartup(
 ): Promise<void> {
   const workspaceDir = join(home, "workspace");
 
-  // Pin only the mise + XDG *cache* dirs to the PVC so download tarballs land
-  // on persistent storage. We deliberately do NOT relocate MISE_DATA_DIR: the
-  // base toolchain (node, claude) is baked into the image at mise's default
-  // data dir ($HOME/.local/share/mise), and the image already puts that shims
-  // dir on PATH. Repointing MISE_DATA_DIR at the (initially empty) PVC orphans
-  // those baked tools — mise then reports the `claude` shim as dangling and
-  // every agent run fails. Caches are safe to persist; installs stay in the image.
+  // On a fresh PVC the $AGENT_HOME/mise/ directory exists (created by
+  // ensureAgentHome) but is empty — no shims yet. Seed it from the image's
+  // default mise data dir so the baked toolchain (node, claude) is available
+  // on the PVC from the first restart onward. Subsequent boots skip the copy.
+  const pvMiseDir = join(home, "mise");
+  const pvShimsDir = join(pvMiseDir, "shims");
+  const imageMiseDir = join(
+    process.env.XDG_DATA_HOME ??
+      join(process.env.HOME ?? home, ".local", "share"),
+    "mise",
+  );
+  if (!existsSync(pvShimsDir) && existsSync(imageMiseDir)) {
+    cpSync(imageMiseDir, pvMiseDir, { recursive: true });
+    console.log("[agent] seeded MISE_DATA_DIR from image on fresh PVC");
+  }
+  process.env.MISE_DATA_DIR = pvMiseDir;
+
+  // Pin mise + XDG cache dirs to the PVC so download tarballs land on
+  // persistent storage.
   process.env.MISE_CACHE_DIR = join(home, "mise", "cache");
   process.env.XDG_CACHE_HOME = join(home, "cache");
   mkdirSync(process.env.MISE_CACHE_DIR, { recursive: true });
@@ -442,17 +455,8 @@ export async function runMiseStartup(
     return;
   }
 
-  // Prepend mise's default shims dir to PATH so workspace-declared tools are
-  // found in non-interactive bash sessions. mise's default data dir is
-  // $HOME/.local/share/mise (we intentionally don't override MISE_DATA_DIR);
-  // honor an explicit MISE_DATA_DIR/XDG_DATA_HOME if the environment sets one.
-  const miseDataDir =
-    process.env.MISE_DATA_DIR ??
-    join(
-      process.env.XDG_DATA_HOME ??
-        join(process.env.HOME ?? home, ".local", "share"),
-      "mise",
-    );
-  const shimsDir = join(miseDataDir, "shims");
+  // Prepend MISE_DATA_DIR/shims to PATH so workspace-declared tools are found
+  // in non-interactive bash sessions.
+  const shimsDir = join(process.env.MISE_DATA_DIR ?? pvMiseDir, "shims");
   process.env.PATH = [shimsDir, process.env.PATH ?? ""].join(":");
 }
