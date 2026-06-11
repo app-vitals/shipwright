@@ -103,6 +103,9 @@ All child models cascade-delete with their `Agent`.
 | `SHIPWRIGHT_DEV_CHAT` | dev only | Set to `"true"` to enable the unauthenticated `POST /chat` endpoint (local dev convenience). Must **not** be set in production (`NODE_ENV=production`). |
 | `SHIPWRIGHT_LOCAL_MARKETPLACE` | dev only | Absolute path to a local marketplace checkout (e.g. `/workspace/marketplace`). When set, `installPlugins` uses this path instead of the GitHub slug for every plugin install and update, so uncommitted marketplace edits take effect inside the container. |
 | `ADMIN_DEV_AUTH` | dev only | Set to `"true"` to enable `GET /admin/dev-login` (bypasses Google OAuth, mints a dev session). Hard-blocked when `NODE_ENV=production` by `dev-auth-guard.ts`. |
+| `VITALS_OS_API_URL` | migration CLI | Base URL of the vitals-os accounts API (e.g. `https://vitals-os.com`). Required by `agent/src/run-migration.ts`. |
+| `VITALS_OS_API_KEY` | migration CLI | Admin API key for the vitals-os accounts API. Required by `agent/src/run-migration.ts`. |
+| `SHIPWRIGHT_ADMIN_API_KEY` | migration CLI | Admin session token (JWT) for the Shipwright admin API (`admin_session` cookie). Required by `agent/src/run-migration.ts`. |
 
 ## Key Files
 
@@ -142,6 +145,9 @@ All child models cascade-delete with their `Agent`.
 | `agent/scripts/cli-args.ts` | Pure CLI helpers: `getArg(name, argv)` and `hasFlag(name, argv)` for `--name=value` and `--name value` forms. |
 | `scripts/chat.ts` | TUI REPL client for the dev `/chat` endpoint. Pure functions (`buildChatRequest`, `formatAgentResponse`, `fetchChatResponse`, `formatFetchError`) exported for unit testing; `runRepl()` drives the stdin/stdout loop. Requires `SHIPWRIGHT_DEV_CHAT=true` on the agent. |
 | `scripts/migrate-agent.ts` | One-shot agent migration script: reads env vars, tools, plugins, and crons from a source vitals-os agent via `VitalsOsClient`, then writes them to the Shipwright admin API via `AdminClient`. Idempotent — cron deduplication by `schedule+prompt`; env upsert is replace-all. Flags: `--agent-id`, `--vitals-os-url`, `--vitals-os-api-key`, `--admin-url`, `--admin-token`, `--dry-run`. |
+| `agent/src/run-migration.ts` | Bulk migration CLI entrypoint — reads `VITALS_OS_API_URL` / `VITALS_OS_API_KEY` / `SHIPWRIGHT_API_URL` / `SHIPWRIGHT_ADMIN_API_KEY` from env, constructs `HttpAccountsMigrationClient` and `HttpShipwrightAdminClient`, calls `runMigration()`, and exits non-zero on any per-agent failure. |
+| `agent/src/migrate.ts` | Core bulk migration logic (`runMigration(accountsClient, adminClient)`) — enumerates all agents from vitals-os, migrates env vars + tools + crons to Shipwright admin API. Idempotent: env replace-all, tools upsert internally, crons skip duplicates by `schedule+prompt`. Continues on per-agent failure; returns `MigrationResult` with counts and `AgentMigrationFailure[]`. |
+| `agent/src/accounts-migration-client.ts` | `AccountsMigrationClient` interface + `HttpAccountsMigrationClient` — reads agent list, config (env + tools), and crons from the vitals-os accounts API. Used by `migrate.ts`. |
 | `agent/src/shipwright-config-client.ts` | `ShipwrightConfigClient` interface + `HttpShipwrightConfigClient` — calls `GET /agents/:id/config` with Bearer auth. |
 | `agent/src/entrypoint-startup.ts` | Extracted startup logic (`runStartup(agentId, deps)`) — DI-injected for integration testing without real network or filesystem side effects. |
 | `agent/src/cron-handler.ts` | Cron runtime: `handleCronRequest()` — runs a cron prompt through Claude and posts the result to Slack. Supports `preCheck` scripts, `silent` suppression, channel vs. DM delivery, and `onPost`/`onSession` callbacks. |

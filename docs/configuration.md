@@ -22,6 +22,11 @@ Configuration for the Shipwright Claude Code plugin (`plugins/shipwright/`). The
 
 | Name | Type | Default | Description |
 |---|---|---|---|
+| `SHIPWRIGHT_TASK_STORE` | `string` | — | Selects the task store backend (`github`, `jira`, or `json`). When set, takes precedence over all file-based config — the `.shipwright.json` walk-up and `SHIPWRIGHT_CONFIG` are skipped entirely. |
+| `SHIPWRIGHT_GITHUB_OWNER` | `string` | — | GitHub organization or user name. Required when `SHIPWRIGHT_TASK_STORE=github`. |
+| `SHIPWRIGHT_GITHUB_REPO` | `string` | — | GitHub repository name. Required when `SHIPWRIGHT_TASK_STORE=github`. |
+| `JIRA_BASE_URL` | `string` | — | Base URL of the Jira instance (e.g. `https://example.atlassian.net`). Required when `SHIPWRIGHT_TASK_STORE=jira`. |
+| `JIRA_PROJECT_KEY` | `string` | — | Jira project key (e.g. `SHIP`). Required when `SHIPWRIGHT_TASK_STORE=jira`. |
 | `SHIPWRIGHT_REPOS_DIR` | `string` | `<AGENT_HOME>/workspace/repos` | Override the workspace repos directory. Used by scripts that need to know where checked-out repos live. |
 | `SHIPWRIGHT_WORKTREE_DIR` | `string` | `<AGENT_HOME>/workspace/worktrees` | Override the workspace worktrees directory. |
 | `SHIPWRIGHT_LOCAL_MARKETPLACE` | `string` | — | Absolute path to a local marketplace checkout. When set, plugin installs and updates use this path instead of fetching from GitHub. Dev-only — do not set in production. |
@@ -38,9 +43,10 @@ Configuration for the Shipwright Claude Code plugin (`plugins/shipwright/`). The
 `.shipwright.json` is for use when you **install and run the Shipwright plugin in Claude Code (or a compatible system)** directly — without a managed Shipwright agent. Managed agents receive all configuration via env vars from the admin service; they do not read `.shipwright.json`.
 
 Config-file resolution (`create-task-store.ts` → `loadConfig`):
-1. Walk up from `cwd` looking for `.shipwright.json`.
-2. Fall back to `SHIPWRIGHT_CONFIG` env var.
-3. Fall back to local JSON state (`state/`).
+1. Check `SHIPWRIGHT_TASK_STORE` env var — if set, use env vars directly and skip file-based config.
+2. Walk up from `cwd` looking for `.shipwright.json`.
+3. Fall back to `SHIPWRIGHT_CONFIG` env var.
+4. Fall back to local JSON state (`state/`).
 
 #### Task store keys
 
