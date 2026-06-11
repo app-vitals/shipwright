@@ -468,6 +468,7 @@ export function renderAgentDetailPage(
 
 export function renderProvisionStartPage(
   userName: string,
+  agents: { id: string; name: string }[],
   opts?: { oauthUrl?: string; error?: string },
 ): string {
   const errorHtml = opts?.error
@@ -477,6 +478,14 @@ export function renderProvisionStartPage(
   const safeOauthUrl = opts?.oauthUrl?.startsWith("https://")
     ? opts.oauthUrl
     : "";
+
+  const agentOptions = agents
+    .map(
+      (a) =>
+        `<option value="${escapeHtml(a.id)}">${escapeHtml(a.name)}</option>`,
+    )
+    .join("\n          ");
+
   const oauthSection = opts?.oauthUrl
     ? `<div class="alert alert-success">
         <strong>App created!</strong> Click the link below to authorize the Slack app.
@@ -486,9 +495,66 @@ export function renderProvisionStartPage(
         Authorize Slack App →
       </a>
       <p style="margin-top:16px;font-size:13px;color:#6b7280">
-        After authorizing, paste the app-level token in the next step.
+        After authorizing, the app credentials have been saved for your agent.
       </p>`
     : `<form method="POST" action="/admin/provision/start">
+        <div class="form-group">
+          <label class="form-label" for="agentId">Agent</label>
+          <select id="agentId" name="agentId" class="form-input" required>
+            <option value="">— select an agent —</option>
+          ${agentOptions}
+          </select>
+        </div>
+
+        <fieldset style="border:1px solid #e8e8ee;border-radius:8px;padding:16px;margin-bottom:16px">
+          <legend style="font-size:13px;font-weight:600;padding:0 8px">GitHub Authentication</legend>
+          <div class="form-group" style="margin-bottom:12px">
+            <label style="font-size:13px;font-weight:500;margin-right:16px">
+              <input type="radio" name="ghAuthMode" value="pat" checked
+                onchange="document.getElementById('gh-pat-fields').style.display='block';document.getElementById('gh-app-fields').style.display='none'"
+              /> Personal Access Token
+            </label>
+            <label style="font-size:13px;font-weight:500">
+              <input type="radio" name="ghAuthMode" value="app"
+                onchange="document.getElementById('gh-pat-fields').style.display='none';document.getElementById('gh-app-fields').style.display='block'"
+              /> GitHub App
+            </label>
+          </div>
+          <div id="gh-pat-fields">
+            <div class="form-group">
+              <label class="form-label" for="ghPat">Personal Access Token</label>
+              <input id="ghPat" name="ghPat" type="password" class="form-input" placeholder="ghp_..." />
+            </div>
+          </div>
+          <div id="gh-app-fields" style="display:none">
+            <div class="form-group">
+              <label class="form-label" for="ghAppId">App ID</label>
+              <input id="ghAppId" name="ghAppId" type="text" class="form-input" placeholder="123456" />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="ghAppInstallationId">Installation ID</label>
+              <input id="ghAppInstallationId" name="ghAppInstallationId" type="text" class="form-input" placeholder="987654" />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="ghAppPrivateKey">Private Key (PEM)</label>
+              <textarea id="ghAppPrivateKey" name="ghAppPrivateKey" class="form-input" rows="6"
+                placeholder="-----BEGIN RSA PRIVATE KEY-----&#10;...&#10;-----END RSA PRIVATE KEY-----"></textarea>
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset style="border:1px solid #e8e8ee;border-radius:8px;padding:16px;margin-bottom:16px">
+          <legend style="font-size:13px;font-weight:600;padding:0 8px">AI Credentials (optional)</legend>
+          <div class="form-group">
+            <label class="form-label" for="anthropicApiKey">Anthropic API Key</label>
+            <input id="anthropicApiKey" name="anthropicApiKey" type="password" class="form-input" placeholder="sk-ant-..." />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="claudeCodeOauthToken">Claude Code OAuth Token</label>
+            <input id="claudeCodeOauthToken" name="claudeCodeOauthToken" type="password" class="form-input" />
+          </div>
+        </fieldset>
+
         <div class="form-group">
           <label class="form-label" for="xoxpToken">Slack User OAuth Token (xoxp-)</label>
           <input

@@ -55,7 +55,13 @@ export interface AdminUISlackClient {
   createAppManifest(
     xoxpToken: string,
     manifest: AppManifest,
-  ): Promise<{ appId: string; oauthRedirectUrl: string }>;
+  ): Promise<{
+    appId: string;
+    oauthRedirectUrl: string;
+    clientId: string;
+    clientSecret: string;
+    signingSecret: string;
+  }>;
 }
 
 interface PrismaAgentLike {
@@ -708,50 +714,173 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
   // ─── Provisioning flow ────────────────────────────────────────────────────
 
-  app.get("/admin/provision", requireAuth, (c) => {
-    return html(renderProvisionStartPage(c.var.userEmail));
+  const PROVISION_STATE_COOKIE = "slack_provision_state";
+  const PROVISION_STATE_TTL_SECONDS = 300; // 5 min
+
+  app.get("/admin/provision", requireAuth, async (c) => {
+    const agents = await prisma.agent.findMany();
+    return html(
+      renderProvisionStartPage(
+        c.var.userEmail,
+        agents.map((a) => ({ id: a.id, name: a.name })),
+      ),
+    );
   });
 
   app.post("/admin/provision/start", requireAuth, async (c) => {
+    // Load agents for form re-render on error
+    const agents = await prisma.agent.findMany().catch(() => []);
+    const agentOptions = agents.map((a) => ({ id: a.id, name: a.name }));
+
+    const formError = (msg: string): Response =>
+      html(renderProvisionStartPage(c.var.userEmail, agentOptions, { error: msg }));
+
+    let agentId: string | undefined;
     let xoxpToken: string | undefined;
+    let ghAuthMode: string | undefined;
+    let ghPat: string | undefined;
+    let ghAppId: string | undefined;
+    let ghAppInstallationId: string | undefined;
+    let ghAppPrivateKey: string | undefined;
+    let anthropicApiKey: string | undefined;
+    let claudeCodeOauthToken: string | undefined;
+
     try {
       const formData = await c.req.formData();
+      agentId = formData.get("agentId")?.toString();
       xoxpToken = formData.get("xoxpToken")?.toString();
+      ghAuthMode = formData.get("ghAuthMode")?.toString() ?? "pat";
+      ghPat = formData.get("ghPat")?.toString();
+      ghAppId = formData.get("ghAppId")?.toString();
+      ghAppInstallationId = formData.get("ghAppInstallationId")?.toString();
+      ghAppPrivateKey = formData.get("ghAppPrivateKey")?.toString();
+      anthropicApiKey = formData.get("anthropicApiKey")?.toString();
+      claudeCodeOauthToken = formData.get("claudeCodeOauthToken")?.toString();
     } catch {
-      return html(
-        renderProvisionStartPage(c.var.userEmail, {
-          error: "Invalid form submission.",
-        }),
-      );
+      return formError("Invalid form submission.");
+    }
+
+    // ── Validate before any Slack call ────────────────────────────────────
+
+    if (!agentId) {
+      return formError("Agent is required.");
     }
 
     if (!xoxpToken || !xoxpToken.startsWith("xoxp-")) {
-      return html(
-        renderProvisionStartPage(c.var.userEmail, {
-          error: "Token must start with xoxp-",
-        }),
-      );
+      return formError("Slack token must start with xoxp-");
     }
 
+    if (ghAuthMode === "pat") {
+      if (!ghPat) {
+        return formError("GitHub Personal Access Token is required.");
+      }
+    } else if (ghAuthMode === "app") {
+      if (!ghAppId || !/^\d+$/.test(ghAppId)) {
+        return formError("GitHub App ID must be a numeric value.");
+      }
+      if (!ghAppInstallationId || !/^\d+$/.test(ghAppInstallationId)) {
+        return formError("GitHub App Installation ID must be a numeric value.");
+      }
+      if (
+        !ghAppPrivateKey ||
+        !ghAppPrivateKey.includes("BEGIN") ||
+        !ghAppPrivateKey.includes("PRIVATE KEY")
+      ) {
+        return formError(
+          "GitHub App Private Key must be a valid PEM-encoded key.",
+        );
+      }
+    } else {
+      return formError("Invalid GitHub auth mode.");
+    }
+
+    // ── Fetch agent name for manifest ─────────────────────────────────────
+
+    const agent = await prisma.agent.findUnique({ where: { id: agentId } });
+    if (!agent) {
+      return formError("Agent not found.");
+    }
+
+    // ── Call Slack — first external action ────────────────────────────────
+
+    let slackResult: {
+      appId: string;
+      oauthRedirectUrl: string;
+      clientId: string;
+      clientSecret: string;
+      signingSecret: string;
+    };
     try {
       const redirectUri = `${appBaseUrl}/admin/provision/complete`;
-      const manifest = defaultAgentManifest("Shipwright Agent", redirectUri);
-      const { oauthRedirectUrl } = await slackClient.createAppManifest(
-        xoxpToken,
-        manifest,
-      );
-      return html(
-        renderProvisionStartPage(c.var.userEmail, {
-          oauthUrl: oauthRedirectUrl,
-        }),
-      );
+      const manifest = defaultAgentManifest(agent.name, redirectUri);
+      slackResult = await slackClient.createAppManifest(xoxpToken, manifest);
     } catch (err) {
       const msg =
         err instanceof Error
           ? err.message
           : "Unknown error creating Slack app.";
-      return html(renderProvisionStartPage(c.var.userEmail, { error: msg }));
+      return formError(msg);
     }
+
+    const { appId, oauthRedirectUrl, clientId, clientSecret, signingSecret } =
+      slackResult;
+
+    // ── Sign provision-state cookie ───────────────────────────────────────
+
+    const now = Math.floor(Date.now() / 1000);
+    const provisionToken = await sign(
+      {
+        agentId,
+        clientId,
+        clientSecret,
+        signingSecret,
+        appId,
+        iat: now,
+        exp: now + PROVISION_STATE_TTL_SECONDS,
+      },
+      sessionSecret,
+      "HS256",
+    );
+
+    setCookie(c, PROVISION_STATE_COOKIE, provisionToken, {
+      httpOnly: true,
+      maxAge: PROVISION_STATE_TTL_SECONDS,
+      sameSite: "Lax",
+      path: "/",
+    });
+
+    // ── Write agent env ───────────────────────────────────────────────────
+
+    const existing = (await agentEnvService.getByAgentId(agentId)) ?? {};
+    const newEnv: Record<string, string> = {
+      ...existing,
+      SLACK_APP_ID: appId,
+      SLACK_SIGNING_SECRET: signingSecret,
+    };
+
+    if (ghAuthMode === "pat") {
+      newEnv.GH_TOKEN = ghPat ?? "";
+    } else {
+      newEnv.GH_APP_ID = ghAppId ?? "";
+      newEnv.GH_APP_INSTALLATION_ID = ghAppInstallationId ?? "";
+      newEnv.GH_APP_PRIVATE_KEY = ghAppPrivateKey ?? "";
+    }
+
+    if (anthropicApiKey) {
+      newEnv.ANTHROPIC_API_KEY = anthropicApiKey;
+    }
+    if (claudeCodeOauthToken) {
+      newEnv.CLAUDE_CODE_OAUTH_TOKEN = claudeCodeOauthToken;
+    }
+
+    await agentEnvService.upsert(agentId, newEnv);
+
+    // Use c.html() so the Set-Cookie header from setCookie() is included
+    return c.html(
+      renderProvisionStartPage(c.var.userEmail, agentOptions, {
+        oauthUrl: oauthRedirectUrl,
+      }),
+    );
   });
 
   // GET — OAuth callback → show paste form for credentials
