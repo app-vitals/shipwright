@@ -167,6 +167,7 @@ Used only by one-time operator scripts in `agent/scripts/` (e.g. `bootstrap-agen
 | `MISE_DATA_DIR` | `string` | `<AGENT_HOME>/.mise` | Override the mise data directory. Auto-derived from `AGENT_HOME`; override only if needed. |
 | `MISE_CACHE_DIR` | `string` | `<AGENT_HOME>/.mise/cache` | Override the mise cache directory. Auto-derived from `AGENT_HOME`. |
 | `XDG_CACHE_HOME` | `string` | `<AGENT_HOME>/.cache` | Override the XDG cache directory. Auto-derived from `AGENT_HOME`. |
+| `XDG_DATA_HOME` | `string` | `$HOME/.local/share` | Override the XDG data directory. Used as a fallback when `MISE_DATA_DIR` is not set to locate the mise shims dir. |
 | `AGENT_ALLOWED_TOOLS` | `string` (JSON array) | — | JSON array of allowed Claude tool patterns. Set by the admin service config sync; do not set manually in production. |
 
 ### Analytics
