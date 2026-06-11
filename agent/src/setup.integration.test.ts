@@ -739,6 +739,29 @@ describe("installPlugins", () => {
     expect(calls).toHaveLength(3);
   });
 
+  it("continues when marketplace add exits non-zero", async () => {
+    const calls: Array<{ args: string[] }> = [];
+    const mockExec = async (
+      _cmd: string,
+      args: string[],
+      _opts: { cwd: string },
+    ) => {
+      calls.push({ args });
+      const isMarketplaceAdd = args[1] === "marketplace";
+      return {
+        stdout: isMarketplaceAdd ? "network error" : "",
+        exitCode: isMarketplaceAdd ? 1 : 0,
+      };
+    };
+
+    await expect(
+      installPlugins(mockExec, testHome, [], "/repo/root"),
+    ).resolves.toBeUndefined();
+
+    // All 3 calls still happened despite marketplace add failure
+    expect(calls).toHaveLength(3);
+  });
+
   it("is a silent no-op when plugins are already installed and up-to-date", async () => {
     const calls: Array<{ args: string[] }> = [];
     const mockExec = async (
