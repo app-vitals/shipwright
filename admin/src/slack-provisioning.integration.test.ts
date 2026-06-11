@@ -193,7 +193,10 @@ describe("admin UI — provisioning flow", () => {
     const app = createAdminUIApp(makeMockDeps(slackClient, upsertCalls));
 
     const body = new URLSearchParams({
+      agentId: AGENT_ID,
       xoxpToken: "xoxp-fake-token-for-testing",
+      ghAuthMode: "pat",
+      ghPat: "ghp_test-pat-token",
     });
     const res = await app.request("/admin/provision/start", {
       method: "POST",
