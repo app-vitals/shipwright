@@ -261,7 +261,7 @@ export function createAdminApp(deps: AdminDeps): Hono<AdminAuthEnv> {
       );
     }
 
-    let cron: AgentCronJob;
+    let cron: AgentCronJob | undefined;
     if (hasSchedule && hasPrompt) {
       // Content update — preCheck and enabled are folded into update()
       cron = await agentCronJobService.update(agentId, cronId, {
@@ -291,7 +291,15 @@ export function createAdminApp(deps: AdminDeps): Hono<AdminAuthEnv> {
       }
     }
 
-    return c.json({ cron: cron! });
+    // Narrowing: cron is always set here since at least one update ran (guarded
+    // above), but TypeScript cannot prove it through the disjoint if-blocks.
+    if (cron === undefined) {
+      throw new BadRequestError(
+        "provide at least one field: schedule+prompt, enabled, or preCheck",
+      );
+    }
+
+    return c.json({ cron });
   });
 
   // DELETE /agents/:id/crons/:cronId — delete a cron job
