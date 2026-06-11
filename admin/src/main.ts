@@ -110,9 +110,7 @@ async function startServer(): Promise<void> {
     .filter(Boolean);
   const appBaseUrl =
     process.env.SHIPWRIGHT_ADMIN_APP_BASE_URL ?? `http://localhost:${port}`;
-  const adminApiKeys = parseAdminApiKeys(
-    process.env.SHIPWRIGHT_ADMIN_API_KEYS,
-  );
+  const adminApiKeys = parseAdminApiKeys(process.env.SHIPWRIGHT_ADMIN_API_KEYS);
 
   const googleClient = new HttpGoogleAuthClient();
   const slackClient = new HttpSlackProvisioningClient();
@@ -143,6 +141,7 @@ async function startServer(): Promise<void> {
     agentToolService,
     agentTokenService,
     agentPluginService,
+    prisma,
     sessionSecret,
     adminApiKeys,
   });
