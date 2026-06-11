@@ -367,7 +367,7 @@ export function escapeHtml(str: string): string {
     .replace(/"/g, "&quot;");
 }
 
-export function renderAdminToolbar(userName: string, activePath: string): string {
+export function renderAdminToolbar(userName: string, activePath = ""): string {
   const active = (prefix: string) =>
     activePath.startsWith(prefix) ? " active" : "";
   return `<nav class="vos-toolbar" aria-label="Site navigation">
