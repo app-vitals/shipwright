@@ -3,13 +3,14 @@
  * Shipwright agent startup entrypoint.
  *
  * Boot order:
- *  1. ensureAgentHome + runMiseStartup + installPlugins (defaults)
- *  2. Config sync — fetch AgentConfigBundle, apply env, install agent plugins (await first)
- *  3. reconcileSystemCrons — best-effort, non-fatal
- *  4. Health server
- *  5. Cron sync loop (60s)
- *  6. Slack Bolt Socket Mode app
- *  7. Graceful SIGTERM/SIGINT shutdown
+ *  1. ensureAgentHome
+ *  2. Health server — binds immediately so kubelet probes stay green during setup
+ *  3. runMiseStartup + installPlugins (defaults)
+ *  4. Config sync — fetch AgentConfigBundle, apply env, install agent plugins (await first)
+ *  5. reconcileSystemCrons — best-effort, non-fatal
+ *  6. Cron sync loop (60s)
+ *  7. Slack Bolt Socket Mode app
+ *  8. Graceful SIGTERM/SIGINT shutdown
  */
 
 import { join } from "node:path";
@@ -50,10 +51,49 @@ for (const level of ["log", "warn", "error"] as const) {
     orig(`[${new Date().toISOString()}]`, ...args);
 }
 
-// ─── Step 1: Agent home + mise + default plugins ──────────────────────────────
+// ─── Step 1: Agent home ───────────────────────────────────────────────────────
 
 ensureAgentHome(config.paths.home);
 console.log(`[agent] agent home initialized: ${config.paths.home}`);
+
+// ─── Step 2: Health server ────────────────────────────────────────────────────
+// Bind before mise/plugin install so kubelet liveness probes don't time out
+// during a slow toolchain install (e.g. compiling Python from source).
+
+const slackClock = SystemClock();
+const sessions = createFileSessionStore(config.paths.sessions);
+const analytics = createAnalyticsStore(join(config.paths.home, "analytics"));
+analytics.track({ type: "session_start" });
+
+const slack = new WebClient(config.slack.botToken ?? "");
+const runner = createRunClaude(
+  Bun.spawn,
+  sessions,
+  undefined,
+  config.paths.workspace,
+  analytics.track,
+);
+
+const cronDeps: CronHandlerDeps = {
+  slack,
+  runner,
+  formatter: markdownToSlack,
+  onSession: (channel: string, ts: string, sessionId: string) => {
+    sessions.set(threadKey(channel, ts), sessionId);
+  },
+  synthesizeSpeechFn: synthesizeSpeech,
+  voiceConfig: config.voice,
+  workspace: config.paths.workspace,
+  alertsChannel: config.alerts.channel,
+};
+
+const healthPort = Number(
+  process.env.SHIPWRIGHT_HEALTH_PORT ?? DEFAULT_HEALTH_PORT,
+);
+startHealthServer(healthPort, analytics.summarize, cronDeps, slackClock);
+console.log(`[agent] health server on port ${healthPort}`);
+
+// ─── Step 3: mise + default plugins ──────────────────────────────────────────
 
 await runMiseStartup(config.paths.home);
 console.log("[agent] mise startup complete");
@@ -72,7 +112,7 @@ const runtimeClient =
       })
     : null;
 
-// ─── Step 2: Config sync ──────────────────────────────────────────────────────
+// ─── Step 4: Config sync ──────────────────────────────────────────────────────
 
 if (runtimeClient && agentId) {
   let configNotFoundLogged = false;
@@ -139,7 +179,7 @@ if (runtimeClient && agentId) {
   console.log("[agent] config sync started (60s interval)");
 }
 
-// ─── Step 3: reconcileSystemCrons — best-effort ────────────────────────────────
+// ─── Step 5: reconcileSystemCrons — best-effort ───────────────────────────────
 
 if (runtimeClient && agentId) {
   try {
@@ -153,40 +193,7 @@ if (runtimeClient && agentId) {
   }
 }
 
-// ─── Step 4: Health server ────────────────────────────────────────────────────
-
-const slackClock = SystemClock();
-const sessions = createFileSessionStore(config.paths.sessions);
-const analytics = createAnalyticsStore(join(config.paths.home, "analytics"));
-analytics.track({ type: "session_start" });
-
-const slack = new WebClient(config.slack.botToken ?? "");
-const runner = createRunClaude(
-  Bun.spawn,
-  sessions,
-  undefined,
-  config.paths.workspace,
-  analytics.track,
-);
-
-const cronDeps: CronHandlerDeps = {
-  slack,
-  runner,
-  formatter: markdownToSlack,
-  onSession: (channel: string, ts: string, sessionId: string) => {
-    sessions.set(threadKey(channel, ts), sessionId);
-  },
-  synthesizeSpeechFn: synthesizeSpeech,
-  voiceConfig: config.voice,
-  workspace: config.paths.workspace,
-  alertsChannel: config.alerts.channel,
-};
-
-const healthPort = Number(process.env.SHIPWRIGHT_HEALTH_PORT ?? DEFAULT_HEALTH_PORT);
-startHealthServer(healthPort, analytics.summarize, cronDeps, slackClock);
-console.log(`[agent] health server on port ${healthPort}`);
-
-// ─── Step 5: Cron sync loop ───────────────────────────────────────────────────
+// ─── Step 6: Cron sync loop ───────────────────────────────────────────────────
 
 const cronTasks = new Map<string, ReturnType<typeof nodeCron.schedule>>();
 
@@ -254,7 +261,7 @@ if (runtimeClient && agentId) {
   console.log("[agent] cron sync started (60s interval)");
 }
 
-// ─── Step 6: Slack Bolt Socket Mode ──────────────────────────────────────────
+// ─── Step 7: Slack Bolt Socket Mode ──────────────────────────────────────────
 
 const app = createSlackApp(
   runner,
@@ -281,7 +288,7 @@ await app.start();
 markSlackConnected();
 console.log("[agent] Slack app started — running");
 
-// ─── Step 7: Graceful shutdown ────────────────────────────────────────────────
+// ─── Step 8: Graceful shutdown ────────────────────────────────────────────────
 
 let shuttingDown = false;
 
