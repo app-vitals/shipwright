@@ -299,6 +299,9 @@ describe("pane env values are obviously dev dummies (public-safe)", () => {
     expect(cmdStr).toContain("host.docker.internal");
     // SHIPWRIGHT_INTERNAL_API_KEY must NOT appear in the agent docker run cmd (removed UNI-1.2)
     expect(cmdStr).not.toContain("SHIPWRIGHT_INTERNAL_API_KEY");
+    // SHIPWRIGHT_AGENT_API_KEY must be present — required by entrypoint.ts and
+    // enables runtime polling (config sync) against the admin pane.
+    expect(cmdStr).toContain("SHIPWRIGHT_AGENT_API_KEY");
   });
 
   test("admin pane has DATABASE_URL_SHIPWRIGHT_ADMIN with postgresql scheme", () => {
@@ -465,6 +468,13 @@ describe("admin pane — dev auth", () => {
   test("admin pane does not include SHIPWRIGHT_INTERNAL_API_KEY (removed in UNI-1.2)", () => {
     const admin = STACK_PANES.find((p) => p.label === "admin") as Pane;
     expect(admin.env?.SHIPWRIGHT_INTERNAL_API_KEY).toBeUndefined();
+  });
+
+  test("admin pane has SHIPWRIGHT_ADMIN_API_KEYS with dev-agent entry (UNI-1.2)", () => {
+    const admin = STACK_PANES.find((p) => p.label === "admin") as Pane;
+    // Must be set so the dev-agent's runtime polling (config sync) passes auth
+    expect(admin.env?.SHIPWRIGHT_ADMIN_API_KEYS).toBeDefined();
+    expect(admin.env?.SHIPWRIGHT_ADMIN_API_KEYS).toContain("dev-agent");
   });
 
   // A zero-length HS256 secret makes Web Crypto throw "DataError" the moment
