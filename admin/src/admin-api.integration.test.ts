@@ -89,6 +89,7 @@ describeOrSkip("admin CRUD API (integration)", () => {
       agentToolService: new AgentToolService(prisma),
       agentTokenService: new AgentTokenService(prisma),
       agentPluginService: new AgentPluginService(prisma),
+      prisma,
       sessionSecret: SESSION_SECRET,
     };
 
