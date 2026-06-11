@@ -145,7 +145,7 @@ export class AgentCronJobService {
   }
 
   /**
-   * Update a cron job's schedule, prompt, channel, user, silent, and preCheck.
+   * Update a cron job's schedule, prompt, channel, user, silent, preCheck, and enabled.
    * Applies the same validation as create():
    *   - schedule must be a valid cron expression
    *   - channel and user are mutually exclusive (422 if both set)
@@ -163,6 +163,7 @@ export class AgentCronJobService {
       user?: string | null;
       silent?: boolean;
       preCheck?: string | null;
+      enabled?: boolean;
     },
   ): Promise<AgentCronJob> {
     await this.get(agentId, cronId);
@@ -188,6 +189,7 @@ export class AgentCronJobService {
         user,
         silent,
         ...(input.preCheck !== undefined && { preCheck: input.preCheck }),
+        ...(input.enabled !== undefined && { enabled: input.enabled }),
       },
     });
   }

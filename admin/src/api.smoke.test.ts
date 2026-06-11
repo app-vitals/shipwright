@@ -13,9 +13,9 @@
 import { describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import { sign } from "hono/jwt";
-import { createAdminApp, parseAdminApiKeys } from "./agents-api.ts";
 import type { AgentCronJob } from "./agent-cron-jobs.ts";
 import type { AgentEnvBundle } from "./agent-envs.ts";
+import { createAdminApp, parseAdminApiKeys } from "./agents-api.ts";
 import { createAgentRuntimeApp } from "./api.ts";
 
 // ─── Mock types ───────────────────────────────────────────────────────────────
@@ -397,6 +397,21 @@ function buildCombinedApp() {
         updatedAt: new Date(),
       }),
       delete: async () => {},
+      setEnabled: async (_agentId, _cronId, enabled) => ({
+        id: "c1",
+        agentId: COMBINED_AGENT_ID,
+        schedule: "",
+        prompt: "",
+        channel: null,
+        user: null,
+        silent: false,
+        enabled,
+        preCheck: null,
+        name: null,
+        system: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
       reconcileSystemCrons: async () => ({
         created: 0,
         updated: 0,

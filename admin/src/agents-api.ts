@@ -40,7 +40,13 @@ export interface AdminDeps {
   >;
   agentCronJobService: Pick<
     AgentCronJobService,
-    "list" | "create" | "update" | "delete" | "reconcileSystemCrons" | "get"
+    | "list"
+    | "create"
+    | "update"
+    | "delete"
+    | "reconcileSystemCrons"
+    | "get"
+    | "setEnabled"
   >;
   agentToolService: Pick<
     AgentToolService,
@@ -221,22 +227,57 @@ export function createAdminApp(deps: AdminDeps): Hono<AdminAuthEnv> {
   });
 
   // PATCH /agents/:id/crons/:cronId — update a cron job
+  //
+  // Two modes:
+  //   Content update: schedule + prompt required together; channel/user/silent/preCheck/enabled optional.
+  //   Enabled-only:   only enabled provided (no schedule/prompt) — toggles without touching content.
   app.patch("/agents/:id/crons/:cronId", async (c) => {
     const agentId = c.req.param("id");
     const cronId = c.req.param("cronId");
     const body = await c.req.json<{
-      schedule: string;
-      prompt: string;
+      schedule?: string;
+      prompt?: string;
       channel?: string | null;
       user?: string | null;
       silent?: boolean;
       preCheck?: string | null;
+      enabled?: boolean;
     }>();
-    const cron: AgentCronJob = await agentCronJobService.update(
-      agentId,
-      cronId,
-      body,
-    );
+
+    const hasSchedule = body.schedule != null;
+    const hasPrompt = body.prompt != null;
+    const hasEnabled = body.enabled !== undefined;
+
+    if (!hasSchedule && !hasPrompt && !hasEnabled) {
+      throw new BadRequestError(
+        "provide at least schedule+prompt (content update) or enabled (toggle)",
+      );
+    }
+    if (hasSchedule !== hasPrompt) {
+      throw new BadRequestError(
+        "schedule and prompt must be provided together",
+      );
+    }
+
+    let cron: AgentCronJob;
+    if (hasSchedule && hasPrompt) {
+      cron = await agentCronJobService.update(agentId, cronId, {
+        schedule: body.schedule as string,
+        prompt: body.prompt as string,
+        channel: body.channel,
+        user: body.user,
+        silent: body.silent,
+        preCheck: body.preCheck,
+        enabled: body.enabled,
+      });
+    } else {
+      cron = await agentCronJobService.setEnabled(
+        agentId,
+        cronId,
+        body.enabled as boolean,
+      );
+    }
+
     return c.json({ cron });
   });
 

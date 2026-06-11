@@ -8,9 +8,9 @@
 
 import { beforeAll, describe, expect, it } from "bun:test";
 import { sign } from "hono/jwt";
+import type { AgentTokenService } from "./agent-tokens.ts";
 import { createAdminApp, parseAdminApiKeys } from "./agents-api.ts";
 import type { AdminDeps } from "./agents-api.ts";
-import type { AgentTokenService } from "./agent-tokens.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -105,6 +105,21 @@ function makeMockDeps(): AdminDeps {
         user: null,
         silent: false,
         enabled: true,
+        preCheck: null,
+        name: null,
+        system: false,
+        createdAt: new Date("2024-01-01"),
+        updatedAt: new Date("2024-01-01"),
+      }),
+      setEnabled: async (_agentId, _cronId, enabled) => ({
+        id: CRON_ID,
+        agentId: AGENT_ID,
+        schedule: "0 9 * * 1-5",
+        prompt: "daily standup",
+        channel: "C123",
+        user: null,
+        silent: false,
+        enabled,
         preCheck: null,
         name: null,
         system: false,
@@ -365,7 +380,7 @@ describe("admin API — cron jobs", () => {
     expect(res.status).toBe(201);
   });
 
-  it("PATCH /agents/:id/crons/:cronId updates and returns 200", async () => {
+  it("PATCH /agents/:id/crons/:cronId updates content and returns 200", async () => {
     const app = createAdminApp(makeMockDeps());
     const res = await app.request(`/agents/${AGENT_ID}/crons/${CRON_ID}`, {
       method: "PATCH",
@@ -380,6 +395,65 @@ describe("admin API — cron jobs", () => {
       },
     });
     expect(res.status).toBe(200);
+  });
+
+  it("PATCH /agents/:id/crons/:cronId with enabled-only toggles and returns 200", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}/crons/${CRON_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({ enabled: false }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.cron.enabled).toBe(false);
+  });
+
+  it("PATCH /agents/:id/crons/:cronId with content+enabled updates both and returns 200", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}/crons/${CRON_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        schedule: "0 10 * * 1-5",
+        prompt: "updated standup",
+        channel: "C123",
+        enabled: false,
+      }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("PATCH /agents/:id/crons/:cronId with only schedule returns 400", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}/crons/${CRON_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({ schedule: "0 10 * * 1-5" }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("PATCH /agents/:id/crons/:cronId with empty body returns 400", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}/crons/${CRON_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({}),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(400);
   });
 
   it("DELETE /agents/:id/crons/:cronId returns 204", async () => {
