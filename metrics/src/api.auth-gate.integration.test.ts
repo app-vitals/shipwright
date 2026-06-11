@@ -160,7 +160,7 @@ describe("owner gate — off by default", () => {
     );
 
     const res = await app.request("/metrics/summary", {
-      headers: { Cookie: `vitals_session=${cookie}` },
+      headers: { Cookie: `admin_session=${cookie}` },
     });
 
     expect(res.status).toBe(200);
@@ -179,7 +179,7 @@ describe("owner gate — off by default", () => {
     );
 
     const res = await app.request("/metrics/summary", {
-      headers: { Cookie: `vitals_session=${cookie}` },
+      headers: { Cookie: `admin_session=${cookie}` },
     });
 
     expect(res.status).toBe(200);
@@ -198,7 +198,7 @@ describe("owner gate — off by default", () => {
     );
 
     const res = await app.request("/metrics/summary", {
-      headers: { Cookie: `vitals_session=${cookie}` },
+      headers: { Cookie: `admin_session=${cookie}` },
     });
 
     expect(res.status).toBe(200);
@@ -212,7 +212,7 @@ describe("owner gate — off by default", () => {
     const app = createMetricsApp(apiKeys, noopAccountsClient, deps);
 
     const res = await app.request("/dashboard", {
-      headers: { Cookie: `vitals_session=${cookie}` },
+      headers: { Cookie: `admin_session=${cookie}` },
     });
 
     expect(res.status).toBe(200);
@@ -236,7 +236,7 @@ describe("owner gate — on when requireOwnerRole: true", () => {
     );
 
     const res = await app.request("/metrics/summary", {
-      headers: { Cookie: `vitals_session=${cookie}` },
+      headers: { Cookie: `admin_session=${cookie}` },
     });
 
     expect(res.status).toBe(401);
@@ -258,7 +258,7 @@ describe("owner gate — on when requireOwnerRole: true", () => {
     );
 
     const res = await app.request("/metrics/summary", {
-      headers: { Cookie: `vitals_session=${cookie}` },
+      headers: { Cookie: `admin_session=${cookie}` },
     });
 
     expect(res.status).toBe(200);
@@ -338,7 +338,7 @@ describe("dashboard HTML — no dead nav links", () => {
     const app = createMetricsApp(apiKeys, noopAccountsClient, deps);
 
     const res = await app.request("/dashboard", {
-      headers: { Cookie: `vitals_session=${cookie}` },
+      headers: { Cookie: `admin_session=${cookie}` },
     });
 
     expect(res.status).toBe(200);
@@ -358,7 +358,7 @@ describe("dashboard HTML — no dead nav links", () => {
     const app = createMetricsApp(apiKeys, noopAccountsClient, deps);
 
     const res = await app.request("/dashboard", {
-      headers: { Cookie: `vitals_session=${cookie}` },
+      headers: { Cookie: `admin_session=${cookie}` },
     });
 
     expect(res.status).toBe(200);

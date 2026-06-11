@@ -6,9 +6,9 @@
  * calls are intercepted at the network layer so no real PostHog credentials are needed.
  *
  * Session cookie auth: injectSessionCookie() signs a JWT with E2E_SESSION_SECRET,
- * which matches the SESSION_SECRET the test server is started with (see startTestServer).
- * This is the fix from PR #107: pin SESSION_SECRET on the spawn env so CI environments
- * that export a real SESSION_SECRET do not break cookie auth in tests.
+ * which matches the SHIPWRIGHT_SESSION_SECRET the test server is started with (see startTestServer).
+ * Pin SHIPWRIGHT_SESSION_SECRET on the spawn env so CI environments that export a real
+ * SHIPWRIGHT_SESSION_SECRET do not break cookie auth in tests.
  */
 
 import { type ChildProcess, spawn } from "node:child_process";
@@ -24,7 +24,7 @@ const TEST_PORT = 3461;
 const BASE_URL = `http://localhost:${TEST_PORT}`;
 
 /**
- * E2E_SESSION_SECRET must match SESSION_SECRET passed to the test server spawn env.
+ * E2E_SESSION_SECRET must match SHIPWRIGHT_SESSION_SECRET passed to the test server spawn env.
  * Both are pinned here to ensure they stay in sync. See startTestServer() for the fix.
  */
 const E2E_SESSION_SECRET = "e2e-test-session-secret-32b";
@@ -42,7 +42,7 @@ async function startTestServer(): Promise<void> {
       METRICS_E2E_PORT: String(TEST_PORT),
       POSTHOG_PERSONAL_API_KEY: "phx_e2e_fake",
       POSTHOG_PROJECT_ID: "99999",
-      SESSION_SECRET: E2E_SESSION_SECRET, // ← pin session secret so CI envs don't break cookie auth
+      SHIPWRIGHT_SESSION_SECRET: E2E_SESSION_SECRET, // ← pin session secret so CI envs don't break cookie auth
     },
     stdio: "pipe",
     cwd: resolve(__dirname, "../.."),
@@ -82,8 +82,8 @@ async function stopTestServer(): Promise<void> {
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 
 /**
- * Inject a valid vitals_session cookie into the page context.
- * Signs with E2E_SESSION_SECRET — must match the SESSION_SECRET the server uses.
+ * Inject a valid admin_session cookie into the page context.
+ * Signs with E2E_SESSION_SECRET — must match the SHIPWRIGHT_SESSION_SECRET the server uses.
  */
 async function injectSessionCookie(page: Page): Promise<void> {
   const payload = {
@@ -95,7 +95,7 @@ async function injectSessionCookie(page: Page): Promise<void> {
   const token = await sign(payload, E2E_SESSION_SECRET, "HS256");
   await page.context().addCookies([
     {
-      name: "vitals_session",
+      name: "admin_session",
       value: token,
       domain: "localhost",
       path: "/",
@@ -416,14 +416,14 @@ test.afterAll(async () => {
 // ─── Dashboard — page load ────────────────────────────────────────────────────
 
 test.describe("Dashboard — page load", () => {
-  test("redirects unauthenticated requests to /auth/login", async ({
+  test("redirects unauthenticated requests to /admin/login", async ({
     page,
   }) => {
     const response = await page.goto(`${BASE_URL}/dashboard`, {
       waitUntil: "domcontentloaded",
     });
     // Should redirect to login
-    expect(page.url()).toContain("/auth/login");
+    expect(page.url()).toContain("/admin/login");
   });
 
   test("renders toolbar with Shipwright wordmark", async ({ page }) => {

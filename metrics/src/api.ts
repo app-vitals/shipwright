@@ -20,7 +20,10 @@ import { authMiddleware } from "./lib/api-auth.ts";
 import type { AppHandler, AuthEnv, Caller } from "./lib/api-auth.ts";
 import { ErrorSchema } from "./lib/api-schemas.ts";
 import { registerWithAuthz } from "./lib/api-utils.ts";
-import { createSessionMiddleware } from "./lib/session-middleware.ts";
+import {
+  SESSION_COOKIE,
+  createSessionMiddleware,
+} from "./lib/session-middleware.ts";
 import type { LocalEventStore } from "./local-store.ts";
 import type { MetricsProvider } from "./metrics-provider.ts";
 import { PostHogClientError, createPostHogClient } from "./posthog-client.ts";
@@ -829,7 +832,7 @@ export function createMetricsHandlers(
 /**
  * Combined auth middleware for /metrics/* routes.
  * Accepts either a valid Bearer token (service-to-service) OR a valid
- * vitals_session cookie (browser dashboard). Returns 401 JSON on failure
+ * admin_session cookie (browser dashboard). Returns 401 JSON on failure
  * so API clients get a machine-readable error rather than a redirect.
  *
  * Owner gate:
@@ -865,9 +868,9 @@ function createCombinedAuthMiddleware(
       }
     }
 
-    // 2. Try session cookie
+    // 2. Try session cookie — the admin's `admin_session` (name claim optional)
     if (sessionSecret) {
-      const sessionToken = getCookie(c, "vitals_session");
+      const sessionToken = getCookie(c, SESSION_COOKIE);
       if (sessionToken) {
         try {
           const payload = (await verify(
@@ -875,14 +878,12 @@ function createCombinedAuthMiddleware(
             sessionSecret,
             "HS256",
           )) as Record<string, unknown>;
-          const { userId, email, name } = payload;
+          const { userId, email } = payload;
           if (
             typeof userId === "string" &&
             userId &&
             typeof email === "string" &&
-            email &&
-            typeof name === "string" &&
-            name
+            email
           ) {
             // Owner role gate — only when requireOwnerRole is true AND accountsClient is wired
             if (requireOwnerRole && accountsClient) {
@@ -920,6 +921,11 @@ export function createMetricsApp(
   const sessionSecret =
     deps?.sessionSecret ?? process.env.SHIPWRIGHT_SESSION_SECRET ?? "";
   const requireOwnerRole = deps?.requireOwnerRole ?? false;
+  if (requireOwnerRole) {
+    console.warn(
+      "[metrics] METRICS_REQUIRE_OWNER_ROLE is enabled — ensure your accountsClient URL serves /accounts/users/{id}. The Shipwright admin service does not expose this endpoint.",
+    );
+  }
   const dashboardToken = deps?.dashboardToken;
   const offlineMode = deps?.offlineMode ?? false;
   const basePath = deps?.basePath ?? process.env.METRICS_BASE_PATH ?? "";
@@ -1039,7 +1045,7 @@ export function createMetricsApp(
     },
   };
 
-  // Dashboard routes are protected by session cookie — redirect to /auth/login on failure
+  // Dashboard routes are protected by session cookie — redirect to /admin/login on failure
   // In offline mode: skip session auth entirely and inject a default local user
   if (!offlineMode) {
     app.use("/dashboard", createSessionMiddleware(sessionSecret));
@@ -1060,7 +1066,7 @@ export function createMetricsApp(
       });
     }
 
-    const sessionToken = getCookie(c, "vitals_session");
+    const sessionToken = getCookie(c, SESSION_COOKIE);
     let userName = "Unknown";
     let userId: string | undefined;
     if (sessionToken && sessionSecret) {
