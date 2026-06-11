@@ -170,6 +170,8 @@ function main(): void {
   const documentedVars = new Set(extractDocumentedVars(docsContent));
 
   // 2. Collect source files from the two directories
+  // Intentionally excludes metrics/ and admin/src/ — those surfaces have
+  // separate config documentation; expand sourceDirs if that changes.
   const sourceDirs = [
     join(projectRoot, "agent", "src"),
     join(projectRoot, "plugins", "shipwright", "scripts"),
