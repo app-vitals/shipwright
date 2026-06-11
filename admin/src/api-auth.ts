@@ -17,8 +17,8 @@ import type { AgentTokenService } from "./agent-tokens.ts";
 
 const SESSION_COOKIE = "admin_session";
 
-// Matches /admin/api/agents/{agentId}/... routes — used for per-agent scope enforcement.
-const AGENT_ROUTE_RE = /^\/admin\/api\/agents\/([^/]+)/;
+// Matches /agents/{agentId}/... routes — used for per-agent scope enforcement.
+const AGENT_ROUTE_RE = /^\/agents\/([^/]+)/;
 
 // ─── Admin API key parsing ────────────────────────────────────────────────────
 
@@ -118,7 +118,7 @@ export function createAdminAuthMiddleware(deps: {
             return c.json({ error: "Forbidden" }, 403);
           }
           // Non-agent routes: scoped keys are permitted (no agentId to enforce against).
-          // All current /admin/api/* routes match AGENT_ROUTE_RE — revisit if that changes.
+          // All current /agents/* routes match AGENT_ROUTE_RE — revisit if that changes.
           return next();
         }
       }

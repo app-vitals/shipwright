@@ -77,7 +77,7 @@ export interface RuntimeApiPaths {
 
 /** Typed paths for the admin POST endpoint — use with createClient<AdminApiPaths>(). */
 export interface AdminApiPaths {
-  "/admin/api/agents/{agentId}/crons/reconcile": {
+  "/agents/{agentId}/crons/reconcile": {
     post: {
       parameters: { path: { agentId: string } };
       responses: {

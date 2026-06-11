@@ -152,7 +152,7 @@ const envPayload: Record<string, string> = {
 };
 
 const response = await adminPatch(
-  `/admin/api/agents/${agentId}/envs`,
+  `/agents/${agentId}/envs`,
   envPayload,
 );
 

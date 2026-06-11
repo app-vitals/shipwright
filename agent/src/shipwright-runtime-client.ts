@@ -101,13 +101,13 @@ export class HttpShipwrightRuntimeClient implements ShipwrightRuntimeClient {
 
   async reconcileSystemCrons(agentId: string): Promise<void> {
     const { error, response } = await this.adminClient.POST(
-      "/admin/api/agents/{agentId}/crons/reconcile",
+      "/agents/{agentId}/crons/reconcile",
       { params: { path: { agentId } } },
     );
     if (error) {
       throw new ShipwrightClientError(
         response.status,
-        `POST /admin/api/agents/${agentId}/crons/reconcile failed: ${response.status}`,
+        `POST /agents/${agentId}/crons/reconcile failed: ${response.status}`,
       );
     }
   }

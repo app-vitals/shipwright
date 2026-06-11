@@ -7,7 +7,7 @@
  * Exports createComposedApp(deps) for testing and startServer() for programmatic use.
  * Runs startServer() directly when executed as the main entry (bun run run-agent.ts).
  *
- * The admin routes (/admin/api/* and /admin/*) are now served by the standalone
+ * The admin routes (/agents/:id/* CRUD and /admin/* UI) are now served by the standalone
  * admin service (admin/src/main.ts). The /agents/* endpoint proxies transparently
  * to the admin service via SHIPWRIGHT_API_URL.
  *

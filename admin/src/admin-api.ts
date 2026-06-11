@@ -2,14 +2,15 @@
  * agent/src/admin-api.ts
  * Admin CRUD API — Hono app factory.
  *
- * Routes mounted at /admin/api/*. Full CRUD for:
+ * Routes mounted at /agents/:id/*. Full CRUD for:
  *   - AgentEnv
  *   - AgentCronJob
  *   - AgentTool
  *   - AgentToken
  *   - AgentPlugin
  *
- * Auth: session cookie (httpOnly JWT, SHIPWRIGHT_SESSION_SECRET).
+ * Auth: admin key (SHIPWRIGHT_ADMIN_API_KEYS) OR per-agent bearer token OR
+ *       session cookie (httpOnly JWT, SHIPWRIGHT_SESSION_SECRET).
  * Cookie name: admin_session.
  */
 
@@ -86,39 +87,39 @@ export function createAdminApp(deps: AdminDeps): Hono {
     return c.json({ error: "Internal server error" }, 500);
   });
 
-  // Apply combined auth (bearer token OR session cookie) to all /admin/api/* routes
+  // Apply combined auth (bearer token OR session cookie) to all /agents/* routes
   app.use(
-    "/admin/api/*",
+    "/agents/*",
     createAdminAuthMiddleware({ sessionSecret, agentTokenService, adminApiKeys }),
   );
 
   // ─── Env vars ──────────────────────────────────────────────────────────────
 
-  // POST /admin/api/agents/:id/envs — replace all env vars (bulk upsert)
-  app.post("/admin/api/agents/:id/envs", async (c) => {
+  // POST /agents/:id/envs — replace all env vars (bulk upsert)
+  app.post("/agents/:id/envs", async (c) => {
     const agentId = c.req.param("id");
     const body = await c.req.json<Record<string, string>>();
     await agentEnvService.upsert(agentId, body);
     return c.json({ ok: true }, 201);
   });
 
-  // GET /admin/api/agents/:id/envs — get all env vars (decrypted)
-  app.get("/admin/api/agents/:id/envs", async (c) => {
+  // GET /agents/:id/envs — get all env vars (decrypted)
+  app.get("/agents/:id/envs", async (c) => {
     const agentId = c.req.param("id");
     const env = await agentEnvService.getByAgentId(agentId);
     return c.json({ env: env ?? {} });
   });
 
-  // PATCH /admin/api/agents/:id/envs — update specific keys (without replacing all)
-  app.patch("/admin/api/agents/:id/envs", async (c) => {
+  // PATCH /agents/:id/envs — update specific keys (without replacing all)
+  app.patch("/agents/:id/envs", async (c) => {
     const agentId = c.req.param("id");
     const body = await c.req.json<Record<string, string>>();
     await agentEnvService.patch(agentId, body);
     return c.json({ ok: true });
   });
 
-  // DELETE /admin/api/agents/:id/envs/:key — delete a single key
-  app.delete("/admin/api/agents/:id/envs/:key", async (c) => {
+  // DELETE /agents/:id/envs/:key — delete a single key
+  app.delete("/agents/:id/envs/:key", async (c) => {
     const agentId = c.req.param("id");
     const key = c.req.param("key");
     await agentEnvService.deleteKey(agentId, key);
@@ -127,8 +128,8 @@ export function createAdminApp(deps: AdminDeps): Hono {
 
   // ─── Cron jobs ─────────────────────────────────────────────────────────────
 
-  // POST /admin/api/agents/:id/crons — create a cron job
-  app.post("/admin/api/agents/:id/crons", async (c) => {
+  // POST /agents/:id/crons — create a cron job
+  app.post("/agents/:id/crons", async (c) => {
     const agentId = c.req.param("id");
     const body = await c.req.json<{
       schedule: string;
@@ -144,22 +145,22 @@ export function createAdminApp(deps: AdminDeps): Hono {
     return c.json({ cron }, 201);
   });
 
-  // GET /admin/api/agents/:id/crons — list cron jobs
-  app.get("/admin/api/agents/:id/crons", async (c) => {
+  // GET /agents/:id/crons — list cron jobs
+  app.get("/agents/:id/crons", async (c) => {
     const agentId = c.req.param("id");
     const crons: AgentCronJob[] = await agentCronJobService.list(agentId);
     return c.json({ crons });
   });
 
-  // POST /admin/api/agents/:id/crons/reconcile — static path must precede /:cronId routes
-  app.post("/admin/api/agents/:id/crons/reconcile", async (c) => {
+  // POST /agents/:id/crons/reconcile — static path must precede /:cronId routes
+  app.post("/agents/:id/crons/reconcile", async (c) => {
     const agentId = c.req.param("id");
     const result = await agentCronJobService.reconcileSystemCrons(agentId);
     return c.json(result);
   });
 
-  // PATCH /admin/api/agents/:id/crons/:cronId — update a cron job
-  app.patch("/admin/api/agents/:id/crons/:cronId", async (c) => {
+  // PATCH /agents/:id/crons/:cronId — update a cron job
+  app.patch("/agents/:id/crons/:cronId", async (c) => {
     const agentId = c.req.param("id");
     const cronId = c.req.param("cronId");
     const body = await c.req.json<{
@@ -178,8 +179,8 @@ export function createAdminApp(deps: AdminDeps): Hono {
     return c.json({ cron });
   });
 
-  // DELETE /admin/api/agents/:id/crons/:cronId — delete a cron job
-  app.delete("/admin/api/agents/:id/crons/:cronId", async (c) => {
+  // DELETE /agents/:id/crons/:cronId — delete a cron job
+  app.delete("/agents/:id/crons/:cronId", async (c) => {
     const agentId = c.req.param("id");
     const cronId = c.req.param("cronId");
     const cron = await agentCronJobService.get(agentId, cronId);
@@ -192,23 +193,23 @@ export function createAdminApp(deps: AdminDeps): Hono {
 
   // ─── Tools ─────────────────────────────────────────────────────────────────
 
-  // POST /admin/api/agents/:id/tools — add a tool pattern
-  app.post("/admin/api/agents/:id/tools", async (c) => {
+  // POST /agents/:id/tools — add a tool pattern
+  app.post("/agents/:id/tools", async (c) => {
     const agentId = c.req.param("id");
     const body = await c.req.json<{ pattern: string }>();
     const tool: AgentTool = await agentToolService.add(agentId, body.pattern);
     return c.json({ tool }, 201);
   });
 
-  // GET /admin/api/agents/:id/tools — list tool patterns
-  app.get("/admin/api/agents/:id/tools", async (c) => {
+  // GET /agents/:id/tools — list tool patterns
+  app.get("/agents/:id/tools", async (c) => {
     const agentId = c.req.param("id");
     const tools: AgentTool[] = await agentToolService.list(agentId);
     return c.json({ tools });
   });
 
-  // PATCH /admin/api/agents/:id/tools/:toolId — enable or disable a tool pattern
-  app.patch("/admin/api/agents/:id/tools/:toolId", async (c) => {
+  // PATCH /agents/:id/tools/:toolId — enable or disable a tool pattern
+  app.patch("/agents/:id/tools/:toolId", async (c) => {
     const agentId = c.req.param("id");
     const toolId = c.req.param("toolId");
     const body = await c.req.json<{ enabled: boolean }>();
@@ -220,8 +221,8 @@ export function createAdminApp(deps: AdminDeps): Hono {
     return c.json({ tool });
   });
 
-  // DELETE /admin/api/agents/:id/tools/:toolId — remove a tool pattern
-  app.delete("/admin/api/agents/:id/tools/:toolId", async (c) => {
+  // DELETE /agents/:id/tools/:toolId — remove a tool pattern
+  app.delete("/agents/:id/tools/:toolId", async (c) => {
     const agentId = c.req.param("id");
     const toolId = c.req.param("toolId");
     await agentToolService.remove(agentId, toolId);
@@ -230,8 +231,8 @@ export function createAdminApp(deps: AdminDeps): Hono {
 
   // ─── Tokens ────────────────────────────────────────────────────────────────
 
-  // POST /admin/api/agents/:id/tokens — create a token (returns raw once)
-  app.post("/admin/api/agents/:id/tokens", async (c) => {
+  // POST /agents/:id/tokens — create a token (returns raw once)
+  app.post("/agents/:id/tokens", async (c) => {
     const agentId = c.req.param("id");
     let label: string | undefined;
     try {
@@ -246,8 +247,8 @@ export function createAdminApp(deps: AdminDeps): Hono {
     return c.json({ token: tokenMeta, rawToken }, 201);
   });
 
-  // GET /admin/api/agents/:id/tokens — list tokens (hash metadata only)
-  app.get("/admin/api/agents/:id/tokens", async (c) => {
+  // GET /agents/:id/tokens — list tokens (hash metadata only)
+  app.get("/agents/:id/tokens", async (c) => {
     const agentId = c.req.param("id");
     const records: AgentToken[] = await agentTokenService.listForAgent(agentId);
     // Never expose the stored hash — return only metadata
@@ -255,8 +256,8 @@ export function createAdminApp(deps: AdminDeps): Hono {
     return c.json({ tokens });
   });
 
-  // DELETE /admin/api/agents/:id/tokens/:tokenId — revoke a token
-  app.delete("/admin/api/agents/:id/tokens/:tokenId", async (c) => {
+  // DELETE /agents/:id/tokens/:tokenId — revoke a token
+  app.delete("/agents/:id/tokens/:tokenId", async (c) => {
     const tokenId = c.req.param("tokenId");
     await agentTokenService.revoke(tokenId);
     return new Response(null, { status: 204 });
@@ -264,8 +265,8 @@ export function createAdminApp(deps: AdminDeps): Hono {
 
   // ─── Plugins ───────────────────────────────────────────────────────────────
 
-  // POST /admin/api/agents/:id/plugins — add a plugin
-  app.post("/admin/api/agents/:id/plugins", async (c) => {
+  // POST /agents/:id/plugins — add a plugin
+  app.post("/agents/:id/plugins", async (c) => {
     const agentId = c.req.param("id");
     const body = await c.req.json<{ name: string; version?: string | null }>();
     const plugin = await agentPluginService.add(
@@ -276,17 +277,17 @@ export function createAdminApp(deps: AdminDeps): Hono {
     return c.json({ plugin }, 201);
   });
 
-  // GET /admin/api/agents/:id/plugins — list plugins
-  app.get("/admin/api/agents/:id/plugins", async (c) => {
+  // GET /agents/:id/plugins — list plugins
+  app.get("/agents/:id/plugins", async (c) => {
     const agentId = c.req.param("id");
     const plugins = await agentPluginService.list(agentId);
     return c.json({ plugins });
   });
 
-  // PATCH /admin/api/agents/:id/plugins?name=<name> — update plugin version (re-upsert)
+  // PATCH /agents/:id/plugins?name=<name> — update plugin version (re-upsert)
   // Uses a query param rather than a path segment to support scoped names like
   // "@shipwright/plugin" which contain a literal "/" that breaks path matching.
-  app.patch("/admin/api/agents/:id/plugins", async (c) => {
+  app.patch("/agents/:id/plugins", async (c) => {
     const agentId = c.req.param("id");
     const name = c.req.query("name");
     if (!name) {
@@ -297,10 +298,10 @@ export function createAdminApp(deps: AdminDeps): Hono {
     return c.json({ plugin });
   });
 
-  // DELETE /admin/api/agents/:id/plugins?name=<name> — remove a plugin by name
+  // DELETE /agents/:id/plugins?name=<name> — remove a plugin by name
   // Uses a query param rather than a path segment to support scoped names like
   // "@shipwright/plugin" which contain a literal "/" that breaks path matching.
-  app.delete("/admin/api/agents/:id/plugins", async (c) => {
+  app.delete("/agents/:id/plugins", async (c) => {
     const agentId = c.req.param("id");
     const name = c.req.query("name");
     if (!name) {

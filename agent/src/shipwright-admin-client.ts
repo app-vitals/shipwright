@@ -35,7 +35,7 @@ export class HttpShipwrightAdminClient
     agentId: string,
     env: Record<string, string>,
   ): Promise<void> {
-    const url = `${this.baseUrl}/admin/api/agents/${agentId}/envs`;
+    const url = `${this.baseUrl}/agents/${agentId}/envs`;
     const res = await globalThis.fetch(url, {
       method: "POST",
       headers: this.headers,
@@ -49,7 +49,7 @@ export class HttpShipwrightAdminClient
   }
 
   async listCrons(agentId: string): Promise<VitalsAgentCron[]> {
-    const url = `${this.baseUrl}/admin/api/agents/${agentId}/crons`;
+    const url = `${this.baseUrl}/agents/${agentId}/crons`;
     const res = await globalThis.fetch(url, { headers: this.headers });
     if (!res.ok) {
       throw new Error(
@@ -61,7 +61,7 @@ export class HttpShipwrightAdminClient
   }
 
   async createCron(agentId: string, cron: VitalsAgentCron): Promise<void> {
-    const url = `${this.baseUrl}/admin/api/agents/${agentId}/crons`;
+    const url = `${this.baseUrl}/agents/${agentId}/crons`;
     const res = await globalThis.fetch(url, {
       method: "POST",
       headers: this.headers,
@@ -75,7 +75,7 @@ export class HttpShipwrightAdminClient
   }
 
   async addTool(agentId: string, pattern: string): Promise<void> {
-    const url = `${this.baseUrl}/admin/api/agents/${agentId}/tools`;
+    const url = `${this.baseUrl}/agents/${agentId}/tools`;
     const res = await globalThis.fetch(url, {
       method: "POST",
       headers: this.headers,

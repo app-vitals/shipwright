@@ -7,8 +7,13 @@
  * Route mount order (important — avoids shadowing):
  *   GET  /health                 — health check (no auth)
  *   *    /agents/*               — runtime API  (Bearer SHIPWRIGHT_INTERNAL_API_KEY)
- *   *    /admin/api/*            — admin CRUD API (session JWT) — MUST be before /admin/*
+ *                                  + admin CRUD API (admin key | per-agent bearer | session JWT)
  *   *    /admin/*                — admin UI       (session JWT)
+ *
+ * Both runtimeApp and adminApiApp serve routes under /agents/*.
+ * They use non-overlapping sub-paths so Hono resolves them correctly:
+ *   runtime  → GET  /agents/:id/config, GET /agents/:id/crons
+ *   admin    → POST/PATCH/DELETE /agents/:id/envs, /crons, /tools, /tokens, /plugins
  */
 
 import { join } from "node:path";
@@ -123,7 +128,7 @@ async function startServer(): Promise<void> {
   root.get("/health", (c) => c.json({ status: "ok" }));
 
   // 2. Runtime API — Bearer SHIPWRIGHT_INTERNAL_API_KEY
-  //    Mounted via a shim to scope the Bearer auth middleware to /agents/* only.
+  //    Mounted directly at /agents so its routes coexist with admin CRUD routes.
   const runtimeApp = createAgentRuntimeApp({
     agentEnvService,
     agentCronJobService,
@@ -131,11 +136,10 @@ async function startServer(): Promise<void> {
     internalApiKey,
   });
 
-  const agentsShim = new Hono();
-  agentsShim.all("/*", async (c) => runtimeApp.fetch(c.req.raw, c.env));
-  root.route("/agents", agentsShim);
+  root.route("/agents", runtimeApp);
 
-  // 3. Admin CRUD API — /admin/api/* — session JWT
+  // 3. Admin CRUD API — /agents/:id/* — admin key | per-agent bearer | session JWT
+  //    Routes are now at /agents/:id/* (same prefix as runtime, different sub-paths).
   //    MUST be mounted before admin-ui (/admin/*) to avoid shadowing.
   const adminApiApp = createAdminApp({
     agentEnvService,
