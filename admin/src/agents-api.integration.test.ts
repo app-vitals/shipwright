@@ -1,5 +1,5 @@
 /**
- * agent/src/admin-api.integration.test.ts
+ * agent/src/agents-api.integration.test.ts
  * Integration tests for the admin CRUD API against a real SQLite DB.
  *
  * Requires DATABASE_URL_ADMIN_TEST to be set; skips otherwise.
@@ -13,8 +13,8 @@
 import { beforeEach, describe, expect, it } from "bun:test";
 import { sign } from "hono/jwt";
 import { PrismaClient } from "../prisma/client/index.js";
-import { createAdminApp } from "./admin-api.ts";
-import type { AdminDeps } from "./admin-api.ts";
+import { createAdminApp } from "./agents-api.ts";
+import type { AdminDeps } from "./agents-api.ts";
 import { AgentCronJobService } from "./agent-cron-jobs.ts";
 import { AgentEnvService } from "./agent-envs.ts";
 import { AgentPluginService } from "./agent-plugins.ts";
