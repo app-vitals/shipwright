@@ -130,16 +130,6 @@ Used only by `agent/src/run-migration.ts` when migrating agents from the Vitals 
 | `VITALS_OS_API_KEY` | `string` | — | API key for the source Vitals OS accounts service. Migration script only. Env-var-only (secret). |
 | `SHIPWRIGHT_ADMIN_API_KEY` | `string` | — | API key for the destination Shipwright admin service. Migration script only. Env-var-only (secret). |
 
-### Ops scripts
-
-Used only by one-time operator scripts in `agent/scripts/` (e.g. `bootstrap-agent.ts`). Not needed for the running agent.
-
-| Name | Type | Default | Description |
-|---|---|---|---|
-| `SHIPWRIGHT_ADMIN_URL` | `string` | required | Base URL of the Shipwright admin API. Required by `bootstrap-agent.ts` to store credentials via the admin service. Env-var-only. |
-| `SHIPWRIGHT_SESSION_TOKEN` | `string` | required | Value of the `admin_session` JWT cookie for authenticating against the admin API. Required by `bootstrap-agent.ts`. Env-var-only (secret). |
-| `SLACK_TEAM_ID` | `string` | required | Slack workspace ID (`T...`). Collected interactively by `bootstrap-agent.ts` and stored as an agent env var. |
-
 ### Server
 
 | Name | Type | Default | Description |
@@ -168,7 +158,7 @@ Used only by one-time operator scripts in `agent/scripts/` (e.g. `bootstrap-agen
 | `MISE_DATA_DIR` | `string` | `<AGENT_HOME>/mise` | Mise data directory. On first startup, seeded from the image's default mise location so baked tools survive pod restarts. Override only if needed. |
 | `MISE_CACHE_DIR` | `string` | `<AGENT_HOME>/mise/cache` | Override the mise cache directory. Auto-derived from `AGENT_HOME`. |
 | `XDG_CACHE_HOME` | `string` | `<AGENT_HOME>/cache` | Override the XDG cache directory. Auto-derived from `AGENT_HOME`. |
-| `XDG_DATA_HOME` | `string` | `~/.local/share` | Standard XDG data home. Used to locate the image's default mise data dir when seeding a fresh PVC. |
+| `XDG_DATA_HOME` | `string` | `$HOME/.local/share` | Override the XDG data directory. Used to locate the mise data dir (`$XDG_DATA_HOME/mise`) when seeding a fresh PVC. |
 | `SHIPWRIGHT_STARTUP_TIMEOUT_MS` | `number` | `60000` | Maximum milliseconds the entrypoint startup sequence may take before the agent exits. Override to a lower value (e.g. `10000`) in dev for faster fail-fast feedback. |
 | `AGENT_ALLOWED_TOOLS` | `string` (JSON array) | — | JSON array of allowed Claude tool patterns. Set by the admin service config sync; do not set manually in production. |
 
