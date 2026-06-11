@@ -41,6 +41,8 @@ import type { GoogleAuthClient } from "./google-auth-client.ts";
 import type { AppManifest } from "./slack-provisioning-client.ts";
 import { defaultAgentManifest } from "./slack-provisioning-client.ts";
 
+type AdminUIEnv = { Variables: { userEmail: string } };
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 /**
@@ -137,7 +139,6 @@ const OAUTH_STATE_COOKIE = "oauth_state";
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const SESSION_TTL_SECONDS = 8 * 60 * 60; // 8 hours
 const OAUTH_STATE_TTL_SECONDS = 600; // 10 min
-const ADMIN_USER_NAME = "admin";
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 
@@ -159,44 +160,50 @@ async function createSessionToken(
   );
 }
 
-async function verifySessionToken(
+async function getSessionEmail(
   token: string,
   secret: string,
-): Promise<boolean> {
+): Promise<string | null> {
   try {
     const payload = (await verify(token, secret, "HS256")) as Record<
       string,
       unknown
     >;
-    return (
+    if (
       typeof payload.userId === "string" &&
       payload.userId.length > 0 &&
       typeof payload.email === "string" &&
       payload.email.length > 0
-    );
+    ) {
+      return payload.email;
+    }
+    return null;
   } catch {
-    return false;
+    return null;
   }
 }
 
 // ─── Auth middleware ──────────────────────────────────────────────────────────
 
-function createUIAuthMiddleware(sessionSecret: string): MiddlewareHandler {
+function createUIAuthMiddleware(
+  sessionSecret: string,
+): MiddlewareHandler<AdminUIEnv> {
   return async (c, next) => {
     const sessionToken = getCookie(c, SESSION_COOKIE);
-    if (
-      !sessionToken ||
-      !(await verifySessionToken(sessionToken, sessionSecret))
-    ) {
+    const email = sessionToken
+      ? await getSessionEmail(sessionToken, sessionSecret)
+      : null;
+    if (!email) {
       return c.redirect("/admin/login", 302);
     }
+    c.set("userEmail", email);
     return next();
   };
 }
 
 // ─── App factory ──────────────────────────────────────────────────────────────
 
-export function createAdminUIApp(deps: AdminUIDeps): Hono {
+export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   const {
     prisma,
     agentEnvService,
@@ -214,7 +221,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
     devAuthEnabled = false,
   } = deps;
 
-  const app = new Hono();
+  const app = new Hono<AdminUIEnv>();
 
   const requireAuth = createUIAuthMiddleware(sessionSecret);
 
@@ -405,7 +412,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
 
   app.get("/admin/agents", requireAuth, async (c) => {
     const agents = await prisma.agent.findMany();
-    return html(renderAgentsPage(agents, ADMIN_USER_NAME));
+    return html(renderAgentsPage(agents, c.var.userEmail));
   });
 
   // ─── Agent detail ─────────────────────────────────────────────────────────
@@ -445,7 +452,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
         tools,
         tokens,
         plugins,
-        ADMIN_USER_NAME,
+        c.var.userEmail,
         { error, newToken },
       ),
     );
@@ -675,7 +682,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
           tools,
           tokens,
           plugins,
-          ADMIN_USER_NAME,
+          c.var.userEmail,
           { newToken: rawToken },
         ),
       );
@@ -702,7 +709,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
   // ─── Provisioning flow ────────────────────────────────────────────────────
 
   app.get("/admin/provision", requireAuth, (c) => {
-    return html(renderProvisionStartPage(ADMIN_USER_NAME));
+    return html(renderProvisionStartPage(c.var.userEmail));
   });
 
   app.post("/admin/provision/start", requireAuth, async (c) => {
@@ -712,7 +719,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
       xoxpToken = formData.get("xoxpToken")?.toString();
     } catch {
       return html(
-        renderProvisionStartPage(ADMIN_USER_NAME, {
+        renderProvisionStartPage(c.var.userEmail, {
           error: "Invalid form submission.",
         }),
       );
@@ -720,7 +727,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
 
     if (!xoxpToken || !xoxpToken.startsWith("xoxp-")) {
       return html(
-        renderProvisionStartPage(ADMIN_USER_NAME, {
+        renderProvisionStartPage(c.var.userEmail, {
           error: "Token must start with xoxp-",
         }),
       );
@@ -734,7 +741,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
         manifest,
       );
       return html(
-        renderProvisionStartPage(ADMIN_USER_NAME, {
+        renderProvisionStartPage(c.var.userEmail, {
           oauthUrl: oauthRedirectUrl,
         }),
       );
@@ -743,14 +750,14 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
         err instanceof Error
           ? err.message
           : "Unknown error creating Slack app.";
-      return html(renderProvisionStartPage(ADMIN_USER_NAME, { error: msg }));
+      return html(renderProvisionStartPage(c.var.userEmail, { error: msg }));
     }
   });
 
   // GET — OAuth callback → show paste form for credentials
   app.get("/admin/provision/complete", requireAuth, (c) => {
     const agentId = c.req.query("agentId");
-    return html(renderProvisionPasteForm(ADMIN_USER_NAME, { agentId }));
+    return html(renderProvisionPasteForm(c.var.userEmail, { agentId }));
   });
 
   // POST — receive pasted credentials → store in AgentEnv
@@ -765,7 +772,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
       signingSecret = formData.get("signingSecret")?.toString();
     } catch {
       return html(
-        renderProvisionCompletePage(ADMIN_USER_NAME, {
+        renderProvisionCompletePage(c.var.userEmail, {
           success: false,
           error: "Invalid form submission.",
         }),
@@ -774,7 +781,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
 
     if (!agentId || !appId || !signingSecret) {
       return html(
-        renderProvisionPasteForm(ADMIN_USER_NAME, {
+        renderProvisionPasteForm(c.var.userEmail, {
           agentId,
           error: "Agent ID, App ID, and Signing Secret are all required.",
         }),
@@ -789,7 +796,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
         SLACK_SIGNING_SECRET: signingSecret,
       });
       return html(
-        renderProvisionCompletePage(ADMIN_USER_NAME, {
+        renderProvisionCompletePage(c.var.userEmail, {
           success: true,
           agentId,
         }),
@@ -800,7 +807,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono {
           ? err.message
           : "Unknown error storing credentials.";
       return html(
-        renderProvisionPasteForm(ADMIN_USER_NAME, { agentId, error: msg }),
+        renderProvisionPasteForm(c.var.userEmail, { agentId, error: msg }),
       );
     }
   });
