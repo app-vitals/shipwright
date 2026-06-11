@@ -51,7 +51,7 @@ export interface EntrypointDeps {
 
 // ─── Main entrypoint ──────────────────────────────────────────────────────────
 
-const DEFAULT_STARTUP_TIMEOUT_MS = 10_000;
+const DEFAULT_STARTUP_TIMEOUT_MS = 60_000;
 
 export async function runEntrypoint(deps: EntrypointDeps): Promise<void> {
   const {
