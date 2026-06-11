@@ -327,7 +327,7 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
         <tbody>
           {[
             { name: "DATABASE_URL_SHIPWRIGHT_ADMIN", type: "string", def: "required", desc: "Postgres connection string for the admin service schema." },
-            { name: "SHIPWRIGHT_SESSION_SECRET", type: "string", def: "—", desc: "Secret for verifying the admin_session JWT cookie used by the admin service." },
+            { name: "SHIPWRIGHT_SESSION_SECRET", type: "string", def: "—", desc: "HS256 secret for signing session cookies. Used by the metrics service (vitals_session cookie) and the admin service (admin_session cookie)." },
             { name: "SHIPWRIGHT_ENCRYPTION_KEY", type: "string", def: "—", desc: "64-char hex (32 bytes) for AES-256-GCM encryption of secrets at rest. If unset, secrets are stored in plain text." },
             { name: "SHIPWRIGHT_ADMIN_ALLOWED_EMAILS", type: "string", def: "—", desc: "Comma-separated list of Google email addresses permitted to log in to the admin UI." },
             { name: "SHIPWRIGHT_ADMIN_APP_BASE_URL", type: "string", def: "http://localhost:{PORT}", desc: "Public base URL of the admin service, used to construct the Google OAuth redirect URI." },
