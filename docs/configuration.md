@@ -130,15 +130,6 @@ Used only by `agent/src/run-migration.ts` when migrating agents from the Vitals 
 | `VITALS_OS_API_KEY` | `string` | — | API key for the source Vitals OS accounts service. Migration script only. Env-var-only (secret). |
 | `SHIPWRIGHT_ADMIN_API_KEY` | `string` | — | API key for the destination Shipwright admin service. Migration script only. Env-var-only (secret). |
 
-### Ops scripts
-
-Used only by one-time operator scripts in `agent/scripts/` (e.g. `bootstrap-agent.ts`). Not needed for the running agent.
-
-| Name | Type | Default | Description |
-|---|---|---|---|
-| `SHIPWRIGHT_ADMIN_URL` | `string` | required | Base URL of the Shipwright admin API. Required by `bootstrap-agent.ts` to store credentials via the admin service. Env-var-only. |
-| `SHIPWRIGHT_SESSION_TOKEN` | `string` | required | Value of the `admin_session` JWT cookie for authenticating against the admin API. Required by `bootstrap-agent.ts`. Env-var-only (secret). |
-
 ### Server
 
 | Name | Type | Default | Description |
@@ -167,6 +158,7 @@ Used only by one-time operator scripts in `agent/scripts/` (e.g. `bootstrap-agen
 | `MISE_DATA_DIR` | `string` | `<AGENT_HOME>/.mise` | Override the mise data directory. Auto-derived from `AGENT_HOME`; override only if needed. |
 | `MISE_CACHE_DIR` | `string` | `<AGENT_HOME>/.mise/cache` | Override the mise cache directory. Auto-derived from `AGENT_HOME`. |
 | `XDG_CACHE_HOME` | `string` | `<AGENT_HOME>/.cache` | Override the XDG cache directory. Auto-derived from `AGENT_HOME`. |
+| `XDG_DATA_HOME` | `string` | `$HOME/.local/share` | Override the XDG data directory. Used to locate the mise data dir (`$XDG_DATA_HOME/mise`) when `MISE_DATA_DIR` is not set. |
 | `AGENT_ALLOWED_TOOLS` | `string` (JSON array) | — | JSON array of allowed Claude tool patterns. Set by the admin service config sync; do not set manually in production. |
 
 ### Analytics
