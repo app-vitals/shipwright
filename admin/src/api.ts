@@ -145,7 +145,10 @@ export function createAgentRuntimeApp(deps: AgentRuntimeDeps): Hono {
   //     Reachable from root as GET /agents/:id/config (Hono v4 strips prefix)
 
   app.get("/:id/config", requireInternalKey, async (c) => {
-    const id = c.req.param("id") ?? "";
+    const id = c.req.param("id");
+    if (!id) {
+      return c.json({ error: "Not found" }, 404);
+    }
 
     // Check agent existence
     const agent = await prisma.agent.findUnique({ where: { id } });
@@ -180,7 +183,10 @@ export function createAgentRuntimeApp(deps: AgentRuntimeDeps): Hono {
   //     Reachable from root as GET /agents/:id/crons (Hono v4 strips prefix)
 
   app.get("/:id/crons", requireInternalKey, async (c) => {
-    const id = c.req.param("id") ?? "";
+    const id = c.req.param("id");
+    if (!id) {
+      return c.json({ error: "Not found" }, 404);
+    }
 
     // Check agent existence
     const agent = await prisma.agent.findUnique({ where: { id } });
