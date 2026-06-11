@@ -133,7 +133,7 @@ export async function startServer(opts?: { port?: number }): Promise<void> {
     });
   } else {
     console.log(
-      "[run-agent] config sync disabled — SHIPWRIGHT_API_URL / SHIPWRIGHT_INTERNAL_API_KEY / SHIPWRIGHT_AGENT_ID not all set",
+      "[run-agent] config sync disabled — SHIPWRIGHT_API_URL / SHIPWRIGHT_AGENT_API_KEY / SHIPWRIGHT_AGENT_ID not all set",
     );
   }
 

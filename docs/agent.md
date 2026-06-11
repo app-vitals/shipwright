@@ -23,7 +23,7 @@ The schema uses `provider = "postgresql"`. `DATABASE_URL_SHIPWRIGHT_ADMIN` must 
 
 ### Runtime API (`api.ts`) — machine-polled
 
-Mounted at `/agents/*`. The harness polls this every ~60s. Auth: **Bearer token** matching `SHIPWRIGHT_INTERNAL_API_KEY` (any mismatch → `401`).
+Mounted at `/agents/*`. The harness polls this every ~60s. Auth: same admin-key / per-agent-token / session-cookie middleware as the CRUD routes (admin key, per-agent bearer token, or session JWT).
 
 | Method | Path | Description |
 |---|---|---|
@@ -87,7 +87,7 @@ All child models cascade-delete with their `Agent`.
 | `DATABASE_URL_SHIPWRIGHT_ADMIN` | ✅ | Dedicated Postgres datasource for the admin service (e.g. `postgresql://user:pass@host:5432/db`). |
 | `SHIPWRIGHT_AGENT_ID` | ✅ (entrypoint) | The agent's ID in the Shipwright platform. Also settable via `--agent-id` CLI flag. |
 | `SHIPWRIGHT_API_URL` | ✅ (entrypoint) | Base URL of the Shipwright API used to fetch agent config at startup. Also settable via `--api-url`. |
-| `SHIPWRIGHT_INTERNAL_API_KEY` | ✅ (entrypoint + runtime API) | Bearer token for the config fetch at startup and for `/agents/*`. Also settable via `--api-key`. |
+| `SHIPWRIGHT_AGENT_API_KEY` | ✅ (entrypoint) | Bearer token for the config fetch at startup (`/agents/:id/config` and `/agents/:id/crons`). Also settable via `--api-key`. |
 | `AGENT_HOME` | entrypoint | Persistent storage root (default: `~/.shipwright-agent`). Mount a PVC here in Kubernetes so mise caches, workspace files, and `~/.claude` survive pod restarts. |
 | `PORT` | server | Hono server port (default: `3000`). |
 | `HEALTH_PORT` | server | Health server port for `index.ts` (default: falls back to `PORT`, then `3001`). Set in Kubernetes to expose the liveness probe on a separate port from the main Hono server. |
@@ -108,7 +108,6 @@ All child models cascade-delete with their `Agent`.
 | `VITALS_OS_API_URL` | migration CLI | Base URL of the vitals-os accounts API (e.g. `https://vitals-os.com`). Required by `agent/src/run-migration.ts`. |
 | `VITALS_OS_API_KEY` | migration CLI | Admin API key for the vitals-os accounts API. Required by `agent/src/run-migration.ts`. |
 | `SHIPWRIGHT_ADMIN_API_KEY` | migration CLI | Bearer API key for the Shipwright admin API (`Authorization: Bearer`). Required by `agent/src/run-migration.ts`. |
-| `SHIPWRIGHT_INTERNAL_API_KEY` | migration CLI | Bearer token for the runtime API (`GET /agents/:id/crons`). Required by `agent/src/run-migration.ts` for cron dedup. |
 
 ## Key Files
 

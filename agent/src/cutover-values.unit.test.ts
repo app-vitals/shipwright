@@ -26,9 +26,9 @@ describe("generateCutoverValues", () => {
     expect(yaml).toContain("SHIPWRIGHT_API_URL");
   });
 
-  it("adds SHIPWRIGHT_INTERNAL_API_KEY to env", () => {
+  it("adds SHIPWRIGHT_AGENT_API_KEY to env", () => {
     const yaml = generateCutoverValues(AGENT_ID, IMAGE_TAG);
-    expect(yaml).toContain("SHIPWRIGHT_INTERNAL_API_KEY");
+    expect(yaml).toContain("SHIPWRIGHT_AGENT_API_KEY");
   });
 
   it("adds SHIPWRIGHT_AGENT_ID with the given agent ID", () => {

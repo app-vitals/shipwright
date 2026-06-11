@@ -47,7 +47,7 @@ const agentId = requireArg("--agent-id");
 const dryRun = hasFlag("--dry-run", argv);
 
 const apiUrl = requireEnv("SHIPWRIGHT_API_URL");
-const apiKey = requireEnv("SHIPWRIGHT_INTERNAL_API_KEY");
+const apiKey = requireEnv("SHIPWRIGHT_AGENT_API_KEY");
 
 // ─── Fetch config ─────────────────────────────────────────────────────────────
 
@@ -71,7 +71,7 @@ const agentEnv: Record<string, string> = {
   ...bundle.env,
   SHIPWRIGHT_AGENT_ID: agentId,
   SHIPWRIGHT_API_URL: apiUrl,
-  SHIPWRIGHT_INTERNAL_API_KEY: apiKey,
+  SHIPWRIGHT_AGENT_API_KEY: apiKey,
   AGENT_HOME: agentHome,
 };
 

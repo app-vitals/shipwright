@@ -21,7 +21,7 @@ mkdirSync(AGENT_HOME, { recursive: true });
 // Set env vars before calling createConfig
 process.env.ANTHROPIC_MODEL = "claude-opus-4-6";
 process.env.SHIPWRIGHT_API_URL = "https://api.shipwright.app";
-process.env.SHIPWRIGHT_INTERNAL_API_KEY = "key-123";
+process.env.SHIPWRIGHT_AGENT_API_KEY = "key-123";
 process.env.SHIPWRIGHT_AGENT_ID = "agent-xyz";
 
 const { config } = createConfig(AGENT_HOME);
@@ -92,7 +92,7 @@ describe("config.shipwright", () => {
     expect(config.shipwright.apiUrl).toBe("https://api.shipwright.app");
   });
 
-  test("apiKey from SHIPWRIGHT_INTERNAL_API_KEY", () => {
+  test("apiKey from SHIPWRIGHT_AGENT_API_KEY", () => {
     expect(config.shipwright.apiKey).toBe("key-123");
   });
 

@@ -51,7 +51,8 @@ export const ADMIN_DEV_LOGIN_URL = `http://localhost:${ADMIN_PORT}/admin/dev-log
 const DUMMY_POSTHOG_KEY = "phc_dev_dummy";
 const DUMMY_ENCRYPTION_KEY =
   "0000000000000000000000000000000000000000000000000000000000000000";
-const DUMMY_INTERNAL_API_KEY = "dev-internal-key";
+// SHIPWRIGHT_INTERNAL_API_KEY removed in UNI-1.2 — runtime routes now use the same
+// admin-key / per-agent-token / session-cookie auth as the CRUD routes.
 // Session-cookie signing key (HS256). Must be non-empty — Web Crypto rejects a
 // zero-length HMAC key with "DataError", which surfaces as a 500 on first login.
 const DUMMY_SESSION_SECRET = "dev-session-secret-not-for-production-use!";
@@ -159,7 +160,6 @@ export const STACK_PANES: Pane[] = [
       PORT: String(ADMIN_PORT),
       DATABASE_URL_SHIPWRIGHT_ADMIN: DEV_DATABASE_URL,
       SHIPWRIGHT_ENCRYPTION_KEY: DUMMY_ENCRYPTION_KEY,
-      SHIPWRIGHT_INTERNAL_API_KEY: DUMMY_INTERNAL_API_KEY,
       SHIPWRIGHT_SESSION_SECRET: DUMMY_SESSION_SECRET,
       ADMIN_DEV_AUTH: "true",
     },
@@ -199,8 +199,6 @@ export const STACK_PANES: Pane[] = [
       `POSTHOG_PROJECT_API_KEY=${DUMMY_POSTHOG_KEY}`,
       "-e",
       "SHIPWRIGHT_AGENT_ID=dev-agent",
-      "-e",
-      `SHIPWRIGHT_INTERNAL_API_KEY=${DUMMY_INTERNAL_API_KEY}`,
       "-e",
       `PORT=${AGENT_PORT}`,
       DEV_DOCKER_IMAGE,

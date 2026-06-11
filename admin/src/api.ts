@@ -6,10 +6,12 @@
  * Hono v4's .route() strips the prefix before dispatching — routes must be
  * registered without the /agents prefix so they resolve correctly at
  * GET /agents/:id/config and GET /agents/:id/crons from the root.
- * Auth via SHIPWRIGHT_INTERNAL_API_KEY bearer token.
+ *
+ * Auth: same admin-key / per-agent-token / session-cookie middleware as the
+ * CRUD routes (SHIPWRIGHT_INTERNAL_API_KEY removed in UNI-1.2).
  * This is the endpoint the harness polls every 60s.
  *
- * NOTE: The internal key middleware is scoped per-route (not global app.use("*")).
+ * NOTE: Auth middleware is scoped per-route (not global app.use("*")).
  * Using app.use("*") in a sub-app mounted via root.route("/agents", runtimeApp)
  * causes Hono v4 to hoist the middleware as a /agents/* guard in root — which
  * blocks all admin CRUD requests (POST/PATCH/DELETE /agents/:id/*) before they
@@ -18,9 +20,13 @@
  */
 
 import { Hono } from "hono";
-import type { Context, Next } from "hono";
 import type { AgentCronJob } from "./agent-cron-jobs.ts";
 import type { AgentEnvBundle } from "./agent-envs.ts";
+import {
+  type AdminApiKey,
+  createAdminAuthMiddleware,
+} from "./api-auth.ts";
+import type { AgentTokenService } from "./agent-tokens.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -58,7 +64,12 @@ export interface AgentRuntimeDeps {
   agentEnvService: AgentEnvServiceLike;
   agentCronJobService: AgentCronJobServiceLike;
   prisma: PrismaLike;
-  internalApiKey: string;
+  /** Session secret for cookie auth (SHIPWRIGHT_SESSION_SECRET). */
+  sessionSecret: string;
+  /** Parsed SHIPWRIGHT_ADMIN_API_KEYS — optional; absent means env key auth is disabled. */
+  adminApiKeys?: Map<string, AdminApiKey>;
+  /** Token service for per-agent bearer token validation. */
+  agentTokenService: Pick<AgentTokenService, "validate">;
 }
 
 // ─── openapi-fetch paths type ─────────────────────────────────────────────────
@@ -122,29 +133,22 @@ export interface AdminApiPaths {
  * Inject real services for production; inject mocks for tests.
  */
 export function createAgentRuntimeApp(deps: AgentRuntimeDeps): Hono {
-  const { agentEnvService, agentCronJobService, prisma, internalApiKey } = deps;
+  const { agentEnvService, agentCronJobService, prisma } = deps;
 
   const app = new Hono();
 
-  // Internal key check — applied per-route, NOT as app.use("*").
+  // Auth middleware — applied per-route, NOT as app.use("*").
   // See file-level comment for why global middleware is avoided here.
-  const requireInternalKey = async (c: Context, next: Next) => {
-    const authHeader = c.req.header("Authorization");
-    const token = authHeader?.startsWith("Bearer ")
-      ? authHeader.slice(7)
-      : null;
-
-    if (!token || token !== internalApiKey) {
-      return c.json({ error: "Unauthorized" }, 401);
-    }
-
-    await next();
-  };
+  const requireAuth = createAdminAuthMiddleware({
+    sessionSecret: deps.sessionSecret,
+    adminApiKeys: deps.adminApiKeys,
+    agentTokenService: deps.agentTokenService,
+  });
 
   // ─── GET /:id/config ─────────────────────────────────────────────────────
   //     Reachable from root as GET /agents/:id/config (Hono v4 strips prefix)
 
-  app.get("/:id/config", requireInternalKey, async (c) => {
+  app.get("/:id/config", requireAuth, async (c) => {
     const id = c.req.param("id");
     if (!id) {
       return c.json({ error: "Not found" }, 404);
@@ -182,7 +186,7 @@ export function createAgentRuntimeApp(deps: AgentRuntimeDeps): Hono {
   // ─── GET /:id/crons ──────────────────────────────────────────────────────
   //     Reachable from root as GET /agents/:id/crons (Hono v4 strips prefix)
 
-  app.get("/:id/crons", requireInternalKey, async (c) => {
+  app.get("/:id/crons", requireAuth, async (c) => {
     const id = c.req.param("id");
     if (!id) {
       return c.json({ error: "Not found" }, 404);

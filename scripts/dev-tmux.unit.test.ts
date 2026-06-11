@@ -297,6 +297,8 @@ describe("pane env values are obviously dev dummies (public-safe)", () => {
     // 64-hex dummy encryption key not needed on thin agent — it's in admin
     // agent must have SHIPWRIGHT_API_URL pointing at host.docker.internal
     expect(cmdStr).toContain("host.docker.internal");
+    // SHIPWRIGHT_INTERNAL_API_KEY must NOT appear in the agent docker run cmd (removed UNI-1.2)
+    expect(cmdStr).not.toContain("SHIPWRIGHT_INTERNAL_API_KEY");
   });
 
   test("admin pane has DATABASE_URL_SHIPWRIGHT_ADMIN with postgresql scheme", () => {
@@ -454,16 +456,15 @@ describe("metrics pane — sqlite mode", () => {
   });
 });
 
-describe("admin pane — dev auth + internal key", () => {
+describe("admin pane — dev auth", () => {
   test("admin pane has ADMIN_DEV_AUTH=true", () => {
     const admin = STACK_PANES.find((p) => p.label === "admin") as Pane;
     expect(admin.env?.ADMIN_DEV_AUTH).toBe("true");
   });
 
-  test("admin pane has SHIPWRIGHT_INTERNAL_API_KEY", () => {
+  test("admin pane does not include SHIPWRIGHT_INTERNAL_API_KEY (removed in UNI-1.2)", () => {
     const admin = STACK_PANES.find((p) => p.label === "admin") as Pane;
-    expect(admin.env?.SHIPWRIGHT_INTERNAL_API_KEY).toBeDefined();
-    expect(admin.env?.SHIPWRIGHT_INTERNAL_API_KEY?.length).toBeGreaterThan(0);
+    expect(admin.env?.SHIPWRIGHT_INTERNAL_API_KEY).toBeUndefined();
   });
 
   // A zero-length HS256 secret makes Web Crypto throw "DataError" the moment

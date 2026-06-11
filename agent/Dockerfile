@@ -17,7 +17,7 @@
 # Required env vars at runtime:
 #   SHIPWRIGHT_AGENT_ID            — the agent's ID in the Shipwright platform
 #   SHIPWRIGHT_API_URL             — base URL of the Shipwright API
-#   SHIPWRIGHT_INTERNAL_API_KEY    — bearer token for the config endpoint
+#   SHIPWRIGHT_AGENT_API_KEY       — bearer token for the config endpoint
 #   ANTHROPIC_API_KEY              — Anthropic API key (or CLAUDE_CODE_OAUTH_TOKEN)
 
 # ─── Base: system tooling installed as root ───────────────────────────────────

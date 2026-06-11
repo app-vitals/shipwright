@@ -32,7 +32,7 @@ Example output:
   env:
     add:
       SHIPWRIGHT_API_URL: ""
-      SHIPWRIGHT_INTERNAL_API_KEY: ""
+      SHIPWRIGHT_AGENT_API_KEY: ""
       SHIPWRIGHT_AGENT_ID: "agent-abc123"
     remove:
       - VITALS_OS_API_URL

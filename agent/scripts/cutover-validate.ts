@@ -8,24 +8,24 @@
  * on failure.
  *
  * Required env vars:
- *   SHIPWRIGHT_API_URL          — base URL of the shipwright agent API
- *   SHIPWRIGHT_INTERNAL_API_KEY — bearer token for the agent API
- *   AGENT_ID                    — the agent ID to validate
+ *   SHIPWRIGHT_API_URL      — base URL of the shipwright agent API
+ *   SHIPWRIGHT_AGENT_API_KEY — bearer token for the agent API
+ *   AGENT_ID                — the agent ID to validate
  *
  * Usage:
- *   SHIPWRIGHT_API_URL=<url> SHIPWRIGHT_INTERNAL_API_KEY=<key> AGENT_ID=<id> \
+ *   SHIPWRIGHT_API_URL=<url> SHIPWRIGHT_AGENT_API_KEY=<key> AGENT_ID=<id> \
  *     bun agent/scripts/cutover-validate.ts
  */
 
 import { type CheckResult, validateCutover } from "../src/cutover-validate.ts";
 import { HttpShipwrightRuntimeClient } from "../src/shipwright-runtime-client.ts";
 
-const USAGE = `Usage: SHIPWRIGHT_API_URL=<url> SHIPWRIGHT_INTERNAL_API_KEY=<key> AGENT_ID=<id> bun cutover-validate.ts
+const USAGE = `Usage: SHIPWRIGHT_API_URL=<url> SHIPWRIGHT_AGENT_API_KEY=<key> AGENT_ID=<id> bun cutover-validate.ts
 
 Required env vars:
-  SHIPWRIGHT_API_URL          — base URL of the shipwright agent API (e.g. https://shipwright.example.com)
-  SHIPWRIGHT_INTERNAL_API_KEY — bearer token for the agent API
-  AGENT_ID                    — the agent ID to validate
+  SHIPWRIGHT_API_URL      — base URL of the shipwright agent API (e.g. https://shipwright.example.com)
+  SHIPWRIGHT_AGENT_API_KEY — bearer token for the agent API
+  AGENT_ID                — the agent ID to validate
 
 Checks performed:
   SLACK_BOT_TOKEN   — present in the agent's env bundle
@@ -52,7 +52,7 @@ function requireEnv(name: string): string {
 }
 
 const apiUrl = requireEnv("SHIPWRIGHT_API_URL");
-const apiKey = requireEnv("SHIPWRIGHT_INTERNAL_API_KEY");
+const apiKey = requireEnv("SHIPWRIGHT_AGENT_API_KEY");
 const agentId = requireEnv("AGENT_ID");
 
 const runtimeClient = new HttpShipwrightRuntimeClient({ apiUrl, apiKey });

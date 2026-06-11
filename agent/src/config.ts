@@ -15,7 +15,7 @@ function buildConfig(agentHome: string) {
     },
     shipwright: {
       apiUrl: optional("SHIPWRIGHT_API_URL"),
-      apiKey: optional("SHIPWRIGHT_INTERNAL_API_KEY"),
+      apiKey: optional("SHIPWRIGHT_AGENT_API_KEY"),
       agentId: optional("SHIPWRIGHT_AGENT_ID"),
     },
     slack: {
