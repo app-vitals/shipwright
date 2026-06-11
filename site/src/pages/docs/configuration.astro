@@ -272,7 +272,7 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
           {[
             { name: "SHIPWRIGHT_API_URL", type: "string", def: "—", desc: "Base URL of the Shipwright admin service, used by the agent entrypoint to fetch config at startup." },
             { name: "SHIPWRIGHT_AGENT_ID", type: "string", def: "—", desc: "The agent's ID in the Shipwright platform. Also settable via --agent-id CLI flag." },
-            { name: "SHIPWRIGHT_INTERNAL_API_KEY", type: "string", def: "—", desc: "Bearer token for the runtime API (/agents/*) and the config fetch at startup. Env-var-only (secret)." },
+            { name: "SHIPWRIGHT_AGENT_API_KEY", type: "string", def: "—", desc: "Bearer token for the config fetch at startup (/agents/:id/config and /agents/:id/crons). Also settable via --api-key CLI flag." },
           ].map((row) => (
             <tr style="border-bottom: 1px solid var(--sw-color-border-subtle);">
               <td style="padding:0.7rem 1rem 0.7rem 0; vertical-align:top;"><code class="sw-mono" style="color:var(--sw-color-support-cyan); font-size:0.875rem;">{row.name}</code></td>

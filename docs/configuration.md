@@ -118,7 +118,7 @@ Provide either the GitHub App vars (recommended) or `GH_TOKEN` (PAT). App auth i
 |---|---|---|---|
 | `SHIPWRIGHT_API_URL` | `string` | — | Base URL of the Shipwright admin service, used by the agent entrypoint to fetch config at startup. |
 | `SHIPWRIGHT_AGENT_ID` | `string` | — | The agent's ID in the Shipwright platform. Also settable via `--agent-id` CLI flag. |
-| `SHIPWRIGHT_INTERNAL_API_KEY` | `string` | — | Bearer token for the runtime API (`/agents/*`) and the config fetch at startup. Env-var-only (secret). |
+| `SHIPWRIGHT_AGENT_API_KEY` | `string` | — | Bearer token for the config fetch at startup (`/agents/:id/config` and `/agents/:id/crons`). Also settable via `--api-key`. |
 
 ### Migration (one-time cutover)
 

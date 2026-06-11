@@ -31,7 +31,7 @@ The service listens on `http://localhost:3000` by default. Visit `/admin` for th
 | `GOOGLE_CLIENT_SECRET` | Yes | Google OAuth 2.0 client secret |
 | `SHIPWRIGHT_ADMIN_ALLOWED_EMAILS` | Yes | Comma-separated list of emails permitted to log in |
 | `SHIPWRIGHT_ADMIN_APP_BASE_URL` | Yes | Public base URL used for OAuth redirect (defaults to `http://localhost:3000`) |
-| `SHIPWRIGHT_INTERNAL_API_KEY` | Yes | Bearer token for the agent runtime API (`/agents/*`) |
+| `SHIPWRIGHT_ADMIN_API_KEYS` | No | Comma-separated `name:token:scope` tuples for bearer token auth |
 | `SHIPWRIGHT_ENCRYPTION_KEY` | Recommended | 64-char hex key for AES-256-GCM encryption of stored secrets |
 | `PORT` | No | HTTP server port (defaults to `3000`) |
 
@@ -62,7 +62,6 @@ docker run \
   -e GOOGLE_CLIENT_SECRET=... \
   -e SHIPWRIGHT_ADMIN_ALLOWED_EMAILS=admin@example.com \
   -e SHIPWRIGHT_ADMIN_APP_BASE_URL=https://admin.example.com \
-  -e SHIPWRIGHT_INTERNAL_API_KEY=... \
   -p 3000:3000 \
   shipwright-admin
 ```

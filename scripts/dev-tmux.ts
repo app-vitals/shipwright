@@ -51,7 +51,11 @@ export const ADMIN_DEV_LOGIN_URL = `http://localhost:${ADMIN_PORT}/admin/dev-log
 const DUMMY_POSTHOG_KEY = "phc_dev_dummy";
 const DUMMY_ENCRYPTION_KEY =
   "0000000000000000000000000000000000000000000000000000000000000000";
-const DUMMY_INTERNAL_API_KEY = "dev-internal-key";
+// SHIPWRIGHT_INTERNAL_API_KEY removed in UNI-1.2 — runtime routes now use the same
+// admin-key / per-agent-token / session-cookie auth as the CRUD routes.
+// Agent API key for dev-agent. Must be registered in SHIPWRIGHT_ADMIN_API_KEYS on the
+// admin pane so that runtime polling (config sync) succeeds at startup.
+const DUMMY_AGENT_API_KEY = "dev-agent-key";
 // Session-cookie signing key (HS256). Must be non-empty — Web Crypto rejects a
 // zero-length HMAC key with "DataError", which surfaces as a 500 on first login.
 const DUMMY_SESSION_SECRET = "dev-session-secret-not-for-production-use!";
@@ -159,8 +163,11 @@ export const STACK_PANES: Pane[] = [
       PORT: String(ADMIN_PORT),
       DATABASE_URL_SHIPWRIGHT_ADMIN: DEV_DATABASE_URL,
       SHIPWRIGHT_ENCRYPTION_KEY: DUMMY_ENCRYPTION_KEY,
-      SHIPWRIGHT_INTERNAL_API_KEY: DUMMY_INTERNAL_API_KEY,
       SHIPWRIGHT_SESSION_SECRET: DUMMY_SESSION_SECRET,
+      // Register the dev-agent API key so runtime polling (config sync) passes
+      // auth. Format: "<agentId>:<apiKey>:<scope>" — scope "dev-agent" scopes it
+      // to this agent; use "*" for an admin bypass key.
+      SHIPWRIGHT_ADMIN_API_KEYS: `dev-agent:${DUMMY_AGENT_API_KEY}:dev-agent`,
       ADMIN_DEV_AUTH: "true",
     },
   },
@@ -200,7 +207,7 @@ export const STACK_PANES: Pane[] = [
       "-e",
       "SHIPWRIGHT_AGENT_ID=dev-agent",
       "-e",
-      `SHIPWRIGHT_INTERNAL_API_KEY=${DUMMY_INTERNAL_API_KEY}`,
+      `SHIPWRIGHT_AGENT_API_KEY=${DUMMY_AGENT_API_KEY}`,
       "-e",
       `PORT=${AGENT_PORT}`,
       DEV_DOCKER_IMAGE,

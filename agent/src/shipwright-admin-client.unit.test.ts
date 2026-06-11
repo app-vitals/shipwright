@@ -7,7 +7,7 @@ import { describe, expect, it } from "bun:test";
 import { HttpShipwrightAdminClient } from "./shipwright-admin-client.ts";
 
 describe("HttpShipwrightAdminClient", () => {
-  it("sends Authorization: Bearer internalApiKey header for listCrons (not Cookie, not adminApiKey)", async () => {
+  it("sends Authorization: Bearer adminApiKey header for listCrons", async () => {
     const capturedRequests: Request[] = [];
 
     const fakeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -18,7 +18,6 @@ describe("HttpShipwrightAdminClient", () => {
     const client = new HttpShipwrightAdminClient(
       "http://localhost:9999",
       "admin-key",
-      "internal-key",
       fakeFetch,
     );
 
@@ -26,7 +25,7 @@ describe("HttpShipwrightAdminClient", () => {
 
     expect(capturedRequests).toHaveLength(1);
     const req = capturedRequests[0];
-    expect(req?.headers.get("Authorization")).toBe("Bearer internal-key");
+    expect(req?.headers.get("Authorization")).toBe("Bearer admin-key");
     expect(req?.headers.get("Cookie")).toBeNull();
   });
 
@@ -48,7 +47,6 @@ describe("HttpShipwrightAdminClient", () => {
     const client = new HttpShipwrightAdminClient(
       "http://localhost:9999",
       "my-secret-api-key",
-      "my-internal-key",
       fakeFetch,
     );
 
@@ -59,7 +57,7 @@ describe("HttpShipwrightAdminClient", () => {
     expect(capturedHeaders[0]?.Cookie).toBeUndefined();
   });
 
-  it("uses the internalApiKey (not adminApiKey) when calling listCrons runtime endpoint", async () => {
+  it("uses adminApiKey for listCrons (same key as all other admin routes)", async () => {
     const capturedHeaders: Record<string, string>[] = [];
 
     const fakeFetch = async (_input: RequestInfo | URL, init?: RequestInit) => {
@@ -91,14 +89,13 @@ describe("HttpShipwrightAdminClient", () => {
     const client = new HttpShipwrightAdminClient(
       "http://localhost:9999",
       "admin-api-key",
-      "internal-api-key",
       fakeFetch,
     );
 
     const crons = await client.listCrons("agent-xyz");
 
     expect(capturedHeaders).toHaveLength(1);
-    expect(capturedHeaders[0]?.Authorization).toBe("Bearer internal-api-key");
+    expect(capturedHeaders[0]?.Authorization).toBe("Bearer admin-api-key");
     expect(crons).toEqual([
       {
         schedule: "0 9 * * 1-5",

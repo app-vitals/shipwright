@@ -75,7 +75,7 @@ export async function runEntrypoint(deps: EntrypointDeps): Promise<void> {
   const missing: string[] = [];
   if (!agentId) missing.push("SHIPWRIGHT_AGENT_ID (or --agent-id)");
   if (!apiUrl) missing.push("SHIPWRIGHT_API_URL (or --api-url)");
-  if (!apiKey) missing.push("SHIPWRIGHT_INTERNAL_API_KEY (or --api-key)");
+  if (!apiKey) missing.push("SHIPWRIGHT_AGENT_API_KEY (or --api-key)");
 
   if (missing.length > 0) {
     for (const m of missing) {

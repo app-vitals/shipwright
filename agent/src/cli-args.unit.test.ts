@@ -62,9 +62,9 @@ describe("parseCliArgs — env var fallback", () => {
     expect(result.apiUrl).toBe("https://env.api.com");
   });
 
-  it("falls back to SHIPWRIGHT_INTERNAL_API_KEY when --api-key not provided", () => {
+  it("falls back to SHIPWRIGHT_AGENT_API_KEY when --api-key not provided", () => {
     const result = parseCliArgs([], {
-      SHIPWRIGHT_INTERNAL_API_KEY: "env-key",
+      SHIPWRIGHT_AGENT_API_KEY: "env-key",
     });
     expect(result.apiKey).toBe("env-key");
   });
