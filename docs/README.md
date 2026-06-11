@@ -12,6 +12,7 @@ Shipwright Harness is the open-source autonomous delivery agent for [Claude Code
 - **[Metrics dashboard](./metrics.md)** — the provider-agnostic metrics service (sqlite default / posthog / fixtures): JSON endpoints, dashboard, auth, and environment.
 - **[Shipwright agent](./agent.md)** — the autonomous runner: runtime + admin APIs, data model, and environment.
 - **[Test system](./test-readiness/test-system.md)** — the full authoritative test blueprint (source for [Testing](./testing.md)).
+- **[Configuration](./configuration.md)** — all configuration options: plugin env vars, `.shipwright.json` keys, agent env vars, and policy fields.
 
 ## Command reference
 
@@ -20,7 +21,6 @@ The plugin's commands (`brainstorm`, `plan-session`, `dev-task`, `review`, `patc
 ## Coming as the toolchain matures
 
 - **Getting started** — install, configure the task store, point Shipwright at your repo.
-- **Configuration** — task-store backends (GitHub Issues / Jira / local), toolchain detection, environment.
 - **Deploying the agent** — running Shipwright autonomously on GitHub Actions or self-hosted.
 
 Track progress on the [`shipwright-oss` milestone](https://github.com/app-vitals/shipwright/milestones).

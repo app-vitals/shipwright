@@ -122,6 +122,10 @@ Shipwright Harness is a [Claude Code](https://www.anthropic.com/claude-code) plu
 
 Shipwright enforces a four-layer test architecture (unit / integration / smoke / e2e) across all three components. Layer boundaries, per-component run commands, speed budgets, and the test-isolation contract are defined in [`docs/test-readiness/test-system.md`](./docs/test-readiness/test-system.md).
 
+## Configuration
+
+All configuration options — plugin env vars, `.shipwright.json` keys, agent env vars, and policy fields — are documented in [`docs/configuration.md`](./docs/configuration.md).
+
 ## Contributing
 
 Issues and discussion are welcome. See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for conventions and workflow, and our [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md). This repository is MIT-licensed and public — please keep contributions free of any proprietary or confidential material.
