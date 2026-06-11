@@ -95,10 +95,12 @@ export async function run(deps: Deps): Promise<RunResult> {
   const currentUser = await deps.getCurrentUser();
   const reviews = deps.readReviews();
 
-  // Build a lookup from PR number → review entry
-  const reviewByPr = new Map<number, ReviewEntry>();
+  // Build a lookup from "repo:pr-number" → review entry.
+  // Keying on number alone causes cross-repo collisions when multiple repos
+  // are configured — two repos can share PR numbers. Include the repo in the key.
+  const reviewByPr = new Map<string, ReviewEntry>();
   for (const entry of reviews) {
-    reviewByPr.set(entry.pr, entry);
+    reviewByPr.set(`${entry.repo ?? ""}:${entry.pr}`, entry);
   }
 
   // We don't know the repo here without a context — use a placeholder for tests.
@@ -108,7 +110,7 @@ export async function run(deps: Deps): Promise<RunResult> {
   for (const pr of prs) {
     if (!deps.isSelfReviewAllowed && pr.author.login === currentUser) continue;
 
-    const entry = reviewByPr.get(pr.number);
+    const entry = reviewByPr.get(`${pr.repo ?? ""}:${pr.number}`);
 
     // No entry → eligible
     if (!entry) {

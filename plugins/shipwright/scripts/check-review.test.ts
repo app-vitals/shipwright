@@ -319,7 +319,7 @@ describe("check-review", () => {
     });
     const prB = makePr({
       number: 42,
-      headRefOid: "sha-B",
+      headRefOid: "sha-A", // same sha as repo-A's lastReviewedCommit — bare-number key would collide and suppress this PR
       repo: "example-org/repo-b",
     });
     const entries: ReviewEntry[] = [
