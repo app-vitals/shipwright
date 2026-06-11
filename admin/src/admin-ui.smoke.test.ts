@@ -1005,6 +1005,7 @@ describe("admin UI — provision start form", () => {
     const setCookieHeader = res.headers.get("Set-Cookie") ?? "";
     expect(setCookieHeader).toContain("slack_provision_state=");
     expect(setCookieHeader).toContain("HttpOnly");
+    expect(setCookieHeader).toContain("Secure");
 
     // Verify the JWT payload contains agentId
     const match = setCookieHeader.match(/slack_provision_state=([^;]+)/);
