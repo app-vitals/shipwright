@@ -137,21 +137,4 @@ System crons are the crons defined in `SYSTEM_CRONS` — they cover both the cor
 
 ## Environment Variables
 
-Shipwright uses two environment variables to locate repos and worktrees. Both default to
-standard paths under `$HOME` and only need to be set when repos live elsewhere.
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `SHIPWRIGHT_REPO_DIR` | `$HOME/src` | Root directory where git repos are cloned. Used as the `-C` target for all `git worktree` operations. |
-| `SHIPWRIGHT_WORKTREE_DIR` | `$HOME/worktrees` | Root directory where worktrees are created. All worktrees are placed under `{SHIPWRIGHT_WORKTREE_DIR}/{repo}-{branch-slug}`. |
-
-**Usage example** — repos cloned under `~/code/` and worktrees under `/tmp/worktrees/`:
-
-```bash
-export SHIPWRIGHT_REPO_DIR=~/code
-export SHIPWRIGHT_WORKTREE_DIR=/tmp/worktrees
-```
-
-Set these in your shell profile (`.zshrc`, `.bashrc`) or in the environment that launches
-the agent. Skills pick up the values at runtime via shell parameter expansion
-(`${SHIPWRIGHT_REPO_DIR:-$HOME/src}`) — no restart needed after export.
+See [`docs/configuration.md`](../../docs/configuration.md) for the full reference — plugin env vars (`SHIPWRIGHT_REPOS_DIR`, `SHIPWRIGHT_WORKTREE_DIR`, task-store vars, etc.), agent env vars, and policy config.
