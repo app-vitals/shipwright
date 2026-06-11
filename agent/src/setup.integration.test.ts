@@ -458,20 +458,50 @@ describe("runMiseStartup", () => {
     process.env.PATH = originalPath;
   });
 
-  it("does NOT relocate MISE_DATA_DIR to the PVC (would orphan baked tools)", async () => {
+  it("sets MISE_DATA_DIR to the PVC path", async () => {
     mkdirSync(join(testHome, "workspace"), { recursive: true });
-    // The PVC's mise dir only ever holds a cache/ — pointing installs there
-    // breaks the image-baked `claude` shim. mise must keep its default data dir.
-    // biome-ignore lint/performance/noDelete: intentional env-var removal (not object property)
-    delete process.env.MISE_DATA_DIR;
-    const mockExec = async (
-      _cmd: string,
-      _args: string[],
-      _opts: { cwd: string },
-    ) => ({ stdout: "", exitCode: 0 });
+    const mockExec = async () => ({ stdout: "", exitCode: 0 });
     await runMiseStartup(testHome, mockExec);
-    expect(process.env.MISE_DATA_DIR).toBeUndefined();
-    expect(process.env.MISE_DATA_DIR).not.toBe(join(testHome, "mise"));
+    expect(process.env.MISE_DATA_DIR).toBe(join(testHome, "mise"));
+  });
+
+  it("seeds MISE_DATA_DIR from image on fresh PVC (shims absent)", async () => {
+    mkdirSync(join(testHome, "workspace"), { recursive: true });
+    // Simulate image mise dir with a shim file
+    const imageMiseDir = join(testHome, ".local", "share", "mise");
+    mkdirSync(join(imageMiseDir, "shims"), { recursive: true });
+    writeFileSync(join(imageMiseDir, "shims", "node"), "mise-shim", "utf8");
+    // PVC mise dir exists but has no shims (fresh PVC)
+    mkdirSync(join(testHome, "mise"), { recursive: true });
+    process.env.HOME = testHome;
+    // biome-ignore lint/performance/noDelete: intentional env-var removal (not object property)
+    delete process.env.XDG_DATA_HOME;
+    const mockExec = async () => ({ stdout: "", exitCode: 0 });
+    await runMiseStartup(testHome, mockExec);
+    expect(existsSync(join(testHome, "mise", "shims", "node"))).toBe(true);
+  });
+
+  it("skips seed when shims already exist on PVC", async () => {
+    mkdirSync(join(testHome, "workspace"), { recursive: true });
+    // Pre-create shims on PVC (simulates a subsequent boot)
+    mkdirSync(join(testHome, "mise", "shims"), { recursive: true });
+    writeFileSync(
+      join(testHome, "mise", "shims", "node"),
+      "pvc-version",
+      "utf8",
+    );
+    // Image also has shims — should not overwrite
+    const imageMiseDir = join(testHome, ".local", "share", "mise");
+    mkdirSync(join(imageMiseDir, "shims"), { recursive: true });
+    writeFileSync(join(imageMiseDir, "shims", "node"), "image-version", "utf8");
+    process.env.HOME = testHome;
+    // biome-ignore lint/performance/noDelete: intentional env-var removal (not object property)
+    delete process.env.XDG_DATA_HOME;
+    const mockExec = async () => ({ stdout: "", exitCode: 0 });
+    await runMiseStartup(testHome, mockExec);
+    expect(readFileSync(join(testHome, "mise", "shims", "node"), "utf8")).toBe(
+      "pvc-version",
+    );
   });
 
   it("pins MISE_CACHE_DIR and XDG_CACHE_HOME to the PVC", async () => {
@@ -540,23 +570,18 @@ describe("runMiseStartup", () => {
     expect(installIdx).toBeGreaterThan(trustIdx);
   });
 
-  it("prepends mise's default ($HOME) shims dir to process.env.PATH", async () => {
+  it("prepends MISE_DATA_DIR/shims (PVC path) to process.env.PATH", async () => {
     mkdirSync(join(testHome, "workspace"), { recursive: true });
     writeFileSync(
       join(testHome, "workspace", "mise.toml"),
       "[tools]\n",
       "utf8",
     );
-    // Drive the default-data-dir branch: no MISE_DATA_DIR/XDG_DATA_HOME, with
-    // HOME pinned to the temp dir so the expected shims path is deterministic.
     // biome-ignore lint/performance/noDelete: intentional env-var removal (not object property)
     delete process.env.MISE_DATA_DIR;
-    // biome-ignore lint/performance/noDelete: intentional env-var removal (not object property)
-    delete process.env.XDG_DATA_HOME;
-    process.env.HOME = testHome;
     const mockExec = async () => ({ stdout: "", exitCode: 0 });
     await runMiseStartup(testHome, mockExec);
-    const expectedShims = join(testHome, ".local", "share", "mise", "shims");
+    const expectedShims = join(testHome, "mise", "shims");
     expect(process.env.PATH?.startsWith(`${expectedShims}:`)).toBe(true);
   });
 });
@@ -736,8 +761,16 @@ describe("installPlugins", () => {
       await installPlugins(mockExec, testHome, []);
 
       // install and update should both use the local path
-      expect(calls[0].args).toEqual(["plugin", "install", "shipwright@/local/marketplace"]);
-      expect(calls[1].args).toEqual(["plugin", "update", "shipwright@/local/marketplace"]);
+      expect(calls[0].args).toEqual([
+        "plugin",
+        "install",
+        "shipwright@/local/marketplace",
+      ]);
+      expect(calls[1].args).toEqual([
+        "plugin",
+        "update",
+        "shipwright@/local/marketplace",
+      ]);
     } finally {
       // Restore env var regardless of test outcome.
       // Use delete when the var was originally unset — assigning undefined coerces

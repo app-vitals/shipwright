@@ -95,4 +95,8 @@ await runEntrypoint({
   exit: (code: number) => {
     process.exit(code);
   },
+  startupTimeoutMs: (() => {
+    const ms = Number(process.env.SHIPWRIGHT_STARTUP_TIMEOUT_MS);
+    return Number.isFinite(ms) ? ms : undefined;
+  })(),
 });
