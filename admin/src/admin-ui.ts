@@ -842,11 +842,14 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       "HS256",
     );
 
+    // TODO(BP-2.2): this cookie is consumed by the OAuth exchange handler in
+    // provision/complete once the Slack OAuth redirect lands.
     setCookie(c, PROVISION_STATE_COOKIE, provisionToken, {
       httpOnly: true,
       maxAge: PROVISION_STATE_TTL_SECONDS,
       sameSite: "Lax",
       path: "/",
+      secure: appBaseUrl.startsWith("https://"),
     });
 
     // ── Write agent env ───────────────────────────────────────────────────
