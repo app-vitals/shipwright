@@ -49,7 +49,7 @@ export class HttpShipwrightRuntimeClient implements ShipwrightRuntimeClient {
 
   constructor(opts: {
     apiUrl: string;
-    /** Base URL for admin-tier endpoints (e.g. /admin/api/...). Defaults to apiUrl when the unified admin service serves both namespaces. */
+    /** Base URL for admin-tier endpoints (e.g. /agents/:id/...). Defaults to apiUrl when the unified admin service serves both namespaces. */
     adminApiUrl?: string;
     apiKey: string;
     fetchFn?: FetchFn;
