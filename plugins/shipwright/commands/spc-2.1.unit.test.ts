@@ -117,16 +117,11 @@ describe("patch.md — subagent prompt templates", () => {
 });
 
 describe("CLAUDE.md — Environment Variables section", () => {
-  it("contains a section about SHIPWRIGHT_REPO_DIR", () => {
-    expect(claudeMd).toContain("SHIPWRIGHT_REPO_DIR");
+  it("links to docs/configuration.md for env var reference", () => {
+    expect(claudeMd).toContain("docs/configuration.md");
   });
 
-  it("contains a section about SHIPWRIGHT_WORKTREE_DIR", () => {
+  it("mentions SHIPWRIGHT_WORKTREE_DIR", () => {
     expect(claudeMd).toContain("SHIPWRIGHT_WORKTREE_DIR");
-  });
-
-  it("documents the defaults ($HOME/src and $HOME/worktrees)", () => {
-    expect(claudeMd).toContain("$HOME/src");
-    expect(claudeMd).toContain("$HOME/worktrees");
   });
 });

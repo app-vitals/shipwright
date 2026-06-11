@@ -67,4 +67,5 @@ shipwright/
 - **[testing.md](./testing.md)** — the four-layer test architecture and isolation contract.
 - **[metrics.md](./metrics.md)** — metrics service API and dashboard.
 - **[agent.md](./agent.md)** — Shipwright agent runtime + admin APIs and data model.
+- **[configuration.md](./configuration.md)** — all configuration options: plugin env vars, `.shipwright.json` keys, agent env vars, and policy fields.
 - `CLAUDE.md` — contributor conventions and the pre-public scrub rule.
