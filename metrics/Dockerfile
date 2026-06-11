@@ -31,6 +31,7 @@ COPY admin/package.json ./admin/
 COPY admin/prisma ./admin/prisma/
 COPY agent/package.json ./agent/
 COPY plugins/shipwright/package.json ./plugins/shipwright/
+COPY lib/package.json ./lib/
 
 RUN bun install --frozen-lockfile
 
