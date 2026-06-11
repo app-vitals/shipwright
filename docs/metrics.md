@@ -81,9 +81,9 @@ All metric endpoints are `GET`, return JSON, and accept the same date-window que
 The `/metrics/*` endpoints accept **either** credential:
 
 - **Bearer API key** — tokens parsed from `METRICS_API_KEYS`. Scoped tokens (scope `!== "*"`) are rejected with `403` on metrics routes.
-- **Session cookie** (`vitals_session`) — when `METRICS_REQUIRE_OWNER_ROLE=true` and an accounts client is configured, the caller's role is checked and non-`OWNER` users get `403`.
+- **Session cookie** (`admin_session`) — when `METRICS_REQUIRE_OWNER_ROLE=true` and an accounts client is configured, the caller's role is checked and non-`OWNER` users get `403`.
 
-The **dashboard** is protected by the session cookie middleware; an invalid/absent session redirects to `/auth/login`. In offline mode (`METRICS_OFFLINE=true`), session auth is skipped entirely and `/dashboard` is served as "Offline User". `/health` is always open.
+The **dashboard** is protected by the session cookie middleware; an invalid/absent session redirects to `/admin/login`. In offline mode (`METRICS_OFFLINE=true`), session auth is skipped entirely and `/dashboard` is served as "Offline User". `/health` is always open.
 
 ## Environment
 
@@ -96,7 +96,7 @@ The **dashboard** is protected by the session cookie middleware; an invalid/abse
 | `DATABASE_URL_METRICS` | | — | Alias for `METRICS_DATABASE_URL`. Accepted when `METRICS_DATABASE_URL` is absent. |
 | `METRICS_API_PORT` | | `3460` | Listen port. |
 | `METRICS_API_KEYS` | | — | Comma-parsed Bearer API keys for `/metrics/*`. |
-| `SHIPWRIGHT_SESSION_SECRET` | | — | HS256 secret for verifying the `vitals_session` cookie. |
+| `SHIPWRIGHT_SESSION_SECRET` | | — | HS256 secret for verifying the `admin_session` cookie. |
 | `METRICS_REQUIRE_OWNER_ROLE` | | `false` | When `true`, gate dashboard/API on `OWNER` role via the accounts client. |
 | `METRICS_ADMIN_URL` | | `http://localhost:3000` | Shipwright admin service base URL (agent name lookups). |
 | `METRICS_INTERNAL_API_KEY` | | — | Internal key for the accounts client. |

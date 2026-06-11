@@ -32,7 +32,7 @@ export function renderDashboardPage(opts: DashboardPageOptions): string {
   <link rel="stylesheet" href="${base}/dashboard/styles.css" />
 </head>
 <body>
-  ${renderShipwrightToolbar({ userName: opts.userName, activePath: `${base}/dashboard`, logoutAction: "/auth/logout", metricsUrl: `${base}/dashboard` })}
+  ${renderShipwrightToolbar({ userName: opts.userName, activePath: `${base}/dashboard`, logoutAction: "/admin/logout", metricsUrl: `${base}/dashboard` })}
   <div class="app">
 
     <!-- Page Controls -->
@@ -341,7 +341,7 @@ export function renderDashboardPage(opts: DashboardPageOptions): string {
 
   </div>
 
-  <script>window.__METRICS_BASE__ = '${base}';</script>
+  <script>window.__METRICS_BASE__ = ${JSON.stringify(base)};</script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
   <script src="${base}/dashboard/app.js"></script>
 </body>
