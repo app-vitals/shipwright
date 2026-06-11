@@ -19,7 +19,8 @@ import type {
   AgentToken,
   AgentTool,
 } from "../prisma/client/index.js";
-import { createAdminAuthMiddleware } from "./api-auth.ts";
+import { createAdminAuthMiddleware, parseAdminApiKeys } from "./api-auth.ts";
+import type { AdminApiKey } from "./api-auth.ts";
 import type { AgentCronJobService } from "./agent-cron-jobs.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
 import type { AgentPluginService } from "./agent-plugins.ts";
@@ -51,7 +52,13 @@ export interface AdminDeps {
     "list" | "add" | "remove" | "removeByName"
   >;
   sessionSecret: string;
+  /** Parsed SHIPWRIGHT_ADMIN_API_KEYS — optional; absent means env key auth is disabled. */
+  adminApiKeys?: Map<string, AdminApiKey>;
 }
+
+// Re-export for callers that need to build the map from an env string.
+export { parseAdminApiKeys };
+export type { AdminApiKey };
 
 // ─── App factory ──────────────────────────────────────────────────────────────
 
@@ -63,6 +70,7 @@ export function createAdminApp(deps: AdminDeps): Hono {
     agentTokenService,
     agentPluginService,
     sessionSecret,
+    adminApiKeys,
   } = deps;
 
   const app = new Hono();
@@ -81,7 +89,7 @@ export function createAdminApp(deps: AdminDeps): Hono {
   // Apply combined auth (bearer token OR session cookie) to all /admin/api/* routes
   app.use(
     "/admin/api/*",
-    createAdminAuthMiddleware({ sessionSecret, agentTokenService }),
+    createAdminAuthMiddleware({ sessionSecret, agentTokenService, adminApiKeys }),
   );
 
   // ─── Env vars ──────────────────────────────────────────────────────────────
