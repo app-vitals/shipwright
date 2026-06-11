@@ -92,7 +92,7 @@
 
   // ─── Fetch ────────────────────────────────────────────────────────────────
 
-  const API_BASE = (window.__METRICS_BASE__ || "") + "/metrics";
+  const API_BASE = `${window.__METRICS_BASE__ || ""}/metrics`;
 
   async function fetchAll(range) {
     const q = buildQuery(range);
