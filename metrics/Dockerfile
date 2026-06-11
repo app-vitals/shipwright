@@ -15,7 +15,7 @@
 #   METRICS_API_PORT           — listen port (default: 3460)
 #   METRICS_API_KEYS           — Bearer API keys for /metrics/* endpoints
 #   METRICS_REQUIRE_OWNER_ROLE — gate dashboard on OWNER role (default: false)
-#   METRICS_ACCOUNTS_URL       — accounts service base URL (default: http://localhost:3457)
+#   METRICS_ADMIN_URL          — shipwright admin service base URL (default: http://localhost:3000)
 #   METRICS_INTERNAL_API_KEY   — internal key for accounts client
 #   SHIPWRIGHT_ENV_FILE        — dotenv file loaded at startup (default: ~/.shipwright/.env)
 

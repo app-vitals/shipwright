@@ -38,7 +38,7 @@ const offlineMode = mode === "fixtures";
 const port = Number(process.env.METRICS_API_PORT ?? 3460);
 const basePath = process.env.METRICS_BASE_PATH ?? "";
 const accountsClient = new HttpAccountsClient(
-  process.env.METRICS_ACCOUNTS_URL ?? "http://localhost:3457",
+  process.env.METRICS_ADMIN_URL ?? "http://localhost:3000",
   process.env.METRICS_INTERNAL_API_KEY ?? "",
 );
 
