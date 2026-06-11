@@ -118,4 +118,12 @@ describe("Taskfile.yml — required run targets", () => {
     expect(block).toMatch(/cmds:/);
     expect(block).toMatch(/scripts\/dev-tmux\.ts/);
   });
+
+  test("task stack:down tears down via dev-tmux.ts --down", () => {
+    const content = readTaskfile();
+    const block = getTaskBlock(content, "stack:down");
+    expect(block).not.toBeNull();
+    expect(block).toMatch(/desc:/);
+    expect(block).toMatch(/scripts\/dev-tmux\.ts --down/);
+  });
 });

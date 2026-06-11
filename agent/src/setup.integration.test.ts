@@ -8,16 +8,19 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
 import type { AgentPlugin } from "@shipwright/admin";
 import {
   ensureAgentHome,
+  ensureDotClaudeSymlink,
   installPlugins,
   isNewWorkspace,
   loadState,
@@ -38,6 +41,75 @@ afterEach(() => {
   if (existsSync(testHome)) {
     rmSync(testHome, { recursive: true, force: true });
   }
+});
+
+// ---------------------------------------------------------------------------
+// ensureDotClaudeSymlink
+// ---------------------------------------------------------------------------
+
+describe("ensureDotClaudeSymlink", () => {
+  it("creates the target dir so the symlink is NOT dangling", () => {
+    mkdirSync(testHome, { recursive: true });
+    const target = join(testHome, "dot-claude"); // does not exist yet
+    const link = join(testHome, "home-claude");
+
+    ensureDotClaudeSymlink(target, link, undefined, () => {});
+
+    // Target was created, link is a symlink, and it resolves (not dangling).
+    expect(existsSync(target)).toBe(true);
+    expect(lstatSync(link).isSymbolicLink()).toBe(true);
+    expect(existsSync(link)).toBe(true);
+    // A write THROUGH the link succeeds — this is the session-env path.
+    mkdirSync(join(link, "session-env"), { recursive: true });
+    expect(existsSync(join(target, "session-env"))).toBe(true);
+  });
+
+  it("replaces a stale DANGLING symlink without throwing (idempotent re-run)", () => {
+    mkdirSync(testHome, { recursive: true });
+    const target = join(testHome, "dot-claude");
+    const link = join(testHome, "home-claude");
+
+    // Simulate the original bug's leftover: a symlink to a missing target.
+    symlinkSync(join(testHome, "missing-target"), link);
+    expect(existsSync(link)).toBe(false); // dangling
+
+    ensureDotClaudeSymlink(target, link, undefined, () => {});
+
+    expect(lstatSync(link).isSymbolicLink()).toBe(true);
+    expect(existsSync(link)).toBe(true); // now resolves
+  });
+
+  it("replaces a real directory at the link path", () => {
+    mkdirSync(testHome, { recursive: true });
+    const target = join(testHome, "dot-claude");
+    const link = join(testHome, "home-claude");
+
+    // A real directory (with a file) sits where the symlink should go.
+    mkdirSync(link, { recursive: true });
+    writeFileSync(join(link, "stale.txt"), "x", "utf8");
+
+    let warned = false;
+    ensureDotClaudeSymlink(target, link, undefined, (m) => {
+      if (m.includes("real directory")) warned = true;
+    });
+
+    expect(warned).toBe(true);
+    expect(lstatSync(link).isSymbolicLink()).toBe(true);
+    expect(existsSync(join(link, "stale.txt"))).toBe(false);
+  });
+
+  it("is idempotent — calling twice leaves a valid symlink", () => {
+    mkdirSync(testHome, { recursive: true });
+    const target = join(testHome, "dot-claude");
+    const link = join(testHome, "home-claude");
+
+    ensureDotClaudeSymlink(target, link, undefined, () => {});
+    expect(() =>
+      ensureDotClaudeSymlink(target, link, undefined, () => {}),
+    ).not.toThrow();
+    expect(lstatSync(link).isSymbolicLink()).toBe(true);
+    expect(existsSync(link)).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -372,25 +444,34 @@ describe("runMiseStartup", () => {
   const originalMiseDataDir = process.env.MISE_DATA_DIR;
   const originalMiseCacheDir = process.env.MISE_CACHE_DIR;
   const originalXdgCacheHome = process.env.XDG_CACHE_HOME;
+  const originalXdgDataHome = process.env.XDG_DATA_HOME;
+  const originalHome = process.env.HOME;
   const originalPath = process.env.PATH;
 
   afterEach(() => {
-    // Restore env vars modified by runMiseStartup
+    // Restore env vars modified by runMiseStartup (and the tests below)
     process.env.MISE_DATA_DIR = originalMiseDataDir;
     process.env.MISE_CACHE_DIR = originalMiseCacheDir;
     process.env.XDG_CACHE_HOME = originalXdgCacheHome;
+    process.env.XDG_DATA_HOME = originalXdgDataHome;
+    process.env.HOME = originalHome;
     process.env.PATH = originalPath;
   });
 
-  it("sets MISE_DATA_DIR to $AGENT_HOME/mise", async () => {
+  it("does NOT relocate MISE_DATA_DIR to the PVC (would orphan baked tools)", async () => {
     mkdirSync(join(testHome, "workspace"), { recursive: true });
+    // The PVC's mise dir only ever holds a cache/ — pointing installs there
+    // breaks the image-baked `claude` shim. mise must keep its default data dir.
+    // biome-ignore lint/performance/noDelete: intentional env-var removal (not object property)
+    delete process.env.MISE_DATA_DIR;
     const mockExec = async (
       _cmd: string,
       _args: string[],
       _opts: { cwd: string },
     ) => ({ stdout: "", exitCode: 0 });
     await runMiseStartup(testHome, mockExec);
-    expect(process.env.MISE_DATA_DIR).toBe(join(testHome, "mise"));
+    expect(process.env.MISE_DATA_DIR).toBeUndefined();
+    expect(process.env.MISE_DATA_DIR).not.toBe(join(testHome, "mise"));
   });
 
   it("pins MISE_CACHE_DIR and XDG_CACHE_HOME to the PVC", async () => {
@@ -459,16 +540,23 @@ describe("runMiseStartup", () => {
     expect(installIdx).toBeGreaterThan(trustIdx);
   });
 
-  it("prepends MISE_DATA_DIR/shims to process.env.PATH", async () => {
+  it("prepends mise's default ($HOME) shims dir to process.env.PATH", async () => {
     mkdirSync(join(testHome, "workspace"), { recursive: true });
     writeFileSync(
       join(testHome, "workspace", "mise.toml"),
       "[tools]\n",
       "utf8",
     );
+    // Drive the default-data-dir branch: no MISE_DATA_DIR/XDG_DATA_HOME, with
+    // HOME pinned to the temp dir so the expected shims path is deterministic.
+    // biome-ignore lint/performance/noDelete: intentional env-var removal (not object property)
+    delete process.env.MISE_DATA_DIR;
+    // biome-ignore lint/performance/noDelete: intentional env-var removal (not object property)
+    delete process.env.XDG_DATA_HOME;
+    process.env.HOME = testHome;
     const mockExec = async () => ({ stdout: "", exitCode: 0 });
     await runMiseStartup(testHome, mockExec);
-    const expectedShims = join(testHome, "mise", "shims");
+    const expectedShims = join(testHome, ".local", "share", "mise", "shims");
     expect(process.env.PATH?.startsWith(`${expectedShims}:`)).toBe(true);
   });
 });
