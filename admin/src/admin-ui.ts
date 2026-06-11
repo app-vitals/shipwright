@@ -203,7 +203,7 @@ function createUIAuthMiddleware(
 
 // ─── App factory ──────────────────────────────────────────────────────────────
 
-export function createAdminUIApp(deps: AdminUIDeps): Hono {
+export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   const {
     prisma,
     agentEnvService,
