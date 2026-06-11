@@ -24,7 +24,7 @@ import { createChatApp } from "./chat.ts";
 import { createRunClaude } from "./claude.ts";
 import { startConfigSync } from "./config-sync.ts";
 import { createConfig } from "./config.ts";
-import { startHealthServer } from "./health.ts";
+import { DEFAULT_HEALTH_PORT, startHealthServer } from "./health.ts";
 import { ensureAgentHome } from "./setup.ts";
 import { HttpShipwrightRuntimeClient } from "./shipwright-runtime-client.ts";
 
@@ -72,7 +72,6 @@ export function createComposedApp(deps: ComposedAppDeps): Hono {
 // ─── Server entry ─────────────────────────────────────────────────────────────
 
 const DEFAULT_PORT = 3000;
-const DEFAULT_HEALTH_PORT = 3459;
 
 export async function startServer(opts?: { port?: number }): Promise<void> {
   const agentHome =
