@@ -122,7 +122,7 @@ All child models cascade-delete with their `Agent`.
 | `admin/src/admin-ui-pages.ts` | Page rendering functions (`renderLoginPage`, `renderAgentsPage`, `renderAgentDetailPage`, `renderProvision*`). |
 | `admin/src/admin-ui-styles.ts` | Shared CSS helpers (`baseStyles`, `escapeHtml`, `renderAdminToolbar`). |
 | `admin/src/google-auth-client.ts` | `GoogleAuthClient` interface + `HttpGoogleAuthClient` — typed Google OAuth2 token exchange and user profile lookup; injected into the admin UI for testability. |
-| `admin/src/slack-provisioning-client.ts` | `SlackProvisioningClient` interface + `HttpSlackProvisioningClient` — drives the one-time Slack app creation flow. |
+| `admin/src/slack-provisioning-client.ts` | `SlackProvisioningClient` interface + `HttpSlackProvisioningClient` — drives the one-time Slack app creation flow. `createAppManifest()` returns `appId`, `oauthRedirectUrl`, `clientId`, `clientSecret`, and `signingSecret` directly from the `apps.manifest.create` response — no separate OAuth exchange needed. |
 | `admin/src/agent-envs.ts` | Env service — encrypted key/value store + config bundle assembly. |
 | `admin/src/agent-cron-jobs.ts` | Cron service + system-cron reconciliation. |
 | `admin/src/agent-tools.ts` / `agent-tokens.ts` / `agent-plugins.ts` | Per-resource service classes. |
