@@ -119,6 +119,9 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
       createAppManifest: async () => ({
         appId: "A123456",
         oauthRedirectUrl: "https://slack.com/oauth/authorize?client_id=123",
+        clientId: "test-client-id",
+        clientSecret: "test-client-secret",
+        signingSecret: "test-signing-secret",
       }),
     },
     appBaseUrl: "https://example.com",

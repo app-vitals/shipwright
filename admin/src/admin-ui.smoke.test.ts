@@ -178,6 +178,9 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
       createAppManifest: async () => ({
         appId: "A123456",
         oauthRedirectUrl: "https://slack.com/oauth/authorize?client_id=123",
+        clientId: "test-client-id",
+        clientSecret: "test-client-secret",
+        signingSecret: "test-signing-secret",
       }),
     },
     appBaseUrl: "https://example.com",
@@ -753,5 +756,371 @@ describe("admin UI — token mutation routes", () => {
     );
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe(`/admin/agents/${AGENT_ID}`);
+  });
+});
+
+// ─── Provision start form ─────────────────────────────────────────────────────
+
+describe("admin UI — provision start form", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  it("GET /admin/provision shows agent selector with agent options", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request("/admin/provision", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('name="agentId"');
+    expect(html).toContain("Test Agent");
+    expect(html).toContain(AGENT_ID);
+  });
+
+  it("POST /admin/provision/start with missing agentId returns 400 or form error before Slack call", async () => {
+    let slackCalled = false;
+    const deps = makeMockDeps({
+      slackClient: {
+        createAppManifest: async () => {
+          slackCalled = true;
+          return {
+            appId: "A123",
+            oauthRedirectUrl: "https://slack.com/authorize",
+            clientId: "cid",
+            clientSecret: "csec",
+            signingSecret: "ssec",
+          };
+        },
+      },
+    });
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({
+      xoxpToken: "xoxp-valid",
+      ghAuthMode: "pat",
+      ghPat: "ghp_token123",
+    });
+    const res = await app.request("/admin/provision/start", {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(slackCalled).toBe(false);
+    const html = await res.text();
+    expect(html).toContain("alert-error");
+  });
+
+  it("POST /admin/provision/start with missing xoxpToken returns form error before Slack call", async () => {
+    let slackCalled = false;
+    const deps = makeMockDeps({
+      slackClient: {
+        createAppManifest: async () => {
+          slackCalled = true;
+          return {
+            appId: "A123",
+            oauthRedirectUrl: "https://slack.com/authorize",
+            clientId: "cid",
+            clientSecret: "csec",
+            signingSecret: "ssec",
+          };
+        },
+      },
+    });
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({
+      agentId: AGENT_ID,
+      ghAuthMode: "pat",
+      ghPat: "ghp_token123",
+    });
+    const res = await app.request("/admin/provision/start", {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(slackCalled).toBe(false);
+    const html = await res.text();
+    expect(html).toContain("alert-error");
+  });
+
+  it("POST /admin/provision/start with ghAuthMode=pat + empty ghPat returns form error before Slack call", async () => {
+    let slackCalled = false;
+    const deps = makeMockDeps({
+      slackClient: {
+        createAppManifest: async () => {
+          slackCalled = true;
+          return {
+            appId: "A123",
+            oauthRedirectUrl: "https://slack.com/authorize",
+            clientId: "cid",
+            clientSecret: "csec",
+            signingSecret: "ssec",
+          };
+        },
+      },
+    });
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({
+      agentId: AGENT_ID,
+      xoxpToken: "xoxp-valid",
+      ghAuthMode: "pat",
+      ghPat: "",
+    });
+    const res = await app.request("/admin/provision/start", {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(slackCalled).toBe(false);
+    const html = await res.text();
+    expect(html).toContain("alert-error");
+  });
+
+  it("POST /admin/provision/start with ghAuthMode=app + invalid ghAppId returns form error before Slack call", async () => {
+    let slackCalled = false;
+    const deps = makeMockDeps({
+      slackClient: {
+        createAppManifest: async () => {
+          slackCalled = true;
+          return {
+            appId: "A123",
+            oauthRedirectUrl: "https://slack.com/authorize",
+            clientId: "cid",
+            clientSecret: "csec",
+            signingSecret: "ssec",
+          };
+        },
+      },
+    });
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({
+      agentId: AGENT_ID,
+      xoxpToken: "xoxp-valid",
+      ghAuthMode: "app",
+      ghAppId: "not-a-number",
+      ghAppInstallationId: "99999",
+      ghAppPrivateKey: "-----BEGIN RSA PRIVATE KEY-----\nfoo\n-----END RSA PRIVATE KEY-----",
+    });
+    const res = await app.request("/admin/provision/start", {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(slackCalled).toBe(false);
+    const html = await res.text();
+    expect(html).toContain("alert-error");
+  });
+
+  it("POST /admin/provision/start Slack error renders form error with NO env upsert", async () => {
+    let upsertCalled = false;
+    const deps = makeMockDeps({
+      slackClient: {
+        createAppManifest: async () => {
+          throw new Error("Slack API error");
+        },
+      },
+      agentEnvService: {
+        getByAgentId: async () => ({}),
+        upsert: async () => {
+          upsertCalled = true;
+        },
+        deleteKey: async () => {},
+        getConfigBundle: async () => null,
+      },
+    });
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({
+      agentId: AGENT_ID,
+      xoxpToken: "xoxp-valid",
+      ghAuthMode: "pat",
+      ghPat: "ghp_token123",
+    });
+    const res = await app.request("/admin/provision/start", {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(upsertCalled).toBe(false);
+    const html = await res.text();
+    expect(html).toContain("alert-error");
+  });
+
+  it("POST /admin/provision/start happy path (PAT): 200 with oauthUrl, cookie set, env upsert with SLACK_APP_ID, SLACK_SIGNING_SECRET, GH_TOKEN", async () => {
+    let upsertArgs: [string, Record<string, string>] | null = null;
+    const deps = makeMockDeps({
+      slackClient: {
+        createAppManifest: async () => ({
+          appId: "A_HAPPY",
+          oauthRedirectUrl: "https://slack.com/oauth/authorize?client_id=happy",
+          clientId: "cid_happy",
+          clientSecret: "csec_happy",
+          signingSecret: "ssec_happy",
+        }),
+      },
+      agentEnvService: {
+        getByAgentId: async () => ({}),
+        upsert: async (agentId, envVars) => {
+          upsertArgs = [agentId, envVars];
+        },
+        deleteKey: async () => {},
+        getConfigBundle: async () => null,
+      },
+    });
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({
+      agentId: AGENT_ID,
+      xoxpToken: "xoxp-valid",
+      ghAuthMode: "pat",
+      ghPat: "ghp_my_token",
+    });
+    const res = await app.request("/admin/provision/start", {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("https://slack.com/oauth/authorize?client_id=happy");
+
+    // Check cookie was set
+    const setCookieHeader = res.headers.get("Set-Cookie") ?? "";
+    expect(setCookieHeader).toContain("slack_provision_state=");
+    expect(setCookieHeader).toContain("HttpOnly");
+    expect(setCookieHeader).toContain("Secure");
+
+    // Verify the JWT payload contains agentId
+    const match = setCookieHeader.match(/slack_provision_state=([^;]+)/);
+    expect(match).toBeTruthy();
+    const jwtToken = decodeURIComponent(match?.[1] ?? "");
+    // Decode JWT payload (middle part, base64url)
+    const parts = jwtToken.split(".");
+    expect(parts).toHaveLength(3);
+    const payload = JSON.parse(
+      Buffer.from(parts[1] ?? "", "base64url").toString("utf-8"),
+    );
+    expect(payload.agentId).toBe(AGENT_ID);
+    expect(payload.appId).toBe("A_HAPPY");
+
+    // Verify upsert was called with correct env vars
+    expect(upsertArgs).not.toBeNull();
+    // biome-ignore lint/style/noNonNullAssertion: guarded by expect(upsertArgs).not.toBeNull() above
+    const [upsertedAgentId, envVars] = upsertArgs!;
+    expect(upsertedAgentId).toBe(AGENT_ID);
+    expect(envVars.SLACK_APP_ID).toBe("A_HAPPY");
+    expect(envVars.SLACK_SIGNING_SECRET).toBe("ssec_happy");
+    expect(envVars.GH_TOKEN).toBe("ghp_my_token");
+  });
+
+  it("POST /admin/provision/start with App auth: upsert includes GH_APP_ID, GH_APP_INSTALLATION_ID, GH_APP_PRIVATE_KEY", async () => {
+    let upsertArgs: [string, Record<string, string>] | null = null;
+    const deps = makeMockDeps({
+      slackClient: {
+        createAppManifest: async () => ({
+          appId: "A_APP",
+          oauthRedirectUrl: "https://slack.com/oauth/authorize?client_id=app",
+          clientId: "cid_app",
+          clientSecret: "csec_app",
+          signingSecret: "ssec_app",
+        }),
+      },
+      agentEnvService: {
+        getByAgentId: async () => ({}),
+        upsert: async (agentId, envVars) => {
+          upsertArgs = [agentId, envVars];
+        },
+        deleteKey: async () => {},
+        getConfigBundle: async () => null,
+      },
+    });
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({
+      agentId: AGENT_ID,
+      xoxpToken: "xoxp-valid",
+      ghAuthMode: "app",
+      ghAppId: "12345",
+      ghAppInstallationId: "67890",
+      ghAppPrivateKey: "-----BEGIN RSA PRIVATE KEY-----\nfoo\n-----END RSA PRIVATE KEY-----",
+    });
+    const res = await app.request("/admin/provision/start", {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+    expect(upsertArgs).not.toBeNull();
+    // biome-ignore lint/style/noNonNullAssertion: guarded by expect(upsertArgs).not.toBeNull() above
+    const [, envVars] = upsertArgs!;
+    expect(envVars.GH_APP_ID).toBe("12345");
+    expect(envVars.GH_APP_INSTALLATION_ID).toBe("67890");
+    expect(envVars.GH_APP_PRIVATE_KEY).toContain("BEGIN RSA PRIVATE KEY");
+    expect(envVars).not.toHaveProperty("GH_TOKEN");
+  });
+
+  it("POST /admin/provision/start with AI creds: upsert includes ANTHROPIC_API_KEY and CLAUDE_CODE_OAUTH_TOKEN", async () => {
+    let upsertArgs: [string, Record<string, string>] | null = null;
+    const deps = makeMockDeps({
+      slackClient: {
+        createAppManifest: async () => ({
+          appId: "A_AI",
+          oauthRedirectUrl: "https://slack.com/oauth/authorize?client_id=ai",
+          clientId: "cid_ai",
+          clientSecret: "csec_ai",
+          signingSecret: "ssec_ai",
+        }),
+      },
+      agentEnvService: {
+        getByAgentId: async () => ({}),
+        upsert: async (agentId, envVars) => {
+          upsertArgs = [agentId, envVars];
+        },
+        deleteKey: async () => {},
+        getConfigBundle: async () => null,
+      },
+    });
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({
+      agentId: AGENT_ID,
+      xoxpToken: "xoxp-valid",
+      ghAuthMode: "pat",
+      ghPat: "ghp_token",
+      anthropicApiKey: "sk-ant-key",
+      claudeCodeOauthToken: "oauth-token-xyz",
+    });
+    const res = await app.request("/admin/provision/start", {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+    expect(upsertArgs).not.toBeNull();
+    // biome-ignore lint/style/noNonNullAssertion: guarded by expect(upsertArgs).not.toBeNull() above
+    const [, envVars] = upsertArgs!;
+    expect(envVars.ANTHROPIC_API_KEY).toBe("sk-ant-key");
+    expect(envVars.CLAUDE_CODE_OAUTH_TOKEN).toBe("oauth-token-xyz");
   });
 });

@@ -635,31 +635,36 @@ describe("renderAgentDetailPage — plugins", () => {
 
 // ─── renderProvisionStartPage ────────────────────────────────────────────────
 
+const AGENTS_FIXTURE = [
+  { id: "agent-001", name: "Alpha Agent" },
+  { id: "agent-002", name: "Beta Agent" },
+];
+
 describe("renderProvisionStartPage", () => {
   test("returns a valid HTML document", () => {
-    const html = renderProvisionStartPage(USER_NAME);
+    const html = renderProvisionStartPage(USER_NAME, []);
     expect(html).toContain("<!DOCTYPE html>");
     expect(html).toContain("<html");
     expect(html).toContain("</html>");
   });
 
   test("includes 'Provision Agent' page title", () => {
-    const html = renderProvisionStartPage(USER_NAME);
+    const html = renderProvisionStartPage(USER_NAME, []);
     expect(html).toContain("Provision Agent");
   });
 
   test("without oauthUrl: shows xoxp token form", () => {
-    const html = renderProvisionStartPage(USER_NAME);
+    const html = renderProvisionStartPage(USER_NAME, []);
     expect(html).toContain("xoxpToken");
   });
 
   test("without oauthUrl: form action is /admin/provision/start", () => {
-    const html = renderProvisionStartPage(USER_NAME);
+    const html = renderProvisionStartPage(USER_NAME, []);
     expect(html).toContain('action="/admin/provision/start"');
   });
 
   test("with oauthUrl: shows authorize link", () => {
-    const html = renderProvisionStartPage(USER_NAME, {
+    const html = renderProvisionStartPage(USER_NAME, [], {
       oauthUrl: "https://slack.com/oauth/v2/authorize?client_id=123",
     });
     expect(html).toContain("Authorize Slack App");
@@ -669,19 +674,19 @@ describe("renderProvisionStartPage", () => {
   });
 
   test("with oauthUrl: does NOT show xoxp form", () => {
-    const html = renderProvisionStartPage(USER_NAME, {
+    const html = renderProvisionStartPage(USER_NAME, [], {
       oauthUrl: "https://slack.com/oauth/v2/authorize?client_id=123",
     });
     expect(html).not.toContain('action="/admin/provision/start"');
   });
 
   test("no error div when no error", () => {
-    const html = renderProvisionStartPage(USER_NAME);
+    const html = renderProvisionStartPage(USER_NAME, []);
     expect(html).not.toContain('class="alert alert-error"');
   });
 
   test("error shown when opts.error set", () => {
-    const html = renderProvisionStartPage(USER_NAME, {
+    const html = renderProvisionStartPage(USER_NAME, [], {
       error: "Invalid token",
     });
     expect(html).toContain('class="alert alert-error"');
@@ -689,7 +694,7 @@ describe("renderProvisionStartPage", () => {
   });
 
   test("XSS: error is escaped", () => {
-    const html = renderProvisionStartPage(USER_NAME, {
+    const html = renderProvisionStartPage(USER_NAME, [], {
       error: "<script>xss()</script>",
     });
     expect(html).not.toContain("<script>");
@@ -697,11 +702,66 @@ describe("renderProvisionStartPage", () => {
   });
 
   test("non-https oauthUrl: authorize href is empty (safe URL guard)", () => {
-    const html = renderProvisionStartPage(USER_NAME, {
+    const html = renderProvisionStartPage(USER_NAME, [], {
       oauthUrl: "javascript:alert(1)",
     });
     // safeOauthUrl is empty string when URL doesn't start with https://
     expect(html).toContain('href=""');
+  });
+
+  // ── new tests for agent selector + GitHub/Claude fields ──────────────────
+
+  test("renders agent selector element", () => {
+    const html = renderProvisionStartPage(USER_NAME, AGENTS_FIXTURE);
+    expect(html).toContain('name="agentId"');
+    expect(html).toContain("<select");
+  });
+
+  test("renders an option for each agent", () => {
+    const html = renderProvisionStartPage(USER_NAME, AGENTS_FIXTURE);
+    expect(html).toContain("agent-001");
+    expect(html).toContain("Alpha Agent");
+    expect(html).toContain("agent-002");
+    expect(html).toContain("Beta Agent");
+  });
+
+  test("renders empty selector when agents=[]", () => {
+    const html = renderProvisionStartPage(USER_NAME, []);
+    expect(html).toContain('name="agentId"');
+    // no option values from agents
+    expect(html).not.toContain('value="agent-001"');
+  });
+
+  test("XSS: agent name in select option is escaped", () => {
+    const xssAgents = [{ id: "a1", name: '<script>evil()</script>' }];
+    const html = renderProvisionStartPage(USER_NAME, xssAgents);
+    expect(html).not.toContain("<script>");
+    expect(html).toContain("&lt;script&gt;");
+  });
+
+  test("renders ghAuthMode radio buttons (pat and app)", () => {
+    const html = renderProvisionStartPage(USER_NAME, []);
+    expect(html).toContain('name="ghAuthMode"');
+    expect(html).toContain('value="pat"');
+    expect(html).toContain('value="app"');
+  });
+
+  test("renders GitHub PAT password input", () => {
+    const html = renderProvisionStartPage(USER_NAME, []);
+    expect(html).toContain('name="ghPat"');
+  });
+
+  test("renders GitHub App fields (ghAppId, ghAppInstallationId, ghAppPrivateKey)", () => {
+    const html = renderProvisionStartPage(USER_NAME, []);
+    expect(html).toContain('name="ghAppId"');
+    expect(html).toContain('name="ghAppInstallationId"');
+    expect(html).toContain('name="ghAppPrivateKey"');
+  });
+
+  test("renders AI creds section (anthropicApiKey, claudeCodeOauthToken)", () => {
+    const html = renderProvisionStartPage(USER_NAME, []);
+    expect(html).toContain('name="anthropicApiKey"');
+    expect(html).toContain('name="claudeCodeOauthToken"');
   });
 });
 
