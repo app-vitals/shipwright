@@ -921,6 +921,11 @@ export function createMetricsApp(
   const sessionSecret =
     deps?.sessionSecret ?? process.env.SHIPWRIGHT_SESSION_SECRET ?? "";
   const requireOwnerRole = deps?.requireOwnerRole ?? false;
+  if (requireOwnerRole) {
+    console.warn(
+      "[metrics] METRICS_REQUIRE_OWNER_ROLE is enabled — ensure your accountsClient URL serves /accounts/users/{id}. The Shipwright admin service does not expose this endpoint.",
+    );
+  }
   const dashboardToken = deps?.dashboardToken;
   const offlineMode = deps?.offlineMode ?? false;
   const basePath = deps?.basePath ?? process.env.METRICS_BASE_PATH ?? "";
