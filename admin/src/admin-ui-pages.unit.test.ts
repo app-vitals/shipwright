@@ -21,6 +21,7 @@ import {
   renderProvisionPasteForm,
   renderProvisionStartPage,
 } from "./admin-ui-pages.ts";
+import { renderAdminToolbar } from "./admin-ui-styles.ts";
 
 // ─── Shared fixtures ──────────────────────────────────────────────────────────
 
@@ -835,5 +836,36 @@ describe("renderProvisionCompletePage", () => {
     });
     expect(html).not.toContain("<script>");
     expect(html).toContain("&lt;script&gt;");
+  });
+});
+
+// ─── renderAdminToolbar — active nav highlight ────────────────────────────────
+
+describe("renderAdminToolbar — active nav highlight", () => {
+  test("activePath /admin/agents: Agents link is active, Provision is not", () => {
+    const html = renderAdminToolbar(USER_NAME, "/admin/agents");
+    expect(html).toContain('href="/admin/agents" class="vos-nav-link active"');
+    expect(html).toContain('href="/admin/provision" class="vos-nav-link"');
+    expect(html).not.toContain('href="/admin/provision" class="vos-nav-link active"');
+  });
+
+  test("activePath sub-path /admin/agents/agent-id: Agents link is still active (startsWith)", () => {
+    const html = renderAdminToolbar(USER_NAME, "/admin/agents/agent-id");
+    expect(html).toContain('href="/admin/agents" class="vos-nav-link active"');
+    expect(html).not.toContain('href="/admin/provision" class="vos-nav-link active"');
+  });
+
+  test("activePath /admin/provision: Provision link is active, Agents is not", () => {
+    const html = renderAdminToolbar(USER_NAME, "/admin/provision");
+    expect(html).toContain('href="/admin/provision" class="vos-nav-link active"');
+    expect(html).toContain('href="/admin/agents" class="vos-nav-link"');
+    expect(html).not.toContain('href="/admin/agents" class="vos-nav-link active"');
+  });
+
+  test("activePath '' (default): neither link is active", () => {
+    const html = renderAdminToolbar(USER_NAME);
+    expect(html).not.toContain('class="vos-nav-link active"');
+    expect(html).toContain('href="/admin/agents" class="vos-nav-link"');
+    expect(html).toContain('href="/admin/provision" class="vos-nav-link"');
   });
 });

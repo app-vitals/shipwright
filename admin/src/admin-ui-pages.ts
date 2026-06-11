@@ -125,7 +125,7 @@ export function renderAgentsPage(
   <style>${baseStyles()}</style>
 </head>
 <body>
-  ${renderAdminToolbar(userName)}
+  ${renderAdminToolbar(userName, "/admin/agents")}
   <div class="vos-page">
     <div class="page-header">
       <h1 class="page-title">Agents</h1>
@@ -292,7 +292,7 @@ export function renderAgentDetailPage(
   <style>${baseStyles()}</style>
 </head>
 <body>
-  ${renderAdminToolbar(userName)}
+  ${renderAdminToolbar(userName, "/admin/agents")}
   <div class="vos-page">
     <div class="page-header">
       <div>
@@ -515,7 +515,7 @@ export function renderProvisionStartPage(
   <style>${baseStyles()}</style>
 </head>
 <body>
-  ${renderAdminToolbar(userName)}
+  ${renderAdminToolbar(userName, "/admin/provision")}
   <div class="vos-page">
     <div class="page-header">
       <h1 class="page-title">Provision Agent</h1>
@@ -553,7 +553,7 @@ export function renderProvisionPasteForm(
   <style>${baseStyles()}</style>
 </head>
 <body>
-  ${renderAdminToolbar(userName)}
+  ${renderAdminToolbar(userName, "/admin/provision")}
   <div class="vos-page">
     <div class="page-header">
       <h1 class="page-title">Provision Agent</h1>
@@ -612,7 +612,7 @@ export function renderProvisionCompletePage(
   <style>${baseStyles()}</style>
 </head>
 <body>
-  ${renderAdminToolbar(userName)}
+  ${renderAdminToolbar(userName, "/admin/provision")}
   <div class="vos-page">
     <div class="page-header">
       <h1 class="page-title">Provision Agent</h1>
