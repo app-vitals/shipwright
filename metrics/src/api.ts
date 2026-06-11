@@ -91,6 +91,8 @@ export interface MetricsDeps {
   dashboardToken?: string;
   /** Offline mode: skip session auth and serve /dashboard as a default local user. Default false. */
   offlineMode?: boolean;
+  /** URL path prefix the app is mounted at (e.g. "/sw"). Injected into dashboard HTML for asset + API fetch URLs. */
+  basePath?: string;
   /**
    * Local event store. When provided, the PostHog-shaped ingest route
    * `POST /batch/` is registered and writes batches to this store. When
@@ -919,6 +921,7 @@ export function createMetricsApp(
   const requireOwnerRole = deps?.requireOwnerRole ?? false;
   const dashboardToken = deps?.dashboardToken;
   const offlineMode = deps?.offlineMode ?? false;
+  const basePath = deps?.basePath ?? process.env.METRICS_BASE_PATH ?? "";
 
   const app = new OpenAPIHono<AuthEnv>({
     defaultHook: (result, c) => {
@@ -1049,6 +1052,7 @@ export function createMetricsApp(
       const body = renderDashboardPage({
         userName: "Offline User",
         isOwner: true,
+        basePath,
       });
       return new Response(body, {
         headers: { "Content-Type": "text/html; charset=utf-8" },
@@ -1082,7 +1086,7 @@ export function createMetricsApp(
     if (requireOwnerRole && accountsClient && userId) {
       const user = await accountsClient.getUser(userId);
       if (user.role !== "OWNER") {
-        const body = renderDashboardPage({ userName, isOwner: false });
+        const body = renderDashboardPage({ userName, isOwner: false, basePath });
         return new Response(body, {
           status: 403,
           headers: { "Content-Type": "text/html; charset=utf-8" },
@@ -1090,7 +1094,7 @@ export function createMetricsApp(
       }
     }
 
-    const body = renderDashboardPage({ userName, isOwner: true });
+    const body = renderDashboardPage({ userName, isOwner: true, basePath });
     return new Response(body, {
       headers: { "Content-Type": "text/html; charset=utf-8" },
     });

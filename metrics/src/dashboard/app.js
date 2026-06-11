@@ -92,27 +92,29 @@
 
   // ─── Fetch ────────────────────────────────────────────────────────────────
 
+  const API_BASE = (window.__METRICS_BASE__ || "") + "/metrics";
+
   async function fetchAll(range) {
     const q = buildQuery(range);
     const [summary, trends, featuresRes, queueRes, tokensRes] =
       await Promise.all([
-        fetch(`/metrics/summary?${q}`).then((r) => r.json()),
-        fetch(`/metrics/trends?${q}&groupBy=${groupByForRange(range)}`).then(
+        fetch(`${API_BASE}/summary?${q}`).then((r) => r.json()),
+        fetch(`${API_BASE}/trends?${q}&groupBy=${groupByForRange(range)}`).then(
           (r) => r.json(),
         ),
-        fetch(`/metrics/features?${q}`)
+        fetch(`${API_BASE}/features?${q}`)
           .then((r) => r.json())
           .catch((err) => {
             console.error("Features fetch failed:", err);
             return null;
           }),
-        fetch(`/metrics/queue?${q}`)
+        fetch(`${API_BASE}/queue?${q}`)
           .then((r) => r.json())
           .catch((err) => {
             console.error("Queue fetch failed:", err);
             return null;
           }),
-        fetch(`/metrics/tokens?${q}`)
+        fetch(`${API_BASE}/tokens?${q}`)
           .then((r) => r.json())
           .catch((err) => {
             console.error("Tokens fetch failed:", err);

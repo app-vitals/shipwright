@@ -370,11 +370,13 @@ export function escapeHtml(str: string): string {
 export function renderAdminToolbar(userName: string, activePath = ""): string {
   const active = (prefix: string) =>
     activePath.startsWith(prefix) ? " active" : "";
+  const metricsHref = process.env.METRICS_DASHBOARD_URL ?? "/sw/dashboard";
   return `<nav class="vos-toolbar" aria-label="Site navigation">
     <a href="/admin/agents" class="vos-wordmark">Shipwright Admin</a>
     <div class="vos-nav">
       <a href="/admin/agents" class="vos-nav-link${active("/admin/agents")}">Agents</a>
       <a href="/admin/provision" class="vos-nav-link${active("/admin/provision")}">Provision</a>
+      <a href="${metricsHref}" class="vos-nav-link">Metrics</a>
     </div>
     <div class="vos-user">
       <span class="vos-username">${escapeHtml(userName)}</span>
