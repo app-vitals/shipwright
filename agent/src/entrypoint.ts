@@ -125,7 +125,7 @@ export async function runEntrypoint(deps: EntrypointDeps): Promise<void> {
     await installPlugins(undefined, undefined, config.plugins);
 
     // Step 8: Spawn agent server
-    spawnAgentServer("bun", ["run", join(import.meta.dir, "run-agent.ts")]);
+    spawnAgentServer("bun", ["run", join(import.meta.dir, "index.ts")]);
   };
 
   let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
