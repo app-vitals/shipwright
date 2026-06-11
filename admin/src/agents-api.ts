@@ -1,5 +1,5 @@
 /**
- * agent/src/admin-api.ts
+ * agent/src/agents-api.ts
  * Admin CRUD API — Hono app factory.
  *
  * Routes mounted at /agents/*. Full CRUD for:
@@ -87,7 +87,7 @@ export function createAdminApp(deps: AdminDeps): Hono<AdminAuthEnv> {
         err.statusCode as 400 | 401 | 403 | 404 | 409 | 422 | 500 | 502,
       );
     }
-    console.error("[admin-api] unhandled error:", err);
+    console.error("[agents-api] unhandled error:", err);
     return c.json({ error: "Internal server error" }, 500);
   });
 
