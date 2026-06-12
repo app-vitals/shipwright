@@ -448,6 +448,12 @@ describe("runMiseStartup", () => {
   const originalHome = process.env.HOME;
   const originalPath = process.env.PATH;
 
+  beforeEach(() => {
+    // Isolate HOME to the per-test dir so the ~/.bashrc mise-activate append in
+    // runMiseStartup never touches the real developer/CI home.
+    process.env.HOME = testHome;
+  });
+
   afterEach(() => {
     // Restore env vars modified by runMiseStartup (and the tests below)
     process.env.MISE_DATA_DIR = originalMiseDataDir;

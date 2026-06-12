@@ -8,6 +8,7 @@
  */
 
 import {
+  appendFileSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -277,7 +278,8 @@ const DEFAULT_DOT_CLAUDE_FS: DotClaudeFs = {
 
 /**
  * Symlink `linkPath` (~/.claude) → `target` ($AGENT_HOME/dot-claude), ensuring
- * the TARGET directory exists first.
+ * the TARGET directory exists first. ALSO symlinks the sibling `~/.claude.json`
+ * → `$AGENT_HOME/claude.json` (see below).
  *
  * The target MUST be created before symlinking: on a fresh PVC the target does
  * not exist, so without this the symlink dangles and every write under
@@ -289,6 +291,15 @@ const DEFAULT_DOT_CLAUDE_FS: DotClaudeFs = {
  * `symlinkSync` throw EEXIST on a re-run. `lstatSync` sees the link itself, so
  * a stale/dangling symlink is detected and replaced. A real directory at
  * `linkPath` is removed (logged) before relinking.
+ *
+ * `~/.claude.json` holds Claude Code's MCP server registrations (`claude mcp
+ * add`) and lives OUTSIDE `~/.claude/`, so it needs its own symlink to survive
+ * pod restarts. Without it, registered MCP servers (e.g. Linear) silently
+ * disappear — Claude reads the ephemeral image copy instead of the PVC's. The
+ * target is `$AGENT_HOME/claude.json` (sibling of the dot-claude dir), matching
+ * the path the vitals-os runtime used, so a migrated PVC's existing MCP config
+ * is picked up. Unlike the dir, the target is NOT pre-created: it is a FILE that
+ * Claude writes on first use, so a dangling symlink is correct until then.
  */
 export function ensureDotClaudeSymlink(
   target: string,
@@ -319,6 +330,27 @@ export function ensureDotClaudeSymlink(
 
   fs.symlinkSync(target, linkPath);
   log(`[entrypoint] symlinked ${linkPath} → ${target}`);
+
+  // ── ~/.claude.json (MCP server registrations) — file symlink, no mkdir ──────
+  const jsonTarget = join(target, "..", "claude.json");
+  const jsonLink = `${linkPath}.json`;
+  let existingJson: ReturnType<typeof lstatSync> | null = null;
+  try {
+    existingJson = fs.lstatSync(jsonLink);
+  } catch {
+    existingJson = null;
+  }
+  if (existingJson) {
+    if (existingJson.isSymbolicLink()) {
+      fs.unlinkSync(jsonLink);
+    } else {
+      // The image ships a real ~/.claude.json — remove it before symlinking so
+      // the PVC copy (with MCP registrations) is the one Claude reads.
+      fs.rmSync(jsonLink, { recursive: false });
+    }
+  }
+  fs.symlinkSync(jsonTarget, jsonLink);
+  log(`[entrypoint] symlinked ${jsonLink} → ${jsonTarget}`);
 }
 
 export function ensureAgentHome(home: string): void {
@@ -442,6 +474,22 @@ export async function runMiseStartup(
   process.env.XDG_CACHE_HOME = join(home, "cache");
   mkdirSync(process.env.MISE_CACHE_DIR, { recursive: true });
   mkdirSync(process.env.XDG_CACHE_HOME, { recursive: true });
+
+  // Activate mise in any bash session the agent spawns (e.g. Claude Code's Bash
+  // tool). The shims-on-PATH prepend below only reaches direct subprocesses;
+  // login/interactive shells re-source profile files that reset PATH, so
+  // workspace-declared tools (e.g. fern's Rust toolchain) would be missing
+  // without this. Ported from the vitals-os runtime; dropped in the extraction.
+  // Unconditional (before the mise.toml check) so it's ready for any workspace
+  // tools; idempotent so repeated boots don't stack duplicate lines.
+  const bashrc = join(process.env.HOME ?? home, ".bashrc");
+  if (
+    !existsSync(bashrc) ||
+    !readFileSync(bashrc, "utf8").includes("mise activate bash")
+  ) {
+    appendFileSync(bashrc, '\neval "$(mise activate bash)"\n');
+    console.log(`[agent] mise activation appended to ${bashrc}`);
+  }
 
   // Skip mise install if no mise.toml declared
   const miseTomlPath = join(workspaceDir, "mise.toml");
