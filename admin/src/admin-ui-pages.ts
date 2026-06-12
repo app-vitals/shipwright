@@ -39,6 +39,7 @@ export interface CronJobItem {
   enabled: boolean;
   name: string | null;
   system: boolean;
+  preCheck?: string | null;
 }
 
 export interface ToolItem {
@@ -199,23 +200,41 @@ export function renderAgentDetailPage(
       </form>`
           : ""
       }`;
+    // Full inline edit (schedule, prompt, channel, preCheck), collapsed behind a
+    // <details> so the table stays readable. Posts to /update → cronService.update.
+    // System crons get NO edit form — their contents are owned by
+    // reconcileSystemCrons and the /update route rejects them (mirrors delete).
+    const editForm = c.system
+      ? ""
+      : `
+      <details style="margin-top:6px">
+        <summary style="cursor:pointer;font-size:11px;color:#6b7280">Edit</summary>
+        <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/crons/${escapeHtml(c.id)}/update" style="display:flex;flex-direction:column;gap:4px;margin-top:6px;min-width:240px">
+          <input name="schedule" type="text" class="form-input mono" style="font-size:11px;padding:3px 6px" value="${escapeHtml(c.schedule)}" placeholder="0 * * * *" required title="Cron expression (5 fields)" />
+          <textarea name="prompt" class="form-input" style="font-size:11px;padding:3px 6px;min-height:48px" placeholder="Prompt" required>${escapeHtml(c.prompt)}</textarea>
+          <input name="channel" type="text" class="form-input" style="font-size:11px;padding:3px 6px" value="${escapeHtml(c.channel ?? "")}" placeholder="Channel ID (optional)" />
+          <input name="preCheck" type="text" class="form-input mono" style="font-size:11px;padding:3px 6px" value="${escapeHtml(c.preCheck ?? "")}" placeholder="plugin:check.ts or ./path.ts (optional)" />
+          <button type="submit" class="btn btn-primary" style="font-size:11px;padding:3px 8px;align-self:flex-start">Save</button>
+        </form>
+      </details>`;
     return `<tr>
       <td class="mono">${escapeHtml(c.schedule)}</td>
       <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis">${escapeHtml(c.name ? `${c.name}: ${c.prompt}` : c.prompt)}</td>
+      <td class="mono" style="font-size:11px;color:#6b7280;max-width:170px;overflow:hidden;text-overflow:ellipsis">${c.preCheck ? escapeHtml(c.preCheck) : "—"}</td>
       <td>${c.channel ? escapeHtml(c.channel) : c.user ? escapeHtml(c.user) : "—"}</td>
       <td><span class="badge ${c.enabled ? "badge-green" : "badge-gray"}">${c.enabled ? "enabled" : "disabled"}</span></td>
-      <td style="white-space:nowrap">${actions}</td>
+      <td style="white-space:nowrap">${actions}${editForm}</td>
     </tr>`;
   }
 
   const systemCronRows =
     systemCrons.length === 0
-      ? `<tr><td colspan="5" class="empty-state">No system crons configured.</td></tr>`
+      ? `<tr><td colspan="6" class="empty-state">No system crons configured.</td></tr>`
       : systemCrons.map(renderCronRow).join("\n");
 
   const customCronRows =
     customCrons.length === 0
-      ? `<tr><td colspan="5" class="empty-state">No custom crons yet.</td></tr>`
+      ? `<tr><td colspan="6" class="empty-state">No custom crons yet.</td></tr>`
       : customCrons.map(renderCronRow).join("\n");
 
   const toolRows =
@@ -343,6 +362,7 @@ export function renderAgentDetailPage(
             <tr>
               <th>Schedule</th>
               <th>Prompt</th>
+              <th>Pre-check</th>
               <th>Target</th>
               <th>Status</th>
               <th></th>
@@ -379,6 +399,7 @@ export function renderAgentDetailPage(
             <tr>
               <th>Schedule</th>
               <th>Prompt</th>
+              <th>Pre-check</th>
               <th>Target</th>
               <th>Status</th>
               <th></th>

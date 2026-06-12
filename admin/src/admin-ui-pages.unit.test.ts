@@ -54,6 +54,7 @@ const SYSTEM_CRON: CronJobItem = {
   enabled: true,
   name: "health-check",
   system: true,
+  preCheck: "shipwright:check-dev-task.ts",
 };
 
 const CUSTOM_CRON: CronJobItem = {
@@ -395,6 +396,31 @@ describe("renderAgentDetailPage — crons", () => {
     expect(html).toContain(
       `action="/admin/agents/${AGENT.id}/crons/${CUSTOM_CRON.id}/delete"`,
     );
+  });
+
+  test("custom cron: full edit form posts to /update with prefilled fields", () => {
+    const html = render([CUSTOM_CRON]);
+    expect(html).toContain(
+      `action="/admin/agents/${AGENT.id}/crons/${CUSTOM_CRON.id}/update"`,
+    );
+    // full edit — schedule, prompt, channel, preCheck all editable
+    expect(html).toContain('name="schedule"');
+    expect(html).toContain('name="prompt"');
+    expect(html).toContain('name="channel"');
+    expect(html).toContain('name="preCheck"');
+  });
+
+  test("system cron: NO edit form (contents owned by reconcile)", () => {
+    const html = render([SYSTEM_CRON]);
+    expect(html).not.toContain(
+      `action="/admin/agents/${AGENT.id}/crons/${SYSTEM_CRON.id}/update"`,
+    );
+  });
+
+  test("cron: preCheck column header + value rendered (system cron, read-only)", () => {
+    const html = render([SYSTEM_CRON]);
+    expect(html).toContain("Pre-check");
+    expect(html).toContain("shipwright:check-dev-task.ts");
   });
 
   test("enabled cron: badge-green and 'enabled' text shown", () => {

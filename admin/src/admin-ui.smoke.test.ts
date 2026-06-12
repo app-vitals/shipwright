@@ -169,6 +169,7 @@ function makeMockDeps(
       get: async () => MOCK_CRON,
       create: async () => MOCK_CRON,
       setEnabled: async () => MOCK_CRON,
+      update: async () => MOCK_CRON,
       delete: async () => {},
       reconcileSystemCrons: async () => ({ created: 0, updated: 0, deleted: 0 }),
     },
@@ -598,6 +599,127 @@ describe("admin UI — cron job mutation routes", () => {
     });
     expect(res.status).toBe(302);
     expect(capturedEnabled).toBe(true);
+  });
+
+  it("POST /admin/agents/:id/crons/:cronId/update redirects to agent detail and forwards user/silent", async () => {
+    let capturedInput:
+      | { user?: string | null; silent?: boolean; preCheck?: string | null }
+      | undefined;
+    const deps = makeMockDeps();
+    deps.agentCronJobService = {
+      ...deps.agentCronJobService,
+      // existing cron is DM-routed (user set, channel null) — the route must
+      // forward user/silent or the service's validateDeliveryTarget would throw.
+      get: async () => ({
+        ...MOCK_CRON,
+        user: "U999",
+        channel: null,
+        silent: false,
+        system: false,
+      }),
+      update: async (_a, _c, input) => {
+        capturedInput = input;
+        return MOCK_CRON;
+      },
+    };
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({
+      schedule: "*/30 * * * *",
+      prompt: "edited prompt",
+      preCheck: "shipwright:check-dev-task.ts",
+    });
+    const res = await app.request(
+      `/admin/agents/${AGENT_ID}/crons/${CRON_ID}/update`,
+      {
+        method: "POST",
+        body: body.toString(),
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(`/admin/agents/${AGENT_ID}`);
+    expect(capturedInput?.user).toBe("U999");
+    expect(capturedInput?.silent).toBe(false);
+    expect(capturedInput?.preCheck).toBe("shipwright:check-dev-task.ts");
+  });
+
+  it("POST /admin/agents/:id/crons/:cronId/update redirects with error when schedule missing", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const body = new URLSearchParams({ prompt: "no schedule" });
+    const res = await app.request(
+      `/admin/agents/${AGENT_ID}/crons/${CRON_ID}/update`,
+      {
+        method: "POST",
+        body: body.toString(),
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toContain("error=");
+  });
+
+  it("POST /admin/agents/:id/crons/:cronId/update redirects with error for system crons (update NOT called)", async () => {
+    let updateCalled = false;
+    const deps = makeMockDeps();
+    deps.agentCronJobService = {
+      ...deps.agentCronJobService,
+      get: async () => ({ ...MOCK_CRON, system: true }),
+      update: async () => {
+        updateCalled = true;
+        return MOCK_CRON;
+      },
+    };
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({ schedule: "0 * * * *", prompt: "x" });
+    const res = await app.request(
+      `/admin/agents/${AGENT_ID}/crons/${CRON_ID}/update`,
+      {
+        method: "POST",
+        body: body.toString(),
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toContain("error=");
+    expect(updateCalled).toBe(false);
+  });
+
+  it("POST /admin/agents/:id/crons/:cronId/update redirects with error when the service throws", async () => {
+    const deps = makeMockDeps();
+    deps.agentCronJobService = {
+      ...deps.agentCronJobService,
+      get: async () => ({ ...MOCK_CRON, system: false }),
+      update: async () => {
+        throw new Error("invalid cron expression");
+      },
+    };
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({
+      schedule: "not a cron",
+      prompt: "x",
+    });
+    const res = await app.request(
+      `/admin/agents/${AGENT_ID}/crons/${CRON_ID}/update`,
+      {
+        method: "POST",
+        body: body.toString(),
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toContain("error=");
   });
 
   it("POST /admin/agents/:id/crons/:cronId/delete redirects to agent detail", async () => {

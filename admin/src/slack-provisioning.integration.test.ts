@@ -130,6 +130,9 @@ function makeMockDeps(
       setEnabled: async () => {
         throw new Error("not implemented");
       },
+      update: async () => {
+        throw new Error("not implemented");
+      },
       delete: async () => {},
       reconcileSystemCrons: async () => ({ created: 0, updated: 0, deleted: 0 }),
     },

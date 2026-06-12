@@ -86,6 +86,9 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
       setEnabled: async () => {
         throw new Error("not found");
       },
+      update: async () => {
+        throw new Error("not found");
+      },
       delete: async () => {},
       reconcileSystemCrons: async () => ({ created: 0, updated: 0, deleted: 0 }),
     },

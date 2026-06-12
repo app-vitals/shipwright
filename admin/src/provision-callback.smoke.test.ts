@@ -147,6 +147,9 @@ function makeMockDeps(
       setEnabled: async () => {
         throw new Error("not implemented");
       },
+      update: async () => {
+        throw new Error("not implemented");
+      },
       delete: async () => {},
       reconcileSystemCrons: async (agentId: string) => {
         state.reconcileCalls.push(agentId);

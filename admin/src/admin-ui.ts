@@ -121,7 +121,13 @@ export interface AdminUIDeps {
   >;
   agentCronJobService: Pick<
     AgentCronJobService,
-    "list" | "create" | "setEnabled" | "delete" | "get" | "reconcileSystemCrons"
+    | "list"
+    | "create"
+    | "update"
+    | "setEnabled"
+    | "delete"
+    | "get"
+    | "reconcileSystemCrons"
   >;
   agentToolService: Pick<
     AgentToolService,
@@ -583,6 +589,62 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       await agentCronJobService.setEnabled(agentId, cronId, enabled);
     } catch {
       // ignore errors — redirect back regardless
+    }
+    return c.redirect(`/admin/agents/${agentId}`, 302);
+  });
+
+  app.post("/admin/agents/:id/crons/:cronId/update", requireAuth, async (c) => {
+    const agentId = c.req.param("id");
+    const cronId = c.req.param("cronId");
+    let schedule = "";
+    let prompt = "";
+    let channel: string | null = null;
+    let preCheck: string | null = null;
+    try {
+      const formData = await c.req.formData();
+      schedule = ((formData.get("schedule") as string | null) ?? "").trim();
+      prompt = ((formData.get("prompt") as string | null) ?? "").trim();
+      const ch = ((formData.get("channel") as string | null) ?? "").trim();
+      channel = ch === "" ? null : ch;
+      const pc = ((formData.get("preCheck") as string | null) ?? "").trim();
+      preCheck = pc === "" ? null : pc; // empty clears the preCheck
+    } catch {
+      // fall through to validation
+    }
+    if (!schedule || !prompt) {
+      return c.redirect(
+        `/admin/agents/${agentId}?error=${encodeURIComponent("schedule and prompt are required")}`,
+        302,
+      );
+    }
+    try {
+      // Fetch the existing cron so we (a) block edits to system crons — their
+      // contents are owned by reconcileSystemCrons and would be reverted — and
+      // (b) forward `user`/`silent`. Without them the service resolves user→null,
+      // silent→false and validateDeliveryTarget throws for any DM-routed cron.
+      const existing = await agentCronJobService.get(agentId, cronId);
+      if (existing.system) {
+        return c.redirect(
+          `/admin/agents/${agentId}?error=${encodeURIComponent("system crons cannot be edited")}`,
+          302,
+        );
+      }
+      await agentCronJobService.update(agentId, cronId, {
+        schedule,
+        prompt,
+        channel,
+        preCheck,
+        user: existing.user,
+        silent: existing.silent,
+      });
+    } catch (err) {
+      // Surface validation errors (e.g. invalid cron expression) back to the page.
+      return c.redirect(
+        `/admin/agents/${agentId}?error=${encodeURIComponent(
+          err instanceof Error ? err.message : "cron update failed",
+        )}`,
+        302,
+      );
     }
     return c.redirect(`/admin/agents/${agentId}`, 302);
   });
