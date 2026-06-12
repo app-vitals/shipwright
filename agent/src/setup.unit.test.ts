@@ -30,7 +30,7 @@ describe("installPlugins — local marketplace", () => {
     ]);
   });
 
-  it("installs and updates shipwright@app-vitals using the local marketplace name", async () => {
+  it("installs and updates shipwright@shipwright using the shipwright marketplace name", async () => {
     const calls: Array<{ cmd: string; args: string[] }> = [];
     const mockExec = async (
       cmd: string,
@@ -48,12 +48,12 @@ describe("installPlugins — local marketplace", () => {
     expect(calls[1].args).toEqual([
       "plugin",
       "install",
-      "shipwright@app-vitals",
+      "shipwright@shipwright",
     ]);
     expect(calls[2].args).toEqual([
       "plugin",
       "update",
-      "shipwright@app-vitals",
+      "shipwright@shipwright",
     ]);
   });
 
@@ -79,9 +79,9 @@ describe("installPlugins — local marketplace", () => {
     expect(calls).toHaveLength(5);
     const specs = calls.slice(1).map((c) => c.args[2]);
     expect(specs).toEqual([
-      "shipwright@app-vitals",
+      "shipwright@shipwright",
       "my-plugin@org/my-marketplace",
-      "shipwright@app-vitals",
+      "shipwright@shipwright",
       "my-plugin@org/my-marketplace",
     ]);
   });
