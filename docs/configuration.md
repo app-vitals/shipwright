@@ -120,16 +120,6 @@ Provide either the GitHub App vars (recommended) or `GH_TOKEN` (PAT). App auth i
 | `SHIPWRIGHT_AGENT_ID` | `string` | — | The agent's ID in the Shipwright platform. Also settable via `--agent-id` CLI flag. |
 | `SHIPWRIGHT_AGENT_API_KEY` | `string` | — | Bearer token for the config fetch at startup (`/agents/:id/config` and `/agents/:id/crons`). Also settable via `--api-key`. |
 
-### Migration (one-time cutover)
-
-Used only by `agent/src/run-migration.ts` when migrating agents from the Vitals OS platform to the Shipwright admin service. Not needed in a fresh deployment.
-
-| Name | Type | Default | Description |
-|---|---|---|---|
-| `VITALS_OS_API_URL` | `string` | — | Base URL of the source Vitals OS accounts service. Used by the migration script only. |
-| `VITALS_OS_API_KEY` | `string` | — | API key for the source Vitals OS accounts service. Migration script only. Env-var-only (secret). |
-| `SHIPWRIGHT_ADMIN_API_KEY` | `string` | — | API key for the destination Shipwright admin service. Migration script only. Env-var-only (secret). |
-
 ### Server
 
 | Name | Type | Default | Description |
