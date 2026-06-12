@@ -618,11 +618,24 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       );
     }
     try {
+      // Fetch the existing cron so we (a) block edits to system crons — their
+      // contents are owned by reconcileSystemCrons and would be reverted — and
+      // (b) forward `user`/`silent`. Without them the service resolves user→null,
+      // silent→false and validateDeliveryTarget throws for any DM-routed cron.
+      const existing = await agentCronJobService.get(agentId, cronId);
+      if (existing.system) {
+        return c.redirect(
+          `/admin/agents/${agentId}?error=${encodeURIComponent("system crons cannot be edited")}`,
+          302,
+        );
+      }
       await agentCronJobService.update(agentId, cronId, {
         schedule,
         prompt,
         channel,
         preCheck,
+        user: existing.user,
+        silent: existing.silent,
       });
     } catch (err) {
       // Surface validation errors (e.g. invalid cron expression) back to the page.

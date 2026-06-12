@@ -398,10 +398,10 @@ describe("renderAgentDetailPage — crons", () => {
     );
   });
 
-  test("cron: full edit form posts to /update with prefilled fields", () => {
-    const html = render([SYSTEM_CRON]);
+  test("custom cron: full edit form posts to /update with prefilled fields", () => {
+    const html = render([CUSTOM_CRON]);
     expect(html).toContain(
-      `action="/admin/agents/${AGENT.id}/crons/${SYSTEM_CRON.id}/update"`,
+      `action="/admin/agents/${AGENT.id}/crons/${CUSTOM_CRON.id}/update"`,
     );
     // full edit — schedule, prompt, channel, preCheck all editable
     expect(html).toContain('name="schedule"');
@@ -410,7 +410,14 @@ describe("renderAgentDetailPage — crons", () => {
     expect(html).toContain('name="preCheck"');
   });
 
-  test("cron: preCheck column header + value rendered", () => {
+  test("system cron: NO edit form (contents owned by reconcile)", () => {
+    const html = render([SYSTEM_CRON]);
+    expect(html).not.toContain(
+      `action="/admin/agents/${AGENT.id}/crons/${SYSTEM_CRON.id}/update"`,
+    );
+  });
+
+  test("cron: preCheck column header + value rendered (system cron, read-only)", () => {
     const html = render([SYSTEM_CRON]);
     expect(html).toContain("Pre-check");
     expect(html).toContain("shipwright:check-dev-task.ts");

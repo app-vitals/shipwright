@@ -202,7 +202,11 @@ export function renderAgentDetailPage(
       }`;
     // Full inline edit (schedule, prompt, channel, preCheck), collapsed behind a
     // <details> so the table stays readable. Posts to /update → cronService.update.
-    const editForm = `
+    // System crons get NO edit form — their contents are owned by
+    // reconcileSystemCrons and the /update route rejects them (mirrors delete).
+    const editForm = c.system
+      ? ""
+      : `
       <details style="margin-top:6px">
         <summary style="cursor:pointer;font-size:11px;color:#6b7280">Edit</summary>
         <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/crons/${escapeHtml(c.id)}/update" style="display:flex;flex-direction:column;gap:4px;margin-top:6px;min-width:240px">
