@@ -177,6 +177,35 @@ async function defaultExec(
 }
 
 /**
+ * Reads the Claude Code plugin manifest and returns specs whose recorded
+ * installPath no longer exists on disk. This happens when a PVC is reused
+ * across containers running as different users (e.g. root → uid 1000): the
+ * old installPath points to the previous HOME's `.claude/` directory, which
+ * doesn't exist in the new container. Claude Code's `plugin install` is
+ * idempotent — it exits 0 when a spec is already recorded even if the path is
+ * unreachable — so hooks fire against a missing binary and silently fail.
+ */
+export function findStalePluginSpecs(
+  specs: readonly string[],
+  manifestPath: string,
+): string[] {
+  if (!existsSync(manifestPath)) return [];
+  let manifest: { plugins?: Record<string, Array<{ installPath?: string }>> };
+  try {
+    manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as typeof manifest;
+  } catch {
+    return [];
+  }
+  return specs.filter((spec) => {
+    const entries = manifest.plugins?.[spec];
+    return (
+      entries?.length &&
+      entries.some((e) => e.installPath && !existsSync(e.installPath))
+    );
+  });
+}
+
+/**
  * Installs the shipwright default plugins plus any agent-specific plugins
  * from the config bundle. All commands are idempotent (exit 0 when already
  * present / already at latest), so reboots are a silent no-op.
@@ -192,6 +221,12 @@ export async function installPlugins(
   cwd: string = process.cwd(),
   agentPlugins: AgentPlugin[] = [],
   shipwrightRepoRoot: string = SHIPWRIGHT_REPO_ROOT,
+  pluginManifestPath: string = join(
+    process.env.HOME ?? "/root",
+    ".claude",
+    "plugins",
+    "installed_plugins.json",
+  ),
 ): Promise<void> {
   try {
     // Register the local marketplace so `claude plugin install` can resolve
@@ -214,6 +249,20 @@ export async function installPlugins(
       (p) => `${p.plugin}@${p.marketplace}`,
     );
     const allSpecs = [...defaultPluginSpecs, ...agentPluginSpecs];
+
+    // Uninstall any plugin whose recorded installPath no longer exists. This
+    // clears stale manifest entries left over from a different-HOME container
+    // so the subsequent `install` records the correct path for the current user.
+    const staleSpecs = findStalePluginSpecs(allSpecs, pluginManifestPath);
+    for (const spec of staleSpecs) {
+      console.log(`[agent] stale plugin path for ${spec} — uninstalling to force reinstall`);
+      const uninstall = await execFn("claude", ["plugin", "uninstall", spec], { cwd });
+      if (uninstall.exitCode !== 0) {
+        console.warn(
+          `[agent] claude plugin uninstall ${spec} exited ${uninstall.exitCode}: ${uninstall.stdout}`,
+        );
+      }
+    }
 
     // Install all plugins (defaults then agent-specific)
     for (const spec of allSpecs) {

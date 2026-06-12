@@ -21,6 +21,7 @@ import type { AgentPlugin } from "@shipwright/admin";
 import {
   ensureAgentHome,
   ensureDotClaudeSymlink,
+  findStalePluginSpecs,
   installPlugins,
   isNewWorkspace,
   loadState,
@@ -634,6 +635,85 @@ describe("runMiseStartup", () => {
 });
 
 // ---------------------------------------------------------------------------
+// findStalePluginSpecs
+// ---------------------------------------------------------------------------
+
+describe("findStalePluginSpecs", () => {
+  it("returns empty array when manifest does not exist", () => {
+    const result = findStalePluginSpecs(
+      ["shipwright@shipwright"],
+      "/nonexistent/installed_plugins.json",
+    );
+    expect(result).toEqual([]);
+  });
+
+  it("returns empty array when all installPaths exist", () => {
+    mkdirSync(testHome, { recursive: true });
+    const pluginDir = join(testHome, "plugin-dir");
+    mkdirSync(pluginDir, { recursive: true });
+    const manifestPath = join(testHome, "installed_plugins.json");
+    writeFileSync(
+      manifestPath,
+      JSON.stringify({
+        version: 2,
+        plugins: {
+          "shipwright@shipwright": [{ installPath: pluginDir }],
+        },
+      }),
+    );
+
+    const result = findStalePluginSpecs(["shipwright@shipwright"], manifestPath);
+    expect(result).toEqual([]);
+  });
+
+  it("returns specs whose installPath does not exist on disk", () => {
+    mkdirSync(testHome, { recursive: true });
+    const manifestPath = join(testHome, "installed_plugins.json");
+    writeFileSync(
+      manifestPath,
+      JSON.stringify({
+        version: 2,
+        plugins: {
+          "vitals-os@vitals-os": [
+            { installPath: "/root/.claude/plugins/cache/vitals-os/0.4.5" },
+          ],
+          "shipwright@shipwright": [
+            { installPath: "/root/.claude/plugins/cache/shipwright/1.0.0" },
+          ],
+        },
+      }),
+    );
+
+    const result = findStalePluginSpecs(
+      ["vitals-os@vitals-os", "shipwright@shipwright"],
+      manifestPath,
+    );
+    expect(result).toContain("vitals-os@vitals-os");
+    expect(result).toContain("shipwright@shipwright");
+  });
+
+  it("skips specs not present in the manifest", () => {
+    mkdirSync(testHome, { recursive: true });
+    const manifestPath = join(testHome, "installed_plugins.json");
+    writeFileSync(
+      manifestPath,
+      JSON.stringify({ version: 2, plugins: {} }),
+    );
+
+    const result = findStalePluginSpecs(["shipwright@shipwright"], manifestPath);
+    expect(result).toEqual([]);
+  });
+
+  it("returns empty array when manifest JSON is corrupted", () => {
+    mkdirSync(testHome, { recursive: true });
+    const manifestPath = join(testHome, "installed_plugins.json");
+    writeFileSync(manifestPath, "not valid json");
+
+    const result = findStalePluginSpecs(["shipwright@shipwright"], manifestPath);
+    expect(result).toEqual([]);
+  });
+});
+
 // installPlugins
 // ---------------------------------------------------------------------------
 
@@ -651,7 +731,7 @@ describe("installPlugins", () => {
 
     await installPlugins(mockExec, testHome, [], "/repo/root");
 
-    // marketplace add + 1 install + 1 update = 3 calls
+    // marketplace add + 1 install + 1 update = 3 calls (no stale paths)
     expect(calls).toHaveLength(3);
     expect(calls[0].args).toEqual([
       "plugin",
@@ -824,5 +904,75 @@ describe("installPlugins", () => {
       installPlugins(mockExec, testHome, [], "/repo/root"),
     ).resolves.toBeUndefined();
     expect(calls).toHaveLength(3);
+  });
+
+  it("uninstalls then reinstalls plugins with stale installPaths from a different-HOME container", async () => {
+    // Simulate a PVC where plugins were installed as root (HOME=/root) but the
+    // container now runs as uid 1000 (HOME=/home/bun). The recorded installPath
+    // points to /root/.claude/... which doesn't exist in the new container.
+    mkdirSync(testHome, { recursive: true });
+    const manifestPath = join(testHome, "installed_plugins.json");
+    writeFileSync(
+      manifestPath,
+      JSON.stringify({
+        version: 2,
+        plugins: {
+          "shipwright@shipwright": [
+            { installPath: "/root/.claude/plugins/cache/shipwright/1.0.0" },
+          ],
+        },
+      }),
+    );
+
+    const calls: Array<{ args: string[] }> = [];
+    const mockExec = async (
+      _cmd: string,
+      args: string[],
+      _opts: { cwd: string },
+    ) => {
+      calls.push({ args });
+      return { stdout: "", exitCode: 0 };
+    };
+
+    await installPlugins(mockExec, testHome, [], "/repo/root", manifestPath);
+
+    // marketplace add + uninstall (stale) + install + update = 4 calls
+    expect(calls).toHaveLength(4);
+    expect(calls[1].args).toEqual(["plugin", "uninstall", "shipwright@shipwright"]);
+    expect(calls[2].args).toEqual(["plugin", "install", "shipwright@shipwright"]);
+    expect(calls[3].args).toEqual(["plugin", "update", "shipwright@shipwright"]);
+  });
+
+  it("does not uninstall plugins with valid installPaths", async () => {
+    // Plugin installed with correct HOME — installPath exists on disk.
+    mkdirSync(testHome, { recursive: true });
+    const pluginDir = join(testHome, "plugins", "cache", "shipwright", "1.0.0");
+    mkdirSync(pluginDir, { recursive: true });
+    const manifestPath = join(testHome, "installed_plugins.json");
+    writeFileSync(
+      manifestPath,
+      JSON.stringify({
+        version: 2,
+        plugins: {
+          "shipwright@shipwright": [{ installPath: pluginDir }],
+        },
+      }),
+    );
+
+    const calls: Array<{ args: string[] }> = [];
+    const mockExec = async (
+      _cmd: string,
+      args: string[],
+      _opts: { cwd: string },
+    ) => {
+      calls.push({ args });
+      return { stdout: "", exitCode: 0 };
+    };
+
+    await installPlugins(mockExec, testHome, [], "/repo/root", manifestPath);
+
+    // marketplace add + install + update = 3 calls (no uninstall)
+    expect(calls).toHaveLength(3);
+    expect(calls.every((c) => c.args[1] !== "uninstall")).toBe(true);
   });
 });
