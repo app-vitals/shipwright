@@ -16,11 +16,13 @@
  *   bun plugins/shipwright/scripts/check-patch.ts
  */
 
+import type { CommitInfo } from "./check-helpers.ts";
 import {
   getCurrentUser,
   ghGraphql,
   ghJson,
   ghRun,
+  isMergeOnlyUpdate,
   resolveAllRepos,
   resolveWorkspacePath,
 } from "./check-helpers.ts";
@@ -82,6 +84,7 @@ export interface Deps {
     pr: number,
   ) => Promise<MergeStatusInfo>;
   updateBranch: (org: string, repo: string, pr: number) => Promise<void>;
+  listPrCommits: (prNumber: number, repo?: string) => Promise<CommitInfo[]>;
 }
 
 // ─── Staleness check (mirrors patch.md Step 3b) ───────────────────────────────
@@ -110,6 +113,46 @@ function hasUnaddressedFindings(data: PrReviewData): boolean {
 
   // No unresolved threads — check if any qualifying review has a non-empty body
   return qualifyingReviews.some((r) => r.body.trim().length > 0);
+}
+
+// ─── Merge-only stale findings ────────────────────────────────────────────────
+
+/**
+ * Returns true if the PR has unaddressed review findings at a stale commit and
+ * all commits since that review are merge commits. Mirrors check-review's
+ * merge-only skip: a branch updated only via merge-from-main hasn't had real
+ * author activity, so findings from the pre-merge review are still valid.
+ */
+async function hasMergeOnlyStaleFindings(
+  prNumber: number,
+  data: PrReviewData,
+  deps: Pick<Deps, "listPrCommits">,
+  repo?: string,
+): Promise<boolean> {
+  const { headRefOid, reviews, reviewThreads } = data;
+
+  const staleReviews = reviews.nodes.filter(
+    (r) =>
+      (r.state === "COMMENTED" || r.state === "CHANGES_REQUESTED") &&
+      r.commit.oid !== headRefOid,
+  );
+
+  if (staleReviews.length === 0) return false;
+
+  const unresolvedThreads = reviewThreads.nodes.filter((t) => !t.isResolved);
+  const hasFindings =
+    unresolvedThreads.length > 0 ||
+    staleReviews.some((r) => r.body.trim().length > 0);
+
+  if (!hasFindings) return false;
+
+  // Anchor on the most recent stale review commit
+  const anchorCommit = [...staleReviews].sort(
+    (a, b) =>
+      new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime(),
+  )[0].commit.oid;
+
+  return isMergeOnlyUpdate(prNumber, anchorCommit, deps, repo);
 }
 
 // ─── Core logic ───────────────────────────────────────────────────────────────
@@ -153,6 +196,16 @@ export async function run(deps: Deps): Promise<RunResult> {
 
     const reviewData = await deps.fetchPrReviews(org, repo, pr.number);
     if (hasUnaddressedFindings(reviewData)) {
+      return {
+        exit: 0,
+        output:
+          "Fix unaddressed review findings on own open PRs via /shipwright:patch",
+      };
+    }
+
+    // If findings exist at a stale commit but all new commits are merges, the
+    // findings are still valid — only a merge-from-main landed, not real author work.
+    if (await hasMergeOnlyStaleFindings(pr.number, reviewData, deps, pr.repo)) {
       return {
         exit: 0,
         output:
@@ -303,6 +356,14 @@ export async function buildProductionDeps(): Promise<Deps> {
     },
     updateBranch: async (org: string, repo: string, pr: number) => {
       ghRun(["pr", "update-branch", String(pr), "--repo", `${org}/${repo}`]);
+    },
+    listPrCommits: async (prNumber: number, repo?: string) => {
+      const targetRepo = repo ?? allRepos[0];
+      return ghJson<CommitInfo[]>([
+        "api",
+        `repos/${targetRepo}/pulls/${prNumber}/commits`,
+        "--paginate",
+      ]);
     },
   };
 }

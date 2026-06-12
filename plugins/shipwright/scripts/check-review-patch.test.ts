@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { ReviewEntry } from "./check-helpers.ts";
+import type { CommitInfo, ReviewEntry } from "./check-helpers.ts";
 import type { PrReviewData } from "./check-patch.ts";
 import { run } from "./check-review-patch.ts";
 
@@ -111,6 +111,7 @@ function makePatchDepsTriggering() {
       _repo: string,
       _pr: number,
     ): Promise<void> => {},
+    listPrCommits: async (): Promise<CommitInfo[]> => [],
   };
 }
 
@@ -142,6 +143,7 @@ function makePatchDepsIdle() {
       _repo: string,
       _pr: number,
     ): Promise<void> => {},
+    listPrCommits: async (): Promise<CommitInfo[]> => [],
   };
 }
 

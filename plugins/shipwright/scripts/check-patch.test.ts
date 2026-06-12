@@ -10,6 +10,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import type { CommitInfo } from "./check-helpers.ts";
 import { run } from "./check-patch.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -82,6 +83,7 @@ function makeDeps(
     repo: string,
     pr: number,
   ) => Promise<void> = async () => {},
+  listPrCommits: (_prNumber: number) => Promise<CommitInfo[]> = async () => [],
 ) {
   return {
     listOwnOpenPrs: async (_repo: string) => ownPrs,
@@ -110,6 +112,7 @@ function makeDeps(
       return mergeStatusByPr[pr] ?? { isBehind: false, isDirty: false };
     },
     updateBranch,
+    listPrCommits,
   };
 }
 
@@ -507,5 +510,155 @@ describe("check-patch", () => {
     );
     expect(result.exit).toBe(0);
     expect(result.output.toLowerCase()).toContain("patch");
+  });
+
+  // ─── Merge-only stale findings ────────────────────────────────────────────
+
+  test("exits 0 when stale COMMENT review has findings and all new commits are merge-only", async () => {
+    const pr = makeOwnPr({ headRefOid: "merge-sha" });
+    const reviewData = makePrReviewData({
+      headRefOid: "merge-sha",
+      reviews: {
+        nodes: [
+          {
+            author: { login: "reviewer1" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-26T10:00:00Z",
+            commit: { oid: "review-sha" }, // posted before the merge commit
+            body: "Please fix this",
+          },
+        ],
+      },
+      reviewThreads: { nodes: [] },
+    });
+    const commits: CommitInfo[] = [
+      { sha: "review-sha", parents: [{ sha: "p0" }] },
+      { sha: "merge-sha", parents: [{ sha: "a" }, { sha: "b" }] }, // merge commit
+    ];
+    const result = await run(
+      makeDeps(
+        [pr],
+        { 10: reviewData },
+        {},
+        {},
+        async () => {},
+        async () => commits,
+      ),
+    );
+    expect(result.exit).toBe(0);
+    expect(result.output).toContain("patch");
+  });
+
+  test("exits 0 when stale review has unresolved threads and all new commits are merge-only", async () => {
+    const pr = makeOwnPr({ headRefOid: "merge-sha" });
+    const reviewData = makePrReviewData({
+      headRefOid: "merge-sha",
+      reviews: {
+        nodes: [
+          {
+            author: { login: "reviewer1" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-26T10:00:00Z",
+            commit: { oid: "review-sha" },
+            body: "",
+          },
+        ],
+      },
+      reviewThreads: {
+        nodes: [
+          {
+            isResolved: false,
+            comments: {
+              nodes: [{ author: { login: "reviewer1" }, body: "Fix this" }],
+            },
+          },
+        ],
+      },
+    });
+    const commits: CommitInfo[] = [
+      { sha: "review-sha", parents: [{ sha: "p0" }] },
+      { sha: "merge-sha", parents: [{ sha: "a" }, { sha: "b" }] },
+    ];
+    const result = await run(
+      makeDeps(
+        [pr],
+        { 10: reviewData },
+        {},
+        {},
+        async () => {},
+        async () => commits,
+      ),
+    );
+    expect(result.exit).toBe(0);
+    expect(result.output).toContain("patch");
+  });
+
+  test("exits 1 when stale review has findings but real commits pushed since (not merge-only)", async () => {
+    const pr = makeOwnPr({ headRefOid: "real-work-sha" });
+    const reviewData = makePrReviewData({
+      headRefOid: "real-work-sha",
+      reviews: {
+        nodes: [
+          {
+            author: { login: "reviewer1" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-26T10:00:00Z",
+            commit: { oid: "review-sha" },
+            body: "Please fix this",
+          },
+        ],
+      },
+      reviewThreads: { nodes: [] },
+    });
+    const commits: CommitInfo[] = [
+      { sha: "review-sha", parents: [{ sha: "p0" }] },
+      { sha: "real-work-sha", parents: [{ sha: "p1" }] }, // regular (non-merge) commit
+    ];
+    const result = await run(
+      makeDeps(
+        [pr],
+        { 10: reviewData },
+        {},
+        {},
+        async () => {},
+        async () => commits,
+      ),
+    );
+    expect(result.exit).toBe(1);
+    expect(result.output).toBe("");
+  });
+
+  test("exits 1 when stale COMMENT review at older commit has no findings (empty body, no unresolved threads)", async () => {
+    const pr = makeOwnPr({ headRefOid: "merge-sha" });
+    const reviewData = makePrReviewData({
+      headRefOid: "merge-sha",
+      reviews: {
+        nodes: [
+          {
+            author: { login: "reviewer1" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-26T10:00:00Z",
+            commit: { oid: "review-sha" },
+            body: "",
+          },
+        ],
+      },
+      reviewThreads: { nodes: [] },
+    });
+    const commits: CommitInfo[] = [
+      { sha: "review-sha", parents: [{ sha: "p0" }] },
+      { sha: "merge-sha", parents: [{ sha: "a" }, { sha: "b" }] },
+    ];
+    const result = await run(
+      makeDeps(
+        [pr],
+        { 10: reviewData },
+        {},
+        {},
+        async () => {},
+        async () => commits,
+      ),
+    );
+    expect(result.exit).toBe(1);
   });
 });

@@ -29,7 +29,6 @@ Configuration for the Shipwright Claude Code plugin (`plugins/shipwright/`). The
 | `JIRA_PROJECT_KEY` | `string` | — | Jira project key (e.g. `SHIP`). Required when `SHIPWRIGHT_TASK_STORE=jira`. |
 | `SHIPWRIGHT_REPOS_DIR` | `string` | `<AGENT_HOME>/workspace/repos` | Override the workspace repos directory. Used by scripts that need to know where checked-out repos live. |
 | `SHIPWRIGHT_WORKTREE_DIR` | `string` | `<AGENT_HOME>/workspace/worktrees` | Override the workspace worktrees directory. |
-| `SHIPWRIGHT_LOCAL_MARKETPLACE` | `string` | — | Absolute path to a local marketplace checkout. When set, plugin installs and updates use this path instead of fetching from GitHub. Dev-only — do not set in production. |
 | `SHIPWRIGHT_DEV_CHAT` | `bool` | `false` | Enables the unauthenticated `POST /chat` endpoint on the agent. **Must not be set in production** (`NODE_ENV=production` blocks it via `chat-guard.ts`). |
 | `SHIPWRIGHT_CONFIG` | `string` | — | Explicit path to `.shipwright.json` when auto-discovery (walk-up from cwd) is not suitable. Falls back to local JSON state if neither this nor the walk-up finds a file. |
 | `GH_CMD` | `string` | `gh` | Override the `gh` CLI executable. Useful in environments where `gh` is installed to a non-default path. |

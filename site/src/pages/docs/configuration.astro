@@ -71,7 +71,6 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
             { name: "JIRA_PROJECT_KEY", type: "string", def: "—", desc: "Jira project key (e.g. SHIP). Required when SHIPWRIGHT_TASK_STORE=jira." },
             { name: "SHIPWRIGHT_REPOS_DIR", type: "string", def: "<AGENT_HOME>/workspace/repos", desc: "Override the workspace repos directory." },
             { name: "SHIPWRIGHT_WORKTREE_DIR", type: "string", def: "<AGENT_HOME>/workspace/worktrees", desc: "Override the workspace worktrees directory." },
-            { name: "SHIPWRIGHT_LOCAL_MARKETPLACE", type: "string", def: "—", desc: "Absolute path to a local marketplace checkout. Dev-only — do not set in production." },
             { name: "SHIPWRIGHT_DEV_CHAT", type: "bool", def: "false", desc: "Enables the unauthenticated POST /chat endpoint. Must not be set in production." },
             { name: "SHIPWRIGHT_CONFIG", type: "string", def: "—", desc: "Explicit path to .shipwright.json when auto-discovery is not suitable." },
             { name: "GH_CMD", type: "string", def: "gh", desc: "Override the gh CLI executable. Useful in environments where gh is installed to a non-default path." },
