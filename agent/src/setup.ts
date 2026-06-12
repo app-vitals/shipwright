@@ -34,8 +34,8 @@ const WORKSPACE_TEMPLATE_DIR = join(import.meta.dir, "..", "workspace");
 // marketplace is always used regardless of whether the GitHub repo is accessible.
 const SHIPWRIGHT_REPO_ROOT = join(import.meta.dir, "..", "..");
 
-// Local marketplace name — matches the `owner` field in .claude-plugin/marketplace.json.
-const SHIPWRIGHT_MARKETPLACE = "app-vitals";
+// Local marketplace name — matches the `name` field in .claude-plugin/marketplace.json.
+const SHIPWRIGHT_MARKETPLACE = "shipwright";
 
 // Default plugin installed on all Shipwright agents.
 const DEFAULT_PLUGINS: readonly string[] = ["shipwright"];
