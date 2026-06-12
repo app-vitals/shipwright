@@ -465,43 +465,22 @@ describe("runMiseStartup", () => {
     expect(process.env.MISE_DATA_DIR).toBe(join(testHome, "mise"));
   });
 
-  it("seeds MISE_DATA_DIR from image on fresh PVC (shims absent)", async () => {
+  it("does NOT seed/copy the image mise dir onto the PVC", async () => {
+    // node + claude are system binaries (image /usr/bin), not mise tools, so
+    // runMiseStartup must NOT copy the image mise dir onto the PVC. The old seed
+    // hack did, which on a reused PVC left claude resolving to a shim with no
+    // install ("claude is not a valid shim").
     mkdirSync(join(testHome, "workspace"), { recursive: true });
-    // Simulate image mise dir with a shim file
     const imageMiseDir = join(testHome, ".local", "share", "mise");
     mkdirSync(join(imageMiseDir, "shims"), { recursive: true });
-    writeFileSync(join(imageMiseDir, "shims", "node"), "mise-shim", "utf8");
-    // PVC mise dir exists but has no shims (fresh PVC)
-    mkdirSync(join(testHome, "mise"), { recursive: true });
+    writeFileSync(join(imageMiseDir, "shims", "claude"), "image-shim", "utf8");
     process.env.HOME = testHome;
     // biome-ignore lint/performance/noDelete: intentional env-var removal (not object property)
     delete process.env.XDG_DATA_HOME;
     const mockExec = async () => ({ stdout: "", exitCode: 0 });
     await runMiseStartup(testHome, mockExec);
-    expect(existsSync(join(testHome, "mise", "shims", "node"))).toBe(true);
-  });
-
-  it("skips seed when shims already exist on PVC", async () => {
-    mkdirSync(join(testHome, "workspace"), { recursive: true });
-    // Pre-create shims on PVC (simulates a subsequent boot)
-    mkdirSync(join(testHome, "mise", "shims"), { recursive: true });
-    writeFileSync(
-      join(testHome, "mise", "shims", "node"),
-      "pvc-version",
-      "utf8",
-    );
-    // Image also has shims — should not overwrite
-    const imageMiseDir = join(testHome, ".local", "share", "mise");
-    mkdirSync(join(imageMiseDir, "shims"), { recursive: true });
-    writeFileSync(join(imageMiseDir, "shims", "node"), "image-version", "utf8");
-    process.env.HOME = testHome;
-    // biome-ignore lint/performance/noDelete: intentional env-var removal (not object property)
-    delete process.env.XDG_DATA_HOME;
-    const mockExec = async () => ({ stdout: "", exitCode: 0 });
-    await runMiseStartup(testHome, mockExec);
-    expect(readFileSync(join(testHome, "mise", "shims", "node"), "utf8")).toBe(
-      "pvc-version",
-    );
+    // The image's claude shim must NOT have been copied to the PVC.
+    expect(existsSync(join(testHome, "mise", "shims", "claude"))).toBe(false);
   });
 
   it("pins MISE_CACHE_DIR and XDG_CACHE_HOME to the PVC", async () => {

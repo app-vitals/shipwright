@@ -8,7 +8,6 @@
  */
 
 import {
-  cpSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -429,32 +428,16 @@ export async function runMiseStartup(
 ): Promise<void> {
   const workspaceDir = join(home, "workspace");
 
-  // On a fresh PVC the $AGENT_HOME/mise/ directory exists (created by
-  // ensureAgentHome) but is empty — no shims yet. Seed it from the image's
-  // default mise data dir so the baked toolchain (node, claude) is available
-  // on the PVC from the first restart onward. Subsequent boots skip the copy.
-  const pvMiseDir = join(home, "mise");
-  const pvShimsDir = join(pvMiseDir, "shims");
-  const imageMiseDir = join(
-    process.env.XDG_DATA_HOME ??
-      join(process.env.HOME ?? home, ".local", "share"),
-    "mise",
-  );
-  if (!existsSync(pvShimsDir) && existsSync(imageMiseDir)) {
-    try {
-      cpSync(imageMiseDir, pvMiseDir, { recursive: true });
-      console.log("[agent] seeded MISE_DATA_DIR from image on fresh PVC");
-    } catch (err) {
-      console.warn(
-        "[agent] failed to seed MISE_DATA_DIR from image — continuing without PVC shims",
-        err,
-      );
-    }
-  }
-  process.env.MISE_DATA_DIR = pvMiseDir;
-
-  // Pin mise + XDG cache dirs to the PVC so download tarballs land on
-  // persistent storage.
+  // Pin mise + XDG cache/data dirs to the PVC before any mise calls so installs
+  // and download tarballs land on persistent storage, not ephemeral. node and
+  // claude are system-wide binaries (installed in the image, on /usr/bin), NOT
+  // mise tools — so repointing MISE_DATA_DIR at the PVC does NOT affect them.
+  // MISE_DATA_DIR holds only workspace-declared runtime tools.
+  //
+  // (Do NOT seed/copy the image mise dir onto the PVC here — that hack existed
+  // when node+claude were mise-managed; on a reused PVC the copy was skipped and
+  // claude resolved to a shim with no install: "claude is not a valid shim".)
+  process.env.MISE_DATA_DIR = join(home, "mise");
   process.env.MISE_CACHE_DIR = join(home, "mise", "cache");
   process.env.XDG_CACHE_HOME = join(home, "cache");
   mkdirSync(process.env.MISE_CACHE_DIR, { recursive: true });
@@ -478,6 +461,6 @@ export async function runMiseStartup(
 
   // Prepend MISE_DATA_DIR/shims to PATH so workspace-declared tools are found
   // in non-interactive bash sessions.
-  const shimsDir = join(pvMiseDir, "shims");
+  const shimsDir = join(process.env.MISE_DATA_DIR, "shims");
   process.env.PATH = [shimsDir, process.env.PATH ?? ""].join(":");
 }
