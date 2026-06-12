@@ -1,5 +1,10 @@
 {
-  "owner": "app-vitals",
+  "name": "shipwright",
+  "description": "Shipwright — AI-powered engineering workflow plugins for Claude Code",
+  "owner": {
+    "name": "app-vitals",
+    "url": "https://github.com/app-vitals"
+  },
   "version": "0.1.0",
   "plugins": [
     {
