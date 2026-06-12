@@ -570,6 +570,29 @@ describe("handleCronRequest — preCheck", () => {
     expect(runArg).toContain("precheck prompt");
   });
 
+  test("runs preCheck with cwd = workspace (resolves state relative to workspace)", async () => {
+    // Mirrors check-dev-task.ts → JsonTaskStore(process.cwd()) reading
+    // `state/todos.json`. The file lives in the workspace; the preCheck must run
+    // there, not in the agent's cwd (/app in prod, the repo root in tests).
+    const ws = join(tmpDir, "ws");
+    mkdirSync(join(ws, "state"), { recursive: true });
+    writeFileSync(join(ws, "state", "todos.json"), "[]");
+    const script = join(tmpDir, "check.ts");
+    writeFileSync(
+      script,
+      `import { existsSync } from "node:fs";\nconsole.log(existsSync("state/todos.json") ? "HAS_STATE" : "NO_STATE");\nprocess.exit(0);`,
+    );
+
+    await handleCronRequest(
+      { jobId: "j1", prompt: "original", channel: "C-TEST", preCheck: script },
+      { ...deps, workspace: ws },
+    );
+
+    expect(mockRunner).toHaveBeenCalledTimes(1);
+    const runArg = (mockRunner.mock.calls as unknown as string[][])[0][0];
+    expect(runArg).toContain("HAS_STATE");
+  });
+
   test("skips job when preCheck script not found (plugin: format)", async () => {
     await handleCronRequest(
       {
