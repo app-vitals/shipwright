@@ -33,6 +33,7 @@ import { createFileSessionStore, threadKey } from "./sessions.ts";
 import { ensureAgentHome, installPlugins, runMiseStartup } from "./setup.ts";
 import { HttpShipwrightRuntimeClient } from "./shipwright-runtime-client.ts";
 import { createSlackApp } from "./slack.ts";
+import { sendBackOnlineDm } from "./startup-dm.ts";
 import { resolveDisplayName } from "./users.ts";
 import { synthesizeSpeech } from "./voice.ts";
 
@@ -287,6 +288,8 @@ const app = createSlackApp(
 await app.start();
 markSlackConnected();
 console.log("[agent] Slack app started — running");
+
+await sendBackOnlineDm(slack, config.owner.user);
 
 // ─── Step 8: Graceful shutdown ────────────────────────────────────────────────
 
