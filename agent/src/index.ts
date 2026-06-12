@@ -33,6 +33,7 @@ import { createFileSessionStore, threadKey } from "./sessions.ts";
 import { ensureAgentHome, installPlugins, runMiseStartup } from "./setup.ts";
 import { HttpShipwrightRuntimeClient } from "./shipwright-runtime-client.ts";
 import { createSlackApp } from "./slack.ts";
+import { sendBackOnlineDm } from "./startup-dm.ts";
 import { resolveDisplayName } from "./users.ts";
 import { synthesizeSpeech } from "./voice.ts";
 
@@ -288,16 +289,7 @@ await app.start();
 markSlackConnected();
 console.log("[agent] Slack app started — running");
 
-if (config.owner.user) {
-  try {
-    const dm = await slack.conversations.open({ users: config.owner.user });
-    if (dm.channel?.id) {
-      await slack.chat.postMessage({ channel: dm.channel.id, text: "back online" });
-    }
-  } catch (err) {
-    console.warn("[agent] back-online DM failed (non-fatal):", err instanceof Error ? err.message : String(err));
-  }
-}
+await sendBackOnlineDm(slack, config.owner.user);
 
 // ─── Step 8: Graceful shutdown ────────────────────────────────────────────────
 
