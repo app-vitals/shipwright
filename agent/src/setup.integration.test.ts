@@ -110,6 +110,49 @@ describe("ensureDotClaudeSymlink", () => {
     expect(lstatSync(link).isSymbolicLink()).toBe(true);
     expect(existsSync(link)).toBe(true);
   });
+
+  it("creates the sibling ~/.claude.json symlink (dangling until Claude writes it)", () => {
+    mkdirSync(testHome, { recursive: true });
+    const target = join(testHome, "dot-claude");
+    const link = join(testHome, "home-claude");
+
+    ensureDotClaudeSymlink(target, link, undefined, () => {});
+
+    const jsonLink = `${link}.json`;
+    expect(lstatSync(jsonLink).isSymbolicLink()).toBe(true);
+    // Target does not exist yet — Claude writes it on first use. Resolves once created.
+    const jsonTarget = join(target, "..", "claude.json");
+    writeFileSync(jsonTarget, '{"mcpServers":{}}', "utf8");
+    expect(readFileSync(jsonLink, "utf8")).toBe('{"mcpServers":{}}');
+  });
+
+  it("replaces a dangling ~/.claude.json symlink on re-run", () => {
+    mkdirSync(testHome, { recursive: true });
+    const target = join(testHome, "dot-claude");
+    const link = join(testHome, "home-claude");
+    const jsonLink = `${link}.json`;
+
+    symlinkSync(join(testHome, "missing.json"), jsonLink);
+    expect(existsSync(jsonLink)).toBe(false); // dangling
+
+    ensureDotClaudeSymlink(target, link, undefined, () => {});
+
+    expect(lstatSync(jsonLink).isSymbolicLink()).toBe(true);
+  });
+
+  it("replaces a real file at ~/.claude.json (image ships a real file — PVC copy wins)", () => {
+    mkdirSync(testHome, { recursive: true });
+    const target = join(testHome, "dot-claude");
+    const link = join(testHome, "home-claude");
+    const jsonLink = `${link}.json`;
+
+    writeFileSync(jsonLink, "{}", "utf8");
+    expect(lstatSync(jsonLink).isSymbolicLink()).toBe(false);
+
+    ensureDotClaudeSymlink(target, link, undefined, () => {});
+
+    expect(lstatSync(jsonLink).isSymbolicLink()).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -568,6 +611,25 @@ describe("runMiseStartup", () => {
     await runMiseStartup(testHome, mockExec);
     const expectedShims = join(testHome, "mise", "shims");
     expect(process.env.PATH?.startsWith(`${expectedShims}:`)).toBe(true);
+  });
+
+  it("appends mise activate bash to ~/.bashrc", async () => {
+    mkdirSync(join(testHome, "workspace"), { recursive: true });
+    const mockExec = async () => ({ stdout: "", exitCode: 0 });
+    await runMiseStartup(testHome, mockExec);
+    const bashrc = join(testHome, ".bashrc");
+    expect(existsSync(bashrc)).toBe(true);
+    expect(readFileSync(bashrc, "utf8")).toContain("mise activate bash");
+  });
+
+  it("does not duplicate the mise activate line on repeated calls (idempotent)", async () => {
+    mkdirSync(join(testHome, "workspace"), { recursive: true });
+    const mockExec = async () => ({ stdout: "", exitCode: 0 });
+    await runMiseStartup(testHome, mockExec);
+    await runMiseStartup(testHome, mockExec);
+    const content = readFileSync(join(testHome, ".bashrc"), "utf8");
+    const count = (content.match(/mise activate bash/g) ?? []).length;
+    expect(count).toBe(1);
   });
 });
 
