@@ -51,6 +51,16 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 # non-root runtime user can invoke it).
 RUN curl https://mise.run | MISE_INSTALL_PATH=/usr/local/bin/mise sh
 
+# Install Node.js + Claude Code CLI system-wide (as root), matching vitals-os.
+# claude is a plain binary on PATH (/usr/bin/claude) backed by system node — it is
+# NOT a mise shim, so its resolution never depends on the active mise/workspace
+# context (which is what broke the previous mise-reshim approach: "claude is not a
+# valid shim"). mise stays purely a runtime *workspace* tool-version manager.
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && npm install -g @anthropic-ai/claude-code@2.1.170 \
+    && rm -rf /var/lib/apt/lists/*
+
 # ─── Build stage ──────────────────────────────────────────────────────────────
 
 FROM base AS build
@@ -98,17 +108,11 @@ RUN mkdir -p /data/agent-home && chown 1000:1000 /data/agent-home
 USER 1000
 ENV HOME=/home/bun
 
-# mise-managed tool shims (node, npm, claude) live under the user's data dir.
+# mise runtime *workspace* tool shims live under the user's data dir, first on
+# PATH. node + claude are system-wide (installed in the base stage) and resolve
+# via the inherited /usr/bin — they are intentionally NOT mise shims.
 # /app/agent/scripts/bin holds the git-credential-shipwright.sh and gh wrappers.
 ENV PATH="/home/bun/.local/share/mise/shims:/app/agent/scripts/bin:${PATH}"
-
-# Node.js 20 LTS via mise (Debian bookworm's apt provides Node 18 which is EOL).
-RUN mise use --global node@20
-
-# Install Claude Code globally via the mise-managed node's npm, then reshim so
-# the `claude` shim is created on PATH.
-RUN npm install -g @anthropic-ai/claude-code@2.1.170 \
-    && mise reshim
 
 # Copy installed node_modules + agent source from the build stage, owned by the
 # runtime user. (The agent dir carries its own workspace node_modules symlinks;
