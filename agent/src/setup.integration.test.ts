@@ -729,7 +729,7 @@ describe("installPlugins", () => {
       return { stdout: "", exitCode: 0 };
     };
 
-    await installPlugins(mockExec, testHome, [], "/repo/root");
+    await installPlugins(mockExec, testHome, [], "/repo/root", join(testHome, "nonexistent.json"));
 
     // marketplace add + 1 install + 1 update = 3 calls (no stale paths)
     expect(calls).toHaveLength(3);
@@ -767,7 +767,7 @@ describe("installPlugins", () => {
       { marketplace: "other-market", plugin: "another-plugin" },
     ];
 
-    await installPlugins(mockExec, testHome, agentPlugins, "/repo/root");
+    await installPlugins(mockExec, testHome, agentPlugins, "/repo/root", join(testHome, "nonexistent.json"));
 
     // 1 marketplace add + 3 installs + 3 updates = 7 calls
     expect(calls).toHaveLength(7);
@@ -825,7 +825,7 @@ describe("installPlugins", () => {
       return { stdout: "", exitCode: 0 };
     };
 
-    await installPlugins(mockExec, testHome, [], "/repo/root");
+    await installPlugins(mockExec, testHome, [], "/repo/root", join(testHome, "nonexistent.json"));
 
     // marketplace add + 1 install + 1 update = 3 calls
     expect(calls).toHaveLength(3);
@@ -839,7 +839,7 @@ describe("installPlugins", () => {
     };
 
     await expect(
-      installPlugins(throwingExec, testHome, [], "/repo/root"),
+      installPlugins(throwingExec, testHome, [], "/repo/root", join(testHome, "nonexistent.json")),
     ).resolves.toBeUndefined();
   });
 
@@ -859,7 +859,7 @@ describe("installPlugins", () => {
     };
 
     await expect(
-      installPlugins(mockExec, testHome, [], "/repo/root"),
+      installPlugins(mockExec, testHome, [], "/repo/root", join(testHome, "nonexistent.json")),
     ).resolves.toBeUndefined();
 
     // All calls still happened despite install failures
@@ -882,7 +882,7 @@ describe("installPlugins", () => {
     };
 
     await expect(
-      installPlugins(mockExec, testHome, [], "/repo/root"),
+      installPlugins(mockExec, testHome, [], "/repo/root", join(testHome, "nonexistent.json")),
     ).resolves.toBeUndefined();
 
     // All 3 calls still happened despite marketplace add failure
@@ -901,7 +901,7 @@ describe("installPlugins", () => {
     };
 
     await expect(
-      installPlugins(mockExec, testHome, [], "/repo/root"),
+      installPlugins(mockExec, testHome, [], "/repo/root", join(testHome, "nonexistent.json")),
     ).resolves.toBeUndefined();
     expect(calls).toHaveLength(3);
   });
