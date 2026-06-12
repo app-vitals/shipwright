@@ -1,30 +1,14 @@
 /**
- * Unit tests for agent/src/setup.ts — SHIPWRIGHT_LOCAL_MARKETPLACE seam
+ * Unit tests for agent/src/setup.ts — installPlugins local marketplace seam
  *
  * Pure logic tests: no I/O, no real binaries, injected exec doubles only.
  */
 
-import { afterEach, describe, expect, it } from "bun:test";
+import { describe, expect, it } from "bun:test";
 import { installPlugins } from "./setup.ts";
 
-describe("installPlugins — SHIPWRIGHT_LOCAL_MARKETPLACE seam", () => {
-  const originalLocalMarketplace = process.env.SHIPWRIGHT_LOCAL_MARKETPLACE;
-
-  afterEach(() => {
-    // Restore env var so tests don't bleed into each other.
-    // Use delete when the var was originally unset — assigning undefined coerces
-    // to the string "undefined" in Node.js-compatible runtimes, breaking the ?? fallback.
-    if (originalLocalMarketplace === undefined) {
-      // biome-ignore lint/performance/noDelete: intentional env-var removal (not object property)
-      delete process.env.SHIPWRIGHT_LOCAL_MARKETPLACE;
-    } else {
-      process.env.SHIPWRIGHT_LOCAL_MARKETPLACE = originalLocalMarketplace;
-    }
-  });
-
-  it("uses local path when SHIPWRIGHT_LOCAL_MARKETPLACE is set", async () => {
-    process.env.SHIPWRIGHT_LOCAL_MARKETPLACE = "/local/path";
-
+describe("installPlugins — local marketplace", () => {
+  it("registers the marketplace before installing plugins", async () => {
     const calls: Array<{ cmd: string; args: string[] }> = [];
     const mockExec = async (
       cmd: string,
@@ -35,20 +19,18 @@ describe("installPlugins — SHIPWRIGHT_LOCAL_MARKETPLACE seam", () => {
       return { stdout: "", exitCode: 0 };
     };
 
-    await installPlugins(mockExec, "/tmp/test-cwd", []);
+    await installPlugins(mockExec, "/tmp/cwd", [], "/repo/root");
 
-    // Both install and update should use the local path
-    const specs = calls.map((c) => c.args[2]);
-    expect(specs).toEqual([
-      "shipwright@/local/path",
-      "shipwright@/local/path",
+    // First call must be marketplace add
+    expect(calls[0].args).toEqual([
+      "plugin",
+      "marketplace",
+      "add",
+      "/repo/root",
     ]);
   });
 
-  it("uses GitHub marketplace slug when SHIPWRIGHT_LOCAL_MARKETPLACE is unset", async () => {
-    // biome-ignore lint/performance/noDelete: intentional env-var removal (not object property)
-    delete process.env.SHIPWRIGHT_LOCAL_MARKETPLACE;
-
+  it("installs and updates shipwright@app-vitals using the local marketplace name", async () => {
     const calls: Array<{ cmd: string; args: string[] }> = [];
     const mockExec = async (
       cmd: string,
@@ -59,19 +41,23 @@ describe("installPlugins — SHIPWRIGHT_LOCAL_MARKETPLACE seam", () => {
       return { stdout: "", exitCode: 0 };
     };
 
-    await installPlugins(mockExec, "/tmp/test-cwd", []);
+    await installPlugins(mockExec, "/tmp/cwd", [], "/repo/root");
 
-    // Should use the original GitHub marketplace slug
-    const specs = calls.map((c) => c.args[2]);
-    expect(specs).toEqual([
-      "shipwright@app-vitals/shipwright",
-      "shipwright@app-vitals/shipwright",
+    // marketplace add + install + update = 3 calls
+    expect(calls).toHaveLength(3);
+    expect(calls[1].args).toEqual([
+      "plugin",
+      "install",
+      "shipwright@app-vitals",
+    ]);
+    expect(calls[2].args).toEqual([
+      "plugin",
+      "update",
+      "shipwright@app-vitals",
     ]);
   });
 
-  it("covers both install and update commands with local path", async () => {
-    process.env.SHIPWRIGHT_LOCAL_MARKETPLACE = "/local/path";
-
+  it("agent plugins use their own marketplace, not the local one", async () => {
     const calls: Array<{ cmd: string; args: string[] }> = [];
     const mockExec = async (
       cmd: string,
@@ -82,22 +68,25 @@ describe("installPlugins — SHIPWRIGHT_LOCAL_MARKETPLACE seam", () => {
       return { stdout: "", exitCode: 0 };
     };
 
-    await installPlugins(mockExec, "/tmp/test-cwd", []);
+    await installPlugins(
+      mockExec,
+      "/tmp/cwd",
+      [{ plugin: "my-plugin", marketplace: "org/my-marketplace" }],
+      "/repo/root",
+    );
 
-    expect(calls).toHaveLength(2);
-
-    // install call uses local path
-    expect(calls[0].args[1]).toBe("install");
-    expect(calls[0].args[2]).toBe("shipwright@/local/path");
-
-    // update call uses local path
-    expect(calls[1].args[1]).toBe("update");
-    expect(calls[1].args[2]).toBe("shipwright@/local/path");
+    // marketplace add + 2 installs + 2 updates = 5 calls
+    expect(calls).toHaveLength(5);
+    const specs = calls.slice(1).map((c) => c.args[2]);
+    expect(specs).toEqual([
+      "shipwright@app-vitals",
+      "my-plugin@org/my-marketplace",
+      "shipwright@app-vitals",
+      "my-plugin@org/my-marketplace",
+    ]);
   });
 
-  it("does not apply SHIPWRIGHT_LOCAL_MARKETPLACE to agentPlugins", async () => {
-    process.env.SHIPWRIGHT_LOCAL_MARKETPLACE = "/local/path";
-
+  it("passes the repoRoot to marketplace add", async () => {
     const calls: Array<{ cmd: string; args: string[] }> = [];
     const mockExec = async (
       cmd: string,
@@ -108,17 +97,13 @@ describe("installPlugins — SHIPWRIGHT_LOCAL_MARKETPLACE seam", () => {
       return { stdout: "", exitCode: 0 };
     };
 
-    await installPlugins(mockExec, "/tmp/test-cwd", [
-      { plugin: "my-agent-plugin", marketplace: "org/my-marketplace" },
-    ]);
+    await installPlugins(mockExec, "/tmp/cwd", [], "/custom/repo/root");
 
-    // DEFAULT_PLUGINS (shipwright) uses the local path; agentPlugins use their own marketplace
-    const specs = calls.map((c) => c.args[2]);
-    expect(specs).toEqual([
-      "shipwright@/local/path",         // default plugin: local override applies
-      "my-agent-plugin@org/my-marketplace", // agent plugin: own marketplace preserved
-      "shipwright@/local/path",         // default plugin update: local override applies
-      "my-agent-plugin@org/my-marketplace", // agent plugin update: own marketplace preserved
+    expect(calls[0].args).toEqual([
+      "plugin",
+      "marketplace",
+      "add",
+      "/custom/repo/root",
     ]);
   });
 });
