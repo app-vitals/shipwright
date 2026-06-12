@@ -31,11 +31,20 @@ FROM oven/bun:1-slim AS base
 #   - curl         — used by the mise installer and gh keyring setup
 #   - ca-certificates — TLS trust for API calls
 #   - unzip        — needed by some mise-managed tools
+#   - jq           — bash JSON parsing in the time-tracking Claude Code hooks
+#   - build-essential / libssl-dev / pkg-config — native + Rust toolchain so the
+#     agent can build client code at runtime (e.g. Rust projects + OpenSSL crates).
+#     Mirrors the vitals-os runtime image. (voice deps — python/edge-tts/ffmpeg —
+#     deliberately omitted; voice is not deployed on the Shipwright harness yet.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     curl \
     ca-certificates \
     unzip \
+    jq \
+    build-essential \
+    libssl-dev \
+    pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 # Install gh CLI via official GitHub apt keyring
