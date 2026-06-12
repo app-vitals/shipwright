@@ -169,6 +169,7 @@ function makeMockDeps(
       get: async () => MOCK_CRON,
       create: async () => MOCK_CRON,
       setEnabled: async () => MOCK_CRON,
+      update: async () => MOCK_CRON,
       delete: async () => {},
       reconcileSystemCrons: async () => ({ created: 0, updated: 0, deleted: 0 }),
     },
