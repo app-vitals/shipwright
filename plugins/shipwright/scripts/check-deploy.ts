@@ -46,6 +46,7 @@ interface CiRun {
 interface WorkflowRun {
   name: string;
   status: string;
+  createdAt?: string;
 }
 
 interface Deps {
@@ -74,6 +75,19 @@ function isCiGreen(runs: CiRun[]): boolean {
   return runs.some(
     (run) => run.status === "completed" && run.conclusion === "success",
   );
+}
+
+// Queued runs older than 1 hour are treated as stuck/ghost runs and ignored.
+const STALE_QUEUED_RUN_MS = 60 * 60 * 1000;
+
+function isActiveRun(run: WorkflowRun, now: string): boolean {
+  if (run.status === "in_progress") return true;
+  if (run.status === "queued") {
+    if (!run.createdAt) return true; // no timestamp → conservative, treat as active
+    const ageMs = new Date(now).getTime() - new Date(run.createdAt).getTime();
+    return ageMs < STALE_QUEUED_RUN_MS;
+  }
+  return false;
 }
 
 function hasSelfApproveReview(reviews: GhReview[], userLogin: string): boolean {
@@ -111,18 +125,16 @@ export async function run(deps: Deps): Promise<RunResult> {
     );
   }
 
-  // Deploying guard: bail out if any configured repo has an active Deploy workflow run
+  // Deploying guard: bail out if any configured repo has an active Deploy workflow run.
+  // Queued runs older than 1 hour are treated as stuck/ghost and skipped.
+  const now = deps.clock ? deps.clock() : new Date().toISOString();
   for (const repo of deps.repos) {
     const [org, repoName] = repo.includes("/")
       ? (repo.split("/", 2) as [string, string])
       : (["app-vitals", repo] as [string, string]);
     try {
       const activeRuns = await deps.fetchActiveDeployRuns(org, repoName);
-      if (
-        activeRuns.some(
-          (r) => r.status === "in_progress" || r.status === "queued",
-        )
-      ) {
+      if (activeRuns.some((r) => isActiveRun(r, now))) {
         return { exit: 1, output: "", candidate: null };
       }
     } catch (err) {
@@ -212,6 +224,7 @@ interface GhWorkflowRunsJson {
     name: string;
     status: string;
     conclusion: string | null;
+    created_at: string;
   }>;
 }
 
@@ -238,7 +251,7 @@ async function buildProductionDeps(): Promise<Deps> {
       ]);
       return [...inProgress.workflow_runs, ...queued.workflow_runs]
         .filter((r) => r.name === "Deploy")
-        .map((r) => ({ name: r.name, status: r.status }));
+        .map((r) => ({ name: r.name, status: r.status, createdAt: r.created_at }));
     },
     listOpenPrs: async (repo: string) => {
       return ghJson<GhPrListJson[]>([

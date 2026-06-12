@@ -35,6 +35,7 @@ interface CiRun {
 interface WorkflowRun {
   name: string;
   status: string;
+  createdAt?: string;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -57,6 +58,7 @@ interface MakeDepsOptions {
   activeDeployRuns?: WorkflowRun[];
   currentUser?: string;
   isSelfReviewAllowed?: boolean;
+  clock?: () => string;
 }
 
 function makeDeps({
@@ -67,11 +69,13 @@ function makeDeps({
   activeDeployRuns = [],
   currentUser = "bodhi-agent",
   isSelfReviewAllowed = true,
+  clock,
 }: MakeDepsOptions = {}) {
   return {
     getCurrentUser: () => currentUser,
     isSelfReviewAllowed,
     repos,
+    clock,
     listOpenPrs: async (repo: string) => prs[repo] ?? [],
     fetchCiRuns: async (
       _org: string,
@@ -109,7 +113,7 @@ describe("check-deploy (new behaviors)", () => {
     expect(result.candidate).toBeNull();
   });
 
-  test("deploying guard: exits 1 when a Deploy run is queued", async () => {
+  test("deploying guard: exits 1 when a Deploy run is queued (no timestamp — conservative)", async () => {
     const pr = makeGhPr({ reviewDecision: "APPROVED" });
     const result = await run(
       makeDeps({
@@ -120,6 +124,38 @@ describe("check-deploy (new behaviors)", () => {
     );
     expect(result.exit).toBe(1);
     expect(result.candidate).toBeNull();
+  });
+
+  test("deploying guard: exits 1 when a Deploy run is queued and recent (< 1 hour)", async () => {
+    const createdAt = "2026-06-12T10:00:00Z";
+    const now = "2026-06-12T10:30:00Z"; // 30 min later
+    const pr = makeGhPr({ reviewDecision: "APPROVED" });
+    const result = await run(
+      makeDeps({
+        prs: { "acme/example-repo": [pr] },
+        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
+        activeDeployRuns: [{ name: "Deploy", status: "queued", createdAt }],
+        clock: () => now,
+      }),
+    );
+    expect(result.exit).toBe(1);
+    expect(result.candidate).toBeNull();
+  });
+
+  test("deploying guard: proceeds when a queued Deploy run is stale (> 1 hour)", async () => {
+    const createdAt = "2026-06-12T10:00:00Z";
+    const now = "2026-06-12T11:01:00Z"; // 61 min later
+    const pr = makeGhPr({ reviewDecision: "APPROVED" });
+    const result = await run(
+      makeDeps({
+        prs: { "acme/example-repo": [pr] },
+        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
+        activeDeployRuns: [{ name: "Deploy", status: "queued", createdAt }],
+        clock: () => now,
+      }),
+    );
+    expect(result.exit).toBe(0);
+    expect(result.candidate).not.toBeNull();
   });
 
   test("deploying guard: proceeds when no active Deploy runs exist", async () => {
