@@ -529,14 +529,6 @@ describe("agent pane — docker run", () => {
     expect(cmdStr).toContain("SHIPWRIGHT_DEV_CHAT=true");
   });
 
-  test("agent pane docker run passes SHIPWRIGHT_LOCAL_MARKETPLACE=/repo/plugins/shipwright", () => {
-    const agent = STACK_PANES.find((p) => p.label === "agent") as Pane;
-    const cmdStr = agent.cmd.join(" ");
-    expect(cmdStr).toContain(
-      "SHIPWRIGHT_LOCAL_MARKETPLACE=/repo/plugins/shipwright",
-    );
-  });
-
   test("agent pane docker run passes SHIPWRIGHT_API_URL pointing at host.docker.internal", () => {
     const agent = STACK_PANES.find((p) => p.label === "agent") as Pane;
     const cmdStr = agent.cmd.join(" ");

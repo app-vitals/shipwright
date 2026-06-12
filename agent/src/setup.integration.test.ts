@@ -591,7 +591,7 @@ describe("runMiseStartup", () => {
 // ---------------------------------------------------------------------------
 
 describe("installPlugins", () => {
-  it("installs shipwright default plugin first (shipwright@app-vitals/shipwright)", async () => {
+  it("registers local marketplace then installs shipwright@app-vitals", async () => {
     const calls: Array<{ cmd: string; args: string[] }> = [];
     const mockExec = async (
       cmd: string,
@@ -602,19 +602,25 @@ describe("installPlugins", () => {
       return { stdout: "", exitCode: 0 };
     };
 
-    await installPlugins(mockExec, testHome, []);
+    await installPlugins(mockExec, testHome, [], "/repo/root");
 
-    // Should have: 1 install + 1 update for the default plugin
-    expect(calls).toHaveLength(2);
+    // marketplace add + 1 install + 1 update = 3 calls
+    expect(calls).toHaveLength(3);
     expect(calls[0].args).toEqual([
       "plugin",
-      "install",
-      "shipwright@app-vitals/shipwright",
+      "marketplace",
+      "add",
+      "/repo/root",
     ]);
     expect(calls[1].args).toEqual([
       "plugin",
+      "install",
+      "shipwright@app-vitals",
+    ]);
+    expect(calls[2].args).toEqual([
+      "plugin",
       "update",
-      "shipwright@app-vitals/shipwright",
+      "shipwright@app-vitals",
     ]);
   });
 
@@ -634,40 +640,47 @@ describe("installPlugins", () => {
       { marketplace: "other-market", plugin: "another-plugin" },
     ];
 
-    await installPlugins(mockExec, testHome, agentPlugins);
+    await installPlugins(mockExec, testHome, agentPlugins, "/repo/root");
 
-    // default install + 2 agent installs + default update + 2 agent updates = 6 calls
-    expect(calls).toHaveLength(6);
+    // 1 marketplace add + 3 installs + 3 updates = 7 calls
+    expect(calls).toHaveLength(7);
 
-    // installs: default first, then agent-specific
     expect(calls[0].args).toEqual([
       "plugin",
-      "install",
-      "shipwright@app-vitals/shipwright",
+      "marketplace",
+      "add",
+      "/repo/root",
     ]);
+
+    // installs: default first, then agent-specific
     expect(calls[1].args).toEqual([
+      "plugin",
+      "install",
+      "shipwright@app-vitals",
+    ]);
+    expect(calls[2].args).toEqual([
       "plugin",
       "install",
       "custom-plugin@my-marketplace",
     ]);
-    expect(calls[2].args).toEqual([
+    expect(calls[3].args).toEqual([
       "plugin",
       "install",
       "another-plugin@other-market",
     ]);
 
     // updates: default first, then agent-specific
-    expect(calls[3].args).toEqual([
+    expect(calls[4].args).toEqual([
       "plugin",
       "update",
-      "shipwright@app-vitals/shipwright",
+      "shipwright@app-vitals",
     ]);
-    expect(calls[4].args).toEqual([
+    expect(calls[5].args).toEqual([
       "plugin",
       "update",
       "custom-plugin@my-marketplace",
     ]);
-    expect(calls[5].args).toEqual([
+    expect(calls[6].args).toEqual([
       "plugin",
       "update",
       "another-plugin@other-market",
@@ -685,12 +698,12 @@ describe("installPlugins", () => {
       return { stdout: "", exitCode: 0 };
     };
 
-    await installPlugins(mockExec, testHome, []);
+    await installPlugins(mockExec, testHome, [], "/repo/root");
 
-    // 1 install + 1 update for just the default plugin
-    expect(calls).toHaveLength(2);
-    expect(calls[0].args).toContain("shipwright@app-vitals/shipwright");
-    expect(calls[1].args).toContain("shipwright@app-vitals/shipwright");
+    // marketplace add + 1 install + 1 update = 3 calls
+    expect(calls).toHaveLength(3);
+    expect(calls[1].args).toContain("shipwright@app-vitals");
+    expect(calls[2].args).toContain("shipwright@app-vitals");
   });
 
   it("is non-fatal when the claude binary isn't available", async () => {
@@ -699,7 +712,7 @@ describe("installPlugins", () => {
     };
 
     await expect(
-      installPlugins(throwingExec, testHome, []),
+      installPlugins(throwingExec, testHome, [], "/repo/root"),
     ).resolves.toBeUndefined();
   });
 
@@ -719,11 +732,34 @@ describe("installPlugins", () => {
     };
 
     await expect(
-      installPlugins(mockExec, testHome, []),
+      installPlugins(mockExec, testHome, [], "/repo/root"),
     ).resolves.toBeUndefined();
 
     // All calls still happened despite install failures
-    expect(calls).toHaveLength(2);
+    expect(calls).toHaveLength(3);
+  });
+
+  it("continues when marketplace add exits non-zero", async () => {
+    const calls: Array<{ args: string[] }> = [];
+    const mockExec = async (
+      _cmd: string,
+      args: string[],
+      _opts: { cwd: string },
+    ) => {
+      calls.push({ args });
+      const isMarketplaceAdd = args[1] === "marketplace";
+      return {
+        stdout: isMarketplaceAdd ? "network error" : "",
+        exitCode: isMarketplaceAdd ? 1 : 0,
+      };
+    };
+
+    await expect(
+      installPlugins(mockExec, testHome, [], "/repo/root"),
+    ).resolves.toBeUndefined();
+
+    // All 3 calls still happened despite marketplace add failure
+    expect(calls).toHaveLength(3);
   });
 
   it("is a silent no-op when plugins are already installed and up-to-date", async () => {
@@ -738,49 +774,8 @@ describe("installPlugins", () => {
     };
 
     await expect(
-      installPlugins(mockExec, testHome, []),
+      installPlugins(mockExec, testHome, [], "/repo/root"),
     ).resolves.toBeUndefined();
-    expect(calls).toHaveLength(2);
-  });
-
-  it("uses SHIPWRIGHT_LOCAL_MARKETPLACE path when env var is set", async () => {
-    const originalLocalMarketplace = process.env.SHIPWRIGHT_LOCAL_MARKETPLACE;
-    process.env.SHIPWRIGHT_LOCAL_MARKETPLACE = "/local/marketplace";
-
-    try {
-      const calls: Array<{ cmd: string; args: string[] }> = [];
-      const mockExec = async (
-        cmd: string,
-        args: string[],
-        _opts: { cwd: string },
-      ) => {
-        calls.push({ cmd, args });
-        return { stdout: "", exitCode: 0 };
-      };
-
-      await installPlugins(mockExec, testHome, []);
-
-      // install and update should both use the local path
-      expect(calls[0].args).toEqual([
-        "plugin",
-        "install",
-        "shipwright@/local/marketplace",
-      ]);
-      expect(calls[1].args).toEqual([
-        "plugin",
-        "update",
-        "shipwright@/local/marketplace",
-      ]);
-    } finally {
-      // Restore env var regardless of test outcome.
-      // Use delete when the var was originally unset — assigning undefined coerces
-      // to the string "undefined" in Node.js-compatible runtimes, breaking the ?? fallback.
-      if (originalLocalMarketplace === undefined) {
-        // biome-ignore lint/performance/noDelete: intentional env-var removal (not object property)
-        delete process.env.SHIPWRIGHT_LOCAL_MARKETPLACE;
-      } else {
-        process.env.SHIPWRIGHT_LOCAL_MARKETPLACE = originalLocalMarketplace;
-      }
-    }
+    expect(calls).toHaveLength(3);
   });
 });

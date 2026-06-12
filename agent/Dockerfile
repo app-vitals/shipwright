@@ -71,6 +71,9 @@ RUN bun install --frozen-lockfile
 
 # Copy the rest of the agent source
 COPY agent/ ./agent/
+# Copy the plugin source so the local marketplace is available at runtime
+COPY plugins/ ./plugins/
+COPY .claude-plugin/ ./.claude-plugin/
 
 # ─── Runtime stage (non-root) ─────────────────────────────────────────────────
 
@@ -112,6 +115,9 @@ RUN npm install -g @anthropic-ai/claude-code@2.1.170 \
 # the root node_modules holds bun's content-addressed store they point into.)
 COPY --from=build --chown=1000:1000 /app/node_modules ./node_modules
 COPY --from=build --chown=1000:1000 /app/agent ./agent
+# Plugin source + marketplace manifest — needed for local `claude plugin marketplace add`
+COPY --from=build --chown=1000:1000 /app/plugins ./plugins
+COPY --from=build --chown=1000:1000 /app/.claude-plugin ./.claude-plugin
 
 # Make the credential helper and gh wrapper executable
 RUN chmod +x /app/agent/scripts/bin/git-credential-shipwright.sh \

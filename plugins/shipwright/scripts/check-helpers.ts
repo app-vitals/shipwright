@@ -228,6 +228,41 @@ export function resolveRepos(workspacePath: string): string[] {
   return [];
 }
 
+// ─── Merge-only detection ────────────────────────────────────────────────────
+
+export interface CommitInfo {
+  sha: string;
+  parents: Array<{ sha: string }>;
+}
+
+/**
+ * Returns true if all commits after `lastReviewedCommit` are merge commits
+ * (parents.length >= 2). Returns false on error, missing anchor, or if there
+ * are no commits after the anchor.
+ *
+ * Shared by check-review (skip re-review after merge-from-main) and check-patch
+ * (still trigger patch when only merge commits landed since a stale review).
+ */
+export async function isMergeOnlyUpdate(
+  prNumber: number,
+  lastReviewedCommit: string,
+  deps: {
+    listPrCommits: (prNumber: number, repo?: string) => Promise<CommitInfo[]>;
+  },
+  repo?: string,
+): Promise<boolean> {
+  try {
+    const commits = await deps.listPrCommits(prNumber, repo);
+    const anchorIndex = commits.findIndex((c) => c.sha === lastReviewedCommit);
+    if (anchorIndex === -1) return false;
+    const subsequent = commits.slice(anchorIndex + 1);
+    if (subsequent.length === 0) return false;
+    return subsequent.every((c) => c.parents.length >= 2);
+  } catch {
+    return false;
+  }
+}
+
 // ─── gh CLI helper ────────────────────────────────────────────────────────────
 
 /**

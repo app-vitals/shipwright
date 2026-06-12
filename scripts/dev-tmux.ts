@@ -207,8 +207,6 @@ export const STACK_PANES: Pane[] = [
       "-e",
       "SHIPWRIGHT_DEV_CHAT=true",
       "-e",
-      "SHIPWRIGHT_LOCAL_MARKETPLACE=/repo/plugins/shipwright",
-      "-e",
       `SHIPWRIGHT_API_URL=http://host.docker.internal:${ADMIN_PORT}`,
       "-e",
       `POSTHOG_HOST=http://host.docker.internal:${METRICS_PORT}`,

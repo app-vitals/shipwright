@@ -115,7 +115,6 @@ All child models cascade-delete with their `Agent`.
 | `GH_APP_INSTALLATION_ID` | GitHub App auth | Installation ID for the target org/repo. Required when using the App auth path. |
 | `GH_TOKEN` | GitHub PAT auth | Personal Access Token for the legacy `gh auth setup-git` path. Used only if the App env vars are absent. |
 | `SHIPWRIGHT_DEV_CHAT` | dev only | Set to `"true"` to enable the unauthenticated `POST /chat` endpoint (local dev convenience). Must **not** be set in production (`NODE_ENV=production`). |
-| `SHIPWRIGHT_LOCAL_MARKETPLACE` | dev only | Absolute path to a local marketplace checkout (e.g. `/workspace/marketplace`). When set, `installPlugins` uses this path instead of the GitHub slug for every plugin install and update, so uncommitted marketplace edits take effect inside the container. |
 | `ADMIN_DEV_AUTH` | dev only | Set to `"true"` to enable `GET /admin/dev-login` (bypasses Google OAuth, mints a dev session). Hard-blocked when `NODE_ENV=production` by `dev-auth-guard.ts`. |
 
 ## Key Files

@@ -18,10 +18,11 @@
  *   bun plugins/shipwright/scripts/check-review.ts
  */
 
-import type { ReviewEntry } from "./check-helpers.ts";
+import type { CommitInfo, ReviewEntry } from "./check-helpers.ts";
 import {
   getCurrentUser,
   ghJson,
+  isMergeOnlyUpdate,
   parseAllowSelfReview,
   readAllowSelfReview,
   readReviews,
@@ -29,6 +30,8 @@ import {
   resolveWorkspacePath,
 } from "./check-helpers.ts";
 
+export type { CommitInfo } from "./check-helpers.ts";
+export { isMergeOnlyUpdate } from "./check-helpers.ts";
 export { parseAllowSelfReview } from "./check-helpers.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -42,11 +45,6 @@ interface PrInfo {
   repo?: string;
 }
 
-export interface CommitInfo {
-  sha: string;
-  parents: Array<{ sha: string }>;
-}
-
 interface Deps {
   getCurrentUser: () => string;
   isSelfReviewAllowed: boolean;
@@ -58,31 +56,6 @@ interface Deps {
 // ─── Terminal statuses ────────────────────────────────────────────────────────
 
 const TERMINAL_STATUSES = new Set(["cleaned", "merged"]);
-
-// ─── Merge-only detection ─────────────────────────────────────────────────────
-
-/**
- * Returns true if all commits since lastReviewedCommit are merge commits
- * (parents.length >= 2). Returns false on any error, if the anchor commit is
- * not found, or if there are no commits after the anchor.
- */
-export async function isMergeOnlyUpdate(
-  prNumber: number,
-  lastReviewedCommit: string,
-  deps: Pick<Deps, "listPrCommits">,
-  repo?: string,
-): Promise<boolean> {
-  try {
-    const commits = await deps.listPrCommits(prNumber, repo);
-    const anchorIndex = commits.findIndex((c) => c.sha === lastReviewedCommit);
-    if (anchorIndex === -1) return false;
-    const subsequent = commits.slice(anchorIndex + 1);
-    if (subsequent.length === 0) return false;
-    return subsequent.every((c) => c.parents.length >= 2);
-  } catch {
-    return false;
-  }
-}
 
 // ─── Core logic ───────────────────────────────────────────────────────────────
 
