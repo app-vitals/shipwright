@@ -200,7 +200,7 @@ export function findStalePluginSpecs(
     const entries = manifest.plugins?.[spec];
     return (
       entries?.length &&
-      entries.some((e) => e.installPath && !existsSync(e.installPath))
+      entries.every((e) => !e.installPath || !existsSync(e.installPath))
     );
   });
 }
