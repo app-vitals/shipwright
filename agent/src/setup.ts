@@ -254,6 +254,7 @@ export async function installPlugins(
     // clears stale manifest entries left over from a different-HOME container
     // so the subsequent `install` records the correct path for the current user.
     const staleSpecs = findStalePluginSpecs(allSpecs, pluginManifestPath);
+    const failedUninstalls = new Set<string>();
     for (const spec of staleSpecs) {
       console.log(`[agent] stale plugin path for ${spec} — uninstalling to force reinstall`);
       const uninstall = await execFn("claude", ["plugin", "uninstall", spec], { cwd });
@@ -261,11 +262,15 @@ export async function installPlugins(
         console.warn(
           `[agent] claude plugin uninstall ${spec} exited ${uninstall.exitCode}: ${uninstall.stdout}`,
         );
+        failedUninstalls.add(spec);
       }
     }
 
-    // Install all plugins (defaults then agent-specific)
+    // Install all plugins (defaults then agent-specific).
+    // Skip any stale spec whose uninstall failed — install is idempotent and
+    // would silently succeed without fixing the stale path, hiding the breakage.
     for (const spec of allSpecs) {
+      if (failedUninstalls.has(spec)) continue;
       const install = await execFn("claude", ["plugin", "install", spec], {
         cwd,
       });
@@ -276,8 +281,10 @@ export async function installPlugins(
       }
     }
 
-    // Update all plugins (defaults then agent-specific)
+    // Update all plugins (defaults then agent-specific).
+    // Skip specs whose uninstall failed for the same reason as the install loop.
     for (const spec of allSpecs) {
+      if (failedUninstalls.has(spec)) continue;
       const update = await execFn("claude", ["plugin", "update", spec], {
         cwd,
       });
