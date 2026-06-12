@@ -156,8 +156,7 @@ describe("check-review-patch (combined precheck)", () => {
       patchDeps: makePatchDepsIdle(),
     });
     expect(result.exit).toBe(0);
-    expect(result.output).toBeTruthy();
-    expect(result.output.toLowerCase()).toContain("review");
+    expect(result.output).toContain("/shipwright:review-patch");
   });
 
   test("exits 0 when only patch check triggers (review is idle)", async () => {
@@ -166,8 +165,24 @@ describe("check-review-patch (combined precheck)", () => {
       patchDeps: makePatchDepsTriggering(),
     });
     expect(result.exit).toBe(0);
-    expect(result.output).toBeTruthy();
-    expect(result.output.toLowerCase()).toContain("patch");
+    expect(result.output).toContain("/shipwright:review-patch");
+  });
+
+  test("exits 0 with same orchestrator prompt regardless of which sub-check triggered", async () => {
+    const reviewOnly = await run({
+      reviewDeps: makeReviewDepsTriggering(),
+      patchDeps: makePatchDepsIdle(),
+    });
+    const patchOnly = await run({
+      reviewDeps: makeReviewDepsIdle(),
+      patchDeps: makePatchDepsTriggering(),
+    });
+    const both = await run({
+      reviewDeps: makeReviewDepsTriggering(),
+      patchDeps: makePatchDepsTriggering(),
+    });
+    expect(reviewOnly.output).toBe(patchOnly.output);
+    expect(reviewOnly.output).toBe(both.output);
   });
 
   test("exits 0 and short-circuits when both would trigger (patch check NOT called)", async () => {
@@ -187,7 +202,7 @@ describe("check-review-patch (combined precheck)", () => {
     });
 
     expect(result.exit).toBe(0);
-    expect(result.output).toBeTruthy();
+    expect(result.output).toContain("/shipwright:review-patch");
     expect(patchCalled).toBe(false); // short-circuited
   });
 

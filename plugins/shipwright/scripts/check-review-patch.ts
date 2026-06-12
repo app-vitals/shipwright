@@ -43,15 +43,26 @@ interface RunResult {
   output: string;
 }
 
+// Fixed prompt used whenever either sub-check has work. The harness uses
+// preCheck output as the session prompt, so we always invoke the full
+// orchestrator rather than routing to a single sub-command.
+const ORCHESTRATOR_PROMPT =
+  "Review and patch open PRs via /shipwright:review-patch";
+
 export async function run(deps: Deps): Promise<RunResult> {
   // Try review check first
   const reviewResult = await runReview(deps.reviewDeps);
   if (reviewResult.exit === 0) {
-    return reviewResult;
+    return { exit: 0, output: ORCHESTRATOR_PROMPT };
   }
 
   // Fall through to patch check
-  return runPatch(deps.patchDeps);
+  const patchResult = await runPatch(deps.patchDeps);
+  if (patchResult.exit === 0) {
+    return { exit: 0, output: ORCHESTRATOR_PROMPT };
+  }
+
+  return { exit: 1, output: "" };
 }
 
 // ─── Production deps ──────────────────────────────────────────────────────────
