@@ -295,7 +295,7 @@ curl -sf -X POST \
   -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
   -H "Content-Type: application/json" \
   "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/plugins" \
-  -d '{"name": "shipwright", "version": "4.27.0"}' | jq .
+  -d '{"name": "shipwright", "version": "4.27.1"}' | jq .
 
 # Update a plugin version
 # name goes in the query param — scoped names like @scope/pkg contain "/" which breaks path matching
@@ -303,7 +303,7 @@ curl -sf -X PATCH \
   -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
   -H "Content-Type: application/json" \
   "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/plugins?name=shipwright" \
-  -d '{"version": "4.27.0"}' | jq .
+  -d '{"version": "4.27.1"}' | jq .
 
 # Remove a plugin
 curl -sf -X DELETE \
