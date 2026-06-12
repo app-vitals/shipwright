@@ -19,7 +19,7 @@ describe("installPlugins — local marketplace", () => {
       return { stdout: "", exitCode: 0 };
     };
 
-    await installPlugins(mockExec, "/tmp/cwd", [], "/repo/root");
+    await installPlugins(mockExec, "/tmp/cwd", [], "/repo/root", "/tmp/nonexistent-manifest.json");
 
     // First call must be marketplace add
     expect(calls[0].args).toEqual([
@@ -41,7 +41,7 @@ describe("installPlugins — local marketplace", () => {
       return { stdout: "", exitCode: 0 };
     };
 
-    await installPlugins(mockExec, "/tmp/cwd", [], "/repo/root");
+    await installPlugins(mockExec, "/tmp/cwd", [], "/repo/root", "/tmp/nonexistent-manifest.json");
 
     // marketplace add + install + update = 3 calls
     expect(calls).toHaveLength(3);
@@ -73,6 +73,7 @@ describe("installPlugins — local marketplace", () => {
       "/tmp/cwd",
       [{ plugin: "my-plugin", marketplace: "org/my-marketplace" }],
       "/repo/root",
+      "/tmp/nonexistent-manifest.json",
     );
 
     // marketplace add + 2 installs + 2 updates = 5 calls
@@ -97,7 +98,7 @@ describe("installPlugins — local marketplace", () => {
       return { stdout: "", exitCode: 0 };
     };
 
-    await installPlugins(mockExec, "/tmp/cwd", [], "/custom/repo/root");
+    await installPlugins(mockExec, "/tmp/cwd", [], "/custom/repo/root", "/tmp/nonexistent-manifest.json");
 
     expect(calls[0].args).toEqual([
       "plugin",
