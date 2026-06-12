@@ -18,7 +18,9 @@ interface PluginEntry {
 }
 
 interface MarketplaceManifest {
-  owner: string;
+  name: string;
+  description: string;
+  owner: { name: string; url: string };
   version: string;
   plugins: PluginEntry[];
 }
@@ -33,11 +35,16 @@ describe("marketplace.json", () => {
     expect(() => JSON.parse(raw)).not.toThrow();
   });
 
-  it("has required top-level fields: owner (string), version (string), plugins (array)", () => {
+  it("has required top-level fields: name (string), owner (object), version (string), plugins (array)", () => {
     const raw = readFileSync(MANIFEST_PATH, "utf8");
     const manifest = JSON.parse(raw) as MarketplaceManifest;
-    expect(typeof manifest.owner).toBe("string");
-    expect(manifest.owner.length).toBeGreaterThan(0);
+    expect(typeof manifest.name).toBe("string");
+    expect(manifest.name.length).toBeGreaterThan(0);
+    expect(typeof manifest.owner).toBe("object");
+    expect(typeof manifest.owner.name).toBe("string");
+    expect(manifest.owner.name.length).toBeGreaterThan(0);
+    expect(typeof manifest.owner.url).toBe("string");
+    expect(manifest.owner.url.length).toBeGreaterThan(0);
     expect(typeof manifest.version).toBe("string");
     expect(manifest.version.length).toBeGreaterThan(0);
     expect(Array.isArray(manifest.plugins)).toBe(true);
