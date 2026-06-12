@@ -591,7 +591,7 @@ describe("runMiseStartup", () => {
 // ---------------------------------------------------------------------------
 
 describe("installPlugins", () => {
-  it("registers local marketplace then installs shipwright@app-vitals", async () => {
+  it("registers local marketplace then installs shipwright@shipwright using the shipwright marketplace", async () => {
     const calls: Array<{ cmd: string; args: string[] }> = [];
     const mockExec = async (
       cmd: string,
@@ -615,12 +615,12 @@ describe("installPlugins", () => {
     expect(calls[1].args).toEqual([
       "plugin",
       "install",
-      "shipwright@app-vitals",
+      "shipwright@shipwright",
     ]);
     expect(calls[2].args).toEqual([
       "plugin",
       "update",
-      "shipwright@app-vitals",
+      "shipwright@shipwright",
     ]);
   });
 
@@ -656,7 +656,7 @@ describe("installPlugins", () => {
     expect(calls[1].args).toEqual([
       "plugin",
       "install",
-      "shipwright@app-vitals",
+      "shipwright@shipwright",
     ]);
     expect(calls[2].args).toEqual([
       "plugin",
@@ -673,7 +673,7 @@ describe("installPlugins", () => {
     expect(calls[4].args).toEqual([
       "plugin",
       "update",
-      "shipwright@app-vitals",
+      "shipwright@shipwright",
     ]);
     expect(calls[5].args).toEqual([
       "plugin",
@@ -702,8 +702,8 @@ describe("installPlugins", () => {
 
     // marketplace add + 1 install + 1 update = 3 calls
     expect(calls).toHaveLength(3);
-    expect(calls[1].args).toContain("shipwright@app-vitals");
-    expect(calls[2].args).toContain("shipwright@app-vitals");
+    expect(calls[1].args).toContain("shipwright@shipwright");
+    expect(calls[2].args).toContain("shipwright@shipwright");
   });
 
   it("is non-fatal when the claude binary isn't available", async () => {
