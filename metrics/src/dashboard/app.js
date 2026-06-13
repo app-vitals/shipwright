@@ -159,6 +159,11 @@
     return String(n);
   }
 
+  function fmtCost(v) {
+    if (v === null || v === undefined) return "$0.00";
+    return `$${Number(v).toFixed(2)}`;
+  }
+
   // ─── Update KPI Cards ────────────────────────────────────────────────────
 
   function updateKPIs(data) {
@@ -306,6 +311,7 @@
       $("token-input").textContent = "--";
       $("token-output").textContent = "--";
       $("token-cache").textContent = "--";
+      $("token-cost").textContent = "$0.00";
       return;
     }
     const { totals, bySessionType, byAgent } = res.data;
@@ -314,6 +320,7 @@
     $("token-cache").textContent = fmtTokens(
       (totals.cacheRead || 0) + (totals.cacheCreation || 0),
     );
+    $("token-cost").textContent = fmtCost(totals.cost);
 
     const sessionTbody = $("token-session-tbody");
     const sessionEmpty = $("token-session-empty");
@@ -328,14 +335,17 @@
           const tdType = document.createElement("td");
           const tdInput = document.createElement("td");
           const tdOutput = document.createElement("td");
+          const tdCost = document.createElement("td");
           const tdTotal = document.createElement("td");
           tdType.textContent = row.sessionType;
           tdInput.textContent = fmtTokens(row.input);
           tdOutput.textContent = fmtTokens(row.output);
+          tdCost.textContent = fmtCost(row.cost);
           tdTotal.textContent = fmtTokens(row.total);
           tr.appendChild(tdType);
           tr.appendChild(tdInput);
           tr.appendChild(tdOutput);
+          tr.appendChild(tdCost);
           tr.appendChild(tdTotal);
           sessionTbody.appendChild(tr);
         }
@@ -355,14 +365,17 @@
           const tdAgent = document.createElement("td");
           const tdInput = document.createElement("td");
           const tdOutput = document.createElement("td");
+          const tdCost = document.createElement("td");
           const tdTotal = document.createElement("td");
           tdAgent.textContent = row.agentName ?? row.agentId;
           tdInput.textContent = fmtTokens(row.input);
           tdOutput.textContent = fmtTokens(row.output);
+          tdCost.textContent = fmtCost(row.cost);
           tdTotal.textContent = fmtTokens(row.total);
           tr.appendChild(tdAgent);
           tr.appendChild(tdInput);
           tr.appendChild(tdOutput);
+          tr.appendChild(tdCost);
           tr.appendChild(tdTotal);
           agentTbody.appendChild(tr);
         }
