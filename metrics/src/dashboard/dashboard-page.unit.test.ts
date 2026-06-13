@@ -415,6 +415,41 @@ describe("renderDashboardPage — MG-1.2 clickable metric graphs", () => {
   });
 });
 
+describe("renderDashboardPage — CCT-2.2 cost KPI and table columns", () => {
+  test("Total Cost KPI card heading is present", () => {
+    const html = renderDashboardPage(BASE_OPTS);
+    expect(html).toContain("Total Cost");
+  });
+
+  test("session type table has Cost ($) column header", () => {
+    const html = renderDashboardPage(BASE_OPTS);
+    const tokenStart = html.indexOf('aria-label="Token usage"');
+    const tokenEnd = html.indexOf("</section>", tokenStart);
+    const tokenSection = html.slice(tokenStart, tokenEnd);
+    const sessionTable = tokenSection.slice(
+      tokenSection.indexOf('id="token-session-table"'),
+      tokenSection.indexOf('id="token-agent-table"'),
+    );
+    expect(sessionTable).toContain("<th>Cost ($)</th>");
+  });
+
+  test("agent table has Cost ($) column header", () => {
+    const html = renderDashboardPage(BASE_OPTS);
+    const tokenStart = html.indexOf('aria-label="Token usage"');
+    const tokenEnd = html.indexOf("</section>", tokenStart);
+    const tokenSection = html.slice(tokenStart, tokenEnd);
+    const agentTable = tokenSection.slice(
+      tokenSection.indexOf('id="token-agent-table"'),
+    );
+    expect(agentTable).toContain("<th>Cost ($)</th>");
+  });
+
+  test("Total Cost KPI card has id token-cost", () => {
+    const html = renderDashboardPage(BASE_OPTS);
+    expect(html).toContain('id="token-cost"');
+  });
+});
+
 describe("renderDashboardPage — basePath", () => {
   test("sets window.__METRICS_BASE__ to the provided basePath", () => {
     const html = renderDashboardPage({ userName: "Alice", basePath: "/sw" });

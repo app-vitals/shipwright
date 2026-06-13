@@ -153,6 +153,7 @@ const TokenTotalsSchema = z
     cacheRead: z.number().openapi({ example: 200 }),
     cacheCreation: z.number().openapi({ example: 100 }),
     total: z.number().openapi({ example: 1800 }),
+    cost: z.number().openapi({ example: 0.5 }),
   })
   .openapi("TokenTotals");
 
@@ -164,6 +165,7 @@ const TokensBySessionTypeSchema = z
     cacheRead: z.number().openapi({ example: 80 }),
     cacheCreation: z.number().openapi({ example: 40 }),
     total: z.number().openapi({ example: 720 }),
+    cost: z.number().openapi({ example: 0.2 }),
   })
   .openapi("TokensBySessionType");
 
@@ -176,6 +178,7 @@ const TokensByAgentSchema = z
     cacheRead: z.number().openapi({ example: 200 }),
     cacheCreation: z.number().openapi({ example: 100 }),
     total: z.number().openapi({ example: 1800 }),
+    cost: z.number().openapi({ example: 0.5 }),
   })
   .openapi("TokensByAgent");
 
@@ -187,6 +190,7 @@ const TokenTrendSchema = z
     cacheRead: z.number().openapi({ example: 60 }),
     cacheCreation: z.number().openapi({ example: 30 }),
     total: z.number().openapi({ example: 540 }),
+    cost: z.number().openapi({ example: 0.15 }),
   })
   .openapi("TokenTrend");
 

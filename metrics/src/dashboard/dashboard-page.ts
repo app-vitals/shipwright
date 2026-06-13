@@ -230,13 +230,18 @@ export function renderDashboardPage(opts: DashboardPageOptions): string {
             <div class="kpi-value" id="token-cache"><span class="skeleton">&nbsp;</span></div>
             <div class="kpi-meta">cache read + creation</div>
           </div>
+          <div class="kpi-card" data-metric="token-cost">
+            <div class="kpi-label">Total Cost</div>
+            <div class="kpi-value" id="token-cost"><span class="skeleton">&nbsp;</span></div>
+            <div class="kpi-meta">total cost (USD)</div>
+          </div>
         </div>
         <div class="token-breakdown-grid">
           <div class="quality-panel">
             <h3 class="panel-title">By Session Type</h3>
             <table class="token-table" id="token-session-table">
               <thead>
-                <tr><th>Session Type</th><th>Input</th><th>Output</th><th>Total</th></tr>
+                <tr><th>Session Type</th><th>Input</th><th>Output</th><th>Cost ($)</th><th>Total</th></tr>
               </thead>
               <tbody id="token-session-tbody"></tbody>
             </table>
@@ -246,7 +251,7 @@ export function renderDashboardPage(opts: DashboardPageOptions): string {
             <h3 class="panel-title">By Agent</h3>
             <table class="token-table" id="token-agent-table">
               <thead>
-                <tr><th>Agent</th><th>Input</th><th>Output</th><th>Total</th></tr>
+                <tr><th>Agent</th><th>Input</th><th>Output</th><th>Cost ($)</th><th>Total</th></tr>
               </thead>
               <tbody id="token-agent-tbody"></tbody>
             </table>
