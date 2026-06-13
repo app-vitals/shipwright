@@ -385,6 +385,33 @@ describe("forwardTokenUsage", () => {
     expect(evt.properties.cache_read_input_tokens).toBe(50);
     expect(evt.properties.cache_creation_input_tokens).toBe(10);
     expect(evt.properties.model).toBe("claude-sonnet-4-5");
+    // "claude-sonnet-4-5" is not in RATES → cost_usd must be 0
+    expect(evt.properties.cost_usd).toBe(0);
+  });
+
+  test("cost_usd reflects actual cost for a known model (claude-sonnet-4-6)", async () => {
+    // sonnet-4-6: $3/1M input, $15/1M output
+    // 100 input + 200 output + 50 cache_read + 10 cache_creation
+    // input:       100 / 1_000_000 * 3     = 0.0003
+    // output:      200 / 1_000_000 * 15    = 0.003
+    // cache_write:  10 / 1_000_000 * 3.75  = 0.0000375
+    // cache_read:   50 / 1_000_000 * 0.3   = 0.000015
+    // total ≈ 0.0033525
+    await forwardTokenUsage(
+      SAMPLE_USAGE,
+      "slack_dm",
+      "claude-sonnet-4-6",
+      mockFetch as unknown as typeof fetch,
+    );
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string) as {
+      batch: { properties: Record<string, unknown> }[];
+    };
+    const evt = body.batch[0];
+    expect(typeof evt.properties.cost_usd).toBe("number");
+    expect(evt.properties.cost_usd as number).toBeCloseTo(0.0033525, 8);
   });
 
   test("no-op when POSTHOG_PROJECT_API_KEY is absent", async () => {
