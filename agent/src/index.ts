@@ -29,10 +29,11 @@ import {
   markSlackDisconnected,
   startHealthServer,
 } from "./health.ts";
+import { createComposedApp } from "./run-agent.ts";
 import { createFileSessionStore, threadKey } from "./sessions.ts";
 import { ensureAgentHome, installPlugins, runMiseStartup } from "./setup.ts";
 import { HttpShipwrightRuntimeClient } from "./shipwright-runtime-client.ts";
-import { createSlackApp } from "./slack.ts";
+import { createSlackApp, hasSlackCredentials } from "./slack.ts";
 import { sendBackOnlineDm } from "./startup-dm.ts";
 import { resolveDisplayName } from "./users.ts";
 import { synthesizeSpeech } from "./voice.ts";
@@ -262,34 +263,61 @@ if (runtimeClient && agentId) {
   console.log("[agent] cron sync started (60s interval)");
 }
 
-// ─── Step 7: Slack Bolt Socket Mode ──────────────────────────────────────────
+// ─── Step 7: Slack Bolt Socket Mode (only when credentials present) ───────────
+// Bolt's Socket Mode throws "Must provide an App-Level Token" if constructed
+// without an appToken, so the agent runs Slack ONLY when both tokens are present.
+// Absent creds → offline mode: skip Slack, keep health green, interact via /chat.
 
-const app = createSlackApp(
-  runner,
-  markdownToSlack,
-  threadKey,
-  undefined, // appFactory — default Bolt App
-  {
-    botToken: config.slack.botToken ?? "",
-    appToken: config.slack.appToken ?? "",
-    signingSecret: config.slack.signingSecret ?? "",
-  },
-  analytics.track,
-  undefined, // fileDownloaderFn — default
-  config.voice,
-  undefined, // transcribeAudioFn — default
-  synthesizeSpeech,
-  (userId, client) => resolveDisplayName(userId, client),
-  undefined, // botUserId — resolved by Bolt
-  undefined, // conversationsRepliesFn — default
-  (key) => sessions.get(key),
-);
+const slackAppConfig = {
+  botToken: config.slack.botToken ?? "",
+  appToken: config.slack.appToken ?? "",
+  signingSecret: config.slack.signingSecret ?? "",
+};
 
-await app.start();
-markSlackConnected();
-console.log("[agent] Slack app started — running");
+let app: ReturnType<typeof createSlackApp> | undefined;
 
-await sendBackOnlineDm(slack, config.owner.user);
+if (hasSlackCredentials(slackAppConfig)) {
+  app = createSlackApp(
+    runner,
+    markdownToSlack,
+    threadKey,
+    undefined, // appFactory — default Bolt App
+    slackAppConfig,
+    analytics.track,
+    undefined, // fileDownloaderFn — default
+    config.voice,
+    undefined, // transcribeAudioFn — default
+    synthesizeSpeech,
+    (userId, client) => resolveDisplayName(userId, client),
+    undefined, // botUserId — resolved by Bolt
+    undefined, // conversationsRepliesFn — default
+    (key) => sessions.get(key),
+  );
+
+  await app.start();
+  markSlackConnected();
+  console.log("[agent] Slack app started — running");
+
+  await sendBackOnlineDm(slack, config.owner.user);
+} else {
+  console.warn(
+    "[agent] Slack credentials absent (need SLACK_BOT_TOKEN + SLACK_APP_TOKEN) — " +
+      "skipping Slack startup. Offline mode: use the dev /chat endpoint to interact.",
+  );
+}
+
+// ─── Step 7b: Dev-only /chat transport ────────────────────────────────────────
+// DEFAULT-DENY: only when SHIPWRIGHT_DEV_CHAT=true (a CI/doctor guard forbids
+// this in production — see chat-guard.ts). Reuses the same Claude runner as
+// Slack so local chat exercises the identical code path.
+if (process.env.SHIPWRIGHT_DEV_CHAT === "true") {
+  const chatPort = Number(process.env.PORT ?? 3000);
+  const chatApp = createComposedApp({ devChat: true, chatRunner: runner });
+  Bun.serve({ fetch: chatApp.fetch, port: chatPort });
+  console.warn(
+    `[agent] SHIPWRIGHT_DEV_CHAT=true — dev /chat endpoint on port ${chatPort} (must NOT be used in production)`,
+  );
+}
 
 // ─── Step 8: Graceful shutdown ────────────────────────────────────────────────
 
@@ -308,18 +336,21 @@ async function shutdown(signal: string) {
   }
   cronTasks.clear();
 
-  // Close the Slack socket (bounded — don't let Bolt hang indefinitely)
-  try {
-    await Promise.race([
-      app.stop(),
-      new Promise<void>((resolve) => setTimeout(resolve, 15_000)),
-    ]);
-    console.log("[agent] Slack app stopped");
-  } catch (err) {
-    console.error(
-      "[agent] app.stop() failed:",
-      err instanceof Error ? err.message : String(err),
-    );
+  // Close the Slack socket (bounded — don't let Bolt hang indefinitely).
+  // Skipped entirely when Slack never started (offline mode).
+  if (app) {
+    try {
+      await Promise.race([
+        app.stop(),
+        new Promise<void>((resolve) => setTimeout(resolve, 15_000)),
+      ]);
+      console.log("[agent] Slack app stopped");
+    } catch (err) {
+      console.error(
+        "[agent] app.stop() failed:",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
   }
 
   console.log("[agent] shutdown complete");
