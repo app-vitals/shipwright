@@ -50,8 +50,9 @@ const totalsColumns = [
   "cache_read_input_tokens",
   "cache_creation_input_tokens",
   "total_tokens",
+  "cost_usd",
 ];
-const totalsRow = [1000, 500, 200, 100, 1800];
+const totalsRow = [1000, 500, 200, 100, 1800, 0.5];
 
 const bySessionTypeColumns = [
   "session_type",
@@ -60,10 +61,11 @@ const bySessionTypeColumns = [
   "cache_read_input_tokens",
   "cache_creation_input_tokens",
   "total_tokens",
+  "cost_usd",
 ];
 const bySessionTypeRows = [
-  ["slack_dm", 400, 200, 80, 40, 720],
-  ["cron", 600, 300, 120, 60, 1080],
+  ["slack_dm", 400, 200, 80, 40, 720, 0.2],
+  ["cron", 600, 300, 120, 60, 1080, 0.3],
 ];
 
 const byAgentColumns = [
@@ -73,8 +75,9 @@ const byAgentColumns = [
   "cache_read_input_tokens",
   "cache_creation_input_tokens",
   "total_tokens",
+  "cost_usd",
 ];
-const byAgentRows = [["agent-abc123", 1000, 500, 200, 100, 1800]];
+const byAgentRows = [["agent-abc123", 1000, 500, 200, 100, 1800, 0.5]];
 
 const trendsColumns = [
   "period",
@@ -83,10 +86,11 @@ const trendsColumns = [
   "cache_read_input_tokens",
   "cache_creation_input_tokens",
   "total_tokens",
+  "cost_usd",
 ];
 const trendsRows = [
-  ["2026-04-01", 300, 150, 60, 30, 540],
-  ["2026-04-02", 700, 350, 140, 70, 1260],
+  ["2026-04-01", 300, 150, 60, 30, 540, 0.15],
+  ["2026-04-02", 700, 350, 140, 70, 1260, 0.35],
 ];
 
 function makeTestApp(
@@ -151,6 +155,7 @@ describe("GET /metrics/tokens?preset=7d — happy path", () => {
     expect(body.data.totals.cacheRead).toBe(200);
     expect(body.data.totals.cacheCreation).toBe(100);
     expect(body.data.totals.total).toBe(1800);
+    expect(body.data.totals.cost).toBe(0.5);
 
     // data.bySessionType
     expect(body.data).toHaveProperty("bySessionType");
@@ -162,6 +167,7 @@ describe("GET /metrics/tokens?preset=7d — happy path", () => {
     expect(body.data.bySessionType[0].cacheRead).toBe(80);
     expect(body.data.bySessionType[0].cacheCreation).toBe(40);
     expect(body.data.bySessionType[0].total).toBe(720);
+    expect(body.data.bySessionType[0].cost).toBe(0.2);
 
     // data.byAgent
     expect(body.data).toHaveProperty("byAgent");
@@ -173,6 +179,7 @@ describe("GET /metrics/tokens?preset=7d — happy path", () => {
     expect(body.data.byAgent[0].cacheRead).toBe(200);
     expect(body.data.byAgent[0].cacheCreation).toBe(100);
     expect(body.data.byAgent[0].total).toBe(1800);
+    expect(body.data.byAgent[0].cost).toBe(0.5);
 
     // data.trends
     expect(body.data).toHaveProperty("trends");
@@ -184,6 +191,7 @@ describe("GET /metrics/tokens?preset=7d — happy path", () => {
     expect(body.data.trends[0].cacheRead).toBe(60);
     expect(body.data.trends[0].cacheCreation).toBe(30);
     expect(body.data.trends[0].total).toBe(540);
+    expect(body.data.trends[0].cost).toBe(0.15);
     expect(body.data.trends[1].date).toBe("2026-04-02");
 
     // meta
@@ -282,6 +290,67 @@ describe("GET /metrics/tokens — empty results", () => {
     expect(body.data.bySessionType).toHaveLength(0);
     expect(body.data.byAgent).toHaveLength(0);
     expect(body.data.trends).toHaveLength(0);
+  });
+});
+
+// ─── GET /metrics/tokens — cost=0 when cost_usd missing ─────────────────────
+
+describe("GET /metrics/tokens — cost is 0 when cost_usd is absent", () => {
+  test("cost defaults to 0 for totals, bySessionType, byAgent, trends when cost_usd column is missing", async () => {
+    // Simulate pre-deploy historical events that don't have cost_usd
+    const legacyTotalsColumns = [
+      "input_tokens",
+      "output_tokens",
+      "cache_read_input_tokens",
+      "cache_creation_input_tokens",
+      "total_tokens",
+    ];
+    const legacyBySessionTypeColumns = [
+      "session_type",
+      "input_tokens",
+      "output_tokens",
+      "cache_read_input_tokens",
+      "cache_creation_input_tokens",
+      "total_tokens",
+    ];
+    const legacyByAgentColumns = [
+      "agent_id",
+      "input_tokens",
+      "output_tokens",
+      "cache_read_input_tokens",
+      "cache_creation_input_tokens",
+      "total_tokens",
+    ];
+    const legacyTrendsColumns = [
+      "period",
+      "input_tokens",
+      "output_tokens",
+      "cache_read_input_tokens",
+      "cache_creation_input_tokens",
+      "total_tokens",
+    ];
+
+    const legacyClient = makeMockClient(
+      makeResult(legacyTotalsColumns, [[1000, 500, 200, 100, 1800]]),
+      makeResult(legacyBySessionTypeColumns, [["slack_dm", 400, 200, 80, 40, 720]]),
+      makeResult(legacyByAgentColumns, [["agent-abc123", 1000, 500, 200, 100, 1800]]),
+      makeResult(legacyTrendsColumns, [["2026-04-01", 300, 150, 60, 30, 540]]),
+    );
+
+    const app = createMetricsApp(
+      apiKeys,
+      makeAccountsClientMock(async () => []),
+      { postHogClient: legacyClient },
+    );
+    const res = await app.request("/metrics/tokens?preset=7d", {
+      headers: authHeader(ADMIN_KEY),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.totals.cost).toBe(0);
+    expect(body.data.bySessionType[0].cost).toBe(0);
+    expect(body.data.byAgent[0].cost).toBe(0);
+    expect(body.data.trends[0].cost).toBe(0);
   });
 });
 

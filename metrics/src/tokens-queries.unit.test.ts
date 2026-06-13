@@ -347,6 +347,26 @@ describe("buildTokensTrendsQuery", () => {
   });
 });
 
+// ─── cost_usd select assertions ──────────────────────────────────────────────
+
+describe("cost_usd select — all 4 token query builders", () => {
+  it("buildTokensTotalsQuery selects cost_usd", () => {
+    expect(buildTokensTotalsQuery("7d")).toContain("cost_usd");
+  });
+
+  it("buildTokensBySessionTypeQuery selects cost_usd", () => {
+    expect(buildTokensBySessionTypeQuery("7d")).toContain("cost_usd");
+  });
+
+  it("buildTokensByAgentQuery selects cost_usd", () => {
+    expect(buildTokensByAgentQuery("7d")).toContain("cost_usd");
+  });
+
+  it("buildTokensTrendsQuery selects cost_usd", () => {
+    expect(buildTokensTrendsQuery("7d")).toContain("cost_usd");
+  });
+});
+
 // ─── HogQL denylist guard ─────────────────────────────────────────────────────
 
 describe("HogQL denylist guard — token queries (TU-2.1)", () => {

@@ -762,6 +762,7 @@ export function createMetricsHandlers(
         cacheRead: toNum(totalsRow.cache_read_input_tokens),
         cacheCreation: toNum(totalsRow.cache_creation_input_tokens),
         total: toNum(totalsRow.total_tokens),
+        cost: toNum(totalsRow.cost_usd),
       };
 
       const bySessionType = resultToRows(bySessionTypeResult).map((row) => ({
@@ -771,6 +772,7 @@ export function createMetricsHandlers(
         cacheRead: toNum(row.cache_read_input_tokens),
         cacheCreation: toNum(row.cache_creation_input_tokens),
         total: toNum(row.total_tokens),
+        cost: toNum(row.cost_usd),
       }));
 
       const byAgentRaw = resultToRows(byAgentResult).map((row) => ({
@@ -780,6 +782,7 @@ export function createMetricsHandlers(
         cacheRead: toNum(row.cache_read_input_tokens),
         cacheCreation: toNum(row.cache_creation_input_tokens),
         total: toNum(row.total_tokens),
+        cost: toNum(row.cost_usd),
       }));
 
       const agentNameMap = new Map<string, string>();
@@ -808,6 +811,7 @@ export function createMetricsHandlers(
         cacheRead: toNum(row.cache_read_input_tokens),
         cacheCreation: toNum(row.cache_creation_input_tokens),
         total: toNum(row.total_tokens),
+        cost: toNum(row.cost_usd),
       }));
 
       return c.json(
