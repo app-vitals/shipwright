@@ -385,6 +385,7 @@ describe("forwardTokenUsage", () => {
     expect(evt.properties.cache_read_input_tokens).toBe(50);
     expect(evt.properties.cache_creation_input_tokens).toBe(10);
     expect(evt.properties.model).toBe("claude-sonnet-4-5");
+    expect(evt.properties.cost_usd).toBe(0); // unknown model → 0
   });
 
   test("no-op when POSTHOG_PROJECT_API_KEY is absent", async () => {
