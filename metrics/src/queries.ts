@@ -320,7 +320,8 @@ export function buildTokensTotalsQuery(dateRange: QueryDateRange): string {
   sum(properties.output_tokens) AS output_tokens,
   sum(properties.cache_read_input_tokens) AS cache_read_input_tokens,
   sum(properties.cache_creation_input_tokens) AS cache_creation_input_tokens,
-  sum(properties.input_tokens) + sum(properties.output_tokens) + sum(properties.cache_read_input_tokens) + sum(properties.cache_creation_input_tokens) AS total_tokens
+  sum(properties.input_tokens) + sum(properties.output_tokens) + sum(properties.cache_read_input_tokens) + sum(properties.cache_creation_input_tokens) AS total_tokens,
+  sum(properties.cost_usd) AS cost_usd
 FROM events
 WHERE event = 'agent_token_usage'
   AND ${dateFilter}`;
@@ -340,7 +341,8 @@ export function buildTokensBySessionTypeQuery(
   sum(properties.output_tokens) AS output_tokens,
   sum(properties.cache_read_input_tokens) AS cache_read_input_tokens,
   sum(properties.cache_creation_input_tokens) AS cache_creation_input_tokens,
-  sum(properties.input_tokens) + sum(properties.output_tokens) + sum(properties.cache_read_input_tokens) + sum(properties.cache_creation_input_tokens) AS total_tokens
+  sum(properties.input_tokens) + sum(properties.output_tokens) + sum(properties.cache_read_input_tokens) + sum(properties.cache_creation_input_tokens) AS total_tokens,
+  sum(properties.cost_usd) AS cost_usd
 FROM events
 WHERE event = 'agent_token_usage'
   AND ${dateFilter}
@@ -359,7 +361,8 @@ export function buildTokensByAgentQuery(dateRange: QueryDateRange): string {
   sum(properties.output_tokens) AS output_tokens,
   sum(properties.cache_read_input_tokens) AS cache_read_input_tokens,
   sum(properties.cache_creation_input_tokens) AS cache_creation_input_tokens,
-  sum(properties.input_tokens) + sum(properties.output_tokens) + sum(properties.cache_read_input_tokens) + sum(properties.cache_creation_input_tokens) AS total_tokens
+  sum(properties.input_tokens) + sum(properties.output_tokens) + sum(properties.cache_read_input_tokens) + sum(properties.cache_creation_input_tokens) AS total_tokens,
+  sum(properties.cost_usd) AS cost_usd
 FROM events
 WHERE event = 'agent_token_usage'
   AND ${dateFilter}
@@ -378,7 +381,8 @@ export function buildTokensTrendsQuery(dateRange: QueryDateRange): string {
   sum(properties.output_tokens) AS output_tokens,
   sum(properties.cache_read_input_tokens) AS cache_read_input_tokens,
   sum(properties.cache_creation_input_tokens) AS cache_creation_input_tokens,
-  sum(properties.input_tokens) + sum(properties.output_tokens) + sum(properties.cache_read_input_tokens) + sum(properties.cache_creation_input_tokens) AS total_tokens
+  sum(properties.input_tokens) + sum(properties.output_tokens) + sum(properties.cache_read_input_tokens) + sum(properties.cache_creation_input_tokens) AS total_tokens,
+  sum(properties.cost_usd) AS cost_usd
 FROM events
 WHERE event = 'agent_token_usage'
   AND ${dateFilter}
