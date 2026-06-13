@@ -14,6 +14,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { TokenUsage } from "./claude.ts";
 import { liveClaudeConfig } from "./claude.ts";
+import { calculateCost } from "./pricing.ts";
 
 interface MetricsEntry {
   task?: string;
@@ -192,6 +193,7 @@ export async function forwardTokenUsage(
       cache_read_input_tokens: usage.cache_read_input_tokens,
       cache_creation_input_tokens: usage.cache_creation_input_tokens,
       model: resolvedModel,
+      cost_usd: calculateCost(usage, resolvedModel),
     },
   };
 

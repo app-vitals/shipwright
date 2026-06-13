@@ -359,7 +359,7 @@ describe("forwardTokenUsage", () => {
     await forwardTokenUsage(
       SAMPLE_USAGE,
       "slack_dm",
-      "claude-sonnet-4-5",
+      "claude-sonnet-4-6",
       mockFetch as unknown as typeof fetch,
     );
 
@@ -384,7 +384,9 @@ describe("forwardTokenUsage", () => {
     expect(evt.properties.output_tokens).toBe(200);
     expect(evt.properties.cache_read_input_tokens).toBe(50);
     expect(evt.properties.cache_creation_input_tokens).toBe(10);
-    expect(evt.properties.model).toBe("claude-sonnet-4-5");
+    expect(evt.properties.model).toBe("claude-sonnet-4-6");
+    // (100 * 3.00 + 200 * 15.00 + 10 * 3.00 * 1.25 + 50 * 3.00 * 0.1) / 1_000_000 = 0.0033525
+    expect(evt.properties.cost_usd).toBe(0.0033525);
   });
 
   test("no-op when POSTHOG_PROJECT_API_KEY is absent", async () => {
