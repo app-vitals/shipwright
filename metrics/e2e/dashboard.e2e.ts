@@ -443,7 +443,7 @@ test.describe("Dashboard — page load", () => {
 
     await expect(page.locator(".kpi-grid")).toBeVisible();
     const cards = page.locator(".kpi-card");
-    await expect(cards).toHaveCount(7);
+    await expect(cards).toHaveCount(8);
   });
 
   test("renders pipeline quality panels", async ({ page }) => {
@@ -759,7 +759,7 @@ test.describe("Dashboard — tablet viewport (1024px)", () => {
     await page.goto(`${BASE_URL}/dashboard`, { waitUntil: "networkidle" });
 
     const cards = page.locator(".kpi-card");
-    await expect(cards).toHaveCount(7);
+    await expect(cards).toHaveCount(8);
     await expect(page.locator(".kpi-grid")).toBeVisible();
   });
 });
