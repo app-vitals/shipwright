@@ -80,6 +80,21 @@ interface SlackConfig {
   signingSecret: string;
 }
 
+/**
+ * Whether the agent has the credentials required to start its Slack Bolt App.
+ *
+ * Bolt's Socket Mode constructor throws "Must provide an App-Level Token" when
+ * `appToken` is empty, so the agent must skip Slack startup (offline mode)
+ * unless BOTH the bot token and the app-level token are present. Whitespace-only
+ * values are treated as absent.
+ */
+export function hasSlackCredentials(cfg: {
+  botToken: string;
+  appToken: string;
+}): boolean {
+  return cfg.botToken.trim() !== "" && cfg.appToken.trim() !== "";
+}
+
 type AppFactory = (cfg: {
   token: string;
   appToken: string;
