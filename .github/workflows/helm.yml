@@ -30,7 +30,10 @@ jobs:
       - name: Install Helm
         uses: azure/setup-helm@v4
         with:
-          version: v3.16.4
+          # helm-unittest v1.x's plugin.yaml uses the `platformHooks` schema
+          # field, which Helm only understands from v3.18 onward. Keep this in
+          # step with the --version pin below.
+          version: v3.18.6
 
       - name: Install helm-unittest plugin
         run: helm plugin install https://github.com/helm-unittest/helm-unittest --version v1.1.1
