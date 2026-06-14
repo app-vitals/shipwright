@@ -248,15 +248,16 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
       replicas: this.config.replicas,
     });
     const container = manifest.spec.template.spec.containers[0];
+    // Pull the env entries directly from the manifest so the Deployment spec
+    // faithfully reflects what the pure builder produced — including the
+    // SHIPWRIGHT_AGENT_API_KEY valueFrom/secretKeyRef entry that cannot be
+    // expressed in the plain `env: Record<string, string>` map.
     return {
       name: resourceName,
       image: container.image,
       replicas: manifest.spec.replicas,
       labels: manifest.spec.selector.matchLabels,
-      env: {
-        SHIPWRIGHT_AGENT_ID: agentId,
-        SHIPWRIGHT_API_URL: this.config.apiUrl,
-      },
+      envVars: container.env,
     };
   }
 

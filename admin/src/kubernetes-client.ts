@@ -40,6 +40,12 @@ export interface DeploymentSpec {
   labels?: Record<string, string>;
   /** Container environment variables (plain values). */
   env?: Record<string, string>;
+  /**
+   * Additional env vars expressed as full `KubernetesEnvVar` objects. Supports
+   * `valueFrom` entries (e.g. `secretKeyRef`) that cannot be expressed in the
+   * plain `env` map. Merged after the `env` entries in the container spec.
+   */
+  envVars?: KubernetesEnvVar[];
 }
 
 export interface SecretSpec {
@@ -170,9 +176,13 @@ export function deploymentBody(
   spec: DeploymentSpec,
 ): KubernetesDeployment {
   const labels = spec.labels ?? { app: spec.name };
-  const env = spec.env
+  const plainEnv: KubernetesEnvVar[] = spec.env
     ? Object.entries(spec.env).map(([name, value]) => ({ name, value }))
-    : undefined;
+    : [];
+  const env: KubernetesEnvVar[] | undefined =
+    plainEnv.length > 0 || (spec.envVars && spec.envVars.length > 0)
+      ? [...plainEnv, ...(spec.envVars ?? [])]
+      : undefined;
 
   return {
     apiVersion: "apps/v1",

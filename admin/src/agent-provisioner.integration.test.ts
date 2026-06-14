@@ -10,7 +10,7 @@
  * Requires DATABASE_URL_ADMIN_TEST to be set; skips otherwise (CI provides it).
  */
 
-import { beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { PrismaClient } from "../prisma/client/index.js";
 import {
   buildAgentSecretManifest,
@@ -72,6 +72,10 @@ describeOrSkip("KubernetesAgentProvisioner (integration)", () => {
     await prisma.agentEnv.deleteMany();
     await prisma.agent.deleteMany();
     tokens = new AgentTokenService(prisma);
+  });
+
+  afterEach(async () => {
+    await prisma.$disconnect();
   });
 
   async function createAgent(name = "Test Agent"): Promise<string> {
