@@ -1,0 +1,35 @@
+Thank you for installing {{ .Chart.Name }} (Shipwright Harness) — chart version {{ .Chart.Version }}, app version {{ .Chart.AppVersion }}.
+
+NOTE: This is the chart skeleton release. The shipwright service workloads
+(admin, metrics, agent Deployments/Services) are added in a later task and are
+NOT yet rendered. What this release currently provisions:
+
+{{- if .Values.postgresql.enabled }}
+  • PostgreSQL (Bitnami subchart) — database "{{ .Values.postgresql.auth.database }}", user "{{ .Values.postgresql.auth.username }}".
+    Connect from inside the cluster:
+      Host:     {{ .Release.Name }}-postgresql.{{ .Release.Namespace }}.svc.cluster.local
+      Port:     5432
+{{- if not .Values.postgresql.auth.existingSecret }}
+    Retrieve the password:
+      kubectl get secret --namespace {{ .Release.Namespace }} {{ .Release.Name }}-postgresql \
+        -o jsonpath="{.data.password}" | base64 -d
+{{- end }}
+{{- else }}
+  • PostgreSQL subchart is DISABLED. Point the admin service at an external
+    DATABASE_URL_SHIPWRIGHT_ADMIN connection string.
+{{- end }}
+
+Configured service ports (exposed once HD-3.x workloads land):
+  • admin:   {{ .Values.admin.service.port }}
+  • metrics: {{ .Values.metrics.service.port }}
+  • agent:   {{ .Values.agent.service.port }}
+
+Networking exposure type: {{ .Values.networking.type }}
+Auth mode:                {{ .Values.auth.mode }}
+
+Minikube tip: with networking.type=ClusterIP, reach a service via
+  kubectl port-forward svc/<service> <localPort>:<servicePort> -n {{ .Release.Namespace }}
+
+Image registry note: if Bitnami's default registry tags become unavailable,
+set global.imageRegistry (or postgresql.image.registry/repository) to a mirror.
+See the chart README "Bitnami registry risk" section for the bitnamilegacy fallback.
