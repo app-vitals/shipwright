@@ -948,6 +948,57 @@ describe("admin API — delete agent", () => {
     expect(provisioner.deprovisioned).toEqual([AGENT_ID]);
   });
 
+  it("DELETE /agents/:id returns 500 and preserves the row when deprovision throws", async () => {
+    const cookie = await makeSessionCookie();
+    const deleted: string[] = [];
+    // Provisioner whose deprovision() rejects with a non-NotFound error. The
+    // throw must propagate (→ 500) BEFORE the agent row is deleted, leaving the
+    // row intact so the delete is retry-safe.
+    const provisioner: AgentProvisioner = {
+      async provision(agentId: string): Promise<ProvisionResult> {
+        return {
+          resourceName: agentId,
+          secretName: `${agentId}-token`,
+          deploymentName: agentId,
+        };
+      },
+      async deprovision(): Promise<void> {
+        throw new Error("k8s API timeout");
+      },
+    };
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      provisioner,
+      prisma: {
+        agent: {
+          findUnique: async (args: { where: { id: string } }) =>
+            args.where.id === AGENT_ID
+              ? { id: AGENT_ID, name: "Existing Agent" }
+              : null,
+          delete: async (args: { where: { id: string } }) => {
+            deleted.push(args.where.id);
+            return {
+              id: args.where.id,
+              name: "Existing Agent",
+              slackId: null,
+              createdAt: new Date("2024-01-01"),
+              updatedAt: new Date("2024-01-01"),
+            };
+          },
+        },
+      } as unknown as AdminDeps["prisma"],
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      method: "DELETE",
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(500);
+    // The deprovision error surfaced before the row was deleted — row preserved.
+    expect(deleted).toEqual([]);
+  });
+
   it("DELETE /agents/:id unknown id → 404 (no deprovision)", async () => {
     const cookie = await makeSessionCookie();
     const provisioner = new RecordingProvisioner();
