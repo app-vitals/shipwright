@@ -16,7 +16,7 @@
               "content": [
                 {
                   "type": "text",
-                  "text": "{\n  \"id\": \"JTS-F.1\",\n  \"title\": \"First fixture task\",\n  \"status\": \"pending\",\n  \"session\": \"fixture-session\"\n}"
+                  "text": "{\n  \"id\": \"JTS-F.1\",\n  \"title\": \"First fixture task\",\n  \"status\": \"pending\",\n  \"session\": \"fixture-session\",\n  \"model\": \"sonnet\"\n}"
                 }
               ]
             }

@@ -110,6 +110,19 @@ export interface Task {
 
   /** GitHub issue URL tracking this task (e.g. https://github.com/org/repo/issues/123). */
   issue?: string;
+
+  /**
+   * Tier hint for model selection.
+   * Callers must map to a full model ID (e.g. claude-sonnet-4-6); no automatic mapping is applied.
+   * Omit to use the agent's default.
+   */
+  model?: "haiku" | "sonnet" | "opus";
+
+  /**
+   * Complexity rating for the task on a 1–5 scale.
+   * 1 = trivial, 5 = highest complexity. Used for planning and model selection heuristics.
+   */
+  complexity?: number;
 }
 
 // ─── QueryFilters ─────────────────────────────────────────────────────────────

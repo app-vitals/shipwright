@@ -20,7 +20,7 @@ import { resolveReadyTasks } from "../store";
 import type { QueryFilters, Task, TaskStore } from "../store";
 import { warnMissingFields } from "./validation";
 
-const NUMERIC_FIELDS = new Set(["pr", "hours"]);
+const NUMERIC_FIELDS = new Set(["pr", "hours", "complexity"]);
 
 const TERMINAL_STATUSES = new Set<string>([
   "merged",

@@ -27,7 +27,7 @@ import { resolveRepos } from "./check-helpers";
 import { createTaskStore, loadConfig } from "./create-task-store";
 import type { Task, TaskStore } from "./store";
 
-const NUMERIC_FIELDS = new Set(["pr", "hours"]);
+const NUMERIC_FIELDS = new Set(["pr", "hours", "complexity"]);
 
 function coerceValue(key: string, rawValue: string): number | string {
   if (NUMERIC_FIELDS.has(key)) {
