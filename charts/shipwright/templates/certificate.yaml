@@ -1,0 +1,24 @@
+{{- if and .Values.tls.certManager.enabled (eq .Values.networking.type "gateway") }}
+# cert-manager Certificate, rendered ONLY when tls.certManager.enabled=true AND
+# networking.type=gateway. The guard prevents accidental rendering when certManager
+# is enabled on a non-gateway setup (networking.type=ingress or ClusterIP), which
+# would produce a Certificate referencing networking.gateway.host (not the ingress
+# host) whose Secret is never mounted or used. Disabled → no Certificate (plain HTTP).
+# cert-manager writes the issued cert into the Secret named here ("<fullname>-tls"),
+# which the Gateway's HTTPS listener references via certificateRefs (templates/gateway.yaml).
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "shipwright.fullname" . }}-tls
+  labels:
+    {{- include "shipwright.labels" . | nindent 4 }}
+spec:
+  # Secret cert-manager populates with the issued certificate + key.
+  secretName: {{ include "shipwright.fullname" . }}-tls
+  dnsNames:
+    - {{ .Values.networking.gateway.host | quote }}
+  issuerRef:
+    name: {{ .Values.tls.certManager.issuerRef.name | quote }}
+    kind: {{ .Values.tls.certManager.issuerRef.kind }}
+    group: cert-manager.io
+{{- end }}

@@ -1,0 +1,87 @@
+{{- if eq .Values.networking.type "gateway" }}
+{{- if .Values.tls.certManager.enabled }}
+# HTTP→HTTPS redirect route. When cert-manager is enabled the Gateway has both
+# an HTTP (:80) and HTTPS (:443) listener. Without this route, the backend
+# HTTPRoutes below (attached by name only) are admitted on both ports, serving
+# plaintext alongside TLS with no redirect. This route attaches specifically to
+# the "http" listener (sectionName: http) and issues a 301 RequestRedirect to
+# HTTPS — the GKE gke-l7-global-external-managed standard and best practice for
+# any TLS-enabled Gateway deployment.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "shipwright.fullname" . }}-http-redirect
+  labels:
+    {{- include "shipwright.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - name: {{ include "shipwright.fullname" . }}
+      sectionName: http
+  hostnames:
+    - {{ .Values.networking.gateway.host | quote }}
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            statusCode: 301
+---
+{{- end }}
+{{- if .Values.metrics.enabled }}
+# Metrics dashboard route. Declared as its OWN HTTPRoute (rendered only when
+# metrics is enabled) so the /dashboard prefix routes to the metrics Service.
+# Gateway API matches the most-specific path across attached routes, so a
+# separate route is equivalent to ordering the rules within one route.
+# When cert-manager is enabled this attaches to the "https" listener only
+# (sectionName: https); plaintext traffic is handled by the redirect route above.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "shipwright.metrics.fullname" . }}
+  labels:
+    {{- include "shipwright.metrics.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - name: {{ include "shipwright.fullname" . }}
+      {{- if .Values.tls.certManager.enabled }}
+      sectionName: https
+      {{- end }}
+  hostnames:
+    - {{ .Values.networking.gateway.host | quote }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /dashboard
+      backendRefs:
+        - name: {{ include "shipwright.metrics.fullname" . }}
+          port: {{ .Values.metrics.service.port }}
+---
+{{- end }}
+# Admin UI/API route. Everything not matched by the more-specific /dashboard
+# route above is routed to the admin Service at the root.
+# When cert-manager is enabled this attaches to the "https" listener only
+# (sectionName: https); plaintext traffic is handled by the redirect route above.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "shipwright.admin.fullname" . }}
+  labels:
+    {{- include "shipwright.admin.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - name: {{ include "shipwright.fullname" . }}
+      {{- if .Values.tls.certManager.enabled }}
+      sectionName: https
+      {{- end }}
+  hostnames:
+    - {{ .Values.networking.gateway.host | quote }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: {{ include "shipwright.admin.fullname" . }}
+          port: {{ .Values.admin.service.port }}
+{{- end }}

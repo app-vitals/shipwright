@@ -63,3 +63,64 @@ tests:
       auth.google.allowedEmails: ""
     asserts:
       - notFailedTemplate: {}
+
+  - it: accepts networking.type=gateway (new enum member)
+    set:
+      networking.type: gateway
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: rejects an unknown property under networking.gateway (additionalProperties false)
+    set:
+      networking.gateway.bogus: x
+    asserts:
+      - failedTemplate:
+          errorPattern: "additional properties 'bogus' not allowed"
+
+  - it: rejects an invalid tls.certManager.issuerRef.kind outside the enum
+    set:
+      tls.certManager.issuerRef.kind: Bogus
+    asserts:
+      - failedTemplate:
+          errorPattern: "issuerRef/kind"
+
+  - it: rejects certManager enabled with an empty issuerRef.name (conditional minLength)
+    set:
+      networking.type: gateway
+      tls.certManager.enabled: true
+      tls.certManager.issuerRef.name: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: "name"
+
+  - it: accepts certManager disabled with an empty issuerRef.name (constraint is enabled-only)
+    set:
+      tls.certManager.enabled: false
+      tls.certManager.issuerRef.name: ""
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: rejects certManager enabled with networking.type=ingress (cross-field guard)
+    set:
+      networking.type: ingress
+      tls.certManager.enabled: true
+      tls.certManager.issuerRef.name: letsencrypt
+    asserts:
+      - failedTemplate:
+          errorPattern: "/networking/type"
+
+  - it: rejects certManager enabled with default networking.type (ClusterIP — most common misconfiguration)
+    set:
+      tls.certManager.enabled: true
+      tls.certManager.issuerRef.name: letsencrypt
+    asserts:
+      - failedTemplate:
+          errorPattern: "/networking/type"
+
+  - it: accepts certManager enabled with networking.type=gateway (cross-field guard)
+    set:
+      networking.type: gateway
+      tls.certManager.enabled: true
+      tls.certManager.issuerRef.name: letsencrypt
+    asserts:
+      - notFailedTemplate: {}

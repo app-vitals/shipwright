@@ -6,7 +6,18 @@
 # end-to-end on kind; ct validates render + install + `helm test`).
 networking:
   # GKE provisions a cloud L4 load balancer for type=LoadBalancer services.
+  # NOTE: type stays LoadBalancer (kind-installable) — NOT "gateway" — because the
+  # kind e2e cluster ct installs on has NO Gateway API CRDs; rendering a Gateway
+  # there would make `ct install` fail. The gke-l7-global-external-managed class is
+  # demonstrated below via networking.gateway.gatewayClassName, which is inert when
+  # type≠gateway. For the full Gateway API + cert-manager config on a real GKE
+  # cluster, see charts/shipwright/examples/values-gke-gateway.yaml.
   type: LoadBalancer
+  gateway:
+    # Demonstrates the GKE managed external L7 gatewayClassName (AC2). Harmless
+    # here because networking.type is LoadBalancer, so no Gateway is rendered on
+    # the kind e2e cluster.
+    gatewayClassName: gke-l7-global-external-managed
 
 auth:
   # Exercise the Google OAuth path (NODE_ENV=production) on ct install. The

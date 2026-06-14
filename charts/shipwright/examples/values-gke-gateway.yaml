@@ -1,0 +1,45 @@
+# Example: full Gateway API + cert-manager configuration for a real GKE cluster.
+#
+# This is NOT a ct-discovered ci/ values variant. The kind cluster `ct install`
+# uses has NO Gateway API CRDs and NO cert-manager installed, so a values file
+# that sets networking.type=gateway (or tls.certManager.enabled=true) would make
+# `ct install` fail (the Gateway/Certificate resources reference unknown CRDs).
+# Keep this under examples/ so ct never picks it up; apply it manually on a real
+# GKE cluster that has the Gateway API + cert-manager installed.
+#
+#   helm install shipwright charts/shipwright \
+#     -f charts/shipwright/examples/values-gke-gateway.yaml
+#
+# Prerequisites on the cluster:
+#   - Gateway API CRDs (gateway.networking.k8s.io/v1) — on GKE, enabled via the
+#     Gateway API add-on; the gke-l7-global-external-managed GatewayClass ships
+#     with GKE's managed gateway controller.
+#   - cert-manager installed, with a ClusterIssuer named below (e.g. letsencrypt).
+
+networking:
+  # Render a Gateway + HTTPRoute(s) instead of an Ingress. Mutually exclusive
+  # with networking.type=ingress.
+  type: gateway
+  gateway:
+    # GKE's managed external global L7 load balancer GatewayClass.
+    gatewayClassName: gke-l7-global-external-managed
+    # The public host the Gateway + routes answer for.
+    host: shipwright.example.com
+
+tls:
+  # Issue a TLS cert via cert-manager. Adds an HTTPS (:443) listener on the
+  # Gateway referencing the issued Secret and routes the same host over TLS.
+  certManager:
+    enabled: true
+    issuerRef:
+      # A ClusterIssuer that must already exist in the cluster.
+      name: letsencrypt-prod
+      kind: ClusterIssuer
+
+auth:
+  # Real Google OAuth for a public deployment.
+  mode: google
+  google:
+    clientId: REPLACE_ME
+    clientSecret: REPLACE_ME
+    allowedEmails: you@example.com
