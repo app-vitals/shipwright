@@ -275,6 +275,16 @@
           "items": { "type": "string" }
         },
         "resources": { "type": "object" }
+      },
+      "if": {
+        "properties": { "enabled": { "const": true } },
+        "required": ["enabled"]
+      },
+      "then": {
+        "properties": {
+          "connectionName": { "type": "string", "minLength": 1 }
+        },
+        "required": ["connectionName"]
       }
     }
   },
