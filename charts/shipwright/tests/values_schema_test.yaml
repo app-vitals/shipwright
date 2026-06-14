@@ -124,3 +124,54 @@ tests:
       tls.certManager.issuerRef.name: letsencrypt
     asserts:
       - notFailedTemplate: {}
+
+  - it: rejects posthog with personalApiKeyRef set but existingSecret empty (conditional minLength)
+    set:
+      metrics.provider.posthog.personalApiKeyRef: my-key-ref
+      metrics.provider.posthog.existingSecret: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: "existingSecret"
+
+  - it: rejects posthog with projectIdRef set but existingSecret empty (conditional minLength)
+    set:
+      metrics.provider.posthog.projectIdRef: my-project-ref
+      metrics.provider.posthog.existingSecret: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: "existingSecret"
+
+  - it: accepts posthog with both ref fields and a non-empty existingSecret
+    set:
+      metrics.provider.posthog.personalApiKeyRef: my-key-ref
+      metrics.provider.posthog.projectIdRef: my-project-ref
+      metrics.provider.posthog.existingSecret: my-secret
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: accepts posthog with no ref fields and an empty existingSecret (guard is ref-triggered)
+    set:
+      metrics.provider.posthog.existingSecret: ""
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: rejects internalKey with key set but existingSecret empty (conditional minLength)
+    set:
+      metrics.provider.internalKey.key: my-key
+      metrics.provider.internalKey.existingSecret: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: "existingSecret"
+
+  - it: accepts internalKey with key set and a non-empty existingSecret
+    set:
+      metrics.provider.internalKey.key: my-key
+      metrics.provider.internalKey.existingSecret: my-secret
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: accepts internalKey with no key and an empty existingSecret (guard is key-triggered)
+    set:
+      metrics.provider.internalKey.existingSecret: ""
+    asserts:
+      - notFailedTemplate: {}
