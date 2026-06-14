@@ -1,0 +1,61 @@
+suite: metrics initdb ConfigMap — templated DB name tracks metrics.database.name, override-safe
+# HD-3.2 fix. The PostgreSQL first-boot init script that creates the SEPARATE
+# metrics database lives in a parent-chart ConfigMap whose CREATE DATABASE name is
+# rendered from the shipwright.metrics.databaseName helper — the SAME helper that
+# assembles METRICS_DATABASE_URL in metrics-secret.yaml. Overriding
+# metrics.database.name therefore updates BOTH in lockstep (no manual edit of a
+# hardcoded name). The ConfigMap is gated on postgresql.enabled.
+templates:
+  - templates/metrics-postgres-initdb-configmap.yaml
+release:
+  name: r
+  namespace: shipwright
+tests:
+  - it: renders a ConfigMap named "<release>-metrics-initdb"
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - equal:
+          path: metadata.name
+          value: r-metrics-initdb
+
+  - it: creates the default metrics database with a templated, idempotent guard
+    asserts:
+      # CREATE DATABASE name is the default metrics database, OWNER is the app user.
+      - matchRegex:
+          path: data["00-create-metrics-db.sql"]
+          pattern: "CREATE DATABASE shipwright_metrics OWNER shipwright"
+      # Idempotency guard references the SAME templated name in both CREATE and WHERE.
+      - matchRegex:
+          path: data["00-create-metrics-db.sql"]
+          pattern: "WHERE NOT EXISTS \\(SELECT FROM pg_database WHERE datname = 'shipwright_metrics'\\)"
+
+  - it: tracks a custom metrics.database.name in BOTH the CREATE and the guard
+    set:
+      metrics.database.name: custom_metrics_db
+    asserts:
+      - matchRegex:
+          path: data["00-create-metrics-db.sql"]
+          pattern: "CREATE DATABASE custom_metrics_db OWNER shipwright"
+      - matchRegex:
+          path: data["00-create-metrics-db.sql"]
+          pattern: "datname = 'custom_metrics_db'"
+      # The old hardcoded default must NOT appear once overridden.
+      - notMatchRegex:
+          path: data["00-create-metrics-db.sql"]
+          pattern: "shipwright_metrics"
+
+  - it: honors a custom postgresql.auth.username as the database OWNER
+    set:
+      postgresql.auth.username: appowner
+    asserts:
+      - matchRegex:
+          path: data["00-create-metrics-db.sql"]
+          pattern: "CREATE DATABASE shipwright_metrics OWNER appowner"
+
+  - it: renders no initdb ConfigMap when the bundled PostgreSQL is disabled
+    set:
+      postgresql.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0

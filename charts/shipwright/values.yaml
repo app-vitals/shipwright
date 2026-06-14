@@ -106,7 +106,9 @@ metrics:
     # sharing the admin database would make the admin schema non-empty and break
     # the admin service's `prisma migrate deploy` baseline (Prisma error P3005).
     # When the bundled PostgreSQL subchart is enabled, this database is created
-    # automatically via postgresql.primary.initdb.scripts (see below). If you
+    # automatically by a parent-chart init ConfigMap wired via
+    # postgresql.primary.initdb.scriptsConfigMap (see below); the created name
+    # tracks this value, so an override here stays in sync everywhere. If you
     # bring your own Postgres (postgresql.enabled=false), pre-create this database
     # or point METRICS_DATABASE_URL at it yourself.
     name: shipwright_metrics
@@ -191,17 +193,23 @@ postgresql:
       limits:
         cpu: 500m
         memory: 512Mi
-    # -- First-boot init scripts (Bitnami subchart). Creates the SEPARATE metrics
-    # database ("shipwright_metrics", matching metrics.database.name) owned by the
-    # application user, so the metrics event store never shares the admin database
-    # (which would break admin's prisma migrate baseline — Prisma P3005). Runs once
-    # as the postgres superuser at initdb time; idempotent via the IF NOT EXISTS guard.
-    # If you override metrics.database.name, update the database name here to match.
+    # -- First-boot init scripts (Bitnami subchart). The SEPARATE metrics database
+    # (default "shipwright_metrics") is created by a parent-chart ConfigMap
+    # (templates/metrics-postgres-initdb-configmap.yaml), referenced here via
+    # scriptsConfigMap below and mounted at /docker-entrypoint-initdb.d. Keeping
+    # the metrics event store in its own database (never the admin database) is
+    # REQUIRED — sharing it would leave the admin schema non-empty and break
+    # admin's `prisma migrate deploy` baseline (Prisma P3005).
+    #
+    # OVERRIDE-SAFE: the ConfigMap renders the created database name from the
+    # shipwright.metrics.databaseName helper — the SAME helper that assembles
+    # METRICS_DATABASE_URL in the metrics Secret — so overriding metrics.database.name
+    # automatically updates BOTH the created database and the URL the metrics service
+    # connects to. No manual edit needed here.
     initdb:
-      scripts:
-        # `.sql` initdb scripts are executed by the Bitnami entrypoint as the
-        # postgres superuser over the local socket (no password needed), against
-        # the default database, right after the app user/database are created.
-        00-create-metrics-db.sql: |
-          SELECT 'CREATE DATABASE shipwright_metrics OWNER shipwright'
-          WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'shipwright_metrics')\gexec
+      # The Bitnami subchart tpl-renders scriptsConfigMap, so this resolves to
+      # "<release>-metrics-initdb" — the name the parent-chart ConfigMap renders
+      # (templates/metrics-postgres-initdb-configmap.yaml). That ConfigMap is gated
+      # on postgresql.enabled, matching this reference: whenever the bundled
+      # Postgres renders, the ConfigMap it mounts renders too (no dangling mount).
+      scriptsConfigMap: '{{ printf "%s-metrics-initdb" .Release.Name }}'
