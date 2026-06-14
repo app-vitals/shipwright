@@ -20,6 +20,13 @@ metrics:
 
 agent:
   provisioning:
+    # Exercise the agent-provisioning RBAC path on kind. These are core RBAC
+    # objects (Role/RoleBinding) + a ServiceAccount — no CRDs — so a single-node
+    # kind cluster creates them without extra setup. Admin only attempts a real
+    # provision when an agent is created via the API, so `ct install` + `helm
+    # test` (which never create an agent) are unaffected; this just verifies the
+    # RBAC + admin env contract apply cleanly.
+    enabled: true
     persistence:
       # No PVC churn on a throwaway local cluster.
       enabled: false

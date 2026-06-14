@@ -105,6 +105,33 @@ assembled DATABASE_URL when the bundled PostgreSQL subchart is used).
 {{- end }}
 
 {{/*
+Agent component fullname: "<fullname>-agent".
+*/}}
+{{- define "shipwright.agent.fullname" -}}
+{{- printf "%s-agent" (include "shipwright.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Agent labels — common labels plus the component label.
+*/}}
+{{- define "shipwright.agent.labels" -}}
+{{ include "shipwright.labels" . }}
+app.kubernetes.io/component: agent
+{{- end }}
+
+{{/*
+Name of the ServiceAccount provisioned agent pods run as (SEPARATE from the admin
+SA). Defaults to "<fullname>-agent" when create=true and no name override.
+*/}}
+{{- define "shipwright.agent.serviceAccountName" -}}
+{{- if .Values.agent.provisioning.serviceAccount.create }}
+{{- default (include "shipwright.agent.fullname" .) .Values.agent.provisioning.serviceAccount.name }}
+{{- else }}
+{{- default "default" .Values.agent.provisioning.serviceAccount.name }}
+{{- end }}
+{{- end }}
+
+{{/*
 Metrics component fullname: "<fullname>-metrics".
 */}}
 {{- define "shipwright.metrics.fullname" -}}

@@ -10,6 +10,45 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [0.8.0]
+
+> Note: `0.7.0` is reserved for HD-4.1 (Gateway API support), landing
+> concurrently. This release jumps to `0.8.0` to avoid a version-increment
+> collision with that PR.
+
+### Added
+
+- Agent-provisioning RBAC + admin env contract, gated on
+  `agent.provisioning.enabled` (default **false** → nothing is rendered and the
+  admin service stays in **Noop** mode, requiring no cluster access). When
+  enabled, the chart renders:
+  - A **namespace-scoped** `Role` (`templates/agent-provisioning-rbac.yaml`) —
+    NOT a `ClusterRole` — granting least-privilege verbs `create`, `get`,
+    `list`, `delete` on `apps`/`Deployments` and core (`""`)/`Secrets`: exactly
+    the verbs the provisioner (`KubernetesAgentProvisioner`) exercises.
+  - A `RoleBinding` binding that Role to the admin `ServiceAccount`.
+  - A separate **agent** `ServiceAccount`
+    (`templates/agent-serviceaccount.yaml`,
+    `agent.provisioning.serviceAccount.{create,name,annotations}`) that
+    provisioned agent pods run as — distinct from the admin SA.
+  - The provisioner **env contract** injected into the admin Deployment,
+    matching `admin/src/main.ts` `buildProvisioner` exactly:
+    `SHIPWRIGHT_K8S_PROVISIONING=enabled`, `SHIPWRIGHT_K8S_NAMESPACE` (via the
+    **downward API**, `fieldRef: metadata.namespace`), `SHIPWRIGHT_AGENT_IMAGE`
+    + `SHIPWRIGHT_AGENT_IMAGE_TAG` (tag defaults to `.Chart.AppVersion`),
+    `SHIPWRIGHT_AGENT_REPLICAS`, `SHIPWRIGHT_API_URL` (built from the admin
+    Service name + port, or `agent.provisioning.apiUrl`), and
+    `SHIPWRIGHT_ADMIN_DEPLOYMENT_NAME`. `SHIPWRIGHT_ADMIN_DEPLOYMENT_UID` is
+    injected ONLY when `agent.provisioning.adminDeploymentUid` is set — the
+    downward API cannot expose the parent Deployment's UID to its pods, so a
+    missing UID is acceptable (ownerRef propagation is a separate follow-up) and
+    no wrong value is fabricated.
+  - New values: `agent.provisioning.{enabled, image.{repository,tag}, replicas,
+    serviceAccount.{create,name,annotations}, apiUrl, adminDeploymentUid,
+    pvc.{size,storageClass}}` (provisioning OFF by default). The `pvc` settings
+    are surfaced for the agent manifest builder's future use and are NOT injected
+    as env (not read by `buildProvisioner`).
+
 ## [0.6.0]
 
 ### Added

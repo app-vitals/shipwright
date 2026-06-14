@@ -139,6 +139,44 @@ agent:
   replicas: 1
   # -- Provisioning controls for the agent's persistent home / workspace.
   provisioning:
+    # -- Whether the admin service provisions agent workloads at runtime. OFF by
+    # default: the chart renders NO provisioning RBAC/ServiceAccount and injects
+    # NO provisioning env, so admin stays in Noop mode (no cluster access). Set
+    # true to render the namespace-scoped Role + RoleBinding + agent SA and inject
+    # the provisioner env contract (matching admin/src/main.ts buildProvisioner)
+    # into the admin Deployment.
+    enabled: false
+    # -- Image the admin provisioner stamps onto agent Deployments.
+    image:
+      repository: shipwright-agent
+      tag: ""           # defaults to .Chart.AppVersion when empty
+    # -- Replica count for provisioned agent Deployments.
+    replicas: 1
+    # -- ServiceAccount provisioned agent pods run as (SEPARATE from the admin SA).
+    serviceAccount:
+      # -- Whether to create the agent ServiceAccount (only when provisioning.enabled).
+      create: true
+      # -- Annotations to add to the agent ServiceAccount.
+      annotations: {}
+      # -- Name of the agent ServiceAccount. Generated if empty and create=true.
+      name: ""
+    # -- In-cluster admin/gateway URL handed to provisioned agents. Empty → built
+    # from the admin Service DNS name + port. Set to point agents at an external
+    # gateway.
+    apiUrl: ""
+    # -- Optional admin Deployment UID for ownerRef propagation. The downward API
+    # does NOT expose the parent Deployment's UID to its pods, so it can only be
+    # supplied explicitly. Leave empty to OMIT the env var (acceptable until
+    # ownerRef propagation lands as a follow-up).
+    adminDeploymentUid: ""
+    # -- PVC settings for provisioned agent workspaces, surfaced for the agent
+    # manifest builder. NOTE: buildProvisioner does not read these as env today,
+    # so they are NOT injected into the admin Deployment — they exist for the
+    # manifest builder's future use.
+    pvc:
+      size: 2Gi
+      # -- StorageClass for provisioned agent PVCs. Empty uses the cluster default.
+      storageClass: ""
     # -- Whether to create a PersistentVolumeClaim for the agent home (AGENT_HOME).
     persistence:
       enabled: true
