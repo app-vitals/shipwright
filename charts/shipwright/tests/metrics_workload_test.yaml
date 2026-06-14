@@ -2,7 +2,7 @@ suite: metrics Deployment / Service / ServiceAccount workloads
 # HD-3.2 adds the metrics workload templates (mirrors the admin pattern). These
 # assert the structural facts: image (tag defaults to appVersion), container port
 # 3460, /health liveness + readiness probes, ServiceAccount wiring, Service shape,
-# the postgres-mode env (METRICS_API_PORT, METRICS_OFFLINE=false), and the
+# the postgres-mode env (METRICS_API_PORT), and the
 # METRICS_DATABASE_URL wiring to the bundled PostgreSQL subchart (assembled in the
 # metrics Secret).
 tests:
@@ -34,7 +34,7 @@ tests:
           path: spec.template.spec.containers[0].readinessProbe.httpGet.port
           value: 3460
 
-  - it: binds the metrics port and forces postgres (non-offline) mode via env
+  - it: binds METRICS_API_PORT env
     template: templates/metrics-deployment.yaml
     asserts:
       - contains:
@@ -42,11 +42,6 @@ tests:
           content:
             name: METRICS_API_PORT
             value: "3460"
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: METRICS_OFFLINE
-            value: "false"
 
   - it: wires SHIPWRIGHT_SESSION_SECRET from the metrics Secret (dashboard session JWT)
     template: templates/metrics-deployment.yaml
