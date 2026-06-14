@@ -8,13 +8,12 @@
  * exported in-memory double).
  */
 
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { readFileSync } from "node:fs";
-import {
-  ConflictError,
-  ForbiddenError,
-  NotFoundError,
-} from "./errors.ts";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { ConflictError, ForbiddenError, NotFoundError } from "./errors.ts";
 import {
   HttpKubernetesClient,
   type KubernetesClient,
@@ -28,24 +27,29 @@ interface CassetteEntry {
   body: unknown;
 }
 
-const CASSETTE_PATH = new URL(
-  "./fixtures/k8s-cassette.json",
-  import.meta.url,
-).pathname;
+const CASSETTE_PATH = new URL("./fixtures/k8s-cassette.json", import.meta.url)
+  .pathname;
 
 const cassette: Record<string, CassetteEntry> = JSON.parse(
   readFileSync(CASSETTE_PATH, "utf-8"),
 );
 
+interface RecordedRequest {
+  url: string;
+  method: string;
+  auth?: string;
+  tls?: { ca?: string };
+}
+
 /**
  * Build an injected fetchFn that returns the cassette entry for `key`.
- * Records the last request so tests can assert URL/method/headers.
+ * Records the last request so tests can assert URL/method/headers/tls.
  */
 function cassetteFetch(key: string): {
   fetchFn: typeof fetch;
-  lastRequest: () => { url: string; method: string; auth?: string };
+  lastRequest: () => RecordedRequest;
 } {
-  let last: { url: string; method: string; auth?: string } | undefined;
+  let last: RecordedRequest | undefined;
   const entry = cassette[key];
   if (!entry) throw new Error(`cassette key not found: ${key}`);
 
@@ -56,6 +60,7 @@ function cassetteFetch(key: string): {
       url,
       method: init?.method ?? "GET",
       auth: headers.get("authorization") ?? undefined,
+      tls: (init as (RequestInit & { tls?: { ca?: string } }) | undefined)?.tls,
     };
     return new Response(JSON.stringify(entry.body), {
       status: entry.status,
@@ -74,7 +79,7 @@ function cassetteFetch(key: string): {
 
 function makeClient(key: string): {
   client: HttpKubernetesClient;
-  lastRequest: () => { url: string; method: string; auth?: string };
+  lastRequest: () => RecordedRequest;
 } {
   const { fetchFn, lastRequest } = cassetteFetch(key);
   const client = new HttpKubernetesClient({
@@ -134,22 +139,28 @@ describe("HttpKubernetesClient — Deployments", () => {
 describe("HttpKubernetesClient — Deployment errors", () => {
   it("maps 404 to NotFoundError", async () => {
     const { client } = makeClient("getDeployment_404");
-    await expect(client.getDeployment("shipwright", "missing")).rejects.toBeInstanceOf(
-      NotFoundError,
-    );
+    await expect(
+      client.getDeployment("shipwright", "missing"),
+    ).rejects.toBeInstanceOf(NotFoundError);
   });
 
   it("maps 409 to ConflictError", async () => {
     const { client } = makeClient("createDeployment_409");
     await expect(
-      client.createDeployment("shipwright", { name: "agent-abc", image: "img:1" }),
+      client.createDeployment("shipwright", {
+        name: "agent-abc",
+        image: "img:1",
+      }),
     ).rejects.toBeInstanceOf(ConflictError);
   });
 
   it("maps 403 to ForbiddenError", async () => {
     const { client } = makeClient("createDeployment_403");
     await expect(
-      client.createDeployment("shipwright", { name: "agent-abc", image: "img:1" }),
+      client.createDeployment("shipwright", {
+        name: "agent-abc",
+        image: "img:1",
+      }),
     ).rejects.toBeInstanceOf(ForbiddenError);
   });
 
@@ -193,9 +204,9 @@ describe("HttpKubernetesClient — Secrets", () => {
 
   it("getSecret maps 404 to NotFoundError", async () => {
     const { client } = makeClient("getSecret_404");
-    await expect(client.getSecret("shipwright", "missing")).rejects.toBeInstanceOf(
-      NotFoundError,
-    );
+    await expect(
+      client.getSecret("shipwright", "missing"),
+    ).rejects.toBeInstanceOf(NotFoundError);
   });
 
   it("deleteSecret DELETEs the named resource", async () => {
@@ -207,6 +218,71 @@ describe("HttpKubernetesClient — Secrets", () => {
     expect(req.url).toBe(
       "https://kubernetes.default.svc/api/v1/namespaces/shipwright/secrets/agent-secret",
     );
+  });
+});
+
+// ─── In-cluster CA → outbound TLS ───────────────────────────────────────────
+
+describe("HttpKubernetesClient — in-cluster CA", () => {
+  const tempDirs: string[] = [];
+  afterEach(() => {
+    for (const dir of tempDirs.splice(0)) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("applies an injected caCert to the outbound request via tls.ca", async () => {
+    const ca =
+      "-----BEGIN CERTIFICATE-----\nINJECTED-CA\n-----END CERTIFICATE-----";
+    const { fetchFn, lastRequest } = cassetteFetch("getDeployment_success");
+    const client = new HttpKubernetesClient({
+      apiServer: "https://kubernetes.default.svc",
+      token: "test-sa-token",
+      caCert: ca,
+      fetchFn,
+    });
+
+    await client.getDeployment("shipwright", "agent-abc");
+    expect(lastRequest().tls?.ca).toBe(ca);
+  });
+
+  it("reads the CA from caPath and applies it to outbound TLS", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "k8s-ca-"));
+    tempDirs.push(dir);
+    const caPath = join(dir, "ca.crt");
+    const ca =
+      "-----BEGIN CERTIFICATE-----\nFILE-CA\n-----END CERTIFICATE-----";
+    writeFileSync(caPath, ca);
+
+    const { fetchFn, lastRequest } = cassetteFetch("getDeployment_success");
+    const client = new HttpKubernetesClient({
+      apiServer: "https://kubernetes.default.svc",
+      token: "test-sa-token",
+      caPath,
+      fetchFn,
+    });
+
+    await client.getDeployment("shipwright", "agent-abc");
+    expect(lastRequest().tls?.ca).toBe(ca);
+  });
+
+  it("omits the tls key entirely when no CA is provided or found", async () => {
+    const missingCaPath = join(
+      mkdtempSync(join(tmpdir(), "k8s-noca-")),
+      "absent-ca.crt",
+    );
+    tempDirs.push(missingCaPath.slice(0, missingCaPath.lastIndexOf("/")));
+
+    const { fetchFn, lastRequest } = cassetteFetch("getDeployment_success");
+    const client = new HttpKubernetesClient({
+      apiServer: "https://kubernetes.default.svc",
+      token: "test-sa-token",
+      caPath: missingCaPath,
+      fetchFn,
+    });
+
+    await client.getDeployment("shipwright", "agent-abc");
+    expect(lastRequest().tls).toBeUndefined();
   });
 });
 
@@ -228,9 +304,9 @@ describe("RecordedKubernetesClient", () => {
   });
 
   it("getDeployment throws NotFoundError for an unknown resource", async () => {
-    await expect(client.getDeployment("shipwright", "nope")).rejects.toBeInstanceOf(
-      NotFoundError,
-    );
+    await expect(
+      client.getDeployment("shipwright", "nope"),
+    ).rejects.toBeInstanceOf(NotFoundError);
   });
 
   it("createDeployment records and returns the resource", async () => {
@@ -256,7 +332,9 @@ describe("RecordedKubernetesClient", () => {
     const rec = new RecordedKubernetesClient({ deployments: {}, secrets: {} });
     await rec.createDeployment("ns", { name: "d", image: "img:1" });
     await rec.deleteDeployment("ns", "d");
-    await expect(rec.getDeployment("ns", "d")).rejects.toBeInstanceOf(NotFoundError);
+    await expect(rec.getDeployment("ns", "d")).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
   });
 
   it("getSecret returns the canned secret", async () => {
@@ -270,6 +348,8 @@ describe("RecordedKubernetesClient", () => {
     const got = await rec.getSecret("ns", "s");
     expect(got.metadata.name).toBe("s");
     await rec.deleteSecret("ns", "s");
-    await expect(rec.getSecret("ns", "s")).rejects.toBeInstanceOf(NotFoundError);
+    await expect(rec.getSecret("ns", "s")).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
   });
 });

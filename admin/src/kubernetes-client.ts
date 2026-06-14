@@ -218,6 +218,19 @@ export function loadInClusterConfig(opts?: {
   return { apiServer, token, caCert };
 }
 
+/**
+ * Read the in-cluster CA cert (PEM) best-effort. A missing file yields
+ * `undefined` rather than throwing — unlike the token, a missing CA must not
+ * crash client construction.
+ */
+function readCaBestEffort(caPath?: string): string | undefined {
+  try {
+    return readFileSync(caPath ?? `${SA_DIR}/ca.crt`, "utf-8");
+  } catch {
+    return undefined;
+  }
+}
+
 function defaultApiServer(): string {
   const host = process.env.KUBERNETES_SERVICE_HOST;
   const port = process.env.KUBERNETES_SERVICE_PORT;
@@ -237,7 +250,8 @@ interface K8sStatus {
 
 function mapError(status: number, body: unknown): ApiError {
   const message =
-    (body as K8sStatus | undefined)?.message ?? `Kubernetes API error ${status}`;
+    (body as K8sStatus | undefined)?.message ??
+    `Kubernetes API error ${status}`;
   switch (status) {
     case 404:
       return new NotFoundError(message);
@@ -259,15 +273,26 @@ export interface HttpKubernetesClientOpts {
   token?: string;
   /** Path to the mounted SA token (used only when `token` is omitted). */
   tokenPath?: string;
-  /** Path to the mounted CA cert (currently informational). */
+  /** In-cluster CA cert (PEM). If omitted, read best-effort from `caPath`. */
+  caCert?: string;
+  /**
+   * Path to the mounted CA cert (used only when `caCert` is omitted). The CA is
+   * read and applied to outbound TLS so HTTPS to the API server verifies against
+   * the cluster's self-signed cert. Reading is best-effort: a missing file
+   * leaves the CA undefined rather than throwing.
+   */
   caPath?: string;
   /** Injected fetch — defaults to the global `fetch`. Never overrides the global. */
   fetchFn?: typeof fetch;
 }
 
+/** RequestInit plus Bun's `tls` option (not in the standard DOM types). */
+type RequestInitWithTls = RequestInit & { tls?: { ca?: string } };
+
 export class HttpKubernetesClient implements KubernetesClient {
   private readonly apiServer: string;
   private readonly token: string;
+  private readonly caCert?: string;
   private readonly fetchFn: typeof fetch;
 
   constructor(opts?: HttpKubernetesClientOpts) {
@@ -275,6 +300,7 @@ export class HttpKubernetesClient implements KubernetesClient {
     this.token =
       opts?.token ??
       readFileSync(opts?.tokenPath ?? `${SA_DIR}/token`, "utf-8").trim();
+    this.caCert = opts?.caCert ?? readCaBestEffort(opts?.caPath);
     this.fetchFn = opts?.fetchFn ?? fetch;
   }
 
@@ -285,11 +311,11 @@ export class HttpKubernetesClient implements KubernetesClient {
     };
   }
 
-  private async request<T>(
-    url: string,
-    init: RequestInit,
-  ): Promise<T> {
-    const resp = await this.fetchFn(url, init);
+  private async request<T>(url: string, init: RequestInit): Promise<T> {
+    const finalInit: RequestInitWithTls = this.caCert
+      ? { ...init, tls: { ca: this.caCert } }
+      : init;
+    const resp = await this.fetchFn(url, finalInit as RequestInit);
     const text = await resp.text();
     const body = text ? JSON.parse(text) : undefined;
     if (!resp.ok) {
@@ -391,9 +417,7 @@ export class RecordedKubernetesClient implements KubernetesClient {
   ): Promise<KubernetesDeployment> {
     const key = RecordedKubernetesClient.key(namespace, spec.name);
     if (this.deployments.has(key)) {
-      throw new ConflictError(
-        `deployments.apps "${spec.name}" already exists`,
-      );
+      throw new ConflictError(`deployments.apps "${spec.name}" already exists`);
     }
     const dep = deploymentBody(namespace, spec);
     this.deployments.set(key, dep);
