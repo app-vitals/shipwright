@@ -14,6 +14,7 @@ import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  ApiError,
   ConflictError,
   ForbiddenError,
   NotFoundError,
@@ -67,10 +68,18 @@ function cassetteFetch(key: string): {
       auth: headers.get("authorization") ?? undefined,
       tls: (init as (RequestInit & { tls?: { ca?: string } }) | undefined)?.tls,
     };
-    return new Response(JSON.stringify(entry.body), {
-      status: entry.status,
-      headers: { "Content-Type": "application/json" },
-    });
+    // A string body is replayed verbatim (e.g. an HTML proxy error page) so the
+    // client sees genuinely non-JSON bytes; objects are JSON-encoded.
+    const isRaw = typeof entry.body === "string";
+    return new Response(
+      isRaw ? (entry.body as string) : JSON.stringify(entry.body),
+      {
+        status: entry.status,
+        headers: {
+          "Content-Type": isRaw ? "text/html" : "application/json",
+        },
+      },
+    );
   }) as typeof fetch;
 
   return {
@@ -176,6 +185,17 @@ describe("HttpKubernetesClient — Deployment errors", () => {
     ).rejects.toBeInstanceOf(UnauthorizedError);
   });
 
+  it("maps a non-2xx non-JSON body (HTML 502) to a typed ApiError, not a SyntaxError", async () => {
+    const { client } = makeClient("getDeployment_502_html");
+    const err = await client
+      .getDeployment("shipwright", "agent-abc")
+      .then(() => undefined)
+      .catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).not.toBeInstanceOf(SyntaxError);
+    expect((err as ApiError).statusCode).toBe(502);
+  });
+
   it("surfaces the k8s Status message in the error", async () => {
     const { client } = makeClient("getDeployment_404");
     await expect(client.getDeployment("shipwright", "missing")).rejects.toThrow(
@@ -221,17 +241,6 @@ describe("HttpKubernetesClient — Secrets", () => {
     ).rejects.toBeInstanceOf(NotFoundError);
   });
 
-  it("deleteSecret DELETEs the named resource", async () => {
-    const { client, lastRequest } = makeClient("deleteSecret_success");
-    await client.deleteSecret("shipwright", "agent-secret");
-
-    const req = lastRequest();
-    expect(req.method).toBe("DELETE");
-    expect(req.url).toBe(
-      "https://kubernetes.default.svc/api/v1/namespaces/shipwright/secrets/agent-secret",
-    );
-  });
-
   it("createSecret maps 409 to ConflictError", async () => {
     const { client } = makeClient("createSecret_409");
     await expect(
@@ -250,6 +259,17 @@ describe("HttpKubernetesClient — Secrets", () => {
         stringData: { TOKEN: "s3cr3t" },
       }),
     ).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  it("deleteSecret DELETEs the named resource", async () => {
+    const { client, lastRequest } = makeClient("deleteSecret_success");
+    await client.deleteSecret("shipwright", "agent-secret");
+
+    const req = lastRequest();
+    expect(req.method).toBe("DELETE");
+    expect(req.url).toBe(
+      "https://kubernetes.default.svc/api/v1/namespaces/shipwright/secrets/agent-secret",
+    );
   });
 });
 
@@ -298,23 +318,81 @@ describe("HttpKubernetesClient — in-cluster CA", () => {
     expect(lastRequest().tls?.ca).toBe(ca);
   });
 
-  it("omits the tls key entirely when no CA is provided or found", async () => {
+  it("omits the tls key (system-CA fallback) without throwing when the DEFAULT CA path is missing", async () => {
+    // No caPath/caCert → the default in-cluster SA path is used, which does not
+    // exist in the test environment. Best-effort: degrade to system CAs (warns
+    // to stderr) rather than throwing, so construction succeeds.
+    const { fetchFn, lastRequest } = cassetteFetch("getDeployment_success");
+    const client = new HttpKubernetesClient({
+      apiServer: "https://kubernetes.default.svc",
+      token: "test-sa-token",
+      fetchFn,
+    });
+
+    await client.getDeployment("shipwright", "agent-abc");
+    expect(lastRequest().tls).toBeUndefined();
+  });
+
+  it("throws when an EXPLICIT caPath is provided but the file is missing", () => {
     const missingCaPath = join(
       mkdtempSync(join(tmpdir(), "k8s-noca-")),
       "absent-ca.crt",
     );
     tempDirs.push(missingCaPath.slice(0, missingCaPath.lastIndexOf("/")));
 
+    expect(
+      () =>
+        new HttpKubernetesClient({
+          apiServer: "https://kubernetes.default.svc",
+          token: "test-sa-token",
+          caPath: missingCaPath,
+        }),
+    ).toThrow(/CA file read failed at explicit caPath/);
+  });
+});
+
+// ─── Per-request token read (rotation) ──────────────────────────────────────
+
+describe("HttpKubernetesClient — token rotation", () => {
+  const tempDirs: string[] = [];
+  afterEach(() => {
+    for (const dir of tempDirs.splice(0)) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("re-reads the token from tokenPath on each request (picks up rotation)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "k8s-token-"));
+    tempDirs.push(dir);
+    const tokenPath = join(dir, "token");
+    writeFileSync(tokenPath, "token-v1\n");
+
     const { fetchFn, lastRequest } = cassetteFetch("getDeployment_success");
     const client = new HttpKubernetesClient({
       apiServer: "https://kubernetes.default.svc",
-      token: "test-sa-token",
-      caPath: missingCaPath,
+      tokenPath,
       fetchFn,
     });
 
     await client.getDeployment("shipwright", "agent-abc");
-    expect(lastRequest().tls).toBeUndefined();
+    expect(lastRequest().auth).toBe("Bearer token-v1");
+
+    // Simulate projected-token rotation on disk.
+    writeFileSync(tokenPath, "token-v2\n");
+    await client.getDeployment("shipwright", "agent-abc");
+    expect(lastRequest().auth).toBe("Bearer token-v2");
+  });
+
+  it("uses a fixed injected token without reading from disk", async () => {
+    const { fetchFn, lastRequest } = cassetteFetch("getDeployment_success");
+    const client = new HttpKubernetesClient({
+      apiServer: "https://kubernetes.default.svc",
+      token: "fixed-token",
+      fetchFn,
+    });
+
+    await client.getDeployment("shipwright", "agent-abc");
+    expect(lastRequest().auth).toBe("Bearer fixed-token");
   });
 });
 

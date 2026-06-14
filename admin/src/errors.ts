@@ -39,6 +39,13 @@ export class BadRequestError extends ApiError {
   }
 }
 
+export class UnauthorizedError extends ApiError {
+  constructor(message = "Unauthorized") {
+    super(401, message);
+    this.name = "UnauthorizedError";
+  }
+}
+
 export class ForbiddenError extends ApiError {
   constructor(message = "Forbidden") {
     super(403, message);
@@ -57,12 +64,5 @@ export class BadGatewayError extends ApiError {
   constructor(message = "Bad gateway") {
     super(502, message);
     this.name = "BadGatewayError";
-  }
-}
-
-export class UnauthorizedError extends ApiError {
-  constructor(message = "Unauthorized") {
-    super(401, message);
-    this.name = "UnauthorizedError";
   }
 }

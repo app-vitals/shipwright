@@ -16,8 +16,8 @@
  *  - deploymentUrl / secretUrl / deploymentBody / secretBody — pure helpers
  *
  * Non-2xx API responses map to the shared typed errors in ./errors.ts:
- *   404 → NotFoundError, 409 → ConflictError, 403 → ForbiddenError,
- *   other → ApiError (with the status code).
+ *   401 → UnauthorizedError, 403 → ForbiddenError, 404 → NotFoundError,
+ *   409 → ConflictError, other → ApiError (with the status code).
  */
 
 import { readFileSync } from "node:fs";
@@ -220,23 +220,28 @@ export function loadInClusterConfig(opts?: {
 }
 
 /**
- * Read the in-cluster CA cert (PEM) best-effort. A missing file yields
- * `undefined` rather than throwing — unlike the token, a missing CA must not
- * crash client construction.
- *
- * When `caPath` is explicitly provided (not the default) and the file cannot
- * be read, a warning is emitted so TLS failures are diagnosable in production.
+ * Read the in-cluster CA cert (PEM). When the caller passed an EXPLICIT
+ * `caPath`, a read failure THROWS — a caller who named a path expects it to
+ * exist, and silently falling back to system CAs would surface as an opaque
+ * TLS verification error later. For the default SA path, reading is
+ * best-effort: a missing file warns and yields `undefined` rather than
+ * crashing client construction.
  */
-function readCaBestEffort(caPath?: string): string | undefined {
-  const resolvedPath = caPath ?? `${SA_DIR}/ca.crt`;
+function readCa(caPath?: string): string | undefined {
+  const explicit = caPath !== undefined;
+  const path = caPath ?? `${SA_DIR}/ca.crt`;
   try {
-    return readFileSync(resolvedPath, "utf-8");
-  } catch {
-    if (caPath !== undefined) {
-      console.warn(
-        `[kubernetes-client] CA file not readable at "${caPath}" — proceeding without CA verification. TLS errors may be hard to diagnose.`,
+    return readFileSync(path, "utf-8");
+  } catch (err) {
+    if (explicit) {
+      throw new Error(
+        `[kubernetes-client] CA file read failed at explicit caPath "${path}": ${String(err)}`,
       );
     }
+    console.warn(
+      "[kubernetes-client] CA file read failed, falling back to system CAs:",
+      err,
+    );
     return undefined;
   }
 }
@@ -290,8 +295,9 @@ export interface HttpKubernetesClientOpts {
   /**
    * Path to the mounted CA cert (used only when `caCert` is omitted). The CA is
    * read and applied to outbound TLS so HTTPS to the API server verifies against
-   * the cluster's self-signed cert. Reading is best-effort: a missing file
-   * leaves the CA undefined rather than throwing.
+   * the cluster's self-signed cert. When `caPath` is provided explicitly, a
+   * read failure THROWS (a named path is expected to exist); the default SA path
+   * is best-effort and warns + degrades to system CAs on failure.
    */
   caPath?: string;
   /** Injected fetch — defaults to the global `fetch`. Never overrides the global. */
@@ -303,37 +309,33 @@ type RequestInitWithTls = RequestInit & { tls?: { ca?: string } };
 
 export class HttpKubernetesClient implements KubernetesClient {
   private readonly apiServer: string;
-  /**
-   * Static token used when `token` is supplied directly. When `null`, the
-   * token is read from `tokenPath` on every request so Kubernetes projected
-   * token rotations (default every 1 h) are picked up automatically.
-   */
-  private readonly staticToken: string | null;
-  /** Path to the mounted SA token — read on each request when no static token. */
+  /** Fixed token (test injection). When undefined, read per-request from disk. */
+  private readonly token?: string;
   private readonly tokenPath: string;
   private readonly caCert?: string;
   private readonly fetchFn: typeof fetch;
 
   constructor(opts?: HttpKubernetesClientOpts) {
     this.apiServer = opts?.apiServer ?? defaultApiServer();
+    this.token = opts?.token;
     this.tokenPath = opts?.tokenPath ?? `${SA_DIR}/token`;
-    if (opts?.token !== undefined) {
-      this.staticToken = opts.token;
-    } else {
-      // Read once at construction for early failure detection, but re-read on
-      // each request so rotated projected tokens are always current.
-      readFileSync(this.tokenPath, "utf-8"); // validate path is readable now
-      this.staticToken = null;
-    }
-    this.caCert = opts?.caCert ?? readCaBestEffort(opts?.caPath);
+    this.caCert = opts?.caCert ?? readCa(opts?.caPath);
     this.fetchFn = opts?.fetchFn ?? fetch;
   }
 
+  /**
+   * Resolve the current Bearer token. An explicitly injected `token` is fixed;
+   * otherwise the token is read from disk per request so that projected
+   * ServiceAccount token rotation (~hourly) is picked up without a pod restart.
+   */
+  private readToken(): string {
+    if (this.token !== undefined) return this.token;
+    return readFileSync(this.tokenPath, "utf-8").trim();
+  }
+
   private authHeaders(extra?: Record<string, string>): HeadersInit {
-    const token =
-      this.staticToken ?? readFileSync(this.tokenPath, "utf-8").trim();
     return {
-      Authorization: `Bearer ${token}`,
+      Authorization: `Bearer ${this.readToken()}`,
       ...extra,
     };
   }
@@ -344,6 +346,9 @@ export class HttpKubernetesClient implements KubernetesClient {
       : init;
     const resp = await this.fetchFn(url, finalInit as RequestInit);
     const text = await resp.text();
+    // Guard parse: proxy 502s / HTML error pages aren't JSON. A parse failure
+    // yields `undefined` so non-2xx still maps to a typed error (mapError has a
+    // status fallback) and 2xx non-JSON returns the existing empty-body path.
     let body: unknown;
     try {
       body = text ? JSON.parse(text) : undefined;
