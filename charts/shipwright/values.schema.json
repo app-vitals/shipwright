@@ -157,7 +157,7 @@
           "required": ["port"]
         }
       },
-      "required": ["enabled", "image"]
+      "required": ["enabled", "image", "service"]
     }
   }
 }

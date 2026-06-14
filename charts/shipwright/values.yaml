@@ -106,9 +106,13 @@ postgresql:
     database: shipwright_admin
     # -- Default application username.
     username: shipwright
-    # -- Default password. CHANGE THIS for any non-throwaway environment, or set
-    # auth.existingSecret to source credentials from a pre-created Secret.
-    password: shipwright
+    # -- Database password. Left EMPTY on purpose: with no password and no
+    # existingSecret, the Bitnami postgresql subchart auto-generates a random
+    # password on install. Set it explicitly here, or (preferred for production)
+    # point auth.existingSecret at a pre-created Secret. CAVEAT: a Bitnami-generated
+    # password is NOT stable across `helm upgrade` — it regenerates unless you use
+    # auth.existingSecret. Never ship a known hard-coded default in this chart.
+    password: ""
     # -- Source credentials from an existing Secret instead of the values above.
     existingSecret: ""
   # -- Minikube-friendly primary defaults: modest resources, small/toggleable storage.

@@ -27,6 +27,13 @@ helm template my-release charts/shipwright
 helm install my-release charts/shipwright --namespace shipwright --create-namespace
 ```
 
+The chart ships **no** default PostgreSQL password: `postgresql.auth.password` is
+empty, so the Bitnami subchart auto-generates a random one on install (retrieve it
+via the `kubectl get secret ... | base64 -d` command printed in NOTES). A generated
+password is **not** stable across `helm upgrade` — for any persistent or production
+environment, set `postgresql.auth.existingSecret` to a pre-created Secret (or set
+`postgresql.auth.password` explicitly to a value you manage).
+
 ## Values
 
 | Key | Default | Description |
