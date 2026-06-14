@@ -61,8 +61,10 @@ Record `task_started_at` (current ISO timestamp) for metrics.
 **Snapshot the Claude Code session JSONL for token tracking:**
 
 ```bash
-# Find the most recently modified JSONL in ~/.claude/projects/
-JSONL_SNAPSHOT_PATH=$(ls -t ~/.claude/projects/*/*.jsonl 2>/dev/null | head -1)
+# Find the most recently modified JSONL scoped to the current project directory.
+# Scoping to the current project avoids picking up a concurrent session's JSONL
+# in multi-agent or multi-project environments.
+JSONL_SNAPSHOT_PATH=$(ls -t ~/.claude/projects/$(pwd | sed 's|/|-|g' | sed 's/^-//')/*.jsonl 2>/dev/null | head -1)
 JSONL_SNAPSHOT_LINES=$(wc -l < "$JSONL_SNAPSHOT_PATH" 2>/dev/null || echo 0)
 EFFORT_LEVEL=$(echo $ANTHROPIC_EFFORT_LEVEL)
 CLAUDE_MODEL=$(echo $CLAUDE_MODEL)
@@ -970,7 +972,7 @@ Never exits non-zero — any parse error yields zeros.
 import json, sys, os
 
 RATES = {
-    "claude-fable-5":    {"input": 10.0, "output": 50.0},
+    "claude-fable-5":    {"input": 10.0, "output": 50.0},  # Anthropic model ID per SDK
     "claude-opus-4-8":   {"input": 5.0,  "output": 25.0},
     "claude-opus-4-7":   {"input": 5.0,  "output": 25.0},
     "claude-opus-4-6":   {"input": 5.0,  "output": 25.0},
@@ -1081,14 +1083,14 @@ POSTHOG_SCRIPT=$(find ~/.claude/plugins/cache -name "posthog_send.py" -path "*/s
   pr={pr_number} files_changed={files_changed_count} \
   started_at="{task_started_at}" {if task has complexity: complexity={complexity}} \
   tokens_in={INPUT_TOKENS} tokens_out={OUTPUT_TOKENS} cost_usd={COST_USD} \
-  effort_level="{EFFORT_LEVEL}"
+  effort_level=$([ -n "$EFFORT_LEVEL" ] && echo "\"$EFFORT_LEVEL\"" || echo null)
 ```
 
 `--task {id}` makes `posthog_send.py` set `properties.task_id` automatically, and the explicit `started_at`/`--ts` pair lets downstream consumers compute cycle time from a single event. This event is additive — it does not replace the JSONL batch line or any incremental checkpoint event.
 
 Notes on token args:
 - `{INPUT_TOKENS}`, `{OUTPUT_TOKENS}`, `{COST_USD}` are the values from Step 10b.2. When any is `null`, pass the literal string `null` — `posthog_send.py` will parse it as JSON `null`.
-- `{EFFORT_LEVEL}` is the value from Step 1. When empty or unset, pass an empty string `""` — `posthog_send.py` will store it as an empty string, and downstream consumers can treat `""` as absent.
+- `{EFFORT_LEVEL}` is the value from Step 1. Use the conditional form `$([ -n "$EFFORT_LEVEL" ] && echo "\"$EFFORT_LEVEL\"" || echo null)` so that an unset or empty `EFFORT_LEVEL` passes the literal `null` (not `""`) — `posthog_send.py` parses `null` as JSON null, keeping the PostHog property consistent with the JSONL record.
 
 ### 10d. Print Handoff
 
