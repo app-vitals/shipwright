@@ -113,6 +113,41 @@ tasks:
           echo "WARNING: gitleaks not installed locally — skipping secret scan. CI enforces this gate."
         fi
 
+  helm:lint:
+    desc: "Helm chart lint (helm lint charts/shipwright)"
+    cmds:
+      - helm lint charts/shipwright
+
+  helm:unittest:
+    desc: "Helm unit tests (helm-unittest golden specs under charts/shipwright/tests/)"
+    cmds:
+      - helm unittest charts/shipwright
+
+  helm:validate:
+    desc: "Render templates and validate against k8s + CRD schemas (kubeconform, strict)"
+    cmds:
+      # The CRD schema-location uses kubeconform's own {{.Group}} placeholders;
+      # wrap the whole flag in a go-task string literal so go-task does not try
+      # to interpolate those braces.
+      - >-
+        helm template shipwright charts/shipwright --namespace shipwright
+        | kubeconform -strict -summary
+        -schema-location default
+        {{ printf "%s" "-schema-location" }}
+        {{ printf "%s" "https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" }}
+
+  helm:check:
+    desc: "Local-runnable Helm gate: lint → unittest → validate (no cluster)"
+    cmds:
+      - task: helm:lint
+      - task: helm:unittest
+      - task: helm:validate
+
+  helm:e2e:
+    desc: "Helm end-to-end: ct install on a kind cluster (runs `helm test`). Requires kind + ct + a running Docker daemon."
+    cmds:
+      - ct install --config ct.yaml --charts charts/shipwright
+
   pre-public:
     desc: Full pre-public audit gate (check-strings + secret-scan). Run before making the repo public.
     cmds:

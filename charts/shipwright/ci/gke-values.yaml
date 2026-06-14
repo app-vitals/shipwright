@@ -1,0 +1,49 @@
+# ct-discovered values variant: GKE-flavored overrides.
+# Demonstrates how the chart is tuned for Google Kubernetes Engine — an internal
+# LoadBalancer for service exposure, the GKE default storage class for PVCs, and
+# session auth. ct renders + installs this variant on the kind cluster to prove
+# the templates accept provider-flavored values (the LB itself is not exercised
+# end-to-end on kind; ct validates render + install + `helm test`).
+networking:
+  # GKE provisions a cloud L4 load balancer for type=LoadBalancer services.
+  type: LoadBalancer
+
+auth:
+  mode: session
+
+agent:
+  provisioning:
+    persistence:
+      enabled: true
+      size: 5Gi
+      # On real GKE you would set storageClass: standard-rwo (the GKE default
+      # dynamic provisioner). Left empty here so `ct install` on a kind cluster
+      # binds the PVC against kind's default StorageClass — the cloud class name
+      # would never bind on kind.
+      storageClass: ""
+      accessModes:
+        - ReadWriteOnce
+
+postgresql:
+  enabled: true
+  # Use the `bitnamilegacy` mirror — the default bitnami/postgresql tag is no
+  # longer publicly pullable (see README "Bitnami registry risk").
+  image:
+    registry: docker.io
+    repository: bitnamilegacy/postgresql
+  auth:
+    database: shipwright_admin
+    username: shipwright
+    # CI-only literal; production should use auth.existingSecret.
+    password: ci-gke-postgres
+  primary:
+    persistence:
+      enabled: true
+      size: 10Gi
+    resources:
+      requests:
+        cpu: 250m
+        memory: 256Mi
+      limits:
+        cpu: "1"
+        memory: 1Gi
