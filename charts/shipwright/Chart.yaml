@@ -29,11 +29,7 @@ annotations:
   # entry in CHANGELOG.md (keep the two in sync on every bump).
   artifacthub.io/changes: |
     - kind: added
-      description: "Gateway API networking (networking.type=gateway) rendering a gateway.networking.k8s.io/v1 Gateway (configurable gatewayClassName/host, default gke-l7-global-external-managed) plus HTTPRoute(s) — admin UI/API at / and metrics dashboard at /dashboard (omitted when metrics disabled). Mutually exclusive with networking.type=ingress."
-    - kind: added
-      description: "Optional cert-manager Certificate (tls.certManager.enabled) wiring a cert-manager.io/v1 Certificate to the gateway host via issuerRef and adding an HTTPS (:443) Gateway listener. Disabled by default (plain HTTP)."
-    - kind: added
-      description: "Agent-provisioning RBAC + admin env contract (agent.provisioning.enabled, default false). When enabled: a namespace-scoped Role (create/get/delete on apps/Deployments and core/Secrets) + RoleBinding to the admin ServiceAccount, a separate agent ServiceAccount, and the provisioner env contract (SHIPWRIGHT_K8S_PROVISIONING, SHIPWRIGHT_K8S_NAMESPACE via downward API, SHIPWRIGHT_AGENT_IMAGE/_TAG, SHIPWRIGHT_AGENT_REPLICAS, SHIPWRIGHT_API_URL, SHIPWRIGHT_ADMIN_DEPLOYMENT_NAME, optional SHIPWRIGHT_ADMIN_DEPLOYMENT_UID) injected into the admin Deployment. Disabled by default → nothing rendered, admin stays in Noop mode."
+      description: "metrics.provider block: configurable PostHog provider (existingSecret refs for POSTHOG_PERSONAL_API_KEY/POSTHOG_PROJECT_ID), METRICS_ADMIN_URL, METRICS_BASE_PATH, METRICS_REQUIRE_OWNER_ROLE, and METRICS_INTERNAL_API_KEY (via existingSecret). All additive and gated — defaults preserve existing SQLite/bundled-PG behavior."
 dependencies:
   # Bitnami PostgreSQL subchart. Pinned to a chart version whose default image tag
   # is concrete (NOT `latest`), because Bitnami's 2025 catalog change moved newer

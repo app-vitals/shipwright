@@ -191,3 +191,124 @@ tests:
     asserts:
       - hasDocuments:
           count: 0
+
+  - it: injects POSTHOG_PERSONAL_API_KEY and POSTHOG_PROJECT_ID via secretKeyRef when posthog existingSecret is set
+    template: templates/metrics-deployment.yaml
+    release:
+      name: r
+    set:
+      metrics.provider.posthog.existingSecret: my-posthog-secret
+      metrics.provider.posthog.personalApiKeyRef: POSTHOG_PERSONAL_API_KEY
+      metrics.provider.posthog.projectIdRef: POSTHOG_PROJECT_ID
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: POSTHOG_PERSONAL_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: my-posthog-secret
+                key: POSTHOG_PERSONAL_API_KEY
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: POSTHOG_PROJECT_ID
+            valueFrom:
+              secretKeyRef:
+                name: my-posthog-secret
+                key: POSTHOG_PROJECT_ID
+
+  - it: omits PostHog env vars in the default path (no existingSecret set)
+    template: templates/metrics-deployment.yaml
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: POSTHOG_PERSONAL_API_KEY
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: POSTHOG_PROJECT_ID
+
+  - it: injects METRICS_ADMIN_URL as a literal env when adminUrl is set
+    template: templates/metrics-deployment.yaml
+    set:
+      metrics.provider.adminUrl: "http://admin-service:3001"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICS_ADMIN_URL
+            value: "http://admin-service:3001"
+
+  - it: omits METRICS_ADMIN_URL when adminUrl is empty (default)
+    template: templates/metrics-deployment.yaml
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICS_ADMIN_URL
+
+  - it: injects METRICS_BASE_PATH as a literal env when basePath is set
+    template: templates/metrics-deployment.yaml
+    set:
+      metrics.provider.basePath: "/dashboard"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICS_BASE_PATH
+            value: "/dashboard"
+
+  - it: omits METRICS_BASE_PATH when basePath is empty (default)
+    template: templates/metrics-deployment.yaml
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICS_BASE_PATH
+
+  - it: injects METRICS_REQUIRE_OWNER_ROLE=true when requireOwnerRole is true
+    template: templates/metrics-deployment.yaml
+    set:
+      metrics.provider.requireOwnerRole: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICS_REQUIRE_OWNER_ROLE
+            value: "true"
+
+  - it: omits METRICS_REQUIRE_OWNER_ROLE when requireOwnerRole is false (default)
+    template: templates/metrics-deployment.yaml
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICS_REQUIRE_OWNER_ROLE
+            value: "true"
+
+  - it: injects METRICS_INTERNAL_API_KEY via secretKeyRef when internalKey.existingSecret is set
+    template: templates/metrics-deployment.yaml
+    release:
+      name: r
+    set:
+      metrics.provider.internalKey.existingSecret: my-internal-secret
+      metrics.provider.internalKey.key: METRICS_INTERNAL_API_KEY
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICS_INTERNAL_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: my-internal-secret
+                key: METRICS_INTERNAL_API_KEY
+
+  - it: omits METRICS_INTERNAL_API_KEY when internalKey.existingSecret is empty (default)
+    template: templates/metrics-deployment.yaml
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICS_INTERNAL_API_KEY
