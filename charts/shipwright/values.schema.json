@@ -262,6 +262,20 @@
         "existingSecret": { "type": "string" },
         "adminUrlKey": { "type": "string" }
       }
+    },
+    "cloudSqlProxy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "image": { "type": "string" },
+        "connectionName": { "type": "string" },
+        "args": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "resources": { "type": "object" }
+      }
     }
   },
   "if": {

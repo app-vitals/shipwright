@@ -65,6 +65,8 @@ spec:
                 secretKeyRef:
                   name: {{ include "shipwright.admin.secretName" . }}
                   key: DATABASE_URL_SHIPWRIGHT_ADMIN
+            {{- else if and (not .Values.postgresql.enabled) (empty .Values.externalDatabase.existingSecret) }}
+            {{- fail "externalDatabase.existingSecret is required when postgresql.enabled=false" }}
             {{- else if .Values.externalDatabase.existingSecret }}
             # Bring-your-own (external) Postgres: inject DATABASE_URL_SHIPWRIGHT_ADMIN
             # from a user-managed Secret. The chart neither assembles nor owns this
@@ -156,7 +158,7 @@ spec:
           image: {{ .Values.cloudSqlProxy.image }}
           args:
             - --private-ip
-            - {{ .Values.cloudSqlProxy.connectionName | quote }}
+            - {{ required "cloudSqlProxy.connectionName is required when cloudSqlProxy.enabled=true" .Values.cloudSqlProxy.connectionName | quote }}
             {{- range .Values.cloudSqlProxy.args }}
             - {{ . | quote }}
             {{- end }}
