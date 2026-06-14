@@ -187,7 +187,7 @@ Assign a complexity score (1–5) and model tier to every task:
 **Tie-breaking rules:**
 - New abstraction required (interface, base class, shared module) → bump up one tier
 - Pure modification of existing code (no new patterns) → stay at current tier
-- When uncertain, prefer the lower tier — the executor escalates automatically on BLOCKED
+- When uncertain, prefer the lower tier — the planner can escalate in a follow-up plan revision if execution is blocked
 
 **Bundle inheritance:** When tasks share a branch, all tasks in the bundle inherit the highest model tier among them. A haiku-tier task bundled with a sonnet-tier task runs at sonnet.
 
