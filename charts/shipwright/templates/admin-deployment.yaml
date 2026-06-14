@@ -22,6 +22,12 @@ spec:
         - name: {{ . }}
         {{- end }}
       {{- end }}
+      {{- if .Values.postgresql.enabled }}
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z {{ include "shipwright.postgresql.fullname" . }} 5432; do echo "waiting for postgresql..."; sleep 2; done']
+      {{- end }}
       containers:
         - name: admin
           image: "{{ with .Values.global.imageRegistry }}{{ . }}/{{ end }}{{ .Values.admin.image.repository }}:{{ .Values.admin.image.tag | default .Chart.AppVersion }}"
