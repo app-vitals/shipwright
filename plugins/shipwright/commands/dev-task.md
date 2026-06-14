@@ -58,6 +58,18 @@ Deps:    {dependencies or "none"}
 
 Record `task_started_at` (current ISO timestamp) for metrics.
 
+**Snapshot the Claude Code session JSONL for token tracking:**
+
+```bash
+# Find the most recently modified JSONL in ~/.claude/projects/
+JSONL_SNAPSHOT_PATH=$(ls -t ~/.claude/projects/*/*.jsonl 2>/dev/null | head -1)
+JSONL_SNAPSHOT_LINES=$(wc -l < "$JSONL_SNAPSHOT_PATH" 2>/dev/null || echo 0)
+EFFORT_LEVEL=$(echo $ANTHROPIC_EFFORT_LEVEL)
+CLAUDE_MODEL=$(echo $CLAUDE_MODEL)
+```
+
+Store `JSONL_SNAPSHOT_PATH`, `JSONL_SNAPSHOT_LINES`, `EFFORT_LEVEL`, and `CLAUDE_MODEL` as variables for use in Step 10b. These are best-effort — if the JSONL path is empty or unreadable, all token fields will emit as `null`. Claude Code sets `$CLAUDE_MODEL` to the active model ID (e.g. `claude-sonnet-4-6`). If not set or not in the pricing table, `cost_usd` emits as `null`.
+
 Each PostHog call in this task is self-contained: it resolves the script path inline and silently skips if the script is not found. No shell variable is shared between steps.
 
 Now detect the project toolchain for `{repo}` (used throughout):
@@ -938,8 +950,102 @@ When `conformanceReport.checked` is `true`, emit `"conformance": {"checked": tru
 
 **Every field must be present on every emitted record**: when test layer metrics is configured (`test-system.md` present), emit `test_layers` with `"measured"` as an object with all-zero counts, `"planned"` as `[]`, `"drift"` as `[]`, `"coverage_per_layer"` as `null`, and `"coverage_per_layer_reason"` as the reason string — even when a task has no test changes. When test layer metrics is not configured (`test-system.md` absent), emit `"test_layers":{"configured":false}`. Never omit the block. The `conformance` field follows the same rule: when `test-system.md` is absent, emit `"conformance":{"checked":false,"deviations":[]}` (conformance was not checked); when `test-system.md` is present but the diff contains no test additions, emit `"conformance":{"checked":true,"deviations":[]}` (checked and no deviations found). Never omit `conformance`.
 
+#### 10b.2. Compute tokens block
+
+Using the `JSONL_SNAPSHOT_PATH` and `JSONL_SNAPSHOT_LINES` captured in Step 1, run the following Python snippet to sum token usage from all new JSONL lines written during this task:
+
+```bash
+python3 /tmp/shipwright-token-calc.py "$JSONL_SNAPSHOT_PATH" "$JSONL_SNAPSHOT_LINES" "$CLAUDE_MODEL"
+```
+
+Write the snippet to `/tmp/shipwright-token-calc.py` once (before running it):
+
+```python
+#!/usr/bin/env python3
+"""
+Sum token usage from new Claude Code JSONL lines since a snapshot position.
+Outputs shell variable assignments: INPUT_TOKENS=N OUTPUT_TOKENS=N COST_USD=N.NNNN
+Never exits non-zero — any parse error yields zeros.
+"""
+import json, sys, os
+
+RATES = {
+    "claude-fable-5":    {"input": 10.0, "output": 50.0},
+    "claude-opus-4-8":   {"input": 5.0,  "output": 25.0},
+    "claude-opus-4-7":   {"input": 5.0,  "output": 25.0},
+    "claude-opus-4-6":   {"input": 5.0,  "output": 25.0},
+    "claude-sonnet-4-6": {"input": 3.0,  "output": 15.0},
+    "claude-haiku-4-5":  {"input": 1.0,  "output":  5.0},
+    "claude-haiku-4-6":  {"input": 1.0,  "output":  5.0},
+}
+
+def main():
+    try:
+        jsonl_path = sys.argv[1] if len(sys.argv) > 1 else ""
+        snapshot_lines = int(sys.argv[2]) if len(sys.argv) > 2 else 0
+        model = sys.argv[3] if len(sys.argv) > 3 else ""
+
+        if not jsonl_path or not os.path.isfile(jsonl_path):
+            print("INPUT_TOKENS=null OUTPUT_TOKENS=null COST_USD=null")
+            return
+
+        input_tokens = 0
+        output_tokens = 0
+        cache_creation = 0
+        cache_read = 0
+
+        with open(jsonl_path, "r", errors="replace") as f:
+            for i, line in enumerate(f):
+                if i < snapshot_lines:
+                    continue
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except Exception:
+                    continue
+                # Claude Code JSONL: top-level usage field
+                usage = None
+                if isinstance(obj.get("usage"), dict):
+                    usage = obj["usage"]
+                # Nested: message.usage
+                elif isinstance(obj.get("message"), dict) and isinstance(obj["message"].get("usage"), dict):
+                    usage = obj["message"]["usage"]
+                if usage:
+                    input_tokens  += int(usage.get("input_tokens", 0) or 0)
+                    output_tokens += int(usage.get("output_tokens", 0) or 0)
+                    cache_creation += int(usage.get("cache_creation_input_tokens", 0) or 0)
+                    cache_read    += int(usage.get("cache_read_input_tokens", 0) or 0)
+
+        rates = RATES.get(model)
+        if rates and (input_tokens or output_tokens):
+            cost = (
+                input_tokens   * rates["input"] +
+                output_tokens  * rates["output"] +
+                cache_creation * rates["input"] * 1.25 +
+                cache_read     * rates["input"] * 0.1
+            ) / 1_000_000
+            print(f"INPUT_TOKENS={input_tokens} OUTPUT_TOKENS={output_tokens} COST_USD={cost:.6f}")
+        else:
+            print(f"INPUT_TOKENS={input_tokens} OUTPUT_TOKENS={output_tokens} COST_USD=null")
+    except Exception:
+        print("INPUT_TOKENS=null OUTPUT_TOKENS=null COST_USD=null")
+
+main()
+```
+
+Evaluate the output:
+
+```bash
+eval $(python3 /tmp/shipwright-token-calc.py "$JSONL_SNAPSHOT_PATH" "$JSONL_SNAPSHOT_LINES" "$CLAUDE_MODEL")
+# INPUT_TOKENS, OUTPUT_TOKENS, COST_USD are now set (numbers or "null")
+```
+
+If the script fails or the JSONL path is unreadable, all three variables emit as `null`. Store `INPUT_TOKENS`, `OUTPUT_TOKENS`, `COST_USD`, and `EFFORT_LEVEL` (from Step 1) for the JSONL line and Step 10c.
+
 ```json
-{"task":"{id}","title":"{title}","session":"{session}","repo":"{repo}","layer":"{layer}","estimated_h":{hours},"ci_fix_attempts":{ci_attempt},"pr":{pr_number},"files_changed":{files_changed_count},"started_at":"{task_started_at}","ts":"{ISO timestamp}","simplify":{"total":{simplify_total},"dry":{simplify_dry},"dead_code":{simplify_dead_code},"naming":{simplify_naming},"complexity":{simplify_complexity},"consistency":{simplify_consistency}},"requirements":{"met":{req_met},"partial":{req_partial},"not_met":{req_not_met},"total":{req_total}},"ci":{"fix_attempts":{ci_attempt},"failures":{ci_failures_json_array},"checks":{ci_checks_json_array}},"auto_docs":{"updated":{auto_docs_updated},"files_changed":{auto_docs_files_changed},"lines_changed":{auto_docs_lines_changed},"skipped_reason":{auto_docs_skipped_reason_json}},"test_layers":{"measured":{test_layers_measured},"planned":{test_layers_planned},"drift":{test_layers_drift},"coverage_per_layer":{test_layers_coverage_per_layer},"coverage_per_layer_reason":{test_layers_coverage_per_layer_reason}},"conformance":{conformance_checked_json}}
+{"task":"{id}","title":"{title}","session":"{session}","repo":"{repo}","layer":"{layer}","estimated_h":{hours},"ci_fix_attempts":{ci_attempt},"pr":{pr_number},"files_changed":{files_changed_count},"started_at":"{task_started_at}","ts":"{ISO timestamp}","simplify":{"total":{simplify_total},"dry":{simplify_dry},"dead_code":{simplify_dead_code},"naming":{simplify_naming},"complexity":{simplify_complexity},"consistency":{simplify_consistency}},"requirements":{"met":{req_met},"partial":{req_partial},"not_met":{req_not_met},"total":{req_total}},"ci":{"fix_attempts":{ci_attempt},"failures":{ci_failures_json_array},"checks":{ci_checks_json_array}},"auto_docs":{"updated":{auto_docs_updated},"files_changed":{auto_docs_files_changed},"lines_changed":{auto_docs_lines_changed},"skipped_reason":{auto_docs_skipped_reason_json}},"test_layers":{"measured":{test_layers_measured},"planned":{test_layers_planned},"drift":{test_layers_drift},"coverage_per_layer":{test_layers_coverage_per_layer},"coverage_per_layer_reason":{test_layers_coverage_per_layer_reason}},"conformance":{conformance_checked_json},"tokens":{"input":{INPUT_TOKENS},"output":{OUTPUT_TOKENS},"cost_usd":{COST_USD}},"effort_level":{effort_level_json}}
 ```
 
 Notes:
@@ -952,6 +1058,8 @@ Notes:
 - `test_layers_coverage_per_layer` is `null` when the toolchain does not support per-layer coverage (most toolchains); do not fabricate values. When null, the aggregate `coverage_delta` field is unaffected.
 - `test_layers_coverage_per_layer_reason` is a quoted string explaining why `coverage_per_layer` is null (e.g. `"toolchain does not support per-layer coverage"`), or `null` when coverage data is populated.
 - `conformance_checked_json` is the JSON encoding of the `ConformanceReport` from `checkConformance`. When `test-system.md` is absent (source: "defaults"), this is `{"checked":false,"deviations":[]}`, indicating conformance was not checked. When present, `checked` is `true` and `deviations` lists any advisory layer deviations. A non-empty deviations array is advisory only — it never causes /dev-task or /review to fail or block.
+- `{INPUT_TOKENS}`, `{OUTPUT_TOKENS}`, `{COST_USD}` are the values from Step 10b.2. `cost_usd` is `null` when the model rate is unknown; `input` and `output` counts are still emitted. All three are `null` only when the JSONL path is missing or unreadable.
+- `effort_level_json` is either a JSON string (e.g. `"high"`) or `null` (unquoted) when `EFFORT_LEVEL` is empty or unset.
 - The `/review` Step 13 enrichment appends `review.*` fields to this same JSONL line by adding a new top-level key to the existing JSON object. This is unaffected by the new `test_layers` block — the enrichment reads the entire line, parses it, adds the `review` key, and writes it back.
 
 This step is silent. JSONL format — one JSON object per line; append-only.
@@ -971,10 +1079,16 @@ POSTHOG_SCRIPT=$(find ~/.claude/plugins/cache -name "posthog_send.py" -path "*/s
   title="{title}" session="{session}" layer="{layer}" \
   estimated_h={hours} actual_h={actual_h} retries={ci_attempt} \
   pr={pr_number} files_changed={files_changed_count} \
-  started_at="{task_started_at}" {if task has complexity: complexity={complexity}}
+  started_at="{task_started_at}" {if task has complexity: complexity={complexity}} \
+  tokens_in={INPUT_TOKENS} tokens_out={OUTPUT_TOKENS} cost_usd={COST_USD} \
+  effort_level="{EFFORT_LEVEL}"
 ```
 
 `--task {id}` makes `posthog_send.py` set `properties.task_id` automatically, and the explicit `started_at`/`--ts` pair lets downstream consumers compute cycle time from a single event. This event is additive — it does not replace the JSONL batch line or any incremental checkpoint event.
+
+Notes on token args:
+- `{INPUT_TOKENS}`, `{OUTPUT_TOKENS}`, `{COST_USD}` are the values from Step 10b.2. When any is `null`, pass the literal string `null` — `posthog_send.py` will parse it as JSON `null`.
+- `{EFFORT_LEVEL}` is the value from Step 1. When empty or unset, pass an empty string `""` — `posthog_send.py` will store it as an empty string, and downstream consumers can treat `""` as absent.
 
 ### 10d. Print Handoff
 

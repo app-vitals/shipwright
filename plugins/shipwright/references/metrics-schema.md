@@ -187,6 +187,30 @@ Computed by `dev-task.md` Step 10b.1 using `checkConformance` and `parseDiffAddi
 
 Records written before v4.15.0 will be missing the `conformance` object entirely. Consumers should treat absent `conformance` as `{checked: false, deviations: []}`.
 
+#### `tokens` — Step 10b.2 token usage
+
+Token counts and estimated cost for the Claude Code session that executed this task.
+
+| Field | Type | Default if Absent | Description |
+|-------|------|-------------------|-------------|
+| `tokens.input` | integer \| null | `null` | Base input tokens from the API response — does not include `cache_creation_input_tokens` or `cache_read_input_tokens`, which are factored into `cost_usd` separately |
+| `tokens.output` | integer \| null | `null` | Total output tokens generated during this task |
+| `tokens.cost_usd` | number \| null | `null` | Estimated cost in USD based on model pricing. `null` when the model is unknown or token counts could not be read |
+
+Computed by the Python token calculator in `dev-task.md` Step 10b.2 by diffing the Claude Code session JSONL from the snapshot taken in Step 1. `cost_usd` is `null` when the model rate is unknown; `input` and `output` counts are still emitted. All three fields are `null` only when the JSONL path is missing or unreadable. The entire `tokens` block is present on every record written by v4.16.0+; omitting a field within it is not permitted — emit `null` explicitly.
+
+Records written before v4.16.0 will be missing the `tokens` object entirely. Consumers should treat absent `tokens` as `{input: null, output: null, cost_usd: null}`.
+
+#### `effort_level` — Step 1 effort level
+
+| Field | Type | Default if Absent | Description |
+|-------|------|-------------------|-------------|
+| `effort_level` | string \| null | `null` | The `ANTHROPIC_EFFORT_LEVEL` env var value at the time the task ran (e.g. `"high"`, `"low"`). `null` when the env var was not set |
+
+Top-level field (not nested). Captured from `$ANTHROPIC_EFFORT_LEVEL` in Step 1 alongside the JSONL snapshot. `null` when the variable is empty or unset.
+
+Records written before v4.16.0 will be missing the `effort_level` field. Consumers should treat absent `effort_level` as `null`.
+
 ---
 
 ## Example Records
@@ -237,6 +261,20 @@ test-system.md was absent — `test_layers` is `{"configured":false}` with no ot
 {"task":"WS-1.7","title":"Fix billing edge case","estimated_h":1,"actual_h":0.8,"complexity":2,"retries":0,"ci_fix_attempts":0,"pr":48,"hotfixes":0,"files_changed":2,"started_at":"2026-05-28T14:00:00Z","ts":"2026-05-28T14:48:00Z","simplify":{"total":0,"dry":0,"dead_code":0,"naming":0,"complexity":0,"consistency":0},"requirements":{"met":2,"partial":0,"not_met":0,"unverifiable":0,"total":2},"ci":{"fix_attempts":0,"failures":[]},"model":"sonnet","coverage":{"before":90.1,"after":90.1,"delta":0.0},"auto_docs":{"updated":false,"files_changed":0,"lines_changed":0,"skipped_reason":"no_stale_refs"},"test_layers":{"configured":false},"conformance":{"checked":false,"deviations":[]}}
 ```
 
+### v4.16.0 record (with tokens and effort_level — DM-0.1)
+
+Token usage and effort level are now tracked. `tokens.cost_usd` is `null` when the model is not in the known pricing table. `effort_level` is `null` when `ANTHROPIC_EFFORT_LEVEL` was not set.
+
+```json
+{"task":"WS-1.8","title":"Add token metrics to dev-task","estimated_h":1,"actual_h":0.9,"complexity":2,"retries":0,"ci_fix_attempts":0,"pr":49,"hotfixes":0,"files_changed":3,"started_at":"2026-06-14T10:00:00Z","ts":"2026-06-14T10:54:00Z","simplify":{"total":0,"dry":0,"dead_code":0,"naming":0,"complexity":0,"consistency":0},"requirements":{"met":3,"partial":0,"not_met":0,"unverifiable":0,"total":3},"ci":{"fix_attempts":0,"failures":[]},"model":"sonnet","coverage":{"before":91.0,"after":91.0,"delta":0.0},"auto_docs":{"updated":false,"files_changed":0,"lines_changed":0,"skipped_reason":"no_stale_refs"},"test_layers":{"configured":false},"conformance":{"checked":false,"deviations":[]},"tokens":{"input":42318,"output":3201,"cost_usd":0.174645},"effort_level":"high"}
+```
+
+Example with unreadable JSONL (all token fields `null`) and no effort level set:
+
+```json
+{"task":"WS-1.9","title":"Fix config typo","estimated_h":0.5,"actual_h":0.4,"complexity":1,"retries":0,"ci_fix_attempts":0,"pr":50,"hotfixes":0,"files_changed":1,"started_at":"2026-06-14T11:00:00Z","ts":"2026-06-14T11:24:00Z","simplify":{"total":0,"dry":0,"dead_code":0,"naming":0,"complexity":0,"consistency":0},"requirements":{"met":1,"partial":0,"not_met":0,"unverifiable":0,"total":1},"ci":{"fix_attempts":0,"failures":[]},"model":"haiku","coverage":{"before":91.0,"after":91.0,"delta":0.0},"auto_docs":{"updated":false,"files_changed":0,"lines_changed":0,"skipped_reason":"no_stale_refs"},"test_layers":{"configured":false},"conformance":{"checked":false,"deviations":[]},"tokens":{"input":null,"output":null,"cost_usd":null},"effort_level":null}
+```
+
 ---
 
 ## Backward Compatibility Rules
@@ -247,6 +285,8 @@ test-system.md was absent — `test_layers` is `{"configured":false}` with no ot
 4. **Old records are included in basic aggregates** (hours, retries, files changed) but excluded from fix cascade aggregates that require the new fields.
 5. **Absent `test_layers` = legacy record (pre-v4.6.0).** Treat as `{measured: {}, planned: [], drift: [], coverage_per_layer: null, coverage_per_layer_reason: null}`. Do not exclude legacy records from aggregates that don't require test layer data.
 6. **`test_layers.configured: false` = test-system.md absent (v4.15.0+).** When `configured` is `false`, no other `test_layers` sub-keys are present. Pre-v4.15.0 records with a full `test_layers` object cannot be assumed to have had test-system.md present — the old code used PLAN_SESSION_DEFAULTS as a fallback, producing identical output. Treat absent `configured` on pre-v4.15.0 records as unknown (not as true).
+7. **Absent `tokens` = legacy record (pre-v4.16.0).** Consumers should treat absent `tokens` as `{input: null, output: null, cost_usd: null}`. Within a present `tokens` object, any sub-field that is `null` means the value could not be read (unreadable JSONL or unknown model) — not that tokens were zero. Never substitute `0` for `null`.
+8. **Absent `effort_level` = legacy record (pre-v4.16.0).** Consumers should treat absent `effort_level` as `null`. An explicit `null` value means `ANTHROPIC_EFFORT_LEVEL` was not set when the task ran; an empty string `""` from the PostHog event (the CLI arg fallback) is equivalent to `null` for aggregation purposes.
 
 ---
 
@@ -264,7 +304,7 @@ This catalogue lists what `dev-task.md` and `review.md` **actually fire** today 
 | `shipwright_auto_docs` | dev-task Step 8.5 — after docs-refresher agent | `task_id`, `project`, `updated`, `files_changed`, `lines_changed`, `skipped_reason` |
 | `shipwright_pr_created` | dev-task Step 9 — after PR creation | `task_id`, `project`, `pr`, `files_changed` |
 | `shipwright_ci_result` | dev-task Step 9b — after CI pass / no-CI skip | `task_id`, `project`, `passed_first_try`, `fix_attempts`, `failures`, `no_ci` (only when no CI configured) |
-| `shipwright_task_complete` | dev-task Step 10c — at task end (after PR + metrics) | `task_id`, `project`, `title`, `session`, `layer`, `estimated_h`, `actual_h`, `retries`, `pr`, `files_changed`, `started_at`; `complexity` when the task carries it |
+| `shipwright_task_complete` | dev-task Step 10c — at task end (after PR + metrics) | `task_id`, `project`, `title`, `session`, `layer`, `estimated_h`, `actual_h`, `retries`, `pr`, `files_changed`, `started_at`; `complexity` when the task carries it; `tokens_in`, `tokens_out`, `cost_usd`, `effort_level` (all `null` when unreadable or model unknown) |
 | `shipwright_task_reviewed` | review Step 13 — after review verdict | `task_id`, `project`, `pr`, `verdict`, `findings`, `fixes_applied`, `agents` |
 | `shipwright_task_deployed` | deploy command — after promote success | `task_id`, `project`, `canary_result`, `pipeline_minutes`, `reverted` |
 
