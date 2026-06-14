@@ -26,6 +26,7 @@ import {
   ConflictError,
   ForbiddenError,
   NotFoundError,
+  UnauthorizedError,
 } from "./errors.ts";
 
 // ─── Resource specs (caller-facing inputs) ──────────────────────────────────
@@ -222,11 +223,20 @@ export function loadInClusterConfig(opts?: {
  * Read the in-cluster CA cert (PEM) best-effort. A missing file yields
  * `undefined` rather than throwing — unlike the token, a missing CA must not
  * crash client construction.
+ *
+ * When `caPath` is explicitly provided (not the default) and the file cannot
+ * be read, a warning is emitted so TLS failures are diagnosable in production.
  */
 function readCaBestEffort(caPath?: string): string | undefined {
+  const resolvedPath = caPath ?? `${SA_DIR}/ca.crt`;
   try {
-    return readFileSync(caPath ?? `${SA_DIR}/ca.crt`, "utf-8");
+    return readFileSync(resolvedPath, "utf-8");
   } catch {
+    if (caPath !== undefined) {
+      console.warn(
+        `[kubernetes-client] CA file not readable at "${caPath}" — proceeding without CA verification. TLS errors may be hard to diagnose.`,
+      );
+    }
     return undefined;
   }
 }
@@ -253,12 +263,14 @@ function mapError(status: number, body: unknown): ApiError {
     (body as K8sStatus | undefined)?.message ??
     `Kubernetes API error ${status}`;
   switch (status) {
+    case 401:
+      return new UnauthorizedError(message);
+    case 403:
+      return new ForbiddenError(message);
     case 404:
       return new NotFoundError(message);
     case 409:
       return new ConflictError(message);
-    case 403:
-      return new ForbiddenError(message);
     default:
       return new ApiError(status, message);
   }
@@ -291,22 +303,37 @@ type RequestInitWithTls = RequestInit & { tls?: { ca?: string } };
 
 export class HttpKubernetesClient implements KubernetesClient {
   private readonly apiServer: string;
-  private readonly token: string;
+  /**
+   * Static token used when `token` is supplied directly. When `null`, the
+   * token is read from `tokenPath` on every request so Kubernetes projected
+   * token rotations (default every 1 h) are picked up automatically.
+   */
+  private readonly staticToken: string | null;
+  /** Path to the mounted SA token — read on each request when no static token. */
+  private readonly tokenPath: string;
   private readonly caCert?: string;
   private readonly fetchFn: typeof fetch;
 
   constructor(opts?: HttpKubernetesClientOpts) {
     this.apiServer = opts?.apiServer ?? defaultApiServer();
-    this.token =
-      opts?.token ??
-      readFileSync(opts?.tokenPath ?? `${SA_DIR}/token`, "utf-8").trim();
+    this.tokenPath = opts?.tokenPath ?? `${SA_DIR}/token`;
+    if (opts?.token !== undefined) {
+      this.staticToken = opts.token;
+    } else {
+      // Read once at construction for early failure detection, but re-read on
+      // each request so rotated projected tokens are always current.
+      readFileSync(this.tokenPath, "utf-8"); // validate path is readable now
+      this.staticToken = null;
+    }
     this.caCert = opts?.caCert ?? readCaBestEffort(opts?.caPath);
     this.fetchFn = opts?.fetchFn ?? fetch;
   }
 
   private authHeaders(extra?: Record<string, string>): HeadersInit {
+    const token =
+      this.staticToken ?? readFileSync(this.tokenPath, "utf-8").trim();
     return {
-      Authorization: `Bearer ${this.token}`,
+      Authorization: `Bearer ${token}`,
       ...extra,
     };
   }
@@ -317,7 +344,12 @@ export class HttpKubernetesClient implements KubernetesClient {
       : init;
     const resp = await this.fetchFn(url, finalInit as RequestInit);
     const text = await resp.text();
-    const body = text ? JSON.parse(text) : undefined;
+    let body: unknown;
+    try {
+      body = text ? JSON.parse(text) : undefined;
+    } catch {
+      body = undefined;
+    }
     if (!resp.ok) {
       throw mapError(resp.status, body);
     }

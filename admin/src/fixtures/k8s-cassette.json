@@ -118,5 +118,38 @@
       "status": "Success",
       "details": { "name": "agent-secret", "kind": "secrets" }
     }
+  },
+  "createSecret_409": {
+    "status": 409,
+    "body": {
+      "apiVersion": "v1",
+      "kind": "Status",
+      "status": "Failure",
+      "message": "secrets \"agent-secret\" already exists",
+      "reason": "AlreadyExists",
+      "code": 409
+    }
+  },
+  "createSecret_403": {
+    "status": 403,
+    "body": {
+      "apiVersion": "v1",
+      "kind": "Status",
+      "status": "Failure",
+      "message": "secrets is forbidden: User cannot create resource",
+      "reason": "Forbidden",
+      "code": 403
+    }
+  },
+  "getDeployment_401": {
+    "status": 401,
+    "body": {
+      "apiVersion": "v1",
+      "kind": "Status",
+      "status": "Failure",
+      "message": "Unauthorized",
+      "reason": "Unauthorized",
+      "code": 401
+    }
   }
 }

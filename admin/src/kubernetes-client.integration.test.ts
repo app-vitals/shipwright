@@ -13,7 +13,12 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ConflictError, ForbiddenError, NotFoundError } from "./errors.ts";
+import {
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+  UnauthorizedError,
+} from "./errors.ts";
 import {
   HttpKubernetesClient,
   type KubernetesClient,
@@ -164,6 +169,13 @@ describe("HttpKubernetesClient — Deployment errors", () => {
     ).rejects.toBeInstanceOf(ForbiddenError);
   });
 
+  it("maps 401 to UnauthorizedError", async () => {
+    const { client } = makeClient("getDeployment_401");
+    await expect(
+      client.getDeployment("shipwright", "agent-abc"),
+    ).rejects.toBeInstanceOf(UnauthorizedError);
+  });
+
   it("surfaces the k8s Status message in the error", async () => {
     const { client } = makeClient("getDeployment_404");
     await expect(client.getDeployment("shipwright", "missing")).rejects.toThrow(
@@ -218,6 +230,26 @@ describe("HttpKubernetesClient — Secrets", () => {
     expect(req.url).toBe(
       "https://kubernetes.default.svc/api/v1/namespaces/shipwright/secrets/agent-secret",
     );
+  });
+
+  it("createSecret maps 409 to ConflictError", async () => {
+    const { client } = makeClient("createSecret_409");
+    await expect(
+      client.createSecret("shipwright", {
+        name: "agent-secret",
+        stringData: { TOKEN: "s3cr3t" },
+      }),
+    ).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it("createSecret maps 403 to ForbiddenError", async () => {
+    const { client } = makeClient("createSecret_403");
+    await expect(
+      client.createSecret("shipwright", {
+        name: "agent-secret",
+        stringData: { TOKEN: "s3cr3t" },
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenError);
   });
 });
 
