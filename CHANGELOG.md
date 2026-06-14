@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **PostHog metrics provider** (`metrics.provider.*`): configure the metrics service to send data to PostHog via `metrics.provider.type=posthog` and `metrics.provider.existingSecret` (holding `POSTHOG_PERSONAL_API_KEY` + `POSTHOG_PROJECT_ID`). Also surfaces `METRICS_ADMIN_URL`, `METRICS_BASE_PATH`, `METRICS_REQUIRE_OWNER_ROLE`, and `METRICS_INTERNAL_API_KEY` environment controls. Default: bundled PostHog/SQLite behavior unchanged.
 
+- **Gateway API networking** (`networking.type=gateway`): renders a `gateway.networking.k8s.io/v1` Gateway and HTTPRoutes instead of an Ingress, routing admin UI/API at `/` and the metrics dashboard at `/dashboard`. Mutually exclusive with `networking.type=ingress`. Requires Gateway API CRDs (and a controller for the chosen class) in the cluster.
+
+- **cert-manager Certificate** (`tls.certManager.*`): setting `tls.certManager.enabled=true` renders a `cert-manager.io/v1` Certificate for `networking.gateway.host` wired to a configurable `issuerRef` (name + kind, kind defaults to `ClusterIssuer`). When enabled, the Gateway adds an HTTPS (`:443`) listener referencing the issued Secret. Disabled by default.
+
+- **Agent-provisioning RBAC** (`agent.provisioning.enabled`): when enabled (default `false`), the chart renders a namespace-scoped Role, RoleBinding, and agent ServiceAccount, plus the full provisioner env contract in the admin Deployment (`SHIPWRIGHT_K8S_PROVISIONING`, `SHIPWRIGHT_K8S_NAMESPACE`, `SHIPWRIGHT_AGENT_IMAGE`, `SHIPWRIGHT_AGENT_IMAGE_TAG`, `SHIPWRIGHT_AGENT_REPLICAS`, `SHIPWRIGHT_API_URL`, `SHIPWRIGHT_ADMIN_DEPLOYMENT_NAME`). Nothing is rendered and the admin service stays in Noop mode when disabled.
+
 ### Chart — How to Install
 
 ```bash

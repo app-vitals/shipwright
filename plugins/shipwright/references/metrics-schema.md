@@ -108,7 +108,7 @@ Falls back to top-level `ci_fix_attempts` if the `ci` object is absent.
 |-------|------|-------------------|-------------|
 | `model` | string | `null` | Model tier that executed this task (e.g., `"haiku"`, `"sonnet"`, `"opus"`) |
 
-Read from the planning doc's Model column. `null` if not specified (pre-model-routing planning docs).
+Initialized to `task.model ?? 'sonnet'` at Step 5b dispatch (tasks without a planning-doc model default to `'sonnet'`). Updated to the upgraded tier (`haiku→sonnet`, `sonnet→opus`) on BLOCKED escalation. `null` only for pre-model-routing records that predate model routing — not for tasks dispatched under the current system.
 
 #### `research` — Step 7a research context loading
 
@@ -304,7 +304,7 @@ This catalogue lists what `dev-task.md` and `review.md` **actually fire** today 
 | `shipwright_auto_docs` | dev-task Step 8.5 — after docs-refresher agent | `task_id`, `project`, `updated`, `files_changed`, `lines_changed`, `skipped_reason` |
 | `shipwright_pr_created` | dev-task Step 9 — after PR creation | `task_id`, `project`, `pr`, `files_changed` |
 | `shipwright_ci_result` | dev-task Step 9b — after CI pass / no-CI skip | `task_id`, `project`, `passed_first_try`, `fix_attempts`, `failures`, `no_ci` (only when no CI configured) |
-| `shipwright_task_complete` | dev-task Step 10c — at task end (after PR + metrics) | `task_id`, `project`, `title`, `session`, `layer`, `estimated_h`, `actual_h`, `retries`, `pr`, `files_changed`, `started_at`; `complexity` when the task carries it; `tokens_in`, `tokens_out`, `cost_usd`, `effort_level` (all `null` when unreadable or model unknown) |
+| `shipwright_task_complete` | dev-task Step 10c — at task end (after PR + metrics) | `task_id`, `project`, `title`, `session`, `layer`, `estimated_h`, `actual_h`, `retries`, `pr`, `files_changed`, `started_at`; `complexity` when the task carries it; `tokens_in`, `tokens_out`, `cost_usd`, `effort_level`, `model` (the EFFECTIVE_MODEL — `task.model ?? 'sonnet'` at dispatch, upgraded on BLOCKED escalation; all cost/token/effort/model fields `null` when unreadable or pre-model-routing) |
 | `shipwright_task_reviewed` | review Step 13 — after review verdict | `task_id`, `project`, `pr`, `verdict`, `findings`, `fixes_applied`, `agents` |
 | `shipwright_task_deployed` | deploy command — after promote success | `task_id`, `project`, `canary_result`, `pipeline_minutes`, `reverted` |
 
