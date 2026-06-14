@@ -180,16 +180,16 @@ Assign a complexity score (1–5) and model tier to every task:
 |-------|--------|-------|
 | 1 | Single file, config/copy change, no logic, unit tests only | `haiku` |
 | 2 | 1–2 files, straightforward logic, unit tests only | `haiku` |
-| 3 | 2–5 files, standard feature, integration tests | `sonnet` |
+| 3 | 2–4 files, standard feature, integration tests | `sonnet` |
 | 4 | 5+ files, cross-layer, new patterns, integration + smoke tests | `sonnet` |
 | 5 | Architectural, cross-layer, new abstraction, migration, or perf-sensitive | `opus` |
 
 **Tie-breaking rules:**
-- New abstraction required (interface, base class, shared module) → bump up one tier
+- New abstraction required (interface, base class, shared module) → bump up one tier (if already at `opus`, stay at `opus`)
 - Pure modification of existing code (no new patterns) → stay at current tier
 - When uncertain, prefer the lower tier — the planner can escalate in a follow-up plan revision if execution is blocked
 
-**Bundle inheritance:** When tasks share a branch, all tasks in the bundle inherit the highest model tier among them. A haiku-tier task bundled with a sonnet-tier task runs at sonnet.
+**Bundle inheritance:** See **Step 6 — Bundle Model Inheritance (Pre-Write)** for the authoritative procedure. Apply that step before writing any tasks to the queue; the scoring here determines each task's base tier only.
 
 ### Bundles
 
