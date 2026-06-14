@@ -1,0 +1,130 @@
+# Default values for the shipwright chart.
+# This is a YAML-formatted file. Minikube-friendly defaults throughout.
+#
+# NOTE: The shipwright workload templates (Deployments/Services for admin, metrics,
+# and agent) land in a later task (HD-3.x). This release is the chart skeleton:
+# the values surface, helpers, NOTES, and the PostgreSQL dependency. With defaults,
+# `helm template` renders the PostgreSQL subchart + NOTES only.
+
+# -- Global values shared with subcharts (including Bitnami PostgreSQL).
+global:
+  # -- Override the registry for ALL images (chart + subcharts) in one place.
+  # Set this to a mirror (e.g. your registry, or a `bitnamilegacy` mirror) if the
+  # default Bitnami registry tags become unavailable. See README "Bitnami registry risk".
+  imageRegistry: ""
+  # -- Global image pull secrets (list of secret names) applied to all pods.
+  imagePullSecrets: []
+  # -- Global storage class for PersistentVolumeClaims (chart + subcharts).
+  storageClass: ""
+
+# -- Default image pull policy for shipwright service images.
+imagePullPolicy: IfNotPresent
+
+# -- Naming overrides.
+nameOverride: ""
+fullnameOverride: ""
+
+# -- Networking exposure strategy for shipwright services.
+networking:
+  # -- How services are exposed: "ClusterIP" | "NodePort" | "LoadBalancer".
+  # Minikube-friendly default is ClusterIP (reach via `minikube service` / port-forward).
+  type: ClusterIP
+
+# -- ServiceAccount for shipwright workloads.
+serviceAccount:
+  # -- Whether a ServiceAccount is created.
+  create: true
+  # -- Annotations to add to the ServiceAccount.
+  annotations: {}
+  # -- Name of the ServiceAccount. If empty and create=true, a name is generated.
+  name: ""
+
+# -- Admin service (@shipwright/admin) — CRUD API + UI. Port 3001.
+admin:
+  enabled: true
+  image:
+    repository: shipwright-admin
+    tag: ""           # defaults to .Chart.AppVersion when empty
+    pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
+  service:
+    port: 3001
+  replicas: 1
+
+# -- Metrics dashboard (@shipwright/metrics) — stateless PostHog-backed service. Port 3460.
+metrics:
+  enabled: true
+  image:
+    repository: shipwright-metrics
+    tag: ""
+    pullPolicy: ""
+  service:
+    port: 3460
+  replicas: 1
+
+# -- Agent service (@shipwright/agent) — autonomous runner + admin CRUD. Port 3000.
+agent:
+  enabled: true
+  image:
+    repository: shipwright-agent
+    tag: ""
+    pullPolicy: ""
+  service:
+    port: 3000
+  replicas: 1
+  # -- Provisioning controls for the agent's persistent home / workspace.
+  provisioning:
+    # -- Whether to create a PersistentVolumeClaim for the agent home (AGENT_HOME).
+    persistence:
+      enabled: true
+      size: 2Gi
+      # -- StorageClass for the agent PVC. Empty uses the cluster default (or global.storageClass).
+      storageClass: ""
+      accessModes:
+        - ReadWriteOnce
+    # -- Mount path inside the agent container for persistent storage.
+    homePath: /data/agent-home
+
+# -- Authentication mode for the shipwright services.
+auth:
+  # -- "none" (Minikube/dev default, no auth gate) | "session" | "bearer".
+  mode: none
+
+# -- Bitnami PostgreSQL subchart configuration.
+# Disable this (postgresql.enabled=false) to bring your own Postgres and point the
+# admin service at an external DATABASE_URL_SHIPWRIGHT_ADMIN.
+postgresql:
+  # -- Deploy the bundled PostgreSQL subchart.
+  enabled: true
+  # -- Image overrides. If Bitnami's default registry tags disappear, repoint
+  # `image.registry` / `image.repository` at a mirror (see README "Bitnami registry risk").
+  image:
+    registry: docker.io
+    repository: bitnami/postgresql
+    # tag intentionally left to the pinned subchart default (concrete, not `latest`).
+  auth:
+    # -- Default database name created on first boot.
+    database: shipwright_admin
+    # -- Default application username.
+    username: shipwright
+    # -- Database password. Left EMPTY on purpose: with no password and no
+    # existingSecret, the Bitnami postgresql subchart auto-generates a random
+    # password on install. Set it explicitly here, or (preferred for production)
+    # point auth.existingSecret at a pre-created Secret. CAVEAT: a Bitnami-generated
+    # password is NOT stable across `helm upgrade` — it regenerates unless you use
+    # auth.existingSecret. Never ship a known hard-coded default in this chart.
+    password: ""
+    # -- Source credentials from an existing Secret instead of the values above.
+    existingSecret: ""
+  # -- Minikube-friendly primary defaults: modest resources, small/toggleable storage.
+  primary:
+    persistence:
+      # -- Toggle persistence off for ephemeral Minikube runs, or size it small.
+      enabled: true
+      size: 1Gi
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
