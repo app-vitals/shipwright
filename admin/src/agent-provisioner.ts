@@ -165,7 +165,13 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
       );
     } catch (err) {
       if (isConflict(err)) {
-        // Already provisioned — idempotent success.
+        // Deployment already exists — idempotent success. But if we minted and
+        // created a NEW Secret in THIS call, the pre-existing Deployment isn't
+        // using it; roll the orphaned Secret (and its fresh token) back so we
+        // never leak it. Only ever delete a Secret THIS call created.
+        if (secretCreated) {
+          await this.deleteSecretBestEffort(secretName);
+        }
         return result;
       }
       if (secretCreated) {
@@ -190,9 +196,11 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
   // ─── Spec derivation (via the pure manifest builders) ─────────────────────
 
   private secretSpec(secretName: string, rawToken: string): SecretSpec {
-    // Build the canonical manifest (owner refs, encoding) for consistency, then
-    // hand the KubernetesClient the plain stringData it create-encodes itself.
-    buildAgentSecretManifest({
+    // The pure builder is the single source of truth for the Secret body (name,
+    // token key, base64 encoding). Derive the KubernetesClient SecretSpec from
+    // its output so the builder actually drives the secret — decoding `data`
+    // back to plain `stringData` since createSecret re-encodes it itself.
+    const manifest = buildAgentSecretManifest({
       name: secretName,
       namespace: this.config.namespace,
       token: rawToken,
@@ -200,7 +208,11 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
       adminDeploymentName: this.config.adminDeploymentName,
       adminDeploymentUid: this.config.adminDeploymentUid,
     });
-    return { name: secretName, stringData: { [this.tokenKey]: rawToken } };
+    const stringData: Record<string, string> = {};
+    for (const [key, value] of Object.entries(manifest.data)) {
+      stringData[key] = Buffer.from(value, "base64").toString("utf-8");
+    }
+    return { name: manifest.metadata.name, stringData };
   }
 
   private deploymentSpec(

@@ -178,6 +178,26 @@ describeOrSkip("KubernetesAgentProvisioner (integration)", () => {
     ).rejects.toThrow();
   });
 
+  it("provision() rolls back the freshly-minted Secret when the Deployment already exists (409)", async () => {
+    const agentId = await createAgent();
+    const name = sanitizeAgentName(agentId);
+    // Seed ONLY the Deployment — the Secret does NOT pre-exist. This call mints
+    // a token and creates a new Secret, then hits a 409 on the Deployment. The
+    // orphaned Secret (carrying a fresh, unused token) must be rolled back.
+    const k8s = emptyClient();
+    await k8s.createDeployment(NAMESPACE, {
+      name,
+      image: `${CONFIG.image}:${CONFIG.imageTag}`,
+    });
+    const provisioner = new KubernetesAgentProvisioner(k8s, tokens, CONFIG);
+
+    // (a) Idempotent success — does NOT throw despite the Deployment conflict.
+    await expect(provisioner.provision(agentId)).resolves.toBeDefined();
+
+    // (b) The Secret created during THIS call was deleted, not left behind.
+    await expect(k8s.getSecret(NAMESPACE, `${name}-token`)).rejects.toThrow();
+  });
+
   it("provision() succeeds idempotently when both resources already exist", async () => {
     const agentId = await createAgent();
     const name = sanitizeAgentName(agentId);
