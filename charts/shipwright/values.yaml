@@ -337,3 +337,39 @@ postgresql:
       # on postgresql.enabled, matching this reference: whenever the bundled
       # Postgres renders, the ConfigMap it mounts renders too (no dangling mount).
       scriptsConfigMap: '{{ printf "%s-metrics-initdb" .Release.Name }}'
+
+# -- Bring-your-own (external) PostgreSQL for the admin service. Used ONLY when
+# postgresql.enabled=false. Point existingSecret at a pre-created Secret holding a
+# ready-to-use DATABASE_URL_SHIPWRIGHT_ADMIN connection string; the admin
+# Deployment injects it via secretKeyRef. The Secret is NOT chart-managed (you
+# create and rotate it), and the chart-managed admin Secret assembles NO DB URL on
+# this path, so there is no duplicate/conflicting env. When postgresql.enabled=true
+# this block is ignored — the bundled subchart path wins and is unchanged.
+externalDatabase:
+  # -- Name of a pre-existing Secret holding the admin DB connection string. Empty
+  # (default) → no external DB wiring. Set this together with postgresql.enabled=false
+  # to enable the external-DB path.
+  existingSecret: ""
+  # -- Key within existingSecret whose value is the full
+  # DATABASE_URL_SHIPWRIGHT_ADMIN connection string. Empty (default) → the template
+  # falls back to the key name "DATABASE_URL_SHIPWRIGHT_ADMIN".
+  adminUrlKey: ""
+
+# -- Cloud SQL Auth Proxy sidecar for the admin pod (GCP Cloud SQL).
+# When enabled, a cloud-sql-proxy sidecar is added to the admin Deployment so
+# a GCP Cloud SQL instance is reachable at 127.0.0.1:5432 from the admin pod.
+# This lets a Cloud SQL DSN (e.g. postgresql://user:pass@127.0.0.1:5432/db) be
+# used directly in externalDatabase.existingSecret — mirrors the vitals-os pattern.
+cloudSqlProxy:
+  # -- When true, add the cloud-sql-proxy sidecar to the admin Deployment.
+  # Default false — purely additive, safe to deploy without this.
+  enabled: false
+  # -- Proxy container image. Pin to a concrete digest for production.
+  image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2
+  # -- Cloud SQL instance connection name (project:region:instance). Required when enabled.
+  connectionName: ""
+  # -- Extra arguments appended after --private-ip and the connection name.
+  # Example: ["--max-sigterm-delay=10s", "--structured-logs"]
+  args: []
+  # -- Compute resources for the proxy sidecar. Empty → no resource limits set.
+  resources: {}

@@ -1,0 +1,89 @@
+suite: admin external (bring-your-own) PostgreSQL wiring
+# SWD-1.1 adds an externalDatabase option: when postgresql.enabled=false AND
+# externalDatabase.existingSecret is set, the admin Deployment injects
+# DATABASE_URL_SHIPWRIGHT_ADMIN via secretKeyRef pointing at the user-managed
+# Secret/key (the chart neither assembles nor owns it). The bundled-PostgreSQL
+# path (postgresql.enabled=true) is unchanged — these specs include a regression
+# guard asserting the bundled env entry is byte-identical even when an external
+# secret is ALSO configured (postgresql.enabled wins).
+release:
+  name: r
+  namespace: shipwright
+tests:
+  - it: injects DATABASE_URL_SHIPWRIGHT_ADMIN from the external Secret/key when postgresql is disabled
+    template: templates/admin-deployment.yaml
+    set:
+      postgresql.enabled: false
+      externalDatabase.existingSecret: my-db-secret
+      externalDatabase.adminUrlKey: ADMIN_CONN
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DATABASE_URL_SHIPWRIGHT_ADMIN
+            valueFrom:
+              secretKeyRef:
+                name: my-db-secret
+                key: ADMIN_CONN
+
+  - it: defaults the external key to DATABASE_URL_SHIPWRIGHT_ADMIN when adminUrlKey is unset
+    template: templates/admin-deployment.yaml
+    set:
+      postgresql.enabled: false
+      externalDatabase.existingSecret: my-db-secret
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DATABASE_URL_SHIPWRIGHT_ADMIN
+            valueFrom:
+              secretKeyRef:
+                name: my-db-secret
+                key: DATABASE_URL_SHIPWRIGHT_ADMIN
+
+  - it: fails with a clear error when postgresql is disabled and no external secret is set
+    template: templates/admin-deployment.yaml
+    set:
+      postgresql.enabled: false
+    asserts:
+      - failedTemplate:
+          errorMessage: "externalDatabase.existingSecret is required when postgresql.enabled=false"
+
+  # ── Regression guard: bundled-PostgreSQL path is unchanged ──────────────────
+  # Even with an external secret ALSO configured, postgresql.enabled=true wins and
+  # the env entry is byte-identical to the bundled-PG behavior (chart-owned Secret).
+  - it: keeps the bundled-PG DATABASE_URL wiring unchanged when postgresql is enabled (external secret ignored)
+    template: templates/admin-deployment.yaml
+    set:
+      postgresql.enabled: true
+      externalDatabase.existingSecret: my-db-secret
+      externalDatabase.adminUrlKey: ADMIN_CONN
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DATABASE_URL_SHIPWRIGHT_ADMIN
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-admin
+                key: DATABASE_URL_SHIPWRIGHT_ADMIN
+      # The external Secret must NOT be referenced on the bundled path.
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DATABASE_URL_SHIPWRIGHT_ADMIN
+            valueFrom:
+              secretKeyRef:
+                name: my-db-secret
+                key: ADMIN_CONN
+
+  # ── admin Secret stays clean on the external path (no duplicate/conflicting env) ──
+  - it: chart admin Secret does NOT assemble a DB URL on the external path (no duplicate env)
+    template: templates/admin-secret.yaml
+    set:
+      postgresql.enabled: false
+      externalDatabase.existingSecret: my-db-secret
+      externalDatabase.adminUrlKey: ADMIN_CONN
+    asserts:
+      - notExists:
+          path: data.DATABASE_URL_SHIPWRIGHT_ADMIN

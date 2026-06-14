@@ -394,6 +394,15 @@ changing the chart, or bring your own database:
   `DATABASE_URL_SHIPWRIGHT_ADMIN`. The chart injects the value into the admin
   pod from that Secret — you create and rotate the Secret outside the chart.
   Pre-create the separate `shipwright_metrics` event-store database as well.
+
+  ```yaml
+  postgresql:
+    enabled: false
+  externalDatabase:
+    existingSecret: my-db-secret          # Secret you create and manage
+    adminUrlKey: DATABASE_URL_SHIPWRIGHT_ADMIN   # key within the Secret (default if omitted)
+  ```
+
 - **Cloud SQL Proxy (GKE):** when the Postgres instance uses a Private IP (Cloud
   SQL or equivalent), set `cloudSqlProxy.enabled=true` and supply a
   `cloudSqlProxy.connectionName`. The chart injects a `cloud-sql-proxy v2`
@@ -402,8 +411,18 @@ changing the chart, or bring your own database:
   container. Use together with `externalDatabase.existingSecret` and
   `postgresql.enabled=false`.
 
-The full image-override / mirror guidance, the exact pinned version, and the
-`existingSecret` story are in
+  ```yaml
+  postgresql:
+    enabled: false
+  externalDatabase:
+    existingSecret: my-cloud-sql-secret
+  cloudSqlProxy:
+    enabled: true
+    connectionName: "project:region:instance"   # required
+    image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2
+  ```
+
+The full image-override / mirror guidance and the exact pinned version are in
 [the chart README — "Bitnami registry risk and image-override / mirror fallback"](../charts/shipwright/README.md#-bitnami-registry-risk-and-image-override--mirror-fallback).
 
 ---
