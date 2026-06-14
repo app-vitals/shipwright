@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [chart-0.10.0] - 2026-06-14
+## [chart-1.0.0] - 2026-06-14
 
 ### Chart — What's New
 
@@ -30,7 +30,7 @@ helm install shipwright shipwright/shipwright
 **Note:** If GitHub Pages is not yet enabled (first-time setup), install directly from the GitHub Release tarball:
 
 ```bash
-helm install shipwright https://github.com/app-vitals/shipwright/releases/download/shipwright-0.10.0/shipwright-0.10.0.tgz
+helm install shipwright https://github.com/app-vitals/shipwright/releases/download/shipwright-1.0.0/shipwright-1.0.0.tgz
 ```
 
 ## [0.1.0] - 2026-06-06

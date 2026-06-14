@@ -6,7 +6,7 @@ description: >
   rewrites only the stale sections in those docs, and commits the result as
   a separate "docs: refresh" commit on the branch. Returns a metrics block
   with counts (files changed, lines changed, skip reason if any).
-model: sonnet
+model: haiku
 ---
 
 # Docs Refresher Agent
