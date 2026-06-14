@@ -10,6 +10,19 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [0.5.0]
+
+### Fixed
+
+- Initdb DB name now tracks `metrics.database.name` overrides. The hardcoded
+  `shipwright_metrics` string in `postgresql.primary.initdb.scripts` has been
+  replaced with a parent-chart ConfigMap (`metrics-initdb-configmap.yaml`)
+  rendered via the `shipwright.metrics.databaseName` helper. The Bitnami subchart
+  reads the ConfigMap name from `postgresql.primary.initdb.scriptsConfigMap`
+  (evaluated through `tpl` at install time using `.Release.Name`). Previously,
+  overriding `metrics.database.name` would cause a fresh install to fail because
+  the Deployment targeted a database that initdb never created.
+
 ## [0.4.0]
 
 ### Added

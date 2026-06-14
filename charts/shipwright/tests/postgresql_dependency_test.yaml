@@ -53,3 +53,47 @@ tests:
           count: 1
       - isKind:
           of: Service
+
+  - it: metrics-initdb ConfigMap is created with default DB name
+    templates:
+      - templates/metrics-postgres-initdb-configmap.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: ConfigMap
+      - equal:
+          path: data["00-create-metrics-db.sql"]
+          value: |
+            SELECT 'CREATE DATABASE shipwright_metrics OWNER shipwright'
+            WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'shipwright_metrics')\gexec
+
+  - it: metrics-initdb ConfigMap uses overridden DB name
+    templates:
+      - templates/metrics-postgres-initdb-configmap.yaml
+    set:
+      metrics.database.name: my_custom_metrics_db
+    asserts:
+      - equal:
+          path: data["00-create-metrics-db.sql"]
+          value: |
+            SELECT 'CREATE DATABASE my_custom_metrics_db OWNER shipwright'
+            WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'my_custom_metrics_db')\gexec
+
+  - it: metrics-initdb ConfigMap is still created when metrics disabled (gated on postgresql only)
+    templates:
+      - templates/metrics-postgres-initdb-configmap.yaml
+    set:
+      metrics.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  - it: metrics-initdb ConfigMap is not created when postgresql disabled
+    templates:
+      - templates/metrics-postgres-initdb-configmap.yaml
+    set:
+      postgresql.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
