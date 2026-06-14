@@ -1060,7 +1060,7 @@ Notes:
 - `conformance_checked_json` is the JSON encoding of the `ConformanceReport` from `checkConformance`. When `test-system.md` is absent (source: "defaults"), this is `{"checked":false,"deviations":[]}`, indicating conformance was not checked. When present, `checked` is `true` and `deviations` lists any advisory layer deviations. A non-empty deviations array is advisory only — it never causes /dev-task or /review to fail or block.
 - `{INPUT_TOKENS}`, `{OUTPUT_TOKENS}`, `{COST_USD}` are the values from Step 10b.2. `cost_usd` is `null` when the model rate is unknown; `input` and `output` counts are still emitted. All three are `null` only when the JSONL path is missing or unreadable.
 - `effort_level_json` is either a JSON string (e.g. `"high"`) or `null` (unquoted) when `EFFORT_LEVEL` is empty or unset.
-- `model_json` is either a JSON string (e.g. `"claude-sonnet-4-6"`) or `null` (unquoted) when `EFFECTIVE_MODEL` is empty or unset. Use `EFFECTIVE_MODEL` (the resolved model the implementation subagent actually ran on, initialized in Step 5b and updated on BLOCKED escalation) — not `$CLAUDE_MODEL` (the orchestrator/parent model).
+- `model_json` is either a JSON string (e.g. `"sonnet"`) or `null` (unquoted) when `EFFECTIVE_MODEL` is empty or unset. Use `EFFECTIVE_MODEL` (the resolved model the implementation subagent actually ran on, initialized in Step 5b and updated on BLOCKED escalation) — not `$CLAUDE_MODEL` (the orchestrator/parent model).
 - The `/review` Step 13 enrichment appends `review.*` fields to this same JSONL line by adding a new top-level key to the existing JSON object. This is unaffected by the new `test_layers` block — the enrichment reads the entire line, parses it, adds the `review` key, and writes it back.
 
 This step is silent. JSONL format — one JSON object per line; append-only.
@@ -1090,7 +1090,7 @@ POSTHOG_SCRIPT=$(find ~/.claude/plugins/cache -name "posthog_send.py" -path "*/s
 Notes on token args:
 - `{INPUT_TOKENS}`, `{OUTPUT_TOKENS}`, `{COST_USD}` are the values from Step 10b.2. When any is `null`, pass the literal string `null` — `posthog_send.py` will parse it as JSON `null`.
 - `{EFFORT_LEVEL}` is the value from Step 1. When empty or unset, pass an empty string `""` — `posthog_send.py` will store it as an empty string, and downstream consumers can treat `""` as absent.
-- `{EFFECTIVE_MODEL}` is the model the implementation subagent actually ran on — initialized to `task.model ?? 'sonnet'` in Step 5b and updated to the upgraded tier on BLOCKED escalation. Emit as-is (e.g. `claude-haiku-4-5-20251001`). When empty or unset, pass an empty string — downstream consumers treat `""` as absent. The parent orchestrator model (`$CLAUDE_MODEL` from Step 1) is a separate value and must not be used here.
+- `{EFFECTIVE_MODEL}` is the model the implementation subagent actually ran on — initialized to `task.model ?? 'sonnet'` in Step 5b and updated to the upgraded tier on BLOCKED escalation. Emit as-is (e.g. `haiku`). When empty or unset, pass an empty string — downstream consumers treat `""` as absent. The parent orchestrator model (`$CLAUDE_MODEL` from Step 1) is a separate value and must not be used here.
 
 ### 10d. Print Handoff
 
