@@ -1,8 +1,8 @@
 Thank you for installing {{ .Chart.Name }} (Shipwright Harness) — chart version {{ .Chart.Version }}, app version {{ .Chart.AppVersion }}.
 
-NOTE: The admin service workload (Deployment/Service/ServiceAccount + Secret) is
-now rendered. The metrics and agent workloads are added in later tasks and are
-NOT yet rendered. What this release currently provisions:
+NOTE: The admin and metrics service workloads (Deployment/Service/ServiceAccount,
+plus a Secret each) are now rendered. The agent workload is added in a later task
+and is NOT yet rendered. What this release currently provisions:
 
 {{- if .Values.postgresql.enabled }}
   • PostgreSQL (Bitnami subchart) — database "{{ .Values.postgresql.auth.database }}", user "{{ .Values.postgresql.auth.username }}".
@@ -44,8 +44,28 @@ Admin service access:
 {{- end }}
   The session/encryption keys (SHIPWRIGHT_SESSION_SECRET / _ENCRYPTION_KEY) are
   generated into that Secret on first install and PRESERVED across `helm upgrade`.
+{{- end }}
 
-{{- if eq .Values.auth.mode "open" }}
+{{- if .Values.metrics.enabled }}
+
+Metrics dashboard access:
+  The metrics Deployment listens on port 3460 (health check: GET /health).
+  Reach the dashboard from your workstation:
+    kubectl port-forward svc/{{ include "shipwright.metrics.fullname" . }} 3460:{{ .Values.metrics.service.port }} -n {{ .Release.Namespace }}
+  then open http://localhost:3460/dashboard
+{{- if .Values.postgresql.enabled }}
+  METRICS_DATABASE_URL is assembled into the chart-managed Secret
+  "{{ include "shipwright.metrics.secretName" . }}" (postgres mode against the bundled
+  PostgreSQL, database "{{ include "shipwright.metrics.databaseName" . }}"), so the
+  database password never appears in the Deployment's plaintext env.
+{{- else }}
+  PostgreSQL subchart is disabled — set METRICS_DATABASE_URL yourself (e.g. via a
+  pre-created Secret) so the metrics service can reach your event store, or leave
+  it unset to run in local SQLite mode.
+{{- end }}
+{{- end }}
+
+{{- if and .Values.admin.enabled (eq .Values.auth.mode "open") }}
 
   ============================================================================
   ⚠️  WARNING: auth.mode=open — DEV AUTH ONLY, NO REAL AUTHENTICATION.
@@ -58,7 +78,6 @@ Admin service access:
 
   auth.mode=google — Google OAuth is enabled (NODE_ENV=production). Only emails
   in auth.google.allowedEmails ("{{ .Values.auth.google.allowedEmails }}") may sign in.
-{{- end }}
 {{- end }}
 
 Minikube tip: with networking.type=ClusterIP, reach a service via

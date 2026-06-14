@@ -22,6 +22,12 @@ admin:
   image:
     pullPolicy: Never
 
+metrics:
+  # pullPolicy Never so kind uses the side-loaded shipwright-metrics image and
+  # never reaches a registry. Postgres mode is exercised via the bundled subchart.
+  image:
+    pullPolicy: Never
+
 agent:
   provisioning:
     persistence:

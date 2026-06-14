@@ -1,0 +1,197 @@
+suite: metrics Deployment / Service / ServiceAccount workloads
+# HD-3.2 adds the metrics workload templates (mirrors the admin pattern). These
+# assert the structural facts: image (tag defaults to appVersion), container port
+# 3460, /health liveness + readiness probes, ServiceAccount wiring, Service shape,
+# the postgres-mode env (METRICS_API_PORT, METRICS_OFFLINE=false), and the
+# METRICS_DATABASE_URL wiring to the bundled PostgreSQL subchart (assembled in the
+# metrics Secret).
+tests:
+  - it: renders the metrics Deployment with the appVersion-defaulted image and port 3460
+    template: templates/metrics-deployment.yaml
+    asserts:
+      - isKind:
+          of: Deployment
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: shipwright-metrics:0.1.0
+      - equal:
+          path: spec.template.spec.containers[0].ports[0].containerPort
+          value: 3460
+
+  - it: sets liveness and readiness probes against /health on port 3460
+    template: templates/metrics-deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.path
+          value: /health
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.port
+          value: 3460
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.path
+          value: /health
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.port
+          value: 3460
+
+  - it: binds the metrics port and forces postgres (non-offline) mode via env
+    template: templates/metrics-deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICS_API_PORT
+            value: "3460"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICS_OFFLINE
+            value: "false"
+
+  - it: wires SHIPWRIGHT_SESSION_SECRET from the metrics Secret (dashboard session JWT)
+    template: templates/metrics-deployment.yaml
+    release:
+      name: r
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_SESSION_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-metrics
+                key: SHIPWRIGHT_SESSION_SECRET
+
+  - it: wires the ServiceAccount and standard selector labels onto the Deployment
+    template: templates/metrics-deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: r-shipwright-metrics
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/component"]
+          value: metrics
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/name"]
+          value: shipwright
+    release:
+      name: r
+
+  - it: applies the configured metrics resources
+    template: templates/metrics-deployment.yaml
+    set:
+      metrics.resources:
+        requests:
+          cpu: 111m
+          memory: 222Mi
+        limits:
+          cpu: 333m
+          memory: 444Mi
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.cpu
+          value: 111m
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.memory
+          value: 444Mi
+
+  - it: wires METRICS_DATABASE_URL from the metrics Secret when postgresql is enabled
+    template: templates/metrics-deployment.yaml
+    set:
+      postgresql.enabled: true
+    release:
+      name: r
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICS_DATABASE_URL
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-metrics
+                key: METRICS_DATABASE_URL
+
+  - it: omits METRICS_DATABASE_URL env when postgresql is disabled (bring-your-own DB)
+    template: templates/metrics-deployment.yaml
+    set:
+      postgresql.enabled: false
+    release:
+      name: r
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICS_DATABASE_URL
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-metrics
+                key: METRICS_DATABASE_URL
+
+  - it: renders the metrics Service (ClusterIP) mapping the service port to targetPort 3460
+    template: templates/metrics-service.yaml
+    asserts:
+      - isKind:
+          of: Service
+      - equal:
+          path: spec.type
+          value: ClusterIP
+      - equal:
+          path: spec.ports[0].port
+          value: 3460
+      - equal:
+          path: spec.ports[0].targetPort
+          value: 3460
+      - equal:
+          path: spec.selector["app.kubernetes.io/component"]
+          value: metrics
+
+  - it: honors a custom metrics.service.type and port
+    template: templates/metrics-service.yaml
+    set:
+      metrics.service.type: NodePort
+      metrics.service.port: 30460
+    asserts:
+      - equal:
+          path: spec.type
+          value: NodePort
+      - equal:
+          path: spec.ports[0].port
+          value: 30460
+      - equal:
+          path: spec.ports[0].targetPort
+          value: 3460
+
+  - it: creates the metrics ServiceAccount by default
+    template: templates/metrics-serviceaccount.yaml
+    asserts:
+      - isKind:
+          of: ServiceAccount
+      - equal:
+          path: metadata.name
+          value: r-shipwright-metrics
+    release:
+      name: r
+
+  - it: skips the metrics ServiceAccount when create=false
+    template: templates/metrics-serviceaccount.yaml
+    set:
+      metrics.serviceAccount.create: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders no metrics workloads when metrics.enabled=false
+    set:
+      metrics.enabled: false
+    documentSelector:
+      path: metadata.labels["app.kubernetes.io/component"]
+      value: metrics
+      skipEmptyTemplates: true
+    templates:
+      - templates/metrics-deployment.yaml
+      - templates/metrics-service.yaml
+      - templates/metrics-serviceaccount.yaml
+      - templates/metrics-secret.yaml
+    asserts:
+      - hasDocuments:
+          count: 0

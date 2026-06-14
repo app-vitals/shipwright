@@ -105,6 +105,61 @@ assembled DATABASE_URL when the bundled PostgreSQL subchart is used).
 {{- end }}
 
 {{/*
+Metrics component fullname: "<fullname>-metrics".
+*/}}
+{{- define "shipwright.metrics.fullname" -}}
+{{- printf "%s-metrics" (include "shipwright.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Metrics selector labels — fullname selector labels plus the component label.
+*/}}
+{{- define "shipwright.metrics.selectorLabels" -}}
+{{ include "shipwright.selectorLabels" . }}
+app.kubernetes.io/component: metrics
+{{- end }}
+
+{{/*
+Metrics labels — common labels plus the component label.
+*/}}
+{{- define "shipwright.metrics.labels" -}}
+{{ include "shipwright.labels" . }}
+app.kubernetes.io/component: metrics
+{{- end }}
+
+{{/*
+Name of the ServiceAccount the metrics workload uses.
+*/}}
+{{- define "shipwright.metrics.serviceAccountName" -}}
+{{- if .Values.metrics.serviceAccount.create }}
+{{- default (include "shipwright.metrics.fullname" .) .Values.metrics.serviceAccount.name }}
+{{- else }}
+{{- default "default" .Values.metrics.serviceAccount.name }}
+{{- end }}
+{{- end }}
+
+{{/*
+Name of the chart-managed metrics Secret (assembled METRICS_DATABASE_URL when
+the bundled PostgreSQL subchart is used, keeping the password out of plaintext
+Deployment env).
+*/}}
+{{- define "shipwright.metrics.secretName" -}}
+{{- printf "%s-metrics" (include "shipwright.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Metrics database name: a SEPARATE database from the admin service (default
+"shipwright_metrics"). The metrics provider creates its own `events` table on
+boot; sharing the admin database would leave the admin schema non-empty and
+break the admin service's `prisma migrate deploy` baseline (Prisma P3005). When
+the bundled PostgreSQL subchart is enabled, this database is provisioned via
+postgresql.primary.initdb.scripts.
+*/}}
+{{- define "shipwright.metrics.databaseName" -}}
+{{- default "shipwright_metrics" .Values.metrics.database.name }}
+{{- end }}
+
+{{/*
 Name of the PostgreSQL subchart Service / Secret ("<release>-postgresql").
 The Bitnami subchart derives these from its own fullname (release name +
 "postgresql"); with no postgresql.fullnameOverride this is the standard form.

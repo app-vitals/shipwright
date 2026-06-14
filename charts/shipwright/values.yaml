@@ -68,16 +68,48 @@ admin:
     # -- Name of the admin ServiceAccount. Generated if empty and create=true.
     name: ""
 
-# -- Metrics dashboard (@shipwright/metrics) — stateless PostHog-backed service. Port 3460.
+# -- Metrics dashboard (@shipwright/metrics) — event-store-backed service. Port 3460.
+# In postgres mode it reads/writes an `events` table in the bundled PostgreSQL and
+# serves the dashboard at /dashboard; the DB-independent /health drives readiness.
 metrics:
   enabled: true
   image:
     repository: shipwright-metrics
-    tag: ""
-    pullPolicy: ""
+    tag: ""           # defaults to .Chart.AppVersion when empty
+    pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
+    # -- Service type for the metrics service. ClusterIP is Minikube-friendly.
+    type: ClusterIP
     port: 3460
   replicas: 1
+  # -- Compute resources for the metrics container. Minikube-friendly defaults.
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+  # -- ServiceAccount for the metrics workload.
+  serviceAccount:
+    # -- Whether a ServiceAccount is created for the metrics workload.
+    create: true
+    # -- Annotations to add to the metrics ServiceAccount.
+    annotations: {}
+    # -- Name of the metrics ServiceAccount. Generated if empty and create=true.
+    name: ""
+  # -- PostgreSQL event-store database for the metrics service (postgres mode).
+  database:
+    # -- Database name for the metrics event store. Defaults to a SEPARATE
+    # database ("shipwright_metrics") from the admin service. This isolation is
+    # REQUIRED: the metrics provider creates its own `events` table on boot, and
+    # sharing the admin database would make the admin schema non-empty and break
+    # the admin service's `prisma migrate deploy` baseline (Prisma error P3005).
+    # When the bundled PostgreSQL subchart is enabled, this database is created
+    # automatically via postgresql.primary.initdb.scripts (see below). If you
+    # bring your own Postgres (postgresql.enabled=false), pre-create this database
+    # or point METRICS_DATABASE_URL at it yourself.
+    name: shipwright_metrics
 
 # -- Agent service (@shipwright/agent) — autonomous runner + admin CRUD. Port 3000.
 agent:
@@ -159,3 +191,17 @@ postgresql:
       limits:
         cpu: 500m
         memory: 512Mi
+    # -- First-boot init scripts (Bitnami subchart). Creates the SEPARATE metrics
+    # database ("shipwright_metrics", matching metrics.database.name) owned by the
+    # application user, so the metrics event store never shares the admin database
+    # (which would break admin's prisma migrate baseline — Prisma P3005). Runs once
+    # as the postgres superuser at initdb time; idempotent via the IF NOT EXISTS guard.
+    # If you override metrics.database.name, update the database name here to match.
+    initdb:
+      scripts:
+        # `.sql` initdb scripts are executed by the Bitnami entrypoint as the
+        # postgres superuser over the local socket (no password needed), against
+        # the default database, right after the app user/database are created.
+        00-create-metrics-db.sql: |
+          SELECT 'CREATE DATABASE shipwright_metrics OWNER shipwright'
+          WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'shipwright_metrics')\gexec

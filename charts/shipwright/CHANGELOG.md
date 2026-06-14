@@ -10,6 +10,29 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [0.4.0]
+
+### Added
+
+- Metrics service workloads: `metrics-deployment.yaml`, `metrics-service.yaml`,
+  and `metrics-serviceaccount.yaml` (container port 3460, liveness/readiness
+  probes on the DB-independent `/health`, ServiceAccount, standard
+  labels/selectors). The dashboard is served at `/dashboard`.
+- Chart-managed metrics `Secret` (`metrics-secret.yaml`) assembling
+  `METRICS_DATABASE_URL` for postgres mode so the database password is never
+  rendered into plaintext Deployment env. Only rendered when both `metrics.enabled`
+  and `postgresql.enabled` are true.
+- `METRICS_DATABASE_URL` wired to the bundled Bitnami PostgreSQL subchart in
+  postgres mode (`METRICS_OFFLINE=false`, `METRICS_API_PORT=3460`). The metrics
+  provider bootstraps its own `events` table on boot — no separate migration job.
+- `metrics.service.type`, `metrics.serviceAccount.{create,name,annotations}`,
+  `metrics.resources`, and `metrics.database.name` values surface, with matching
+  `values.schema.json` constraints. `metrics.database.name` empty reuses the
+  bundled PostgreSQL database (no collision with the admin Prisma tables); set it
+  to isolate metrics data in a separate database.
+- CI: the `helm-e2e` workflow now builds and side-loads the `shipwright-metrics`
+  image into kind so `ct install` schedules the real metrics workload.
+
 ## [0.3.0]
 
 ### Added

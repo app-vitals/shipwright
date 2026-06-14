@@ -43,7 +43,23 @@
       }
     },
     "admin": { "$ref": "#/definitions/service" },
-    "metrics": { "$ref": "#/definitions/service" },
+    "metrics": {
+      "allOf": [
+        { "$ref": "#/definitions/service" },
+        {
+          "type": "object",
+          "properties": {
+            "database": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": { "type": "string" }
+              }
+            }
+          }
+        }
+      ]
+    },
     "agent": {
       "allOf": [
         { "$ref": "#/definitions/service" },

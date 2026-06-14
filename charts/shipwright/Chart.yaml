@@ -8,7 +8,7 @@ type: application
 # Chart version (SemVer). Bump on every chart change, independent of appVersion.
 # See CHANGELOG.md and the README "Versioning" section — CI enforces this bump
 # via `ct lint --check-version-increment`.
-version: 0.3.0
+version: 0.4.0
 # Version of the Shipwright application this chart deploys by default.
 appVersion: "0.1.0"
 home: https://shipwright-harness.com
@@ -29,15 +29,13 @@ annotations:
   # entry in CHANGELOG.md (keep the two in sync on every bump).
   artifacthub.io/changes: |
     - kind: added
-      description: admin Deployment/Service/ServiceAccount workload templates (port 3001, /health probes)
+      description: metrics Deployment/Service/ServiceAccount workload templates (port 3460, /health probes, /dashboard)
     - kind: added
-      description: chart-managed admin Secret with session/encryption keys persisted across helm upgrade (lookup idiom)
+      description: chart-managed metrics Secret assembling METRICS_DATABASE_URL for postgres mode (password kept out of plaintext env)
     - kind: added
-      description: DATABASE_URL_SHIPWRIGHT_ADMIN wired to the bundled PostgreSQL subchart (password kept out of plaintext env)
+      description: METRICS_DATABASE_URL wired to the bundled PostgreSQL subchart in postgres mode (metrics.database.name selects a distinct or shared database)
     - kind: added
-      description: auth modes — open (dev auth, insecure) and google (Google OAuth, NODE_ENV=production)
-    - kind: changed
-      description: auth.mode enum is now open|google (was none|session|bearer); default open
+      description: metrics values surface — service.type, resources, serviceAccount, database.name — with matching values.schema.json constraints
 dependencies:
   # Bitnami PostgreSQL subchart. Pinned to a chart version whose default image tag
   # is concrete (NOT `latest`), because Bitnami's 2025 catalog change moved newer
