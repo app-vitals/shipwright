@@ -10,7 +10,7 @@ tests:
       - matchRegexRaw:
           pattern: Thank you for installing shipwright \(Shipwright Harness\)
       - matchRegexRaw:
-          pattern: chart version 0\.9\.1, app version 0\.1\.0
+          pattern: chart version 1\.0\.0, app version 0\.1\.0
 
   - it: surfaces the three configured service ports in NOTES
     asserts:
