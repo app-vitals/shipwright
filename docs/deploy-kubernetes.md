@@ -389,12 +389,35 @@ changing the chart, or bring your own database:
 
 - **Mirror the whole stack:** set `global.imageRegistry: <your-mirror>`.
 - **Use the `bitnamilegacy` mirror** for PostgreSQL specifically.
-- **Bring your own PostgreSQL:** set `postgresql.enabled=false` and supply
-  `DATABASE_URL_SHIPWRIGHT_ADMIN` out of band (and pre-create the separate
-  `shipwright_metrics` event-store database).
+- **Bring your own PostgreSQL:** set `postgresql.enabled=false` and use the
+  `externalDatabase` block to inject `DATABASE_URL_SHIPWRIGHT_ADMIN` from a
+  pre-existing Secret (and pre-create the separate `shipwright_metrics`
+  event-store database separately):
 
-The full image-override / mirror guidance, the exact pinned version, and the
-`existingSecret` story are in
+  ```yaml
+  postgresql:
+    enabled: false
+  externalDatabase:
+    existingSecret: my-db-secret          # Secret you create and manage
+    adminUrlKey: DATABASE_URL_SHIPWRIGHT_ADMIN   # key within the Secret (default if omitted)
+  ```
+
+- **GCP Cloud SQL (Cloud SQL Auth Proxy):** when your external database is a
+  GCP Cloud SQL instance, add the `cloudSqlProxy` sidecar to the admin pod so
+  the instance is reachable at `127.0.0.1:5432`:
+
+  ```yaml
+  postgresql:
+    enabled: false
+  externalDatabase:
+    existingSecret: my-cloud-sql-secret
+  cloudSqlProxy:
+    enabled: true
+    connectionName: "project:region:instance"   # required
+    image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2
+  ```
+
+The full image-override / mirror guidance and the exact pinned version are in
 [the chart README — "Bitnami registry risk and image-override / mirror fallback"](../charts/shipwright/README.md#-bitnami-registry-risk-and-image-override--mirror-fallback).
 
 ---
