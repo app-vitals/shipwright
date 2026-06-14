@@ -1,0 +1,122 @@
+{
+  "createDeployment_success": {
+    "status": 201,
+    "body": {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "name": "agent-abc",
+        "namespace": "shipwright",
+        "uid": "11111111-1111-1111-1111-111111111111",
+        "labels": { "app": "agent-abc" }
+      },
+      "spec": { "replicas": 1 },
+      "status": { "replicas": 0 }
+    }
+  },
+  "getDeployment_success": {
+    "status": 200,
+    "body": {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "name": "agent-abc",
+        "namespace": "shipwright",
+        "uid": "11111111-1111-1111-1111-111111111111",
+        "labels": { "app": "agent-abc" }
+      },
+      "spec": { "replicas": 1 },
+      "status": { "replicas": 1, "readyReplicas": 1 }
+    }
+  },
+  "getDeployment_404": {
+    "status": 404,
+    "body": {
+      "apiVersion": "v1",
+      "kind": "Status",
+      "status": "Failure",
+      "message": "deployments.apps \"missing\" not found",
+      "reason": "NotFound",
+      "code": 404
+    }
+  },
+  "createDeployment_409": {
+    "status": 409,
+    "body": {
+      "apiVersion": "v1",
+      "kind": "Status",
+      "status": "Failure",
+      "message": "deployments.apps \"agent-abc\" already exists",
+      "reason": "AlreadyExists",
+      "code": 409
+    }
+  },
+  "createDeployment_403": {
+    "status": 403,
+    "body": {
+      "apiVersion": "v1",
+      "kind": "Status",
+      "status": "Failure",
+      "message": "deployments.apps is forbidden: User cannot create resource",
+      "reason": "Forbidden",
+      "code": 403
+    }
+  },
+  "deleteDeployment_success": {
+    "status": 200,
+    "body": {
+      "apiVersion": "v1",
+      "kind": "Status",
+      "status": "Success",
+      "details": { "name": "agent-abc", "kind": "deployments" }
+    }
+  },
+  "createSecret_success": {
+    "status": 201,
+    "body": {
+      "apiVersion": "v1",
+      "kind": "Secret",
+      "type": "Opaque",
+      "metadata": {
+        "name": "agent-secret",
+        "namespace": "shipwright",
+        "uid": "22222222-2222-2222-2222-222222222222"
+      },
+      "data": { "TOKEN": "czNjcjN0" }
+    }
+  },
+  "getSecret_success": {
+    "status": 200,
+    "body": {
+      "apiVersion": "v1",
+      "kind": "Secret",
+      "type": "Opaque",
+      "metadata": {
+        "name": "agent-secret",
+        "namespace": "shipwright",
+        "uid": "22222222-2222-2222-2222-222222222222"
+      },
+      "data": { "TOKEN": "czNjcjN0" }
+    }
+  },
+  "getSecret_404": {
+    "status": 404,
+    "body": {
+      "apiVersion": "v1",
+      "kind": "Status",
+      "status": "Failure",
+      "message": "secrets \"missing\" not found",
+      "reason": "NotFound",
+      "code": 404
+    }
+  },
+  "deleteSecret_success": {
+    "status": 200,
+    "body": {
+      "apiVersion": "v1",
+      "kind": "Status",
+      "status": "Success",
+      "details": { "name": "agent-secret", "kind": "secrets" }
+    }
+  }
+}
