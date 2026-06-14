@@ -24,7 +24,7 @@ independent of `appVersion`. CI enforces this with
   enabled, the chart renders:
   - A **namespace-scoped** `Role` (`templates/agent-provisioning-rbac.yaml`) —
     NOT a `ClusterRole` — granting least-privilege verbs `create`, `get`,
-    `list`, `delete` on `apps`/`Deployments` and core (`""`)/`Secrets`: exactly
+    `delete` on `apps`/`Deployments` and core (`""`)/`Secrets`: exactly
     the verbs the provisioner (`KubernetesAgentProvisioner`) exercises.
   - A `RoleBinding` binding that Role to the admin `ServiceAccount`.
   - A separate **agent** `ServiceAccount`

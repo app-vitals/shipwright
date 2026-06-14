@@ -8,7 +8,7 @@ suite: agent-provisioning RBAC + admin env contract (HD-4.2)
 #       carries NO provisioning env (admin stays in Noop mode)
 tests:
   # ── (a) enabled → RBAC + agent SA ────────────────────────────────────────────
-  - it: renders a namespace-scoped Role with exactly create/get/list/delete on Deployments and Secrets
+  - it: renders a namespace-scoped Role with exactly create/get/delete on Deployments and Secrets
     template: templates/agent-provisioning-rbac.yaml
     documentIndex: 0
     set:
@@ -29,7 +29,7 @@ tests:
           value: ["deployments"]
       - equal:
           path: rules[0].verbs
-          value: ["create", "get", "list", "delete"]
+          value: ["create", "get", "delete"]
       - equal:
           path: rules[1].apiGroups
           value: [""]
@@ -38,7 +38,7 @@ tests:
           value: ["secrets"]
       - equal:
           path: rules[1].verbs
-          value: ["create", "get", "list", "delete"]
+          value: ["create", "get", "delete"]
 
   - it: binds the Role to the admin ServiceAccount via a namespace-scoped RoleBinding
     template: templates/agent-provisioning-rbac.yaml
@@ -190,3 +190,28 @@ tests:
             valueFrom:
               fieldRef:
                 fieldPath: metadata.namespace
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_AGENT_IMAGE
+            value: shipwright-agent
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_AGENT_IMAGE_TAG
+            value: "0.1.0"
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_AGENT_REPLICAS
+            value: "1"
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_API_URL
+            value: http://r-shipwright-admin:3001
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_ADMIN_DEPLOYMENT_NAME
+            value: r-shipwright-admin

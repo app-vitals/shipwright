@@ -6,7 +6,7 @@
 # Deployments + Secrets only within its own release namespace, so a Role bound by
 # a RoleBinding is the least-privilege fit — no cluster-wide grant. The verb set
 # is exactly what the provisioner (HD-1.3 KubernetesAgentProvisioner / HD-1.4
-# wiring) exercises: create + get + list + delete on Deployments (apps) and
+# wiring) exercises: create + get + delete on Deployments (apps) and
 # Secrets (core).
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -17,10 +17,10 @@ metadata:
 rules:
   - apiGroups: ["apps"]
     resources: ["deployments"]
-    verbs: ["create", "get", "list", "delete"]
+    verbs: ["create", "get", "delete"]
   - apiGroups: [""]
     resources: ["secrets"]
-    verbs: ["create", "get", "list", "delete"]
+    verbs: ["create", "get", "delete"]
 ---
 # RoleBinding granting the admin ServiceAccount the Role above, scoped to the
 # release namespace.

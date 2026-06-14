@@ -29,7 +29,7 @@ annotations:
   # entry in CHANGELOG.md (keep the two in sync on every bump).
   artifacthub.io/changes: |
     - kind: added
-      description: "Agent-provisioning RBAC + admin env contract (agent.provisioning.enabled, default false). When enabled: a namespace-scoped Role (create/get/list/delete on apps/Deployments and core/Secrets) + RoleBinding to the admin ServiceAccount, a separate agent ServiceAccount, and the provisioner env contract (SHIPWRIGHT_K8S_PROVISIONING, SHIPWRIGHT_K8S_NAMESPACE via downward API, SHIPWRIGHT_AGENT_IMAGE/_TAG, SHIPWRIGHT_AGENT_REPLICAS, SHIPWRIGHT_API_URL, SHIPWRIGHT_ADMIN_DEPLOYMENT_NAME, optional SHIPWRIGHT_ADMIN_DEPLOYMENT_UID) injected into the admin Deployment. Disabled by default → nothing rendered, admin stays in Noop mode. (Note: 0.7.0 is HD-4.1 Gateway API, landing concurrently.)"
+      description: "Agent-provisioning RBAC + admin env contract (agent.provisioning.enabled, default false). When enabled: a namespace-scoped Role (create/get/delete on apps/Deployments and core/Secrets) + RoleBinding to the admin ServiceAccount, a separate agent ServiceAccount, and the provisioner env contract (SHIPWRIGHT_K8S_PROVISIONING, SHIPWRIGHT_K8S_NAMESPACE via downward API, SHIPWRIGHT_AGENT_IMAGE/_TAG, SHIPWRIGHT_AGENT_REPLICAS, SHIPWRIGHT_API_URL, SHIPWRIGHT_ADMIN_DEPLOYMENT_NAME, optional SHIPWRIGHT_ADMIN_DEPLOYMENT_UID) injected into the admin Deployment. Disabled by default → nothing rendered, admin stays in Noop mode. (Note: 0.7.0 is HD-4.1 Gateway API, landing concurrently.)"
 dependencies:
   # Bitnami PostgreSQL subchart. Pinned to a chart version whose default image tag
   # is concrete (NOT `latest`), because Bitnami's 2025 catalog change moved newer
