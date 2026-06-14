@@ -389,9 +389,18 @@ changing the chart, or bring your own database:
 
 - **Mirror the whole stack:** set `global.imageRegistry: <your-mirror>`.
 - **Use the `bitnamilegacy` mirror** for PostgreSQL specifically.
-- **Bring your own PostgreSQL:** set `postgresql.enabled=false` and supply
-  `DATABASE_URL_SHIPWRIGHT_ADMIN` out of band (and pre-create the separate
-  `shipwright_metrics` event-store database).
+- **Bring your own PostgreSQL:** set `postgresql.enabled=false` and point
+  `externalDatabase.existingSecret` at a pre-created Kubernetes Secret holding
+  `DATABASE_URL_SHIPWRIGHT_ADMIN`. The chart injects the value into the admin
+  pod from that Secret — you create and rotate the Secret outside the chart.
+  Pre-create the separate `shipwright_metrics` event-store database as well.
+- **Cloud SQL Proxy (GKE):** when the Postgres instance uses a Private IP (Cloud
+  SQL or equivalent), set `cloudSqlProxy.enabled=true` and supply a
+  `cloudSqlProxy.connectionName`. The chart injects a `cloud-sql-proxy v2`
+  sidecar into the admin pod; the proxy listens on `127.0.0.1:5432` with
+  `--private-ip`, making the instance reachable as `localhost` from the admin
+  container. Use together with `externalDatabase.existingSecret` and
+  `postgresql.enabled=false`.
 
 The full image-override / mirror guidance, the exact pinned version, and the
 `existingSecret` story are in
