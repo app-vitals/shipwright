@@ -13,6 +13,7 @@
 import { beforeEach, describe, expect, it } from "bun:test";
 import { sign } from "hono/jwt";
 import { PrismaClient } from "../prisma/client/index.js";
+import { NoopAgentProvisioner } from "./agent-provisioner.ts";
 import { createAdminApp } from "./agents-api.ts";
 import type { AdminDeps } from "./agents-api.ts";
 import { AgentCronJobService } from "./agent-cron-jobs.ts";
@@ -90,6 +91,7 @@ describeOrSkip("admin CRUD API (integration)", () => {
       agentTokenService: new AgentTokenService(prisma),
       agentPluginService: new AgentPluginService(prisma),
       prisma,
+      provisioner: new NoopAgentProvisioner(),
       sessionSecret: SESSION_SECRET,
     };
 

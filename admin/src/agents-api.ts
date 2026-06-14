@@ -25,11 +25,17 @@ import type {
 import type { AgentCronJobService } from "./agent-cron-jobs.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
 import type { AgentPluginService } from "./agent-plugins.ts";
+import type { AgentProvisioner } from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 import type { AgentToolService } from "./agent-tools.ts";
 import { createAdminAuthMiddleware, parseAdminApiKeys } from "./api-auth.ts";
 import type { AdminApiKey, AdminAuthEnv } from "./api-auth.ts";
-import { ApiError, BadRequestError, ForbiddenError } from "./errors.ts";
+import {
+  ApiError,
+  BadRequestError,
+  ForbiddenError,
+  NotFoundError,
+} from "./errors.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -62,6 +68,12 @@ export interface AdminDeps {
     "list" | "add" | "remove" | "removeByName"
   >;
   prisma: Pick<PrismaClient, "agent">;
+  /**
+   * Provisions (and tears down) the workload backing an agent. Defaults to a
+   * no-op when Kubernetes provisioning is disabled (preserving create/delete
+   * behavior without a cluster). See `agent-provisioner.ts`.
+   */
+  provisioner: AgentProvisioner;
   sessionSecret: string;
   /** Parsed SHIPWRIGHT_ADMIN_API_KEYS — optional; absent means env key auth is disabled. */
   adminApiKeys?: Map<string, AdminApiKey>;
@@ -81,6 +93,7 @@ export function createAdminApp(deps: AdminDeps): Hono<AdminAuthEnv> {
     agentTokenService,
     agentPluginService,
     prisma,
+    provisioner,
     sessionSecret,
     adminApiKeys,
   } = deps;
@@ -135,6 +148,26 @@ export function createAdminApp(deps: AdminDeps): Hono<AdminAuthEnv> {
       const agent = await prisma.agent.create({
         data: { name: body.name, slackId: body.slackId ?? null },
       });
+
+      // Provision the backing workload AFTER the row exists (the provisioner
+      // mints a per-agent token tied to the agent id). If provisioning throws,
+      // roll the agent row back so we never leave a half-created agent with no
+      // workload — then surface the failure as a 5xx via onError. The Noop
+      // provisioner never throws, preserving today's create behavior exactly.
+      try {
+        await provisioner.provision(agent.id);
+      } catch (err) {
+        await prisma.agent
+          .delete({ where: { id: agent.id } })
+          .catch((cleanupErr) => {
+            console.error(
+              "[agents-api] failed to roll back agent after provision error:",
+              cleanupErr,
+            );
+          });
+        throw err;
+      }
+
       return c.json(
         {
           id: agent.id,
@@ -144,6 +177,46 @@ export function createAdminApp(deps: AdminDeps): Hono<AdminAuthEnv> {
         },
         201,
       );
+    },
+  );
+
+  // DELETE /agents/:id — delete an agent and tear down its workload (admin only)
+  //
+  // Note: this static-depth route (/agents/:id) is NOT matched by the
+  // /agents/* middleware (which requires a trailing path segment), so auth is
+  // re-applied explicitly here, mirroring POST/GET /agents above.
+  app.delete(
+    "/agents/:id",
+    createAdminAuthMiddleware({
+      sessionSecret,
+      agentTokenService,
+      adminApiKeys,
+    }),
+    async (c) => {
+      if (c.get("isAdmin") !== true) {
+        throw new ForbiddenError(
+          "Only admin bearers and session users can delete agents",
+        );
+      }
+      const agentId = c.req.param("id");
+
+      // 404 on unknown id before any side effects.
+      const existing = await prisma.agent.findUnique({
+        where: { id: agentId },
+        select: { id: true },
+      });
+      if (!existing) {
+        throw new NotFoundError(`agent ${agentId} not found`);
+      }
+
+      // Tear down the workload first, then delete the row. Child rows
+      // (AgentEnv / AgentCronJob / AgentTool / AgentToken / AgentPlugin) cascade
+      // via `onDelete: Cascade` in the Prisma schema. deprovision() tolerates an
+      // already-absent workload, so a retried delete is a no-op.
+      await provisioner.deprovision(agentId);
+      await prisma.agent.delete({ where: { id: agentId } });
+
+      return new Response(null, { status: 204 });
     },
   );
 
