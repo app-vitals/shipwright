@@ -8,9 +8,37 @@
 
 import { beforeAll, describe, expect, it } from "bun:test";
 import { sign } from "hono/jwt";
+import type { AgentProvisioner, ProvisionResult } from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 import { createAdminApp, parseAdminApiKeys } from "./agents-api.ts";
 import type { AdminDeps } from "./agents-api.ts";
+
+// ─── Recording fake provisioner ───────────────────────────────────────────────
+
+/**
+ * In-memory AgentProvisioner double that records every provision/deprovision
+ * call. Injected via deps — no mock.module, no global overrides.
+ */
+class RecordingProvisioner implements AgentProvisioner {
+  readonly provisioned: string[] = [];
+  readonly deprovisioned: string[] = [];
+
+  constructor(private readonly onProvision?: (agentId: string) => void) {}
+
+  async provision(agentId: string): Promise<ProvisionResult> {
+    this.onProvision?.(agentId);
+    this.provisioned.push(agentId);
+    return {
+      resourceName: agentId,
+      secretName: `${agentId}-token`,
+      deploymentName: agentId,
+    };
+  }
+
+  async deprovision(agentId: string): Promise<void> {
+    this.deprovisioned.push(agentId);
+  }
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -241,8 +269,20 @@ function makeMockDeps(): AdminDeps {
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
         }),
+        findUnique: async (args: { where: { id: string } }) =>
+          args.where.id === AGENT_ID
+            ? { id: AGENT_ID, name: "Existing Agent" }
+            : null,
+        delete: async (args: { where: { id: string } }) => ({
+          id: args.where.id,
+          name: "Existing Agent",
+          slackId: null,
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+        }),
       },
     } as unknown as AdminDeps["prisma"],
+    provisioner: new RecordingProvisioner(),
     sessionSecret: SESSION_SECRET,
   };
 }
@@ -740,9 +780,11 @@ describe("admin API — plugins", () => {
 const ADMIN_API_KEY = "admin-key-for-create-tests";
 
 describe("admin API — create agent", () => {
-  it("POST /admin/api/agents with admin bearer → 201 with agent object", async () => {
+  it("POST /admin/api/agents with admin bearer → 201 with agent object + provisions", async () => {
+    const provisioner = new RecordingProvisioner();
     const deps: AdminDeps = {
       ...makeMockDeps(),
+      provisioner,
       adminApiKeys: parseAdminApiKeys(`admin:${ADMIN_API_KEY}:*`),
     };
     const app = createAdminApp(deps);
@@ -757,6 +799,74 @@ describe("admin API — create agent", () => {
     expect(res.status).toBe(201);
     const body = await res.json();
     expect(body).toMatchObject({ id: "agent-new-id", name: "Test Agent" });
+    // Provisioner invoked with the newly-created agent id.
+    expect(provisioner.provisioned).toEqual(["agent-new-id"]);
+  });
+
+  it("POST /admin/api/agents with the Noop provisioner still returns 201 (default path)", async () => {
+    // The default makeMockDeps wires a recording provisioner; here we assert the
+    // contract that a never-throwing provisioner preserves today's 201 behavior.
+    const cookie = await makeSessionCookie();
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({ name: "Noop Agent" }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body).toMatchObject({ id: "agent-new-id", name: "Noop Agent" });
+  });
+
+  it("POST /admin/api/agents rolls back the agent row and 500s when provision throws", async () => {
+    const cookie = await makeSessionCookie();
+    const deleted: string[] = [];
+    const provisioner = new RecordingProvisioner(() => {
+      throw new Error("cluster unavailable");
+    });
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      provisioner,
+      prisma: {
+        agent: {
+          create: async (args: {
+            data: { name: string; slackId: string | null };
+          }) => ({
+            id: "agent-new-id",
+            name: args.data.name,
+            slackId: args.data.slackId,
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+          }),
+          delete: async (args: { where: { id: string } }) => {
+            deleted.push(args.where.id);
+            return {
+              id: args.where.id,
+              name: "rolled-back",
+              slackId: null,
+              createdAt: new Date("2024-01-01"),
+              updatedAt: new Date("2024-01-01"),
+            };
+          },
+        },
+      } as unknown as AdminDeps["prisma"],
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({ name: "Doomed Agent" }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(500);
+    // The half-created agent row was rolled back.
+    expect(deleted).toEqual(["agent-new-id"]);
   });
 
   it("POST /admin/api/agents with per-agent bearer → 403", async () => {
@@ -803,6 +913,124 @@ describe("admin API — create agent", () => {
       },
     });
     expect(res.status).toBe(400);
+  });
+});
+
+// ─── Delete agent smoke tests ─────────────────────────────────────────────────
+
+describe("admin API — delete agent", () => {
+  it("DELETE /agents/:id with session cookie → 204 + deprovisions", async () => {
+    const cookie = await makeSessionCookie();
+    const provisioner = new RecordingProvisioner();
+    const deps: AdminDeps = { ...makeMockDeps(), provisioner };
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      method: "DELETE",
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(204);
+    expect(provisioner.deprovisioned).toEqual([AGENT_ID]);
+  });
+
+  it("DELETE /agents/:id with admin bearer → 204", async () => {
+    const provisioner = new RecordingProvisioner();
+    const deps: AdminDeps = {
+      ...makeMockDeps(),
+      provisioner,
+      adminApiKeys: parseAdminApiKeys(`admin:${ADMIN_API_KEY}:*`),
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${ADMIN_API_KEY}` },
+    });
+    expect(res.status).toBe(204);
+    expect(provisioner.deprovisioned).toEqual([AGENT_ID]);
+  });
+
+  it("DELETE /agents/:id returns 500 and preserves the row when deprovision throws", async () => {
+    const cookie = await makeSessionCookie();
+    const deleted: string[] = [];
+    // Provisioner whose deprovision() rejects with a non-NotFound error. The
+    // throw must propagate (→ 500) BEFORE the agent row is deleted, leaving the
+    // row intact so the delete is retry-safe.
+    const provisioner: AgentProvisioner = {
+      async provision(agentId: string): Promise<ProvisionResult> {
+        return {
+          resourceName: agentId,
+          secretName: `${agentId}-token`,
+          deploymentName: agentId,
+        };
+      },
+      async deprovision(): Promise<void> {
+        throw new Error("k8s API timeout");
+      },
+    };
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      provisioner,
+      prisma: {
+        agent: {
+          findUnique: async (args: { where: { id: string } }) =>
+            args.where.id === AGENT_ID
+              ? { id: AGENT_ID, name: "Existing Agent" }
+              : null,
+          delete: async (args: { where: { id: string } }) => {
+            deleted.push(args.where.id);
+            return {
+              id: args.where.id,
+              name: "Existing Agent",
+              slackId: null,
+              createdAt: new Date("2024-01-01"),
+              updatedAt: new Date("2024-01-01"),
+            };
+          },
+        },
+      } as unknown as AdminDeps["prisma"],
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      method: "DELETE",
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(500);
+    // The deprovision error surfaced before the row was deleted — row preserved.
+    expect(deleted).toEqual([]);
+  });
+
+  it("DELETE /agents/:id unknown id → 404 (no deprovision)", async () => {
+    const cookie = await makeSessionCookie();
+    const provisioner = new RecordingProvisioner();
+    const deps: AdminDeps = { ...makeMockDeps(), provisioner };
+    const app = createAdminApp(deps);
+    const res = await app.request("/agents/does-not-exist", {
+      method: "DELETE",
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(404);
+    expect(provisioner.deprovisioned).toEqual([]);
+  });
+
+  it("DELETE /agents/:id without auth → 401", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}`, { method: "DELETE" });
+    expect(res.status).toBe(401);
+  });
+
+  it("DELETE /agents/:id with per-agent bearer → 403", async () => {
+    const provisioner = new RecordingProvisioner();
+    const deps: AdminDeps = {
+      ...makeDepsWithTokenValidation(async () => ({ agentId: AGENT_ID })),
+      provisioner,
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${VALID_BEARER_TOKEN}` },
+    });
+    expect(res.status).toBe(403);
+    expect(provisioner.deprovisioned).toEqual([]);
   });
 });
 

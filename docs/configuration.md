@@ -139,6 +139,20 @@ Provide either the GitHub App vars (recommended) or `GH_TOKEN` (PAT). App auth i
 | `GOOGLE_CLIENT_ID` | `string` | — | Google OAuth 2.0 client ID. Required for the admin UI login flow. |
 | `GOOGLE_CLIENT_SECRET` | `string` | — | Google OAuth 2.0 client secret. Required for the admin UI login flow. |
 
+### Agent provisioning (admin service)
+
+Controls how the admin service provisions the Kubernetes workload backing each agent on `POST /agents` (and tears it down on `DELETE /agents/:id`). When provisioning is disabled (the default), create/delete only write the database row — no cluster is required.
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `SHIPWRIGHT_K8S_PROVISIONING` | `string` | — | Set to `enabled` to provision a real Kubernetes Secret + Deployment per agent via `KubernetesAgentProvisioner`. Any other value (or unset) selects the no-op provisioner, preserving DB-only create/delete behavior. |
+| `SHIPWRIGHT_K8S_NAMESPACE` | `string` | `default` | Namespace the per-agent Secret + Deployment are created in. Only read when provisioning is enabled. |
+| `SHIPWRIGHT_AGENT_IMAGE` | `string` | — | Agent container image (without tag) used for the provisioned Deployment. Only read when provisioning is enabled. |
+| `SHIPWRIGHT_AGENT_IMAGE_TAG` | `string` | `latest` | Image tag joined as `image:tag` for the provisioned Deployment. Only read when provisioning is enabled. |
+| `SHIPWRIGHT_ADMIN_DEPLOYMENT_NAME` | `string` | — | Name of the admin Deployment, used as the `ownerReference` target so per-agent resources are garbage-collected with the admin Deployment. Only read when provisioning is enabled. |
+| `SHIPWRIGHT_ADMIN_DEPLOYMENT_UID` | `string` | — | UID of the admin Deployment, paired with `SHIPWRIGHT_ADMIN_DEPLOYMENT_NAME` for the `ownerReference`. Only read when provisioning is enabled. |
+| `SHIPWRIGHT_AGENT_REPLICAS` | `number` | `1` | Replica count for the provisioned agent Deployment. Only read when provisioning is enabled. |
+
 ### Workspace and tooling
 
 | Name | Type | Default | Description |

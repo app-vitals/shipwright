@@ -24,11 +24,17 @@ import { createAdminUIApp } from "./admin-ui.ts";
 import { AgentCronJobService } from "./agent-cron-jobs.ts";
 import { AgentEnvService } from "./agent-envs.ts";
 import { AgentPluginService } from "./agent-plugins.ts";
+import type { AgentProvisioner } from "./agent-provisioner.ts";
+import {
+  KubernetesAgentProvisioner,
+  NoopAgentProvisioner,
+} from "./agent-provisioner.ts";
 import { AgentTokenService } from "./agent-tokens.ts";
 import { AgentToolService } from "./agent-tools.ts";
 import { createAgentRuntimeApp } from "./api.ts";
 import { isDevAuthAllowed } from "./dev-auth-guard.ts";
 import { HttpGoogleAuthClient } from "./google-auth-client.ts";
+import { HttpKubernetesClient } from "./kubernetes-client.ts";
 import { HttpSlackProvisioningClient } from "./slack-provisioning-client.ts";
 import { makeTokenCrypto } from "./token-crypto.ts";
 
@@ -79,6 +85,50 @@ async function runMigrations(): Promise<void> {
   console.log("[admin] migrations complete");
 }
 
+// ─── Provisioner selection ────────────────────────────────────────────────────
+
+/**
+ * Select the agent provisioner from the environment.
+ *
+ * When `SHIPWRIGHT_K8S_PROVISIONING=enabled`, construct a real
+ * `KubernetesAgentProvisioner` that mints a per-agent token and creates the
+ * backing Secret + Deployment in the cluster. Otherwise (unset / any other
+ * value) return a `NoopAgentProvisioner` so create/delete behave exactly as
+ * before — no cluster required. This keeps the new wiring safe to deploy
+ * standalone behind the flag's default.
+ */
+function buildProvisioner(
+  env: NodeJS.ProcessEnv,
+  agentTokenService: AgentTokenService,
+): AgentProvisioner {
+  if (env.SHIPWRIGHT_K8S_PROVISIONING !== "enabled") {
+    return new NoopAgentProvisioner();
+  }
+
+  const namespace = env.SHIPWRIGHT_K8S_NAMESPACE ?? "default";
+  const image = env.SHIPWRIGHT_AGENT_IMAGE ?? "";
+  const imageTag = env.SHIPWRIGHT_AGENT_IMAGE_TAG ?? "latest";
+  const apiUrl = env.SHIPWRIGHT_API_URL ?? "";
+  const adminDeploymentName = env.SHIPWRIGHT_ADMIN_DEPLOYMENT_NAME ?? "";
+  const adminDeploymentUid = env.SHIPWRIGHT_ADMIN_DEPLOYMENT_UID ?? "";
+  const replicasRaw = env.SHIPWRIGHT_AGENT_REPLICAS;
+  const replicas = replicasRaw ? Number(replicasRaw) : undefined;
+
+  const k8s = new HttpKubernetesClient();
+
+  return new KubernetesAgentProvisioner(k8s, agentTokenService, {
+    namespace,
+    image,
+    imageTag,
+    apiUrl,
+    adminDeploymentName,
+    adminDeploymentUid,
+    ...(replicas !== undefined && Number.isFinite(replicas)
+      ? { replicas }
+      : {}),
+  });
+}
+
 // ─── Server entry ─────────────────────────────────────────────────────────────
 
 const DEFAULT_PORT = 3000;
@@ -103,6 +153,9 @@ async function startServer(): Promise<void> {
   const agentToolService = new AgentToolService(prisma);
   const agentTokenService = new AgentTokenService(prisma);
   const agentPluginService = new AgentPluginService(prisma);
+
+  // Real K8s provisioner when SHIPWRIGHT_K8S_PROVISIONING=enabled, else Noop.
+  const provisioner = buildProvisioner(process.env, agentTokenService);
 
   // Read config values at call time (no module-level env reads)
   const sessionSecret = process.env.SHIPWRIGHT_SESSION_SECRET ?? "";
@@ -150,6 +203,7 @@ async function startServer(): Promise<void> {
     agentTokenService,
     agentPluginService,
     prisma,
+    provisioner,
     sessionSecret,
     adminApiKeys,
   });

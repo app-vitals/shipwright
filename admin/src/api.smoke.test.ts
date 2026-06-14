@@ -15,6 +15,7 @@ import { Hono } from "hono";
 import { sign } from "hono/jwt";
 import type { AgentCronJob } from "./agent-cron-jobs.ts";
 import type { AgentEnvBundle } from "./agent-envs.ts";
+import { NoopAgentProvisioner } from "./agent-provisioner.ts";
 import { createAdminApp, parseAdminApiKeys } from "./agents-api.ts";
 import { createAgentRuntimeApp } from "./api.ts";
 
@@ -514,6 +515,7 @@ function buildCombinedApp() {
         }),
       },
     } as never,
+    provisioner: new NoopAgentProvisioner(),
     sessionSecret: COMBINED_SESSION_SECRET,
     adminApiKeys: parseAdminApiKeys(`admin:${COMBINED_ADMIN_KEY}:*`),
   });
