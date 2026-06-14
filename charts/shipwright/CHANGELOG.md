@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [0.9.1]
+
+### Added
+
+- `metrics.provider` block: configurable PostHog provider (`posthog.existingSecret`, `posthog.personalApiKeyRef`, `posthog.projectIdRef`) for POSTHOG_PERSONAL_API_KEY / POSTHOG_PROJECT_ID injection via `secretKeyRef`, plus `adminUrl` (METRICS_ADMIN_URL), `basePath` (METRICS_BASE_PATH), `requireOwnerRole` (METRICS_REQUIRE_OWNER_ROLE), and `internalKey.existingSecret` / `internalKey.key` (METRICS_INTERNAL_API_KEY). All fields default to empty/false — existing `SHIPWRIGHT_SESSION_SECRET` and bundled-PG `METRICS_DATABASE_URL` paths are unchanged (additive, gated).
+
 ## [0.9.0]
 
 ### Added
