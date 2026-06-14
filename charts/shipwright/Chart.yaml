@@ -6,7 +6,9 @@ description: >-
   optional PostgreSQL dependency for Kubernetes (Minikube-friendly defaults).
 type: application
 # Chart version (SemVer). Bump on every chart change, independent of appVersion.
-version: 0.1.0
+# See CHANGELOG.md and the README "Versioning" section — CI enforces this bump
+# via `ct lint --check-version-increment`.
+version: 0.2.0
 # Version of the Shipwright application this chart deploys by default.
 appVersion: "0.1.0"
 home: https://shipwright-harness.com
@@ -23,6 +25,17 @@ maintainers:
 # License: MIT (chart + application).
 annotations:
   licenses: MIT
+  # Artifact Hub change log for this release. Must mirror the matching version
+  # entry in CHANGELOG.md (keep the two in sync on every bump).
+  artifacthub.io/changes: |
+    - kind: added
+      description: CHANGELOG.md (keep-a-changelog) documenting chart versions
+    - kind: added
+      description: artifacthub.io/changes annotation mirroring the CHANGELOG
+    - kind: added
+      description: ct version-increment CI gate — chart changes must bump version
+    - kind: changed
+      description: documented the chart versioning discipline in README + CONTRIBUTING
 dependencies:
   # Bitnami PostgreSQL subchart. Pinned to a chart version whose default image tag
   # is concrete (NOT `latest`), because Bitnami's 2025 catalog change moved newer

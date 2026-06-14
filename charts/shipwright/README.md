@@ -13,6 +13,25 @@ Minikube-friendly defaults.
 
 License: **MIT**.
 
+## Versioning
+
+This chart follows [Semantic Versioning](https://semver.org). The chart
+`version` in `Chart.yaml` is bumped on **every** chart change, independent of
+`appVersion` (which tracks the Shipwright application release the chart deploys
+by default).
+
+**On any change under `charts/shipwright/**`:**
+
+1. Bump `version` in `Chart.yaml` (patch / minor / major per the nature of the
+   change).
+2. Add a matching entry to [`CHANGELOG.md`](./CHANGELOG.md) (keep-a-changelog
+   style).
+3. Mirror that entry in the `artifacthub.io/changes` annotation in `Chart.yaml`.
+
+CI enforces step 1: the Helm workflow runs
+`ct lint --check-version-increment`, which fails any PR that modifies the chart
+without bumping `version`. See [`CONTRIBUTING.md`](./CONTRIBUTING.md).
+
 ## Quick start (Minikube)
 
 ```bash
