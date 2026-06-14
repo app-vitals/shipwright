@@ -88,11 +88,27 @@
           "properties": {
             "clientId": { "type": "string" },
             "clientSecret": { "type": "string" },
-            "allowedEmails": { "type": "string", "minLength": 1 }
+            "allowedEmails": { "type": "string" }
           }
         }
       },
-      "required": ["mode"]
+      "required": ["mode"],
+      "if": {
+        "properties": { "mode": { "const": "google" } },
+        "required": ["mode"]
+      },
+      "then": {
+        "properties": {
+          "google": {
+            "required": ["clientId", "clientSecret", "allowedEmails"],
+            "properties": {
+              "clientId":      { "type": "string", "minLength": 1 },
+              "clientSecret":  { "type": "string", "minLength": 1 },
+              "allowedEmails": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
     },
     "postgresql": {
       "type": "object",
