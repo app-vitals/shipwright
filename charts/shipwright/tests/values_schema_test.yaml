@@ -86,6 +86,7 @@ tests:
 
   - it: rejects certManager enabled with an empty issuerRef.name (conditional minLength)
     set:
+      networking.type: gateway
       tls.certManager.enabled: true
       tls.certManager.issuerRef.name: ""
     asserts:
@@ -96,5 +97,22 @@ tests:
     set:
       tls.certManager.enabled: false
       tls.certManager.issuerRef.name: ""
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: rejects certManager enabled with networking.type=ingress (cross-field guard)
+    set:
+      networking.type: ingress
+      tls.certManager.enabled: true
+      tls.certManager.issuerRef.name: letsencrypt
+    asserts:
+      - failedTemplate:
+          errorPattern: "networking.type"
+
+  - it: accepts certManager enabled with networking.type=gateway (cross-field guard)
+    set:
+      networking.type: gateway
+      tls.certManager.enabled: true
+      tls.certManager.issuerRef.name: letsencrypt
     asserts:
       - notFailedTemplate: {}

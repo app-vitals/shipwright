@@ -226,6 +226,25 @@
       "required": ["enabled"]
     }
   },
+  "if": {
+    "properties": {
+      "tls": {
+        "properties": {
+          "certManager": {
+            "properties": { "enabled": { "const": true } },
+            "required": ["enabled"]
+          }
+        }
+      }
+    }
+  },
+  "then": {
+    "properties": {
+      "networking": {
+        "properties": { "type": { "const": "gateway" } }
+      }
+    }
+  },
   "definitions": {
     "service": {
       "type": "object",
