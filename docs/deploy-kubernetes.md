@@ -389,9 +389,12 @@ changing the chart, or bring your own database:
 
 - **Mirror the whole stack:** set `global.imageRegistry: <your-mirror>`.
 - **Use the `bitnamilegacy` mirror** for PostgreSQL specifically.
-- **Bring your own PostgreSQL:** set `postgresql.enabled=false` and supply
-  `DATABASE_URL_SHIPWRIGHT_ADMIN` out of band (and pre-create the separate
-  `shipwright_metrics` event-store database).
+- **Bring your own PostgreSQL:** set `postgresql.enabled=false` and use the
+  `externalDatabase` block to inject `DATABASE_URL_SHIPWRIGHT_ADMIN` from a
+  pre-existing Secret: set `externalDatabase.existingSecret` to the Secret name
+  (and optionally `externalDatabase.adminUrlKey` to override the key within it,
+  defaulting to `DATABASE_URL_SHIPWRIGHT_ADMIN`). Pre-create the separate
+  `shipwright_metrics` event-store database separately.
 
 The full image-override / mirror guidance, the exact pinned version, and the
 `existingSecret` story are in
