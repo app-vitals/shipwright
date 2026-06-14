@@ -443,7 +443,7 @@ describe("JsonTaskStore", () => {
 
   describe("update", () => {
     test("updates specific fields on a task", async () => {
-      writeTodos([{ id: "T-1", title: "Original", status: "pending" }]);
+      writeTodos([{ id: "T-1", title: "Original", status: "pending", model: "sonnet" }]);
       const adapter = new JsonTaskStore(tmpDir);
       const updated = await adapter.update("T-1", { status: "in_progress" });
       expect(updated.status).toBe("in_progress");
@@ -463,6 +463,12 @@ describe("JsonTaskStore", () => {
       const adapter = new JsonTaskStore(tmpDir);
       expect(adapter.coerceValue("hours", "3.5")).toBe(3.5);
       expect(typeof adapter.coerceValue("hours", "3.5")).toBe("number");
+    });
+
+    test("complexity field is coerced to number", async () => {
+      const adapter = new JsonTaskStore(tmpDir);
+      expect(adapter.coerceValue("complexity", "3")).toBe(3);
+      expect(typeof adapter.coerceValue("complexity", "3")).toBe("number");
     });
 
     test("non-numeric fields remain as strings", async () => {
@@ -493,7 +499,7 @@ describe("JsonTaskStore", () => {
 
     test("update does not touch other tasks", async () => {
       writeTodos([
-        { id: "T-1", title: "First", status: "pending" },
+        { id: "T-1", title: "First", status: "pending", model: "sonnet" },
         { id: "T-2", title: "Second", status: "pending" },
       ]);
       const adapter = new JsonTaskStore(tmpDir);
@@ -932,6 +938,44 @@ describe("JsonTaskStore", () => {
     });
   });
 
+  // ─── complexity range guard ──────────────────────────────────────────────────
+
+  describe("complexity range guard", () => {
+    test("warns when complexity is out of range (0)", async () => {
+      writeTodos([{ id: "T-1", title: "Task", status: "pending" }]);
+      const warnings: string[] = [];
+      const adapter = new JsonTaskStore(tmpDir, (msg) => warnings.push(msg));
+      await adapter.update("T-1", { complexity: 0 });
+      expect(warnings.some((w) => w.includes("complexity must be 1"))).toBe(true);
+    });
+
+    test("warns when complexity is out of range (6)", async () => {
+      writeTodos([{ id: "T-1", title: "Task", status: "pending" }]);
+      const warnings: string[] = [];
+      const adapter = new JsonTaskStore(tmpDir, (msg) => warnings.push(msg));
+      await adapter.update("T-1", { complexity: 6 });
+      expect(warnings.some((w) => w.includes("complexity must be 1"))).toBe(true);
+    });
+
+    test("does NOT warn for valid complexity values (1–5)", async () => {
+      for (const v of [1, 2, 3, 4, 5]) {
+        writeTodos([{ id: "T-1", title: "Task", status: "pending" }]);
+        const warnings: string[] = [];
+        const adapter = new JsonTaskStore(tmpDir, (msg) => warnings.push(msg));
+        await adapter.update("T-1", { complexity: v });
+        expect(warnings.some((w) => w.includes("complexity"))).toBe(false);
+      }
+    });
+
+    test("warn is soft — update still persists even when complexity is out of range", async () => {
+      writeTodos([{ id: "T-1", title: "Task", status: "pending" }]);
+      const warnings: string[] = [];
+      const adapter = new JsonTaskStore(tmpDir, (msg) => warnings.push(msg));
+      const result = await adapter.update("T-1", { complexity: 99 });
+      expect(result.complexity).toBe(99);
+    });
+  });
+
   // ─── terminal status closes GitHub issue ─────────────────────────────────────
 
   describe("update closes GitHub issue on terminal status transition", () => {
@@ -1028,6 +1072,7 @@ describe("JsonTaskStore", () => {
           id: "T-1",
           title: "Task",
           status: "pending",
+          model: "sonnet",
           issue: "https://github.com/acme/example-repo/issues/7",
         },
       ]);

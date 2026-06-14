@@ -775,6 +775,7 @@ describe("GitHubTaskStore.update", () => {
         id: "TSR-1.1",
         title: "Task",
         status: "pending",
+        model: "sonnet",
       }),
     ];
 
@@ -1402,6 +1403,7 @@ process.exit(0);
         id: "TSR-5.5",
         title: "Task",
         status: "pending",
+        model: "sonnet",
       }),
     ];
     const closesFile = path.join(tmpDir, "nonterminal-gh-closes.txt");

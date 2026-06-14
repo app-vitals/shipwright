@@ -43,4 +43,11 @@ export function warnMissingFields(
       "[shipwright] task transitioning to in_progress is missing model field — consider setting model to haiku, sonnet, or opus",
     );
   }
+
+  if (
+    mergedTask.complexity !== undefined &&
+    (mergedTask.complexity < 1 || mergedTask.complexity > 5)
+  ) {
+    warn("[shipwright] complexity must be 1–5");
+  }
 }
