@@ -5,7 +5,7 @@ description: >
   (1) the /learn-dream command runs, (2) a nightly cron consolidates an agent fleet's
   transcripts, (3) the user asks "what have we been learning lately?" across many
   sessions. Not for single-session capture — that is the learning-capture skill.
-model: sonnet
+model: haiku
 ---
 
 # Learning Dreamer
