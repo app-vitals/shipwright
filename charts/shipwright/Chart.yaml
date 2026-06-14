@@ -8,7 +8,7 @@ type: application
 # Chart version (SemVer). Bump on every chart change, independent of appVersion.
 # See CHANGELOG.md and the README "Versioning" section — CI enforces this bump
 # via `ct lint --check-version-increment`.
-version: 0.9.1
+version: 0.10.0
 # Version of the Shipwright application this chart deploys by default.
 appVersion: "0.1.0"
 home: https://shipwright-harness.com
@@ -29,7 +29,9 @@ annotations:
   # entry in CHANGELOG.md (keep the two in sync on every bump).
   artifacthub.io/changes: |
     - kind: added
-      description: "metrics.provider block: configurable PostHog provider (existingSecret refs for POSTHOG_PERSONAL_API_KEY/POSTHOG_PROJECT_ID), METRICS_ADMIN_URL, METRICS_BASE_PATH, METRICS_REQUIRE_OWNER_ROLE, and METRICS_INTERNAL_API_KEY (via existingSecret). All additive and gated — defaults preserve existing SQLite/bundled-PG behavior."
+      description: "externalDatabase block: bring-your-own-Postgres support for the admin service (existingSecret + optional adminUrlKey). Fail guard when postgresql.enabled=false and existingSecret is empty."
+    - kind: added
+      description: "cloudSqlProxy sidecar support: enabled/connectionName/image values + required validation for connectionName. Schema block added to values.schema.json with additionalProperties: false."
 dependencies:
   # Bitnami PostgreSQL subchart. Pinned to a chart version whose default image tag
   # is concrete (NOT `latest`), because Bitnami's 2025 catalog change moved newer
