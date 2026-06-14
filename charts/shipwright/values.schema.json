@@ -124,6 +124,17 @@
                     "existingSecret":    { "type": "string" },
                     "personalApiKeyRef": { "type": "string" },
                     "projectIdRef":      { "type": "string" }
+                  },
+                  "if": {
+                    "properties": { "existingSecret": { "type": "string", "minLength": 1 } },
+                    "required": ["existingSecret"]
+                  },
+                  "then": {
+                    "properties": {
+                      "personalApiKeyRef": { "type": "string", "minLength": 1 },
+                      "projectIdRef":      { "type": "string", "minLength": 1 }
+                    },
+                    "required": ["personalApiKeyRef", "projectIdRef"]
                   }
                 },
                 "adminUrl":          { "type": "string" },
@@ -135,6 +146,14 @@
                   "properties": {
                     "existingSecret": { "type": "string" },
                     "key":            { "type": "string" }
+                  },
+                  "if": {
+                    "properties": { "existingSecret": { "type": "string", "minLength": 1 } },
+                    "required": ["existingSecret"]
+                  },
+                  "then": {
+                    "properties": { "key": { "type": "string", "minLength": 1 } },
+                    "required": ["key"]
                   }
                 }
               }
