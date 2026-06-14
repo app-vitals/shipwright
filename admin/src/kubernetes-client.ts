@@ -50,6 +50,35 @@ export interface SecretSpec {
 
 // ─── Resource bodies (k8s wire shapes) ──────────────────────────────────────
 
+/** A single container env var: either a literal value or a `valueFrom` source. */
+export interface KubernetesEnvVar {
+  name: string;
+  value?: string;
+  valueFrom?: {
+    secretKeyRef?: { name: string; key: string };
+    configMapKeyRef?: { name: string; key: string };
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+export interface KubernetesContainer {
+  name: string;
+  image: string;
+  env?: KubernetesEnvVar[];
+  volumeMounts?: Array<{
+    name: string;
+    mountPath: string;
+    [key: string]: unknown;
+  }>;
+  livenessProbe?: {
+    httpGet?: { path?: string; port: number | string; [key: string]: unknown };
+    [key: string]: unknown;
+  };
+  securityContext?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
 export interface KubernetesDeployment {
   apiVersion: string;
   kind: string;
@@ -57,6 +86,7 @@ export interface KubernetesDeployment {
     name: string;
     namespace: string;
     labels?: Record<string, string>;
+    ownerReferences?: Array<Record<string, unknown>>;
     [key: string]: unknown;
   };
   spec: {
@@ -65,11 +95,14 @@ export interface KubernetesDeployment {
     template: {
       metadata: { labels: Record<string, string> };
       spec: {
-        containers: Array<{
+        containers: KubernetesContainer[];
+        volumes?: Array<{
           name: string;
-          image: string;
-          env?: Array<{ name: string; value: string }>;
+          persistentVolumeClaim?: { claimName: string };
+          [key: string]: unknown;
         }>;
+        securityContext?: Record<string, unknown>;
+        [key: string]: unknown;
       };
     };
   };
@@ -83,6 +116,7 @@ export interface KubernetesSecret {
   metadata: {
     name: string;
     namespace: string;
+    ownerReferences?: Array<Record<string, unknown>>;
     [key: string]: unknown;
   };
   data: Record<string, string>;
