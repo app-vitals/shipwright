@@ -10,6 +10,25 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [0.6.0]
+
+### Added
+
+- Ingress networking. Setting `networking.type=ingress` renders a
+  `networking.k8s.io/v1` `Ingress` (`templates/ingress.yaml`) with a configurable
+  `ingressClassName` (`networking.ingress.className`, default `nginx`), `host`
+  (`networking.ingress.host`, default `shipwright.local`), and controller-specific
+  `annotations` (`networking.ingress.annotations`, default `{}`). Rules route the
+  admin UI/API at `/` to the admin Service and the metrics dashboard at `/dashboard`
+  to the metrics Service (`pathType: Prefix`). The `/dashboard` path is omitted when
+  `metrics.enabled=false`. No Ingress is rendered for any other `networking.type`
+  (the default stays `ClusterIP`, so the Ingress is OFF by default).
+- Helm test connection hook (`templates/tests/test-connection.yaml`). A
+  `helm.sh/hook: test` Pod using the public, pinned `curlimages/curl` image curls
+  the admin Service `/health` (must return 200) and, when `metrics.enabled`, the
+  metrics Service `/dashboard` (accepts 200 or 302), exiting non-zero on failure so
+  `helm test` fails loudly. This is the smoke check `ct install` runs in the e2e job.
+
 ## [0.5.0]
 
 ### Fixed

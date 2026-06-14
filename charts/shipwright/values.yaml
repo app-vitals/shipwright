@@ -26,9 +26,23 @@ fullnameOverride: ""
 
 # -- Networking exposure strategy for shipwright services.
 networking:
-  # -- How services are exposed: "ClusterIP" | "NodePort" | "LoadBalancer".
+  # -- How services are exposed: "ClusterIP" | "NodePort" | "LoadBalancer" | "ingress".
   # Minikube-friendly default is ClusterIP (reach via `minikube service` / port-forward).
+  # Set to "ingress" to render an Ingress (templates/ingress.yaml) routing the admin
+  # UI/API at "/" and the metrics dashboard at "/dashboard"; the Services keep their
+  # own ClusterIP type (admin.service.type / metrics.service.type).
   type: ClusterIP
+  # -- Ingress settings (used ONLY when networking.type=ingress).
+  ingress:
+    # -- IngressClass to use: "nginx" for the Minikube/NGINX ingress addon,
+    # "alb" for the AWS Load Balancer Controller on EKS, etc.
+    className: nginx
+    # -- Host the Ingress answers for. Minikube-friendly default; for the NGINX
+    # addon add it to /etc/hosts pointing at `minikube ip`.
+    host: shipwright.local
+    # -- Extra annotations for the Ingress (controller-specific). For ALB, e.g.
+    # alb.ingress.kubernetes.io/scheme, /target-type; for NGINX, rewrite/ssl rules.
+    annotations: {}
 
 # -- ServiceAccount for shipwright workloads.
 serviceAccount:

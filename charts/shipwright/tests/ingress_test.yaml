@@ -1,0 +1,167 @@
+suite: Ingress networking + helm test connection hook
+# HD-3.3 adds templates/ingress.yaml (rendered only when networking.type=ingress)
+# and templates/tests/test-connection.yaml (a helm.sh/hook: test Pod). These
+# assert the conditional rendering, the className/host/backends/paths, and the
+# hook annotation.
+tests:
+  - it: renders a networking.k8s.io/v1 Ingress when networking.type=ingress
+    template: templates/ingress.yaml
+    set:
+      networking.type: ingress
+    release:
+      name: r
+    asserts:
+      - isKind:
+          of: Ingress
+      - equal:
+          path: apiVersion
+          value: networking.k8s.io/v1
+      - equal:
+          path: metadata.name
+          value: r-shipwright
+
+  - it: uses the configured ingressClassName and host
+    template: templates/ingress.yaml
+    set:
+      networking.type: ingress
+      networking.ingress.className: alb
+      networking.ingress.host: shipwright.example.com
+    asserts:
+      - equal:
+          path: spec.ingressClassName
+          value: alb
+      - equal:
+          path: spec.rules[0].host
+          value: shipwright.example.com
+
+  - it: applies configured ingress annotations
+    template: templates/ingress.yaml
+    set:
+      networking.type: ingress
+      networking.ingress.annotations:
+        alb.ingress.kubernetes.io/scheme: internet-facing
+    asserts:
+      - equal:
+          path: metadata.annotations["alb.ingress.kubernetes.io/scheme"]
+          value: internet-facing
+
+  - it: routes / to the admin Service (port http) and /dashboard to the metrics Service (port http)
+    template: templates/ingress.yaml
+    set:
+      networking.type: ingress
+    release:
+      name: r
+    asserts:
+      # /dashboard -> metrics (declared first so the more-specific prefix wins)
+      - equal:
+          path: spec.rules[0].http.paths[0].path
+          value: /dashboard
+      - equal:
+          path: spec.rules[0].http.paths[0].pathType
+          value: Prefix
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.name
+          value: r-shipwright-metrics
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.port.name
+          value: http
+      # / -> admin
+      - equal:
+          path: spec.rules[0].http.paths[1].path
+          value: /
+      - equal:
+          path: spec.rules[0].http.paths[1].pathType
+          value: Prefix
+      - equal:
+          path: spec.rules[0].http.paths[1].backend.service.name
+          value: r-shipwright-admin
+      - equal:
+          path: spec.rules[0].http.paths[1].backend.service.port.name
+          value: http
+
+  - it: omits the /dashboard path when metrics is disabled
+    template: templates/ingress.yaml
+    set:
+      networking.type: ingress
+      metrics.enabled: false
+    release:
+      name: r
+    asserts:
+      # Only the admin "/" path remains.
+      - lengthEqual:
+          path: spec.rules[0].http.paths
+          count: 1
+      - equal:
+          path: spec.rules[0].http.paths[0].path
+          value: /
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.name
+          value: r-shipwright-admin
+
+  - it: renders NO Ingress with the default networking.type (ClusterIP)
+    template: templates/ingress.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders NO Ingress for NodePort / LoadBalancer
+    template: templates/ingress.yaml
+    set:
+      networking.type: LoadBalancer
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders the helm test connection Pod with the test hook annotation
+    template: templates/tests/test-connection.yaml
+    release:
+      name: r
+    asserts:
+      - isKind:
+          of: Pod
+      - equal:
+          path: metadata.name
+          value: r-shipwright-test-connection
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: test
+      - equal:
+          path: spec.restartPolicy
+          value: Never
+      - matchRegex:
+          path: spec.containers[0].image
+          pattern: "^curlimages/curl:"
+
+  - it: curls admin /health and metrics /dashboard in the hook command
+    template: templates/tests/test-connection.yaml
+    release:
+      name: r
+    asserts:
+      - matchRegex:
+          path: spec.containers[0].command[2]
+          pattern: "http://r-shipwright-admin:3001/health"
+      - matchRegex:
+          path: spec.containers[0].command[2]
+          pattern: "http://r-shipwright-metrics:3460/dashboard"
+
+  - it: omits the metrics /dashboard check in the hook when metrics is disabled
+    template: templates/tests/test-connection.yaml
+    set:
+      metrics.enabled: false
+    release:
+      name: r
+    asserts:
+      - matchRegex:
+          path: spec.containers[0].command[2]
+          pattern: "http://r-shipwright-admin:3001/health"
+      - notMatchRegex:
+          path: spec.containers[0].command[2]
+          pattern: /dashboard
+
+  - it: renders no test-connection Pod when admin is disabled
+    template: templates/tests/test-connection.yaml
+    set:
+      admin.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
