@@ -65,6 +65,16 @@ spec:
                 secretKeyRef:
                   name: {{ include "shipwright.admin.secretName" . }}
                   key: DATABASE_URL_SHIPWRIGHT_ADMIN
+            {{- else if .Values.externalDatabase.existingSecret }}
+            # Bring-your-own (external) Postgres: inject DATABASE_URL_SHIPWRIGHT_ADMIN
+            # from a user-managed Secret. The chart neither assembles nor owns this
+            # Secret, so the admin Secret stays free of any DB URL (no duplicate env).
+            # adminUrlKey defaults to DATABASE_URL_SHIPWRIGHT_ADMIN when left empty.
+            - name: DATABASE_URL_SHIPWRIGHT_ADMIN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.externalDatabase.existingSecret }}
+                  key: {{ .Values.externalDatabase.adminUrlKey | default "DATABASE_URL_SHIPWRIGHT_ADMIN" }}
             {{- end }}
             - name: SHIPWRIGHT_SESSION_SECRET
               valueFrom:
