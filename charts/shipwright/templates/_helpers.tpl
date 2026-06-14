@@ -61,3 +61,54 @@ Create the name of the service account to use.
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{/*
+Admin component fullname: "<fullname>-admin".
+*/}}
+{{- define "shipwright.admin.fullname" -}}
+{{- printf "%s-admin" (include "shipwright.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Admin selector labels — fullname selector labels plus the component label.
+*/}}
+{{- define "shipwright.admin.selectorLabels" -}}
+{{ include "shipwright.selectorLabels" . }}
+app.kubernetes.io/component: admin
+{{- end }}
+
+{{/*
+Admin labels — common labels plus the component label.
+*/}}
+{{- define "shipwright.admin.labels" -}}
+{{ include "shipwright.labels" . }}
+app.kubernetes.io/component: admin
+{{- end }}
+
+{{/*
+Name of the ServiceAccount the admin workload uses.
+*/}}
+{{- define "shipwright.admin.serviceAccountName" -}}
+{{- if .Values.admin.serviceAccount.create }}
+{{- default (include "shipwright.admin.fullname" .) .Values.admin.serviceAccount.name }}
+{{- else }}
+{{- default "default" .Values.admin.serviceAccount.name }}
+{{- end }}
+{{- end }}
+
+{{/*
+Name of the chart-managed admin Secret (session + encryption keys, and the
+assembled DATABASE_URL when the bundled PostgreSQL subchart is used).
+*/}}
+{{- define "shipwright.admin.secretName" -}}
+{{- printf "%s-admin" (include "shipwright.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Name of the PostgreSQL subchart Service / Secret ("<release>-postgresql").
+The Bitnami subchart derives these from its own fullname (release name +
+"postgresql"); with no postgresql.fullnameOverride this is the standard form.
+*/}}
+{{- define "shipwright.postgresql.fullname" -}}
+{{- printf "%s-postgresql" .Release.Name | trunc 63 | trimSuffix "-" }}
+{{- end }}

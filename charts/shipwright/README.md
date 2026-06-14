@@ -85,7 +85,14 @@ environment, set `postgresql.auth.existingSecret` to a pre-created Secret (or se
 | `agent.provisioning.persistence.size` | `2Gi` | Agent PVC size. |
 | `agent.provisioning.persistence.storageClass` | `""` | Agent PVC StorageClass (cluster default if empty). |
 | `agent.provisioning.homePath` | `/data/agent-home` | Mount path for the agent persistent home. |
-| `auth.mode` | `none` | Auth gate: `none` (dev/Minikube) \| `session` \| `bearer`. |
+| `auth.mode` | `open` | Admin auth: `open` (dev auth, **no OAuth — insecure, do not expose publicly**) \| `google` (Google OAuth, `NODE_ENV=production`). |
+| `auth.google.clientId` | `""` | Google OAuth client ID (used when `auth.mode=google`). |
+| `auth.google.clientSecret` | `""` | Google OAuth client secret (kept in the chart-managed admin Secret). |
+| `auth.google.allowedEmails` | `""` | Comma-separated allow-list of emails permitted to sign in. |
+| `admin.service.type` | `ClusterIP` | Admin Service type. |
+| `admin.serviceAccount.create` | `true` | Whether to create the admin ServiceAccount. |
+| `admin.serviceAccount.name` | `""` | Admin ServiceAccount name (generated if empty). |
+| `admin.resources` | `50m/64Mi → 250m/256Mi` | Admin container resource requests/limits. |
 | `postgresql.enabled` | `true` | Deploy the bundled Bitnami PostgreSQL subchart. |
 | `postgresql.image.registry` | `docker.io` | PostgreSQL image registry (repoint to a mirror — see below). |
 | `postgresql.image.repository` | `bitnami/postgresql` | PostgreSQL image repository. |

@@ -10,7 +10,7 @@ tests:
       - matchRegexRaw:
           pattern: Thank you for installing shipwright \(Shipwright Harness\)
       - matchRegexRaw:
-          pattern: chart version 0\.2\.0, app version 0\.1\.0
+          pattern: chart version 0\.3\.0, app version 0\.1\.0
 
   - it: surfaces the three configured service ports in NOTES
     asserts:
@@ -26,7 +26,7 @@ tests:
       - matchRegexRaw:
           pattern: "Networking exposure type: ClusterIP"
       - matchRegexRaw:
-          pattern: "Auth mode:                none"
+          pattern: "Auth mode:                open"
 
   - it: documents the PostgreSQL connection when the subchart is enabled
     set:

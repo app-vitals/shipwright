@@ -1,7 +1,7 @@
 Thank you for installing {{ .Chart.Name }} (Shipwright Harness) — chart version {{ .Chart.Version }}, app version {{ .Chart.AppVersion }}.
 
-NOTE: This is the chart skeleton release. The shipwright service workloads
-(admin, metrics, agent Deployments/Services) are added in a later task and are
+NOTE: The admin service workload (Deployment/Service/ServiceAccount + Secret) is
+now rendered. The metrics and agent workloads are added in later tasks and are
 NOT yet rendered. What this release currently provisions:
 
 {{- if .Values.postgresql.enabled }}
@@ -26,6 +26,40 @@ Configured service ports (exposed once HD-3.x workloads land):
 
 Networking exposure type: {{ .Values.networking.type }}
 Auth mode:                {{ .Values.auth.mode }}
+
+{{- if .Values.admin.enabled }}
+
+Admin service access:
+  The admin Deployment listens on port 3001 (health check: GET /health).
+  Reach the UI/API from your workstation:
+    kubectl port-forward svc/{{ include "shipwright.admin.fullname" . }} 3001:{{ .Values.admin.service.port }} -n {{ .Release.Namespace }}
+  then open http://localhost:3001
+{{- if .Values.postgresql.enabled }}
+  DATABASE_URL_SHIPWRIGHT_ADMIN is assembled into the chart-managed Secret
+  "{{ include "shipwright.admin.secretName" . }}" (pointing at the bundled PostgreSQL),
+  so the database password never appears in the Deployment's plaintext env.
+{{- else }}
+  PostgreSQL subchart is disabled — set DATABASE_URL_SHIPWRIGHT_ADMIN yourself
+  (e.g. via a pre-created Secret) so the admin service can reach your database.
+{{- end }}
+  The session/encryption keys (SHIPWRIGHT_SESSION_SECRET / _ENCRYPTION_KEY) are
+  generated into that Secret on first install and PRESERVED across `helm upgrade`.
+
+{{- if eq .Values.auth.mode "open" }}
+
+  ============================================================================
+  ⚠️  WARNING: auth.mode=open — DEV AUTH ONLY, NO REAL AUTHENTICATION.
+      ADMIN_DEV_AUTH=true is set: anyone who can reach the admin service is
+      treated as authenticated. This is INSECURE. DO NOT expose this service
+      publicly (no public LoadBalancer/Ingress). For real access control set
+      auth.mode=google and provide auth.google.{clientId,clientSecret,allowedEmails}.
+  ============================================================================
+{{- else if eq .Values.auth.mode "google" }}
+
+  auth.mode=google — Google OAuth is enabled (NODE_ENV=production). Only emails
+  in auth.google.allowedEmails ("{{ .Values.auth.google.allowedEmails }}") may sign in.
+{{- end }}
+{{- end }}
 
 Minikube tip: with networking.type=ClusterIP, reach a service via
   kubectl port-forward svc/<service> <localPort>:<servicePort> -n {{ .Release.Namespace }}
