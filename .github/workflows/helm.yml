@@ -98,6 +98,7 @@ jobs:
         uses: helm/kind-action@v1
         with:
           version: v0.24.0
+          cluster_name: kind
 
       - name: Build and load stub admin image for kind
         run: |
