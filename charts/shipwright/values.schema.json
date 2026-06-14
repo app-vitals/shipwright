@@ -79,6 +79,36 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
+                "enabled": { "type": "boolean" },
+                "image": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "repository": { "type": "string" },
+                    "tag": { "type": "string" }
+                  },
+                  "required": ["repository"]
+                },
+                "replicas": { "type": "integer", "minimum": 0 },
+                "serviceAccount": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "create": { "type": "boolean" },
+                    "annotations": { "type": "object" },
+                    "name": { "type": "string" }
+                  }
+                },
+                "apiUrl": { "type": "string" },
+                "adminDeploymentUid": { "type": "string" },
+                "pvc": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "size": { "type": "string" },
+                    "storageClass": { "type": "string" }
+                  }
+                },
                 "persistence": {
                   "type": "object",
                   "additionalProperties": false,
