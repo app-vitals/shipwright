@@ -151,4 +151,20 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+        {{- if .Values.cloudSqlProxy.enabled }}
+        - name: cloud-sql-proxy
+          image: {{ .Values.cloudSqlProxy.image }}
+          args:
+            - --private-ip
+            - {{ .Values.cloudSqlProxy.connectionName | quote }}
+            {{- range .Values.cloudSqlProxy.args }}
+            - {{ . | quote }}
+            {{- end }}
+          securityContext:
+            runAsNonRoot: true
+          {{- with .Values.cloudSqlProxy.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+        {{- end }}
 {{- end }}

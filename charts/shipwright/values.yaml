@@ -321,3 +321,22 @@ externalDatabase:
   # DATABASE_URL_SHIPWRIGHT_ADMIN connection string. Empty (default) → the template
   # falls back to the key name "DATABASE_URL_SHIPWRIGHT_ADMIN".
   adminUrlKey: ""
+
+# -- Cloud SQL Auth Proxy sidecar for the admin pod (GCP Cloud SQL).
+# When enabled, a cloud-sql-proxy sidecar is added to the admin Deployment so
+# a GCP Cloud SQL instance is reachable at 127.0.0.1:5432 from the admin pod.
+# This lets a Cloud SQL DSN (e.g. postgresql://user:pass@127.0.0.1:5432/db) be
+# used directly in externalDatabase.existingSecret — mirrors the vitals-os pattern.
+cloudSqlProxy:
+  # -- When true, add the cloud-sql-proxy sidecar to the admin Deployment.
+  # Default false — purely additive, safe to deploy without this.
+  enabled: false
+  # -- Proxy container image. Pin to a concrete digest for production.
+  image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2
+  # -- Cloud SQL instance connection name (project:region:instance). Required when enabled.
+  connectionName: ""
+  # -- Extra arguments appended after --private-ip and the connection name.
+  # Example: ["--max-sigterm-delay=10s", "--structured-logs"]
+  args: []
+  # -- Compute resources for the proxy sidecar. Empty → no resource limits set.
+  resources: {}
