@@ -1,0 +1,44 @@
+suite: default image repositories and pull policy
+# HD-2.1 set the PostgreSQL image coordinates (docker.io/bitnami/postgresql,
+# concrete tag — never `latest`) and the IfNotPresent default pull policy.
+# The shipwright service image repositories (shipwright-admin / -metrics /
+# -agent) live in values.yaml but have no consuming workload template until
+# HD-3.x, so they are guarded by values.schema.json `required: [repository]`
+# (see values_schema_test.yaml) rather than asserted on a rendered Deployment.
+# Here we assert the image facts that actually render today: the PostgreSQL
+# subchart's concrete image and pull policy.
+templates:
+  - charts/postgresql/templates/primary/statefulset.yaml
+tests:
+  - it: renders the bitnami/postgresql image from the docker.io registry
+    set:
+      postgresql.enabled: true
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].image
+          pattern: "^docker\\.io/bitnami/postgresql:"
+
+  - it: pins a concrete PostgreSQL image tag (never `latest`)
+    set:
+      postgresql.enabled: true
+    asserts:
+      - notMatchRegex:
+          path: spec.template.spec.containers[0].image
+          pattern: ":latest$"
+
+  - it: defaults the PostgreSQL pull policy to IfNotPresent
+    set:
+      postgresql.enabled: true
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: IfNotPresent
+
+  - it: repoints the image when global.imageRegistry overrides the registry
+    set:
+      postgresql.enabled: true
+      global.imageRegistry: my-mirror.example.com
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].image
+          pattern: "^my-mirror\\.example\\.com/bitnami/postgresql:"

@@ -1,0 +1,48 @@
+suite: values.schema.json guard behavior
+# HD-2.1 shipped values.schema.json. The `service` definition marks
+# `enabled`, `image`, and `service` as required (and image.repository within it).
+# Helm validates values against this schema BEFORE template execution, so an
+# override that violates a `required`/`enum` constraint must fail the render.
+# Schema-validation errors are matched with failedTemplate.errorPattern (the
+# errorMessage matcher only covers in-template render errors).
+templates:
+  - templates/NOTES.txt
+tests:
+  - it: renders cleanly with the default (schema-valid) values
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: rejects an admin service whose required `service` block is removed
+    set:
+      admin.service: null
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/admin': missing property 'service'"
+
+  - it: rejects a service image missing the required `repository`
+    set:
+      metrics.image.repository: null
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/metrics/image': missing property 'repository'"
+
+  - it: rejects an unknown property on a service image (additionalProperties false)
+    set:
+      admin.image.bogus: x
+    asserts:
+      - failedTemplate:
+          errorPattern: "additional properties 'bogus' not allowed"
+
+  - it: rejects an invalid networking.type outside the allowed enum
+    set:
+      networking.type: Bogus
+    asserts:
+      - failedTemplate:
+          errorPattern: "/networking/type"
+
+  - it: rejects an unknown auth.mode outside the allowed enum
+    set:
+      auth.mode: superuser
+    asserts:
+      - failedTemplate:
+          errorPattern: "/auth/mode"

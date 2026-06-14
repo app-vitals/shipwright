@@ -1,0 +1,24 @@
+# chart-testing (ct) configuration.
+# https://github.com/helm/chart-testing
+#
+# Single-chart repo: charts live under charts/, the only chart is
+# charts/shipwright. ct discovers the per-environment values variants under
+# charts/shipwright/ci/*-values.yaml and installs the chart once per variant on
+# the kind cluster, then runs `helm test`.
+
+# Branch ct diffs against to decide which charts changed.
+target-branch: main
+
+# Where charts live (relative to repo root).
+chart-dirs:
+  - charts
+
+# This is a leaf application chart; no remote chart repositories to add.
+chart-repos: []
+
+# Single maintainer/org chart — don't enforce the maintainers list.
+validate-maintainers: false
+
+# Don't gate on a chart-version bump for every change (the CLI task and CI invoke
+# ct with --charts explicitly, so changed-chart detection is bypassed anyway).
+check-version-increment: false

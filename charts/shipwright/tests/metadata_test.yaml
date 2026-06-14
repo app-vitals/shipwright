@@ -1,0 +1,47 @@
+suite: chart metadata and NOTES rendering
+# Asserts the chart-level facts HD-2.1 established: NOTES.txt renders the chart
+# name/version, the configured service ports, and the networking/auth surface.
+# NOTES.txt is free text, so assertions use the *Raw matchers (no YAML path).
+templates:
+  - templates/NOTES.txt
+tests:
+  - it: renders the Shipwright Harness banner with chart + app version
+    asserts:
+      - matchRegexRaw:
+          pattern: Thank you for installing shipwright \(Shipwright Harness\)
+      - matchRegexRaw:
+          pattern: chart version 0\.1\.0, app version 0\.1\.0
+
+  - it: surfaces the three configured service ports in NOTES
+    asserts:
+      - matchRegexRaw:
+          pattern: "admin:   3001"
+      - matchRegexRaw:
+          pattern: "metrics: 3460"
+      - matchRegexRaw:
+          pattern: "agent:   3000"
+
+  - it: reports the default networking exposure and auth mode
+    asserts:
+      - matchRegexRaw:
+          pattern: "Networking exposure type: ClusterIP"
+      - matchRegexRaw:
+          pattern: "Auth mode:                none"
+
+  - it: documents the PostgreSQL connection when the subchart is enabled
+    set:
+      postgresql.enabled: true
+    asserts:
+      - matchRegexRaw:
+          pattern: PostgreSQL \(Bitnami subchart\)
+      - matchRegexRaw:
+          pattern: database "shipwright_admin", user "shipwright"
+
+  - it: tells the operator to bring their own DB when PostgreSQL is disabled
+    set:
+      postgresql.enabled: false
+    asserts:
+      - matchRegexRaw:
+          pattern: PostgreSQL subchart is DISABLED
+      - matchRegexRaw:
+          pattern: external\s+DATABASE_URL_SHIPWRIGHT_ADMIN

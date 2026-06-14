@@ -1,0 +1,84 @@
+name: Helm
+
+# Isolated from ci.yml (bun lint/typecheck/test). This workflow only gates the
+# Helm chart: fast no-cluster checks on every PR, plus a kind-based `ct install`
+# end-to-end job. Both jobs block merge on failure.
+on:
+  pull_request:
+    paths:
+      - "charts/**"
+      - "ct.yaml"
+      - ".github/workflows/helm.yml"
+  push:
+    branches: [main]
+    paths:
+      - "charts/**"
+      - "ct.yaml"
+      - ".github/workflows/helm.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  # Fast, no-cluster gate: lint + unit tests + schema validation.
+  helm-checks:
+    name: helm lint / unittest / validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.16.4
+
+      - name: Install helm-unittest plugin
+        run: helm plugin install https://github.com/helm-unittest/helm-unittest --version v1.1.1
+
+      - name: Install kubeconform
+        uses: bmuschko/setup-kubeconform@v1
+        with:
+          kubeconform-version: 0.6.7
+
+      - name: helm lint
+        run: helm lint charts/shipwright
+
+      - name: helm unittest
+        run: helm unittest charts/shipwright
+
+      - name: kubeconform validate (strict, k8s + CRD schemas)
+        run: |
+          helm template shipwright charts/shipwright --namespace shipwright \
+            | kubeconform \
+                -strict \
+                -summary \
+                -schema-location default \
+                -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
+
+  # End-to-end gate: spin a kind cluster and `ct install` the chart per ci/ values
+  # variant, running `helm test` against each install.
+  helm-e2e:
+    name: ct install (kind)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # ct needs full history to diff against target-branch
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.16.4
+
+      - name: Set up chart-testing
+        uses: helm/chart-testing-action@v2
+        with:
+          version: v3.12.0
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          version: v0.24.0
+
+      - name: ct install (per ci/ values variant, runs helm test)
+        run: ct install --config ct.yaml --charts charts/shipwright
