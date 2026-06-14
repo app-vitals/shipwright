@@ -10,19 +10,14 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
-## [0.10.0]
+## [1.0.0]
+
+_First publicly published chart version. New features in this release: externalDatabase and cloudSqlProxy (SWD-1.x). Gateway API networking, cert-manager Certificate, agent-provisioning RBAC, and metrics.provider were shipped in 0.9.0/0.9.1._
 
 ### Added
 
-- `externalDatabase` block: bring-your-own-Postgres support for the admin service
-  (`externalDatabase.existingSecret` + optional `externalDatabase.adminUrlKey`). When
-  `postgresql.enabled=false` and `externalDatabase.existingSecret` is set, the admin
-  Deployment injects `DATABASE_URL_SHIPWRIGHT_ADMIN` via `secretKeyRef`; a fail guard
-  aborts rendering when `postgresql.enabled=false` and `externalDatabase.existingSecret`
-  is empty. The bundled-PostgreSQL path is unchanged.
-- `cloudSqlProxy` sidecar support: `cloudSqlProxy.{enabled,connectionName,image}` values
-  with `required` validation for `connectionName`, plus a `cloudSqlProxy` schema block in
-  `values.schema.json` (`additionalProperties: false`).
+- `externalDatabase` block: bring-your-own-Postgres for the admin service. Set `postgresql.enabled=false` and `externalDatabase.existingSecret` to inject `DATABASE_URL_SHIPWRIGHT_ADMIN` from a user-managed Secret via `secretKeyRef`. The optional `externalDatabase.adminUrlKey` overrides the key name within that Secret (defaults to `DATABASE_URL_SHIPWRIGHT_ADMIN` when empty). When this path is active, the chart-managed admin Secret assembles no DB URL (no duplicate env injection). Bundled-PostgreSQL path is unchanged — this is purely additive.
+- `cloudSqlProxy` sidecar: when `cloudSqlProxy.enabled=true`, a GCP Cloud SQL Auth Proxy container is injected alongside the admin container in the admin Deployment, making a Cloud SQL instance reachable at `127.0.0.1:5432`. Disabled by default (`enabled: false`). When enabled, the proxy runs with `--private-ip` and the required `cloudSqlProxy.connectionName` argument. Additional proxy arguments are configurable via `cloudSqlProxy.args`; resource limits via `cloudSqlProxy.resources`. The sidecar is purely additive — the existing admin Deployment is unchanged when the feature is off.
 
 ## [0.9.1]
 

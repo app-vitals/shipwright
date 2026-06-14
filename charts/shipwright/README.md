@@ -13,6 +13,27 @@ Minikube-friendly defaults.
 
 License: **MIT**.
 
+## Helm Repository
+
+The chart is published via [chart-releaser](https://github.com/helm/chart-releaser) to GitHub Pages on every merge to `main` that bumps `Chart.yaml` version.
+
+**Add the repo:**
+
+```bash
+helm repo add shipwright https://app-vitals.github.io/shipwright
+helm repo update
+helm install my-release shipwright/shipwright
+```
+
+**GitHub Pages publish path:** On the first push to `main` with a chart version bump, chart-releaser packages the chart, creates the `gh-pages` branch, and publishes the index. GitHub Pages will be auto-enabled at that point, or can be enabled manually via **Settings → Pages → gh-pages branch → / (root)**.
+
+**Fallback — direct .tgz download:** If the Helm repo is not yet available (before the first release lands), you can install directly from the GitHub Releases page:
+
+```bash
+# Find the release at https://github.com/app-vitals/shipwright/releases
+helm install my-release https://github.com/app-vitals/shipwright/releases/download/shipwright-1.0.0/shipwright-1.0.0.tgz
+```
+
 ## Versioning
 
 This chart follows [Semantic Versioning](https://semver.org). The chart
