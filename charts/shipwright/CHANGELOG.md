@@ -10,6 +10,20 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [0.10.0]
+
+### Added
+
+- `externalDatabase` block: bring-your-own-Postgres support for the admin service
+  (`externalDatabase.existingSecret` + optional `externalDatabase.adminUrlKey`). When
+  `postgresql.enabled=false` and `externalDatabase.existingSecret` is set, the admin
+  Deployment injects `DATABASE_URL_SHIPWRIGHT_ADMIN` via `secretKeyRef`; a fail guard
+  aborts rendering when `postgresql.enabled=false` and `externalDatabase.existingSecret`
+  is empty. The bundled-PostgreSQL path is unchanged.
+- `cloudSqlProxy` sidecar support: `cloudSqlProxy.{enabled,connectionName,image}` values
+  with `required` validation for `connectionName`, plus a `cloudSqlProxy` schema block in
+  `values.schema.json` (`additionalProperties: false`).
+
 ## [0.9.1]
 
 ### Added
