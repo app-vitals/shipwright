@@ -242,6 +242,16 @@ Present the task list and dependency map as a first pass. The engineer reviews a
 
 Once the task breakdown is approved, write each task to the task store via `task_store.ts`.
 
+### Bundle Model Inheritance (Pre-Write)
+
+Before constructing any JSON, apply bundle inheritance to the full task list:
+
+1. Group planned tasks by `branch`.
+2. For each group with more than one task (a bundle), find the highest model tier present: `opus` > `sonnet` > `haiku`.
+3. Set every task in that bundle to the highest tier before writing.
+
+A task on its own branch is unaffected. This ensures a `haiku`-scored task bundled with a `sonnet`-scored task is written as `model: "sonnet"`.
+
 The code path depends on `taskStore` in `SHIPWRIGHT_CONFIG`. Read it the same way Phase-0 does:
 
 ```bash
