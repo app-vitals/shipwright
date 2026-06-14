@@ -318,8 +318,8 @@ tests:
       tls.certManager.issuerRef.name: letsencrypt
       networking.type: ingress
     asserts:
-      - hasDocuments:
-          count: 0
+      - failedTemplate:
+          errorPattern: "/networking/type"
 
   - it: renders NO Certificate when certManager is enabled with ClusterIP networking
     template: templates/certificate.yaml
@@ -327,8 +327,8 @@ tests:
       tls.certManager.enabled: true
       tls.certManager.issuerRef.name: letsencrypt
     asserts:
-      - hasDocuments:
-          count: 0
+      - failedTemplate:
+          errorPattern: "/networking/type"
 
   # ---- Mutual exclusivity with Ingress ----
   - it: networking.type=gateway renders NO Ingress

@@ -107,7 +107,15 @@ tests:
       tls.certManager.issuerRef.name: letsencrypt
     asserts:
       - failedTemplate:
-          errorPattern: "networking.type"
+          errorPattern: "/networking/type"
+
+  - it: rejects certManager enabled with default networking.type (ClusterIP — most common misconfiguration)
+    set:
+      tls.certManager.enabled: true
+      tls.certManager.issuerRef.name: letsencrypt
+    asserts:
+      - failedTemplate:
+          errorPattern: "/networking/type"
 
   - it: accepts certManager enabled with networking.type=gateway (cross-field guard)
     set:
