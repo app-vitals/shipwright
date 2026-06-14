@@ -29,6 +29,14 @@ Examples:
         verdict="SHIP IT" findings=0 fixes_applied=0 \\
         'agents=["code-reviewer","silent-failure-hunter"]'
 
+    python3 posthog_send.py shipwright_task_complete \\
+        --project my-app --task WS-1.1 --ts "2026-06-14T10:54:00Z" \\
+        title="Add token metrics" session="abc123" layer="shared" \\
+        estimated_h=1 actual_h=0.9 retries=0 pr=49 files_changed=3 \\
+        started_at="2026-06-14T10:00:00Z" complexity=2 \\
+        tokens_in=42318 tokens_out=3201 cost_usd=0.174645 \\
+        effort_level="high"
+
 The script builds distinct_id and $insert_id automatically from --project and --task,
 so the caller never has to construct JSON.
 
