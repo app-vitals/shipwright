@@ -1,0 +1,104 @@
+suite: admin auth modes (open vs google)
+# HD-3.1 auth modes. auth.mode=open → ADMIN_DEV_AUTH=true and NO NODE_ENV.
+# auth.mode=google → NODE_ENV=production + Google OAuth env (from the admin
+# Secret) + SHIPWRIGHT_ADMIN_ALLOWED_EMAILS.
+templates:
+  - templates/admin-deployment.yaml
+release:
+  name: r
+tests:
+  - it: open mode sets ADMIN_DEV_AUTH=true (working dev UI, no OAuth)
+    set:
+      auth.mode: open
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: ADMIN_DEV_AUTH
+            value: "true"
+
+  - it: open mode does NOT set NODE_ENV=production (keeps dev auth enabled)
+    set:
+      auth.mode: open
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: NODE_ENV
+            value: "production"
+
+  - it: open mode does NOT set any Google OAuth env
+    set:
+      auth.mode: open
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: GOOGLE_CLIENT_ID
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-admin
+                key: GOOGLE_CLIENT_ID
+
+  - it: google mode sets NODE_ENV=production
+    set:
+      auth.mode: google
+      auth.google.clientId: cid
+      auth.google.clientSecret: csec
+      auth.google.allowedEmails: dev@example.com
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: NODE_ENV
+            value: "production"
+
+  - it: google mode sources GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET from the admin Secret
+    set:
+      auth.mode: google
+      auth.google.clientId: cid
+      auth.google.clientSecret: csec
+      auth.google.allowedEmails: dev@example.com
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: GOOGLE_CLIENT_ID
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-admin
+                key: GOOGLE_CLIENT_ID
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: GOOGLE_CLIENT_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-admin
+                key: GOOGLE_CLIENT_SECRET
+
+  - it: google mode passes SHIPWRIGHT_ADMIN_ALLOWED_EMAILS from values
+    set:
+      auth.mode: google
+      auth.google.clientId: cid
+      auth.google.clientSecret: csec
+      auth.google.allowedEmails: a@example.com,b@example.com
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_ADMIN_ALLOWED_EMAILS
+            value: a@example.com,b@example.com
+
+  - it: google mode does NOT set ADMIN_DEV_AUTH (dev auth is off)
+    set:
+      auth.mode: google
+      auth.google.clientId: cid
+      auth.google.clientSecret: csec
+      auth.google.allowedEmails: dev@example.com
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: ADMIN_DEV_AUTH
+            value: "true"

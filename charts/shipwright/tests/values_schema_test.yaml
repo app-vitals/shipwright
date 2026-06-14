@@ -46,3 +46,20 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: "/auth/mode"
+
+  - it: rejects google mode with empty allowedEmails (conditional minLength)
+    set:
+      auth.mode: google
+      auth.google.clientId: cid
+      auth.google.clientSecret: csec
+      auth.google.allowedEmails: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: "allowedEmails"
+
+  - it: accepts open mode with empty allowedEmails (constraint is google-only)
+    set:
+      auth.mode: open
+      auth.google.allowedEmails: ""
+    asserts:
+      - notFailedTemplate: {}

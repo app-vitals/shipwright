@@ -1,0 +1,106 @@
+{{- if .Values.admin.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "shipwright.admin.fullname" . }}
+  labels:
+    {{- include "shipwright.admin.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.admin.replicas | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "shipwright.admin.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "shipwright.admin.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "shipwright.admin.serviceAccountName" . }}
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- range . }}
+        - name: {{ . }}
+        {{- end }}
+      {{- end }}
+      {{- if .Values.postgresql.enabled }}
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z {{ include "shipwright.postgresql.fullname" . }} 5432; do echo "waiting for postgresql..."; sleep 2; done']
+      {{- end }}
+      containers:
+        - name: admin
+          image: "{{ with .Values.global.imageRegistry }}{{ . }}/{{ end }}{{ .Values.admin.image.repository }}:{{ .Values.admin.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.admin.image.pullPolicy | default .Values.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: 3001
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3001
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3001
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          env:
+            # Bind the admin service to the chart-standard port 3001 (the app
+            # defaults to 3000 via PORT; the chart standardizes on 3001).
+            - name: PORT
+              value: "3001"
+            {{- if .Values.postgresql.enabled }}
+            # Assembled in the admin Secret so the Postgres password is never in
+            # plaintext Deployment env.
+            - name: DATABASE_URL_SHIPWRIGHT_ADMIN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "shipwright.admin.secretName" . }}
+                  key: DATABASE_URL_SHIPWRIGHT_ADMIN
+            {{- end }}
+            - name: SHIPWRIGHT_SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "shipwright.admin.secretName" . }}
+                  key: SHIPWRIGHT_SESSION_SECRET
+            - name: SHIPWRIGHT_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "shipwright.admin.secretName" . }}
+                  key: SHIPWRIGHT_ENCRYPTION_KEY
+            {{- if or (eq .Values.auth.mode "open") (eq .Values.auth.mode "none") }}
+            # auth.mode=open (or deprecated alias "none") — dev auth, NO OAuth.
+            # Insecure: do not expose publicly. NODE_ENV is intentionally NOT set
+            # to production so the dev-auth path stays enabled.
+            - name: ADMIN_DEV_AUTH
+              value: "true"
+            {{- else if eq .Values.auth.mode "google" }}
+            # auth.mode=google — real Google OAuth. Production hardening on.
+            - name: NODE_ENV
+              value: "production"
+            - name: GOOGLE_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "shipwright.admin.secretName" . }}
+                  key: GOOGLE_CLIENT_ID
+            - name: GOOGLE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "shipwright.admin.secretName" . }}
+                  key: GOOGLE_CLIENT_SECRET
+            - name: SHIPWRIGHT_ADMIN_ALLOWED_EMAILS
+              value: {{ .Values.auth.google.allowedEmails | quote }}
+            {{- end }}
+          {{- with .Values.admin.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+{{- end }}
