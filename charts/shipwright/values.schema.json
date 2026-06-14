@@ -28,7 +28,16 @@
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["ClusterIP", "NodePort", "LoadBalancer"]
+          "enum": ["ClusterIP", "NodePort", "LoadBalancer", "ingress"]
+        },
+        "ingress": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "className": { "type": "string" },
+            "host": { "type": "string" },
+            "annotations": { "type": "object" }
+          }
         }
       },
       "required": ["type"]

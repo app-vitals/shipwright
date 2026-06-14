@@ -1,0 +1,48 @@
+{{- if .Values.admin.enabled }}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "shipwright.fullname" . }}-test-connection
+  labels:
+    {{- include "shipwright.labels" . | nindent 4 }}
+    app.kubernetes.io/component: test-connection
+  annotations:
+    # Marks this Pod as a Helm test hook: it only runs on `helm test`, never on
+    # install/upgrade. Deleted after the test run unless it fails (kept for debug).
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  # A failed test Pod should surface immediately, not be retried into a
+  # CrashLoopBackOff that masks the failure from `helm test`.
+  restartPolicy: Never
+  containers:
+    - name: curl
+      # Small, public, pinned curl image (no first-party build needed).
+      image: curlimages/curl:8.11.1
+      command:
+        - /bin/sh
+        - -c
+        - |
+          set -eu
+          # Admin /health MUST return 200.
+          ADMIN_URL="http://{{ include "shipwright.admin.fullname" . }}:{{ .Values.admin.service.port }}/health"
+          echo "GET ${ADMIN_URL} (expect 200)"
+          admin_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 --retry 5 --retry-delay 3 --retry-connrefused "${ADMIN_URL}")"
+          echo "admin /health -> ${admin_code}"
+          if [ "${admin_code}" != "200" ]; then
+            echo "FAIL: admin /health returned ${admin_code}, expected 200" >&2
+            exit 1
+          fi
+          {{- if .Values.metrics.enabled }}
+          # Metrics /dashboard MUST return 200 or 302 (auth/redirect tolerated).
+          METRICS_URL="http://{{ include "shipwright.metrics.fullname" . }}:{{ .Values.metrics.service.port }}/dashboard"
+          echo "GET ${METRICS_URL} (expect 200 or 302)"
+          metrics_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 --retry 5 --retry-delay 3 --retry-connrefused "${METRICS_URL}")"
+          echo "metrics /dashboard -> ${metrics_code}"
+          if [ "${metrics_code}" != "200" ] && [ "${metrics_code}" != "302" ]; then
+            echo "FAIL: metrics /dashboard returned ${metrics_code}, expected 200 or 302" >&2
+            exit 1
+          fi
+          {{- end }}
+          echo "OK: connection checks passed"
+{{- end }}

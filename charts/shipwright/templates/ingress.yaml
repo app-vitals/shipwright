@@ -1,0 +1,42 @@
+{{- if eq .Values.networking.type "ingress" }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "shipwright.fullname" . }}
+  labels:
+    {{- include "shipwright.labels" . | nindent 4 }}
+  {{- with .Values.networking.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.networking.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.networking.ingress.host | quote }}
+      http:
+        paths:
+          {{- if .Values.metrics.enabled }}
+          # Metrics dashboard. Declared BEFORE the admin "/" catch-all so the
+          # more-specific /dashboard prefix wins (ingress controllers match the
+          # longest prefix, but ordering keeps intent explicit). Omitted entirely
+          # when metrics is disabled.
+          - path: /dashboard
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "shipwright.metrics.fullname" . }}
+                port:
+                  name: http
+          {{- end }}
+          # Admin UI/API at the root. Everything not matched by a more-specific
+          # path above is routed to the admin service.
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "shipwright.admin.fullname" . }}
+                port:
+                  name: http
+{{- end }}
