@@ -146,7 +146,19 @@ tests:
             name: SHIPWRIGHT_API_URL
             value: http://r-shipwright-admin:3001
 
-  - it: omits SHIPWRIGHT_ADMIN_DEPLOYMENT_UID unless an override is provided, and injects it when set
+  - it: omits SHIPWRIGHT_ADMIN_DEPLOYMENT_UID when adminDeploymentUid is not set
+    template: templates/admin-deployment.yaml
+    set:
+      agent.provisioning.enabled: true
+    release:
+      name: r
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_ADMIN_DEPLOYMENT_UID
+
+  - it: injects SHIPWRIGHT_ADMIN_DEPLOYMENT_UID when adminDeploymentUid is set
     template: templates/admin-deployment.yaml
     set:
       agent.provisioning.enabled: true
