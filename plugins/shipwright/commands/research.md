@@ -32,7 +32,7 @@ Spawn the `researcher` agent via the Agent tool. Pass a prompt that includes:
 2. **The docs directory path** (if found)
 3. **Project name** (from `package.json` name field, or the current directory name)
 
-Use `model: sonnet` and provide a clear, complete prompt — the agent has no prior context.
+Provide a clear, complete prompt — the agent has no prior context.
 
 Example agent prompt:
 ```

@@ -242,7 +242,7 @@ Before dispatching:
 
 ### 5b. Dispatch Implementation Subagent
 
-Dispatch a `general-purpose` subagent with this prompt (fill in all `{placeholders}` from context already collected):
+Dispatch a `general-purpose` subagent with this prompt (fill in all `{placeholders}` from context already collected). Pass `model: task.model ?? 'sonnet'` to the Agent() call so tasks can opt into a different model tier. At dispatch time, set `EFFECTIVE_MODEL = task.model ?? 'sonnet'` — this variable tracks the model the implementation subagent actually runs on and is used for metrics in Steps 10b and 10c.
 
 ```
 You are implementing a feature task. Follow TDD (red-green-refactor) strictly — write failing tests BEFORE writing implementation code.
@@ -322,7 +322,7 @@ Parse the subagent's STATUS report:
 - **DONE**: Store the RESEARCH_METRICS block for Step 10b. Proceed to Step 6.
 - **DONE_WITH_CONCERNS**: Read the concerns. If they indicate correctness or scope gaps, address them before Step 6. If they are observations only (e.g., "this file is growing large"), note them and proceed.
 - **NEEDS_CONTEXT**: Provide the missing context and re-dispatch with the same prompt augmented with the answer.
-- **BLOCKED**: Assess the blocker. If it is a context problem, re-dispatch with more context. If the task is too large, break it into smaller sub-tasks. If the plan is wrong, escalate to the user.
+- **BLOCKED**: First, attempt a model upgrade: if the effective model (`task.model ?? 'sonnet'`) is 'haiku', re-dispatch with 'sonnet' and set `EFFECTIVE_MODEL = 'sonnet'`; if the effective model is 'sonnet', re-dispatch with 'opus' and set `EFFECTIVE_MODEL = 'opus'`. Re-dispatch the subagent once at the upgraded tier with the same prompt plus the blocker context appended. If still BLOCKED after the upgrade re-dispatch, or if the effective model is already 'opus', assess the blocker: if it is a context problem, provide more context; if the task is too large, break it into smaller sub-tasks; if the plan is wrong, escalate to the user.
 
 Extract from RESEARCH_METRICS for Step 10b: `docs_scanned`, `docs_selected`, `docs_loaded` (as JSON array), `web_search` (boolean), `web_queries` (integer).
 
@@ -367,7 +367,7 @@ POSTHOG_SCRIPT=$(find ~/.claude/plugins/cache -name "posthog_send.py" -path "*/s
 
 Before creating a PR, launch an independent spec compliance subagent to verify the implementation actually satisfies the acceptance criteria. This is an independent review — the subagent has no knowledge of implementation decisions made in Step 7, only the spec and the diff.
 
-**Dispatch a `general-purpose` subagent** with this prompt:
+**Dispatch a `general-purpose` subagent** with `model: 'haiku'` (spec compliance is a lightweight structured review) and this prompt:
 
 ```
 You are performing a spec compliance review. Review the implementation diff against the acceptance criteria and report whether each criterion is MET, PARTIAL, or NOT MET.
@@ -1045,7 +1045,7 @@ eval $(python3 /tmp/shipwright-token-calc.py "$JSONL_SNAPSHOT_PATH" "$JSONL_SNAP
 If the script fails or the JSONL path is unreadable, all three variables emit as `null`. Store `INPUT_TOKENS`, `OUTPUT_TOKENS`, `COST_USD`, and `EFFORT_LEVEL` (from Step 1) for the JSONL line and Step 10c.
 
 ```json
-{"task":"{id}","title":"{title}","session":"{session}","repo":"{repo}","layer":"{layer}","estimated_h":{hours},"ci_fix_attempts":{ci_attempt},"pr":{pr_number},"files_changed":{files_changed_count},"started_at":"{task_started_at}","ts":"{ISO timestamp}","simplify":{"total":{simplify_total},"dry":{simplify_dry},"dead_code":{simplify_dead_code},"naming":{simplify_naming},"complexity":{simplify_complexity},"consistency":{simplify_consistency}},"requirements":{"met":{req_met},"partial":{req_partial},"not_met":{req_not_met},"total":{req_total}},"ci":{"fix_attempts":{ci_attempt},"failures":{ci_failures_json_array},"checks":{ci_checks_json_array}},"auto_docs":{"updated":{auto_docs_updated},"files_changed":{auto_docs_files_changed},"lines_changed":{auto_docs_lines_changed},"skipped_reason":{auto_docs_skipped_reason_json}},"test_layers":{"measured":{test_layers_measured},"planned":{test_layers_planned},"drift":{test_layers_drift},"coverage_per_layer":{test_layers_coverage_per_layer},"coverage_per_layer_reason":{test_layers_coverage_per_layer_reason}},"conformance":{conformance_checked_json},"tokens":{"input":{INPUT_TOKENS},"output":{OUTPUT_TOKENS},"cost_usd":{COST_USD}},"effort_level":{effort_level_json}}
+{"task":"{id}","title":"{title}","session":"{session}","repo":"{repo}","layer":"{layer}","estimated_h":{hours},"ci_fix_attempts":{ci_attempt},"pr":{pr_number},"files_changed":{files_changed_count},"started_at":"{task_started_at}","ts":"{ISO timestamp}","simplify":{"total":{simplify_total},"dry":{simplify_dry},"dead_code":{simplify_dead_code},"naming":{simplify_naming},"complexity":{simplify_complexity},"consistency":{simplify_consistency}},"requirements":{"met":{req_met},"partial":{req_partial},"not_met":{req_not_met},"total":{req_total}},"ci":{"fix_attempts":{ci_attempt},"failures":{ci_failures_json_array},"checks":{ci_checks_json_array}},"auto_docs":{"updated":{auto_docs_updated},"files_changed":{auto_docs_files_changed},"lines_changed":{auto_docs_lines_changed},"skipped_reason":{auto_docs_skipped_reason_json}},"test_layers":{"measured":{test_layers_measured},"planned":{test_layers_planned},"drift":{test_layers_drift},"coverage_per_layer":{test_layers_coverage_per_layer},"coverage_per_layer_reason":{test_layers_coverage_per_layer_reason}},"conformance":{conformance_checked_json},"tokens":{"input":{INPUT_TOKENS},"output":{OUTPUT_TOKENS},"cost_usd":{COST_USD}},"model":{model_json},"effort_level":{effort_level_json}}
 ```
 
 Notes:
@@ -1060,6 +1060,7 @@ Notes:
 - `conformance_checked_json` is the JSON encoding of the `ConformanceReport` from `checkConformance`. When `test-system.md` is absent (source: "defaults"), this is `{"checked":false,"deviations":[]}`, indicating conformance was not checked. When present, `checked` is `true` and `deviations` lists any advisory layer deviations. A non-empty deviations array is advisory only — it never causes /dev-task or /review to fail or block.
 - `{INPUT_TOKENS}`, `{OUTPUT_TOKENS}`, `{COST_USD}` are the values from Step 10b.2. `cost_usd` is `null` when the model rate is unknown; `input` and `output` counts are still emitted. All three are `null` only when the JSONL path is missing or unreadable.
 - `effort_level_json` is either a JSON string (e.g. `"high"`) or `null` (unquoted) when `EFFORT_LEVEL` is empty or unset.
+- `model_json` is either a JSON string (e.g. `"sonnet"`) or `null` (unquoted) when `EFFECTIVE_MODEL` is empty or unset. Use `EFFECTIVE_MODEL` (the resolved model the implementation subagent actually ran on, initialized in Step 5b and updated on BLOCKED escalation) — not `$CLAUDE_MODEL` (the orchestrator/parent model).
 - The `/review` Step 13 enrichment appends `review.*` fields to this same JSONL line by adding a new top-level key to the existing JSON object. This is unaffected by the new `test_layers` block — the enrichment reads the entire line, parses it, adds the `review` key, and writes it back.
 
 This step is silent. JSONL format — one JSON object per line; append-only.
@@ -1081,7 +1082,7 @@ POSTHOG_SCRIPT=$(find ~/.claude/plugins/cache -name "posthog_send.py" -path "*/s
   pr={pr_number} files_changed={files_changed_count} \
   started_at="{task_started_at}" {if task has complexity: complexity={complexity}} \
   tokens_in={INPUT_TOKENS} tokens_out={OUTPUT_TOKENS} cost_usd={COST_USD} \
-  effort_level="{EFFORT_LEVEL}"
+  model="{EFFECTIVE_MODEL}" effort_level="{EFFORT_LEVEL}"
 ```
 
 `--task {id}` makes `posthog_send.py` set `properties.task_id` automatically, and the explicit `started_at`/`--ts` pair lets downstream consumers compute cycle time from a single event. This event is additive — it does not replace the JSONL batch line or any incremental checkpoint event.
@@ -1089,6 +1090,7 @@ POSTHOG_SCRIPT=$(find ~/.claude/plugins/cache -name "posthog_send.py" -path "*/s
 Notes on token args:
 - `{INPUT_TOKENS}`, `{OUTPUT_TOKENS}`, `{COST_USD}` are the values from Step 10b.2. When any is `null`, pass the literal string `null` — `posthog_send.py` will parse it as JSON `null`.
 - `{EFFORT_LEVEL}` is the value from Step 1. When empty or unset, pass an empty string `""` — `posthog_send.py` will store it as an empty string, and downstream consumers can treat `""` as absent.
+- `{EFFECTIVE_MODEL}` is the model the implementation subagent actually ran on — initialized to `task.model ?? 'sonnet'` in Step 5b and updated to the upgraded tier on BLOCKED escalation. Emit as-is (e.g. `haiku`). When empty or unset, pass an empty string — downstream consumers treat `""` as absent. The parent orchestrator model (`$CLAUDE_MODEL` from Step 1) is a separate value and must not be used here.
 
 ### 10d. Print Handoff
 
