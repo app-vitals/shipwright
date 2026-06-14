@@ -13,6 +13,30 @@ the chart, attaches the `.tgz` to a GitHub Release, and updates the
 > idempotent — it only releases versions it hasn't published before — so a
 > chart is published exactly when its version is bumped, never on a plain PR.
 
+## First-time setup (one-time)
+
+Before the **first** chart release, the `gh-pages` branch must exist and GitHub
+Pages must be serving from it. The `chart-release.yml` workflow appends to an
+existing `gh-pages` branch — if it doesn't exist, the first publish silently
+no-ops and the `helm repo add` URL below 404s. Do this once:
+
+1. Create an orphan `gh-pages` branch:
+
+   ```bash
+   git checkout --orphan gh-pages
+   git rm -rf .
+   git commit --allow-empty -m "init gh-pages"
+   git push origin gh-pages
+   git checkout main
+   ```
+
+2. Enable GitHub Pages: **Settings → Pages → Source: "Deploy from a branch"**,
+   branch `gh-pages`, folder `/ (root)`.
+
+This is a one-time setup. After the first chart release, the
+`chart-release.yml` workflow maintains `index.yaml` on `gh-pages`
+automatically — no further manual steps.
+
 ## Add the repo and install
 
 ```bash
