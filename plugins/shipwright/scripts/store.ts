@@ -113,7 +113,7 @@ export interface Task {
 
   /**
    * Tier hint for model selection.
-   * haiku/sonnet/opus will be mapped to full model IDs before passing to the CLI.
+   * Callers must map to a full model ID (e.g. claude-sonnet-4-6); no automatic mapping is applied.
    * Omit to use the agent's default.
    */
   model?: "haiku" | "sonnet" | "opus";
