@@ -12,6 +12,8 @@ independent of `appVersion`. CI enforces this with
 
 ## [1.0.0]
 
+_First publicly published chart version. Cumulative features spanning 0.9.x development, now available via the Artifact Hub / Helm repo._
+
 ### Added
 
 - `externalDatabase` block: bring-your-own-Postgres for the admin service. Set `postgresql.enabled=false` and `externalDatabase.existingSecret` to inject `DATABASE_URL_SHIPWRIGHT_ADMIN` from a user-managed Secret via `secretKeyRef`. The optional `externalDatabase.adminUrlKey` overrides the key name within that Secret (defaults to `DATABASE_URL_SHIPWRIGHT_ADMIN` when empty). When this path is active, the chart-managed admin Secret assembles no DB URL (no duplicate env injection). Bundled-PostgreSQL path is unchanged — this is purely additive.
