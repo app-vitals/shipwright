@@ -24,6 +24,15 @@
 
 Requires [Claude Code](https://www.anthropic.com/claude-code). Point it at your own repository — Shipwright is repo-agnostic.
 
+**Deploying the services to Kubernetes?** The `shipwright` Helm chart is published to a Helm repo on each chart version bump:
+
+```bash
+helm repo add shipwright https://app-vitals.github.io/shipwright
+helm install my-release shipwright/shipwright --namespace shipwright --create-namespace
+```
+
+See [`docs/helm-repo.md`](./docs/helm-repo.md) for the full flow and how publishing is triggered.
+
 ## Quickstart
 
 You can run the **metrics dashboard locally today** — **offline by default**, with **no PostHog key, no accounts, and no database**. One copy-paste prompt sequences the two execution contexts (terminal shell + an in-session slash command) and opens the dashboard.
