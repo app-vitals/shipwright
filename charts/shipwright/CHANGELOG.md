@@ -10,6 +10,40 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [0.7.0]
+
+### Added
+
+- Gateway API networking. Setting `networking.type=gateway` renders a
+  `gateway.networking.k8s.io/v1` `Gateway` (`templates/gateway.yaml`) and
+  `HTTPRoute`(s) (`templates/httproute.yaml`) instead of an Ingress. The Gateway
+  binds to a configurable `gatewayClassName` (`networking.gateway.gatewayClassName`,
+  default `gke-l7-global-external-managed`) and `host`
+  (`networking.gateway.host`, default `shipwright.local`), with a plain HTTP
+  listener on `:80`. HTTPRoutes attach via `parentRefs` and route the admin
+  UI/API at `/` to the admin Service and the metrics dashboard at `/dashboard`
+  to the metrics Service (the `/dashboard` route is omitted when
+  `metrics.enabled=false`). Mutually exclusive with `networking.type=ingress`:
+  `gateway` renders Gateway+HTTPRoute and NO Ingress, `ingress` renders Ingress
+  and NO Gateway/HTTPRoute. Requires the Gateway API CRDs (and a controller for
+  the chosen class) in the cluster.
+- Optional cert-manager Certificate. Setting `tls.certManager.enabled=true`
+  renders a `cert-manager.io/v1` `Certificate` (`templates/certificate.yaml`)
+  for `networking.gateway.host`, wired to an `issuerRef`
+  (`tls.certManager.issuerRef.{name,kind}`, kind default `ClusterIssuer`). When
+  enabled, the Gateway also adds an HTTPS (`:443`) listener referencing the
+  issued Secret (`<fullname>-tls`). Disabled by default (Minikube = plain HTTP);
+  disabled → no Certificate is rendered.
+- `networking.gateway.{gatewayClassName,host,annotations}` and
+  `tls.certManager.{enabled,issuerRef.{name,kind}}` values surface, with matching
+  `values.schema.json` constraints (`gateway` added to the `networking.type`
+  enum; the `certManager` block requires a non-empty `issuerRef.name` when
+  enabled).
+- Example values file `examples/values-gke-gateway.yaml` demonstrating the full
+  `networking.type=gateway` + `tls.certManager.enabled=true` configuration for a
+  real GKE cluster (NOT a ct-discovered `ci/` variant, since the kind e2e cluster
+  has no Gateway API / cert-manager CRDs).
+
 ## [0.6.0]
 
 ### Added

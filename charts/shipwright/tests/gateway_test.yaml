@@ -1,0 +1,261 @@
+suite: Gateway API networking (Gateway + HTTPRoute) + cert-manager Certificate
+# HD-4.1 adds templates/gateway.yaml + templates/httproute.yaml (rendered only
+# when networking.type=gateway) and templates/certificate.yaml (rendered only
+# when tls.certManager.enabled). These assert the conditional rendering, the
+# gatewayClassName/host/backends, the cert-manager wiring, and mutual exclusivity
+# with the Ingress (networking.type=ingress renders Ingress and NO Gateway/route;
+# networking.type=gateway renders Gateway+route and NO Ingress).
+tests:
+  # ---- Gateway rendering ----
+  - it: renders a gateway.networking.k8s.io/v1 Gateway when networking.type=gateway
+    template: templates/gateway.yaml
+    set:
+      networking.type: gateway
+    release:
+      name: r
+    asserts:
+      - isKind:
+          of: Gateway
+      - equal:
+          path: apiVersion
+          value: gateway.networking.k8s.io/v1
+      - equal:
+          path: metadata.name
+          value: r-shipwright
+
+  - it: uses the configured gatewayClassName and host (default gatewayClassName is the GKE managed class)
+    template: templates/gateway.yaml
+    set:
+      networking.type: gateway
+    asserts:
+      - equal:
+          path: spec.gatewayClassName
+          value: gke-l7-global-external-managed
+      - equal:
+          path: spec.listeners[0].name
+          value: http
+      - equal:
+          path: spec.listeners[0].protocol
+          value: HTTP
+      - equal:
+          path: spec.listeners[0].port
+          value: 80
+      - equal:
+          path: spec.listeners[0].hostname
+          value: shipwright.local
+
+  - it: honors an overridden gatewayClassName and host
+    template: templates/gateway.yaml
+    set:
+      networking.type: gateway
+      networking.gateway.gatewayClassName: istio
+      networking.gateway.host: shipwright.example
+    asserts:
+      - equal:
+          path: spec.gatewayClassName
+          value: istio
+      - equal:
+          path: spec.listeners[0].hostname
+          value: shipwright.example
+
+  - it: adds an HTTPS listener referencing the cert Secret when certManager is enabled
+    template: templates/gateway.yaml
+    set:
+      networking.type: gateway
+      tls.certManager.enabled: true
+      tls.certManager.issuerRef.name: letsencrypt
+    release:
+      name: r
+    asserts:
+      - lengthEqual:
+          path: spec.listeners
+          count: 2
+      - equal:
+          path: spec.listeners[1].name
+          value: https
+      - equal:
+          path: spec.listeners[1].protocol
+          value: HTTPS
+      - equal:
+          path: spec.listeners[1].port
+          value: 443
+      - equal:
+          path: spec.listeners[1].tls.mode
+          value: Terminate
+      - equal:
+          path: spec.listeners[1].tls.certificateRefs[0].name
+          value: r-shipwright-tls
+
+  - it: has only the HTTP listener when certManager is disabled
+    template: templates/gateway.yaml
+    set:
+      networking.type: gateway
+    asserts:
+      - lengthEqual:
+          path: spec.listeners
+          count: 1
+      - equal:
+          path: spec.listeners[0].name
+          value: http
+
+  - it: renders NO Gateway with the default networking.type (ClusterIP)
+    template: templates/gateway.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  # ---- HTTPRoute rendering ----
+  - it: renders admin + metrics HTTPRoutes attached to the Gateway via parentRefs
+    template: templates/httproute.yaml
+    set:
+      networking.type: gateway
+    release:
+      name: r
+    asserts:
+      - hasDocuments:
+          count: 2
+      # First doc: metrics /dashboard route
+      - isKind:
+          of: HTTPRoute
+        documentIndex: 0
+      - equal:
+          path: metadata.name
+          value: r-shipwright-metrics
+        documentIndex: 0
+      - equal:
+          path: spec.parentRefs[0].name
+          value: r-shipwright
+        documentIndex: 0
+      - equal:
+          path: spec.rules[0].matches[0].path.value
+          value: /dashboard
+        documentIndex: 0
+      - equal:
+          path: spec.rules[0].backendRefs[0].name
+          value: r-shipwright-metrics
+        documentIndex: 0
+      - equal:
+          path: spec.rules[0].backendRefs[0].port
+          value: 3460
+        documentIndex: 0
+      # Second doc: admin "/" route
+      - equal:
+          path: metadata.name
+          value: r-shipwright-admin
+        documentIndex: 1
+      - equal:
+          path: spec.parentRefs[0].name
+          value: r-shipwright
+        documentIndex: 1
+      - equal:
+          path: spec.rules[0].matches[0].path.value
+          value: /
+        documentIndex: 1
+      - equal:
+          path: spec.rules[0].backendRefs[0].name
+          value: r-shipwright-admin
+        documentIndex: 1
+      - equal:
+          path: spec.rules[0].backendRefs[0].port
+          value: 3001
+        documentIndex: 1
+
+  - it: omits the metrics /dashboard HTTPRoute when metrics is disabled
+    template: templates/httproute.yaml
+    set:
+      networking.type: gateway
+      metrics.enabled: false
+    release:
+      name: r
+    asserts:
+      # Only the admin route remains.
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: metadata.name
+          value: r-shipwright-admin
+      - equal:
+          path: spec.rules[0].backendRefs[0].name
+          value: r-shipwright-admin
+
+  - it: renders NO HTTPRoute with the default networking.type (ClusterIP)
+    template: templates/httproute.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  # ---- cert-manager Certificate ----
+  - it: renders a cert-manager.io/v1 Certificate wired to the host + issuerRef when enabled
+    template: templates/certificate.yaml
+    set:
+      tls.certManager.enabled: true
+      networking.gateway.host: shipwright.example
+      tls.certManager.issuerRef.name: letsencrypt
+    release:
+      name: r
+    asserts:
+      - isKind:
+          of: Certificate
+      - equal:
+          path: apiVersion
+          value: cert-manager.io/v1
+      - equal:
+          path: metadata.name
+          value: r-shipwright-tls
+      - equal:
+          path: spec.secretName
+          value: r-shipwright-tls
+      - equal:
+          path: spec.dnsNames[0]
+          value: shipwright.example
+      - equal:
+          path: spec.issuerRef.name
+          value: letsencrypt
+      - equal:
+          path: spec.issuerRef.kind
+          value: ClusterIssuer
+      - equal:
+          path: spec.issuerRef.group
+          value: cert-manager.io
+
+  - it: honors an overridden issuerRef.kind (Issuer)
+    template: templates/certificate.yaml
+    set:
+      tls.certManager.enabled: true
+      tls.certManager.issuerRef.name: my-issuer
+      tls.certManager.issuerRef.kind: Issuer
+    asserts:
+      - equal:
+          path: spec.issuerRef.kind
+          value: Issuer
+
+  - it: renders NO Certificate when certManager is disabled (default — plain HTTP)
+    template: templates/certificate.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  # ---- Mutual exclusivity with Ingress ----
+  - it: networking.type=gateway renders NO Ingress
+    template: templates/ingress.yaml
+    set:
+      networking.type: gateway
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: networking.type=ingress renders NO Gateway
+    template: templates/gateway.yaml
+    set:
+      networking.type: ingress
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: networking.type=ingress renders NO HTTPRoute
+    template: templates/httproute.yaml
+    set:
+      networking.type: ingress
+    asserts:
+      - hasDocuments:
+          count: 0

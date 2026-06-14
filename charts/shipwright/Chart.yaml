@@ -8,7 +8,7 @@ type: application
 # Chart version (SemVer). Bump on every chart change, independent of appVersion.
 # See CHANGELOG.md and the README "Versioning" section — CI enforces this bump
 # via `ct lint --check-version-increment`.
-version: 0.6.0
+version: 0.7.0
 # Version of the Shipwright application this chart deploys by default.
 appVersion: "0.1.0"
 home: https://shipwright-harness.com
@@ -29,9 +29,9 @@ annotations:
   # entry in CHANGELOG.md (keep the two in sync on every bump).
   artifacthub.io/changes: |
     - kind: added
-      description: "Ingress networking (networking.type=ingress) rendering networking.k8s.io/v1 Ingress with configurable ingressClassName/host/annotations — admin UI/API at / and metrics dashboard at /dashboard (omitted when metrics disabled)"
+      description: "Gateway API networking (networking.type=gateway) rendering a gateway.networking.k8s.io/v1 Gateway (configurable gatewayClassName/host, default gke-l7-global-external-managed) plus HTTPRoute(s) — admin UI/API at / and metrics dashboard at /dashboard (omitted when metrics disabled). Mutually exclusive with networking.type=ingress."
     - kind: added
-      description: "Helm test connection hook (templates/tests/test-connection.yaml) curling admin /health (200) and metrics /dashboard (200/302) so `helm test` verifies a live install"
+      description: "Optional cert-manager Certificate (tls.certManager.enabled) wiring a cert-manager.io/v1 Certificate to the gateway host via issuerRef and adding an HTTPS (:443) Gateway listener. Disabled by default (plain HTTP)."
 dependencies:
   # Bitnami PostgreSQL subchart. Pinned to a chart version whose default image tag
   # is concrete (NOT `latest`), because Bitnami's 2025 catalog change moved newer

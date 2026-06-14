@@ -28,7 +28,7 @@
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["ClusterIP", "NodePort", "LoadBalancer", "ingress"]
+          "enum": ["ClusterIP", "NodePort", "LoadBalancer", "ingress", "gateway"]
         },
         "ingress": {
           "type": "object",
@@ -38,9 +38,57 @@
             "host": { "type": "string" },
             "annotations": { "type": "object" }
           }
+        },
+        "gateway": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "gatewayClassName": { "type": "string" },
+            "host": { "type": "string" },
+            "annotations": { "type": "object" }
+          }
         }
       },
       "required": ["type"]
+    },
+    "tls": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "certManager": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "issuerRef": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": { "type": "string" },
+                "kind": {
+                  "type": "string",
+                  "enum": ["ClusterIssuer", "Issuer"]
+                }
+              }
+            }
+          },
+          "if": {
+            "properties": { "enabled": { "const": true } },
+            "required": ["enabled"]
+          },
+          "then": {
+            "properties": {
+              "issuerRef": {
+                "required": ["name"],
+                "properties": {
+                  "name": { "type": "string", "minLength": 1 }
+                }
+              }
+            },
+            "required": ["issuerRef"]
+          }
+        }
+      }
     },
     "serviceAccount": {
       "type": "object",

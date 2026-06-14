@@ -1,0 +1,21 @@
+{{- if .Values.tls.certManager.enabled }}
+# cert-manager Certificate, rendered ONLY when tls.certManager.enabled=true.
+# Disabled → no Certificate (plain HTTP). cert-manager writes the issued cert
+# into the Secret named here ("<fullname>-tls"), which the Gateway's HTTPS
+# listener references via certificateRefs (templates/gateway.yaml).
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "shipwright.fullname" . }}-tls
+  labels:
+    {{- include "shipwright.labels" . | nindent 4 }}
+spec:
+  # Secret cert-manager populates with the issued certificate + key.
+  secretName: {{ include "shipwright.fullname" . }}-tls
+  dnsNames:
+    - {{ .Values.networking.gateway.host | quote }}
+  issuerRef:
+    name: {{ .Values.tls.certManager.issuerRef.name | quote }}
+    kind: {{ .Values.tls.certManager.issuerRef.kind }}
+    group: cert-manager.io
+{{- end }}
