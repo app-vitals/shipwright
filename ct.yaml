@@ -19,6 +19,8 @@ chart-repos: []
 # Single maintainer/org chart — don't enforce the maintainers list.
 validate-maintainers: false
 
-# Don't gate on a chart-version bump for every change (the CLI task and CI invoke
-# ct with --charts explicitly, so changed-chart detection is bypassed anyway).
-check-version-increment: false
+# Gate on a chart-version bump for every chart change. `ct lint
+# --check-version-increment` diffs charts/shipwright/** against target-branch and
+# fails any PR that modifies the chart without bumping Chart.yaml `version`. See
+# charts/shipwright/CHANGELOG.md and the README "Versioning" section.
+check-version-increment: true
