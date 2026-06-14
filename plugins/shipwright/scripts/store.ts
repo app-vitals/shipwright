@@ -112,8 +112,9 @@ export interface Task {
   issue?: string;
 
   /**
-   * The Claude model to use when executing this task.
-   * Used by the agent runtime to select the appropriate model per-task.
+   * Tier hint for model selection.
+   * haiku/sonnet/opus will be mapped to full model IDs before passing to the CLI.
+   * Omit to use the agent's default.
    */
   model?: "haiku" | "sonnet" | "opus";
 

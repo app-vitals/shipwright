@@ -76,7 +76,7 @@ pending → in_progress → pr_open → merged → deployed
 | `prCreatedAt` | ISO string \| null | When PR was opened |
 | `mergedAt` | ISO string \| null | When PR was merged |
 | `deployedAt` | ISO string \| null | When PR was promoted to production via deploy command |
-| `model` | `"haiku" \| "sonnet" \| "opus" \| undefined` | Claude model to use when executing this task. The agent runtime selects the model per-task when set. Omit to use the agent's default model. |
+| `model` | `"haiku" \| "sonnet" \| "opus" \| undefined` | Tier hint for model selection. Callers must map to a full model ID (e.g. `claude-sonnet-4-6`); no automatic mapping is applied. Omit to use the agent's default model. |
 | `complexity` | `number \| undefined` | Complexity rating on a 1–5 scale (1 = trivial, 5 = highest). Used for planning and model selection heuristics. |
 
 ## Bundled Tasks
