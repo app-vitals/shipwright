@@ -29,6 +29,12 @@ annotations:
   # entry in CHANGELOG.md (keep the two in sync on every bump).
   artifacthub.io/changes: |
     - kind: added
+      description: "Gateway API networking: networking.type=gateway renders a gateway.networking.k8s.io/v1 Gateway and HTTPRoutes instead of an Ingress. Configurable via networking.gateway.{gatewayClassName,host,annotations}. Mutually exclusive with networking.type=ingress. Requires Gateway API CRDs in the cluster."
+    - kind: added
+      description: "cert-manager Certificate: tls.certManager.enabled=true renders a cert-manager.io/v1 Certificate for networking.gateway.host, wired to an issuerRef (tls.certManager.issuerRef.{name,kind}, kind default ClusterIssuer). When enabled, the Gateway adds an HTTPS (:443) listener referencing the issued Secret. Disabled by default."
+    - kind: added
+      description: "Agent-provisioning RBAC: agent.provisioning.enabled (default false) renders a namespace-scoped Role, RoleBinding, agent ServiceAccount, and injects the provisioner env contract into the admin Deployment (SHIPWRIGHT_K8S_PROVISIONING=enabled, SHIPWRIGHT_K8S_NAMESPACE via downward API, SHIPWRIGHT_AGENT_IMAGE, SHIPWRIGHT_AGENT_IMAGE_TAG, SHIPWRIGHT_AGENT_REPLICAS, SHIPWRIGHT_API_URL). Nothing is rendered when disabled."
+    - kind: added
       description: "externalDatabase block: bring-your-own Postgres for the admin service (externalDatabase.existingSecret + adminUrlKey). Used when postgresql.enabled=false; the admin Deployment injects DATABASE_URL_SHIPWRIGHT_ADMIN from a user-managed Secret. Default off (existingSecret empty)."
     - kind: added
       description: "cloudSqlProxy block: optional cloud-sql-proxy v2 sidecar for the admin pod. Renders only when cloudSqlProxy.enabled=true; defaults: image gcr.io/cloud-sql-connectors/cloud-sql-proxy:2, --private-ip + connectionName args, runAsNonRoot. Default off."
