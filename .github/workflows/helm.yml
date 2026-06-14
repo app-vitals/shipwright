@@ -95,27 +95,26 @@ jobs:
           version: v3.12.0
 
       - name: Create kind cluster
+        # cluster_name is pinned to "kind" — the `kind load` step below
+        # side-loads the admin image into THAT cluster.
         uses: helm/kind-action@v1
         with:
           version: v0.24.0
           cluster_name: kind
 
-      - name: Build and load stub admin image for kind
-        run: |
-          # Build a minimal stub that serves HTTP on port 3001 so the admin
-          # Deployment's liveness/readiness probes (/health) pass in ct install.
-          # busybox httpd serves any request with 200 + directory listing.
-          # imagePullPolicy: Never in ci/ values ensures kind uses this pre-loaded
-          # image instead of trying to pull shipwright-admin from a registry.
-          mkdir -p /tmp/stub-admin/www
-          echo "ok" > /tmp/stub-admin/www/health
-          docker build -t shipwright-admin:0.1.0 -f - /tmp/stub-admin <<'EOF'
-          FROM busybox:1.36
-          COPY www/ /www/
-          EXPOSE 3001
-          CMD ["httpd", "-f", "-p", "3001", "-h", "/www"]
-          EOF
-          kind load docker-image shipwright-admin:0.1.0
+      # The admin Deployment runs the first-party `shipwright-admin` image, which
+      # is NOT published to any registry at PR time. Build the REAL image and
+      # side-load it into the kind cluster so `ct install` schedules the actual
+      # workload (not a stub): the admin pod boots, runs `prisma migrate deploy`
+      # against the bundled PostgreSQL subchart, and serves its DB-independent
+      # /health probe — so `ct install --wait` sees it reach Ready. The ci/ values
+      # set admin.image.pullPolicy: Never, so kind uses this loaded image and
+      # never reaches a registry. Tag 0.1.0 = Chart.yaml appVersion.
+      - name: Build admin image
+        run: docker build -t shipwright-admin:0.1.0 -f admin/Dockerfile .
+
+      - name: Load admin image into kind
+        run: kind load docker-image shipwright-admin:0.1.0 --name kind
 
       - name: ct install (per ci/ values variant, runs helm test)
         run: ct install --config ct.yaml --charts charts/shipwright
