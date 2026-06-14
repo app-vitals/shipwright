@@ -1,7 +1,7 @@
 # ct-discovered values variant: EKS-flavored overrides.
 # Demonstrates AWS Elastic Kubernetes Service tuning — an external/NLB-style
-# LoadBalancer exposure, the EBS gp3 storage class for PVCs, and bearer-token
-# auth. As with the GKE variant, ct renders + installs this on the kind cluster
+# LoadBalancer exposure, the EBS gp3 storage class for PVCs, and dev (open)
+# admin auth. As with the GKE variant, ct renders + installs this on the kind cluster
 # (the cloud LB/EBS are not provisioned on kind) to confirm the chart accepts
 # provider-flavored values and passes `helm test`.
 networking:
@@ -9,7 +9,8 @@ networking:
   type: LoadBalancer
 
 auth:
-  mode: bearer
+  # Dev auth (ADMIN_DEV_AUTH=true) — exercises the non-google render path.
+  mode: open
 
 agent:
   provisioning:

@@ -47,8 +47,26 @@ admin:
     tag: ""           # defaults to .Chart.AppVersion when empty
     pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
+    # -- Service type for the admin service. ClusterIP is Minikube-friendly.
+    type: ClusterIP
     port: 3001
   replicas: 1
+  # -- Compute resources for the admin container. Minikube-friendly defaults.
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+  # -- ServiceAccount for the admin workload.
+  serviceAccount:
+    # -- Whether a ServiceAccount is created for the admin workload.
+    create: true
+    # -- Annotations to add to the admin ServiceAccount.
+    annotations: {}
+    # -- Name of the admin ServiceAccount. Generated if empty and create=true.
+    name: ""
 
 # -- Metrics dashboard (@shipwright/metrics) — stateless PostHog-backed service. Port 3460.
 metrics:
@@ -84,10 +102,23 @@ agent:
     # -- Mount path inside the agent container for persistent storage.
     homePath: /data/agent-home
 
-# -- Authentication mode for the shipwright services.
+# -- Authentication mode for the admin service.
 auth:
-  # -- "none" (Minikube/dev default, no auth gate) | "session" | "bearer".
-  mode: none
+  # -- Admin auth mode:
+  #    "open"   — dev auth, NO OAuth (ADMIN_DEV_AUTH=true). Working UI, but
+  #               INSECURE: anyone who can reach the service is authenticated.
+  #               Minikube/dev default. Do NOT expose publicly.
+  #    "google" — real Google OAuth (NODE_ENV=production). Requires
+  #               auth.google.{clientId,clientSecret,allowedEmails}.
+  mode: open
+  # -- Google OAuth settings (used only when auth.mode=google).
+  google:
+    # -- Google OAuth client ID.
+    clientId: ""
+    # -- Google OAuth client secret (kept in the chart-managed admin Secret).
+    clientSecret: ""
+    # -- Comma-separated allow-list of emails permitted to sign in.
+    allowedEmails: ""
 
 # -- Bitnami PostgreSQL subchart configuration.
 # Disable this (postgresql.enabled=false) to bring your own Postgres and point the

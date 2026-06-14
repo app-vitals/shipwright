@@ -1,0 +1,17 @@
+{{- if .Values.admin.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "shipwright.admin.fullname" . }}
+  labels:
+    {{- include "shipwright.admin.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.admin.service.type | default "ClusterIP" }}
+  ports:
+    - name: http
+      port: {{ .Values.admin.service.port }}
+      targetPort: 3001
+      protocol: TCP
+  selector:
+    {{- include "shipwright.admin.selectorLabels" . | nindent 4 }}
+{{- end }}

@@ -1,7 +1,7 @@
 # ct-discovered values variant: GKE-flavored overrides.
 # Demonstrates how the chart is tuned for Google Kubernetes Engine — an internal
 # LoadBalancer for service exposure, the GKE default storage class for PVCs, and
-# session auth. ct renders + installs this variant on the kind cluster to prove
+# Google OAuth admin auth. ct renders + installs this variant on the kind cluster to prove
 # the templates accept provider-flavored values (the LB itself is not exercised
 # end-to-end on kind; ct validates render + install + `helm test`).
 networking:
@@ -9,7 +9,14 @@ networking:
   type: LoadBalancer
 
 auth:
-  mode: session
+  # Exercise the Google OAuth path (NODE_ENV=production) on ct install. The
+  # client id/secret are CI-only non-secret literals — production should inject
+  # real credentials via values or a pre-created Secret, never commit them.
+  mode: google
+  google:
+    clientId: ci-gke-client-id
+    clientSecret: ci-gke-client-secret
+    allowedEmails: ci@example.com
 
 agent:
   provisioning:

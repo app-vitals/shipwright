@@ -5,7 +5,8 @@ networking:
   type: ClusterIP
 
 auth:
-  mode: none
+  # Dev auth (ADMIN_DEV_AUTH=true), no OAuth — fine for a throwaway local cluster.
+  mode: open
 
 agent:
   provisioning:
