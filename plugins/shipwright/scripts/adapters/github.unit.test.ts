@@ -2078,16 +2078,15 @@ process.exit(0);
   });
 });
 
-// ─── GitHubTaskStore.update field enforcement warnings ────────────────────────
+// ─── Shared helpers for update-warning tests ─────────────────────────────────
 
-describe("GitHubTaskStore.update field enforcement warnings", () => {
-  function makeUpdateScript(
-    dir: string,
-    name: string,
-    issues: ReturnType<typeof makeIssue>[],
-  ): Promise<string> {
-    const scriptPath = path.join(dir, name);
-    const script = `#!/usr/bin/env bun
+async function makeUpdateScript(
+  dir: string,
+  name: string,
+  issues: ReturnType<typeof makeIssue>[],
+): Promise<string> {
+  const scriptPath = path.join(dir, name);
+  const script = `#!/usr/bin/env bun
 import { argv } from "process";
 const args = argv.slice(2);
 
@@ -2102,10 +2101,13 @@ if (args[0] === "issue" && (args[1] === "edit" || args[1] === "close")) {
 
 process.exit(0);
 `;
-    return writeFile(scriptPath, script, { mode: 0o755 }).then(
-      () => scriptPath,
-    );
-  }
+  await writeFile(scriptPath, script, { mode: 0o755 });
+  return scriptPath;
+}
+
+// ─── GitHubTaskStore.update field enforcement warnings ────────────────────────
+
+describe("GitHubTaskStore.update field enforcement warnings", () => {
 
   test("warns when prCreatedAt missing on pr_open transition", async () => {
     const issues = [
@@ -2476,31 +2478,6 @@ process.exit(0);
 // ─── in_progress transition warns when model missing (GitHub adapter) ─────────
 
 describe("GitHubTaskStore model warning on in_progress transition", () => {
-  async function makeUpdateScript(
-    dir: string,
-    name: string,
-    issues: ReturnType<typeof makeIssue>[],
-  ): Promise<string> {
-    const scriptPath = path.join(dir, name);
-    const script = `#!/usr/bin/env bun
-import { argv } from "process";
-const args = argv.slice(2);
-
-if (args[0] === "issue" && args[1] === "list") {
-  console.log(${JSON.stringify(JSON.stringify(issues))});
-  process.exit(0);
-}
-
-if (args[0] === "issue" && (args[1] === "edit" || args[1] === "close")) {
-  process.exit(0);
-}
-
-process.exit(0);
-`;
-    await writeFile(scriptPath, script, { mode: 0o755 });
-    return scriptPath;
-  }
-
   test("warns when model is missing on transition to in_progress", async () => {
     const issues = [
       makeIssue(30, "DM-WARN.1: Task", "pending", {
