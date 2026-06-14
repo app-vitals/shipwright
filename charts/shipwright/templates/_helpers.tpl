@@ -153,7 +153,12 @@ Metrics database name: a SEPARATE database from the admin service (default
 boot; sharing the admin database would leave the admin schema non-empty and
 break the admin service's `prisma migrate deploy` baseline (Prisma P3005). When
 the bundled PostgreSQL subchart is enabled, this database is provisioned via
-postgresql.primary.initdb.scripts.
+the parent-chart ConfigMap in metrics-postgres-initdb-configmap.yaml, which
+renders the CREATE DATABASE SQL with this helper. The ConfigMap name tracks the
+release (values.yaml sets postgresql.primary.initdb.scriptsConfigMap to a
+tpl-evaluable string the Bitnami subchart resolves at render time). Overriding
+metrics.database.name updates BOTH the database created at initdb time and the
+METRICS_DATABASE_URL assembled in metrics-secret.yaml — they use the same helper.
 */}}
 {{- define "shipwright.metrics.databaseName" -}}
 {{- default "shipwright_metrics" .Values.metrics.database.name }}
