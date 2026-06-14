@@ -443,7 +443,7 @@ describe("JsonTaskStore", () => {
 
   describe("update", () => {
     test("updates specific fields on a task", async () => {
-      writeTodos([{ id: "T-1", title: "Original", status: "pending" }]);
+      writeTodos([{ id: "T-1", title: "Original", status: "pending", model: "sonnet" }]);
       const adapter = new JsonTaskStore(tmpDir);
       const updated = await adapter.update("T-1", { status: "in_progress" });
       expect(updated.status).toBe("in_progress");
@@ -463,6 +463,12 @@ describe("JsonTaskStore", () => {
       const adapter = new JsonTaskStore(tmpDir);
       expect(adapter.coerceValue("hours", "3.5")).toBe(3.5);
       expect(typeof adapter.coerceValue("hours", "3.5")).toBe("number");
+    });
+
+    test("complexity field is coerced to number", async () => {
+      const adapter = new JsonTaskStore(tmpDir);
+      expect(adapter.coerceValue("complexity", "3")).toBe(3);
+      expect(typeof adapter.coerceValue("complexity", "3")).toBe("number");
     });
 
     test("non-numeric fields remain as strings", async () => {
@@ -493,7 +499,7 @@ describe("JsonTaskStore", () => {
 
     test("update does not touch other tasks", async () => {
       writeTodos([
-        { id: "T-1", title: "First", status: "pending" },
+        { id: "T-1", title: "First", status: "pending", model: "sonnet" },
         { id: "T-2", title: "Second", status: "pending" },
       ]);
       const adapter = new JsonTaskStore(tmpDir);
@@ -790,12 +796,14 @@ describe("JsonTaskStore", () => {
       expect(warnings.some((w) => w.includes("ciFixAttempts"))).toBe(false);
     });
 
-    test("does NOT warn for transitions to other statuses (e.g., in_progress)", async () => {
-      writeTodos([{ id: "T-1", title: "Task", status: "pending" }]);
+    test("does NOT warn about pr_open or ciFixAttempts for in_progress transitions", async () => {
+      writeTodos([{ id: "T-1", title: "Task", status: "pending", model: "sonnet" }]);
       const warnings: string[] = [];
       const adapter = new JsonTaskStore(tmpDir, (msg) => warnings.push(msg));
       await adapter.update("T-1", { status: "in_progress" });
-      expect(warnings).toHaveLength(0);
+      // prCreatedAt / pr+prUrl / ciFixAttempts warnings must NOT fire for in_progress
+      expect(warnings.some((w) => w.includes("prCreatedAt"))).toBe(false);
+      expect(warnings.some((w) => w.includes("ciFixAttempts"))).toBe(false);
     });
 
     test("update still succeeds (writes) even when warnings fire", async () => {
@@ -806,6 +814,165 @@ describe("JsonTaskStore", () => {
       expect(result?.status).toBe("pr_open");
       const todos = readTodos() as Array<{ id: string; status: string }>;
       expect(todos[0].status).toBe("pr_open");
+    });
+  });
+
+  // ─── model and complexity round-trip ─────────────────────────────────────────
+
+  describe("model and complexity field round-trip", () => {
+    test("append preserves model field through JSON round-trip", async () => {
+      writeTodos([]);
+      const adapter = new JsonTaskStore(tmpDir);
+      await adapter.append([
+        {
+          id: "T-1",
+          title: "Task with model",
+          status: "pending",
+          model: "sonnet",
+        },
+      ]);
+      const todos = readTodos() as Array<{
+        id: string;
+        model?: string;
+      }>;
+      expect(todos[0].model).toBe("sonnet");
+    });
+
+    test("append preserves complexity field through JSON round-trip", async () => {
+      writeTodos([]);
+      const adapter = new JsonTaskStore(tmpDir);
+      await adapter.append([
+        {
+          id: "T-1",
+          title: "Task with complexity",
+          status: "pending",
+          complexity: 3,
+        },
+      ]);
+      const todos = readTodos() as Array<{
+        id: string;
+        complexity?: number;
+      }>;
+      expect(todos[0].complexity).toBe(3);
+    });
+
+    test("update preserves model and complexity through JSON round-trip", async () => {
+      writeTodos([{ id: "T-1", title: "Task", status: "pending" }]);
+      const adapter = new JsonTaskStore(tmpDir);
+      const updated = await adapter.update("T-1", {
+        model: "haiku",
+        complexity: 2,
+      });
+      expect(updated.model).toBe("haiku");
+      expect(updated.complexity).toBe(2);
+
+      const todos = readTodos() as Array<{
+        id: string;
+        model?: string;
+        complexity?: number;
+      }>;
+      expect(todos[0].model).toBe("haiku");
+      expect(todos[0].complexity).toBe(2);
+    });
+
+    test("model and complexity are not dropped when updating other fields", async () => {
+      writeTodos([
+        {
+          id: "T-1",
+          title: "Task",
+          status: "pending",
+          model: "opus",
+          complexity: 5,
+        },
+      ]);
+      const adapter = new JsonTaskStore(tmpDir);
+      const updated = await adapter.update("T-1", { note: "updated note" });
+      expect(updated.model).toBe("opus");
+      expect(updated.complexity).toBe(5);
+    });
+  });
+
+  // ─── in_progress transition warns when model missing ─────────────────────────
+
+  describe("model field warning on in_progress transition", () => {
+    test("warns when model is missing on transition to in_progress", async () => {
+      writeTodos([{ id: "T-1", title: "Task", status: "pending" }]);
+      const warnings: string[] = [];
+      const adapter = new JsonTaskStore(tmpDir, (msg) => warnings.push(msg));
+      await adapter.update("T-1", { status: "in_progress" });
+      expect(warnings.some((w) => w.includes("model"))).toBe(true);
+    });
+
+    test("does NOT warn when model is present on transition to in_progress", async () => {
+      writeTodos([
+        { id: "T-1", title: "Task", status: "pending", model: "sonnet" },
+      ]);
+      const warnings: string[] = [];
+      const adapter = new JsonTaskStore(tmpDir, (msg) => warnings.push(msg));
+      await adapter.update("T-1", { status: "in_progress" });
+      expect(warnings.some((w) => w.includes("model"))).toBe(false);
+    });
+
+    test("does NOT warn about model for other status transitions", async () => {
+      writeTodos([{ id: "T-1", title: "Task", status: "in_progress" }]);
+      const warnings: string[] = [];
+      const adapter = new JsonTaskStore(tmpDir, (msg) => warnings.push(msg));
+      await adapter.update("T-1", {
+        status: "pr_open",
+        pr: 42,
+        prCreatedAt: "2026-01-01T00:00:00Z",
+        prUrl: "https://example.com/pr/42",
+      });
+      // Might warn about pr/prUrl, but must NOT warn about model
+      expect(warnings.some((w) => w.includes("model"))).toBe(false);
+    });
+
+    test("warn is soft — update still succeeds when model missing", async () => {
+      writeTodos([{ id: "T-1", title: "Task", status: "pending" }]);
+      const warnings: string[] = [];
+      const adapter = new JsonTaskStore(tmpDir, (msg) => warnings.push(msg));
+      const result = await adapter.update("T-1", { status: "in_progress" });
+      expect(result.status).toBe("in_progress");
+      const todos = readTodos() as Array<{ id: string; status: string }>;
+      expect(todos[0].status).toBe("in_progress");
+    });
+  });
+
+  // ─── complexity range guard ──────────────────────────────────────────────────
+
+  describe("complexity range guard", () => {
+    test("warns when complexity is out of range (0)", async () => {
+      writeTodos([{ id: "T-1", title: "Task", status: "pending" }]);
+      const warnings: string[] = [];
+      const adapter = new JsonTaskStore(tmpDir, (msg) => warnings.push(msg));
+      await adapter.update("T-1", { complexity: 0 });
+      expect(warnings.some((w) => w.includes("complexity must be 1"))).toBe(true);
+    });
+
+    test("warns when complexity is out of range (6)", async () => {
+      writeTodos([{ id: "T-1", title: "Task", status: "pending" }]);
+      const warnings: string[] = [];
+      const adapter = new JsonTaskStore(tmpDir, (msg) => warnings.push(msg));
+      await adapter.update("T-1", { complexity: 6 });
+      expect(warnings.some((w) => w.includes("complexity must be 1"))).toBe(true);
+    });
+
+    test("does NOT warn for valid complexity values (1–5)", async () => {
+      for (const v of [1, 2, 3, 4, 5]) {
+        writeTodos([{ id: "T-1", title: "Task", status: "pending" }]);
+        const warnings: string[] = [];
+        const adapter = new JsonTaskStore(tmpDir, (msg) => warnings.push(msg));
+        await adapter.update("T-1", { complexity: v });
+        expect(warnings.some((w) => w.includes("complexity"))).toBe(false);
+      }
+    });
+
+    test("warn is soft — update still persists even when complexity is out of range", async () => {
+      writeTodos([{ id: "T-1", title: "Task", status: "pending" }]);
+      const warnings: string[] = [];
+      const adapter = new JsonTaskStore(tmpDir, (msg) => warnings.push(msg));
+      const result = await adapter.update("T-1", { complexity: 99 });
+      expect(result.complexity).toBe(99);
     });
   });
 
@@ -905,6 +1072,7 @@ describe("JsonTaskStore", () => {
           id: "T-1",
           title: "Task",
           status: "pending",
+          model: "sonnet",
           issue: "https://github.com/acme/example-repo/issues/7",
         },
       ]);

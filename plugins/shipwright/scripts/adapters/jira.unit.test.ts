@@ -487,7 +487,7 @@ describe("JiraTaskStore.update", () => {
   });
 
   test("performs status transition when status field is updated", async () => {
-    const issue = makeJiraIssue("SHIP-1", "JTS-14.1: Task", "To Do", { id: "JTS-14.1", title: "Task", status: "pending" });
+    const issue = makeJiraIssue("SHIP-1", "JTS-14.1: Task", "To Do", { id: "JTS-14.1", title: "Task", status: "pending", model: "sonnet" });
     const transitionCalls: unknown[] = [];
     const fakeFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const url = typeof input === "string" ? input : input.toString();
@@ -507,7 +507,7 @@ describe("JiraTaskStore.update", () => {
   });
 
   test("adds a comment with PR URL when pr field is set", async () => {
-    const issue = makeJiraIssue("SHIP-1", "JTS-15.1: Task", "To Do", { id: "JTS-15.1", title: "Task", status: "pending" });
+    const issue = makeJiraIssue("SHIP-1", "JTS-15.1: Task", "To Do", { id: "JTS-15.1", title: "Task", status: "pending", model: "sonnet" });
     const commentBodies: unknown[] = [];
     const fakeFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const url = typeof input === "string" ? input : input.toString();
@@ -527,7 +527,7 @@ describe("JiraTaskStore.update", () => {
   });
 
   test("PUTs description body even when only status changes (body block stays in sync)", async () => {
-    const issue = makeJiraIssue("SHIP-1", "JTS-STATUS-BODY.1: Task", "To Do", { id: "JTS-STATUS-BODY.1", title: "Task", status: "pending" });
+    const issue = makeJiraIssue("SHIP-1", "JTS-STATUS-BODY.1: Task", "To Do", { id: "JTS-STATUS-BODY.1", title: "Task", status: "pending", model: "sonnet" });
     let putCount = 0;
     let putBody: unknown = null;
     const fakeFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
