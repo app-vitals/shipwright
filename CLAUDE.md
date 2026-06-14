@@ -151,4 +151,5 @@ To load additional context into a session, add `@docs/filename.md` entries here 
 - **docs/testing.md** — the four-layer test model (unit / integration / smoke / e2e), run commands, speed budgets, and the isolation contract
 - **docs/metrics.md** — metrics service (B): JSON endpoints, server-rendered dashboard, dual auth (Bearer / session), and environment
 - **docs/agent.md** — Shipwright agent (C): runtime + admin CRUD APIs, the six-model Prisma store, and encryption/env notes
+- **docs/deploy-kubernetes.md** — Kubernetes deployment guide: Minikube / GKE (Gateway API + cert-manager) / EKS (ALB), the agent runtime-provisioning RBAC model, and auth modes
 - **docs/test-readiness/test-system.md** — the authoritative test blueprint: layer matrix, boundary rules, per-component budgets, CI pipeline shape, and the full isolation contract

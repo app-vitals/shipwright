@@ -31,7 +31,7 @@ helm repo add shipwright https://app-vitals.github.io/shipwright
 helm install my-release shipwright/shipwright --namespace shipwright --create-namespace
 ```
 
-See [`docs/helm-repo.md`](./docs/helm-repo.md) for the full flow and how publishing is triggered.
+See [`docs/deploy-kubernetes.md`](./docs/deploy-kubernetes.md) for end-to-end deployment guides (Minikube / GKE / EKS), and [`docs/helm-repo.md`](./docs/helm-repo.md) for the published-repo flow and how publishing is triggered.
 
 ## Quickstart
 
