@@ -68,16 +68,50 @@ admin:
     # -- Name of the admin ServiceAccount. Generated if empty and create=true.
     name: ""
 
-# -- Metrics dashboard (@shipwright/metrics) — stateless PostHog-backed service. Port 3460.
+# -- Metrics dashboard (@shipwright/metrics) — event-store-backed service. Port 3460.
+# In postgres mode it reads/writes an `events` table in the bundled PostgreSQL and
+# serves the dashboard at /dashboard; the DB-independent /health drives readiness.
 metrics:
   enabled: true
   image:
     repository: shipwright-metrics
-    tag: ""
-    pullPolicy: ""
+    tag: ""           # defaults to .Chart.AppVersion when empty
+    pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
+    # -- Service type for the metrics service. ClusterIP is Minikube-friendly.
+    type: ClusterIP
     port: 3460
   replicas: 1
+  # -- Compute resources for the metrics container. Minikube-friendly defaults.
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+  # -- ServiceAccount for the metrics workload.
+  serviceAccount:
+    # -- Whether a ServiceAccount is created for the metrics workload.
+    create: true
+    # -- Annotations to add to the metrics ServiceAccount.
+    annotations: {}
+    # -- Name of the metrics ServiceAccount. Generated if empty and create=true.
+    name: ""
+  # -- PostgreSQL event-store database for the metrics service (postgres mode).
+  database:
+    # -- Database name for the metrics event store. Defaults to a SEPARATE
+    # database ("shipwright_metrics") from the admin service. This isolation is
+    # REQUIRED: the metrics provider creates its own `events` table on boot, and
+    # sharing the admin database would make the admin schema non-empty and break
+    # the admin service's `prisma migrate deploy` baseline (Prisma error P3005).
+    # When the bundled PostgreSQL subchart is enabled, this database is created
+    # automatically by a parent-chart init ConfigMap wired via
+    # postgresql.primary.initdb.scriptsConfigMap (see below); the created name
+    # tracks this value, so an override here stays in sync everywhere. If you
+    # bring your own Postgres (postgresql.enabled=false), pre-create this database
+    # or point METRICS_DATABASE_URL at it yourself.
+    name: shipwright_metrics
 
 # -- Agent service (@shipwright/agent) — autonomous runner + admin CRUD. Port 3000.
 agent:
@@ -159,3 +193,23 @@ postgresql:
       limits:
         cpu: 500m
         memory: 512Mi
+    # -- First-boot init scripts (Bitnami subchart). The SEPARATE metrics database
+    # (default "shipwright_metrics") is created by a parent-chart ConfigMap
+    # (templates/metrics-postgres-initdb-configmap.yaml), referenced here via
+    # scriptsConfigMap below and mounted at /docker-entrypoint-initdb.d. Keeping
+    # the metrics event store in its own database (never the admin database) is
+    # REQUIRED — sharing it would leave the admin schema non-empty and break
+    # admin's `prisma migrate deploy` baseline (Prisma P3005).
+    #
+    # OVERRIDE-SAFE: the ConfigMap renders the created database name from the
+    # shipwright.metrics.databaseName helper — the SAME helper that assembles
+    # METRICS_DATABASE_URL in the metrics Secret — so overriding metrics.database.name
+    # automatically updates BOTH the created database and the URL the metrics service
+    # connects to. No manual edit needed here.
+    initdb:
+      # The Bitnami subchart tpl-renders scriptsConfigMap, so this resolves to
+      # "<release>-metrics-initdb" — the name the parent-chart ConfigMap renders
+      # (templates/metrics-postgres-initdb-configmap.yaml). That ConfigMap is gated
+      # on postgresql.enabled, matching this reference: whenever the bundled
+      # Postgres renders, the ConfigMap it mounts renders too (no dangling mount).
+      scriptsConfigMap: '{{ printf "%s-metrics-initdb" .Release.Name }}'

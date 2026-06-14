@@ -10,7 +10,7 @@ tests:
       - matchRegexRaw:
           pattern: Thank you for installing shipwright \(Shipwright Harness\)
       - matchRegexRaw:
-          pattern: chart version 0\.3\.0, app version 0\.1\.0
+          pattern: chart version 0\.5\.0, app version 0\.1\.0
 
   - it: surfaces the three configured service ports in NOTES
     asserts:
@@ -27,6 +27,18 @@ tests:
           pattern: "Networking exposure type: ClusterIP"
       - matchRegexRaw:
           pattern: "Auth mode:                open"
+
+  - it: surfaces the metrics dashboard access line by default (metrics enabled)
+    asserts:
+      - matchRegexRaw:
+          pattern: "open http://localhost:3460/dashboard"
+
+  - it: omits the metrics dashboard access line when metrics is disabled
+    set:
+      metrics.enabled: false
+    asserts:
+      - notMatchRegexRaw:
+          pattern: "3460/dashboard"
 
   - it: documents the PostgreSQL connection when the subchart is enabled
     set:

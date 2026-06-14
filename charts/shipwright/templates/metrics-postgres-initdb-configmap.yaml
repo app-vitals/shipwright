@@ -1,0 +1,45 @@
+{{- if .Values.postgresql.enabled }}
+{{- /*
+  Parent-chart ConfigMap holding the PostgreSQL first-boot init script that
+  creates the SEPARATE metrics event-store database. The Bitnami subchart mounts
+  it at /docker-entrypoint-initdb.d via postgresql.primary.initdb.scriptsConfigMap
+  (see values.yaml), so the script runs once at initdb time as the postgres
+  superuser over the local socket.
+
+  GATING: rendered whenever the bundled PostgreSQL subchart is enabled — NOT gated
+  additionally on metrics.enabled. values.yaml statically references this ConfigMap
+  via postgresql.primary.initdb.scriptsConfigMap; the Bitnami subchart's tpl `$`
+  context is the SUBCHART root (no `.Values.metrics`), so that reference cannot be
+  conditionally cleared when metrics is disabled. Gating this ConfigMap on
+  postgresql.enabled alone keeps the subchart's volume reference valid in every
+  case. When metrics is disabled the bundled Postgres still harmlessly pre-creates
+  the (unused) metrics database — cheap, idempotent, and avoids a dangling mount.
+  When postgresql.enabled=false, neither the subchart nor this ConfigMap render.
+
+  Why a templated ConfigMap instead of a static postgresql.primary.initdb.scripts
+  block: the created database name is rendered from shipwright.metrics.databaseName
+  — the SAME helper that assembles METRICS_DATABASE_URL in metrics-secret.yaml. If
+  a user overrides metrics.database.name, the created database and the URL the
+  metrics service connects to stay in sync automatically (no manual edit here).
+
+  The ConfigMap name is "<release>-metrics-initdb". values.yaml references it via
+  scriptsConfigMap: '{{ printf "%s-metrics-initdb" .Release.Name }}', which the
+  Bitnami subchart tpl-renders, so the reference tracks the release name for
+  multi-release safety.
+
+  Idempotent via the WHERE NOT EXISTS guard (templated in BOTH the CREATE and the
+  guard); OWNER is the application user from postgresql.auth.username.
+*/}}
+{{- $dbName := include "shipwright.metrics.databaseName" . }}
+{{- $owner := .Values.postgresql.auth.username }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ printf "%s-metrics-initdb" .Release.Name | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "shipwright.metrics.labels" . | nindent 4 }}
+data:
+  00-create-metrics-db.sql: |
+    SELECT 'CREATE DATABASE {{ $dbName }} OWNER {{ $owner }}'
+    WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '{{ $dbName }}')\gexec
+{{- end }}

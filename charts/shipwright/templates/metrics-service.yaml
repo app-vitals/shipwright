@@ -1,0 +1,17 @@
+{{- if .Values.metrics.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "shipwright.metrics.fullname" . }}
+  labels:
+    {{- include "shipwright.metrics.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.metrics.service.type | default "ClusterIP" }}
+  ports:
+    - name: http
+      port: {{ .Values.metrics.service.port }}
+      targetPort: 3460
+      protocol: TCP
+  selector:
+    {{- include "shipwright.metrics.selectorLabels" . | nindent 4 }}
+{{- end }}

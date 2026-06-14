@@ -87,7 +87,7 @@ jobs:
       - name: Install Helm
         uses: azure/setup-helm@v4
         with:
-          version: v3.16.4
+          version: v3.18.6
 
       - name: Set up chart-testing
         uses: helm/chart-testing-action@v2
@@ -115,6 +115,20 @@ jobs:
 
       - name: Load admin image into kind
         run: kind load docker-image shipwright-admin:0.1.0 --name kind
+
+      # The metrics Deployment runs the first-party `shipwright-metrics` image,
+      # which is also NOT published at PR time. Build the REAL image and side-load
+      # it into kind so `ct install` schedules the actual metrics workload: the
+      # pod boots in postgres mode against the bundled PostgreSQL subchart,
+      # bootstraps its own `events` table, and serves the DB-independent /health
+      # probe — so `ct install --wait` sees it reach Ready. The ci/ values set
+      # metrics.image.pullPolicy: Never, so kind uses this loaded image and never
+      # reaches a registry. Tag 0.1.0 = Chart.yaml appVersion.
+      - name: Build metrics image
+        run: docker build -t shipwright-metrics:0.1.0 -f metrics/Dockerfile .
+
+      - name: Load metrics image into kind
+        run: kind load docker-image shipwright-metrics:0.1.0 --name kind
 
       - name: ct install (per ci/ values variant, runs helm test)
         run: ct install --config ct.yaml --charts charts/shipwright
