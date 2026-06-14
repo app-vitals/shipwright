@@ -137,22 +137,36 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
       deploymentName: resourceName,
     };
 
-    // 1. Token — mint a fresh scoped token for this agent.
-    const { rawToken } = await this.tokens.create(agentId, "k8s-provision");
-    result.rawToken = rawToken;
-
-    // 2. Secret — must exist before the Deployment that references it.
-    //    A 409 means a prior (possibly partial) provision already created it;
-    //    treat as already-present and continue to the Deployment step.
+    // 1. Token — mint only when the Secret does NOT already exist. If the Secret
+    //    is already present (a prior provision completed or partially ran), we
+    //    skip minting so no orphaned token rows accumulate in the DB and the
+    //    returned rawToken correctly signals "use the existing credential" via
+    //    undefined. Only mint a fresh token when we're about to write a new Secret.
     let secretCreated = false;
+    let secretAlreadyExists = false;
     try {
-      await this.k8s.createSecret(
-        this.config.namespace,
-        this.secretSpec(secretName, rawToken),
-      );
-      secretCreated = true;
+      await this.k8s.getSecret(this.config.namespace, secretName);
+      secretAlreadyExists = true;
     } catch (err) {
-      if (!isConflict(err)) throw err;
+      if (!isNotFound(err)) throw err;
+    }
+
+    if (!secretAlreadyExists) {
+      const { rawToken } = await this.tokens.create(agentId, "k8s-provision");
+      result.rawToken = rawToken;
+
+      // 2. Secret — must exist before the Deployment that references it.
+      //    A 409 here is unexpected (we just confirmed it was absent), but treat
+      //    it as already-present and continue to the Deployment step.
+      try {
+        await this.k8s.createSecret(
+          this.config.namespace,
+          this.secretSpec(secretName, rawToken),
+        );
+        secretCreated = true;
+      } catch (err) {
+        if (!isConflict(err)) throw err;
+      }
     }
 
     // 3. Deployment. If creation fails AFTER we created the Secret in THIS call,
