@@ -169,6 +169,27 @@ For each task:
 - **Branch**: `feat/{id-lowered-dashes}-{first-3-words-kebab}` — or a shared branch name for bundled tasks (see below)
 - **Layer**: API | Frontend | Database | Shared | Background | CLI
 - **Hours**: rough estimate (1-8h; break tasks larger than 8h)
+- **Complexity**: integer 1–5 — use the scoring table below
+- **Model**: `haiku` | `sonnet` | `opus` — derived from complexity score (see table)
+
+### Complexity and Model Scoring
+
+Assign a complexity score (1–5) and model tier to every task:
+
+| Score | Signal | Model |
+|-------|--------|-------|
+| 1 | Single file, config/copy change, no logic, unit tests only | `haiku` |
+| 2 | 1–2 files, straightforward logic, unit tests only | `haiku` |
+| 3 | 2–5 files, standard feature, integration tests | `sonnet` |
+| 4 | 5+ files, cross-layer, new patterns, integration + smoke tests | `sonnet` |
+| 5 | Architectural, cross-layer, new abstraction, migration, or perf-sensitive | `opus` |
+
+**Tie-breaking rules:**
+- New abstraction required (interface, base class, shared module) → bump up one tier
+- Pure modification of existing code (no new patterns) → stay at current tier
+- When uncertain, prefer the lower tier — the planner can escalate in a follow-up plan revision if execution is blocked
+
+**Bundle inheritance:** When tasks share a branch, all tasks in the bundle inherit the highest model tier among them. A haiku-tier task bundled with a sonnet-tier task runs at sonnet.
 
 ### Bundles
 
@@ -221,6 +242,16 @@ Present the task list and dependency map as a first pass. The engineer reviews a
 
 Once the task breakdown is approved, write each task to the task store via `task_store.ts`.
 
+### Bundle Model Inheritance (Pre-Write)
+
+Before constructing any JSON, apply bundle inheritance to the full task list:
+
+1. Group planned tasks by `branch`.
+2. For each group with more than one task (a bundle), find the highest model tier present: `opus` > `sonnet` > `haiku`.
+3. Set every task in that bundle to the highest tier before writing.
+
+A task on its own branch is unaffected. This ensures a `haiku`-scored task bundled with a `sonnet`-scored task is written as `model: "sonnet"`.
+
 The code path depends on `taskStore` in `SHIPWRIGHT_CONFIG`. Read it the same way Phase-0 does:
 
 ```bash
@@ -265,7 +296,9 @@ Write the new tasks to a temp file `/tmp/new-tasks-{session}.json` as a JSON arr
     "status": "pending",
     "pr": null,
     "addedAt": "{ISO timestamp}",
-    "hours": 2
+    "hours": 2,
+    "complexity": {complexity},
+    "model": "{model}"
   }
 ]
 ```
@@ -374,7 +407,9 @@ Write the tasks to `/tmp/new-tasks-{session}.json`. Set `source` to `"gh:{owner}
     "status": "pending",
     "pr": null,
     "addedAt": "{ISO timestamp}",
-    "hours": 2
+    "hours": 2,
+    "complexity": {complexity},
+    "model": "{model}"
   }
 ]
 ```
