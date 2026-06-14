@@ -112,6 +112,32 @@
               "properties": {
                 "name": { "type": "string" }
               }
+            },
+            "provider": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "posthog": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "existingSecret":   { "type": "string" },
+                    "personalApiKeyRef": { "type": "string" },
+                    "projectIdRef":      { "type": "string" }
+                  }
+                },
+                "adminUrl":          { "type": "string" },
+                "basePath":          { "type": "string" },
+                "requireOwnerRole":  { "type": "boolean" },
+                "internalKey": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "existingSecret": { "type": "string" },
+                    "key":            { "type": "string" }
+                  }
+                }
+              }
             }
           }
         }

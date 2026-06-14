@@ -74,6 +74,37 @@ spec:
                   name: {{ include "shipwright.metrics.secretName" . }}
                   key: METRICS_DATABASE_URL
             {{- end }}
+            {{- if .Values.metrics.provider.posthog.existingSecret }}
+            - name: POSTHOG_PERSONAL_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.metrics.provider.posthog.existingSecret }}
+                  key: {{ .Values.metrics.provider.posthog.personalApiKeyRef }}
+            - name: POSTHOG_PROJECT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.metrics.provider.posthog.existingSecret }}
+                  key: {{ .Values.metrics.provider.posthog.projectIdRef }}
+            {{- end }}
+            {{- if .Values.metrics.provider.adminUrl }}
+            - name: METRICS_ADMIN_URL
+              value: {{ .Values.metrics.provider.adminUrl | quote }}
+            {{- end }}
+            {{- if .Values.metrics.provider.basePath }}
+            - name: METRICS_BASE_PATH
+              value: {{ .Values.metrics.provider.basePath | quote }}
+            {{- end }}
+            {{- if .Values.metrics.provider.requireOwnerRole }}
+            - name: METRICS_REQUIRE_OWNER_ROLE
+              value: "true"
+            {{- end }}
+            {{- if .Values.metrics.provider.internalKey.existingSecret }}
+            - name: METRICS_INTERNAL_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.metrics.provider.internalKey.existingSecret }}
+                  key: {{ .Values.metrics.provider.internalKey.key }}
+            {{- end }}
           {{- with .Values.metrics.resources }}
           resources:
             {{- toYaml . | nindent 12 }}

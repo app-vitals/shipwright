@@ -163,6 +163,39 @@ metrics:
     # bring your own Postgres (postgresql.enabled=false), pre-create this database
     # or point METRICS_DATABASE_URL at it yourself.
     name: shipwright_metrics
+  # -- Provider and environment surface for the metrics dashboard.
+  # All fields are optional and additive — defaults preserve the existing
+  # SQLite / bundled-PostgreSQL fallback behavior unchanged.
+  provider:
+    # -- PostHog analytics provider (optional). When configured, the metrics
+    # dashboard sends events to PostHog instead of the bundled store.
+    # Leave existingSecret empty (the default) to disable PostHog injection.
+    posthog:
+      # -- Name of an existing Secret holding PostHog API credentials.
+      # Leave empty to disable PostHog env injection.
+      existingSecret: ""
+      # -- Key in the secret for POSTHOG_PERSONAL_API_KEY.
+      personalApiKeyRef: POSTHOG_PERSONAL_API_KEY
+      # -- Key in the secret for POSTHOG_PROJECT_ID.
+      projectIdRef: POSTHOG_PROJECT_ID
+    # -- URL of the admin service as seen by the metrics dashboard.
+    # Required when not using the bundled admin service (e.g., external admin).
+    # Leave empty to omit the METRICS_ADMIN_URL env var.
+    adminUrl: ""
+    # -- Base path for the metrics dashboard (e.g., /dashboard). Leave empty
+    # to omit the METRICS_BASE_PATH env var (defaults to root inside the app).
+    basePath: ""
+    # -- When true, require OWNER role for dashboard access.
+    # Injects METRICS_REQUIRE_OWNER_ROLE=true when enabled.
+    requireOwnerRole: false
+    # -- Internal API key shared between metrics and admin services.
+    # Set existingSecret to inject METRICS_INTERNAL_API_KEY via secretKeyRef.
+    internalKey:
+      # -- Name of an existing Secret holding the internal API key.
+      # Leave empty to omit the METRICS_INTERNAL_API_KEY env var.
+      existingSecret: ""
+      # -- Key in the secret for METRICS_INTERNAL_API_KEY.
+      key: METRICS_INTERNAL_API_KEY
 
 # -- Agent service (@shipwright/agent) — autonomous runner + admin CRUD. Port 3000.
 agent:
