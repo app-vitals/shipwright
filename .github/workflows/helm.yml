@@ -101,8 +101,18 @@ jobs:
 
       - name: Build and load stub admin image for kind
         run: |
-          docker build -t shipwright-admin:0.1.0 - <<'EOF'
-          FROM scratch
+          # Build a minimal stub that serves HTTP on port 3001 so the admin
+          # Deployment's liveness/readiness probes (/health) pass in ct install.
+          # busybox httpd serves any request with 200 + directory listing.
+          # imagePullPolicy: Never in ci/ values ensures kind uses this pre-loaded
+          # image instead of trying to pull shipwright-admin from a registry.
+          mkdir -p /tmp/stub-admin/www
+          echo "ok" > /tmp/stub-admin/www/health
+          docker build -t shipwright-admin:0.1.0 -f - /tmp/stub-admin <<'EOF'
+          FROM busybox:1.36
+          COPY www/ /www/
+          EXPOSE 3001
+          CMD ["httpd", "-f", "-p", "3001", "-h", "/www"]
           EOF
           kind load docker-image shipwright-admin:0.1.0
 
