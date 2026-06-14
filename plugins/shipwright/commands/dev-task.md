@@ -65,9 +65,10 @@ Record `task_started_at` (current ISO timestamp) for metrics.
 JSONL_SNAPSHOT_PATH=$(ls -t ~/.claude/projects/*/*.jsonl 2>/dev/null | head -1)
 JSONL_SNAPSHOT_LINES=$(wc -l < "$JSONL_SNAPSHOT_PATH" 2>/dev/null || echo 0)
 EFFORT_LEVEL=$(echo $ANTHROPIC_EFFORT_LEVEL)
+CLAUDE_MODEL=$(echo $CLAUDE_MODEL)
 ```
 
-Store `JSONL_SNAPSHOT_PATH`, `JSONL_SNAPSHOT_LINES`, and `EFFORT_LEVEL` as variables for use in Step 10b. These are best-effort — if the JSONL path is empty or unreadable, all token fields will emit as `null`.
+Store `JSONL_SNAPSHOT_PATH`, `JSONL_SNAPSHOT_LINES`, `EFFORT_LEVEL`, and `CLAUDE_MODEL` as variables for use in Step 10b. These are best-effort — if the JSONL path is empty or unreadable, all token fields will emit as `null`. Claude Code sets `$CLAUDE_MODEL` to the active model ID (e.g. `claude-sonnet-4-6`). If not set or not in the pricing table, `cost_usd` emits as `null`.
 
 Each PostHog call in this task is self-contained: it resolves the script path inline and silently skips if the script is not found. No shell variable is shared between steps.
 
@@ -1057,7 +1058,7 @@ Notes:
 - `test_layers_coverage_per_layer` is `null` when the toolchain does not support per-layer coverage (most toolchains); do not fabricate values. When null, the aggregate `coverage_delta` field is unaffected.
 - `test_layers_coverage_per_layer_reason` is a quoted string explaining why `coverage_per_layer` is null (e.g. `"toolchain does not support per-layer coverage"`), or `null` when coverage data is populated.
 - `conformance_checked_json` is the JSON encoding of the `ConformanceReport` from `checkConformance`. When `test-system.md` is absent (source: "defaults"), this is `{"checked":false,"deviations":[]}`, indicating conformance was not checked. When present, `checked` is `true` and `deviations` lists any advisory layer deviations. A non-empty deviations array is advisory only — it never causes /dev-task or /review to fail or block.
-- `{INPUT_TOKENS}`, `{OUTPUT_TOKENS}`, `{COST_USD}` are the values from Step 10b.2. Emit `null` (unquoted) for any field that could not be read (missing JSONL path, unreadable file, unknown model).
+- `{INPUT_TOKENS}`, `{OUTPUT_TOKENS}`, `{COST_USD}` are the values from Step 10b.2. `cost_usd` is `null` when the model rate is unknown; `input` and `output` counts are still emitted. All three are `null` only when the JSONL path is missing or unreadable.
 - `effort_level_json` is either a JSON string (e.g. `"high"`) or `null` (unquoted) when `EFFORT_LEVEL` is empty or unset.
 - The `/review` Step 13 enrichment appends `review.*` fields to this same JSONL line by adding a new top-level key to the existing JSON object. This is unaffected by the new `test_layers` block — the enrichment reads the entire line, parses it, adds the `review` key, and writes it back.
 

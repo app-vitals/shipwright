@@ -193,11 +193,11 @@ Token counts and estimated cost for the Claude Code session that executed this t
 
 | Field | Type | Default if Absent | Description |
 |-------|------|-------------------|-------------|
-| `tokens.input` | integer \| null | `null` | Total input tokens consumed during this task (includes cache creation and cache read tokens) |
+| `tokens.input` | integer \| null | `null` | Base input tokens from the API response — does not include `cache_creation_input_tokens` or `cache_read_input_tokens`, which are factored into `cost_usd` separately |
 | `tokens.output` | integer \| null | `null` | Total output tokens generated during this task |
 | `tokens.cost_usd` | number \| null | `null` | Estimated cost in USD based on model pricing. `null` when the model is unknown or token counts could not be read |
 
-Computed by the Python token calculator in `dev-task.md` Step 10b.2 by diffing the Claude Code session JSONL from the snapshot taken in Step 1. `null` for any field that could not be determined (missing JSONL path, unreadable file, or unknown model rate). The entire `tokens` block is present on every record written by v4.16.0+; omitting a field within it is not permitted — emit `null` explicitly.
+Computed by the Python token calculator in `dev-task.md` Step 10b.2 by diffing the Claude Code session JSONL from the snapshot taken in Step 1. `cost_usd` is `null` when the model rate is unknown; `input` and `output` counts are still emitted. All three fields are `null` only when the JSONL path is missing or unreadable. The entire `tokens` block is present on every record written by v4.16.0+; omitting a field within it is not permitted — emit `null` explicitly.
 
 Records written before v4.16.0 will be missing the `tokens` object entirely. Consumers should treat absent `tokens` as `{input: null, output: null, cost_usd: null}`.
 
