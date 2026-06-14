@@ -56,11 +56,6 @@ spec:
             # Bind the metrics dashboard to the chart-standard port 3460.
             - name: METRICS_API_PORT
               value: "3460"
-            # Force the read backend out of offline/fixtures mode. With a postgres
-            # METRICS_DATABASE_URL present, the provider selects "postgres" mode
-            # (any METRICS_OFFLINE value other than "true" is ignored).
-            - name: METRICS_OFFLINE
-              value: "false"
             # Signs the dashboard session JWT. Generated into the metrics Secret
             # on first install and preserved across `helm upgrade`.
             - name: SHIPWRIGHT_SESSION_SECRET
