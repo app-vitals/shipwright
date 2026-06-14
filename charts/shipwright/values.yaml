@@ -63,10 +63,15 @@ networking:
 
 # -- TLS / certificate management for the gateway/ingress host.
 tls:
-  # -- cert-manager integration. When enabled, renders a cert-manager.io/v1
-  # Certificate (templates/certificate.yaml) for networking.gateway.host and the
-  # Gateway adds an HTTPS (:443) listener referencing the issued Secret. Disabled
-  # by default (Minikube = plain HTTP, no cert-manager installed).
+  # -- cert-manager integration. When enabled AND networking.type=gateway, renders
+  # a cert-manager.io/v1 Certificate (templates/certificate.yaml) for
+  # networking.gateway.host and the Gateway adds an HTTPS (:443) listener
+  # referencing the issued Secret. An HTTP→HTTPS redirect HTTPRoute is also
+  # rendered on the Gateway's "http" listener so that plaintext traffic is
+  # redirected (301) to HTTPS — the standard expectation for GKE
+  # gke-l7-global-external-managed and any TLS-enabled Gateway deployment.
+  # Has no effect when networking.type is not "gateway". Disabled by default
+  # (Minikube = plain HTTP, no cert-manager installed).
   certManager:
     enabled: false
     # -- Reference to the cert-manager Issuer/ClusterIssuer that signs the cert.
