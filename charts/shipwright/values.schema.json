@@ -299,6 +299,38 @@
         }
       },
       "required": ["enabled"]
+    },
+    "externalDatabase": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "existingSecret": { "type": "string" },
+        "adminUrlKey": { "type": "string" }
+      }
+    },
+    "cloudSqlProxy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "image": { "type": "string" },
+        "connectionName": { "type": "string" },
+        "args": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "resources": { "type": "object" }
+      },
+      "if": {
+        "properties": { "enabled": { "const": true } },
+        "required": ["enabled"]
+      },
+      "then": {
+        "properties": {
+          "connectionName": { "type": "string", "minLength": 1 }
+        },
+        "required": ["connectionName"]
+      }
     }
   },
   "if": {

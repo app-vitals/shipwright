@@ -389,21 +389,35 @@ changing the chart, or bring your own database:
 
 - **Mirror the whole stack:** set `global.imageRegistry: <your-mirror>`.
 - **Use the `bitnamilegacy` mirror** for PostgreSQL specifically.
-- **Bring your own PostgreSQL:** set `postgresql.enabled=false` and point
-  `externalDatabase.existingSecret` at a pre-created Kubernetes Secret holding
-  `DATABASE_URL_SHIPWRIGHT_ADMIN`. The chart injects the value into the admin
-  pod from that Secret — you create and rotate the Secret outside the chart.
-  Pre-create the separate `shipwright_metrics` event-store database as well.
-- **Cloud SQL Proxy (GKE):** when the Postgres instance uses a Private IP (Cloud
-  SQL or equivalent), set `cloudSqlProxy.enabled=true` and supply a
-  `cloudSqlProxy.connectionName`. The chart injects a `cloud-sql-proxy v2`
-  sidecar into the admin pod; the proxy listens on `127.0.0.1:5432` with
-  `--private-ip`, making the instance reachable as `localhost` from the admin
-  container. Use together with `externalDatabase.existingSecret` and
-  `postgresql.enabled=false`.
+- **Bring your own PostgreSQL:** set `postgresql.enabled=false` and use the
+  `externalDatabase` block to inject `DATABASE_URL_SHIPWRIGHT_ADMIN` from a
+  pre-existing Secret (and pre-create the separate `shipwright_metrics`
+  event-store database separately):
 
-The full image-override / mirror guidance, the exact pinned version, and the
-`existingSecret` story are in
+  ```yaml
+  postgresql:
+    enabled: false
+  externalDatabase:
+    existingSecret: my-db-secret          # Secret you create and manage
+    adminUrlKey: DATABASE_URL_SHIPWRIGHT_ADMIN   # key within the Secret (default if omitted)
+  ```
+
+- **GCP Cloud SQL (Cloud SQL Auth Proxy):** when your external database is a
+  GCP Cloud SQL instance, add the `cloudSqlProxy` sidecar to the admin pod so
+  the instance is reachable at `127.0.0.1:5432`:
+
+  ```yaml
+  postgresql:
+    enabled: false
+  externalDatabase:
+    existingSecret: my-cloud-sql-secret
+  cloudSqlProxy:
+    enabled: true
+    connectionName: "project:region:instance"   # required
+    image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2
+  ```
+
+The full image-override / mirror guidance and the exact pinned version are in
 [the chart README — "Bitnami registry risk and image-override / mirror fallback"](../charts/shipwright/README.md#-bitnami-registry-risk-and-image-override--mirror-fallback).
 
 ---

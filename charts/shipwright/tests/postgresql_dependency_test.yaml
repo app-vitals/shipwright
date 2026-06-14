@@ -35,6 +35,7 @@ tests:
       - charts/postgresql/templates/primary/statefulset.yaml
     set:
       postgresql.enabled: false
+      externalDatabase.existingSecret: my-db-secret
     documentSelector:
       path: kind
       value: StatefulSet
@@ -94,6 +95,7 @@ tests:
       - templates/metrics-postgres-initdb-configmap.yaml
     set:
       postgresql.enabled: false
+      externalDatabase.existingSecret: my-db-secret
     asserts:
       - hasDocuments:
           count: 0
