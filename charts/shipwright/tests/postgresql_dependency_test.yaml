@@ -1,0 +1,55 @@
+suite: PostgreSQL subchart conditional rendering
+# HD-2.1 wired the Bitnami PostgreSQL subchart behind `postgresql.enabled`
+# (condition in Chart.yaml). These tests assert the subchart's StatefulSet renders
+# (and is correctly named) when enabled. The *absence* of the subchart when
+# disabled is asserted structurally below via documentSelector, and at the NOTES
+# level in metadata_test.yaml ("PostgreSQL subchart is DISABLED").
+tests:
+  - it: renders the PostgreSQL StatefulSet when postgresql.enabled=true
+    templates:
+      - charts/postgresql/templates/primary/statefulset.yaml
+    set:
+      postgresql.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: StatefulSet
+      - matchRegex:
+          path: metadata.name
+          pattern: -postgresql$
+
+  - it: renders the PostgreSQL StatefulSet under default values (enabled by default)
+    templates:
+      - charts/postgresql/templates/primary/statefulset.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: StatefulSet
+
+  - it: renders no PostgreSQL StatefulSet when postgresql.enabled=false
+    # When the subchart condition is false Helm does not load the subchart
+    # templates at all; skipEmptyTemplates lets us assert that scoped emptiness.
+    templates:
+      - charts/postgresql/templates/primary/statefulset.yaml
+    set:
+      postgresql.enabled: false
+    documentSelector:
+      path: kind
+      value: StatefulSet
+      skipEmptyTemplates: true
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders the PostgreSQL primary Service when enabled
+    templates:
+      - charts/postgresql/templates/primary/svc.yaml
+    set:
+      postgresql.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Service

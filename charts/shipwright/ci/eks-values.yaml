@@ -1,0 +1,48 @@
+# ct-discovered values variant: EKS-flavored overrides.
+# Demonstrates AWS Elastic Kubernetes Service tuning — an external/NLB-style
+# LoadBalancer exposure, the EBS gp3 storage class for PVCs, and bearer-token
+# auth. As with the GKE variant, ct renders + installs this on the kind cluster
+# (the cloud LB/EBS are not provisioned on kind) to confirm the chart accepts
+# provider-flavored values and passes `helm test`.
+networking:
+  # EKS fronts type=LoadBalancer services with an AWS NLB/ELB.
+  type: LoadBalancer
+
+auth:
+  mode: bearer
+
+agent:
+  provisioning:
+    persistence:
+      enabled: true
+      size: 5Gi
+      # On real EKS you would set storageClass: gp3 (the EBS CSI gp3 class).
+      # Left empty here so `ct install` on a kind cluster binds the PVC against
+      # kind's default StorageClass — the cloud class name would never bind.
+      storageClass: ""
+      accessModes:
+        - ReadWriteOnce
+
+postgresql:
+  enabled: true
+  # Use the `bitnamilegacy` mirror — the default bitnami/postgresql tag is no
+  # longer publicly pullable (see README "Bitnami registry risk").
+  image:
+    registry: docker.io
+    repository: bitnamilegacy/postgresql
+  auth:
+    database: shipwright_admin
+    username: shipwright
+    # CI-only literal; production should use auth.existingSecret.
+    password: ci-eks-postgres
+  primary:
+    persistence:
+      enabled: true
+      size: 10Gi
+    resources:
+      requests:
+        cpu: 250m
+        memory: 256Mi
+      limits:
+        cpu: "1"
+        memory: 1Gi

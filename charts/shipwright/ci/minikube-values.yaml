@@ -1,0 +1,43 @@
+# ct-discovered values variant: small/local (minikube / kind).
+# Keeps the install lightweight so `ct install` on a single-node kind cluster
+# can pull, schedule, and pass `helm test` quickly. Storage is ephemeral.
+networking:
+  type: ClusterIP
+
+auth:
+  mode: none
+
+agent:
+  provisioning:
+    persistence:
+      # No PVC churn on a throwaway local cluster.
+      enabled: false
+
+postgresql:
+  enabled: true
+  # Bitnami moved its public catalog behind "Bitnami Secure" in 2025, so the
+  # default docker.io/bitnami/postgresql tag is no longer publicly pullable.
+  # Point CI installs at the `bitnamilegacy` mirror (the fallback documented in
+  # the chart README "Bitnami registry risk" section) so `ct install` can pull.
+  image:
+    registry: docker.io
+    repository: bitnamilegacy/postgresql
+  # Set an explicit password so the install is deterministic across CI re-runs
+  # (a Bitnami auto-generated password is fine for a throwaway cluster, but a
+  # fixed value keeps `helm test`/connectivity checks reproducible). This is a
+  # CI-only, non-secret literal for an ephemeral single-node cluster.
+  auth:
+    database: shipwright_admin
+    username: shipwright
+    password: ci-local-postgres
+  primary:
+    persistence:
+      # Ephemeral storage — no PVC on the local node.
+      enabled: false
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 250m
+        memory: 256Mi
