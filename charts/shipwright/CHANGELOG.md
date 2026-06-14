@@ -35,6 +35,10 @@ independent of `appVersion`. CI enforces this with
 
 - `auth.mode` enum is now `open | google` (was `none | session | bearer`); the
   default is `open`. NOTES.txt warns loudly when `auth.mode=open`.
+  **Migration:** existing installs with `auth.mode: none` should run
+  `helm upgrade --set auth.mode=open` or add `auth.mode: open` to their values
+  file. The value `none` is retained as a deprecated alias for `open` and will
+  be removed in a future release.
 - CI values variants (`ci/*-values.yaml`) updated to the new auth modes (gke
   exercises `google`, minikube/eks exercise `open`).
 

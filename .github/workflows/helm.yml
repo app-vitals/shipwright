@@ -99,5 +99,12 @@ jobs:
         with:
           version: v0.24.0
 
+      - name: Build and load stub admin image for kind
+        run: |
+          docker build -t shipwright-admin:0.1.0 - <<'EOF'
+          FROM scratch
+          EOF
+          kind load docker-image shipwright-admin:0.1.0
+
       - name: ct install (per ci/ values variant, runs helm test)
         run: ct install --config ct.yaml --charts charts/shipwright

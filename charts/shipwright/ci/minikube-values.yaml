@@ -8,6 +8,10 @@ auth:
   # Dev auth (ADMIN_DEV_AUTH=true), no OAuth — fine for a throwaway local cluster.
   mode: open
 
+admin:
+  image:
+    pullPolicy: Never
+
 agent:
   provisioning:
     persistence:

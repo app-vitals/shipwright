@@ -12,6 +12,10 @@ auth:
   # Dev auth (ADMIN_DEV_AUTH=true) — exercises the non-google render path.
   mode: open
 
+admin:
+  image:
+    pullPolicy: Never
+
 agent:
   provisioning:
     persistence:

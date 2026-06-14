@@ -80,7 +80,7 @@
       "properties": {
         "mode": {
           "type": "string",
-          "enum": ["open", "google"]
+          "enum": ["open", "google", "none"]
         },
         "google": {
           "type": "object",

@@ -18,6 +18,10 @@ auth:
     clientSecret: ci-gke-client-secret
     allowedEmails: ci@example.com
 
+admin:
+  image:
+    pullPolicy: Never
+
 agent:
   provisioning:
     persistence:
