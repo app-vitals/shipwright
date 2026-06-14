@@ -1,0 +1,116 @@
+suite: admin cloud-sql-proxy sidecar (SWD-1.2)
+# When cloudSqlProxy.enabled=true, the admin Deployment gets a cloud-sql-proxy
+# sidecar container so a GCP Cloud SQL instance is reachable at 127.0.0.1:5432.
+# The sidecar is absent by default (cloudSqlProxy.enabled=false).
+release:
+  name: r
+  namespace: shipwright
+tests:
+  - it: does NOT render the cloud-sql-proxy sidecar by default (enabled=false)
+    template: templates/admin-deployment.yaml
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers
+          content:
+            name: cloud-sql-proxy
+
+  - it: renders the cloud-sql-proxy sidecar when enabled=true
+    template: templates/admin-deployment.yaml
+    set:
+      cloudSqlProxy.enabled: true
+      cloudSqlProxy.connectionName: my-project:us-central1:my-instance
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[1].name
+          value: cloud-sql-proxy
+
+  - it: uses the default cloud-sql-proxy image
+    template: templates/admin-deployment.yaml
+    set:
+      cloudSqlProxy.enabled: true
+      cloudSqlProxy.connectionName: my-project:us-central1:my-instance
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[1].image
+          value: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2
+
+  - it: passes --private-ip and connectionName as the sidecar args
+    template: templates/admin-deployment.yaml
+    set:
+      cloudSqlProxy.enabled: true
+      cloudSqlProxy.connectionName: my-project:us-central1:my-instance
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[1].args
+          value:
+            - --private-ip
+            - my-project:us-central1:my-instance
+
+  - it: appends extra args after --private-ip and connectionName
+    template: templates/admin-deployment.yaml
+    set:
+      cloudSqlProxy.enabled: true
+      cloudSqlProxy.connectionName: my-project:us-central1:my-instance
+      cloudSqlProxy.args:
+        - --max-sigterm-delay=10s
+        - --structured-logs
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[1].args
+          value:
+            - --private-ip
+            - my-project:us-central1:my-instance
+            - --max-sigterm-delay=10s
+            - --structured-logs
+
+  - it: sets runAsNonRoot on the sidecar securityContext
+    template: templates/admin-deployment.yaml
+    set:
+      cloudSqlProxy.enabled: true
+      cloudSqlProxy.connectionName: my-project:us-central1:my-instance
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[1].securityContext.runAsNonRoot
+          value: true
+
+  - it: honors configured resources on the sidecar
+    template: templates/admin-deployment.yaml
+    set:
+      cloudSqlProxy.enabled: true
+      cloudSqlProxy.connectionName: my-project:us-central1:my-instance
+      cloudSqlProxy.resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 128Mi
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[1].resources.requests.cpu
+          value: 10m
+      - equal:
+          path: spec.template.spec.containers[1].resources.limits.memory
+          value: 128Mi
+
+  - it: honors a custom sidecar image
+    template: templates/admin-deployment.yaml
+    set:
+      cloudSqlProxy.enabled: true
+      cloudSqlProxy.connectionName: my-project:us-central1:my-instance
+      cloudSqlProxy.image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.14.0
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[1].image
+          value: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.14.0
+
+  # Regression guard: enabling the proxy does not disturb the main admin container
+  - it: admin container remains at index 0 when proxy is enabled
+    template: templates/admin-deployment.yaml
+    set:
+      cloudSqlProxy.enabled: true
+      cloudSqlProxy.connectionName: my-project:us-central1:my-instance
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].name
+          value: admin

@@ -110,6 +110,7 @@ tests:
     template: templates/metrics-deployment.yaml
     set:
       postgresql.enabled: false
+      externalDatabase.existingSecret: my-db-secret
     release:
       name: r
     asserts:

@@ -65,6 +65,18 @@ spec:
                 secretKeyRef:
                   name: {{ include "shipwright.admin.secretName" . }}
                   key: DATABASE_URL_SHIPWRIGHT_ADMIN
+            {{- else if and (not .Values.postgresql.enabled) (empty .Values.externalDatabase.existingSecret) }}
+            {{- fail "externalDatabase.existingSecret is required when postgresql.enabled=false" }}
+            {{- else if .Values.externalDatabase.existingSecret }}
+            # Bring-your-own (external) Postgres: inject DATABASE_URL_SHIPWRIGHT_ADMIN
+            # from a user-managed Secret. The chart neither assembles nor owns this
+            # Secret, so the admin Secret stays free of any DB URL (no duplicate env).
+            # adminUrlKey defaults to DATABASE_URL_SHIPWRIGHT_ADMIN when left empty.
+            - name: DATABASE_URL_SHIPWRIGHT_ADMIN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.externalDatabase.existingSecret }}
+                  key: {{ .Values.externalDatabase.adminUrlKey | default "DATABASE_URL_SHIPWRIGHT_ADMIN" }}
             {{- end }}
             - name: SHIPWRIGHT_SESSION_SECRET
               valueFrom:
@@ -141,4 +153,20 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+        {{- if .Values.cloudSqlProxy.enabled }}
+        - name: cloud-sql-proxy
+          image: {{ .Values.cloudSqlProxy.image }}
+          args:
+            - --private-ip
+            - {{ required "cloudSqlProxy.connectionName is required when cloudSqlProxy.enabled=true" .Values.cloudSqlProxy.connectionName | quote }}
+            {{- range .Values.cloudSqlProxy.args }}
+            - {{ . | quote }}
+            {{- end }}
+          securityContext:
+            runAsNonRoot: true
+          {{- with .Values.cloudSqlProxy.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+        {{- end }}
 {{- end }}

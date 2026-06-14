@@ -148,12 +148,28 @@ changing the chart — pick one:
    ```
 
 3. **Bring your own PostgreSQL** — disable the subchart entirely and point the
-   admin service at an external database:
+   admin service at an external database via the `externalDatabase` block:
 
    ```yaml
    postgresql:
      enabled: false
-   # then provide DATABASE_URL_SHIPWRIGHT_ADMIN out-of-band
+   externalDatabase:
+     existingSecret: my-db-secret        # Secret you create and manage
+     adminUrlKey: DATABASE_URL_SHIPWRIGHT_ADMIN   # key within the Secret (default if omitted)
+   ```
+
+   For **GCP Cloud SQL**, add the `cloudSqlProxy` sidecar so the instance is
+   reachable at `127.0.0.1:5432` from the admin pod:
+
+   ```yaml
+   postgresql:
+     enabled: false
+   externalDatabase:
+     existingSecret: my-cloud-sql-secret
+   cloudSqlProxy:
+     enabled: true
+     connectionName: "project:region:instance"   # required
+     image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2
    ```
 
 If `helm dependency build` cannot reach the OCI registry, the classic Bitnami

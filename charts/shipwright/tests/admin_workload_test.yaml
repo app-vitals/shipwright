@@ -81,19 +81,13 @@ tests:
                 name: r-shipwright-admin
                 key: DATABASE_URL_SHIPWRIGHT_ADMIN
 
-  - it: omits DATABASE_URL_SHIPWRIGHT_ADMIN env when postgresql is disabled (bring-your-own DB)
+  - it: fails with a clear error when postgresql is disabled and no external secret is set
     template: templates/admin-deployment.yaml
     set:
       postgresql.enabled: false
     asserts:
-      - notContains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: DATABASE_URL_SHIPWRIGHT_ADMIN
-            valueFrom:
-              secretKeyRef:
-                name: r-shipwright-admin
-                key: DATABASE_URL_SHIPWRIGHT_ADMIN
+      - failedTemplate:
+          errorMessage: "externalDatabase.existingSecret is required when postgresql.enabled=false"
     release:
       name: r
 
