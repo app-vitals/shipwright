@@ -110,6 +110,18 @@ export interface Task {
 
   /** GitHub issue URL tracking this task (e.g. https://github.com/org/repo/issues/123). */
   issue?: string;
+
+  /**
+   * The Claude model to use when executing this task.
+   * Used by the agent runtime to select the appropriate model per-task.
+   */
+  model?: "haiku" | "sonnet" | "opus";
+
+  /**
+   * Complexity rating for the task on a 1–5 scale.
+   * 1 = trivial, 5 = highest complexity. Used for planning and model selection heuristics.
+   */
+  complexity?: number;
 }
 
 // ─── QueryFilters ─────────────────────────────────────────────────────────────

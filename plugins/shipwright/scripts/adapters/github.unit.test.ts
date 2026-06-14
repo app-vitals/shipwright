@@ -2253,12 +2253,13 @@ process.exit(0);
     expect(warnings.some((w) => w.includes("ciFixAttempts"))).toBe(false);
   });
 
-  test("does NOT warn for transitions to other statuses (e.g., in_progress)", async () => {
+  test("does NOT warn about pr_open or ciFixAttempts for in_progress transitions", async () => {
     const issues = [
       makeIssue(8, "TSR-W.8: Task", "pending", {
         id: "TSR-W.8",
         title: "Task",
         status: "pending",
+        model: "sonnet",
       }),
     ];
     const scriptPath = await makeUpdateScript(tmpDir, "warn-gh-8", issues);
@@ -2267,7 +2268,9 @@ process.exit(0);
     const warnings: string[] = [];
     const adapter = new GitHubTaskStore(CONFIG, (msg) => warnings.push(msg));
     await adapter.update("TSR-W.8", { status: "in_progress" });
-    expect(warnings).toHaveLength(0);
+    // prCreatedAt / pr+prUrl / ciFixAttempts warnings must NOT fire for in_progress
+    expect(warnings.some((w) => w.includes("prCreatedAt"))).toBe(false);
+    expect(warnings.some((w) => w.includes("ciFixAttempts"))).toBe(false);
   });
 
   test("update still succeeds even when warnings fire", async () => {
@@ -2361,6 +2364,205 @@ describe("GitHubTaskStore.query ready+assignee filter", () => {
     const ids = tasks.map((t) => t.id);
     expect(ids).toContain("RPA-3.1");
     expect(ids).toContain("RPA-3.2");
+  });
+});
+
+// ─── model and complexity round-trip (GitHub adapter) ────────────────────────
+
+describe("GitHubTaskStore model and complexity round-trip", () => {
+  test("model field survives write into shipwright block and parse back out", async () => {
+    const originalTask = {
+      id: "DM-1.1",
+      title: "Task with model",
+      status: "pending" as const,
+      model: "sonnet" as const,
+      complexity: 3,
+    };
+    const issues = [
+      makeIssue(10, "DM-1.1: Task with model", "pending", originalTask),
+    ];
+
+    const fakeGh = await writeFakeGh(tmpDir, {
+      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone,assignees --limit 500":
+        issues,
+    });
+    process.env.GH_CMD = fakeGh;
+
+    const adapter = new GitHubTaskStore(CONFIG);
+    const tasks = await adapter.query({});
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0].model).toBe("sonnet");
+    expect(tasks[0].complexity).toBe(3);
+  });
+
+  test("model and complexity survive an update round-trip through shipwright block", async () => {
+    const originalTask = {
+      id: "DM-1.2",
+      title: "Task",
+      status: "pending" as const,
+      model: "opus" as const,
+      complexity: 5,
+    };
+    const issues = [makeIssue(11, "DM-1.2: Task", "pending", originalTask)];
+
+    const scriptPath = path.join(tmpDir, "model-roundtrip-gh");
+    const bodyFile = path.join(tmpDir, "model-roundtrip-body.txt");
+    const script = `#!/usr/bin/env bun
+import { argv } from "process";
+import { writeFileSync } from "fs";
+const args = argv.slice(2);
+
+if (args[0] === "issue" && args[1] === "list") {
+  console.log(${JSON.stringify(JSON.stringify(issues))});
+  process.exit(0);
+}
+
+if (args[0] === "issue" && args[1] === "edit") {
+  const bodyIdx = args.indexOf("--body");
+  if (bodyIdx >= 0) {
+    writeFileSync(${JSON.stringify(bodyFile)}, args[bodyIdx + 1]);
+  }
+  process.exit(0);
+}
+
+process.exit(0);
+`;
+    await writeFile(scriptPath, script, { mode: 0o755 });
+    process.env.GH_CMD = scriptPath;
+
+    const adapter = new GitHubTaskStore(CONFIG);
+    const updated = await adapter.update("DM-1.2", { note: "some update" });
+
+    // Fields must survive the round-trip in the returned task
+    expect(updated.model).toBe("opus");
+    expect(updated.complexity).toBe(5);
+
+    // The written body must also contain model and complexity
+    const body = await Bun.file(bodyFile).text();
+    expect(body).toContain('"model"');
+    expect(body).toContain("opus");
+    expect(body).toContain('"complexity"');
+    expect(body).toContain("5");
+  });
+
+  test("all three model values (haiku, sonnet, opus) are preserved without coercion", async () => {
+    for (const [idx, modelValue] of (
+      ["haiku", "sonnet", "opus"] as const
+    ).entries()) {
+      const id = `DM-MODEL-${idx}`;
+      const originalTask = {
+        id,
+        title: `Task ${modelValue}`,
+        status: "pending" as const,
+        model: modelValue,
+      };
+      const issues = [
+        makeIssue(20 + idx, `${id}: Task ${modelValue}`, "pending", originalTask),
+      ];
+
+      const fakeGh = await writeFakeGh(tmpDir, {
+        "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone,assignees --limit 500":
+          issues,
+      });
+      process.env.GH_CMD = fakeGh;
+
+      const adapter = new GitHubTaskStore(CONFIG);
+      const tasks = await adapter.query({});
+      expect(tasks[0].model).toBe(modelValue);
+    }
+  });
+});
+
+// ─── in_progress transition warns when model missing (GitHub adapter) ─────────
+
+describe("GitHubTaskStore model warning on in_progress transition", () => {
+  async function makeUpdateScript(
+    dir: string,
+    name: string,
+    issues: ReturnType<typeof makeIssue>[],
+  ): Promise<string> {
+    const scriptPath = path.join(dir, name);
+    const script = `#!/usr/bin/env bun
+import { argv } from "process";
+const args = argv.slice(2);
+
+if (args[0] === "issue" && args[1] === "list") {
+  console.log(${JSON.stringify(JSON.stringify(issues))});
+  process.exit(0);
+}
+
+if (args[0] === "issue" && (args[1] === "edit" || args[1] === "close")) {
+  process.exit(0);
+}
+
+process.exit(0);
+`;
+    await writeFile(scriptPath, script, { mode: 0o755 });
+    return scriptPath;
+  }
+
+  test("warns when model is missing on transition to in_progress", async () => {
+    const issues = [
+      makeIssue(30, "DM-WARN.1: Task", "pending", {
+        id: "DM-WARN.1",
+        title: "Task",
+        status: "pending",
+      }),
+    ];
+    const scriptPath = await makeUpdateScript(
+      tmpDir,
+      "model-warn-gh-1",
+      issues,
+    );
+    process.env.GH_CMD = scriptPath;
+
+    const warnings: string[] = [];
+    const adapter = new GitHubTaskStore(CONFIG, (msg) => warnings.push(msg));
+    await adapter.update("DM-WARN.1", { status: "in_progress" });
+    expect(warnings.some((w) => w.includes("model"))).toBe(true);
+  });
+
+  test("does NOT warn when model is already set on in_progress transition", async () => {
+    const issues = [
+      makeIssue(31, "DM-WARN.2: Task", "pending", {
+        id: "DM-WARN.2",
+        title: "Task",
+        status: "pending",
+        model: "haiku",
+      }),
+    ];
+    const scriptPath = await makeUpdateScript(
+      tmpDir,
+      "model-warn-gh-2",
+      issues,
+    );
+    process.env.GH_CMD = scriptPath;
+
+    const warnings: string[] = [];
+    const adapter = new GitHubTaskStore(CONFIG, (msg) => warnings.push(msg));
+    await adapter.update("DM-WARN.2", { status: "in_progress" });
+    expect(warnings.some((w) => w.includes("model"))).toBe(false);
+  });
+
+  test("model warning is soft — update still succeeds", async () => {
+    const issues = [
+      makeIssue(32, "DM-WARN.3: Task", "pending", {
+        id: "DM-WARN.3",
+        title: "Task",
+        status: "pending",
+      }),
+    ];
+    const scriptPath = await makeUpdateScript(
+      tmpDir,
+      "model-warn-gh-3",
+      issues,
+    );
+    process.env.GH_CMD = scriptPath;
+
+    const warnings: string[] = [];
+    const adapter = new GitHubTaskStore(CONFIG, (msg) => warnings.push(msg));
+    const result = await adapter.update("DM-WARN.3", { status: "in_progress" });
+    expect(result.status).toBe("in_progress");
   });
 });
 
