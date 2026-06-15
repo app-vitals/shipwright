@@ -208,6 +208,27 @@ export class GitHubTaskStore implements TaskStore {
     }
   }
 
+  private async ensureMilestone(session: string): Promise<void> {
+    const g = this.config.github;
+    if (!g) return;
+    const raw = await this.runGh([
+      "api",
+      `repos/${g.owner}/${g.repo}/milestones`,
+      "--paginate",
+    ]);
+    const existing = JSON.parse(raw) as Array<{ title: string }>;
+    if (!existing.some((m) => m.title === session)) {
+      await this.runGh([
+        "api",
+        "--method",
+        "POST",
+        `repos/${g.owner}/${g.repo}/milestones`,
+        "-f",
+        `title=${session}`,
+      ]);
+    }
+  }
+
   private async fetchAllIssues(): Promise<GhIssue[]> {
     const raw = await this.runGh([
       "issue",
@@ -314,6 +335,7 @@ export class GitHubTaskStore implements TaskStore {
     let inserted = 0;
     const updated = 0;
     const currentUser = await this.resolveCurrentGhUser();
+    const ensuredMilestones = new Set<string>();
 
     for (const task of tasks) {
       if (!task.id) {
@@ -340,6 +362,10 @@ export class GitHubTaskStore implements TaskStore {
           this.repoFlag,
           "--force",
         ]);
+        if (!ensuredMilestones.has(task.session)) {
+          await this.ensureMilestone(task.session);
+          ensuredMilestones.add(task.session);
+        }
       }
 
       const createArgs = [

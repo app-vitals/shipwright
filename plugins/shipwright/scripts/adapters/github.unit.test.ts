@@ -614,6 +614,12 @@ if (args[0] === "issue" && args[1] === "list") {
   process.exit(0);
 }
 
+// Handle milestones API calls (ensureMilestone)
+if (args[0] === "api") {
+  console.log("[]");
+  process.exit(0);
+}
+
 // Capture issue create calls
 if (args[0] === "issue" && args[1] === "create") {
   const count = parseInt(readFileSync(${JSON.stringify(createCountFile)}, "utf8")) + 1;
@@ -1443,6 +1449,11 @@ if (args[0] === "label" && args[1] === "create") {
   process.exit(0);
 }
 
+if (args[0] === "api") {
+  console.log("[]");
+  process.exit(0);
+}
+
 if (args[0] === "issue" && args[1] === "create") {
   writeFileSync(${JSON.stringify(argsFile)}, JSON.stringify(args));
   console.log("https://github.com/test-owner/test-repo/issues/77");
@@ -1478,6 +1489,11 @@ import { appendFileSync } from "fs";
 const args = argv.slice(2);
 
 if (args[0] === "issue" && args[1] === "list") {
+  console.log("[]");
+  process.exit(0);
+}
+
+if (args[0] === "api" && !args.includes("--method")) {
   console.log("[]");
   process.exit(0);
 }
@@ -2665,5 +2681,183 @@ process.exit(0);
     // Old label "status:in_progress" IS in _labels → --remove-label must be included
     expect(labelEdit).toContain("--remove-label");
     expect(labelEdit).toContain("status:in_progress");
+  });
+});
+
+// ─── GitHubTaskStore.append — ensureMilestone ────────────────────────────────
+
+describe("GitHubTaskStore.append — ensureMilestone", () => {
+  test("calls gh api POST milestones when milestone is absent", async () => {
+    const postsFile = path.join(tmpDir, "milestone-posts.txt");
+    const scriptPath = path.join(tmpDir, "milestone-absent-gh");
+    const script = `#!/usr/bin/env bun
+import { argv } from "process";
+import { appendFileSync } from "fs";
+const args = argv.slice(2);
+
+if (args[0] === "issue" && args[1] === "list") {
+  console.log("[]");
+  process.exit(0);
+}
+
+if (args[0] === "label" && args[1] === "create") {
+  process.exit(0);
+}
+
+// Milestones GET — return empty (milestone absent)
+if (args[0] === "api" && !args.includes("--method") && args[1].includes("milestones")) {
+  console.log("[]");
+  process.exit(0);
+}
+
+// Milestones POST — record it
+if (args[0] === "api" && args[1] === "--method" && args[2] === "POST") {
+  appendFileSync(${JSON.stringify(postsFile)}, args.join("|") + "\\n");
+  console.log("{}");
+  process.exit(0);
+}
+
+if (args[0] === "issue" && args[1] === "create") {
+  console.log("https://github.com/test-owner/test-repo/issues/99");
+  process.exit(0);
+}
+
+process.exit(0);
+`;
+    await writeFile(scriptPath, script, { mode: 0o755 });
+    process.env.GH_CMD = scriptPath;
+
+    const adapter = new GitHubTaskStore(CONFIG);
+    await adapter.append([
+      {
+        id: "TSR-9.1",
+        title: "Task with session",
+        status: "pending",
+        session: "my-session",
+      },
+    ]);
+
+    const postsContent = await Bun.file(postsFile).text();
+    const posts = postsContent
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => line.split("|"));
+
+    const milestonePost = posts.find(
+      (p) =>
+        p[0] === "api" &&
+        p[1] === "--method" &&
+        p[2] === "POST" &&
+        p.some((arg) => arg.includes("milestones")),
+    );
+    expect(milestonePost).toBeDefined();
+    expect(milestonePost?.some((arg) => arg.includes("my-session"))).toBe(true);
+  });
+
+  test("does NOT call gh api POST milestones when milestone already exists", async () => {
+    const postsFile = path.join(tmpDir, "milestone-exists-posts.txt");
+    const scriptPath = path.join(tmpDir, "milestone-exists-gh");
+    const script = `#!/usr/bin/env bun
+import { argv } from "process";
+import { appendFileSync } from "fs";
+const args = argv.slice(2);
+
+if (args[0] === "issue" && args[1] === "list") {
+  console.log("[]");
+  process.exit(0);
+}
+
+if (args[0] === "label" && args[1] === "create") {
+  process.exit(0);
+}
+
+// Milestones GET — return existing milestone
+if (args[0] === "api" && !args.includes("--method") && args[1].includes("milestones")) {
+  console.log(JSON.stringify([{title: "my-session", number: 1, state: "open", open_issues: 0}]));
+  process.exit(0);
+}
+
+// Milestones POST — record it (should NOT be called)
+if (args[0] === "api" && args[1] === "--method" && args[2] === "POST") {
+  appendFileSync(${JSON.stringify(postsFile)}, args.join("|") + "\\n");
+  console.log("{}");
+  process.exit(0);
+}
+
+if (args[0] === "issue" && args[1] === "create") {
+  console.log("https://github.com/test-owner/test-repo/issues/99");
+  process.exit(0);
+}
+
+process.exit(0);
+`;
+    await writeFile(scriptPath, script, { mode: 0o755 });
+    process.env.GH_CMD = scriptPath;
+
+    const adapter = new GitHubTaskStore(CONFIG);
+    await adapter.append([
+      {
+        id: "TSR-9.2",
+        title: "Task with existing session",
+        status: "pending",
+        session: "my-session",
+      },
+    ]);
+
+    const postsExist = await Bun.file(postsFile).exists();
+    expect(postsExist).toBe(false);
+  });
+
+  test("only calls ensureMilestone once per session when batch has multiple tasks with same session", async () => {
+    const milestonesGetFile = path.join(tmpDir, "milestone-batch-gets.txt");
+    const scriptPath = path.join(tmpDir, "milestone-batch-gh");
+    const script = `#!/usr/bin/env bun
+import { argv } from "process";
+import { appendFileSync } from "fs";
+const args = argv.slice(2);
+
+if (args[0] === "issue" && args[1] === "list") {
+  console.log("[]");
+  process.exit(0);
+}
+
+if (args[0] === "label" && args[1] === "create") {
+  process.exit(0);
+}
+
+// Milestones GET — record each call and return empty
+if (args[0] === "api" && !args.includes("--method") && args[1].includes("milestones")) {
+  appendFileSync(${JSON.stringify(milestonesGetFile)}, "get\\n");
+  console.log("[]");
+  process.exit(0);
+}
+
+// Milestones POST
+if (args[0] === "api" && args[1] === "--method" && args[2] === "POST") {
+  console.log("{}");
+  process.exit(0);
+}
+
+if (args[0] === "issue" && args[1] === "create") {
+  console.log("https://github.com/test-owner/test-repo/issues/99");
+  process.exit(0);
+}
+
+process.exit(0);
+`;
+    await writeFile(scriptPath, script, { mode: 0o755 });
+    process.env.GH_CMD = scriptPath;
+
+    const adapter = new GitHubTaskStore(CONFIG);
+    await adapter.append([
+      { id: "TSR-9.3", title: "Task 1", status: "pending", session: "batch-session" },
+      { id: "TSR-9.4", title: "Task 2", status: "pending", session: "batch-session" },
+      { id: "TSR-9.5", title: "Task 3", status: "pending", session: "batch-session" },
+    ]);
+
+    const getsContent = await Bun.file(milestonesGetFile).text();
+    const getCount = getsContent.trim().split("\n").filter(Boolean).length;
+    expect(getCount).toBe(1);
   });
 });
