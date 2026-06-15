@@ -213,8 +213,7 @@ export class GitHubTaskStore implements TaskStore {
     if (!g) return;
     const raw = await this.runGh([
       "api",
-      `repos/${g.owner}/${g.repo}/milestones`,
-      "--paginate",
+      `repos/${g.owner}/${g.repo}/milestones?per_page=100`,
     ]);
     const existing = JSON.parse(raw) as Array<{ title: string }>;
     if (!existing.some((m) => m.title === session)) {

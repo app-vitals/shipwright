@@ -614,8 +614,14 @@ if (args[0] === "issue" && args[1] === "list") {
   process.exit(0);
 }
 
+// Handle current user resolution (resolveCurrentGhUser)
+if (args[0] === "api" && args[1] === "user") {
+  console.log("test-user");
+  process.exit(0);
+}
+
 // Handle milestones API calls (ensureMilestone)
-if (args[0] === "api") {
+if (args[0] === "api" && args[1].includes("milestones")) {
   console.log("[]");
   process.exit(0);
 }
@@ -1449,7 +1455,14 @@ if (args[0] === "label" && args[1] === "create") {
   process.exit(0);
 }
 
-if (args[0] === "api") {
+// Handle current user resolution (resolveCurrentGhUser)
+if (args[0] === "api" && args[1] === "user") {
+  console.log("test-user");
+  process.exit(0);
+}
+
+// Handle milestones API calls (ensureMilestone)
+if (args[0] === "api" && args[1].includes("milestones")) {
   console.log("[]");
   process.exit(0);
 }
