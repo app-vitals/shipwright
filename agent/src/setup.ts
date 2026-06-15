@@ -13,6 +13,7 @@ import {
   lstatSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -149,6 +150,66 @@ export function isNewWorkspace(home: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Baked marketplace discovery
+// ---------------------------------------------------------------------------
+
+/**
+ * Convention root for derived-image marketplaces:
+ *   /opt/shipwright/marketplaces/<name>/
+ *
+ * To ship a private marketplace with a derived image, place a directory
+ * containing `.claude-plugin/marketplace.json` under this root:
+ *
+ *   /opt/shipwright/marketplaces/
+ *     my-org-plugins/
+ *       .claude-plugin/
+ *         marketplace.json   ← required; triggers discovery
+ *         plugin.json        ← optional plugin metadata
+ *       ...
+ *
+ * The harness registers each discovered marketplace at boot via
+ * `claude plugin marketplace add <dir>` before the built-in shipwright
+ * marketplace. Plugin selection is still controlled by the AgentPlugin table —
+ * adding a marketplace makes its plugins available but does not install them.
+ *
+ * No env var, no DB table: marketplace availability is an IMAGE property.
+ */
+export const BAKED_MARKETPLACES_ROOT = "/opt/shipwright/marketplaces";
+
+/**
+ * Scans `conventionRoot` for directories that contain a
+ * `.claude-plugin/marketplace.json` file and returns their absolute paths.
+ *
+ * Returns an empty array when:
+ * - `conventionRoot` is an empty string
+ * - `conventionRoot` does not exist on disk
+ * - no subdirectory contains `.claude-plugin/marketplace.json`
+ *
+ * Non-throwing — all errors are handled internally.
+ */
+export function discoverBakedMarketplaces(conventionRoot: string): string[] {
+  if (!conventionRoot) return [];
+  if (!existsSync(conventionRoot)) return [];
+
+  let entries: string[];
+  try {
+    entries = readdirSync(conventionRoot);
+  } catch {
+    return [];
+  }
+
+  const result: string[] = [];
+  for (const entry of entries) {
+    const dirPath = join(conventionRoot, entry);
+    const marketplaceJson = join(dirPath, ".claude-plugin", "marketplace.json");
+    if (existsSync(marketplaceJson)) {
+      result.push(dirPath);
+    }
+  }
+  return result;
+}
+
+// ---------------------------------------------------------------------------
 // Plugin install
 // ---------------------------------------------------------------------------
 
@@ -215,6 +276,18 @@ export function findStalePluginSpecs(
  *
  * Install order: defaults first, then agent-specific plugins.
  * Update order: same.
+ *
+ * Marketplace registration order:
+ *   1. Extra baked marketplaces (discovered from `extraMarketplacesRoot` or
+ *      passed directly via `extraMarketplaceDirs`)
+ *   2. Built-in shipwright marketplace (`shipwrightRepoRoot`)
+ *
+ * @param extraMarketplaceDirs - Explicit list of extra marketplace dirs to
+ *   register. When provided, `extraMarketplacesRoot` is ignored. Useful for
+ *   tests that inject dirs directly without touching the filesystem.
+ * @param extraMarketplacesRoot - Convention root scanned by
+ *   `discoverBakedMarketplaces`. Defaults to `BAKED_MARKETPLACES_ROOT`
+ *   (/opt/shipwright/marketplaces). No-op when the path does not exist.
  */
 export async function installPlugins(
   execFn: ExecFn = defaultExec,
@@ -227,10 +300,34 @@ export async function installPlugins(
     "plugins",
     "installed_plugins.json",
   ),
+  extraMarketplaceDirs?: string[],
+  extraMarketplacesRoot: string = BAKED_MARKETPLACES_ROOT,
 ): Promise<void> {
   try {
-    // Register the local marketplace so `claude plugin install` can resolve
-    // plugins by name. Idempotent — safe to call on every startup.
+    // Determine which extra marketplace dirs to register.
+    // Explicit list (injected via tests) takes precedence over discovery.
+    const extraDirs =
+      extraMarketplaceDirs !== undefined
+        ? extraMarketplaceDirs
+        : discoverBakedMarketplaces(extraMarketplacesRoot);
+
+    // Register extra baked marketplaces BEFORE the built-in shipwright marketplace.
+    // Idempotent — safe to call on every startup.
+    for (const dir of extraDirs) {
+      const extraAdd = await execFn(
+        "claude",
+        ["plugin", "marketplace", "add", dir],
+        { cwd },
+      );
+      if (extraAdd.exitCode !== 0) {
+        console.warn(
+          `[agent] claude plugin marketplace add ${dir} exited ${extraAdd.exitCode}: ${extraAdd.stdout}`,
+        );
+      }
+    }
+
+    // Register the local (built-in) shipwright marketplace so `claude plugin install`
+    // can resolve plugins by name. Idempotent — safe to call on every startup.
     const add = await execFn(
       "claude",
       ["plugin", "marketplace", "add", shipwrightRepoRoot],
