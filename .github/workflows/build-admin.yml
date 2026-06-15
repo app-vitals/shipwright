@@ -24,6 +24,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           tag_prefix: "admin-v"
           default_bump: patch
+          fetch_all_tags: true
 
       - name: Authenticate to GCP
         uses: google-github-actions/auth@v2
