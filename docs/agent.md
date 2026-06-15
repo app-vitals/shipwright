@@ -117,6 +117,28 @@ All child models cascade-delete with their `Agent`.
 | `SHIPWRIGHT_DEV_CHAT` | dev only | Set to `"true"` to enable the unauthenticated `POST /chat` endpoint (local dev convenience). Must **not** be set in production (`NODE_ENV=production`). |
 | `ADMIN_DEV_AUTH` | dev only | Set to `"true"` to enable `GET /admin/dev-login` (bypasses Google OAuth, mints a dev session). Hard-blocked when `NODE_ENV=production` by `dev-auth-guard.ts`. |
 
+## Baked marketplaces (derived images)
+
+A derived Docker image can ship additional Claude Code plugin marketplaces that are automatically registered at agent boot — no env var, no DB entry required. Marketplace availability is an **image property**; plugin selection remains in the AgentPlugin table as usual.
+
+**Convention root:** `/opt/shipwright/marketplaces/`
+
+Place one subdirectory per marketplace under the convention root. Each subdirectory must contain `.claude-plugin/marketplace.json` (the standard marketplace manifest). The harness calls `claude plugin marketplace add <dir>` for every discovered directory **before** registering the built-in shipwright marketplace, so derived-image plugins resolve correctly.
+
+```
+/opt/shipwright/marketplaces/
+  my-org-plugins/
+    .claude-plugin/
+      marketplace.json   ← required; triggers discovery
+      plugin.json        ← optional plugin metadata
+    plugins/
+      ...
+```
+
+Directories that do not contain `.claude-plugin/marketplace.json` are silently skipped. The registration call is idempotent and non-fatal — a missing directory or a non-zero exit from `claude` is logged as a warning and startup continues.
+
+The constant `BAKED_MARKETPLACES_ROOT` and function `discoverBakedMarketplaces()` in `agent/src/setup.ts` implement this behavior.
+
 ## Key Files
 
 | File | Purpose |

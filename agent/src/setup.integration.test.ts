@@ -19,6 +19,7 @@ import {
 import { join } from "node:path";
 import type { AgentPlugin } from "@shipwright/admin";
 import {
+  discoverBakedMarketplaces,
   ensureAgentHome,
   ensureDotClaudeSymlink,
   findStalePluginSpecs,
@@ -1018,5 +1019,204 @@ describe("installPlugins", () => {
     // marketplace add + install + update = 3 calls (no uninstall)
     expect(calls).toHaveLength(3);
     expect(calls.every((c) => c.args[1] !== "uninstall")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// discoverBakedMarketplaces
+// ---------------------------------------------------------------------------
+
+describe("discoverBakedMarketplaces", () => {
+  it("returns dirs that have .claude-plugin/marketplace.json", () => {
+    mkdirSync(testHome, { recursive: true });
+    const conventionRoot = join(testHome, "marketplaces");
+
+    // Create a valid marketplace dir
+    const validDir = join(conventionRoot, "my-marketplace");
+    mkdirSync(join(validDir, ".claude-plugin"), { recursive: true });
+    writeFileSync(
+      join(validDir, ".claude-plugin", "marketplace.json"),
+      JSON.stringify({ name: "my-marketplace" }),
+      "utf8",
+    );
+
+    const result = discoverBakedMarketplaces(conventionRoot);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toBe(validDir);
+  });
+
+  it("skips dirs without .claude-plugin/marketplace.json", () => {
+    mkdirSync(testHome, { recursive: true });
+    const conventionRoot = join(testHome, "marketplaces");
+
+    // Valid dir
+    const validDir = join(conventionRoot, "valid-marketplace");
+    mkdirSync(join(validDir, ".claude-plugin"), { recursive: true });
+    writeFileSync(
+      join(validDir, ".claude-plugin", "marketplace.json"),
+      JSON.stringify({ name: "valid-marketplace" }),
+      "utf8",
+    );
+
+    // Dir missing .claude-plugin/marketplace.json
+    const invalidDir = join(conventionRoot, "invalid-marketplace");
+    mkdirSync(join(invalidDir, ".claude-plugin"), { recursive: true });
+    // No marketplace.json — only a different file
+    writeFileSync(join(invalidDir, ".claude-plugin", "plugin.json"), "{}", "utf8");
+
+    // Dir with no .claude-plugin at all
+    const bareDir = join(conventionRoot, "bare-dir");
+    mkdirSync(bareDir, { recursive: true });
+
+    const result = discoverBakedMarketplaces(conventionRoot);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toBe(validDir);
+  });
+
+  it("returns empty array when conventionRoot is absent", () => {
+    const result = discoverBakedMarketplaces(
+      join(testHome, "nonexistent-convention-root"),
+    );
+    expect(result).toEqual([]);
+  });
+
+  it("returns empty array when conventionRoot is empty", () => {
+    mkdirSync(testHome, { recursive: true });
+    const conventionRoot = join(testHome, "empty-marketplaces");
+    mkdirSync(conventionRoot, { recursive: true });
+
+    const result = discoverBakedMarketplaces(conventionRoot);
+    expect(result).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// installPlugins — extra marketplace discovery
+// ---------------------------------------------------------------------------
+
+describe("installPlugins — extra marketplace discovery", () => {
+  it("registers each discovered marketplace dir before plugin installs", async () => {
+    mkdirSync(testHome, { recursive: true });
+    const conventionRoot = join(testHome, "marketplaces");
+
+    // Create a baked marketplace dir
+    const extraMarketDir = join(conventionRoot, "vitals-os");
+    mkdirSync(join(extraMarketDir, ".claude-plugin"), { recursive: true });
+    writeFileSync(
+      join(extraMarketDir, ".claude-plugin", "marketplace.json"),
+      JSON.stringify({ name: "vitals-os" }),
+      "utf8",
+    );
+
+    const calls: Array<{ cmd: string; args: string[] }> = [];
+    const mockExec = async (
+      cmd: string,
+      args: string[],
+      _opts: { cwd: string },
+    ) => {
+      calls.push({ cmd, args });
+      return { stdout: "", exitCode: 0 };
+    };
+
+    await installPlugins(
+      mockExec,
+      testHome,
+      [],
+      "/repo/root",
+      join(testHome, "nonexistent.json"),
+      undefined, // use default discovery — pass conventionRoot via extraMarketplacesRoot
+      conventionRoot,
+    );
+
+    // Extra marketplace add must come BEFORE the /repo/root marketplace add and BEFORE plugin install
+    const addCalls = calls.filter((c) => c.args[1] === "marketplace");
+    expect(addCalls.length).toBeGreaterThanOrEqual(2);
+    expect(addCalls[0].args[3]).toBe(extraMarketDir);
+    expect(addCalls[1].args[3]).toBe("/repo/root");
+
+    // All install calls must come after all marketplace add calls
+    const installIdx = calls.findIndex((c) => c.args[1] === "install");
+    const lastAddIdx = calls.reduce((max, c, i) =>
+      c.args[1] === "marketplace" ? i : max, -1);
+    expect(installIdx).toBeGreaterThan(lastAddIdx);
+  });
+
+  it("skips dirs that do not have .claude-plugin/marketplace.json", async () => {
+    mkdirSync(testHome, { recursive: true });
+    const conventionRoot = join(testHome, "marketplaces");
+
+    // Valid dir
+    const validDir = join(conventionRoot, "valid");
+    mkdirSync(join(validDir, ".claude-plugin"), { recursive: true });
+    writeFileSync(
+      join(validDir, ".claude-plugin", "marketplace.json"),
+      JSON.stringify({ name: "valid" }),
+      "utf8",
+    );
+
+    // Invalid dir (no marketplace.json)
+    const invalidDir = join(conventionRoot, "invalid");
+    mkdirSync(join(invalidDir, ".claude-plugin"), { recursive: true });
+
+    const calls: Array<{ cmd: string; args: string[] }> = [];
+    const mockExec = async (
+      cmd: string,
+      args: string[],
+      _opts: { cwd: string },
+    ) => {
+      calls.push({ cmd, args });
+      return { stdout: "", exitCode: 0 };
+    };
+
+    await installPlugins(
+      mockExec,
+      testHome,
+      [],
+      "/repo/root",
+      join(testHome, "nonexistent.json"),
+      undefined,
+      conventionRoot,
+    );
+
+    const addCalls = calls.filter((c) => c.args[1] === "marketplace");
+    // Only valid + /repo/root = 2 adds (invalid dir excluded)
+    expect(addCalls).toHaveLength(2);
+    const addDirs = addCalls.map((c) => c.args[3]);
+    expect(addDirs).toContain(validDir);
+    expect(addDirs).not.toContain(invalidDir);
+    expect(addDirs).toContain("/repo/root");
+  });
+
+  it("is backward compatible when no extra marketplace dirs exist", async () => {
+    mkdirSync(testHome, { recursive: true });
+    const conventionRoot = join(testHome, "empty-marketplaces");
+    mkdirSync(conventionRoot, { recursive: true });
+
+    const calls: Array<{ cmd: string; args: string[] }> = [];
+    const mockExec = async (
+      cmd: string,
+      args: string[],
+      _opts: { cwd: string },
+    ) => {
+      calls.push({ cmd, args });
+      return { stdout: "", exitCode: 0 };
+    };
+
+    await installPlugins(
+      mockExec,
+      testHome,
+      [],
+      "/repo/root",
+      join(testHome, "nonexistent.json"),
+      undefined,
+      conventionRoot,
+    );
+
+    // Only the /repo/root marketplace add — same as before this feature
+    const addCalls = calls.filter((c) => c.args[1] === "marketplace");
+    expect(addCalls).toHaveLength(1);
+    expect(addCalls[0].args[3]).toBe("/repo/root");
+    // marketplace add + install + update = 3 calls total
+    expect(calls).toHaveLength(3);
   });
 });
