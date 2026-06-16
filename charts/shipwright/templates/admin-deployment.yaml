@@ -78,6 +78,21 @@ spec:
                   name: {{ .Values.externalDatabase.existingSecret }}
                   key: {{ .Values.externalDatabase.adminUrlKey | default "DATABASE_URL_SHIPWRIGHT_ADMIN" }}
             {{- end }}
+            {{- if .Values.admin.encryptionKeys.existingSecret }}
+            # admin.encryptionKeys.existingSecret: source these two keys from a
+            # caller-managed Secret so they survive across fresh namespace installs
+            # without generating random values that can't decrypt existing data.
+            - name: SHIPWRIGHT_SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.admin.encryptionKeys.existingSecret }}
+                  key: {{ .Values.admin.encryptionKeys.sessionSecretRef | default "SHIPWRIGHT_SESSION_SECRET" }}
+            - name: SHIPWRIGHT_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.admin.encryptionKeys.existingSecret }}
+                  key: {{ .Values.admin.encryptionKeys.encryptionKeyRef | default "SHIPWRIGHT_ENCRYPTION_KEY" }}
+            {{- else }}
             - name: SHIPWRIGHT_SESSION_SECRET
               valueFrom:
                 secretKeyRef:
@@ -88,6 +103,13 @@ spec:
                 secretKeyRef:
                   name: {{ include "shipwright.admin.secretName" . }}
                   key: SHIPWRIGHT_ENCRYPTION_KEY
+            {{- end }}
+            {{- if .Values.admin.appBaseUrl }}
+            # admin.appBaseUrl: public host for OAuth redirect URIs so they use
+            # the real hostname instead of localhost:3001 behind a Gateway.
+            - name: SHIPWRIGHT_ADMIN_APP_BASE_URL
+              value: {{ .Values.admin.appBaseUrl | quote }}
+            {{- end }}
             {{- if or (eq .Values.auth.mode "open") (eq .Values.auth.mode "none") }}
             # auth.mode=open (or deprecated alias "none") — dev auth, NO OAuth.
             # Insecure: do not expose publicly. NODE_ENV is intentionally NOT set
@@ -148,6 +170,11 @@ spec:
             - name: SHIPWRIGHT_ADMIN_DEPLOYMENT_UID
               value: {{ . | quote }}
             {{- end }}
+            {{- end }}
+            {{- with .Values.admin.extraEnv }}
+            # admin.extraEnv: caller-supplied env vars appended last so they can
+            # override anything above if needed.
+            {{- toYaml . | nindent 12 }}
             {{- end }}
           {{- with .Values.admin.resources }}
           resources:

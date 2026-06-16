@@ -45,7 +45,14 @@
           "properties": {
             "gatewayClassName": { "type": "string" },
             "host": { "type": "string" },
-            "annotations": { "type": "object" }
+            "annotations": { "type": "object" },
+            "healthCheckPolicy": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" }
+              }
+            }
           }
         }
       },
@@ -99,7 +106,47 @@
         "name": { "type": "string" }
       }
     },
-    "admin": { "$ref": "#/definitions/service" },
+    "admin": {
+      "allOf": [
+        { "$ref": "#/definitions/service" },
+        {
+          "type": "object",
+          "properties": {
+            "encryptionKeys": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "existingSecret":   { "type": "string" },
+                "encryptionKeyRef": { "type": "string" },
+                "sessionSecretRef": { "type": "string" }
+              },
+              "if": {
+                "properties": { "existingSecret": { "type": "string", "minLength": 1 } },
+                "required": ["existingSecret"]
+              },
+              "then": {
+                "properties": {
+                  "encryptionKeyRef": { "type": "string", "minLength": 1 },
+                  "sessionSecretRef": { "type": "string", "minLength": 1 }
+                },
+                "required": ["encryptionKeyRef", "sessionSecretRef"]
+              }
+            },
+            "appBaseUrl": { "type": "string" },
+            "extraEnv": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                  "name": { "type": "string" }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
     "metrics": {
       "allOf": [
         { "$ref": "#/definitions/service" },

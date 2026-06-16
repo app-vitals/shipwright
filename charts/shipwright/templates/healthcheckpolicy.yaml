@@ -1,0 +1,59 @@
+{{- if and (eq .Values.networking.type "gateway") .Values.networking.gateway.healthCheckPolicy.enabled }}
+{{- /*
+  GKE HealthCheckPolicies for the admin and metrics Services.
+
+  The GKE Gateway controller default-probes "/" — both services return 404 there —
+  and marks each backend UNHEALTHY, returning 503 on the external host. These
+  policies steer the probe to /health (both services respond 200) and fix that.
+
+  Only rendered when:
+    networking.type=gateway           (GKE Gateway API path)
+    networking.gateway.healthCheckPolicy.enabled=true   (opt-in; off by default)
+
+  The networking.gke.io/v1 API is GKE-specific. Do not enable this on other
+  Gateway controllers (Istio, Cilium, etc.) that don't support it.
+*/}}
+apiVersion: networking.gke.io/v1
+kind: HealthCheckPolicy
+metadata:
+  name: {{ include "shipwright.admin.fullname" . }}
+  labels:
+    {{- include "shipwright.admin.labels" . | nindent 4 }}
+spec:
+  default:
+    checkIntervalSec: 15
+    timeoutSec: 5
+    healthyThreshold: 1
+    unhealthyThreshold: 2
+    config:
+      type: HTTP
+      httpHealthCheck:
+        requestPath: /health
+  targetRef:
+    group: ""
+    kind: Service
+    name: {{ include "shipwright.admin.fullname" . }}
+{{- if .Values.metrics.enabled }}
+---
+apiVersion: networking.gke.io/v1
+kind: HealthCheckPolicy
+metadata:
+  name: {{ include "shipwright.metrics.fullname" . }}
+  labels:
+    {{- include "shipwright.metrics.labels" . | nindent 4 }}
+spec:
+  default:
+    checkIntervalSec: 15
+    timeoutSec: 5
+    healthyThreshold: 1
+    unhealthyThreshold: 2
+    config:
+      type: HTTP
+      httpHealthCheck:
+        requestPath: /health
+  targetRef:
+    group: ""
+    kind: Service
+    name: {{ include "shipwright.metrics.fullname" . }}
+{{- end }}
+{{- end }}

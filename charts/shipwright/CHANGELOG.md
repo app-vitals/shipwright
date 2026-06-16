@@ -10,6 +10,15 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.1.0]
+
+### Added
+
+- `admin.encryptionKeys` block: source `SHIPWRIGHT_ENCRYPTION_KEY` and `SHIPWRIGHT_SESSION_SECRET` from a pre-existing Secret instead of generating random values on a fresh namespace install. Set `admin.encryptionKeys.existingSecret` to the Secret name; `encryptionKeyRef` and `sessionSecretRef` select the keys within it (default to the env var names). When set, the chart-managed Secret omits these two keys entirely and the Deployment injects them via `secretKeyRef` against the caller-managed Secret. Default is empty — existing generate-on-install / reuse-on-upgrade behaviour is unchanged.
+- `admin.appBaseUrl`: sets `SHIPWRIGHT_ADMIN_APP_BASE_URL` in the admin container env when non-empty. Required when the admin service is behind a Gateway or Ingress so that OAuth redirect URIs reference the real public host rather than `localhost:3001`. Omitted from the env when left empty (default).
+- `admin.extraEnv`: list of Kubernetes `envVar` objects appended to the admin container env. Provides a generic passthrough for env vars not otherwise covered by chart values. Defaults to `[]` (no extra vars).
+- `networking.gateway.healthCheckPolicy.enabled`: when `true` and `networking.type=gateway`, renders a `networking.gke.io/v1 HealthCheckPolicy` for the admin Service and (when `metrics.enabled=true`) a second one for the metrics Service, both probing `/health` with 15 s interval / 5 s timeout / 1 healthy / 2 unhealthy thresholds. Without this the GKE Gateway controller default-probes `"/"` (both services → 404) and marks the backends UNHEALTHY, returning 503 on the external host. Disabled by default (`false`) so non-GKE Gateway installs are unaffected.
+
 ## [1.0.0]
 
 _First publicly published chart version. New features in this release: externalDatabase and cloudSqlProxy (SWD-1.x). Gateway API networking, cert-manager Certificate, agent-provisioning RBAC, and metrics.provider were shipped in 0.9.0/0.9.1._
