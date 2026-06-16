@@ -473,8 +473,8 @@ describe("admin pane — dev auth", () => {
   });
 
   test("admin pane points the toolbar Metrics link at the running metrics dashboard", () => {
-    // Without this the toolbar's Metrics link falls back to /sw/dashboard on the
-    // admin host (:3001), which 404s — the dashboard actually lives on :3460.
+    // Without this the toolbar's Metrics link uses the same-host relative /dashboard,
+    // which in dev points to :3001 instead of the metrics service on :3460.
     const admin = STACK_PANES.find((p) => p.label === "admin") as Pane;
     expect(admin.env?.METRICS_DASHBOARD_URL).toBe(
       `http://localhost:${METRICS_PORT}/dashboard`,

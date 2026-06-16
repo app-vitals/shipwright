@@ -128,7 +128,7 @@ export function renderShipwrightToolbar(
   opts: ShipwrightToolbarOptions,
 ): string {
   const { userName, activePath, logoutAction } = opts;
-  const metricsUrl = opts.metricsUrl ?? "/sw/dashboard";
+  const metricsUrl = opts.metricsUrl ?? "/dashboard";
   const adminBase = opts.adminBaseUrl ?? "";
   const active = (prefix: string) =>
     activePath.startsWith(prefix) ? " active" : "";
