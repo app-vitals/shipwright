@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-06-16
+
+### Chart — What's New
+
+#### Helm Chart (`charts/shipwright`)
+
+- **Google OAuth bring-your-own Secret** (`auth.google.existingSecret`): source `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `SHIPWRIGHT_ADMIN_ALLOWED_EMAILS` from a caller-managed Secret instead of inline Helm values. The chart-managed admin Secret omits these keys when the knob is set; the Deployment sources them via `secretKeyRef`. Allows fully secret-free helm installs when combined with `admin.encryptionKeys.existingSecret`.
+
 ## [chart-1.0.0] - 2026-06-14
 
 ### Chart — What's New

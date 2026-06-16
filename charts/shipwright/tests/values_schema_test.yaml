@@ -188,3 +188,24 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: "key"
+
+  - it: accepts google mode with existingSecret set and empty clientId (existingSecret bypasses inline-field requirement)
+    set:
+      auth.mode: google
+      auth.google.existingSecret: my-google-secret
+      auth.google.clientId: ""
+      auth.google.clientSecret: ""
+      auth.google.allowedEmails: ""
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: rejects google mode with existingSecret empty and empty clientId (existing enforcement still holds)
+    set:
+      auth.mode: google
+      auth.google.existingSecret: ""
+      auth.google.clientId: ""
+      auth.google.clientSecret: csec
+      auth.google.allowedEmails: user@example.com
+    asserts:
+      - failedTemplate:
+          errorPattern: "clientId"
