@@ -13,6 +13,14 @@ Use this skill to interact with the Shipwright task store. The task store is a C
 (`task_store.ts`) that abstracts over JSON-file and GitHub Issues backends. The backend
 is selected via env vars or `.shipwright.json` — see **Configure the backend** below for the config schema.
 
+> **The CLI is the only interface.** Always go through `task_store.ts`
+> (`query` / `update` / `append`) — never open, `cat`, or edit a file to read or change tasks.
+> The store's underlying persistence is private to the backend (a local file for the JSON
+> backend; issues for the GitHub backend) and is not a supported entry point; reaching for it
+> bypasses validation and the status-label↔body sync, and is the most common way tasks get
+> orphaned. The unit you work with is the **task** (see
+> [task-schema.md](references/task-schema.md)).
+
 ---
 
 ## Configure the backend
@@ -226,6 +234,8 @@ This skill is the **canonical reference for the task lifecycle** — `dev-task`,
 `review` all drive the store through the same `update` transitions documented above. You should
 not need to read those command files to operate the queue.
 
-- Task schema + field validation: the plugin's `scripts/adapters/validation.ts`
-- GitHub backend data model (labels + body JSON block): `scripts/adapters/github.ts`
+- **Task schema** (all fields + per-status required fields): [task-schema.md](references/task-schema.md)
 - Backend selection / config schema: see **Configure the backend** above.
+- Maintainer-only (do **not** operate on these directly — use the CLI): field validation lives in
+  `scripts/adapters/validation.ts`; the GitHub persistence model (status label + body JSON block) in
+  `scripts/adapters/github.ts`.
