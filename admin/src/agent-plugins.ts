@@ -2,7 +2,10 @@
  * agent/src/agent-plugins.ts
  * AgentPluginService — CRUD for Claude Code plugins per agent.
  *
- * Each plugin is identified by its package name (e.g. "@shipwright/plugin").
+ * Each plugin is identified by its canonical Claude install spec — the string
+ * passed to `claude plugin install`: "<plugin>@<marketplace>" (e.g.
+ * "shipwright@shipwright"), or a bare "<plugin>" that defaults to the bundled
+ * "shipwright" marketplace.
  * The unique constraint on [agentId, name] prevents duplicates; add() uses
  * upsert so re-adding an existing plugin updates its version and re-enables it.
  */

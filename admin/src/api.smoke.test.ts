@@ -152,7 +152,7 @@ function buildApp(opts?: {
           allowedTools: ["Read", "Write", "Bash"],
         };
   const plugins = opts?.plugins ?? [
-    makePlugin(KNOWN_AGENT_ID, "@shipwright/plugin"),
+    makePlugin(KNOWN_AGENT_ID, "shipwright@shipwright"),
   ];
   const crons = opts?.crons ?? [makeCron(KNOWN_AGENT_ID, "cron-1")];
 
@@ -195,16 +195,17 @@ describe("GET /:id/config (mounted as GET /agents/:id/config from root)", () => 
     });
     expect(body.allowedTools).toEqual(["Read", "Write", "Bash"]);
     expect(body.plugins).toEqual([
-      { marketplace: "shipwright", plugin: "@shipwright/plugin" },
+      { marketplace: "shipwright", plugin: "shipwright" },
     ]);
   });
 
-  test("derives marketplace from the plugin namespace, defaulting to shipwright", async () => {
+  test("parses the canonical plugin@marketplace spec, defaulting bare names to shipwright", async () => {
     const app = buildApp({
       plugins: [
-        makePlugin(KNOWN_AGENT_ID, "@vitals-os/plugin"),
-        makePlugin(KNOWN_AGENT_ID, "@shipwright/plugin"),
+        makePlugin(KNOWN_AGENT_ID, "time-tracker@acme"),
+        makePlugin(KNOWN_AGENT_ID, "shipwright@shipwright"),
         makePlugin(KNOWN_AGENT_ID, "unscoped-plugin"),
+        makePlugin(KNOWN_AGENT_ID, "my-plugin@org/my-marketplace"),
       ],
     });
     const res = await app.request(`/${KNOWN_AGENT_ID}/config`, {
@@ -214,9 +215,11 @@ describe("GET /:id/config (mounted as GET /agents/:id/config from root)", () => 
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.plugins).toEqual([
-      { marketplace: "vitals-os", plugin: "@vitals-os/plugin" },
-      { marketplace: "shipwright", plugin: "@shipwright/plugin" },
+      { marketplace: "acme", plugin: "time-tracker" },
+      { marketplace: "shipwright", plugin: "shipwright" },
       { marketplace: "shipwright", plugin: "unscoped-plugin" },
+      // Splits on the first "@" so a marketplace can itself contain a "/".
+      { marketplace: "org/my-marketplace", plugin: "my-plugin" },
     ]);
   });
 
@@ -232,7 +235,7 @@ describe("GET /:id/config (mounted as GET /agents/:id/config from root)", () => 
     expect(body.allowedTools).toEqual([]);
     // plugins still returned (the agent has them)
     expect(body.plugins).toEqual([
-      { marketplace: "shipwright", plugin: "@shipwright/plugin" },
+      { marketplace: "shipwright", plugin: "shipwright" },
     ]);
   });
 

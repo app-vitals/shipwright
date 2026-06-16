@@ -285,20 +285,39 @@ curl -sf -X DELETE \
 
 Plugins installed on the agent determine which skills and commands are available.
 
+**`name` is the canonical Claude install spec** — exactly the string you'd pass to
+`claude plugin install`:
+
+- `"<plugin>@<marketplace>"` for a marketplace-scoped plugin (e.g. `"shipwright@shipwright"`,
+  `"my-plugin@my-marketplace"`). The config bundle splits on the first `@`, and the harness
+  reassembles `<plugin>@<marketplace>` to install it.
+- A bare `"<plugin>"` defaults to the bundled `shipwright` marketplace.
+
+Do **not** use an npm-scoped form like `@my-marketplace/my-plugin` — `claude plugin install`
+does not accept scoped plugin identifiers, and the agent would fail to install it.
+
 ```bash
 # List installed plugins
 curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
   "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/plugins" | jq .
 
-# Install a plugin (or re-add to pin a specific version)
+# Install a plugin from the bundled shipwright marketplace (or re-add to pin a version)
 curl -sf -X POST \
   -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
   -H "Content-Type: application/json" \
   "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/plugins" \
   -d '{"name": "shipwright", "version": "4.27.2"}' | jq .
 
+# Install a plugin from a different marketplace baked into the agent image
+# (use the canonical "<plugin>@<marketplace>" spec)
+curl -sf -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/plugins" \
+  -d '{"name": "my-plugin@my-marketplace"}' | jq .
+
 # Update a plugin version
-# name goes in the query param — scoped names like @scope/pkg contain "/" which breaks path matching
+# name goes in the query param — a spec like my-plugin@org/marketplace can contain "/" which breaks path matching
 curl -sf -X PATCH \
   -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
   -H "Content-Type: application/json" \
