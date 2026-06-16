@@ -9,7 +9,7 @@
  *
  * Subcommands:
  *   query       Filter and return tasks as JSON array
- *   append      Upsert tasks from a JSON file (idempotent by id)
+ *   append      Append tasks from a JSON file (insert-only on GitHub adapter; upsert on JSON adapter)
  *   update      Write specific fields to a task by ID
  *   repos       Print all org/repo strings (one per line)
  *   resolve-repo  Print first org/repo (deprecated alias for repos)
@@ -92,7 +92,7 @@ function printUsageAndExit(): never {
       "",
       "Subcommands:",
       "  query         Filter and return tasks as JSON array",
-      "  append        Upsert tasks from a JSON file (idempotent by id)",
+      "  append        Append tasks from a JSON file (insert-only on GitHub adapter; upsert on JSON adapter)",
       "  update        Write specific fields to a task by ID",
       "  repos         Print all org/repo strings (one per line)",
       "  resolve-repo  Print first org/repo (deprecated alias for repos)",

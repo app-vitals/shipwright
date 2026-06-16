@@ -358,8 +358,10 @@ shipwright/
 ├── skills/
 │   ├── agent-admin/
 │   │   └── SKILL.md             # Manage Shipwright agents — crons, env vars, tools, tokens, plugins
-│   └── review-staged/
-│       └── SKILL.md             # Conversational walkthrough of staged reviews
+│   ├── review-staged/
+│   │   └── SKILL.md             # Conversational walkthrough of staged reviews
+│   └── task-store/
+│       └── SKILL.md             # Query and update the task store — lifecycle invocations, env var config
 ├── references/
 │   ├── doc-refresh-recipe.md    # Shared staleness + section-rewrite recipe (research-docs + docs-refresher)
 │   ├── metrics-schema.md        # Metrics JSONL schema reference
