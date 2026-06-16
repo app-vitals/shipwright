@@ -1,0 +1,116 @@
+suite: GKE HealthCheckPolicy (networking.gke.io/v1)
+# HK-1.3: render HealthCheckPolicy resources for the admin and metrics Services
+# when networking.type=gateway AND networking.gateway.healthCheckPolicy.enabled=true.
+# Without these the GKE Gateway default-probes "/" (both services 404) and returns
+# 503 externally. Disabled by default so non-GKE installs are unaffected.
+templates:
+  - templates/healthcheckpolicy.yaml
+release:
+  name: r
+  namespace: shipwright
+tests:
+  - it: renders NO HealthCheckPolicy by default (disabled)
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders NO HealthCheckPolicy when networking.type=gateway but healthCheckPolicy.enabled=false
+    set:
+      networking.type: gateway
+      networking.gateway.healthCheckPolicy.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders NO HealthCheckPolicy when healthCheckPolicy.enabled=true but networking.type is not gateway
+    set:
+      networking.type: ClusterIP
+      networking.gateway.healthCheckPolicy.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders admin + metrics HealthCheckPolicies when gateway + enabled
+    set:
+      networking.type: gateway
+      networking.gateway.healthCheckPolicy.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 2
+      # First doc: admin HealthCheckPolicy
+      - isAPIVersion:
+          of: networking.gke.io/v1
+        documentIndex: 0
+      - isKind:
+          of: HealthCheckPolicy
+        documentIndex: 0
+      - equal:
+          path: metadata.name
+          value: r-shipwright-admin
+        documentIndex: 0
+      - equal:
+          path: spec.default.config.type
+          value: HTTP
+        documentIndex: 0
+      - equal:
+          path: spec.default.config.httpHealthCheck.requestPath
+          value: /health
+        documentIndex: 0
+      - equal:
+          path: spec.targetRef.kind
+          value: Service
+        documentIndex: 0
+      - equal:
+          path: spec.targetRef.name
+          value: r-shipwright-admin
+        documentIndex: 0
+      # Second doc: metrics HealthCheckPolicy
+      - isAPIVersion:
+          of: networking.gke.io/v1
+        documentIndex: 1
+      - isKind:
+          of: HealthCheckPolicy
+        documentIndex: 1
+      - equal:
+          path: metadata.name
+          value: r-shipwright-metrics
+        documentIndex: 1
+      - equal:
+          path: spec.default.config.httpHealthCheck.requestPath
+          value: /health
+        documentIndex: 1
+      - equal:
+          path: spec.targetRef.name
+          value: r-shipwright-metrics
+        documentIndex: 1
+
+  - it: renders only the admin HealthCheckPolicy when metrics is disabled
+    set:
+      networking.type: gateway
+      networking.gateway.healthCheckPolicy.enabled: true
+      metrics.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: metadata.name
+          value: r-shipwright-admin
+
+  - it: probe params are 15s interval, 5s timeout, 1 healthy threshold, 2 unhealthy threshold
+    set:
+      networking.type: gateway
+      networking.gateway.healthCheckPolicy.enabled: true
+    documentIndex: 0
+    asserts:
+      - equal:
+          path: spec.default.checkIntervalSec
+          value: 15
+      - equal:
+          path: spec.default.timeoutSec
+          value: 5
+      - equal:
+          path: spec.default.healthyThreshold
+          value: 1
+      - equal:
+          path: spec.default.unhealthyThreshold
+          value: 2
