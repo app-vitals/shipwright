@@ -163,7 +163,7 @@ function makeMockDeps(
         findMany: async () => [],
         findUnique: async () => null,
         create: async () => ({ id: "m1", agentId: AGENT_ID, email: "member@example.com" }),
-        delete: async () => {},
+        deleteMany: async () => ({ count: 0 }),
       },
     },
     agentEnvService: {
@@ -1303,7 +1303,7 @@ describe("admin UI — member access control", () => {
               ? { id: "m1", agentId: AGENT_ID, email: MEMBER_EMAIL }
               : null,
           create: async () => ({ id: "m1", agentId: AGENT_ID, email: MEMBER_EMAIL }),
-          delete: async () => {},
+          deleteMany: async () => ({ count: 0 }),
         },
       },
     });
@@ -1357,7 +1357,7 @@ describe("admin UI — member access control", () => {
           findMany: async () => [{ id: "m1", agentId: AGENT_ID, email: MEMBER_EMAIL, createdAt: new Date() }],
           findUnique: async () => null,
           create: async () => ({ id: "m1", agentId: AGENT_ID, email: MEMBER_EMAIL }),
-          delete: async () => {},
+          deleteMany: async () => ({ count: 0 }),
         },
       },
     });
@@ -1410,7 +1410,7 @@ describe("admin UI — member access control", () => {
           findMany: async () => [{ id: "m1", agentId: AGENT_ID, email: MEMBER_EMAIL, createdAt: new Date() }],
           findUnique: async () => null,
           create: async () => ({ id: "m1", agentId: AGENT_ID, email: MEMBER_EMAIL }),
-          delete: async () => {},
+          deleteMany: async () => ({ count: 0 }),
         },
       },
     });
@@ -1476,7 +1476,7 @@ describe("admin UI — member management routes", () => {
             created = data;
             return { id: "m-new", ...data };
           },
-          delete: async () => {},
+          deleteMany: async () => ({ count: 0 }),
         },
       },
     });
@@ -1509,8 +1509,9 @@ describe("admin UI — member management routes", () => {
           findMany: async () => [],
           findUnique: async () => null,
           create: async () => ({ id: "m1", agentId: AGENT_ID, email: "member@example.com" }),
-          delete: async ({ where }: { where: { id: string } }) => {
+          deleteMany: async ({ where }: { where: { id: string; agentId: string } }) => {
             deletedId = where.id;
+            return { count: 1 };
           },
         },
       },

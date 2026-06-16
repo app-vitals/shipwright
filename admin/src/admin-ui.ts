@@ -121,7 +121,7 @@ interface PrismaLike {
     create(args: {
       data: { agentId: string; email: string };
     }): Promise<{ id: string; agentId: string; email: string }>;
-    delete(args: { where: { id: string } }): Promise<void>;
+    deleteMany(args: { where: { id: string; agentId: string } }): Promise<{ count: number }>;
   };
 }
 
@@ -206,7 +206,7 @@ async function getSessionUser(
       typeof payload.email === "string" &&
       payload.email.length > 0
     ) {
-      return { email: payload.email, isAdmin: payload.isAdmin === true };
+      return { email: payload.email, isAdmin: payload.isAdmin !== false };
     }
     return null;
   } catch {
@@ -1263,7 +1263,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }
     if (memberId) {
       try {
-        await prisma.agentMember.delete({ where: { id: memberId } });
+        await prisma.agentMember.deleteMany({ where: { id: memberId, agentId } });
       } catch {
         // already gone, ignore
       }

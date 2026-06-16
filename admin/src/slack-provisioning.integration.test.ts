@@ -115,7 +115,7 @@ function makeMockDeps(
         findMany: async () => [],
         findUnique: async () => null,
         create: async () => ({ id: "m1", agentId: AGENT_ID, email: "member@example.com" }),
-        delete: async () => {},
+        deleteMany: async () => ({ count: 0 }),
       },
     },
     agentEnvService: {
