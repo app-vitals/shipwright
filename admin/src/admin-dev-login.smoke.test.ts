@@ -68,6 +68,12 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
       agentPlugin: {
         findMany: async () => [],
       },
+      agentMember: {
+        findMany: async () => [],
+        findUnique: async () => null,
+        create: async () => ({ id: "m1", agentId: "agent-123", email: "member@example.com" }),
+        delete: async () => {},
+      },
     },
     agentEnvService: {
       getByAgentId: async () => ({ FOO: "bar" }),

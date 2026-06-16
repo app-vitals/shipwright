@@ -11,6 +11,7 @@ import {
   type AgentDetail,
   type AgentListItem,
   type CronJobItem,
+  type MemberItem,
   type PluginItem,
   type TokenItem,
   type ToolItem,
@@ -158,30 +159,30 @@ describe("renderLoginPage", () => {
 
 describe("renderAgentsPage", () => {
   test("returns a valid HTML document", () => {
-    const html = renderAgentsPage([], USER_NAME);
+    const html = renderAgentsPage([], USER_NAME, true);
     expect(html).toContain("<!DOCTYPE html>");
     expect(html).toContain("<html");
     expect(html).toContain("</html>");
   });
 
   test("empty agents array shows 'No agents yet' empty state", () => {
-    const html = renderAgentsPage([], USER_NAME);
+    const html = renderAgentsPage([], USER_NAME, true);
     expect(html).toContain("No agents yet");
   });
 
   test("empty state includes link to /admin/provision", () => {
-    const html = renderAgentsPage([], USER_NAME);
+    const html = renderAgentsPage([], USER_NAME, true);
     expect(html).toContain("/admin/provision");
   });
 
   test("agent name appears as a link", () => {
-    const html = renderAgentsPage([AGENT_LIST_ITEM], USER_NAME);
+    const html = renderAgentsPage([AGENT_LIST_ITEM], USER_NAME, true);
     expect(html).toContain("Test Agent");
     expect(html).toContain('href="/admin/agents/agent-123"');
   });
 
   test("Manage button links to agent detail page", () => {
-    const html = renderAgentsPage([AGENT_LIST_ITEM], USER_NAME);
+    const html = renderAgentsPage([AGENT_LIST_ITEM], USER_NAME, true);
     expect(html).toContain("Manage");
     expect(html).toContain(`/admin/agents/${AGENT_LIST_ITEM.id}`);
   });
@@ -191,7 +192,7 @@ describe("renderAgentsPage", () => {
       ...AGENT_LIST_ITEM,
       name: '<script>alert("xss")</script>',
     };
-    const html = renderAgentsPage([xssAgent], USER_NAME);
+    const html = renderAgentsPage([xssAgent], USER_NAME, true);
     expect(html).not.toContain("<script>");
     expect(html).toContain("&lt;script&gt;");
   });
@@ -201,7 +202,7 @@ describe("renderAgentsPage", () => {
       ...AGENT_LIST_ITEM,
       id: 'agent-"><script>',
     };
-    const html = renderAgentsPage([xssAgent], USER_NAME);
+    const html = renderAgentsPage([xssAgent], USER_NAME, true);
     expect(html).not.toContain('"><script>');
     expect(html).toContain("&quot;&gt;&lt;script&gt;");
   });
@@ -212,22 +213,86 @@ describe("renderAgentsPage", () => {
       id: "agent-456",
       name: "Second Agent",
     };
-    const html = renderAgentsPage([AGENT_LIST_ITEM, second], USER_NAME);
+    const html = renderAgentsPage([AGENT_LIST_ITEM, second], USER_NAME, true);
     expect(html).toContain("Test Agent");
     expect(html).toContain("Second Agent");
   });
 
   test("no empty-state message when agents present", () => {
-    const html = renderAgentsPage([AGENT_LIST_ITEM], USER_NAME);
+    const html = renderAgentsPage([AGENT_LIST_ITEM], USER_NAME, true);
     expect(html).not.toContain("No agents yet");
+  });
+
+  test("non-admin: provision button is hidden", () => {
+    const html = renderAgentsPage([AGENT_LIST_ITEM], USER_NAME, false);
+    expect(html).not.toContain("+ Provision agent");
+  });
+
+  test("non-admin: empty state shows 'No agents.' without provision link", () => {
+    const html = renderAgentsPage([], USER_NAME, false);
+    expect(html).toContain("No agents.");
+    expect(html).not.toContain("Provision one");
+  });
+});
+
+// ─── renderAgentDetailPage — members section ─────────────────────────────────
+
+describe("renderAgentDetailPage — members section", () => {
+  const MEMBER: MemberItem = {
+    id: "m1",
+    email: "member@example.com",
+    createdAt: new Date("2025-01-15T00:00:00Z"),
+  };
+
+  test("admin sees the Members section", () => {
+    const html = renderAgentDetailPage(AGENT, {}, [], [], [], [], [], USER_NAME, true);
+    expect(html).toContain("Members");
+  });
+
+  test("non-admin does not see the Members section", () => {
+    const html = renderAgentDetailPage(AGENT, {}, [], [], [], [], [], USER_NAME, false);
+    expect(html).not.toContain("Members");
+  });
+
+  test("member email appears in the members table", () => {
+    const html = renderAgentDetailPage(AGENT, {}, [], [], [], [], [MEMBER], USER_NAME, true);
+    expect(html).toContain("member@example.com");
+  });
+
+  test("member added date appears in the members table", () => {
+    const html = renderAgentDetailPage(AGENT, {}, [], [], [], [], [MEMBER], USER_NAME, true);
+    expect(html).toContain("2025-01-15");
+  });
+
+  test("member remove button posts to the delete route with memberId", () => {
+    const html = renderAgentDetailPage(AGENT, {}, [], [], [], [], [MEMBER], USER_NAME, true);
+    expect(html).toContain(`/admin/agents/${AGENT.id}/members/delete`);
+    expect(html).toContain('name="memberId"');
+    expect(html).toContain(`value="${MEMBER.id}"`);
+  });
+
+  test("empty members list shows 'No members yet'", () => {
+    const html = renderAgentDetailPage(AGENT, {}, [], [], [], [], [], USER_NAME, true);
+    expect(html).toContain("No members yet");
+  });
+
+  test("XSS: member email is escaped", () => {
+    const xssMember: MemberItem = {
+      id: "m-xss",
+      email: '<script>alert("xss")</script>',
+      createdAt: new Date("2025-01-01"),
+    };
+    const html = renderAgentDetailPage(AGENT, {}, [], [], [], [], [xssMember], USER_NAME, true);
+    expect(html).not.toContain("<script>");
+    expect(html).toContain("&lt;script&gt;");
   });
 });
 
 // ─── renderAgentDetailPage — overview ────────────────────────────────────────
 
 describe("renderAgentDetailPage — overview", () => {
-  function render(opts?: Parameters<typeof renderAgentDetailPage>[7]): string {
-    return renderAgentDetailPage(AGENT, {}, [], [], [], [], USER_NAME, opts);
+  function render(opts?: Parameters<typeof renderAgentDetailPage>[9]): string {
+    return renderAgentDetailPage(AGENT, {}, [], [], [], [], [], USER_NAME, true, opts);
   }
 
   test("returns a valid HTML document", () => {
@@ -247,7 +312,7 @@ describe("renderAgentDetailPage — overview", () => {
       ...AGENT,
       name: '<script>alert("xss")</script>',
     };
-    const html = renderAgentDetailPage(xssAgent, {}, [], [], [], [], USER_NAME);
+    const html = renderAgentDetailPage(xssAgent, {}, [], [], [], [], [], USER_NAME, true);
     expect(html).not.toContain("<script>");
     expect(html).toContain("&lt;script&gt;");
   });
@@ -296,7 +361,7 @@ describe("renderAgentDetailPage — overview", () => {
 
 describe("renderAgentDetailPage — env vars", () => {
   function render(envVars: Record<string, string>): string {
-    return renderAgentDetailPage(AGENT, envVars, [], [], [], [], USER_NAME);
+    return renderAgentDetailPage(AGENT, envVars, [], [], [], [], [], USER_NAME, true);
   }
 
   test("empty envVars shows 'No env vars set.' empty state", () => {
@@ -357,7 +422,7 @@ describe("renderAgentDetailPage — env vars", () => {
 
 describe("renderAgentDetailPage — crons", () => {
   function render(crons: CronJobItem[]): string {
-    return renderAgentDetailPage(AGENT, {}, crons, [], [], [], USER_NAME);
+    return renderAgentDetailPage(AGENT, {}, crons, [], [], [], [], USER_NAME, true);
   }
 
   test("empty crons: 'No system crons configured.' shown", () => {
@@ -481,7 +546,7 @@ describe("renderAgentDetailPage — crons", () => {
 
 describe("renderAgentDetailPage — tools", () => {
   function render(tools: ToolItem[]): string {
-    return renderAgentDetailPage(AGENT, {}, [], tools, [], [], USER_NAME);
+    return renderAgentDetailPage(AGENT, {}, [], tools, [], [], [], USER_NAME, true);
   }
 
   test("empty tools: 'No tools configured.' empty state", () => {
@@ -540,7 +605,7 @@ describe("renderAgentDetailPage — tools", () => {
 
 describe("renderAgentDetailPage — tokens", () => {
   function render(tokens: TokenItem[]): string {
-    return renderAgentDetailPage(AGENT, {}, [], [], tokens, [], USER_NAME);
+    return renderAgentDetailPage(AGENT, {}, [], [], tokens, [], [], USER_NAME, true);
   }
 
   test("empty tokens: 'No tokens created.' empty state", () => {
@@ -613,7 +678,7 @@ describe("renderAgentDetailPage — tokens", () => {
 
 describe("renderAgentDetailPage — plugins", () => {
   function render(plugins: PluginItem[]): string {
-    return renderAgentDetailPage(AGENT, {}, [], [], [], plugins, USER_NAME);
+    return renderAgentDetailPage(AGENT, {}, [], [], [], plugins, [], USER_NAME, true);
   }
 
   test("empty plugins: 'No plugins installed.' empty state", () => {

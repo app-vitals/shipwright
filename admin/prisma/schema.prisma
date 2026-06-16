@@ -32,6 +32,7 @@ model Agent {
   tools     AgentTool[]
   tokens    AgentToken[]
   plugins   AgentPlugin[]
+  members   AgentMember[]
 }
 
 // ─── Agent Env ────────────────────────────────────────────────────────────────
@@ -118,4 +119,20 @@ model AgentPlugin {
   updatedAt DateTime @updatedAt
 
   @@unique([agentId, name])
+}
+
+// ─── Agent Members ────────────────────────────────────────────────────────────
+// Non-admin users granted web UI access to a specific agent.
+// Admins (SHIPWRIGHT_ADMIN_ALLOWED_EMAILS) bypass this table entirely.
+// Members can view and edit only the agents they are listed on.
+
+model AgentMember {
+  id        String   @id @default(cuid())
+  agentId   String
+  email     String
+  createdAt DateTime @default(now())
+  agent     Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, email])
+  @@index([email])
 }

@@ -69,11 +69,13 @@ async function makeSessionCookie(
   secret = SESSION_SECRET,
   userId = "google-sub-123",
   email = "admin@example.com",
+  isAdmin = true,
 ): Promise<string> {
   return sign(
     {
       userId,
       email,
+      isAdmin,
       iat: Math.floor(Date.now() / 1000),
       exp: Math.floor(Date.now() / 1000) + 3600,
     },
@@ -156,6 +158,12 @@ function makeMockDeps(
       },
       agentPlugin: {
         findMany: async () => [],
+      },
+      agentMember: {
+        findMany: async () => [],
+        findUnique: async () => null,
+        create: async () => ({ id: "m1", agentId: AGENT_ID, email: "member@example.com" }),
+        delete: async () => {},
       },
     },
     agentEnvService: {
@@ -1253,5 +1261,291 @@ describe("admin UI — provision start form", () => {
     const [, envVars] = upsertArgs!;
     expect(envVars.ANTHROPIC_API_KEY).toBe("sk-ant-key");
     expect(envVars.CLAUDE_CODE_OAUTH_TOKEN).toBe("oauth-token-xyz");
+  });
+});
+
+// ─── Member access control ────────────────────────────────────────────────────
+
+describe("admin UI — member access control", () => {
+  const MEMBER_EMAIL = "member@example.com";
+
+  it("non-admin member can view their agent detail", async () => {
+    const memberCookie = await makeSessionCookie(
+      SESSION_SECRET,
+      "google-sub-member",
+      MEMBER_EMAIL,
+      false,
+    );
+    const deps = makeMockDeps({
+      prisma: {
+        agent: {
+          findMany: async () => [],
+          findUnique: async () => ({
+            id: AGENT_ID,
+            name: "Test Agent",
+            slackId: "U123456",
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+          }),
+          create: async () => ({
+            id: AGENT_ID,
+            name: "Test Agent",
+            slackId: "U123456",
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+          }),
+        },
+        agentPlugin: { findMany: async () => [] },
+        agentMember: {
+          findMany: async () => [],
+          findUnique: async ({ where }: { where: { agentId_email: { agentId: string; email: string } } }) =>
+            where.agentId_email.email === MEMBER_EMAIL
+              ? { id: "m1", agentId: AGENT_ID, email: MEMBER_EMAIL }
+              : null,
+          create: async () => ({ id: "m1", agentId: AGENT_ID, email: MEMBER_EMAIL }),
+          delete: async () => {},
+        },
+      },
+    });
+    const app = createAdminUIApp(deps);
+    const res = await app.request(`/admin/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${memberCookie}` },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("non-admin non-member gets 403 on agent detail", async () => {
+    const outsiderCookie = await makeSessionCookie(
+      SESSION_SECRET,
+      "google-sub-outsider",
+      "outsider@example.com",
+      false,
+    );
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request(`/admin/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${outsiderCookie}` },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("non-admin sees only their agents in the agents list", async () => {
+    const memberCookie = await makeSessionCookie(
+      SESSION_SECRET,
+      "google-sub-member",
+      MEMBER_EMAIL,
+      false,
+    );
+    const OTHER_AGENT_ID = "agent-other-456";
+    const deps = makeMockDeps({
+      prisma: {
+        agent: {
+          findMany: async ({ where }: { where?: { id?: { in?: string[] } } } = {}) => {
+            const allAgents = [
+              { id: AGENT_ID, name: "My Agent", slackId: "U1", createdAt: new Date("2024-01-01") },
+              { id: OTHER_AGENT_ID, name: "Other Agent", slackId: "U2", createdAt: new Date("2024-01-01") },
+            ];
+            if (where?.id?.in) {
+              return allAgents.filter((a) => where.id?.in?.includes(a.id));
+            }
+            return allAgents;
+          },
+          findUnique: async () => null,
+          create: async () => ({ id: AGENT_ID, name: "My Agent", slackId: "U1", createdAt: new Date(), updatedAt: new Date() }),
+        },
+        agentPlugin: { findMany: async () => [] },
+        agentMember: {
+          findMany: async () => [{ id: "m1", agentId: AGENT_ID, email: MEMBER_EMAIL, createdAt: new Date() }],
+          findUnique: async () => null,
+          create: async () => ({ id: "m1", agentId: AGENT_ID, email: MEMBER_EMAIL }),
+          delete: async () => {},
+        },
+      },
+    });
+    const app = createAdminUIApp(deps);
+    const res = await app.request("/admin/agents", {
+      headers: { Cookie: `admin_session=${memberCookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("My Agent");
+    expect(html).not.toContain("Other Agent");
+  });
+
+  it("non-admin gets 403 on GET /admin/provision", async () => {
+    const memberCookie = await makeSessionCookie(
+      SESSION_SECRET,
+      "google-sub-member",
+      MEMBER_EMAIL,
+      false,
+    );
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request("/admin/provision", {
+      headers: { Cookie: `admin_session=${memberCookie}` },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("OAuth callback grants member access to non-admin with a matching membership", async () => {
+    const nonce = "test-nonce-member";
+    const params = new URLSearchParams({ state: nonce, code: "auth-code-member" });
+    const oauthState = encodeURIComponent(JSON.stringify({ nonce }));
+    const deps = makeMockDeps({
+      googleClient: makeGoogleClient({
+        getUserInfo: () =>
+          Promise.resolve({
+            sub: "google-sub-member",
+            email: MEMBER_EMAIL,
+            email_verified: true,
+            name: "Member User",
+          }),
+      }),
+      prisma: {
+        agent: {
+          findMany: async () => [],
+          findUnique: async () => null,
+          create: async () => ({ id: AGENT_ID, name: "Test Agent", slackId: "U1", createdAt: new Date(), updatedAt: new Date() }),
+        },
+        agentPlugin: { findMany: async () => [] },
+        agentMember: {
+          findMany: async () => [{ id: "m1", agentId: AGENT_ID, email: MEMBER_EMAIL, createdAt: new Date() }],
+          findUnique: async () => null,
+          create: async () => ({ id: "m1", agentId: AGENT_ID, email: MEMBER_EMAIL }),
+          delete: async () => {},
+        },
+      },
+    });
+    const app = createAdminUIApp(deps);
+    const res = await app.request(
+      new Request(`https://example.com/admin/auth/callback?${params.toString()}`, {
+        headers: { Cookie: `oauth_state=${oauthState}` },
+      }),
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Set-Cookie")).toContain("admin_session=");
+  });
+
+  it("OAuth callback returns 403 for non-admin with no membership", async () => {
+    const nonce = "test-nonce-outsider";
+    const params = new URLSearchParams({ state: nonce, code: "auth-code-outsider" });
+    const oauthState = encodeURIComponent(JSON.stringify({ nonce }));
+    const app = createAdminUIApp(
+      makeMockDeps({
+        googleClient: makeGoogleClient({
+          getUserInfo: () =>
+            Promise.resolve({
+              sub: "google-sub-outsider",
+              email: "outsider@example.com",
+              email_verified: true,
+              name: "Outsider",
+            }),
+        }),
+      }),
+    );
+    const res = await app.request(
+      new Request(`https://example.com/admin/auth/callback?${params.toString()}`, {
+        headers: { Cookie: `oauth_state=${oauthState}` },
+      }),
+    );
+    expect(res.status).toBe(403);
+  });
+});
+
+// ─── Member management routes ─────────────────────────────────────────────────
+
+describe("admin UI — member management routes", () => {
+  let adminCookie: string;
+
+  beforeAll(async () => {
+    adminCookie = await makeSessionCookie();
+  });
+
+  it("admin can add a member via POST /admin/agents/:id/members", async () => {
+    let created: { agentId: string; email: string } | null = null;
+    const deps = makeMockDeps({
+      prisma: {
+        agent: {
+          findMany: async () => [],
+          findUnique: async () => ({ id: AGENT_ID, name: "Test Agent", slackId: "U1", createdAt: new Date(), updatedAt: new Date() }),
+          create: async () => ({ id: AGENT_ID, name: "Test Agent", slackId: "U1", createdAt: new Date(), updatedAt: new Date() }),
+        },
+        agentPlugin: { findMany: async () => [] },
+        agentMember: {
+          findMany: async () => [],
+          findUnique: async () => null,
+          create: async ({ data }: { data: { agentId: string; email: string } }) => {
+            created = data;
+            return { id: "m-new", ...data };
+          },
+          delete: async () => {},
+        },
+      },
+    });
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({ email: "newmember@example.com" });
+    const res = await app.request(`/admin/agents/${AGENT_ID}/members`, {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${adminCookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    expect(created).not.toBeNull();
+    expect(created?.email).toBe("newmember@example.com");
+  });
+
+  it("admin can remove a member via POST /admin/agents/:id/members/delete", async () => {
+    let deletedId: string | null = null;
+    const deps = makeMockDeps({
+      prisma: {
+        agent: {
+          findMany: async () => [],
+          findUnique: async () => ({ id: AGENT_ID, name: "Test Agent", slackId: "U1", createdAt: new Date(), updatedAt: new Date() }),
+          create: async () => ({ id: AGENT_ID, name: "Test Agent", slackId: "U1", createdAt: new Date(), updatedAt: new Date() }),
+        },
+        agentPlugin: { findMany: async () => [] },
+        agentMember: {
+          findMany: async () => [],
+          findUnique: async () => null,
+          create: async () => ({ id: "m1", agentId: AGENT_ID, email: "member@example.com" }),
+          delete: async ({ where }: { where: { id: string } }) => {
+            deletedId = where.id;
+          },
+        },
+      },
+    });
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({ memberId: "m1" });
+    const res = await app.request(`/admin/agents/${AGENT_ID}/members/delete`, {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${adminCookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    expect(deletedId).toBe("m1");
+  });
+
+  it("non-admin gets 403 on POST /admin/agents/:id/members", async () => {
+    const memberCookie = await makeSessionCookie(
+      SESSION_SECRET,
+      "google-sub-member",
+      "member@example.com",
+      false,
+    );
+    const app = createAdminUIApp(makeMockDeps());
+    const body = new URLSearchParams({ email: "new@example.com" });
+    const res = await app.request(`/admin/agents/${AGENT_ID}/members`, {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${memberCookie}`,
+      },
+    });
+    expect(res.status).toBe(403);
   });
 });
