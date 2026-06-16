@@ -120,6 +120,24 @@ spec:
             # auth.mode=google — real Google OAuth. Production hardening on.
             - name: NODE_ENV
               value: "production"
+            {{- if .Values.auth.google.existingSecret }}
+            # auth.google.existingSecret: source all three OAuth vars from caller-managed Secret.
+            - name: GOOGLE_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.auth.google.existingSecret }}
+                  key: {{ .Values.auth.google.clientIdRef | default "GOOGLE_CLIENT_ID" }}
+            - name: GOOGLE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.auth.google.existingSecret }}
+                  key: {{ .Values.auth.google.clientSecretRef | default "GOOGLE_CLIENT_SECRET" }}
+            - name: SHIPWRIGHT_ADMIN_ALLOWED_EMAILS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.auth.google.existingSecret }}
+                  key: {{ .Values.auth.google.allowedEmailsRef | default "SHIPWRIGHT_ADMIN_ALLOWED_EMAILS" }}
+            {{- else }}
             - name: GOOGLE_CLIENT_ID
               valueFrom:
                 secretKeyRef:
@@ -132,6 +150,7 @@ spec:
                   key: GOOGLE_CLIENT_SECRET
             - name: SHIPWRIGHT_ADMIN_ALLOWED_EMAILS
               value: {{ .Values.auth.google.allowedEmails | quote }}
+            {{- end }}
             {{- end }}
             {{- if .Values.agent.provisioning.enabled }}
             # ── Agent-provisioning env contract (HD-4.2) ──────────────────────

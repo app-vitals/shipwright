@@ -301,7 +301,18 @@ auth:
   mode: open
   # -- Google OAuth settings (used only when auth.mode=google).
   google:
-    # -- Google OAuth client ID.
+    # -- Name of an existing Secret holding Google OAuth credentials and the
+    # allowed-emails list. When set, clientId/clientSecret/allowedEmails below
+    # are ignored and the Deployment sources those three vars via secretKeyRef
+    # from this Secret. Leave empty to use the inline values below.
+    existingSecret: ""
+    # -- Key in existingSecret for GOOGLE_CLIENT_ID.
+    clientIdRef: GOOGLE_CLIENT_ID
+    # -- Key in existingSecret for GOOGLE_CLIENT_SECRET.
+    clientSecretRef: GOOGLE_CLIENT_SECRET
+    # -- Key in existingSecret for SHIPWRIGHT_ADMIN_ALLOWED_EMAILS.
+    allowedEmailsRef: SHIPWRIGHT_ADMIN_ALLOWED_EMAILS
+    # -- Google OAuth client ID (used when existingSecret is empty).
     clientId: ""
     # -- Google OAuth client secret (kept in the chart-managed admin Secret).
     clientSecret: ""
