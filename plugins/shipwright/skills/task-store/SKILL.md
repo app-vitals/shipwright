@@ -3,32 +3,15 @@ name: task-store
 description: >
   Query and update the Shipwright task store — pick the next ready task, mark status
   transitions, and append new tasks. Use whenever you need to read from or write to
-  the task queue. Covers agent env var configuration, script resolution, standard
-  lifecycle invocations, and common failure modes.
+  the task queue. Covers script resolution, standard lifecycle invocations, and common
+  failure modes.
 ---
 
 # Task Store — Skill
 
 Use this skill to interact with the Shipwright task store. The task store is a CLI
-(`task_store.ts`) that abstracts over JSON-file and GitHub Issues backends. For agents,
-the backend is selected via environment variables — no config file needed.
-
----
-
-## Configuration (agents)
-
-Agents configure the task store via env vars. These take highest precedence and bypass
-config file discovery entirely.
-
-| Variable | Required | Description |
-|---|---|---|
-| `SHIPWRIGHT_TASK_STORE` | Yes | Backend selector: `github`, `json`, or `jira` |
-| `SHIPWRIGHT_GITHUB_OWNER` | If `github` | GitHub org or user that owns the task repo |
-| `SHIPWRIGHT_GITHUB_REPO` | If `github` | GitHub repo name where issues are created |
-| `GH_TOKEN` | If `github` | GitHub token with `repo` scope |
-
-For local Claude Code sessions, the backend is configured via `.shipwright.json` — see
-`references/task-store.md` for that path.
+(`task_store.ts`) that abstracts over JSON-file and GitHub Issues backends. The backend
+is selected via `.shipwright.json` — see `references/task-store.md` for the config schema.
 
 ---
 
