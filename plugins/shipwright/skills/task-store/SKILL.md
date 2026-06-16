@@ -139,12 +139,16 @@ bun "$PLUGIN_SCRIPTS/task_store.ts" update --id {id} \
 
 ### Append new tasks
 
-Write tasks to a temp file, then upsert (idempotent by `id`):
+Write tasks to a temp file, then append:
 
 ```bash
 bun "$PLUGIN_SCRIPTS/task_store.ts" append --file /tmp/new-tasks.json
 # Returns: { "inserted": N, "updated": N }
 ```
+
+Backend note: the GitHub adapter is insert-only — existing tasks (matched by `id`) are
+never updated via `append`. Use `update` for targeted field changes on existing
+GitHub-backed tasks. The JSON adapter upserts (idempotent by `id`).
 
 ---
 
