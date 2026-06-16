@@ -45,7 +45,17 @@ The script walks up from the current directory looking for `.shipwright.json`. E
 { "taskStore": "github", "github": { "owner": "app-vitals", "repo": "shipwright" } }
 ```
 
-If neither env vars nor a config file are found, the JSON backend is used by default.
+### Option C — `SHIPWRIGHT_CONFIG` env var (explicit file path)
+
+When no `.shipwright.json` is found by walk-up, `SHIPWRIGHT_CONFIG` is consulted next.
+Use this in CI or non-standard workspace layouts where the config file lives outside
+the working directory:
+
+```bash
+export SHIPWRIGHT_CONFIG=/path/to/.shipwright.json
+```
+
+If none of the above resolve, the JSON backend is used by default.
 
 ---
 
@@ -143,7 +153,10 @@ bun "$PLUGIN_SCRIPTS/task_store.ts" append --file /tmp/new-tasks.json
 When `--ready` is set, `--status`, `--id`, and `--pr` are **ignored**. Only
 `--assignee` and `--session` apply as post-filters.
 
-- `--assignee` — filter by GitHub login (pass `$CURRENT_USER`)
+- `--assignee` — filter by GitHub login (pass `$CURRENT_USER`).
+  Backend note: the GitHub adapter includes unassigned tasks (`assignee` field absent) —
+  they are available to any agent. The JSON adapter uses strict equality — unassigned
+  tasks are excluded; omit `--assignee` to see them.
 - `--session` — filter by planning session slug (the `session` field stamped on each task
   during `plan-session`). Omit to return ready tasks across all sessions.
 
