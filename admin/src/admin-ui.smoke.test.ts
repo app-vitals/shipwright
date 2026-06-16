@@ -1492,7 +1492,7 @@ describe("admin UI — member management routes", () => {
     });
     expect(res.status).toBe(302);
     expect(created).not.toBeNull();
-    expect(created?.email).toBe("newmember@example.com");
+    expect((created as { agentId: string; email: string } | null)?.email).toBe("newmember@example.com");
   });
 
   it("admin can remove a member via POST /admin/agents/:id/members/delete", async () => {
@@ -1526,7 +1526,7 @@ describe("admin UI — member management routes", () => {
       },
     });
     expect(res.status).toBe(302);
-    expect(deletedId).toBe("m1");
+    expect(deletedId as string | null).toBe("m1");
   });
 
   it("non-admin gets 403 on POST /admin/agents/:id/members", async () => {
