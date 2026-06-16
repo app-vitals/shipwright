@@ -43,6 +43,12 @@ stripped from the visible message before posting.
 `repos/<repo>` is always on `main`. Use for reading, research, and reference only.
 Never edit files in `repos/` directly.
 
+**Before any work on a repo** (planning, review, dev-task, patch, etc.) — pull first:
+```bash
+git -C repos/<repo> pull
+```
+This keeps the local ref current and prevents stale diffs.
+
 ### Worktrees
 
 All active work — features, bug fixes, reviewing a specific branch — happens in
