@@ -9,7 +9,7 @@ export interface ShipwrightToolbarOptions {
   activePath: string;
   /** Form action for the sign-out button (differs per service). */
   logoutAction: string;
-  /** Full URL of the metrics dashboard. Defaults to "/sw/dashboard". */
+  /** Full URL of the metrics dashboard. Defaults to "/dashboard". */
   metricsUrl?: string;
   /** Base URL of the admin service. Defaults to empty string (same origin). */
   adminBaseUrl?: string;
@@ -128,7 +128,7 @@ export function renderShipwrightToolbar(
   opts: ShipwrightToolbarOptions,
 ): string {
   const { userName, activePath, logoutAction } = opts;
-  const metricsUrl = opts.metricsUrl ?? "/sw/dashboard";
+  const metricsUrl = opts.metricsUrl ?? "/dashboard";
   const adminBase = opts.adminBaseUrl ?? "";
   const active = (prefix: string) =>
     activePath.startsWith(prefix) ? " active" : "";
