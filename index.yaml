@@ -4,6 +4,40 @@ entries:
   - annotations:
       artifacthub.io/changes: |
         - kind: added
+          description: "auth.google.existingSecret: source GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and SHIPWRIGHT_ADMIN_ALLOWED_EMAILS from a caller-managed Secret instead of inline Helm values. The chart-managed admin Secret omits these keys when the knob is set; the Deployment sources them via secretKeyRef. Allows fully secret-free helm installs when combined with admin.encryptionKeys.existingSecret."
+      licenses: MIT
+    apiVersion: v2
+    appVersion: 0.1.0
+    created: "2026-06-16T21:01:16.49471186Z"
+    dependencies:
+    - condition: postgresql.enabled
+      name: postgresql
+      repository: oci://registry-1.docker.io/bitnamicharts
+      version: 16.7.27
+    description: Shipwright Harness — the open-source autonomous delivery agent for
+      Claude Code. This chart packages the three Shipwright services (admin, metrics,
+      agent) and an optional PostgreSQL dependency for Kubernetes (Minikube-friendly
+      defaults).
+    digest: 3e7e43ce0f13156127672125b404788e94588f94915233c685069cf1bbe5b258
+    home: https://shipwright-harness.com
+    keywords:
+    - shipwright
+    - claude-code
+    - delivery-agent
+    - ci-cd
+    maintainers:
+    - name: Shipwright Harness
+      url: https://shipwright-harness.com
+    name: shipwright
+    sources:
+    - https://github.com/app-vitals/shipwright
+    type: application
+    urls:
+    - https://github.com/app-vitals/shipwright/releases/download/shipwright-1.2.0/shipwright-1.2.0.tgz
+    version: 1.2.0
+  - annotations:
+      artifacthub.io/changes: |
+        - kind: added
           description: "admin.encryptionKeys.existingSecret: source SHIPWRIGHT_ENCRYPTION_KEY and SHIPWRIGHT_SESSION_SECRET from a caller-managed Secret instead of generating random values on fresh namespace installs. The chart-managed Secret omits these keys when the knob is set; the Deployment references the external Secret via secretKeyRef. Fixes installs where generated random keys cannot decrypt existing encrypted-at-rest agent env."
         - kind: added
           description: "admin.appBaseUrl: sets SHIPWRIGHT_ADMIN_APP_BASE_URL so OAuth redirect URIs use the real hostname instead of localhost:3001 when the admin is behind a Gateway or Ingress."
@@ -77,4 +111,4 @@ entries:
     urls:
     - https://app-vitals.github.io/shipwright/shipwright-1.0.0.tgz
     version: 1.0.0
-generated: "2026-06-16T20:20:04.419752972Z"
+generated: "2026-06-16T21:01:16.494724914Z"
