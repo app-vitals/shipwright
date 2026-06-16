@@ -239,7 +239,7 @@ function makeMockDeps(): AdminDeps {
         {
           id: PLUGIN_ID,
           agentId: AGENT_ID,
-          name: "@shipwright/plugin",
+          name: "shipwright@shipwright",
           version: "1.0.0",
           enabled: true,
           createdAt: new Date("2024-01-01"),
@@ -249,7 +249,7 @@ function makeMockDeps(): AdminDeps {
       add: async () => ({
         id: PLUGIN_ID,
         agentId: AGENT_ID,
-        name: "@shipwright/plugin",
+        name: "shipwright@shipwright",
         version: "1.0.0",
         enabled: true,
         createdAt: new Date("2024-01-01"),
@@ -704,7 +704,7 @@ describe("admin API — plugins", () => {
     const app = createAdminApp(makeMockDeps());
     const res = await app.request(`/agents/${AGENT_ID}/plugins`, {
       method: "POST",
-      body: JSON.stringify({ name: "@shipwright/plugin", version: "1.0.0" }),
+      body: JSON.stringify({ name: "shipwright@shipwright", version: "1.0.0" }),
       headers: {
         "Content-Type": "application/json",
         Cookie: `admin_session=${cookie}`,
@@ -727,7 +727,7 @@ describe("admin API — plugins", () => {
   it("PATCH /agents/:id/plugins?name=<name> updates version (200)", async () => {
     const app = createAdminApp(makeMockDeps());
     const res = await app.request(
-      `/agents/${AGENT_ID}/plugins?name=${encodeURIComponent("@shipwright/plugin")}`,
+      `/agents/${AGENT_ID}/plugins?name=${encodeURIComponent("shipwright@shipwright")}`,
       {
         method: "PATCH",
         body: JSON.stringify({ version: "2.0.0" }),
@@ -756,7 +756,7 @@ describe("admin API — plugins", () => {
   it("DELETE /agents/:id/plugins?name=<name> returns 204", async () => {
     const app = createAdminApp(makeMockDeps());
     const res = await app.request(
-      `/agents/${AGENT_ID}/plugins?name=${encodeURIComponent("@shipwright/plugin")}`,
+      `/agents/${AGENT_ID}/plugins?name=${encodeURIComponent("shipwright@shipwright")}`,
       {
         method: "DELETE",
         headers: { Cookie: `admin_session=${cookie}` },

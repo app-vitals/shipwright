@@ -485,8 +485,9 @@ export function createAdminApp(deps: AdminDeps): Hono<AdminAuthEnv> {
   });
 
   // PATCH /agents/:id/plugins?name=<name> — update plugin version (re-upsert)
-  // Uses a query param rather than a path segment to support scoped names like
-  // "@shipwright/plugin" which contain a literal "/" that breaks path matching.
+  // Uses a query param rather than a path segment because a canonical spec like
+  // "my-plugin@org/my-marketplace" can contain a literal "/" that breaks path
+  // matching.
   app.patch("/agents/:id/plugins", async (c) => {
     const agentId = c.req.param("id");
     const name = c.req.query("name");
@@ -499,8 +500,9 @@ export function createAdminApp(deps: AdminDeps): Hono<AdminAuthEnv> {
   });
 
   // DELETE /agents/:id/plugins?name=<name> — remove a plugin by name
-  // Uses a query param rather than a path segment to support scoped names like
-  // "@shipwright/plugin" which contain a literal "/" that breaks path matching.
+  // Uses a query param rather than a path segment because a canonical spec like
+  // "my-plugin@org/my-marketplace" can contain a literal "/" that breaks path
+  // matching.
   app.delete("/agents/:id/plugins", async (c) => {
     const agentId = c.req.param("id");
     const name = c.req.query("name");

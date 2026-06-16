@@ -169,15 +169,17 @@ export function createAgentRuntimeApp(deps: AgentRuntimeDeps): Hono {
     const response: AgentConfigResponse = {
       env: bundle?.env ?? {},
       allowedTools: bundle?.allowedTools ?? [],
-      plugins: plugins.map((p) => ({
-        // Derive the marketplace from the plugin's namespace (scoped names like
-        // "@vitals-os/plugin" install from their own registry); default to
-        // "shipwright" for unscoped names.
-        marketplace: p.name.startsWith("@")
-          ? p.name.split("/")[0].slice(1)
-          : "shipwright",
-        plugin: p.name,
-      })),
+      plugins: plugins.map((p) => {
+        // The stored name is the canonical Claude plugin spec — exactly what
+        // you'd pass to `claude plugin install`: "<plugin>@<marketplace>"
+        // (e.g. "shipwright@shipwright"), or a bare "<plugin>" that defaults to
+        // the bundled "shipwright" marketplace. The harness reassembles
+        // "<plugin>@<marketplace>" from these two fields.
+        const at = p.name.indexOf("@");
+        return at === -1
+          ? { marketplace: "shipwright", plugin: p.name }
+          : { plugin: p.name.slice(0, at), marketplace: p.name.slice(at + 1) };
+      }),
     };
 
     return c.json(response, 200);
