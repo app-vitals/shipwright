@@ -281,9 +281,13 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "clientId": { "type": "string" },
-            "clientSecret": { "type": "string" },
-            "allowedEmails": { "type": "string" }
+            "existingSecret":  { "type": "string" },
+            "clientIdRef":     { "type": "string" },
+            "clientSecretRef": { "type": "string" },
+            "allowedEmailsRef":{ "type": "string" },
+            "clientId":        { "type": "string" },
+            "clientSecret":    { "type": "string" },
+            "allowedEmails":   { "type": "string" }
           }
         }
       },
@@ -295,11 +299,18 @@
       "then": {
         "properties": {
           "google": {
-            "required": ["clientId", "clientSecret", "allowedEmails"],
-            "properties": {
-              "clientId":      { "type": "string", "minLength": 1 },
-              "clientSecret":  { "type": "string", "minLength": 1 },
-              "allowedEmails": { "type": "string", "minLength": 1 }
+            "if": {
+              "properties": { "existingSecret": { "type": "string", "minLength": 1 } },
+              "required": ["existingSecret"]
+            },
+            "then": {},
+            "else": {
+              "required": ["clientId", "clientSecret", "allowedEmails"],
+              "properties": {
+                "clientId":      { "type": "string", "minLength": 1 },
+                "clientSecret":  { "type": "string", "minLength": 1 },
+                "allowedEmails": { "type": "string", "minLength": 1 }
+              }
             }
           }
         }

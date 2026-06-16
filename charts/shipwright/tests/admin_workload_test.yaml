@@ -141,6 +141,76 @@ tests:
                 name: r-shipwright-admin
                 key: SHIPWRIGHT_ENCRYPTION_KEY
 
+  # ── auth.google.existingSecret ───────────────────────────────────────────
+
+  - it: sources GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and SHIPWRIGHT_ADMIN_ALLOWED_EMAILS from existingSecret when set
+    template: templates/admin-deployment.yaml
+    set:
+      auth.mode: google
+      auth.google.existingSecret: my-google-secret
+      auth.google.clientIdRef: GOOGLE_CLIENT_ID
+      auth.google.clientSecretRef: GOOGLE_CLIENT_SECRET
+      auth.google.allowedEmailsRef: SHIPWRIGHT_ADMIN_ALLOWED_EMAILS
+    release:
+      name: r
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: GOOGLE_CLIENT_ID
+            valueFrom:
+              secretKeyRef:
+                name: my-google-secret
+                key: GOOGLE_CLIENT_ID
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: GOOGLE_CLIENT_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: my-google-secret
+                key: GOOGLE_CLIENT_SECRET
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_ADMIN_ALLOWED_EMAILS
+            valueFrom:
+              secretKeyRef:
+                name: my-google-secret
+                key: SHIPWRIGHT_ADMIN_ALLOWED_EMAILS
+
+  - it: sources Google OAuth from the chart-managed Secret by default (no existingSecret)
+    template: templates/admin-deployment.yaml
+    set:
+      auth.mode: google
+      auth.google.clientId: cid
+      auth.google.clientSecret: csec
+      auth.google.allowedEmails: dev@example.com
+    release:
+      name: r
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: GOOGLE_CLIENT_ID
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-admin
+                key: GOOGLE_CLIENT_ID
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: GOOGLE_CLIENT_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-admin
+                key: GOOGLE_CLIENT_SECRET
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_ADMIN_ALLOWED_EMAILS
+            value: "dev@example.com"
+
   # ── admin.appBaseUrl ──────────────────────────────────────────────────────
 
   - it: injects SHIPWRIGHT_ADMIN_APP_BASE_URL when admin.appBaseUrl is set
