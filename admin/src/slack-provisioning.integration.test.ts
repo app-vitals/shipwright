@@ -67,6 +67,7 @@ async function makeSessionCookie(secret = SESSION_SECRET): Promise<string> {
     {
       userId: "admin",
       email: "admin",
+      isAdmin: true,
       iat: Math.floor(Date.now() / 1000),
       exp: Math.floor(Date.now() / 1000) + 3600,
     },
