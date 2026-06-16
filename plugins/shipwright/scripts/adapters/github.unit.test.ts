@@ -2139,7 +2139,6 @@ process.exit(0);
 // ─── GitHubTaskStore.update field enforcement warnings ────────────────────────
 
 describe("GitHubTaskStore.update field enforcement warnings", () => {
-
   test("warns when prCreatedAt missing on pr_open transition", async () => {
     const issues = [
       makeIssue(1, "TSR-W.1: Task", "in_progress", {
@@ -2490,7 +2489,12 @@ process.exit(0);
         model: modelValue,
       };
       const issues = [
-        makeIssue(20 + idx, `${id}: Task ${modelValue}`, "pending", originalTask),
+        makeIssue(
+          20 + idx,
+          `${id}: Task ${modelValue}`,
+          "pending",
+          originalTask,
+        ),
       ];
 
       const fakeGh = await writeFakeGh(tmpDir, {
@@ -2695,6 +2699,43 @@ process.exit(0);
     expect(labelEdit).toContain("--remove-label");
     expect(labelEdit).toContain("status:in_progress");
   });
+
+  test("update() does NOT remove the label when new status equals current status", async () => {
+    // Regression: re-applying the current status must not emit
+    // `--add-label status:X --remove-label status:X` in one gh call — gh nets that
+    // to a removal, leaving the issue with no status label (orphaned).
+    const issues = [
+      makeIssue(101, "LSG-3.1: Task", "pr_open", {
+        id: "LSG-3.1",
+        title: "Task",
+        status: "pr_open",
+      }),
+    ];
+
+    const { scriptPath, editsFile } = await makeEditCaptureScript(
+      tmpDir,
+      "same-status-test-gh",
+      issues,
+    );
+    process.env.GH_CMD = scriptPath;
+
+    const adapter = new GitHubTaskStore(CONFIG);
+    await adapter.update("LSG-3.1", { status: "pr_open", pr: 1509 });
+
+    const edits = (await Bun.file(editsFile).text())
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((line: string) => line.split("|"));
+
+    const labelEdit = edits.find(
+      (e: string[]) =>
+        e.includes("--add-label") && e.includes("status:pr_open"),
+    );
+    expect(labelEdit).toBeDefined();
+    // new === old (pr_open) → must NOT pair the add with a same-label remove
+    expect(labelEdit).not.toContain("--remove-label");
+  });
 });
 
 // ─── GitHubTaskStore.append — ensureMilestone ────────────────────────────────
@@ -2864,9 +2905,24 @@ process.exit(0);
 
     const adapter = new GitHubTaskStore(CONFIG);
     await adapter.append([
-      { id: "TSR-9.3", title: "Task 1", status: "pending", session: "batch-session" },
-      { id: "TSR-9.4", title: "Task 2", status: "pending", session: "batch-session" },
-      { id: "TSR-9.5", title: "Task 3", status: "pending", session: "batch-session" },
+      {
+        id: "TSR-9.3",
+        title: "Task 1",
+        status: "pending",
+        session: "batch-session",
+      },
+      {
+        id: "TSR-9.4",
+        title: "Task 2",
+        status: "pending",
+        session: "batch-session",
+      },
+      {
+        id: "TSR-9.5",
+        title: "Task 3",
+        status: "pending",
+        session: "batch-session",
+      },
     ]);
 
     const getsContent = await Bun.file(milestonesGetFile).text();

@@ -11,7 +11,15 @@ description: >
 
 Use this skill to interact with the Shipwright task store. The task store is a CLI
 (`task_store.ts`) that abstracts over JSON-file and GitHub Issues backends. The backend
-is selected via env vars or `.shipwright.json` — see `references/task-store.md` for the config schema.
+is selected via env vars or `.shipwright.json` — see **Configure the backend** below for the config schema.
+
+> **The CLI is the only interface.** Always go through `task_store.ts`
+> (`query` / `update` / `append`) — never open, `cat`, or edit a file to read or change tasks.
+> The store's underlying persistence is private to the backend (a local file for the JSON
+> backend; issues for the GitHub backend) and is not a supported entry point; reaching for it
+> bypasses validation and the status-label↔body sync, and is the most common way tasks get
+> orphaned. The unit you work with is the **task** (see
+> [task-schema.md](references/task-schema.md)).
 
 ---
 
@@ -193,7 +201,41 @@ Branch statuses: `blocked`, `cancelled`, `deploying`, `deployed`
 
 ---
 
+## How status is stored — always transition via `update`
+
+On a GitHub-backed task, status lives in **two** places, kept in sync by the CLI:
+- the `status:<value>` **label** on the issue — what `query --status` / `--ready` filter on, and
+- the `"status"` field in the issue body's ` ```shipwright ` JSON block — the full task record.
+
+**Always change status with `task_store.ts update --set status=…`** (the lifecycle commands
+above). It rewrites the body JSON and swaps the label in a single call. Do **not** hand-edit
+the label with `gh issue edit` or edit the body JSON directly — the two drift apart and the
+task misbehaves.
+
+**Orphan gotcha:** a task with **no `status:*` label** is invisible to the store —
+`fetchAllIssues` filters by that label, so `query --id` returns `[]` and `update` reports
+`task not found`. If a task gets orphaned (label removed out-of-band), the CLI can't heal it
+because it can't enumerate a label-less issue. Recover by re-adding the label, then resume
+with `update`:
+
+```bash
+gh issue edit {issue-number} --repo {owner}/{repo} --add-label status:{current-status}
+```
+
+> Pre-4.27.3 adapters could orphan a task *themselves*: re-applying the current status issued
+> `gh issue edit --add-label status:X --remove-label status:X`, which gh nets to a removal.
+> Fixed in 4.27.3 (the swap now skips `--remove-label` when new == old).
+
+---
+
 ## Reference
 
-Full schema: `references/todos-schema.md`
-Backend contract and GitHub data model: `references/task-store.md`
+This skill is the **canonical reference for the task lifecycle** — `dev-task`, `patch`, and
+`review` all drive the store through the same `update` transitions documented above. You should
+not need to read those command files to operate the queue.
+
+- **Task schema** (all fields + per-status required fields): [task-schema.md](references/task-schema.md)
+- Backend selection / config schema: see **Configure the backend** above.
+- Maintainer-only (do **not** operate on these directly — use the CLI): field validation lives in
+  `scripts/adapters/validation.ts`; the GitHub persistence model (status label + body JSON block) in
+  `scripts/adapters/github.ts`.
