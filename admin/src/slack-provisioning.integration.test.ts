@@ -67,6 +67,7 @@ async function makeSessionCookie(secret = SESSION_SECRET): Promise<string> {
     {
       userId: "admin",
       email: "admin",
+      isAdmin: true,
       iat: Math.floor(Date.now() / 1000),
       exp: Math.floor(Date.now() / 1000) + 3600,
     },
@@ -109,6 +110,12 @@ function makeMockDeps(
       },
       agentPlugin: {
         findMany: async () => [],
+      },
+      agentMember: {
+        findMany: async () => [],
+        findUnique: async () => null,
+        create: async () => ({ id: "m1", agentId: AGENT_ID, email: "member@example.com" }),
+        deleteMany: async () => ({ count: 0 }),
       },
     },
     agentEnvService: {

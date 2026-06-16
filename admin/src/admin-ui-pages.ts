@@ -62,6 +62,12 @@ export interface PluginItem {
   enabled: boolean;
 }
 
+export interface MemberItem {
+  id: string;
+  email: string;
+  createdAt: Date;
+}
+
 // ─── Login page ───────────────────────────────────────────────────────────────
 
 export function renderLoginPage(opts?: {
@@ -102,10 +108,11 @@ export function renderLoginPage(opts?: {
 export function renderAgentsPage(
   agents: AgentListItem[],
   userName: string,
+  isAdmin: boolean,
 ): string {
   const rows =
     agents.length === 0
-      ? `<tr><td colspan="4" class="empty-state">No agents yet. <a href="/admin/provision">Provision one →</a></td></tr>`
+      ? `<tr><td colspan="4" class="empty-state">${isAdmin ? 'No agents yet. <a href="/admin/provision">Provision one →</a>' : "No agents."}</td></tr>`
       : agents
           .map(
             (a) => `<tr>
@@ -116,6 +123,10 @@ export function renderAgentsPage(
   </tr>`,
           )
           .join("\n");
+
+  const provisionButton = isAdmin
+    ? `<a href="/admin/provision" class="btn btn-primary">+ Provision agent</a>`
+    : "";
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -130,7 +141,7 @@ export function renderAgentsPage(
   <div class="vos-page">
     <div class="page-header">
       <h1 class="page-title">Agents</h1>
-      <a href="/admin/provision" class="btn btn-primary">+ Provision agent</a>
+      ${provisionButton}
     </div>
     <div class="card">
       <table class="data-table">
@@ -161,7 +172,9 @@ export function renderAgentDetailPage(
   tools: ToolItem[],
   tokens: TokenItem[],
   plugins: PluginItem[],
+  members: MemberItem[],
   userName: string,
+  isAdmin: boolean,
   opts?: { error?: string; newToken?: string },
 ): string {
   const envRows =
@@ -290,6 +303,49 @@ export function renderAgentDetailPage(
     </tr>`,
           )
           .join("\n");
+
+  const memberRows =
+    members.length === 0
+      ? `<tr><td colspan="3" class="empty-state">No members yet.</td></tr>`
+      : members
+          .map(
+            (m) => `<tr>
+      <td>${escapeHtml(m.email)}</td>
+      <td>${escapeHtml(m.createdAt.toISOString().split("T")[0])}</td>
+      <td>
+        <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/members/delete" style="display:inline">
+          <input type="hidden" name="memberId" value="${escapeHtml(m.id)}" />
+          <button type="submit" class="btn btn-danger" style="font-size:11px;padding:3px 8px">Remove</button>
+        </form>
+      </td>
+    </tr>`,
+          )
+          .join("\n");
+
+  const membersSection = `
+    <div class="card">
+      <div class="card-title">Members</div>
+      <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/members" style="margin-bottom:16px">
+        <div class="form-row">
+          <div class="form-group" style="flex:1">
+            <input name="email" type="email" class="form-input" placeholder="user@example.com" required />
+          </div>
+          <button type="submit" class="btn btn-primary">Add</button>
+        </div>
+      </form>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Email</th>
+            <th>Added</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${memberRows}
+        </tbody>
+      </table>
+    </div>`;
 
   const errorHtml = opts?.error
     ? `<div class="alert alert-error">${escapeHtml(opts.error)}</div>`
@@ -479,6 +535,8 @@ export function renderAgentDetailPage(
         </tbody>
       </table>
     </div>
+
+    ${isAdmin ? membersSection : ""}
 
   </div>
 </body>

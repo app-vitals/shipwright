@@ -41,7 +41,7 @@ import type { GoogleAuthClient } from "./google-auth-client.ts";
 import type { AppManifest } from "./slack-provisioning-client.ts";
 import { defaultAgentManifest } from "./slack-provisioning-client.ts";
 
-type AdminUIEnv = { Variables: { userEmail: string } };
+type AdminUIEnv = { Variables: { userEmail: string; isAdmin: boolean } };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -111,6 +111,18 @@ interface PrismaLike {
       }>
     >;
   };
+  agentMember: {
+    findMany(args: {
+      where: { email?: string; agentId?: string };
+    }): Promise<Array<{ id: string; agentId: string; email: string; createdAt: Date }>>;
+    findUnique(args: {
+      where: { agentId_email: { agentId: string; email: string } };
+    }): Promise<{ id: string; agentId: string; email: string } | null>;
+    create(args: {
+      data: { agentId: string; email: string };
+    }): Promise<{ id: string; agentId: string; email: string }>;
+    deleteMany(args: { where: { id: string; agentId: string } }): Promise<{ count: number }>;
+  };
 }
 
 export interface AdminUIDeps {
@@ -163,12 +175,14 @@ async function createSessionToken(
   secret: string,
   userId: string,
   email: string,
+  isAdmin: boolean,
 ): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   return sign(
     {
       userId,
       email,
+      isAdmin,
       iat: now,
       exp: now + SESSION_TTL_SECONDS,
     },
@@ -177,10 +191,10 @@ async function createSessionToken(
   );
 }
 
-async function getSessionEmail(
+async function getSessionUser(
   token: string,
   secret: string,
-): Promise<string | null> {
+): Promise<{ email: string; isAdmin: boolean } | null> {
   try {
     const payload = (await verify(token, secret, "HS256")) as Record<
       string,
@@ -192,7 +206,7 @@ async function getSessionEmail(
       typeof payload.email === "string" &&
       payload.email.length > 0
     ) {
-      return payload.email;
+      return { email: payload.email, isAdmin: payload.isAdmin !== false };
     }
     return null;
   } catch {
@@ -207,13 +221,14 @@ function createUIAuthMiddleware(
 ): MiddlewareHandler<AdminUIEnv> {
   return async (c, next) => {
     const sessionToken = getCookie(c, SESSION_COOKIE);
-    const email = sessionToken
-      ? await getSessionEmail(sessionToken, sessionSecret)
+    const user = sessionToken
+      ? await getSessionUser(sessionToken, sessionSecret)
       : null;
-    if (!email) {
+    if (!user) {
       return c.redirect("/admin/login", 302);
     }
-    c.set("userEmail", email);
+    c.set("userEmail", user.email);
+    c.set("isAdmin", user.isAdmin);
     return next();
   };
 }
@@ -370,13 +385,18 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       return c.redirect("/admin/login?error=auth_failed", 302);
     }
 
-    // Check allowlist
-    if (
-      !adminAllowedEmails
-        .map((e) => e.toLowerCase())
-        .includes(userInfo.email.toLowerCase())
-    ) {
-      return new Response("Forbidden", { status: 403 });
+    // Check admin allowlist first, then fall back to member access
+    const isAdmin = adminAllowedEmails
+      .map((e) => e.toLowerCase())
+      .includes(userInfo.email.toLowerCase());
+
+    if (!isAdmin) {
+      const memberships = await prisma.agentMember.findMany({
+        where: { email: userInfo.email.toLowerCase() },
+      });
+      if (memberships.length === 0) {
+        return new Response("Forbidden", { status: 403 });
+      }
     }
 
     // Create session
@@ -384,6 +404,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       sessionSecret,
       userInfo.sub,
       userInfo.email,
+      isAdmin,
     );
     setCookie(c, SESSION_COOKIE, token, {
       httpOnly: true,
@@ -414,7 +435,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     if (!devAuthEnabled) {
       return new Response("Not Found", { status: 404 });
     }
-    const token = await createSessionToken(sessionSecret, "dev", "dev@localhost");
+    const token = await createSessionToken(sessionSecret, "dev", "dev@localhost", true);
     setCookie(c, SESSION_COOKIE, token, {
       httpOnly: true,
       secure: appBaseUrl.startsWith("https://"),
@@ -428,11 +449,32 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   // ─── Agents list ──────────────────────────────────────────────────────────
 
   app.get("/admin/agents", requireAuth, async (c) => {
-    const agents = await prisma.agent.findMany();
-    return html(renderAgentsPage(agents, c.var.userEmail));
+    let agents: Awaited<ReturnType<typeof prisma.agent.findMany>>;
+    if (c.var.isAdmin) {
+      agents = await prisma.agent.findMany();
+    } else {
+      const memberships = await prisma.agentMember.findMany({
+        where: { email: c.var.userEmail.toLowerCase() },
+      });
+      const agentIds = memberships.map((m) => m.agentId);
+      agents = await prisma.agent.findMany({ where: { id: { in: agentIds } } });
+    }
+    return html(renderAgentsPage(agents, c.var.userEmail, c.var.isAdmin));
   });
 
   // ─── Agent detail ─────────────────────────────────────────────────────────
+
+  async function assertAgentAccess(
+    agentId: string,
+    userEmail: string,
+    isAdmin: boolean,
+  ): Promise<boolean> {
+    if (isAdmin) return true;
+    const membership = await prisma.agentMember.findUnique({
+      where: { agentId_email: { agentId, email: userEmail.toLowerCase() } },
+    });
+    return membership !== null;
+  }
 
   const ERROR_MESSAGES: Record<string, string> = {
     missing_fields: "Required fields are missing.",
@@ -449,16 +491,23 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       return new Response("Agent not found", { status: 404 });
     }
 
+    if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
+      return new Response("Forbidden", { status: 403 });
+    }
+
     const rawError = c.req.query("error") ?? undefined;
     const error = rawError ? (ERROR_MESSAGES[rawError] ?? rawError) : undefined;
     const newToken = c.req.query("newToken") ?? undefined;
 
-    const [envVars, crons, tools, tokens, plugins] = await Promise.all([
+    const [envVars, crons, tools, tokens, plugins, members] = await Promise.all([
       agentEnvService.getByAgentId(agentId).then((e) => e ?? {}),
       agentCronJobService.list(agentId),
       agentToolService.list(agentId),
       agentTokenService.listForAgent(agentId),
       agentPluginService.list(agentId),
+      c.var.isAdmin
+        ? prisma.agentMember.findMany({ where: { agentId } })
+        : Promise.resolve([]),
     ]);
 
     return html(
@@ -469,7 +518,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         tools,
         tokens,
         plugins,
+        members,
         c.var.userEmail,
+        c.var.isAdmin,
         { error, newToken },
       ),
     );
@@ -479,6 +530,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
   app.post("/admin/agents/:id/envs", requireAuth, async (c) => {
     const agentId = c.req.param("id");
+    if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
+      return new Response("Forbidden", { status: 403 });
+    }
     let key: string | undefined;
     let value: string | undefined;
     try {
@@ -497,6 +551,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
   app.post("/admin/agents/:id/envs/delete", requireAuth, async (c) => {
     const agentId = c.req.param("id");
+    if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
+      return new Response("Forbidden", { status: 403 });
+    }
     let key: string | undefined;
     try {
       const formData = await c.req.formData();
@@ -514,6 +571,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
   app.post("/admin/agents/:id/crons", requireAuth, async (c) => {
     const agentId = c.req.param("id");
+    if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
+      return new Response("Forbidden", { status: 403 });
+    }
     let schedule: string | undefined;
     let prompt: string | undefined;
     let channel: string | null = null;
@@ -578,6 +638,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   app.post("/admin/agents/:id/crons/:cronId/toggle", requireAuth, async (c) => {
     const agentId = c.req.param("id");
     const cronId = c.req.param("cronId");
+    if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
+      return new Response("Forbidden", { status: 403 });
+    }
     let enabled = true;
     try {
       const formData = await c.req.formData();
@@ -596,6 +659,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   app.post("/admin/agents/:id/crons/:cronId/update", requireAuth, async (c) => {
     const agentId = c.req.param("id");
     const cronId = c.req.param("cronId");
+    if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
+      return new Response("Forbidden", { status: 403 });
+    }
     let schedule = "";
     let prompt = "";
     let channel: string | null = null;
@@ -652,6 +718,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   app.post("/admin/agents/:id/crons/:cronId/delete", requireAuth, async (c) => {
     const agentId = c.req.param("id");
     const cronId = c.req.param("cronId");
+    if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
+      return new Response("Forbidden", { status: 403 });
+    }
     try {
       const cron = await agentCronJobService.get(agentId, cronId);
       if (cron.system) {
@@ -674,6 +743,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
   app.post("/admin/agents/:id/tools", requireAuth, async (c) => {
     const agentId = c.req.param("id");
+    if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
+      return new Response("Forbidden", { status: 403 });
+    }
     let pattern: string | undefined;
     try {
       const formData = await c.req.formData();
@@ -695,6 +767,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   app.post("/admin/agents/:id/tools/:toolId/toggle", requireAuth, async (c) => {
     const agentId = c.req.param("id");
     const toolId = c.req.param("toolId");
+    if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
+      return new Response("Forbidden", { status: 403 });
+    }
     let enabled = true;
     try {
       const formData = await c.req.formData();
@@ -713,6 +788,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   app.post("/admin/agents/:id/tools/:toolId/delete", requireAuth, async (c) => {
     const agentId = c.req.param("id");
     const toolId = c.req.param("toolId");
+    if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
+      return new Response("Forbidden", { status: 403 });
+    }
     try {
       await agentToolService.remove(agentId, toolId);
     } catch {
@@ -725,6 +803,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
   app.post("/admin/agents/:id/tokens", requireAuth, async (c) => {
     const agentId = c.req.param("id");
+    if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
+      return new Response("Forbidden", { status: 403 });
+    }
     let label: string | undefined;
     try {
       const formData = await c.req.formData();
@@ -740,12 +821,15 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       const { rawToken } = await agentTokenService.create(agentId, label);
       // Render the page directly (200) rather than redirecting with the token in the URL.
       // A redirect would expose the raw token in server access logs and browser history.
-      const [envVars, crons, tools, tokens, plugins] = await Promise.all([
+      const [envVars, crons, tools, tokens, plugins, members] = await Promise.all([
         agentEnvService.getByAgentId(agentId).then((e) => e ?? {}),
         agentCronJobService.list(agentId),
         agentToolService.list(agentId),
         agentTokenService.listForAgent(agentId),
         agentPluginService.list(agentId),
+        c.var.isAdmin
+          ? prisma.agentMember.findMany({ where: { agentId } })
+          : Promise.resolve([]),
       ]);
       return html(
         renderAgentDetailPage(
@@ -755,7 +839,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
           tools,
           tokens,
           plugins,
+          members,
           c.var.userEmail,
+          c.var.isAdmin,
           { newToken: rawToken },
         ),
       );
@@ -770,6 +856,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     async (c) => {
       const agentId = c.req.param("id");
       const tokenId = c.req.param("tokenId");
+      if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
+        return new Response("Forbidden", { status: 403 });
+      }
       try {
         await agentTokenService.revoke(tokenId);
       } catch {
@@ -785,6 +874,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   const PROVISION_STATE_TTL_SECONDS = 300; // 5 min
 
   app.get("/admin/provision", requireAuth, async (c) => {
+    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
     const agents = await prisma.agent.findMany();
     return html(
       renderProvisionStartPage(
@@ -795,6 +885,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   });
 
   app.post("/admin/provision/start", requireAuth, async (c) => {
+    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
     // Load agents for form re-render on error
     const agents = await prisma.agent.findMany().catch(() => []);
     const agentOptions = agents.map((a) => ({ id: a.id, name: a.name }));
@@ -955,6 +1046,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
   // GET — OAuth callback → exchange code, store SLACK_BOT_TOKEN, show xapp-token page
   app.get("/admin/provision/complete", requireAuth, async (c) => {
+    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
     const userEmail = c.var.userEmail;
 
     // Read and validate the provision state cookie
@@ -1068,6 +1160,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
   // POST /admin/provision/xapp-token — save xapp token, create scoped token, seed crons
   app.post("/admin/provision/xapp-token", requireAuth, async (c) => {
+    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
     const userEmail = c.var.userEmail;
 
     let agentId: string | undefined;
@@ -1134,6 +1227,48 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         }),
       );
     }
+  });
+
+  // ─── Member management (admin only) ──────────────────────────────────────
+
+  app.post("/admin/agents/:id/members", requireAuth, async (c) => {
+    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+    const agentId = c.req.param("id");
+    let email: string | undefined;
+    try {
+      const formData = await c.req.formData();
+      email = formData.get("email")?.toString()?.toLowerCase();
+    } catch {
+      return c.redirect(`/admin/agents/${agentId}`, 302);
+    }
+    if (email) {
+      try {
+        await prisma.agentMember.create({ data: { agentId, email } });
+      } catch {
+        // unique constraint violation — already a member, ignore
+      }
+    }
+    return c.redirect(`/admin/agents/${agentId}`, 302);
+  });
+
+  app.post("/admin/agents/:id/members/delete", requireAuth, async (c) => {
+    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+    const agentId = c.req.param("id");
+    let memberId: string | undefined;
+    try {
+      const formData = await c.req.formData();
+      memberId = formData.get("memberId")?.toString();
+    } catch {
+      return c.redirect(`/admin/agents/${agentId}`, 302);
+    }
+    if (memberId) {
+      try {
+        await prisma.agentMember.deleteMany({ where: { id: memberId, agentId } });
+      } catch {
+        // already gone, ignore
+      }
+    }
+    return c.redirect(`/admin/agents/${agentId}`, 302);
   });
 
   return app;
