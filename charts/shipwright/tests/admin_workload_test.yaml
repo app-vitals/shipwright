@@ -91,6 +91,115 @@ tests:
     release:
       name: r
 
+  # ── admin.encryptionKeys.existingSecret ──────────────────────────────────
+
+  - it: sources SHIPWRIGHT_SESSION_SECRET and SHIPWRIGHT_ENCRYPTION_KEY from existingSecret when set
+    template: templates/admin-deployment.yaml
+    set:
+      admin.encryptionKeys.existingSecret: my-keys-secret
+      admin.encryptionKeys.encryptionKeyRef: SHIPWRIGHT_ENCRYPTION_KEY
+      admin.encryptionKeys.sessionSecretRef: SHIPWRIGHT_SESSION_SECRET
+    release:
+      name: r
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_SESSION_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: my-keys-secret
+                key: SHIPWRIGHT_SESSION_SECRET
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_ENCRYPTION_KEY
+            valueFrom:
+              secretKeyRef:
+                name: my-keys-secret
+                key: SHIPWRIGHT_ENCRYPTION_KEY
+
+  - it: sources session+encryption keys from the chart-managed Secret by default (no existingSecret)
+    template: templates/admin-deployment.yaml
+    release:
+      name: r
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_SESSION_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-admin
+                key: SHIPWRIGHT_SESSION_SECRET
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_ENCRYPTION_KEY
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-admin
+                key: SHIPWRIGHT_ENCRYPTION_KEY
+
+  # ── admin.appBaseUrl ──────────────────────────────────────────────────────
+
+  - it: injects SHIPWRIGHT_ADMIN_APP_BASE_URL when admin.appBaseUrl is set
+    template: templates/admin-deployment.yaml
+    set:
+      admin.appBaseUrl: "https://shipwright.example.com"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_ADMIN_APP_BASE_URL
+            value: "https://shipwright.example.com"
+
+  - it: omits SHIPWRIGHT_ADMIN_APP_BASE_URL when admin.appBaseUrl is empty (default)
+    template: templates/admin-deployment.yaml
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_ADMIN_APP_BASE_URL
+
+  # ── admin.extraEnv ────────────────────────────────────────────────────────
+
+  - it: appends admin.extraEnv entries to the container env
+    template: templates/admin-deployment.yaml
+    set:
+      admin.extraEnv:
+        - name: MY_CUSTOM_VAR
+          value: "hello"
+        - name: FROM_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: my-secret
+              key: MY_KEY
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: MY_CUSTOM_VAR
+            value: "hello"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: FROM_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: my-secret
+                key: MY_KEY
+
+  - it: renders no extra env vars when admin.extraEnv is empty (default)
+    template: templates/admin-deployment.yaml
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: MY_CUSTOM_VAR
+
+  # ── service / serviceaccount ──────────────────────────────────────────────
+
   - it: renders the admin Service (ClusterIP) mapping the service port to targetPort 3001
     template: templates/admin-service.yaml
     asserts:
