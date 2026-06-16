@@ -4,6 +4,46 @@ entries:
   - annotations:
       artifacthub.io/changes: |
         - kind: added
+          description: "admin.encryptionKeys.existingSecret: source SHIPWRIGHT_ENCRYPTION_KEY and SHIPWRIGHT_SESSION_SECRET from a caller-managed Secret instead of generating random values on fresh namespace installs. The chart-managed Secret omits these keys when the knob is set; the Deployment references the external Secret via secretKeyRef. Fixes installs where generated random keys cannot decrypt existing encrypted-at-rest agent env."
+        - kind: added
+          description: "admin.appBaseUrl: sets SHIPWRIGHT_ADMIN_APP_BASE_URL so OAuth redirect URIs use the real hostname instead of localhost:3001 when the admin is behind a Gateway or Ingress."
+        - kind: added
+          description: "admin.extraEnv: list of Kubernetes envVar objects appended to the admin container, providing a generic env passthrough for values not otherwise covered by chart knobs."
+        - kind: added
+          description: "networking.gateway.healthCheckPolicy.enabled: when true and networking.type=gateway, renders networking.gke.io/v1 HealthCheckPolicy resources for the admin and metrics Services probing /health. Fixes GKE Gateway deployments where the default probe to / (both services 404) marks backends UNHEALTHY and returns 503 externally. Disabled by default."
+      licenses: MIT
+    apiVersion: v2
+    appVersion: 0.1.0
+    created: "2026-06-16T20:20:04.41974463Z"
+    dependencies:
+    - condition: postgresql.enabled
+      name: postgresql
+      repository: oci://registry-1.docker.io/bitnamicharts
+      version: 16.7.27
+    description: Shipwright Harness — the open-source autonomous delivery agent for
+      Claude Code. This chart packages the three Shipwright services (admin, metrics,
+      agent) and an optional PostgreSQL dependency for Kubernetes (Minikube-friendly
+      defaults).
+    digest: 56c61d4030b90c5544d9255bce68a35fd474accc7d38ae3910f3ffa545d8be00
+    home: https://shipwright-harness.com
+    keywords:
+    - shipwright
+    - claude-code
+    - delivery-agent
+    - ci-cd
+    maintainers:
+    - name: Shipwright Harness
+      url: https://shipwright-harness.com
+    name: shipwright
+    sources:
+    - https://github.com/app-vitals/shipwright
+    type: application
+    urls:
+    - https://github.com/app-vitals/shipwright/releases/download/shipwright-1.1.0/shipwright-1.1.0.tgz
+    version: 1.1.0
+  - annotations:
+      artifacthub.io/changes: |
+        - kind: added
           description: "externalDatabase block: bring-your-own Postgres for the admin service (externalDatabase.existingSecret + adminUrlKey). Used when postgresql.enabled=false; the admin Deployment injects DATABASE_URL_SHIPWRIGHT_ADMIN from a user-managed Secret. Default off (existingSecret empty)."
         - kind: added
           description: "cloudSqlProxy block: optional cloud-sql-proxy v2 sidecar for the admin pod. Renders only when cloudSqlProxy.enabled=true; defaults: image gcr.io/cloud-sql-connectors/cloud-sql-proxy:2, --private-ip + connectionName args, runAsNonRoot. Default off."
@@ -37,4 +77,4 @@ entries:
     urls:
     - https://app-vitals.github.io/shipwright/shipwright-1.0.0.tgz
     version: 1.0.0
-generated: "2026-06-16T03:43:01.746354659Z"
+generated: "2026-06-16T20:20:04.419752972Z"
