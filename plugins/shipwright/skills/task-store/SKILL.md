@@ -11,7 +11,41 @@ description: >
 
 Use this skill to interact with the Shipwright task store. The task store is a CLI
 (`task_store.ts`) that abstracts over JSON-file and GitHub Issues backends. The backend
-is selected via `.shipwright.json` — see `references/task-store.md` for the config schema.
+is selected via env vars or `.shipwright.json` — see `references/task-store.md` for the config schema.
+
+---
+
+## Configure the backend
+
+The backend is resolved in this order (first match wins):
+
+### Option A — env vars (preferred for agents)
+
+Set `SHIPWRIGHT_TASK_STORE` to select the backend. No config file required.
+
+**GitHub Issues backend:**
+
+```bash
+export SHIPWRIGHT_TASK_STORE=github
+export SHIPWRIGHT_GITHUB_OWNER=<org-or-user>   # e.g. app-vitals
+export SHIPWRIGHT_GITHUB_REPO=<repo-name>       # e.g. shipwright
+```
+
+**JSON file backend (local fallback):**
+
+```bash
+export SHIPWRIGHT_TASK_STORE=json
+```
+
+### Option B — `.shipwright.json` config file
+
+The script walks up from the current directory looking for `.shipwright.json`. Example:
+
+```json
+{ "taskStore": "github", "github": { "owner": "app-vitals", "repo": "shipwright" } }
+```
+
+If neither env vars nor a config file are found, the JSON backend is used by default.
 
 ---
 
@@ -108,6 +142,10 @@ bun "$PLUGIN_SCRIPTS/task_store.ts" append --file /tmp/new-tasks.json
 
 When `--ready` is set, `--status`, `--id`, and `--pr` are **ignored**. Only
 `--assignee` and `--session` apply as post-filters.
+
+- `--assignee` — filter by GitHub login (pass `$CURRENT_USER`)
+- `--session` — filter by planning session slug (the `session` field stamped on each task
+  during `plan-session`). Omit to return ready tasks across all sessions.
 
 A task is ready when:
 - `status === "pending"`, AND
