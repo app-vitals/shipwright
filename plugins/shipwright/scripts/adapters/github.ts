@@ -457,10 +457,19 @@ export class GitHubTaskStore implements TaskStore {
         "--add-label",
         newLabel,
       ];
-      // Only remove the old label if it was actually present on the issue.
-      // Attempting to remove a label that isn't there causes gh to error,
-      // which leaves the issue with no status label and invisible to fetchAllIssues.
-      if (targetTask._labelStatus !== undefined) {
+      // Only remove the old label if it was actually present on the issue AND
+      // differs from the one we're adding. Two failure modes otherwise:
+      //   1. _labelStatus === undefined: removing a label that isn't there makes
+      //      gh error, leaving the issue with no status label.
+      //   2. _labelStatus === newStatus (re-applying the current status): a single
+      //      `gh issue edit --add-label X --remove-label X` nets to a REMOVAL, so
+      //      the issue ends up with no status label.
+      // Either way the issue becomes invisible to fetchAllIssues (orphaned) and can
+      // only be recovered by manually re-adding the label.
+      if (
+        targetTask._labelStatus !== undefined &&
+        targetTask._labelStatus !== newStatus
+      ) {
         editArgs.push(
           "--remove-label",
           `${STATUS_LABEL_PREFIX}${targetTask._labelStatus}`,
