@@ -9,7 +9,7 @@ export interface ShipwrightToolbarOptions {
   activePath: string;
   /** Form action for the sign-out button (differs per service). */
   logoutAction: string;
-  /** Full URL of the metrics dashboard. Defaults to "/sw/dashboard". */
+  /** Full URL of the metrics dashboard. Defaults to "/dashboard". */
   metricsUrl?: string;
   /** Base URL of the admin service. Defaults to empty string (same origin). */
   adminBaseUrl?: string;

@@ -176,8 +176,8 @@ export const STACK_PANES: Pane[] = [
       SHIPWRIGHT_ADMIN_API_KEYS: `dev-agent:${DUMMY_AGENT_API_KEY}:dev-agent`,
       ADMIN_DEV_AUTH: "true",
       // Point the admin toolbar's "Metrics" link at the running metrics
-      // dashboard (:3460). Without this it falls back to /sw/dashboard on the
-      // admin host (:3001) and 404s.
+      // dashboard (:3460). Without this it uses the same-host relative /dashboard,
+      // which in dev points to :3001 instead of the metrics service on :3460.
       METRICS_DASHBOARD_URL: `http://localhost:${METRICS_PORT}/dashboard`,
     },
   },
