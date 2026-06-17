@@ -129,6 +129,31 @@ export interface KubernetesSecret {
   [key: string]: unknown;
 }
 
+export interface PvcSpec {
+  name: string;
+  namespace: string;
+  storageGi: number;
+  storageClassName?: string;
+}
+
+export interface KubernetesPvc {
+  apiVersion: string;
+  kind: string;
+  metadata: {
+    name: string;
+    namespace: string;
+    ownerReferences?: Array<Record<string, unknown>>;
+    [key: string]: unknown;
+  };
+  spec: {
+    accessModes: string[];
+    resources: { requests: { storage: string } };
+    storageClassName?: string;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
 // ─── Interface ──────────────────────────────────────────────────────────────
 
 export interface KubernetesClient {
@@ -148,6 +173,9 @@ export interface KubernetesClient {
   createSecret(namespace: string, spec: SecretSpec): Promise<KubernetesSecret>;
   getSecret(namespace: string, name: string): Promise<KubernetesSecret>;
   deleteSecret(namespace: string, name: string): Promise<void>;
+  createPvc(namespace: string, spec: PvcSpec): Promise<KubernetesPvc>;
+  getPvc(namespace: string, name: string): Promise<KubernetesPvc>;
+  deletePvc(namespace: string, name: string): Promise<void>;
 }
 
 // ─── Pure URL builders ────────────────────────────────────────────────────────
@@ -173,6 +201,16 @@ export function secretUrl(
   name?: string,
 ): string {
   const base = `${trimTrailingSlash(apiServer)}/api/v1/namespaces/${namespace}/secrets`;
+  return name ? `${base}/${name}` : base;
+}
+
+/** `/api/v1/namespaces/{ns}/persistentvolumeclaims[/{name}]` */
+export function pvcUrl(
+  apiServer: string,
+  namespace: string,
+  name?: string,
+): string {
+  const base = `${trimTrailingSlash(apiServer)}/api/v1/namespaces/${namespace}/persistentvolumeclaims`;
   return name ? `${base}/${name}` : base;
 }
 
@@ -234,6 +272,22 @@ export function secretBody(
     metadata: { name: spec.name, namespace },
     data,
   };
+}
+
+export function pvcBody(namespace: string, spec: PvcSpec): KubernetesPvc {
+  const body: KubernetesPvc = {
+    apiVersion: "v1",
+    kind: "PersistentVolumeClaim",
+    metadata: { name: spec.name, namespace },
+    spec: {
+      accessModes: ["ReadWriteOnce"],
+      resources: { requests: { storage: `${spec.storageGi}Gi` } },
+    },
+  };
+  if (spec.storageClassName !== undefined) {
+    body.spec.storageClassName = spec.storageClassName;
+  }
+  return body;
 }
 
 // ─── In-cluster config loading ────────────────────────────────────────────────
@@ -494,6 +548,28 @@ export class HttpKubernetesClient implements KubernetesClient {
       headers: this.authHeaders(),
     });
   }
+
+  async createPvc(namespace: string, spec: PvcSpec): Promise<KubernetesPvc> {
+    return this.request<KubernetesPvc>(pvcUrl(this.apiServer, namespace), {
+      method: "POST",
+      headers: this.authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(pvcBody(namespace, spec)),
+    });
+  }
+
+  async getPvc(namespace: string, name: string): Promise<KubernetesPvc> {
+    return this.request<KubernetesPvc>(pvcUrl(this.apiServer, namespace, name), {
+      method: "GET",
+      headers: this.authHeaders(),
+    });
+  }
+
+  async deletePvc(namespace: string, name: string): Promise<void> {
+    await this.request<unknown>(pvcUrl(this.apiServer, namespace, name), {
+      method: "DELETE",
+      headers: this.authHeaders(),
+    });
+  }
 }
 
 // ─── RecordedKubernetesClient (in-memory double) ──────────────────────────────
@@ -503,6 +579,8 @@ export interface KubernetesCassette {
   deployments: Record<string, KubernetesDeployment>;
   /** Pre-seeded secrets keyed by `${namespace}/${name}`. */
   secrets: Record<string, KubernetesSecret>;
+  /** Pre-seeded PVCs keyed by `${namespace}/${name}`. */
+  pvcs?: Record<string, KubernetesPvc>;
 }
 
 /**
@@ -513,10 +591,12 @@ export interface KubernetesCassette {
 export class RecordedKubernetesClient implements KubernetesClient {
   private readonly deployments: Map<string, KubernetesDeployment>;
   private readonly secrets: Map<string, KubernetesSecret>;
+  private readonly pvcs: Map<string, KubernetesPvc>;
 
   constructor(cassette: KubernetesCassette) {
     this.deployments = new Map(Object.entries(cassette.deployments));
     this.secrets = new Map(Object.entries(cassette.secrets));
+    this.pvcs = new Map(Object.entries(cassette.pvcs ?? {}));
   }
 
   private static key(namespace: string, name: string): string {
@@ -606,5 +686,33 @@ export class RecordedKubernetesClient implements KubernetesClient {
       throw new NotFoundError(`secrets "${name}" not found`);
     }
     this.secrets.delete(key);
+  }
+
+  async createPvc(namespace: string, spec: PvcSpec): Promise<KubernetesPvc> {
+    const key = RecordedKubernetesClient.key(namespace, spec.name);
+    if (this.pvcs.has(key)) {
+      throw new ConflictError(
+        `persistentvolumeclaims "${spec.name}" already exists`,
+      );
+    }
+    const pvc = pvcBody(namespace, spec);
+    this.pvcs.set(key, pvc);
+    return pvc;
+  }
+
+  async getPvc(namespace: string, name: string): Promise<KubernetesPvc> {
+    const pvc = this.pvcs.get(RecordedKubernetesClient.key(namespace, name));
+    if (!pvc) {
+      throw new NotFoundError(`persistentvolumeclaims "${name}" not found`);
+    }
+    return pvc;
+  }
+
+  async deletePvc(namespace: string, name: string): Promise<void> {
+    const key = RecordedKubernetesClient.key(namespace, name);
+    if (!this.pvcs.has(key)) {
+      throw new NotFoundError(`persistentvolumeclaims "${name}" not found`);
+    }
+    this.pvcs.delete(key);
   }
 }

@@ -42,19 +42,23 @@ token scope: N/A (JSON backend)
 [ok]  storage: /path/to/state/todos.json present
 [ok]  data: duplicate-ids — No duplicate IDs found
 [ok]  data: dangling-deps — All dependencies resolve
+[ok]  data: cross-repo-orphans — All repos are valid
 ```
 
 The `doctor` command runs two categories of checks:
 
 1. **Config/storage checks** — verifies the backend is configured correctly and accessible
 2. **Data integrity checks** — audits task metadata for structural issues:
-   - `duplicate-ids` — no task ID appears twice
-   - `dangling-deps` — all task dependencies reference existing tasks
-   - `zero-status-label` (GitHub only) — all shipwright-managed issues have a `status:*` label
-   - `stale-pr` (GitHub only) — tasks in `pr_open` or `approved` status have merged PRs
-   - `cross-repo-orphans` — all cross-repo task references point to valid repositories
 
-If any check fails (returns `[fail]`), the command exits with status code 1.
+| Check | Level | Applies to | Trigger condition |
+|-------|-------|-----------|-------------------|
+| `duplicate-ids` | `fail` | all backends | Two or more tasks share the same `id` |
+| `dangling-deps` | `fail` | all backends | A task's `dependencies` reference an `id` that doesn't exist |
+| `cross-repo-orphans` | `warn` | all backends | A task's `repo` field doesn't match the adapter's configured repo |
+| `zero-status-label` | `fail` | GitHub only | A GitHub issue has a shipwright code block but no `status:*` label |
+| `stale-pr` | `fail` | GitHub only | A task in `pr_open` or `approved` status has a PR that is already merged |
+
+Any check that returns `[fail]` causes the command to exit with status code 1. Results with `[warn]` severity are printed but do not cause a non-zero exit.
 
 ### When to use
 
@@ -244,6 +248,8 @@ To mark a task as HITL:
 
 HITL is a runtime flag — it does not affect `query()` filters or direct task lookup. Use `query(filters: { hitl: true })` to return only HITL tasks, or `query(filters: { hitl: false })` to return only non-HITL tasks.
 
+**Notification workflow:** When `check-dev-task.ts` finds pending HITL tasks that have not been notified (no `hitlNotifiedAt` timestamp), it returns exit code 0 with a notification message listing the tasks. The notification should be posted to the configured channel, and then each task's `hitlNotifiedAt` field should be stamped with the current timestamp using the task store update command to prevent duplicate notifications. The field format is an ISO 8601 timestamp string (e.g., `"2026-06-17T10:00:00Z"`).
+
 ### How task metadata is stored
 
 When Shipwright creates a Jira issue, it stores the full task JSON in an ADF `codeBlock` with `language: "shipwright"` in the issue description. A human-readable description paragraph appears above it. Issues without this block are ignored by the adapter.
@@ -282,7 +288,7 @@ The `task_store.ts` script provides several subcommands for manual interaction w
 | `doctor` | Validate configuration and print diagnostics (includes `backend:` line showing the active backend) |
 | `backend` | Print the active backend name: `json`, `github`, or `jira` (useful for scripts that need to detect the backend) |
 | `query` | Filter and return tasks as JSON array (supports `--status`, `--id`, `--pr`, `--assignee`, `--branch`, `--session`, `--hitl`, and `--ready`) |
-| `append` | Append tasks from a JSON file (insert-only on GitHub adapter; upsert on JSON adapter) |
+| `append` | Append tasks from a JSON file (insert-only on GitHub adapter; upsert on JSON adapter). GitHub backend warns to stderr when a duplicate task ID is skipped: `warn: task '{id}' already exists in GitHub — skipped` |
 | `update` | Write specific fields to a task by ID |
 | `repos` | Print all org/repo strings (one per line) |
 | `resolve-repo` | Print first org/repo (deprecated alias for `repos`) |
