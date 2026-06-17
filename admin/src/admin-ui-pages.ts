@@ -538,6 +538,23 @@ export function renderAgentDetailPage(
 
     ${isAdmin ? membersSection : ""}
 
+    ${
+      isAdmin
+        ? `<!-- Danger Zone -->
+    <div class="card" style="border:1px solid #fca5a5">
+      <div class="card-title" style="color:#dc2626">Danger Zone</div>
+      <p style="font-size:13px;color:#6b7280;margin-bottom:16px">
+        Deleting this agent permanently removes all its data (env vars, crons, tools, tokens, plugins, members)
+        and terminates its pod. This action cannot be undone.
+      </p>
+      <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/delete"
+            onsubmit="return confirm('Delete agent ${escapeHtml(agent.name)}? This cannot be undone.')">
+        <button type="submit" class="btn btn-danger">Delete agent</button>
+      </form>
+    </div>`
+        : ""
+    }
+
   </div>
 </body>
 </html>`;

@@ -155,6 +155,13 @@ function makeMockDeps(
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
         }),
+        delete: async () => ({
+          id: AGENT_ID,
+          name: "Test Agent",
+          slackId: "U123456",
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+        }),
       },
       agentPlugin: {
         findMany: async () => [],
@@ -201,6 +208,10 @@ function makeMockDeps(
     adminAllowedEmails: ADMIN_ALLOWED_EMAILS,
     googleClient: makeGoogleClient(),
     slackClient: { ...BASE_SLACK_CLIENT, ...slackClientOverride },
+    provisioner: {
+      provision: async () => ({ resourceName: "r", secretName: "s", deploymentName: "d" }),
+      deprovision: async () => {},
+    },
     appBaseUrl: "https://example.com",
     ...rest,
   };
@@ -1294,6 +1305,13 @@ describe("admin UI — member access control", () => {
             createdAt: new Date("2024-01-01"),
             updatedAt: new Date("2024-01-01"),
           }),
+          delete: async () => ({
+            id: AGENT_ID,
+            name: "Test Agent",
+            slackId: "U123456",
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+          }),
         },
         agentPlugin: { findMany: async () => [] },
         agentMember: {
@@ -1351,6 +1369,7 @@ describe("admin UI — member access control", () => {
           },
           findUnique: async () => null,
           create: async () => ({ id: AGENT_ID, name: "My Agent", slackId: "U1", createdAt: new Date(), updatedAt: new Date() }),
+          delete: async () => ({ id: AGENT_ID, name: "My Agent", slackId: "U1", createdAt: new Date(), updatedAt: new Date() }),
         },
         agentPlugin: { findMany: async () => [] },
         agentMember: {
@@ -1404,6 +1423,7 @@ describe("admin UI — member access control", () => {
           findMany: async () => [],
           findUnique: async () => null,
           create: async () => ({ id: AGENT_ID, name: "Test Agent", slackId: "U1", createdAt: new Date(), updatedAt: new Date() }),
+          delete: async () => ({ id: AGENT_ID, name: "Test Agent", slackId: "U1", createdAt: new Date(), updatedAt: new Date() }),
         },
         agentPlugin: { findMany: async () => [] },
         agentMember: {
@@ -1450,6 +1470,86 @@ describe("admin UI — member access control", () => {
   });
 });
 
+// ─── Agent delete route ───────────────────────────────────────────────────────
+
+describe("admin UI — agent delete route", () => {
+  let adminCookie: string;
+  let nonAdminCookie: string;
+
+  beforeAll(async () => {
+    adminCookie = await makeSessionCookie();
+    nonAdminCookie = await makeSessionCookie(
+      SESSION_SECRET,
+      "google-sub-member",
+      "member@example.com",
+      false,
+    );
+  });
+
+  it("admin POST /admin/agents/:id/delete → 302 redirect to /admin/agents?success=deleted", async () => {
+    let deprovisioned: string | null = null;
+    let deleted: string | null = null;
+    const deps = makeMockDeps({
+      provisioner: {
+        provision: async () => ({ resourceName: "r", secretName: "s", deploymentName: "d" }),
+        deprovision: async (agentId: string) => {
+          deprovisioned = agentId;
+        },
+      },
+      prisma: {
+        agent: {
+          findMany: async () => [],
+          findUnique: async () => ({
+            id: AGENT_ID,
+            name: "Test Agent",
+            slackId: "U123456",
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+          }),
+          create: async () => ({
+            id: AGENT_ID,
+            name: "Test Agent",
+            slackId: "U123456",
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+          }),
+          delete: async ({ where }: { where: { id: string } }) => {
+            deleted = where.id;
+            return { id: where.id, name: "Test Agent", slackId: null, createdAt: new Date(), updatedAt: new Date() };
+          },
+        },
+        agentPlugin: { findMany: async () => [] },
+        agentMember: {
+          findMany: async () => [],
+          findUnique: async () => null,
+          create: async () => ({ id: "m1", agentId: AGENT_ID, email: "member@example.com" }),
+          deleteMany: async () => ({ count: 0 }),
+        },
+      },
+    });
+    const app = createAdminUIApp(deps);
+    const res = await app.request(`/admin/agents/${AGENT_ID}/delete`, {
+      method: "POST",
+      headers: { Cookie: `admin_session=${adminCookie}` },
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/admin/agents?success=deleted");
+    // biome-ignore lint/style/noNonNullAssertion: set by the spy closure above
+    expect(deprovisioned!).toBe(AGENT_ID);
+    // biome-ignore lint/style/noNonNullAssertion: set by the spy closure above
+    expect(deleted!).toBe(AGENT_ID);
+  });
+
+  it("non-admin POST /admin/agents/:id/delete → 403", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request(`/admin/agents/${AGENT_ID}/delete`, {
+      method: "POST",
+      headers: { Cookie: `admin_session=${nonAdminCookie}` },
+    });
+    expect(res.status).toBe(403);
+  });
+});
+
 // ─── Member management routes ─────────────────────────────────────────────────
 
 describe("admin UI — member management routes", () => {
@@ -1467,6 +1567,7 @@ describe("admin UI — member management routes", () => {
           findMany: async () => [],
           findUnique: async () => ({ id: AGENT_ID, name: "Test Agent", slackId: "U1", createdAt: new Date(), updatedAt: new Date() }),
           create: async () => ({ id: AGENT_ID, name: "Test Agent", slackId: "U1", createdAt: new Date(), updatedAt: new Date() }),
+          delete: async () => ({ id: AGENT_ID, name: "Test Agent", slackId: "U1", createdAt: new Date(), updatedAt: new Date() }),
         },
         agentPlugin: { findMany: async () => [] },
         agentMember: {
@@ -1503,6 +1604,7 @@ describe("admin UI — member management routes", () => {
           findMany: async () => [],
           findUnique: async () => ({ id: AGENT_ID, name: "Test Agent", slackId: "U1", createdAt: new Date(), updatedAt: new Date() }),
           create: async () => ({ id: AGENT_ID, name: "Test Agent", slackId: "U1", createdAt: new Date(), updatedAt: new Date() }),
+          delete: async () => ({ id: AGENT_ID, name: "Test Agent", slackId: "U1", createdAt: new Date(), updatedAt: new Date() }),
         },
         agentPlugin: { findMany: async () => [] },
         agentMember: {

@@ -38,6 +38,7 @@ import type { AgentTokenService } from "./agent-tokens.ts";
 import type { AgentToolService } from "./agent-tools.ts";
 import { ForbiddenError, UnprocessableEntityError } from "./errors.ts";
 import type { GoogleAuthClient } from "./google-auth-client.ts";
+import type { AgentProvisioner } from "./agent-provisioner.ts";
 import type { AppManifest } from "./slack-provisioning-client.ts";
 import { defaultAgentManifest } from "./slack-provisioning-client.ts";
 
@@ -89,6 +90,13 @@ interface PrismaAgentLike {
   create(args: {
     data: { name: string; slackId?: string | null };
   }): Promise<{
+    id: string;
+    name: string;
+    slackId: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+  }>;
+  delete(args: { where: { id: string } }): Promise<{
     id: string;
     name: string;
     slackId: string | null;
@@ -150,6 +158,7 @@ export interface AdminUIDeps {
     "listForAgent" | "create" | "revoke"
   >;
   agentPluginService: Pick<AgentPluginService, "list">;
+  provisioner: AgentProvisioner;
   sessionSecret: string;
   googleClient: GoogleAuthClient;
   googleClientId: string;
@@ -243,6 +252,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     agentToolService,
     agentTokenService,
     agentPluginService,
+    provisioner,
     sessionSecret,
     googleClient,
     googleClientId,
@@ -1269,6 +1279,21 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       }
     }
     return c.redirect(`/admin/agents/${agentId}`, 302);
+  });
+
+  // ─── Agent delete (danger zone) ───────────────────────────────────────────
+
+  app.post("/admin/agents/:id/delete", requireAuth, async (c) => {
+    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+    const agentId = c.req.param("id");
+    try {
+      await provisioner.deprovision(agentId);
+      await prisma.agent.delete({ where: { id: agentId } });
+    } catch (err) {
+      const msg = err instanceof Error ? encodeURIComponent(err.message) : "delete_failed";
+      return c.redirect(`/admin/agents/${agentId}?error=${msg}`, 302);
+    }
+    return c.redirect("/admin/agents?success=deleted", 302);
   });
 
   return app;
