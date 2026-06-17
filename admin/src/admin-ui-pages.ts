@@ -547,10 +547,18 @@ export function renderAgentDetailPage(
         Deleting this agent permanently removes all its data (env vars, crons, tools, tokens, plugins, members)
         and terminates its pod. This action cannot be undone.
       </p>
-      <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/delete"
-            onsubmit="return confirm('Delete agent ${escapeHtml(agent.name)}? This cannot be undone.')">
+      <form id="delete-agent-form" method="POST" action="/admin/agents/${escapeHtml(agent.id)}/delete"
+            data-agent-name="${escapeHtml(agent.name)}">
         <button type="submit" class="btn btn-danger">Delete agent</button>
       </form>
+      <script>
+        document.getElementById('delete-agent-form').addEventListener('submit', function(e) {
+          var name = this.dataset.agentName;
+          if (!confirm('Delete agent ' + name + '? This cannot be undone.')) {
+            e.preventDefault();
+          }
+        });
+      </script>
     </div>`
         : ""
     }
