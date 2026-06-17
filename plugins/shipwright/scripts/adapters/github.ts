@@ -146,6 +146,11 @@ function issueToTask(issue: GhIssue): TaskWithMeta {
     task._labelStatus = labelStatus;
   }
 
+  // hitl label is authoritative — set task.hitl when the label is present
+  if (issue.labels.some((lbl) => lbl.name === "hitl")) {
+    task.hitl = true;
+  }
+
   // Fall back to GitHub issue assignee when not set in the YAML block
   if (task.assignee === undefined && issue.assignees?.[0]) {
     task.assignee = issue.assignees[0].login;
@@ -326,6 +331,13 @@ export class GitHubTaskStore implements TaskStore {
       // ready path above.
       tasks = tasks.filter((t) => t.assignee === filters.assignee);
     }
+    if (filters.hitl !== undefined) {
+      if (filters.hitl) {
+        tasks = tasks.filter((t) => t.hitl === true);
+      } else {
+        tasks = tasks.filter((t) => t.hitl !== true);
+      }
+    }
 
     return tasks.map(stripInternal);
   }
@@ -397,6 +409,10 @@ export class GitHubTaskStore implements TaskStore {
 
       if (assignee) {
         createArgs.push("--assignee", assignee);
+      }
+
+      if (task.hitl === true) {
+        createArgs.push("--label", "hitl");
       }
 
       await this.runGh(createArgs);
@@ -494,6 +510,31 @@ export class GitHubTaskStore implements TaskStore {
           String(issueNumber),
           "--repo",
           this.repoFlag,
+        ]);
+      }
+    }
+
+    // Manage hitl label when hitl field is explicitly set or cleared
+    if (fields.hitl !== undefined && issueNumber !== undefined) {
+      if (fields.hitl) {
+        await this.runGh([
+          "issue",
+          "edit",
+          String(issueNumber),
+          "--repo",
+          this.repoFlag,
+          "--add-label",
+          "hitl",
+        ]);
+      } else {
+        await this.runGh([
+          "issue",
+          "edit",
+          String(issueNumber),
+          "--repo",
+          this.repoFlag,
+          "--remove-label",
+          "hitl",
         ]);
       }
     }
@@ -741,6 +782,16 @@ export class GitHubTaskStore implements TaskStore {
         "--force",
       ]);
     }
+    await this.runGh([
+      "label",
+      "create",
+      "hitl",
+      "--repo",
+      this.repoFlag,
+      "--color",
+      "B60205",
+      "--force",
+    ]);
   }
 
   async resolveRepo(): Promise<string> {
