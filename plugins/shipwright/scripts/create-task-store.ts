@@ -146,6 +146,63 @@ export function loadConfig(cwd: string = process.cwd()): LoadedConfig {
 // ─── Factory ──────────────────────────────────────────────────────────────────
 
 /**
+ * Run doctor diagnostics for the active backend configuration.
+ *
+ * Emits human-readable status lines to stdout (console.log) and warnings to
+ * stderr (console.warn). For non-JSON backends, checks for the coexistence
+ * condition where a `state/todos.json` file exists and is non-empty alongside
+ * an active GitHub or Jira backend — this indicates stale JSON data that will
+ * never be consulted and could be confusing.
+ *
+ * @param config       The resolved task store config.
+ * @param configSource The source string returned by loadConfig (e.g. file path or "default").
+ * @param cwd          The working directory to look for state/todos.json (defaults to process.cwd()).
+ */
+export function doctorCheck(
+  config: TaskStoreConfig,
+  configSource: string,
+  cwd: string = process.cwd(),
+): void {
+  const backend = config.taskStore;
+
+  console.log(`backend: ${backend}`);
+  if (configSource === "default") {
+    console.log("config: default (no SHIPWRIGHT_CONFIG set)");
+  } else {
+    console.log(`config: ${configSource}`);
+  }
+
+  // For non-JSON backends (github, jira), check for a coexisting non-empty todos.json
+  if (backend !== "json") {
+    const todosPath = join(cwd, "state", "todos.json");
+    if (existsSync(todosPath)) {
+      try {
+        const content = readFileSync(todosPath, "utf-8").trim();
+        if (content.length > 0) {
+          let parsed: unknown;
+          try {
+            parsed = JSON.parse(content);
+          } catch {
+            parsed = null;
+          }
+          // Warn if it's a non-empty array (or unparseable content)
+          const isNonEmptyArray =
+            Array.isArray(parsed) && (parsed as unknown[]).length > 0;
+          const isNonEmptyContent = !Array.isArray(parsed) && content !== "[]";
+          if (isNonEmptyArray || isNonEmptyContent) {
+            console.warn(
+              `[warn] config: todos.json exists and is non-empty while ${backend} backend is active`,
+            );
+          }
+        }
+      } catch {
+        // If we can't read the file, skip the check silently
+      }
+    }
+  }
+}
+
+/**
  * Create a TaskStore instance for the given config.
  *
  * - `taskStore: "json"` → JsonTaskStore backed by state/todos.json in process.cwd()
