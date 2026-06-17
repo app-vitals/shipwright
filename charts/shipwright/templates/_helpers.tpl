@@ -132,6 +132,48 @@ SA). Defaults to "<fullname>-agent" when create=true and no name override.
 {{- end }}
 
 {{/*
+Whisper component fullname: "<fullname>-whisper". The self-hosted Whisper ASR
+pod (onerahmet/openai-whisper-asr-webservice) rendered only when
+agent.voice.enabled and agent.voice.provider == "whisper".
+*/}}
+{{- define "shipwright.whisper.fullname" -}}
+{{- printf "%s-whisper" (include "shipwright.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Whisper selector labels — fullname selector labels plus the component label.
+*/}}
+{{- define "shipwright.whisper.selectorLabels" -}}
+{{ include "shipwright.selectorLabels" . }}
+app.kubernetes.io/component: whisper
+{{- end }}
+
+{{/*
+Whisper labels — common labels plus the component label.
+*/}}
+{{- define "shipwright.whisper.labels" -}}
+{{ include "shipwright.labels" . }}
+app.kubernetes.io/component: whisper
+{{- end }}
+
+{{/*
+In-cluster URL of the Whisper Service ("http://<fullname>-whisper:<port>").
+This is the WHISPER_SERVICE_URL injected into the admin (and via the provisioner,
+provisioned agents) when agent.voice.provider == "whisper".
+*/}}
+{{- define "shipwright.whisper.serviceUrl" -}}
+{{- printf "http://%s:%v" (include "shipwright.whisper.fullname" .) .Values.agent.voice.whisper.service.port }}
+{{- end }}
+
+{{/*
+Name of the chart-managed voice Secret holding the STT/TTS API keys
+(ELEVENLABS_API_KEY, and GROQ_API_KEY when provider=groq).
+*/}}
+{{- define "shipwright.voice.secretName" -}}
+{{- printf "%s-voice" (include "shipwright.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
 Metrics component fullname: "<fullname>-metrics".
 */}}
 {{- define "shipwright.metrics.fullname" -}}

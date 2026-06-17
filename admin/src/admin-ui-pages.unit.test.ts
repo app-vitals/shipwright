@@ -283,7 +283,9 @@ describe("renderAgentDetailPage — members section", () => {
       createdAt: new Date("2025-01-01"),
     };
     const html = renderAgentDetailPage(AGENT, {}, [], [], [], [], [xssMember], USER_NAME, true);
-    expect(html).not.toContain("<script>");
+    // The raw XSS payload must not appear unescaped in the output
+    expect(html).not.toContain('alert("xss")');
+    // The email content must be HTML-escaped
     expect(html).toContain("&lt;script&gt;");
   });
 });
@@ -313,7 +315,9 @@ describe("renderAgentDetailPage — overview", () => {
       name: '<script>alert("xss")</script>',
     };
     const html = renderAgentDetailPage(xssAgent, {}, [], [], [], [], [], USER_NAME, true);
-    expect(html).not.toContain("<script>");
+    // The raw XSS payload must not appear unescaped in the output
+    expect(html).not.toContain('alert("xss")');
+    // The agent name must be HTML-escaped wherever it appears
     expect(html).toContain("&lt;script&gt;");
   });
 
@@ -330,7 +334,8 @@ describe("renderAgentDetailPage — overview", () => {
 
   test("XSS: error message is escaped", () => {
     const html = render({ error: "<script>bad()</script>" });
-    expect(html).not.toContain("<script>");
+    // The opening script tag must not appear unescaped (would allow execution)
+    expect(html).not.toContain("<script>bad()");
     expect(html).toContain("&lt;script&gt;");
   });
 
@@ -347,13 +352,32 @@ describe("renderAgentDetailPage — overview", () => {
 
   test("XSS: new token value is escaped", () => {
     const html = render({ newToken: '<script>alert("xss")</script>' });
-    expect(html).not.toContain("<script>");
+    // The raw XSS payload must not appear unescaped in the output
+    expect(html).not.toContain('alert("xss")');
     expect(html).toContain("&lt;script&gt;");
   });
 
   test("back link to /admin/agents present", () => {
     const html = render();
     expect(html).toContain('href="/admin/agents"');
+  });
+
+  test("danger zone: delete form uses data-agent-name attribute (XSS-safe)", () => {
+    const xssAgent: AgentDetail = {
+      ...AGENT,
+      name: "O'Brien",
+    };
+    const html = renderAgentDetailPage(xssAgent, {}, [], [], [], [], [], USER_NAME, true);
+    // Agent name stored as a data attribute (safe in double-quoted HTML attribute context)
+    expect(html).toContain("data-agent-name=\"O'Brien\"");
+    // No inline onsubmit with unescaped single quotes
+    expect(html).not.toContain("onsubmit");
+  });
+
+  test("danger zone: delete form absent for non-admins", () => {
+    const html = renderAgentDetailPage(AGENT, {}, [], [], [], [], [], USER_NAME, false);
+    expect(html).not.toContain("Danger Zone");
+    expect(html).not.toContain("delete-agent-form");
   });
 });
 
@@ -406,7 +430,8 @@ describe("renderAgentDetailPage — env vars", () => {
 
   test("XSS: env key is escaped", () => {
     const html = render({ "<script>": "val" });
-    expect(html).not.toContain("<script>");
+    // The raw XSS payload must not appear as a live tag in the output
+    expect(html).not.toContain("<script>val");
     expect(html).toContain("&lt;script&gt;");
   });
 
@@ -527,7 +552,8 @@ describe("renderAgentDetailPage — crons", () => {
       schedule: "<script>bad()</script>",
     };
     const html = render([xssCron]);
-    expect(html).not.toContain("<script>");
+    // The raw XSS payload must not appear unescaped in the output
+    expect(html).not.toContain(">bad()<");
     expect(html).toContain("&lt;script&gt;");
   });
 
@@ -596,7 +622,8 @@ describe("renderAgentDetailPage — tools", () => {
       pattern: "<script>alert(1)</script>",
     };
     const html = render([xssTool]);
-    expect(html).not.toContain("<script>");
+    // The raw XSS payload must not appear unescaped in the output
+    expect(html).not.toContain(">alert(1)<");
     expect(html).toContain("&lt;script&gt;");
   });
 });
@@ -669,7 +696,8 @@ describe("renderAgentDetailPage — tokens", () => {
       label: "<script>steal()</script>",
     };
     const html = render([xssToken]);
-    expect(html).not.toContain("<script>");
+    // The raw XSS payload must not appear unescaped in the output
+    expect(html).not.toContain(">steal()<");
     expect(html).toContain("&lt;script&gt;");
   });
 });
@@ -719,7 +747,8 @@ describe("renderAgentDetailPage — plugins", () => {
       name: "<script>bad()</script>",
     };
     const html = render([xssPlugin]);
-    expect(html).not.toContain("<script>");
+    // The raw XSS payload must not appear unescaped in the output
+    expect(html).not.toContain(">bad()<");
     expect(html).toContain("&lt;script&gt;");
   });
 });

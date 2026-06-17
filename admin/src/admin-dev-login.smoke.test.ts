@@ -64,6 +64,13 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
         }),
+        delete: async () => ({
+          id: AGENT_ID,
+          name: "Test Agent",
+          slackId: "U123456",
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+        }),
       },
       agentPlugin: {
         findMany: async () => [],
@@ -134,6 +141,10 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
         signingSecret: "test-signing-secret",
       }),
       exchangeOAuthCode: async () => ({ botToken: "xoxb-mock-bot-token" }),
+    },
+    provisioner: {
+      provision: async () => ({ resourceName: "r", secretName: "s", deploymentName: "d" }),
+      deprovision: async () => {},
     },
     appBaseUrl: "https://example.com",
     devAuthEnabled: false,

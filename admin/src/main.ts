@@ -114,6 +114,20 @@ function buildProvisioner(
   const replicasRaw = env.SHIPWRIGHT_AGENT_REPLICAS;
   const replicas = replicasRaw ? Number(replicasRaw) : undefined;
 
+  // Agent-voice (STT/TTS) env flowed into provisioned agent pods. The chart's
+  // voice Secret + Whisper Service URL land in the admin's env when
+  // agent.voice.enabled; absent → voice disabled and no voice env is injected.
+  const voice = {
+    ...(env.WHISPER_SERVICE_URL
+      ? { whisperServiceUrl: env.WHISPER_SERVICE_URL }
+      : {}),
+    ...(env.GROQ_API_KEY ? { groqApiKey: env.GROQ_API_KEY } : {}),
+    ...(env.ELEVENLABS_API_KEY
+      ? { elevenLabsApiKey: env.ELEVENLABS_API_KEY }
+      : {}),
+    ...(env.ELEVENLABS_VOICE_ID ? { voiceId: env.ELEVENLABS_VOICE_ID } : {}),
+  };
+
   const k8s = new HttpKubernetesClient();
 
   return new KubernetesAgentProvisioner(k8s, agentTokenService, {
@@ -126,6 +140,7 @@ function buildProvisioner(
     ...(replicas !== undefined && Number.isFinite(replicas)
       ? { replicas }
       : {}),
+    ...(Object.keys(voice).length > 0 ? { voice } : {}),
   });
 }
 
@@ -220,6 +235,7 @@ async function startServer(): Promise<void> {
     agentToolService,
     agentTokenService,
     agentPluginService,
+    provisioner,
     sessionSecret,
     googleClientId,
     googleClientSecret,

@@ -140,6 +140,62 @@ export interface AgentDeploymentOpts {
   adminDeploymentUid: string;
   /** Replica count. Defaults to 1. */
   replicas?: number;
+  /**
+   * Optional agent-voice (STT/TTS) configuration. When omitted, the provisioned
+   * agent pod gets only the 3 base env vars (voice disabled). When present, the
+   * relevant vars are appended after the base vars:
+   *   - whisperServiceUrl → WHISPER_SERVICE_URL (provider=whisper)
+   *   - groqApiKey        → GROQ_API_KEY        (provider=groq)
+   *   - elevenLabsApiKey  → ELEVENLABS_API_KEY  (TTS, either provider)
+   *   - voiceId           → ELEVENLABS_VOICE_ID (optional TTS voice override)
+   * Only the keys that are set are injected — this mirrors the agent's own
+   * env contract (agent/src/config.ts).
+   */
+  voice?: AgentVoiceEnv;
+}
+
+/**
+ * The subset of voice env an admin provisioner flows into a provisioned agent
+ * pod. The admin reads these from its OWN env (sourced from the chart's voice
+ * Secret + whisper Service URL); this builder only shapes the pod env from them.
+ */
+export interface AgentVoiceEnv {
+  /** http(s) URL of the self-hosted Whisper pod (provider=whisper). */
+  whisperServiceUrl?: string;
+  /** Groq API key (provider=groq). */
+  groqApiKey?: string;
+  /** ElevenLabs API key (TTS). */
+  elevenLabsApiKey?: string;
+  /** Optional ElevenLabs voice id override. */
+  voiceId?: string;
+}
+
+/**
+ * Build the ordered voice env entries from a partial voice config. Only set
+ * keys are emitted; an empty/undefined config yields no entries (voice
+ * disabled). Order is stable for deterministic manifests/tests.
+ */
+function voiceEnvEntries(
+  voice: AgentVoiceEnv | undefined,
+): { name: string; value: string }[] {
+  if (!voice) return [];
+  const entries: { name: string; value: string }[] = [];
+  if (voice.whisperServiceUrl) {
+    entries.push({
+      name: "WHISPER_SERVICE_URL",
+      value: voice.whisperServiceUrl,
+    });
+  }
+  if (voice.groqApiKey) {
+    entries.push({ name: "GROQ_API_KEY", value: voice.groqApiKey });
+  }
+  if (voice.elevenLabsApiKey) {
+    entries.push({ name: "ELEVENLABS_API_KEY", value: voice.elevenLabsApiKey });
+  }
+  if (voice.voiceId) {
+    entries.push({ name: "ELEVENLABS_VOICE_ID", value: voice.voiceId });
+  }
+  return entries;
 }
 
 export function buildAgentDeploymentManifest(
@@ -204,6 +260,9 @@ export function buildAgentDeploymentManifest(
                     secretKeyRef: { name: opts.secretName, key: tokenKey },
                   },
                 },
+                // Voice (STT/TTS) env — appended only for the keys that are set
+                // (none when voice is disabled, preserving the 3 base vars).
+                ...voiceEnvEntries(opts.voice),
               ],
               volumeMounts: [
                 { name: volumeName, mountPath: AGENT_HOME_MOUNT_PATH },
