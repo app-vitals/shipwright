@@ -151,6 +151,7 @@ async function cmdQuery(
   const prStr = getFlag(flags, "pr");
   const pr = prStr !== undefined ? Number.parseInt(prStr, 10) : undefined;
   const assignee = getFlag(flags, "assignee");
+  const branch = getFlag(flags, "branch");
 
   const results = await adapter.query({
     ready,
@@ -159,6 +160,7 @@ async function cmdQuery(
     id,
     pr,
     assignee,
+    branch,
   });
   process.stdout.write(`${JSON.stringify(results, null, 2)}\n`);
 }

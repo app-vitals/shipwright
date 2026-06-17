@@ -307,6 +307,9 @@ export class GitHubTaskStore implements TaskStore {
           (t) => t.assignee === undefined || t.assignee === filters.assignee,
         );
       }
+      if (filters.branch !== undefined) {
+        result = result.filter((t) => t.branch === filters.branch);
+      }
       return result.map(stripInternal);
     }
 
@@ -330,6 +333,9 @@ export class GitHubTaskStore implements TaskStore {
       // are NOT implicitly available to every agent the way they are in the
       // ready path above.
       tasks = tasks.filter((t) => t.assignee === filters.assignee);
+    }
+    if (filters.branch !== undefined) {
+      tasks = tasks.filter((t) => t.branch === filters.branch);
     }
     if (filters.hitl !== undefined) {
       if (filters.hitl) {

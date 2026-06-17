@@ -1320,6 +1320,126 @@ describe("GitHubTaskStore.query assignee filter", () => {
   });
 });
 
+// ─── query with branch filter ─────────────────────────────────────────────────
+
+describe("GitHubTaskStore.query branch filter", () => {
+  test("filters tasks by branch when filters.branch is set", async () => {
+    const issues = [
+      makeIssue(1, "TSR-B.1: On branch", "pending", {
+        id: "TSR-B.1",
+        title: "On branch",
+        status: "pending",
+        branch: "feat/x",
+      }),
+      makeIssue(2, "TSR-B.2: Other branch", "pending", {
+        id: "TSR-B.2",
+        title: "Other branch",
+        status: "pending",
+        branch: "feat/y",
+      }),
+      makeIssue(3, "TSR-B.3: No branch", "pending", {
+        id: "TSR-B.3",
+        title: "No branch",
+        status: "pending",
+      }),
+    ];
+
+    const fakeGh = await writeFakeGh(tmpDir, {
+      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone,assignees --limit 500":
+        issues,
+    });
+    process.env.GH_CMD = fakeGh;
+
+    const adapter = new GitHubTaskStore(CONFIG);
+    const tasks = await adapter.query({ branch: "feat/x" });
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0].id).toBe("TSR-B.1");
+  });
+
+  test("returns empty array when no tasks match the branch", async () => {
+    const issues = [
+      makeIssue(1, "TSR-B.4: Other branch", "pending", {
+        id: "TSR-B.4",
+        title: "Other branch",
+        status: "pending",
+        branch: "feat/other",
+      }),
+    ];
+
+    const fakeGh = await writeFakeGh(tmpDir, {
+      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone,assignees --limit 500":
+        issues,
+    });
+    process.env.GH_CMD = fakeGh;
+
+    const adapter = new GitHubTaskStore(CONFIG);
+    const tasks = await adapter.query({ branch: "feat/x" });
+    expect(tasks).toHaveLength(0);
+  });
+
+  test("branch filter can be combined with status filter", async () => {
+    const issues = [
+      makeIssue(1, "TSR-B.5: Match both", "pending", {
+        id: "TSR-B.5",
+        title: "Match both",
+        status: "pending",
+        branch: "feat/x",
+      }),
+      makeIssue(2, "TSR-B.6: Right branch wrong status", "in_progress", {
+        id: "TSR-B.6",
+        title: "Right branch wrong status",
+        status: "in_progress",
+        branch: "feat/x",
+      }),
+      makeIssue(3, "TSR-B.7: Wrong branch right status", "pending", {
+        id: "TSR-B.7",
+        title: "Wrong branch right status",
+        status: "pending",
+        branch: "feat/y",
+      }),
+    ];
+
+    const fakeGh = await writeFakeGh(tmpDir, {
+      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone,assignees --limit 500":
+        issues,
+    });
+    process.env.GH_CMD = fakeGh;
+
+    const adapter = new GitHubTaskStore(CONFIG);
+    const tasks = await adapter.query({ branch: "feat/x", status: "pending" });
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0].id).toBe("TSR-B.5");
+  });
+
+  test("--ready --branch filters ready tasks by branch", async () => {
+    const issues = [
+      makeIssue(1, "TSR-B.8: On branch", "pending", {
+        id: "TSR-B.8",
+        title: "On branch",
+        status: "pending",
+        branch: "feat/x",
+      }),
+      makeIssue(2, "TSR-B.9: Other branch", "pending", {
+        id: "TSR-B.9",
+        title: "Other branch",
+        status: "pending",
+        branch: "feat/y",
+      }),
+    ];
+
+    const fakeGh = await writeFakeGh(tmpDir, {
+      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone,assignees --limit 500":
+        issues,
+    });
+    process.env.GH_CMD = fakeGh;
+
+    const adapter = new GitHubTaskStore(CONFIG);
+    const tasks = await adapter.query({ ready: true, branch: "feat/x" });
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0].id).toBe("TSR-B.8");
+  });
+});
+
 // ─── update closes on terminal statuses ──────────────────────────────────────
 
 describe("GitHubTaskStore.update terminal status closing", () => {
