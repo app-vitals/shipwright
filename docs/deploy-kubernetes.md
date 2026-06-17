@@ -300,18 +300,22 @@ to spin up real agent workloads.
 Setting `agent.provisioning.enabled=true` switches the admin service to the
 **Kubernetes** provisioner. Then:
 
-- `POST /agents` mints a scoped per-agent token, creates a per-agent **Secret**
-  (carrying the token) and a per-agent **Deployment** (referencing that Secret),
-  in that order. Both operations are idempotent and safe to retry.
+- `POST /agents` creates a per-agent **PersistentVolumeClaim** (for persistent
+  agent home storage), mints a scoped per-agent token, creates a per-agent
+  **Secret** (carrying the token), and a per-agent **Deployment** (referencing
+  both), in that order. All operations are idempotent and safe to retry.
 - `DELETE /agents/:id` deletes the agent's Deployment then its Secret,
-  tolerating already-absent resources.
+  tolerating already-absent resources. The **PVC is intentionally left behind**
+  (data safety policy) — cluster admins may clean it up manually once its data
+  has been exported if needed.
 
 ### What the chart renders when provisioning is enabled
 
 - A **namespace-scoped `Role`** (not a `ClusterRole`) named
   `<admin>-agent-provisioner` granting `create`, `get`, and `delete` on
-  `Deployments` (`apps`) and `Secrets` (core) — exactly the verbs the
-  provisioner exercises, least-privilege and scoped to the release namespace.
+  `PersistentVolumeClaims` (core), `Deployments` (`apps`), and `Secrets` (core)
+  — exactly the verbs the provisioner exercises, least-privilege and scoped to
+  the release namespace.
 - A **`RoleBinding`** binding that Role to the **admin ServiceAccount**.
 - A separate **agent ServiceAccount** that provisioned agent pods run as
   (distinct from the admin SA).
