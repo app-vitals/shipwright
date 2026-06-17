@@ -59,6 +59,12 @@ export interface ReconcileResult {
   recreated: string[];
   /** K8s Deployment names that exist but are not tied to any known agent ID. */
   orphans: string[];
+  /**
+   * Agent IDs whose re-provisioning failed with a transient or permanent error.
+   * These are not counted in `recreated`. The caller should retry or alert on
+   * non-empty `failed` arrays.
+   */
+  failed: Array<{ agentId: string; error: string }>;
 }
 
 export interface AgentProvisioner {
@@ -241,13 +247,23 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
 
     const recreated: string[] = [];
     const orphans: string[] = [];
+    const failed: Array<{ agentId: string; error: string }> = [];
 
     // Recreate Deployments that should exist but are missing in k8s.
+    // Each provision() call is wrapped in try/catch so a single transient K8s
+    // error does not abort the loop — the remaining agents are always checked.
     for (const [resourceName, agentId] of expectedNames) {
       if (!k8sNameSet.has(resourceName)) {
         // provision() is idempotent — it handles ConflictError on Secret/Deployment.
-        await this.provision(agentId);
-        recreated.push(agentId);
+        try {
+          await this.provision(agentId);
+          recreated.push(agentId);
+        } catch (err) {
+          failed.push({
+            agentId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
       }
     }
 
@@ -258,7 +274,7 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
       }
     }
 
-    return { recreated, orphans };
+    return { recreated, orphans, failed };
   }
 
   // ─── Spec derivation (via the pure manifest builders) ─────────────────────
@@ -353,6 +369,6 @@ export class NoopAgentProvisioner implements AgentProvisioner {
   }
 
   async reconcile(_agentIds: string[]): Promise<ReconcileResult> {
-    return { recreated: [], orphans: [] };
+    return { recreated: [], orphans: [], failed: [] };
   }
 }

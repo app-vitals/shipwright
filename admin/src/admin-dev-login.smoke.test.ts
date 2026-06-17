@@ -145,6 +145,7 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
     provisioner: {
       provision: async () => ({ resourceName: "r", secretName: "s", deploymentName: "d" }),
       deprovision: async () => {},
+      reconcile: async () => ({ recreated: [], orphans: [], failed: [] }),
     },
     appBaseUrl: "https://example.com",
     devAuthEnabled: false,

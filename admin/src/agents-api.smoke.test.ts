@@ -22,9 +22,10 @@ import type { AdminDeps } from "./agents-api.ts";
 class RecordingProvisioner implements AgentProvisioner {
   readonly provisioned: string[] = [];
   readonly deprovisioned: string[] = [];
-  reconcileResult: { recreated: string[]; orphans: string[] } = {
+  reconcileResult: { recreated: string[]; orphans: string[]; failed: Array<{ agentId: string; error: string }> } = {
     recreated: [],
     orphans: [],
+    failed: [],
   };
 
   constructor(private readonly onProvision?: (agentId: string) => void) {}
@@ -45,7 +46,7 @@ class RecordingProvisioner implements AgentProvisioner {
 
   async reconcile(
     _agentIds: string[],
-  ): Promise<{ recreated: string[]; orphans: string[] }> {
+  ): Promise<{ recreated: string[]; orphans: string[]; failed: Array<{ agentId: string; error: string }> }> {
     return this.reconcileResult;
   }
 }
@@ -977,7 +978,7 @@ describe("admin API — delete agent", () => {
         throw new Error("k8s API timeout");
       },
       async reconcile() {
-        return { recreated: [], orphans: [] };
+        return { recreated: [], orphans: [], failed: [] };
       },
     };
     const base = makeMockDeps();
@@ -1075,6 +1076,7 @@ describe("admin API — POST /agents/reconcile", () => {
     provisioner.reconcileResult = {
       recreated: ["agent-abc"],
       orphans: ["agent-orphan"],
+      failed: [],
     };
     const deps: AdminDeps = { ...makeMockDeps(), provisioner };
     const app = createAdminApp(deps);
