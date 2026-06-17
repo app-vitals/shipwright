@@ -23,6 +23,7 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
+import type { AuditResult } from "./adapters/audit";
 import { JsonTaskStore } from "./adapters/json";
 import { resolveRepos } from "./check-helpers";
 import { createTaskStore, doctorCheck, loadConfig } from "./create-task-store";
@@ -319,15 +320,35 @@ export function cmdBackend(config: import("./store").TaskStoreConfig): void {
   process.stdout.write(`${getBackend(config)}\n`);
 }
 
-function cmdDoctor(
+async function cmdDoctor(
   adapter: TaskStore,
   config: import("./store").TaskStoreConfig,
   configSource: string,
-): void {
+): Promise<void> {
+  // Run existing config/storage doctor checks
   if (adapter instanceof JsonTaskStore) {
     adapter.doctor(configSource);
   } else {
     doctorCheck(config, configSource);
+  }
+
+  // Run data integrity checks via dataDoctor() if available
+  const withDoctor = adapter as { dataDoctor?: () => Promise<AuditResult[]> };
+  if (typeof withDoctor.dataDoctor === "function") {
+    const results = await withDoctor.dataDoctor();
+
+    let hasFailure = false;
+    for (const result of results) {
+      const line = `[${result.level}] data: ${result.check} — ${result.message}`;
+      process.stdout.write(`${line}\n`);
+      if (result.level === "fail") {
+        hasFailure = true;
+      }
+    }
+
+    if (hasFailure) {
+      process.exit(1);
+    }
   }
 }
 
@@ -382,7 +403,7 @@ async function main(): Promise<void> {
       await cmdCleanup(adapter);
       break;
     case "doctor":
-      cmdDoctor(adapter, config, configSource);
+      await cmdDoctor(adapter, config, configSource);
       break;
     case "backend":
       cmdBackend(config);

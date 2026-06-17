@@ -107,6 +107,13 @@ function makeMockDeps(
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
         }),
+        delete: async () => ({
+          id: AGENT_ID,
+          name: "Test Agent",
+          slackId: null,
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+        }),
       },
       agentPlugin: {
         findMany: async () => [],
@@ -179,6 +186,10 @@ function makeMockDeps(
       }),
     },
     slackClient,
+    provisioner: {
+      provision: async () => ({ resourceName: "r", secretName: "s", deploymentName: "d" }),
+      deprovision: async () => {},
+    },
     appBaseUrl: "https://example.com",
   };
 }
