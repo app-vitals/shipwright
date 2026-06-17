@@ -371,7 +371,7 @@ Service URL, the voice id) are plain Deployment env.
 
 > Voice env reaches provisioned agent pods through the admin provisioner:
 > `agent.voice.*` → admin Deployment env → `admin/src/main.ts` `buildProvisioner`
-> → `buildAgentManifest`. So `agent.provisioning.enabled=true` is what actually
+> → `buildAgentDeploymentManifest`. So `agent.provisioning.enabled=true` is what actually
 > stamps the voice env onto agent pods; with provisioning off the admin stays in
 > Noop mode and the voice env is inert.
 
