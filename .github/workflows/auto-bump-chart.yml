@@ -1,0 +1,221 @@
+name: Auto-Bump Chart Version
+
+# Triggers whenever an image-build tag is pushed for any of the three
+# Shipwright services. Each build workflow (build-agent.yml, build-admin.yml,
+# build-metrics.yml) creates a tag like agent-v*, admin-v*, or metrics-v*
+# on main after a successful image push. This workflow detects those tags and
+# opens a chart-version bump PR so no manual bump-chart.sh invocation is needed.
+#
+# Flow:
+#   tag push (agent-v* / admin-v* / metrics-v*)
+#     → this workflow
+#       → bump patch version in Chart.yaml
+#       → open PR (chore/chart-v{new_version})
+#       → enable auto-merge (squash)
+#     → PR merges to main
+#       → chart-release.yml triggers (paths: charts/shipwright/**)
+#         → chart-releaser publishes new chart version
+#         → dispatches downstream vitals-os bump PR
+#
+# Manual test plan (cannot be tested in CI without real tag + secrets):
+#   1. Push a dummy tag matching one of the trigger patterns:
+#        git tag agent-v9.9.9 && git push origin agent-v9.9.9
+#   2. Observe this workflow runs, creates branch chore/chart-v{N},
+#      opens a PR, and enables auto-merge.
+#   3. Verify PR description includes the triggering tag name.
+#   4. After merge, confirm chart-release.yml fires and publishes the new version.
+#   5. Delete the dummy tag to clean up:
+#        git push origin --delete agent-v9.9.9
+#
+# Logic tests live in .github/workflows/test-auto-bump-chart.sh.
+# Run locally: bash .github/workflows/test-auto-bump-chart.sh
+
+on:
+  push:
+    tags:
+      - "admin-v*"
+      - "metrics-v*"
+      - "agent-v*"
+
+# Queue concurrent bumps rather than cancelling them — if multiple tags land
+# at nearly the same time, each should produce its own chart bump PR. Using
+# cancel-in-progress: false ensures they queue up and run sequentially so
+# each run sees the version committed by the previous one.
+concurrency:
+  group: chart-bump
+  cancel-in-progress: false
+
+permissions:
+  contents: write      # push branch + commit
+  pull-requests: write # open PR + enable auto-merge
+
+jobs:
+  bump-chart:
+    name: bump chart version
+    runs-on: ubuntu-latest
+    steps:
+      # Check out main (not the tag's commit) so we always bump from the
+      # latest chart version on main rather than whatever state the tag points at.
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Configure Git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      # Read the current chart version using grep+sed — avoids a yq dependency.
+      # The version line in Chart.yaml is always "version: X.Y.Z" (no spaces
+      # before the key, plain value — no quoting).
+      - name: Read current chart version
+        id: current
+        run: |
+          VERSION=$(grep '^version:' charts/shipwright/Chart.yaml | sed 's/^version: //')
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Current chart version: ${VERSION}"
+
+      # Increment the patch component only. Chart version bumps are always
+      # patch-level here — minor/major bumps remain a manual step.
+      - name: Compute new chart version
+        id: new
+        run: |
+          CURRENT="${{ steps.current.outputs.version }}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+          PATCH=$(( PATCH + 1 ))
+          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          BRANCH="chore/chart-v${NEW_VERSION}"
+          echo "version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "branch=${BRANCH}"       >> "$GITHUB_OUTPUT"
+          echo "New chart version: ${NEW_VERSION} (branch: ${BRANCH})"
+
+      # Idempotency: if a PR for this exact chart version already exists
+      # (e.g. because two tags landed almost simultaneously), skip safely.
+      - name: Check for existing bump branch
+        id: idempotency
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="${{ steps.new.outputs.branch }}"
+          if git ls-remote --heads origin "$BRANCH" | grep -q .; then
+            echo "Branch ${BRANCH} already exists on remote — skipping bump."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Update the version field in Chart.yaml using python3 (available on all
+      # GitHub-hosted runners). Regex substitution on the 'version:' line only
+      # avoids inadvertently touching appVersion or dependency versions.
+      - name: Update Chart.yaml version
+        if: steps.idempotency.outputs.skip != 'true'
+        run: |
+          NEW_VERSION="${{ steps.new.outputs.version }}"
+          python3 - charts/shipwright/Chart.yaml "$NEW_VERSION" <<'PYEOF'
+          import sys, re
+          path, new_ver = sys.argv[1], sys.argv[2]
+          with open(path, 'r') as f:
+              content = f.read()
+          content = re.sub(r'^version:.*$', f'version: {new_ver}', content, flags=re.MULTILINE)
+          with open(path, 'w') as f:
+              f.write(content)
+          PYEOF
+
+      # Record which release tag triggered this bump in the Artifact Hub
+      # change log annotation. This surfaces the triggering tag in the
+      # Artifact Hub UI when the chart is published.
+      - name: Update artifacthub.io/changes annotation
+        if: steps.idempotency.outputs.skip != 'true'
+        run: |
+          TAG="${{ github.ref_name }}"
+          NEW_VERSION="${{ steps.new.outputs.version }}"
+          python3 - charts/shipwright/Chart.yaml "$TAG" "$NEW_VERSION" <<'PYEOF'
+          import sys, re
+          path, tag, ver = sys.argv[1], sys.argv[2], sys.argv[3]
+          with open(path, 'r') as f:
+              content = f.read()
+          new_block = (
+              "  artifacthub.io/changes: |\n"
+              f"    - kind: changed\n"
+              f'      description: "auto-bump to chart v{ver} triggered by release tag {tag}"\n'
+          )
+          content = re.sub(
+              r'  artifacthub\.io/changes:.*?(?=\n\S|\Z)',
+              new_block.rstrip('\n'),
+              content,
+              flags=re.DOTALL,
+          )
+          with open(path, 'w') as f:
+              f.write(content)
+          PYEOF
+
+      # Create a dedicated branch, commit the Chart.yaml change, and push.
+      - name: Commit and push bump branch
+        if: steps.idempotency.outputs.skip != 'true'
+        run: |
+          BRANCH="${{ steps.new.outputs.branch }}"
+          NEW_VERSION="${{ steps.new.outputs.version }}"
+          TAG="${{ github.ref_name }}"
+
+          git checkout -b "$BRANCH"
+          git add charts/shipwright/Chart.yaml
+          git commit -m "chore(chart): bump chart version to ${NEW_VERSION}
+
+          Auto-bump triggered by release tag ${TAG}.
+          After merge, chart-release.yml will publish chart v${NEW_VERSION}."
+
+          git push -u origin "$BRANCH"
+
+      # Open the PR targeting main. The title triggers chart-testing CI (helm.yml)
+      # and the merge will trigger chart-release.yml (which watches charts/**).
+      - name: Open bump PR
+        if: steps.idempotency.outputs.skip != 'true'
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NEW_VERSION="${{ steps.new.outputs.version }}"
+          CURRENT_VERSION="${{ steps.current.outputs.version }}"
+          TAG="${{ github.ref_name }}"
+          BRANCH="${{ steps.new.outputs.branch }}"
+
+          PR_URL=$(gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "chore(chart): bump chart version to ${NEW_VERSION}" \
+            --body "$(cat <<EOF
+          ## Chart version bump: ${CURRENT_VERSION} → ${NEW_VERSION}
+
+          **Triggering tag:** \`${TAG}\`
+          **New chart version:** \`${NEW_VERSION}\`
+
+          ### What happens next
+
+          1. This PR is auto-merged (squash) once CI passes.
+          2. The merge triggers \`chart-release.yml\`, which packages and publishes
+             chart v${NEW_VERSION} to the Helm repository.
+          3. \`chart-release.yml\` then dispatches to the downstream platform repo,
+             which opens a vitals-os bump PR automatically.
+
+          ---
+          _Auto-generated by \`.github/workflows/auto-bump-chart.yml\`._
+          EOF
+          )")
+
+          echo "pr_url=${PR_URL}" >> "$GITHUB_OUTPUT"
+          echo "Opened PR: ${PR_URL}"
+
+      # Enable auto-merge so the PR merges as soon as required checks pass.
+      # This requires "Allow auto-merge" to be enabled in the repo Settings.
+      # If GITHUB_TOKEN lacks sufficient permission for auto-merge, configure
+      # a PAT stored as CHART_BUMP_TOKEN and substitute it here.
+      - name: Enable auto-merge
+        if: steps.idempotency.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_URL="${{ steps.pr.outputs.pr_url }}"
+          gh pr merge "$PR_URL" --auto --squash
+          echo "Auto-merge enabled on ${PR_URL}"
