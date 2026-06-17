@@ -113,6 +113,8 @@ function buildProvisioner(
   const adminDeploymentUid = env.SHIPWRIGHT_ADMIN_DEPLOYMENT_UID ?? "";
   const replicasRaw = env.SHIPWRIGHT_AGENT_REPLICAS;
   const replicas = replicasRaw ? Number(replicasRaw) : undefined;
+  const pvcStorageGiRaw = env.SHIPWRIGHT_AGENT_PVC_STORAGE_GI;
+  const pvcStorageGi = pvcStorageGiRaw ? Number(pvcStorageGiRaw) : undefined;
 
   // Agent-voice (STT/TTS) env flowed into provisioned agent pods. The chart's
   // voice Secret + Whisper Service URL land in the admin's env when
@@ -139,6 +141,9 @@ function buildProvisioner(
     adminDeploymentUid,
     ...(replicas !== undefined && Number.isFinite(replicas)
       ? { replicas }
+      : {}),
+    ...(pvcStorageGi !== undefined && Number.isFinite(pvcStorageGi)
+      ? { pvcStorageGi }
       : {}),
     ...(Object.keys(voice).length > 0 ? { voice } : {}),
   });
