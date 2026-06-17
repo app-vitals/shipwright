@@ -93,6 +93,17 @@ jobs:
 
       # Idempotency: if a PR for this exact chart version already exists
       # (e.g. because two tags landed almost simultaneously), skip safely.
+      #
+      # Burst-collapse note: when multiple build tags push at nearly the same
+      # time, the concurrency group (cancel-in-progress: false) queues the runs
+      # and they execute sequentially. The first run opens chore/chart-vX.Y.Z
+      # and sets auto-merge. By the time the second run reaches this check, the
+      # branch already exists — it skips. This means a burst of N simultaneous
+      # tag pushes collapses to a single chart-version bump, not N bumps. This
+      # is intentional: the chart version is a monotonic counter tied to chart
+      # content changes, not to image releases. One PR per chart-content delta
+      # keeps the chart history readable and avoids a cascade of concurrent
+      # bump PRs from a coordinated multi-service release.
       - name: Check for existing bump branch
         id: idempotency
         env:
@@ -100,7 +111,7 @@ jobs:
         run: |
           BRANCH="${{ steps.new.outputs.branch }}"
           if git ls-remote --heads origin "$BRANCH" | grep -q .; then
-            echo "Branch ${BRANCH} already exists on remote — skipping bump."
+            echo "Branch ${BRANCH} already exists on remote — skipping bump (burst-collapse)."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
@@ -166,7 +177,14 @@ jobs:
           Auto-bump triggered by release tag ${TAG}.
           After merge, chart-release.yml will publish chart v${NEW_VERSION}."
 
-          git push -u origin "$BRANCH"
+          # Fault-tolerant push: if a concurrent run slips through the
+          # idempotency check (ls-remote and push are non-atomic), the second
+          # push will fail because the branch already exists. Treat that as a
+          # clean skip rather than a noisy workflow failure.
+          git push -u origin "$BRANCH" || {
+            echo "Branch ${BRANCH} already pushed by a concurrent run — skipping."
+            exit 0
+          }
 
       # Open the PR targeting main. The title triggers chart-testing CI (helm.yml)
       # and the merge will trigger chart-release.yml (which watches charts/**).
