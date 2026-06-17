@@ -11,10 +11,18 @@ name: Chart Release
 #     the .tgz attached and updates the gh-pages index.yaml. chart-releaser is
 #     idempotent: already-released versions are skipped, so the effective trigger
 #     is "a chart version bump landed on main" (HD-2.3's versioning discipline).
+#     After publishing, this workflow emits a repository_dispatch event to vitals-os
+#     (see "Notify vitals-os of chart release" step below) to trigger downstream
+#     integration with the Shipwright agent platform.
 #
 #   dry-run (pull_request) — validates that the chart packages and an index can
 #     be generated, WITHOUT publishing anything. This is the PR-time test for the
 #     publish path.
+#
+# Required secrets:
+#   - VITALS_OS_DISPATCH_TOKEN: GitHub token with repo permissions for app-vitals/vitals-os
+#     Used to emit repository_dispatch events. Set continue-on-error: true on the
+#     dispatch step so a missing or invalid token does not block chart publishing.
 on:
   push:
     branches: [main]
@@ -60,6 +68,20 @@ jobs:
           charts_dir: charts
         env:
           CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Notify vitals-os of chart release
+        continue-on-error: true
+        run: |
+          # Extract chart version from Chart.yaml
+          CHART_VERSION=$(grep '^version:' charts/shipwright/Chart.yaml | sed 's/^version: //')
+          echo "Publishing chart version: $CHART_VERSION"
+
+          # Emit repository_dispatch event to vitals-os with the chart version
+          gh api repos/app-vitals/vitals-os/dispatches \
+            -F event_type="shipwright-chart-released" \
+            -F client_payload='{"chart_version": "'$CHART_VERSION'"}'
+        env:
+          GH_TOKEN: ${{ secrets.VITALS_OS_DISPATCH_TOKEN }}
 
   # Dry-run validation — runs ONLY on pull_request. Proves the chart packages and
   # an index renders; publishes nothing (no gh-pages push, no GitHub Release).
