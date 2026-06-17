@@ -48,6 +48,12 @@ export function checkDuplicateIds(tasks: Task[]): AuditResult[] {
   return failures;
 }
 
+/**
+ * Checks for dangling dependency references in `tasks`.
+ * Callers are responsible for populating `allKnownIds` with every task ID
+ * in scope — deps absent from this set are flagged as dangling even if they
+ * exist in another filtered subset.
+ */
 export function checkDanglingDeps(
   tasks: Task[],
   allKnownIds: Set<string>,
