@@ -187,6 +187,8 @@ Optional. When unset, voice transcription and synthesis are disabled.
 | `ELEVENLABS_VOICE_ID` | `string` | — | ElevenLabs voice ID to use for synthesis. |
 | `WHISPER_SERVICE_URL` | `string` | — | URL of a Whisper transcription service for voice input. |
 
+On Kubernetes these env vars are a deploy-time option of the Helm chart rather than something you set by hand. Set `agent.voice.enabled=true` and `agent.voice.provider` (`whisper` | `groq`); the chart then injects the matching env into provisioned agent pods. With `provider=whisper` it renders a self-hosted Whisper ASR pod (`onerahmet/openai-whisper-asr-webservice`, reached at its `POST /asr` endpoint) and sets `WHISPER_SERVICE_URL` to its in-cluster Service. With `provider=groq` it flows `GROQ_API_KEY` from a chart-managed voice Secret. ElevenLabs TTS (`ELEVENLABS_API_KEY`, optional `ELEVENLABS_VOICE_ID`) applies to both providers. See the `agent.voice` block in `charts/shipwright/values.yaml`.
+
 ### Dev-only
 
 **Do not set these in production.**

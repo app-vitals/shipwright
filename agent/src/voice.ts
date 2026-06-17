@@ -28,8 +28,19 @@ type SpawnFn = (
 const defaultSpawn: SpawnFn = (cmd, args, opts) => spawn(cmd, args, opts ?? {});
 
 /**
- * Creates an HTTP client that transcribes audio via the whisper-svc POST /transcribe endpoint.
- * Accepts an optional fetchFn for dependency injection in tests (avoids global.fetch mocking).
+ * Creates an HTTP client that transcribes audio via the self-hosted Whisper pod
+ * the chart ships: onerahmet/openai-whisper-asr-webservice.
+ *
+ * That image exposes a single ASR endpoint — `POST /asr` — with the audio
+ * attached as the multipart field `audio_file`. The behaviour is selected via
+ * query params; with `output=txt` the service returns the transcription as a
+ * plain-text body (NOT JSON). We pin:
+ *   - task=transcribe   (transcribe, not translate-to-English)
+ *   - output=txt        (plain text body, simplest to consume)
+ *   - encode=true        (let ffmpeg inside the image decode arbitrary input)
+ *
+ * Accepts an optional fetchFn for dependency injection in tests (avoids
+ * global.fetch mocking).
  */
 export function makeWhisperSvcClient(
   serviceUrl: string,
@@ -41,11 +52,19 @@ export function makeWhisperSvcClient(
   ): Promise<string | null> => {
     const formData = new FormData();
     const blob = new Blob([new Uint8Array(audioBuffer)]);
-    formData.append("file", blob, audioPath.split("/").pop() ?? "audio.wav");
+    // onerahmet's ASR endpoint reads the upload from the `audio_file` field.
+    formData.append(
+      "audio_file",
+      blob,
+      audioPath.split("/").pop() ?? "audio.wav",
+    );
+
+    const base = serviceUrl.replace(/\/+$/, "");
+    const url = `${base}/asr?encode=true&task=transcribe&output=txt`;
 
     let resp: Response;
     try {
-      resp = await fetchFn(`${serviceUrl}/transcribe`, {
+      resp = await fetchFn(url, {
         method: "POST",
         body: formData,
       });
@@ -63,8 +82,9 @@ export function makeWhisperSvcClient(
       return null;
     }
 
-    const data = (await resp.json()) as { text: string };
-    return data.text ?? null;
+    // output=txt → the body IS the transcription (no JSON envelope).
+    const text = (await resp.text()).trim();
+    return text.length > 0 ? text : null;
   };
 }
 
