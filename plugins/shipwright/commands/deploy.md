@@ -55,7 +55,7 @@ For each PR, check in order:
    by `AGENT_LOGIN` has a body where `trimStart().startsWith("APPROVE")`:
    ```bash
    gh pr view {pr} --repo {org}/{repo} --json reviews \
-     --jq '[.reviews[] | select(.author.login == "'$AGENT_LOGIN'") | .body] | first'
+     --jq '[.reviews[] | select(.author.login == "'$AGENT_LOGIN'") | .body] | any(startswith("APPROVE"))'
    ```
    Skip if neither source shows approval.
 
