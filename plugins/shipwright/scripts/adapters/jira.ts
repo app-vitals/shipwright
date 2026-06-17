@@ -413,6 +413,9 @@ export class JiraTaskStore implements TaskStore {
           (t) => t.assignee === undefined || t.assignee === filters.assignee,
         );
       }
+      if (filters.branch !== undefined) {
+        result = result.filter((t) => t.branch === filters.branch);
+      }
       return result.map(stripInternal);
     }
 

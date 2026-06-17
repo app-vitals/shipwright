@@ -1408,6 +1408,34 @@ describe("GitHubTaskStore.query branch filter", () => {
     expect(tasks).toHaveLength(1);
     expect(tasks[0].id).toBe("TSR-B.5");
   });
+
+  test("--ready --branch filters ready tasks by branch", async () => {
+    const issues = [
+      makeIssue(1, "TSR-B.8: On branch", "pending", {
+        id: "TSR-B.8",
+        title: "On branch",
+        status: "pending",
+        branch: "feat/x",
+      }),
+      makeIssue(2, "TSR-B.9: Other branch", "pending", {
+        id: "TSR-B.9",
+        title: "Other branch",
+        status: "pending",
+        branch: "feat/y",
+      }),
+    ];
+
+    const fakeGh = await writeFakeGh(tmpDir, {
+      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone,assignees --limit 500":
+        issues,
+    });
+    process.env.GH_CMD = fakeGh;
+
+    const adapter = new GitHubTaskStore(CONFIG);
+    const tasks = await adapter.query({ ready: true, branch: "feat/x" });
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0].id).toBe("TSR-B.8");
+  });
 });
 
 // ─── update closes on terminal statuses ──────────────────────────────────────
