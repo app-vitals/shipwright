@@ -166,6 +166,7 @@ export async function forwardTokenUsage(
   usage: TokenUsage | undefined,
   sessionType: SessionType,
   model?: string,
+  cronName?: string,
   fetchFn: typeof fetch = globalThis.fetch,
 ): Promise<void> {
   if (!usage) return;
@@ -194,6 +195,7 @@ export async function forwardTokenUsage(
       cache_creation_input_tokens: usage.cache_creation_input_tokens,
       model: resolvedModel,
       cost_usd: calculateCost(usage, resolvedModel),
+      ...(cronName !== undefined ? { cron_name: cronName } : {}),
     },
   };
 

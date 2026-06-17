@@ -360,6 +360,7 @@ describe("forwardTokenUsage", () => {
       SAMPLE_USAGE,
       "slack_dm",
       "claude-sonnet-4-6",
+      undefined,
       mockFetch as unknown as typeof fetch,
     );
 
@@ -395,6 +396,7 @@ describe("forwardTokenUsage", () => {
       SAMPLE_USAGE,
       "cron",
       undefined,
+      undefined,
       mockFetch as unknown as typeof fetch,
     );
     expect(mockFetch).not.toHaveBeenCalled();
@@ -404,6 +406,7 @@ describe("forwardTokenUsage", () => {
     await forwardTokenUsage(
       undefined,
       "slack_mention",
+      undefined,
       undefined,
       mockFetch as unknown as typeof fetch,
     );
@@ -417,8 +420,41 @@ describe("forwardTokenUsage", () => {
         SAMPLE_USAGE,
         "slack_dm",
         undefined,
+        undefined,
         failFetch as unknown as typeof fetch,
       ),
     ).resolves.toBeUndefined();
+  });
+
+  test("includes cron_name in properties when cronName is provided", async () => {
+    await forwardTokenUsage(
+      SAMPLE_USAGE,
+      "cron",
+      undefined,
+      "shipwright-dev-task",
+      mockFetch as unknown as typeof fetch,
+    );
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(
+      (mockFetch.mock.calls[0] as [string, RequestInit])[1].body as string,
+    ) as { batch: { properties: Record<string, unknown> }[] };
+    expect(body.batch[0].properties.cron_name).toBe("shipwright-dev-task");
+  });
+
+  test("omits cron_name from properties when cronName is not provided", async () => {
+    await forwardTokenUsage(
+      SAMPLE_USAGE,
+      "cron",
+      undefined,
+      undefined,
+      mockFetch as unknown as typeof fetch,
+    );
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(
+      (mockFetch.mock.calls[0] as [string, RequestInit])[1].body as string,
+    ) as { batch: { properties: Record<string, unknown> }[] };
+    expect(body.batch[0].properties).not.toHaveProperty("cron_name");
   });
 });
