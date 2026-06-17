@@ -174,9 +174,10 @@ describe("makeWhisperSvcClient — HTTP transcription client", () => {
     if (tmpFile && existsSync(tmpFile)) unlinkSync(tmpFile);
   });
 
-  test("posts audio to /transcribe and returns transcription text", async () => {
-    const fakeFetch = mock(async (_url: string, _opts: RequestInit) =>
-      Response.json({ text: "transcribed text" }),
+  test("posts audio to /asr and returns transcription text", async () => {
+    const fakeFetch = mock(
+      async (_url: string, _opts: RequestInit) =>
+        new Response("transcribed text", { status: 200 }),
     );
     const client = makeWhisperSvcClient(
       "http://whisper-svc:8000",
@@ -189,14 +190,14 @@ describe("makeWhisperSvcClient — HTTP transcription client", () => {
     expect(result).toBe("transcribed text");
     expect(fakeFetch).toHaveBeenCalledTimes(1);
     const [url] = fakeFetch.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("http://whisper-svc:8000/transcribe");
+    expect(url.startsWith("http://whisper-svc:8000/asr")).toBe(true);
   });
 
   test("sends audio as multipart form data", async () => {
     const capturedOpts: RequestInit[] = [];
     const fakeFetch = mock(async (_url: string, opts: RequestInit) => {
       capturedOpts.push(opts);
-      return Response.json({ text: "ok" });
+      return new Response("ok", { status: 200 });
     });
     const client = makeWhisperSvcClient(
       "http://whisper-svc:8000",
@@ -256,7 +257,7 @@ describe("makeWhisperSvcClient — HTTP transcription client", () => {
     const capturedBodies: FormData[] = [];
     const fakeFetch = mock(async (_url: string, opts: RequestInit) => {
       capturedBodies.push(opts.body as FormData);
-      return Response.json({ text: "ok" });
+      return new Response("ok", { status: 200 });
     });
     const client = makeWhisperSvcClient(
       "http://whisper-svc:8000",
@@ -267,7 +268,7 @@ describe("makeWhisperSvcClient — HTTP transcription client", () => {
 
     const formData = capturedBodies[0];
     expect(formData).toBeDefined();
-    const file = formData?.get("file") as File | null;
+    const file = formData?.get("audio_file") as File | null;
     expect(file?.name).toBe("my-recording.webm");
   });
 });
@@ -434,8 +435,8 @@ describe("transcribeAudio — fallback chain", () => {
   });
 
   test("uses whisper-svc URL from voiceConfig when no client is injected", async () => {
-    const fakeFetch = mock(async () =>
-      Response.json({ text: "from config url" }),
+    const fakeFetch = mock(
+      async () => new Response("from config url", { status: 200 }),
     );
     const configWithUrl: VoiceConfig = {
       whisperServiceUrl: "http://whisper-svc:8000",

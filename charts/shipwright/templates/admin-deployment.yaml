@@ -190,6 +190,42 @@ spec:
               value: {{ . | quote }}
             {{- end }}
             {{- end }}
+            {{- if .Values.agent.voice.enabled }}
+            # ── Agent-voice env contract (CV-1.1) ─────────────────────────────
+            # Injected ONLY when agent.voice.enabled. admin/src/main.ts
+            # buildProvisioner reads these and flows them into every provisioned
+            # agent pod (agent/src/config.ts reads the same names). When voice is
+            # disabled none of these render and provisioned pods keep the 3 base
+            # vars only.
+            {{- if eq .Values.agent.voice.provider "whisper" }}
+            # provider=whisper → the in-cluster Whisper Service URL (POST /asr).
+            - name: WHISPER_SERVICE_URL
+              value: {{ include "shipwright.whisper.serviceUrl" . | quote }}
+            {{- else if eq .Values.agent.voice.provider "groq" }}
+            # provider=groq → GROQ_API_KEY sourced from the chart-managed voice
+            # Secret so the key is never in plaintext Deployment env.
+            {{- if .Values.agent.voice.groq.apiKey }}
+            - name: GROQ_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "shipwright.voice.secretName" . }}
+                  key: GROQ_API_KEY
+            {{- end }}
+            {{- end }}
+            # ElevenLabs TTS (both providers). Key via the voice Secret; the
+            # optional voice id is non-secret plain env.
+            {{- if .Values.agent.voice.elevenlabs.apiKey }}
+            - name: ELEVENLABS_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "shipwright.voice.secretName" . }}
+                  key: ELEVENLABS_API_KEY
+            {{- end }}
+            {{- with .Values.agent.voice.elevenlabs.voiceId }}
+            - name: ELEVENLABS_VOICE_ID
+              value: {{ . | quote }}
+            {{- end }}
+            {{- end }}
             {{- with .Values.admin.extraEnv }}
             # admin.extraEnv: caller-supplied env vars appended last so they can
             # override anything above if needed.
