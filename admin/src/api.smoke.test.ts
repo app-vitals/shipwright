@@ -524,10 +524,21 @@ function buildCombinedApp() {
   });
 
   const root = new Hono();
+  root.get("/health", (c) => c.json({ status: "ok" }));
+  root.get("/", (c) => c.redirect("/admin/login", 302));
   root.route("/agents", runtimeApp);
   root.route("/", adminApp);
   return root;
 }
+
+describe("root redirect — GET / → 302 /admin/login", () => {
+  test("GET / returns 302 with Location /admin/login", async () => {
+    const root = buildCombinedApp();
+    const res = await root.request("/", { redirect: "manual" });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/admin/login");
+  });
+});
 
 describe("combined server — regression guard: runtime middleware must not block admin CRUD", () => {
   test("POST /agents/:id/envs with admin key reaches admin handler (201, not 401)", async () => {
