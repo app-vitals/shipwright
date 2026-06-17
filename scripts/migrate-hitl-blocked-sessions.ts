@@ -42,7 +42,6 @@
  */
 
 import { spawn } from "node:child_process";
-import path from "node:path";
 
 const MIGRATIONS = [
   {
@@ -112,10 +111,10 @@ async function runTaskStore(
     let stdout = "";
     let stderr = "";
 
-    child.stdout!.on("data", (data) => {
+    child.stdout?.on("data", (data) => {
       stdout += data.toString();
     });
-    child.stderr!.on("data", (data) => {
+    child.stderr?.on("data", (data) => {
       stderr += data.toString();
     });
 
@@ -254,9 +253,9 @@ async function main(): Promise<void> {
     migrated[id] = success;
 
     if (success) {
-      log(`  ✓ Updated`);
+      log("  ✓ Updated");
     } else {
-      log(`  ✗ Failed`);
+      log("  ✗ Failed");
     }
   }
 
