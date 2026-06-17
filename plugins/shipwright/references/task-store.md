@@ -129,9 +129,12 @@ Idempotently upsert tasks from a JSON file (matched by `id`).
 ts-store append <file>
 ```
 
-- If a task with the same `id` already exists, it is updated with the fields
-  from the file. Fields not present in the file are left unchanged.
-- If the task does not exist, it is inserted.
+- **JSON backend:** If a task with the same `id` already exists, it is updated with the
+  fields from the file. Fields not present in the file are left unchanged. If the task
+  does not exist, it is inserted (upsert behavior).
+- **GitHub backend:** Insert-only. If a task with a matching `id` already exists in the
+  GitHub store, it is skipped and a warning is emitted to stderr: `warn: task '{id}'
+  already exists in GitHub — skipped`. New tasks are inserted normally.
 
 **Return shape:** Summary object.
 
@@ -210,11 +213,23 @@ misconfiguration.
 ts-store doctor
 ```
 
-Checks performed:
+**Config and storage checks:**
 - Config file present and valid JSON
 - Required fields populated for the active backend
 - Auth token present and `gh auth status` succeeds
 - For GitHub backend: all 6 status labels exist in the configured repository
+
+**Data integrity checks:**
+
+| Check | Level | Applies to | Trigger condition |
+|-------|-------|-----------|-------------------|
+| `duplicate-ids` | `fail` | all backends | Two or more tasks share the same `id` |
+| `dangling-deps` | `fail` | all backends | A task's `dependencies` reference an `id` that doesn't exist |
+| `cross-repo-orphans` | `warn` | all backends | A task's `repo` field doesn't match the adapter's configured repo |
+| `zero-status-label` | `fail` | GitHub only | A GitHub issue has a shipwright code block but no `status:*` label |
+| `stale-pr` | `fail` | GitHub only | A task in `pr_open` or `approved` status has a PR that is already merged |
+
+Any check that returns `[fail]` causes the command to exit with code 1. Results with `[warn]` severity are printed but do not cause a non-zero exit.
 
 **Return shape:** Diagnostic lines printed to stdout/stderr; exit code `0`
 (healthy) or `1` (misconfigured).
@@ -228,6 +243,9 @@ Checks performed:
 [ok]  label: status:approved
 [ok]  label: status:merged
 [ok]  label: status:blocked
+[ok]  data: duplicate-ids — No duplicate IDs found
+[ok]  data: dangling-deps — All dependencies resolve
+[ok]  data: cross-repo-orphans — All repos are valid
 ```
 
 ---
