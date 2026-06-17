@@ -40,7 +40,8 @@ Detect the active backend and, when it is `"github"`, run the task store setup b
 
 ```bash
 PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | sort -V | tail -1 | xargs dirname 2>/dev/null)
-PHASE0_BACKEND=$([ -n "$PLUGIN_SCRIPTS" ] && bun "$PLUGIN_SCRIPTS/task_store.ts" backend 2>/dev/null || echo "json")
+PHASE0_BACKEND=$([ -n "$PLUGIN_SCRIPTS" ] && bun "$PLUGIN_SCRIPTS/task_store.ts" backend 2>/dev/null)
+PHASE0_BACKEND=${PHASE0_BACKEND:-json}
 [ "$PHASE0_BACKEND" = "github" ] && bun "$PLUGIN_SCRIPTS/task_store.ts" setup
 ```
 
@@ -309,6 +310,7 @@ bun "$PLUGIN_SCRIPTS/task_store.ts" append --file /tmp/new-tasks-{session}.json
 
 ```bash
 SHIPWRIGHT_REPO_FULL=$(bun "$PLUGIN_SCRIPTS/task_store.ts" repos 2>/dev/null | head -1)
+[ -z "$SHIPWRIGHT_REPO_FULL" ] && { echo 'ERROR: repos returned no output — ensure github.owner and github.repo are set in .shipwright.json' >&2; false; }
 SHIPWRIGHT_OWNER=$(echo "$SHIPWRIGHT_REPO_FULL" | cut -d'/' -f1)
 SHIPWRIGHT_REPO=$(echo "$SHIPWRIGHT_REPO_FULL" | cut -d'/' -f2)
 ```

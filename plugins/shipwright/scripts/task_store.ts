@@ -311,8 +311,12 @@ async function cmdCleanup(adapter: TaskStore): Promise<void> {
   );
 }
 
+export function getBackend(config: import("./store").TaskStoreConfig): string {
+  return config.taskStore ?? "json";
+}
+
 export function cmdBackend(config: import("./store").TaskStoreConfig): void {
-  process.stdout.write(`${config.taskStore ?? "json"}\n`);
+  process.stdout.write(`${getBackend(config)}\n`);
 }
 
 function cmdDoctor(

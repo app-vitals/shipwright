@@ -8,27 +8,17 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { cmdBackend } from "./task_store";
+import { getBackend } from "./task_store";
 import { loadConfig } from "./create-task-store";
 
-function captureStdout(fn: () => void): string {
-  const chunks: string[] = [];
-  const orig = process.stdout.write.bind(process.stdout);
-  // biome-ignore lint/suspicious/noExplicitAny: intercepting stdout.write for test assertion
-  (process.stdout as any).write = (chunk: string) => { chunks.push(chunk); return true; };
-  try { fn(); } finally {
-    // biome-ignore lint/suspicious/noExplicitAny: restoring original stdout.write
-    (process.stdout as any).write = orig;
-  }
-  return chunks.join("");
-}
-
-describe("cmdBackend", () => {
+describe("getBackend", () => {
   let isolatedDir: string;
   const origTaskStore = process.env.SHIPWRIGHT_TASK_STORE;
   const origConfig = process.env.SHIPWRIGHT_CONFIG;
   const origGhOwner = process.env.SHIPWRIGHT_GITHUB_OWNER;
   const origGhRepo = process.env.SHIPWRIGHT_GITHUB_REPO;
+  const origJiraUrl = process.env.JIRA_BASE_URL;
+  const origJiraKey = process.env.JIRA_PROJECT_KEY;
 
   beforeEach(() => {
     isolatedDir = mkdtempSync(join(tmpdir(), "sw-backend-test-"));
@@ -40,6 +30,10 @@ describe("cmdBackend", () => {
     delete process.env.SHIPWRIGHT_GITHUB_OWNER;
     // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
     delete process.env.SHIPWRIGHT_GITHUB_REPO;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.JIRA_BASE_URL;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.JIRA_PROJECT_KEY;
   });
 
   afterEach(() => {
@@ -68,47 +62,42 @@ describe("cmdBackend", () => {
       // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
       delete process.env.SHIPWRIGHT_GITHUB_REPO;
     }
+    if (origJiraUrl !== undefined) {
+      process.env.JIRA_BASE_URL = origJiraUrl;
+    } else {
+      // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+      delete process.env.JIRA_BASE_URL;
+    }
+    if (origJiraKey !== undefined) {
+      process.env.JIRA_PROJECT_KEY = origJiraKey;
+    } else {
+      // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+      delete process.env.JIRA_PROJECT_KEY;
+    }
   });
 
-  test("no config (JSON default) → prints 'json'", () => {
+  test("no config (JSON default) → returns 'json'", () => {
     const { config } = loadConfig(isolatedDir);
-    expect(captureStdout(() => cmdBackend(config))).toBe("json\n");
+    expect(getBackend(config)).toBe("json");
   });
 
-  test("SHIPWRIGHT_TASK_STORE=github → prints 'github'", () => {
+  test("SHIPWRIGHT_TASK_STORE=github → returns 'github'", () => {
     process.env.SHIPWRIGHT_TASK_STORE = "github";
     process.env.SHIPWRIGHT_GITHUB_OWNER = "my-org";
     process.env.SHIPWRIGHT_GITHUB_REPO = "my-repo";
     const { config } = loadConfig(isolatedDir);
-    expect(captureStdout(() => cmdBackend(config))).toBe("github\n");
+    expect(getBackend(config)).toBe("github");
   });
 
-  test("SHIPWRIGHT_TASK_STORE=jira → prints 'jira'", () => {
+  test("SHIPWRIGHT_TASK_STORE=jira → returns 'jira'", () => {
     process.env.SHIPWRIGHT_TASK_STORE = "jira";
     process.env.JIRA_BASE_URL = "https://example.atlassian.net";
     process.env.JIRA_PROJECT_KEY = "SHIP";
-    const origJiraUrl = process.env.JIRA_BASE_URL;
-    const origJiraKey = process.env.JIRA_PROJECT_KEY;
     const { config } = loadConfig(isolatedDir);
-    try {
-      expect(captureStdout(() => cmdBackend(config))).toBe("jira\n");
-    } finally {
-      if (origJiraUrl !== undefined) {
-        process.env.JIRA_BASE_URL = origJiraUrl;
-      } else {
-        // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
-        delete process.env.JIRA_BASE_URL;
-      }
-      if (origJiraKey !== undefined) {
-        process.env.JIRA_PROJECT_KEY = origJiraKey;
-      } else {
-        // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
-        delete process.env.JIRA_PROJECT_KEY;
-      }
-    }
+    expect(getBackend(config)).toBe("jira");
   });
 
-  test(".shipwright.json with github backend → prints 'github'", () => {
+  test(".shipwright.json with github backend → returns 'github'", () => {
     writeFileSync(
       join(isolatedDir, ".shipwright.json"),
       JSON.stringify({
@@ -117,6 +106,6 @@ describe("cmdBackend", () => {
       }),
     );
     const { config } = loadConfig(isolatedDir);
-    expect(captureStdout(() => cmdBackend(config))).toBe("github\n");
+    expect(getBackend(config)).toBe("github");
   });
 });
