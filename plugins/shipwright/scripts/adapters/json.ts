@@ -18,6 +18,12 @@ import {
 import { dirname, join } from "node:path";
 import { resolveReadyTasks } from "../store";
 import type { QueryFilters, Task, TaskStore } from "../store";
+import {
+  checkCrossRepoOrphans,
+  checkDanglingDeps,
+  checkDuplicateIds,
+} from "./audit";
+import type { AuditResult } from "./audit";
 import { warnMissingFields } from "./validation";
 
 const NUMERIC_FIELDS = new Set(["pr", "hours", "complexity"]);
@@ -298,6 +304,31 @@ export class JsonTaskStore implements TaskStore {
       if (task.repo) seen.add(task.repo);
     }
     return [...seen];
+  }
+
+  async dataDoctor(): Promise<AuditResult[]> {
+    let tasks: Task[];
+    try {
+      tasks = this.readTodos();
+    } catch {
+      // If todos.json is missing, only the storage check in doctor() will surface it.
+      return [];
+    }
+
+    const allIds = new Set(tasks.map((t) => t.id));
+    const results: AuditResult[] = [
+      ...checkDuplicateIds(tasks),
+      ...checkDanglingDeps(tasks, allIds),
+    ];
+
+    // Cross-repo orphan check: use the first task's repo as the configured repo.
+    // If no tasks have a repo field, skip this check.
+    const configuredRepo = tasks.find((t) => t.repo)?.repo;
+    if (configuredRepo !== undefined) {
+      results.push(...checkCrossRepoOrphans(tasks, configuredRepo));
+    }
+
+    return results;
   }
 
   doctor(configSource: string): void {

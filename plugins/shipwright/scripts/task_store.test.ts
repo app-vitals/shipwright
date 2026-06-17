@@ -1326,3 +1326,276 @@ process.exit(0);
     expect(stdout).toContain("Closed 0 stale open issue");
   });
 });
+
+// ---------------------------------------------------------------------------
+// describe("doctor data checks") — TSD-2.1 black-box tests
+// ---------------------------------------------------------------------------
+
+/**
+ * Helper: write a fake-gh script that serves a canned response for
+ * "issue list" and optionally for "pr view".
+ *
+ * Issues is a JSON array of GhIssue-like objects.
+ * prViews is a Record mapping PR number → mergedAt string (or "null").
+ */
+function writeDoctorFakeGh(
+  dir: string,
+  opts: {
+    issues: unknown[];
+    prViews?: Record<string, string>;
+    name?: string;
+  },
+): string {
+  const fakeGhPath = join(dir, opts.name ?? "fake-gh-doctor");
+  const prViewsJson = JSON.stringify(opts.prViews ?? {});
+  writeFileSync(
+    fakeGhPath,
+    `#!/usr/bin/env bun
+import { argv } from "process";
+const args = argv.slice(2);
+const issues = ${JSON.stringify(JSON.stringify(opts.issues))};
+const prViews = ${prViewsJson};
+// issue list → return canned issues
+if (args[0] === "issue" && args[1] === "list") {
+  console.log(issues);
+  process.exit(0);
+}
+// pr view <N> ... --jq .mergedAt → return canned mergedAt
+if (args[0] === "pr" && args[1] === "view") {
+  const prNum = args[2];
+  const val = prViews[prNum] ?? "null";
+  console.log(val);
+  process.exit(0);
+}
+// api → return empty milestones
+if (args[0] === "api") {
+  console.log("[]");
+  process.exit(0);
+}
+process.exit(0);
+`,
+  );
+  Bun.spawnSync(["chmod", "755", fakeGhPath]);
+  return fakeGhPath;
+}
+
+/** Make a minimal GH issue object. */
+function makeGhIssue(
+  opts: {
+    number?: number;
+    title?: string;
+    body?: string;
+    labels?: Array<{ name: string }>;
+    state?: string;
+    pr?: number;
+    id?: string;
+  } = {},
+): unknown {
+  const id = opts.id ?? "T-1";
+  const pr = opts.pr;
+  const meta: Record<string, unknown> = { id, status: "pending" };
+  if (pr !== undefined) {
+    meta.pr = pr;
+    meta.status = "pr_open";
+  }
+  const body = `\`\`\`shipwright\n${JSON.stringify(meta)}\n\`\`\``;
+  return {
+    number: opts.number ?? 1,
+    title: opts.title ?? `${id}: Test issue`,
+    body: opts.body ?? body,
+    labels: opts.labels ?? [{ name: "status:pending" }],
+    state: opts.state ?? "OPEN",
+    url: "",
+    milestone: null,
+    assignees: [],
+  };
+}
+
+describe("doctor data checks (TSD-2.1)", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "doctor-data-test-"));
+    writeTodos(tmpDir, []);
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  // ── Test 1: duplicate-ID store → [fail] data: duplicate ids ──────────────
+
+  test("duplicate-ID store prints [fail] data: duplicate ids and exits 1", () => {
+    // JSON backend: two tasks with the same ID
+    writeTodos(tmpDir, [
+      makeTask({ id: "T-DUP", status: "pending" }),
+      makeTask({ id: "T-DUP", status: "in_progress" }),
+    ]);
+    const { code, stdout } = run(["doctor"], {
+      cwd: tmpDir,
+      env: { SHIPWRIGHT_CONFIG: "" },
+    });
+    expect(stdout).toMatch(/\[fail\]/);
+    expect(stdout).toContain("duplicate-ids");
+    expect(code).toBe(1);
+  });
+
+  // ── Test 2: zero-label issue (GitHub backend) → [fail] data: zero status: label ──
+
+  test("zero-label issue via GitHub backend prints [fail] data: zero status: label and exits 1", () => {
+    const cfgPath = writeJsonFile(tmpDir, "gh.json", {
+      taskStore: "github",
+      github: { owner: "org", repo: "repo" },
+    });
+
+    // An issue with no status:* label (but has shipwright block → wide-fetch catches it)
+    const issueNoLabel = {
+      number: 10,
+      title: "ZL-1: Zero label issue",
+      body: "```shipwright\n{\"id\":\"ZL-1\",\"status\":\"pending\"}\n```",
+      labels: [], // no status:* label!
+      state: "OPEN",
+      url: "",
+      milestone: null,
+      assignees: [],
+    };
+
+    const fakeGhPath = writeDoctorFakeGh(tmpDir, { issues: [issueNoLabel] });
+
+    const { code, stdout } = run(["doctor"], {
+      cwd: tmpDir,
+      env: { SHIPWRIGHT_CONFIG: cfgPath, GH_CMD: fakeGhPath },
+    });
+    expect(stdout).toMatch(/\[fail\]/);
+    expect(stdout).toContain("zero-status-label");
+    expect(code).toBe(1);
+  });
+
+  // ── Test 3: stale pr_open task → [fail] data: stale pr ────────────────────
+
+  test("stale pr_open task (PR not merged) prints [fail] data: stale pr and exits 1", () => {
+    const cfgPath = writeJsonFile(tmpDir, "gh.json", {
+      taskStore: "github",
+      github: { owner: "org", repo: "repo" },
+    });
+
+    // A pr_open task with a PR number — PR is NOT merged (mergedAt = null)
+    const staleIssue = makeGhIssue({
+      id: "STALE-1",
+      labels: [{ name: "status:pr_open" }],
+      pr: 99,
+    });
+
+    const fakeGhPath = writeDoctorFakeGh(tmpDir, {
+      issues: [staleIssue],
+      prViews: { "99": "null" },
+    });
+
+    const { code, stdout } = run(["doctor"], {
+      cwd: tmpDir,
+      env: { SHIPWRIGHT_CONFIG: cfgPath, GH_CMD: fakeGhPath },
+    });
+    expect(stdout).toMatch(/\[fail\]/);
+    expect(stdout).toContain("stale-pr");
+    expect(code).toBe(1);
+  });
+
+  // ── Test 4: dangling dep → [fail] data: dangling dep ──────────────────────
+
+  test("dangling dep prints [fail] data: dangling dep and exits 1", () => {
+    // JSON backend: task depends on unknown ID
+    writeTodos(tmpDir, [
+      makeTask({ id: "T-1", status: "pending", dependencies: ["GHOST-99"] }),
+    ]);
+    const { code, stdout } = run(["doctor"], {
+      cwd: tmpDir,
+      env: { SHIPWRIGHT_CONFIG: "" },
+    });
+    expect(stdout).toMatch(/\[fail\]/);
+    expect(stdout).toContain("dangling-deps");
+    expect(code).toBe(1);
+  });
+
+  // ── Test 5: cross-repo orphan → [warn] data: cross-repo orphan, exits 0 ──
+
+  test("cross-repo orphan prints [warn] data: cross-repo orphan and exits 0", () => {
+    // JSON backend: task with a repo different from the first task's repo
+    // The doctor uses the first task's repo as the configured repo
+    writeTodos(tmpDir, [
+      makeTask({ id: "T-1", status: "pending", repo: "org/main-repo" }),
+      makeTask({ id: "T-2", status: "pending", repo: "org/other-repo" }),
+    ]);
+    const { code, stdout, stderr } = run(["doctor"], {
+      cwd: tmpDir,
+      env: { SHIPWRIGHT_CONFIG: "" },
+    });
+    const combined = stdout + stderr;
+    expect(combined).toMatch(/\[warn\]/);
+    expect(combined).toContain("cross-repo-orphans");
+    expect(code).toBe(0);
+  });
+
+  // ── Test 6: healthy store → only [ok] lines, exits 0 ─────────────────────
+
+  test("healthy store prints only [ok] lines and exits 0", () => {
+    writeTodos(tmpDir, [
+      makeTask({ id: "T-1", status: "pending", dependencies: [], repo: "org/repo" }),
+      makeTask({ id: "T-2", status: "merged", dependencies: [], repo: "org/repo" }),
+    ]);
+    const { code, stdout, stderr } = run(["doctor"], {
+      cwd: tmpDir,
+      env: { SHIPWRIGHT_CONFIG: "" },
+    });
+    // No [fail] or [warn] from data checks
+    expect(stdout).not.toContain("[fail]");
+    expect(stdout + stderr).not.toContain("[warn] data:");
+    expect(code).toBe(0);
+  });
+
+  // ── Test 7: GitHubTaskStore.append() with duplicate ID emits warn to stderr ──
+
+  test("GitHubTaskStore.append() with duplicate ID emits warn: line to stderr and skips", () => {
+    const cfgPath = writeJsonFile(tmpDir, "gh.json", {
+      taskStore: "github",
+      github: { owner: "org", repo: "repo" },
+    });
+
+    // Fake gh: issue list returns existing issue with id DUP-1
+    const existingIssue = makeGhIssue({
+      id: "DUP-1",
+      labels: [{ name: "status:pending" }],
+    });
+
+    const fakeGhPath = join(tmpDir, "fake-gh-append");
+    writeFileSync(
+      fakeGhPath,
+      `#!/usr/bin/env bun
+import { argv } from "process";
+const args = argv.slice(2);
+if (args[0] === "issue" && args[1] === "list") {
+  console.log(${JSON.stringify(JSON.stringify([existingIssue]))});
+  process.exit(0);
+}
+if (args[0] === "api" && args[1] === "user") {
+  console.log("testuser");
+  process.exit(0);
+}
+process.exit(0);
+`,
+    );
+    Bun.spawnSync(["chmod", "755", fakeGhPath]);
+
+    // Append a task with the same ID that already exists
+    const appendFile = writeJsonFile(tmpDir, "append.json", [
+      makeTask({ id: "DUP-1", status: "pending" }),
+    ]);
+
+    const { code, stderr } = run(["append", "--file", appendFile], {
+      cwd: tmpDir,
+      env: { SHIPWRIGHT_CONFIG: cfgPath, GH_CMD: fakeGhPath },
+    });
+    expect(code).toBe(0);
+    expect(stderr).toContain("warn:");
+    expect(stderr).toContain("DUP-1");
+  });
+});

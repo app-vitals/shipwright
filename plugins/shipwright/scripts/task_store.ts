@@ -309,15 +309,39 @@ async function cmdCleanup(adapter: TaskStore): Promise<void> {
   );
 }
 
-function cmdDoctor(
+async function cmdDoctor(
   adapter: TaskStore,
   config: import("./store").TaskStoreConfig,
   configSource: string,
-): void {
+): Promise<void> {
+  // Run existing config/storage doctor checks
   if (adapter instanceof JsonTaskStore) {
     adapter.doctor(configSource);
   } else {
     doctorCheck(config, configSource);
+  }
+
+  // Run data integrity checks via dataDoctor() if available
+  if (
+    "dataDoctor" in adapter &&
+    typeof (adapter as { dataDoctor?: unknown }).dataDoctor === "function"
+  ) {
+    const results = await (
+      adapter as { dataDoctor: () => Promise<import("./adapters/audit").AuditResult[]> }
+    ).dataDoctor();
+
+    let hasFailure = false;
+    for (const result of results) {
+      const line = `[${result.level}] data: ${result.check} — ${result.message}`;
+      process.stdout.write(`${line}\n`);
+      if (result.level === "fail") {
+        hasFailure = true;
+      }
+    }
+
+    if (hasFailure) {
+      process.exit(1);
+    }
   }
 }
 
@@ -371,7 +395,7 @@ async function main(): Promise<void> {
       await cmdCleanup(adapter);
       break;
     case "doctor":
-      cmdDoctor(adapter, config, configSource);
+      await cmdDoctor(adapter, config, configSource);
       break;
   }
 }
