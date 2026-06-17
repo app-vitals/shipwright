@@ -534,7 +534,7 @@ function buildCombinedApp() {
 describe("root redirect — GET / → 302 /admin/login", () => {
   test("GET / returns 302 with Location /admin/login", async () => {
     const root = buildCombinedApp();
-    const res = await root.request("/", { redirect: "manual" });
+    const res = await root.request("/");
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe("/admin/login");
   });
