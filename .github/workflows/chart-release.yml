@@ -77,9 +77,8 @@ jobs:
           echo "Publishing chart version: $CHART_VERSION"
 
           # Emit repository_dispatch event to vitals-os with the chart version
-          gh api repos/app-vitals/vitals-os/dispatches \
-            -F event_type="shipwright-chart-released" \
-            -F client_payload='{"chart_version": "'$CHART_VERSION'"}'
+          printf '{"event_type":"shipwright-chart-released","client_payload":{"chart_version":"%s"}}' "$CHART_VERSION" \
+            | gh api repos/app-vitals/vitals-os/dispatches --method POST --input -
         env:
           GH_TOKEN: ${{ secrets.VITALS_OS_DISPATCH_TOKEN }}
 
