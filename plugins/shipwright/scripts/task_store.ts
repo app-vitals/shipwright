@@ -30,11 +30,16 @@ import { createTaskStore, doctorCheck, loadConfig } from "./create-task-store";
 import type { Task, TaskStore } from "./store";
 
 const NUMERIC_FIELDS = new Set(["pr", "hours", "complexity"]);
+const BOOLEAN_FIELDS = new Set(["hitl"]);
 
-function coerceValue(key: string, rawValue: string): number | string {
+function coerceValue(key: string, rawValue: string): boolean | number | string {
   if (NUMERIC_FIELDS.has(key)) {
     const n = Number(rawValue);
     return Number.isNaN(n) ? rawValue : n;
+  }
+  if (BOOLEAN_FIELDS.has(key)) {
+    if (rawValue === "true") return true;
+    if (rawValue === "false") return false;
   }
   return rawValue;
 }
