@@ -15,6 +15,7 @@
  *   resolve-repo  Print first org/repo (deprecated alias for repos)
  *   setup       Create state/todos.json if missing
  *   doctor      Validate config and print diagnostics
+ *   backend     Print the active backend name ("json", "github", "jira")
  *
  * Environment:
  *   SHIPWRIGHT_CONFIG   Path to JSON config file (optional)
@@ -99,6 +100,7 @@ function printUsageAndExit(): never {
       "  setup         Create state/todos.json if missing",
       "  cleanup       Close open GitHub issues with terminal status labels",
       "  doctor        Validate config and print diagnostics",
+      "  backend       Print the active backend name (json, github, jira)",
       "",
     ].join("\n"),
   );
@@ -309,6 +311,10 @@ async function cmdCleanup(adapter: TaskStore): Promise<void> {
   );
 }
 
+export function cmdBackend(config: import("./store").TaskStoreConfig): void {
+  process.stdout.write(`${config.taskStore ?? "json"}\n`);
+}
+
 function cmdDoctor(
   adapter: TaskStore,
   config: import("./store").TaskStoreConfig,
@@ -334,6 +340,7 @@ const SUBCOMMANDS = new Set([
   "setup",
   "cleanup",
   "doctor",
+  "backend",
 ]);
 
 async function main(): Promise<void> {
@@ -373,10 +380,15 @@ async function main(): Promise<void> {
     case "doctor":
       cmdDoctor(adapter, config, configSource);
       break;
+    case "backend":
+      cmdBackend(config);
+      break;
   }
 }
 
-main().catch((e: unknown) => {
-  process.stderr.write(`error: ${String(e)}\n`);
-  process.exit(1);
-});
+if (import.meta.main) {
+  main().catch((e: unknown) => {
+    process.stderr.write(`error: ${String(e)}\n`);
+    process.exit(1);
+  });
+}

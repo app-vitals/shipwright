@@ -36,18 +36,18 @@ This is the engineering planning pass. The product spec (what and why) is alread
 
 ## Phase-0: Backend Setup (GitHub only)
 
-If `SHIPWRIGHT_CONFIG` is set, read the config file and check the `taskStore` field.
-When `taskStore` is `"github"`, run the task store setup before any context loading:
+Detect the active backend and, when it is `"github"`, run the task store setup before any context loading:
 
 ```bash
 PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | sort -V | tail -1 | xargs dirname 2>/dev/null)
-[ -n "$PLUGIN_SCRIPTS" ] && bun "$PLUGIN_SCRIPTS/task_store.ts" setup
+PHASE0_BACKEND=$([ -n "$PLUGIN_SCRIPTS" ] && bun "$PLUGIN_SCRIPTS/task_store.ts" backend 2>/dev/null || echo "json")
+[ "$PHASE0_BACKEND" = "github" ] && bun "$PLUGIN_SCRIPTS/task_store.ts" setup
 ```
 
-If the command exits non-zero, print the error and **stop** — a misconfigured board means
+If the `setup` command exits non-zero, print the error and **stop** — a misconfigured board means
 tasks written in Step 6 won't land on the board and the queue will be out of sync.
 
-If `SHIPWRIGHT_CONFIG` is not set, or `taskStore` is `"json"` (the default), skip this step.
+If the active backend is `"json"` (the default), skip this step.
 
 ---
 
@@ -255,16 +255,7 @@ A task on its own branch is unaffected. This ensures a `haiku`-scored task bundl
 The code path depends on `taskStore` in `SHIPWRIGHT_CONFIG`. Read it the same way Phase-0 does:
 
 ```bash
-SHIPWRIGHT_CONFIG_VALUE=$(python3 -c "
-import os, json
-cfg_path = os.environ.get('SHIPWRIGHT_CONFIG', '')
-if cfg_path:
-    with open(cfg_path) as f:
-        cfg = json.load(f)
-    print(cfg.get('taskStore', 'json'))
-else:
-    print('json')
-" 2>/dev/null || echo "json")
+SHIPWRIGHT_CONFIG_VALUE=$(bun "$PLUGIN_SCRIPTS/task_store.ts" backend 2>/dev/null || echo "json")
 ```
 
 **Branch gate — choose exactly one path based on `SHIPWRIGHT_CONFIG_VALUE`:**
@@ -317,32 +308,12 @@ bun "$PLUGIN_SCRIPTS/task_store.ts" append --file /tmp/new-tasks-{session}.json
 **Step 6a — Read owner/repo from config:**
 
 ```bash
-SHIPWRIGHT_OWNER=$(python3 -c "
-import os, json, sys
-cfg_path = os.environ.get('SHIPWRIGHT_CONFIG', '')
-with open(cfg_path) as f:
-    cfg = json.load(f)
-val = cfg.get('github', {}).get('owner', '')
-if not val:
-    print('ERROR: github.owner not configured in SHIPWRIGHT_CONFIG', file=sys.stderr)
-    sys.exit(1)
-print(val)
-")
-
-SHIPWRIGHT_REPO=$(python3 -c "
-import os, json, sys
-cfg_path = os.environ.get('SHIPWRIGHT_CONFIG', '')
-with open(cfg_path) as f:
-    cfg = json.load(f)
-val = cfg.get('github', {}).get('repo', '')
-if not val:
-    print('ERROR: github.repo not configured in SHIPWRIGHT_CONFIG', file=sys.stderr)
-    sys.exit(1)
-print(val)
-")
+SHIPWRIGHT_REPO_FULL=$(bun "$PLUGIN_SCRIPTS/task_store.ts" repos 2>/dev/null | head -1)
+SHIPWRIGHT_OWNER=$(echo "$SHIPWRIGHT_REPO_FULL" | cut -d'/' -f1)
+SHIPWRIGHT_REPO=$(echo "$SHIPWRIGHT_REPO_FULL" | cut -d'/' -f2)
 ```
 
-If either command exits non-zero (i.e. the `github` key or its `owner`/`repo` sub-keys are missing from `SHIPWRIGHT_CONFIG`), stop immediately. Add `github: {owner: "...", repo: "..."}` to your config file before retrying.
+If `SHIPWRIGHT_REPO_FULL` is empty (i.e. `repos` returned no output), stop immediately. Ensure `github.owner` and `github.repo` are configured in the active task store config before retrying.
 
 **Step 6b — Create a parent GitHub Issue for the plan:**
 
