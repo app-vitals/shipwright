@@ -162,8 +162,35 @@ jobs:
               f.write(content)
           PYEOF
 
-      # Create a dedicated branch, commit the Chart.yaml change, and push.
+      # Prepend a new entry to CHANGELOG.md so it stays in sync with Chart.yaml.
+      # Chart.yaml line 28-29 requires the two to mirror each other on every bump.
+      - name: Update CHANGELOG.md
+        if: steps.idempotency.outputs.skip != 'true'
+        run: |
+          NEW_VERSION="${{ steps.new.outputs.version }}"
+          TAG="${{ github.ref_name }}"
+          DATE=$(date -u +%Y-%m-%d)
+          ENTRY="## [${NEW_VERSION}] - ${DATE}\n\n### Changed\n\n- auto-bump to chart v${NEW_VERSION} triggered by release tag \`${TAG}\`\n"
+          # Prepend the new entry after the header block (after the last line starting with '#' in the preamble)
+          python3 - charts/shipwright/CHANGELOG.md "$ENTRY" <<'PYEOF'
+          import sys
+          path = sys.argv[1]
+          entry = sys.argv[2].replace('\\n', '\n')
+          with open(path, 'r') as f:
+              content = f.read()
+          # Insert after the first H2 heading boundary — find the first '## [' and insert before it
+          idx = content.find('\n## [')
+          if idx == -1:
+              content = content + '\n' + entry
+          else:
+              content = content[:idx + 1] + entry + '\n' + content[idx + 1:]
+          with open(path, 'w') as f:
+              f.write(content)
+          PYEOF
+
+      # Create a dedicated branch, commit the Chart.yaml + CHANGELOG.md changes, and push.
       - name: Commit and push bump branch
+        id: commit-push
         if: steps.idempotency.outputs.skip != 'true'
         run: |
           BRANCH="${{ steps.new.outputs.branch }}"
@@ -171,7 +198,7 @@ jobs:
           TAG="${{ github.ref_name }}"
 
           git checkout -b "$BRANCH"
-          git add charts/shipwright/Chart.yaml
+          git add charts/shipwright/Chart.yaml charts/shipwright/CHANGELOG.md
           git commit -m "chore(chart): bump chart version to ${NEW_VERSION}
 
           Auto-bump triggered by release tag ${TAG}.
@@ -183,13 +210,14 @@ jobs:
           # clean skip rather than a noisy workflow failure.
           git push -u origin "$BRANCH" || {
             echo "Branch ${BRANCH} already pushed by a concurrent run — skipping."
+            echo "push_skipped=true" >> "$GITHUB_OUTPUT"
             exit 0
           }
 
       # Open the PR targeting main. The title triggers chart-testing CI (helm.yml)
       # and the merge will trigger chart-release.yml (which watches charts/**).
       - name: Open bump PR
-        if: steps.idempotency.outputs.skip != 'true'
+        if: steps.idempotency.outputs.skip != 'true' && steps.commit-push.outputs.push_skipped != 'true'
         id: pr
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -230,7 +258,7 @@ jobs:
       # If GITHUB_TOKEN lacks sufficient permission for auto-merge, configure
       # a PAT stored as CHART_BUMP_TOKEN and substitute it here.
       - name: Enable auto-merge
-        if: steps.idempotency.outputs.skip != 'true'
+        if: steps.idempotency.outputs.skip != 'true' && steps.commit-push.outputs.push_skipped != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
