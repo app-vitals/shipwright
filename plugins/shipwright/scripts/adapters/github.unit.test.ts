@@ -123,7 +123,7 @@ describe("GitHubTaskStore.resolveRepo", () => {
 // ─── resolveRepos ────────────────────────────────────────────────────────────
 
 describe("GitHubTaskStore.resolveRepos", () => {
-  test("returns config repo as single-element array", async () => {
+  test("returns config repo when no workspace repos dir exists", async () => {
     const adapter = new GitHubTaskStore(CONFIG);
     const repos = await adapter.resolveRepos();
     expect(repos).toEqual(["test-owner/test-repo"]);
@@ -133,6 +133,30 @@ describe("GitHubTaskStore.resolveRepos", () => {
     const adapter = new GitHubTaskStore({ taskStore: "github" });
     const repos = await adapter.resolveRepos();
     expect(repos).toEqual([]);
+  });
+
+  test("merges config repo with workspace repos, config repo first, no duplicates", async () => {
+    const reposDir = await mkdtemp(path.join(tmpdir(), "shipwright-test-repos-"));
+    try {
+      // Create a fake git repo that resolveRepos can scan
+      const repoDir = path.join(reposDir, "other-repo");
+      await Bun.write(
+        path.join(repoDir, ".git", "config"),
+        '[remote "origin"]\n\turl = https://github.com/test-owner/other-repo.git\n',
+      );
+      const prev = process.env.SHIPWRIGHT_REPOS_DIR;
+      process.env.SHIPWRIGHT_REPOS_DIR = reposDir;
+      try {
+        const adapter = new GitHubTaskStore(CONFIG);
+        const repos = await adapter.resolveRepos();
+        expect(repos[0]).toBe("test-owner/test-repo");
+        expect(repos).toContain("test-owner/other-repo");
+      } finally {
+        process.env.SHIPWRIGHT_REPOS_DIR = prev;
+      }
+    } finally {
+      await rm(reposDir, { recursive: true, force: true });
+    }
   });
 });
 
