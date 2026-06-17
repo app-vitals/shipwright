@@ -205,7 +205,7 @@ Tasks that are tightly coupled — where splitting into separate PRs would produ
 
 **Deploy gate for bundles:** The deploy cron holds until all tasks on the shared branch reach `pr_open` or beyond. A bundle PR will not be merged while any sibling task is still `pending`, `in_progress`, or `blocked`. This prevents shipping a PR that only contains half the bundle's work.
 
-**⚠ `allow_auto_merge` bypasses the bundle gate.** GitHub's `allow_auto_merge` causes a PR to merge automatically as soon as checks pass — before the deploy cron runs its bundle-completeness check. Repos that use bundles **must keep `allow_auto_merge` disabled** (the repository default). If you need auto-merge for a specific flow (e.g., automated changelog PRs — see CLA-1.2), use a PAT-driven merge step scoped to that workflow only, not a repo-wide setting. On 2026-06-16 a bundle shipped with an incomplete sibling because `allow_auto_merge` was temporarily enabled on the repo; the bundle gate never fired.
+**⚠ `allow_auto_merge` bypasses the bundle gate.** GitHub's `allow_auto_merge` causes a PR to merge automatically as soon as checks pass — before the deploy cron runs its bundle-completeness check. Repos that use bundles **must keep `allow_auto_merge` disabled** (the repository default). If you need auto-merge for a specific flow (e.g., automated changelog PRs driven by a dedicated workflow), use a PAT-driven merge step scoped to that workflow only, not a repo-wide setting. On 2026-06-16 a bundle shipped with an incomplete sibling because `allow_auto_merge` was temporarily enabled on the repo; the bundle gate never fired.
 
 ### Dependency Map
 
