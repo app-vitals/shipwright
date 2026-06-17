@@ -29,7 +29,10 @@ export type MetricQuery =
   | { kind: "tokensTotals"; range: QueryDateRange }
   | { kind: "tokensBySessionType"; range: QueryDateRange }
   | { kind: "tokensByAgent"; range: QueryDateRange }
-  | { kind: "tokensTrends"; range: QueryDateRange };
+  | { kind: "tokensTrends"; range: QueryDateRange }
+  | { kind: "tokensByAgentBySessionType"; range: QueryDateRange }
+  | { kind: "tokensByAgentByCron"; range: QueryDateRange }
+  | { kind: "tokensByAgentByModel"; range: QueryDateRange };
 
 export type MetricQueryKind = MetricQuery["kind"];
 

@@ -40,19 +40,22 @@ The fix is to move the seam **above** any query language: the API expresses *wha
 
 // What the dashboard/API asks for — query INTENT as data, not a query string.
 export type MetricQuery =
-  | { kind: "summary";            range: DateRange }
-  | { kind: "summaryCycleTime";   range: DateRange }
-  | { kind: "trends";             range: DateRange; groupBy: "hour" | "day" | "week" }
-  | { kind: "featuresTasks";      range: DateRange }
-  | { kind: "featuresCi";         range: DateRange }
-  | { kind: "featuresReviews";    range: DateRange }
-  | { kind: "queueFunnel";        range: DateRange }
-  | { kind: "queueCycleStarted";  range: DateRange }
-  | { kind: "queueCycleMerged";   range: DateRange }
-  | { kind: "tokensTotals";       range: DateRange }
-  | { kind: "tokensBySessionType"; range: DateRange }
-  | { kind: "tokensByAgent";      range: DateRange }
-  | { kind: "tokensTrends";       range: DateRange };
+  | { kind: "summary";                    range: DateRange }
+  | { kind: "summaryCycleTime";           range: DateRange }
+  | { kind: "trends";                     range: DateRange; groupBy: "hour" | "day" | "week" }
+  | { kind: "featuresTasks";              range: DateRange }
+  | { kind: "featuresCi";                 range: DateRange }
+  | { kind: "featuresReviews";            range: DateRange }
+  | { kind: "queueFunnel";                range: DateRange }
+  | { kind: "queueCycleStarted";          range: DateRange }
+  | { kind: "queueCycleMerged";           range: DateRange }
+  | { kind: "tokensTotals";               range: DateRange }
+  | { kind: "tokensBySessionType";        range: DateRange }
+  | { kind: "tokensByAgent";              range: DateRange }
+  | { kind: "tokensByAgentBySessionType"; range: DateRange }
+  | { kind: "tokensByAgentByCron";        range: DateRange }
+  | { kind: "tokensByAgentByModel";       range: DateRange }
+  | { kind: "tokensTrends";               range: DateRange };
 
 // The normalized result — today's HogQLResult shape, renamed to drop the vendor name.
 export type MetricTable = { columns: string[]; results: unknown[][]; types: string[] };

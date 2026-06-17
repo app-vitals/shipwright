@@ -371,6 +371,78 @@ ORDER BY total_tokens DESC`;
 }
 
 /**
+ * Token usage by agent and session type: aggregates grouped by agent_id + session_type.
+ */
+export function buildTokensByAgentBySessionTypeQuery(
+  dateRange: QueryDateRange,
+): string {
+  const dateFilter = buildDateFilter(dateRange);
+  return `SELECT
+  properties.agent_id AS agent_id,
+  properties.session_type AS session_type,
+  sum(properties.input_tokens) AS input_tokens,
+  sum(properties.output_tokens) AS output_tokens,
+  sum(properties.cache_read_input_tokens) AS cache_read_input_tokens,
+  sum(properties.cache_creation_input_tokens) AS cache_creation_input_tokens,
+  sum(properties.input_tokens) + sum(properties.output_tokens) + sum(properties.cache_read_input_tokens) + sum(properties.cache_creation_input_tokens) AS total_tokens,
+  sum(properties.cost_usd) AS cost_usd
+FROM events
+WHERE event = 'agent_token_usage'
+  AND ${dateFilter}
+GROUP BY agent_id, session_type
+ORDER BY total_tokens DESC`;
+}
+
+/**
+ * Token usage by agent and cron name: aggregates grouped by agent_id + cron_name.
+ * Restricted to cron session types with a non-null cron_name.
+ */
+export function buildTokensByAgentByCronQuery(
+  dateRange: QueryDateRange,
+): string {
+  const dateFilter = buildDateFilter(dateRange);
+  return `SELECT
+  properties.agent_id AS agent_id,
+  properties.cron_name AS cron_name,
+  sum(properties.input_tokens) AS input_tokens,
+  sum(properties.output_tokens) AS output_tokens,
+  sum(properties.cache_read_input_tokens) AS cache_read_input_tokens,
+  sum(properties.cache_creation_input_tokens) AS cache_creation_input_tokens,
+  sum(properties.input_tokens) + sum(properties.output_tokens) + sum(properties.cache_read_input_tokens) + sum(properties.cache_creation_input_tokens) AS total_tokens,
+  sum(properties.cost_usd) AS cost_usd
+FROM events
+WHERE event = 'agent_token_usage'
+  AND properties.session_type = 'cron'
+  AND isNotNull(properties.cron_name)
+  AND ${dateFilter}
+GROUP BY agent_id, cron_name
+ORDER BY total_tokens DESC`;
+}
+
+/**
+ * Token usage by agent and model: aggregates grouped by agent_id + model.
+ */
+export function buildTokensByAgentByModelQuery(
+  dateRange: QueryDateRange,
+): string {
+  const dateFilter = buildDateFilter(dateRange);
+  return `SELECT
+  properties.agent_id AS agent_id,
+  properties.model AS model,
+  sum(properties.input_tokens) AS input_tokens,
+  sum(properties.output_tokens) AS output_tokens,
+  sum(properties.cache_read_input_tokens) AS cache_read_input_tokens,
+  sum(properties.cache_creation_input_tokens) AS cache_creation_input_tokens,
+  sum(properties.input_tokens) + sum(properties.output_tokens) + sum(properties.cache_read_input_tokens) + sum(properties.cache_creation_input_tokens) AS total_tokens,
+  sum(properties.cost_usd) AS cost_usd
+FROM events
+WHERE event = 'agent_token_usage'
+  AND ${dateFilter}
+GROUP BY agent_id, model
+ORDER BY total_tokens DESC`;
+}
+
+/**
  * Token usage daily trends: time-series token sums grouped by day (LA timezone).
  */
 export function buildTokensTrendsQuery(dateRange: QueryDateRange): string {

@@ -8,6 +8,9 @@ import { describe, expect, it } from "bun:test";
 import {
   DENYLIST,
   type QueryDateRange,
+  buildTokensByAgentByCronQuery,
+  buildTokensByAgentByModelQuery,
+  buildTokensByAgentBySessionTypeQuery,
   buildTokensByAgentQuery,
   buildTokensBySessionTypeQuery,
   buildTokensTotalsQuery,
@@ -347,6 +350,197 @@ describe("buildTokensTrendsQuery", () => {
   });
 });
 
+// ─── buildTokensByAgentBySessionTypeQuery ────────────────────────────────────
+
+describe("buildTokensByAgentBySessionTypeQuery", () => {
+  it("filters to agent_token_usage event", () => {
+    const query = buildTokensByAgentBySessionTypeQuery("7d");
+    expect(query).toContain(`event = '${TOKEN_EVENT}'`);
+  });
+
+  it("groups by agent_id and session_type", () => {
+    const query = buildTokensByAgentBySessionTypeQuery("7d");
+    expect(query).toContain("GROUP BY agent_id, session_type");
+  });
+
+  it("selects agent_id column", () => {
+    const query = buildTokensByAgentBySessionTypeQuery("7d");
+    expect(query).toContain("agent_id");
+  });
+
+  it("selects session_type column", () => {
+    const query = buildTokensByAgentBySessionTypeQuery("7d");
+    expect(query).toContain("session_type");
+  });
+
+  it("selects input_tokens", () => {
+    const query = buildTokensByAgentBySessionTypeQuery("7d");
+    expect(query).toContain("input_tokens");
+  });
+
+  it("selects total_tokens", () => {
+    const query = buildTokensByAgentBySessionTypeQuery("7d");
+    expect(query).toContain("total_tokens");
+  });
+
+  it("selects cost_usd", () => {
+    const query = buildTokensByAgentBySessionTypeQuery("7d");
+    expect(query).toContain("cost_usd");
+  });
+
+  it("queries from events table", () => {
+    const query = buildTokensByAgentBySessionTypeQuery("7d");
+    expect(query).toContain("FROM events");
+  });
+
+  it("applies 7d date filter", () => {
+    const query = buildTokensByAgentBySessionTypeQuery("7d");
+    expect(query).toContain(
+      "timestamp >= toStartOfDay(now() - interval 7 day, 'America/Los_Angeles')",
+    );
+  });
+
+  it("references agent_id and session_type properties", () => {
+    const query = buildTokensByAgentBySessionTypeQuery("7d");
+    expect(query).toContain("properties.agent_id");
+    expect(query).toContain("properties.session_type");
+  });
+
+  it("uses sum() aggregates", () => {
+    const query = buildTokensByAgentBySessionTypeQuery("7d");
+    expect(query).toContain("sum(");
+  });
+});
+
+// ─── buildTokensByAgentByCronQuery ────────────────────────────────────────────
+
+describe("buildTokensByAgentByCronQuery", () => {
+  it("filters to agent_token_usage event", () => {
+    const query = buildTokensByAgentByCronQuery("7d");
+    expect(query).toContain(`event = '${TOKEN_EVENT}'`);
+  });
+
+  it("groups by agent_id and cron_name", () => {
+    const query = buildTokensByAgentByCronQuery("7d");
+    expect(query).toContain("GROUP BY agent_id, cron_name");
+  });
+
+  it("filters to session_type = cron", () => {
+    const query = buildTokensByAgentByCronQuery("7d");
+    expect(query).toContain("session_type");
+    expect(query).toContain("'cron'");
+  });
+
+  it("filters to non-null cron_name via isNotNull", () => {
+    const query = buildTokensByAgentByCronQuery("7d");
+    expect(query).toContain("isNotNull(properties.cron_name)");
+  });
+
+  it("selects agent_id column", () => {
+    const query = buildTokensByAgentByCronQuery("7d");
+    expect(query).toContain("agent_id");
+  });
+
+  it("selects cron_name column", () => {
+    const query = buildTokensByAgentByCronQuery("7d");
+    expect(query).toContain("cron_name");
+  });
+
+  it("selects total_tokens", () => {
+    const query = buildTokensByAgentByCronQuery("7d");
+    expect(query).toContain("total_tokens");
+  });
+
+  it("selects cost_usd", () => {
+    const query = buildTokensByAgentByCronQuery("7d");
+    expect(query).toContain("cost_usd");
+  });
+
+  it("queries from events table", () => {
+    const query = buildTokensByAgentByCronQuery("7d");
+    expect(query).toContain("FROM events");
+  });
+
+  it("applies 7d date filter", () => {
+    const query = buildTokensByAgentByCronQuery("7d");
+    expect(query).toContain(
+      "timestamp >= toStartOfDay(now() - interval 7 day, 'America/Los_Angeles')",
+    );
+  });
+
+  it("references cron_name property", () => {
+    const query = buildTokensByAgentByCronQuery("7d");
+    expect(query).toContain("properties.cron_name");
+  });
+
+  it("uses sum() aggregates", () => {
+    const query = buildTokensByAgentByCronQuery("7d");
+    expect(query).toContain("sum(");
+  });
+});
+
+// ─── buildTokensByAgentByModelQuery ──────────────────────────────────────────
+
+describe("buildTokensByAgentByModelQuery", () => {
+  it("filters to agent_token_usage event", () => {
+    const query = buildTokensByAgentByModelQuery("7d");
+    expect(query).toContain(`event = '${TOKEN_EVENT}'`);
+  });
+
+  it("groups by agent_id and model", () => {
+    const query = buildTokensByAgentByModelQuery("7d");
+    expect(query).toContain("GROUP BY agent_id, model");
+  });
+
+  it("selects agent_id column", () => {
+    const query = buildTokensByAgentByModelQuery("7d");
+    expect(query).toContain("agent_id");
+  });
+
+  it("selects model column", () => {
+    const query = buildTokensByAgentByModelQuery("7d");
+    expect(query).toContain("model");
+  });
+
+  it("selects input_tokens", () => {
+    const query = buildTokensByAgentByModelQuery("7d");
+    expect(query).toContain("input_tokens");
+  });
+
+  it("selects total_tokens", () => {
+    const query = buildTokensByAgentByModelQuery("7d");
+    expect(query).toContain("total_tokens");
+  });
+
+  it("selects cost_usd", () => {
+    const query = buildTokensByAgentByModelQuery("7d");
+    expect(query).toContain("cost_usd");
+  });
+
+  it("queries from events table", () => {
+    const query = buildTokensByAgentByModelQuery("7d");
+    expect(query).toContain("FROM events");
+  });
+
+  it("applies 7d date filter", () => {
+    const query = buildTokensByAgentByModelQuery("7d");
+    expect(query).toContain(
+      "timestamp >= toStartOfDay(now() - interval 7 day, 'America/Los_Angeles')",
+    );
+  });
+
+  it("references agent_id and model properties", () => {
+    const query = buildTokensByAgentByModelQuery("7d");
+    expect(query).toContain("properties.agent_id");
+    expect(query).toContain("properties.model");
+  });
+
+  it("uses sum() aggregates", () => {
+    const query = buildTokensByAgentByModelQuery("7d");
+    expect(query).toContain("sum(");
+  });
+});
+
 // ─── cost_usd select assertions ──────────────────────────────────────────────
 
 describe("cost_usd select — all 4 token query builders", () => {
@@ -376,6 +570,12 @@ describe("HogQL denylist guard — token queries (TU-2.1)", () => {
       ["buildTokensBySessionTypeQuery", buildTokensBySessionTypeQuery],
       ["buildTokensByAgentQuery", buildTokensByAgentQuery],
       ["buildTokensTrendsQuery", buildTokensTrendsQuery],
+      [
+        "buildTokensByAgentBySessionTypeQuery",
+        buildTokensByAgentBySessionTypeQuery,
+      ],
+      ["buildTokensByAgentByCronQuery", buildTokensByAgentByCronQuery],
+      ["buildTokensByAgentByModelQuery", buildTokensByAgentByModelQuery],
     ];
 
   const DATE_RANGE: QueryDateRange = { from: "2026-01-01", to: "2026-03-31" };
@@ -401,6 +601,9 @@ describe("Direct typed prop rule — token properties referenced directly", () =
     buildTokensBySessionTypeQuery,
     buildTokensByAgentQuery,
     buildTokensTrendsQuery,
+    buildTokensByAgentBySessionTypeQuery,
+    buildTokensByAgentByCronQuery,
+    buildTokensByAgentByModelQuery,
   ];
 
   it("no toString() round-trips on numeric token properties", () => {
@@ -427,6 +630,12 @@ describe("PST timezone anchor — token queries", () => {
       ["buildTokensBySessionTypeQuery", buildTokensBySessionTypeQuery],
       ["buildTokensByAgentQuery", buildTokensByAgentQuery],
       ["buildTokensTrendsQuery", buildTokensTrendsQuery],
+      [
+        "buildTokensByAgentBySessionTypeQuery",
+        buildTokensByAgentBySessionTypeQuery,
+      ],
+      ["buildTokensByAgentByCronQuery", buildTokensByAgentByCronQuery],
+      ["buildTokensByAgentByModelQuery", buildTokensByAgentByModelQuery],
     ];
 
   for (const [name, builder] of tokenBuilders) {
@@ -441,5 +650,21 @@ describe("PST timezone anchor — token queries", () => {
       expect(query).not.toMatch(/(?<!OfDay\()\btoday\(\)/);
       expect(query).not.toMatch(/now\(\) - interval \d+ day(?!,)/);
     }
+  });
+});
+
+// ─── cost_usd select assertions — new cross-dimension builders ────────────────
+
+describe("cost_usd select — new cross-dimension builders", () => {
+  it("buildTokensByAgentBySessionTypeQuery selects cost_usd", () => {
+    expect(buildTokensByAgentBySessionTypeQuery("7d")).toContain("cost_usd");
+  });
+
+  it("buildTokensByAgentByCronQuery selects cost_usd", () => {
+    expect(buildTokensByAgentByCronQuery("7d")).toContain("cost_usd");
+  });
+
+  it("buildTokensByAgentByModelQuery selects cost_usd", () => {
+    expect(buildTokensByAgentByModelQuery("7d")).toContain("cost_usd");
   });
 });
