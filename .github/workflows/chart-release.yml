@@ -19,10 +19,12 @@ name: Chart Release
 #     be generated, WITHOUT publishing anything. This is the PR-time test for the
 #     publish path.
 #
-# Required secrets:
-#   - VITALS_OS_DISPATCH_TOKEN: GitHub token with repo permissions for app-vitals/vitals-os
-#     Used to emit repository_dispatch events. Set continue-on-error: true on the
-#     dispatch step so a missing or invalid token does not block chart publishing.
+# Required secrets / variables:
+#   - VITALS_OS_DISPATCH_TOKEN: GitHub PAT with `repo` scope on the dispatch target.
+#     Used to emit repository_dispatch events. The step is continue-on-error: true so a
+#     missing or invalid token does not block chart publishing.
+#   - CHART_DISPATCH_REPO (repository variable): owner/repo to receive the dispatch event
+#     (e.g. the companion platform repo). Set in Settings → Secrets and variables → Actions.
 on:
   push:
     branches: [main]
@@ -69,18 +71,19 @@ jobs:
         env:
           CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Notify vitals-os of chart release
+      - name: Notify downstream of chart release
         continue-on-error: true
-        run: |
-          # Extract chart version from Chart.yaml
-          CHART_VERSION=$(grep '^version:' charts/shipwright/Chart.yaml | sed 's/^version: //')
-          echo "Publishing chart version: $CHART_VERSION"
-
-          # Emit repository_dispatch event to vitals-os with the chart version
-          printf '{"event_type":"shipwright-chart-released","client_payload":{"chart_version":"%s"}}' "$CHART_VERSION" \
-            | gh api repos/app-vitals/vitals-os/dispatches --method POST --input -
         env:
           GH_TOKEN: ${{ secrets.VITALS_OS_DISPATCH_TOKEN }}
+          DISPATCH_REPO: ${{ vars.CHART_DISPATCH_REPO }}
+        run: |
+          # Extract chart version from Chart.yaml at runtime
+          CHART_VERSION=$(grep '^version:' charts/shipwright/Chart.yaml | sed 's/^version: //')
+          echo "Chart version: $CHART_VERSION"
+
+          # Emit repository_dispatch event to the configured downstream repo
+          printf '{"event_type":"shipwright-chart-released","client_payload":{"chart_version":"%s"}}' "$CHART_VERSION" \
+            | gh api "repos/$DISPATCH_REPO/dispatches" --method POST --input -
 
   # Dry-run validation — runs ONLY on pull_request. Proves the chart packages and
   # an index renders; publishes nothing (no gh-pages push, no GitHub Release).
