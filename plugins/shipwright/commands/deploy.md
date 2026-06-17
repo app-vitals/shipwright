@@ -270,7 +270,7 @@ Use `-` for runs not yet seen.
 
 **Terminal conditions:**
 
-**All runs completed successfully** (`conclusion == "success"` for every run seen):
+**All runs completed successfully** (at least one run must be seen, AND `conclusion == "success"` for every run seen):
 ```
 ✓ Post-merge CI passed ({elapsed}m)
   {name}: success
