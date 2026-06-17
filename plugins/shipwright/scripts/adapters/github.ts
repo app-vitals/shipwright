@@ -21,6 +21,12 @@ import type {
   TaskStoreConfig,
 } from "../store.ts";
 import { resolveRepos } from "../check-helpers.ts";
+import {
+  type AuditResult,
+  checkCrossRepoOrphans,
+  checkDanglingDeps,
+  checkDuplicateIds,
+} from "./audit.ts";
 import { warnMissingFields } from "./validation.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -345,6 +351,9 @@ export class GitHubTaskStore implements TaskStore {
         // Insert-only: existing issues are never updated. This intentionally diverges
         // from the TaskStore upsert contract — GitHub issues are the source of truth
         // once created. Use update() for targeted field changes on existing tasks.
+        process.stderr.write(
+          `warn: task '${task.id}' already exists in GitHub — skipped\n`,
+        );
         continue;
       }
 
@@ -602,6 +611,119 @@ export class GitHubTaskStore implements TaskStore {
     }
 
     return { closed, milestonesClosed: emptyMilestones.length, plansClosed };
+  }
+
+  /**
+   * Fetch ALL issues that contain a shipwright code block (wide search),
+   * regardless of whether they carry a status:* label. Used by dataDoctor()
+   * to surface zero-label issues that fetchAllIssues() would miss.
+   */
+  private async fetchWideIssues(): Promise<GhIssue[]> {
+    const raw = await this.runGh([
+      "issue",
+      "list",
+      "--repo",
+      this.repoFlag,
+      "--state",
+      "all",
+      "--search",
+      "shipwright in:body",
+      "--json",
+      "number,title,body,labels,state,url,milestone,assignees",
+      "--limit",
+      "500",
+    ]);
+    return JSON.parse(raw) as GhIssue[];
+  }
+
+  async dataDoctor(): Promise<AuditResult[]> {
+    const results: AuditResult[] = [];
+
+    // ── 1. Fetch all managed tasks (status-labeled) ──────────────────────────
+    // Skip data checks entirely when GitHub auth is unavailable (e.g. CI doctor step
+    // without GH_TOKEN). Config checks in doctor() still run regardless.
+    let allIssues: GhIssue[];
+    try {
+      allIssues = await this.fetchAllIssues();
+    } catch {
+      return results; // no auth or network — skip data checks silently
+    }
+
+    const tasks = allIssues.map((i) => issueToTask(i) as Task);
+
+    // ── 2. Run pure checks ───────────────────────────────────────────────────
+    const allIds = new Set(tasks.map((t) => t.id));
+    results.push(...checkDuplicateIds(tasks));
+    results.push(...checkDanglingDeps(tasks, allIds));
+
+    const g = this.config.github;
+    if (g) {
+      results.push(
+        ...checkCrossRepoOrphans(tasks, `${g.owner}/${g.repo}`),
+      );
+    }
+
+    // ── 3. Zero-label check (wide fetch) ────────────────────────────────────
+    let wideIssues: GhIssue[];
+    try {
+      wideIssues = await this.fetchWideIssues();
+    } catch {
+      results.push({
+        level: "warn",
+        check: "zero-status-label",
+        message: "skipped (could not fetch wide issues)",
+      });
+      wideIssues = [];
+    }
+
+    // Find issues that have a shipwright block but NO status:* label
+    for (const issue of wideIssues) {
+      const hasStatusLabel = issue.labels.some((lbl) =>
+        lbl.name.startsWith(STATUS_LABEL_PREFIX),
+      );
+      const hasShipwrightBlock = parseIssueBody(issue.body) !== null;
+      if (hasShipwrightBlock && !hasStatusLabel) {
+        results.push({
+          level: "fail",
+          check: "zero-status-label",
+          message: `Issue #${issue.number} ('${issue.title}') has shipwright block but no status: label`,
+        });
+      }
+    }
+
+    // ── 4. Stale PR check for pr_open / approved tasks ──────────────────────
+    const staleCandidates = tasks.filter(
+      (t) => (t.status === "pr_open" || t.status === "approved") && t.pr,
+    );
+
+    for (const task of staleCandidates) {
+      if (!task.pr) continue;
+      try {
+        const mergedAt = await this.runGh([
+          "pr",
+          "view",
+          String(task.pr),
+          "--repo",
+          this.repoFlag,
+          "--json",
+          "mergedAt",
+          "--jq",
+          ".mergedAt",
+        ]);
+        const isMerged = mergedAt.trim() !== "" && mergedAt.trim() !== "null";
+        if (isMerged) {
+          results.push({
+            level: "fail",
+            check: "stale-pr",
+            message: `Task '${task.id}' has status '${task.status}' but PR #${task.pr} is already merged`,
+          });
+        }
+      } catch {
+        // If we can't check the PR, skip silently to avoid false positives
+      }
+    }
+
+    return results;
   }
 
   async setup(): Promise<void> {
