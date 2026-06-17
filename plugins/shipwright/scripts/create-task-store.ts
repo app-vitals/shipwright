@@ -145,19 +145,6 @@ export function loadConfig(cwd: string = process.cwd()): LoadedConfig {
 
 // ─── Factory ──────────────────────────────────────────────────────────────────
 
-/**
- * Run doctor diagnostics for the active backend configuration.
- *
- * Emits human-readable status lines to stdout (console.log) and warnings to
- * stderr (console.warn). For non-JSON backends, checks for the coexistence
- * condition where a `state/todos.json` file exists and is non-empty alongside
- * an active GitHub or Jira backend — this indicates stale JSON data that will
- * never be consulted and could be confusing.
- *
- * @param config       The resolved task store config.
- * @param configSource The source string returned by loadConfig (e.g. file path or "default").
- * @param cwd          The working directory to look for state/todos.json (defaults to process.cwd()).
- */
 export function doctorCheck(
   config: TaskStoreConfig,
   configSource: string,

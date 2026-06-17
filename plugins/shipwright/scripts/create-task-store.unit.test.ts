@@ -401,19 +401,15 @@ describe("createTaskStore single-backend enforcement", () => {
 
   // Test: when GitHub backend configured, createTaskStore returns a GitHubTaskStore (not JsonTaskStore)
   test("GitHub config → createTaskStore returns GitHubTaskStore, not JsonTaskStore", () => {
-    const { config } = loadConfig(tmpDir);
-    // Use env to set github backend (simpler than writing .shipwright.json)
     process.env.SHIPWRIGHT_TASK_STORE = "github";
     process.env.SHIPWRIGHT_GITHUB_OWNER = "test-org";
     process.env.SHIPWRIGHT_GITHUB_REPO = "test-repo";
-    const { config: ghConfig } = loadConfig(tmpDir);
-    const store = createTaskStore(ghConfig);
-    // Should not be a JsonTaskStore
+    const { config } = loadConfig(tmpDir);
+    const store = createTaskStore(config);
     const { JsonTaskStore } = require("./adapters/json");
     expect(store).not.toBeInstanceOf(JsonTaskStore);
     const { GitHubTaskStore } = require("./adapters/github");
     expect(store).toBeInstanceOf(GitHubTaskStore);
-    void config; // suppress unused var
   });
 
   // Test: when no backend configured, createTaskStore returns a JsonTaskStore (no GitHub calls)
