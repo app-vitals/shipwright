@@ -130,6 +130,8 @@ describeOrSkip("KubernetesAgentProvisioner (integration)", () => {
       getDeployment: (ns, n) => recorded.getDeployment(ns, n),
       deleteSecret: (ns, n) => recorded.deleteSecret(ns, n),
       deleteDeployment: (ns, n) => recorded.deleteDeployment(ns, n),
+      deploymentExists: (ns, n) => recorded.deploymentExists(ns, n),
+      listDeployments: (ns, sel) => recorded.listDeployments(ns, sel),
     };
     const provisioner = new KubernetesAgentProvisioner(ordered, tokens, CONFIG);
 
@@ -168,6 +170,8 @@ describeOrSkip("KubernetesAgentProvisioner (integration)", () => {
       getDeployment: (ns, n) => recorded.getDeployment(ns, n),
       deleteSecret: (ns, n) => recorded.deleteSecret(ns, n),
       deleteDeployment: (ns, n) => recorded.deleteDeployment(ns, n),
+      deploymentExists: (ns, n) => recorded.deploymentExists(ns, n),
+      listDeployments: (ns, sel) => recorded.listDeployments(ns, sel),
     };
     const provisioner = new KubernetesAgentProvisioner(failing, tokens, CONFIG);
 
@@ -227,6 +231,66 @@ describeOrSkip("KubernetesAgentProvisioner (integration)", () => {
     await expect(provisioner.provision(agentId)).resolves.toBeDefined();
   });
 
+  // ─── reconcile ────────────────────────────────────────────────────────────────
+
+  it("reconcile() returns empty arrays when there are no agents and no k8s deployments", async () => {
+    const k8s = emptyClient();
+    const provisioner = new KubernetesAgentProvisioner(k8s, tokens, CONFIG);
+    const result = await provisioner.reconcile([]);
+    expect(result).toEqual({ recreated: [], orphans: [] });
+  });
+
+  it("reconcile() recreates a Deployment for a known agent missing from K8s", async () => {
+    const agentId = await createAgent("ReconcileAgent");
+    const k8s = emptyClient();
+    const provisioner = new KubernetesAgentProvisioner(k8s, tokens, CONFIG);
+
+    // Agent exists in DB, but no k8s Deployment provisioned yet.
+    const result = await provisioner.reconcile([agentId]);
+
+    expect(result.orphans).toEqual([]);
+    expect(result.recreated).toEqual([agentId]);
+
+    // The deployment was actually created in k8s.
+    const name = sanitizeAgentName(agentId);
+    await expect(k8s.getDeployment(NAMESPACE, name)).resolves.toBeDefined();
+  });
+
+  it("reconcile() reports orphan deployments not in the known agent list", async () => {
+    const k8s = emptyClient();
+    // Pre-seed an orphaned deployment in k8s (not tied to any DB agent).
+    const orphanName = sanitizeAgentName("orphaned-agent-id-xyz");
+    await k8s.createDeployment(NAMESPACE, {
+      name: orphanName,
+      image: `${CONFIG.image}:${CONFIG.imageTag}`,
+      labels: {
+        "app.kubernetes.io/name": "shipwright-agent",
+        "app.kubernetes.io/managed-by": "shipwright-admin",
+      },
+    });
+    const provisioner = new KubernetesAgentProvisioner(k8s, tokens, CONFIG);
+
+    // No known agents — the k8s deployment is an orphan.
+    const result = await provisioner.reconcile([]);
+
+    expect(result.recreated).toEqual([]);
+    expect(result.orphans).toEqual([orphanName]);
+  });
+
+  it("reconcile() returns no recreated/orphans when everything matches", async () => {
+    const agentId = await createAgent("MatchingAgent");
+    const k8s = emptyClient();
+    const provisioner = new KubernetesAgentProvisioner(k8s, tokens, CONFIG);
+
+    // First provision it properly.
+    await provisioner.provision(agentId);
+
+    // Now reconcile — should be a clean no-op.
+    const result = await provisioner.reconcile([agentId]);
+    expect(result.recreated).toEqual([]);
+    expect(result.orphans).toEqual([]);
+  });
+
   // ─── deprovision ──────────────────────────────────────────────────────────────
 
   it("deprovision() deletes both the Deployment and the Secret", async () => {
@@ -272,6 +336,12 @@ describe("NoopAgentProvisioner", () => {
   it("deprovision() resolves to nothing", async () => {
     const provisioner = new NoopAgentProvisioner();
     await expect(provisioner.deprovision("agent_42")).resolves.toBeUndefined();
+  });
+
+  it("reconcile() returns empty arrays (no-op)", async () => {
+    const provisioner = new NoopAgentProvisioner();
+    const result = await provisioner.reconcile(["agent_42", "agent_99"]);
+    expect(result).toEqual({ recreated: [], orphans: [] });
   });
 
   it("ConflictError remains importable for typed-error narrowing", () => {

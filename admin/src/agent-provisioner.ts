@@ -53,11 +53,25 @@ export interface ProvisionResult {
   rawToken?: string;
 }
 
+/** Outcome of a reconcile pass. */
+export interface ReconcileResult {
+  /** Agent IDs whose Deployments were missing and have been re-provisioned. */
+  recreated: string[];
+  /** K8s Deployment names that exist but are not tied to any known agent ID. */
+  orphans: string[];
+}
+
 export interface AgentProvisioner {
   /** Mint a token and create the agent's Secret + Deployment. Idempotent. */
   provision(agentId: string): Promise<ProvisionResult>;
   /** Delete the agent's Deployment + Secret. Tolerates already-absent. */
   deprovision(agentId: string): Promise<void>;
+  /**
+   * Reconcile K8s Deployment state against a list of known agent IDs.
+   * Re-provisions agents whose Deployments are missing; surfaces orphaned
+   * Deployments that have no corresponding agent.
+   */
+  reconcile(agentIds: string[]): Promise<ReconcileResult>;
 }
 
 // ─── Configuration ──────────────────────────────────────────────────────────
@@ -207,6 +221,46 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
     await this.deleteSecretBestEffort(secretName);
   }
 
+  async reconcile(agentIds: string[]): Promise<ReconcileResult> {
+    const labelSelector =
+      "app.kubernetes.io/name=shipwright-agent,app.kubernetes.io/managed-by=shipwright-admin";
+
+    // List all agent Deployments currently in k8s.
+    const k8sNames = await this.k8s.listDeployments(
+      this.config.namespace,
+      labelSelector,
+    );
+    const k8sNameSet = new Set(k8sNames);
+
+    // Build a map from sanitized resource name → original agentId, and track
+    // the full set of expected k8s names.
+    const expectedNames = new Map<string, string>(); // resourceName → agentId
+    for (const agentId of agentIds) {
+      expectedNames.set(this.resourceName(agentId), agentId);
+    }
+
+    const recreated: string[] = [];
+    const orphans: string[] = [];
+
+    // Recreate Deployments that should exist but are missing in k8s.
+    for (const [resourceName, agentId] of expectedNames) {
+      if (!k8sNameSet.has(resourceName)) {
+        // provision() is idempotent — it handles ConflictError on Secret/Deployment.
+        await this.provision(agentId);
+        recreated.push(agentId);
+      }
+    }
+
+    // Collect k8s Deployments that have no known agent.
+    for (const k8sName of k8sNames) {
+      if (!expectedNames.has(k8sName)) {
+        orphans.push(k8sName);
+      }
+    }
+
+    return { recreated, orphans };
+  }
+
   // ─── Spec derivation (via the pure manifest builders) ─────────────────────
 
   private secretSpec(secretName: string, rawToken: string): SecretSpec {
@@ -296,5 +350,9 @@ export class NoopAgentProvisioner implements AgentProvisioner {
 
   async deprovision(_agentId: string): Promise<void> {
     // intentionally a no-op
+  }
+
+  async reconcile(_agentIds: string[]): Promise<ReconcileResult> {
+    return { recreated: [], orphans: [] };
   }
 }
