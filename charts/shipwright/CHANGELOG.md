@@ -10,6 +10,16 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.4.0]
+
+### Added
+
+- `agent.voice` block: agent voice (STT/TTS) as a deploy-time chart option. Disabled by default (`agent.voice.enabled=false`) — no Whisper pod/Service, no voice Secret, and the admin Deployment carries no voice env (provisioned agent pods keep their 3 base vars). When enabled:
+  - `agent.voice.provider=whisper` renders a self-hosted Whisper ASR `Deployment` + `Service` (`templates/whisper-deployment.yaml`, `templates/whisper-service.yaml`) running `onerahmet/openai-whisper-asr-webservice:v1.3.0` — pinned to a concrete tag so `helm upgrade` cannot silently break the `POST /asr?task=transcribe&output=txt` plain-text contract the agent's whisper client targets. The in-cluster Service URL is injected into the admin Deployment as `WHISPER_SERVICE_URL` and flowed to provisioned agent pods by the admin provisioner.
+  - `agent.voice.provider=groq` flows `GROQ_API_KEY` via the chart-managed voice Secret (`templates/voice-secret.yaml`) with no Whisper pod.
+  - ElevenLabs TTS applies to both providers: `agent.voice.elevenlabs.apiKey` is stored in the voice Secret and injected as `ELEVENLABS_API_KEY`; the optional `agent.voice.elevenlabs.voiceId` is injected as the plain-value `ELEVENLABS_VOICE_ID`.
+  - New values: `agent.voice.{enabled, provider, whisper.{image, service.port, resources}, elevenlabs.{apiKey, voiceId}, groq.apiKey}`, with matching `values.schema.json` constraints (`provider` enum `whisper | groq`).
+
 ## [1.3.0]
 
 ### Added

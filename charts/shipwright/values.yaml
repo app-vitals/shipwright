@@ -301,6 +301,50 @@ agent:
         - ReadWriteOnce
     # -- Mount path inside the agent container for persistent storage.
     homePath: /data/agent-home
+  # -- Agent voice (speech-to-text / text-to-speech) — a DEPLOY-TIME option.
+  # OFF by default: no Whisper pod/Service, no voice Secret, and NO voice env is
+  # injected into the admin (so provisioned agent pods keep just the 3 base vars).
+  # When enabled, the admin's buildProvisioner (admin/src/main.ts) reads the voice
+  # env injected below and flows it into every provisioned agent pod:
+  #   - provider=whisper → WHISPER_SERVICE_URL (the in-cluster Whisper Service) +
+  #     ELEVENLABS_API_KEY (TTS); a Whisper Deployment+Service is rendered.
+  #   - provider=groq    → GROQ_API_KEY (STT) + ELEVENLABS_API_KEY (TTS); no pod.
+  voice:
+    # -- Master switch. Default false → nothing voice-related renders.
+    enabled: false
+    # -- STT provider: "whisper" (self-hosted pod) or "groq" (Groq cloud STT).
+    # TTS is always ElevenLabs (with an in-agent edge-tts fallback when no key).
+    provider: whisper
+    # -- Self-hosted Whisper ASR pod (used ONLY when provider=whisper). Renders a
+    # Deployment + Service running onerahmet/openai-whisper-asr-webservice, whose
+    # POST /asr endpoint the agent's whisper-svc client targets.
+    whisper:
+      # -- Whisper ASR image. The onerahmet image exposes POST /asr (multipart
+      # `audio_file`, query task=transcribe&output=txt). Pinned to v1.3.0 (tested
+      # version) — do not float to :latest; the plain-text /asr contract is tightly
+      # coupled to this tag and a silent image update on helm upgrade can break it.
+      image: onerahmet/openai-whisper-asr-webservice:v1.3.0
+      # -- Service exposing the Whisper pod in-cluster. The container listens on
+      # 9000 (the image default); the Service port becomes WHISPER_SERVICE_URL.
+      service:
+        port: 9000
+      # -- Compute resources for the Whisper container. Empty → no limits set.
+      # ASR is CPU/memory heavy; size this for your model on a real deployment.
+      resources: {}
+    # -- ElevenLabs TTS (text-to-speech). Used for BOTH providers.
+    elevenlabs:
+      # -- ElevenLabs API key. Stored in the chart-managed voice Secret and
+      # injected as ELEVENLABS_API_KEY. Empty → no key (agent falls back to
+      # edge-tts inside the pod).
+      apiKey: ""
+      # -- Optional ElevenLabs voice id (ELEVENLABS_VOICE_ID). Empty → the agent's
+      # built-in default voice.
+      voiceId: ""
+    # -- Groq cloud STT (used ONLY when provider=groq). Stored in the voice Secret
+    # and injected as GROQ_API_KEY.
+    groq:
+      # -- Groq API key. Empty with provider=groq means STT is unconfigured.
+      apiKey: ""
 
 # -- Authentication mode for the admin service.
 auth:

@@ -22,6 +22,11 @@ import type { AdminDeps } from "./agents-api.ts";
 class RecordingProvisioner implements AgentProvisioner {
   readonly provisioned: string[] = [];
   readonly deprovisioned: string[] = [];
+  reconcileResult: { recreated: string[]; orphans: string[]; failed: Array<{ agentId: string; error: string }> } = {
+    recreated: [],
+    orphans: [],
+    failed: [],
+  };
 
   constructor(private readonly onProvision?: (agentId: string) => void) {}
 
@@ -37,6 +42,12 @@ class RecordingProvisioner implements AgentProvisioner {
 
   async deprovision(agentId: string): Promise<void> {
     this.deprovisioned.push(agentId);
+  }
+
+  async reconcile(
+    _agentIds: string[],
+  ): Promise<{ recreated: string[]; orphans: string[]; failed: Array<{ agentId: string; error: string }> }> {
+    return this.reconcileResult;
   }
 }
 
@@ -273,6 +284,7 @@ function makeMockDeps(): AdminDeps {
           args.where.id === AGENT_ID
             ? { id: AGENT_ID, name: "Existing Agent" }
             : null,
+        findMany: async () => [{ id: AGENT_ID }, { id: "agent-other-id" }],
         delete: async (args: { where: { id: string } }) => ({
           id: args.where.id,
           name: "Existing Agent",
@@ -965,6 +977,9 @@ describe("admin API — delete agent", () => {
       async deprovision(): Promise<void> {
         throw new Error("k8s API timeout");
       },
+      async reconcile() {
+        return { recreated: [], orphans: [], failed: [] };
+      },
     };
     const base = makeMockDeps();
     const deps: AdminDeps = {
@@ -1031,6 +1046,68 @@ describe("admin API — delete agent", () => {
     });
     expect(res.status).toBe(403);
     expect(provisioner.deprovisioned).toEqual([]);
+  });
+});
+
+// ─── Reconcile route smoke tests ─────────────────────────────────────────────
+
+describe("admin API — POST /agents/reconcile", () => {
+  it("POST /agents/reconcile without auth → 401", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request("/agents/reconcile", { method: "POST" });
+    expect(res.status).toBe(401);
+  });
+
+  it("POST /agents/reconcile with per-agent bearer → 403", async () => {
+    const deps = makeDepsWithTokenValidation(async () => ({
+      agentId: AGENT_ID,
+    }));
+    const app = createAdminApp(deps);
+    const res = await app.request("/agents/reconcile", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${VALID_BEARER_TOKEN}` },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("POST /agents/reconcile with admin session → calls reconcile and returns { recreated, orphans }", async () => {
+    const cookie = await makeSessionCookie();
+    const provisioner = new RecordingProvisioner();
+    provisioner.reconcileResult = {
+      recreated: ["agent-abc"],
+      orphans: ["agent-orphan"],
+      failed: [],
+    };
+    const deps: AdminDeps = { ...makeMockDeps(), provisioner };
+    const app = createAdminApp(deps);
+    const res = await app.request("/agents/reconcile", {
+      method: "POST",
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({
+      recreated: ["agent-abc"],
+      orphans: ["agent-orphan"],
+    });
+  });
+
+  it("POST /agents/reconcile with admin bearer → 200", async () => {
+    const provisioner = new RecordingProvisioner();
+    const deps: AdminDeps = {
+      ...makeMockDeps(),
+      provisioner,
+      adminApiKeys: parseAdminApiKeys(`admin:${ADMIN_API_KEY}:*`),
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request("/agents/reconcile", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${ADMIN_API_KEY}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toHaveProperty("recreated");
+    expect(body).toHaveProperty("orphans");
   });
 });
 

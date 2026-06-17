@@ -149,6 +149,84 @@ describe("buildAgentDeploymentManifest", () => {
   });
 });
 
+// ─── voice env injection ────────────────────────────────────────────────────
+
+describe("buildAgentDeploymentManifest — voice env", () => {
+  const envNames = (d: ReturnType<typeof buildAgentDeploymentManifest>) =>
+    (d.spec.template.spec.containers[0].env ?? []).map((e) => e.name);
+
+  it("injects only the 3 base vars when no voice config is supplied (disabled)", () => {
+    const d = buildAgentDeploymentManifest(deployOpts);
+    expect(envNames(d)).toEqual([
+      "SHIPWRIGHT_AGENT_ID",
+      "SHIPWRIGHT_API_URL",
+      "SHIPWRIGHT_AGENT_API_KEY",
+    ]);
+  });
+
+  it("injects WHISPER_SERVICE_URL + ELEVENLABS_API_KEY for the whisper provider", () => {
+    const d = buildAgentDeploymentManifest({
+      ...deployOpts,
+      voice: {
+        whisperServiceUrl: "http://r-shipwright-whisper:9000",
+        elevenLabsApiKey: "el-key",
+      },
+    });
+    const env = d.spec.template.spec.containers[0].env ?? [];
+    const byName = new Map(env.map((e) => [e.name, e]));
+
+    expect(byName.get("WHISPER_SERVICE_URL")?.value).toBe(
+      "http://r-shipwright-whisper:9000",
+    );
+    expect(byName.get("ELEVENLABS_API_KEY")?.value).toBe("el-key");
+    // whisper mode does not flow a Groq key
+    expect(byName.has("GROQ_API_KEY")).toBe(false);
+  });
+
+  it("injects GROQ_API_KEY + ELEVENLABS_API_KEY for the groq provider (no WHISPER_SERVICE_URL)", () => {
+    const d = buildAgentDeploymentManifest({
+      ...deployOpts,
+      voice: {
+        groqApiKey: "groq-key",
+        elevenLabsApiKey: "el-key",
+      },
+    });
+    const env = d.spec.template.spec.containers[0].env ?? [];
+    const byName = new Map(env.map((e) => [e.name, e]));
+
+    expect(byName.get("GROQ_API_KEY")?.value).toBe("groq-key");
+    expect(byName.get("ELEVENLABS_API_KEY")?.value).toBe("el-key");
+    expect(byName.has("WHISPER_SERVICE_URL")).toBe(false);
+  });
+
+  it("injects an optional ELEVENLABS_VOICE_ID when supplied", () => {
+    const d = buildAgentDeploymentManifest({
+      ...deployOpts,
+      voice: {
+        elevenLabsApiKey: "el-key",
+        voiceId: "voice-xyz",
+      },
+    });
+    const env = d.spec.template.spec.containers[0].env ?? [];
+    const byName = new Map(env.map((e) => [e.name, e]));
+    expect(byName.get("ELEVENLABS_VOICE_ID")?.value).toBe("voice-xyz");
+  });
+
+  it("keeps the base 3 vars first and appends voice vars after the token", () => {
+    const d = buildAgentDeploymentManifest({
+      ...deployOpts,
+      voice: { whisperServiceUrl: "http://w:9000", elevenLabsApiKey: "k" },
+    });
+    const names = envNames(d);
+    expect(names.slice(0, 3)).toEqual([
+      "SHIPWRIGHT_AGENT_ID",
+      "SHIPWRIGHT_API_URL",
+      "SHIPWRIGHT_AGENT_API_KEY",
+    ]);
+    expect(names).toContain("WHISPER_SERVICE_URL");
+  });
+});
+
 // ─── buildAgentSecretManifest ───────────────────────────────────────────────
 
 describe("buildAgentSecretManifest", () => {

@@ -24,6 +24,7 @@
  */
 
 import {
+  type AgentVoiceEnv,
   buildAgentDeploymentManifest,
   buildAgentSecretManifest,
   sanitizeAgentName,
@@ -53,11 +54,31 @@ export interface ProvisionResult {
   rawToken?: string;
 }
 
+/** Outcome of a reconcile pass. */
+export interface ReconcileResult {
+  /** Agent IDs whose Deployments were missing and have been re-provisioned. */
+  recreated: string[];
+  /** K8s Deployment names that exist but are not tied to any known agent ID. */
+  orphans: string[];
+  /**
+   * Agent IDs whose re-provisioning failed with a transient or permanent error.
+   * These are not counted in `recreated`. The caller should retry or alert on
+   * non-empty `failed` arrays.
+   */
+  failed: Array<{ agentId: string; error: string }>;
+}
+
 export interface AgentProvisioner {
   /** Mint a token and create the agent's Secret + Deployment. Idempotent. */
   provision(agentId: string): Promise<ProvisionResult>;
   /** Delete the agent's Deployment + Secret. Tolerates already-absent. */
   deprovision(agentId: string): Promise<void>;
+  /**
+   * Reconcile K8s Deployment state against a list of known agent IDs.
+   * Re-provisions agents whose Deployments are missing; surfaces orphaned
+   * Deployments that have no corresponding agent.
+   */
+  reconcile(agentIds: string[]): Promise<ReconcileResult>;
 }
 
 // ─── Configuration ──────────────────────────────────────────────────────────
@@ -89,6 +110,12 @@ export interface KubernetesAgentProvisionerConfig {
   tokenSecretKey?: string;
   /** Replica count for the agent Deployment. Defaults to 1. */
   replicas?: number;
+  /**
+   * Optional agent-voice env flowed into provisioned agent pods. The admin reads
+   * these from its OWN env (sourced from the chart's voice Secret + the in-cluster
+   * Whisper Service URL). Omitted/empty → voice disabled (no voice env injected).
+   */
+  voice?: AgentVoiceEnv;
 }
 
 function isConflict(err: unknown): boolean {
@@ -207,6 +234,56 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
     await this.deleteSecretBestEffort(secretName);
   }
 
+  async reconcile(agentIds: string[]): Promise<ReconcileResult> {
+    const labelSelector =
+      "app.kubernetes.io/name=shipwright-agent,app.kubernetes.io/managed-by=shipwright-admin";
+
+    // List all agent Deployments currently in k8s.
+    const k8sNames = await this.k8s.listDeployments(
+      this.config.namespace,
+      labelSelector,
+    );
+    const k8sNameSet = new Set(k8sNames);
+
+    // Build a map from sanitized resource name → original agentId, and track
+    // the full set of expected k8s names.
+    const expectedNames = new Map<string, string>(); // resourceName → agentId
+    for (const agentId of agentIds) {
+      expectedNames.set(this.resourceName(agentId), agentId);
+    }
+
+    const recreated: string[] = [];
+    const orphans: string[] = [];
+    const failed: Array<{ agentId: string; error: string }> = [];
+
+    // Recreate Deployments that should exist but are missing in k8s.
+    // Each provision() call is wrapped in try/catch so a single transient K8s
+    // error does not abort the loop — the remaining agents are always checked.
+    for (const [resourceName, agentId] of expectedNames) {
+      if (!k8sNameSet.has(resourceName)) {
+        // provision() is idempotent — it handles ConflictError on Secret/Deployment.
+        try {
+          await this.provision(agentId);
+          recreated.push(agentId);
+        } catch (err) {
+          failed.push({
+            agentId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+    }
+
+    // Collect k8s Deployments that have no known agent.
+    for (const k8sName of k8sNames) {
+      if (!expectedNames.has(k8sName)) {
+        orphans.push(k8sName);
+      }
+    }
+
+    return { recreated, orphans, failed };
+  }
+
   // ─── Spec derivation (via the pure manifest builders) ─────────────────────
 
   private secretSpec(secretName: string, rawToken: string): SecretSpec {
@@ -246,6 +323,7 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
       adminDeploymentName: this.config.adminDeploymentName,
       adminDeploymentUid: this.config.adminDeploymentUid,
       replicas: this.config.replicas,
+      voice: this.config.voice,
     });
     const container = manifest.spec.template.spec.containers[0];
     // Pull the env entries directly from the manifest so the Deployment spec
@@ -296,5 +374,9 @@ export class NoopAgentProvisioner implements AgentProvisioner {
 
   async deprovision(_agentId: string): Promise<void> {
     // intentionally a no-op
+  }
+
+  async reconcile(_agentIds: string[]): Promise<ReconcileResult> {
+    return { recreated: [], orphans: [], failed: [] };
   }
 }

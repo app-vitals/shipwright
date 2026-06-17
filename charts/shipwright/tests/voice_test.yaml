@@ -1,0 +1,201 @@
+suite: agent voice (STT/TTS) — Whisper pod, voice Secret, admin env (CV-1.1)
+# Asserts the agent.voice surface, gated on agent.voice.enabled:
+#   (a) disabled (default) → NO whisper Deployment/Service, NO voice Secret, and
+#       the admin Deployment carries no voice env (provisioned agents keep the 3
+#       base vars — see admin/src/agent-manifest.unit.test.ts).
+#   (b) enabled + provider=whisper → Whisper Deployment (onerahmet image) +
+#       Service render, and the admin gets WHISPER_SERVICE_URL + the ElevenLabs
+#       vars.
+#   (c) enabled + provider=groq → no Whisper pod; GROQ_API_KEY flows via the voice
+#       Secret; no WHISPER_SERVICE_URL in the admin env.
+release:
+  name: r
+  namespace: shipwright
+tests:
+  # ── (a) disabled (default) → nothing voice-related renders ──────────────────
+  - it: renders no Whisper Deployment by default (voice disabled)
+    template: templates/whisper-deployment.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders no Whisper Service by default (voice disabled)
+    template: templates/whisper-service.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders no voice Secret by default (voice disabled)
+    template: templates/voice-secret.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: leaves the admin Deployment with no voice env by default
+    template: templates/admin-deployment.yaml
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: WHISPER_SERVICE_URL
+            value: http://r-shipwright-whisper:9000
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: ELEVENLABS_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-voice
+                key: ELEVENLABS_API_KEY
+
+  # ── (b) enabled + provider=whisper → pod + service + secret + admin env ─────
+  - it: renders the Whisper Deployment with the onerahmet image when provider=whisper
+    template: templates/whisper-deployment.yaml
+    set:
+      agent.voice.enabled: true
+      agent.voice.provider: whisper
+    asserts:
+      - isKind:
+          of: Deployment
+      - equal:
+          path: metadata.name
+          value: r-shipwright-whisper
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: onerahmet/openai-whisper-asr-webservice:v1.3.0
+      - equal:
+          path: spec.template.spec.containers[0].ports[0].containerPort
+          value: 9000
+
+  - it: renders the Whisper Service when provider=whisper
+    template: templates/whisper-service.yaml
+    set:
+      agent.voice.enabled: true
+      agent.voice.provider: whisper
+    asserts:
+      - isKind:
+          of: Service
+      - equal:
+          path: metadata.name
+          value: r-shipwright-whisper
+      - equal:
+          path: spec.ports[0].port
+          value: 9000
+      - equal:
+          path: spec.ports[0].targetPort
+          value: 9000
+
+  - it: renders the voice Secret with ELEVENLABS_API_KEY when set
+    template: templates/voice-secret.yaml
+    set:
+      agent.voice.enabled: true
+      agent.voice.provider: whisper
+      agent.voice.elevenlabs.apiKey: el-secret
+    asserts:
+      - isKind:
+          of: Secret
+      - equal:
+          path: metadata.name
+          value: r-shipwright-voice
+      - equal:
+          path: data.ELEVENLABS_API_KEY
+          decodeBase64: true
+          value: el-secret
+      # whisper mode never carries a Groq key
+      - notExists:
+          path: data.GROQ_API_KEY
+
+  - it: injects WHISPER_SERVICE_URL + the ElevenLabs vars into the admin Deployment when provider=whisper
+    template: templates/admin-deployment.yaml
+    set:
+      agent.voice.enabled: true
+      agent.voice.provider: whisper
+      agent.voice.elevenlabs.apiKey: el-secret
+      agent.voice.elevenlabs.voiceId: vox-1
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: WHISPER_SERVICE_URL
+            value: http://r-shipwright-whisper:9000
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: ELEVENLABS_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-voice
+                key: ELEVENLABS_API_KEY
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: ELEVENLABS_VOICE_ID
+            value: vox-1
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: GROQ_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-voice
+                key: GROQ_API_KEY
+
+  # ── (c) enabled + provider=groq → no pod; GROQ via Secret; no WHISPER URL ───
+  - it: renders no Whisper Deployment when provider=groq
+    template: templates/whisper-deployment.yaml
+    set:
+      agent.voice.enabled: true
+      agent.voice.provider: groq
+      agent.voice.groq.apiKey: groq-secret
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders no Whisper Service when provider=groq
+    template: templates/whisper-service.yaml
+    set:
+      agent.voice.enabled: true
+      agent.voice.provider: groq
+      agent.voice.groq.apiKey: groq-secret
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: stores GROQ_API_KEY in the voice Secret when provider=groq
+    template: templates/voice-secret.yaml
+    set:
+      agent.voice.enabled: true
+      agent.voice.provider: groq
+      agent.voice.groq.apiKey: groq-secret
+      agent.voice.elevenlabs.apiKey: el-secret
+    asserts:
+      - equal:
+          path: data.GROQ_API_KEY
+          decodeBase64: true
+          value: groq-secret
+      - equal:
+          path: data.ELEVENLABS_API_KEY
+          decodeBase64: true
+          value: el-secret
+
+  - it: flows GROQ_API_KEY via secretKeyRef and omits WHISPER_SERVICE_URL when provider=groq
+    template: templates/admin-deployment.yaml
+    set:
+      agent.voice.enabled: true
+      agent.voice.provider: groq
+      agent.voice.groq.apiKey: groq-secret
+      agent.voice.elevenlabs.apiKey: el-secret
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: GROQ_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-voice
+                key: GROQ_API_KEY
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: WHISPER_SERVICE_URL
+            value: http://r-shipwright-whisper:9000
