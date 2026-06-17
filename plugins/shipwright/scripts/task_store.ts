@@ -220,7 +220,7 @@ async function cmdUpdate(
   }
 
   // Parse --set key=value pairs
-  const nonStatusFields: Record<string, string | number> = {};
+  const nonStatusFields: Record<string, string | number | boolean> = {};
   let statusValue: string | undefined;
 
   for (const kv of setArgs) {
