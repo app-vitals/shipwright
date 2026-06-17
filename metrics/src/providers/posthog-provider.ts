@@ -14,7 +14,7 @@ import type {
 } from "../metrics-provider.ts";
 import type { QueryDateRange, TrendsGroupBy } from "../queries.ts";
 
-/** The 13 HogQL builders, keyed by MetricQuery kind. */
+/** The 16 HogQL builders, keyed by MetricQuery kind. */
 export interface BuilderFns {
   summary: (range: QueryDateRange) => string;
   summaryCycleTime: (range: QueryDateRange) => string;
@@ -29,6 +29,9 @@ export interface BuilderFns {
   tokensBySessionType: (range: QueryDateRange) => string;
   tokensByAgent: (range: QueryDateRange) => string;
   tokensTrends: (range: QueryDateRange) => string;
+  tokensByAgentBySessionType: (range: QueryDateRange) => string;
+  tokensByAgentByCron: (range: QueryDateRange) => string;
+  tokensByAgentByModel: (range: QueryDateRange) => string;
 }
 
 export class PostHogProvider implements MetricsProvider {
@@ -71,6 +74,12 @@ export class PostHogProvider implements MetricsProvider {
         return b.tokensByAgent(q.range);
       case "tokensTrends":
         return b.tokensTrends(q.range);
+      case "tokensByAgentBySessionType":
+        return b.tokensByAgentBySessionType(q.range);
+      case "tokensByAgentByCron":
+        return b.tokensByAgentByCron(q.range);
+      case "tokensByAgentByModel":
+        return b.tokensByAgentByModel(q.range);
     }
   }
 }

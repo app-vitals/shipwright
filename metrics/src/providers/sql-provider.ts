@@ -163,6 +163,12 @@ export class SqlEventStoreProvider implements MetricsProvider {
         return this.tokensGrouped(win, "agent_id");
       case "tokensTrends":
         return this.tokensTrends(win);
+      case "tokensByAgentBySessionType":
+        return this.tokensGrouped2(win, "agent_id", "session_type");
+      case "tokensByAgentByCron":
+        return this.tokensGroupedCron(win);
+      case "tokensByAgentByModel":
+        return this.tokensGrouped2(win, "agent_id", "model");
     }
   }
 
@@ -579,6 +585,85 @@ export class SqlEventStoreProvider implements MetricsProvider {
       })
       .sort((a, b) => Number(b[5]) - Number(a[5]));
     return table(this.tokenColumns(prop), rows);
+  }
+
+  private async tokensGrouped2(
+    win: { from: string; to: string },
+    prop1: string,
+    prop2: string,
+  ): Promise<MetricTable> {
+    const events = await this.events("agent_token_usage", win);
+    const groups = new Map<string, SqlStoredEvent[]>();
+    for (const e of events) {
+      const v1 = e.properties[prop1];
+      const v2 = e.properties[prop2];
+      const k1 = typeof v1 === "string" ? v1 : String(v1 ?? "");
+      const k2 = typeof v2 === "string" ? v2 : String(v2 ?? "");
+      const key = `${k1}\x00${k2}`;
+      const arr = groups.get(key) ?? [];
+      arr.push(e);
+      groups.set(key, arr);
+    }
+    const rows = [...groups.entries()]
+      .map(([key, group]) => {
+        const [k1, k2] = key.split("\x00", 2);
+        const t = this.tokenSumRow(group);
+        return [
+          k1,
+          k2,
+          t.input,
+          t.output,
+          t.cacheRead,
+          t.cacheCreation,
+          t.total,
+          sum(group.map((e) => num(e.properties.cost_usd))),
+        ];
+      })
+      .sort((a, b) => Number(b[6]) - Number(a[6]));
+    return table([prop1, prop2, ...this.tokenColumns()], rows);
+  }
+
+  private async tokensGroupedCron(win: {
+    from: string;
+    to: string;
+  }): Promise<MetricTable> {
+    const events = await this.events("agent_token_usage", win);
+    const filtered = events.filter(
+      (e) =>
+        e.properties.session_type === "cron" &&
+        e.properties.cron_name != null &&
+        e.properties.cron_name !== "",
+    );
+    const groups = new Map<string, SqlStoredEvent[]>();
+    for (const e of filtered) {
+      const agentId = e.properties.agent_id;
+      const cronName = e.properties.cron_name;
+      const k1 =
+        typeof agentId === "string" ? agentId : String(agentId ?? "");
+      const k2 =
+        typeof cronName === "string" ? cronName : String(cronName ?? "");
+      const key = `${k1}\x00${k2}`;
+      const arr = groups.get(key) ?? [];
+      arr.push(e);
+      groups.set(key, arr);
+    }
+    const rows = [...groups.entries()]
+      .map(([key, group]) => {
+        const [k1, k2] = key.split("\x00", 2);
+        const t = this.tokenSumRow(group);
+        return [
+          k1,
+          k2,
+          t.input,
+          t.output,
+          t.cacheRead,
+          t.cacheCreation,
+          t.total,
+          sum(group.map((e) => num(e.properties.cost_usd))),
+        ];
+      })
+      .sort((a, b) => Number(b[6]) - Number(a[6]));
+    return table(["agent_id", "cron_name", ...this.tokenColumns()], rows);
   }
 
   private async tokensTrends(win: {

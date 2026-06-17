@@ -194,12 +194,54 @@ const TokenTrendSchema = z
   })
   .openapi("TokenTrend");
 
+const TokensByAgentBySessionTypeSchema = z
+  .object({
+    agentId: z.string(),
+    sessionType: z.string(),
+    input: z.number(),
+    output: z.number(),
+    cacheRead: z.number(),
+    cacheCreation: z.number(),
+    total: z.number(),
+    cost: z.number(),
+  })
+  .openapi("TokensByAgentBySessionType");
+
+const TokensByAgentByCronSchema = z
+  .object({
+    agentId: z.string(),
+    cronName: z.string(),
+    input: z.number(),
+    output: z.number(),
+    cacheRead: z.number(),
+    cacheCreation: z.number(),
+    total: z.number(),
+    cost: z.number(),
+  })
+  .openapi("TokensByAgentByCron");
+
+const TokensByAgentByModelSchema = z
+  .object({
+    agentId: z.string(),
+    model: z.string(),
+    input: z.number(),
+    output: z.number(),
+    cacheRead: z.number(),
+    cacheCreation: z.number(),
+    total: z.number(),
+    cost: z.number(),
+  })
+  .openapi("TokensByAgentByModel");
+
 export const TokensResultSchema = z
   .object({
     totals: TokenTotalsSchema,
     bySessionType: z.array(TokensBySessionTypeSchema),
     byAgent: z.array(TokensByAgentSchema),
     trends: z.array(TokenTrendSchema),
+    byAgentSessionType: z.array(TokensByAgentBySessionTypeSchema),
+    byAgentCron: z.array(TokensByAgentByCronSchema),
+    byAgentModel: z.array(TokensByAgentByModelSchema),
   })
   .openapi("TokensResult");
 

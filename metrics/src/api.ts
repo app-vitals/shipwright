@@ -37,6 +37,9 @@ import {
   buildQueueFunnelQuery,
   buildSummaryCycleTimeQuery,
   buildSummaryQuery,
+  buildTokensByAgentByCronQuery,
+  buildTokensByAgentByModelQuery,
+  buildTokensByAgentBySessionTypeQuery,
   buildTokensByAgentQuery,
   buildTokensBySessionTypeQuery,
   buildTokensTotalsQuery,
@@ -86,6 +89,9 @@ export interface MetricsDeps {
   buildTokensBySessionTypeQueryFn?: typeof buildTokensBySessionTypeQuery;
   buildTokensByAgentQueryFn?: typeof buildTokensByAgentQuery;
   buildTokensTrendsQueryFn?: typeof buildTokensTrendsQuery;
+  buildTokensByAgentBySessionTypeQueryFn?: typeof buildTokensByAgentBySessionTypeQuery;
+  buildTokensByAgentByCronQueryFn?: typeof buildTokensByAgentByCronQuery;
+  buildTokensByAgentByModelQueryFn?: typeof buildTokensByAgentByModelQuery;
   dashboardDir?: string;
   sessionSecret?: string;
   /** Owner-gate: require OWNER role for session-cookie auth. Default false. */
@@ -340,6 +346,13 @@ function resolveProvider(
       deps?.buildTokensBySessionTypeQueryFn ?? buildTokensBySessionTypeQuery,
     tokensByAgent: deps?.buildTokensByAgentQueryFn ?? buildTokensByAgentQuery,
     tokensTrends: deps?.buildTokensTrendsQueryFn ?? buildTokensTrendsQuery,
+    tokensByAgentBySessionType:
+      deps?.buildTokensByAgentBySessionTypeQueryFn ??
+      buildTokensByAgentBySessionTypeQuery,
+    tokensByAgentByCron:
+      deps?.buildTokensByAgentByCronQueryFn ?? buildTokensByAgentByCronQuery,
+    tokensByAgentByModel:
+      deps?.buildTokensByAgentByModelQueryFn ?? buildTokensByAgentByModelQuery,
   });
 }
 
@@ -747,13 +760,23 @@ export function createMetricsHandlers(
     const startMs = Date.now();
 
     try {
-      const [totalsResult, bySessionTypeResult, byAgentResult, trendsResult] =
-        await Promise.all([
-          provider.query({ kind: "tokensTotals", range: dateRange }),
-          provider.query({ kind: "tokensBySessionType", range: dateRange }),
-          provider.query({ kind: "tokensByAgent", range: dateRange }),
-          provider.query({ kind: "tokensTrends", range: dateRange }),
-        ]);
+      const [
+        totalsResult,
+        bySessionTypeResult,
+        byAgentResult,
+        trendsResult,
+        byAgentBySessionTypeResult,
+        byAgentByCronResult,
+        byAgentByModelResult,
+      ] = await Promise.all([
+        provider.query({ kind: "tokensTotals", range: dateRange }),
+        provider.query({ kind: "tokensBySessionType", range: dateRange }),
+        provider.query({ kind: "tokensByAgent", range: dateRange }),
+        provider.query({ kind: "tokensTrends", range: dateRange }),
+        provider.query({ kind: "tokensByAgentBySessionType", range: dateRange }),
+        provider.query({ kind: "tokensByAgentByCron", range: dateRange }),
+        provider.query({ kind: "tokensByAgentByModel", range: dateRange }),
+      ]);
 
       const totalsRow = rowToObject(totalsResult) ?? {};
       const totals = {
@@ -814,9 +837,52 @@ export function createMetricsHandlers(
         cost: toNum(row.cost_usd),
       }));
 
+      const byAgentSessionType = resultToRows(byAgentBySessionTypeResult).map(
+        (row) => ({
+          agentId: String(row.agent_id ?? ""),
+          sessionType: String(row.session_type ?? ""),
+          input: toNum(row.input_tokens),
+          output: toNum(row.output_tokens),
+          cacheRead: toNum(row.cache_read_input_tokens),
+          cacheCreation: toNum(row.cache_creation_input_tokens),
+          total: toNum(row.total_tokens),
+          cost: toNum(row.cost_usd),
+        }),
+      );
+
+      const byAgentCron = resultToRows(byAgentByCronResult).map((row) => ({
+        agentId: String(row.agent_id ?? ""),
+        cronName: String(row.cron_name ?? ""),
+        input: toNum(row.input_tokens),
+        output: toNum(row.output_tokens),
+        cacheRead: toNum(row.cache_read_input_tokens),
+        cacheCreation: toNum(row.cache_creation_input_tokens),
+        total: toNum(row.total_tokens),
+        cost: toNum(row.cost_usd),
+      }));
+
+      const byAgentModel = resultToRows(byAgentByModelResult).map((row) => ({
+        agentId: String(row.agent_id ?? ""),
+        model: String(row.model ?? ""),
+        input: toNum(row.input_tokens),
+        output: toNum(row.output_tokens),
+        cacheRead: toNum(row.cache_read_input_tokens),
+        cacheCreation: toNum(row.cache_creation_input_tokens),
+        total: toNum(row.total_tokens),
+        cost: toNum(row.cost_usd),
+      }));
+
       return c.json(
         wrapResponse(
-          { totals, bySessionType, byAgent, trends },
+          {
+            totals,
+            bySessionType,
+            byAgent,
+            trends,
+            byAgentSessionType,
+            byAgentCron,
+            byAgentModel,
+          },
           {
             dateRange: dateRangeMeta,
             generatedAt: new Date().toISOString(),

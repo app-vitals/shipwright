@@ -52,6 +52,9 @@ function sentinelBuilders() {
       tokensBySessionType: (_r: QueryDateRange) => "S:tsession",
       tokensByAgent: (_r: QueryDateRange) => "S:tagent",
       tokensTrends: (_r: QueryDateRange) => "S:ttrends",
+      tokensByAgentBySessionType: (_r: QueryDateRange) => "S:tagent_session",
+      tokensByAgentByCron: (_r: QueryDateRange) => "S:tagent_cron",
+      tokensByAgentByModel: (_r: QueryDateRange) => "S:tagent_model",
     },
   };
 }
@@ -72,6 +75,18 @@ const cases: Array<{ q: MetricQuery; expected: string }> = [
   },
   { q: { kind: "tokensByAgent", range: "today" }, expected: "S:tagent" },
   { q: { kind: "tokensTrends", range: "today" }, expected: "S:ttrends" },
+  {
+    q: { kind: "tokensByAgentBySessionType", range: "today" },
+    expected: "S:tagent_session",
+  },
+  {
+    q: { kind: "tokensByAgentByCron", range: "today" },
+    expected: "S:tagent_cron",
+  },
+  {
+    q: { kind: "tokensByAgentByModel", range: "today" },
+    expected: "S:tagent_model",
+  },
 ];
 
 describe("PostHogProvider routing", () => {

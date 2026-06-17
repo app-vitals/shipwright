@@ -31,11 +31,33 @@ function makeMockClient(
   bySessionTypeResult: HogQLResult,
   byAgentResult: HogQLResult,
   trendsResult: HogQLResult,
+  byAgentBySessionTypeResult?: HogQLResult,
+  byAgentByCronResult?: HogQLResult,
+  byAgentByModelResult?: HogQLResult,
 ) {
   return {
     query: async (hogql: string): Promise<HogQLResult> => {
+      // More specific patterns first to avoid GROUP BY agent_id ambiguity
+      if (hogql.includes("agent_id, session_type"))
+        return (
+          byAgentBySessionTypeResult ??
+          makeResult(byAgentBySessionTypeColumns, [])
+        );
+      if (
+        hogql.includes("agent_id, cron_name") ||
+        hogql.includes("isNotNull(properties.cron_name)")
+      )
+        return byAgentByCronResult ?? makeResult(byAgentByCronColumns, []);
+      if (hogql.includes("agent_id, model"))
+        return byAgentByModelResult ?? makeResult(byAgentByModelColumns, []);
       if (hogql.includes("GROUP BY session_type")) return bySessionTypeResult;
-      if (hogql.includes("GROUP BY agent_id")) return byAgentResult;
+      if (
+        hogql.includes("GROUP BY agent_id") &&
+        !hogql.includes("session_type") &&
+        !hogql.includes("cron_name") &&
+        !hogql.includes(", model")
+      )
+        return byAgentResult;
       if (hogql.includes("GROUP BY period")) return trendsResult;
       return totalsResult;
     },
@@ -93,6 +115,50 @@ const trendsRows = [
   ["2026-04-02", 700, 350, 140, 70, 1260, 0.35],
 ];
 
+const byAgentBySessionTypeColumns = [
+  "agent_id",
+  "session_type",
+  "input_tokens",
+  "output_tokens",
+  "cache_read_input_tokens",
+  "cache_creation_input_tokens",
+  "total_tokens",
+  "cost_usd",
+];
+const byAgentBySessionTypeRows = [
+  ["agent-abc123", "slack_dm", 400, 200, 80, 40, 720, 0.2],
+  ["agent-abc123", "cron", 600, 300, 120, 60, 1080, 0.3],
+];
+
+const byAgentByCronColumns = [
+  "agent_id",
+  "cron_name",
+  "input_tokens",
+  "output_tokens",
+  "cache_read_input_tokens",
+  "cache_creation_input_tokens",
+  "total_tokens",
+  "cost_usd",
+];
+const byAgentByCronRows = [
+  ["agent-abc123", "daily-report", 600, 300, 120, 60, 1080, 0.3],
+];
+
+const byAgentByModelColumns = [
+  "agent_id",
+  "model",
+  "input_tokens",
+  "output_tokens",
+  "cache_read_input_tokens",
+  "cache_creation_input_tokens",
+  "total_tokens",
+  "cost_usd",
+];
+const byAgentByModelRows = [
+  ["agent-abc123", "claude-sonnet-4-6", 700, 350, 140, 70, 1260, 0.35],
+  ["agent-abc123", "claude-opus-4-6", 300, 150, 60, 30, 540, 0.15],
+];
+
 function makeTestApp(
   accountsClient: AccountsClient = makeAccountsClientMock(async () => []),
   deps?: Partial<MetricsDeps>,
@@ -102,6 +168,9 @@ function makeTestApp(
     makeResult(bySessionTypeColumns, bySessionTypeRows),
     makeResult(byAgentColumns, byAgentRows),
     makeResult(trendsColumns, trendsRows),
+    makeResult(byAgentBySessionTypeColumns, byAgentBySessionTypeRows),
+    makeResult(byAgentByCronColumns, byAgentByCronRows),
+    makeResult(byAgentByModelColumns, byAgentByModelRows),
   );
   return createMetricsApp(apiKeys, accountsClient, { postHogClient, ...deps });
 }
@@ -194,6 +263,36 @@ describe("GET /metrics/tokens?preset=7d — happy path", () => {
     expect(body.data.trends[0].cost).toBe(0.15);
     expect(body.data.trends[1].date).toBe("2026-04-02");
 
+    // data.byAgentSessionType
+    expect(body.data).toHaveProperty("byAgentSessionType");
+    expect(Array.isArray(body.data.byAgentSessionType)).toBe(true);
+    expect(body.data.byAgentSessionType).toHaveLength(2);
+    expect(body.data.byAgentSessionType[0].agentId).toBe("agent-abc123");
+    expect(body.data.byAgentSessionType[0].sessionType).toBe("slack_dm");
+    expect(body.data.byAgentSessionType[0].input).toBe(400);
+    expect(body.data.byAgentSessionType[0].total).toBe(720);
+    expect(body.data.byAgentSessionType[0].cost).toBe(0.2);
+
+    // data.byAgentCron
+    expect(body.data).toHaveProperty("byAgentCron");
+    expect(Array.isArray(body.data.byAgentCron)).toBe(true);
+    expect(body.data.byAgentCron).toHaveLength(1);
+    expect(body.data.byAgentCron[0].agentId).toBe("agent-abc123");
+    expect(body.data.byAgentCron[0].cronName).toBe("daily-report");
+    expect(body.data.byAgentCron[0].input).toBe(600);
+    expect(body.data.byAgentCron[0].total).toBe(1080);
+    expect(body.data.byAgentCron[0].cost).toBe(0.3);
+
+    // data.byAgentModel
+    expect(body.data).toHaveProperty("byAgentModel");
+    expect(Array.isArray(body.data.byAgentModel)).toBe(true);
+    expect(body.data.byAgentModel).toHaveLength(2);
+    expect(body.data.byAgentModel[0].agentId).toBe("agent-abc123");
+    expect(body.data.byAgentModel[0].model).toBe("claude-sonnet-4-6");
+    expect(body.data.byAgentModel[0].input).toBe(700);
+    expect(body.data.byAgentModel[0].total).toBe(1260);
+    expect(body.data.byAgentModel[0].cost).toBe(0.35);
+
     // meta
     expect(body.meta).toHaveProperty("dateRange");
     expect(body.meta.dateRange).toHaveProperty("from");
@@ -265,12 +364,15 @@ describe("GET /metrics/tokens — custom date range", () => {
 // ─── GET /metrics/tokens — empty results ─────────────────────────────────────
 
 describe("GET /metrics/tokens — empty results", () => {
-  test("empty PostHog results return zero totals", async () => {
+  test("empty PostHog results return zero totals and empty arrays", async () => {
     const emptyClient = makeMockClient(
       makeResult(totalsColumns, []),
       makeResult(bySessionTypeColumns, []),
       makeResult(byAgentColumns, []),
       makeResult(trendsColumns, []),
+      makeResult(byAgentBySessionTypeColumns, []),
+      makeResult(byAgentByCronColumns, []),
+      makeResult(byAgentByModelColumns, []),
     );
     const app = createMetricsApp(
       apiKeys,
@@ -290,6 +392,10 @@ describe("GET /metrics/tokens — empty results", () => {
     expect(body.data.bySessionType).toHaveLength(0);
     expect(body.data.byAgent).toHaveLength(0);
     expect(body.data.trends).toHaveLength(0);
+    // New fields must be empty arrays, not 500
+    expect(body.data.byAgentSessionType).toHaveLength(0);
+    expect(body.data.byAgentCron).toHaveLength(0);
+    expect(body.data.byAgentModel).toHaveLength(0);
   });
 });
 
