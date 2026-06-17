@@ -18,6 +18,12 @@ import {
 import { dirname, join } from "node:path";
 import { resolveReadyTasks } from "../store";
 import type { QueryFilters, Task, TaskStore } from "../store";
+import {
+  type AuditResult,
+  checkCrossRepoOrphans,
+  checkDanglingDeps,
+  checkDuplicateIds,
+} from "./audit";
 import { warnMissingFields } from "./validation";
 
 const NUMERIC_FIELDS = new Set(["pr", "hours", "complexity"]);
@@ -298,6 +304,37 @@ export class JsonTaskStore implements TaskStore {
       if (task.repo) seen.add(task.repo);
     }
     return [...seen];
+  }
+
+  async dataDoctor(): Promise<AuditResult[]> {
+    let tasks: Task[];
+    try {
+      tasks = this.readTodos();
+    } catch {
+      // If todos.json is missing, only the storage check in doctor() will surface it.
+      return [];
+    }
+
+    const allIds = new Set(tasks.map((t) => t.id));
+    const results: AuditResult[] = [
+      ...checkDuplicateIds(tasks),
+      ...checkDanglingDeps(tasks, allIds),
+    ];
+
+    // Cross-repo orphan check: use the first task's repo as the configured repo.
+    // If no tasks have a repo field, emit an explicit N/A result and skip.
+    const configuredRepo = tasks.find((t) => t.repo)?.repo;
+    if (configuredRepo !== undefined) {
+      results.push(...checkCrossRepoOrphans(tasks, configuredRepo));
+    } else {
+      results.push({
+        level: "ok",
+        check: "cross-repo-orphans",
+        message: "N/A (no tasks have a repo field)",
+      });
+    }
+
+    return results;
   }
 
   doctor(configSource: string): void {
