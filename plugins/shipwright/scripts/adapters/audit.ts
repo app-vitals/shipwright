@@ -2,33 +2,16 @@
  * plugins/shipwright/scripts/adapters/audit.ts
  *
  * Pure, I/O-free audit check functions for task integrity.
- * All functions are synchronous, pure, and suitable for validation pipelines.
  */
 
 import type { Task } from "../store";
 
-/**
- * Result of an audit check.
- *
- * level: 'ok' when check passes, 'warn' for non-blocking issues, 'fail' for blocking issues
- * check: machine-readable check identifier (e.g. 'duplicate-ids')
- * message: human-readable message explaining the result
- */
 export interface AuditResult {
   level: "ok" | "warn" | "fail";
   check: string;
   message: string;
 }
 
-/**
- * Check for duplicate task IDs.
- *
- * Returns a single 'ok' result if no duplicates exist.
- * Returns one 'fail' result per duplicated ID, including count of occurrences.
- *
- * @param tasks Task array to check
- * @returns Array of AuditResult objects
- */
 export function checkDuplicateIds(tasks: Task[]): AuditResult[] {
   const idCounts = new Map<string, number>();
 
@@ -60,17 +43,6 @@ export function checkDuplicateIds(tasks: Task[]): AuditResult[] {
   return failures;
 }
 
-/**
- * Check for dangling task dependencies.
- *
- * For each task, ensures all dependency IDs are in the allKnownIds set.
- * Returns a single 'ok' result if all dependencies resolve.
- * Returns one 'fail' result per dangling dependency reference.
- *
- * @param tasks Task array to check
- * @param allKnownIds Set of all known task IDs in the system
- * @returns Array of AuditResult objects
- */
 export function checkDanglingDeps(
   tasks: Task[],
   allKnownIds: Set<string>,
@@ -103,18 +75,6 @@ export function checkDanglingDeps(
   return failures;
 }
 
-/**
- * Check for cross-repo orphaned tasks.
- *
- * For each task with a repo field, verifies it matches the configured repo.
- * Tasks without a repo field are skipped (not considered orphans).
- * Returns a single 'ok' result if all tasks match or have no repo field.
- * Returns one 'warn' result per task with a mismatched repo.
- *
- * @param tasks Task array to check
- * @param configuredRepo The expected repo in 'owner/repo' format
- * @returns Array of AuditResult objects
- */
 export function checkCrossRepoOrphans(
   tasks: Task[],
   configuredRepo: string,

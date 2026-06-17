@@ -1,10 +1,3 @@
-/**
- * Tests for plugins/shipwright/scripts/adapters/audit.ts
- *
- * Pure unit tests for the audit check functions.
- * No I/O required — all pure functions with pure test data.
- */
-
 import { describe, expect, test } from "bun:test";
 import type { Task } from "../store";
 import {
@@ -53,7 +46,7 @@ describe("checkDuplicateIds", () => {
     expect(failure?.message).toContain("3");
   });
 
-  test("returns empty list for empty task list", () => {
+  test("returns ok for empty task list", () => {
     const tasks: Task[] = [];
     const result = checkDuplicateIds(tasks);
     expect(result).toHaveLength(1);
@@ -161,7 +154,7 @@ describe("checkDanglingDeps", () => {
     expect(failures.every((f) => f.check === "dangling-deps")).toBe(true);
   });
 
-  test("handles empty task list", () => {
+  test("returns ok for empty task list", () => {
     const result = checkDanglingDeps([], new Set());
     expect(result).toHaveLength(1);
     expect(result[0].level).toBe("ok");
@@ -259,7 +252,7 @@ describe("checkCrossRepoOrphans", () => {
     expect(warnings.every((w) => w.check === "cross-repo-orphans")).toBe(true);
   });
 
-  test("handles empty task list", () => {
+  test("returns ok for empty task list", () => {
     const result = checkCrossRepoOrphans([], "acme/repo");
     expect(result).toHaveLength(1);
     expect(result[0].level).toBe("ok");
