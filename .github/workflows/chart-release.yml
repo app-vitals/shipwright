@@ -11,10 +11,19 @@ name: Chart Release
 #     the .tgz attached and updates the gh-pages index.yaml. chart-releaser is
 #     idempotent: already-released versions are skipped, so the effective trigger
 #     is "a chart version bump landed on main" (HD-2.3's versioning discipline).
+#     After publishing, this workflow emits a repository_dispatch event to a configured
+#     downstream repository (see "Notify downstream of chart release" step below).
 #
 #   dry-run (pull_request) — validates that the chart packages and an index can
 #     be generated, WITHOUT publishing anything. This is the PR-time test for the
 #     publish path.
+#
+# Required secrets / variables:
+#   - SHIPWRIGHT_DISPATCH_TOKEN: GitHub PAT with `repo` scope on the dispatch target.
+#     Used to emit repository_dispatch events. The step is continue-on-error: true so a
+#     missing or invalid token does not block chart publishing.
+#   - CHART_DISPATCH_REPO (repository variable): owner/repo to receive the dispatch event
+#     (e.g. the companion platform repo). Set in Settings → Secrets and variables → Actions.
 on:
   push:
     branches: [main]
@@ -60,6 +69,23 @@ jobs:
           charts_dir: charts
         env:
           CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Notify downstream of chart release
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.SHIPWRIGHT_DISPATCH_TOKEN }}
+          DISPATCH_REPO: ${{ vars.CHART_DISPATCH_REPO }}
+        run: |
+          [ -z "$DISPATCH_REPO" ] && echo "CHART_DISPATCH_REPO not configured, skipping" && exit 0
+
+          # Extract chart version from Chart.yaml at runtime
+          CHART_VERSION=$(grep '^version:' charts/shipwright/Chart.yaml | sed 's/^version: //')
+          [ -z "$CHART_VERSION" ] && echo "Error: could not parse chart version" && exit 1
+          echo "Chart version: $CHART_VERSION"
+
+          # Emit repository_dispatch event to the configured downstream repo
+          printf '{"event_type":"shipwright-chart-released","client_payload":{"chart_version":"%s"}}' "$CHART_VERSION" \
+            | gh api "repos/$DISPATCH_REPO/dispatches" --method POST --input -
 
   # Dry-run validation — runs ONLY on pull_request. Proves the chart packages and
   # an index renders; publishes nothing (no gh-pages push, no GitHub Release).
