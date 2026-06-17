@@ -477,6 +477,35 @@ describe("query filters", () => {
     expect(result.map((t) => t.id)).toContain("TS-1.1");
   });
 
+  test("--branch filters tasks by branch", () => {
+    writeTodos(tmpDir, [
+      makeTask({ id: "TS-1.1", status: "pending", branch: "feat/x" }),
+      makeTask({ id: "TS-1.2", status: "pending", branch: "feat/y" }),
+      makeTask({ id: "TS-1.3", status: "pending" }), // no branch field
+    ]);
+    const { code, stdout } = run(["query", "--branch", "feat/x"], {
+      cwd: tmpDir,
+    });
+    expect(code).toBe(0);
+    const result = JSON.parse(stdout) as Array<{ id: string }>;
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("TS-1.1");
+  });
+
+  test("--branch with --ready filters ready tasks by branch", () => {
+    writeTodos(tmpDir, [
+      makeTask({ id: "TS-1.1", status: "pending", branch: "feat/x" }),
+      makeTask({ id: "TS-1.2", status: "pending", branch: "feat/y" }),
+    ]);
+    const { code, stdout } = run(["query", "--ready", "--branch", "feat/x"], {
+      cwd: tmpDir,
+    });
+    expect(code).toBe(0);
+    const result = JSON.parse(stdout) as Array<{ id: string }>;
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("TS-1.1");
+  });
+
   test("--status with no matching tasks returns empty array", () => {
     writeTodos(tmpDir, [makeTask({ id: "TS-1.1", status: "pending" })]);
     const { code, stdout } = run(["query", "--status", "merged"], {

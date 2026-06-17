@@ -413,6 +413,9 @@ export class JiraTaskStore implements TaskStore {
           (t) => t.assignee === undefined || t.assignee === filters.assignee,
         );
       }
+      if (filters.branch !== undefined) {
+        result = result.filter((t) => t.branch === filters.branch);
+      }
       return result.map(stripInternal);
     }
 
@@ -432,6 +435,9 @@ export class JiraTaskStore implements TaskStore {
     }
     if (filters.assignee !== undefined) {
       tasks = tasks.filter((t) => t.assignee === filters.assignee);
+    }
+    if (filters.branch !== undefined) {
+      tasks = tasks.filter((t) => t.branch === filters.branch);
     }
 
     return tasks.map(stripInternal);
