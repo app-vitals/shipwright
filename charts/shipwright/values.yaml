@@ -193,6 +193,18 @@ metrics:
     # bring your own Postgres (postgresql.enabled=false), pre-create this database
     # or point METRICS_DATABASE_URL at it yourself.
     name: shipwright_metrics
+  # -- Stable session secret via an existing Secret. When existingSecret is
+  # non-empty, SHIPWRIGHT_SESSION_SECRET (signs/validates the dashboard session
+  # JWT) is sourced from that pre-existing Secret instead of the chart-generated
+  # random. Point this at the SAME Secret the admin uses (admin.encryptionKeys.
+  # existingSecret) so admin-minted sessions validate at the metrics service when
+  # both sit behind a shared Gateway — a mismatch 401s the dashboard's metrics
+  # view. Leave empty to use the chart-managed Secret (generate on first install,
+  # reuse on upgrade via lookup).
+  sessionSecret:
+    existingSecret: ""
+    # -- Key in existingSecret that holds SHIPWRIGHT_SESSION_SECRET.
+    sessionSecretRef: SHIPWRIGHT_SESSION_SECRET
   # -- Provider and environment surface for the metrics dashboard.
   # All fields are optional and additive — defaults preserve the existing
   # SQLite / bundled-PostgreSQL fallback behavior unchanged.
