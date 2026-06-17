@@ -280,6 +280,51 @@
                 },
                 "homePath": { "type": "string" }
               }
+            },
+            "voice": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "provider": {
+                  "type": "string",
+                  "enum": ["whisper", "groq"]
+                },
+                "whisper": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "image": { "type": "string" },
+                    "service": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "port": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 65535
+                        }
+                      }
+                    },
+                    "resources": { "type": "object" }
+                  }
+                },
+                "elevenlabs": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "apiKey": { "type": "string" },
+                    "voiceId": { "type": "string" }
+                  }
+                },
+                "groq": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "apiKey": { "type": "string" }
+                  }
+                }
+              }
             }
           }
         }

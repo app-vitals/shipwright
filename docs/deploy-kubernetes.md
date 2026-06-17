@@ -344,6 +344,62 @@ These map to the admin service's provisioning env vars
 
 ---
 
+## Agent voice (STT/TTS)
+
+Agent voice — speech-to-text (STT) for incoming voice notes and text-to-speech
+(TTS) for spoken replies — is a **deploy-time option**, off by default. When
+disabled, no voice resources render and provisioned agent pods carry only the
+three base env vars (`SHIPWRIGHT_AGENT_ID`, `SHIPWRIGHT_API_URL`,
+`SHIPWRIGHT_AGENT_API_KEY`).
+
+Enable it with `agent.voice.enabled=true` and pick an STT provider:
+
+- **`provider: whisper`** (default) — the chart renders a self-hosted Whisper
+  ASR **Deployment + Service** running `onerahmet/openai-whisper-asr-webservice`.
+  The agent's transcription client POSTs to that image's `/asr` endpoint
+  (`?encode=true&task=transcribe&output=txt`, audio in the `audio_file` field,
+  plain-text response). The admin Deployment gets `WHISPER_SERVICE_URL` pointing
+  at the in-cluster Service, which the provisioner flows into each agent pod.
+- **`provider: groq`** — no Whisper pod; Groq cloud STT is used instead. The
+  `GROQ_API_KEY` is stored in the chart-managed voice `Secret` and injected into
+  the admin (and provisioned agents) via `secretKeyRef`.
+
+TTS is **ElevenLabs** for both providers (the agent falls back to an in-pod
+`edge-tts` if no key is set). The ElevenLabs key + optional voice id and the Groq
+key live in the chart-managed voice `Secret`; non-secret values (the Whisper
+Service URL, the voice id) are plain Deployment env.
+
+> Voice env reaches provisioned agent pods through the admin provisioner:
+> `agent.voice.*` → admin Deployment env → `admin/src/main.ts` `buildProvisioner`
+> → `buildAgentManifest`. So `agent.provisioning.enabled=true` is what actually
+> stamps the voice env onto agent pods; with provisioning off the admin stays in
+> Noop mode and the voice env is inert.
+
+### Voice values
+
+```yaml
+agent:
+  voice:
+    enabled: true
+    provider: whisper            # "whisper" (self-hosted pod) | "groq" (cloud STT)
+    whisper:
+      image: onerahmet/openai-whisper-asr-webservice:latest  # pin a concrete tag in prod
+      service:
+        port: 9000               # in-cluster Service port → WHISPER_SERVICE_URL
+      resources: {}              # ASR is heavy; size for your model
+    elevenlabs:
+      apiKey: ""                 # → ELEVENLABS_API_KEY (TTS); empty → edge-tts fallback
+      voiceId: ""                # → ELEVENLABS_VOICE_ID (optional)
+    groq:
+      apiKey: ""                 # → GROQ_API_KEY (only used when provider=groq)
+```
+
+These map to the agent voice env vars (`WHISPER_SERVICE_URL`,
+`ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, `GROQ_API_KEY`) read by
+`agent/src/config.ts`.
+
+---
+
 ## Authentication modes
 
 The admin service's `auth.mode` selects how users authenticate to the admin UI.
