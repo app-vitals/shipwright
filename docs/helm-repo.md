@@ -24,7 +24,7 @@ configured, the publish succeeds without the dispatch notification.
 To enable downstream notifications, configure these GitHub Actions secrets and
 variables in the current repository (**Settings → Secrets and variables → Actions**):
 
-1. **`VITALS_OS_DISPATCH_TOKEN`** (secret) — a GitHub Personal Access Token (PAT)
+1. **`SHIPWRIGHT_DISPATCH_TOKEN`** (secret) — a GitHub Personal Access Token (PAT)
    with `repo` scope on the target downstream repository. Used to emit the
    dispatch event. The workflow step is `continue-on-error: true`, so a missing
    or invalid token does not block chart publishing.
