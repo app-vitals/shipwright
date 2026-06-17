@@ -184,6 +184,16 @@ if [[ "${DRY_RUN}" == "true" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
+# Main-branch guard — must run from main to avoid including feature commits
+# ---------------------------------------------------------------------------
+
+CURRENT_BRANCH=$(git -C "${REPO_ROOT}" rev-parse --abbrev-ref HEAD)
+if [[ "${CURRENT_BRANCH}" != "main" ]]; then
+  echo "ERROR: must run from main (currently on ${CURRENT_BRANCH})" >&2
+  exit 1
+fi
+
+# ---------------------------------------------------------------------------
 # Update Chart.yaml — version field
 # ---------------------------------------------------------------------------
 
@@ -265,11 +275,6 @@ mv "${TMPFILE}" "${CHANGELOG}"
 # ---------------------------------------------------------------------------
 
 echo "[bump-chart] creating branch ${BRANCH}..."
-CURRENT_BRANCH=$(git -C "${REPO_ROOT}" rev-parse --abbrev-ref HEAD)
-if [[ "${CURRENT_BRANCH}" != "main" ]]; then
-  echo "ERROR: must run from main (currently on ${CURRENT_BRANCH})" >&2
-  exit 1
-fi
 git -C "${REPO_ROOT}" checkout -b "${BRANCH}"
 
 echo "[bump-chart] staging changes..."
