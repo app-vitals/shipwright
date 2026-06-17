@@ -271,7 +271,7 @@ The `task_store.ts` script provides several subcommands for manual interaction w
 | `setup` | Create `state/todos.json` if missing (JSON backend) or initialize GitHub/Jira labels and validation (GitHub/Jira backends) |
 | `doctor` | Validate configuration and print diagnostics (includes `backend:` line showing the active backend) |
 | `backend` | Print the active backend name: `json`, `github`, or `jira` (useful for scripts that need to detect the backend) |
-| `query` | Filter and return tasks as JSON array (supports `--status pending` and other filters) |
+| `query` | Filter and return tasks as JSON array (supports `--status`, `--id`, `--pr`, `--assignee`, `--branch`, `--session`, and `--ready`) |
 | `append` | Append tasks from a JSON file (insert-only on GitHub adapter; upsert on JSON adapter) |
 | `update` | Write specific fields to a task by ID |
 | `repos` | Print all org/repo strings (one per line) |
