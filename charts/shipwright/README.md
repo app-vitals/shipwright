@@ -97,6 +97,7 @@ environment, set `postgresql.auth.existingSecret` to a pre-created Secret (or se
 | `metrics.image.tag` | `""` | Metrics image tag (defaults to chart `appVersion`). |
 | `metrics.service.port` | `3460` | Metrics service port. |
 | `metrics.replicas` | `1` | Metrics replica count. |
+| `metrics.sessionSecret.existingSecret` | `""` | Source the metrics `SHIPWRIGHT_SESSION_SECRET` from a pre-created Secret. Point at the admin's Secret so admin-minted dashboard JWTs validate (a mismatch 401s the dashboard). Empty = chart-generated. |
 | `agent.enabled` | `true` | Toggle the agent service (port **3000**). |
 | `agent.image.repository` | `shipwright-agent` | Agent image repo. |
 | `agent.image.tag` | `""` | Agent image tag (defaults to chart `appVersion`). |
