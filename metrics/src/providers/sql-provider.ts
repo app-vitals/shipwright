@@ -620,7 +620,7 @@ export class SqlEventStoreProvider implements MetricsProvider {
         ];
       })
       .sort((a, b) => Number(b[6]) - Number(a[6]));
-    return table([prop1, prop2, ...this.tokenColumns()], rows);
+    return table([prop1, prop2, ...this.tokenColumns(), "cost_usd"], rows);
   }
 
   private async tokensGroupedCron(win: {
@@ -663,7 +663,7 @@ export class SqlEventStoreProvider implements MetricsProvider {
         ];
       })
       .sort((a, b) => Number(b[6]) - Number(a[6]));
-    return table(["agent_id", "cron_name", ...this.tokenColumns()], rows);
+    return table(["agent_id", "cron_name", ...this.tokenColumns(), "cost_usd"], rows);
   }
 
   private async tokensTrends(win: {

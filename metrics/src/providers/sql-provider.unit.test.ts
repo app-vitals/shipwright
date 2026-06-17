@@ -115,6 +115,9 @@ beforeEach(() => {
     cache_creation_input_tokens: 100,
     session_type: "cron",
     agent_id: "agent-a",
+    cron_name: "daily-report",
+    model: "claude-sonnet-4-5",
+    cost_usd: 0.01,
   });
   seed("agent_token_usage", "2026-06-03T09:00:00.000Z", {
     input_tokens: 2000,
@@ -123,6 +126,8 @@ beforeEach(() => {
     cache_creation_input_tokens: 150,
     session_type: "slack_dm",
     agent_id: "agent-b",
+    model: "claude-opus-4-5",
+    cost_usd: 0.05,
   });
 });
 
@@ -238,5 +243,44 @@ describe("SqlEventStoreProvider.tokens", () => {
     expect(all.length).toBeGreaterThanOrEqual(2);
     const total = all.reduce((acc, x) => acc + Number(x.input_tokens ?? 0), 0);
     expect(total).toBe(3000);
+  });
+
+  test("tokensByAgentBySessionType — columns include cost_usd and values are correct", async () => {
+    const table = await q({ kind: "tokensByAgentBySessionType", range: RANGE });
+    expect(table.columns).toContain("cost_usd");
+    expect(table.columns).toContain("agent_id");
+    expect(table.columns).toContain("session_type");
+    const all = rows(table);
+    const agentA = all.find((x) => x.agent_id === "agent-a" && x.session_type === "cron");
+    expect(agentA).toBeDefined();
+    expect(Number(agentA?.input_tokens)).toBe(1000);
+    expect(Number(agentA?.cost_usd)).toBeCloseTo(0.01);
+  });
+
+  test("tokensByAgentByCron — columns include cost_usd; only cron events included", async () => {
+    const table = await q({ kind: "tokensByAgentByCron", range: RANGE });
+    expect(table.columns).toContain("cost_usd");
+    expect(table.columns).toContain("agent_id");
+    expect(table.columns).toContain("cron_name");
+    const all = rows(table);
+    // Only the cron event (agent-a / daily-report) qualifies
+    expect(all).toHaveLength(1);
+    const r = all[0];
+    expect(r?.agent_id).toBe("agent-a");
+    expect(r?.cron_name).toBe("daily-report");
+    expect(Number(r?.input_tokens)).toBe(1000);
+    expect(Number(r?.cost_usd)).toBeCloseTo(0.01);
+  });
+
+  test("tokensByAgentByModel — columns include cost_usd and values are correct", async () => {
+    const table = await q({ kind: "tokensByAgentByModel", range: RANGE });
+    expect(table.columns).toContain("cost_usd");
+    expect(table.columns).toContain("agent_id");
+    expect(table.columns).toContain("model");
+    const all = rows(table);
+    const agentB = all.find((x) => x.agent_id === "agent-b");
+    expect(agentB).toBeDefined();
+    expect(Number(agentB?.input_tokens)).toBe(2000);
+    expect(Number(agentB?.cost_usd)).toBeCloseTo(0.05);
   });
 });
