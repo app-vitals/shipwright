@@ -3,11 +3,11 @@
 # false → this file renders nothing and the admin service stays in Noop mode).
 #
 # Namespace-scoped Role (NOT a ClusterRole): the admin service provisions agent
-# Deployments + Secrets only within its own release namespace, so a Role bound by
-# a RoleBinding is the least-privilege fit — no cluster-wide grant. The verb set
-# is exactly what the provisioner (HD-1.3 KubernetesAgentProvisioner / HD-1.4
-# wiring) exercises: create + get + delete on Deployments (apps) and
-# Secrets (core).
+# Deployments + Secrets + PVCs only within its own release namespace, so a Role
+# bound by a RoleBinding is the least-privilege fit — no cluster-wide grant. The
+# verb set is exactly what the provisioner (HD-1.3 KubernetesAgentProvisioner /
+# HD-1.4 wiring) exercises: create + get + delete on Deployments (apps),
+# Secrets (core), and PersistentVolumeClaims (core).
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -20,6 +20,9 @@ rules:
     verbs: ["create", "get", "delete"]
   - apiGroups: [""]
     resources: ["secrets"]
+    verbs: ["create", "get", "delete"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
     verbs: ["create", "get", "delete"]
 ---
 # RoleBinding granting the admin ServiceAccount the Role above, scoped to the
