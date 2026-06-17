@@ -716,6 +716,28 @@ describe("update", () => {
     expect(typeof result.hours).toBe("number");
   });
 
+  test("coerces hitl field to boolean true", () => {
+    const { code, stdout } = run(
+      ["update", "--id", "TS-1.1", "--set", "hitl=true"],
+      { cwd: tmpDir },
+    );
+    expect(code).toBe(0);
+    const result = JSON.parse(stdout) as { hitl: unknown };
+    expect(result.hitl).toBe(true);
+    expect(typeof result.hitl).toBe("boolean");
+  });
+
+  test("coerces hitl field to boolean false", () => {
+    const { code, stdout } = run(
+      ["update", "--id", "TS-1.1", "--set", "hitl=false"],
+      { cwd: tmpDir },
+    );
+    expect(code).toBe(0);
+    const result = JSON.parse(stdout) as { hitl: unknown };
+    expect(result.hitl).toBe(false);
+    expect(typeof result.hitl).toBe("boolean");
+  });
+
   test("status and other fields together — final state has both correct", () => {
     const { code, stdout } = run(
       [
