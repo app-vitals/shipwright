@@ -36,6 +36,7 @@ Every feature moves through the same stages. One `planning/{folder}/` directory 
 | `/dev-task {task-id}` | Single task execution — branch, implement, test, simplify, review, PR |
 | `/dev-task {task-id} --merge` | Same as above, but auto-merges after review (used by dev-loop) |
 | `/dev-loop {folder?}` | Autonomous continuous dev — picks next task, runs dev-task --merge in a loop |
+| `/hitl {task-id}` | Execute a human-in-the-loop task — loads task context, assists with infra execution, marks done on exit |
 | `/metrics {project?}` | Analyze pipeline metrics — fix cascade trends, quality rates, and recommendations |
 | `/refresh-plan {folder}` | Syncs planning doc against current codebase state |
 | `/review` | Auto-detecting multi-agent code review for the current branch |
