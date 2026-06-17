@@ -4,7 +4,7 @@ description: Execute the next ready task from the queue — build feature, simpl
 
 # Dev Task
 
-Pick the next ready task from `state/todos.json`, build the feature, simplify, verify requirements, and ship a PR. Follow all steps in order.
+Pick the next ready task from the task store, build the feature, simplify, verify requirements, and ship a PR. Follow all steps in order.
 
 **This command runs autonomously. Do not pause for user input unless a build or test failure cannot be auto-resolved.**
 
@@ -138,7 +138,7 @@ POSTHOG_SCRIPT=$(find ~/.claude/plugins/cache -name "posthog_send.py" -path "*/s
 
 ## Step 3: Build Feature-Dev Prompt
 
-Construct the implementation prompt from the task fields in `state/todos.json`:
+Construct the implementation prompt from the task fields in the task store:
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -601,7 +601,7 @@ gh pr list --head {branch} --state open --json number,url
 
 **If a PR already exists** (bundled task — joining an existing PR):
 - The push above added the commits to the existing branch/PR — no new PR needed
-- Set `pr: {existing-pr-number}` and `prCreatedAt: "{ISO timestamp}"` in todos.json for this task
+- Set `pr: {existing-pr-number}` and `prCreatedAt: "{ISO timestamp}"` in the task store for this task
 - Print the existing PR URL
 - Skip to the `shipwright_pr_created` PostHog event below (still fire it so metrics are captured)
 
