@@ -107,6 +107,14 @@ environment, set `postgresql.auth.existingSecret` to a pre-created Secret (or se
 | `agent.provisioning.persistence.size` | `2Gi` | Agent PVC size. |
 | `agent.provisioning.persistence.storageClass` | `""` | Agent PVC StorageClass (cluster default if empty). |
 | `agent.provisioning.homePath` | `/data/agent-home` | Mount path for the agent persistent home. |
+| `agent.voice.enabled` | `false` | Master switch for agent voice (STT/TTS). Off = no Whisper pod/Service/Secret and no voice env (provisioned agents keep the 3 base vars). |
+| `agent.voice.provider` | `whisper` | STT provider: `whisper` (self-hosted ASR pod) \| `groq` (Groq cloud STT). TTS is always ElevenLabs. |
+| `agent.voice.whisper.image` | `onerahmet/openai-whisper-asr-webservice:latest` | Whisper ASR image (exposes `POST /asr`). Pin a concrete tag in production. |
+| `agent.voice.whisper.service.port` | `9000` | In-cluster Whisper Service port → `WHISPER_SERVICE_URL`. |
+| `agent.voice.whisper.resources` | `{}` | Whisper container resources (empty = no limits). |
+| `agent.voice.elevenlabs.apiKey` | `""` | ElevenLabs TTS key → `ELEVENLABS_API_KEY` (voice Secret). Empty = in-pod edge-tts fallback. |
+| `agent.voice.elevenlabs.voiceId` | `""` | Optional ElevenLabs voice id → `ELEVENLABS_VOICE_ID`. |
+| `agent.voice.groq.apiKey` | `""` | Groq STT key → `GROQ_API_KEY` (voice Secret); used only when `provider=groq`. |
 | `auth.mode` | `open` | Admin auth: `open` (dev auth, **no OAuth — insecure, do not expose publicly**) \| `google` (Google OAuth, `NODE_ENV=production`). |
 | `auth.google.clientId` | `""` | Google OAuth client ID (used when `auth.mode=google`). |
 | `auth.google.clientSecret` | `""` | Google OAuth client secret (kept in the chart-managed admin Secret). |

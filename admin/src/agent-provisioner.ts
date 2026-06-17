@@ -24,6 +24,7 @@
  */
 
 import {
+  type AgentVoiceEnv,
   buildAgentDeploymentManifest,
   buildAgentSecretManifest,
   sanitizeAgentName,
@@ -109,6 +110,12 @@ export interface KubernetesAgentProvisionerConfig {
   tokenSecretKey?: string;
   /** Replica count for the agent Deployment. Defaults to 1. */
   replicas?: number;
+  /**
+   * Optional agent-voice env flowed into provisioned agent pods. The admin reads
+   * these from its OWN env (sourced from the chart's voice Secret + the in-cluster
+   * Whisper Service URL). Omitted/empty → voice disabled (no voice env injected).
+   */
+  voice?: AgentVoiceEnv;
 }
 
 function isConflict(err: unknown): boolean {
@@ -316,6 +323,7 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
       adminDeploymentName: this.config.adminDeploymentName,
       adminDeploymentUid: this.config.adminDeploymentUid,
       replicas: this.config.replicas,
+      voice: this.config.voice,
     });
     const container = manifest.spec.template.spec.containers[0];
     // Pull the env entries directly from the manifest so the Deployment spec
