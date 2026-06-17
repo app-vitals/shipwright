@@ -294,6 +294,29 @@ The `task_store.ts` script provides several subcommands for manual interaction w
 | `resolve-repo` | Print first org/repo (deprecated alias for `repos`) |
 | `cleanup` | Close open GitHub issues with terminal status labels (GitHub backend only) |
 
+### `query` filter reference
+
+All filters are AND-combined. `--ready` takes precedence and ignores `--status`, `--id`, and `--pr`.
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--status` | string | Match tasks with this exact status (e.g. `pending`, `in_progress`, `pr_open`) |
+| `--id` | string | Match the task with this exact ID |
+| `--pr` | number | Match the task whose `pr` field equals this PR number |
+| `--assignee` | string | Match tasks assigned to this GitHub login |
+| `--branch` | string | Match tasks whose `branch` field equals this branch name — useful for querying all tasks in a bundle |
+| `--session` | string | Match tasks belonging to this planning session slug |
+| `--hitl` | boolean | `true` returns only HITL tasks; `false` returns only non-HITL tasks |
+| `--ready` | flag | Return only tasks that are `pending` with all dependencies satisfied |
+
+**`--branch` example** — find all tasks sharing a bundle branch:
+
+```bash
+bun plugins/shipwright/scripts/task_store.ts query --branch feat/some-bundle
+```
+
+The deploy cron uses this internally to check bundle completeness before merging: it queries all tasks on the PR's branch and blocks the merge if any are still `pending`, `in_progress`, or `blocked`.
+
 ---
 
 ## Troubleshooting
