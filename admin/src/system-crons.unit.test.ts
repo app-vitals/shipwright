@@ -2,11 +2,11 @@ import { describe, expect, test } from "bun:test";
 import { SYSTEM_CRONS } from "./system-crons.ts";
 
 describe("SYSTEM_CRONS", () => {
-  test("exports exactly eleven crons", () => {
-    expect(SYSTEM_CRONS).toHaveLength(11);
+  test("exports exactly ten crons", () => {
+    expect(SYSTEM_CRONS).toHaveLength(10);
   });
 
-  test("cron names are the eleven expected crons", () => {
+  test("cron names are the ten expected crons", () => {
     const names = SYSTEM_CRONS.map((c) => c.name);
     expect(names).toContain("shipwright-dev-task");
     expect(names).toContain("shipwright-patch");
@@ -18,7 +18,6 @@ describe("SYSTEM_CRONS", () => {
     expect(names).toContain("learn-dream");
     expect(names).toContain("dependabot-triage");
     expect(names).toContain("entropy-patrol-maintenance");
-    expect(names).toContain("arc-queue-probe");
   });
 
   test("all crons have silent: true", () => {
@@ -169,8 +168,7 @@ describe("SYSTEM_CRONS", () => {
         c.name !== "shipwright-docs-freshness" &&
         c.name !== "learn-dream" &&
         c.name !== "dependabot-triage" &&
-        c.name !== "entropy-patrol-maintenance" &&
-        c.name !== "arc-queue-probe",
+        c.name !== "entropy-patrol-maintenance",
     );
     for (const cron of pollingCrons) {
       expect(cron.schedule).toBe("*/30 * * * *");
@@ -240,28 +238,6 @@ describe("SYSTEM_CRONS", () => {
     expect(cron?.prompt).toContain("/shipwright:entropy-fix");
     expect(cron?.prompt).not.toContain("entropy-patrol:");
     expect(cron?.prompt).toContain("entropy-patrol-last-run.json");
-  });
-
-  // ── arc-queue-probe ─────────────────────────────────────────────────────────
-
-  test("arc-queue-probe has schedule 0 9 * * *", () => {
-    const cron = SYSTEM_CRONS.find((c) => c.name === "arc-queue-probe");
-    expect(cron?.schedule).toBe("0 9 * * *");
-  });
-
-  test("arc-queue-probe has enabled: false", () => {
-    const cron = SYSTEM_CRONS.find((c) => c.name === "arc-queue-probe");
-    expect(cron?.enabled).toBe(false);
-  });
-
-  test("arc-queue-probe has no preCheck", () => {
-    const cron = SYSTEM_CRONS.find((c) => c.name === "arc-queue-probe");
-    expect(cron?.preCheck).toBeUndefined();
-  });
-
-  test("arc-queue-probe prompt contains the script invocation", () => {
-    const cron = SYSTEM_CRONS.find((c) => c.name === "arc-queue-probe");
-    expect(cron?.prompt).toContain("bun scripts/arc-queue-probe.ts");
   });
 
   // ── No old plugin-prefix refs anywhere in prompts ──────────────────────────
