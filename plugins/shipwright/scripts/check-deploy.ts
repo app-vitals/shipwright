@@ -193,8 +193,6 @@ export async function run(deps: Deps): Promise<RunResult> {
         const ciRuns = await deps.fetchCiRuns(org, repoName, pr.headRefOid);
         if (!isCiGreen(ciRuns)) continue;
 
-        // Bundle completeness gate: skip if any bundle-mate task on this branch
-        // is still in flight (pending / in_progress / blocked).
         if (deps.isBundleComplete) {
           const bundleComplete = await deps.isBundleComplete(pr.headRefName);
           if (!bundleComplete) continue;
