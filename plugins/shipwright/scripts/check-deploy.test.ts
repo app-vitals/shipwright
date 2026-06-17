@@ -16,6 +16,7 @@ import { run } from "./check-deploy.ts";
 interface GhPr {
   number: number;
   headRefOid: string;
+  headRefName: string;
   author: { login: string };
   reviewDecision: string | null;
 }
@@ -37,6 +38,7 @@ function makeGhPr(overrides: Partial<GhPr> = {}): GhPr {
   return {
     number: 50,
     headRefOid: "sha50",
+    headRefName: "feat/sw-50-example",
     author: { login: "bodhi-agent" },
     reviewDecision: null,
     ...overrides,
