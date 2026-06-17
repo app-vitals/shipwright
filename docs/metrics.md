@@ -69,7 +69,7 @@ All metric endpoints are `GET`, return JSON, and accept the same date-window que
 | GET | `/metrics/trends` | Time-series trends; supports `groupBy`. |
 | GET | `/metrics/features` | Per-feature task / CI / review breakdown. |
 | GET | `/metrics/queue` | Shipwright v3 queue metrics: funnel counts, block rate, avg cycle time (days), avg review findings. |
-| GET | `/metrics/tokens` | Token usage — totals, by agent, by session type, and trends; each group includes a `cost` field (USD). |
+| GET | `/metrics/tokens` | Token usage — totals, by agent, by session type, by agent + session type, by agent + cron, by agent + model, and trends; each group includes a `cost` field (USD). |
 | POST | `/batch/` | PostHog-shaped batch ingest — writes events to the local SQLite store. Only registered when `localStore` is injected via `MetricsDeps`; returns 404 otherwise. |
 | GET | `/dashboard` | Server-rendered dashboard HTML (session-gated). |
 | GET | `/dashboard/*` | Static dashboard assets (`styles.css`, `app.js`). |
@@ -116,7 +116,7 @@ The **dashboard** is protected by the session cookie middleware; an invalid/abse
 | `metrics/src/metrics-provider.ts` | `MetricsProvider` interface + `MetricQuery` / `MetricTable` types — the backend-agnostic read seam. |
 | `metrics/src/select-provider.ts` | Pure env-to-mode selector (`selectProviderMode()`) — maps env vars to `"fixtures" \| "posthog" \| "postgres" \| "sqlite"`. |
 | `metrics/src/providers/posthog-provider.ts` | `PostHogProvider` — implements `MetricsProvider` over a `PostHogClient` and HogQL query builders. |
-| `metrics/src/providers/sql-provider.ts` | `SqlEventStoreProvider` — shared aggregation engine; all 13 query kinds in TypeScript over any `SqlEventStore`. |
+| `metrics/src/providers/sql-provider.ts` | `SqlEventStoreProvider` — shared aggregation engine; all 16 query kinds in TypeScript over any `SqlEventStore`. |
 | `metrics/src/providers/sqlite-provider.ts` | `SqliteProvider` — thin wrapper adapting `LocalEventStore` to `SqlEventStoreProvider`. |
 | `metrics/src/providers/postgres-provider.ts` | `PostgresProvider` / `createPostgresEventStore()` — Postgres backend using `pg.Pool`; provisions DDL; wraps `SqlEventStoreProvider`. |
 | `metrics/src/queries.ts` | HogQL query builders (summary, trends, features, queue, tokens); used by `PostHogProvider`. |
