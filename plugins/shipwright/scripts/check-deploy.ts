@@ -194,7 +194,7 @@ export async function run(deps: Deps): Promise<RunResult> {
         if (!isCiGreen(ciRuns)) continue;
 
         if (deps.isBundleComplete) {
-          const bundleComplete = await deps.isBundleComplete(pr.headRefName);
+          const bundleComplete = await deps.isBundleComplete(pr.headRefName).catch(() => true);
           if (!bundleComplete) continue;
         }
 

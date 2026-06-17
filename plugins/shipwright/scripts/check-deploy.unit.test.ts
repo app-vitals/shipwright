@@ -418,6 +418,22 @@ describe("check-deploy (new behaviors)", () => {
     expect(result.candidate).not.toBeNull();
   });
 
+  test("isBundleComplete: proceeds when isBundleComplete throws (permissive on error)", async () => {
+    const pr = makeGhPr({
+      headRefName: "feat/my-branch",
+      reviewDecision: "APPROVED",
+    });
+    const result = await run(
+      makeDeps({
+        prs: { "acme/example-repo": [pr] },
+        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
+        isBundleComplete: async (_branch: string) => { throw new Error("task store unavailable"); },
+      }),
+    );
+    expect(result.exit).toBe(0);
+    expect(result.candidate).not.toBeNull();
+  });
+
   test("isBundleComplete: proceeds when isBundleComplete is absent (dep not provided)", async () => {
     const pr = makeGhPr({
       headRefName: "feat/my-branch",
