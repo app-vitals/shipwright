@@ -159,6 +159,9 @@ export interface QueryFilters {
   /** Filter tasks by GitHub login of the assigned developer. */
   assignee?: string;
 
+  /** Filter tasks by branch name (exact match). */
+  branch?: string;
+
   /** When true, return only hitl tasks; when false, exclude hitl tasks. */
   hitl?: boolean;
 }

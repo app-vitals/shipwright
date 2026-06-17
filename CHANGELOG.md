@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.28.0] - 2026-06-17
+
+### Plugin — What's New
+
+#### Human-in-the-Loop (HITL) Task Type & Workflow
+
+- **HITL task type fields** (HIT-1.1): Core Task interface now supports `hitl: boolean` and `hitlNotifiedAt: string` fields. When `hitl === true`, the task requires human approval before execution and is excluded from automated execution by `resolveReadyTasks()`.
+
+- **GitHub adapter HITL support** (HIT-1.2): Task create/update operations now sync the HITL label (`#B60205`) on GitHub issues. The `query()` method accepts `hitl: true|false` filter to select or exclude HITL tasks. The `update()` method manages HITL label state when the task's `hitl` field is set or cleared.
+
+- **JSON adapter HITL filter** (HIT-1.3): Local task store query now accepts `hitl: true|false` filter to select or exclude HITL tasks.
+
+- **HITL pending notification** (HIT-2.1): `check-dev-task` precheck now detects when no automated ready tasks exist but unnotified HITL tasks do. When detected, the precheck exits cleanly with a notification prompt, instructing the agent to alert humans about pending HITL tasks. The `hitlNotifiedAt` timestamp is set when the notification is posted to prevent repeat alerts.
+
+- **HITL detection in planning** (HIT-3.1): `plan-session` adds Step 5.5 HITL detection pass. Tasks flagged with keywords ("human approval", "manual review", "requires discussion", etc.) or judgment entries marking decisions requiring human input are automatically marked `hitl: true`.
+
+- **HITL skill** (HIT-3.2): New `shipwright:hitl` skill provides human-in-the-loop task approval and lifecycle management. Allows humans to review, approve, or reject pending HITL tasks with full auditability.
+
 ## [1.4.0] - 2026-06-17
 
 ### Chart — What's New

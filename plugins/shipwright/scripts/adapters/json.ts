@@ -127,6 +127,9 @@ export class JsonTaskStore implements TaskStore {
       if (filters.assignee !== undefined) {
         result = result.filter((t) => t.assignee === filters.assignee);
       }
+      if (filters.branch !== undefined) {
+        result = result.filter((t) => t.branch === filters.branch);
+      }
       return result;
     }
 
@@ -141,6 +144,8 @@ export class JsonTaskStore implements TaskStore {
       result = result.filter((t) => t.pr === filters.pr);
     if (filters.assignee !== undefined)
       result = result.filter((t) => t.assignee === filters.assignee);
+    if (filters.branch !== undefined)
+      result = result.filter((t) => t.branch === filters.branch);
     return result;
   }
 

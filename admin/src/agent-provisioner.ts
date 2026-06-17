@@ -34,6 +34,7 @@ import { ConflictError, NotFoundError } from "./errors.ts";
 import type {
   DeploymentSpec,
   KubernetesClient,
+  PvcSpec,
   SecretSpec,
 } from "./kubernetes-client.ts";
 
@@ -110,6 +111,8 @@ export interface KubernetesAgentProvisionerConfig {
   tokenSecretKey?: string;
   /** Replica count for the agent Deployment. Defaults to 1. */
   replicas?: number;
+  /** Storage size in Gi for the agent home PVC. Defaults to 40. */
+  pvcStorageGi?: number;
   /**
    * Optional agent-voice env flowed into provisioned agent pods. The admin reads
    * these from its OWN env (sourced from the chart's voice Secret + the in-cluster
@@ -158,13 +161,26 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
   async provision(agentId: string): Promise<ProvisionResult> {
     const resourceName = this.resourceName(agentId);
     const secretName = this.secretNameFor(resourceName);
+    const pvcName = this.pvcNameFor(resourceName);
     const result: ProvisionResult = {
       resourceName,
       secretName,
       deploymentName: resourceName,
     };
 
-    // 1. Token — mint only when the Secret does NOT already exist. If the Secret
+    // 1. PVC — must exist before the Deployment that mounts it. A 409 means the
+    //    PVC already exists from a prior provision; treat as idempotent success.
+    //    On any subsequent failure, do NOT delete the PVC (data safety policy).
+    try {
+      await this.k8s.createPvc(
+        this.config.namespace,
+        this.pvcSpec(pvcName),
+      );
+    } catch (err) {
+      if (!isConflict(err)) throw err;
+    }
+
+    // 2. Token — mint only when the Secret does NOT already exist. If the Secret
     //    is already present (a prior provision completed or partially ran), we
     //    skip minting so no orphaned token rows accumulate in the DB and the
     //    returned rawToken correctly signals "use the existing credential" via
@@ -182,7 +198,7 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
       const { rawToken } = await this.tokens.create(agentId, "k8s-provision");
       result.rawToken = rawToken;
 
-      // 2. Secret — must exist before the Deployment that references it.
+      // 3. Secret — must exist before the Deployment that references it.
       //    A 409 here is unexpected (we just confirmed it was absent), but treat
       //    it as already-present and continue to the Deployment step.
       try {
@@ -196,9 +212,9 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
       }
     }
 
-    // 3. Deployment. If creation fails AFTER we created the Secret in THIS call,
+    // 4. Deployment. If creation fails AFTER we created the Secret in THIS call,
     //    roll the Secret back (best-effort) so a retry starts clean and never
-    //    leaks a half-provisioned state.
+    //    leaks a half-provisioned state. The PVC is NOT rolled back (data safety).
     try {
       await this.k8s.createDeployment(
         this.config.namespace,
@@ -285,6 +301,14 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
   }
 
   // ─── Spec derivation (via the pure manifest builders) ─────────────────────
+
+  private pvcSpec(pvcName: string): PvcSpec {
+    return {
+      name: pvcName,
+      namespace: this.config.namespace,
+      storageGi: this.config.pvcStorageGi ?? 40,
+    };
+  }
 
   private secretSpec(secretName: string, rawToken: string): SecretSpec {
     // The pure builder is the single source of truth for the Secret body (name,

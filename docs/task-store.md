@@ -248,6 +248,8 @@ To mark a task as HITL:
 
 HITL is a runtime flag — it does not affect `query()` filters or direct task lookup. Use `query(filters: { hitl: true })` to return only HITL tasks, or `query(filters: { hitl: false })` to return only non-HITL tasks.
 
+**Notification workflow:** When `check-dev-task.ts` finds pending HITL tasks that have not been notified (no `hitlNotifiedAt` timestamp), it returns exit code 0 with a notification message listing the tasks. The notification should be posted to the configured channel, and then each task's `hitlNotifiedAt` field should be stamped with the current timestamp using the task store update command to prevent duplicate notifications. The field format is an ISO 8601 timestamp string (e.g., `"2026-06-17T10:00:00Z"`).
+
 ### How task metadata is stored
 
 When Shipwright creates a Jira issue, it stores the full task JSON in an ADF `codeBlock` with `language: "shipwright"` in the issue description. A human-readable description paragraph appears above it. Issues without this block are ignored by the adapter.
@@ -285,7 +287,7 @@ The `task_store.ts` script provides several subcommands for manual interaction w
 | `setup` | Create `state/todos.json` if missing (JSON backend) or initialize GitHub/Jira labels and validation (GitHub/Jira backends) |
 | `doctor` | Validate configuration and print diagnostics (includes `backend:` line showing the active backend) |
 | `backend` | Print the active backend name: `json`, `github`, or `jira` (useful for scripts that need to detect the backend) |
-| `query` | Filter and return tasks as JSON array (supports `--status pending`, `--assignee user`, `--hitl` and other filters) |
+| `query` | Filter and return tasks as JSON array (supports `--status`, `--id`, `--pr`, `--assignee`, `--branch`, `--session`, `--hitl`, and `--ready`) |
 | `append` | Append tasks from a JSON file (insert-only on GitHub adapter; upsert on JSON adapter). GitHub backend warns to stderr when a duplicate task ID is skipped: `warn: task '{id}' already exists in GitHub — skipped` |
 | `update` | Write specific fields to a task by ID |
 | `repos` | Print all org/repo strings (one per line) |

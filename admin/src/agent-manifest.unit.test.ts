@@ -9,8 +9,10 @@ import {
   AGENT_HEALTH_PORT,
   AGENT_HOME_MOUNT_PATH,
   type AgentDeploymentOpts,
+  type AgentPvcOpts,
   type AgentSecretOpts,
   buildAgentDeploymentManifest,
+  buildAgentPvcManifest,
   buildAgentSecretManifest,
   sanitizeAgentName,
 } from "./agent-manifest.ts";
@@ -269,6 +271,65 @@ describe("buildAgentSecretManifest", () => {
       name: "shipwright-admin",
       uid: "11112222-3333-4444-5555-666677778888",
       controller: true,
+    });
+  });
+});
+
+// ─── buildAgentPvcManifest ──────────────────────────────────────────────────
+
+describe("buildAgentPvcManifest", () => {
+  const pvcOpts: AgentPvcOpts = {
+    name: "agent-42-home",
+    namespace: "shipwright",
+    sizeGi: 40,
+    adminDeploymentName: "shipwright-admin",
+    adminDeploymentUid: "11112222-3333-4444-5555-666677778888",
+  };
+
+  it("emits a v1 PersistentVolumeClaim", () => {
+    const p = buildAgentPvcManifest(pvcOpts);
+    expect(p.apiVersion).toBe("v1");
+    expect(p.kind).toBe("PersistentVolumeClaim");
+    expect(p.metadata.name).toBe("agent-42-home");
+    expect(p.metadata.namespace).toBe("shipwright");
+  });
+
+  it("sets accessModes to ReadWriteOnce", () => {
+    const p = buildAgentPvcManifest(pvcOpts);
+    expect(p.spec.accessModes).toEqual(["ReadWriteOnce"]);
+  });
+
+  it("sets storage to sizeGi Gi", () => {
+    const p = buildAgentPvcManifest(pvcOpts);
+    expect(p.spec.resources.requests.storage).toBe("40Gi");
+  });
+
+  it("honours a custom sizeGi", () => {
+    const p = buildAgentPvcManifest({ ...pvcOpts, sizeGi: 100 });
+    expect(p.spec.resources.requests.storage).toBe("100Gi");
+  });
+
+  it("includes storageClassName when provided", () => {
+    const p = buildAgentPvcManifest({ ...pvcOpts, storageClassName: "premium" });
+    expect(p.spec.storageClassName).toBe("premium");
+  });
+
+  it("omits storageClassName when not provided", () => {
+    const p = buildAgentPvcManifest(pvcOpts);
+    expect(p.spec.storageClassName).toBeUndefined();
+  });
+
+  it("carries an ownerReference to the admin Deployment for GC", () => {
+    const p = buildAgentPvcManifest(pvcOpts);
+    const refs = p.metadata.ownerReferences ?? [];
+    expect(refs).toHaveLength(1);
+    expect(refs[0]).toMatchObject({
+      apiVersion: "apps/v1",
+      kind: "Deployment",
+      name: "shipwright-admin",
+      uid: "11112222-3333-4444-5555-666677778888",
+      controller: true,
+      blockOwnerDeletion: true,
     });
   });
 });
