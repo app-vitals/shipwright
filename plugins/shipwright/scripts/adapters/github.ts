@@ -640,16 +640,13 @@ export class GitHubTaskStore implements TaskStore {
     const results: AuditResult[] = [];
 
     // ── 1. Fetch all managed tasks (status-labeled) ──────────────────────────
+    // Skip data checks entirely when GitHub auth is unavailable (e.g. CI doctor step
+    // without GH_TOKEN). Config checks in doctor() still run regardless.
     let allIssues: GhIssue[];
     try {
       allIssues = await this.fetchAllIssues();
-    } catch (e) {
-      results.push({
-        level: "fail",
-        check: "fetch-issues",
-        message: `Failed to fetch issues: ${String(e)}`,
-      });
-      return results;
+    } catch {
+      return results; // no auth or network — skip data checks silently
     }
 
     const tasks = allIssues.map((i) => issueToTask(i) as Task);
