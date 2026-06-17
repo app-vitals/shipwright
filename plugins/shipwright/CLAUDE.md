@@ -114,7 +114,7 @@ favors permissive: false positives are visible and self-correcting; false negati
 | Script | Guards | What it checks |
 |---|---|---|
 | `check-review.ts` | `review` cron | Open PRs with unreviewed commits (by headRefOid dedup against `state/reviews.json`); respects `allow_self_review` policy |
-| `check-deploy.ts` | `deploy` cron | Open PRs with `APPROVED` review decision and green CI; respects `allow_self_review` for self-authored PRs |
+| `check-deploy.ts` | `deploy` cron | Open PRs with `APPROVED` review decision, green CI, and bundle-mate task readiness (if any tasks share the branch); respects `allow_self_review` for self-authored PRs |
 | `check-dev-task.ts` | `dev-task` cron | Pending tasks with all dependencies satisfied (task store `ready: true` query) |
 | `check-patch.ts` | `patch` cron | Auto-updates BEHIND branches via `gh pr update-branch`; signals patch skill for unaddressed review findings, stuck-BEHIND branches (update-branch failures), merge conflicts, and failing CI; queries GitHub directly — does NOT read `state/reviews.json` |
 | `check-review-patch.ts` | `review-patch` cron | Delegates to `check-patch.ts` + `check-review.ts`; exits 0 if either exits 0, covering the full scope of the review-patch orchestrator (unaddressed findings, failing CI, BEHIND branches, merge conflicts, and unreviewed commits) |
