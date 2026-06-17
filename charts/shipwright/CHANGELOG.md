@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.4.0]
+
+### Added
+
+- `agent-provisioning-rbac`: added a `persistentvolumeclaims` rule (`create`/`get`/`delete`) to the `agent-provisioner` Role, giving the provisioner the permissions it needs to manage workspace PVCs alongside Deployments and Secrets. Additive — no existing rules changed. ALP-A.2 in vitals-os bumps the subchart dependency to pick this up.
+
 ## [1.3.0]
 
 ### Added
