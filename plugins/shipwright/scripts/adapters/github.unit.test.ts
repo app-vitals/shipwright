@@ -136,7 +136,9 @@ describe("GitHubTaskStore.resolveRepos", () => {
   });
 
   test("merges config repo with workspace repos, config repo first, no duplicates", async () => {
-    const reposDir = await mkdtemp(path.join(tmpdir(), "shipwright-test-repos-"));
+    const reposDir = await mkdtemp(
+      path.join(tmpdir(), "shipwright-test-repos-"),
+    );
     try {
       // Create a fake git repo that resolveRepos can scan
       const repoDir = path.join(reposDir, "other-repo");
@@ -3072,5 +3074,266 @@ process.exit(0);
     const getsContent = await Bun.file(milestonesGetFile).text();
     const getCount = getsContent.trim().split("\n").filter(Boolean).length;
     expect(getCount).toBe(1);
+  });
+});
+
+// ─── HITL label support (HIT-1.2) ────────────────────────────────────────────
+
+describe("GitHubTaskStore HITL label support", () => {
+  test("setup() creates hitl label via --force", async () => {
+    const captureScript = path.join(tmpDir, "hitl-setup-gh");
+    const callsFile = path.join(tmpDir, "hitl-setup-calls.txt");
+    const script = `#!/usr/bin/env bun
+import { argv } from "process";
+import { appendFileSync } from "fs";
+appendFileSync(${JSON.stringify(callsFile)}, argv.slice(2).join("|") + "\\n");
+process.exit(0);
+`;
+    await writeFile(captureScript, script, { mode: 0o755 });
+    process.env.GH_CMD = captureScript;
+
+    const adapter = new GitHubTaskStore(CONFIG);
+    await adapter.setup();
+
+    const calls = (await Bun.file(callsFile).text())
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => line.split("|"));
+
+    const hitlLabelCall = calls.find(
+      (c) => c[0] === "label" && c[1] === "create" && c[2] === "hitl",
+    );
+    expect(hitlLabelCall).toBeDefined();
+    expect(hitlLabelCall).toContain("--force");
+    expect(hitlLabelCall).toContain("--color");
+    expect(hitlLabelCall).toContain("B60205");
+  });
+
+  test("append() adds --label hitl when task.hitl is true", async () => {
+    const argsFile = path.join(tmpDir, "hitl-append-args.json");
+    const captureScript = path.join(tmpDir, "hitl-append-gh");
+    const script = `#!/usr/bin/env bun
+import { argv } from "process";
+import { writeFileSync } from "fs";
+const args = argv.slice(2);
+
+if (args[0] === "issue" && args[1] === "list") {
+  console.log("[]");
+  process.exit(0);
+}
+
+if (args[0] === "api" && args[1] === "user") {
+  console.log("test-user");
+  process.exit(0);
+}
+
+if (args[0] === "api" && args[1].includes("milestones")) {
+  console.log("[]");
+  process.exit(0);
+}
+
+if (args[0] === "label" && args[1] === "create") {
+  process.exit(0);
+}
+
+if (args[0] === "issue" && args[1] === "create") {
+  writeFileSync(${JSON.stringify(argsFile)}, JSON.stringify(args));
+  console.log("https://github.com/test-owner/test-repo/issues/42");
+  process.exit(0);
+}
+
+process.exit(0);
+`;
+    await writeFile(captureScript, script, { mode: 0o755 });
+    process.env.GH_CMD = captureScript;
+
+    const adapter = new GitHubTaskStore(CONFIG);
+    await adapter.append([
+      {
+        id: "HIT-A.1",
+        title: "HITL task",
+        status: "pending",
+        hitl: true,
+        session: "hitl-test",
+      },
+    ]);
+
+    const createArgs = JSON.parse(await Bun.file(argsFile).text()) as string[];
+    expect(createArgs).toContain("--label");
+    expect(createArgs).toContain("hitl");
+  });
+
+  test("issueToTask() sets hitl: true when hitl label is present on the issue", async () => {
+    const baseIssue = makeIssue(1, "HIT-B.1: HITL task", "pending", {
+      id: "HIT-B.1",
+      title: "HITL task",
+      status: "pending",
+    });
+    const issueWithHitlLabel = {
+      ...baseIssue,
+      labels: [...baseIssue.labels, { name: "hitl" }],
+    };
+
+    const issueWithoutHitlLabel = makeIssue(
+      2,
+      "HIT-B.2: Normal task",
+      "pending",
+      {
+        id: "HIT-B.2",
+        title: "Normal task",
+        status: "pending",
+      },
+    );
+
+    const fakeGh = await writeFakeGh(tmpDir, {
+      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone,assignees --limit 500":
+        [issueWithHitlLabel, issueWithoutHitlLabel],
+    });
+    process.env.GH_CMD = fakeGh;
+
+    const adapter = new GitHubTaskStore(CONFIG);
+    const tasks = await adapter.query({});
+
+    const hitlTask = tasks.find((t) => t.id === "HIT-B.1");
+    const normalTask = tasks.find((t) => t.id === "HIT-B.2");
+
+    expect(hitlTask?.hitl).toBe(true);
+    expect(normalTask?.hitl).toBeUndefined();
+  });
+
+  test("query({ hitl: true }) returns only hitl tasks; query({ hitl: false }) excludes them", async () => {
+    const baseIssue = makeIssue(1, "HIT-C.1: HITL task", "pending", {
+      id: "HIT-C.1",
+      title: "HITL task",
+      status: "pending",
+    });
+    const hitlIssue = {
+      ...baseIssue,
+      labels: [...baseIssue.labels, { name: "hitl" }],
+    };
+    const normalIssue = makeIssue(2, "HIT-C.2: Normal task", "pending", {
+      id: "HIT-C.2",
+      title: "Normal task",
+      status: "pending",
+    });
+
+    const fakeGh = await writeFakeGh(tmpDir, {
+      "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone,assignees --limit 500":
+        [hitlIssue, normalIssue],
+    });
+    process.env.GH_CMD = fakeGh;
+
+    const adapter = new GitHubTaskStore(CONFIG);
+
+    const hitlOnly = await adapter.query({ hitl: true });
+    expect(hitlOnly).toHaveLength(1);
+    expect(hitlOnly[0].id).toBe("HIT-C.1");
+
+    const nonHitlOnly = await adapter.query({ hitl: false });
+    expect(nonHitlOnly).toHaveLength(1);
+    expect(nonHitlOnly[0].id).toBe("HIT-C.2");
+  });
+
+  test("update(id, { hitl: true }) calls gh issue edit --add-label hitl", async () => {
+    const issues = [
+      makeIssue(42, "HIT-D.1: HITL task", "pending", {
+        id: "HIT-D.1",
+        title: "HITL task",
+        status: "pending",
+      }),
+    ];
+
+    const editsFile = path.join(tmpDir, "hitl-add-edits.txt");
+    const scriptPath = path.join(tmpDir, "hitl-add-gh");
+    const script = `#!/usr/bin/env bun
+import { argv } from "process";
+import { appendFileSync } from "fs";
+const args = argv.slice(2);
+
+if (args[0] === "issue" && args[1] === "list") {
+  console.log(${JSON.stringify(JSON.stringify(issues))});
+  process.exit(0);
+}
+
+if (args[0] === "issue" && args[1] === "edit") {
+  appendFileSync(${JSON.stringify(editsFile)}, args.join("|") + "\\n");
+  process.exit(0);
+}
+
+if (args[0] === "issue" && args[1] === "close") {
+  process.exit(0);
+}
+
+process.exit(0);
+`;
+    await writeFile(scriptPath, script, { mode: 0o755 });
+    process.env.GH_CMD = scriptPath;
+
+    const adapter = new GitHubTaskStore(CONFIG);
+    await adapter.update("HIT-D.1", { hitl: true });
+
+    const edits = (await Bun.file(editsFile).text())
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => line.split("|"));
+
+    const hitlEdit = edits.find(
+      (e) => e.includes("--add-label") && e.includes("hitl"),
+    );
+    expect(hitlEdit).toBeDefined();
+    expect(hitlEdit).not.toContain("--remove-label");
+  });
+
+  test("update(id, { hitl: false }) calls gh issue edit --remove-label hitl", async () => {
+    const issues = [
+      makeIssue(43, "HIT-D.2: HITL task", "pending", {
+        id: "HIT-D.2",
+        title: "HITL task",
+        status: "pending",
+      }),
+    ];
+
+    const editsFile = path.join(tmpDir, "hitl-remove-edits.txt");
+    const scriptPath = path.join(tmpDir, "hitl-remove-gh");
+    const script = `#!/usr/bin/env bun
+import { argv } from "process";
+import { appendFileSync } from "fs";
+const args = argv.slice(2);
+
+if (args[0] === "issue" && args[1] === "list") {
+  console.log(${JSON.stringify(JSON.stringify(issues))});
+  process.exit(0);
+}
+
+if (args[0] === "issue" && args[1] === "edit") {
+  appendFileSync(${JSON.stringify(editsFile)}, args.join("|") + "\\n");
+  process.exit(0);
+}
+
+if (args[0] === "issue" && args[1] === "close") {
+  process.exit(0);
+}
+
+process.exit(0);
+`;
+    await writeFile(scriptPath, script, { mode: 0o755 });
+    process.env.GH_CMD = scriptPath;
+
+    const adapter = new GitHubTaskStore(CONFIG);
+    await adapter.update("HIT-D.2", { hitl: false });
+
+    const edits = (await Bun.file(editsFile).text())
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => line.split("|"));
+
+    const hitlEdit = edits.find(
+      (e) => e.includes("--remove-label") && e.includes("hitl"),
+    );
+    expect(hitlEdit).toBeDefined();
+    expect(hitlEdit).not.toContain("--add-label");
   });
 });

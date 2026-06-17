@@ -123,6 +123,16 @@ export interface Task {
    * 1 = trivial, 5 = highest complexity. Used for planning and model selection heuristics.
    */
   complexity?: number;
+
+  /**
+   * When true, this task requires human-in-the-loop execution and must not be
+   * picked up by the automated dev-task executor. resolveReadyTasks excludes
+   * hitl tasks from the ready set.
+   */
+  hitl?: boolean;
+
+  /** ISO timestamp set when the agent first notified humans about this HITL task. */
+  hitlNotifiedAt?: string;
 }
 
 // ─── QueryFilters ─────────────────────────────────────────────────────────────
@@ -151,6 +161,9 @@ export interface QueryFilters {
 
   /** Filter tasks by branch name (exact match). */
   branch?: string;
+
+  /** When true, return only hitl tasks; when false, exclude hitl tasks. */
+  hitl?: boolean;
 }
 
 // ─── TaskStoreConfig ──────────────────────────────────────────────────────────
@@ -217,6 +230,7 @@ export async function resolveReadyTasks(
 
   for (const task of tasks) {
     if (task.status !== "pending") continue;
+    if (task.hitl === true) continue;
 
     let ready = true;
     for (const depId of task.dependencies ?? []) {

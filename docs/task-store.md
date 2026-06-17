@@ -72,7 +72,7 @@ If any check fails (returns `[fail]`), the command exits with status code 1.
 
 ## GitHub backend
 
-The GitHub backend stores tasks as GitHub Issues. Each issue carries a `status:*` label that is the authoritative status, plus a fenced `shipwright` code block in the issue body containing the full task metadata JSON.
+The GitHub backend stores tasks as GitHub Issues. Each issue carries a `status:*` label that is the authoritative status, an optional `hitl` label to gate execution, and a fenced `shipwright` code block in the issue body containing the full task metadata JSON.
 
 ### Prerequisites
 
@@ -110,7 +110,7 @@ bun plugins/shipwright/scripts/task_store.ts setup
 bun plugins/shipwright/scripts/task_store.ts doctor
 ```
 
-The `setup` command creates all `status:*` labels (`status:pending`, `status:in_progress`, `status:pr_open`, etc.) using `--force` so it is safe to re-run.
+The `setup` command creates all `status:*` labels (`status:pending`, `status:in_progress`, `status:pr_open`, etc.) and the `hitl` label (human-in-the-loop, red color) using `--force` so it is safe to re-run.
 
 ### When to use
 
@@ -234,6 +234,16 @@ Example — limit to the current sprint and only pending tasks:
 }
 ```
 
+### Human-in-the-loop (HITL) filtering
+
+Tasks marked with the `hitl` label or field are automatically excluded from the ready task set. Use this to temporarily gate high-risk or uncertain tasks from automated execution — they will not be picked up by `resolveReadyTasks()` even when all dependencies are satisfied and status is `pending`.
+
+To mark a task as HITL:
+- **GitHub backend:** apply the `hitl` label to the issue
+- **Jira backend:** add `hitl: true` to the task metadata block, or use a custom JQL filter (see `readyJql` above) to exclude them
+
+HITL is a runtime flag — it does not affect `query()` filters or direct task lookup. Use `query(filters: { hitl: true })` to return only HITL tasks, or `query(filters: { hitl: false })` to return only non-HITL tasks.
+
 ### How task metadata is stored
 
 When Shipwright creates a Jira issue, it stores the full task JSON in an ADF `codeBlock` with `language: "shipwright"` in the issue description. A human-readable description paragraph appears above it. Issues without this block are ignored by the adapter.
@@ -271,7 +281,7 @@ The `task_store.ts` script provides several subcommands for manual interaction w
 | `setup` | Create `state/todos.json` if missing (JSON backend) or initialize GitHub/Jira labels and validation (GitHub/Jira backends) |
 | `doctor` | Validate configuration and print diagnostics (includes `backend:` line showing the active backend) |
 | `backend` | Print the active backend name: `json`, `github`, or `jira` (useful for scripts that need to detect the backend) |
-| `query` | Filter and return tasks as JSON array (supports `--status`, `--id`, `--pr`, `--assignee`, `--branch`, `--session`, and `--ready`) |
+| `query` | Filter and return tasks as JSON array (supports `--status`, `--id`, `--pr`, `--assignee`, `--branch`, `--session`, `--hitl`, and `--ready`) |
 | `append` | Append tasks from a JSON file (insert-only on GitHub adapter; upsert on JSON adapter) |
 | `update` | Write specific fields to a task by ID |
 | `repos` | Print all org/repo strings (one per line) |

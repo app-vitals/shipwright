@@ -12,6 +12,7 @@
  * GH_CMD env var is used for the gh executable — inject a fake command for tests.
  */
 
+import { resolveRepos } from "../check-helpers.ts";
 import { resolveReadyTasks } from "../store.ts";
 import type {
   QueryFilters,
@@ -20,7 +21,6 @@ import type {
   TaskStore,
   TaskStoreConfig,
 } from "../store.ts";
-import { resolveRepos } from "../check-helpers.ts";
 import {
   type AuditResult,
   checkCrossRepoOrphans,
@@ -144,6 +144,11 @@ function issueToTask(issue: GhIssue): TaskWithMeta {
   if (labelStatus !== undefined) {
     task.status = labelStatus;
     task._labelStatus = labelStatus;
+  }
+
+  // hitl label is authoritative — set task.hitl when the label is present
+  if (issue.labels.some((lbl) => lbl.name === "hitl")) {
+    task.hitl = true;
   }
 
   // Fall back to GitHub issue assignee when not set in the YAML block
@@ -332,6 +337,13 @@ export class GitHubTaskStore implements TaskStore {
     if (filters.branch !== undefined) {
       tasks = tasks.filter((t) => t.branch === filters.branch);
     }
+    if (filters.hitl !== undefined) {
+      if (filters.hitl) {
+        tasks = tasks.filter((t) => t.hitl === true);
+      } else {
+        tasks = tasks.filter((t) => t.hitl !== true);
+      }
+    }
 
     return tasks.map(stripInternal);
   }
@@ -403,6 +415,10 @@ export class GitHubTaskStore implements TaskStore {
 
       if (assignee) {
         createArgs.push("--assignee", assignee);
+      }
+
+      if (task.hitl === true) {
+        createArgs.push("--label", "hitl");
       }
 
       await this.runGh(createArgs);
@@ -500,6 +516,31 @@ export class GitHubTaskStore implements TaskStore {
           String(issueNumber),
           "--repo",
           this.repoFlag,
+        ]);
+      }
+    }
+
+    // Manage hitl label when hitl field is explicitly set or cleared
+    if (fields.hitl !== undefined && issueNumber !== undefined) {
+      if (fields.hitl) {
+        await this.runGh([
+          "issue",
+          "edit",
+          String(issueNumber),
+          "--repo",
+          this.repoFlag,
+          "--add-label",
+          "hitl",
+        ]);
+      } else {
+        await this.runGh([
+          "issue",
+          "edit",
+          String(issueNumber),
+          "--repo",
+          this.repoFlag,
+          "--remove-label",
+          "hitl",
         ]);
       }
     }
@@ -664,9 +705,7 @@ export class GitHubTaskStore implements TaskStore {
 
     const g = this.config.github;
     if (g) {
-      results.push(
-        ...checkCrossRepoOrphans(tasks, `${g.owner}/${g.repo}`),
-      );
+      results.push(...checkCrossRepoOrphans(tasks, `${g.owner}/${g.repo}`));
     }
 
     // ── 3. Zero-label check (wide fetch) ────────────────────────────────────
@@ -747,6 +786,16 @@ export class GitHubTaskStore implements TaskStore {
         "--force",
       ]);
     }
+    await this.runGh([
+      "label",
+      "create",
+      "hitl",
+      "--repo",
+      this.repoFlag,
+      "--color",
+      "B60205",
+      "--force",
+    ]);
   }
 
   async resolveRepo(): Promise<string> {
