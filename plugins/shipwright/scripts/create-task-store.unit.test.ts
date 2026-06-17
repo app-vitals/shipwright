@@ -21,7 +21,9 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadConfig, createTaskStore } from "./create-task-store";
+import { GitHubTaskStore } from "./adapters/github";
+import { JsonTaskStore } from "./adapters/json";
+import { createTaskStore, doctorCheck, loadConfig } from "./create-task-store";
 
 describe("loadConfig discovery", () => {
   let tmpDir: string;
@@ -406,9 +408,7 @@ describe("createTaskStore single-backend enforcement", () => {
     process.env.SHIPWRIGHT_GITHUB_REPO = "test-repo";
     const { config } = loadConfig(tmpDir);
     const store = createTaskStore(config);
-    const { JsonTaskStore } = require("./adapters/json");
     expect(store).not.toBeInstanceOf(JsonTaskStore);
-    const { GitHubTaskStore } = require("./adapters/github");
     expect(store).toBeInstanceOf(GitHubTaskStore);
   });
 
@@ -419,9 +419,7 @@ describe("createTaskStore single-backend enforcement", () => {
       const { config } = loadConfig(isolatedDir);
       expect(config.taskStore).toBe("json");
       const store = createTaskStore(config);
-      const { JsonTaskStore } = require("./adapters/json");
       expect(store).toBeInstanceOf(JsonTaskStore);
-      const { GitHubTaskStore } = require("./adapters/github");
       expect(store).not.toBeInstanceOf(GitHubTaskStore);
     } finally {
       rmSync(isolatedDir, { recursive: true, force: true });
@@ -444,7 +442,6 @@ describe("createTaskStore single-backend enforcement", () => {
     // should not touch the file at all. We verify by checking the factory returns the
     // right type without any interaction with todos.json.
     const store = createTaskStore(config);
-    const { GitHubTaskStore } = require("./adapters/github");
     expect(store).toBeInstanceOf(GitHubTaskStore);
     // todos.json still exists and is unchanged (not read/written by createTaskStore)
     const todosContent = readFileSync(join(tmpDir, "state", "todos.json"), "utf-8");
@@ -526,9 +523,6 @@ describe("doctor coexistence warning", () => {
 
     try {
       const { config, configSource } = loadConfig(tmpDir);
-      // doctor is in task_store.ts but we need a unit-testable version
-      // We call the doctorCheck function exported from create-task-store
-      const { doctorCheck } = require("./create-task-store");
       doctorCheck(config, configSource, tmpDir);
     } finally {
       console.warn = origWarn;
@@ -562,7 +556,6 @@ describe("doctor coexistence warning", () => {
 
     try {
       const { config, configSource } = loadConfig(tmpDir);
-      const { doctorCheck } = require("./create-task-store");
       doctorCheck(config, configSource, tmpDir);
     } finally {
       console.warn = origWarn;
@@ -592,7 +585,6 @@ describe("doctor coexistence warning", () => {
 
     try {
       const { config, configSource } = loadConfig(tmpDir);
-      const { doctorCheck } = require("./create-task-store");
       doctorCheck(config, configSource, tmpDir);
     } finally {
       console.warn = origWarn;
@@ -627,7 +619,6 @@ describe("doctor coexistence warning", () => {
         ]));
         const { config, configSource } = loadConfig(isolatedDir);
         expect(config.taskStore).toBe("json");
-        const { doctorCheck } = require("./create-task-store");
         doctorCheck(config, configSource, isolatedDir);
       } finally {
         rmSync(isolatedDir, { recursive: true, force: true });
