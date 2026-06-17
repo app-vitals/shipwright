@@ -3114,4 +3114,106 @@ process.exit(0);
     expect(nonHitlOnly).toHaveLength(1);
     expect(nonHitlOnly[0].id).toBe("HIT-C.2");
   });
+
+  test("update(id, { hitl: true }) calls gh issue edit --add-label hitl", async () => {
+    const issues = [
+      makeIssue(42, "HIT-D.1: HITL task", "pending", {
+        id: "HIT-D.1",
+        title: "HITL task",
+        status: "pending",
+      }),
+    ];
+
+    const editsFile = path.join(tmpDir, "hitl-add-edits.txt");
+    const scriptPath = path.join(tmpDir, "hitl-add-gh");
+    const script = `#!/usr/bin/env bun
+import { argv } from "process";
+import { appendFileSync } from "fs";
+const args = argv.slice(2);
+
+if (args[0] === "issue" && args[1] === "list") {
+  console.log(${JSON.stringify(JSON.stringify(issues))});
+  process.exit(0);
+}
+
+if (args[0] === "issue" && args[1] === "edit") {
+  appendFileSync(${JSON.stringify(editsFile)}, args.join("|") + "\\n");
+  process.exit(0);
+}
+
+if (args[0] === "issue" && args[1] === "close") {
+  process.exit(0);
+}
+
+process.exit(0);
+`;
+    await writeFile(scriptPath, script, { mode: 0o755 });
+    process.env.GH_CMD = scriptPath;
+
+    const adapter = new GitHubTaskStore(CONFIG);
+    await adapter.update("HIT-D.1", { hitl: true });
+
+    const edits = (await Bun.file(editsFile).text())
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => line.split("|"));
+
+    const hitlEdit = edits.find(
+      (e) => e.includes("--add-label") && e.includes("hitl"),
+    );
+    expect(hitlEdit).toBeDefined();
+    expect(hitlEdit).not.toContain("--remove-label");
+  });
+
+  test("update(id, { hitl: false }) calls gh issue edit --remove-label hitl", async () => {
+    const issues = [
+      makeIssue(43, "HIT-D.2: HITL task", "pending", {
+        id: "HIT-D.2",
+        title: "HITL task",
+        status: "pending",
+      }),
+    ];
+
+    const editsFile = path.join(tmpDir, "hitl-remove-edits.txt");
+    const scriptPath = path.join(tmpDir, "hitl-remove-gh");
+    const script = `#!/usr/bin/env bun
+import { argv } from "process";
+import { appendFileSync } from "fs";
+const args = argv.slice(2);
+
+if (args[0] === "issue" && args[1] === "list") {
+  console.log(${JSON.stringify(JSON.stringify(issues))});
+  process.exit(0);
+}
+
+if (args[0] === "issue" && args[1] === "edit") {
+  appendFileSync(${JSON.stringify(editsFile)}, args.join("|") + "\\n");
+  process.exit(0);
+}
+
+if (args[0] === "issue" && args[1] === "close") {
+  process.exit(0);
+}
+
+process.exit(0);
+`;
+    await writeFile(scriptPath, script, { mode: 0o755 });
+    process.env.GH_CMD = scriptPath;
+
+    const adapter = new GitHubTaskStore(CONFIG);
+    await adapter.update("HIT-D.2", { hitl: false });
+
+    const edits = (await Bun.file(editsFile).text())
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => line.split("|"));
+
+    const hitlEdit = edits.find(
+      (e) => e.includes("--remove-label") && e.includes("hitl"),
+    );
+    expect(hitlEdit).toBeDefined();
+    expect(hitlEdit).not.toContain("--add-label");
+  });
 });
