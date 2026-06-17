@@ -10,6 +10,18 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.3.0]
+
+### Added
+
+- `metrics.sessionSecret.existingSecret`: source the metrics service's `SHIPWRIGHT_SESSION_SECRET` from a caller-managed Secret instead of the chart-generated random. Point it at the same Secret the admin uses (`admin.encryptionKeys.existingSecret`) so admin-minted dashboard session JWTs validate at the metrics service when both sit behind a shared Gateway — a mismatch returns 401 on the dashboard's metrics view. `sessionSecretRef` selects the key within that Secret (defaults to `SHIPWRIGHT_SESSION_SECRET`). When set, the chart-managed metrics Secret omits `SHIPWRIGHT_SESSION_SECRET` and the Deployment injects it via `secretKeyRef` against the caller-managed Secret. Default empty preserves the existing generate-on-install / reuse-on-upgrade behaviour — purely additive.
+
+## [1.2.0]
+
+### Added
+
+- `auth.google.existingSecret`: source `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `SHIPWRIGHT_ADMIN_ALLOWED_EMAILS` from a caller-managed Secret instead of inline Helm values. The chart-managed admin Secret omits these keys when the knob is set; the Deployment sources them via `secretKeyRef`. Allows fully secret-free helm installs when combined with `admin.encryptionKeys.existingSecret`.
+
 ## [1.1.0]
 
 ### Added
