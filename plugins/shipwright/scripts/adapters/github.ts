@@ -671,7 +671,7 @@ export class GitHubTaskStore implements TaskStore {
       results.push({
         level: "warn",
         check: "zero-status-label",
-        message: "data: zero-status-label — skipped (could not fetch wide issues)",
+        message: "skipped (could not fetch wide issues)",
       });
       wideIssues = [];
     }

@@ -330,7 +330,7 @@ export class JsonTaskStore implements TaskStore {
       results.push({
         level: "ok",
         check: "cross-repo-orphans",
-        message: "data: cross-repo-orphans — N/A (no tasks have a repo field)",
+        message: "N/A (no tasks have a repo field)",
       });
     }
 
