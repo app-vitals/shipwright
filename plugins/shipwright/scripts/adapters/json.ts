@@ -322,10 +322,16 @@ export class JsonTaskStore implements TaskStore {
     ];
 
     // Cross-repo orphan check: use the first task's repo as the configured repo.
-    // If no tasks have a repo field, skip this check.
+    // If no tasks have a repo field, emit an explicit N/A result and skip.
     const configuredRepo = tasks.find((t) => t.repo)?.repo;
     if (configuredRepo !== undefined) {
       results.push(...checkCrossRepoOrphans(tasks, configuredRepo));
+    } else {
+      results.push({
+        level: "ok",
+        check: "cross-repo-orphans",
+        message: "data: cross-repo-orphans — N/A (no tasks have a repo field)",
+      });
     }
 
     return results;

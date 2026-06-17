@@ -1473,13 +1473,13 @@ describe("doctor data checks (TSD-2.1)", () => {
 
   // ── Test 3: stale pr_open task → [fail] data: stale pr ────────────────────
 
-  test("stale pr_open task (PR not merged) prints [fail] data: stale pr and exits 1", () => {
+  test("stale pr_open task (PR already merged) prints [fail] data: stale-pr and exits 1", () => {
     const cfgPath = writeJsonFile(tmpDir, "gh.json", {
       taskStore: "github",
       github: { owner: "org", repo: "repo" },
     });
 
-    // A pr_open task with a PR number — PR is NOT merged (mergedAt = null)
+    // A pr_open task with a PR number — PR IS merged (mergedAt has a timestamp)
     const staleIssue = makeGhIssue({
       id: "STALE-1",
       labels: [{ name: "status:pr_open" }],
@@ -1488,7 +1488,7 @@ describe("doctor data checks (TSD-2.1)", () => {
 
     const fakeGhPath = writeDoctorFakeGh(tmpDir, {
       issues: [staleIssue],
-      prViews: { "99": "null" },
+      prViews: { "99": "2026-06-17T10:00:00Z" },
     });
 
     const { code, stdout } = run(["doctor"], {

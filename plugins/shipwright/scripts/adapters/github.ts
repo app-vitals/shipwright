@@ -668,6 +668,11 @@ export class GitHubTaskStore implements TaskStore {
     try {
       wideIssues = await this.fetchWideIssues();
     } catch {
+      results.push({
+        level: "warn",
+        check: "zero-status-label",
+        message: "data: zero-status-label — skipped (could not fetch wide issues)",
+      });
       wideIssues = [];
     }
 
@@ -706,11 +711,11 @@ export class GitHubTaskStore implements TaskStore {
           ".mergedAt",
         ]);
         const isMerged = mergedAt.trim() !== "" && mergedAt.trim() !== "null";
-        if (!isMerged) {
+        if (isMerged) {
           results.push({
             level: "fail",
             check: "stale-pr",
-            message: `Task '${task.id}' has status '${task.status}' but PR #${task.pr} is not merged`,
+            message: `Task '${task.id}' has status '${task.status}' but PR #${task.pr} is already merged`,
           });
         }
       } catch {
