@@ -152,8 +152,7 @@ describe("GitHubTaskStore.resolveRepos", () => {
         expect(repos[0]).toBe("test-owner/test-repo");
         expect(repos).toContain("test-owner/other-repo");
       } finally {
-        if (prev === undefined) delete process.env.SHIPWRIGHT_REPOS_DIR;
-        else process.env.SHIPWRIGHT_REPOS_DIR = prev;
+        process.env.SHIPWRIGHT_REPOS_DIR = prev;
       }
     } finally {
       await rm(reposDir, { recursive: true, force: true });
