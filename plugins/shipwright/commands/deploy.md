@@ -114,6 +114,45 @@ Task:   {task_id} — {task_title}  (or "standalone deploy" if no task found)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
+### 2b. Bundle Completeness Gate
+
+<!-- Added 2026-06-16: prevents partial bundle deployments when bundle-mates
+     on the same branch are still pending/in_progress/blocked. -->
+
+Fetch the head branch name for the PR:
+
+```bash
+HEAD_REF=$(gh pr view {pr} --repo {org}/{repo} --json headRefName --jq '.headRefName')
+```
+
+Query the task store for all tasks tracked against that branch:
+
+```bash
+PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | sort -V | tail -1 | xargs dirname 2>/dev/null)
+BUNDLE_TASKS=$(bun "$PLUGIN_SCRIPTS/task_store.ts" query --branch "$HEAD_REF")
+```
+
+Filter for incomplete bundle-mates — any task with status `pending`, `in_progress`, or `blocked`:
+
+```bash
+INCOMPLETE=$(echo "$BUNDLE_TASKS" | jq '[.[] | select(.status == "pending" or .status == "in_progress" or .status == "blocked")]')
+INCOMPLETE_COUNT=$(echo "$INCOMPLETE" | jq 'length')
+```
+
+**If `INCOMPLETE_COUNT > 0`**, bundle-mates are still in flight — hold the merge and stop:
+
+```
+✗ Bundle gate: {INCOMPLETE_COUNT} task(s) on branch {HEAD_REF} are not yet ready.
+  Holding merge until all bundle-mates reach pr_open or beyond.
+
+  Incomplete tasks:
+    {for each: "  - {id}: {title} [{status}]"}
+
+  Re-run /shipwright:deploy once all bundle tasks have open PRs.
+```
+
+**If `INCOMPLETE_COUNT == 0`** (no tasks found on the branch, or all tasks are `pr_open`, `approved`, `merged`, `deployed`, or `done`): proceed to Step 3.
+
 ---
 
 ## Step 3: Pre-flight Checks (GitHub API — no local state)
