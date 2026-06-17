@@ -17,6 +17,7 @@ import { run } from "./check-deploy.ts";
 interface GhPr {
   number: number;
   headRefOid: string;
+  headRefName: string;
   author: { login: string };
   reviewDecision: string | null;
 }
@@ -44,6 +45,7 @@ function makeGhPr(overrides: Partial<GhPr> = {}): GhPr {
   return {
     number: 50,
     headRefOid: "sha50",
+    headRefName: "feat/default-branch",
     author: { login: "bodhi-agent" },
     reviewDecision: "APPROVED",
     ...overrides,
@@ -377,5 +379,45 @@ describe("check-deploy (new behaviors)", () => {
     });
     expect(cleaned).toBe(true);
     expect(result.exit).toBe(1);
+  });
+
+  // ── Bundle gate ───────────────────────────────────────────────────────────────
+
+  test("bundle gate: skips PR when isBundleComplete returns false", async () => {
+    const pr = makeGhPr({ reviewDecision: "APPROVED", headRefName: "feat/my-feature" });
+    const result = await run({
+      ...makeDeps({
+        prs: { "acme/example-repo": [pr] },
+        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
+      }),
+      isBundleComplete: async (_branch: string) => false,
+    });
+    expect(result.exit).toBe(1);
+    expect(result.candidate).toBeNull();
+  });
+
+  test("bundle gate: proceeds when isBundleComplete returns true", async () => {
+    const pr = makeGhPr({ reviewDecision: "APPROVED", headRefName: "feat/my-feature" });
+    const result = await run({
+      ...makeDeps({
+        prs: { "acme/example-repo": [pr] },
+        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
+      }),
+      isBundleComplete: async (_branch: string) => true,
+    });
+    expect(result.exit).toBe(0);
+    expect(result.candidate).not.toBeNull();
+  });
+
+  test("bundle gate: proceeds when isBundleComplete is absent (backward compat)", async () => {
+    const pr = makeGhPr({ reviewDecision: "APPROVED" });
+    const result = await run(
+      makeDeps({
+        prs: { "acme/example-repo": [pr] },
+        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
+      }),
+    );
+    expect(result.exit).toBe(0);
+    expect(result.candidate).not.toBeNull();
   });
 });

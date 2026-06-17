@@ -28,6 +28,7 @@ import { createTaskStore, loadConfig } from "./create-task-store.ts";
 interface GhPr {
   number: number;
   headRefOid: string;
+  headRefName: string;
   author: { login: string };
   reviewDecision: string | null;
 }
@@ -67,6 +68,8 @@ interface Deps {
   reconcileStalePrOpenTasks?: () => Promise<void>;
   // Belt-and-suspenders: close open issues that have terminal status labels.
   cleanupStaleIssues?: () => Promise<void>;
+  // Bundle completeness gate: returns false when bundle-mates are still pending/in_progress/blocked.
+  isBundleComplete?: (headBranch: string) => Promise<boolean>;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -189,6 +192,11 @@ export async function run(deps: Deps): Promise<RunResult> {
         const ciRuns = await deps.fetchCiRuns(org, repoName, pr.headRefOid);
         if (!isCiGreen(ciRuns)) continue;
 
+        if (deps.isBundleComplete) {
+          const bundleOk = await deps.isBundleComplete(pr.headRefName);
+          if (!bundleOk) continue;
+        }
+
         return {
           exit: 0,
           output: "Deploy ready PRs via /shipwright:deploy",
@@ -210,6 +218,7 @@ export async function run(deps: Deps): Promise<RunResult> {
 interface GhPrListJson {
   number: number;
   headRefOid: string;
+  headRefName: string;
   author: { login: string };
   reviewDecision: string | null;
 }
@@ -265,7 +274,7 @@ async function buildProductionDeps(): Promise<Deps> {
         "--repo",
         repo,
         "--json",
-        "number,headRefOid,author,reviewDecision",
+        "number,headRefOid,headRefName,author,reviewDecision",
       ]);
     },
     fetchPrReviews: async (org: string, repo: string, pr: number) => {
@@ -368,6 +377,15 @@ async function buildProductionDeps(): Promise<Deps> {
           `[check-deploy] cleanup: closed ${closed} issue(s), ${plansClosed} plan(s), ${milestonesClosed} milestone(s)\n`,
         );
       }
+    },
+    isBundleComplete: async (headBranch: string) => {
+      if (!headBranch) return true;
+      const { config } = loadConfig();
+      const store = createTaskStore(config);
+      const tasks = await store.query({ branch: headBranch });
+      if (tasks.length === 0) return true;
+      const BLOCKING_STATUSES = new Set(["pending", "in_progress", "blocked"]);
+      return !tasks.some((t) => BLOCKING_STATUSES.has(t.status));
     },
   };
 }

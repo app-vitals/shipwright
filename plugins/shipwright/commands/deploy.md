@@ -114,6 +114,31 @@ Task:   {task_id} — {task_title}  (or "standalone deploy" if no task found)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
+### 2b. Bundle Completeness Gate
+
+Before merging, verify that all tracked tasks on this PR's branch are ready — none may be
+pending, in_progress, or blocked (bundle-mates that haven't shipped yet).
+
+Fetch the PR's head branch name and query the task store for tasks on that branch:
+
+```bash
+HEAD_BRANCH=$(gh pr view {pr} --repo {org}/{repo} --json headRefName --jq '.headRefName')
+bun "$PLUGIN_SCRIPTS/task_store.ts" query --branch "$HEAD_BRANCH"
+```
+
+**If no tasks are tracked on this branch:** the bundle is complete — proceed.
+
+**If any task has status `pending`, `in_progress`, or `blocked`:** the bundle is NOT
+complete. Skip this PR silently and stop:
+
+```
+⏸  Bundle incomplete — branch {HEAD_BRANCH} has tasks that are not yet ready to merge.
+   Re-run /shipwright:deploy once all bundle-mates have reached pr_open or beyond.
+```
+
+**If all tasks are `pr_open`, `approved`, `merged`, `deploying`, `deployed`, `done`, or
+`cancelled`:** the bundle is complete — proceed to Step 3.
+
 ---
 
 ## Step 3: Pre-flight Checks (GitHub API — no local state)
