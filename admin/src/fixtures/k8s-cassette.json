@@ -155,5 +155,34 @@
       "status": "Success",
       "details": { "name": "agent-secret", "kind": "secrets" }
     }
+  },
+  "createPvc_success": {
+    "status": 201,
+    "body": {
+      "apiVersion": "v1",
+      "kind": "PersistentVolumeClaim",
+      "metadata": { "name": "agent-abc-home", "namespace": "shipwright" },
+      "spec": { "accessModes": ["ReadWriteOnce"], "resources": { "requests": { "storage": "40Gi" } } },
+      "status": { "phase": "Pending" }
+    }
+  },
+  "getPvc_success": {
+    "status": 200,
+    "body": {
+      "apiVersion": "v1",
+      "kind": "PersistentVolumeClaim",
+      "metadata": { "name": "agent-abc-home", "namespace": "shipwright" },
+      "spec": { "accessModes": ["ReadWriteOnce"], "resources": { "requests": { "storage": "40Gi" } } },
+      "status": { "phase": "Bound" }
+    }
+  },
+  "deletePvc_success": { "status": 200, "body": {} },
+  "createPvc_409": {
+    "status": 409,
+    "body": { "message": "persistentvolumeclaims \"agent-abc-home\" already exists", "reason": "AlreadyExists", "code": 409 }
+  },
+  "getPvc_404": {
+    "status": 404,
+    "body": { "message": "persistentvolumeclaims \"missing\" not found", "reason": "NotFound", "code": 404 }
   }
 }

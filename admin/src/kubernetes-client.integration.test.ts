@@ -22,6 +22,7 @@ import {
 } from "./errors.ts";
 import {
   HttpKubernetesClient,
+  type KubernetesPvc,
   type KubernetesClient,
   RecordedKubernetesClient,
 } from "./kubernetes-client.ts";
@@ -396,6 +397,68 @@ describe("HttpKubernetesClient — token rotation", () => {
   });
 });
 
+// ─── PVCs: success + error paths ────────────────────────────────────────────
+
+describe("HttpKubernetesClient — PVCs", () => {
+  it("createPvc POSTs to the persistentvolumeclaims collection", async () => {
+    const { client, lastRequest } = makeClient("createPvc_success");
+    const result = await client.createPvc("shipwright", {
+      name: "agent-abc-home",
+      namespace: "shipwright",
+      storageGi: 40,
+    });
+
+    const req = lastRequest();
+    expect(req.method).toBe("POST");
+    expect(req.url).toBe(
+      "https://kubernetes.default.svc/api/v1/namespaces/shipwright/persistentvolumeclaims",
+    );
+    expect(req.auth).toBe("Bearer test-sa-token");
+    expect(result.metadata.name).toBe("agent-abc-home");
+  });
+
+  it("getPvc GETs the named resource", async () => {
+    const { client, lastRequest } = makeClient("getPvc_success");
+    const result = await client.getPvc("shipwright", "agent-abc-home");
+
+    const req = lastRequest();
+    expect(req.method).toBe("GET");
+    expect(req.url).toBe(
+      "https://kubernetes.default.svc/api/v1/namespaces/shipwright/persistentvolumeclaims/agent-abc-home",
+    );
+    expect(result.metadata.name).toBe("agent-abc-home");
+  });
+
+  it("deletePvc DELETEs the named resource", async () => {
+    const { client, lastRequest } = makeClient("deletePvc_success");
+    await client.deletePvc("shipwright", "agent-abc-home");
+
+    const req = lastRequest();
+    expect(req.method).toBe("DELETE");
+    expect(req.url).toBe(
+      "https://kubernetes.default.svc/api/v1/namespaces/shipwright/persistentvolumeclaims/agent-abc-home",
+    );
+  });
+
+  it("createPvc maps 409 to ConflictError", async () => {
+    const { client } = makeClient("createPvc_409");
+    await expect(
+      client.createPvc("shipwright", {
+        name: "agent-abc-home",
+        namespace: "shipwright",
+        storageGi: 40,
+      }),
+    ).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it("getPvc maps 404 to NotFoundError", async () => {
+    const { client } = makeClient("getPvc_404");
+    await expect(
+      client.getPvc("shipwright", "missing"),
+    ).rejects.toBeInstanceOf(NotFoundError);
+  });
+});
+
 // ─── RecordedKubernetesClient (in-memory double) ────────────────────────────
 
 describe("RecordedKubernetesClient", () => {
@@ -405,6 +468,9 @@ describe("RecordedKubernetesClient", () => {
     },
     secrets: {
       "shipwright/agent-secret": cassette.getSecret_success?.body as never,
+    },
+    pvcs: {
+      "shipwright/agent-abc-home": cassette.getPvc_success?.body as never,
     },
   });
 
