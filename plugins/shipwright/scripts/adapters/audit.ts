@@ -12,6 +12,11 @@ export interface AuditResult {
   message: string;
 }
 
+/**
+ * Detects duplicate task IDs within the provided `tasks` slice.
+ * Callers are responsible for passing the full set if cross-scope detection is needed —
+ * duplicates that span filtered subsets will not be surfaced.
+ */
 export function checkDuplicateIds(tasks: Task[]): AuditResult[] {
   const idCounts = new Map<string, number>();
 
@@ -75,6 +80,10 @@ export function checkDanglingDeps(
   return failures;
 }
 
+/**
+ * Returns warn for each task whose repo doesn't match configuredRepo.
+ * Tasks with no `repo` field are skipped — only explicit mismatches are flagged.
+ */
 export function checkCrossRepoOrphans(
   tasks: Task[],
   configuredRepo: string,
