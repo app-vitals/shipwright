@@ -277,7 +277,20 @@ Use `-` for runs not yet seen.
   {name}: success
   ...
 ```
-Compute `pipeline_minutes = elapsed`. Update the task store and fire `shipwright_task_deployed` with `canary_result="no_pipeline"` and `pipeline_minutes={pipeline_minutes}`. Print the handoff block (Step 9) with `Pipeline: post-merge CI ({pipeline_minutes}m)`. Stop.
+Compute `pipeline_minutes = elapsed`. Update the task store — skip if deploy-only mode:
+```bash
+bun "$PLUGIN_SCRIPTS/task_store.ts" update --id "$TASK_ID" \
+  --set status=deployed \
+  --set deployedAt="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+```
+Fire `shipwright_task_deployed` — skip if deploy-only mode:
+```bash
+POSTHOG_SCRIPT=$(find ~/.claude/plugins/cache -name "posthog_send.py" -path "*/shipwright/*" 2>/dev/null | head -1)
+[ -n "$POSTHOG_SCRIPT" ] && [ -n "$TASK_ID" ] && python3 "$POSTHOG_SCRIPT" shipwright_task_deployed \
+  --project {repo} --task "$TASK_ID" \
+  canary_result=no_pipeline pipeline_minutes={pipeline_minutes}
+```
+Print the handoff block (Step 9) with `Pipeline: post-merge CI ({pipeline_minutes}m)`. Stop.
 
 **Any run fails** (`conclusion == "failure"` on any run):
 ```
@@ -297,7 +310,20 @@ Stop.
 ⚠ Post-merge CI still pending after 10 minutes — marking deployed.
   Check manually: gh api repos/{org}/{repo}/actions/runs?head_sha={SQUASH_SHA}
 ```
-Update the task store to `status=deployed` and fire `shipwright_task_deployed` with `canary_result="no_pipeline"` and `pipeline_minutes=10`. Print the handoff block (Step 9) with `Pipeline: post-merge CI (pending at timeout)`. Stop.
+Update the task store to `status=deployed` — skip if deploy-only mode:
+```bash
+bun "$PLUGIN_SCRIPTS/task_store.ts" update --id "$TASK_ID" \
+  --set status=deployed \
+  --set deployedAt="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+```
+Fire `shipwright_task_deployed` — skip if deploy-only mode:
+```bash
+POSTHOG_SCRIPT=$(find ~/.claude/plugins/cache -name "posthog_send.py" -path "*/shipwright/*" 2>/dev/null | head -1)
+[ -n "$POSTHOG_SCRIPT" ] && [ -n "$TASK_ID" ] && python3 "$POSTHOG_SCRIPT" shipwright_task_deployed \
+  --project {repo} --task "$TASK_ID" \
+  canary_result=no_pipeline pipeline_minutes=10
+```
+Print the handoff block (Step 9) with `Pipeline: post-merge CI (pending at timeout)`. Stop.
 
 ---
 
