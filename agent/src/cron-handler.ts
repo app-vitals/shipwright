@@ -202,7 +202,7 @@ export async function handleCronRequest(
   if (workspace && metricsSnapshot) {
     await forwardNewMetrics(workspace, metricsSnapshot);
   }
-  await forwardTokenUsage(usage, "cron");
+  await forwardTokenUsage(usage, "cron", undefined, jobId);
 
   const { cleaned, markers } = parseMarkers(result);
   const isSilentMarker = markers.some((m) => m.type === "silent");
