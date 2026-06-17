@@ -145,6 +145,50 @@ export function loadConfig(cwd: string = process.cwd()): LoadedConfig {
 
 // ─── Factory ──────────────────────────────────────────────────────────────────
 
+export function doctorCheck(
+  config: TaskStoreConfig,
+  configSource: string,
+  cwd: string = process.cwd(),
+): void {
+  const backend = config.taskStore;
+
+  console.log(`backend: ${backend}`);
+  if (configSource === "default") {
+    console.log("config: default (no SHIPWRIGHT_CONFIG set)");
+  } else {
+    console.log(`config: ${configSource}`);
+  }
+
+  // For non-JSON backends (github, jira), check for a coexisting non-empty todos.json
+  if (backend !== "json") {
+    const todosPath = join(cwd, "state", "todos.json");
+    if (existsSync(todosPath)) {
+      try {
+        const content = readFileSync(todosPath, "utf-8").trim();
+        if (content.length > 0) {
+          let parsed: unknown;
+          try {
+            parsed = JSON.parse(content);
+          } catch {
+            parsed = null;
+          }
+          // Warn if it's a non-empty array (or unparseable content)
+          const isNonEmptyArray =
+            Array.isArray(parsed) && (parsed as unknown[]).length > 0;
+          const isNonEmptyContent = !Array.isArray(parsed) && content !== "[]";
+          if (isNonEmptyArray || isNonEmptyContent) {
+            console.warn(
+              `[warn] config: todos.json exists and is non-empty while ${backend} backend is active`,
+            );
+          }
+        }
+      } catch {
+        // If we can't read the file, skip the check silently
+      }
+    }
+  }
+}
+
 /**
  * Create a TaskStore instance for the given config.
  *

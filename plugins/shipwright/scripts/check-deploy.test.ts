@@ -160,6 +160,31 @@ describe("check-deploy", () => {
     expect(result.exit).toBe(1);
   });
 
+  test("exits 0 when self-review body uses markdown bold (**APPROVE**)", async () => {
+    const pr = makeGhPr({
+      author: { login: "bodhi-agent" },
+      reviewDecision: null,
+    });
+    const reviews: GhReview[] = [
+      {
+        author: { login: "bodhi-agent" },
+        body: "**APPROVE** — All acceptance criteria met.",
+        state: "COMMENTED",
+      },
+    ];
+    const result = await run(
+      makeDeps({
+        currentUser: "bodhi-agent",
+        isSelfReviewAllowed: true,
+        prs: { "acme/example-repo": [pr] },
+        reviews: { 50: reviews },
+        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
+      }),
+    );
+    expect(result.exit).toBe(0);
+    expect(result.output).toBeTruthy();
+  });
+
   test("exits 1 when self-review allowed but no APPROVE in review body", async () => {
     const pr = makeGhPr({
       author: { login: "bodhi-agent" },
