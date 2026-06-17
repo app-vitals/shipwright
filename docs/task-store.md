@@ -40,7 +40,21 @@ backend: json
 config: default (no SHIPWRIGHT_CONFIG set)
 token scope: N/A (JSON backend)
 [ok]  storage: /path/to/state/todos.json present
+[ok]  data: duplicate-ids — No duplicate IDs found
+[ok]  data: dangling-deps — All dependencies resolve
 ```
+
+The `doctor` command runs two categories of checks:
+
+1. **Config/storage checks** — verifies the backend is configured correctly and accessible
+2. **Data integrity checks** — audits task metadata for structural issues:
+   - `duplicate-ids` — no task ID appears twice
+   - `dangling-deps` — all task dependencies reference existing tasks
+   - `zero-status-label` (GitHub only) — all shipwright-managed issues have a `status:*` label
+   - `stale-pr` (GitHub only) — tasks in `pr_open` or `approved` status have merged PRs
+   - `cross-repo-orphans` — all cross-repo task references point to valid repositories
+
+If any check fails (returns `[fail]`), the command exits with status code 1.
 
 ### When to use
 
