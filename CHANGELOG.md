@@ -25,6 +25,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **HITL skill** (HIT-3.2): New `shipwright:hitl` skill provides human-in-the-loop task approval and lifecycle management. Allows humans to review, approve, or reject pending HITL tasks with full auditability.
 
+## [1.5.1] - 2026-06-17
+
+### Plugin — What's New
+
+#### Task Store (`plugins/shipwright/scripts/task_store.ts`)
+
+- **CLI-consistent skill invocation**: `plan-session`, `dev-task`, and `deploy` skills now invoke `task_store.ts` via the CLI directly, replacing inline script calls. Behavior is consistent across all three commands.
+- **Expanded `--doctor` checks**: five data-integrity checks now run under `--doctor`: orphaned tasks (no matching GitHub Issue), label drift (status label vs JSON mismatch), stale in-progress tasks (stuck > 24h), dependency cycles, and duplicate IDs. Duplicate IDs also trigger a warning in normal `query` output.
+
 ## [1.4.0] - 2026-06-17
 
 ### Chart — What's New
