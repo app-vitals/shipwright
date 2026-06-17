@@ -12,6 +12,7 @@
  * GH_CMD env var is used for the gh executable — inject a fake command for tests.
  */
 
+import { resolveRepos } from "../check-helpers.ts";
 import { resolveReadyTasks } from "../store.ts";
 import type {
   QueryFilters,
@@ -20,7 +21,6 @@ import type {
   TaskStore,
   TaskStoreConfig,
 } from "../store.ts";
-import { resolveRepos } from "../check-helpers.ts";
 import {
   type AuditResult,
   checkCrossRepoOrphans,
@@ -699,9 +699,7 @@ export class GitHubTaskStore implements TaskStore {
 
     const g = this.config.github;
     if (g) {
-      results.push(
-        ...checkCrossRepoOrphans(tasks, `${g.owner}/${g.repo}`),
-      );
+      results.push(...checkCrossRepoOrphans(tasks, `${g.owner}/${g.repo}`));
     }
 
     // ── 3. Zero-label check (wide fetch) ────────────────────────────────────

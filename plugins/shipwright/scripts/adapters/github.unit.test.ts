@@ -136,7 +136,9 @@ describe("GitHubTaskStore.resolveRepos", () => {
   });
 
   test("merges config repo with workspace repos, config repo first, no duplicates", async () => {
-    const reposDir = await mkdtemp(path.join(tmpdir(), "shipwright-test-repos-"));
+    const reposDir = await mkdtemp(
+      path.join(tmpdir(), "shipwright-test-repos-"),
+    );
     try {
       // Create a fake git repo that resolveRepos can scan
       const repoDir = path.join(reposDir, "other-repo");
@@ -2888,7 +2890,6 @@ process.exit(0);
   });
 
   test("only calls ensureMilestone once per session when batch has multiple tasks with same session", async () => {
-
     const milestonesGetFile = path.join(tmpDir, "milestone-batch-gets.txt");
     const scriptPath = path.join(tmpDir, "milestone-batch-gh");
     const script = `#!/usr/bin/env bun
@@ -3054,11 +3055,16 @@ process.exit(0);
       labels: [...baseIssue.labels, { name: "hitl" }],
     };
 
-    const issueWithoutHitlLabel = makeIssue(2, "HIT-B.2: Normal task", "pending", {
-      id: "HIT-B.2",
-      title: "Normal task",
-      status: "pending",
-    });
+    const issueWithoutHitlLabel = makeIssue(
+      2,
+      "HIT-B.2: Normal task",
+      "pending",
+      {
+        id: "HIT-B.2",
+        title: "Normal task",
+        status: "pending",
+      },
+    );
 
     const fakeGh = await writeFakeGh(tmpDir, {
       "issue list --repo test-owner/test-repo --state all --json number,title,body,labels,state,url,milestone,assignees --limit 500":
