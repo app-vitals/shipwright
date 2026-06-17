@@ -177,6 +177,9 @@ async function startServer(): Promise<void> {
   // 1. Health check — no auth
   root.get("/health", (c) => c.json({ status: "ok" }));
 
+  // Redirect bare root to the login page — no handler exists at "/" otherwise.
+  root.get("/", (c) => c.redirect("/admin/login", 302));
+
   // 2. Runtime API — admin key | per-agent bearer | session JWT
   //    Mounted via root.route("/agents", runtimeApp). Hono v4 strips the prefix
   //    before dispatching, so runtimeApp routes are registered as /:id/config
