@@ -11,6 +11,18 @@ import { join } from "node:path";
 import { cmdBackend } from "./task_store";
 import { loadConfig } from "./create-task-store";
 
+function captureStdout(fn: () => void): string {
+  const chunks: string[] = [];
+  const orig = process.stdout.write.bind(process.stdout);
+  // biome-ignore lint/suspicious/noExplicitAny: intercepting stdout.write for test assertion
+  (process.stdout as any).write = (chunk: string) => { chunks.push(chunk); return true; };
+  try { fn(); } finally {
+    // biome-ignore lint/suspicious/noExplicitAny: restoring original stdout.write
+    (process.stdout as any).write = orig;
+  }
+  return chunks.join("");
+}
+
 describe("cmdBackend", () => {
   let isolatedDir: string;
   const origTaskStore = process.env.SHIPWRIGHT_TASK_STORE;
@@ -60,20 +72,7 @@ describe("cmdBackend", () => {
 
   test("no config (JSON default) → prints 'json'", () => {
     const { config } = loadConfig(isolatedDir);
-    const output: string[] = [];
-    const origWrite = process.stdout.write.bind(process.stdout);
-    // biome-ignore lint/suspicious/noExplicitAny: intercepting stdout.write for test assertion
-    (process.stdout as any).write = (chunk: string, ...rest: unknown[]) => {
-      output.push(chunk);
-      return true;
-    };
-    try {
-      cmdBackend(config);
-    } finally {
-      // biome-ignore lint/suspicious/noExplicitAny: restoring original stdout.write
-      (process.stdout as any).write = origWrite;
-    }
-    expect(output.join("")).toBe("json\n");
+    expect(captureStdout(() => cmdBackend(config))).toBe("json\n");
   });
 
   test("SHIPWRIGHT_TASK_STORE=github → prints 'github'", () => {
@@ -81,20 +80,7 @@ describe("cmdBackend", () => {
     process.env.SHIPWRIGHT_GITHUB_OWNER = "my-org";
     process.env.SHIPWRIGHT_GITHUB_REPO = "my-repo";
     const { config } = loadConfig(isolatedDir);
-    const output: string[] = [];
-    const origWrite = process.stdout.write.bind(process.stdout);
-    // biome-ignore lint/suspicious/noExplicitAny: intercepting stdout.write for test assertion
-    (process.stdout as any).write = (chunk: string, ...rest: unknown[]) => {
-      output.push(chunk);
-      return true;
-    };
-    try {
-      cmdBackend(config);
-    } finally {
-      // biome-ignore lint/suspicious/noExplicitAny: restoring original stdout.write
-      (process.stdout as any).write = origWrite;
-    }
-    expect(output.join("")).toBe("github\n");
+    expect(captureStdout(() => cmdBackend(config))).toBe("github\n");
   });
 
   test("SHIPWRIGHT_TASK_STORE=jira → prints 'jira'", () => {
@@ -104,18 +90,9 @@ describe("cmdBackend", () => {
     const origJiraUrl = process.env.JIRA_BASE_URL;
     const origJiraKey = process.env.JIRA_PROJECT_KEY;
     const { config } = loadConfig(isolatedDir);
-    const output: string[] = [];
-    const origWrite = process.stdout.write.bind(process.stdout);
-    // biome-ignore lint/suspicious/noExplicitAny: intercepting stdout.write for test assertion
-    (process.stdout as any).write = (chunk: string, ...rest: unknown[]) => {
-      output.push(chunk);
-      return true;
-    };
     try {
-      cmdBackend(config);
+      expect(captureStdout(() => cmdBackend(config))).toBe("jira\n");
     } finally {
-      // biome-ignore lint/suspicious/noExplicitAny: restoring original stdout.write
-      (process.stdout as any).write = origWrite;
       if (origJiraUrl !== undefined) {
         process.env.JIRA_BASE_URL = origJiraUrl;
       } else {
@@ -129,7 +106,6 @@ describe("cmdBackend", () => {
         delete process.env.JIRA_PROJECT_KEY;
       }
     }
-    expect(output.join("")).toBe("jira\n");
   });
 
   test(".shipwright.json with github backend → prints 'github'", () => {
@@ -141,19 +117,6 @@ describe("cmdBackend", () => {
       }),
     );
     const { config } = loadConfig(isolatedDir);
-    const output: string[] = [];
-    const origWrite = process.stdout.write.bind(process.stdout);
-    // biome-ignore lint/suspicious/noExplicitAny: intercepting stdout.write for test assertion
-    (process.stdout as any).write = (chunk: string, ...rest: unknown[]) => {
-      output.push(chunk);
-      return true;
-    };
-    try {
-      cmdBackend(config);
-    } finally {
-      // biome-ignore lint/suspicious/noExplicitAny: restoring original stdout.write
-      (process.stdout as any).write = origWrite;
-    }
-    expect(output.join("")).toBe("github\n");
+    expect(captureStdout(() => cmdBackend(config))).toBe("github\n");
   });
 });
