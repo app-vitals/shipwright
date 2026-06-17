@@ -235,6 +235,7 @@ async function startServer(): Promise<void> {
     agentToolService,
     agentTokenService,
     agentPluginService,
+    provisioner,
     sessionSecret,
     googleClientId,
     googleClientSecret,
