@@ -28,6 +28,7 @@ import { createTaskStore, loadConfig } from "./create-task-store.ts";
 interface GhPr {
   number: number;
   headRefOid: string;
+  headRefName: string;
   author: { login: string };
   reviewDecision: string | null;
 }
@@ -67,6 +68,9 @@ interface Deps {
   reconcileStalePrOpenTasks?: () => Promise<void>;
   // Belt-and-suspenders: close open issues that have terminal status labels.
   cleanupStaleIssues?: () => Promise<void>;
+  // Bundle completeness gate: returns false if any bundle-mate task on the branch
+  // is still pending/in_progress/blocked. PR is skipped when it returns false.
+  isBundleComplete?: (branch: string) => Promise<boolean>;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -189,6 +193,11 @@ export async function run(deps: Deps): Promise<RunResult> {
         const ciRuns = await deps.fetchCiRuns(org, repoName, pr.headRefOid);
         if (!isCiGreen(ciRuns)) continue;
 
+        if (deps.isBundleComplete) {
+          const bundleComplete = await deps.isBundleComplete(pr.headRefName).catch(() => true);
+          if (!bundleComplete) continue;
+        }
+
         return {
           exit: 0,
           output: "Deploy ready PRs via /shipwright:deploy",
@@ -210,6 +219,7 @@ export async function run(deps: Deps): Promise<RunResult> {
 interface GhPrListJson {
   number: number;
   headRefOid: string;
+  headRefName: string;
   author: { login: string };
   reviewDecision: string | null;
 }
@@ -265,7 +275,7 @@ async function buildProductionDeps(): Promise<Deps> {
         "--repo",
         repo,
         "--json",
-        "number,headRefOid,author,reviewDecision",
+        "number,headRefOid,headRefName,author,reviewDecision",
       ]);
     },
     fetchPrReviews: async (org: string, repo: string, pr: number) => {
@@ -368,6 +378,17 @@ async function buildProductionDeps(): Promise<Deps> {
           `[check-deploy] cleanup: closed ${closed} issue(s), ${plansClosed} plan(s), ${milestonesClosed} milestone(s)\n`,
         );
       }
+    },
+    isBundleComplete: async (headBranch: string) => {
+      const { config } = loadConfig();
+      const store = createTaskStore(config);
+      const branchTasks = await store.query({ branch: headBranch });
+      const incomplete = branchTasks.filter((t) =>
+        t.status === "pending" ||
+        t.status === "in_progress" ||
+        t.status === "blocked",
+      );
+      return incomplete.length === 0;
     },
   };
 }

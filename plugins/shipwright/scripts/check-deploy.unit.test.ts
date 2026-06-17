@@ -17,6 +17,7 @@ import { run } from "./check-deploy.ts";
 interface GhPr {
   number: number;
   headRefOid: string;
+  headRefName: string;
   author: { login: string };
   reviewDecision: string | null;
 }
@@ -44,6 +45,7 @@ function makeGhPr(overrides: Partial<GhPr> = {}): GhPr {
   return {
     number: 50,
     headRefOid: "sha50",
+    headRefName: "feat/example-branch",
     author: { login: "bodhi-agent" },
     reviewDecision: "APPROVED",
     ...overrides,
@@ -59,6 +61,7 @@ interface MakeDepsOptions {
   currentUser?: string;
   isSelfReviewAllowed?: boolean;
   clock?: () => string;
+  isBundleComplete?: (branch: string) => Promise<boolean>;
 }
 
 function makeDeps({
@@ -70,6 +73,7 @@ function makeDeps({
   currentUser = "bodhi-agent",
   isSelfReviewAllowed = true,
   clock,
+  isBundleComplete,
 }: MakeDepsOptions = {}) {
   return {
     getCurrentUser: () => currentUser,
@@ -91,6 +95,7 @@ function makeDeps({
       _org: string,
       _repo: string,
     ): Promise<WorkflowRun[]> => activeDeployRuns,
+    ...(isBundleComplete !== undefined ? { isBundleComplete } : {}),
   };
 }
 
@@ -377,5 +382,71 @@ describe("check-deploy (new behaviors)", () => {
     });
     expect(cleaned).toBe(true);
     expect(result.exit).toBe(1);
+  });
+
+  // ── Bundle completeness gate ──────────────────────────────────────────────────
+
+  test("isBundleComplete: skips PR when isBundleComplete returns false", async () => {
+    const pr = makeGhPr({
+      headRefName: "feat/my-branch",
+      reviewDecision: "APPROVED",
+    });
+    const result = await run(
+      makeDeps({
+        prs: { "acme/example-repo": [pr] },
+        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
+        isBundleComplete: async (_branch: string) => false,
+      }),
+    );
+    expect(result.exit).toBe(1);
+    expect(result.candidate).toBeNull();
+  });
+
+  test("isBundleComplete: proceeds when isBundleComplete returns true", async () => {
+    const pr = makeGhPr({
+      headRefName: "feat/my-branch",
+      reviewDecision: "APPROVED",
+    });
+    const result = await run(
+      makeDeps({
+        prs: { "acme/example-repo": [pr] },
+        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
+        isBundleComplete: async (_branch: string) => true,
+      }),
+    );
+    expect(result.exit).toBe(0);
+    expect(result.candidate).not.toBeNull();
+  });
+
+  test("isBundleComplete: proceeds when isBundleComplete throws (permissive on error)", async () => {
+    const pr = makeGhPr({
+      headRefName: "feat/my-branch",
+      reviewDecision: "APPROVED",
+    });
+    const result = await run(
+      makeDeps({
+        prs: { "acme/example-repo": [pr] },
+        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
+        isBundleComplete: async (_branch: string) => { throw new Error("task store unavailable"); },
+      }),
+    );
+    expect(result.exit).toBe(0);
+    expect(result.candidate).not.toBeNull();
+  });
+
+  test("isBundleComplete: proceeds when isBundleComplete is absent (dep not provided)", async () => {
+    const pr = makeGhPr({
+      headRefName: "feat/my-branch",
+      reviewDecision: "APPROVED",
+    });
+    const result = await run(
+      makeDeps({
+        prs: { "acme/example-repo": [pr] },
+        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
+        // isBundleComplete is intentionally omitted
+      }),
+    );
+    expect(result.exit).toBe(0);
+    expect(result.candidate).not.toBeNull();
   });
 });

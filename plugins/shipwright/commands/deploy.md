@@ -114,6 +114,29 @@ Task:   {task_id} — {task_title}  (or "standalone deploy" if no task found)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
+### 2b. Bundle Completeness Gate
+
+Before running pre-flight checks, verify that all tasks on this branch are `pr_open` or
+beyond (i.e., no bundle-mates are still in flight). This prevents deploying a PR while
+sibling tasks on the same branch are still being developed or are blocked.
+
+```bash
+PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | sort -V | tail -1 | xargs dirname 2>/dev/null)
+HEAD_BRANCH=$(gh pr view {pr} --repo {org}/{repo} --json headRefName --jq '.headRefName')
+BRANCH_TASKS=$(bun "$PLUGIN_SCRIPTS/task_store.ts" query --branch "$HEAD_BRANCH" 2>/dev/null || echo '[]')
+INCOMPLETE_TASKS=$(echo "$BRANCH_TASKS" | jq '[.[] | select(.status == "pending" or .status == "in_progress" or .status == "blocked") | {id, status}]')
+INCOMPLETE=$(echo "$INCOMPLETE_TASKS" | jq 'length')
+```
+
+If `INCOMPLETE > 0`: print and stop [silent]:
+```
+⏸ Bundle gate: {INCOMPLETE} task(s) on branch {HEAD_BRANCH} are still in flight:
+  {for each item in INCOMPLETE_TASKS: "  - {id} ({status})"}
+  Waiting for bundle-mates to reach pr_open before deploying.
+```
+
+If `INCOMPLETE == 0` (no tasks tracked, or all tasks are `pr_open` or beyond): proceed to Step 3.
+
 ---
 
 ## Step 3: Pre-flight Checks (GitHub API — no local state)
