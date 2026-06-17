@@ -62,7 +62,7 @@ tests:
           value: r-shipwright-whisper
       - equal:
           path: spec.template.spec.containers[0].image
-          value: onerahmet/openai-whisper-asr-webservice:latest
+          value: onerahmet/openai-whisper-asr-webservice:v1.3.0
       - equal:
           path: spec.template.spec.containers[0].ports[0].containerPort
           value: 9000

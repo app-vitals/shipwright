@@ -320,9 +320,10 @@ agent:
     # POST /asr endpoint the agent's whisper-svc client targets.
     whisper:
       # -- Whisper ASR image. The onerahmet image exposes POST /asr (multipart
-      # `audio_file`, query task=transcribe&output=txt). Pin a concrete tag for
-      # production rather than the floating `latest`.
-      image: onerahmet/openai-whisper-asr-webservice:latest
+      # `audio_file`, query task=transcribe&output=txt). Pinned to v1.3.0 (tested
+      # version) — do not float to :latest; the plain-text /asr contract is tightly
+      # coupled to this tag and a silent image update on helm upgrade can break it.
+      image: onerahmet/openai-whisper-asr-webservice:v1.3.0
       # -- Service exposing the Whisper pod in-cluster. The container listens on
       # 9000 (the image default); the Service port becomes WHISPER_SERVICE_URL.
       service:
