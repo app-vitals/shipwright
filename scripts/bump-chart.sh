@@ -193,6 +193,8 @@ if [[ "${CURRENT_BRANCH}" != "main" ]]; then
   exit 1
 fi
 
+git -C "${REPO_ROOT}" pull --ff-only origin main
+
 # ---------------------------------------------------------------------------
 # Update Chart.yaml — version field
 # ---------------------------------------------------------------------------
