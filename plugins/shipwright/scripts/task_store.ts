@@ -24,7 +24,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { JsonTaskStore } from "./adapters/json";
 import { resolveRepos } from "./check-helpers";
-import { createTaskStore, loadConfig } from "./create-task-store";
+import { createTaskStore, doctorCheck, loadConfig } from "./create-task-store";
 import type { Task, TaskStore } from "./store";
 
 const NUMERIC_FIELDS = new Set(["pr", "hours", "complexity"]);
@@ -309,16 +309,15 @@ async function cmdCleanup(adapter: TaskStore): Promise<void> {
   );
 }
 
-function cmdDoctor(adapter: TaskStore, configSource: string): void {
+function cmdDoctor(
+  adapter: TaskStore,
+  config: import("./store").TaskStoreConfig,
+  configSource: string,
+): void {
   if (adapter instanceof JsonTaskStore) {
     adapter.doctor(configSource);
   } else {
-    console.log("backend: github");
-    if (configSource === "default") {
-      console.log("config: default (no SHIPWRIGHT_CONFIG set)");
-    } else {
-      console.log(`config: ${configSource}`);
-    }
+    doctorCheck(config, configSource);
   }
 }
 
@@ -372,7 +371,7 @@ async function main(): Promise<void> {
       await cmdCleanup(adapter);
       break;
     case "doctor":
-      cmdDoctor(adapter, configSource);
+      cmdDoctor(adapter, config, configSource);
       break;
   }
 }

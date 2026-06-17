@@ -12,10 +12,18 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadConfig } from "./create-task-store";
+import { GitHubTaskStore } from "./adapters/github";
+import { JsonTaskStore } from "./adapters/json";
+import { createTaskStore, doctorCheck, loadConfig } from "./create-task-store";
 
 describe("loadConfig discovery", () => {
   let tmpDir: string;
@@ -341,5 +349,286 @@ describe("loadConfig env var fallbacks", () => {
     // Should have fallen through to the .shipwright.json file config
     expect(result?.config.taskStore).toBe("json");
     expect(result?.configSource).toContain(".shipwright.json");
+  });
+});
+
+// ─── TSD-1.2: single-backend enforcement ─────────────────────────────────────
+
+describe("createTaskStore single-backend enforcement", () => {
+  let tmpDir: string;
+  const origTaskStore = process.env.SHIPWRIGHT_TASK_STORE;
+  const origGhOwner = process.env.SHIPWRIGHT_GITHUB_OWNER;
+  const origGhRepo = process.env.SHIPWRIGHT_GITHUB_REPO;
+  const origConfig = process.env.SHIPWRIGHT_CONFIG;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "sw-single-backend-test-"));
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SHIPWRIGHT_TASK_STORE;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SHIPWRIGHT_GITHUB_OWNER;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SHIPWRIGHT_GITHUB_REPO;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SHIPWRIGHT_CONFIG;
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+    if (origTaskStore !== undefined) {
+      process.env.SHIPWRIGHT_TASK_STORE = origTaskStore;
+    } else {
+      // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+      delete process.env.SHIPWRIGHT_TASK_STORE;
+    }
+    if (origGhOwner !== undefined) {
+      process.env.SHIPWRIGHT_GITHUB_OWNER = origGhOwner;
+    } else {
+      // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+      delete process.env.SHIPWRIGHT_GITHUB_OWNER;
+    }
+    if (origGhRepo !== undefined) {
+      process.env.SHIPWRIGHT_GITHUB_REPO = origGhRepo;
+    } else {
+      // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+      delete process.env.SHIPWRIGHT_GITHUB_REPO;
+    }
+    if (origConfig !== undefined) {
+      process.env.SHIPWRIGHT_CONFIG = origConfig;
+    } else {
+      // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+      delete process.env.SHIPWRIGHT_CONFIG;
+    }
+  });
+
+  // Test: when GitHub backend configured, createTaskStore returns a GitHubTaskStore (not JsonTaskStore)
+  test("GitHub config → createTaskStore returns GitHubTaskStore, not JsonTaskStore", () => {
+    process.env.SHIPWRIGHT_TASK_STORE = "github";
+    process.env.SHIPWRIGHT_GITHUB_OWNER = "test-org";
+    process.env.SHIPWRIGHT_GITHUB_REPO = "test-repo";
+    const { config } = loadConfig(tmpDir);
+    const store = createTaskStore(config);
+    expect(store).not.toBeInstanceOf(JsonTaskStore);
+    expect(store).toBeInstanceOf(GitHubTaskStore);
+  });
+
+  // Test: when no backend configured, createTaskStore returns a JsonTaskStore (no GitHub calls)
+  test("no backend configured → createTaskStore returns JsonTaskStore", () => {
+    const isolatedDir = mkdtempSync(join(tmpdir(), "sw-json-default-"));
+    try {
+      const { config } = loadConfig(isolatedDir);
+      expect(config.taskStore).toBe("json");
+      const store = createTaskStore(config);
+      expect(store).toBeInstanceOf(JsonTaskStore);
+      expect(store).not.toBeInstanceOf(GitHubTaskStore);
+    } finally {
+      rmSync(isolatedDir, { recursive: true, force: true });
+    }
+  });
+
+  // Test: GitHub backend configured → todos.json is NOT read during createTaskStore
+  test("GitHub backend configured → todos.json is not read by createTaskStore", () => {
+    // Create a todos.json that would be picked up by JsonTaskStore
+    mkdirSync(join(tmpDir, "state"), { recursive: true });
+    writeFileSync(join(tmpDir, "state", "todos.json"), JSON.stringify([
+      { id: "T-1", title: "Should not appear", status: "pending" },
+    ]));
+    process.env.SHIPWRIGHT_TASK_STORE = "github";
+    process.env.SHIPWRIGHT_GITHUB_OWNER = "test-org";
+    process.env.SHIPWRIGHT_GITHUB_REPO = "test-repo";
+    const { config } = loadConfig(tmpDir);
+    expect(config.taskStore).toBe("github");
+    // Creating the store should not read todos.json — simply instantiating GitHubTaskStore
+    // should not touch the file at all. We verify by checking the factory returns the
+    // right type without any interaction with todos.json.
+    const store = createTaskStore(config);
+    expect(store).toBeInstanceOf(GitHubTaskStore);
+    // todos.json still exists and is unchanged (not read/written by createTaskStore)
+    const todosContent = readFileSync(join(tmpDir, "state", "todos.json"), "utf-8");
+    const todos = JSON.parse(todosContent) as unknown[];
+    expect(todos).toHaveLength(1);
+  });
+});
+
+describe("doctor coexistence warning", () => {
+  let tmpDir: string;
+  const origTaskStore = process.env.SHIPWRIGHT_TASK_STORE;
+  const origGhOwner = process.env.SHIPWRIGHT_GITHUB_OWNER;
+  const origGhRepo = process.env.SHIPWRIGHT_GITHUB_REPO;
+  const origConfig = process.env.SHIPWRIGHT_CONFIG;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "sw-doctor-coexist-"));
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SHIPWRIGHT_TASK_STORE;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SHIPWRIGHT_GITHUB_OWNER;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SHIPWRIGHT_GITHUB_REPO;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SHIPWRIGHT_CONFIG;
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+    if (origTaskStore !== undefined) {
+      process.env.SHIPWRIGHT_TASK_STORE = origTaskStore;
+    } else {
+      // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+      delete process.env.SHIPWRIGHT_TASK_STORE;
+    }
+    if (origGhOwner !== undefined) {
+      process.env.SHIPWRIGHT_GITHUB_OWNER = origGhOwner;
+    } else {
+      // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+      delete process.env.SHIPWRIGHT_GITHUB_OWNER;
+    }
+    if (origGhRepo !== undefined) {
+      process.env.SHIPWRIGHT_GITHUB_REPO = origGhRepo;
+    } else {
+      // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+      delete process.env.SHIPWRIGHT_GITHUB_REPO;
+    }
+    if (origConfig !== undefined) {
+      process.env.SHIPWRIGHT_CONFIG = origConfig;
+    } else {
+      // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+      delete process.env.SHIPWRIGHT_CONFIG;
+    }
+  });
+
+  // Test: doctor warns when todos.json exists + non-empty while GitHub backend active
+  test("doctor warns when todos.json exists and is non-empty while GitHub backend is active", () => {
+    // Create a non-empty todos.json
+    mkdirSync(join(tmpDir, "state"), { recursive: true });
+    writeFileSync(join(tmpDir, "state", "todos.json"), JSON.stringify([
+      { id: "T-1", title: "Stale task", status: "pending" },
+    ]));
+
+    // Write .shipwright.json with github backend
+    writeFileSync(
+      join(tmpDir, ".shipwright.json"),
+      JSON.stringify({
+        taskStore: "github",
+        github: { owner: "test-org", repo: "test-repo" },
+      }),
+    );
+
+    const warnings: string[] = [];
+    const logs: string[] = [];
+    const origWarn = console.warn;
+    const origLog = console.log;
+    console.warn = (...args: unknown[]) => warnings.push(args.join(" "));
+    console.log = (...args: unknown[]) => logs.push(args.join(" "));
+
+    try {
+      const { config, configSource } = loadConfig(tmpDir);
+      doctorCheck(config, configSource, tmpDir);
+    } finally {
+      console.warn = origWarn;
+      console.log = origLog;
+    }
+
+    // Should emit the coexistence warning
+    const allOutput = [...warnings, ...logs].join("\n");
+    expect(allOutput).toMatch(/\[warn\].*todos\.json.*github/i);
+  });
+
+  // Test: doctor does NOT warn when todos.json is empty while GitHub backend active
+  test("doctor does NOT warn when todos.json is empty while GitHub backend is active", () => {
+    mkdirSync(join(tmpDir, "state"), { recursive: true });
+    writeFileSync(join(tmpDir, "state", "todos.json"), JSON.stringify([]));
+
+    writeFileSync(
+      join(tmpDir, ".shipwright.json"),
+      JSON.stringify({
+        taskStore: "github",
+        github: { owner: "test-org", repo: "test-repo" },
+      }),
+    );
+
+    const warnings: string[] = [];
+    const logs: string[] = [];
+    const origWarn = console.warn;
+    const origLog = console.log;
+    console.warn = (...args: unknown[]) => warnings.push(args.join(" "));
+    console.log = (...args: unknown[]) => logs.push(args.join(" "));
+
+    try {
+      const { config, configSource } = loadConfig(tmpDir);
+      doctorCheck(config, configSource, tmpDir);
+    } finally {
+      console.warn = origWarn;
+      console.log = origLog;
+    }
+
+    const allOutput = [...warnings, ...logs].join("\n");
+    expect(allOutput).not.toMatch(/\[warn\].*todos\.json.*github/i);
+  });
+
+  // Test: doctor does NOT warn when todos.json absent while GitHub backend active
+  test("doctor does NOT warn when todos.json is absent while GitHub backend is active", () => {
+    writeFileSync(
+      join(tmpDir, ".shipwright.json"),
+      JSON.stringify({
+        taskStore: "github",
+        github: { owner: "test-org", repo: "test-repo" },
+      }),
+    );
+
+    const warnings: string[] = [];
+    const logs: string[] = [];
+    const origWarn = console.warn;
+    const origLog = console.log;
+    console.warn = (...args: unknown[]) => warnings.push(args.join(" "));
+    console.log = (...args: unknown[]) => logs.push(args.join(" "));
+
+    try {
+      const { config, configSource } = loadConfig(tmpDir);
+      doctorCheck(config, configSource, tmpDir);
+    } finally {
+      console.warn = origWarn;
+      console.log = origLog;
+    }
+
+    const allOutput = [...warnings, ...logs].join("\n");
+    expect(allOutput).not.toMatch(/\[warn\].*todos\.json.*github/i);
+  });
+
+  // Test: doctor does NOT warn for JSON backend even when todos.json exists and is non-empty
+  test("doctor does NOT emit coexistence warning when JSON backend is active", () => {
+    mkdirSync(join(tmpDir, "state"), { recursive: true });
+    writeFileSync(join(tmpDir, "state", "todos.json"), JSON.stringify([
+      { id: "T-1", title: "Active task", status: "pending" },
+    ]));
+
+    const warnings: string[] = [];
+    const logs: string[] = [];
+    const origWarn = console.warn;
+    const origLog = console.log;
+    console.warn = (...args: unknown[]) => warnings.push(args.join(" "));
+    console.log = (...args: unknown[]) => logs.push(args.join(" "));
+
+    try {
+      const isolatedDir = mkdtempSync(join(tmpdir(), "sw-json-doctor-"));
+      try {
+        // Copy todos.json to isolated dir
+        mkdirSync(join(isolatedDir, "state"), { recursive: true });
+        writeFileSync(join(isolatedDir, "state", "todos.json"), JSON.stringify([
+          { id: "T-1", title: "Active task", status: "pending" },
+        ]));
+        const { config, configSource } = loadConfig(isolatedDir);
+        expect(config.taskStore).toBe("json");
+        doctorCheck(config, configSource, isolatedDir);
+      } finally {
+        rmSync(isolatedDir, { recursive: true, force: true });
+      }
+    } finally {
+      console.warn = origWarn;
+      console.log = origLog;
+    }
+
+    const allOutput = [...warnings, ...logs].join("\n");
+    expect(allOutput).not.toMatch(/\[warn\].*todos\.json.*github/i);
   });
 });
