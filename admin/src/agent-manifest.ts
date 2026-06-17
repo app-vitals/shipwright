@@ -18,6 +18,7 @@
 import { createHash } from "node:crypto";
 import type {
   KubernetesDeployment,
+  KubernetesPvc,
   KubernetesSecret,
 } from "./kubernetes-client.ts";
 
@@ -114,6 +115,39 @@ function cleanBase(id: string): string {
 
 function trimDashes(s: string): string {
   return s.replace(/^-+/, "").replace(/-+$/, "");
+}
+
+// ─── PVC builder ────────────────────────────────────────────────────────────
+
+export interface AgentPvcOpts {
+  name: string;
+  namespace: string;
+  sizeGi: number;
+  storageClassName?: string;
+  adminDeploymentName: string;
+  adminDeploymentUid: string;
+}
+
+export function buildAgentPvcManifest(opts: AgentPvcOpts): KubernetesPvc {
+  const manifest: KubernetesPvc = {
+    apiVersion: "v1",
+    kind: "PersistentVolumeClaim",
+    metadata: {
+      name: opts.name,
+      namespace: opts.namespace,
+      ownerReferences: [
+        adminOwnerReference(opts.adminDeploymentName, opts.adminDeploymentUid),
+      ],
+    },
+    spec: {
+      accessModes: ["ReadWriteOnce"],
+      resources: { requests: { storage: `${opts.sizeGi}Gi` } },
+    },
+  };
+  if (opts.storageClassName !== undefined) {
+    manifest.spec.storageClassName = opts.storageClassName;
+  }
+  return manifest;
 }
 
 // ─── Deployment builder ─────────────────────────────────────────────────────
