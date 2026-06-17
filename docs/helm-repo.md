@@ -14,6 +14,16 @@ emits a `repository_dispatch` event to notify a configured downstream repository
 > idempotent — it only releases versions it hasn't published before — so a
 > chart is published exactly when its version is bumped, never on a plain PR.
 
+## How chart versions are bumped
+
+Chart version bumps are **automated** by the
+[`auto-bump-chart.yml`](../.github/workflows/auto-bump-chart.yml) workflow.
+Whenever a release tag is pushed matching `agent-v*`, `admin-v*`, or `metrics-v*`
+(created by the service build workflows on successful image push), the automation
+detects the tag, increments the chart patch version in `Chart.yaml`, opens a PR
+(targeting `main`), and enables auto-merge. Once the PR merges, `chart-release.yml`
+fires and publishes the new chart version. No manual version bump is required.
+
 ## Downstream dispatch configuration (optional)
 
 The `chart-release.yml` workflow can emit a `repository_dispatch` event to a
