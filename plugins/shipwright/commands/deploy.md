@@ -124,12 +124,14 @@ sibling tasks on the same branch are still being developed or are blocked.
 PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | sort -V | tail -1 | xargs dirname 2>/dev/null)
 HEAD_BRANCH=$(gh pr view {pr} --repo {org}/{repo} --json headRefName --jq '.headRefName')
 BRANCH_TASKS=$(bun "$PLUGIN_SCRIPTS/task_store.ts" query --branch "$HEAD_BRANCH" 2>/dev/null || echo '[]')
-INCOMPLETE=$(echo "$BRANCH_TASKS" | jq '[.[] | select(.status == "pending" or .status == "in_progress" or .status == "blocked")] | length')
+INCOMPLETE_TASKS=$(echo "$BRANCH_TASKS" | jq '[.[] | select(.status == "pending" or .status == "in_progress" or .status == "blocked") | {id, status}]')
+INCOMPLETE=$(echo "$INCOMPLETE_TASKS" | jq 'length')
 ```
 
 If `INCOMPLETE > 0`: print and stop [silent]:
 ```
-⏸ Bundle gate: {INCOMPLETE} task(s) on branch {HEAD_BRANCH} are still in flight (pending/in_progress/blocked).
+⏸ Bundle gate: {INCOMPLETE} task(s) on branch {HEAD_BRANCH} are still in flight:
+  {for each item in INCOMPLETE_TASKS: "  - {id} ({status})"}
   Waiting for bundle-mates to reach pr_open before deploying.
 ```
 
