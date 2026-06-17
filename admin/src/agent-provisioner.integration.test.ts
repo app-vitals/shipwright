@@ -26,8 +26,10 @@ import { ConflictError } from "./errors.ts";
 import {
   type DeploymentSpec,
   type KubernetesClient,
+  type KubernetesPvc,
   type KubernetesSecret,
   RecordedKubernetesClient,
+  type PvcSpec,
   type SecretSpec,
 } from "./kubernetes-client.ts";
 
@@ -52,7 +54,7 @@ function makePrisma(): PrismaClient {
 }
 
 function emptyClient(): RecordedKubernetesClient {
-  return new RecordedKubernetesClient({ deployments: {}, secrets: {} });
+  return new RecordedKubernetesClient({ deployments: {}, secrets: {}, pvcs: {} });
 }
 
 /** Decode the token value the Secret carries under the default "token" key. */
@@ -126,17 +128,39 @@ describeOrSkip("KubernetesAgentProvisioner (integration)", () => {
         order.push("deployment");
         return recorded.createDeployment(ns, spec);
       },
+      createPvc: (ns: string, spec: PvcSpec) => {
+        order.push("pvc");
+        return recorded.createPvc(ns, spec);
+      },
       getSecret: (ns, n) => recorded.getSecret(ns, n),
       getDeployment: (ns, n) => recorded.getDeployment(ns, n),
+      getPvc: (ns, n) => recorded.getPvc(ns, n),
       deleteSecret: (ns, n) => recorded.deleteSecret(ns, n),
       deleteDeployment: (ns, n) => recorded.deleteDeployment(ns, n),
+      deletePvc: (ns, n) => recorded.deletePvc(ns, n),
       deploymentExists: (ns, n) => recorded.deploymentExists(ns, n),
       listDeployments: (ns, sel) => recorded.listDeployments(ns, sel),
     };
     const provisioner = new KubernetesAgentProvisioner(ordered, tokens, CONFIG);
 
     await provisioner.provision(agentId);
-    expect(order).toEqual(["secret", "deployment"]);
+    expect(order).toEqual(["pvc", "secret", "deployment"]);
+  });
+
+  it("deprovision() deletes Deployment and Secret but leaves PVC", async () => {
+    const agentId = await createAgent();
+    const k8s = emptyClient();
+    const provisioner = new KubernetesAgentProvisioner(k8s, tokens, CONFIG);
+
+    await provisioner.provision(agentId);
+    await provisioner.deprovision(agentId);
+
+    const name = sanitizeAgentName(agentId);
+    // Deployment and Secret must be gone
+    await expect(k8s.getDeployment(NAMESPACE, name)).rejects.toThrow();
+    await expect(k8s.getSecret(NAMESPACE, `${name}-token`)).rejects.toThrow();
+    // PVC must still be present (data safety)
+    await expect(k8s.getPvc(NAMESPACE, `${name}-home`)).resolves.toBeDefined();
   });
 
   it("provision() is safe to retry (provision twice → no throw)", async () => {
@@ -162,14 +186,17 @@ describeOrSkip("KubernetesAgentProvisioner (integration)", () => {
     const agentId = await createAgent();
     const recorded = emptyClient();
     const failing: KubernetesClient = {
+      createPvc: (ns, spec) => recorded.createPvc(ns, spec),
       createSecret: (ns, spec) => recorded.createSecret(ns, spec),
       createDeployment: async () => {
         throw new Error("simulated API server failure");
       },
       getSecret: (ns, n) => recorded.getSecret(ns, n),
       getDeployment: (ns, n) => recorded.getDeployment(ns, n),
+      getPvc: (ns, n) => recorded.getPvc(ns, n),
       deleteSecret: (ns, n) => recorded.deleteSecret(ns, n),
       deleteDeployment: (ns, n) => recorded.deleteDeployment(ns, n),
+      deletePvc: (ns, n) => recorded.deletePvc(ns, n),
       deploymentExists: (ns, n) => recorded.deploymentExists(ns, n),
       listDeployments: (ns, sel) => recorded.listDeployments(ns, sel),
     };
