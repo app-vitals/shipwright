@@ -93,7 +93,10 @@ function isActiveRun(run: WorkflowRun, now: string): boolean {
 function hasSelfApproveReview(reviews: GhReview[], userLogin: string): boolean {
   return reviews.some(
     (r) =>
-      r.author.login === userLogin && r.body.trimStart().startsWith("APPROVE"),
+      r.author.login === userLogin &&
+      // Strip leading markdown bold markers (**) before checking — the review
+      // skill posts "**APPROVE**" but the body must still be treated as APPROVE.
+      r.body.trimStart().replace(/^\*+/, "").startsWith("APPROVE"),
   );
 }
 
