@@ -6,9 +6,8 @@ The `shipwright` chart (`charts/shipwright`) is published to a
 [`chart-release.yml`](../.github/workflows/chart-release.yml) workflow runs
 [chart-releaser](https://github.com/helm/chart-releaser-action), which packages
 the chart, attaches the `.tgz` to a GitHub Release, and updates the
-`index.yaml` on the `gh-pages` branch. After publishing, the workflow emits a
-`repository_dispatch` event to a downstream repository (typically the Shipwright
-agent platform) to trigger downstream integration.
+`index.yaml` on the `gh-pages` branch. After publishing, the workflow optionally
+emits a `repository_dispatch` event to notify a configured downstream repository.
 
 > Publishing is keyed off `Chart.yaml`'s `version` (the
 > [versioning discipline](../charts/shipwright/CHANGELOG.md)). chart-releaser is
