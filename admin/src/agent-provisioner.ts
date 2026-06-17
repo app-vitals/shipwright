@@ -25,7 +25,6 @@
 
 import {
   buildAgentDeploymentManifest,
-  buildAgentPvcManifest,
   buildAgentSecretManifest,
   sanitizeAgentName,
 } from "./agent-manifest.ts";
@@ -227,16 +226,9 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
   // ─── Spec derivation (via the pure manifest builders) ─────────────────────
 
   private pvcSpec(pvcName: string): PvcSpec {
-    const manifest = buildAgentPvcManifest({
+    return {
       name: pvcName,
       namespace: this.config.namespace,
-      sizeGi: this.config.pvcStorageGi ?? 40,
-      adminDeploymentName: this.config.adminDeploymentName,
-      adminDeploymentUid: this.config.adminDeploymentUid,
-    });
-    return {
-      name: manifest.metadata.name,
-      namespace: manifest.metadata.namespace,
       storageGi: this.config.pvcStorageGi ?? 40,
     };
   }
