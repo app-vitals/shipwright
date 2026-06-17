@@ -22,6 +22,7 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
+import type { AuditResult } from "./adapters/audit";
 import { JsonTaskStore } from "./adapters/json";
 import { resolveRepos } from "./check-helpers";
 import { createTaskStore, doctorCheck, loadConfig } from "./create-task-store";
@@ -322,13 +323,9 @@ async function cmdDoctor(
   }
 
   // Run data integrity checks via dataDoctor() if available
-  if (
-    "dataDoctor" in adapter &&
-    typeof (adapter as { dataDoctor?: unknown }).dataDoctor === "function"
-  ) {
-    const results = await (
-      adapter as { dataDoctor: () => Promise<import("./adapters/audit").AuditResult[]> }
-    ).dataDoctor();
+  const withDoctor = adapter as { dataDoctor?: () => Promise<AuditResult[]> };
+  if (typeof withDoctor.dataDoctor === "function") {
+    const results = await withDoctor.dataDoctor();
 
     let hasFailure = false;
     for (const result of results) {

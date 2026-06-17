@@ -19,11 +19,11 @@ import { dirname, join } from "node:path";
 import { resolveReadyTasks } from "../store";
 import type { QueryFilters, Task, TaskStore } from "../store";
 import {
+  type AuditResult,
   checkCrossRepoOrphans,
   checkDanglingDeps,
   checkDuplicateIds,
 } from "./audit";
-import type { AuditResult } from "./audit";
 import { warnMissingFields } from "./validation";
 
 const NUMERIC_FIELDS = new Set(["pr", "hours", "complexity"]);

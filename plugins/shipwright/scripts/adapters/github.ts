@@ -22,11 +22,11 @@ import type {
 } from "../store.ts";
 import { resolveRepos } from "../check-helpers.ts";
 import {
+  type AuditResult,
   checkCrossRepoOrphans,
   checkDanglingDeps,
   checkDuplicateIds,
 } from "./audit.ts";
-import type { AuditResult } from "./audit.ts";
 import { warnMissingFields } from "./validation.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
