@@ -160,6 +160,22 @@
                 "name": { "type": "string" }
               }
             },
+            "sessionSecret": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "existingSecret":   { "type": "string" },
+                "sessionSecretRef": { "type": "string" }
+              },
+              "if": {
+                "properties": { "existingSecret": { "type": "string", "minLength": 1 } },
+                "required": ["existingSecret"]
+              },
+              "then": {
+                "properties": { "sessionSecretRef": { "type": "string", "minLength": 1 } },
+                "required": ["sessionSecretRef"]
+              }
+            },
             "provider": {
               "type": "object",
               "additionalProperties": false,

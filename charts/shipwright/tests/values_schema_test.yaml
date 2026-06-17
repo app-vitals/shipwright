@@ -189,6 +189,34 @@ tests:
       - failedTemplate:
           errorPattern: "key"
 
+  - it: accepts sessionSecret with sessionSecretRef set and existingSecret empty (guard is existingSecret-triggered)
+    set:
+      metrics.sessionSecret.sessionSecretRef: SHIPWRIGHT_SESSION_SECRET
+      metrics.sessionSecret.existingSecret: ""
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: accepts sessionSecret with sessionSecretRef set and a non-empty existingSecret
+    set:
+      metrics.sessionSecret.sessionSecretRef: SHIPWRIGHT_SESSION_SECRET
+      metrics.sessionSecret.existingSecret: shipwright-secrets
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: accepts sessionSecret with no ref and an empty existingSecret (guard never triggers)
+    set:
+      metrics.sessionSecret.existingSecret: ""
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: rejects sessionSecret with existingSecret set but sessionSecretRef empty (conditional minLength)
+    set:
+      metrics.sessionSecret.existingSecret: shipwright-secrets
+      metrics.sessionSecret.sessionSecretRef: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: "sessionSecretRef"
+
   - it: accepts google mode with existingSecret set and empty clientId (existingSecret bypasses inline-field requirement)
     set:
       auth.mode: google

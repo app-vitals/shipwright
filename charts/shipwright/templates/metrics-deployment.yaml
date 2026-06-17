@@ -56,13 +56,26 @@ spec:
             # Bind the metrics dashboard to the chart-standard port 3460.
             - name: METRICS_API_PORT
               value: "3460"
-            # Signs the dashboard session JWT. Generated into the metrics Secret
-            # on first install and preserved across `helm upgrade`.
+            # Signs/validates the dashboard session JWT. MUST match the admin's
+            # SHIPWRIGHT_SESSION_SECRET so admin-minted sessions validate at the
+            # metrics service when both sit behind a shared Gateway — otherwise the
+            # dashboard's metrics view 401s. When metrics.sessionSecret.existingSecret
+            # is set, source it from that caller-managed Secret (point it at the same
+            # Secret the admin uses); otherwise use the chart-generated metrics Secret
+            # (generate on first install, reuse on upgrade).
+            {{- if .Values.metrics.sessionSecret.existingSecret }}
+            - name: SHIPWRIGHT_SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.metrics.sessionSecret.existingSecret }}
+                  key: {{ .Values.metrics.sessionSecret.sessionSecretRef | default "SHIPWRIGHT_SESSION_SECRET" }}
+            {{- else }}
             - name: SHIPWRIGHT_SESSION_SECRET
               valueFrom:
                 secretKeyRef:
                   name: {{ include "shipwright.metrics.secretName" . }}
                   key: SHIPWRIGHT_SESSION_SECRET
+            {{- end }}
             {{- if .Values.postgresql.enabled }}
             # Assembled in the metrics Secret so the Postgres password is never in
             # plaintext Deployment env. Targets the bundled PostgreSQL in postgres
