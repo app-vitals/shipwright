@@ -170,6 +170,7 @@ For each task:
 - **Branch**: `feat/{id-lowered-dashes}-{first-3-words-kebab}` — or a shared branch name for bundled tasks (see below)
 - **Layer**: API | Frontend | Database | Shared | Background | CLI
 - **Hours**: rough estimate (1-8h; break tasks larger than 8h)
+- **HITL**: `⚠ HITL` if the task requires human action (see Step 5.5); omit otherwise
 - **Complexity**: integer 1–5 — use the scoring table below
 - **Model**: `haiku` | `sonnet` | `opus` — derived from complexity score (see table)
 
@@ -217,11 +218,11 @@ Present the map in two forms:
 
 **2. Summary table:**
 ```
-Task         | Depends on  | Blocks
-{PREFIX}-1.1 | —           | 2.1
-{PREFIX}-1.2 | —           | 2.1
-{PREFIX}-2.1 | 1.1, 1.2    | 2.2
-{PREFIX}-2.2 | 2.1         | —
+Task         | Depends on  | Blocks | HITL
+{PREFIX}-1.1 | —           | 2.1    |
+{PREFIX}-1.2 | —           | 2.1    |
+{PREFIX}-2.1 | 1.1, 1.2    | 2.2    | ⚠ HITL
+{PREFIX}-2.2 | 2.1         | —      |
 ```
 
 ### Breaking Change Safety
@@ -236,6 +237,68 @@ A task that drops or renames something while a later task updates the consumers 
 If a task has no renames or removals, mark it: `Safe to deploy standalone: yes`.
 
 Present the task list and dependency map as a first pass. The engineer reviews and iterates — they may catch implementation details, missing edge cases, or better task splits. Iterate until approved.
+
+---
+
+## Step 5.5: HITL Detection
+
+Before writing tasks to the queue, scan every task for Human-in-the-Loop requirements. A task is HITL if it cannot be completed autonomously — it requires a human to act in a UI, provision a credential, or execute a privileged command outside the automated pipeline.
+
+### Keyword Heuristics
+
+Flag a task as HITL if its title or description contains any of the following keywords (case-insensitive):
+
+```
+terraform, helm, kubectl, GKE, GCP, deploy (image/cluster context),
+container registry, image push, certificate, Cloud SQL, kube-context,
+rollout, helm upgrade, kubectl apply, PAT, personal access token,
+provision secret, GitHub settings, branch protection, allow_auto_merge
+```
+
+### Judgment Step
+
+Even without a keyword match, flag the task HITL if it fundamentally requires:
+- A human to act in a web UI (e.g., GCP Console, GitHub Settings, DNS registrar, cloud provider dashboard)
+- Provisioning or rotating a credential, secret, or API key
+- Approving a privileged workflow that requires human authorization
+- Any action that cannot be expressed as a CLI command the agent can run
+
+Apply judgment: if the task description implies "someone must click approve in the console" or "create a secret in 1Password," it's HITL regardless of the keywords present.
+
+### How to Flag a Matched Task
+
+For each task that matches either heuristic:
+
+1. **Set `hitl: true`** in its task JSON (see Step 6 templates)
+2. **Inject a `## Human steps` section** into its description naming:
+   - What access is required (e.g., "Requires: GCP Console IAM editor role")
+   - Suggested command or action (e.g., `gcloud secrets versions add my-secret --data-file=- <<< "value"`)
+   - Any pre-requisite setup (e.g., "Must have kube-context set to production cluster")
+3. **Mark the task `⚠ HITL`** in the task table (HITL column)
+
+Non-matching tasks are unaffected — do not add a `## Human steps` section or set `hitl: true` on them.
+
+**Example HITL description injection:**
+```
+{original description}
+
+## Human steps
+Requires: GCP Console access (Cloud SQL Admin role)
+Action: Set the database password via Cloud SQL Studio or:
+  gcloud sql users set-password app --instance=prod-db --password=<value>
+Pre-requisite: Ensure kube-context is pointed at the production cluster before running migrations.
+```
+
+After scanning, list any flagged tasks:
+```
+HITL tasks detected: {count}
+{PREFIX}-X.Y — {title} — flagged by: {keyword match / judgment}
+```
+
+If no tasks are flagged, print:
+```
+HITL scan: no tasks require human steps
+```
 
 ---
 
@@ -286,6 +349,7 @@ Write the new tasks to a temp file `/tmp/new-tasks-{session}.json` as a JSON arr
     "branch": "feat/...",
     "dependencies": [],
     "status": "pending",
+    "hitl": false,
     "pr": null,
     "addedAt": "{ISO timestamp}",
     "hours": 2,
@@ -294,6 +358,8 @@ Write the new tasks to a temp file `/tmp/new-tasks-{session}.json` as a JSON arr
   }
 ]
 ```
+
+Set `"hitl": true` (and include the `## Human steps` section in `description`) for any task flagged in Step 5.5.
 
 Append them to `state/todos.json` via task_store.ts (idempotent by id — safe to re-run):
 
@@ -378,6 +444,7 @@ Write the tasks to `/tmp/new-tasks-{session}.json`. Set `source` to `"gh:{owner}
     "branch": "feat/...",
     "dependencies": [],
     "status": "pending",
+    "hitl": false,
     "pr": null,
     "addedAt": "{ISO timestamp}",
     "hours": 2,
@@ -386,6 +453,8 @@ Write the tasks to `/tmp/new-tasks-{session}.json`. Set `source` to `"gh:{owner}
   }
 ]
 ```
+
+Set `"hitl": true` (and include the `## Human steps` section in `description`) for any task flagged in Step 5.5.
 
 To inject the source field into an already-assembled tasks array using `jq`:
 
