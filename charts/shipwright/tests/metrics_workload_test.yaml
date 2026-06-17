@@ -57,6 +57,49 @@ tests:
                 name: r-shipwright-metrics
                 key: SHIPWRIGHT_SESSION_SECRET
 
+  - it: sources SHIPWRIGHT_SESSION_SECRET from a caller-managed Secret when metrics.sessionSecret.existingSecret is set
+    # Point metrics at the same Secret the admin uses so admin-minted dashboard
+    # JWTs validate at the metrics service (shared-Gateway dashboards).
+    template: templates/metrics-deployment.yaml
+    release:
+      name: r
+    set:
+      metrics.sessionSecret.existingSecret: shipwright-secrets
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_SESSION_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: shipwright-secrets
+                key: SHIPWRIGHT_SESSION_SECRET
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_SESSION_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-metrics
+                key: SHIPWRIGHT_SESSION_SECRET
+
+  - it: honors a custom metrics.sessionSecret.sessionSecretRef key
+    template: templates/metrics-deployment.yaml
+    release:
+      name: r
+    set:
+      metrics.sessionSecret.existingSecret: shipwright-secrets
+      metrics.sessionSecret.sessionSecretRef: MY_SESSION_KEY
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_SESSION_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: shipwright-secrets
+                key: MY_SESSION_KEY
+
   - it: wires the ServiceAccount and standard selector labels onto the Deployment
     template: templates/metrics-deployment.yaml
     asserts:
