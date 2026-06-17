@@ -46,6 +46,10 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     --message|-m)
+      if [[ -z "${2:-}" ]]; then
+        echo "ERROR: --message requires a value" >&2
+        exit 1
+      fi
       MESSAGE="${2:-}"
       shift 2
       ;;
@@ -217,6 +221,7 @@ NEW_SECTION="## [${NEW_VERSION}] - ${TODAY}
 # The CHANGELOG header ends before the first "## [" line.
 # We use a Python-based sed-equivalent for reliable multi-line insertion.
 TMPFILE="$(mktemp)"
+trap 'rm -f "${TMPFILE}"' EXIT
 
 python3 - "${CHANGELOG}" "${NEW_SECTION}" "${TMPFILE}" <<'PYEOF'
 import sys
@@ -260,6 +265,11 @@ mv "${TMPFILE}" "${CHANGELOG}"
 # ---------------------------------------------------------------------------
 
 echo "[bump-chart] creating branch ${BRANCH}..."
+CURRENT_BRANCH=$(git -C "${REPO_ROOT}" rev-parse --abbrev-ref HEAD)
+if [[ "${CURRENT_BRANCH}" != "main" ]]; then
+  echo "ERROR: must run from main (currently on ${CURRENT_BRANCH})" >&2
+  exit 1
+fi
 git -C "${REPO_ROOT}" checkout -b "${BRANCH}"
 
 echo "[bump-chart] staging changes..."
