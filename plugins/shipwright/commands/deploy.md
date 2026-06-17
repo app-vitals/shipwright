@@ -114,6 +114,41 @@ Task:   {task_id} — {task_title}  (or "standalone deploy" if no task found)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
+### 2b. Bundle Completeness Check
+
+Before running pre-flight checks, verify that all tracked tasks on this PR's branch are
+at least `pr_open` (i.e., no bundle-mate is still `pending`, `in_progress`, or `blocked`).
+
+Get the PR's head branch name:
+
+```bash
+HEAD_BRANCH=$(gh pr view {pr} --repo {org}/{repo} --json headRefName --jq '.headRefName')
+```
+
+Query the task store for tasks on this branch:
+
+```bash
+PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | sort -V | tail -1 | xargs dirname 2>/dev/null)
+BRANCH_TASKS=$(bun "$PLUGIN_SCRIPTS/task_store.ts" query --branch "$HEAD_BRANCH" 2>/dev/null || echo "[]")
+```
+
+Check whether any task is incomplete (`pending`, `in_progress`, or `blocked`):
+
+```bash
+INCOMPLETE=$(echo "$BRANCH_TASKS" | jq '[.[] | select(.status == "pending" or .status == "in_progress" or .status == "blocked")] | length')
+```
+
+**If `INCOMPLETE > 0`**: bundle-mates are not yet ready. Print and stop:
+
+```
+⏸ Bundle incomplete — {INCOMPLETE} task(s) on branch {HEAD_BRANCH} are not yet pr_open.
+  Waiting for all bundle-mates to reach pr_open before merging.
+  Re-run /shipwright:deploy once remaining tasks have open PRs.
+```
+
+**If `INCOMPLETE == 0`** (no tracked tasks, or all are `pr_open`/`approved`/`merged`/beyond):
+proceed to Step 3.
+
 ---
 
 ## Step 3: Pre-flight Checks (GitHub API — no local state)
