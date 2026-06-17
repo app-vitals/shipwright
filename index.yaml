@@ -4,6 +4,40 @@ entries:
   - annotations:
       artifacthub.io/changes: |
         - kind: added
+          description: "agent.voice: deploy-time agent voice (STT/TTS). Set agent.voice.enabled=true and agent.voice.provider=whisper to render a self-hosted Whisper ASR Deployment+Service (onerahmet/openai-whisper-asr-webservice:v1.3.0 — pinned, POST /asr) and inject WHISPER_SERVICE_URL + ELEVENLABS_API_KEY into the admin (flowed to provisioned agent pods by the provisioner). provider=groq flows GROQ_API_KEY via a chart-managed voice Secret with no Whisper pod. Disabled by default: no Whisper pod/Service/Secret and provisioned-agent env is unchanged (3 base vars)."
+      licenses: MIT
+    apiVersion: v2
+    appVersion: 0.1.0
+    created: "2026-06-17T12:09:25.822542179Z"
+    dependencies:
+    - condition: postgresql.enabled
+      name: postgresql
+      repository: oci://registry-1.docker.io/bitnamicharts
+      version: 16.7.27
+    description: Shipwright Harness — the open-source autonomous delivery agent for
+      Claude Code. This chart packages the three Shipwright services (admin, metrics,
+      agent) and an optional PostgreSQL dependency for Kubernetes (Minikube-friendly
+      defaults).
+    digest: 6125ff22968b586688cf39def6ff06b530138befc654e8308147dfe42de8d513
+    home: https://shipwright-harness.com
+    keywords:
+    - shipwright
+    - claude-code
+    - delivery-agent
+    - ci-cd
+    maintainers:
+    - name: Shipwright Harness
+      url: https://shipwright-harness.com
+    name: shipwright
+    sources:
+    - https://github.com/app-vitals/shipwright
+    type: application
+    urls:
+    - https://github.com/app-vitals/shipwright/releases/download/shipwright-1.4.0/shipwright-1.4.0.tgz
+    version: 1.4.0
+  - annotations:
+      artifacthub.io/changes: |
+        - kind: added
           description: "metrics.sessionSecret.existingSecret: source the metrics service's SHIPWRIGHT_SESSION_SECRET from a caller-managed Secret instead of the chart-generated random. Point it at the same Secret the admin uses (admin.encryptionKeys.existingSecret) so admin-minted dashboard session JWTs validate at the metrics service when both sit behind a shared Gateway — a mismatch 401s the dashboard's metrics view. The chart-managed metrics Secret omits SHIPWRIGHT_SESSION_SECRET when the knob is set; the Deployment sources it via secretKeyRef. Default empty preserves the generate-on-install / reuse-on-upgrade behaviour."
       licenses: MIT
     apiVersion: v2
@@ -145,4 +179,4 @@ entries:
     urls:
     - https://app-vitals.github.io/shipwright/shipwright-1.0.0.tgz
     version: 1.0.0
-generated: "2026-06-17T07:48:05.942826697Z"
+generated: "2026-06-17T12:09:25.82256106Z"
