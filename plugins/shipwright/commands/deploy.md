@@ -245,17 +245,61 @@ gh api "repos/$REPO/actions/runs?per_page=50" \
 ```
 
 - **Deploy workflow appears**: Break the 5-minute poll early and proceed to the main pipeline watch (Step 5b).
-- **No Deploy workflow after 5 minutes**: The repo has no deploy pipeline. Mark the task complete:
-  - Print: `⏭  No Deploy workflow triggered — repo has no pipeline. Marking task deployed.`
-  - If a task was found (not deploy-only mode): update via the task store — `status=deployed`, `deployedAt={now ISO timestamp}`:
-    ```bash
-    bun "$PLUGIN_SCRIPTS/task_store.ts" update --id "$TASK_ID" \
-      --set status=deployed \
-      --set deployedAt="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    ```
-    Also fire `shipwright_task_deployed` with `canary_result="no_pipeline"` and `pipeline_minutes=0`. Skip both if no task was found.
-  - Print the handoff block (Step 9) with `Pipeline: no pipeline`
-  - Stop.
+- **No Deploy workflow after 5 minutes**: The repo has no deploy pipeline. Print:
+  ```
+  ⏭  No Deploy workflow triggered — watching post-merge CI runs on {SQUASH_SHA[0..7]}
+  ```
+  Then proceed to Step 5c to watch post-merge CI and build runs before marking the task deployed.
+
+### 5c. Post-Merge CI Watch (no Deploy pipeline)
+
+Poll for CI and build runs on `SQUASH_SHA` for up to **10 minutes** (poll every 30 seconds, up to 20 polls):
+
+```bash
+REPO="{org}/{repo}"
+gh api "repos/$REPO/actions/runs?per_page=50" \
+  --jq "[.workflow_runs[] | select(.head_sha == \"$SQUASH_SHA\") | {id, name, status, conclusion}]"
+```
+
+Print progress on each poll:
+```
+[{elapsed}m] {name}: {status}/{conclusion} | {name}: {status}/{conclusion} | ...
+```
+
+Use `-` for runs not yet seen.
+
+**Terminal conditions:**
+
+**All runs completed successfully** (`conclusion == "success"` for every run seen):
+```
+✓ Post-merge CI passed ({elapsed}m)
+  {name}: success
+  {name}: success
+  ...
+```
+Compute `pipeline_minutes = elapsed`. Update the task store and fire `shipwright_task_deployed` with `canary_result="no_pipeline"` and `pipeline_minutes={pipeline_minutes}`. Print the handoff block (Step 9) with `Pipeline: post-merge CI ({pipeline_minutes}m)`. Stop.
+
+**Any run fails** (`conclusion == "failure"` on any run):
+```
+✗ Post-merge CI failed — {name}
+  Logs: gh run view {id} --log --failed
+```
+Update via task store — skip if deploy-only mode:
+```bash
+bun "$PLUGIN_SCRIPTS/task_store.ts" update --id "$TASK_ID" \
+  --set status=blocked \
+  --set note="Post-merge CI failed — run ID: {id}"
+```
+Stop.
+
+**Budget exhausted (10 minutes)** with runs still pending:
+```
+⚠ Post-merge CI still pending after 10 minutes — marking deployed.
+  Check manually: gh api repos/{org}/{repo}/actions/runs?head_sha={SQUASH_SHA}
+```
+Update the task store to `status=deployed` and fire `shipwright_task_deployed` with `canary_result="no_pipeline"` and `pipeline_minutes=10`. Print the handoff block (Step 9) with `Pipeline: post-merge CI (pending at timeout)`. Stop.
+
+---
 
 ### 5b. Monitor Pipeline (Deploy → Canary → Promote)
 
