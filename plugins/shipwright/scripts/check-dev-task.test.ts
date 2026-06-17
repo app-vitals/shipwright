@@ -36,6 +36,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
 interface MakeDepsOptions {
   readyTasks?: Task[];
   inProgressTasks?: Task[];
+  hitlPendingTasks?: Task[];
   resetCalls?: string[];
   stampCalls?: string[];
   clock?: Clock;
@@ -50,12 +51,14 @@ function makeDeps(options: MakeDepsOptions | Task[] = {}) {
 
   const readyTasks = opts.readyTasks ?? [];
   const inProgressTasks = opts.inProgressTasks ?? [];
+  const hitlPendingTasks = opts.hitlPendingTasks ?? [];
   const resetCalls = opts.resetCalls ?? [];
   const clock = opts.clock ?? FixedClock("2026-05-31T16:00:00Z");
 
   return {
     getReadyTasks: async (): Promise<Task[]> => readyTasks,
     getInProgressTasks: async (): Promise<Task[]> => inProgressTasks,
+    getHitlPendingTasks: async (): Promise<Task[]> => hitlPendingTasks,
     resetTask: async (id: string): Promise<Task> => {
       resetCalls.push(id);
       return makeTask({ id, status: "pending" });
@@ -219,5 +222,87 @@ describe("check-dev-task", () => {
 
     expect(resetCalls).toContain("SWC-2.6");
     expect(result.exit).toBe(1);
+  });
+
+  // ─── HITL pending notification ────────────────────────────────────────────
+
+  test("exits 0 with HITL notification when only HITL tasks pending (no ready work)", async () => {
+    const hitlTask1 = makeTask({
+      id: "HIT-3.1",
+      title: "Review architecture decision",
+      status: "pending",
+      hitl: true,
+    });
+    const hitlTask2 = makeTask({
+      id: "HIT-3.2",
+      title: "Approve deployment plan",
+      status: "pending",
+      hitl: true,
+    });
+
+    const result = await run(
+      makeDeps({
+        readyTasks: [],
+        hitlPendingTasks: [hitlTask1, hitlTask2],
+      }),
+    );
+
+    expect(result.exit).toBe(0);
+    expect(result.output).toContain("HIT-3.1");
+    expect(result.output).toContain("HIT-3.2");
+    expect(result.output).toContain("Review architecture decision");
+    expect(result.output).toContain("Approve deployment plan");
+  });
+
+  test("exits 0 with standard dev-task prompt when both ready and HITL tasks exist", async () => {
+    const regularTask = makeTask({ id: "SWC-4.1", title: "Regular task" });
+    const hitlTask = makeTask({
+      id: "HIT-4.1",
+      title: "Human review needed",
+      status: "pending",
+      hitl: true,
+    });
+
+    const result = await run(
+      makeDeps({
+        readyTasks: [regularTask],
+        hitlPendingTasks: [hitlTask],
+      }),
+    );
+
+    expect(result.exit).toBe(0);
+    expect(result.output.toLowerCase()).toContain("dev-task");
+  });
+
+  test("excludes HITL tasks with hitlNotifiedAt from notification", async () => {
+    const hitlTaskWithNotifiedAt = makeTask({
+      id: "HIT-5.1",
+      title: "Already notified task",
+      status: "pending",
+      hitl: true,
+      hitlNotifiedAt: "2026-06-17T10:00:00Z",
+    });
+
+    const result = await run(
+      makeDeps({
+        readyTasks: [],
+        hitlPendingTasks: [hitlTaskWithNotifiedAt],
+      }),
+    );
+
+    expect(result.exit).toBe(1);
+    expect(result.output).toBe("");
+  });
+
+  test("exits 1 when no ready tasks and no un-notified HITL tasks", async () => {
+    const result = await run(
+      makeDeps({
+        readyTasks: [],
+        hitlPendingTasks: [],
+      }),
+    );
+
+    expect(result.exit).toBe(1);
+    expect(result.output).toBe("");
   });
 });

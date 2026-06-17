@@ -31,6 +31,7 @@ const STALE_THRESHOLD_MS = 4 * 60 * 60 * 1000; // 4 hours
 interface Deps {
   getReadyTasks: () => Promise<Task[]>;
   getInProgressTasks: () => Promise<Task[]>;
+  getHitlPendingTasks: () => Promise<Task[]>;
   resetTask: (id: string) => Promise<Task>;
   stampTask: (id: string, startedAt: string) => Promise<Task>;
   clock: Clock;
@@ -63,6 +64,21 @@ export async function run(deps: Deps): Promise<RunResult> {
       exit: 0,
       output:
         "Pick the next ready task from the task store and execute via /shipwright:dev-task",
+    };
+  }
+
+  const hitlPendingTasks = await deps.getHitlPendingTasks();
+  const unnotifiedHitlTasks = hitlPendingTasks.filter(
+    (t) => t.hitlNotifiedAt === undefined,
+  );
+
+  if (unnotifiedHitlTasks.length > 0) {
+    const taskList = unnotifiedHitlTasks
+      .map((t) => `  - ${t.id}: ${t.title}`)
+      .join("\n");
+    return {
+      exit: 0,
+      output: `The following tasks require human-in-the-loop action. Post a notification in the channel listing these tasks and ask for human attention, then stamp hitlNotifiedAt on each using the task store update command:\n${taskList}`,
     };
   }
 
@@ -99,6 +115,8 @@ function buildProductionDeps(): Deps {
   return {
     getReadyTasks: () => store.query({ ready: true, assignee }),
     getInProgressTasks: () => store.query({ status: "in_progress", assignee }),
+    getHitlPendingTasks: () =>
+      store.query({ status: "pending", hitl: true, assignee }),
     resetTask: (id) =>
       store.update(id, { status: "pending", startedAt: undefined }),
     stampTask: (id, startedAt) => store.update(id, { startedAt }),
