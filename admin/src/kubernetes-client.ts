@@ -162,6 +162,13 @@ export interface KubernetesClient {
     spec: DeploymentSpec,
   ): Promise<KubernetesDeployment>;
   getDeployment(namespace: string, name: string): Promise<KubernetesDeployment>;
+  /** Returns true if the deployment exists, false if 404, throws on other errors. */
+  deploymentExists(namespace: string, name: string): Promise<boolean>;
+  /**
+   * Lists deployments in a namespace, optionally filtered by a label selector.
+   * Returns an array of deployment names (metadata.name).
+   */
+  listDeployments(namespace: string, labelSelector?: string): Promise<string[]>;
   deleteDeployment(namespace: string, name: string): Promise<void>;
   createSecret(namespace: string, spec: SecretSpec): Promise<KubernetesSecret>;
   getSecret(namespace: string, name: string): Promise<KubernetesSecret>;
@@ -483,6 +490,30 @@ export class HttpKubernetesClient implements KubernetesClient {
     );
   }
 
+  async deploymentExists(namespace: string, name: string): Promise<boolean> {
+    try {
+      await this.getDeployment(namespace, name);
+      return true;
+    } catch (err) {
+      if (err instanceof NotFoundError) return false;
+      throw err;
+    }
+  }
+
+  async listDeployments(
+    namespace: string,
+    labelSelector?: string,
+  ): Promise<string[]> {
+    const base = deploymentUrl(this.apiServer, namespace);
+    const url = labelSelector
+      ? `${base}?labelSelector=${encodeURIComponent(labelSelector)}`
+      : base;
+    const response = await this.request<{
+      items: Array<{ metadata: { name: string } }>;
+    }>(url, { method: "GET", headers: this.authHeaders() });
+    return response.items.map((item) => item.metadata.name);
+  }
+
   async deleteDeployment(namespace: string, name: string): Promise<void> {
     await this.request<unknown>(
       deploymentUrl(this.apiServer, namespace, name),
@@ -596,6 +627,26 @@ export class RecordedKubernetesClient implements KubernetesClient {
       throw new NotFoundError(`deployments.apps "${name}" not found`);
     }
     return dep;
+  }
+
+  async deploymentExists(namespace: string, name: string): Promise<boolean> {
+    return this.deployments.has(RecordedKubernetesClient.key(namespace, name));
+  }
+
+  // The labelSelector is ignored by the in-memory double: in tests the caller
+  // controls which deployments are seeded, so filtering by label is unnecessary.
+  async listDeployments(
+    namespace: string,
+    _labelSelector?: string,
+  ): Promise<string[]> {
+    const prefix = `${namespace}/`;
+    const names: string[] = [];
+    for (const [key] of this.deployments) {
+      if (key.startsWith(prefix)) {
+        names.push(key.slice(prefix.length));
+      }
+    }
+    return names;
   }
 
   async deleteDeployment(namespace: string, name: string): Promise<void> {

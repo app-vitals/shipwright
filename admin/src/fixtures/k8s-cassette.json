@@ -184,5 +184,43 @@
   "getPvc_404": {
     "status": 404,
     "body": { "message": "persistentvolumeclaims \"missing\" not found", "reason": "NotFound", "code": 404 }
+  },
+  "listDeployments_success": {
+    "status": 200,
+    "body": {
+      "kind": "DeploymentList",
+      "apiVersion": "apps/v1",
+      "items": [
+        { "metadata": { "name": "agent-abc123" } },
+        { "metadata": { "name": "agent-def456" } }
+      ]
+    }
+  },
+  "listDeployments_empty": {
+    "status": 200,
+    "body": {
+      "kind": "DeploymentList",
+      "apiVersion": "apps/v1",
+      "items": []
+    }
+  },
+  "deploymentExists_true": {
+    "status": 200,
+    "body": {
+      "kind": "Deployment",
+      "apiVersion": "apps/v1",
+      "metadata": { "name": "agent-abc123", "namespace": "shipwright" }
+    }
+  },
+  "deploymentExists_false": {
+    "status": 404,
+    "body": {
+      "apiVersion": "v1",
+      "kind": "Status",
+      "status": "Failure",
+      "message": "deployments.apps \"agent-abc123\" not found",
+      "reason": "NotFound",
+      "code": 404
+    }
   }
 }
