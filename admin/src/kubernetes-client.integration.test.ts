@@ -23,6 +23,7 @@ import {
 import {
   HttpKubernetesClient,
   type KubernetesClient,
+  type KubernetesDeployment,
   RecordedKubernetesClient,
 } from "./kubernetes-client.ts";
 
@@ -396,6 +397,54 @@ describe("HttpKubernetesClient — token rotation", () => {
   });
 });
 
+// ─── Deployments: listDeployments + deploymentExists ──────────────────────────
+
+describe("HttpKubernetesClient — listDeployments", () => {
+  it("listDeployments() returns array of names from items", async () => {
+    const { client, lastRequest } = makeClient("listDeployments_success");
+    const names = await client.listDeployments("shipwright");
+
+    const req = lastRequest();
+    expect(req.method).toBe("GET");
+    expect(req.url).toBe(
+      "https://kubernetes.default.svc/apis/apps/v1/namespaces/shipwright/deployments",
+    );
+    expect(names).toEqual(["agent-abc123", "agent-def456"]);
+  });
+
+  it("listDeployments() with labelSelector passes ?labelSelector=... in URL", async () => {
+    const { client, lastRequest } = makeClient("listDeployments_success");
+    const labelSelector =
+      "app.kubernetes.io/name=shipwright-agent,app.kubernetes.io/managed-by=shipwright-admin";
+    await client.listDeployments("shipwright", labelSelector);
+
+    const req = lastRequest();
+    expect(req.url).toContain(
+      `?labelSelector=${encodeURIComponent(labelSelector)}`,
+    );
+  });
+
+  it("listDeployments() returns [] for an empty list", async () => {
+    const { client } = makeClient("listDeployments_empty");
+    const names = await client.listDeployments("shipwright");
+    expect(names).toEqual([]);
+  });
+});
+
+describe("HttpKubernetesClient — deploymentExists", () => {
+  it("deploymentExists() returns true when the deployment is found", async () => {
+    const { client } = makeClient("deploymentExists_true");
+    const exists = await client.deploymentExists("shipwright", "agent-abc123");
+    expect(exists).toBe(true);
+  });
+
+  it("deploymentExists() returns false when the deployment is not found (404)", async () => {
+    const { client } = makeClient("deploymentExists_false");
+    const exists = await client.deploymentExists("shipwright", "agent-abc123");
+    expect(exists).toBe(false);
+  });
+});
+
 // ─── RecordedKubernetesClient (in-memory double) ────────────────────────────
 
 describe("RecordedKubernetesClient", () => {
@@ -461,5 +510,48 @@ describe("RecordedKubernetesClient", () => {
     await expect(rec.getSecret("ns", "s")).rejects.toBeInstanceOf(
       NotFoundError,
     );
+  });
+
+  it("deploymentExists() returns true for a seeded deployment", async () => {
+    const rec = new RecordedKubernetesClient({
+      deployments: {
+        "shipwright/agent-abc": cassette.getDeployment_success?.body as never,
+      },
+      secrets: {},
+    });
+    expect(await rec.deploymentExists("shipwright", "agent-abc")).toBe(true);
+  });
+
+  it("deploymentExists() returns false for an absent deployment", async () => {
+    const rec = new RecordedKubernetesClient({ deployments: {}, secrets: {} });
+    expect(await rec.deploymentExists("shipwright", "agent-missing")).toBe(
+      false,
+    );
+  });
+
+  it("listDeployments() returns names from seeded deployments in the namespace", async () => {
+    const baseDeployment = cassette.getDeployment_success
+      ?.body as KubernetesDeployment;
+    const rec = new RecordedKubernetesClient({
+      deployments: {
+        "shipwright/agent-abc": baseDeployment,
+        "shipwright/agent-def": {
+          ...baseDeployment,
+          metadata: { ...baseDeployment.metadata, name: "agent-def", namespace: "shipwright" },
+        },
+        "other-ns/agent-xyz": {
+          ...baseDeployment,
+          metadata: { ...baseDeployment.metadata, name: "agent-xyz", namespace: "other-ns" },
+        },
+      },
+      secrets: {},
+    });
+    const names = await rec.listDeployments("shipwright");
+    expect(names.sort()).toEqual(["agent-abc", "agent-def"]);
+  });
+
+  it("listDeployments() returns [] when namespace has no deployments", async () => {
+    const rec = new RecordedKubernetesClient({ deployments: {}, secrets: {} });
+    expect(await rec.listDeployments("shipwright")).toEqual([]);
   });
 });

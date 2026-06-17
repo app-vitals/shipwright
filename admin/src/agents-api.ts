@@ -180,6 +180,29 @@ export function createAdminApp(deps: AdminDeps): Hono<AdminAuthEnv> {
     },
   );
 
+  // POST /agents/reconcile — reconcile K8s Deployment state against the DB (admin only)
+  //
+  // IMPORTANT: must be registered BEFORE /agents/:id routes to avoid path conflicts.
+  // Not covered by /agents/* middleware — auth applied explicitly.
+  app.post(
+    "/agents/reconcile",
+    createAdminAuthMiddleware({
+      sessionSecret,
+      agentTokenService,
+      adminApiKeys,
+    }),
+    async (c) => {
+      if (c.get("isAdmin") !== true) {
+        throw new ForbiddenError(
+          "Only admin bearers and session users can reconcile agents",
+        );
+      }
+      const agents = await prisma.agent.findMany({ select: { id: true } });
+      const result = await provisioner.reconcile(agents.map((a) => a.id));
+      return c.json(result);
+    },
+  );
+
   // DELETE /agents/:id — delete an agent and tear down its workload (admin only)
   //
   // Note: this static-depth route (/agents/:id) is NOT matched by the
