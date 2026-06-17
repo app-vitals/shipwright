@@ -20,6 +20,7 @@ import type {
   TaskStore,
   TaskStoreConfig,
 } from "../store.ts";
+import { resolveRepos } from "../check-helpers.ts";
 import { warnMissingFields } from "./validation.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -633,6 +634,8 @@ export class GitHubTaskStore implements TaskStore {
   async resolveRepos(): Promise<string[]> {
     const g = this.config.github;
     if (!g?.owner || !g?.repo) return [];
-    return [`${g.owner}/${g.repo}`];
+    const primary = `${g.owner}/${g.repo}`;
+    const scanned = resolveRepos(process.cwd());
+    return [primary, ...scanned.filter((r) => r !== primary)];
   }
 }
