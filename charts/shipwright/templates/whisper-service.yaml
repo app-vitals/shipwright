@@ -1,0 +1,23 @@
+{{- if and .Values.agent.voice.enabled (eq .Values.agent.voice.provider "whisper") }}
+{{- /*
+  Service fronting the self-hosted Whisper ASR pod (CV-1.1). Rendered under the
+  same condition as whisper-deployment.yaml. Its ClusterIP DNS name + port form
+  WHISPER_SERVICE_URL (see shipwright.whisper.serviceUrl), which the admin injects
+  and the provisioner flows into provisioned agent pods.
+*/}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "shipwright.whisper.fullname" . }}
+  labels:
+    {{- include "shipwright.whisper.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.agent.voice.whisper.service.port }}
+      targetPort: 9000
+      protocol: TCP
+  selector:
+    {{- include "shipwright.whisper.selectorLabels" . | nindent 4 }}
+{{- end }}

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-06-17
+
+### Chart — What's New
+
+#### Helm Chart (`charts/shipwright`)
+
+- **Agent voice (STT/TTS)** (`agent.voice.*`): make agent speech-to-text / text-to-speech a deploy-time option. Set `agent.voice.enabled=true` to wire voice. `agent.voice.provider=whisper` (default) renders a self-hosted Whisper ASR `Deployment` + `Service` (`onerahmet/openai-whisper-asr-webservice`, `POST /asr`) and injects `WHISPER_SERVICE_URL` + the ElevenLabs TTS vars into the admin Deployment, which the admin provisioner (`buildProvisioner` → `buildAgentManifest`) flows into every provisioned agent pod. `agent.voice.provider=groq` flows `GROQ_API_KEY` for STT via a chart-managed voice `Secret` with no Whisper pod. ElevenLabs (`agent.voice.elevenlabs.apiKey` / `.voiceId`) and Groq (`agent.voice.groq.apiKey`) keys live in the voice Secret and are sourced via `secretKeyRef`. **Default: off** — no Whisper pod/Service/Secret renders and provisioned-agent env is unchanged (the 3 base vars).
+
+#### Agent (`agent/`)
+
+- **Whisper ASR contract alignment**: the agent's self-hosted Whisper client (`makeWhisperSvcClient`) now targets the `onerahmet/openai-whisper-asr-webservice` contract — `POST /asr?encode=true&task=transcribe&output=txt` with the audio in the `audio_file` multipart field and a plain-text response body — instead of a JSON `POST /transcribe`. This resolves the image-vs-client contract gap so the shipped Whisper pod and the agent agree.
+
 ## [1.2.0] - 2026-06-16
 
 ### Chart — What's New
