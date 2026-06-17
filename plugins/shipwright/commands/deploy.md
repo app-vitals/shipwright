@@ -114,6 +114,22 @@ Task:   {task_id} — {task_title}  (or "standalone deploy" if no task found)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
+### 2b. Bundle Completeness Gate
+
+Before merging, verify that all other tasks sharing this PR's branch are at least at `pr_open` status. This prevents deploying a partial bundle when a companion task is still in development.
+
+Query the task store for tasks on this branch:
+```bash
+bun "$PLUGIN_SCRIPTS/task_store.ts" query --branch {headRefName}
+```
+
+If any returned task has status `pending`, `in_progress`, or `blocked`, skip this PR:
+```
+⏭ Bundle incomplete — skipping PR #{pr} (branch {headRefName} has tasks not yet at pr_open)
+```
+
+Proceed if the query returns no tasks, or all tasks are `pr_open` or beyond.
+
 ---
 
 ## Step 3: Pre-flight Checks (GitHub API — no local state)

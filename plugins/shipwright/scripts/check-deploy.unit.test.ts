@@ -17,6 +17,7 @@ import { run } from "./check-deploy.ts";
 interface GhPr {
   number: number;
   headRefOid: string;
+  headRefName: string;
   author: { login: string };
   reviewDecision: string | null;
 }
@@ -44,6 +45,7 @@ function makeGhPr(overrides: Partial<GhPr> = {}): GhPr {
   return {
     number: 50,
     headRefOid: "sha50",
+    headRefName: "feat/sw-50-example",
     author: { login: "bodhi-agent" },
     reviewDecision: "APPROVED",
     ...overrides,
@@ -59,6 +61,7 @@ interface MakeDepsOptions {
   currentUser?: string;
   isSelfReviewAllowed?: boolean;
   clock?: () => string;
+  isBundleComplete?: (headBranch: string) => Promise<boolean>;
 }
 
 function makeDeps({
@@ -70,6 +73,7 @@ function makeDeps({
   currentUser = "bodhi-agent",
   isSelfReviewAllowed = true,
   clock,
+  isBundleComplete,
 }: MakeDepsOptions = {}) {
   return {
     getCurrentUser: () => currentUser,
@@ -91,6 +95,7 @@ function makeDeps({
       _org: string,
       _repo: string,
     ): Promise<WorkflowRun[]> => activeDeployRuns,
+    ...(isBundleComplete !== undefined ? { isBundleComplete } : {}),
   };
 }
 
@@ -377,5 +382,55 @@ describe("check-deploy (new behaviors)", () => {
     });
     expect(cleaned).toBe(true);
     expect(result.exit).toBe(1);
+  });
+
+  // ── Bundle completeness gate ───────────────────────────────────────────────────
+
+  test("isBundleComplete returns false → PR is skipped", async () => {
+    const pr = makeGhPr({
+      headRefOid: "sha50",
+      author: { login: "bodhi-agent" },
+      reviewDecision: "APPROVED",
+    });
+    const result = await run(
+      makeDeps({
+        prs: { "acme/example-repo": [pr] },
+        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
+        isBundleComplete: async () => false,
+      }),
+    );
+    expect(result.exit).toBe(1);
+    expect(result.candidate).toBeNull();
+  });
+
+  test("isBundleComplete returns true → PR proceeds", async () => {
+    const pr = makeGhPr({
+      headRefOid: "sha50",
+      author: { login: "bodhi-agent" },
+      reviewDecision: "APPROVED",
+    });
+    const result = await run(
+      makeDeps({
+        prs: { "acme/example-repo": [pr] },
+        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
+        isBundleComplete: async () => true,
+      }),
+    );
+    expect(result.exit).toBe(0);
+  });
+
+  test("isBundleComplete absent → PR proceeds", async () => {
+    const pr = makeGhPr({
+      headRefOid: "sha50",
+      author: { login: "bodhi-agent" },
+      reviewDecision: "APPROVED",
+    });
+    const result = await run(
+      makeDeps({
+        prs: { "acme/example-repo": [pr] },
+        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
+      }),
+    );
+    expect(result.exit).toBe(0);
   });
 });
