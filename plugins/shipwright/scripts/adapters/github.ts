@@ -326,6 +326,9 @@ export class GitHubTaskStore implements TaskStore {
       // ready path above.
       tasks = tasks.filter((t) => t.assignee === filters.assignee);
     }
+    if (filters.branch !== undefined) {
+      tasks = tasks.filter((t) => t.branch === filters.branch);
+    }
 
     return tasks.map(stripInternal);
   }

@@ -219,6 +219,42 @@ describe("JiraTaskStore.query", () => {
     expect(tasks).toHaveLength(1);
     expect(tasks[0].id).toBe("JTS-9.1");
   });
+
+  test("filters by branch when filters.branch is set", async () => {
+    const issues = [
+      makeJiraIssue("SHIP-1", "t1", "To Do", { id: "JTS-BR.1", title: "t1", status: "pending", branch: "feat/x" }),
+      makeJiraIssue("SHIP-2", "t2", "To Do", { id: "JTS-BR.2", title: "t2", status: "pending", branch: "feat/y" }),
+      makeJiraIssue("SHIP-3", "t3", "To Do", { id: "JTS-BR.3", title: "t3", status: "pending" }),
+    ];
+    const fakeFetch = makeFakeFetch({ "POST /rest/api/3/issue/search": { status: 200, body: { issues, total: 3 } } });
+    const store = new JiraTaskStore(CONFIG, fakeFetch, "user@example.com", "token");
+    const tasks = await store.query({ branch: "feat/x" });
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0].id).toBe("JTS-BR.1");
+  });
+
+  test("branch filter returns empty when no tasks match", async () => {
+    const issues = [
+      makeJiraIssue("SHIP-1", "t1", "To Do", { id: "JTS-BR.4", title: "t1", status: "pending", branch: "feat/other" }),
+    ];
+    const fakeFetch = makeFakeFetch({ "POST /rest/api/3/issue/search": { status: 200, body: { issues, total: 1 } } });
+    const store = new JiraTaskStore(CONFIG, fakeFetch, "user@example.com", "token");
+    const tasks = await store.query({ branch: "feat/x" });
+    expect(tasks).toHaveLength(0);
+  });
+
+  test("branch filter can be combined with status filter", async () => {
+    const issues = [
+      makeJiraIssue("SHIP-1", "t1", "To Do", { id: "JTS-BR.5", title: "t1", status: "pending", branch: "feat/x" }),
+      makeJiraIssue("SHIP-2", "t2", "In Progress", { id: "JTS-BR.6", title: "t2", status: "in_progress", branch: "feat/x" }),
+      makeJiraIssue("SHIP-3", "t3", "To Do", { id: "JTS-BR.7", title: "t3", status: "pending", branch: "feat/y" }),
+    ];
+    const fakeFetch = makeFakeFetch({ "POST /rest/api/3/issue/search": { status: 200, body: { issues, total: 3 } } });
+    const store = new JiraTaskStore(CONFIG, fakeFetch, "user@example.com", "token");
+    const tasks = await store.query({ branch: "feat/x", status: "pending" });
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0].id).toBe("JTS-BR.5");
+  });
 });
 
 describe("JiraTaskStore fetchAllIssues — readyJql config", () => {

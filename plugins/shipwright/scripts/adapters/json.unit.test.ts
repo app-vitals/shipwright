@@ -329,6 +329,39 @@ describe("JsonTaskStore", () => {
       const results = await adapter.query({});
       expect(results).toHaveLength(2);
     });
+
+    test("--branch filters by branch (returns only matching tasks)", async () => {
+      writeTodos([
+        { id: "T-1", title: "On branch", status: "pending", branch: "feat/x" },
+        { id: "T-2", title: "Other branch", status: "pending", branch: "feat/y" },
+        { id: "T-3", title: "No branch", status: "pending" },
+      ]);
+      const adapter = new JsonTaskStore(tmpDir);
+      const results = await adapter.query({ branch: "feat/x" });
+      expect(results).toHaveLength(1);
+      expect(results[0].id).toBe("T-1");
+    });
+
+    test("--branch returns empty when no tasks match", async () => {
+      writeTodos([
+        { id: "T-1", title: "On branch", status: "pending", branch: "feat/other" },
+      ]);
+      const adapter = new JsonTaskStore(tmpDir);
+      const results = await adapter.query({ branch: "feat/x" });
+      expect(results).toHaveLength(0);
+    });
+
+    test("--branch can be combined with --status", async () => {
+      writeTodos([
+        { id: "T-1", title: "Match both", status: "pending", branch: "feat/x" },
+        { id: "T-2", title: "Right branch wrong status", status: "in_progress", branch: "feat/x" },
+        { id: "T-3", title: "Wrong branch right status", status: "pending", branch: "feat/y" },
+      ]);
+      const adapter = new JsonTaskStore(tmpDir);
+      const results = await adapter.query({ branch: "feat/x", status: "pending" });
+      expect(results).toHaveLength(1);
+      expect(results[0].id).toBe("T-1");
+    });
   });
 
   // ─── append ──────────────────────────────────────────────────────────────────
