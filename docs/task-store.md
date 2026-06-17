@@ -260,6 +260,26 @@ The `setup` command calls the Jira project API (`GET /rest/api/3/project/{key}`)
 
 ---
 
+## CLI Reference
+
+The `task_store.ts` script provides several subcommands for manual interaction with the task store.
+
+### Subcommands
+
+| Command | Description |
+|---------|-------------|
+| `setup` | Create `state/todos.json` if missing (JSON backend) or initialize GitHub/Jira labels and validation (GitHub/Jira backends) |
+| `doctor` | Validate configuration and print diagnostics (includes `backend:` line showing the active backend) |
+| `backend` | Print the active backend name: `json`, `github`, or `jira` (useful for scripts that need to detect the backend) |
+| `query` | Filter and return tasks as JSON array (supports `--status pending` and other filters) |
+| `append` | Append tasks from a JSON file (insert-only on GitHub adapter; upsert on JSON adapter) |
+| `update` | Write specific fields to a task by ID |
+| `repos` | Print all org/repo strings (one per line) |
+| `resolve-repo` | Print first org/repo (deprecated alias for `repos`) |
+| `cleanup` | Close open GitHub issues with terminal status labels (GitHub backend only) |
+
+---
+
 ## Troubleshooting
 
 ### Jira: 401 Unauthorized
