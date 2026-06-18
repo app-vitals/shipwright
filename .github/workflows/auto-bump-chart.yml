@@ -220,7 +220,7 @@ jobs:
         if: steps.idempotency.outputs.skip != 'true' && steps.commit-push.outputs.push_skipped != 'true'
         id: pr
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.VITALS_OS_DISPATCH_TOKEN }}
         run: |
           NEW_VERSION="${{ steps.new.outputs.version }}"
           CURRENT_VERSION="${{ steps.current.outputs.version }}"
@@ -255,12 +255,10 @@ jobs:
 
       # Enable auto-merge so the PR merges as soon as required checks pass.
       # This requires "Allow auto-merge" to be enabled in the repo Settings.
-      # If GITHUB_TOKEN lacks sufficient permission for auto-merge, configure
-      # a PAT stored as CHART_BUMP_TOKEN and substitute it here.
       - name: Enable auto-merge
         if: steps.idempotency.outputs.skip != 'true' && steps.commit-push.outputs.push_skipped != 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.VITALS_OS_DISPATCH_TOKEN }}
         run: |
           PR_URL="${{ steps.pr.outputs.pr_url }}"
           gh pr merge "$PR_URL" --auto --squash
