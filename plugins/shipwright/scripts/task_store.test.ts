@@ -738,6 +738,28 @@ describe("update", () => {
     expect(typeof result.hitl).toBe("boolean");
   });
 
+  test("coerces dependencies to JSON array (empty)", () => {
+    const { code, stdout } = run(
+      ["update", "--id", "TS-1.1", "--set", "dependencies=[]"],
+      { cwd: tmpDir },
+    );
+    expect(code).toBe(0);
+    const result = JSON.parse(stdout) as { dependencies: unknown };
+    expect(Array.isArray(result.dependencies)).toBe(true);
+    expect(result.dependencies).toEqual([]);
+  });
+
+  test("coerces dependencies to JSON array (populated)", () => {
+    const { code, stdout } = run(
+      ["update", "--id", "TS-1.1", "--set", 'dependencies=["TS-0.1","TS-0.2"]'],
+      { cwd: tmpDir },
+    );
+    expect(code).toBe(0);
+    const result = JSON.parse(stdout) as { dependencies: unknown };
+    expect(Array.isArray(result.dependencies)).toBe(true);
+    expect(result.dependencies).toEqual(["TS-0.1", "TS-0.2"]);
+  });
+
   test("status and other fields together — final state has both correct", () => {
     const { code, stdout } = run(
       [

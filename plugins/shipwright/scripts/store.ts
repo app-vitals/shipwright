@@ -12,12 +12,13 @@
  *   2. dep.status === "done"      → satisfied (legacy status, treated same as merged)
  *   3. dep.status === "deploying" → satisfied (post-merged, deploy in flight — counts same as deployed)
  *   4. dep.status === "deployed"  → satisfied (post-merged, always counts)
- *   5. dep.branch === candidate.branch AND dep.status ∈ { "pr_open", "approved", "merged" }
+ *   5. dep.status === "cancelled" → satisfied (work is moot; downstream should unblock)
+ *   6. dep.branch === candidate.branch AND dep.status ∈ { "pr_open", "approved", "merged" }
  *      → satisfied (bundled tasks on the same PR branch can proceed together)
- *   6. dep.branch !== candidate.branch AND dep.status === "pr_open" AND dep.pr is set
+ *   7. dep.branch !== candidate.branch AND dep.status === "pr_open" AND dep.pr is set
  *      → call isPrMerged(dep.pr) to check if the PR is actually merged on GitHub
  *
- * Any other state (pending, in_progress, blocked, cancelled, unknown dep) → not satisfied.
+ * Any other state (pending, in_progress, blocked, unknown dep) → not satisfied.
  *
  * A task is "ready" when:
  *   - task.status === "pending"
@@ -245,7 +246,8 @@ export async function resolveReadyTasks(
         dep.status === "merged" ||
         dep.status === "done" ||
         dep.status === "deploying" ||
-        dep.status === "deployed"
+        dep.status === "deployed" ||
+        dep.status === "cancelled"
       ) {
         continue;
       }

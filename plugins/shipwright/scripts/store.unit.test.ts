@@ -22,11 +22,12 @@ import { resolveReadyTasks } from "./store.ts";
 // A dependency is satisfied when:
 //   - dep.status is "merged" → satisfied
 //   - dep.status is "done" (legacy) → satisfied
+//   - dep.status is "cancelled" → satisfied (work is moot; downstream unblocks)
 //   - dep shares the same branch as the candidate AND dep.status is
 //     "pr_open" | "approved" | "merged" → satisfied
 //
 function depSatisfied(dep: Task, candidateBranch: string | undefined): boolean {
-  if (dep.status === "merged" || dep.status === "done") return true;
+  if (dep.status === "merged" || dep.status === "done" || dep.status === "cancelled") return true;
   if (
     dep.branch &&
     dep.branch === candidateBranch &&
@@ -383,6 +384,11 @@ describe("dep_satisfied semantics (pure — uses only Task type)", () => {
 
   test("dep with status=done is satisfied (legacy)", () => {
     const dep: Task = { id: "D-1", title: "Dep", status: "done" };
+    expect(depSatisfied(dep, "feat/any")).toBe(true);
+  });
+
+  test("dep with status=cancelled is satisfied (downstream unblocks)", () => {
+    const dep: Task = { id: "D-1", title: "Dep", status: "cancelled" };
     expect(depSatisfied(dep, "feat/any")).toBe(true);
   });
 
