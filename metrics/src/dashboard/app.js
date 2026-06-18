@@ -314,43 +314,14 @@
       $("token-cost").textContent = "$0.00";
       return;
     }
-    const { totals, bySessionType, byAgent } = res.data;
+    const { totals, byAgent, byAgentCron, byAgentModel, byAgentSessionType } =
+      res.data;
     $("token-input").textContent = fmtTokens(totals.input);
     $("token-output").textContent = fmtTokens(totals.output);
     $("token-cache").textContent = fmtTokens(
       (totals.cacheRead || 0) + (totals.cacheCreation || 0),
     );
     $("token-cost").textContent = fmtCost(totals.cost);
-
-    const sessionTbody = $("token-session-tbody");
-    const sessionEmpty = $("token-session-empty");
-    if (sessionTbody) {
-      sessionTbody.innerHTML = "";
-      if (!bySessionType || bySessionType.length === 0) {
-        if (sessionEmpty) sessionEmpty.style.display = "";
-      } else {
-        if (sessionEmpty) sessionEmpty.style.display = "none";
-        for (const row of bySessionType) {
-          const tr = document.createElement("tr");
-          const tdType = document.createElement("td");
-          const tdInput = document.createElement("td");
-          const tdOutput = document.createElement("td");
-          const tdCost = document.createElement("td");
-          const tdTotal = document.createElement("td");
-          tdType.textContent = row.sessionType;
-          tdInput.textContent = fmtTokens(row.input);
-          tdOutput.textContent = fmtTokens(row.output);
-          tdCost.textContent = fmtCost(row.cost);
-          tdTotal.textContent = fmtTokens(row.total);
-          tr.appendChild(tdType);
-          tr.appendChild(tdInput);
-          tr.appendChild(tdOutput);
-          tr.appendChild(tdCost);
-          tr.appendChild(tdTotal);
-          sessionTbody.appendChild(tr);
-        }
-      }
-    }
 
     const agentTbody = $("token-agent-tbody");
     const agentEmpty = $("token-agent-empty");
@@ -360,24 +331,87 @@
         if (agentEmpty) agentEmpty.style.display = "";
       } else {
         if (agentEmpty) agentEmpty.style.display = "none";
-        for (const row of byAgent) {
-          const tr = document.createElement("tr");
-          const tdAgent = document.createElement("td");
-          const tdInput = document.createElement("td");
-          const tdOutput = document.createElement("td");
-          const tdCost = document.createElement("td");
-          const tdTotal = document.createElement("td");
-          tdAgent.textContent = row.agentName ?? row.agentId;
-          tdInput.textContent = fmtTokens(row.input);
-          tdOutput.textContent = fmtTokens(row.output);
-          tdCost.textContent = fmtCost(row.cost);
-          tdTotal.textContent = fmtTokens(row.total);
-          tr.appendChild(tdAgent);
-          tr.appendChild(tdInput);
-          tr.appendChild(tdOutput);
-          tr.appendChild(tdCost);
-          tr.appendChild(tdTotal);
-          agentTbody.appendChild(tr);
+        for (const agent of byAgent) {
+          const agentCronRows = (byAgentCron || []).filter(
+            (r) => r.agentId === agent.agentId,
+          );
+          const agentSessionRows = (byAgentSessionType || []).filter(
+            (r) => r.agentId === agent.agentId,
+          );
+          const agentModelRows = (byAgentModel || []).filter(
+            (r) => r.agentId === agent.agentId,
+          );
+
+          const cronTotal = agentCronRows.reduce(
+            (sum, r) => sum + (r.total || 0),
+            0,
+          );
+          let dmTotal;
+          if (agentSessionRows.length > 0) {
+            dmTotal = agentSessionRows
+              .filter((r) => r.sessionType !== "cron")
+              .reduce((sum, r) => sum + (r.total || 0), 0);
+          } else {
+            dmTotal = (agent.total || 0) - cronTotal;
+          }
+
+          const agentLabel =
+            agent.agentName ?? agent.agentId.slice(0, 8);
+
+          // Agent header row
+          const headerTr = document.createElement("tr");
+          headerTr.className = "agent-header-row";
+          const cells = [
+            agentLabel,
+            fmtTokens(cronTotal),
+            fmtTokens(dmTotal),
+            fmtTokens(agent.total),
+            fmtCost(agent.cost),
+          ];
+          for (const text of cells) {
+            const td = document.createElement("td");
+            td.textContent = text;
+            headerTr.appendChild(td);
+          }
+          agentTbody.appendChild(headerTr);
+
+          // Cron sub-rows
+          for (const cronRow of agentCronRows) {
+            const tr = document.createElement("tr");
+            tr.className = "agent-cron-row";
+            const cronCells = [
+              `› ${cronRow.cronName}`,
+              fmtTokens(cronRow.total),
+              "--",
+              fmtTokens(cronRow.total),
+              fmtCost(cronRow.cost),
+            ];
+            for (const text of cronCells) {
+              const td = document.createElement("td");
+              td.textContent = text;
+              tr.appendChild(td);
+            }
+            agentTbody.appendChild(tr);
+          }
+
+          // Model sub-rows
+          for (const modelRow of agentModelRows) {
+            const tr = document.createElement("tr");
+            tr.className = "agent-model-row";
+            const modelCells = [
+              `◦ ${modelRow.model}`,
+              "--",
+              "--",
+              fmtTokens(modelRow.total),
+              fmtCost(modelRow.cost),
+            ];
+            for (const text of modelCells) {
+              const td = document.createElement("td");
+              td.textContent = text;
+              tr.appendChild(td);
+            }
+            agentTbody.appendChild(tr);
+          }
         }
       }
     }
