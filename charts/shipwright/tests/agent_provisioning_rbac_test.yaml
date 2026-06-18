@@ -182,7 +182,6 @@ tests:
             name: SHIPWRIGHT_ADMIN_DEPLOYMENT_UID
             value: "abc-123-uid"
 
-  # ── (c) disabled (default) → nothing rendered + admin Noop ──────────────────
   - it: injects explicit SHIPWRIGHT_K8S_NAMESPACE value when agent.provisioning.namespace is set
     template: templates/admin-deployment.yaml
     set:
@@ -204,6 +203,7 @@ tests:
               fieldRef:
                 fieldPath: metadata.namespace
 
+  # ── (c) disabled (default) → nothing rendered + admin Noop ──────────────────
   - it: renders no agent-provisioning RBAC by default (provisioning disabled)
     template: templates/agent-provisioning-rbac.yaml
     asserts:
