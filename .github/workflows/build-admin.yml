@@ -3,6 +3,9 @@ name: Build and Push Admin Image
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "charts/**"
+      - "CHANGELOG.md"
 
 permissions:
   contents: write
