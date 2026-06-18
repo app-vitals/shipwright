@@ -59,6 +59,8 @@ jobs:
       - name: Checkout main
         uses: actions/checkout@v4
         with:
+          token: ${{ secrets.VITALS_OS_DISPATCH_TOKEN }}
+        with:
           ref: main
           fetch-depth: 0
 
