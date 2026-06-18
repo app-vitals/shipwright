@@ -121,6 +121,7 @@ const BASE_SLACK_CLIENT: AdminUISlackClient = {
     clientSecret: "test-client-secret",
     signingSecret: "test-signing-secret",
   }),
+  updateAppManifest: async () => {},
   exchangeOAuthCode: async () => ({ botToken: "xoxb-mock-bot-token" }),
 };
 
@@ -1649,6 +1650,138 @@ describe("admin UI — member management routes", () => {
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
         Cookie: `admin_session=${memberCookie}`,
+      },
+    });
+    expect(res.status).toBe(403);
+  });
+});
+
+describe("admin UI — manifest sync route", () => {
+  let adminCookie: string;
+
+  beforeAll(async () => {
+    adminCookie = await makeSessionCookie();
+  });
+
+  it("happy path: valid token + SLACK_APP_ID set → redirects to ?success=manifest_synced", async () => {
+    let updateCalled = false;
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentEnvService: {
+          getByAgentId: async () => ({ SLACK_APP_ID: "A123456" }),
+          upsert: async () => {},
+          deleteKey: async () => {},
+          getConfigBundle: async () => null,
+        },
+        slackClient: {
+          updateAppManifest: async () => {
+            updateCalled = true;
+          },
+        },
+      }),
+    );
+    const body = new URLSearchParams({ xoxpToken: "xoxp-valid-token" });
+    const res = await app.request(`/admin/agents/${AGENT_ID}/sync-manifest`, {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${adminCookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toContain("success=manifest_synced");
+    expect(updateCalled).toBe(true);
+  });
+
+  it("invalid token (missing xoxp- prefix) → redirects with error", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const body = new URLSearchParams({ xoxpToken: "xoxb-wrong-token-type" });
+    const res = await app.request(`/admin/agents/${AGENT_ID}/sync-manifest`, {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${adminCookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toContain("error=");
+    expect(decodeURIComponent(res.headers.get("location") ?? "")).toContain(
+      "Slack token must start with xoxp-",
+    );
+  });
+
+  it("missing SLACK_APP_ID env var → redirects with error", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentEnvService: {
+          getByAgentId: async () => ({}),
+          upsert: async () => {},
+          deleteKey: async () => {},
+          getConfigBundle: async () => null,
+        },
+      }),
+    );
+    const body = new URLSearchParams({ xoxpToken: "xoxp-valid-token" });
+    const res = await app.request(`/admin/agents/${AGENT_ID}/sync-manifest`, {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${adminCookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    expect(decodeURIComponent(res.headers.get("location") ?? "")).toContain(
+      "SLACK_APP_ID is not set",
+    );
+  });
+
+  it("Slack client throws → redirects with the error message", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentEnvService: {
+          getByAgentId: async () => ({ SLACK_APP_ID: "A123456" }),
+          upsert: async () => {},
+          deleteKey: async () => {},
+          getConfigBundle: async () => null,
+        },
+        slackClient: {
+          updateAppManifest: async () => {
+            throw new Error("slack_api_error");
+          },
+        },
+      }),
+    );
+    const body = new URLSearchParams({ xoxpToken: "xoxp-valid-token" });
+    const res = await app.request(`/admin/agents/${AGENT_ID}/sync-manifest`, {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${adminCookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    expect(decodeURIComponent(res.headers.get("location") ?? "")).toContain("slack_api_error");
+  });
+
+  it("access denied: non-admin non-member → 403", async () => {
+    const outsiderCookie = await makeSessionCookie(
+      SESSION_SECRET,
+      "google-sub-outsider",
+      "outsider@example.com",
+      false,
+    );
+    const app = createAdminUIApp(makeMockDeps());
+    const body = new URLSearchParams({ xoxpToken: "xoxp-valid-token" });
+    const res = await app.request(`/admin/agents/${AGENT_ID}/sync-manifest`, {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${outsiderCookie}`,
       },
     });
     expect(res.status).toBe(403);

@@ -62,6 +62,11 @@ export interface AdminUISlackClient {
     clientSecret: string;
     signingSecret: string;
   }>;
+  updateAppManifest(
+    xoxpToken: string,
+    appId: string,
+    manifest: AppManifest,
+  ): Promise<void>;
   exchangeOAuthCode(
     code: string,
     clientId: string,
@@ -508,6 +513,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     const rawError = c.req.query("error") ?? undefined;
     const error = rawError ? (ERROR_MESSAGES[rawError] ?? rawError) : undefined;
     const newToken = c.req.query("newToken") ?? undefined;
+    const successMsg =
+      c.req.query("success") === "manifest_synced"
+        ? "Manifest synced successfully."
+        : undefined;
 
     const [envVars, crons, tools, tokens, plugins, members] = await Promise.all([
       agentEnvService.getByAgentId(agentId).then((e) => e ?? {}),
@@ -531,7 +540,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         members,
         c.var.userEmail,
         c.var.isAdmin,
-        { error, newToken },
+        { error, newToken, successMsg },
       ),
     );
   });
@@ -877,6 +886,54 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       return c.redirect(`/admin/agents/${agentId}`, 302);
     },
   );
+
+  // ─── Manifest sync ────────────────────────────────────────────────────────
+
+  app.post("/admin/agents/:id/sync-manifest", requireAuth, async (c) => {
+    const agentId = c.req.param("id");
+    if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
+      return new Response("Forbidden", { status: 403 });
+    }
+    const agent = await prisma.agent.findUnique({ where: { id: agentId } });
+    if (!agent) return new Response("Agent not found", { status: 404 });
+
+    let xoxpToken: string | undefined;
+    try {
+      const formData = await c.req.formData();
+      xoxpToken = formData.get("xoxpToken")?.toString();
+    } catch {
+      return c.redirect(`/admin/agents/${agentId}?error=missing_fields`, 302);
+    }
+
+    if (!xoxpToken || !xoxpToken.startsWith("xoxp-")) {
+      return c.redirect(
+        `/admin/agents/${agentId}?error=${encodeURIComponent("Slack token must start with xoxp-")}`,
+        302,
+      );
+    }
+
+    const envVars = (await agentEnvService.getByAgentId(agentId)) ?? {};
+    const appId = envVars.SLACK_APP_ID;
+    if (!appId) {
+      return c.redirect(
+        `/admin/agents/${agentId}?error=${encodeURIComponent("SLACK_APP_ID is not set — provision the agent first.")}`,
+        302,
+      );
+    }
+
+    try {
+      const manifest = defaultAgentManifest(agent.name, `${appBaseUrl}/admin/provision/complete`);
+      await slackClient.updateAppManifest(xoxpToken, appId, manifest);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error syncing manifest.";
+      return c.redirect(
+        `/admin/agents/${agentId}?error=${encodeURIComponent(msg)}`,
+        302,
+      );
+    }
+
+    return c.redirect(`/admin/agents/${agentId}?success=manifest_synced`, 302);
+  });
 
   // ─── Provisioning flow ────────────────────────────────────────────────────
 

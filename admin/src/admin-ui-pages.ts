@@ -175,7 +175,7 @@ export function renderAgentDetailPage(
   members: MemberItem[],
   userName: string,
   isAdmin: boolean,
-  opts?: { error?: string; newToken?: string },
+  opts?: { error?: string; newToken?: string; successMsg?: string },
 ): string {
   const envRows =
     Object.keys(envVars).length === 0
@@ -351,6 +351,10 @@ export function renderAgentDetailPage(
     ? `<div class="alert alert-error">${escapeHtml(opts.error)}</div>`
     : "";
 
+  const successHtml = opts?.successMsg
+    ? `<div class="alert alert-success">${escapeHtml(opts.successMsg)}</div>`
+    : "";
+
   const newTokenHtml = opts?.newToken
     ? `<div class="alert alert-success">
         <strong>Token created.</strong> Copy it now — it will not be shown again.<br />
@@ -375,8 +379,28 @@ export function renderAgentDetailPage(
         <h1 class="page-title" style="margin-top:4px">${escapeHtml(agent.name)}</h1>
         ${agent.slackId ? `<span style="font-size:13px;color:#6b7280">Slack ID: <span class="mono">${escapeHtml(agent.slackId)}</span></span>` : ""}
       </div>
+      <div>
+        <details>
+          <summary class="btn btn-secondary" style="cursor:pointer;font-size:12px;list-style:none">Sync Manifest</summary>
+          <div style="position:absolute;right:24px;margin-top:6px;background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);z-index:10;min-width:320px">
+            <p style="font-size:12px;color:#6b7280;margin:0 0 10px">Syncs the current manifest to the provisioned Slack app. Requires a Slack user token (<span class="mono">xoxp-</span>).</p>
+            <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/sync-manifest" style="display:flex;flex-direction:column;gap:8px">
+              <input
+                name="xoxpToken"
+                type="password"
+                class="form-input mono"
+                placeholder="xoxp-..."
+                required
+                style="font-size:12px"
+              />
+              <button type="submit" class="btn btn-primary" style="font-size:12px;align-self:flex-start">Confirm Sync</button>
+            </form>
+          </div>
+        </details>
+      </div>
     </div>
     ${errorHtml}
+    ${successHtml}
     ${newTokenHtml}
 
     <!-- Env Vars -->

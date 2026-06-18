@@ -76,6 +76,16 @@ export interface SlackProvisioningClient {
   }>;
 
   /**
+   * Call apps.manifest.update with the given xoxp- user token, app ID, and manifest.
+   * Updates the manifest of an already-provisioned Slack app in-place.
+   */
+  updateAppManifest(
+    xoxpToken: string,
+    appId: string,
+    manifest: AppManifest,
+  ): Promise<void>;
+
+  /**
    * Exchange an OAuth authorization code for a bot token via oauth.v2.access.
    */
   exchangeOAuthCode(
@@ -193,6 +203,34 @@ export class HttpSlackProvisioningClient implements SlackProvisioningClient {
     }
 
     return { botToken: data.access_token };
+  }
+
+  async updateAppManifest(
+    xoxpToken: string,
+    appId: string,
+    manifest: AppManifest,
+  ): Promise<void> {
+    const url = `${this.apiBase}/apps.manifest.update`;
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${xoxpToken}`,
+        "Content-Type": "application/json; charset=utf-8",
+      },
+      body: JSON.stringify({ app_id: appId, manifest: JSON.stringify(manifest) }),
+    });
+
+    if (!resp.ok) {
+      throw new Error(
+        `Slack apps.manifest.update HTTP error: ${resp.status} ${resp.statusText}`,
+      );
+    }
+
+    const data = (await resp.json()) as { ok: boolean; error?: string };
+
+    if (!data.ok) {
+      throw new Error(`Slack apps.manifest.update failed: ${data.error}`);
+    }
   }
 
   async createAppManifest(
