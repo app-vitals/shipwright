@@ -78,10 +78,10 @@ describe("renderDashboardPage — Token Usage section", () => {
     expect(html).toContain('id="token-cache"');
   });
 
-  test("includes session type breakdown table", () => {
+  test("does not include session type breakdown table", () => {
     const html = renderDashboardPage(BASE_OPTS);
-    expect(html).toContain('id="token-session-table"');
-    expect(html).toContain('id="token-session-tbody"');
+    expect(html).not.toContain('id="token-session-table"');
+    expect(html).not.toContain('id="token-session-tbody"');
   });
 
   test("includes agent breakdown table", () => {
@@ -282,22 +282,8 @@ describe("renderDashboardPage — info icons: approved copy", () => {
   });
 });
 
-describe("renderDashboardPage — TK-1.1 token table input/output columns", () => {
-  test("session type table has Input and Output column headers", () => {
-    const html = renderDashboardPage(BASE_OPTS);
-    const tokenSection = html.slice(
-      html.indexOf('aria-label="Token usage"'),
-      html.indexOf('aria-label="Feature breakdown"'),
-    );
-    const sessionTable = tokenSection.slice(
-      tokenSection.indexOf('id="token-session-table"'),
-      tokenSection.indexOf('id="token-agent-table"'),
-    );
-    expect(sessionTable).toContain("<th>Input</th>");
-    expect(sessionTable).toContain("<th>Output</th>");
-  });
-
-  test("agent table has Input and Output column headers", () => {
+describe("renderDashboardPage — TK-1.1 token table columns", () => {
+  test("agent table does not have Input or Output column headers (replaced by Cron/DM)", () => {
     const html = renderDashboardPage(BASE_OPTS);
     const tokenSection = html.slice(
       html.indexOf('aria-label="Token usage"'),
@@ -306,22 +292,8 @@ describe("renderDashboardPage — TK-1.1 token table input/output columns", () =
     const agentTable = tokenSection.slice(
       tokenSection.indexOf('id="token-agent-table"'),
     );
-    expect(agentTable).toContain("<th>Input</th>");
-    expect(agentTable).toContain("<th>Output</th>");
-  });
-
-  test("session type table Total column is labeled 'Total' not 'Total Tokens'", () => {
-    const html = renderDashboardPage(BASE_OPTS);
-    const tokenSection = html.slice(
-      html.indexOf('aria-label="Token usage"'),
-      html.indexOf('aria-label="Feature breakdown"'),
-    );
-    const sessionTable = tokenSection.slice(
-      tokenSection.indexOf('id="token-session-table"'),
-      tokenSection.indexOf('id="token-agent-table"'),
-    );
-    expect(sessionTable).not.toContain("<th>Total Tokens</th>");
-    expect(sessionTable).toContain("<th>Total</th>");
+    expect(agentTable).not.toContain("<th>Input</th>");
+    expect(agentTable).not.toContain("<th>Output</th>");
   });
 
   test("agent table Total column is labeled 'Total' not 'Total Tokens'", () => {
@@ -421,16 +393,9 @@ describe("renderDashboardPage — CCT-2.2 cost KPI and table columns", () => {
     expect(html).toContain("Total Cost");
   });
 
-  test("session type table has Cost ($) column header", () => {
+  test("session type table is absent (removed in ATB-2.2)", () => {
     const html = renderDashboardPage(BASE_OPTS);
-    const tokenStart = html.indexOf('aria-label="Token usage"');
-    const tokenEnd = html.indexOf("</section>", tokenStart);
-    const tokenSection = html.slice(tokenStart, tokenEnd);
-    const sessionTable = tokenSection.slice(
-      tokenSection.indexOf('id="token-session-table"'),
-      tokenSection.indexOf('id="token-agent-table"'),
-    );
-    expect(sessionTable).toContain("<th>Cost ($)</th>");
+    expect(html).not.toContain('id="token-session-table"');
   });
 
   test("agent table has Cost ($) column header", () => {
@@ -464,6 +429,28 @@ describe("renderDashboardPage — basePath", () => {
   test("prefixes the app script src with basePath", () => {
     const html = renderDashboardPage({ userName: "Alice", basePath: "/sw" });
     expect(html).toContain('src="/sw/dashboard/app.js"');
+  });
+});
+
+describe("renderDashboardPage — ATB-2.2 hierarchical token breakdown", () => {
+  test("By Session Type panel is removed", () => {
+    const html = renderDashboardPage(BASE_OPTS);
+    expect(html).not.toContain("By Session Type");
+  });
+
+  test("agent table has Agent Cron DM/Mention Total Cost columns", () => {
+    const html = renderDashboardPage(BASE_OPTS);
+    const tokenStart = html.indexOf('aria-label="Token usage"');
+    const tokenEnd = html.indexOf("</section>", tokenStart);
+    const tokenSection = html.slice(tokenStart, tokenEnd);
+    const agentTable = tokenSection.slice(
+      tokenSection.indexOf('id="token-agent-table"'),
+    );
+    expect(agentTable).toContain("<th>Agent</th>");
+    expect(agentTable).toContain("<th>Cron</th>");
+    expect(agentTable).toContain("<th>DM/Mention</th>");
+    expect(agentTable).toContain("<th>Total</th>");
+    expect(agentTable).toContain("<th>Cost ($)</th>");
   });
 });
 

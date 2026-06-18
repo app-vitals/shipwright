@@ -236,27 +236,15 @@ export function renderDashboardPage(opts: DashboardPageOptions): string {
             <div class="kpi-meta">total cost (USD)</div>
           </div>
         </div>
-        <div class="token-breakdown-grid">
-          <div class="quality-panel">
-            <h3 class="panel-title">By Session Type</h3>
-            <table class="token-table" id="token-session-table">
-              <thead>
-                <tr><th>Session Type</th><th>Input</th><th>Output</th><th>Cost ($)</th><th>Total</th></tr>
-              </thead>
-              <tbody id="token-session-tbody"></tbody>
-            </table>
-            <p id="token-session-empty" class="empty-state" style="display:none">No data</p>
-          </div>
-          <div class="quality-panel">
-            <h3 class="panel-title">By Agent</h3>
-            <table class="token-table" id="token-agent-table">
-              <thead>
-                <tr><th>Agent</th><th>Input</th><th>Output</th><th>Cost ($)</th><th>Total</th></tr>
-              </thead>
-              <tbody id="token-agent-tbody"></tbody>
-            </table>
-            <p id="token-agent-empty" class="empty-state" style="display:none">No data</p>
-          </div>
+        <div class="quality-panel">
+          <h3 class="panel-title">By Agent</h3>
+          <table class="token-table" id="token-agent-table">
+            <thead>
+              <tr><th>Agent</th><th>Cron</th><th>DM/Mention</th><th>Total</th><th>Cost ($)</th></tr>
+            </thead>
+            <tbody id="token-agent-tbody"></tbody>
+          </table>
+          <p id="token-agent-empty" class="empty-state" style="display:none">No data</p>
         </div>
         <div class="token-trends-section">
           <div class="token-trends-toggles" role="group" aria-label="Token series">
