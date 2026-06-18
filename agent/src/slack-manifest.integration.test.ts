@@ -144,6 +144,20 @@ describe("buildManifest — agent/assistant", () => {
       "assistant_thread_context_changed",
     );
   });
+
+  test("bot_events include message.channels", () => {
+    const m = buildManifest("Test Agent");
+    expect(m.settings.event_subscriptions.bot_events).toContain(
+      "message.channels",
+    );
+  });
+
+  test("bot_events include message.groups", () => {
+    const m = buildManifest("Test Agent");
+    expect(m.settings.event_subscriptions.bot_events).toContain(
+      "message.groups",
+    );
+  });
 });
 
 // ─── Default scopes ───────────────────────────────────────────────────────────
@@ -167,6 +181,16 @@ describe("buildManifest — default scopes", () => {
   test("includes channels:read", () => {
     const m = buildManifest("Test Agent");
     expect(m.oauth_config.scopes.bot).toContain("channels:read");
+  });
+
+  test("includes channels:history", () => {
+    const m = buildManifest("Test Agent");
+    expect(m.oauth_config.scopes.bot).toContain("channels:history");
+  });
+
+  test("includes groups:history", () => {
+    const m = buildManifest("Test Agent");
+    expect(m.oauth_config.scopes.bot).toContain("groups:history");
   });
 
   test("includes im:history", () => {
@@ -223,7 +247,7 @@ describe("buildManifest — custom scopes", () => {
   });
 
   test("total scope count is defaults + unique extras", () => {
-    const extras = ["channels:history", "groups:read"];
+    const extras = ["groups:read", "links:read"];
     const m = buildManifest("Test Agent", extras);
     expect(m.oauth_config.scopes.bot.length).toBe(
       DEFAULT_BOT_SCOPES.length + extras.length,
