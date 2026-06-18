@@ -31,8 +31,9 @@ import type { Task, TaskStore } from "./store";
 
 const NUMERIC_FIELDS = new Set(["pr", "hours", "complexity"]);
 const BOOLEAN_FIELDS = new Set(["hitl"]);
+const ARRAY_FIELDS = new Set(["dependencies", "acceptanceCriteria"]);
 
-function coerceValue(key: string, rawValue: string): boolean | number | string {
+function coerceValue(key: string, rawValue: string): boolean | number | string | string[] {
   if (NUMERIC_FIELDS.has(key)) {
     const n = Number(rawValue);
     return Number.isNaN(n) ? rawValue : n;
@@ -40,6 +41,20 @@ function coerceValue(key: string, rawValue: string): boolean | number | string {
   if (BOOLEAN_FIELDS.has(key)) {
     if (rawValue === "true") return true;
     if (rawValue === "false") return false;
+  }
+  if (ARRAY_FIELDS.has(key)) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(rawValue);
+    } catch {
+      process.stderr.write(`error: --set value for '${key}' must be a valid JSON array (got: ${rawValue})\n`);
+      process.exit(1);
+    }
+    if (!Array.isArray(parsed)) {
+      process.stderr.write(`error: --set value for '${key}' must be a JSON array, not ${typeof parsed}\n`);
+      process.exit(1);
+    }
+    return parsed as string[];
   }
   return rawValue;
 }
@@ -222,7 +237,7 @@ async function cmdUpdate(
   }
 
   // Parse --set key=value pairs
-  const nonStatusFields: Record<string, string | number | boolean> = {};
+  const nonStatusFields: Record<string, string | number | boolean | string[]> = {};
   let statusValue: string | undefined;
 
   for (const kv of setArgs) {
