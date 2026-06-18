@@ -114,14 +114,14 @@ describe("check-dev-task", () => {
 
   // ─── Stale in_progress guard ──────────────────────────────────────────────
 
-  test("resets in_progress task older than 4 hours to pending", async () => {
+  test("resets in_progress task older than 45 minutes to pending", async () => {
     const resetCalls: string[] = [];
     const clock = FixedClock("2026-05-31T16:00:00Z");
-    // 4 hours and 1 second ago — just over the threshold
+    // 45 minutes and 1 second ago — just over the threshold
     const staleTask = makeTask({
       id: "SWC-2.1",
       status: "in_progress",
-      startedAt: "2026-05-31T11:59:59Z",
+      startedAt: "2026-05-31T15:14:59Z",
     });
 
     await run(
@@ -135,14 +135,14 @@ describe("check-dev-task", () => {
     expect(resetCalls).toContain("SWC-2.1");
   });
 
-  test("does not reset in_progress task newer than 4 hours", async () => {
+  test("does not reset in_progress task newer than 45 minutes", async () => {
     const resetCalls: string[] = [];
     const clock = FixedClock("2026-05-31T16:00:00Z");
-    // 1 hour ago — well within the threshold
+    // 40 minutes ago — well within the threshold
     const freshTask = makeTask({
       id: "SWC-2.2",
       status: "in_progress",
-      startedAt: "2026-05-31T15:00:00Z",
+      startedAt: "2026-05-31T15:20:00Z",
     });
 
     await run(
@@ -163,7 +163,7 @@ describe("check-dev-task", () => {
     const taskWithoutStartedAt = makeTask({
       id: "SWC-2.3",
       status: "in_progress",
-      // no startedAt — conservative: stamp now, reset 4 hours later
+      // no startedAt — conservative: stamp now, reset 45 minutes later
     });
 
     await run(
@@ -185,7 +185,7 @@ describe("check-dev-task", () => {
     const staleTask = makeTask({
       id: "SWC-2.4",
       status: "in_progress",
-      startedAt: "2026-05-31T11:59:59Z",
+      startedAt: "2026-05-31T15:14:59Z",
     });
     const readyTask = makeTask({ id: "SWC-2.5" });
 
@@ -208,7 +208,7 @@ describe("check-dev-task", () => {
     const staleTask = makeTask({
       id: "SWC-2.6",
       status: "in_progress",
-      startedAt: "2026-05-31T11:59:59Z",
+      startedAt: "2026-05-31T15:14:59Z",
     });
 
     const result = await run(

@@ -6,7 +6,7 @@
  *
  * Queries the task store for ready tasks and prints a prompt if any exist.
  * Before checking ready tasks, guards against stale in_progress tasks:
- *   - Tasks with startedAt older than 4 hours are reset to pending.
+ *   - Tasks with startedAt older than 45 minutes are reset to pending.
  *   - Tasks with no startedAt are stamped with the current time so they age
  *     out naturally on the next run (conservative — avoids disrupting tasks
  *     legitimately set to in_progress outside of dev-task).
@@ -24,7 +24,7 @@ import type { Task } from "./store.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const STALE_THRESHOLD_MS = 4 * 60 * 60 * 1000; // 4 hours
+const STALE_THRESHOLD_MS = 45 * 60 * 1000; // 45 minutes
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
