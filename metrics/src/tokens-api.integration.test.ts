@@ -6,7 +6,11 @@
 
 import { describe, expect, test } from "bun:test";
 import { type MetricsDeps, createMetricsApp } from "./api.ts";
-import type { AccountsClient, UserRecord } from "./lib/accounts-client.ts";
+import type {
+  AccountsClient,
+  CronJobRecord,
+  UserRecord,
+} from "./lib/accounts-client.ts";
 import { parseApiKeys } from "./lib/api-auth.ts";
 import { makeAccountsClientMock } from "./lib/test-helpers.ts";
 import type { HogQLResult } from "./types.ts";
@@ -438,8 +442,12 @@ describe("GET /metrics/tokens — cost is 0 when cost_usd is absent", () => {
 
     const legacyClient = makeMockClient(
       makeResult(legacyTotalsColumns, [[1000, 500, 200, 100, 1800]]),
-      makeResult(legacyBySessionTypeColumns, [["slack_dm", 400, 200, 80, 40, 720]]),
-      makeResult(legacyByAgentColumns, [["agent-abc123", 1000, 500, 200, 100, 1800]]),
+      makeResult(legacyBySessionTypeColumns, [
+        ["slack_dm", 400, 200, 80, 40, 720],
+      ]),
+      makeResult(legacyByAgentColumns, [
+        ["agent-abc123", 1000, 500, 200, 100, 1800],
+      ]),
       makeResult(legacyTrendsColumns, [["2026-04-01", 300, 150, 60, 30, 540]]),
     );
 
@@ -519,7 +527,7 @@ describe("GET /metrics/tokens — agent name resolution", () => {
     expect(body.data.byAgent[0].agentName).toBeUndefined();
   });
 
-  test("returns 200 with no agentName when accountsClient.listUsers() throws", async () => {
+  test("returns 200 with no agentName when accountsClient.listAgents() throws", async () => {
     const accountsClient = makeAccountsClientMock(async () => {
       throw new Error("accounts service unavailable");
     });
@@ -533,5 +541,105 @@ describe("GET /metrics/tokens — agent name resolution", () => {
     expect(body.data.byAgent).toHaveLength(1);
     expect(body.data.byAgent[0].agentId).toBe("agent-abc123");
     expect(body.data.byAgent[0].agentName).toBeUndefined();
+  });
+});
+
+// ─── GET /metrics/tokens — cron name resolution ───────────────────────────────
+
+describe("GET /metrics/tokens — cron name resolution", () => {
+  const CRON_ID = "cmq000cron0001abc";
+
+  function makeCronPostHogClient(cronName: string) {
+    return makeMockClient(
+      makeResult(totalsColumns, [totalsRow]),
+      makeResult(bySessionTypeColumns, bySessionTypeRows),
+      makeResult(byAgentColumns, byAgentRows),
+      makeResult(trendsColumns, trendsRows),
+      makeResult(byAgentBySessionTypeColumns, byAgentBySessionTypeRows),
+      makeResult(byAgentByCronColumns, [
+        ["agent-abc123", cronName, 600, 300, 120, 60, 1080, 0.3],
+      ]),
+      makeResult(byAgentByModelColumns, byAgentByModelRows),
+    );
+  }
+
+  function makeClientWithCrons(
+    impl: (agentId: string) => Promise<CronJobRecord[]>,
+  ): AccountsClient {
+    return {
+      ...makeAccountsClientMock(async () => []),
+      listAgentCronJobs: impl,
+    };
+  }
+
+  test("resolves cron ID to job.name when name is set", async () => {
+    const app = createMetricsApp(
+      apiKeys,
+      makeClientWithCrons(async () => [
+        { id: CRON_ID, name: "daily-report", prompt: "Run the daily report" },
+      ]),
+      { postHogClient: makeCronPostHogClient(CRON_ID) },
+    );
+    const res = await app.request("/metrics/tokens?preset=7d", {
+      headers: authHeader(ADMIN_KEY),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.byAgentCron[0].cronName).toBe("daily-report");
+  });
+
+  test("truncates prompt when name is null and prompt exceeds 40 chars", async () => {
+    // 57-char prompt; slice(0,40) = "Check the task store for new items now. "
+    // trim() removes trailing space → "Check the task store for new items now."
+    const longPrompt =
+      "Check the task store for new items now. Then process them";
+    const app = createMetricsApp(
+      apiKeys,
+      makeClientWithCrons(async () => [
+        { id: CRON_ID, name: null, prompt: longPrompt },
+      ]),
+      { postHogClient: makeCronPostHogClient(CRON_ID) },
+    );
+    const res = await app.request("/metrics/tokens?preset=7d", {
+      headers: authHeader(ADMIN_KEY),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.byAgentCron[0].cronName).toBe(
+      "Check the task store for new items now.…",
+    );
+  });
+
+  test("uses full prompt when name is null and prompt is short", async () => {
+    const shortPrompt = "Run the daily report";
+    const app = createMetricsApp(
+      apiKeys,
+      makeClientWithCrons(async () => [
+        { id: CRON_ID, name: null, prompt: shortPrompt },
+      ]),
+      { postHogClient: makeCronPostHogClient(CRON_ID) },
+    );
+    const res = await app.request("/metrics/tokens?preset=7d", {
+      headers: authHeader(ADMIN_KEY),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.byAgentCron[0].cronName).toBe(shortPrompt);
+  });
+
+  test("falls back to raw cron ID when listAgentCronJobs throws", async () => {
+    const app = createMetricsApp(
+      apiKeys,
+      makeClientWithCrons(async () => {
+        throw new Error("admin unavailable");
+      }),
+      { postHogClient: makeCronPostHogClient(CRON_ID) },
+    );
+    const res = await app.request("/metrics/tokens?preset=7d", {
+      headers: authHeader(ADMIN_KEY),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.byAgentCron[0].cronName).toBe(CRON_ID);
   });
 });

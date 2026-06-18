@@ -850,7 +850,7 @@ export function createMetricsHandlers(
         }),
       );
 
-      const byAgentCron = resultToRows(byAgentByCronResult).map((row) => ({
+      const byAgentCronRaw = resultToRows(byAgentByCronResult).map((row) => ({
         agentId: String(row.agent_id ?? ""),
         cronName: String(row.cron_name ?? ""),
         input: toNum(row.input_tokens),
@@ -859,6 +859,35 @@ export function createMetricsHandlers(
         cacheCreation: toNum(row.cache_creation_input_tokens),
         total: toNum(row.total_tokens),
         cost: toNum(row.cost_usd),
+      }));
+
+      const cronDisplayNameMap = new Map<string, string>();
+      if (byAgentCronRaw.length > 0) {
+        const uniqueAgentIds = [...new Set(byAgentCronRaw.map((r) => r.agentId))];
+        await Promise.all(
+          uniqueAgentIds.map(async (agentId) => {
+            try {
+              const jobs = await accountsClient.listAgentCronJobs(agentId);
+              for (const job of jobs) {
+                const displayName =
+                  job.name ??
+                  (job.prompt.length > 40
+                    ? `${job.prompt.slice(0, 40).trim()}…`
+                    : job.prompt);
+                cronDisplayNameMap.set(job.id, displayName);
+              }
+            } catch (e) {
+              process.stderr.write(
+                `[metrics-api] listAgentCronJobs(${agentId}) failed — cronName resolution skipped: ${String(e)}\n`,
+              );
+            }
+          }),
+        );
+      }
+
+      const byAgentCron = byAgentCronRaw.map((row) => ({
+        ...row,
+        cronName: cronDisplayNameMap.get(row.cronName) ?? row.cronName,
       }));
 
       const byAgentModel = resultToRows(byAgentByModelResult).map((row) => ({

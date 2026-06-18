@@ -4,7 +4,11 @@
  * NOT exported from index.ts — test-only.
  */
 
-import type { AccountsClient, UserRecord } from "./accounts-client.ts";
+import type {
+  AccountsClient,
+  AgentRecord,
+  UserRecord,
+} from "./accounts-client.ts";
 import type { Clock } from "./clock.ts";
 
 // ─── FixedClock ───────────────────────────────────────────────────────────────
@@ -32,20 +36,29 @@ export function FixedClock(
 // ─── makeAccountsClientMock ──────────────────────────────────────────────────
 
 /**
- * Minimal AccountsClient stub for tests that need to control listUsers output.
+ * Minimal AccountsClient stub for tests that need to control listUsers /
+ * listAgents output but don't exercise any other accounts methods.
+ *
+ * When `listAgentsImpl` is omitted, `listAgents` derives agent records from
+ * `listUsersImpl` (maps each user to `{ id, name }`). Pass an explicit
+ * `listAgentsImpl` to override that default — e.g. to simulate a failure or
+ * return a distinct set of agent records.
  */
 export function makeAccountsClientMock(
   listUsersImpl: () => Promise<UserRecord[]>,
+  listAgentsImpl?: () => Promise<AgentRecord[]>,
 ): AccountsClient {
   const notImplemented = async (): Promise<never> => {
     throw new Error("not implemented");
   };
   return {
     listUsers: listUsersImpl,
-    listAgents: async () => {
-      const users = await listUsersImpl();
-      return users.map(({ id, name }) => ({ id, name }));
-    },
+    listAgents:
+      listAgentsImpl ??
+      (async () => {
+        const users = await listUsersImpl();
+        return users.map(({ id, name }) => ({ id, name }));
+      }),
     getUser: async (id: string) => ({
       id,
       name: "noop",

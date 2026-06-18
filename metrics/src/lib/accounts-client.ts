@@ -34,6 +34,12 @@ export interface AgentRecord {
   name: string;
 }
 
+export interface CronJobRecord {
+  id: string;
+  name?: string | null;
+  prompt: string;
+}
+
 // ─── Error type ───────────────────────────────────────────────────────────────
 
 export class AccountsClientError extends Error {
@@ -84,7 +90,7 @@ export interface AccountsClient {
   getTeam(id: string): Promise<unknown | null>;
   listTeams(): Promise<unknown[]>;
   listEnabledCronJobs(): Promise<unknown[]>;
-  listAgentCronJobs(agentId: string): Promise<unknown[]>;
+  listAgentCronJobs(agentId: string): Promise<CronJobRecord[]>;
   createAgentCronJob(agentId: string, input: unknown): Promise<unknown>;
   deleteAgentCronJob(agentId: string, cronId: string): Promise<void>;
   setAgentCronJobEnabled(
@@ -262,8 +268,8 @@ export class HttpAccountsClient implements AccountsClient {
     throw new AccountsClientError(501, "not implemented");
   }
 
-  async listAgentCronJobs(agentId: string): Promise<unknown[]> {
-    throw new AccountsClientError(501, "not implemented");
+  async listAgentCronJobs(agentId: string): Promise<CronJobRecord[]> {
+    return this.fetch<CronJobRecord[]>(`/agents/${agentId}/crons`);
   }
 
   async createAgentCronJob(agentId: string, input: unknown): Promise<unknown> {
