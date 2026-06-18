@@ -6,7 +6,11 @@
 
 import { describe, expect, test } from "bun:test";
 import { type MetricsDeps, createMetricsApp } from "./api.ts";
-import type { AccountsClient, CronJobRecord, UserRecord } from "./lib/accounts-client.ts";
+import type {
+  AccountsClient,
+  CronJobRecord,
+  UserRecord,
+} from "./lib/accounts-client.ts";
 import { parseApiKeys } from "./lib/api-auth.ts";
 import { makeAccountsClientMock } from "./lib/test-helpers.ts";
 import type { HogQLResult } from "./types.ts";
@@ -438,8 +442,12 @@ describe("GET /metrics/tokens — cost is 0 when cost_usd is absent", () => {
 
     const legacyClient = makeMockClient(
       makeResult(legacyTotalsColumns, [[1000, 500, 200, 100, 1800]]),
-      makeResult(legacyBySessionTypeColumns, [["slack_dm", 400, 200, 80, 40, 720]]),
-      makeResult(legacyByAgentColumns, [["agent-abc123", 1000, 500, 200, 100, 1800]]),
+      makeResult(legacyBySessionTypeColumns, [
+        ["slack_dm", 400, 200, 80, 40, 720],
+      ]),
+      makeResult(legacyByAgentColumns, [
+        ["agent-abc123", 1000, 500, 200, 100, 1800],
+      ]),
       makeResult(legacyTrendsColumns, [["2026-04-01", 300, 150, 60, 30, 540]]),
     );
 
@@ -519,7 +527,7 @@ describe("GET /metrics/tokens — agent name resolution", () => {
     expect(body.data.byAgent[0].agentName).toBeUndefined();
   });
 
-  test("returns 200 with no agentName when accountsClient.listUsers() throws", async () => {
+  test("returns 200 with no agentName when accountsClient.listAgents() throws", async () => {
     const accountsClient = makeAccountsClientMock(async () => {
       throw new Error("accounts service unavailable");
     });
