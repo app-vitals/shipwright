@@ -950,7 +950,7 @@ describe("admin UI — provision start form", () => {
     });
     const app = createAdminUIApp(deps);
     const body = new URLSearchParams({
-      xoxpToken: "xoxp-valid",
+      xoxpToken: "xoxe.xoxp-valid",
       ghAuthMode: "pat",
       ghPat: "ghp_token123",
     });
@@ -1021,7 +1021,7 @@ describe("admin UI — provision start form", () => {
     const app = createAdminUIApp(deps);
     const body = new URLSearchParams({
       agentId: AGENT_ID,
-      xoxpToken: "xoxp-valid",
+      xoxpToken: "xoxe.xoxp-valid",
       ghAuthMode: "pat",
       ghPat: "",
     });
@@ -1057,7 +1057,7 @@ describe("admin UI — provision start form", () => {
     const app = createAdminUIApp(deps);
     const body = new URLSearchParams({
       agentId: AGENT_ID,
-      xoxpToken: "xoxp-valid",
+      xoxpToken: "xoxe.xoxp-valid",
       ghAuthMode: "app",
       ghAppId: "not-a-number",
       ghAppInstallationId: "99999",
@@ -1096,7 +1096,7 @@ describe("admin UI — provision start form", () => {
     const app = createAdminUIApp(deps);
     const body = new URLSearchParams({
       agentId: AGENT_ID,
-      xoxpToken: "xoxp-valid",
+      xoxpToken: "xoxe.xoxp-valid",
       ghAuthMode: "pat",
       ghPat: "ghp_token123",
     });
@@ -1137,7 +1137,7 @@ describe("admin UI — provision start form", () => {
     const app = createAdminUIApp(deps);
     const body = new URLSearchParams({
       agentId: AGENT_ID,
-      xoxpToken: "xoxp-valid",
+      xoxpToken: "xoxe.xoxp-valid",
       ghAuthMode: "pat",
       ghPat: "ghp_my_token",
     });
@@ -1206,7 +1206,7 @@ describe("admin UI — provision start form", () => {
     const app = createAdminUIApp(deps);
     const body = new URLSearchParams({
       agentId: AGENT_ID,
-      xoxpToken: "xoxp-valid",
+      xoxpToken: "xoxe.xoxp-valid",
       ghAuthMode: "app",
       ghAppId: "12345",
       ghAppInstallationId: "67890",
@@ -1254,7 +1254,7 @@ describe("admin UI — provision start form", () => {
     const app = createAdminUIApp(deps);
     const body = new URLSearchParams({
       agentId: AGENT_ID,
-      xoxpToken: "xoxp-valid",
+      xoxpToken: "xoxe.xoxp-valid",
       ghAuthMode: "pat",
       ghPat: "ghp_token",
       anthropicApiKey: "sk-ant-key",
@@ -1680,7 +1680,7 @@ describe("admin UI — manifest sync route", () => {
         },
       }),
     );
-    const body = new URLSearchParams({ xoxpToken: "xoxp-valid-token" });
+    const body = new URLSearchParams({ xoxpToken: "xoxe.xoxp-valid-token" });
     const res = await app.request(`/admin/agents/${AGENT_ID}/sync-manifest`, {
       method: "POST",
       body: body.toString(),
@@ -1694,7 +1694,7 @@ describe("admin UI — manifest sync route", () => {
     expect(updateCalled).toBe(true);
   });
 
-  it("invalid token (missing xoxp- prefix) → redirects with error", async () => {
+  it("invalid token (wrong prefix) → redirects with error", async () => {
     const app = createAdminUIApp(makeMockDeps());
     const body = new URLSearchParams({ xoxpToken: "xoxb-wrong-token-type" });
     const res = await app.request(`/admin/agents/${AGENT_ID}/sync-manifest`, {
@@ -1708,7 +1708,24 @@ describe("admin UI — manifest sync route", () => {
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toContain("error=");
     expect(decodeURIComponent(res.headers.get("location") ?? "")).toContain(
-      "Slack token must start with xoxp-",
+      "Slack app configuration token must start with xoxe.xoxp",
+    );
+  });
+
+  it("xoxe.xoxp rotating token → passes token validation", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const body = new URLSearchParams({ xoxpToken: "xoxe.xoxp-valid-rotating-token" });
+    const res = await app.request(`/admin/agents/${AGENT_ID}/sync-manifest`, {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${adminCookie}`,
+      },
+    });
+    // Token passes validation; redirect (if any) is for a different reason (e.g. missing SLACK_APP_ID)
+    expect(decodeURIComponent(res.headers.get("location") ?? "")).not.toContain(
+      "Slack app configuration token must start with",
     );
   });
 
@@ -1723,7 +1740,7 @@ describe("admin UI — manifest sync route", () => {
         },
       }),
     );
-    const body = new URLSearchParams({ xoxpToken: "xoxp-valid-token" });
+    const body = new URLSearchParams({ xoxpToken: "xoxe.xoxp-valid-token" });
     const res = await app.request(`/admin/agents/${AGENT_ID}/sync-manifest`, {
       method: "POST",
       body: body.toString(),
@@ -1754,7 +1771,7 @@ describe("admin UI — manifest sync route", () => {
         },
       }),
     );
-    const body = new URLSearchParams({ xoxpToken: "xoxp-valid-token" });
+    const body = new URLSearchParams({ xoxpToken: "xoxe.xoxp-valid-token" });
     const res = await app.request(`/admin/agents/${AGENT_ID}/sync-manifest`, {
       method: "POST",
       body: body.toString(),
@@ -1775,7 +1792,7 @@ describe("admin UI — manifest sync route", () => {
       false,
     );
     const app = createAdminUIApp(makeMockDeps());
-    const body = new URLSearchParams({ xoxpToken: "xoxp-valid-token" });
+    const body = new URLSearchParams({ xoxpToken: "xoxe.xoxp-valid-token" });
     const res = await app.request(`/admin/agents/${AGENT_ID}/sync-manifest`, {
       method: "POST",
       body: body.toString(),

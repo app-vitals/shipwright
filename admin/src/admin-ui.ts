@@ -905,9 +905,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       return c.redirect(`/admin/agents/${agentId}?error=missing_fields`, 302);
     }
 
-    if (!xoxpToken || !xoxpToken.startsWith("xoxp-")) {
+    if (!xoxpToken || !xoxpToken.startsWith("xoxe.xoxp")) {
       return c.redirect(
-        `/admin/agents/${agentId}?error=${encodeURIComponent("Slack token must start with xoxp-")}`,
+        `/admin/agents/${agentId}?error=${encodeURIComponent("Slack app configuration token must start with xoxe.xoxp")}`,
         302,
       );
     }
@@ -991,8 +991,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       return formError("Agent is required.");
     }
 
-    if (!xoxpToken || !xoxpToken.startsWith("xoxp-")) {
-      return formError("Slack token must start with xoxp-");
+    if (!xoxpToken || !xoxpToken.startsWith("xoxe.xoxp")) {
+      return formError("Slack app configuration token must start with xoxe.xoxp");
     }
 
     if (ghAuthMode === "pat") {
