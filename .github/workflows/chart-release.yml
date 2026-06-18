@@ -19,7 +19,7 @@ name: Chart Release
 #     publish path.
 #
 # Required secrets / variables:
-#   - SHIPWRIGHT_DISPATCH_TOKEN: GitHub PAT with `repo` scope on the dispatch target.
+#   - VITALS_OS_DISPATCH_TOKEN: GitHub PAT with `repo` scope on the dispatch target.
 #     Used to emit repository_dispatch events. The step is continue-on-error: true so a
 #     missing or invalid token does not block chart publishing.
 #   - CHART_DISPATCH_REPO (repository variable): owner/repo to receive the dispatch event
@@ -73,7 +73,7 @@ jobs:
       - name: Notify downstream of chart release
         continue-on-error: true
         env:
-          GH_TOKEN: ${{ secrets.SHIPWRIGHT_DISPATCH_TOKEN }}
+          GH_TOKEN: ${{ secrets.VITALS_OS_DISPATCH_TOKEN }}
           DISPATCH_REPO: ${{ vars.CHART_DISPATCH_REPO }}
         run: |
           [ -z "$DISPATCH_REPO" ] && echo "CHART_DISPATCH_REPO not configured, skipping" && exit 0
