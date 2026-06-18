@@ -43,11 +43,18 @@ function coerceValue(key: string, rawValue: string): boolean | number | string |
     if (rawValue === "false") return false;
   }
   if (ARRAY_FIELDS.has(key)) {
+    let parsed: unknown;
     try {
-      return JSON.parse(rawValue) as string[];
+      parsed = JSON.parse(rawValue);
     } catch {
-      return rawValue;
+      process.stderr.write(`error: --set value for '${key}' must be a valid JSON array (got: ${rawValue})\n`);
+      process.exit(1);
     }
+    if (!Array.isArray(parsed)) {
+      process.stderr.write(`error: --set value for '${key}' must be a JSON array, not ${typeof parsed}\n`);
+      process.exit(1);
+    }
+    return parsed as string[];
   }
   return rawValue;
 }

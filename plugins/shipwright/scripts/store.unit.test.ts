@@ -716,6 +716,15 @@ describe("resolveReadyTasks", () => {
     expect(ready.map((t) => t.id)).not.toContain("T-1");
   });
 
+  test("cancelled dep satisfies dependency", async () => {
+    const tasks: Task[] = [
+      { id: "D-1", title: "Dep", status: "cancelled" },
+      { id: "T-1", title: "Task", status: "pending", dependencies: ["D-1"] },
+    ];
+    const ready = await resolveReadyTasks(tasks, async () => false);
+    expect(ready.map((t) => t.id)).toContain("T-1");
+  });
+
   test("unknown dep ID — NOT ready (conservative)", async () => {
     const tasks: Task[] = [
       {
