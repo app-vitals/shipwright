@@ -140,6 +140,7 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
         clientSecret: "test-client-secret",
         signingSecret: "test-signing-secret",
       }),
+      updateAppManifest: async () => {},
       exchangeOAuthCode: async () => ({ botToken: "xoxb-mock-bot-token" }),
     },
     provisioner: {

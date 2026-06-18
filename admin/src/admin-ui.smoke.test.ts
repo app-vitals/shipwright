@@ -121,6 +121,7 @@ const BASE_SLACK_CLIENT: AdminUISlackClient = {
     clientSecret: "test-client-secret",
     signingSecret: "test-signing-secret",
   }),
+  updateAppManifest: async () => {},
   exchangeOAuthCode: async () => ({ botToken: "xoxb-mock-bot-token" }),
 };
 

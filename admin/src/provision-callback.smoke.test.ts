@@ -89,6 +89,7 @@ function makeMockSlackClient(opts?: {
       clientSecret: "test-client-secret",
       signingSecret: "test-signing-secret",
     }),
+    updateAppManifest: async () => {},
     exchangeOAuthCode:
       opts?.exchangeOAuthCode ??
       (async () => ({ botToken: "xoxb-mock-bot-token" })),

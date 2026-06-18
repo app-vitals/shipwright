@@ -50,6 +50,12 @@ class RecordedSlackClient implements AdminUISlackClient {
     return this.cassette.createAppManifest;
   }
 
+  async updateAppManifest(
+    _xoxpToken: string,
+    _appId: string,
+    _manifest: AppManifest,
+  ): Promise<void> {}
+
   async exchangeOAuthCode(
     _code: string,
     _clientId: string,
