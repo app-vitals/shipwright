@@ -4,6 +4,40 @@ entries:
   - annotations:
       artifacthub.io/changes: |
         - kind: changed
+          description: "auto-bump to chart v1.5.2 triggered by release tag metrics-v0.74.2"
+      licenses: MIT
+    apiVersion: v2
+    appVersion: 0.1.0
+    created: "2026-06-18T05:33:31.321571806Z"
+    dependencies:
+    - condition: postgresql.enabled
+      name: postgresql
+      repository: oci://registry-1.docker.io/bitnamicharts
+      version: 16.7.27
+    description: Shipwright Harness — the open-source autonomous delivery agent for
+      Claude Code. This chart packages the three Shipwright services (admin, metrics,
+      agent) and an optional PostgreSQL dependency for Kubernetes (Minikube-friendly
+      defaults).
+    digest: 44c88e220493212f948fc15e6eb72c1ffc058a03d17ab0a1b9212484339d270a
+    home: https://shipwright-harness.com
+    keywords:
+    - shipwright
+    - claude-code
+    - delivery-agent
+    - ci-cd
+    maintainers:
+    - name: Shipwright Harness
+      url: https://shipwright-harness.com
+    name: shipwright
+    sources:
+    - https://github.com/app-vitals/shipwright
+    type: application
+    urls:
+    - https://github.com/app-vitals/shipwright/releases/download/shipwright-1.5.2/shipwright-1.5.2.tgz
+    version: 1.5.2
+  - annotations:
+      artifacthub.io/changes: |
+        - kind: changed
           description: "task-store: plan-session, dev-task, and deploy skills now invoke the task_store CLI directly instead of inline scripts — consistent behavior across all three commands."
         - kind: changed
           description: "task-store-doctor: expanded --doctor output with 5 data-integrity checks (orphaned tasks, label drift, stale in-progress, dependency cycles, duplicate IDs) and a duplicate-ID warning appended to normal query output."
@@ -249,4 +283,4 @@ entries:
     urls:
     - https://app-vitals.github.io/shipwright/shipwright-1.0.0.tgz
     version: 1.0.0
-generated: "2026-06-17T16:31:55.859439644Z"
+generated: "2026-06-18T05:33:31.321602263Z"
