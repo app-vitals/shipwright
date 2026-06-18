@@ -8,7 +8,7 @@ type: application
 # Chart version (SemVer). Bump on every chart change, independent of appVersion.
 # See CHANGELOG.md and the README "Versioning" section — CI enforces this bump
 # via `ct lint --check-version-increment`.
-version: 1.5.1
+version: 1.5.2
 # Version of the Shipwright application this chart deploys by default.
 appVersion: "0.1.0"
 home: https://shipwright-harness.com
@@ -29,9 +29,7 @@ annotations:
   # entry in CHANGELOG.md (keep the two in sync on every bump).
   artifacthub.io/changes: |
     - kind: changed
-      description: "task-store: plan-session, dev-task, and deploy skills now invoke the task_store CLI directly instead of inline scripts — consistent behavior across all three commands."
-    - kind: changed
-      description: "task-store-doctor: expanded --doctor output with 5 data-integrity checks (orphaned tasks, label drift, stale in-progress, dependency cycles, duplicate IDs) and a duplicate-ID warning appended to normal query output."
+      description: "auto-bump to chart v1.5.2 triggered by release tag metrics-v0.74.2"
 dependencies:
   # Bitnami PostgreSQL subchart. Pinned to a chart version whose default image tag
   # is concrete (NOT `latest`), because Bitnami's 2025 catalog change moved newer
