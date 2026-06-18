@@ -147,7 +147,7 @@ Controls how the admin service provisions the Kubernetes workload backing each a
 | Name | Type | Default | Description |
 |---|---|---|---|
 | `SHIPWRIGHT_K8S_PROVISIONING` | `string` | — | Set to `enabled` to provision a real Kubernetes PersistentVolumeClaim + Secret + Deployment per agent via `KubernetesAgentProvisioner`. Any other value (or unset) selects the no-op provisioner, preserving DB-only create/delete behavior. |
-| `SHIPWRIGHT_K8S_NAMESPACE` | `string` | `default` | Namespace the per-agent PersistentVolumeClaim, Secret, and Deployment are created in. Only read when provisioning is enabled. |
+| `SHIPWRIGHT_K8S_NAMESPACE` | `string` | — | Target namespace for per-agent PersistentVolumeClaim, Secret, and Deployment. When set (explicit value), use that namespace (cross-namespace provisioning). When unset, fall back to the downward API (the pod's own release namespace — the zero-config default). Only read when provisioning is enabled. |
 | `SHIPWRIGHT_AGENT_IMAGE` | `string` | — | Agent container image (without tag) used for the provisioned Deployment. Only read when provisioning is enabled. |
 | `SHIPWRIGHT_AGENT_IMAGE_TAG` | `string` | `latest` | Image tag joined as `image:tag` for the provisioned Deployment. Only read when provisioning is enabled. |
 | `SHIPWRIGHT_ADMIN_DEPLOYMENT_NAME` | `string` | — | Name of the admin Deployment, used as the `ownerReference` target so per-agent resources are garbage-collected with the admin Deployment. Only read when provisioning is enabled. |
