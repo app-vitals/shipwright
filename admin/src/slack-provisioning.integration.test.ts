@@ -211,7 +211,7 @@ const CASSETTE_PATH = new URL(
 describe("SlackProvisioningClient — cassette", () => {
   it("createAppManifest returns clientId, clientSecret, and signingSecret from cassette", async () => {
     const slackClient = new RecordedSlackClient(CASSETTE_PATH);
-    const result = await slackClient.createAppManifest("xoxp-fake", {} as AppManifest);
+    const result = await slackClient.createAppManifest("xoxe.xoxp-fake", {} as AppManifest);
     expect(result.clientId).toBe("1234567890.9876543210");
     expect(result.clientSecret).toBe("test-client-secret-value");
     expect(result.signingSecret).toBe("test-signing-secret-value");
@@ -225,14 +225,14 @@ describe("admin UI — provisioning flow", () => {
     cookie = await makeSessionCookie();
   });
 
-  it("POST /admin/provision/start with xoxp- token calls apps.manifest.create and returns OAuth URL", async () => {
+  it("POST /admin/provision/start with xoxe.xoxp- token calls apps.manifest.create and returns OAuth URL", async () => {
     const upsertCalls: UpsertCall[] = [];
     const slackClient = new RecordedSlackClient(CASSETTE_PATH);
     const app = createAdminUIApp(makeMockDeps(slackClient, upsertCalls));
 
     const body = new URLSearchParams({
       agentId: AGENT_ID,
-      xoxpToken: "xoxp-fake-token-for-testing",
+      xoxpToken: "xoxe.xoxp-1-fake-token-for-testing",
       ghAuthMode: "pat",
       ghPat: "ghp_test-pat-token",
     });

@@ -1708,7 +1708,7 @@ describe("admin UI — manifest sync route", () => {
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toContain("error=");
     expect(decodeURIComponent(res.headers.get("location") ?? "")).toContain(
-      "Slack app configuration token must start with xoxe.xoxp",
+      "Slack app configuration token must start with xoxe.xoxp-",
     );
   });
 
