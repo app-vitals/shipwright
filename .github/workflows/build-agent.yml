@@ -3,6 +3,9 @@ name: Build and Push Agent Image
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "charts/**"
+      - "CHANGELOG.md"
 
 permissions:
   contents: write
@@ -45,3 +48,14 @@ jobs:
       - name: Push Docker image
         run: |
           docker push ${{ secrets.ARTIFACT_REGISTRY_REPO }}/shipwright-agent:${{ steps.tag.outputs.new_tag }}
+
+      - name: Dispatch agent-released to vitals-os
+        env:
+          GH_TOKEN: ${{ secrets.VITALS_OS_DISPATCH_TOKEN }}
+          NEW_TAG: ${{ steps.tag.outputs.new_tag }}
+          DISPATCH_REPO: ${{ vars.CHART_DISPATCH_REPO }}
+        run: |
+          [ -z "$DISPATCH_REPO" ] && echo "CHART_DISPATCH_REPO not configured, skipping" && exit 0
+          printf '{"event_type":"shipwright-agent-released","client_payload":{"base_tag":"%s"}}' "$NEW_TAG" \
+            | gh api "repos/$DISPATCH_REPO/dispatches" --method POST --input -
+          echo "Dispatched shipwright-agent-released with base_tag: ${NEW_TAG}"
