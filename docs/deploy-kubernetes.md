@@ -311,12 +311,16 @@ Setting `agent.provisioning.enabled=true` switches the admin service to the
 
 ### What the chart renders when provisioning is enabled
 
-- A **namespace-scoped `Role`** (not a `ClusterRole`) named
+- A **`ClusterRole`** (not a namespace-scoped `Role`) named
   `<admin>-agent-provisioner` granting `create`, `get`, and `delete` on
   `PersistentVolumeClaims` (core), `Deployments` (`apps`), and `Secrets` (core)
-  — exactly the verbs the provisioner exercises, least-privilege and scoped to
-  the release namespace.
-- A **`RoleBinding`** binding that Role to the **admin ServiceAccount**.
+  — exactly the verbs the provisioner exercises. The ClusterRole enables the
+  admin service to provision agents in any target namespace, not just its own
+  release namespace (e.g. provisioning vitals-os agents with PVCs pinned to the
+  vitals-os namespace).
+- A **`ClusterRoleBinding`** binding that ClusterRole to the **admin ServiceAccount**.
+  The subject's namespace scopes which ServiceAccount is granted the
+  cluster-wide permissions.
 - A separate **agent ServiceAccount** that provisioned agent pods run as
   (distinct from the admin SA).
 - The provisioner env contract injected into the admin Deployment, matching
@@ -328,6 +332,7 @@ Setting `agent.provisioning.enabled=true` switches the admin service to the
 agent:
   provisioning:
     enabled: true
+    namespace: ""                  # target namespace for provisioned agent resources; defaults to the admin pod's release namespace
     image:
       repository: shipwright-agent
       tag: ""                      # defaults to the chart appVersion
