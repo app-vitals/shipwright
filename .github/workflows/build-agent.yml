@@ -21,7 +21,7 @@ jobs:
         id: tag
         uses: mathieudutour/github-tag-action@v6.2
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          github_token: ${{ secrets.SHIPWRIGHT_DISPATCH_TOKEN }}
           tag_prefix: "agent-v"
           default_bump: patch
           fetch_all_tags: true
