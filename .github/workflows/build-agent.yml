@@ -3,9 +3,13 @@ name: Build and Push Agent Image
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - "charts/**"
-      - "CHANGELOG.md"
+    paths:
+      - "agent/**"
+      - "plugins/**"
+      - ".claude-plugin/**"
+      - "package.json"
+      - "bun.lock"
+      - ".github/workflows/build-agent.yml"
 
 permissions:
   contents: write

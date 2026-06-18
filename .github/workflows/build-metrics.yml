@@ -3,9 +3,12 @@ name: Build and Push Metrics Image
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - "charts/**"
-      - "CHANGELOG.md"
+    paths:
+      - "metrics/**"
+      - "lib/**"
+      - "package.json"
+      - "bun.lock"
+      - ".github/workflows/build-metrics.yml"
 
 permissions:
   contents: write
