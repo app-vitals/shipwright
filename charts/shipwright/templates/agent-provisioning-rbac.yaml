@@ -1,15 +1,17 @@
 {{- if .Values.agent.provisioning.enabled }}
-# Agent-provisioning RBAC (HD-4.2). Gated on agent.provisioning.enabled (default
-# false → this file renders nothing and the admin service stays in Noop mode).
+{{- if .Values.agent.provisioning.namespace }}
+# Agent-provisioning RBAC (HD-4.2 / K8S-NS-1.1). Gated on agent.provisioning.enabled
+# (default false → this file renders nothing and the admin service stays in Noop mode).
 #
-# Namespace-scoped Role (NOT a ClusterRole): the admin service provisions agent
-# Deployments + Secrets + PVCs only within its own release namespace, so a Role
-# bound by a RoleBinding is the least-privilege fit — no cluster-wide grant. The
-# verb set is exactly what the provisioner (HD-1.3 KubernetesAgentProvisioner /
+# Cross-namespace mode (agent.provisioning.namespace is set): ClusterRole + ClusterRoleBinding.
+# The admin service provisions agent Deployments + Secrets + PVCs into a namespace other than
+# its own release namespace (e.g. provisioning vitals-os agents into the vitals-os namespace).
+# A ClusterRole bound via ClusterRoleBinding is required to reach across namespace boundaries.
+# The verb set is exactly what the provisioner (HD-1.3 KubernetesAgentProvisioner /
 # HD-1.4 wiring) exercises: create + get + delete on Deployments (apps),
 # Secrets (core), and PersistentVolumeClaims (core).
 apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
+kind: ClusterRole
 metadata:
   name: {{ include "shipwright.admin.fullname" . }}-agent-provisioner
   labels:
@@ -25,12 +27,54 @@ rules:
     resources: ["persistentvolumeclaims"]
     verbs: ["create", "get", "delete"]
 ---
-# RoleBinding granting the admin ServiceAccount the Role above, scoped to the
-# release namespace.
+# ClusterRoleBinding granting the admin ServiceAccount the ClusterRole above.
+# The subject namespace scopes which SA is granted the cluster-wide permissions.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "shipwright.admin.fullname" . }}-agent-provisioner
+  labels:
+    {{- include "shipwright.admin.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "shipwright.admin.fullname" . }}-agent-provisioner
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "shipwright.admin.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- else }}
+# Agent-provisioning RBAC (HD-4.2 / K8S-NS-1.1). Gated on agent.provisioning.enabled
+# (default false → this file renders nothing and the admin service stays in Noop mode).
+#
+# Same-namespace mode (agent.provisioning.namespace is empty, the default): namespace-scoped
+# Role + RoleBinding. The admin service provisions agent Deployments + Secrets + PVCs into
+# its own release namespace — no cross-namespace access is needed, so a namespace-scoped Role
+# provides least-privilege RBAC.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "shipwright.admin.fullname" . }}-agent-provisioner
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "shipwright.admin.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["create", "get", "delete"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create", "get", "delete"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["create", "get", "delete"]
+---
+# RoleBinding granting the admin ServiceAccount the namespace-scoped Role above.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: {{ include "shipwright.admin.fullname" . }}-agent-provisioner
+  namespace: {{ .Release.Namespace }}
   labels:
     {{- include "shipwright.admin.labels" . | nindent 4 }}
 roleRef:
@@ -41,4 +85,5 @@ subjects:
   - kind: ServiceAccount
     name: {{ include "shipwright.admin.serviceAccountName" . }}
     namespace: {{ .Release.Namespace }}
+{{- end }}
 {{- end }}

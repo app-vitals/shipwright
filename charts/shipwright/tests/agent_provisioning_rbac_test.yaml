@@ -1,23 +1,28 @@
-suite: agent-provisioning RBAC + admin env contract (HD-4.2)
+suite: agent-provisioning RBAC + admin env contract (HD-4.2 / K8S-NS-1.1)
 # Asserts the agent-provisioning surface, gated on agent.provisioning.enabled:
-#   (a) enabled → namespace-scoped Role (exact resources + verbs) + RoleBinding to
-#       the admin SA + a separate agent ServiceAccount
+#   (a) enabled + namespace set (cross-namespace mode) → cluster-scoped ClusterRole + ClusterRoleBinding
+#       to the admin SA. ClusterRole enables cross-namespace provisioning (e.g. vitals-os agents
+#       with PVCs pinned to their namespace).
+#   (a2) enabled + namespace empty (same-namespace mode, default) → namespace-scoped Role + RoleBinding.
+#       Least-privilege RBAC when the admin service provisions into its own release namespace.
 #   (b) enabled → admin Deployment gets SHIPWRIGHT_K8S_PROVISIONING=enabled and the
-#       downward-API namespace env, matching admin/src/main.ts buildProvisioner
+#       downward-API namespace env (or explicit override), matching admin/src/main.ts buildProvisioner
 #   (c) disabled (default) → NONE of the RBAC/SA render, and the admin Deployment
 #       carries NO provisioning env (admin stays in Noop mode)
 tests:
   # ── (a) enabled → RBAC + agent SA ────────────────────────────────────────────
-  - it: renders a namespace-scoped Role with exactly create/get/delete on Deployments, Secrets, and PVCs
+  # Cross-namespace mode (agent.provisioning.namespace set) → ClusterRole + ClusterRoleBinding
+  - it: renders a cluster-scoped ClusterRole with exactly create/get/delete on Deployments, Secrets, and PVCs (cross-namespace mode)
     template: templates/agent-provisioning-rbac.yaml
     documentIndex: 0
     set:
       agent.provisioning.enabled: true
+      agent.provisioning.namespace: vitals-os
     release:
       name: r
     asserts:
       - isKind:
-          of: Role
+          of: ClusterRole
       - equal:
           path: metadata.name
           value: r-shipwright-admin-agent-provisioner
@@ -49,7 +54,69 @@ tests:
           path: rules[2].verbs
           value: ["create", "get", "delete"]
 
-  - it: binds the Role to the admin ServiceAccount via a namespace-scoped RoleBinding
+  - it: binds the ClusterRole to the admin ServiceAccount via a ClusterRoleBinding (cross-namespace mode)
+    template: templates/agent-provisioning-rbac.yaml
+    documentIndex: 1
+    set:
+      agent.provisioning.enabled: true
+      agent.provisioning.namespace: vitals-os
+    release:
+      name: r
+      namespace: shipwright-ns
+    asserts:
+      - isKind:
+          of: ClusterRoleBinding
+      - equal:
+          path: roleRef.kind
+          value: ClusterRole
+      - equal:
+          path: roleRef.name
+          value: r-shipwright-admin-agent-provisioner
+      - equal:
+          path: subjects[0].kind
+          value: ServiceAccount
+      - equal:
+          path: subjects[0].name
+          value: r-shipwright-admin
+      - equal:
+          path: subjects[0].namespace
+          value: shipwright-ns
+
+  # Same-namespace mode (agent.provisioning.namespace empty, the default) → Role + RoleBinding
+  - it: renders a namespace-scoped Role when provisioning is enabled without a cross-namespace override (same-namespace mode)
+    template: templates/agent-provisioning-rbac.yaml
+    documentIndex: 0
+    set:
+      agent.provisioning.enabled: true
+    release:
+      name: r
+      namespace: shipwright-ns
+    asserts:
+      - isKind:
+          of: Role
+      - equal:
+          path: metadata.name
+          value: r-shipwright-admin-agent-provisioner
+      - equal:
+          path: metadata.namespace
+          value: shipwright-ns
+      - equal:
+          path: rules[0].apiGroups
+          value: ["apps"]
+      - equal:
+          path: rules[0].resources
+          value: ["deployments"]
+      - equal:
+          path: rules[0].verbs
+          value: ["create", "get", "delete"]
+      - equal:
+          path: rules[1].resources
+          value: ["secrets"]
+      - equal:
+          path: rules[2].resources
+          value: ["persistentvolumeclaims"]
+
+  - it: binds the Role to the admin ServiceAccount via a RoleBinding (same-namespace mode)
     template: templates/agent-provisioning-rbac.yaml
     documentIndex: 1
     set:
@@ -180,6 +247,27 @@ tests:
           content:
             name: SHIPWRIGHT_ADMIN_DEPLOYMENT_UID
             value: "abc-123-uid"
+
+  - it: injects explicit SHIPWRIGHT_K8S_NAMESPACE value when agent.provisioning.namespace is set
+    template: templates/admin-deployment.yaml
+    set:
+      agent.provisioning.enabled: true
+      agent.provisioning.namespace: vitals-os
+    release:
+      name: r
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_NAMESPACE
+            value: "vitals-os"
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
 
   # ── (c) disabled (default) → nothing rendered + admin Noop ──────────────────
   - it: renders no agent-provisioning RBAC by default (provisioning disabled)

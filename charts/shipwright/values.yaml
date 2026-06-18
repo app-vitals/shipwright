@@ -254,10 +254,16 @@ agent:
     # -- Whether the admin service provisions agent workloads at runtime. OFF by
     # default: the chart renders NO provisioning RBAC/ServiceAccount and injects
     # NO provisioning env, so admin stays in Noop mode (no cluster access). Set
-    # true to render the namespace-scoped Role + RoleBinding + agent SA and inject
-    # the provisioner env contract (matching admin/src/main.ts buildProvisioner)
-    # into the admin Deployment.
+    # true to render the Role/ClusterRole + RoleBinding/ClusterRoleBinding + agent SA
+    # and inject the provisioner env contract (matching admin/src/main.ts buildProvisioner)
+    # into the admin Deployment. RBAC scope depends on provisioning.namespace: empty =
+    # namespace-scoped Role; non-empty = cluster-scoped ClusterRole.
     enabled: false
+    # -- Override namespace for provisioned agent resources. Empty (default) uses
+    # the pod's own release namespace (injected via the downward API). Set to
+    # provision agents into a different namespace — uses ClusterRole RBAC when set,
+    # Role when empty.
+    namespace: ""
     # -- Image the admin provisioner stamps onto agent Deployments.
     image:
       repository: shipwright-agent
