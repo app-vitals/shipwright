@@ -1,15 +1,16 @@
 {{- if .Values.agent.provisioning.enabled }}
-# Agent-provisioning RBAC (HD-4.2). Gated on agent.provisioning.enabled (default
-# false → this file renders nothing and the admin service stays in Noop mode).
+# Agent-provisioning RBAC (HD-4.2 / K8S-NS-1.1). Gated on agent.provisioning.enabled
+# (default false → this file renders nothing and the admin service stays in Noop mode).
 #
-# Namespace-scoped Role (NOT a ClusterRole): the admin service provisions agent
-# Deployments + Secrets + PVCs only within its own release namespace, so a Role
-# bound by a RoleBinding is the least-privilege fit — no cluster-wide grant. The
-# verb set is exactly what the provisioner (HD-1.3 KubernetesAgentProvisioner /
+# ClusterRole (NOT a namespace-scoped Role): the admin service provisions agent
+# Deployments + Secrets + PVCs and must be able to reach any target namespace in the
+# cluster (e.g. provisioning vitals-os agents whose PVCs are pinned to the vitals-os
+# namespace). A ClusterRole bound via a ClusterRoleBinding is the right fit here.
+# The verb set is exactly what the provisioner (HD-1.3 KubernetesAgentProvisioner /
 # HD-1.4 wiring) exercises: create + get + delete on Deployments (apps),
 # Secrets (core), and PersistentVolumeClaims (core).
 apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
+kind: ClusterRole
 metadata:
   name: {{ include "shipwright.admin.fullname" . }}-agent-provisioner
   labels:
@@ -25,17 +26,17 @@ rules:
     resources: ["persistentvolumeclaims"]
     verbs: ["create", "get", "delete"]
 ---
-# RoleBinding granting the admin ServiceAccount the Role above, scoped to the
-# release namespace.
+# ClusterRoleBinding granting the admin ServiceAccount the ClusterRole above.
+# The subject namespace scopes which SA is granted the cluster-wide permissions.
 apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
+kind: ClusterRoleBinding
 metadata:
   name: {{ include "shipwright.admin.fullname" . }}-agent-provisioner
   labels:
     {{- include "shipwright.admin.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: Role
+  kind: ClusterRole
   name: {{ include "shipwright.admin.fullname" . }}-agent-provisioner
 subjects:
   - kind: ServiceAccount
