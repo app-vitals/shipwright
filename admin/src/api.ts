@@ -19,7 +19,7 @@
  * two routes that need it.
  */
 
-import { Hono } from "hono";
+import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import type { AgentCronJob } from "./agent-cron-jobs.ts";
 import type { AgentEnvBundle } from "./agent-envs.ts";
 import {
@@ -27,6 +27,12 @@ import {
   createAdminAuthMiddleware,
 } from "./api-auth.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
+import {
+  AgentConfigResponseSchema,
+  AgentCronJobSchema,
+  AgentIdParamSchema,
+  RuntimeErrorSchema,
+} from "./openapi-schemas.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -125,17 +131,71 @@ export interface AdminApiPaths {
   };
 }
 
+// ─── Route definitions ────────────────────────────────────────────────────────
+
+const getConfigRoute = createRoute({
+  method: "get",
+  path: "/:id/config",
+  tags: ["runtime"],
+  summary: "Get agent config bundle",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: AgentIdParamSchema,
+  },
+  responses: {
+    200: {
+      description: "Agent config bundle",
+      content: { "application/json": { schema: AgentConfigResponseSchema } },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: RuntimeErrorSchema } },
+    },
+    404: {
+      description: "Agent not found",
+      content: { "application/json": { schema: RuntimeErrorSchema } },
+    },
+  },
+});
+
+const getCronsRoute = createRoute({
+  method: "get",
+  path: "/:id/crons",
+  tags: ["runtime"],
+  summary: "List agent cron jobs",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: AgentIdParamSchema,
+  },
+  responses: {
+    200: {
+      description: "Array of cron jobs",
+      content: {
+        "application/json": { schema: z.array(AgentCronJobSchema) },
+      },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: RuntimeErrorSchema } },
+    },
+    404: {
+      description: "Agent not found",
+      content: { "application/json": { schema: RuntimeErrorSchema } },
+    },
+  },
+});
+
 // ─── Factory ──────────────────────────────────────────────────────────────────
 
 /**
- * Creates the Hono runtime API app.
+ * Creates the OpenAPIHono runtime API app.
  *
  * Inject real services for production; inject mocks for tests.
  */
-export function createAgentRuntimeApp(deps: AgentRuntimeDeps): Hono {
+export function createAgentRuntimeApp(deps: AgentRuntimeDeps): OpenAPIHono {
   const { agentEnvService, agentCronJobService, prisma } = deps;
 
-  const app = new Hono();
+  const app = new OpenAPIHono();
 
   // Auth middleware — applied per-route, NOT as app.use("*").
   // See file-level comment for why global middleware is avoided here.
@@ -148,11 +208,10 @@ export function createAgentRuntimeApp(deps: AgentRuntimeDeps): Hono {
   // ─── GET /:id/config ─────────────────────────────────────────────────────
   //     Reachable from root as GET /agents/:id/config (Hono v4 strips prefix)
 
-  app.get("/:id/config", requireAuth, async (c) => {
-    const id = c.req.param("id");
-    if (!id) {
-      return c.json({ error: "Not found" }, 404);
-    }
+  app.use("/:id/config", requireAuth);
+
+  app.openapi(getConfigRoute, async (c) => {
+    const { id } = c.req.valid("param");
 
     // Check agent existence
     const agent = await prisma.agent.findUnique({ where: { id } });
@@ -188,11 +247,10 @@ export function createAgentRuntimeApp(deps: AgentRuntimeDeps): Hono {
   // ─── GET /:id/crons ──────────────────────────────────────────────────────
   //     Reachable from root as GET /agents/:id/crons (Hono v4 strips prefix)
 
-  app.get("/:id/crons", requireAuth, async (c) => {
-    const id = c.req.param("id");
-    if (!id) {
-      return c.json({ error: "Not found" }, 404);
-    }
+  app.use("/:id/crons", requireAuth);
+
+  app.openapi(getCronsRoute, async (c) => {
+    const { id } = c.req.valid("param");
 
     // Check agent existence
     const agent = await prisma.agent.findUnique({ where: { id } });
