@@ -148,6 +148,7 @@ export function buildAgentManifest(
           "groups:history",
           "im:history",
           "im:write",
+          "mpim:history",
           "reactions:read",
           "reactions:write",
           "users:read",
