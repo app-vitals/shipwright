@@ -22,7 +22,11 @@ import type { AdminDeps } from "./agents-api.ts";
 class RecordingProvisioner implements AgentProvisioner {
   readonly provisioned: string[] = [];
   readonly deprovisioned: string[] = [];
-  reconcileResult: { recreated: string[]; orphans: string[]; failed: Array<{ agentId: string; error: string }> } = {
+  reconcileResult: {
+    recreated: string[];
+    orphans: string[];
+    failed: Array<{ agentId: string; error: string }>;
+  } = {
     recreated: [],
     orphans: [],
     failed: [],
@@ -46,7 +50,11 @@ class RecordingProvisioner implements AgentProvisioner {
 
   async reconcile(
     _agentIds: string[],
-  ): Promise<{ recreated: string[]; orphans: string[]; failed: Array<{ agentId: string; error: string }> }> {
+  ): Promise<{
+    recreated: string[];
+    orphans: string[];
+    failed: Array<{ agentId: string; error: string }>;
+  }> {
     return this.reconcileResult;
   }
 }
@@ -679,6 +687,19 @@ describe("admin API — tokens", () => {
     expect(body.token).toBeDefined();
   });
 
+  it("POST /agents/:id/tokens returns 201 with rawToken when no body is sent", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}/tokens`, {
+      method: "POST",
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.rawToken).toBeDefined();
+    expect(typeof body.rawToken).toBe("string");
+    expect(body.token).toBeDefined();
+  });
+
   it("GET /agents/:id/tokens returns list WITHOUT rawToken", async () => {
     const app = createAdminApp(makeMockDeps());
     const res = await app.request(`/agents/${AGENT_ID}/tokens`, {
@@ -1180,5 +1201,28 @@ describe("admin API — bearer token auth", () => {
       headers: { Cookie: `admin_session=${cookie}` },
     });
     expect(res.status).toBe(200);
+  });
+});
+
+// ─── Zod request-body validation ──────────────────────────────────────────────
+
+describe("admin API — Zod validation", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  it("POST /agents/:id/crons with missing required fields returns 400 from Zod", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}/crons`, {
+      method: "POST",
+      body: JSON.stringify({ prompt: "missing schedule field" }), // schedule is required
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(400);
   });
 });
