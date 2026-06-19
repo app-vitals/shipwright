@@ -2,5 +2,9 @@
   "name": "@shipwright/lib",
   "version": "0.1.0",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "exports": {
+    "./admin-types": "./admin-types.ts",
+    "./web/*": "./web/*"
+  }
 }

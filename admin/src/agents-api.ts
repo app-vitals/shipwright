@@ -536,9 +536,10 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
   // Apply combined auth (bearer token OR session cookie) to all /agents/* routes.
   app.use("/agents/*", authMiddleware);
 
-  // The /agents/* matcher requires a trailing path segment, so the static-depth
-  // routes (/agents and /agents/:id) are NOT covered above — apply auth to them
-  // explicitly, mirroring the prior plain-Hono implementation.
+  // /agents/* covers all /agents/… paths with at least one trailing segment
+  // (e.g. /agents/:id, /agents/:id/crons). Only the zero-segment paths
+  // (/agents and /agents/reconcile) are not covered above — apply auth to them
+  // explicitly.
   app.use("/agents", authMiddleware);
   app.use("/agents/reconcile", authMiddleware);
 

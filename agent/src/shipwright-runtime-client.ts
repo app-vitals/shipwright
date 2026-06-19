@@ -8,12 +8,8 @@
  * - HttpShipwrightRuntimeClient — typed HTTP implementation via openapi-fetch
  */
 
-import type {
-  AdminApiPaths,
-  AgentConfigResponse,
-  AgentCronJob,
-  RuntimeApiPaths,
-} from "@shipwright/admin";
+import type { AgentConfigResponse, AgentCronJob } from "@shipwright/admin";
+import type { paths } from "@shipwright/lib/admin-types";
 import createClient from "openapi-fetch";
 
 type FetchFn = (
@@ -44,8 +40,8 @@ export interface ShipwrightRuntimeClient {
 // ─── HttpShipwrightRuntimeClient ──────────────────────────────────────────────
 
 export class HttpShipwrightRuntimeClient implements ShipwrightRuntimeClient {
-  private readonly client: ReturnType<typeof createClient<RuntimeApiPaths>>;
-  private readonly adminClient: ReturnType<typeof createClient<AdminApiPaths>>;
+  private readonly client: ReturnType<typeof createClient<paths>>;
+  private readonly adminClient: ReturnType<typeof createClient<paths>>;
 
   constructor(opts: {
     apiUrl: string;
@@ -61,11 +57,11 @@ export class HttpShipwrightRuntimeClient implements ShipwrightRuntimeClient {
       },
       ...(opts.fetchFn ? { fetch: opts.fetchFn } : {}),
     };
-    this.client = createClient<RuntimeApiPaths>({
+    this.client = createClient<paths>({
       baseUrl: opts.apiUrl,
       ...commonOpts,
     });
-    this.adminClient = createClient<AdminApiPaths>({
+    this.adminClient = createClient<paths>({
       baseUrl: opts.adminApiUrl ?? opts.apiUrl,
       ...commonOpts,
     });
@@ -73,8 +69,8 @@ export class HttpShipwrightRuntimeClient implements ShipwrightRuntimeClient {
 
   async getAgentConfigBundle(agentId: string): Promise<AgentConfigResponse> {
     const { data, error, response } = await this.client.GET(
-      "/agents/{agentId}/config",
-      { params: { path: { agentId } } },
+      "/agents/{id}/config",
+      { params: { path: { id: agentId } } },
     );
     if (error) {
       throw new ShipwrightClientError(
@@ -87,8 +83,8 @@ export class HttpShipwrightRuntimeClient implements ShipwrightRuntimeClient {
 
   async listAgentCronJobs(agentId: string): Promise<AgentCronJob[]> {
     const { data, error, response } = await this.client.GET(
-      "/agents/{agentId}/crons",
-      { params: { path: { agentId } } },
+      "/agents/{id}/crons",
+      { params: { path: { id: agentId } } },
     );
     if (error) {
       throw new ShipwrightClientError(
@@ -96,15 +92,20 @@ export class HttpShipwrightRuntimeClient implements ShipwrightRuntimeClient {
         `GET /agents/${agentId}/crons failed: ${response.status}`,
       );
     }
-    return data;
+    // The API returns ISO date strings; cast through unknown to the internal
+    // AgentCronJob type (which uses Date objects — deserialization is callers'
+    // concern, matching prior behaviour).
+    return data as unknown as AgentCronJob[];
   }
 
   async reconcileSystemCrons(agentId: string): Promise<void> {
-    const { error, response } = await this.adminClient.POST(
-      "/agents/{agentId}/crons/reconcile",
-      { params: { path: { agentId } } },
+    // The reconcile endpoint only defines a 200 response in the spec, so
+    // openapi-fetch types `error` as never. Use response.ok instead.
+    const { response } = await this.adminClient.POST(
+      "/agents/{id}/crons/reconcile",
+      { params: { path: { id: agentId } } },
     );
-    if (error) {
+    if (!response.ok) {
       throw new ShipwrightClientError(
         response.status,
         `POST /agents/${agentId}/crons/reconcile failed: ${response.status}`,
