@@ -2,9 +2,10 @@
  * admin/src/admin-spec.smoke.test.ts
  * Smoke test: GET /doc returns 200 with a valid OpenAPI 3.1.0 document.
  *
- * Verifies that the combined root app (runtime + admin) exposes a /doc endpoint
- * that serves the generated OpenAPI spec. This test will fail until the /doc
- * endpoint is wired up in the factory.
+ * Verifies that a locally-assembled root app (runtime + admin + /doc) returns a
+ * valid 3.1.0 spec. `buildSpecApp()` wires the /doc endpoint directly — this test
+ * does NOT verify that production `main.ts` exposes /doc (it does not today;
+ * wiring /doc in the factory is a planned follow-up).
  */
 
 import { describe, expect, it } from "bun:test";
@@ -128,7 +129,11 @@ describe("GET /doc — OpenAPI spec endpoint", () => {
     const res = await app.request("/doc");
     const body = await res.json();
     // Runtime routes mounted via root.route("/agents", runtimeApp) appear with
-    // Hono colon notation in the OAS doc from the root app's /doc endpoint.
+    // Hono colon notation (:id) in the live /doc output — NOT curly-brace OAS
+    // notation ({id}). The committed admin/openapi.json and lib/admin-types.ts
+    // use {id} because generate-admin-spec.ts rewrites colons before writing the
+    // artifact. Both are correct for their context; these assertions must match
+    // the live Hono format, not the committed spec file.
     expect(body.paths["/agents/:id/config"]).toBeDefined();
     expect(body.paths["/agents/:id/crons"]).toBeDefined();
   });
