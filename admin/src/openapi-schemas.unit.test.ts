@@ -312,26 +312,15 @@ describe("AgentPluginSchema", () => {
 
 describe("ErrorSchema", () => {
   test("parses valid error response", () => {
-    const result = ErrorSchema.safeParse({ error: "Not found", status: 404 });
+    const result = ErrorSchema.safeParse({ error: "Not found" });
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.error).toBe("Not found");
-      expect(result.data.status).toBe(404);
     }
   });
 
   test("rejects missing error string", () => {
-    const result = ErrorSchema.safeParse({ status: 500 });
-    expect(result.success).toBe(false);
-  });
-
-  test("rejects missing status", () => {
-    const result = ErrorSchema.safeParse({ error: "oops" });
-    expect(result.success).toBe(false);
-  });
-
-  test("rejects non-number status", () => {
-    const result = ErrorSchema.safeParse({ error: "oops", status: "404" });
+    const result = ErrorSchema.safeParse({});
     expect(result.success).toBe(false);
   });
 });
