@@ -215,7 +215,7 @@ export const AgentTokenMetaSchema = AgentTokenSchema;
  */
 export const CreateAgentTokenResponseSchema = z
   .object({
-    token: AgentTokenMetaSchema,
+    token: AgentTokenSchema,
     rawToken: z
       .string()
       .openapi({ example: "swt_v1_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" }),
