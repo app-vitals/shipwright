@@ -154,7 +154,7 @@ export function buildAgentManifest(
           "users:read",
         ],
       },
-      redirect_urls: [redirectUri ?? "http://localhost:3460"],
+      ...(redirectUri !== undefined ? { redirect_urls: [redirectUri] } : {}),
     },
     settings: {
       org_deploy_enabled: false,
