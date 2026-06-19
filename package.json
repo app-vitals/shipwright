@@ -11,6 +11,8 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
+    "openapi-fetch": "^0.13",
+    "openapi-typescript": "^7",
     "@semantic-release/changelog": "^6.0.3",
     "@semantic-release/commit-analyzer": "^13.0.1",
     "@semantic-release/exec": "^7.1.0",
