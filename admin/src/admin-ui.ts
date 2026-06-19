@@ -40,7 +40,10 @@ import { ForbiddenError, UnprocessableEntityError } from "./errors.ts";
 import type { GoogleAuthClient } from "./google-auth-client.ts";
 import type { AgentProvisioner } from "./agent-provisioner.ts";
 import type { AppManifest } from "./slack-provisioning-client.ts";
-import { buildAgentManifest } from "./slack-provisioning-client.ts";
+import {
+  AGENT_BOT_SCOPES,
+  buildAgentManifest,
+} from "./slack-provisioning-client.ts";
 
 type AdminUIEnv = { Variables: { userEmail: string; isAdmin: boolean } };
 
@@ -969,23 +972,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         secure: appBaseUrl.startsWith("https://"),
       });
 
-      // Build the Slack OAuth v2 authorize URL
-      const scopes = [
-        "app_mentions:read",
-        "assistant:write",
-        "channels:history",
-        "channels:read",
-        "chat:write",
-        "files:read",
-        "files:write",
-        "groups:history",
-        "im:history",
-        "im:write",
-        "mpim:history",
-        "reactions:read",
-        "reactions:write",
-        "users:read",
-      ].join(",");
+      // Build the Slack OAuth v2 authorize URL — use the canonical scope list
+      // exported from slack-provisioning-client.ts so this stays in sync with
+      // what buildAgentManifest declares.
+      const scopes = AGENT_BOT_SCOPES.join(",");
       const redirectUri = `${appBaseUrl}/admin/provision/complete`;
       const oauthParams = new URLSearchParams({
         client_id: clientId,

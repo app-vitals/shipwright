@@ -109,7 +109,28 @@ export interface SlackProvisioningClient {
  * and subsequent manifest syncs (omit redirectUri to keep localhost default).
  * Socket Mode and the full event/assistant config are always applied — there
  * is no separate "provisioning-only" manifest.
+ *
+ * The canonical bot scope list is exported as `AGENT_BOT_SCOPES` so that other
+ * code paths (e.g. the sync-manifest reinstall OAuth URL) can stay in sync
+ * without duplicating the array.
  */
+export const AGENT_BOT_SCOPES: string[] = [
+  "app_mentions:read",
+  "assistant:write",
+  "channels:history",
+  "channels:read",
+  "chat:write",
+  "files:read",
+  "files:write",
+  "groups:history",
+  "im:history",
+  "im:write",
+  "mpim:history",
+  "reactions:read",
+  "reactions:write",
+  "users:read",
+];
+
 export function buildAgentManifest(
   appName: string,
   redirectUri?: string,
@@ -137,22 +158,7 @@ export function buildAgentManifest(
     },
     oauth_config: {
       scopes: {
-        bot: [
-          "app_mentions:read",
-          "assistant:write",
-          "channels:history",
-          "channels:read",
-          "chat:write",
-          "files:read",
-          "files:write",
-          "groups:history",
-          "im:history",
-          "im:write",
-          "mpim:history",
-          "reactions:read",
-          "reactions:write",
-          "users:read",
-        ],
+        bot: AGENT_BOT_SCOPES,
       },
       ...(redirectUri !== undefined ? { redirect_urls: [redirectUri] } : {}),
     },

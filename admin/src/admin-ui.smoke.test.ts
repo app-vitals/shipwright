@@ -1841,6 +1841,15 @@ describe("admin UI — manifest sync route", () => {
     // Provision state cookie should be set
     const setCookieHeader = res.headers.get("Set-Cookie") ?? "";
     expect(setCookieHeader).toContain("slack_provision_state=");
+    // Verify JWT payload — a bug encoding the wrong agentId or clientId
+    // would pass the presence check above but be caught here
+    const tokenMatch = setCookieHeader.match(/slack_provision_state=([^;]+)/);
+    expect(tokenMatch).not.toBeNull();
+    const jwtPayload = JSON.parse(
+      Buffer.from(tokenMatch?.[1].split(".")[1] ?? "", "base64url").toString(),
+    );
+    expect(jwtPayload.agentId).toBe(AGENT_ID);
+    expect(jwtPayload.clientId).toBe("my-client-id");
   });
 
   it("sync-manifest with no SLACK_CLIENT_ID in env (legacy agent) → 302 to ?success=manifest_synced", async () => {
