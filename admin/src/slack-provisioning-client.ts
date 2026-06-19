@@ -100,58 +100,20 @@ export interface SlackProvisioningClient {
   ): Promise<{ botToken: string }>;
 }
 
-// ─── Default manifest ─────────────────────────────────────────────────────────
+// ─── Agent manifest ───────────────────────────────────────────────────────────
 
 /**
- * Default Slack app manifest for a Shipwright agent.
- * Scopes allow the agent to post messages, read channel history, and send DMs.
+ * Builds the Slack app manifest for a Shipwright agent.
+ *
+ * Used for both initial provisioning (pass redirectUri for the OAuth callback)
+ * and subsequent manifest syncs (omit redirectUri to keep localhost default).
+ * Socket Mode and the full event/assistant config are always applied — there
+ * is no separate "provisioning-only" manifest.
  */
-export function defaultAgentManifest(
+export function buildAgentManifest(
   appName: string,
-  redirectUri: string,
+  redirectUri?: string,
 ): AppManifest {
-  return {
-    display_information: {
-      name: appName,
-      description: "Shipwright autonomous agent",
-      background_color: "#1a1a2e",
-    },
-    features: {
-      bot_user: {
-        display_name: appName,
-        always_online: false,
-      },
-    },
-    oauth_config: {
-      scopes: {
-        bot: [
-          "channels:history",
-          "channels:read",
-          "chat:write",
-          "groups:history",
-          "groups:read",
-          "im:history",
-          "im:read",
-          "im:write",
-          "mpim:history",
-          "users:read",
-        ],
-      },
-      redirect_urls: [redirectUri],
-    },
-    settings: {
-      org_deploy_enabled: false,
-      socket_mode_enabled: false,
-    },
-  };
-}
-
-/**
- * Operational Slack app manifest for a Shipwright agent.
- * Applied after provisioning via "Sync Manifest" to enable Socket Mode,
- * event subscriptions, and the assistant experience.
- */
-export function operationalAgentManifest(appName: string): AppManifest {
   return {
     display_information: {
       name: appName,
@@ -191,7 +153,7 @@ export function operationalAgentManifest(appName: string): AppManifest {
           "users:read",
         ],
       },
-      redirect_urls: ["http://localhost:3460"],
+      redirect_urls: [redirectUri ?? "http://localhost:3460"],
     },
     settings: {
       org_deploy_enabled: false,

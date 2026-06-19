@@ -40,7 +40,7 @@ import { ForbiddenError, UnprocessableEntityError } from "./errors.ts";
 import type { GoogleAuthClient } from "./google-auth-client.ts";
 import type { AgentProvisioner } from "./agent-provisioner.ts";
 import type { AppManifest } from "./slack-provisioning-client.ts";
-import { defaultAgentManifest, operationalAgentManifest } from "./slack-provisioning-client.ts";
+import { buildAgentManifest } from "./slack-provisioning-client.ts";
 
 type AdminUIEnv = { Variables: { userEmail: string; isAdmin: boolean } };
 
@@ -922,7 +922,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }
 
     try {
-      const manifest = operationalAgentManifest(agent.name);
+      const manifest = buildAgentManifest(agent.name);
       await slackClient.updateAppManifest(xoxpToken, appId, manifest);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unknown error syncing manifest.";
@@ -1037,7 +1037,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     };
     try {
       const redirectUri = `${appBaseUrl}/admin/provision/complete`;
-      const manifest = defaultAgentManifest(agent.name, redirectUri);
+      const manifest = buildAgentManifest(agent.name, redirectUri);
       slackResult = await slackClient.createAppManifest(xoxpToken, manifest);
     } catch (err) {
       const msg =
