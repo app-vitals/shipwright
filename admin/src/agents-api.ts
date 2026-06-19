@@ -1,6 +1,6 @@
 /**
  * agent/src/agents-api.ts
- * Admin CRUD API — Hono app factory.
+ * Admin CRUD API — OpenAPIHono app factory.
  *
  * Routes mounted at /agents/*. Full CRUD for:
  *   - Agent (create)
@@ -10,18 +10,17 @@
  *   - AgentToken
  *   - AgentPlugin
  *
+ * Routes are declared via createRoute() with Zod request/response schemas
+ * (see openapi-schemas.ts). Malformed request bodies are rejected with 400 by
+ * the OpenAPIHono defaultHook before reaching handlers.
+ *
  * Auth: admin key (SHIPWRIGHT_ADMIN_API_KEYS) OR per-agent bearer token OR
  *       session cookie (httpOnly JWT, SHIPWRIGHT_SESSION_SECRET).
  * Cookie name: admin_session.
  */
 
-import { Hono } from "hono";
-import type {
-  AgentCronJob,
-  AgentToken,
-  AgentTool,
-  PrismaClient,
-} from "../prisma/client/index.js";
+import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import type { PrismaClient } from "../prisma/client/index.js";
 import type { AgentCronJobService } from "./agent-cron-jobs.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
 import type { AgentPluginService } from "./agent-plugins.ts";
@@ -36,6 +35,32 @@ import {
   ForbiddenError,
   NotFoundError,
 } from "./errors.ts";
+import {
+  AgentCronJobSchema,
+  AgentEnvBodySchema,
+  AgentEnvResponseSchema,
+  AgentIdParamSchema,
+  AgentPluginSchema,
+  AgentSchema,
+  AgentSummarySchema,
+  AgentTokenSchema,
+  AgentToolSchema,
+  CreateAgentBodySchema,
+  CreateAgentCronJobBodySchema,
+  CreateAgentPluginBodySchema,
+  CreateAgentTokenBodySchema,
+  CreateAgentTokenResponseSchema,
+  CronIdParamSchema,
+  EnvKeyParamSchema,
+  ErrorSchema,
+  OkSchema,
+  PatchAgentCronJobBodySchema,
+  PatchAgentPluginBodySchema,
+  PatchAgentToolBodySchema,
+  PluginNameQuerySchema,
+  TokenIdParamSchema,
+  ToolIdParamSchema,
+} from "./openapi-schemas.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -83,9 +108,393 @@ export interface AdminDeps {
 export { parseAdminApiKeys };
 export type { AdminApiKey };
 
+// ─── Response schema helpers ────────────────────────────────────────────────────
+
+const ReconcileCronResultSchema = z
+  .object({
+    created: z.number().int(),
+    updated: z.number().int(),
+    deleted: z.number().int(),
+  })
+  .openapi("ReconcileCronResult");
+
+const ReconcileAgentsResultSchema = z
+  .object({
+    recreated: z.array(z.string()),
+    orphans: z.array(z.string()),
+    failed: z.array(z.object({ agentId: z.string(), error: z.string() })),
+  })
+  .openapi("ReconcileAgentsResult");
+
+const CronWrapperSchema = z
+  .object({ cron: AgentCronJobSchema })
+  .openapi("CronWrapper");
+
+const ToolWrapperSchema = z
+  .object({ tool: AgentToolSchema })
+  .openapi("ToolWrapper");
+
+const ToolsWrapperSchema = z
+  .object({ tools: z.array(AgentToolSchema) })
+  .openapi("ToolsWrapper");
+
+const TokensWrapperSchema = z
+  .object({ tokens: z.array(AgentTokenSchema) })
+  .openapi("TokensWrapper");
+
+const PluginWrapperSchema = z
+  .object({ plugin: AgentPluginSchema })
+  .openapi("PluginWrapper");
+
+const PluginsWrapperSchema = z
+  .object({ plugins: z.array(AgentPluginSchema) })
+  .openapi("PluginsWrapper");
+
+const jsonError = {
+  content: { "application/json": { schema: ErrorSchema } },
+};
+
+// ─── Route definitions ──────────────────────────────────────────────────────────
+
+const createAgentRoute = createRoute({
+  method: "post",
+  path: "/agents",
+  request: {
+    body: {
+      content: { "application/json": { schema: CreateAgentBodySchema } },
+    },
+  },
+  responses: {
+    201: {
+      description: "Agent created",
+      content: { "application/json": { schema: AgentSchema } },
+    },
+    400: { description: "Bad request", ...jsonError },
+    403: { description: "Forbidden", ...jsonError },
+  },
+});
+
+const reconcileAgentsRoute = createRoute({
+  method: "post",
+  path: "/agents/reconcile",
+  responses: {
+    200: {
+      description: "Reconciliation summary",
+      content: { "application/json": { schema: ReconcileAgentsResultSchema } },
+    },
+    403: { description: "Forbidden", ...jsonError },
+  },
+});
+
+const listAgentsRoute = createRoute({
+  method: "get",
+  path: "/agents",
+  responses: {
+    200: {
+      description: "List of agents",
+      content: { "application/json": { schema: z.array(AgentSummarySchema) } },
+    },
+    403: { description: "Forbidden", ...jsonError },
+  },
+});
+
+const deleteAgentRoute = createRoute({
+  method: "delete",
+  path: "/agents/{id}",
+  request: { params: AgentIdParamSchema },
+  responses: {
+    204: { description: "Agent deleted" },
+    403: { description: "Forbidden", ...jsonError },
+    404: { description: "Agent not found", ...jsonError },
+  },
+});
+
+const upsertEnvsRoute = createRoute({
+  method: "post",
+  path: "/agents/{id}/envs",
+  request: {
+    params: AgentIdParamSchema,
+    body: { content: { "application/json": { schema: AgentEnvBodySchema } } },
+  },
+  responses: {
+    201: {
+      description: "Env vars replaced",
+      content: { "application/json": { schema: OkSchema } },
+    },
+    400: { description: "Bad request", ...jsonError },
+  },
+});
+
+const getEnvsRoute = createRoute({
+  method: "get",
+  path: "/agents/{id}/envs",
+  request: { params: AgentIdParamSchema },
+  responses: {
+    200: {
+      description: "Decrypted env vars",
+      content: { "application/json": { schema: AgentEnvResponseSchema } },
+    },
+  },
+});
+
+const patchEnvsRoute = createRoute({
+  method: "patch",
+  path: "/agents/{id}/envs",
+  request: {
+    params: AgentIdParamSchema,
+    body: { content: { "application/json": { schema: AgentEnvBodySchema } } },
+  },
+  responses: {
+    200: {
+      description: "Env vars updated",
+      content: { "application/json": { schema: OkSchema } },
+    },
+    400: { description: "Bad request", ...jsonError },
+  },
+});
+
+const deleteEnvKeyRoute = createRoute({
+  method: "delete",
+  path: "/agents/{id}/envs/{key}",
+  request: { params: EnvKeyParamSchema },
+  responses: {
+    204: { description: "Key deleted" },
+  },
+});
+
+const createCronRoute = createRoute({
+  method: "post",
+  path: "/agents/{id}/crons",
+  request: {
+    params: AgentIdParamSchema,
+    body: {
+      content: {
+        "application/json": { schema: CreateAgentCronJobBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Cron job created",
+      content: { "application/json": { schema: CronWrapperSchema } },
+    },
+    400: { description: "Bad request", ...jsonError },
+  },
+});
+
+const reconcileCronsRoute = createRoute({
+  method: "post",
+  path: "/agents/{id}/crons/reconcile",
+  request: { params: AgentIdParamSchema },
+  responses: {
+    200: {
+      description: "Reconciliation summary",
+      content: { "application/json": { schema: ReconcileCronResultSchema } },
+    },
+  },
+});
+
+const patchCronRoute = createRoute({
+  method: "patch",
+  path: "/agents/{id}/crons/{cronId}",
+  request: {
+    params: CronIdParamSchema,
+    body: {
+      content: { "application/json": { schema: PatchAgentCronJobBodySchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: "Cron job updated",
+      content: { "application/json": { schema: CronWrapperSchema } },
+    },
+    400: { description: "Bad request", ...jsonError },
+  },
+});
+
+const deleteCronRoute = createRoute({
+  method: "delete",
+  path: "/agents/{id}/crons/{cronId}",
+  request: { params: CronIdParamSchema },
+  responses: {
+    204: { description: "Cron job deleted" },
+    403: { description: "Forbidden", ...jsonError },
+  },
+});
+
+const createToolRoute = createRoute({
+  method: "post",
+  path: "/agents/{id}/tools",
+  request: {
+    params: AgentIdParamSchema,
+    body: {
+      content: {
+        "application/json": {
+          schema: z
+            .object({ pattern: z.string().min(1) })
+            .openapi("CreateAgentToolBody"),
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Tool added",
+      content: { "application/json": { schema: ToolWrapperSchema } },
+    },
+    400: { description: "Bad request", ...jsonError },
+  },
+});
+
+const listToolsRoute = createRoute({
+  method: "get",
+  path: "/agents/{id}/tools",
+  request: { params: AgentIdParamSchema },
+  responses: {
+    200: {
+      description: "List of tool patterns",
+      content: { "application/json": { schema: ToolsWrapperSchema } },
+    },
+  },
+});
+
+const patchToolRoute = createRoute({
+  method: "patch",
+  path: "/agents/{id}/tools/{toolId}",
+  request: {
+    params: ToolIdParamSchema,
+    body: {
+      content: { "application/json": { schema: PatchAgentToolBodySchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: "Tool toggled",
+      content: { "application/json": { schema: ToolWrapperSchema } },
+    },
+    400: { description: "Bad request", ...jsonError },
+  },
+});
+
+const deleteToolRoute = createRoute({
+  method: "delete",
+  path: "/agents/{id}/tools/{toolId}",
+  request: { params: ToolIdParamSchema },
+  responses: {
+    204: { description: "Tool removed" },
+  },
+});
+
+const createTokenRoute = createRoute({
+  method: "post",
+  path: "/agents/{id}/tokens",
+  request: {
+    params: AgentIdParamSchema,
+    body: {
+      required: false,
+      content: {
+        "application/json": { schema: CreateAgentTokenBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Token created (raw value returned once)",
+      content: {
+        "application/json": { schema: CreateAgentTokenResponseSchema },
+      },
+    },
+  },
+});
+
+const listTokensRoute = createRoute({
+  method: "get",
+  path: "/agents/{id}/tokens",
+  request: { params: AgentIdParamSchema },
+  responses: {
+    200: {
+      description: "List of token metadata",
+      content: { "application/json": { schema: TokensWrapperSchema } },
+    },
+  },
+});
+
+const deleteTokenRoute = createRoute({
+  method: "delete",
+  path: "/agents/{id}/tokens/{tokenId}",
+  request: { params: TokenIdParamSchema },
+  responses: {
+    204: { description: "Token revoked" },
+  },
+});
+
+const createPluginRoute = createRoute({
+  method: "post",
+  path: "/agents/{id}/plugins",
+  request: {
+    params: AgentIdParamSchema,
+    body: {
+      content: {
+        "application/json": { schema: CreateAgentPluginBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Plugin added",
+      content: { "application/json": { schema: PluginWrapperSchema } },
+    },
+    400: { description: "Bad request", ...jsonError },
+  },
+});
+
+const listPluginsRoute = createRoute({
+  method: "get",
+  path: "/agents/{id}/plugins",
+  request: { params: AgentIdParamSchema },
+  responses: {
+    200: {
+      description: "List of plugins",
+      content: { "application/json": { schema: PluginsWrapperSchema } },
+    },
+  },
+});
+
+const patchPluginRoute = createRoute({
+  method: "patch",
+  path: "/agents/{id}/plugins",
+  request: {
+    params: AgentIdParamSchema,
+    query: PluginNameQuerySchema,
+    body: {
+      content: { "application/json": { schema: PatchAgentPluginBodySchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: "Plugin version updated",
+      content: { "application/json": { schema: PluginWrapperSchema } },
+    },
+    400: { description: "Bad request", ...jsonError },
+  },
+});
+
+const deletePluginRoute = createRoute({
+  method: "delete",
+  path: "/agents/{id}/plugins",
+  request: {
+    params: AgentIdParamSchema,
+    query: PluginNameQuerySchema,
+  },
+  responses: {
+    204: { description: "Plugin removed" },
+    400: { description: "Bad request", ...jsonError },
+  },
+});
+
 // ─── App factory ──────────────────────────────────────────────────────────────
 
-export function createAdminApp(deps: AdminDeps): Hono<AdminAuthEnv> {
+export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
   const {
     agentEnvService,
     agentCronJobService,
@@ -98,7 +507,17 @@ export function createAdminApp(deps: AdminDeps): Hono<AdminAuthEnv> {
     adminApiKeys,
   } = deps;
 
-  const app = new Hono<AdminAuthEnv>();
+  const app = new OpenAPIHono<AdminAuthEnv>({
+    // Fires when Zod request validation fails — surface a 400 with the issues.
+    defaultHook: (result, c) => {
+      if (!result.success) {
+        const message = result.error.issues
+          .map((i) => `${i.path.join(".")}: ${i.message}`)
+          .join(", ");
+        return c.json({ error: message }, 400);
+      }
+    },
+  });
 
   app.onError((err, c) => {
     if (err instanceof ApiError) {
@@ -111,216 +530,165 @@ export function createAdminApp(deps: AdminDeps): Hono<AdminAuthEnv> {
     return c.json({ error: "Internal server error" }, 500);
   });
 
-  // Apply combined auth (bearer token OR session cookie) to all /agents/* routes
-  app.use(
-    "/agents/*",
-    createAdminAuthMiddleware({
-      sessionSecret,
-      agentTokenService,
-      adminApiKeys,
-    }),
-  );
+  const authMiddleware = createAdminAuthMiddleware({
+    sessionSecret,
+    agentTokenService,
+    adminApiKeys,
+  });
+
+  // Apply combined auth (bearer token OR session cookie) to all /agents/* routes.
+  app.use("/agents/*", authMiddleware);
+
+  // The /agents/* matcher requires a trailing path segment, so the static-depth
+  // routes (/agents and /agents/:id) are NOT covered above — apply auth to them
+  // explicitly, mirroring the prior plain-Hono implementation.
+  app.use("/agents", authMiddleware);
+  app.use("/agents/reconcile", authMiddleware);
 
   // ─── Agents ────────────────────────────────────────────────────────────────
 
   // POST /agents — create a new agent (admin only)
-  // Note: /agents route without :id — not covered by /agents/* middleware above.
-  // Auth is checked manually in the handler via c.get("isAdmin").
-  // The middleware is applied to /agents/* (with trailing path), so POST /agents
-  // does NOT go through auth middleware — we re-apply it here explicitly.
-  app.post(
-    "/agents",
-    createAdminAuthMiddleware({
-      sessionSecret,
-      agentTokenService,
-      adminApiKeys,
-    }),
-    async (c) => {
-      if (c.get("isAdmin") !== true) {
-        throw new ForbiddenError(
-          "Only admin bearers and session users can create agents",
-        );
-      }
-      const body = await c.req.json<{ name?: string; slackId?: string }>();
-      if (!body.name || typeof body.name !== "string") {
-        throw new BadRequestError("name is required");
-      }
-      const agent = await prisma.agent.create({
-        data: { name: body.name, slackId: body.slackId ?? null },
-      });
-
-      // Provision the backing workload AFTER the row exists (the provisioner
-      // mints a per-agent token tied to the agent id). If provisioning throws,
-      // roll the agent row back so we never leave a half-created agent with no
-      // workload — then surface the failure as a 5xx via onError. The Noop
-      // provisioner never throws, preserving today's create behavior exactly.
-      try {
-        await provisioner.provision(agent.id);
-      } catch (err) {
-        await prisma.agent
-          .delete({ where: { id: agent.id } })
-          .catch((cleanupErr) => {
-            console.error(
-              "[agents-api] failed to roll back agent after provision error:",
-              cleanupErr,
-            );
-          });
-        throw err;
-      }
-
-      return c.json(
-        {
-          id: agent.id,
-          name: agent.name,
-          slackId: agent.slackId,
-          createdAt: agent.createdAt,
-        },
-        201,
+  app.openapi(createAgentRoute, async (c) => {
+    if (c.get("isAdmin") !== true) {
+      throw new ForbiddenError(
+        "Only admin bearers and session users can create agents",
       );
-    },
-  );
+    }
+    const body = c.req.valid("json");
+    const agent = await prisma.agent.create({
+      data: { name: body.name, slackId: body.slackId ?? null },
+    });
+
+    // Provision the backing workload AFTER the row exists (the provisioner
+    // mints a per-agent token tied to the agent id). If provisioning throws,
+    // roll the agent row back so we never leave a half-created agent with no
+    // workload — then surface the failure as a 5xx via onError. The Noop
+    // provisioner never throws, preserving today's create behavior exactly.
+    try {
+      await provisioner.provision(agent.id);
+    } catch (err) {
+      await prisma.agent
+        .delete({ where: { id: agent.id } })
+        .catch((cleanupErr) => {
+          console.error(
+            "[agents-api] failed to roll back agent after provision error:",
+            cleanupErr,
+          );
+        });
+      throw err;
+    }
+
+    return c.json(
+      {
+        id: agent.id,
+        name: agent.name,
+        slackId: agent.slackId,
+        createdAt: agent.createdAt.toISOString(),
+        updatedAt: agent.updatedAt.toISOString(),
+      },
+      201,
+    );
+  });
 
   // POST /agents/reconcile — reconcile K8s Deployment state against the DB (admin only)
-  //
-  // IMPORTANT: must be registered BEFORE /agents/:id routes to avoid path conflicts.
-  // Not covered by /agents/* middleware — auth applied explicitly.
-  app.post(
-    "/agents/reconcile",
-    createAdminAuthMiddleware({
-      sessionSecret,
-      agentTokenService,
-      adminApiKeys,
-    }),
-    async (c) => {
-      if (c.get("isAdmin") !== true) {
-        throw new ForbiddenError(
-          "Only admin bearers and session users can reconcile agents",
-        );
-      }
-      const agents = await prisma.agent.findMany({ select: { id: true } });
-      const result = await provisioner.reconcile(agents.map((a) => a.id));
-      return c.json(result);
-    },
-  );
+  app.openapi(reconcileAgentsRoute, async (c) => {
+    if (c.get("isAdmin") !== true) {
+      throw new ForbiddenError(
+        "Only admin bearers and session users can reconcile agents",
+      );
+    }
+    const agents = await prisma.agent.findMany({ select: { id: true } });
+    const result = await provisioner.reconcile(agents.map((a) => a.id));
+    return c.json(result, 200);
+  });
 
   // DELETE /agents/:id — delete an agent and tear down its workload (admin only)
-  //
-  // Note: this static-depth route (/agents/:id) is NOT matched by the
-  // /agents/* middleware (which requires a trailing path segment), so auth is
-  // re-applied explicitly here, mirroring POST/GET /agents above.
-  app.delete(
-    "/agents/:id",
-    createAdminAuthMiddleware({
-      sessionSecret,
-      agentTokenService,
-      adminApiKeys,
-    }),
-    async (c) => {
-      if (c.get("isAdmin") !== true) {
-        throw new ForbiddenError(
-          "Only admin bearers and session users can delete agents",
-        );
-      }
-      const agentId = c.req.param("id");
+  app.openapi(deleteAgentRoute, async (c) => {
+    if (c.get("isAdmin") !== true) {
+      throw new ForbiddenError(
+        "Only admin bearers and session users can delete agents",
+      );
+    }
+    const { id: agentId } = c.req.valid("param");
 
-      // 404 on unknown id before any side effects.
-      const existing = await prisma.agent.findUnique({
-        where: { id: agentId },
-        select: { id: true },
-      });
-      if (!existing) {
-        throw new NotFoundError(`agent ${agentId} not found`);
-      }
+    // 404 on unknown id before any side effects.
+    const existing = await prisma.agent.findUnique({
+      where: { id: agentId },
+      select: { id: true },
+    });
+    if (!existing) {
+      throw new NotFoundError(`agent ${agentId} not found`);
+    }
 
-      // Tear down the workload first, then delete the row. Child rows
-      // (AgentEnv / AgentCronJob / AgentTool / AgentToken / AgentPlugin) cascade
-      // via `onDelete: Cascade` in the Prisma schema. deprovision() tolerates an
-      // already-absent workload, so a retried delete is a no-op.
-      await provisioner.deprovision(agentId);
-      await prisma.agent.delete({ where: { id: agentId } });
+    // Tear down the workload first, then delete the row. Child rows
+    // (AgentEnv / AgentCronJob / AgentTool / AgentToken / AgentPlugin) cascade
+    // via `onDelete: Cascade` in the Prisma schema. deprovision() tolerates an
+    // already-absent workload, so a retried delete is a no-op.
+    await provisioner.deprovision(agentId);
+    await prisma.agent.delete({ where: { id: agentId } });
 
-      return new Response(null, { status: 204 });
-    },
-  );
+    return c.body(null, 204);
+  });
 
   // GET /agents — list all agents (id + name) for metrics name resolution.
-  // Not covered by /agents/* middleware — auth applied explicitly like POST /agents.
-  app.get(
-    "/agents",
-    createAdminAuthMiddleware({
-      sessionSecret,
-      agentTokenService,
-      adminApiKeys,
-    }),
-    async (c) => {
-      if (c.get("isAdmin") !== true) {
-        throw new ForbiddenError("Admin access required to list agents");
-      }
-      const agents = await prisma.agent.findMany({
-        select: { id: true, name: true },
-        orderBy: { name: "asc" },
-      });
-      return c.json(agents);
-    },
-  );
+  app.openapi(listAgentsRoute, async (c) => {
+    if (c.get("isAdmin") !== true) {
+      throw new ForbiddenError("Admin access required to list agents");
+    }
+    const agents = await prisma.agent.findMany({
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    });
+    return c.json(agents, 200);
+  });
 
   // ─── Env vars ──────────────────────────────────────────────────────────────
 
   // POST /agents/:id/envs — replace all env vars (bulk upsert)
-  app.post("/agents/:id/envs", async (c) => {
-    const agentId = c.req.param("id");
-    const body = await c.req.json<Record<string, string>>();
+  app.openapi(upsertEnvsRoute, async (c) => {
+    const { id: agentId } = c.req.valid("param");
+    const body = c.req.valid("json");
     await agentEnvService.upsert(agentId, body);
-    return c.json({ ok: true }, 201);
+    return c.json({ ok: true } as const, 201);
   });
 
   // GET /agents/:id/envs — get all env vars (decrypted)
-  app.get("/agents/:id/envs", async (c) => {
-    const agentId = c.req.param("id");
+  app.openapi(getEnvsRoute, async (c) => {
+    const { id: agentId } = c.req.valid("param");
     const env = await agentEnvService.getByAgentId(agentId);
-    return c.json({ env: env ?? {} });
+    return c.json({ env: env ?? {} }, 200);
   });
 
   // PATCH /agents/:id/envs — update specific keys (without replacing all)
-  app.patch("/agents/:id/envs", async (c) => {
-    const agentId = c.req.param("id");
-    const body = await c.req.json<Record<string, string>>();
+  app.openapi(patchEnvsRoute, async (c) => {
+    const { id: agentId } = c.req.valid("param");
+    const body = c.req.valid("json");
     await agentEnvService.patch(agentId, body);
-    return c.json({ ok: true });
+    return c.json({ ok: true } as const, 200);
   });
 
   // DELETE /agents/:id/envs/:key — delete a single key
-  app.delete("/agents/:id/envs/:key", async (c) => {
-    const agentId = c.req.param("id");
-    const key = c.req.param("key");
+  app.openapi(deleteEnvKeyRoute, async (c) => {
+    const { id: agentId, key } = c.req.valid("param");
     await agentEnvService.deleteKey(agentId, key);
-    return new Response(null, { status: 204 });
+    return c.body(null, 204);
   });
 
   // ─── Cron jobs ─────────────────────────────────────────────────────────────
 
   // POST /agents/:id/crons — create a cron job
-  app.post("/agents/:id/crons", async (c) => {
-    const agentId = c.req.param("id");
-    const body = await c.req.json<{
-      schedule: string;
-      prompt: string;
-      channel?: string | null;
-      user?: string | null;
-      silent?: boolean;
-      enabled?: boolean;
-      preCheck?: string | null;
-      name?: string | null;
-    }>();
-    const cron: AgentCronJob = await agentCronJobService.create(agentId, body);
-    return c.json({ cron }, 201);
+  app.openapi(createCronRoute, async (c) => {
+    const { id: agentId } = c.req.valid("param");
+    const body = c.req.valid("json");
+    const cron = await agentCronJobService.create(agentId, body);
+    return c.json({ cron: serializeCron(cron) }, 201);
   });
 
   // POST /agents/:id/crons/reconcile — static path must precede /:cronId routes
-  app.post("/agents/:id/crons/reconcile", async (c) => {
-    const agentId = c.req.param("id");
+  app.openapi(reconcileCronsRoute, async (c) => {
+    const { id: agentId } = c.req.valid("param");
     const result = await agentCronJobService.reconcileSystemCrons(agentId);
-    return c.json(result);
+    return c.json(result, 200);
   });
 
   // PATCH /agents/:id/crons/:cronId — update a cron job
@@ -328,18 +696,10 @@ export function createAdminApp(deps: AdminDeps): Hono<AdminAuthEnv> {
   // schedule and prompt must be provided together (content update).
   // enabled and preCheck are orthogonal — each may be sent alone or combined
   // with a content update or with each other. Empty body returns 400.
-  app.patch("/agents/:id/crons/:cronId", async (c) => {
-    const agentId = c.req.param("id");
-    const cronId = c.req.param("cronId");
-    const body = await c.req.json<{
-      schedule?: string;
-      prompt?: string;
-      channel?: string | null;
-      user?: string | null;
-      silent?: boolean;
-      preCheck?: string | null;
-      enabled?: boolean;
-    }>();
+  // These are business-logic checks (not schema-level), so they remain manual.
+  app.openapi(patchCronRoute, async (c) => {
+    const { id: agentId, cronId } = c.req.valid("param");
+    const body = c.req.valid("json");
 
     const hasSchedule = body.schedule != null;
     const hasPrompt = body.prompt != null;
@@ -357,7 +717,7 @@ export function createAdminApp(deps: AdminDeps): Hono<AdminAuthEnv> {
       );
     }
 
-    let cron: AgentCronJob | undefined;
+    let cron: Awaited<ReturnType<AgentCronJobService["update"]>> | undefined;
     if (hasSchedule && hasPrompt) {
       // Content update — preCheck and enabled are folded into update()
       cron = await agentCronJobService.update(agentId, cronId, {
@@ -399,142 +759,178 @@ export function createAdminApp(deps: AdminDeps): Hono<AdminAuthEnv> {
       );
     }
 
-    return c.json({ cron });
+    return c.json({ cron: serializeCron(cron) }, 200);
   });
 
   // DELETE /agents/:id/crons/:cronId — delete a cron job
-  app.delete("/agents/:id/crons/:cronId", async (c) => {
-    const agentId = c.req.param("id");
-    const cronId = c.req.param("cronId");
+  app.openapi(deleteCronRoute, async (c) => {
+    const { id: agentId, cronId } = c.req.valid("param");
     const cron = await agentCronJobService.get(agentId, cronId);
     if (cron.system) {
       throw new ForbiddenError("system crons cannot be deleted");
     }
     await agentCronJobService.delete(agentId, cronId);
-    return new Response(null, { status: 204 });
+    return c.body(null, 204);
   });
 
   // ─── Tools ─────────────────────────────────────────────────────────────────
 
   // POST /agents/:id/tools — add a tool pattern
-  app.post("/agents/:id/tools", async (c) => {
-    const agentId = c.req.param("id");
-    const body = await c.req.json<{ pattern: string }>();
-    const tool: AgentTool = await agentToolService.add(agentId, body.pattern);
-    return c.json({ tool }, 201);
+  app.openapi(createToolRoute, async (c) => {
+    const { id: agentId } = c.req.valid("param");
+    const body = c.req.valid("json");
+    const tool = await agentToolService.add(agentId, body.pattern);
+    return c.json({ tool: serializeTool(tool) }, 201);
   });
 
   // GET /agents/:id/tools — list tool patterns
-  app.get("/agents/:id/tools", async (c) => {
-    const agentId = c.req.param("id");
-    const tools: AgentTool[] = await agentToolService.list(agentId);
-    return c.json({ tools });
+  app.openapi(listToolsRoute, async (c) => {
+    const { id: agentId } = c.req.valid("param");
+    const tools = await agentToolService.list(agentId);
+    return c.json({ tools: tools.map(serializeTool) }, 200);
   });
 
   // PATCH /agents/:id/tools/:toolId — enable or disable a tool pattern
-  app.patch("/agents/:id/tools/:toolId", async (c) => {
-    const agentId = c.req.param("id");
-    const toolId = c.req.param("toolId");
-    const body = await c.req.json<{ enabled: boolean }>();
-    const tool: AgentTool = await agentToolService.toggle(
-      agentId,
-      toolId,
-      body.enabled,
-    );
-    return c.json({ tool });
+  app.openapi(patchToolRoute, async (c) => {
+    const { id: agentId, toolId } = c.req.valid("param");
+    const body = c.req.valid("json");
+    const tool = await agentToolService.toggle(agentId, toolId, body.enabled);
+    return c.json({ tool: serializeTool(tool) }, 200);
   });
 
   // DELETE /agents/:id/tools/:toolId — remove a tool pattern
-  app.delete("/agents/:id/tools/:toolId", async (c) => {
-    const agentId = c.req.param("id");
-    const toolId = c.req.param("toolId");
+  app.openapi(deleteToolRoute, async (c) => {
+    const { id: agentId, toolId } = c.req.valid("param");
     await agentToolService.remove(agentId, toolId);
-    return new Response(null, { status: 204 });
+    return c.body(null, 204);
   });
 
   // ─── Tokens ────────────────────────────────────────────────────────────────
 
   // POST /agents/:id/tokens — create a token (returns raw once)
-  app.post("/agents/:id/tokens", async (c) => {
-    const agentId = c.req.param("id");
-    let label: string | undefined;
-    try {
-      const body = await c.req.json<{ label?: string }>();
-      label = body.label;
-    } catch {
-      // body is optional
-    }
-    const { token, rawToken } = await agentTokenService.create(agentId, label);
+  app.openapi(createTokenRoute, async (c) => {
+    const { id: agentId } = c.req.valid("param");
+    const body = c.req.valid("json");
+    const { token, rawToken } = await agentTokenService.create(
+      agentId,
+      body?.label,
+    );
     // Return the token record (without the hashed token value) + rawToken
     const { token: _hash, ...tokenMeta } = token;
-    return c.json({ token: tokenMeta, rawToken }, 201);
+    return c.json(
+      {
+        token: {
+          ...tokenMeta,
+          createdAt: tokenMeta.createdAt.toISOString(),
+          revokedAt: tokenMeta.revokedAt
+            ? tokenMeta.revokedAt.toISOString()
+            : null,
+        },
+        rawToken,
+      },
+      201,
+    );
   });
 
   // GET /agents/:id/tokens — list tokens (hash metadata only)
-  app.get("/agents/:id/tokens", async (c) => {
-    const agentId = c.req.param("id");
-    const records: AgentToken[] = await agentTokenService.listForAgent(agentId);
+  app.openapi(listTokensRoute, async (c) => {
+    const { id: agentId } = c.req.valid("param");
+    const records = await agentTokenService.listForAgent(agentId);
     // Never expose the stored hash — return only metadata
-    const tokens = records.map(({ token: _hash, ...meta }) => meta);
-    return c.json({ tokens });
+    const tokens = records.map(({ token: _hash, ...meta }) => ({
+      ...meta,
+      createdAt: meta.createdAt.toISOString(),
+      revokedAt: meta.revokedAt ? meta.revokedAt.toISOString() : null,
+    }));
+    return c.json({ tokens }, 200);
   });
 
   // DELETE /agents/:id/tokens/:tokenId — revoke a token
-  app.delete("/agents/:id/tokens/:tokenId", async (c) => {
-    const tokenId = c.req.param("tokenId");
+  app.openapi(deleteTokenRoute, async (c) => {
+    const { tokenId } = c.req.valid("param");
     await agentTokenService.revoke(tokenId);
-    return new Response(null, { status: 204 });
+    return c.body(null, 204);
   });
 
   // ─── Plugins ───────────────────────────────────────────────────────────────
 
   // POST /agents/:id/plugins — add a plugin
-  app.post("/agents/:id/plugins", async (c) => {
-    const agentId = c.req.param("id");
-    const body = await c.req.json<{ name: string; version?: string | null }>();
+  app.openapi(createPluginRoute, async (c) => {
+    const { id: agentId } = c.req.valid("param");
+    const body = c.req.valid("json");
     const plugin = await agentPluginService.add(
       agentId,
       body.name,
       body.version,
     );
-    return c.json({ plugin }, 201);
+    return c.json({ plugin: serializePlugin(plugin) }, 201);
   });
 
   // GET /agents/:id/plugins — list plugins
-  app.get("/agents/:id/plugins", async (c) => {
-    const agentId = c.req.param("id");
+  app.openapi(listPluginsRoute, async (c) => {
+    const { id: agentId } = c.req.valid("param");
     const plugins = await agentPluginService.list(agentId);
-    return c.json({ plugins });
+    return c.json({ plugins: plugins.map(serializePlugin) }, 200);
   });
 
   // PATCH /agents/:id/plugins?name=<name> — update plugin version (re-upsert)
   // Uses a query param rather than a path segment because a canonical spec like
   // "my-plugin@org/my-marketplace" can contain a literal "/" that breaks path
-  // matching.
-  app.patch("/agents/:id/plugins", async (c) => {
-    const agentId = c.req.param("id");
-    const name = c.req.query("name");
-    if (!name) {
-      return c.json({ error: "Missing required query param: name" }, 400);
-    }
-    const body = await c.req.json<{ version?: string | null }>();
+  // matching. The name param is validated by Zod (PluginNameQuerySchema).
+  app.openapi(patchPluginRoute, async (c) => {
+    const { id: agentId } = c.req.valid("param");
+    const { name } = c.req.valid("query");
+    const body = c.req.valid("json");
     const plugin = await agentPluginService.add(agentId, name, body.version);
-    return c.json({ plugin });
+    return c.json({ plugin: serializePlugin(plugin) }, 200);
   });
 
   // DELETE /agents/:id/plugins?name=<name> — remove a plugin by name
-  // Uses a query param rather than a path segment because a canonical spec like
-  // "my-plugin@org/my-marketplace" can contain a literal "/" that breaks path
-  // matching.
-  app.delete("/agents/:id/plugins", async (c) => {
-    const agentId = c.req.param("id");
-    const name = c.req.query("name");
-    if (!name) {
-      return c.json({ error: "Missing required query param: name" }, 400);
-    }
+  app.openapi(deletePluginRoute, async (c) => {
+    const { id: agentId } = c.req.valid("param");
+    const { name } = c.req.valid("query");
     await agentPluginService.removeByName(agentId, name);
-    return new Response(null, { status: 204 });
+    return c.body(null, 204);
   });
 
   return app;
+}
+
+// ─── Serializers ────────────────────────────────────────────────────────────────
+//
+// Prisma returns Date objects; the Zod response schemas expect ISO strings.
+// These helpers normalize date fields so c.json() output matches the schema.
+
+function serializeCron(cron: {
+  createdAt: Date;
+  updatedAt: Date;
+  [k: string]: unknown;
+}): z.infer<typeof AgentCronJobSchema> {
+  return {
+    ...cron,
+    createdAt: cron.createdAt.toISOString(),
+    updatedAt: cron.updatedAt.toISOString(),
+  } as z.infer<typeof AgentCronJobSchema>;
+}
+
+function serializeTool(tool: {
+  createdAt: Date;
+  [k: string]: unknown;
+}): z.infer<typeof AgentToolSchema> {
+  return {
+    ...tool,
+    createdAt: tool.createdAt.toISOString(),
+  } as z.infer<typeof AgentToolSchema>;
+}
+
+function serializePlugin(plugin: {
+  createdAt: Date;
+  updatedAt: Date;
+  [k: string]: unknown;
+}): z.infer<typeof AgentPluginSchema> {
+  return {
+    ...plugin,
+    createdAt: plugin.createdAt.toISOString(),
+    updatedAt: plugin.updatedAt.toISOString(),
+  } as z.infer<typeof AgentPluginSchema>;
 }
