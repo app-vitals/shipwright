@@ -380,6 +380,9 @@ the live `/doc` endpoint on a running admin service:
 open "$SHIPWRIGHT_API_URL/doc"
 ```
 
+> **Note:** The `/doc` endpoint is not yet wired in the production admin service — it is a
+> planned follow-up. Use `admin/openapi.json` as the schema reference in the meantime.
+
 ---
 
 ## Safety Rules
