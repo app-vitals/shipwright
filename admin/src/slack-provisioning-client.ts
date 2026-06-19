@@ -52,6 +52,10 @@ export interface AppManifest {
       messages_tab_read_only_enabled?: boolean;
     };
     bot_user?: AppManifestBotUser;
+    assistant_view?: {
+      assistant_description?: string;
+      suggested_prompts?: { title: string; message: string }[];
+    };
   };
   oauth_config?: AppManifestOAuthConfig;
   settings?: AppManifestSettings;
@@ -138,6 +142,71 @@ export function defaultAgentManifest(
     settings: {
       org_deploy_enabled: false,
       socket_mode_enabled: false,
+    },
+  };
+}
+
+/**
+ * Operational Slack app manifest for a Shipwright agent.
+ * Applied after provisioning via "Sync Manifest" to enable Socket Mode,
+ * event subscriptions, and the assistant experience.
+ */
+export function operationalAgentManifest(appName: string): AppManifest {
+  return {
+    display_information: {
+      name: appName,
+      description: `${appName} — powered by Shipwright`,
+      background_color: "#1a1a2e",
+    },
+    features: {
+      app_home: {
+        home_tab_enabled: false,
+        messages_tab_enabled: true,
+        messages_tab_read_only_enabled: false,
+      },
+      bot_user: {
+        display_name: appName,
+        always_online: true,
+      },
+      assistant_view: {
+        assistant_description: `${appName} — powered by Shipwright`,
+        suggested_prompts: [],
+      },
+    },
+    oauth_config: {
+      scopes: {
+        bot: [
+          "app_mentions:read",
+          "assistant:write",
+          "channels:history",
+          "channels:read",
+          "chat:write",
+          "files:read",
+          "files:write",
+          "groups:history",
+          "im:history",
+          "im:write",
+          "reactions:read",
+          "reactions:write",
+          "users:read",
+        ],
+      },
+      redirect_urls: ["http://localhost:3460"],
+    },
+    settings: {
+      org_deploy_enabled: false,
+      socket_mode_enabled: true,
+      event_subscriptions: {
+        bot_events: [
+          "app_mention",
+          "assistant_thread_context_changed",
+          "assistant_thread_started",
+          "message.channels",
+          "message.groups",
+          "message.im",
+          "reaction_added",
+        ],
+      },
     },
   };
 }
