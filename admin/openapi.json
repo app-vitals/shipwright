@@ -1,0 +1,1684 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Shipwright Admin API",
+    "version": "0.1.0",
+    "description": "REST API for the Shipwright admin service — CRUD for agents, env vars, cron jobs, tokens, tools, and plugins, plus the agent runtime polling endpoints."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3457",
+      "description": "Local dev"
+    }
+  ],
+  "components": {
+    "schemas": {
+      "Agent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "name": {
+            "type": "string",
+            "example": "Bodhi"
+          },
+          "slackId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "U0AALR8M69X"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "example": "not found"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "CreateAgentBody": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "example": "Bodhi"
+          },
+          "slackId": {
+            "type": "string",
+            "example": "U0AALR8M69X"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "ReconcileAgentsResult": {
+        "type": "object",
+        "properties": {
+          "recreated": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "orphans": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "failed": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "agentId": {
+                  "type": "string"
+                },
+                "error": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "agentId",
+                "error"
+              ]
+            }
+          }
+        },
+        "required": [
+          "recreated",
+          "orphans",
+          "failed"
+        ]
+      },
+      "AgentSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "name": {
+            "type": "string",
+            "example": "Bodhi"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "Ok": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "ok"
+        ]
+      },
+      "AgentEnvBody": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        }
+      },
+      "AgentEnvResponse": {
+        "type": "object",
+        "properties": {
+          "env": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "example": {
+              "MY_VAR": "value"
+            }
+          }
+        },
+        "required": [
+          "env"
+        ]
+      },
+      "AgentCronJob": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "agentId": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "schedule": {
+            "type": "string",
+            "example": "0 9 * * 1-5"
+          },
+          "prompt": {
+            "type": "string",
+            "example": "Run the morning brief."
+          },
+          "channel": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "C01234567"
+          },
+          "user": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "U0AALR8M69X"
+          },
+          "silent": {
+            "type": "boolean",
+            "example": false
+          },
+          "enabled": {
+            "type": "boolean",
+            "example": true
+          },
+          "preCheck": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "shipwright:check-dev-task.ts"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "morning-brief"
+          },
+          "system": {
+            "type": "boolean",
+            "example": false
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "schedule",
+          "prompt",
+          "channel",
+          "user",
+          "silent",
+          "enabled",
+          "preCheck",
+          "name",
+          "system",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "CronWrapper": {
+        "type": "object",
+        "properties": {
+          "cron": {
+            "$ref": "#/components/schemas/AgentCronJob"
+          }
+        },
+        "required": [
+          "cron"
+        ]
+      },
+      "CreateAgentCronJobBody": {
+        "type": "object",
+        "properties": {
+          "schedule": {
+            "type": "string",
+            "example": "0 9 * * 1-5"
+          },
+          "prompt": {
+            "type": "string",
+            "example": "Run the morning brief."
+          },
+          "channel": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "C01234567"
+          },
+          "user": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "U0AALR8M69X"
+          },
+          "silent": {
+            "type": "boolean",
+            "example": false
+          },
+          "enabled": {
+            "type": "boolean",
+            "example": true
+          },
+          "preCheck": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "shipwright:check-dev-task.ts"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "morning-brief"
+          }
+        },
+        "required": [
+          "schedule",
+          "prompt"
+        ]
+      },
+      "ReconcileCronResult": {
+        "type": "object",
+        "properties": {
+          "created": {
+            "type": "integer"
+          },
+          "updated": {
+            "type": "integer"
+          },
+          "deleted": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "created",
+          "updated",
+          "deleted"
+        ]
+      },
+      "PatchAgentCronJobBody": {
+        "type": "object",
+        "properties": {
+          "schedule": {
+            "type": "string",
+            "example": "0 9 * * 1-5"
+          },
+          "prompt": {
+            "type": "string",
+            "example": "Run the morning brief."
+          },
+          "channel": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "C01234567"
+          },
+          "user": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "U0AALR8M69X"
+          },
+          "silent": {
+            "type": "boolean",
+            "example": false
+          },
+          "preCheck": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "shipwright:check-dev-task.ts"
+          },
+          "enabled": {
+            "type": "boolean",
+            "example": true
+          }
+        }
+      },
+      "AgentTool": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "agentId": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "pattern": {
+            "type": "string",
+            "example": "Read"
+          },
+          "enabled": {
+            "type": "boolean",
+            "example": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "pattern",
+          "enabled",
+          "createdAt"
+        ]
+      },
+      "ToolWrapper": {
+        "type": "object",
+        "properties": {
+          "tool": {
+            "$ref": "#/components/schemas/AgentTool"
+          }
+        },
+        "required": [
+          "tool"
+        ]
+      },
+      "CreateAgentToolBody": {
+        "type": "object",
+        "properties": {
+          "pattern": {
+            "type": "string",
+            "minLength": 1,
+            "example": "Bash"
+          }
+        },
+        "required": [
+          "pattern"
+        ]
+      },
+      "ToolsWrapper": {
+        "type": "object",
+        "properties": {
+          "tools": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentTool"
+            }
+          }
+        },
+        "required": [
+          "tools"
+        ]
+      },
+      "PatchAgentToolBody": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "example": false
+          }
+        },
+        "required": [
+          "enabled"
+        ]
+      },
+      "AgentToken": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "agentId": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "ci-runner"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          },
+          "revokedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": null
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "createdAt"
+        ]
+      },
+      "CreateAgentTokenResponse": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "$ref": "#/components/schemas/AgentToken"
+          },
+          "rawToken": {
+            "type": "string",
+            "example": "swt_v1_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+          }
+        },
+        "required": [
+          "token",
+          "rawToken"
+        ]
+      },
+      "CreateAgentTokenBody": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "example": "ci-runner"
+          }
+        }
+      },
+      "TokensWrapper": {
+        "type": "object",
+        "properties": {
+          "tokens": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentToken"
+            }
+          }
+        },
+        "required": [
+          "tokens"
+        ]
+      },
+      "AgentPlugin": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "agentId": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "name": {
+            "type": "string",
+            "example": "@shipwright/plugin"
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "1.2.3"
+          },
+          "enabled": {
+            "type": "boolean",
+            "example": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "name",
+          "enabled",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "PluginWrapper": {
+        "type": "object",
+        "properties": {
+          "plugin": {
+            "$ref": "#/components/schemas/AgentPlugin"
+          }
+        },
+        "required": [
+          "plugin"
+        ]
+      },
+      "CreateAgentPluginBody": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "example": "@shipwright/plugin"
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "1.2.3"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "PluginsWrapper": {
+        "type": "object",
+        "properties": {
+          "plugins": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentPlugin"
+            }
+          }
+        },
+        "required": [
+          "plugins"
+        ]
+      },
+      "PatchAgentPluginBody": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "1.3.0"
+          }
+        }
+      },
+      "AgentConfigPlugin": {
+        "type": "object",
+        "properties": {
+          "marketplace": {
+            "type": "string",
+            "example": "shipwright"
+          },
+          "plugin": {
+            "type": "string",
+            "example": "shipwright"
+          }
+        },
+        "required": [
+          "marketplace",
+          "plugin"
+        ]
+      },
+      "AgentConfigResponse": {
+        "type": "object",
+        "properties": {
+          "env": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "example": {
+              "SLACK_BOT_TOKEN": "xoxb-..."
+            }
+          },
+          "allowedTools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "Read",
+              "Write"
+            ]
+          },
+          "plugins": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentConfigPlugin"
+            }
+          }
+        },
+        "required": [
+          "env",
+          "allowedTools",
+          "plugins"
+        ]
+      },
+      "RuntimeError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "example": "Not found"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      }
+    },
+    "parameters": {}
+  },
+  "paths": {
+    "/agents": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAgentBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Agent created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Agent"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "responses": {
+          "200": {
+            "description": "List of agents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentSummary"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/reconcile": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "Reconciliation summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReconcileAgentsResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}": {
+      "delete": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Agent deleted"
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/envs": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentEnvBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Env vars replaced",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Decrypted env vars",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentEnvResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentEnvBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Env vars updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/envs/{key}": {
+      "delete": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "MY_VAR"
+            },
+            "required": true,
+            "name": "key",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Key deleted"
+          }
+        }
+      }
+    },
+    "/agents/{id}/crons": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAgentCronJobBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Cron job created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CronWrapper"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "runtime"
+        ],
+        "summary": "List agent cron jobs",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Array of cron jobs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentCronJob"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/crons/reconcile": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Reconciliation summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReconcileCronResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/crons/{cronId}": {
+      "patch": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx0987654321"
+            },
+            "required": true,
+            "name": "cronId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchAgentCronJobBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Cron job updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CronWrapper"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx0987654321"
+            },
+            "required": true,
+            "name": "cronId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Cron job deleted"
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/tools": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAgentToolBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Tool added",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolWrapper"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of tool patterns",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolsWrapper"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/tools/{toolId}": {
+      "patch": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx0987654321"
+            },
+            "required": true,
+            "name": "toolId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchAgentToolBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool toggled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolWrapper"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx0987654321"
+            },
+            "required": true,
+            "name": "toolId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Tool removed"
+          }
+        }
+      }
+    },
+    "/agents/{id}/tokens": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAgentTokenBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Token created (raw value returned once)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateAgentTokenResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of token metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokensWrapper"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/tokens/{tokenId}": {
+      "delete": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx0987654321"
+            },
+            "required": true,
+            "name": "tokenId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Token revoked"
+          }
+        }
+      }
+    },
+    "/agents/{id}/plugins": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAgentPluginBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Plugin added",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginWrapper"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of plugins",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginsWrapper"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "@shipwright/plugin"
+            },
+            "required": true,
+            "name": "name",
+            "in": "query"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchAgentPluginBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Plugin version updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginWrapper"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "@shipwright/plugin"
+            },
+            "required": true,
+            "name": "name",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Plugin removed"
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/config": {
+      "get": {
+        "tags": [
+          "runtime"
+        ],
+        "summary": "Get agent config bundle",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Agent config bundle",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentConfigResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "webhooks": {}
+}
