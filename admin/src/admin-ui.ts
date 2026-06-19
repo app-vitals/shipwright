@@ -34,11 +34,11 @@ import {
 import type { AgentCronJobService } from "./agent-cron-jobs.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
 import type { AgentPluginService } from "./agent-plugins.ts";
+import type { AgentProvisioner } from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 import type { AgentToolService } from "./agent-tools.ts";
 import { ForbiddenError, UnprocessableEntityError } from "./errors.ts";
 import type { GoogleAuthClient } from "./google-auth-client.ts";
-import type { AgentProvisioner } from "./agent-provisioner.ts";
 import type { AppManifest } from "./slack-provisioning-client.ts";
 import {
   AGENT_BOT_SCOPES,
@@ -130,14 +130,18 @@ interface PrismaLike {
   agentMember: {
     findMany(args: {
       where: { email?: string; agentId?: string };
-    }): Promise<Array<{ id: string; agentId: string; email: string; createdAt: Date }>>;
+    }): Promise<
+      Array<{ id: string; agentId: string; email: string; createdAt: Date }>
+    >;
     findUnique(args: {
       where: { agentId_email: { agentId: string; email: string } };
     }): Promise<{ id: string; agentId: string; email: string } | null>;
     create(args: {
       data: { agentId: string; email: string };
     }): Promise<{ id: string; agentId: string; email: string }>;
-    deleteMany(args: { where: { id: string; agentId: string } }): Promise<{ count: number }>;
+    deleteMany(args: { where: { id: string; agentId: string } }): Promise<{
+      count: number;
+    }>;
   };
 }
 
@@ -453,7 +457,12 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     if (!devAuthEnabled) {
       return new Response("Not Found", { status: 404 });
     }
-    const token = await createSessionToken(sessionSecret, "dev", "dev@localhost", true);
+    const token = await createSessionToken(
+      sessionSecret,
+      "dev",
+      "dev@localhost",
+      true,
+    );
     setCookie(c, SESSION_COOKIE, token, {
       httpOnly: true,
       secure: appBaseUrl.startsWith("https://"),
@@ -524,16 +533,18 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
           ? "Slack app reinstalled successfully."
           : undefined;
 
-    const [envVars, crons, tools, tokens, plugins, members] = await Promise.all([
-      agentEnvService.getByAgentId(agentId).then((e) => e ?? {}),
-      agentCronJobService.list(agentId),
-      agentToolService.list(agentId),
-      agentTokenService.listForAgent(agentId),
-      agentPluginService.list(agentId),
-      c.var.isAdmin
-        ? prisma.agentMember.findMany({ where: { agentId } })
-        : Promise.resolve([]),
-    ]);
+    const [envVars, crons, tools, tokens, plugins, members] = await Promise.all(
+      [
+        agentEnvService.getByAgentId(agentId).then((e) => e ?? {}),
+        agentCronJobService.list(agentId),
+        agentToolService.list(agentId),
+        agentTokenService.listForAgent(agentId),
+        agentPluginService.list(agentId),
+        c.var.isAdmin
+          ? prisma.agentMember.findMany({ where: { agentId } })
+          : Promise.resolve([]),
+      ],
+    );
 
     return html(
       renderAgentDetailPage(
@@ -846,16 +857,17 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       const { rawToken } = await agentTokenService.create(agentId, label);
       // Render the page directly (200) rather than redirecting with the token in the URL.
       // A redirect would expose the raw token in server access logs and browser history.
-      const [envVars, crons, tools, tokens, plugins, members] = await Promise.all([
-        agentEnvService.getByAgentId(agentId).then((e) => e ?? {}),
-        agentCronJobService.list(agentId),
-        agentToolService.list(agentId),
-        agentTokenService.listForAgent(agentId),
-        agentPluginService.list(agentId),
-        c.var.isAdmin
-          ? prisma.agentMember.findMany({ where: { agentId } })
-          : Promise.resolve([]),
-      ]);
+      const [envVars, crons, tools, tokens, plugins, members] =
+        await Promise.all([
+          agentEnvService.getByAgentId(agentId).then((e) => e ?? {}),
+          agentCronJobService.list(agentId),
+          agentToolService.list(agentId),
+          agentTokenService.listForAgent(agentId),
+          agentPluginService.list(agentId),
+          c.var.isAdmin
+            ? prisma.agentMember.findMany({ where: { agentId } })
+            : Promise.resolve([]),
+        ]);
       return html(
         renderAgentDetailPage(
           agent,
@@ -933,10 +945,12 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }
 
     try {
-      const manifest = buildAgentManifest(agent.name);
+      const redirectUri = `${appBaseUrl}/admin/provision/complete`;
+      const manifest = buildAgentManifest(agent.name, redirectUri);
       await slackClient.updateAppManifest(xoxpToken, appId, manifest);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Unknown error syncing manifest.";
+      const msg =
+        err instanceof Error ? err.message : "Unknown error syncing manifest.";
       return c.redirect(
         `/admin/agents/${agentId}?error=${encodeURIComponent(msg)}`,
         302,
@@ -1011,7 +1025,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     const agentOptions = agents.map((a) => ({ id: a.id, name: a.name }));
 
     const formError = (msg: string): Response =>
-      html(renderProvisionStartPage(c.var.userEmail, agentOptions, { error: msg }));
+      html(
+        renderProvisionStartPage(c.var.userEmail, agentOptions, { error: msg }),
+      );
 
     let agentId: string | undefined;
     let xoxpToken: string | undefined;
@@ -1045,7 +1061,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }
 
     if (!xoxpToken || !xoxpToken.startsWith("xoxe.xoxp-")) {
-      return formError("Slack app configuration token must start with xoxe.xoxp-");
+      return formError(
+        "Slack app configuration token must start with xoxe.xoxp-",
+      );
     }
 
     if (ghAuthMode === "pat") {
@@ -1251,7 +1269,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       botToken = result.botToken;
     } catch (err) {
       const msg =
-        err instanceof Error ? err.message : "Unknown error exchanging OAuth code.";
+        err instanceof Error
+          ? err.message
+          : "Unknown error exchanging OAuth code.";
       return html(
         renderProvisionCompletePage(userEmail, {
           success: false,
@@ -1261,7 +1281,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }
 
     // Store SLACK_BOT_TOKEN in agent env
-    const existing = (await agentEnvService.getByAgentId(provisionState.agentId)) ?? {};
+    const existing =
+      (await agentEnvService.getByAgentId(provisionState.agentId)) ?? {};
     await agentEnvService.upsert(provisionState.agentId, {
       ...existing,
       SLACK_BOT_TOKEN: botToken,
@@ -1350,7 +1371,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       );
     } catch (err) {
       const msg =
-        err instanceof Error ? err.message : "Unknown error completing provisioning.";
+        err instanceof Error
+          ? err.message
+          : "Unknown error completing provisioning.";
       return html(
         renderProvisionXappTokenPage(userEmail, {
           agentId,
@@ -1394,7 +1417,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }
     if (memberId) {
       try {
-        await prisma.agentMember.deleteMany({ where: { id: memberId, agentId } });
+        await prisma.agentMember.deleteMany({
+          where: { id: memberId, agentId },
+        });
       } catch {
         // already gone, ignore
       }
@@ -1411,7 +1436,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       await provisioner.deprovision(agentId);
       await prisma.agent.delete({ where: { id: agentId } });
     } catch (err) {
-      const msg = err instanceof Error ? encodeURIComponent(err.message) : "delete_failed";
+      const msg =
+        err instanceof Error
+          ? encodeURIComponent(err.message)
+          : "delete_failed";
       return c.redirect(`/admin/agents/${agentId}?error=${msg}`, 302);
     }
     return c.redirect("/admin/agents?success=deleted", 302);

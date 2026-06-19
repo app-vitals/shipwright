@@ -10,7 +10,7 @@ const NAME = "test-agent";
 const REDIRECT = "https://shipwright.vitals-os.com/admin/provision/complete";
 
 describe("buildAgentManifest", () => {
-  describe("sync-manifest (no redirectUri)", () => {
+  describe("buildAgentManifest without redirectUri (unit)", () => {
     const manifest = buildAgentManifest(NAME);
 
     it("sets socket_mode_enabled: true", () => {
