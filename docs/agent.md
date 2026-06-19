@@ -145,10 +145,10 @@ The constant `BAKED_MARKETPLACES_ROOT` and function `discoverBakedMarketplaces()
 | File | Purpose |
 |---|---|
 | `admin/src/main.ts` | Standalone admin service entrypoint — runs `prisma migrate deploy`, constructs all services, and mounts health + runtime API + admin CRUD API + admin UI. Dockerfile `ENTRYPOINT`. |
-| `admin/src/api.ts` | Runtime API factory `createAgentRuntimeApp()` (DI for services). |
+| `admin/src/api.ts` | Runtime API factory `createAgentRuntimeApp()` (OpenAPIHono app with OAS 2.1 route definitions; DI for services). |
 | `admin/src/agents-api.ts` | Admin CRUD factory `createAdminApp()`. |
 | `admin/src/api-auth.ts` | Combined admin auth middleware (`createAdminAuthMiddleware()`) and env-key parser (`parseAdminApiKeys()`) — bearer check order: env API keys (scope enforcement), then DB token via `agentTokenService`; bearer path does not fall through to session cookie on failure. |
-| `admin/src/openapi-schemas.ts` | Zod schemas for the admin API — entity types (Agent, AgentCronJob, AgentTool, AgentToken, AgentPlugin), request bodies, and common error shapes (Error, Ok). Imported by route migrations (OAS-2.1, OAS-2.2); `z` imported from `@hono/zod-openapi` for `.openapi()` metadata support. |
+| `admin/src/openapi-schemas.ts` | Zod schemas for the admin and runtime APIs — entity types (Agent, AgentCronJob, AgentTool, AgentToken, AgentPlugin), request bodies, runtime response shapes (AgentConfigResponse, RuntimeError), and common error shapes (Error, Ok). Imported by route migrations (OAS-2.1, OAS-2.2); `z` imported from `@hono/zod-openapi` for `.openapi()` metadata support. |
 | `admin/src/admin-ui.ts` | Admin UI factory `createAdminUIApp()` — server-rendered Hono app (login, agent list/detail, Slack provisioning) with POST mutation routes for cron jobs, tools, and tokens (create/toggle/delete/revoke). Accepts `devAuthEnabled` in `AdminUIDeps`; when true, registers `GET /admin/dev-login` (dev auto-login). |
 | `admin/src/dev-auth-guard.ts` | `isDevAuthAllowed(env)` — pure predicate over an injected env object (`DevAuthGuardEnv`). Returns `true` only when `ADMIN_DEV_AUTH=true` and `NODE_ENV !== "production"`. Mirrors the `chat-guard.ts` safety pattern. |
 | `admin/src/admin-ui-pages.ts` | Page rendering functions (`renderLoginPage`, `renderAgentsPage`, `renderAgentDetailPage`, `renderProvision*`). |
