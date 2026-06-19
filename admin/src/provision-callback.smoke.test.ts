@@ -349,6 +349,57 @@ describe("GET /admin/provision/complete — OAuth callback", () => {
   });
 });
 
+describe("GET /admin/provision/complete — reinstall path (SLACK_APP_TOKEN already set)", () => {
+  let sessionCookie: string;
+
+  beforeAll(async () => {
+    sessionCookie = await makeSessionCookie();
+  });
+
+  it("valid state cookie + code param + SLACK_APP_TOKEN already in env → 302 to ?success=reinstalled", async () => {
+    const state: MockState = {
+      upsertCalls: [],
+      reconcileCalls: [],
+      createTokenCalls: [],
+    };
+    const deps = makeMockDeps(state, {
+      agentEnvService: {
+        // Existing env already has SLACK_APP_TOKEN — reinstall path
+        getByAgentId: async () => ({
+          SLACK_BOT_TOKEN: "xoxb-old-bot-token",
+          SLACK_APP_TOKEN: "xapp-existing-app-token",
+        }),
+        upsert: async (agentId: string, env: Record<string, string>) => {
+          state.upsertCalls.push({ agentId, env });
+        },
+        deleteKey: async () => {},
+        getConfigBundle: async () => null,
+      },
+    });
+    const app = createAdminUIApp(deps);
+
+    const provisionState = await makeProvisionStateCookie();
+
+    const res = await app.request(
+      "/admin/provision/complete?code=valid-oauth-code",
+      {
+        headers: {
+          Cookie: `admin_session=${sessionCookie}; ${PROVISION_STATE_COOKIE}=${provisionState}`,
+        },
+      },
+    );
+
+    expect(res.status).toBe(302);
+    const location = res.headers.get("location") ?? "";
+    expect(location).toContain("success=reinstalled");
+    expect(location).toContain(`/admin/agents/${AGENT_ID}`);
+
+    // SLACK_BOT_TOKEN should still have been stored (new token)
+    const storedEnv = state.upsertCalls[state.upsertCalls.length - 1]?.env;
+    expect(storedEnv).toHaveProperty("SLACK_BOT_TOKEN", "xoxb-mock-bot-token");
+  });
+});
+
 describe("POST /admin/provision/complete — removed route", () => {
   let sessionCookie: string;
 

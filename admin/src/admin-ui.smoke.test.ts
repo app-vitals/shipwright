@@ -1179,6 +1179,8 @@ describe("admin UI — provision start form", () => {
     expect(upsertedAgentId).toBe(AGENT_ID);
     expect(envVars.SLACK_APP_ID).toBe("A_HAPPY");
     expect(envVars.SLACK_SIGNING_SECRET).toBe("ssec_happy");
+    expect(envVars.SLACK_CLIENT_ID).toBe("cid_happy");
+    expect(envVars.SLACK_CLIENT_SECRET).toBe("csec_happy");
     expect(envVars.GH_TOKEN).toBe("ghp_my_token");
   });
 
@@ -1802,5 +1804,73 @@ describe("admin UI — manifest sync route", () => {
       },
     });
     expect(res.status).toBe(403);
+  });
+
+  it("sync-manifest with SLACK_CLIENT_ID/SECRET/SIGNING_SECRET in env → 302 to slack.com/oauth/v2/authorize with provision state cookie set", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentEnvService: {
+          getByAgentId: async () => ({
+            SLACK_APP_ID: "A123456",
+            SLACK_CLIENT_ID: "my-client-id",
+            SLACK_CLIENT_SECRET: "my-client-secret",
+            SLACK_SIGNING_SECRET: "my-signing-secret",
+          }),
+          upsert: async () => {},
+          deleteKey: async () => {},
+          getConfigBundle: async () => null,
+        },
+        slackClient: {
+          updateAppManifest: async () => {},
+        },
+      }),
+    );
+    const body = new URLSearchParams({ xoxpToken: "xoxe.xoxp-valid-token" });
+    const res = await app.request(`/admin/agents/${AGENT_ID}/sync-manifest`, {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${adminCookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    const location = res.headers.get("location") ?? "";
+    expect(location).toContain("slack.com/oauth/v2/authorize");
+    expect(location).toContain("client_id=my-client-id");
+    // Provision state cookie should be set
+    const setCookieHeader = res.headers.get("Set-Cookie") ?? "";
+    expect(setCookieHeader).toContain("slack_provision_state=");
+  });
+
+  it("sync-manifest with no SLACK_CLIENT_ID in env (legacy agent) → 302 to ?success=manifest_synced", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentEnvService: {
+          getByAgentId: async () => ({
+            SLACK_APP_ID: "A123456",
+            // No SLACK_CLIENT_ID — legacy agent
+          }),
+          upsert: async () => {},
+          deleteKey: async () => {},
+          getConfigBundle: async () => null,
+        },
+        slackClient: {
+          updateAppManifest: async () => {},
+        },
+      }),
+    );
+    const body = new URLSearchParams({ xoxpToken: "xoxe.xoxp-valid-token" });
+    const res = await app.request(`/admin/agents/${AGENT_ID}/sync-manifest`, {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${adminCookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toContain("success=manifest_synced");
+    expect(res.headers.get("Set-Cookie") ?? "").not.toContain("slack_provision_state=");
   });
 });

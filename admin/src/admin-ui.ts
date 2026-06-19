@@ -513,10 +513,13 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     const rawError = c.req.query("error") ?? undefined;
     const error = rawError ? (ERROR_MESSAGES[rawError] ?? rawError) : undefined;
     const newToken = c.req.query("newToken") ?? undefined;
+    const successParam = c.req.query("success");
     const successMsg =
-      c.req.query("success") === "manifest_synced"
+      successParam === "manifest_synced"
         ? "Manifest synced successfully."
-        : undefined;
+        : successParam === "reinstalled"
+          ? "Slack app reinstalled successfully."
+          : undefined;
 
     const [envVars, crons, tools, tokens, plugins, members] = await Promise.all([
       agentEnvService.getByAgentId(agentId).then((e) => e ?? {}),
@@ -887,6 +890,11 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     },
   );
 
+  // ─── Provisioning state constants ────────────────────────────────────────
+
+  const PROVISION_STATE_COOKIE = "slack_provision_state";
+  const PROVISION_STATE_TTL_SECONDS = 300; // 5 min
+
   // ─── Manifest sync ────────────────────────────────────────────────────────
 
   app.post("/admin/agents/:id/sync-manifest", requireAuth, async (c) => {
@@ -932,13 +940,68 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       );
     }
 
+    // If the agent has OAuth credentials stored, trigger a reinstall via Slack OAuth
+    const clientId = envVars.SLACK_CLIENT_ID;
+    const clientSecret = envVars.SLACK_CLIENT_SECRET;
+    const signingSecret = envVars.SLACK_SIGNING_SECRET;
+
+    if (clientId && clientSecret && signingSecret) {
+      // Sign a provision-state cookie so /provision/complete can exchange the code
+      const now = Math.floor(Date.now() / 1000);
+      const provisionToken = await sign(
+        {
+          agentId,
+          clientId,
+          clientSecret,
+          signingSecret,
+          appId,
+          iat: now,
+          exp: now + PROVISION_STATE_TTL_SECONDS,
+        },
+        sessionSecret,
+        "HS256",
+      );
+      setCookie(c, PROVISION_STATE_COOKIE, provisionToken, {
+        httpOnly: true,
+        maxAge: PROVISION_STATE_TTL_SECONDS,
+        sameSite: "Lax",
+        path: "/",
+        secure: appBaseUrl.startsWith("https://"),
+      });
+
+      // Build the Slack OAuth v2 authorize URL
+      const scopes = [
+        "app_mentions:read",
+        "assistant:write",
+        "channels:history",
+        "channels:read",
+        "chat:write",
+        "files:read",
+        "files:write",
+        "groups:history",
+        "im:history",
+        "im:write",
+        "mpim:history",
+        "reactions:read",
+        "reactions:write",
+        "users:read",
+      ].join(",");
+      const redirectUri = `${appBaseUrl}/admin/provision/complete`;
+      const oauthParams = new URLSearchParams({
+        client_id: clientId,
+        scope: scopes,
+        redirect_uri: redirectUri,
+      });
+      return c.redirect(
+        `https://slack.com/oauth/v2/authorize?${oauthParams.toString()}`,
+        302,
+      );
+    }
+
     return c.redirect(`/admin/agents/${agentId}?success=manifest_synced`, 302);
   });
 
   // ─── Provisioning flow ────────────────────────────────────────────────────
-
-  const PROVISION_STATE_COOKIE = "slack_provision_state";
-  const PROVISION_STATE_TTL_SECONDS = 300; // 5 min
 
   app.get("/admin/provision", requireAuth, async (c) => {
     if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
@@ -1084,6 +1147,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       ...existing,
       SLACK_APP_ID: appId,
       SLACK_SIGNING_SECRET: signingSecret,
+      SLACK_CLIENT_ID: clientId,
+      SLACK_CLIENT_SECRET: clientSecret,
     };
 
     if (ghAuthMode === "pat") {
@@ -1211,6 +1276,15 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       ...existing,
       SLACK_BOT_TOKEN: botToken,
     });
+
+    // If SLACK_APP_TOKEN is already set this is a reinstall (not fresh provisioning).
+    // Skip the xapp-token page and redirect directly to the agent detail page.
+    if (existing.SLACK_APP_TOKEN) {
+      return c.redirect(
+        `/admin/agents/${provisionState.agentId}?success=reinstalled`,
+        302,
+      );
+    }
 
     // Render xapp-token page
     return html(
