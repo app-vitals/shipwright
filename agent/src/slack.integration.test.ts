@@ -857,6 +857,26 @@ describe("app_mention handler", () => {
     expect(event.type).toBe("error");
     expect(event.error).toBe("oops");
   });
+
+  test("app_mention in active thread: runClaude not called when session exists", async () => {
+    // The fix: when thread_ts is set and getSessionFn returns a session, the
+    // app_mention handler returns early — the message handler already covers it
+    // and would double-respond otherwise.
+    createSlackApp({ getSessionFn: () => "sess-existing" });
+    const client = makeMockClient();
+    const say = makeSay();
+    await capturedMentionHandler?.({
+      event: {
+        text: "<@UBOT> follow-up in thread",
+        channel: "C999",
+        ts: "3.3",
+        thread_ts: "1.0",
+      },
+      say,
+      client,
+    });
+    expect(mockRunClaude).not.toHaveBeenCalled();
+  });
 });
 
 // ─── app_mention handler — file handling ─────────────────────────────────────

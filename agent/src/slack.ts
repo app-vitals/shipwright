@@ -500,6 +500,12 @@ export function createSlackApp(
     const sessionKey = getThreadKey(ev.channel, ev.thread_ts ?? ev.ts);
     const replyTs = ev.thread_ts ?? ev.ts;
 
+    // Drop @mention if bot is already participating in this thread —
+    // the message handler covers it and would double-respond otherwise.
+    if (ev.thread_ts && getSessionFn(sessionKey)) {
+      return;
+    }
+
     const setStatus = async (status: string) => {
       // biome-ignore lint/suspicious/noExplicitAny: Bolt types don't include Agents API yet
       await (client.assistant.threads as any)
