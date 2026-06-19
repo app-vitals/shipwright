@@ -52,6 +52,10 @@ export interface AppManifest {
       messages_tab_read_only_enabled?: boolean;
     };
     bot_user?: AppManifestBotUser;
+    assistant_view?: {
+      assistant_description?: string;
+      suggested_prompts?: { title: string; message: string }[];
+    };
   };
   oauth_config?: AppManifestOAuthConfig;
   settings?: AppManifestSettings;
@@ -96,48 +100,76 @@ export interface SlackProvisioningClient {
   ): Promise<{ botToken: string }>;
 }
 
-// ─── Default manifest ─────────────────────────────────────────────────────────
+// ─── Agent manifest ───────────────────────────────────────────────────────────
 
 /**
- * Default Slack app manifest for a Shipwright agent.
- * Scopes allow the agent to post messages, read channel history, and send DMs.
+ * Builds the Slack app manifest for a Shipwright agent.
+ *
+ * Used for both initial provisioning (pass redirectUri for the OAuth callback)
+ * and subsequent manifest syncs (omit redirectUri to keep localhost default).
+ * Socket Mode and the full event/assistant config are always applied — there
+ * is no separate "provisioning-only" manifest.
  */
-export function defaultAgentManifest(
+export function buildAgentManifest(
   appName: string,
-  redirectUri: string,
+  redirectUri?: string,
 ): AppManifest {
   return {
     display_information: {
       name: appName,
-      description: "Shipwright autonomous agent",
+      description: `${appName} — powered by Shipwright`,
       background_color: "#1a1a2e",
     },
     features: {
+      app_home: {
+        home_tab_enabled: false,
+        messages_tab_enabled: true,
+        messages_tab_read_only_enabled: false,
+      },
       bot_user: {
         display_name: appName,
-        always_online: false,
+        always_online: true,
+      },
+      assistant_view: {
+        assistant_description: `${appName} — powered by Shipwright`,
+        suggested_prompts: [],
       },
     },
     oauth_config: {
       scopes: {
         bot: [
+          "app_mentions:read",
+          "assistant:write",
           "channels:history",
           "channels:read",
           "chat:write",
+          "files:read",
+          "files:write",
           "groups:history",
-          "groups:read",
           "im:history",
-          "im:read",
           "im:write",
           "mpim:history",
+          "reactions:read",
+          "reactions:write",
           "users:read",
         ],
       },
-      redirect_urls: [redirectUri],
+      ...(redirectUri !== undefined ? { redirect_urls: [redirectUri] } : {}),
     },
     settings: {
       org_deploy_enabled: false,
-      socket_mode_enabled: false,
+      socket_mode_enabled: true,
+      event_subscriptions: {
+        bot_events: [
+          "app_mention",
+          "assistant_thread_context_changed",
+          "assistant_thread_started",
+          "message.channels",
+          "message.groups",
+          "message.im",
+          "reaction_added",
+        ],
+      },
     },
   };
 }
