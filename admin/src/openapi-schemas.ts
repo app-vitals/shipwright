@@ -322,3 +322,27 @@ export const EnvKeyParamSchema = z.object({
 export const PluginNameQuerySchema = z.object({
   name: z.string().openapi({ example: "@shipwright/plugin" }),
 });
+
+// ─── AgentConfig (runtime GET /agents/:id/config response) ───────────────────
+
+export const AgentConfigPluginSchema = z
+  .object({
+    marketplace: z.string().openapi({ example: "shipwright" }),
+    plugin: z.string().openapi({ example: "shipwright" }),
+  })
+  .openapi("AgentConfigPlugin");
+
+export const AgentConfigResponseSchema = z
+  .object({
+    env: z.record(z.string()).openapi({ example: { SLACK_BOT_TOKEN: "xoxb-..." } }),
+    allowedTools: z.array(z.string()).openapi({ example: ["Read", "Write"] }),
+    plugins: z.array(AgentConfigPluginSchema),
+  })
+  .openapi("AgentConfigResponse");
+
+// Simple error shape for runtime API responses (no status field)
+export const RuntimeErrorSchema = z
+  .object({
+    error: z.string().openapi({ example: "Not found" }),
+  })
+  .openapi("RuntimeError");
