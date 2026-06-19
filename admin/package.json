@@ -14,9 +14,11 @@
     "db:migrate": "prisma migrate deploy --schema=prisma/schema.prisma"
   },
   "dependencies": {
+    "@hono/zod-openapi": "^0.18.3",
     "@prisma/client": "^6.19.2",
     "@shipwright/lib": "*",
-    "hono": "^4"
+    "hono": "^4",
+    "zod": "^3"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",
