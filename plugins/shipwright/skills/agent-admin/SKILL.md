@@ -11,6 +11,9 @@ description: >
 Use this skill to configure and manage Shipwright agents via the admin API. Covers cron jobs,
 env vars, tool permissions, API tokens, and plugins for any agent — including yourself.
 
+**Scope boundary:** For delivery pipeline work (planning, code tasks, reviews, deploys) use the
+task-store, dev-task, review, or deploy skills. This skill is for agent lifecycle management only.
+
 ---
 
 ## Authentication
@@ -364,6 +367,21 @@ The metrics service exposes PostHog-backed pipeline data. Endpoints require Bear
 
 For structured analysis, use `/shipwright:metrics` instead — it handles PostHog queries,
 local JSONL fallback, trends, and produces a formatted report.
+
+---
+
+## API Reference
+
+The full admin API schema is committed to the repository at `admin/openapi.json`. For
+interactive schema exploration (endpoints, request/response shapes, validation rules), access
+the live `/doc` endpoint on a running admin service:
+
+```bash
+open "$SHIPWRIGHT_API_URL/doc"
+```
+
+> **Note:** The `/doc` endpoint is not yet wired in the production admin service — it is a
+> planned follow-up. Use `admin/openapi.json` as the schema reference in the meantime.
 
 ---
 
