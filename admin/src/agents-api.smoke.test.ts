@@ -687,6 +687,19 @@ describe("admin API — tokens", () => {
     expect(body.token).toBeDefined();
   });
 
+  it("POST /agents/:id/tokens returns 201 with rawToken when no body is sent", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}/tokens`, {
+      method: "POST",
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.rawToken).toBeDefined();
+    expect(typeof body.rawToken).toBe("string");
+    expect(body.token).toBeDefined();
+  });
+
   it("GET /agents/:id/tokens returns list WITHOUT rawToken", async () => {
     const app = createAdminApp(makeMockDeps());
     const res = await app.request(`/agents/${AGENT_ID}/tokens`, {
