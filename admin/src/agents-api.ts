@@ -50,6 +50,7 @@ import {
   CreateAgentPluginBodySchema,
   CreateAgentTokenBodySchema,
   CreateAgentTokenResponseSchema,
+  CreateAgentToolBodySchema,
   CronIdParamSchema,
   EnvKeyParamSchema,
   ErrorSchema,
@@ -329,11 +330,7 @@ const createToolRoute = createRoute({
     params: AgentIdParamSchema,
     body: {
       content: {
-        "application/json": {
-          schema: z
-            .object({ pattern: z.string().min(1) })
-            .openapi("CreateAgentToolBody"),
-        },
+        "application/json": { schema: CreateAgentToolBodySchema },
       },
     },
   },
