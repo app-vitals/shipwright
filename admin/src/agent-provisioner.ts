@@ -101,13 +101,13 @@ export interface KubernetesAgentProvisionerConfig {
   /** Admin Deployment uid — ownerReference target for GC. */
   adminDeploymentUid: string;
   /**
-   * Build the PVC name for an agent from its sanitized resource name and
-   * optional human-readable slug (e.g. the agent's name). When a slug is
-   * provided (via `provision(agentId, { slug })`), it is passed as the second
-   * argument so callers can substitute `{name}` in a template. Defaults to
-   * `<resourceName>-home`.
+   * Build the PVC name for an agent from a single pre-resolved, RFC1123-safe
+   * name string. When a slug is provided (via `provision(agentId, { slug })`),
+   * `pvcNameFor` sanitizes it via `sanitizeAgentName` and passes the result as
+   * the sole argument; otherwise the sanitized `resourceName` (derived from
+   * `agentId`) is passed. Defaults to `<resourceName>-home`.
    */
-  pvcName?: (resourceName: string, slug?: string) => string;
+  pvcName?: (resourceName: string) => string;
   /**
    * Build the Secret name from the sanitized resource name.
    * Defaults to `<name>-token`.
@@ -160,7 +160,7 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
 
   private pvcNameFor(resourceName: string, slug?: string): string {
     return this.config.pvcName
-      ? this.config.pvcName(resourceName, slug)
+      ? this.config.pvcName(slug ? sanitizeAgentName(slug) : resourceName)
       : `${resourceName}-home`;
   }
 

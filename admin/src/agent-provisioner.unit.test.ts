@@ -79,16 +79,13 @@ describe("KubernetesAgentProvisioner.provision() — default PVC naming", () => 
   it("passes undefined slug → falls back to resourceName in pvcName function", async () => {
     const agentId = "cmqalfjcm000m4101iharq28k";
     const resourceName = sanitizeAgentName(agentId);
-    let capturedArgs: {
-      resourceName: string;
-      slug: string | undefined;
-    } | null = null;
+    let capturedName: string | null = null;
 
     const config: KubernetesAgentProvisionerConfig = {
       ...BASE_CONFIG,
-      pvcName: (rn, slug) => {
-        capturedArgs = { resourceName: rn, slug };
-        return `${rn}-home`;
+      pvcName: (name) => {
+        capturedName = name;
+        return `${name}-home`;
       },
     };
 
@@ -101,11 +98,10 @@ describe("KubernetesAgentProvisioner.provision() — default PVC naming", () => 
 
     await provisioner.provision(agentId);
 
-    expect(capturedArgs).not.toBeNull();
+    expect(capturedName).not.toBeNull();
+    // Without a slug, pvcNameFor passes the sanitized resourceName directly.
     // biome-ignore lint/style/noNonNullAssertion: guarded by the not.toBeNull() assertion above
-    expect(capturedArgs!.resourceName).toBe(resourceName);
-    // biome-ignore lint/style/noNonNullAssertion: guarded by the not.toBeNull() assertion above
-    expect(capturedArgs!.slug).toBeUndefined();
+    expect(capturedName!).toBe(resourceName);
   });
 });
 
@@ -118,7 +114,7 @@ describe("KubernetesAgentProvisioner.provision() — templated PVC naming", () =
 
     const config: KubernetesAgentProvisionerConfig = {
       ...BASE_CONFIG,
-      pvcName: (resourceName, s) => `vitals-os-agent-${s ?? resourceName}-home`,
+      pvcName: (name) => `vitals-os-agent-${name}-home`,
     };
 
     const k8s = emptyClient();
@@ -149,7 +145,7 @@ describe("KubernetesAgentProvisioner.provision() — templated PVC naming", () =
 
     const config: KubernetesAgentProvisionerConfig = {
       ...BASE_CONFIG,
-      pvcName: (resourceName, s) => `vitals-os-agent-${s ?? resourceName}-home`,
+      pvcName: (name) => `vitals-os-agent-${name}-home`,
     };
 
     const k8s = emptyClient();
@@ -181,9 +177,8 @@ describe("KubernetesAgentProvisioner.reconcile() — template respected", () => 
 
     const config: KubernetesAgentProvisionerConfig = {
       ...BASE_CONFIG,
-      // Template with no slug falls back to resourceName
-      pvcName: (resourceName, slug) =>
-        `vitals-os-agent-${slug ?? resourceName}-home`,
+      // Template with no slug falls back to resourceName (resolved by pvcNameFor)
+      pvcName: (name) => `vitals-os-agent-${name}-home`,
     };
 
     const k8s = emptyClient();

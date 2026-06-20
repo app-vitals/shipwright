@@ -148,13 +148,12 @@ function buildProvisioner(
       : {}),
     ...(Object.keys(voice).length > 0 ? { voice } : {}),
     // When SHIPWRIGHT_AGENT_PVC_NAME_TEMPLATE is set (e.g. "vitals-os-agent-{name}-home"),
-    // substitute {name} with the slug (agent's human-readable name) when provided, or
-    // fall back to the sanitized resource name (agentId-derived). When unset, the
-    // provisioner uses the default `${resourceName}-home` naming.
+    // substitute {name} with the pre-sanitized name resolved by pvcNameFor()
+    // (slug sanitized via sanitizeAgentName, or falls back to resourceName).
+    // When unset, the provisioner uses the default `${resourceName}-home` naming.
     ...(pvcNameTemplate
       ? {
-          pvcName: (resourceName: string, slug?: string) =>
-            pvcNameTemplate.replace("{name}", slug ?? resourceName),
+          pvcName: (name: string) => pvcNameTemplate.replace("{name}", name),
         }
       : {}),
   });
