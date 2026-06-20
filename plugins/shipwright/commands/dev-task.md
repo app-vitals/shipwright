@@ -52,7 +52,13 @@ If the output is an empty JSON array (`[]`), respond `[silent]` and stop.
 Then re-run /shipwright:dev-task.
 ```
 
-Respond `[silent]` and stop. A missing branch cannot be recovered from at runtime — worktree creation will fail silently if attempted.
+Before stopping, mark the task blocked so the cron does not keep re-queuing it:
+
+```bash
+bun "$PLUGIN_SCRIPTS/task_store.ts" update --id {id} --set status=blocked
+```
+
+Post the message above and stop. A missing branch cannot be recovered from at runtime — worktree creation will fail silently if attempted.
 
 Print:
 ```
