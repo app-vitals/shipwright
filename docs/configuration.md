@@ -154,6 +154,7 @@ Controls how the admin service provisions the Kubernetes workload backing each a
 | `SHIPWRIGHT_ADMIN_DEPLOYMENT_UID` | `string` | — | UID of the admin Deployment, paired with `SHIPWRIGHT_ADMIN_DEPLOYMENT_NAME` for the `ownerReference`. Only read when provisioning is enabled. |
 | `SHIPWRIGHT_AGENT_REPLICAS` | `number` | `1` | Replica count for the provisioned agent Deployment. Only read when provisioning is enabled. |
 | `SHIPWRIGHT_AGENT_PVC_STORAGE_GI` | `number` | `40` | Storage size in Gi for the per-agent persistent home directory (PVC). Only read when provisioning is enabled. Must be large enough to hold mise caches and workspace files across pod restarts. |
+| `SHIPWRIGHT_AGENT_PVC_NAME_TEMPLATE` | `string` | — | PVC name template for provisioned agent home directories. When set, `{name}` is replaced with the agent slug to derive the PVC name (e.g. `vitals-os-agent-{name}-home` → `vitals-os-agent-okwow-home`). When unset, PVC is named `{sanitizedAgentId}-home` (default). Only read when provisioning is enabled. |
 
 ### Workspace and tooling
 

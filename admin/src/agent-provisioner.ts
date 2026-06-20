@@ -71,7 +71,7 @@ export interface ReconcileResult {
 
 export interface AgentProvisioner {
   /** Mint a token and create the agent's Secret + Deployment. Idempotent. */
-  provision(agentId: string): Promise<ProvisionResult>;
+  provision(agentId: string, opts?: { slug?: string }): Promise<ProvisionResult>;
   /** Delete the agent's Deployment + Secret. Tolerates already-absent. */
   deprovision(agentId: string): Promise<void>;
   /**
@@ -79,7 +79,7 @@ export interface AgentProvisioner {
    * Re-provisions agents whose Deployments are missing; surfaces orphaned
    * Deployments that have no corresponding agent.
    */
-  reconcile(agentIds: string[]): Promise<ReconcileResult>;
+  reconcile(agents: Array<{ id: string; slug?: string }>): Promise<ReconcileResult>;
 }
 
 // ─── Configuration ──────────────────────────────────────────────────────────
@@ -152,16 +152,17 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
       : `${resourceName}-token`;
   }
 
-  private pvcNameFor(resourceName: string): string {
-    return this.config.pvcName
-      ? this.config.pvcName(resourceName)
-      : `${resourceName}-home`;
+  private pvcNameFor(resourceName: string, slug?: string): string {
+    if (this.config.pvcName) {
+      return this.config.pvcName(slug ?? resourceName);
+    }
+    return `${resourceName}-home`;
   }
 
-  async provision(agentId: string): Promise<ProvisionResult> {
+  async provision(agentId: string, opts?: { slug?: string }): Promise<ProvisionResult> {
     const resourceName = this.resourceName(agentId);
     const secretName = this.secretNameFor(resourceName);
-    const pvcName = this.pvcNameFor(resourceName);
+    const pvcName = this.pvcNameFor(resourceName, opts?.slug);
     const result: ProvisionResult = {
       resourceName,
       secretName,
@@ -218,7 +219,7 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
     try {
       await this.k8s.createDeployment(
         this.config.namespace,
-        this.deploymentSpec(agentId, resourceName, secretName),
+        this.deploymentSpec(agentId, resourceName, secretName, opts?.slug),
       );
     } catch (err) {
       if (isConflict(err)) {
@@ -250,7 +251,7 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
     await this.deleteSecretBestEffort(secretName);
   }
 
-  async reconcile(agentIds: string[]): Promise<ReconcileResult> {
+  async reconcile(agents: Array<{ id: string; slug?: string }>): Promise<ReconcileResult> {
     const labelSelector =
       "app.kubernetes.io/name=shipwright-agent,app.kubernetes.io/managed-by=shipwright-admin";
 
@@ -261,11 +262,11 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
     );
     const k8sNameSet = new Set(k8sNames);
 
-    // Build a map from sanitized resource name → original agentId, and track
+    // Build a map from sanitized resource name → original agent entry, and track
     // the full set of expected k8s names.
-    const expectedNames = new Map<string, string>(); // resourceName → agentId
-    for (const agentId of agentIds) {
-      expectedNames.set(this.resourceName(agentId), agentId);
+    const expectedNames = new Map<string, { id: string; slug?: string }>(); // resourceName → agent
+    for (const agent of agents) {
+      expectedNames.set(this.resourceName(agent.id), agent);
     }
 
     const recreated: string[] = [];
@@ -275,15 +276,15 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
     // Recreate Deployments that should exist but are missing in k8s.
     // Each provision() call is wrapped in try/catch so a single transient K8s
     // error does not abort the loop — the remaining agents are always checked.
-    for (const [resourceName, agentId] of expectedNames) {
+    for (const [resourceName, agent] of expectedNames) {
       if (!k8sNameSet.has(resourceName)) {
         // provision() is idempotent — it handles ConflictError on Secret/Deployment.
         try {
-          await this.provision(agentId);
-          recreated.push(agentId);
+          await this.provision(agent.id, { slug: agent.slug });
+          recreated.push(agent.id);
         } catch (err) {
           failed.push({
-            agentId,
+            agentId: agent.id,
             error: err instanceof Error ? err.message : String(err),
           });
         }
@@ -334,6 +335,7 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
     agentId: string,
     resourceName: string,
     secretName: string,
+    slug?: string,
   ): DeploymentSpec {
     const manifest = buildAgentDeploymentManifest({
       agentId,
@@ -341,7 +343,7 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
       image: this.config.image,
       imageTag: this.config.imageTag,
       apiUrl: this.config.apiUrl,
-      pvcName: this.pvcNameFor(resourceName),
+      pvcName: this.pvcNameFor(resourceName, slug),
       secretName,
       tokenSecretKey: this.tokenKey,
       adminDeploymentName: this.config.adminDeploymentName,
@@ -387,7 +389,7 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
  * admin service construct and run unchanged without a cluster.
  */
 export class NoopAgentProvisioner implements AgentProvisioner {
-  async provision(agentId: string): Promise<ProvisionResult> {
+  async provision(agentId: string, _opts?: { slug?: string }): Promise<ProvisionResult> {
     const resourceName = sanitizeAgentName(agentId);
     return {
       resourceName,
@@ -400,7 +402,7 @@ export class NoopAgentProvisioner implements AgentProvisioner {
     // intentionally a no-op
   }
 
-  async reconcile(_agentIds: string[]): Promise<ReconcileResult> {
+  async reconcile(_agents: Array<{ id: string; slug?: string }>): Promise<ReconcileResult> {
     return { recreated: [], orphans: [], failed: [] };
   }
 }

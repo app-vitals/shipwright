@@ -273,7 +273,7 @@ describeOrSkip("KubernetesAgentProvisioner (integration)", () => {
     const provisioner = new KubernetesAgentProvisioner(k8s, tokens, CONFIG);
 
     // Agent exists in DB, but no k8s Deployment provisioned yet.
-    const result = await provisioner.reconcile([agentId]);
+    const result = await provisioner.reconcile([{ id: agentId }]);
 
     expect(result.orphans).toEqual([]);
     expect(result.recreated).toEqual([agentId]);
@@ -313,9 +313,68 @@ describeOrSkip("KubernetesAgentProvisioner (integration)", () => {
     await provisioner.provision(agentId);
 
     // Now reconcile — should be a clean no-op.
-    const result = await provisioner.reconcile([agentId]);
+    const result = await provisioner.reconcile([{ id: agentId }]);
     expect(result.recreated).toEqual([]);
     expect(result.orphans).toEqual([]);
+  });
+
+  // ─── PVC name template ───────────────────────────────────────────────────────
+
+  it("provision() uses slug for PVC name when pvcName template is configured", async () => {
+    const agentId = await createAgent("OkWOW Agent");
+    const k8s = emptyClient();
+    const provisioner = new KubernetesAgentProvisioner(k8s, tokens, {
+      ...CONFIG,
+      pvcName: (name) => `vitals-os-agent-${name}-home`,
+    });
+
+    await provisioner.provision(agentId, { slug: "okwow" });
+
+    // PVC must use the slug, not the sanitized agentId.
+    await expect(
+      k8s.getPvc(NAMESPACE, "vitals-os-agent-okwow-home"),
+    ).resolves.toBeDefined();
+    // Default-named PVC must NOT exist.
+    const resourceName = sanitizeAgentName(agentId);
+    await expect(
+      k8s.getPvc(NAMESPACE, `vitals-os-agent-${resourceName}-home`),
+    ).rejects.toThrow();
+  });
+
+  it("provision() falls back to resourceName when slug is absent and pvcName is configured", async () => {
+    const agentId = await createAgent("FallbackAgent");
+    const k8s = emptyClient();
+    const resourceName = sanitizeAgentName(agentId);
+    const provisioner = new KubernetesAgentProvisioner(k8s, tokens, {
+      ...CONFIG,
+      pvcName: (name) => `vitals-os-agent-${name}-home`,
+    });
+
+    // Call provision() with no opts — slug is absent.
+    await provisioner.provision(agentId);
+
+    // PVC must use the sanitized resourceName (not a slug).
+    await expect(
+      k8s.getPvc(NAMESPACE, `vitals-os-agent-${resourceName}-home`),
+    ).resolves.toBeDefined();
+  });
+
+  it("reconcile() uses slug for PVC name when template is configured", async () => {
+    const agentId = await createAgent("ReconcileSlugAgent");
+    const k8s = emptyClient();
+    const provisioner = new KubernetesAgentProvisioner(k8s, tokens, {
+      ...CONFIG,
+      pvcName: (name) => `vitals-os-agent-${name}-home`,
+    });
+
+    // Agent exists in DB, no k8s Deployment — reconcile should provision it.
+    const result = await provisioner.reconcile([{ id: agentId, slug: "okwow" }]);
+
+    expect(result.recreated).toEqual([agentId]);
+    // PVC must use the slug passed through reconcile.
+    await expect(
+      k8s.getPvc(NAMESPACE, "vitals-os-agent-okwow-home"),
+    ).resolves.toBeDefined();
   });
 
   // ─── deprovision ──────────────────────────────────────────────────────────────
@@ -367,7 +426,10 @@ describe("NoopAgentProvisioner", () => {
 
   it("reconcile() returns empty arrays (no-op)", async () => {
     const provisioner = new NoopAgentProvisioner();
-    const result = await provisioner.reconcile(["agent_42", "agent_99"]);
+    const result = await provisioner.reconcile([
+      { id: "agent_42" },
+      { id: "agent_99" },
+    ]);
     expect(result).toEqual({ recreated: [], orphans: [], failed: [] });
   });
 
