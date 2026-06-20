@@ -44,6 +44,22 @@ The command returns `pending` shipwright tasks whose dependencies are all satisf
 
 If the output is an empty JSON array (`[]`), respond `[silent]` and stop.
 
+**Validate required fields.** If the selected task has no `branch` field (null, undefined, or empty string), do not proceed. Post:
+
+```
+⚠ Task {id} has no branch field set. Set it with:
+  bun "$PLUGIN_SCRIPTS/task_store.ts" update --id {id} --set branch=feat/{id-lowercase}
+Then re-run /shipwright:dev-task.
+```
+
+Before stopping, mark the task blocked so the cron does not keep re-queuing it:
+
+```bash
+bun "$PLUGIN_SCRIPTS/task_store.ts" update --id {id} --set status=blocked
+```
+
+Post the message above and stop. A missing branch cannot be recovered from at runtime — worktree creation will fail silently if attempted.
+
 Print:
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
