@@ -19,7 +19,6 @@
 import { join } from "node:path";
 import { Hono } from "hono";
 import { PrismaClient } from "../prisma/client/index.js";
-import { createAdminApp, parseAdminApiKeys } from "./agents-api.ts";
 import { createAdminUIApp } from "./admin-ui.ts";
 import { AgentCronJobService } from "./agent-cron-jobs.ts";
 import { AgentEnvService } from "./agent-envs.ts";
@@ -31,6 +30,7 @@ import {
 } from "./agent-provisioner.ts";
 import { AgentTokenService } from "./agent-tokens.ts";
 import { AgentToolService } from "./agent-tools.ts";
+import { createAdminApp, parseAdminApiKeys } from "./agents-api.ts";
 import { createAgentRuntimeApp } from "./api.ts";
 import { isDevAuthAllowed } from "./dev-auth-guard.ts";
 import { HttpGoogleAuthClient } from "./google-auth-client.ts";
@@ -147,8 +147,14 @@ function buildProvisioner(
       ? { pvcStorageGi }
       : {}),
     ...(Object.keys(voice).length > 0 ? { voice } : {}),
+    // When SHIPWRIGHT_AGENT_PVC_NAME_TEMPLATE is set (e.g. "vitals-os-agent-{name}-home"),
+    // substitute {name} with the pre-sanitized name resolved by pvcNameFor()
+    // (slug sanitized via sanitizeAgentName, or falls back to resourceName).
+    // When unset, the provisioner uses the default `${resourceName}-home` naming.
     ...(pvcNameTemplate
-      ? { pvcName: (name: string) => pvcNameTemplate.replace("{name}", name) }
+      ? {
+          pvcName: (name: string) => pvcNameTemplate.replace("{name}", name),
+        }
       : {}),
   });
 }

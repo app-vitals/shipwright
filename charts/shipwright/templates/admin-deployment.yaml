@@ -196,6 +196,9 @@ spec:
               value: {{ . | quote }}
             {{- end }}
             {{- with .Values.agent.provisioning.pvcNameTemplate }}
+            # PVC name template: when set, the provisioner substitutes {name} with
+            # the agent's human-readable name (slug) to derive the PVC name. Used
+            # when migrating from static agents with fixed naming conventions.
             - name: SHIPWRIGHT_AGENT_PVC_NAME_TEMPLATE
               value: {{ . | quote }}
             {{- end }}

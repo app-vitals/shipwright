@@ -29,7 +29,7 @@ annotations:
   # entry in CHANGELOG.md (keep the two in sync on every bump).
   artifacthub.io/changes: |
     - kind: changed
-      description: "auto-bump to chart v1.5.26 triggered by release tag agent-v0.58.0"
+      description: "pvcNameTemplate: pass slug as second arg to provisioner callback; warn when reconcile re-provisions without slug"
 dependencies:
   # Bitnami PostgreSQL subchart. Pinned to a chart version whose default image tag
   # is concrete (NOT `latest`), because Bitnami's 2025 catalog change moved newer

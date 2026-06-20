@@ -14,7 +14,7 @@ independent of `appVersion`. CI enforces this with
 
 ### Changed
 
-- auto-bump to chart v1.5.26 triggered by release tag `agent-v0.58.0`
+- `agent.provisioning.pvcNameTemplate`: pass slug to provisioner callback as second arg; fallback to sanitized resource name when slug is absent; add console.warn when pvcNameTemplate is active and reconcile re-provisions without a slug
 
 ## [1.5.25] - 2026-06-20
 
