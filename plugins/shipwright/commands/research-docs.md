@@ -93,7 +93,7 @@ For any module that has no corresponding doc (identified by scanning for modules
 Do NOT generate the doc automatically. Instead, write a follow-on task via `task_store.ts append`:
 
 ```bash
-PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | sort -V | tail -1 | xargs dirname 2>/dev/null)
+PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | awk -F/ '{print $(NF-2), $0}' | sort -V | tail -1 | cut -d' ' -f2- | xargs dirname 2>/dev/null)
 # Write task JSON to temp file, then:
 bun "$PLUGIN_SCRIPTS/task_store.ts" append --file /tmp/missing-docs-tasks.json
 ```

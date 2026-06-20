@@ -35,7 +35,7 @@ Example: /shipwright:hitl HIT-3.1
 Resolve the task store script and query by ID:
 
 ```bash
-PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | sort -V | tail -1 | xargs dirname 2>/dev/null)
+PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | awk -F/ '{print $(NF-2), $0}' | sort -V | tail -1 | cut -d' ' -f2- | xargs dirname 2>/dev/null)
 TASK_JSON=$(bun "$PLUGIN_SCRIPTS/task_store.ts" query --id "$TASK_ID" 2>/dev/null)
 ```
 
