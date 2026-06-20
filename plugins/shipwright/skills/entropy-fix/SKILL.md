@@ -135,7 +135,7 @@ If `--queue` was passed, run this workflow instead of Steps 6a-6e.
 ### 6q.1 Locate task_store.ts
 
 ```bash
-TASK_STORE_DIR=$(find ~/.claude/plugins/cache -maxdepth 6 -name "task_store.ts" -path "*/shipwright/*" | sort -V | tail -1 | xargs dirname 2>/dev/null)
+TASK_STORE_DIR=$(find ~/.claude/plugins/cache -maxdepth 6 -name "task_store.ts" -path "*/shipwright/*" | awk -F/ '{print $(NF-2), $0}' | sort -V | tail -1 | cut -d' ' -f2- | xargs dirname 2>/dev/null)
 ```
 
 If `TASK_STORE_DIR` is empty, print:

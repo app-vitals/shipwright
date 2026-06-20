@@ -38,7 +38,7 @@ AGENT_LOGIN=$(gh api user --jq '.login')
 
 Resolve the configured repos:
 ```bash
-PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | sort -V | tail -1 | xargs dirname 2>/dev/null)
+PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | awk -F/ '{print $(NF-2), $0}' | sort -V | tail -1 | cut -d' ' -f2- | xargs dirname 2>/dev/null)
 REPOS=$(bun "$PLUGIN_SCRIPTS/task_store.ts" repos)
 ```
 
@@ -121,7 +121,7 @@ beyond (i.e., no bundle-mates are still in flight). This prevents deploying a PR
 sibling tasks on the same branch are still being developed or are blocked.
 
 ```bash
-PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | sort -V | tail -1 | xargs dirname 2>/dev/null)
+PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | awk -F/ '{print $(NF-2), $0}' | sort -V | tail -1 | cut -d' ' -f2- | xargs dirname 2>/dev/null)
 HEAD_BRANCH=$(gh pr view {pr} --repo {org}/{repo} --json headRefName --jq '.headRefName')
 BRANCH_TASKS=$(bun "$PLUGIN_SCRIPTS/task_store.ts" query --branch "$HEAD_BRANCH" 2>/dev/null || echo '[]')
 INCOMPLETE_TASKS=$(echo "$BRANCH_TASKS" | jq '[.[] | select(.status == "pending" or .status == "in_progress" or .status == "blocked") | {id, status}]')
