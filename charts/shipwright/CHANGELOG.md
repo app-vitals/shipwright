@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.5.26] - 2026-06-20
+
+### Changed
+
+- `agent.provisioning.pvcNameTemplate`: pass slug to provisioner callback as second arg; fallback to sanitized resource name when slug is absent; add console.warn when pvcNameTemplate is active and reconcile re-provisions without a slug
+
 ## [1.5.25] - 2026-06-20
 
 ### Changed

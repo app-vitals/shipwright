@@ -284,6 +284,15 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
     for (const [resourceName, agent] of expectedNames) {
       if (!k8sNameSet.has(resourceName)) {
         // provision() is idempotent — it handles ConflictError on Secret/Deployment.
+        if (this.config.pvcName && !agent.slug) {
+          // When a pvcName template is active, the PVC name is derived from the slug.
+          // If slug is absent, reconcile falls back to resourceName — which may not
+          // match the slug-based PVC created by the original provision() call, risking
+          // a mount to an empty volume. Callers should populate slug in the agents array.
+          console.warn(
+            `[reconcile] pvcName template is set but agent ${agent.id} has no slug; PVC will be named from resourceName (${resourceName}) — verify this matches the PVC created at provision time`,
+          );
+        }
         try {
           await this.provision(agent.id, { slug: agent.slug });
           recreated.push(agent.id);
