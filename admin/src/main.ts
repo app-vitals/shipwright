@@ -115,6 +115,7 @@ function buildProvisioner(
   const replicas = replicasRaw ? Number(replicasRaw) : undefined;
   const pvcStorageGiRaw = env.SHIPWRIGHT_AGENT_PVC_STORAGE_GI;
   const pvcStorageGi = pvcStorageGiRaw ? Number(pvcStorageGiRaw) : undefined;
+  const pvcNameTemplate = env.SHIPWRIGHT_AGENT_PVC_NAME_TEMPLATE;
 
   // Agent-voice (STT/TTS) env flowed into provisioned agent pods. The chart's
   // voice Secret + Whisper Service URL land in the admin's env when
@@ -146,6 +147,9 @@ function buildProvisioner(
       ? { pvcStorageGi }
       : {}),
     ...(Object.keys(voice).length > 0 ? { voice } : {}),
+    ...(pvcNameTemplate
+      ? { pvcName: (name: string) => pvcNameTemplate.replace("{name}", name) }
+      : {}),
   });
 }
 

@@ -10,6 +10,18 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.5.25] - 2026-06-20
+
+### Changed
+
+- auto-bump to chart v1.5.25 triggered by release tag `admin-v0.75.0`
+
+## [1.5.24] - 2026-06-20
+
+### Added
+
+- `agent.provisioning.pvcNameTemplate`: optional PVC name template for provisioned agent home directories; `{name}` is replaced with the agent slug at provision time
+
 ## [1.5.23] - 2026-06-20
 
 ### Changed
