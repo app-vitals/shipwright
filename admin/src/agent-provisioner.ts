@@ -154,7 +154,7 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
 
   private pvcNameFor(resourceName: string, slug?: string): string {
     if (this.config.pvcName) {
-      return this.config.pvcName(slug ?? resourceName);
+      return this.config.pvcName(slug ? sanitizeAgentName(slug) : resourceName);
     }
     return `${resourceName}-home`;
   }

@@ -359,6 +359,28 @@ describeOrSkip("KubernetesAgentProvisioner (integration)", () => {
     ).resolves.toBeDefined();
   });
 
+  it("provision() sanitizes an unsafe slug before passing to pvcName template", async () => {
+    const agentId = await createAgent("Uppercase Spaces Agent");
+    const k8s = emptyClient();
+    const provisioner = new KubernetesAgentProvisioner(k8s, tokens, {
+      ...CONFIG,
+      pvcName: (name) => `vitals-os-agent-${name}-home`,
+    });
+
+    // slug contains uppercase and spaces — must be RFC1123 sanitized.
+    await provisioner.provision(agentId, { slug: "My Agent" });
+
+    // sanitizeAgentName("My Agent") → "my-agent-<hash>" (lossy path → hash suffix)
+    const sanitized = sanitizeAgentName("My Agent");
+    await expect(
+      k8s.getPvc(NAMESPACE, `vitals-os-agent-${sanitized}-home`),
+    ).resolves.toBeDefined();
+    // Raw unsanitized PVC name must NOT exist.
+    await expect(
+      k8s.getPvc(NAMESPACE, "vitals-os-agent-My Agent-home"),
+    ).rejects.toThrow();
+  });
+
   it("reconcile() uses slug for PVC name when template is configured", async () => {
     const agentId = await createAgent("ReconcileSlugAgent");
     const k8s = emptyClient();
