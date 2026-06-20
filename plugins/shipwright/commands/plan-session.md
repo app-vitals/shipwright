@@ -39,7 +39,7 @@ This is the engineering planning pass. The product spec (what and why) is alread
 Detect the active backend and, when it is `"github"`, run the task store setup before any context loading:
 
 ```bash
-PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | sort -V | tail -1 | xargs dirname 2>/dev/null)
+PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | awk -F/ '{print $(NF-2), $0}' | sort -V | tail -1 | cut -d' ' -f2- | xargs dirname 2>/dev/null)
 PHASE0_BACKEND=$([ -n "$PLUGIN_SCRIPTS" ] && bun "$PLUGIN_SCRIPTS/task_store.ts" backend 2>/dev/null)
 PHASE0_BACKEND=${PHASE0_BACKEND:-json}
 [ "$PHASE0_BACKEND" = "github" ] && bun "$PLUGIN_SCRIPTS/task_store.ts" setup
@@ -58,7 +58,7 @@ If the active backend is `"json"` (the default), skip this step.
 2. Glob the repo structure to understand the codebase layout
 3. Check for any existing tasks in this session to avoid duplicates:
    ```bash
-   PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | sort -V | tail -1 | xargs dirname 2>/dev/null)
+   PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | awk -F/ '{print $(NF-2), $0}' | sort -V | tail -1 | cut -d' ' -f2- | xargs dirname 2>/dev/null)
    [ -n "$PLUGIN_SCRIPTS" ] && bun "$PLUGIN_SCRIPTS/task_store.ts" query --session {session}
    ```
    The output is a JSON array. If non-empty, print the existing task IDs and skip re-adding them.
@@ -368,7 +368,7 @@ Set `"hitl": true` (and include the `## Human steps` section in `description`) f
 Append them to `state/todos.json` via task_store.ts (idempotent by id — safe to re-run):
 
 ```bash
-PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | sort -V | tail -1 | xargs dirname 2>/dev/null)
+PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | awk -F/ '{print $(NF-2), $0}' | sort -V | tail -1 | cut -d' ' -f2- | xargs dirname 2>/dev/null)
 bun "$PLUGIN_SCRIPTS/task_store.ts" append --file /tmp/new-tasks-{session}.json
 ```
 
@@ -472,7 +472,7 @@ jq --arg src "$PARENT_REF" \
 **Step 6d — Append tasks to the store:**
 
 ```bash
-PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | sort -V | tail -1 | xargs dirname 2>/dev/null)
+PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | awk -F/ '{print $(NF-2), $0}' | sort -V | tail -1 | cut -d' ' -f2- | xargs dirname 2>/dev/null)
 bun "$PLUGIN_SCRIPTS/task_store.ts" append --file /tmp/new-tasks-{session}-linked.json
 ```
 

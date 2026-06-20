@@ -33,7 +33,7 @@ CURRENT_USER=$(gh api /user -q '.login')
 Resolve the list of repos to scan. Use the same resolver as other shipwright commands:
 
 ```bash
-PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | sort -V | tail -1 | xargs dirname 2>/dev/null)
+PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | awk -F/ '{print $(NF-2), $0}' | sort -V | tail -1 | cut -d' ' -f2- | xargs dirname 2>/dev/null)
 REPOS=$(bun "$PLUGIN_SCRIPTS/task_store.ts" repos)
 ```
 
