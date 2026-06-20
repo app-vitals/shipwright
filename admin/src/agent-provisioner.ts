@@ -71,7 +71,10 @@ export interface ReconcileResult {
 
 export interface AgentProvisioner {
   /** Mint a token and create the agent's Secret + Deployment. Idempotent. */
-  provision(agentId: string): Promise<ProvisionResult>;
+  provision(
+    agentId: string,
+    opts?: { slug?: string },
+  ): Promise<ProvisionResult>;
   /** Delete the agent's Deployment + Secret. Tolerates already-absent. */
   deprovision(agentId: string): Promise<void>;
   /**
@@ -98,10 +101,13 @@ export interface KubernetesAgentProvisionerConfig {
   /** Admin Deployment uid — ownerReference target for GC. */
   adminDeploymentUid: string;
   /**
-   * Build the PVC name for an agent from its sanitized resource name.
-   * Defaults to `<name>-home`.
+   * Build the PVC name for an agent from its sanitized resource name and
+   * optional human-readable slug (e.g. the agent's name). When a slug is
+   * provided (via `provision(agentId, { slug })`), it is passed as the second
+   * argument so callers can substitute `{name}` in a template. Defaults to
+   * `<resourceName>-home`.
    */
-  pvcName?: (resourceName: string) => string;
+  pvcName?: (resourceName: string, slug?: string) => string;
   /**
    * Build the Secret name from the sanitized resource name.
    * Defaults to `<name>-token`.
@@ -152,16 +158,19 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
       : `${resourceName}-token`;
   }
 
-  private pvcNameFor(resourceName: string): string {
+  private pvcNameFor(resourceName: string, slug?: string): string {
     return this.config.pvcName
-      ? this.config.pvcName(resourceName)
+      ? this.config.pvcName(resourceName, slug)
       : `${resourceName}-home`;
   }
 
-  async provision(agentId: string): Promise<ProvisionResult> {
+  async provision(
+    agentId: string,
+    opts?: { slug?: string },
+  ): Promise<ProvisionResult> {
     const resourceName = this.resourceName(agentId);
     const secretName = this.secretNameFor(resourceName);
-    const pvcName = this.pvcNameFor(resourceName);
+    const pvcName = this.pvcNameFor(resourceName, opts?.slug);
     const result: ProvisionResult = {
       resourceName,
       secretName,
@@ -172,10 +181,7 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
     //    PVC already exists from a prior provision; treat as idempotent success.
     //    On any subsequent failure, do NOT delete the PVC (data safety policy).
     try {
-      await this.k8s.createPvc(
-        this.config.namespace,
-        this.pvcSpec(pvcName),
-      );
+      await this.k8s.createPvc(this.config.namespace, this.pvcSpec(pvcName));
     } catch (err) {
       if (!isConflict(err)) throw err;
     }
@@ -218,7 +224,7 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
     try {
       await this.k8s.createDeployment(
         this.config.namespace,
-        this.deploymentSpec(agentId, resourceName, secretName),
+        this.deploymentSpec(agentId, resourceName, secretName, opts?.slug),
       );
     } catch (err) {
       if (isConflict(err)) {
@@ -334,6 +340,7 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
     agentId: string,
     resourceName: string,
     secretName: string,
+    slug?: string,
   ): DeploymentSpec {
     const manifest = buildAgentDeploymentManifest({
       agentId,
@@ -341,7 +348,7 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
       image: this.config.image,
       imageTag: this.config.imageTag,
       apiUrl: this.config.apiUrl,
-      pvcName: this.pvcNameFor(resourceName),
+      pvcName: this.pvcNameFor(resourceName, slug),
       secretName,
       tokenSecretKey: this.tokenKey,
       adminDeploymentName: this.config.adminDeploymentName,

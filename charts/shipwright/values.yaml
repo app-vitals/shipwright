@@ -287,6 +287,12 @@ agent:
     # supplied explicitly. Leave empty to OMIT the env var (acceptable until
     # ownerRef propagation lands as a follow-up).
     adminDeploymentUid: ""
+    # -- PVC name template for provisioned agents. When non-empty, the provisioner
+    # substitutes `{name}` with the agent's human-readable name (slug) to derive the
+    # PVC name. Use this when migrating from static agents whose PVCs were created
+    # with a specific naming convention (e.g. "vitals-os-agent-{name}-home").
+    # When empty (the default), PVCs are named `{sanitizedAgentId}-home`.
+    pvcNameTemplate: ""
     # -- Provisioned workspace PVCs: created per-agent when the provisioner spins
     # up a new agent pod. These settings are surfaced for the agent manifest
     # builder's future use. NOTE: buildProvisioner does not read these as env

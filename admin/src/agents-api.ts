@@ -563,7 +563,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     // workload — then surface the failure as a 5xx via onError. The Noop
     // provisioner never throws, preserving today's create behavior exactly.
     try {
-      await provisioner.provision(agent.id);
+      await provisioner.provision(agent.id, { slug: agent.name });
     } catch (err) {
       await prisma.agent
         .delete({ where: { id: agent.id } })

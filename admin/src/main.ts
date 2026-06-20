@@ -19,7 +19,6 @@
 import { join } from "node:path";
 import { Hono } from "hono";
 import { PrismaClient } from "../prisma/client/index.js";
-import { createAdminApp, parseAdminApiKeys } from "./agents-api.ts";
 import { createAdminUIApp } from "./admin-ui.ts";
 import { AgentCronJobService } from "./agent-cron-jobs.ts";
 import { AgentEnvService } from "./agent-envs.ts";
@@ -31,6 +30,7 @@ import {
 } from "./agent-provisioner.ts";
 import { AgentTokenService } from "./agent-tokens.ts";
 import { AgentToolService } from "./agent-tools.ts";
+import { createAdminApp, parseAdminApiKeys } from "./agents-api.ts";
 import { createAgentRuntimeApp } from "./api.ts";
 import { isDevAuthAllowed } from "./dev-auth-guard.ts";
 import { HttpGoogleAuthClient } from "./google-auth-client.ts";
@@ -115,6 +115,7 @@ function buildProvisioner(
   const replicas = replicasRaw ? Number(replicasRaw) : undefined;
   const pvcStorageGiRaw = env.SHIPWRIGHT_AGENT_PVC_STORAGE_GI;
   const pvcStorageGi = pvcStorageGiRaw ? Number(pvcStorageGiRaw) : undefined;
+  const pvcNameTemplate = env.SHIPWRIGHT_AGENT_PVC_NAME_TEMPLATE;
 
   // Agent-voice (STT/TTS) env flowed into provisioned agent pods. The chart's
   // voice Secret + Whisper Service URL land in the admin's env when
@@ -146,6 +147,16 @@ function buildProvisioner(
       ? { pvcStorageGi }
       : {}),
     ...(Object.keys(voice).length > 0 ? { voice } : {}),
+    // When SHIPWRIGHT_AGENT_PVC_NAME_TEMPLATE is set (e.g. "vitals-os-agent-{name}-home"),
+    // substitute {name} with the slug (agent's human-readable name) when provided, or
+    // fall back to the sanitized resource name (agentId-derived). When unset, the
+    // provisioner uses the default `${resourceName}-home` naming.
+    ...(pvcNameTemplate
+      ? {
+          pvcName: (resourceName: string, slug?: string) =>
+            pvcNameTemplate.replace("{name}", slug ?? resourceName),
+        }
+      : {}),
   });
 }
 
