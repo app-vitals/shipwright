@@ -563,7 +563,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     // workload — then surface the failure as a 5xx via onError. The Noop
     // provisioner never throws, preserving today's create behavior exactly.
     try {
-      await provisioner.provision(agent.id);
+      await provisioner.provision(agent.id, { slug: agent.name });
     } catch (err) {
       await prisma.agent
         .delete({ where: { id: agent.id } })
@@ -595,8 +595,8 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
         "Only admin bearers and session users can reconcile agents",
       );
     }
-    const agents = await prisma.agent.findMany({ select: { id: true } });
-    const result = await provisioner.reconcile(agents.map((a) => a.id));
+    const agents = await prisma.agent.findMany({ select: { id: true, name: true } });
+    const result = await provisioner.reconcile(agents.map((a) => ({ id: a.id, slug: a.name })));
     return c.json(result, 200);
   });
 

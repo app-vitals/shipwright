@@ -258,6 +258,7 @@
                 },
                 "apiUrl": { "type": "string" },
                 "adminDeploymentUid": { "type": "string" },
+                "pvcNameTemplate": { "type": "string" },
                 "pvc": {
                   "type": "object",
                   "additionalProperties": false,

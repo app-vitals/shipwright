@@ -195,6 +195,10 @@ spec:
             - name: SHIPWRIGHT_ADMIN_DEPLOYMENT_UID
               value: {{ . | quote }}
             {{- end }}
+            {{- with .Values.agent.provisioning.pvcNameTemplate }}
+            - name: SHIPWRIGHT_AGENT_PVC_NAME_TEMPLATE
+              value: {{ . | quote }}
+            {{- end }}
             {{- end }}
             {{- if .Values.agent.voice.enabled }}
             # ── Agent-voice env contract (CV-1.1) ─────────────────────────────
