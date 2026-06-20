@@ -154,6 +154,19 @@ bun "$PLUGIN_SCRIPTS/task_store.ts" append --file /tmp/new-tasks.json
 # Returns: { "inserted": N, "updated": N }
 ```
 
+**Required fields for every task** — omitting these causes silent failures downstream:
+
+| Field | Why required |
+|---|---|
+| `id` | Stable key; used by dependency resolution and all `update` calls |
+| `title` | Required by schema |
+| `status` | Must be `"pending"` on creation |
+| `repo` | Routes `dev-task` to the correct worktree |
+| `branch` | `dev-task` creates the worktree from this; absent → task is skipped with an error |
+| `assignee` | Without it, any agent can pick up the task; with it, only that agent will |
+
+Convention: `branch` = `feat/{id-lowercase}` (e.g. `feat/she-pvc-name-template`).
+
 Backend note: the GitHub adapter is insert-only — existing tasks (matched by `id`) are
 never updated via `append`. Use `update` for targeted field changes on existing
 GitHub-backed tasks. The JSON adapter upserts (idempotent by `id`).
