@@ -3,6 +3,40 @@ entries:
   shipwright:
   - annotations:
       artifacthub.io/changes: |
+        - kind: added
+          description: "agent.provisioning.pvcNameTemplate: optional PVC name template for provisioned agent home directories"
+      licenses: MIT
+    apiVersion: v2
+    appVersion: 0.1.0
+    created: "2026-06-20T02:32:59.456295295Z"
+    dependencies:
+    - condition: postgresql.enabled
+      name: postgresql
+      repository: oci://registry-1.docker.io/bitnamicharts
+      version: 16.7.27
+    description: Shipwright Harness — the open-source autonomous delivery agent for
+      Claude Code. This chart packages the three Shipwright services (admin, metrics,
+      agent) and an optional PostgreSQL dependency for Kubernetes (Minikube-friendly
+      defaults).
+    digest: b4909641fe5c609332c44653d10d51e4f07a744830ea672ccdf97fe0d93f2616
+    home: https://shipwright-harness.com
+    keywords:
+    - shipwright
+    - claude-code
+    - delivery-agent
+    - ci-cd
+    maintainers:
+    - name: Shipwright Harness
+      url: https://shipwright-harness.com
+    name: shipwright
+    sources:
+    - https://github.com/app-vitals/shipwright
+    type: application
+    urls:
+    - https://github.com/app-vitals/shipwright/releases/download/shipwright-1.5.24/shipwright-1.5.24.tgz
+    version: 1.5.24
+  - annotations:
+      artifacthub.io/changes: |
         - kind: changed
           description: "auto-bump to chart v1.5.23 triggered by release tag agent-v0.57.0"
       licenses: MIT
@@ -997,4 +1031,4 @@ entries:
     urls:
     - https://app-vitals.github.io/shipwright/shipwright-1.0.0.tgz
     version: 1.0.0
-generated: "2026-06-20T01:04:41.42800039Z"
+generated: "2026-06-20T02:32:59.456595689Z"
