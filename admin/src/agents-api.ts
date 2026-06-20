@@ -595,8 +595,8 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
         "Only admin bearers and session users can reconcile agents",
       );
     }
-    const agents = await prisma.agent.findMany({ select: { id: true } });
-    const result = await provisioner.reconcile(agents.map((a) => a.id));
+    const agents = await prisma.agent.findMany({ select: { id: true, name: true } });
+    const result = await provisioner.reconcile(agents.map((a) => ({ id: a.id, slug: a.name })));
     return c.json(result, 200);
   });
 

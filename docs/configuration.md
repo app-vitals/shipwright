@@ -154,7 +154,7 @@ Controls how the admin service provisions the Kubernetes workload backing each a
 | `SHIPWRIGHT_ADMIN_DEPLOYMENT_UID` | `string` | — | UID of the admin Deployment, paired with `SHIPWRIGHT_ADMIN_DEPLOYMENT_NAME` for the `ownerReference`. Only read when provisioning is enabled. |
 | `SHIPWRIGHT_AGENT_REPLICAS` | `number` | `1` | Replica count for the provisioned agent Deployment. Only read when provisioning is enabled. |
 | `SHIPWRIGHT_AGENT_PVC_STORAGE_GI` | `number` | `40` | Storage size in Gi for the per-agent persistent home directory (PVC). Only read when provisioning is enabled. Must be large enough to hold mise caches and workspace files across pod restarts. |
-| `SHIPWRIGHT_AGENT_PVC_NAME_TEMPLATE` | `string` | — | Template for deriving the PVC name from the agent's human-readable name. Use `{name}` as the placeholder — it is substituted with the agent's name (slug) when provided, or the sanitized agent ID otherwise. Example: `vitals-os-agent-{name}-home`. When unset (the default), PVCs are named `{sanitizedAgentId}-home`. Useful when migrating from static agents whose PVCs were created with a fixed naming convention. Only read when provisioning is enabled. |
+| `SHIPWRIGHT_AGENT_PVC_NAME_TEMPLATE` | `string` | — | Template for deriving the PVC name from the agent's human-readable name. Use `{name}` as the placeholder — it is substituted with the agent's name (slug) when provided, or the sanitized agent ID otherwise. Example: `vitals-os-agent-{name}-home` → `vitals-os-agent-okwow-home`. When unset (the default), PVCs are named `{sanitizedAgentId}-home`. Useful when migrating from static agents whose PVCs were created with a fixed naming convention. Only read when provisioning is enabled. |
 
 ### Workspace and tooling
 

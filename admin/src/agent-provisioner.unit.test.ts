@@ -194,7 +194,7 @@ describe("KubernetesAgentProvisioner.reconcile() — template respected", () => 
     );
 
     // Reconcile with a missing deployment — should provision and use the template
-    const result = await provisioner.reconcile([agentId]);
+    const result = await provisioner.reconcile([{ id: agentId }]);
 
     expect(result.recreated).toEqual([agentId]);
     expect(result.failed).toEqual([]);

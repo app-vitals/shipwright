@@ -34,7 +34,7 @@ class RecordingProvisioner implements AgentProvisioner {
 
   constructor(private readonly onProvision?: (agentId: string) => void) {}
 
-  async provision(agentId: string): Promise<ProvisionResult> {
+  async provision(agentId: string, _opts?: { slug?: string }): Promise<ProvisionResult> {
     this.onProvision?.(agentId);
     this.provisioned.push(agentId);
     return {
@@ -49,7 +49,7 @@ class RecordingProvisioner implements AgentProvisioner {
   }
 
   async reconcile(
-    _agentIds: string[],
+    _agents: Array<{ id: string; slug?: string }>,
   ): Promise<{
     recreated: string[];
     orphans: string[];
