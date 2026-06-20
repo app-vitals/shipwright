@@ -154,7 +154,7 @@ The constant `BAKED_MARKETPLACES_ROOT` and function `discoverBakedMarketplaces()
 | `admin/src/admin-ui-pages.ts` | Page rendering functions (`renderLoginPage`, `renderAgentsPage`, `renderAgentDetailPage`, `renderProvision*`). |
 | `admin/src/admin-ui-styles.ts` | Shared CSS helpers (`baseStyles`, `escapeHtml`, `renderAdminToolbar`). |
 | `admin/src/google-auth-client.ts` | `GoogleAuthClient` interface + `HttpGoogleAuthClient` — typed Google OAuth2 token exchange and user profile lookup; injected into the admin UI for testability. |
-| `admin/src/slack-provisioning-client.ts` | `SlackProvisioningClient` interface + `HttpSlackProvisioningClient` — drives the one-time Slack app creation and OAuth flow. `createAppManifest()` returns `appId`, `oauthRedirectUrl`, `clientId`, `clientSecret`, and `signingSecret` from the `apps.manifest.create` response. `exchangeOAuthCode()` exchanges the Slack OAuth callback code for a bot token via `oauth.v2.access`. |
+| `admin/src/slack-provisioning-client.ts` | `SlackProvisioningClient` interface + `HttpSlackProvisioningClient` — drives the one-time Slack app creation and OAuth flow. `createAppManifest()` returns `appId`, `oauthRedirectUrl`, `clientId`, `clientSecret`, and `signingSecret` from the `apps.manifest.create` response. `exchangeOAuthCode()` exchanges the Slack OAuth callback code for a bot token via `oauth.v2.access`. Also exports `buildAgentManifest(appName, redirectUri?)` — constructs per-agent Slack app manifests via the Manifest API shape — and `AGENT_BOT_SCOPES` — the canonical bot scope list used by both provisioning and sync-manifest OAuth flows. |
 | `admin/src/agent-envs.ts` | Env service — encrypted key/value store + config bundle assembly. |
 | `admin/src/agent-cron-jobs.ts` | Cron service + system-cron reconciliation. |
 | `admin/src/agent-tools.ts` / `agent-tokens.ts` / `agent-plugins.ts` | Per-resource service classes. |
@@ -182,7 +182,6 @@ The constant `BAKED_MARKETPLACES_ROOT` and function `discoverBakedMarketplaces()
 | `agent/src/cron-handler.ts` | Cron runtime: `handleCronRequest()` — runs a cron prompt through Claude and posts the result to Slack. Supports `preCheck` scripts, `silent` suppression, channel vs. DM delivery, and `onPost`/`onSession` callbacks. |
 | `agent/src/slack.ts` | Slack event handler: `createSlackApp()` — Bolt-based Socket Mode app handling DMs, `app_mention`, `reaction_added`, file attachments, and voice transcription. |
 | `agent/src/health.ts` | Health server: `startHealthServer(port, summarize?, cronDeps?, clock?, graceMs?)` — K8s liveness probe server. `GET /health` returns `{ ok: true, slack: "connected"\|"disconnected" }` (200) or `{ ok: false, slack: "disconnected" }` (500) when the Slack socket has been continuously down longer than `graceMs` (default 90 s). `GET /stats` returns an `AnalyticsSummary` when a `summarize` function is injected (404 otherwise). `POST /cron` dispatches cron prompts via `cron-handler.ts`. Exports `slackState`, `markSlackConnected()`, and `markSlackDisconnected(clock)` for Slack socket lifecycle wiring. |
-| `agent/src/slack-manifest.ts` | Typed Slack app manifest builder (`buildManifest()`) — constructs per-agent Slack app manifests via the Manifest API shape. |
 | `admin/prisma/schema.prisma` | The six-model schema (`DATABASE_URL_SHIPWRIGHT_ADMIN`). |
 
 ## Testing
