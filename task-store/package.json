@@ -13,7 +13,8 @@
     "db:migrate": "prisma migrate deploy --schema=prisma/schema.prisma"
   },
   "dependencies": {
-    "@prisma/client": "^6.19.2"
+    "@prisma/client": "^6.19.2",
+    "hono": "^4.12.26"
   },
   "devDependencies": {
     "bun-types": "^1.3.14",

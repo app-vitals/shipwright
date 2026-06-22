@@ -2,31 +2,87 @@
  * task-store/src/main.ts
  *
  * HTTP entry point for the Shipwright task-store service.
- * Service logic is not yet implemented — this placeholder starts cleanly,
- * exposes a /healthz endpoint, and logs startup so the Dockerfile ENTRYPOINT
- * and dev-tmux.ts pane work without errors.
+ *
+ * Boot sequence:
+ *   1. Run `prisma migrate deploy` as an idempotent preflight.
+ *   2. Construct PrismaClient + TaskService + TaskTokenService.
+ *   3. Compose the Hono app and serve it via Bun.serve.
+ *
+ * DB: DATABASE_URL_SHIPWRIGHT_TASK_STORE (dedicated database — never shared).
  */
 
-const PORT = Number(process.env.PORT ?? 3000);
+import { join } from "node:path";
+import { createTaskStoreApp } from "./app.ts";
+import { PrismaClient } from "./index.ts";
+import { TaskService } from "./task-service.ts";
+import { TaskTokenService } from "./token-service.ts";
 
-const server = Bun.serve({
-  port: PORT,
-  fetch(req) {
-    const url = new URL(req.url);
+const DEFAULT_PORT = 3000;
 
-    if (url.pathname === "/healthz") {
-      return new Response(
-        JSON.stringify({ status: "ok", service: "task-store" }),
-        {
-          headers: { "content-type": "application/json" },
-        },
-      );
-    }
+// ─── Migration preflight ──────────────────────────────────────────────────────
 
-    return new Response("task-store service not yet implemented", {
-      status: 501,
-    });
-  },
+/**
+ * Runs `prisma migrate deploy` as a boot preflight. Idempotent — safe on every
+ * startup. Throws on migration failure so a broken schema fails fast rather than
+ * serving against an unmigrated database.
+ */
+async function runMigrations(): Promise<void> {
+  const databaseUrl = process.env.DATABASE_URL_SHIPWRIGHT_TASK_STORE;
+  if (!databaseUrl) {
+    console.warn(
+      "[task-store] DATABASE_URL_SHIPWRIGHT_TASK_STORE not set — skipping prisma migrate deploy",
+    );
+    return;
+  }
+
+  console.log("[task-store] running prisma migrate deploy...");
+
+  const proc = Bun.spawn(
+    ["bunx", "prisma", "migrate", "deploy", "--schema=prisma/schema.prisma"],
+    {
+      cwd: join(import.meta.dir, ".."),
+      env: { ...process.env, DATABASE_URL_SHIPWRIGHT_TASK_STORE: databaseUrl },
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
+
+  const [stdout, stderr] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ]);
+
+  await proc.exited;
+
+  if (proc.exitCode !== 0) {
+    console.error("[task-store] prisma migrate deploy failed:");
+    console.error(stderr);
+    throw new Error(`prisma migrate deploy exited with code ${proc.exitCode}`);
+  }
+
+  if (stdout.trim()) console.log("[task-store]", stdout.trim());
+  console.log("[task-store] migrations complete");
+}
+
+// ─── Server entry ─────────────────────────────────────────────────────────────
+
+async function startServer(): Promise<void> {
+  const port = Number(process.env.PORT ?? DEFAULT_PORT);
+
+  console.log(`[task-store] starting service on port ${port}`);
+
+  await runMigrations();
+
+  const prisma = new PrismaClient();
+  const taskService = new TaskService(prisma);
+  const tokenService = new TaskTokenService(prisma);
+  const app = createTaskStoreApp({ taskService, tokenService });
+
+  const server = Bun.serve({ port, fetch: app.fetch });
+  console.log(`[task-store] listening on http://localhost:${server.port}`);
+}
+
+startServer().catch((err) => {
+  console.error("[task-store] fatal startup error:", err);
+  process.exit(1);
 });
-
-console.log(`task-store listening on http://localhost:${server.port}`);
