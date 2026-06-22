@@ -71,7 +71,7 @@ It runs in **your** environment, on **your** codebase — you own it, it's MIT, 
 
 Shipwright turns a feature idea into shipped, reviewed code through a sequence of Claude Code commands — each stage producing a durable artifact the next stage consumes:
 
-- **PRD** an idea into a product spec.
+- **Write a PRD** for your idea — a structured product spec ready for /plan-session.
 - **Plan** the spec into a queue of well-scoped, dependency-ordered tasks (tracked as **GitHub Issues** — the queue lives where your team already works).
 - **Execute** the next ready task — build, test, and open a PR.
 - **Review** the PR with policy-controlled, inline feedback.
