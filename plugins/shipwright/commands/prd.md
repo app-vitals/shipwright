@@ -251,7 +251,7 @@ Substitute `{repo}` with the value detected in Phase 0 step 2b. The handoff line
 
 - **One question at a time** — never ask multiple questions in the same message
 - **Probe vague answers** — ask for examples and specific outcomes before moving on
-- **Don't invent requirements** — if you're uncertain, put it in Open Questions
+- **Don't invent requirements** — if you're uncertain, raise it in Q8 and drive it to a decision or named blocker
 - **Feature depth matters** — a feature with unclear acceptance criteria will produce poor tasks in plan-session; invest time here
 - **Research before drafting** — Phase 2 surfaces codebase constraints that change what's feasible
 - **The PRD is the contract** — plan-session will use it as-is to generate a full task breakdown; what's missing here will be missing in the plan
