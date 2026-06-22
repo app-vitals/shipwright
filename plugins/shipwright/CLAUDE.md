@@ -66,7 +66,7 @@ Skills are invocable in any order. `deploy` does not require `review` to have ru
 from GitHub and the file system at the time it runs.
 
 Applies to: **all skills** — review, deploy, patch, dev-task, plan-session, research,
-brainstorm, refresh-plan
+prd, refresh-plan
 
 ### 6. Skills Are Idempotent
 

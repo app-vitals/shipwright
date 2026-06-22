@@ -17,7 +17,7 @@ Shipwright Harness is the open-source autonomous delivery agent for [Claude Code
 
 ## Command reference
 
-The plugin's commands (`brainstorm`, `plan-session`, `dev-task`, `review`, `patch`, `deploy`, the five-phase test-readiness pipeline, and more) are documented at their source: see [`plugins/shipwright/README.md`](../plugins/shipwright/README.md) and [`plugins/shipwright/CLAUDE.md`](../plugins/shipwright/CLAUDE.md).
+The plugin's commands (`prd`, `plan-session`, `dev-task`, `review`, `patch`, `deploy`, the five-phase test-readiness pipeline, and more) are documented at their source: see [`plugins/shipwright/README.md`](../plugins/shipwright/README.md) and [`plugins/shipwright/CLAUDE.md`](../plugins/shipwright/CLAUDE.md).
 
 ## Coming as the toolchain matures
 

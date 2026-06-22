@@ -1,8 +1,8 @@
 # PRODUCT-SPEC.md Template
 
-This template is used by `/brainstorm` to generate the `planning/{folder}/PRODUCT-SPEC.md` file. It is also the format that `/plan-session` expects when it reads planning documents.
+This template is used by `/prd` to generate the `planning/{folder}/PRODUCT-SPEC.md` file. It is also the format that `/plan-session` expects when it reads planning documents.
 
-The `/brainstorm` command fills each placeholder from interactive discovery and codebase research. The resulting document is placed at `planning/{folder}/PRODUCT-SPEC.md` for direct consumption by `/plan-session`.
+The `/prd` command fills each placeholder from interactive discovery and codebase research. The resulting document is placed at `planning/{folder}/PRODUCT-SPEC.md` for direct consumption by `/plan-session`.
 
 ---
 
@@ -103,7 +103,7 @@ and technically. This is the overall completion condition, not per-feature accep
 
 ## Field Reference
 
-| Field | Purpose | Source in `/brainstorm` |
+| Field | Purpose | Source in `/prd` |
 |-------|---------|------------------------|
 | **Overview** | Quick project summary | Synthesized from Q2 + Q3 |
 | **Problem Statement** | Specific problem being solved | Q2 |

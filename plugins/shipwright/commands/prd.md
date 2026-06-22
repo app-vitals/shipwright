@@ -6,7 +6,7 @@ arguments:
     required: true
 ---
 
-# Brainstorm: $ARGUMENTS
+# PRD: $ARGUMENTS
 
 Run an interactive requirements session for `planning/$ARGUMENTS/`. Ask qualifying questions one at a time to fully understand what you're building, then produce a structured `PRODUCT-SPEC.md` that `/plan-session` can consume directly.
 
@@ -206,7 +206,7 @@ Print:
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-BRAINSTORM COMPLETE
+PRD COMPLETE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 PRD: planning/$ARGUMENTS/PRODUCT-SPEC.md

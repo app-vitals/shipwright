@@ -27,7 +27,7 @@ locate the source tree (~/src/{repo}). Confirm it is correct before proceeding.
 ```
 Wait for user confirmation before continuing to Step 1.
 
-This is the engineering planning pass. The product spec (what and why) is already done — either from `/brainstorm` or handed in directly. This session translates that spec into a concrete technical design and task queue.
+This is the engineering planning pass. The product spec (what and why) is already done — either from `/prd` or handed in directly. This session translates that spec into a concrete technical design and task queue.
 
 **Input:** `planning/{session}/PRODUCT-SPEC.md` (or a verbal description if no spec exists)
 **Output:** Tasks in `state/todos.json`, ready for `dev-task` to execute
