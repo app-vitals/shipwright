@@ -93,7 +93,7 @@ Run the complete local stack — metrics dashboard, admin UI, and the Shipwright
 | **Bun** | Runtime + package manager. | <https://bun.sh> |
 | **go-task** (`task`) | Single local entrypoint. | <https://taskfile.dev/installation/> |
 | **Docker** | Runs the agent in an isolated container. | <https://docs.docker.com/get-docker/> |
-| **tmux** | `task stack` multiplexes the 5 panes. | `brew install tmux` / `apt install tmux` |
+| **tmux** | `task stack` multiplexes the 6 panes. | `brew install tmux` / `apt install tmux` |
 | **PostgreSQL** | Admin service DB (local). | `brew install postgresql@16` / `apt install postgresql` |
 | **Claude Code** | Runs the `/plugin install` step. | <https://www.anthropic.com/claude-code> |
 
@@ -124,12 +124,13 @@ Open `state/dev-agent.env` and fill in **one** of:
 task stack
 ```
 
-This opens a tmux session (`shipwright`) with 5 panes:
+This opens a tmux session (`shipwright`) with 6 panes:
 
 | Pane | What | URL |
 |---|---|---|
 | metrics | Dashboard in SQLite mode | <http://localhost:3460/dashboard> |
 | admin | Admin CRUD API + UI | <http://localhost:3001/admin> |
+| task-store | Task queue service (Postgres-backed) | <http://localhost:3002> |
 | agent | Shipwright agent in Docker | <http://localhost:3000> |
 | chat | TUI chat REPL | _(terminal)_ |
 | logs | Scratch shell | _(terminal)_ |
