@@ -78,6 +78,7 @@
           "version.txt",
           "package.json",
           "plugins/shipwright/package.json",
+          "plugins/shipwright/.claude-plugin/plugin.json",
           "metrics/package.json",
           "agent/package.json"
         ],
