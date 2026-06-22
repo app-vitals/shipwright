@@ -238,7 +238,7 @@ cleanup_after_days: 14
 
 ## See also
 
-- [architecture.md](./architecture.md) — the three-artifact A→B→C design.
+- [architecture.md](./architecture.md) — the four-artifact A→B→C→D design.
 - [agent.md](./agent.md) — Shipwright agent runtime, admin CRUD APIs, and data model.
 - [quickstart.md](./quickstart.md) — how to get the full dev stack running locally.
 - `CLAUDE.md` — env var namespacing convention and database env var rules.
