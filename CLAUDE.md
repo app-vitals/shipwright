@@ -8,13 +8,14 @@ Shipwright Harness is **the open-source (MIT) autonomous delivery agent for Clau
 
 > The plugin is repo-agnostic: it runs its planning/execution/review/deploy commands against *any* repository. This repo is both the source of the plugin **and** the codebase it ships against.
 
-## Architecture — three artifacts, sequenced A → B → C
+## Architecture — four artifacts, sequenced A → B → C → D
 
 | Phase | Artifact | Directory | What it is |
 |---|---|---|---|
 | **A** | **Plugin** (the system) | `plugins/shipwright/` | Commands, skills, agents, scripts users `/plugin install`. Repo-agnostic. |
 | **B** | **Metrics dashboard** | `metrics/` | Stateless Hono service: PostHog-backed JSON endpoints + a server-rendered dashboard. No database. |
 | **C** | **Shipwright agent** | `agent/` | Hono service + Prisma store; a thin autonomous runner: pick next ready task → build → ship PR → forward metrics. |
+| **D** | **Task store service** | `task-store/` | Postgres-backed task queue + scoped tokens. Prisma schema defines `Task` and `TaskToken` models; re-exported as `@shipwright/task-store`. Replaces the JSON file fallback. |
 
 Supporting surfaces (not phased):
 - `site/` — Astro + Tailwind marketing site (**shipwright-harness.com**). Self-contained; **not** a Bun workspace; Playwright smoke tests.
@@ -138,8 +139,9 @@ Each Prisma service reads its own `DATABASE_URL_*` — never a shared connection
 | Variable | Service | Schema |
 |----------|---------|--------|
 | `DATABASE_URL_SHIPWRIGHT_ADMIN` | `@shipwright/admin` | `admin/prisma/schema.prisma` |
+| `DATABASE_URL_SHIPWRIGHT_TASK_STORE` | `@shipwright/task-store` | `task-store/prisma/schema.prisma` |
 
-The schema uses `provider = "postgresql"`. `DATABASE_URL_SHIPWRIGHT_ADMIN` must be a Postgres connection string.
+The schema uses `provider = "postgresql"`. Both `DATABASE_URL_SHIPWRIGHT_ADMIN` and `DATABASE_URL_SHIPWRIGHT_TASK_STORE` must be Postgres connection strings.
 
 For the full configuration reference (all env vars, agent config, policy config), see [`docs/configuration.md`](./docs/configuration.md).
 
@@ -147,7 +149,7 @@ For the full configuration reference (all env vars, agent config, policy config)
 
 To load additional context into a session, add `@docs/filename.md` entries here — don't create separate `CLAUDE-REFERENCE.md` or similar files.
 
-- **docs/architecture.md** — the three-artifact A→B→C design (plugin / metrics / agent), supporting surfaces, and workspace layout
+- **docs/architecture.md** — the four-artifact A→B→C→D design (plugin / metrics / agent / task-store), supporting surfaces, and workspace layout
 - **docs/testing.md** — the four-layer test model (unit / integration / smoke / e2e), run commands, speed budgets, and the isolation contract
 - **docs/metrics.md** — metrics service (B): JSON endpoints, server-rendered dashboard, dual auth (Bearer / session), and environment
 - **docs/agent.md** — Shipwright agent (C): runtime + admin CRUD APIs, the six-model Prisma store, and encryption/env notes
