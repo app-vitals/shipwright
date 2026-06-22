@@ -836,7 +836,12 @@ Run these across ALL scenarios to verify genericization:
   - [ ] Overview, Problem Statement, Users & Context
   - [ ] Feature sections with ### headings
   - [ ] Acceptance criteria as `- [ ]` checkboxes
-  - [ ] Technical Constraints, Scope (In/Out), Priorities, Open Questions, Success Criteria
+  - [ ] Technical Constraints, Scope (In/Out), Priorities, Success Criteria
+  - [ ] Each feature has a **Source Map** field listing existing files the feature touches (populated from Phase 2 researcher pass; present even if empty with a note)
+  - [ ] Each feature has a **Testing Strategy** field naming the test layer and a one-sentence rationale (populated from Phase 2 test-layer probe)
+  - [ ] Top-level **Testing Strategy** section contains a table mapping every feature to its test layer and rationale
+  - [ ] **Resolved Decisions** section (replacing Open Questions) records every uncertainty from Q8 as a decision or default + rationale — no "TBD" or "defer to plan-session" entries
+  - [ ] No section contains a TODO placeholder or an unresolved question that would block plan-session from generating tasks
 - [ ] Phase 4 presents complete spec and iterates on feedback
 - [ ] Phase 5 writes `planning/april-2026-notifications/PRODUCT-SPEC.md`
 - [ ] Phase 5 prints PRD COMPLETE block with feature count and next step

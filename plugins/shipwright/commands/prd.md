@@ -120,11 +120,18 @@ Are any features higher priority than others?
 Is there a delivery sequence that matters — things that must be built before others can start?
 ```
 
-### Q8 — Open Questions
+### Q8 — Open Questions → Drive to Decisions
 ```
-Any unknowns or open questions we should flag for the planning session?
-Things you're unsure about, decisions that aren't made yet, or dependencies on other teams?
+Are there any decisions we haven't made yet, or things you're unsure about?
 ```
+
+For each item the user raises, do NOT simply record it as an open question. Instead, drive it to a decision:
+
+1. **If the user has a preference**: record it as a Resolved Decision with their rationale.
+2. **If the user is genuinely unsure**: propose a sensible default based on codebase patterns from Phase 0/2 research, and ask: "Shall I go with {default} as the default? You can revisit this before plan-session." Record the accepted default as a Resolved Decision, noting it was chosen as a default and can be changed.
+3. **If resolution requires external sign-off** (e.g., security team, legal, another team's API): record the dependency as a Resolved Decision with a note that the blocker must be resolved before plan-session can begin — and flag it explicitly so the user knows the session is blocked on this.
+
+The goal: every uncertainty that enters Q8 exits Q8 as a decision or a named blocker with an owner. **Do not write "TBD" or "defer to plan-session" — those are not decisions.** Plan-session cannot generate tasks from unresolved questions; the PRD session is the place to resolve them.
 
 ### Q9 — Success Criteria
 ```
@@ -136,9 +143,13 @@ What does a successful outcome look like — from both the user's perspective an
 
 After completing all discovery questions, spawn the `agents/researcher.md` agent with:
 - The feature list gathered in Phase 1
-- Task: "For each of these features, identify: (1) existing code patterns or utilities in this codebase that should be reused, (2) any relevant external APIs or libraries, (3) architectural constraints or risks the planning session should account for, (4) complexity risks — things that look simple in the spec but may be disproportionately complex in the code, require refactoring tightly coupled areas, or introduce unjustified complexity. For each complexity risk, describe the technical concern and its likely business impact (scope creep, timeline, fragility)."
+- Task: "For each of these features, identify: (1) existing code patterns or utilities in this codebase that should be reused, (2) any relevant external APIs or libraries, (3) architectural constraints or risks the planning session should account for, (4) complexity risks — things that look simple in the spec but may be disproportionately complex in the code, require refactoring tightly coupled areas, or introduce unjustified complexity. For each complexity risk, describe the technical concern and its likely business impact (scope creep, timeline, fragility). (5) the specific existing files this feature will touch or modify (for the Source Map field — list file paths, not just directories). (6) which test layer owns coverage for this feature (unit / integration / smoke / e2e) and a one-sentence justification based on whether the feature has I/O, calls external services, tests HTTP route contracts, or requires browser-driven flows."
 
 Store the research output — it feeds both Phase 2b and Phase 3.
+
+For each feature, extract from the researcher output:
+- **Source Map**: the list of existing files the feature touches (used to populate the per-feature Source Map field in the spec)
+- **Test layer**: the recommended layer and rationale (used to populate the per-feature Testing Strategy field and the top-level Testing Strategy table)
 
 ## Phase 2b: Complexity Review (PO Decision Gate)
 
@@ -160,7 +171,7 @@ Example translations:
 - "missing abstraction needed first" → "Before we can build this, we'd need to build some underlying plumbing first — that's extra scope you may not have accounted for"
 - "no test coverage in billing" → "The billing area has no safety nets right now — changes here carry more risk until we add them"
 
-For each flag, ask the user: **"How do you want to handle this?"** Wait for their answer before moving on. Record their decision — it will be reflected in the spec.
+For each flag, ask the user: **"How do you want to handle this?"** Wait for their answer before moving on. Record their decision — it will be reflected in the spec as a Resolved Decision, not as a deferred question.
 
 If no complexity risks were found, skip Phase 2b entirely and proceed to Phase 3.
 
@@ -175,17 +186,19 @@ Fill in each section from your gathered information:
 - Map Q5 → Technical Constraints
 - Map Q6 → Out of Scope
 - Map Q7 → Priorities & Sequence
-- Map Q8 → Open Questions
+- Map Q8 decisions (driven to resolution) → Resolved Decisions
 - Map Q9 → Success Criteria
 - Map Phase 2 output → Technical Considerations per feature
-- Map Phase 2b decisions → adjust feature scope if simplified, or add to Open Questions if flagged for engineering
+- Map Phase 2 file enumeration → Source Map per feature (list of existing files the feature touches)
+- Map Phase 2 test-layer probe → Testing Strategy per feature + top-level Testing Strategy table
+- Map Phase 2b decisions → adjust feature scope if simplified, or add to Resolved Decisions if flagged for engineering (with the decision recorded as "flagged for engineering review before implementation")
 
 **Acceptance criteria format:** Every feature must have at least one acceptance criterion written as a testable checkbox:
 - `- [ ] {Specific, observable, testable outcome}` 
 - Good: `- [ ] User can switch workspaces without losing unsaved work`
 - Bad: `- [ ] Feature works correctly`
 
-**Open questions vs. requirements:** If something is uncertain, put it in Open Questions rather than assuming. Plan-session will flag these during requirements extraction.
+**Resolved Decisions vs. requirements:** If something was uncertain, it must have been driven to a decision in Q8 and recorded in Resolved Decisions. Do not write "TBD" or leave decisions deferred — plan-session cannot generate tasks from unresolved questions. The only acceptable entry in Resolved Decisions that is not yet resolved is a named external blocker with an explicit owner.
 
 Present the complete draft to the user section by section. After presenting each section, ask: "Does this look right, or would you like to adjust anything here?"
 
@@ -216,7 +229,8 @@ Features: {N}
   ...
 
 Complexity Flags: {N reviewed — N simplified, N accepted, N flagged for eng}
-Open Questions: {N flagged for plan-session}
+Resolved Decisions: {N decisions recorded (N driven from Q8, N from Phase 2b)}
+External Blockers: {N items require external resolution before plan-session}
 
 NEXT: /plan-session {repo} $ARGUMENTS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

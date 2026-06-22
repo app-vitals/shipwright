@@ -90,6 +90,8 @@ If no spec exists, ask: **"What are we building?"** and collect enough to procee
 - **smoke** — critical-path HTTP flows exercised via Hono's in-process `app.request()` driver; no real socket
 - **e2e** — full user journeys in a real browser (Playwright); real HTTP, multi-step flows
 
+If the spec has a Source Map (per-feature list of existing files each feature touches), seed file exploration from it — read those files first before globbing broadly. This avoids re-deriving what the PRD session already identified. If a feature's Source Map is absent or empty, fall back to the full glob-and-search approach below.
+
 Map the spec to the codebase across four layers. For each layer that the spec touches:
 
 **Business logic** — find where the relevant rules/behaviors currently live; identify what's new vs. what's changing
@@ -149,7 +151,7 @@ Also include:
 - Specific files that will change
 - How it integrates with existing patterns
 - Any complexity risks from Step 2 and how the design addresses (or explicitly accepts) them
-- **Per-layer test reasoning** — for each module touched by the spec, state: which layer owns its coverage (unit / integration / smoke / e2e), what justifies a test at that scope rather than a narrower one, and which existing tests become redundant or should be retired as a result of the change. Use the layer definitions loaded in Step 2.
+- **Per-layer test reasoning** — if the spec has a Testing Strategy section, adopt it directly rather than re-deriving: confirm the layer assignments make sense given the codebase findings in Step 2, note any disagreements, and proceed with the spec's strategy unless a concrete technical reason overrides it. If Testing Strategy is absent, derive it from scratch using the layer definitions loaded in Step 2.
 
 Keep it simple. If two approaches exist, recommend one and explain why.
 
