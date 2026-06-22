@@ -241,3 +241,26 @@ The Bitnami subchart derives these from its own fullname (release name +
 {{- define "shipwright.postgresql.fullname" -}}
 {{- printf "%s-postgresql" .Release.Name | trunc 63 | trimSuffix "-" }}
 {{- end }}
+
+{{/*
+Task-store component fullname: "<fullname>-task-store".
+*/}}
+{{- define "shipwright.taskStore.fullname" -}}
+{{- printf "%s-task-store" (include "shipwright.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Task-store selector labels — fullname selector labels plus the component label.
+*/}}
+{{- define "shipwright.taskStore.selectorLabels" -}}
+{{ include "shipwright.selectorLabels" . }}
+app.kubernetes.io/component: task-store
+{{- end }}
+
+{{/*
+Task-store labels — common labels plus the component label.
+*/}}
+{{- define "shipwright.taskStore.labels" -}}
+{{ include "shipwright.labels" . }}
+app.kubernetes.io/component: task-store
+{{- end }}
