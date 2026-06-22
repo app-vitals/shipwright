@@ -1,0 +1,105 @@
+// Shipwright — Task Store Service Schema
+// Owns: Task, TaskToken.
+//
+// WARNING: This schema uses DATABASE_URL_SHIPWRIGHT_TASK_STORE — a dedicated
+// database for the task-store service. Do NOT point this at a shared database.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "./client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL_SHIPWRIGHT_TASK_STORE")
+}
+
+// ─── Task Status ──────────────────────────────────────────────────────────────
+// Full pipeline status set. Lifecycle:
+// pending → in_progress → pr_open → approved → merged → deploying → deployed
+// Terminal: merged | done | deployed | cancelled. Paused: blocked.
+
+enum TaskStatus {
+  pending
+  in_progress
+  pr_open
+  approved
+  merged
+  done
+  deploying
+  deployed
+  blocked
+  cancelled
+}
+
+// ─── Task ─────────────────────────────────────────────────────────────────────
+// Canonical task record. Mirrors the store.ts Task interface (minus prNumber,
+// prOpenedAt, file, size) plus claim/liveness fields for multi-agent execution.
+//
+// Timestamp fields that originate from the JS interface are stored as ISO
+// strings (String?) to match the application contract. Only createdAt and
+// updatedAt are system-managed DateTime columns.
+
+model Task {
+  id     String     @id @default(cuid())
+  title  String
+  status TaskStatus
+
+  source             String?
+  session            String?
+  repo               String?
+  description        String?
+  acceptanceCriteria String[]
+  layer              String?
+  branch             String?
+  dependencies       String[]
+  pr                 Int?
+  hours              Float?
+  addedAt            String?
+  startedAt          String?
+  prCreatedAt        String?
+  mergedAt           String?
+  blockedAt          String?
+  blockedReason      String?
+  note               String?
+  type               String?
+  priority           String?
+  cancelledAt        String?
+  completedAt        String?
+  deployingAt        String?
+  ciFixAttempts      Int?
+  mergeCommit        String?
+  prUrl              String?
+  assignee           String?
+  issue              String?
+  model              String? // "haiku" | "sonnet" | "opus"
+  complexity         Int?
+  hitl               Boolean?
+  hitlNotifiedAt     String?
+
+  // ─── Claim / liveness (multi-agent execution) ───
+  claimedBy   String? // agent ID that claimed this task
+  agentHint   String? // hint for which agent should pick up this task
+  claimedAt   String? // ISO timestamp when claimed
+  heartbeatAt String? // ISO timestamp of last heartbeat (liveness check)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([session])
+  @@index([assignee])
+  @@index([claimedBy])
+}
+
+// ─── Task Token ───────────────────────────────────────────────────────────────
+// Scoped API tokens for task-store authentication. The raw token is returned
+// once at creation; only the SHA-256 hash is stored.
+
+model TaskToken {
+  id        String    @id @default(cuid())
+  token     String    @unique // SHA-256 hash of the raw token (hex)
+  label     String?
+  createdAt DateTime  @default(now())
+  revokedAt DateTime?
+}
