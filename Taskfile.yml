@@ -97,6 +97,26 @@ tasks:
         fi
         cd admin && bunx prisma migrate dev --schema=prisma/schema.prisma
 
+  db:provision:task-store:
+    desc: Create the task-store database (idempotent — safe to re-run)
+    cmds:
+      - |
+        if [ -z "$DATABASE_URL_SHIPWRIGHT_TASK_STORE" ]; then
+          echo "ERROR: DATABASE_URL_SHIPWRIGHT_TASK_STORE is not set. Export it before running db:provision:task-store."
+          exit 1
+        fi
+        cd task-store && bunx prisma migrate deploy --schema=prisma/schema.prisma
+
+  db:migrate:task-store:
+    desc: Generate and apply a new task-store Prisma migration (dev only)
+    cmds:
+      - |
+        if [ -z "$DATABASE_URL_SHIPWRIGHT_TASK_STORE" ]; then
+          echo "ERROR: DATABASE_URL_SHIPWRIGHT_TASK_STORE is not set. Export it before running db:migrate:task-store."
+          exit 1
+        fi
+        cd task-store && bunx prisma migrate dev --schema=prisma/schema.prisma
+
 
   e2e:
     desc: Run metrics dashboard Playwright e2e tests (requires Playwright chromium installed)

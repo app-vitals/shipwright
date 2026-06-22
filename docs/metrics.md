@@ -139,5 +139,5 @@ See [testing.md](./testing.md).
 
 ## See also
 
-- [architecture.md](./architecture.md) — where the metrics service sits in the A→B→C design.
+- [architecture.md](./architecture.md) — where the metrics service sits in the A→B→C→D design.
 - `plugins/shipwright/references/metrics-schema.md` — the `metrics.jsonl` schema the pipeline emits, which feeds these queries.

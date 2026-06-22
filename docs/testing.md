@@ -48,8 +48,9 @@ cd site && npm test                  # playwright (*.spec.ts)
 | Metrics (`metrics`) | unit, integration, smoke, e2e | `bun test --filter metrics` (unit/integration/smoke); `task e2e` (e2e) |
 | Agent (`agent`) | unit, integration, smoke | `bun test --filter agent` |
 | Admin (`admin`) | unit, integration, smoke, e2e | `bun test --filter admin` (unit/integration/smoke); `cd admin && bunx playwright test` (e2e) |
+| Task Store (`task-store`) | integration | `bun test --filter task-store` |
 
-The plugin has **no smoke/e2e layer** (no HTTP surface). E2E (Playwright) covers the marketing site home page (`site/tests/home.spec.ts`), the metrics dashboard UI (`metrics/e2e/dashboard.e2e.ts`), and the admin UI (`admin/e2e/agents-page.e2e.ts`, `admin/e2e/login-page.e2e.ts`).
+The plugin has **no smoke/e2e layer** (no HTTP surface). Task Store is a pure Prisma package (library, no HTTP surface). E2E (Playwright) covers the marketing site home page (`site/tests/home.spec.ts`), the metrics dashboard UI (`metrics/e2e/dashboard.e2e.ts`), and the admin UI (`admin/e2e/agents-page.e2e.ts`, `admin/e2e/login-page.e2e.ts`).
 
 ## Speed budgets
 

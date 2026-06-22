@@ -22,6 +22,7 @@ import {
   type Pane,
   SESSION_NAME,
   STACK_PANES,
+  TASK_STORE_PORT,
   brewFormulaInstalled,
   buildLogsBanner,
   buildStackCommands,
@@ -171,12 +172,12 @@ describe("buildStackCommands", () => {
     expect(titles).toEqual(STACK_PANES.map((p) => p.label));
   });
 
-  test("uses a single window with 5 panes (1 new-session + 4 split-window)", () => {
+  test("uses a single window with 6 panes (1 new-session + 5 split-window)", () => {
     const cmds = buildStackCommands(STACK_PANES);
     const newSessions = cmds.filter((c) => c.argv[0] === "new-session");
     const splits = cmds.filter((c) => c.argv[0] === "split-window");
     expect(newSessions.length).toBe(1);
-    expect(splits.length).toBe(4);
+    expect(splits.length).toBe(5);
   });
 
   test("runs the migration preflight BEFORE the admin pane is started", () => {
@@ -235,15 +236,26 @@ describe("runStack — per-pane commands via injected exec", () => {
     expect(sk).toContain("DATABASE_URL_SHIPWRIGHT_ADMIN=");
   });
 
-  test("agent pane (pane 2) runs docker container with SHIPWRIGHT_API_URL via host.docker.internal", () => {
+  test("task-store pane (pane 2) runs task-store with PORT=3002 and DATABASE_URL_SHIPWRIGHT_TASK_STORE", () => {
     const { calls, exec } = makeRecorder();
     runStack(STACK_PANES, exec);
     const sk = sendKeysForPane(calls, 2)?.join(" ") ?? "";
+    expect(sk).toContain("task-store/src/main.ts");
+    expect(sk).toContain(`PORT=${TASK_STORE_PORT}`);
+    expect(sk).toContain("DATABASE_URL_SHIPWRIGHT_TASK_STORE=");
+  });
+
+  test("agent pane (pane 3) runs docker container with SHIPWRIGHT_API_URL via host.docker.internal", () => {
+    const { calls, exec } = makeRecorder();
+    runStack(STACK_PANES, exec);
+    const sk = sendKeysForPane(calls, 3)?.join(" ") ?? "";
     expect(sk).toContain("docker run");
     expect(sk).not.toContain("agent/src/run-agent.ts");
     expect(sk).toContain(`PORT=${AGENT_PORT}`);
     expect(sk).toContain("SHIPWRIGHT_DEV_CHAT=true");
-    expect(sk).toContain(`POSTHOG_HOST=http://host.docker.internal:${METRICS_PORT}`);
+    expect(sk).toContain(
+      `POSTHOG_HOST=http://host.docker.internal:${METRICS_PORT}`,
+    );
     expect(sk).toContain("POSTHOG_PROJECT_API_KEY=");
     expect(sk).toContain(
       `SHIPWRIGHT_API_URL=http://host.docker.internal:${ADMIN_PORT}`,
@@ -252,23 +264,23 @@ describe("runStack — per-pane commands via injected exec", () => {
     expect(sk).not.toContain("DATABASE_URL=");
   });
 
-  test("chat pane (pane 3) runs scripts/chat.ts", () => {
+  test("chat pane (pane 4) runs scripts/chat.ts", () => {
     const { calls, exec } = makeRecorder();
     runStack(STACK_PANES, exec);
-    const sk = sendKeysForPane(calls, 3)?.join(" ") ?? "";
+    const sk = sendKeysForPane(calls, 4)?.join(" ") ?? "";
     expect(sk).toContain("scripts/chat.ts");
   });
 
-  test("logs pane (pane 4) is a scratch shell (no server command)", () => {
-    const logs = STACK_PANES[4];
+  test("logs pane (pane 5) is a scratch shell (no server command)", () => {
+    const logs = STACK_PANES[5];
     expect(logs.label).toBe("logs");
     // scratch shell: no long-running bun server entry
     expect(logs.cmd.join(" ")).not.toContain("server.ts");
     expect(logs.cmd.join(" ")).not.toContain("run-agent.ts");
   });
 
-  test("logs pane (pane 4) prints a signpost banner then drops into a shell", () => {
-    const cmd = STACK_PANES[4].cmd.join(" ");
+  test("logs pane (pane 5) prints a signpost banner then drops into a shell", () => {
+    const cmd = STACK_PANES[5].cmd.join(" ");
     expect(cmd).toContain(DASHBOARD_URL); // tells the user where the UI is
     expect(cmd).toContain(`localhost:${AGENT_PORT}`);
     expect(cmd).toContain('exec "$SHELL"'); // remains an interactive scratch shell
@@ -572,7 +584,7 @@ describe("buildStackCommands — docker build + seed preflights", () => {
     const agentSendKeysIdx = cmds.findIndex(
       (c) =>
         c.kind === "send-keys" &&
-        c.argv.some((a) => a.includes(`${SESSION_NAME}:0.2`)),
+        c.argv.some((a) => a.includes(`${SESSION_NAME}:0.3`)),
     );
     expect(dockerBuildIdx).toBeGreaterThanOrEqual(0);
     expect(agentSendKeysIdx).toBeGreaterThanOrEqual(0);
@@ -606,7 +618,7 @@ describe("buildStackCommands — docker build + seed preflights", () => {
     const agentSendKeysIdx = cmds.findIndex(
       (c) =>
         c.kind === "send-keys" &&
-        c.argv.some((a) => a.includes(`${SESSION_NAME}:0.2`)),
+        c.argv.some((a) => a.includes(`${SESSION_NAME}:0.3`)),
     );
     expect(seedIdx).toBeGreaterThanOrEqual(0);
     expect(migrateIdx).toBeGreaterThanOrEqual(0);
@@ -619,9 +631,7 @@ describe("buildStackCommands — docker build + seed preflights", () => {
     const cmds = buildStackCommands(STACK_PANES, {
       repoPath: "/fake/repo",
     });
-    const seed = cmds.find((c) =>
-      c.argv.join(" ").includes("seed-dev-agent"),
-    );
+    const seed = cmds.find((c) => c.argv.join(" ").includes("seed-dev-agent"));
     expect(seed).toBeDefined();
     expect(seed?.kind).toBe("preflight");
     const cmdStr = seed?.argv.join(" ") ?? "";
@@ -636,7 +646,7 @@ describe("buildStackCommands — docker build + seed preflights", () => {
     const agentSendKeys = cmds.find(
       (c) =>
         c.kind === "send-keys" &&
-        c.argv.some((a) => a.includes(`${SESSION_NAME}:0.2`)),
+        c.argv.some((a) => a.includes(`${SESSION_NAME}:0.3`)),
     );
     const shellLine = agentSendKeys?.argv.join(" ") ?? "";
     expect(shellLine).toContain("/fake/repo:/repo:ro");
@@ -648,7 +658,7 @@ describe("buildStackCommands — docker build + seed preflights", () => {
     const agentSendKeys = cmds.find(
       (c) =>
         c.kind === "send-keys" &&
-        c.argv.some((a) => a.includes(`${SESSION_NAME}:0.2`)),
+        c.argv.some((a) => a.includes(`${SESSION_NAME}:0.3`)),
     );
     const shellLine = agentSendKeys?.argv.join(" ") ?? "";
     // Exactly the named volume and the read-only repo — no host home paths.
@@ -656,6 +666,84 @@ describe("buildStackCommands — docker build + seed preflights", () => {
     expect(volumeMatches.length).toBe(2);
     expect(shellLine).not.toContain("/root");
     expect(shellLine).not.toContain("/home");
+  });
+});
+
+describe("task-store pane", () => {
+  test("TASK_STORE_PORT is 3002 (distinct from agent :3000 and admin :3001)", () => {
+    expect(TASK_STORE_PORT).toBe(3002);
+    expect(TASK_STORE_PORT).not.toBe(AGENT_PORT);
+    expect(TASK_STORE_PORT).not.toBe(ADMIN_PORT);
+  });
+
+  test("a task-store pane exists in STACK_PANES", () => {
+    const taskStore = STACK_PANES.find((p) => p.label === "task-store");
+    expect(taskStore).toBeDefined();
+  });
+
+  test("task-store pane sits at index 2 (after admin, before agent)", () => {
+    expect(STACK_PANES[1].label).toBe("admin");
+    expect(STACK_PANES[2].label).toBe("task-store");
+    expect(STACK_PANES[3].label).toBe("agent");
+  });
+
+  test("task-store pane runs task-store/src/main.ts with PORT=3002", () => {
+    const taskStore = STACK_PANES.find((p) => p.label === "task-store") as Pane;
+    expect(taskStore.cmd.join(" ")).toContain("task-store/src/main.ts");
+    expect(taskStore.env?.PORT).toBe(String(TASK_STORE_PORT));
+  });
+
+  test("task-store pane has a dedicated DATABASE_URL_SHIPWRIGHT_TASK_STORE (postgresql)", () => {
+    const taskStore = STACK_PANES.find((p) => p.label === "task-store") as Pane;
+    expect(taskStore.env?.DATABASE_URL_SHIPWRIGHT_TASK_STORE).toContain(
+      "postgresql:",
+    );
+  });
+
+  test("task-store send-keys carries PORT=3002", () => {
+    const { calls, exec } = makeRecorder();
+    runStack(STACK_PANES, exec);
+    const sk = sendKeysForPane(calls, 2)?.join(" ") ?? "";
+    expect(sk).toContain("task-store/src/main.ts");
+    expect(sk).toContain(`PORT=${TASK_STORE_PORT}`);
+  });
+
+  test("task-store prisma preflight fires BEFORE the task-store pane command", () => {
+    const cmds = buildStackCommands(STACK_PANES);
+    const preflightIdx = cmds.findIndex(
+      (c) =>
+        c.kind === "preflight" &&
+        c.argv.join(" ").includes("cd task-store") &&
+        c.argv.join(" ").includes("prisma generate"),
+    );
+    const taskStoreSendKeysIdx = cmds.findIndex(
+      (c) =>
+        c.kind === "send-keys" &&
+        c.argv.some((a) => a.includes("task-store/src/main.ts")),
+    );
+    expect(preflightIdx).toBeGreaterThanOrEqual(0);
+    expect(taskStoreSendKeysIdx).toBeGreaterThanOrEqual(0);
+    expect(preflightIdx).toBeLessThan(taskStoreSendKeysIdx);
+  });
+
+  test("task-store preflight generates the Prisma client then migrates", () => {
+    const cmds = buildStackCommands(STACK_PANES);
+    const preflight = cmds.find(
+      (c) =>
+        c.kind === "preflight" && c.argv.join(" ").includes("cd task-store"),
+    );
+    expect(preflight).toBeDefined();
+    const cmd = preflight?.argv.join(" ") ?? "";
+    expect(cmd).toContain("prisma generate");
+    expect(cmd).toContain("migrate deploy");
+    expect(cmd.indexOf("prisma generate")).toBeLessThan(
+      cmd.indexOf("migrate deploy"),
+    );
+  });
+
+  test("logs banner includes the task-store service URL", () => {
+    const banner = buildLogsBanner();
+    expect(banner).toContain(`localhost:${TASK_STORE_PORT}`);
   });
 });
 

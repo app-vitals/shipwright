@@ -1,0 +1,187 @@
+/**
+ * task-store/src/tasks.integration.test.ts
+ *
+ * Integration tests for the task-store Prisma schema against a real Postgres DB.
+ *
+ * Requires DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST to be set; skips otherwise.
+ */
+
+import { beforeEach, describe, expect, it } from "bun:test";
+import { PrismaClient } from "../prisma/client/index.js";
+
+const TEST_DB = process.env.DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST;
+
+const describeOrSkip = TEST_DB ? describe : describe.skip;
+
+function makePrisma(): PrismaClient {
+  return new PrismaClient({
+    // TEST_DB is guaranteed set — the describe block is skipped otherwise.
+    datasources: { db: { url: TEST_DB as string } },
+  });
+}
+
+describeOrSkip("Task store schema (integration)", () => {
+  let prisma: PrismaClient;
+
+  beforeEach(async () => {
+    prisma = makePrisma();
+    await prisma.taskToken.deleteMany();
+    await prisma.task.deleteMany();
+  });
+
+  // ─── Task round-trip ──────────────────────────────────────────────────────────
+
+  it("creates a Task row and reads back all columns", async () => {
+    const created = await prisma.task.create({
+      data: {
+        title: "Scaffold the task store",
+        status: "pending",
+        source: "plan-session",
+        session: "TSS-1",
+        repo: "shipwright",
+        description: "Build the package",
+        acceptanceCriteria: ["AC1", "AC2", "AC3"],
+        layer: "Database",
+        branch: "feat/tss-1-1",
+        dependencies: ["TSS-0", "TSS-0b"],
+        pr: 42,
+        hours: 3.5,
+        addedAt: "2026-06-22T10:00:00.000Z",
+        startedAt: "2026-06-22T11:00:00.000Z",
+        prCreatedAt: "2026-06-22T12:00:00.000Z",
+        mergedAt: "2026-06-22T13:00:00.000Z",
+        blockedAt: "2026-06-22T13:30:00.000Z",
+        blockedReason: "waiting on review",
+        note: "first scaffold",
+        type: "feature",
+        priority: "high",
+        cancelledAt: "2026-06-22T14:00:00.000Z",
+        completedAt: "2026-06-22T15:00:00.000Z",
+        deployingAt: "2026-06-22T15:30:00.000Z",
+        ciFixAttempts: 2,
+        mergeCommit: "abc123",
+        prUrl: "https://github.com/org/repo/pull/42",
+        assignee: "dmcaulay",
+        issue: "https://github.com/org/repo/issues/7",
+        model: "sonnet",
+        complexity: 3,
+        hitl: false,
+        hitlNotifiedAt: "2026-06-22T16:00:00.000Z",
+        claimedBy: "agent-alpha",
+        agentHint: "agent-beta",
+        claimedAt: "2026-06-22T16:30:00.000Z",
+        heartbeatAt: "2026-06-22T16:45:00.000Z",
+      },
+    });
+
+    const read = await prisma.task.findUnique({ where: { id: created.id } });
+    expect(read).not.toBeNull();
+    if (!read) return;
+
+    expect(read.title).toBe("Scaffold the task store");
+    expect(read.status).toBe("pending");
+    expect(read.source).toBe("plan-session");
+    expect(read.session).toBe("TSS-1");
+    expect(read.repo).toBe("shipwright");
+    expect(read.description).toBe("Build the package");
+    expect(read.acceptanceCriteria).toEqual(["AC1", "AC2", "AC3"]);
+    expect(read.layer).toBe("Database");
+    expect(read.branch).toBe("feat/tss-1-1");
+    expect(read.dependencies).toEqual(["TSS-0", "TSS-0b"]);
+    expect(read.pr).toBe(42);
+    expect(read.hours).toBe(3.5);
+    expect(read.addedAt).toBe("2026-06-22T10:00:00.000Z");
+    expect(read.startedAt).toBe("2026-06-22T11:00:00.000Z");
+    expect(read.prCreatedAt).toBe("2026-06-22T12:00:00.000Z");
+    expect(read.mergedAt).toBe("2026-06-22T13:00:00.000Z");
+    expect(read.blockedAt).toBe("2026-06-22T13:30:00.000Z");
+    expect(read.blockedReason).toBe("waiting on review");
+    expect(read.note).toBe("first scaffold");
+    expect(read.type).toBe("feature");
+    expect(read.priority).toBe("high");
+    expect(read.cancelledAt).toBe("2026-06-22T14:00:00.000Z");
+    expect(read.completedAt).toBe("2026-06-22T15:00:00.000Z");
+    expect(read.deployingAt).toBe("2026-06-22T15:30:00.000Z");
+    expect(read.ciFixAttempts).toBe(2);
+    expect(read.mergeCommit).toBe("abc123");
+    expect(read.prUrl).toBe("https://github.com/org/repo/pull/42");
+    expect(read.assignee).toBe("dmcaulay");
+    expect(read.issue).toBe("https://github.com/org/repo/issues/7");
+    expect(read.model).toBe("sonnet");
+    expect(read.complexity).toBe(3);
+    expect(read.hitl).toBe(false);
+    expect(read.hitlNotifiedAt).toBe("2026-06-22T16:00:00.000Z");
+
+    // New claim/liveness fields
+    expect(read.claimedBy).toBe("agent-alpha");
+    expect(read.agentHint).toBe("agent-beta");
+    expect(read.claimedAt).toBe("2026-06-22T16:30:00.000Z");
+    expect(read.heartbeatAt).toBe("2026-06-22T16:45:00.000Z");
+
+    // System-managed timestamps
+    expect(read.createdAt).toBeInstanceOf(Date);
+    expect(read.updatedAt).toBeInstanceOf(Date);
+  });
+
+  it("defaults optional fields to null/empty and applies all status values", async () => {
+    const minimal = await prisma.task.create({
+      data: { title: "Minimal", status: "in_progress" },
+    });
+    const read = await prisma.task.findUnique({ where: { id: minimal.id } });
+    expect(read?.status).toBe("in_progress");
+    expect(read?.source).toBeNull();
+    expect(read?.acceptanceCriteria).toEqual([]);
+    expect(read?.dependencies).toEqual([]);
+    expect(read?.claimedBy).toBeNull();
+
+    // Exercise the full status enum set.
+    const statuses = [
+      "pending",
+      "in_progress",
+      "pr_open",
+      "approved",
+      "merged",
+      "done",
+      "deploying",
+      "deployed",
+      "blocked",
+      "cancelled",
+    ] as const;
+    for (const status of statuses) {
+      const t = await prisma.task.create({ data: { title: status, status } });
+      expect(t.status).toBe(status);
+    }
+  });
+
+  // ─── TaskToken round-trip ─────────────────────────────────────────────────────
+
+  it("creates a TaskToken row and reads back the hash + label", async () => {
+    const created = await prisma.taskToken.create({
+      data: {
+        token: "a".repeat(64), // SHA-256 hex hash placeholder
+        label: "ci-runner",
+      },
+    });
+
+    const read = await prisma.taskToken.findUnique({
+      where: { id: created.id },
+    });
+    expect(read).not.toBeNull();
+    expect(read?.token).toBe("a".repeat(64));
+    expect(read?.label).toBe("ci-runner");
+    expect(read?.revokedAt).toBeNull();
+    expect(read?.createdAt).toBeInstanceOf(Date);
+  });
+
+  it("enforces the unique constraint on TaskToken.token", async () => {
+    const hash = "b".repeat(64);
+    await prisma.taskToken.create({ data: { token: hash } });
+    let threw = false;
+    try {
+      await prisma.taskToken.create({ data: { token: hash } });
+    } catch {
+      threw = true;
+    }
+    expect(threw).toBe(true);
+  });
+});

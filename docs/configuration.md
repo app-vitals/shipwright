@@ -127,11 +127,12 @@ Provide either the GitHub App vars (recommended) or `GH_TOKEN` (PAT). App auth i
 | `SHIPWRIGHT_HEALTH_PORT` | `number` | `3459` | Dedicated health server port for K8s liveness probes. Used by `entrypoint-main.ts` (started in-process before the startup sequence) and by `run-agent.ts` `startServer()`. Set separately so the probe is always reachable regardless of whether the chat server is running. |
 | `NODE_ENV` | `string` | — | Runtime environment. Set to `production` to enforce production-safety guards (blocks `SHIPWRIGHT_DEV_CHAT`, `ADMIN_DEV_AUTH`). |
 
-### Metrics & Admin service
+### Metrics & Admin & Task-Store services
 
 | Name | Type | Default | Description |
 |---|---|---|---|
 | `DATABASE_URL_SHIPWRIGHT_ADMIN` | `string` | required | Postgres connection string for the admin service schema (e.g. `postgresql://user:pass@host:5432/db`). |
+| `DATABASE_URL_SHIPWRIGHT_TASK_STORE` | `string` | required | Postgres connection string for the task-store service. **Must be a separate database** from the admin service — the schema forbids sharing. |
 | `SHIPWRIGHT_SESSION_SECRET` | `string` | — | HS256 secret for the `admin_session` cookie. The admin service signs it on Google-OAuth login; the metrics service verifies it to reuse the same session (the two must share the value). |
 | `SHIPWRIGHT_ENCRYPTION_KEY` | `string` | — | 64-char hex (32 bytes) for AES-256-GCM encryption of secrets at rest. **If unset, secrets are stored in plain text** — always set this in any real deployment. |
 | `SHIPWRIGHT_ADMIN_ALLOWED_EMAILS` | `string` | — | Comma-separated list of Google email addresses permitted to log in to the admin UI. |
@@ -238,7 +239,7 @@ cleanup_after_days: 14
 
 ## See also
 
-- [architecture.md](./architecture.md) — the three-artifact A→B→C design.
+- [architecture.md](./architecture.md) — the four-artifact A→B→C→D design.
 - [agent.md](./agent.md) — Shipwright agent runtime, admin CRUD APIs, and data model.
 - [quickstart.md](./quickstart.md) — how to get the full dev stack running locally.
 - `CLAUDE.md` — env var namespacing convention and database env var rules.

@@ -22,6 +22,7 @@
       "coverage",
       "agent/prisma/client",
       "admin/prisma/client",
+      "task-store/prisma/client",
       "site/.astro",
       "site/dist"
     ]

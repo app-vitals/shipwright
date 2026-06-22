@@ -190,5 +190,5 @@ Unit + integration + smoke layers (`bun test --filter agent`). DB integration te
 
 ## See also
 
-- [architecture.md](./architecture.md) — the A→B→C artifact design.
+- [architecture.md](./architecture.md) — the A→B→C→D artifact design.
 - `CLAUDE.md` → "Database env vars" — the per-service `DATABASE_URL_*` convention.
