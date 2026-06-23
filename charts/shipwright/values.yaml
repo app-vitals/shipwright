@@ -492,6 +492,15 @@ taskStore:
     # Defaults to "shipwright-secrets" (the canonical cluster secret name).
     # The chart does NOT manage this Secret — create it before deploying.
     existingSecret: "shipwright-secrets"
+  # -- ServiceAccount for the task-store pod. Set create: false and name: <sa>
+  # to reuse an existing SA (e.g. the umbrella chart'''s Workload Identity SA).
+  serviceAccount:
+    # -- Whether a ServiceAccount is created for the task-store workload.
+    create: true
+    # -- Annotations for the task-store ServiceAccount. Generated if empty and create=true.
+    annotations: {}
+    # -- Name of the task-store ServiceAccount. Generated if empty and create=true.
+    name: ""
 
 # -- Cloud SQL Auth Proxy sidecar for the admin pod (GCP Cloud SQL).
 # When enabled, a cloud-sql-proxy sidecar is added to the admin Deployment so
