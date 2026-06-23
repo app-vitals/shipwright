@@ -11,10 +11,12 @@
 **Shipwright Harness** is an open-source **autonomous coding agent + system** for Claude Code — a **deployable cloud agent** plus the autonomous coding system (built on the Shipwright plugin) that powers it. Use it interactively inside Claude Code, or deploy the agent to your cloud to run autonomously on your own codebase. It is built by [App Vitals](https://app-vitals.com) and shares that family's dark, premium, engineer-first aesthetic — but it is its own product, with its own signature color.
 
 **Two faces, one product:**
-- **The agent** — deploy it to your cloud; autonomous coding on your codebase, with the same review/test bar as human code. This is the hero.
+- **The agent** — deploy it to your cloud; autonomous coding on your codebase, with the same review/test bar as human code. This is the hero. **You interact with it in Slack** (DMs, @mentions, voice notes, reactions) and it **ships on a schedule via cron jobs** — these are sanctioned, first-class public messages for the agent face, not buried config details.
 - **The system** — the autonomous coding system (built on the Claude Code Shipwright plugin): plan · build · review · metrics.
 
-> **Do not market "the loop."** The `/dev-loop` (autonomous queue-drain) is an internal/power-user workflow, not a public message. Outward materials lead with the **agent** and the **system** — never "the delivery loop."
+> **One system, two ways to run it** — a **Claude Code plugin** you drive at your prompt, and a **Slack-native cloud agent** you deploy and let ship on a schedule. Both run the same system; lead with the surface that fits the audience.
+
+> **Do not market "the loop."** The `/dev-loop` (autonomous queue-drain) is an internal/power-user workflow, not a public message. Outward materials lead with the **agent** and the **system** — never "the delivery loop." (Marketing **Slack** as the interaction surface and **cron** as the autonomy mechanism is fine and encouraged; "the loop" as a named concept is what stays internal.)
 
 **Category & competitive frame:** Shipwright is the **free, open-source, own-it** alternative to closed, hosted autonomous coding agents. The wedge is price, ownership, and control: the closed agents are rented and run on someone else's infrastructure; Shipwright is **free and MIT**, runs in *your* environment, on *your* codebase, deployed to *your* cloud — and the people who built it can operate it alongside you. Lead with **free · open-source · you own it · your cloud · same quality bar as human code** when contrasting. **Never name a specific competitor in public materials** — keep the contrast generic.
 
