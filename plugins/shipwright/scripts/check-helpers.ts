@@ -5,10 +5,9 @@
  *
  * Covers:
  * - Workspace path resolution (WORKSPACE_PATH env var or cwd heuristic)
- * - Org/repo resolution from todos.json
+ * - Org/repo resolution from repos/ dir and shipwright.config.json
  * - gh CLI execution helper
  * - reviews.json reading
- * - todos.json reading
  */
 
 import { spawnSync } from "node:child_process";
@@ -123,14 +122,6 @@ export function resolveWorkspacePath(): string {
   if (!agentHome)
     throw new Error("AGENT_HOME is not set — cannot resolve workspace path");
   return join(agentHome, "workspace");
-}
-
-// ─── todos.json reading ───────────────────────────────────────────────────────
-
-export function readTodos(workspacePath: string): Task[] {
-  const todosPath = join(workspacePath, "state", "todos.json");
-  if (!existsSync(todosPath)) return [];
-  return JSON.parse(readFileSync(todosPath, "utf-8")) as Task[];
 }
 
 // ─── reviews.json reading ─────────────────────────────────────────────────────

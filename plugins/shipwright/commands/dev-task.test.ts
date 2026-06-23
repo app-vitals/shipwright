@@ -11,9 +11,9 @@ beforeAll(() => {
 });
 
 describe("dev-task.md Step 1 — in_progress resume safeguard", () => {
-  it("checks for in_progress tasks before query --ready", () => {
-    const inProgressIdx = content.indexOf("query --status in_progress");
-    const readyIdx = content.indexOf("query --ready");
+  it("checks for in_progress tasks before ready=true query", () => {
+    const inProgressIdx = content.indexOf("status=in_progress");
+    const readyIdx = content.indexOf("ready=true");
     expect(inProgressIdx).toBeGreaterThan(-1);
     expect(readyIdx).toBeGreaterThan(-1);
     expect(inProgressIdx).toBeLessThan(readyIdx);

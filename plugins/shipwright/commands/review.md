@@ -118,9 +118,14 @@ Exclude:
 - PRs where `author.login == CURRENT_USER` and `allow_self_review` is false
 - PRs where `author.login == "app/dependabot"` — handled exclusively by the dependabot-review plugin
 
-When a PR is checked out for review, also search `state/todos.json` for a task whose `pr`
+When a PR is checked out for review, also query the task store for a task whose `pr`
 field matches the PR number — if found, record the `id` and `session` for metrics enrichment
-in Steps 12 and 13.
+in Steps 12 and 13:
+
+```bash
+curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?pr=$PR_NUMBER" | jq '.[0] // empty'
+```
 
 ### Deduplication and Filtering
 
@@ -557,13 +562,13 @@ Update the entry for this PR:
 
 Write `state/reviews.json`.
 
-**Never update `state/todos.json` task status when posting a review.** The deploy skill looks up tasks in todos.json by PR number (expecting `status: 'pr_open'`) to perform post-deployment tracking — changing status here breaks that linkage. Task status transitions in todos are owned by the deploy skill (`pr_open` → `deployed`).
+**Never update task status when posting a review.** The deploy skill looks up tasks by PR number (expecting `status: 'pr_open'`) to perform post-deployment tracking — changing status here breaks that linkage. Task status transitions are owned by the deploy skill (`pr_open` → `deployed`).
 
 ---
 
 ## Step 13: Enrich Metrics (if shipwright task)
 
-If the PR maps to a task in `state/todos.json` (via `taskId`):
+If the PR maps to a task in the task store (via `taskId`):
 
 1. Find the task's planning folder: `planning/{session}/`
 2. Read `planning/{session}/metrics.jsonl`
@@ -579,7 +584,7 @@ If the PR maps to a task in `state/todos.json` (via `taskId`):
    - `findings_count`: integer count of findings (for backward compat — consumers that read `review.findings` as an integer should use this field instead)
 
    **Review latency** (`review_latency_h`):
-   - Read the task's `prCreatedAt` field from its entry in `state/todos.json`
+   - Read the task's `prCreatedAt` field from the task store
    - Compute: `(Date.now() - Date.parse(prCreatedAt)) / 3600000` — float, hours from PR creation to verdict
    - If `prCreatedAt` is missing or unparseable, omit `review_latency_h`
 

@@ -26,7 +26,7 @@ Follow all phases in order. Proceed automatically between phases. The only pause
    - `Gemfile` → Ruby
    - `Makefile` → Generic Make
 
-2b. **Detect repo name** from git metadata (used in the handoff to `/plan-session` and written to every `state/todos.json` task):
+2b. **Detect repo name** from git metadata (used in the handoff to `/plan-session` and written to every task in the task store):
    - `git remote get-url origin` → parse the `owner/repo` segment, strip any trailing `.git`. Use the bare `{repo}` portion.
    - Fallback if no remote: `basename $(git rev-parse --show-toplevel)`
    - Last resort if not in a git repo: `basename $(pwd)` and print a warning.
@@ -236,7 +236,7 @@ NEXT: /plan-session {repo} $ARGUMENTS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ⚠ Do NOT skip /plan-session. It is the ONLY command that writes tasks to
-`state/todos.json`, which is the queue `/dev-task` reads from. Bypassing it
+the task store, which is the queue `/dev-task` reads from. Bypassing it
 leaves the queue empty or stale and breaks the pipeline.
 
 If the work feels trivial, `/plan-session` will produce a single small task —
