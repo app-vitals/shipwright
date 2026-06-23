@@ -219,42 +219,30 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
     let tsTokenId: string | undefined;
 
     if (!secretAlreadyExists) {
-      // Mint task-store token before creating the Secret so it can be included
-      // in the same Secret write (atomic from the agent's perspective).
+      // Optionally mint a task-store token to co-locate in the same Secret write.
+      let tsRawToken: string | undefined;
       if (this.config.taskStore) {
-        const { id, rawToken: tsRawToken } =
-          await this.config.taskStore.mintToken(`agent:${agentId}`);
+        const { id, rawToken } = await this.config.taskStore.mintToken(
+          `agent:${agentId}`,
+        );
         tsTokenId = id;
-        // tsRawToken is passed to secretSpec below
-        const { rawToken } = await this.tokens.create(agentId, "k8s-provision");
-        result.rawToken = rawToken;
+        tsRawToken = rawToken;
+      }
 
-        // 3. Secret — includes both the agent API token and the task-store token.
-        try {
-          await this.k8s.createSecret(
-            this.config.namespace,
-            this.secretSpec(secretName, rawToken, tsRawToken),
-          );
-          secretCreated = true;
-        } catch (err) {
-          if (!isConflict(err)) throw err;
-        }
-      } else {
-        const { rawToken } = await this.tokens.create(agentId, "k8s-provision");
-        result.rawToken = rawToken;
+      const { rawToken } = await this.tokens.create(agentId, "k8s-provision");
+      result.rawToken = rawToken;
 
-        // 3. Secret — must exist before the Deployment that references it.
-        //    A 409 here is unexpected (we just confirmed it was absent), but treat
-        //    it as already-present and continue to the Deployment step.
-        try {
-          await this.k8s.createSecret(
-            this.config.namespace,
-            this.secretSpec(secretName, rawToken),
-          );
-          secretCreated = true;
-        } catch (err) {
-          if (!isConflict(err)) throw err;
-        }
+      // 3. Secret — must exist before the Deployment that references it.
+      //    A 409 here is unexpected (we just confirmed it was absent), but treat
+      //    it as already-present and continue to the Deployment step.
+      try {
+        await this.k8s.createSecret(
+          this.config.namespace,
+          this.secretSpec(secretName, rawToken, tsRawToken),
+        );
+        secretCreated = true;
+      } catch (err) {
+        if (!isConflict(err)) throw err;
       }
     }
 
