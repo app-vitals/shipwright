@@ -40,6 +40,11 @@ const year = new Date().getFullYear();
     <meta name="description" content={description} />
     <link rel="canonical" href={canonicalURL} />
 
+    <!-- Favicon: scalable SVG mark with a PNG fallback (both in site/public/). -->
+    <link rel="icon" type="image/svg+xml" href="/shipwright-icon.svg" />
+    <link rel="icon" type="image/png" href="/shipwright-icon.png" />
+    <link rel="apple-touch-icon" href="/shipwright-icon.png" />
+
     <!-- Open Graph -->
     <meta property="og:type" content="website" />
     <meta property="og:url" content={canonicalURL} />
@@ -81,6 +86,38 @@ const year = new Date().getFullYear();
     >
     </div>
 
+    <!--
+      Site header (brand lockup): square ship mark + "Shipwright Harness"
+      wordmark per BRAND.md §4 (display font; "Harness" carries the green).
+      Zero runtime JS; the whole lockup links home.
+    -->
+    <header
+      class="sw-container relative z-10 flex items-center justify-between py-6"
+    >
+      <a
+        href="/"
+        class="flex items-center gap-3"
+        aria-label="Shipwright Harness — home"
+      >
+        <img
+          src="/shipwright-icon.svg"
+          alt=""
+          width="36"
+          height="36"
+          class="rounded-lg"
+        />
+        <span
+          class="text-lg"
+          style="font-family: var(--sw-font-display); font-weight: 700; letter-spacing: -0.01em; color: var(--sw-color-text-heading);"
+        >
+          Shipwright <span style="color: var(--sw-color-brand-default);"
+            >Harness</span
+          >
+        </span>
+      </a>
+      <a href={repoUrl} class="sw-label">GitHub ↗</a>
+    </header>
+
     <!-- .sw-container already caps width at --sw-layout-max-width (72rem). -->
     <main class="sw-container relative">
       <slot />
@@ -96,7 +133,16 @@ const year = new Date().getFullYear();
         class="flex flex-col gap-6 pt-8 sm:flex-row sm:items-center sm:justify-between"
         style="border-top: 1px solid var(--sw-color-border-subtle);"
       >
-        <p class="sw-label">Shipwright Harness · MIT-licensed · © {year}</p>
+        <p class="sw-label flex items-center gap-2">
+          <img
+            src="/shipwright-icon.svg"
+            alt=""
+            width="20"
+            height="20"
+            class="rounded"
+          />
+          Shipwright Harness · MIT-licensed · © {year}
+        </p>
         <nav class="flex flex-wrap gap-x-6 gap-y-2 text-sm" aria-label="Footer">
           <a href={repoUrl}>GitHub</a>
           <a href={licenseUrl}>MIT License</a>

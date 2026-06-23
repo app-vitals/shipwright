@@ -36,7 +36,7 @@ PR to CI-green + reviewed, then merge/deploy it, and repeat. Fully autonomous; n
 ## Prerequisites (one-time, per machine)
 
 This repo lives at a non-standard path, so Shipwright's `~/src/{repo}` defaults don't apply, and
-the cron prechecks need a workspace path. Set these four vars in `.claude/settings.local.json`
+the cron prechecks need a workspace path. Set these five vars in `.claude/settings.local.json`
 (git-ignored) using **absolute paths for your machine**, then **restart the session** (env loads
 at startup):
 
@@ -45,6 +45,7 @@ at startup):
   "env": {
     "SHIPWRIGHT_CONFIG": "<ABSOLUTE_PATH_TO_THIS_REPO>/.shipwright.json",
     "SHIPWRIGHT_REPO_DIR": "<ABSOLUTE_PATH_TO_THE_PARENT_DIR_OF_THIS_REPO>",
+    "SHIPWRIGHT_REPOS_DIR": "<ABSOLUTE_PATH_TO_A_DIR_CONTAINING_ONLY_THIS_REPO_CLONE>",
     "SHIPWRIGHT_WORKTREE_DIR": "<ABSOLUTE_PATH_TO_A_WORKTREES_DIR>",
     "WORKSPACE_PATH": "<ABSOLUTE_PATH_TO_THIS_REPO>"
   }
@@ -56,6 +57,17 @@ at startup):
 - `SHIPWRIGHT_REPO_DIR` is the **parent** of this repo, so `/shipwright:dev-task` resolves
   `$SHIPWRIGHT_REPO_DIR/<repo>` instead of the missing `~/src/<repo>` (its worktree step fails
   without this).
+- `SHIPWRIGHT_REPOS_DIR` is how the **PR gates** (`check-deploy` / `check-review` / `check-patch`)
+  discover which repo to query. They do **not** read `.shipwright.json` — `resolveRepos()` scans
+  `<WORKSPACE_PATH>/repos/` then `$SHIPWRIGHT_REPOS_DIR` for git clones and parses each
+  `.git/config` origin URL. **Unset ⇒ it returns `[]` and the gates silently fall back to the
+  hardcoded `app-vitals/vitals-os`** — i.e. they query the wrong repo and never see your PRs
+  (DEPLOY and review-patch go permanently idle while real PRs sit open). Point this at a directory
+  that contains **only one clone (or a symlink) of this repo** — the gates use `repos[0]`, so a
+  multi-repo parent dir resolves an arbitrary sibling. Example:
+  `mkdir -p ~/.shipwright-repos && ln -sfn <ABSOLUTE_PATH_TO_THIS_REPO> ~/.shipwright-repos/shipwright`,
+  then set `SHIPWRIGHT_REPOS_DIR` to `~/.shipwright-repos`. (Note: this is **not** the same as
+  `SHIPWRIGHT_REPO_DIR` (singular) above — different consumer, different value.)
 - `SHIPWRIGHT_WORKTREE_DIR` is where worktrees are created.
 - `WORKSPACE_PATH` is where the prechecks read/write agent state (`state/reviews.json` for review
   dedup, optional `agent-policy.md`). The repo root works — `state/` is git-ignored. Without it,
@@ -64,6 +76,9 @@ at startup):
 **Verify before looping:**
 ```bash
 echo "$SHIPWRIGHT_CONFIG"; echo "$WORKSPACE_PATH"; ls -d "$SHIPWRIGHT_REPO_DIR"/* >/dev/null && echo "repo dir ok"
+# Gate repo resolution: SHIPWRIGHT_REPOS_DIR must contain a clone whose origin matches .shipwright.json.
+# If this prints nothing, the gates will silently query app-vitals/vitals-os instead of your repo.
+for d in "$SHIPWRIGHT_REPOS_DIR"/*/.git/config; do grep -h 'url = ' "$d" 2>/dev/null; done
 D=$(find ~/.claude/plugins/cache -maxdepth 5 -name task_store.ts -path '*/shipwright/*' | head -1 | xargs dirname)
 bun "$D/task_store.ts" doctor                          # must report the github backend
 bun "$D/check-review-patch.ts" >/dev/null 2>&1; echo "review-patch gate exit=$?"   # 0/1 = ok; 2 = WORKSPACE_PATH unset
@@ -146,6 +161,13 @@ start a fresh run.
 - **Checks-API token nuance:** `gh pr view --json statusCheckRollup` / `gh pr checks` work with a
   normal OAuth token; an agent PAT without Checks access must use the Actions API
   (`gh api repos/<owner>/<repo>/actions/runs?branch=<branch>` filtered by head SHA).
+- **`check-patch.ts` CI-failure detection is broken in the published plugin cache** (≤4.26.0): it
+  calls `gh pr checks --json conclusion`, but `conclusion` is not a valid `gh pr checks` field, so
+  the query throws and the swallowing try/catch returns `hasFailing:false`. Net effect: a PR whose
+  *only* problem is failing CI **and** that has already been reviewed at HEAD (so the review gate
+  skips it too) will leave `review-patch` idle — the loop won't auto-patch it. Until the upstream
+  plugin is fixed, drive such a PR with `/shipwright:patch` directly, or push the CI fix by hand.
+  (The `/shipwright:patch` *command* uses the Actions API correctly — only the precheck gate is blind.)
 - **Gates are token-free, not API-free:** `check-deploy.ts` / `check-review-patch.ts` and the
   `task_store.ts query --ready` count make `gh`/GraphQL calls and read the task store, so they
   need `SHIPWRIGHT_CONFIG` + `WORKSPACE_PATH` set and `gh` authenticated (all covered by
