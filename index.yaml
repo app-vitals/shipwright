@@ -3,6 +3,40 @@ entries:
   shipwright:
   - annotations:
       artifacthub.io/changes: |
+        - kind: changed
+          description: "image-update detection and patching in reconcile (SHI-1.3); restore dispatch pipeline (fix #633)"
+      licenses: MIT
+    apiVersion: v2
+    appVersion: 0.1.0
+    created: "2026-06-23T23:34:16.13286663Z"
+    dependencies:
+    - condition: postgresql.enabled
+      name: postgresql
+      repository: oci://registry-1.docker.io/bitnamicharts
+      version: 16.7.27
+    description: Shipwright Harness — the open-source autonomous delivery agent for
+      Claude Code. This chart packages the three Shipwright services (admin, metrics,
+      agent) and an optional PostgreSQL dependency for Kubernetes (Minikube-friendly
+      defaults).
+    digest: 4e89b153a523f08775247fac4bbf7dfc0292d86bdc9641f491e09b09078494fa
+    home: https://shipwright-harness.com
+    keywords:
+    - shipwright
+    - claude-code
+    - delivery-agent
+    - ci-cd
+    maintainers:
+    - name: Shipwright Harness
+      url: https://shipwright-harness.com
+    name: shipwright
+    sources:
+    - https://github.com/app-vitals/shipwright
+    type: application
+    urls:
+    - https://github.com/app-vitals/shipwright/releases/download/shipwright-1.6.12/shipwright-1.6.12.tgz
+    version: 1.6.12
+  - annotations:
+      artifacthub.io/changes: |
         - kind: added
           description: "task-store HTTP adapter in the shipwright plugin; drop GitHub and Jira backends (TSS-2.1)"
       licenses: MIT
@@ -1609,4 +1643,4 @@ entries:
     urls:
     - https://app-vitals.github.io/shipwright/shipwright-1.0.0.tgz
     version: 1.0.0
-generated: "2026-06-23T22:57:11.508034758Z"
+generated: "2026-06-23T23:34:16.133109473Z"
