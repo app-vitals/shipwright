@@ -1,14 +1,15 @@
 # Deploying to Kubernetes
 
-> How to deploy the three Shipwright services (admin, metrics, agent) to
+> How to deploy the four Shipwright services (admin, metrics, agent, task-store) to
 > Kubernetes with the `shipwright` Helm chart — local on Minikube, and in
 > production on GKE (Gateway API + cert-manager) or EKS (ALB + cert-manager).
 
 The chart lives at [`charts/shipwright`](../charts/shipwright) and is also
 published to a Helm repo on every chart version bump (see
 [`helm-repo.md`](./helm-repo.md)). It packages the admin (port **3001**), metrics
-(port **3460**), and agent (port **3000**) services plus an optional bundled
-PostgreSQL dependency, with Minikube-friendly defaults throughout.
+(port **3460**), agent (port **3000**), and optional task-store (port **3000**)
+services plus an optional bundled PostgreSQL dependency, with Minikube-friendly
+defaults throughout. Task-store is disabled by default.
 
 This guide covers three deployment targets end-to-end, then the cross-cutting
 concerns shared by all of them:
@@ -459,6 +460,9 @@ changing the chart, or bring your own database:
   `DATABASE_URL_SHIPWRIGHT_ADMIN`. The chart injects the value into the admin
   pod from that Secret — you create and rotate the Secret outside the chart.
   Pre-create the separate `shipwright_metrics` event-store database as well.
+  If you enable task-store (`taskStore.enabled=true`), also pre-create a Secret
+  holding `DATABASE_URL_SHIPWRIGHT_TASK_STORE` and point `taskStore.database.existingSecret`
+  at it — the task-store database **must be separate** from the admin database.
 
   ```yaml
   postgresql:
@@ -497,4 +501,4 @@ The full image-override / mirror guidance and the exact pinned version are in
 - [`helm-repo.md`](./helm-repo.md) — installing from the published Helm repo and how publishing is triggered.
 - [`charts/shipwright/README.md`](../charts/shipwright/README.md) — the chart's own README: full values table, versioning, and the Bitnami fallback.
 - [`configuration.md`](./configuration.md) — every env var, including the agent-provisioning and auth-mode vars.
-- [`architecture.md`](./architecture.md) — the three-artifact (plugin / metrics / agent) design.
+- [`architecture.md`](./architecture.md) — the four-artifact (plugin / metrics / agent / task-store) design.

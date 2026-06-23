@@ -1,0 +1,150 @@
+suite: task-store Deployment / Service workloads
+# TSS-4.1 adds the task-store workload templates. These assert the structural
+# facts: image (tag defaults to appVersion), container port 3000, /health
+# liveness + readiness probes, Service shape, and the DATABASE_URL wiring
+# from an existingSecret (shipwright-secrets by default).
+tests:
+  - it: renders the task-store Deployment with the appVersion-defaulted image and port 3000
+    template: templates/task-store-deployment.yaml
+    set:
+      taskStore.enabled: true
+    asserts:
+      - isKind:
+          of: Deployment
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: shipwright-task-store:0.1.0
+      - equal:
+          path: spec.template.spec.containers[0].ports[0].containerPort
+          value: 3000
+
+  - it: sets liveness and readiness probes against /health on port 3000
+    template: templates/task-store-deployment.yaml
+    set:
+      taskStore.enabled: true
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.path
+          value: /health
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.port
+          value: 3000
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.path
+          value: /health
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.port
+          value: 3000
+
+  - it: wires standard selector labels onto the Deployment
+    template: templates/task-store-deployment.yaml
+    set:
+      taskStore.enabled: true
+    asserts:
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/component"]
+          value: task-store
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/name"]
+          value: shipwright
+    release:
+      name: r
+
+  - it: applies the configured task-store resources
+    template: templates/task-store-deployment.yaml
+    set:
+      taskStore.enabled: true
+      taskStore.resources:
+        requests:
+          cpu: 111m
+          memory: 222Mi
+        limits:
+          cpu: 333m
+          memory: 444Mi
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.cpu
+          value: 111m
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.memory
+          value: 444Mi
+
+  - it: wires DATABASE_URL_SHIPWRIGHT_TASK_STORE from the default existingSecret (shipwright-secrets)
+    template: templates/task-store-deployment.yaml
+    set:
+      taskStore.enabled: true
+    release:
+      name: r
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DATABASE_URL_SHIPWRIGHT_TASK_STORE
+            valueFrom:
+              secretKeyRef:
+                name: shipwright-secrets
+                key: DATABASE_URL_SHIPWRIGHT_TASK_STORE
+
+  - it: wires DATABASE_URL_SHIPWRIGHT_TASK_STORE from a custom existingSecret
+    template: templates/task-store-deployment.yaml
+    set:
+      taskStore.enabled: true
+      taskStore.database.existingSecret: my-task-store-secret
+    release:
+      name: r
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DATABASE_URL_SHIPWRIGHT_TASK_STORE
+            valueFrom:
+              secretKeyRef:
+                name: my-task-store-secret
+                key: DATABASE_URL_SHIPWRIGHT_TASK_STORE
+
+  - it: renders the task-store Service (ClusterIP) mapping the service port to targetPort 3000
+    template: templates/task-store-service.yaml
+    set:
+      taskStore.enabled: true
+    asserts:
+      - isKind:
+          of: Service
+      - equal:
+          path: spec.type
+          value: ClusterIP
+      - equal:
+          path: spec.ports[0].port
+          value: 3000
+      - equal:
+          path: spec.ports[0].targetPort
+          value: 3000
+      - equal:
+          path: spec.selector["app.kubernetes.io/component"]
+          value: task-store
+
+  - it: honors a custom taskStore.service.type and port
+    template: templates/task-store-service.yaml
+    set:
+      taskStore.enabled: true
+      taskStore.service.type: NodePort
+      taskStore.service.port: 30000
+    asserts:
+      - equal:
+          path: spec.type
+          value: NodePort
+      - equal:
+          path: spec.ports[0].port
+          value: 30000
+      - equal:
+          path: spec.ports[0].targetPort
+          value: 3000
+
+  - it: renders no task-store workloads when taskStore.enabled=false
+    set:
+      taskStore.enabled: false
+    templates:
+      - templates/task-store-deployment.yaml
+      - templates/task-store-service.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
