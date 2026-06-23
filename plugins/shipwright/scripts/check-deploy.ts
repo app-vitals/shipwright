@@ -252,7 +252,12 @@ function makeStore() {
     process.stderr.write("error: SHIPWRIGHT_TASK_STORE_URL is required\n");
     process.exit(1);
   }
-  return new TaskStoreHttpClient(taskStoreUrl, fetch);
+  try {
+    return new TaskStoreHttpClient(taskStoreUrl, fetch);
+  } catch (e) {
+    process.stderr.write(`error: ${String(e)}\n`);
+    process.exit(1);
+  }
 }
 
 async function buildProductionDeps(): Promise<Deps> {

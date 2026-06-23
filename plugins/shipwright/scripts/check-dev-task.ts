@@ -113,7 +113,13 @@ function buildProductionDeps(): Deps {
     process.stderr.write("error: SHIPWRIGHT_TASK_STORE_URL is required\n");
     process.exit(1);
   }
-  const store = new TaskStoreHttpClient(taskStoreUrl, fetch);
+  let store: TaskStoreHttpClient;
+  try {
+    store = new TaskStoreHttpClient(taskStoreUrl, fetch);
+  } catch (e) {
+    process.stderr.write(`error: ${String(e)}\n`);
+    process.exit(1);
+  }
   const assignee = resolveGhUser();
 
   return {
