@@ -23,18 +23,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Generate app token for tag push
-        id: app-token
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ secrets.RELEASE_APP_ID }}
-          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-
       - name: Bump version and push tag
         id: tag
         uses: mathieudutour/github-tag-action@v6.2
         with:
-          github_token: ${{ steps.app-token.outputs.token }}
+          github_token: ${{ secrets.VITALS_OS_DISPATCH_TOKEN }}
           tag_prefix: "admin-v"
           default_bump: patch
           fetch_all_tags: true
