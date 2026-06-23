@@ -170,9 +170,14 @@ describe("setupGitHubAuth — App path", () => {
     });
 
     expect(errorSpy).toHaveBeenCalled();
-    const firstCall = errorSpy.mock.calls[0]?.[0] as string;
-    expect(firstCall).toContain("git config");
-    expect(firstCall).toContain("status 1");
+    // call[0] = safe.directory failure (fires first, unconditionally)
+    const safeDirectoryCall = errorSpy.mock.calls[0]?.[0] as string;
+    expect(safeDirectoryCall).toContain("safe.directory");
+    expect(safeDirectoryCall).toContain("status 1");
+    // call[1] = credential helper failure (the actual subject of this test)
+    const credHelperCall = errorSpy.mock.calls[1]?.[0] as string;
+    expect(credHelperCall).toContain("credential");
+    expect(credHelperCall).toContain("status 1");
   });
 
   test("background refresh callback rewrites the token file only — no env mutation, no further spawnSync calls", async () => {
