@@ -14,6 +14,7 @@
 import { createHash } from "node:crypto";
 import type {
   KubernetesDeployment,
+  KubernetesEnvVar,
   KubernetesPvc,
   KubernetesSecret,
 } from "./kubernetes-client.ts";
@@ -213,9 +214,7 @@ function voiceEnvEntries(
  * and SHIPWRIGHT_TASK_STORE_URL (plain value). Returns an empty array when
  * taskStoreUrl is absent (task-store wiring disabled).
  */
-function taskStoreEnvEntries(
-  opts: AgentDeploymentOpts,
-): { name: string; value?: string; valueFrom?: unknown }[] {
+function taskStoreEnvEntries(opts: AgentDeploymentOpts): KubernetesEnvVar[] {
   if (!opts.taskStoreUrl) return [];
   const tsKey = opts.taskStoreTokenSecretKey ?? "task-store-token";
   return [
