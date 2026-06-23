@@ -24,12 +24,14 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { sign, verify } from "hono/jwt";
 import {
+  type TaskItem,
   renderAgentDetailPage,
   renderAgentsPage,
   renderLoginPage,
   renderProvisionCompletePage,
   renderProvisionStartPage,
   renderProvisionXappTokenPage,
+  renderTasksPage,
 } from "./admin-ui-pages.ts";
 import type { AgentCronJobService } from "./agent-cron-jobs.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
@@ -180,6 +182,15 @@ export interface AdminUIDeps {
   appBaseUrl: string;
   /** Enable the /admin/dev-login route. Hard-blocked in production regardless of this value. */
   devAuthEnabled?: boolean;
+  /**
+   * Fetch tasks from the task-store service. If absent, the tasks page renders
+   * in degraded mode (empty table + yellow notice) rather than returning 500.
+   */
+  fetchTaskStoreTasks?: (params: URLSearchParams) => Promise<TaskItem[]>;
+  /**
+   * Release a task (unclaim → pending) via the task-store service.
+   */
+  releaseTask?: (id: string) => Promise<void>;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -273,6 +284,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     slackClient,
     appBaseUrl,
     devAuthEnabled = false,
+    fetchTaskStoreTasks,
+    releaseTask,
   } = deps;
 
   const app = new Hono<AdminUIEnv>();
@@ -1425,6 +1438,57 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       }
     }
     return c.redirect(`/admin/agents/${agentId}`, 302);
+  });
+
+  // ─── Tasks page ───────────────────────────────────────────────────────────
+
+  app.get("/admin/tasks", requireAuth, async (c) => {
+    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+    const status = c.req.query("status") ?? undefined;
+    const session = c.req.query("session") ?? undefined;
+    const repo = c.req.query("repo") ?? undefined;
+    const error = c.req.query("error") ?? undefined;
+
+    let tasks: TaskItem[] = [];
+    let degraded = false;
+
+    if (!fetchTaskStoreTasks) {
+      degraded = true;
+    } else {
+      const params = new URLSearchParams();
+      if (status) params.set("status", status);
+      if (session) params.set("session", session);
+      if (repo) params.set("repo", repo);
+      try {
+        tasks = await fetchTaskStoreTasks(params);
+      } catch {
+        degraded = true;
+      }
+    }
+
+    return html(
+      renderTasksPage(
+        tasks,
+        { status, session, repo },
+        degraded,
+        c.var.userEmail,
+        error ? { error } : undefined,
+      ),
+    );
+  });
+
+  app.post("/admin/tasks/:id/release", requireAuth, async (c) => {
+    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+    const taskId = c.req.param("id");
+    if (!releaseTask) return c.redirect("/admin/tasks?error=task_store_unavailable", 302);
+    if (releaseTask) {
+      try {
+        await releaseTask(taskId);
+      } catch {
+        return c.redirect("/admin/tasks?error=release_failed", 302);
+      }
+    }
+    return c.redirect("/admin/tasks", 302);
   });
 
   // ─── Agent delete (danger zone) ───────────────────────────────────────────
