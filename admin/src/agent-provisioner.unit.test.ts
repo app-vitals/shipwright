@@ -22,8 +22,6 @@ const BASE_CONFIG: KubernetesAgentProvisionerConfig = {
   image: "ghcr.io/app-vitals/shipwright-agent",
   imageTag: "v1.0.0",
   apiUrl: "http://shipwright-admin.shipwright.svc:3001",
-  adminDeploymentName: "shipwright-admin",
-  adminDeploymentUid: "aaaa-bbbb-cccc-dddd",
 };
 
 /** Stub token service — no DB required. */

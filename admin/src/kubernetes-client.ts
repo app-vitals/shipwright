@@ -81,6 +81,10 @@ export interface KubernetesContainer {
     httpGet?: { path?: string; port: number | string; [key: string]: unknown };
     [key: string]: unknown;
   };
+  readinessProbe?: {
+    httpGet?: { path?: string; port: number | string; [key: string]: unknown };
+    [key: string]: unknown;
+  };
   securityContext?: Record<string, unknown>;
   [key: string]: unknown;
 }

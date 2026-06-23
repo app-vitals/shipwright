@@ -28,8 +28,6 @@ const deployOpts: AgentDeploymentOpts = {
   pvcName: "agent-42-home",
   secretName: "agent-42-token",
   tokenSecretKey: "token",
-  adminDeploymentName: "shipwright-admin",
-  adminDeploymentUid: "11112222-3333-4444-5555-666677778888",
 };
 
 // ─── buildAgentDeploymentManifest ───────────────────────────────────────────
@@ -110,18 +108,45 @@ describe("buildAgentDeploymentManifest", () => {
     expect(mount?.name).toBe(vol?.name);
   });
 
-  it("defines a liveness probe on the health port 3459", () => {
+  it("sets strategy Recreate", () => {
     const d = buildAgentDeploymentManifest(deployOpts);
-    const probe = d.spec.template.spec.containers[0].livenessProbe;
-    expect(AGENT_HEALTH_PORT).toBe(3459);
-    expect(probe?.httpGet?.port).toBe(3459);
+    expect(d.spec.strategy).toEqual({ type: "Recreate" });
   });
 
-  it("applies a hardened security context (fsGroup, runAsNonRoot, runAsUser)", () => {
+  it("sets terminationGracePeriodSeconds to 120", () => {
+    const d = buildAgentDeploymentManifest(deployOpts);
+    expect(d.spec.template.spec.terminationGracePeriodSeconds).toBe(120);
+  });
+
+  it("declares a containerPort for the health port", () => {
+    const d = buildAgentDeploymentManifest(deployOpts);
+    const ports = d.spec.template.spec.containers[0].ports ?? [];
+    expect(ports).toContainEqual({ containerPort: AGENT_HEALTH_PORT, protocol: "TCP" });
+  });
+
+  it("sets AGENT_HOME env var to the mount path", () => {
+    const d = buildAgentDeploymentManifest(deployOpts);
+    const env = d.spec.template.spec.containers[0].env ?? [];
+    const agentHome = env.find((e) => e.name === "AGENT_HOME");
+    expect(agentHome?.value).toBe(AGENT_HOME_MOUNT_PATH);
+  });
+
+  it("defines liveness and readiness probes on the health port", () => {
+    const d = buildAgentDeploymentManifest(deployOpts);
+    const c = d.spec.template.spec.containers[0];
+    expect(AGENT_HEALTH_PORT).toBe(3459);
+    expect(c.livenessProbe?.httpGet?.port).toBe(3459);
+    expect(c.livenessProbe?.failureThreshold).toBe(3);
+    expect(c.readinessProbe?.httpGet?.port).toBe(3459);
+    expect(c.readinessProbe?.failureThreshold).toBe(3);
+  });
+
+  it("applies a hardened security context (fsGroup, fsGroupChangePolicy, runAsNonRoot, runAsUser)", () => {
     const d = buildAgentDeploymentManifest(deployOpts);
     const podSpec = d.spec.template.spec;
     expect(podSpec.securityContext).toMatchObject({
       fsGroup: 1000,
+      fsGroupChangePolicy: "OnRootMismatch",
       runAsNonRoot: true,
       runAsUser: 1000,
     });
@@ -131,18 +156,9 @@ describe("buildAgentDeploymentManifest", () => {
     });
   });
 
-  it("sets an ownerReference to the admin Deployment for GC on uninstall", () => {
+  it("does not set ownerReferences", () => {
     const d = buildAgentDeploymentManifest(deployOpts);
-    const refs = d.metadata.ownerReferences ?? [];
-    expect(refs).toHaveLength(1);
-    expect(refs[0]).toMatchObject({
-      apiVersion: "apps/v1",
-      kind: "Deployment",
-      name: "shipwright-admin",
-      uid: "11112222-3333-4444-5555-666677778888",
-      controller: true,
-      blockOwnerDeletion: true,
-    });
+    expect(d.metadata.ownerReferences).toBeUndefined();
   });
 
   it("honours an explicit replicas override", () => {
@@ -239,8 +255,6 @@ describe("buildAgentSecretManifest", () => {
     namespace: "shipwright",
     token: "sw-agent-secret-token",
     tokenKey: "token",
-    adminDeploymentName: "shipwright-admin",
-    adminDeploymentUid: "11112222-3333-4444-5555-666677778888",
   };
 
   it("emits an Opaque v1 Secret", () => {
@@ -265,15 +279,9 @@ describe("buildAgentSecretManifest", () => {
     expect(s.data.token).toBeDefined();
   });
 
-  it("carries an ownerReference to the admin Deployment", () => {
+  it("does not set ownerReferences", () => {
     const s = buildAgentSecretManifest(secretOpts);
-    const refs = s.metadata.ownerReferences ?? [];
-    expect(refs[0]).toMatchObject({
-      kind: "Deployment",
-      name: "shipwright-admin",
-      uid: "11112222-3333-4444-5555-666677778888",
-      controller: true,
-    });
+    expect(s.metadata.ownerReferences).toBeUndefined();
   });
 });
 
@@ -284,8 +292,6 @@ describe("buildAgentPvcManifest", () => {
     name: "agent-42-home",
     namespace: "shipwright",
     sizeGi: 40,
-    adminDeploymentName: "shipwright-admin",
-    adminDeploymentUid: "11112222-3333-4444-5555-666677778888",
   };
 
   it("emits a v1 PersistentVolumeClaim", () => {
@@ -321,18 +327,9 @@ describe("buildAgentPvcManifest", () => {
     expect(p.spec.storageClassName).toBeUndefined();
   });
 
-  it("carries an ownerReference to the admin Deployment for GC", () => {
+  it("does not set ownerReferences", () => {
     const p = buildAgentPvcManifest(pvcOpts);
-    const refs = p.metadata.ownerReferences ?? [];
-    expect(refs).toHaveLength(1);
-    expect(refs[0]).toMatchObject({
-      apiVersion: "apps/v1",
-      kind: "Deployment",
-      name: "shipwright-admin",
-      uid: "11112222-3333-4444-5555-666677778888",
-      controller: true,
-      blockOwnerDeletion: true,
-    });
+    expect(p.metadata.ownerReferences).toBeUndefined();
   });
 });
 

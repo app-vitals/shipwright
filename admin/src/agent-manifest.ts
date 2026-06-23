@@ -9,10 +9,6 @@
  * objects. The actual k8s API calls live in ./kubernetes-client.ts; this module
  * returns the same `KubernetesDeployment` / `KubernetesSecret` wire types so the
  * two stay structurally consistent.
- *
- * Garbage collection: each agent resource carries an `ownerReference` to the
- * admin Deployment. When the admin Deployment is deleted on uninstall,
- * Kubernetes cascade-deletes every owned agent Deployment + Secret.
  */
 
 import { createHash } from "node:crypto";
@@ -44,29 +40,6 @@ const INSTANCE_LABEL = "app.kubernetes.io/instance";
 const MANAGED_BY_LABEL = "app.kubernetes.io/managed-by";
 const AGENT_ID_LABEL = "shipwright.dev/agent-id";
 const AGENT_APP_NAME = "shipwright-agent";
-
-// ─── Owner reference (GC) ───────────────────────────────────────────────────
-
-interface OwnerReference {
-  apiVersion: string;
-  kind: string;
-  name: string;
-  uid: string;
-  controller: boolean;
-  blockOwnerDeletion: boolean;
-  [key: string]: unknown;
-}
-
-function adminOwnerReference(name: string, uid: string): OwnerReference {
-  return {
-    apiVersion: "apps/v1",
-    kind: "Deployment",
-    name,
-    uid,
-    controller: true,
-    blockOwnerDeletion: true,
-  };
-}
 
 // ─── Name sanitization ──────────────────────────────────────────────────────
 
@@ -124,8 +97,6 @@ export interface AgentPvcOpts {
   namespace: string;
   sizeGi: number;
   storageClassName?: string;
-  adminDeploymentName: string;
-  adminDeploymentUid: string;
 }
 
 export function buildAgentPvcManifest(opts: AgentPvcOpts): KubernetesPvc {
@@ -135,9 +106,6 @@ export function buildAgentPvcManifest(opts: AgentPvcOpts): KubernetesPvc {
     metadata: {
       name: opts.name,
       namespace: opts.namespace,
-      ownerReferences: [
-        adminOwnerReference(opts.adminDeploymentName, opts.adminDeploymentUid),
-      ],
     },
     spec: {
       accessModes: ["ReadWriteOnce"],
@@ -168,10 +136,6 @@ export interface AgentDeploymentOpts {
   secretName: string;
   /** Key within the Secret's data that holds the token. Defaults to "token". */
   tokenSecretKey?: string;
-  /** Admin Deployment name (ownerReference target for GC). */
-  adminDeploymentName: string;
-  /** Admin Deployment uid (ownerReference target for GC). */
-  adminDeploymentUid: string;
   /** Replica count. Defaults to 1. */
   replicas?: number;
   /**
@@ -260,9 +224,6 @@ export function buildAgentDeploymentManifest(
       name,
       namespace: opts.namespace,
       labels,
-      ownerReferences: [
-        adminOwnerReference(opts.adminDeploymentName, opts.adminDeploymentUid),
-      ],
     },
     spec: {
       replicas: opts.replicas ?? 1,
@@ -275,6 +236,7 @@ export function buildAgentDeploymentManifest(
         spec: {
           securityContext: {
             fsGroup: AGENT_RUN_AS,
+            fsGroupChangePolicy: "OnRootMismatch",
             runAsNonRoot: true,
             runAsUser: AGENT_RUN_AS,
           },
@@ -291,6 +253,7 @@ export function buildAgentDeploymentManifest(
             {
               name: AGENT_APP_NAME,
               image: `${opts.image}:${opts.imageTag}`,
+              ports: [{ containerPort: AGENT_HEALTH_PORT, protocol: "TCP" }],
               env: [
                 { name: "SHIPWRIGHT_AGENT_ID", value: opts.agentId },
                 { name: "SHIPWRIGHT_API_URL", value: opts.apiUrl },
@@ -311,8 +274,9 @@ export function buildAgentDeploymentManifest(
               ],
               livenessProbe: {
                 httpGet: { path: "/health", port: AGENT_HEALTH_PORT },
-                initialDelaySeconds: 10,
-                periodSeconds: 15,
+                initialDelaySeconds: 15,
+                periodSeconds: 30,
+                failureThreshold: 3,
               },
               readinessProbe: {
                 httpGet: { path: "/health", port: AGENT_HEALTH_PORT },
@@ -342,10 +306,6 @@ export interface AgentSecretOpts {
   token: string;
   /** Key under which the token is stored. Defaults to "token". */
   tokenKey?: string;
-  /** Admin Deployment name (ownerReference target for GC). */
-  adminDeploymentName: string;
-  /** Admin Deployment uid (ownerReference target for GC). */
-  adminDeploymentUid: string;
 }
 
 export function buildAgentSecretManifest(
@@ -359,9 +319,6 @@ export function buildAgentSecretManifest(
     metadata: {
       name: opts.name,
       namespace: opts.namespace,
-      ownerReferences: [
-        adminOwnerReference(opts.adminDeploymentName, opts.adminDeploymentUid),
-      ],
     },
     data: {
       [tokenKey]: Buffer.from(opts.token).toString("base64"),

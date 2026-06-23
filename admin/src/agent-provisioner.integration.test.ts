@@ -44,8 +44,6 @@ const CONFIG: KubernetesAgentProvisionerConfig = {
   image: "ghcr.io/app-vitals/shipwright-agent",
   imageTag: "v1.2.3",
   apiUrl: "http://shipwright-admin.shipwright.svc:3001",
-  adminDeploymentName: "shipwright-admin",
-  adminDeploymentUid: "11112222-3333-4444-5555-666677778888",
 };
 
 function makePrisma(): PrismaClient {
@@ -255,8 +253,6 @@ describeOrSkip("KubernetesAgentProvisioner (integration)", () => {
       name: `${name}-token`,
       namespace: NAMESPACE,
       token: "preexisting",
-      adminDeploymentName: CONFIG.adminDeploymentName,
-      adminDeploymentUid: CONFIG.adminDeploymentUid,
     });
     const k8s = new RecordedKubernetesClient({
       deployments: {},
