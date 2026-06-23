@@ -64,7 +64,7 @@ jobs:
       - name: Notify downstream of chart release
         continue-on-error: true
         env:
-          GH_TOKEN: ${{ secrets.VITALS_OS_DISPATCH_TOKEN }}
+          GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
           DISPATCH_REPO: ${{ vars.CHART_DISPATCH_REPO }}
         run: |
           [ -z "$DISPATCH_REPO" ] && echo "CHART_DISPATCH_REPO not configured, skipping" && exit 0
