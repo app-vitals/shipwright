@@ -141,7 +141,7 @@ Each Prisma service reads its own `DATABASE_URL_*` — never a shared connection
 | `DATABASE_URL_SHIPWRIGHT_ADMIN` | `@shipwright/admin` | `admin/prisma/schema.prisma` |
 | `DATABASE_URL_SHIPWRIGHT_TASK_STORE` | `@shipwright/task-store` | `task-store/prisma/schema.prisma` |
 
-The schema uses `provider = "postgresql"`. Both `DATABASE_URL_SHIPWRIGHT_ADMIN` and `DATABASE_URL_SHIPWRIGHT_TASK_STORE` must be Postgres connection strings.
+The schema uses `provider = "postgresql"`. All database connection strings must be Postgres connection strings: `postgresql://user:password@host:5432/database`.
 
 For the full configuration reference (all env vars, agent config, policy config), see [`docs/configuration.md`](./docs/configuration.md).
 
