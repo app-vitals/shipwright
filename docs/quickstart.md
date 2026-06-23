@@ -137,15 +137,15 @@ This opens a tmux session (`shipwright`) with 6 panes:
 
 A browser window opens automatically to the admin dev-login page.
 
-### Step 4 — Install the plugin and send a chat turn
+### Step 4 — Send a chat turn (plugin install coming soon)
 
-Inside a **Claude Code** session pointed at this repo:
+> 🚧 The `/plugin install` step (Phase A) is not yet ready for general use. Once it ships, you'll run this inside a Claude Code session pointed at this repo:
+>
+> ```
+> /plugin install shipwright@app-vitals/shipwright
+> ```
 
-```
-/plugin install shipwright@app-vitals/shipwright
-```
-
-Then use the **chat** pane (or `bun scripts/chat.ts` in a new terminal) to send a message. The turn should round-trip through the Docker agent.
+Use the **chat** pane (or `bun scripts/chat.ts` in a new terminal) to send a message. The turn should round-trip through the Docker agent.
 
 ### Stopping the stack
 
