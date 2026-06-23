@@ -236,6 +236,7 @@ export function buildAgentDeploymentManifest(
         spec: {
           securityContext: {
             fsGroup: AGENT_RUN_AS,
+            fsGroupChangePolicy: "OnRootMismatch",
             runAsNonRoot: true,
             runAsUser: AGENT_RUN_AS,
           },

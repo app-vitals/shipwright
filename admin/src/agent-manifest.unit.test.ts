@@ -115,11 +115,12 @@ describe("buildAgentDeploymentManifest", () => {
     expect(probe?.httpGet?.port).toBe(3459);
   });
 
-  it("applies a hardened security context (fsGroup, runAsNonRoot, runAsUser)", () => {
+  it("applies a hardened security context (fsGroup, fsGroupChangePolicy, runAsNonRoot, runAsUser)", () => {
     const d = buildAgentDeploymentManifest(deployOpts);
     const podSpec = d.spec.template.spec;
     expect(podSpec.securityContext).toMatchObject({
       fsGroup: 1000,
+      fsGroupChangePolicy: "OnRootMismatch",
       runAsNonRoot: true,
       runAsUser: 1000,
     });
