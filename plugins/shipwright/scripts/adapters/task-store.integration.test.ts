@@ -30,7 +30,6 @@ const REPO_FIXTURE = loadFixture("repo.json");
 const BASE_URL = "https://task-store.test";
 const TOKEN = "test-bearer-token";
 const CONFIG: TaskStoreConfig = {
-  taskStore: "task-store",
   taskStoreUrl: BASE_URL,
 };
 

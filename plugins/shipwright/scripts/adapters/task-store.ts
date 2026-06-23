@@ -56,16 +56,7 @@ export class TaskStoreHttpAdapter implements TaskStore {
   // ── Internal helpers ──────────────────────────────────────────────────────
 
   private get baseUrl(): string {
-    const url =
-      (this.config as { taskStoreUrl?: string }).taskStoreUrl ??
-      process.env.SHIPWRIGHT_TASK_STORE_URL ??
-      "";
-    if (!url) {
-      throw new Error(
-        "taskStoreUrl is required in TaskStoreConfig (or set SHIPWRIGHT_TASK_STORE_URL env var)",
-      );
-    }
-    return url.replace(/\/$/, "");
+    return this.config.taskStoreUrl.replace(/\/$/, "");
   }
 
   private async apiFetch(

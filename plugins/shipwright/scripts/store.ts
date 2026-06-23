@@ -171,18 +171,10 @@ export interface QueryFilters {
 
 /**
  * Configuration for a TaskStore instance.
- *
- * `taskStore: "task-store"` uses a remote task-store HTTP service.
  */
 export interface TaskStoreConfig {
-  taskStore: "task-store";
-
-  /**
-   * Required when taskStore === "task-store".
-   * Base URL of the task-store service, e.g. "https://task-store.example.com".
-   * Can also be set via SHIPWRIGHT_TASK_STORE_URL env var.
-   */
-  taskStoreUrl?: string;
+  /** Base URL of the task-store service, e.g. "https://task-store.example.com". */
+  taskStoreUrl: string;
 }
 
 // ─── resolveReadyTasks ────────────────────────────────────────────────────────

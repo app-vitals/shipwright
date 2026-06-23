@@ -25,7 +25,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolveRepos } from "./check-helpers";
 import { createTaskStore, loadConfig } from "./create-task-store";
-import type { Task, TaskStore } from "./store";
+import type { Task, TaskStore, TaskStoreConfig } from "./store";
 
 const NUMERIC_FIELDS = new Set(["pr", "hours", "complexity"]);
 const BOOLEAN_FIELDS = new Set(["hitl"]);
@@ -340,35 +340,21 @@ async function cmdCleanup(adapter: TaskStore): Promise<void> {
   );
 }
 
-export function getBackend(config: import("./store").TaskStoreConfig): string {
-  return config.taskStore;
+export function getBackend(_config: TaskStoreConfig): string {
+  return "task-store";
 }
 
-export function cmdBackend(config: import("./store").TaskStoreConfig): void {
-  process.stdout.write(`${getBackend(config)}\n`);
+export function cmdBackend(_config: TaskStoreConfig): void {
+  process.stdout.write("task-store\n");
 }
 
 async function cmdDoctor(
   _adapter: TaskStore,
-  config: import("./store").TaskStoreConfig,
-  configSource: string,
+  config: TaskStoreConfig,
 ): Promise<void> {
-  console.log(`backend: ${config.taskStore}`);
-  if (configSource === "default") {
-    console.log("config: default (no SHIPWRIGHT_CONFIG set)");
-  } else {
-    console.log(`config: ${configSource}`);
-  }
-  const url =
-    (config as { taskStoreUrl?: string }).taskStoreUrl ??
-    process.env.SHIPWRIGHT_TASK_STORE_URL ??
-    "";
+  console.log("backend: task-store");
+  console.log(`taskStoreUrl: ${config.taskStoreUrl}`);
   const token = process.env.SHIPWRIGHT_TASK_STORE_TOKEN ?? "";
-  if (url) {
-    console.log(`[ok]  taskStoreUrl: ${url}`);
-  } else {
-    console.warn("[warn] taskStoreUrl: not set (set SHIPWRIGHT_TASK_STORE_URL)");
-  }
   if (token) {
     console.log("[ok]  SHIPWRIGHT_TASK_STORE_TOKEN: set");
   } else {
@@ -402,27 +388,12 @@ async function main(): Promise<void> {
     printUsageAndExit();
   }
 
-  const { config, configSource } = loadConfig();
+  const config = loadConfig();
 
   // backend is a config-level command — doesn't need the adapter
   if (command === "backend") {
     cmdBackend(config);
     return;
-  }
-
-  // Doctor command: run local checks even if task-store URL is not configured.
-  if (command === "doctor" && config.taskStore === "task-store") {
-    const taskStoreUrl =
-      (config as { taskStoreUrl?: string }).taskStoreUrl ??
-      process.env.SHIPWRIGHT_TASK_STORE_URL ??
-      "";
-    if (!taskStoreUrl) {
-      doctorCheck(config, configSource);
-      process.stdout.write(
-        "[warn] SHIPWRIGHT_TASK_STORE_URL not set — skipping remote task-store health checks\n",
-      );
-      process.exit(0);
-    }
   }
 
   const adapter = createTaskStore(config);
@@ -450,7 +421,7 @@ async function main(): Promise<void> {
       await cmdCleanup(adapter);
       break;
     case "doctor":
-      await cmdDoctor(adapter, config, configSource);
+      await cmdDoctor(adapter, config);
       break;
     case "backend":
       cmdBackend(config);

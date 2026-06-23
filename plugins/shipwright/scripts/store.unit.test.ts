@@ -216,21 +216,9 @@ describe("QueryFilters type", () => {
 // ─── TaskStoreConfig ──────────────────────────────────────────────────────────
 
 describe("TaskStoreConfig type", () => {
-  test("task-store backend config is valid with taskStoreUrl", () => {
-    const cfg: TaskStoreConfig = {
-      taskStore: "task-store",
-      taskStoreUrl: "https://ts.example.com",
-    };
-    expect(cfg.taskStore).toBe("task-store");
+  test("config requires taskStoreUrl", () => {
+    const cfg: TaskStoreConfig = { taskStoreUrl: "https://ts.example.com" };
     expect(cfg.taskStoreUrl).toBe("https://ts.example.com");
-  });
-
-  test("task-store backend config without taskStoreUrl is valid (resolved from env)", () => {
-    const cfg: TaskStoreConfig = {
-      taskStore: "task-store",
-    };
-    expect(cfg.taskStore).toBe("task-store");
-    expect(cfg.taskStoreUrl).toBeUndefined();
   });
 });
 
