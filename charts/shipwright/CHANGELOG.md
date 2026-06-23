@@ -10,11 +10,24 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
-## [1.6.9] - 2026-06-23
+## [1.6.11] - 2026-06-23
 
 ### Added
 
 - task-store HTTP adapter in the shipwright plugin; drop GitHub and Jira backends (TSS-2.1)
+
+## [1.6.10] - 2026-06-23
+
+### Changed
+
+- auto-bump to chart v1.6.10 triggered by release tag `admin-v0.80.0`
+
+## [1.6.9] - 2026-06-23
+
+### Removed
+
+- Deleted `ci/vitals-os-values.yaml` (internal CI install-test profile; no longer ships).
+- Scrubbed all internal `vitals-os` references from chart templates, tests, CHANGELOG, and docs; replaced with generic placeholders.
 
 ## [1.6.8] - 2026-06-23
 
@@ -225,7 +238,7 @@ independent of `appVersion`. CI enforces this with
 
 ### Added
 
-- `agent-provisioning-rbac`: added a `persistentvolumeclaims` rule (`create`/`get`/`delete`) to the `agent-provisioner` Role, giving the provisioner the permissions it needs to manage workspace PVCs alongside Deployments and Secrets. Additive — no existing rules changed. ALP-A.2 in vitals-os bumps the subchart dependency to pick this up.
+- `agent-provisioning-rbac`: added a `persistentvolumeclaims` rule (`create`/`get`/`delete`) to the `agent-provisioner` Role, giving the provisioner the permissions it needs to manage workspace PVCs alongside Deployments and Secrets. Additive — no existing rules changed.
 
 ## [1.4.0]
 

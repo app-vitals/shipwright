@@ -1,8 +1,8 @@
 suite: agent-provisioning RBAC + admin env contract (HD-4.2 / K8S-NS-1.1)
 # Asserts the agent-provisioning surface, gated on agent.provisioning.enabled:
 #   (a) enabled + namespace set (cross-namespace mode) → cluster-scoped ClusterRole + ClusterRoleBinding
-#       to the admin SA. ClusterRole enables cross-namespace provisioning (e.g. vitals-os agents
-#       with PVCs pinned to their namespace).
+#       to the admin SA. ClusterRole enables cross-namespace provisioning (e.g. agents
+#       with PVCs pinned to a dedicated target namespace).
 #   (a2) enabled + namespace empty (same-namespace mode, default) → namespace-scoped Role + RoleBinding.
 #       Least-privilege RBAC when the admin service provisions into its own release namespace.
 #   (b) enabled → admin Deployment gets SHIPWRIGHT_K8S_PROVISIONING=enabled and the
@@ -17,7 +17,7 @@ tests:
     documentIndex: 0
     set:
       agent.provisioning.enabled: true
-      agent.provisioning.namespace: vitals-os
+      agent.provisioning.namespace: my-org
     release:
       name: r
     asserts:
@@ -59,7 +59,7 @@ tests:
     documentIndex: 1
     set:
       agent.provisioning.enabled: true
-      agent.provisioning.namespace: vitals-os
+      agent.provisioning.namespace: my-org
     release:
       name: r
       namespace: shipwright-ns
@@ -220,7 +220,7 @@ tests:
     template: templates/admin-deployment.yaml
     set:
       agent.provisioning.enabled: true
-      agent.provisioning.namespace: vitals-os
+      agent.provisioning.namespace: my-org
     release:
       name: r
     asserts:
@@ -228,7 +228,7 @@ tests:
           path: spec.template.spec.containers[0].env
           content:
             name: SHIPWRIGHT_K8S_NAMESPACE
-            value: "vitals-os"
+            value: "my-org"
       - notContains:
           path: spec.template.spec.containers[0].env
           content:
