@@ -5,7 +5,7 @@
 #
 # Cross-namespace mode (agent.provisioning.namespace is set): ClusterRole + ClusterRoleBinding.
 # The admin service provisions agent Deployments + Secrets + PVCs into a namespace other than
-# its own release namespace (e.g. provisioning vitals-os agents into the vitals-os namespace).
+# its own release namespace (e.g. provisioning agents into a dedicated target namespace).
 # A ClusterRole bound via ClusterRoleBinding is required to reach across namespace boundaries.
 # The verb set is exactly what the provisioner (HD-1.3 KubernetesAgentProvisioner /
 # HD-1.4 wiring) exercises: create + get + delete on Deployments (apps),
