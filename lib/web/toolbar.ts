@@ -137,6 +137,7 @@ export function renderShipwrightToolbar(
     <div class="vos-nav">
       <a href="${adminBase}/admin/agents" class="vos-nav-link${active("/admin/agents")}">Agents</a>
       <a href="${adminBase}/admin/provision" class="vos-nav-link${active("/admin/provision")}">Provision</a>
+      <a href="${adminBase}/admin/tasks" class="vos-nav-link${active("/admin/tasks")}">Tasks</a>
       <a href="${metricsUrl}" class="vos-nav-link${active(metricsUrl)}">Metrics</a>
     </div>
     <div class="vos-user">

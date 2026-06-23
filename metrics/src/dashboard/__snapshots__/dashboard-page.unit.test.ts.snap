@@ -113,6 +113,7 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
     <div class="vos-nav">
       <a href="/admin/agents" class="vos-nav-link">Agents</a>
       <a href="/admin/provision" class="vos-nav-link">Provision</a>
+      <a href="/admin/tasks" class="vos-nav-link">Tasks</a>
       <a href="/dashboard" class="vos-nav-link active">Metrics</a>
     </div>
     <div class="vos-user">
@@ -543,6 +544,7 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
     <div class="vos-nav">
       <a href="/admin/agents" class="vos-nav-link">Agents</a>
       <a href="/admin/provision" class="vos-nav-link">Provision</a>
+      <a href="/admin/tasks" class="vos-nav-link">Tasks</a>
       <a href="/dashboard" class="vos-nav-link active">Metrics</a>
     </div>
     <div class="vos-user">
@@ -973,6 +975,7 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
     <div class="vos-nav">
       <a href="/admin/agents" class="vos-nav-link">Agents</a>
       <a href="/admin/provision" class="vos-nav-link">Provision</a>
+      <a href="/admin/tasks" class="vos-nav-link">Tasks</a>
       <a href="/dashboard" class="vos-nav-link active">Metrics</a>
     </div>
     <div class="vos-user">
@@ -1403,6 +1406,7 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
     <div class="vos-nav">
       <a href="/admin/agents" class="vos-nav-link">Agents</a>
       <a href="/admin/provision" class="vos-nav-link">Provision</a>
+      <a href="/admin/tasks" class="vos-nav-link">Tasks</a>
       <a href="/dashboard" class="vos-nav-link active">Metrics</a>
     </div>
     <div class="vos-user">
