@@ -198,7 +198,7 @@ export function createTaskStore(config: TaskStoreConfig): TaskStore {
       process.exit(1);
     }
   }
-  if (config.taskStore === "github" || config.taskStore === "jira") {
+  if ((config.taskStore as string) === "github" || (config.taskStore as string) === "jira") {
     process.stderr.write(
       `error: the "${config.taskStore}" task store backend has been removed. Update your .shipwright.json to use taskStore: "task-store" and set SHIPWRIGHT_TASK_STORE_URL.\n`,
     );
