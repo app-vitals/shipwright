@@ -28,8 +28,6 @@ const deployOpts: AgentDeploymentOpts = {
   pvcName: "agent-42-home",
   secretName: "agent-42-token",
   tokenSecretKey: "token",
-  adminDeploymentName: "shipwright-admin",
-  adminDeploymentUid: "11112222-3333-4444-5555-666677778888",
 };
 
 // ─── buildAgentDeploymentManifest ───────────────────────────────────────────
@@ -131,18 +129,9 @@ describe("buildAgentDeploymentManifest", () => {
     });
   });
 
-  it("sets an ownerReference to the admin Deployment for GC on uninstall", () => {
+  it("does not set ownerReferences", () => {
     const d = buildAgentDeploymentManifest(deployOpts);
-    const refs = d.metadata.ownerReferences ?? [];
-    expect(refs).toHaveLength(1);
-    expect(refs[0]).toMatchObject({
-      apiVersion: "apps/v1",
-      kind: "Deployment",
-      name: "shipwright-admin",
-      uid: "11112222-3333-4444-5555-666677778888",
-      controller: true,
-      blockOwnerDeletion: true,
-    });
+    expect(d.metadata.ownerReferences).toBeUndefined();
   });
 
   it("honours an explicit replicas override", () => {
@@ -239,8 +228,6 @@ describe("buildAgentSecretManifest", () => {
     namespace: "shipwright",
     token: "sw-agent-secret-token",
     tokenKey: "token",
-    adminDeploymentName: "shipwright-admin",
-    adminDeploymentUid: "11112222-3333-4444-5555-666677778888",
   };
 
   it("emits an Opaque v1 Secret", () => {
@@ -265,15 +252,9 @@ describe("buildAgentSecretManifest", () => {
     expect(s.data.token).toBeDefined();
   });
 
-  it("carries an ownerReference to the admin Deployment", () => {
+  it("does not set ownerReferences", () => {
     const s = buildAgentSecretManifest(secretOpts);
-    const refs = s.metadata.ownerReferences ?? [];
-    expect(refs[0]).toMatchObject({
-      kind: "Deployment",
-      name: "shipwright-admin",
-      uid: "11112222-3333-4444-5555-666677778888",
-      controller: true,
-    });
+    expect(s.metadata.ownerReferences).toBeUndefined();
   });
 });
 
@@ -284,8 +265,6 @@ describe("buildAgentPvcManifest", () => {
     name: "agent-42-home",
     namespace: "shipwright",
     sizeGi: 40,
-    adminDeploymentName: "shipwright-admin",
-    adminDeploymentUid: "11112222-3333-4444-5555-666677778888",
   };
 
   it("emits a v1 PersistentVolumeClaim", () => {
@@ -321,18 +300,9 @@ describe("buildAgentPvcManifest", () => {
     expect(p.spec.storageClassName).toBeUndefined();
   });
 
-  it("carries an ownerReference to the admin Deployment for GC", () => {
+  it("does not set ownerReferences", () => {
     const p = buildAgentPvcManifest(pvcOpts);
-    const refs = p.metadata.ownerReferences ?? [];
-    expect(refs).toHaveLength(1);
-    expect(refs[0]).toMatchObject({
-      apiVersion: "apps/v1",
-      kind: "Deployment",
-      name: "shipwright-admin",
-      uid: "11112222-3333-4444-5555-666677778888",
-      controller: true,
-      blockOwnerDeletion: true,
-    });
+    expect(p.metadata.ownerReferences).toBeUndefined();
   });
 });
 

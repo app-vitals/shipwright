@@ -109,8 +109,6 @@ function buildProvisioner(
   const image = env.SHIPWRIGHT_AGENT_IMAGE ?? "";
   const imageTag = env.SHIPWRIGHT_AGENT_IMAGE_TAG ?? "latest";
   const apiUrl = env.SHIPWRIGHT_API_URL ?? "";
-  const adminDeploymentName = env.SHIPWRIGHT_ADMIN_DEPLOYMENT_NAME ?? "";
-  const adminDeploymentUid = env.SHIPWRIGHT_ADMIN_DEPLOYMENT_UID ?? "";
   const replicasRaw = env.SHIPWRIGHT_AGENT_REPLICAS;
   const replicas = replicasRaw ? Number(replicasRaw) : undefined;
   const pvcStorageGiRaw = env.SHIPWRIGHT_AGENT_PVC_STORAGE_GI;
@@ -138,8 +136,6 @@ function buildProvisioner(
     image,
     imageTag,
     apiUrl,
-    adminDeploymentName,
-    adminDeploymentUid,
     ...(replicas !== undefined && Number.isFinite(replicas)
       ? { replicas }
       : {}),
