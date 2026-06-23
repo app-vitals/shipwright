@@ -28,8 +28,8 @@ annotations:
   # Artifact Hub change log for this release. Must mirror the matching version
   # entry in CHANGELOG.md (keep the two in sync on every bump).
   artifacthub.io/changes: |
-    - kind: added
-      description: "wire full manifest through provisioner for proper PVC mounts"
+    - kind: changed
+      description: "bump chart to v1.6.4: remove dead code in release-task handler, fix PVC mounts via full manifest provisioner"
 dependencies:
   # Bitnami PostgreSQL subchart. Pinned to a chart version whose default image tag
   # is concrete (NOT `latest`), because Bitnami's 2025 catalog change moved newer
