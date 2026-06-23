@@ -28,6 +28,8 @@ annotations:
   # Artifact Hub change log for this release. Must mirror the matching version
   # entry in CHANGELOG.md (keep the two in sync on every bump).
   artifacthub.io/changes: |
+    - kind: fixed
+      description: "add serviceAccountName + taskStore.serviceAccount values to task-store Deployment for Workload Identity (TSS-4.2)"
     - kind: changed
       description: "auto-bump to chart v1.6.2 triggered by release tag metrics-v0.79.0"
 dependencies:

@@ -15,6 +15,7 @@ spec:
       labels:
         {{- include "shipwright.taskStore.selectorLabels" . | nindent 8 }}
     spec:
+      serviceAccountName: {{ include "shipwright.taskStore.serviceAccountName" . }}
       {{- with .Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- range . }}
