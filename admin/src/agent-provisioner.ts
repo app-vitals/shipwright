@@ -228,8 +228,6 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
           pvcName: this.pvcNameFor(resourceName, opts?.slug),
           secretName,
           tokenSecretKey: this.tokenKey,
-          adminDeploymentName: this.config.adminDeploymentName,
-          adminDeploymentUid: this.config.adminDeploymentUid,
           replicas: this.config.replicas,
           voice: this.config.voice,
         }),
