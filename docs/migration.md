@@ -4,7 +4,7 @@ Durable notes for breaking changes and the steps needed to migrate across versio
 
 ---
 
-## `AgentProvisioner.reconcile()` interface change
+## `AgentProvisioner.reconcile()` interface change _(v4.29.0)_
 
 - **`reconcile(agentIds: string[])` → `reconcile(agents: Array<{ id: string; slug?: string }>)`**: The `AgentProvisioner` interface's `reconcile()` method now accepts structured agent objects instead of raw ID strings. This is a **compile-time breaking change** for any code that implements or calls `AgentProvisioner` directly.
 
