@@ -332,7 +332,7 @@ describe("HttpKubernetesClient.patchDeployment()", () => {
     const client = new HttpKubernetesClient({
       apiServer,
       token: "test-token",
-      fetchFn: fetchFn as typeof fetch,
+      fetchFn: fetchFn as unknown as typeof fetch,
     });
 
     await expect(
