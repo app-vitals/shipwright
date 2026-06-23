@@ -127,6 +127,14 @@ const ReconcileAgentsResultSchema = z
   })
   .openapi("ReconcileAgentsResult");
 
+const ProvisionAgentResultSchema = z
+  .object({
+    resourceName: z.string(),
+    secretName: z.string(),
+    deploymentName: z.string(),
+  })
+  .openapi("ProvisionAgentResult");
+
 const CronWrapperSchema = z
   .object({ cron: AgentCronJobSchema })
   .openapi("CronWrapper");
@@ -184,6 +192,20 @@ const reconcileAgentsRoute = createRoute({
       content: { "application/json": { schema: ReconcileAgentsResultSchema } },
     },
     403: { description: "Forbidden", ...jsonError },
+  },
+});
+
+const provisionAgentRoute = createRoute({
+  method: "post",
+  path: "/agents/{id}/provision",
+  request: { params: AgentIdParamSchema },
+  responses: {
+    200: {
+      description: "Agent provisioned (or already-provisioned — idempotent)",
+      content: { "application/json": { schema: ProvisionAgentResultSchema } },
+    },
+    403: { description: "Forbidden", ...jsonError },
+    404: { description: "Agent not found", ...jsonError },
   },
 });
 
@@ -598,6 +620,31 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     const agents = await prisma.agent.findMany({ select: { id: true, name: true } });
     const result = await provisioner.reconcile(agents.map((a) => ({ id: a.id, slug: a.name })));
     return c.json(result, 200);
+  });
+
+  // POST /agents/:id/provision — provision a single agent's K8s workload (admin only).
+  // Idempotent: safe to call on an already-provisioned agent.
+  app.openapi(provisionAgentRoute, async (c) => {
+    if (c.get("isAdmin") !== true) {
+      throw new ForbiddenError(
+        "Only admin bearers and session users can provision agents",
+      );
+    }
+    const { id: agentId } = c.req.valid("param");
+
+    const agent = await prisma.agent.findUnique({
+      where: { id: agentId },
+      select: { id: true, name: true },
+    });
+    if (!agent) {
+      throw new NotFoundError(`agent ${agentId} not found`);
+    }
+
+    const { resourceName, secretName, deploymentName } = await provisioner.provision(
+      agent.id,
+      { slug: agent.name },
+    );
+    return c.json({ resourceName, secretName, deploymentName }, 200);
   });
 
   // DELETE /agents/:id — delete an agent and tear down its workload (admin only)
