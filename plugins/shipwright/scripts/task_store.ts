@@ -13,9 +13,9 @@
  *   update      Write specific fields to a task by ID
  *   repos       Print all org/repo strings (one per line)
  *   resolve-repo  Print first org/repo (deprecated alias for repos)
- *   setup       Create state/todos.json if missing
+ *   setup       Initialize task store
  *   doctor      Validate config and print diagnostics
- *   backend     Print the active backend name ("json", "github", "jira")
+ *   backend     Print the active backend name
  *
  * Environment:
  *   SHIPWRIGHT_CONFIG   Path to JSON config file (optional)
@@ -23,10 +23,8 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import type { AuditResult } from "./adapters/audit";
-import { JsonTaskStore } from "./adapters/json";
 import { resolveRepos } from "./check-helpers";
-import { createTaskStore, doctorCheck, loadConfig } from "./create-task-store";
+import { createTaskStore, loadConfig } from "./create-task-store";
 import type { Task, TaskStore } from "./store";
 
 const NUMERIC_FIELDS = new Set(["pr", "hours", "complexity"]);
@@ -121,14 +119,14 @@ function printUsageAndExit(): never {
       "",
       "Subcommands:",
       "  query         Filter and return tasks as JSON array",
-      "  append        Append tasks from a JSON file (insert-only on GitHub adapter; upsert on JSON adapter)",
+      "  append        Append tasks from a JSON file",
       "  update        Write specific fields to a task by ID",
       "  repos         Print all org/repo strings (one per line)",
       "  resolve-repo  Print first org/repo (deprecated alias for repos)",
-      "  setup         Create state/todos.json if missing",
-      "  cleanup       Close open GitHub issues with terminal status labels",
+      "  setup         Initialize task store",
+      "  cleanup       Close stale open issues",
       "  doctor        Validate config and print diagnostics",
-      "  backend       Print the active backend name (json, github, jira)",
+      "  backend       Print the active backend name",
       "",
     ].join("\n"),
   );
@@ -343,7 +341,7 @@ async function cmdCleanup(adapter: TaskStore): Promise<void> {
 }
 
 export function getBackend(config: import("./store").TaskStoreConfig): string {
-  return config.taskStore ?? "json";
+  return config.taskStore;
 }
 
 export function cmdBackend(config: import("./store").TaskStoreConfig): void {
@@ -351,34 +349,32 @@ export function cmdBackend(config: import("./store").TaskStoreConfig): void {
 }
 
 async function cmdDoctor(
-  adapter: TaskStore,
+  _adapter: TaskStore,
   config: import("./store").TaskStoreConfig,
   configSource: string,
 ): Promise<void> {
-  // Run existing config/storage doctor checks
-  if (adapter instanceof JsonTaskStore) {
-    adapter.doctor(configSource);
+  console.log(`backend: ${config.taskStore}`);
+  if (configSource === "default") {
+    console.log("config: default (no SHIPWRIGHT_CONFIG set)");
   } else {
-    doctorCheck(config, configSource);
+    console.log(`config: ${configSource}`);
   }
-
-  // Run data integrity checks via dataDoctor() if available
-  const withDoctor = adapter as { dataDoctor?: () => Promise<AuditResult[]> };
-  if (typeof withDoctor.dataDoctor === "function") {
-    const results = await withDoctor.dataDoctor();
-
-    let hasFailure = false;
-    for (const result of results) {
-      const line = `[${result.level}] data: ${result.check} — ${result.message}`;
-      process.stdout.write(`${line}\n`);
-      if (result.level === "fail") {
-        hasFailure = true;
-      }
-    }
-
-    if (hasFailure) {
-      process.exit(1);
-    }
+  const url =
+    (config as { taskStoreUrl?: string }).taskStoreUrl ??
+    process.env.SHIPWRIGHT_TASK_STORE_URL ??
+    "";
+  const token = process.env.SHIPWRIGHT_TASK_STORE_TOKEN ?? "";
+  if (url) {
+    console.log(`[ok]  taskStoreUrl: ${url}`);
+  } else {
+    console.warn("[warn] taskStoreUrl: not set (set SHIPWRIGHT_TASK_STORE_URL)");
+  }
+  if (token) {
+    console.log("[ok]  SHIPWRIGHT_TASK_STORE_TOKEN: set");
+  } else {
+    console.warn(
+      "[warn] SHIPWRIGHT_TASK_STORE_TOKEN: not set — requests will be unauthenticated",
+    );
   }
 }
 

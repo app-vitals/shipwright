@@ -216,11 +216,6 @@ describe("QueryFilters type", () => {
 // ─── TaskStoreConfig ──────────────────────────────────────────────────────────
 
 describe("TaskStoreConfig type", () => {
-  test("json backend config is valid", () => {
-    const cfg: TaskStoreConfig = { taskStore: "json" };
-    expect(cfg.taskStore).toBe("json");
-  });
-
   test("task-store backend config is valid with taskStoreUrl", () => {
     const cfg: TaskStoreConfig = {
       taskStore: "task-store",

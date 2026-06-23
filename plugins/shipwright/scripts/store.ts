@@ -172,11 +172,10 @@ export interface QueryFilters {
 /**
  * Configuration for a TaskStore instance.
  *
- * `taskStore: "json"` uses a local state/todos.json file.
  * `taskStore: "task-store"` uses a remote task-store HTTP service.
  */
 export interface TaskStoreConfig {
-  taskStore: "json" | "task-store";
+  taskStore: "task-store";
 
   /**
    * Required when taskStore === "task-store".

@@ -7,7 +7,7 @@
  *   0. SHIPWRIGHT_TASK_STORE env var (and related vars) — highest precedence
  *   1. Walk up from cwd to find .shipwright.json
  *   2. Fall back to SHIPWRIGHT_CONFIG env var
- *   3. Default to JSON backend
+ *   3. Error — config is required
  *
  * Usage:
  *   import { loadConfig, createTaskStore } from "./create-task-store";
@@ -17,7 +17,6 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { JsonTaskStore } from "./adapters/json";
 import { TaskStoreHttpAdapter } from "./adapters/task-store";
 import type { TaskStore, TaskStoreConfig } from "./store";
 
@@ -72,12 +71,12 @@ function readConfigFile(cfgPath: string): TaskStoreConfig {
 }
 
 /**
- * Resolve the TaskStoreConfig using the 4-step discovery chain:
+ * Resolve the TaskStoreConfig using the discovery chain:
  *
  * 0. Check env vars (SHIPWRIGHT_TASK_STORE, etc.) → highest precedence.
  * 1. Walk up from `cwd` to find `.shipwright.json` → use it if found.
  * 2. Fall back to `SHIPWRIGHT_CONFIG` env var → use it if set and non-empty.
- * 3. Default to JSON backend with no config file.
+ * 3. Error — config is required.
  *
  * The optional `cwd` parameter exists for testability — pass a temp directory
  * in tests so the walk-up does not escape into the real filesystem.
@@ -91,12 +90,9 @@ export function loadConfig(cwd: string = process.cwd()): LoadedConfig {
     const config: TaskStoreConfig = { taskStore: "task-store", taskStoreUrl };
     return { config, configSource: "env" };
   }
-  if (taskStoreEnv === "json") {
-    return { config: { taskStore: "json" }, configSource: "env" };
-  }
   if (taskStoreEnv !== "") {
     process.stderr.write(
-      `warning: unrecognized SHIPWRIGHT_TASK_STORE value: "${taskStoreEnv}" — expected task-store or json. Falling through to file config.\n`,
+      `warning: unrecognized SHIPWRIGHT_TASK_STORE value: "${taskStoreEnv}" — expected task-store. Falling through to file config.\n`,
     );
   }
 
@@ -123,60 +119,18 @@ export function loadConfig(cwd: string = process.cwd()): LoadedConfig {
     return { config, configSource: cfgPath };
   }
 
-  // Step 3: default to JSON backend
-  return { config: { taskStore: "json" }, configSource: "default" };
+  // Step 3: no config found — error
+  process.stderr.write(
+    "error: no task store config found. Set SHIPWRIGHT_TASK_STORE=task-store + SHIPWRIGHT_TASK_STORE_URL, or create a .shipwright.json with taskStore: \"task-store\".\n",
+  );
+  process.exit(1);
 }
 
 // ─── Factory ──────────────────────────────────────────────────────────────────
 
-export function doctorCheck(
-  config: TaskStoreConfig,
-  configSource: string,
-  cwd: string = process.cwd(),
-): void {
-  const backend = config.taskStore;
-
-  console.log(`backend: ${backend}`);
-  if (configSource === "default") {
-    console.log("config: default (no SHIPWRIGHT_CONFIG set)");
-  } else {
-    console.log(`config: ${configSource}`);
-  }
-
-  // For non-JSON backends (task-store), check for a coexisting non-empty todos.json
-  if (backend !== "json") {
-    const todosPath = join(cwd, "state", "todos.json");
-    if (existsSync(todosPath)) {
-      try {
-        const content = readFileSync(todosPath, "utf-8").trim();
-        if (content.length > 0) {
-          let parsed: unknown;
-          try {
-            parsed = JSON.parse(content);
-          } catch {
-            parsed = null;
-          }
-          // Warn if it's a non-empty array (or unparseable content)
-          const isNonEmptyArray =
-            Array.isArray(parsed) && (parsed as unknown[]).length > 0;
-          const isNonEmptyContent = !Array.isArray(parsed) && content !== "[]";
-          if (isNonEmptyArray || isNonEmptyContent) {
-            console.warn(
-              `[warn] config: todos.json exists and is non-empty while ${backend} backend is active`,
-            );
-          }
-        }
-      } catch {
-        // If we can't read the file, skip the check silently
-      }
-    }
-  }
-}
-
 /**
  * Create a TaskStore instance for the given config.
  *
- * - `taskStore: "json"` → JsonTaskStore backed by state/todos.json in process.cwd()
  * - `taskStore: "task-store"` → TaskStoreHttpAdapter backed by a remote HTTP service
  */
 export function createTaskStore(config: TaskStoreConfig): TaskStore {
@@ -198,11 +152,18 @@ export function createTaskStore(config: TaskStoreConfig): TaskStore {
       process.exit(1);
     }
   }
-  if ((config.taskStore as string) === "github" || (config.taskStore as string) === "jira") {
+  if (
+    (config.taskStore as string) === "github" ||
+    (config.taskStore as string) === "jira" ||
+    (config.taskStore as string) === "json"
+  ) {
     process.stderr.write(
       `error: the "${config.taskStore}" task store backend has been removed. Update your .shipwright.json to use taskStore: "task-store" and set SHIPWRIGHT_TASK_STORE_URL.\n`,
     );
     process.exit(1);
   }
-  return new JsonTaskStore(process.cwd());
+  process.stderr.write(
+    `error: unknown taskStore value: "${config.taskStore}". Expected "task-store".\n`,
+  );
+  process.exit(1);
 }

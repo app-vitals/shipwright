@@ -49,11 +49,6 @@ describe("getBackend", () => {
     }
   });
 
-  test("no config (JSON default) → returns 'json'", () => {
-    const { config } = loadConfig(isolatedDir);
-    expect(getBackend(config)).toBe("json");
-  });
-
   test("SHIPWRIGHT_TASK_STORE=task-store → returns 'task-store'", () => {
     process.env.SHIPWRIGHT_TASK_STORE = "task-store";
     process.env.SHIPWRIGHT_TASK_STORE_URL = "https://ts.example.com";
@@ -71,14 +66,5 @@ describe("getBackend", () => {
     );
     const { config } = loadConfig(isolatedDir);
     expect(getBackend(config)).toBe("task-store");
-  });
-
-  test(".shipwright.json with json backend → returns 'json'", () => {
-    writeFileSync(
-      join(isolatedDir, ".shipwright.json"),
-      JSON.stringify({ taskStore: "json" }),
-    );
-    const { config } = loadConfig(isolatedDir);
-    expect(getBackend(config)).toBe("json");
   });
 });
