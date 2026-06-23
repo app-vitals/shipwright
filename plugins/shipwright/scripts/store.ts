@@ -299,6 +299,13 @@ export interface TaskStore {
   }>;
 }
 
+// ─── TaskStoreConfig ─────────────────────────────────────────────────────────
+
+/** Configuration object passed to task-store adapters. */
+export interface TaskStoreConfig {
+  taskStoreUrl: string;
+}
+
 // ─── TaskStoreHttpClient ──────────────────────────────────────────────────────
 
 /** Minimal fetch signature used for dependency injection in tests. */
