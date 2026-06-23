@@ -34,7 +34,7 @@ tests:
           value: ["deployments"]
       - equal:
           path: rules[0].verbs
-          value: ["create", "get", "delete"]
+          value: ["create", "get", "list", "delete"]
       - equal:
           path: rules[1].apiGroups
           value: [""]
@@ -108,7 +108,7 @@ tests:
           value: ["deployments"]
       - equal:
           path: rules[0].verbs
-          value: ["create", "get", "delete"]
+          value: ["create", "get", "list", "delete"]
       - equal:
           path: rules[1].resources
           value: ["secrets"]
