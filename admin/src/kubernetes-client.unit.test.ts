@@ -10,6 +10,7 @@ import {
   NotFoundError,
 } from "./errors.ts";
 import {
+  HttpKubernetesClient,
   RecordedKubernetesClient,
   deploymentBody,
   deploymentUrl,
@@ -242,6 +243,159 @@ describe("RecordedKubernetesClient — PVCs", () => {
     });
     const fetched = await rec.getPvc("shipwright", "agent-abc-home");
     expect(fetched.metadata.name).toBe("agent-abc-home");
+  });
+});
+
+// ─── HttpKubernetesClient: patchDeployment ───────────────────────────────────
+
+describe("HttpKubernetesClient.patchDeployment()", () => {
+  const apiServer = "https://kubernetes.default.svc";
+  const namespace = "shipwright";
+  const name = "agent-abc";
+  const patch = {
+    spec: {
+      template: {
+        spec: {
+          containers: [{ name: "agent-abc", image: "ghcr.io/example/agent:v2" }],
+        },
+      },
+    },
+  };
+
+  it("sends PATCH to deploymentUrl(apiServer, namespace, name)", async () => {
+    let capturedUrl: string | undefined;
+    let capturedMethod: string | undefined;
+
+    const fetchFn = async (url: string | URL | Request, init?: RequestInit) => {
+      capturedUrl = String(url);
+      capturedMethod = init?.method;
+      return new Response(null, { status: 200 });
+    };
+
+    const client = new HttpKubernetesClient({
+      apiServer,
+      token: "test-token",
+      fetchFn: fetchFn as typeof fetch,
+    });
+
+    await client.patchDeployment(namespace, name, patch);
+
+    expect(capturedUrl).toBe(deploymentUrl(apiServer, namespace, name));
+    expect(capturedMethod).toBe("PATCH");
+  });
+
+  it("sends Content-Type: application/strategic-merge-patch+json", async () => {
+    let capturedHeaders: HeadersInit | undefined;
+
+    const fetchFn = async (_url: string | URL | Request, init?: RequestInit) => {
+      capturedHeaders = init?.headers;
+      return new Response(null, { status: 200 });
+    };
+
+    const client = new HttpKubernetesClient({
+      apiServer,
+      token: "test-token",
+      fetchFn: fetchFn as typeof fetch,
+    });
+
+    await client.patchDeployment(namespace, name, patch);
+
+    const headers = capturedHeaders as Record<string, string>;
+    expect(headers["Content-Type"]).toBe(
+      "application/strategic-merge-patch+json",
+    );
+  });
+
+  it("sends the patch object as JSON body", async () => {
+    let capturedBody: string | undefined;
+
+    const fetchFn = async (_url: string | URL | Request, init?: RequestInit) => {
+      capturedBody = init?.body as string;
+      return new Response(null, { status: 200 });
+    };
+
+    const client = new HttpKubernetesClient({
+      apiServer,
+      token: "test-token",
+      fetchFn: fetchFn as typeof fetch,
+    });
+
+    await client.patchDeployment(namespace, name, patch);
+
+    expect(capturedBody).toBe(JSON.stringify(patch));
+  });
+
+  it("throws NotFoundError on 404", async () => {
+    const fetchFn = async () =>
+      new Response(JSON.stringify({ message: "not found" }), { status: 404 });
+
+    const client = new HttpKubernetesClient({
+      apiServer,
+      token: "test-token",
+      fetchFn: fetchFn as unknown as typeof fetch,
+    });
+
+    await expect(
+      client.patchDeployment(namespace, name, patch),
+    ).rejects.toBeInstanceOf(NotFoundError);
+  });
+});
+
+// ─── RecordedKubernetesClient: patchDeployment ───────────────────────────────
+
+describe("RecordedKubernetesClient.patchDeployment()", () => {
+  const makeDeployment = (image: string) => ({
+    apiVersion: "apps/v1" as const,
+    kind: "Deployment" as const,
+    metadata: { name: "agent-abc", namespace: "shipwright" },
+    spec: {
+      replicas: 1,
+      selector: { matchLabels: { app: "agent-abc" } },
+      template: {
+        metadata: { labels: { app: "agent-abc" } },
+        spec: {
+          containers: [{ name: "agent-abc", image }],
+        },
+      },
+    },
+  });
+
+  it("updates containers[0].image from the patch payload", async () => {
+    const rec = new RecordedKubernetesClient({
+      deployments: { "shipwright/agent-abc": makeDeployment("ghcr.io/example/agent:v1") },
+      secrets: {},
+    });
+
+    await rec.patchDeployment("shipwright", "agent-abc", {
+      spec: {
+        template: {
+          spec: {
+            containers: [{ name: "agent-abc", image: "ghcr.io/example/agent:v2" }],
+          },
+        },
+      },
+    });
+
+    const dep = await rec.getDeployment("shipwright", "agent-abc");
+    expect(dep.spec.template.spec.containers[0]?.image).toBe(
+      "ghcr.io/example/agent:v2",
+    );
+  });
+
+  it("throws NotFoundError when the deployment does not exist", async () => {
+    const rec = new RecordedKubernetesClient({ deployments: {}, secrets: {} });
+
+    await expect(
+      rec.patchDeployment("shipwright", "agent-abc", {
+        spec: {
+          template: {
+            spec: {
+              containers: [{ name: "agent-abc", image: "ghcr.io/example/agent:v2" }],
+            },
+          },
+        },
+      }),
+    ).rejects.toBeInstanceOf(NotFoundError);
   });
 });
 
