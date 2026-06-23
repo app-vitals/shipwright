@@ -317,8 +317,8 @@ Setting `agent.provisioning.enabled=true` switches the admin service to the
   `PersistentVolumeClaims` (core), `Deployments` (`apps`), and `Secrets` (core)
   — exactly the verbs the provisioner exercises. The ClusterRole enables the
   admin service to provision agents in any target namespace, not just its own
-  release namespace (e.g. provisioning vitals-os agents with PVCs pinned to the
-  vitals-os namespace).
+  release namespace (e.g. provisioning agents with PVCs pinned to a custom
+  namespace).
 - A **`ClusterRoleBinding`** binding that ClusterRole to the **admin ServiceAccount**.
   The subject's namespace scopes which ServiceAccount is granted the
   cluster-wide permissions.
