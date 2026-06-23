@@ -21,7 +21,7 @@ import {
   resolveAllRepos,
   resolveWorkspacePath,
 } from "./check-helpers.ts";
-import { TaskStoreHttpClient } from "./store.ts";
+import type { Task } from "./check-helpers.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -246,18 +246,43 @@ interface GhWorkflowRunsJson {
   }>;
 }
 
-function makeStore() {
+function makeTaskStoreFetch() {
   const taskStoreUrl = (process.env.SHIPWRIGHT_TASK_STORE_URL ?? "").trim();
+  const taskStoreToken = (process.env.SHIPWRIGHT_TASK_STORE_TOKEN ?? "").trim();
   if (!taskStoreUrl) {
     process.stderr.write("error: SHIPWRIGHT_TASK_STORE_URL is required\n");
     process.exit(1);
   }
-  try {
-    return new TaskStoreHttpClient(taskStoreUrl, fetch);
-  } catch (e) {
-    process.stderr.write(`error: ${String(e)}\n`);
+  if (!taskStoreToken) {
+    process.stderr.write("error: SHIPWRIGHT_TASK_STORE_TOKEN is required\n");
     process.exit(1);
   }
+  const baseUrl = taskStoreUrl.replace(/\/$/, "");
+  const authHeaders = {
+    Authorization: `Bearer ${taskStoreToken}`,
+    "Content-Type": "application/json",
+  };
+
+  return {
+    async query(params: URLSearchParams): Promise<Task[]> {
+      const res = await fetch(`${baseUrl}/tasks?${params}`, {
+        headers: authHeaders,
+      });
+      if (!res.ok)
+        throw new Error(`task-store GET /tasks?${params} → ${res.status}`);
+      return res.json() as Promise<Task[]>;
+    },
+    async update(id: string, fields: Record<string, unknown>): Promise<Task> {
+      const res = await fetch(`${baseUrl}/tasks/${id}`, {
+        method: "PATCH",
+        headers: authHeaders,
+        body: JSON.stringify(fields),
+      });
+      if (!res.ok)
+        throw new Error(`task-store PATCH /tasks/${id} → ${res.status}`);
+      return res.json() as Promise<Task>;
+    },
+  };
 }
 
 async function buildProductionDeps(): Promise<Deps> {
@@ -323,8 +348,10 @@ async function buildProductionDeps(): Promise<Deps> {
         .map((r) => ({ status: r.status, conclusion: r.conclusion }));
     },
     reconcileStalePrOpenTasks: async () => {
-      const store = makeStore();
-      const prOpenTasks = await store.query({ status: "pr_open" });
+      const taskStore = makeTaskStoreFetch();
+      const prOpenTasks = await taskStore.query(
+        new URLSearchParams({ status: "pr_open" }),
+      );
       if (prOpenTasks.length === 0) return;
 
       const now = clock();
@@ -347,7 +374,10 @@ async function buildProductionDeps(): Promise<Deps> {
               "state",
             ]);
             if (prData.state === "MERGED") {
-              await store.update(task.id, { status: "merged", mergedAt: now });
+              await taskStore.update(task.id, {
+                status: "merged",
+                mergedAt: now,
+              });
               process.stderr.write(
                 `[check-deploy] reconciled task ${task.id} (PR #${task.pr}) → merged\n`,
               );
@@ -374,7 +404,7 @@ async function buildProductionDeps(): Promise<Deps> {
             ]);
             const first = merged[0];
             if (first !== undefined) {
-              await store.update(task.id, {
+              await taskStore.update(task.id, {
                 status: "merged",
                 pr: first.number,
                 mergedAt: now,
@@ -392,17 +422,13 @@ async function buildProductionDeps(): Promise<Deps> {
       }
     },
     cleanupStaleIssues: async () => {
-      const store = makeStore();
-      const { closed, milestonesClosed, plansClosed } = await store.cleanup();
-      if (closed > 0 || milestonesClosed > 0 || plansClosed > 0) {
-        process.stderr.write(
-          `[check-deploy] cleanup: closed ${closed} issue(s), ${plansClosed} plan(s), ${milestonesClosed} milestone(s)\n`,
-        );
-      }
+      // cleanup() is a no-op on the HTTP task store backend — nothing to do.
     },
     isBundleComplete: async (headBranch: string) => {
-      const store = makeStore();
-      const branchTasks = await store.query({ branch: headBranch });
+      const taskStore = makeTaskStoreFetch();
+      const branchTasks = await taskStore.query(
+        new URLSearchParams({ branch: headBranch }),
+      );
       const incomplete = branchTasks.filter(
         (t) =>
           t.status === "pending" ||

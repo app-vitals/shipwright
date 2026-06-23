@@ -14,7 +14,61 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import type { Task } from "./store.ts";
+
+// ─── Task types ───────────────────────────────────────────────────────────────
+
+export type TaskStatus =
+  | "pending"
+  | "in_progress"
+  | "pr_open"
+  | "approved"
+  | "merged"
+  | "done"
+  | "deploying"
+  | "deployed"
+  | "blocked"
+  | "cancelled";
+
+export interface Task {
+  id: string;
+  title: string;
+  status: TaskStatus;
+  source?: string;
+  session?: string;
+  repo?: string;
+  description?: string;
+  acceptanceCriteria?: string[];
+  layer?: string;
+  branch?: string;
+  dependencies?: string[];
+  pr?: number;
+  hours?: number;
+  addedAt?: string;
+  startedAt?: string;
+  prCreatedAt?: string;
+  mergedAt?: string;
+  blockedAt?: string;
+  blockedReason?: string;
+  note?: string;
+  type?: string;
+  priority?: string;
+  size?: string;
+  file?: string;
+  cancelledAt?: string;
+  completedAt?: string;
+  deployingAt?: string;
+  ciFixAttempts?: number;
+  mergeCommit?: string;
+  prNumber?: number;
+  prOpenedAt?: string;
+  prUrl?: string;
+  assignee?: string;
+  issue?: string;
+  model?: "haiku" | "sonnet" | "opus";
+  complexity?: number;
+  hitl?: boolean;
+  hitlNotifiedAt?: string;
+}
 
 // ─── ReviewEntry ──────────────────────────────────────────────────────────────
 
