@@ -135,11 +135,17 @@ describe("setupGitHubAuth — App path", () => {
       ],
       { stdio: "inherit", env: expectedEnv },
     );
+    // safe.directory always set unconditionally
+    expect(spawnSync).toHaveBeenCalledWith(
+      "git",
+      ["config", "--global", "safe.directory", "*"],
+      { stdio: "inherit", env: expect.any(Object) },
+    );
     // No `gh auth setup-git` invocation on the App path anymore
     for (const call of spawnSync.mock.calls) {
       expect(call[0]).not.toBe("gh");
     }
-    expect(spawnSync).toHaveBeenCalledTimes(3);
+    expect(spawnSync).toHaveBeenCalledTimes(4);
     expect(startBackgroundRefresh).toHaveBeenCalledTimes(1);
   });
 
@@ -232,7 +238,12 @@ describe("setupGitHubAuth — PAT path", () => {
 
     await setupGitHubAuth(deps);
 
-    expect(spawnSync).toHaveBeenCalledTimes(1);
+    expect(spawnSync).toHaveBeenCalledTimes(2);
+    expect(spawnSync).toHaveBeenCalledWith(
+      "git",
+      ["config", "--global", "safe.directory", "*"],
+      { stdio: "inherit", env: expect.any(Object) },
+    );
     expect(spawnSync).toHaveBeenCalledWith("gh", ["auth", "setup-git"], {
       stdio: "inherit",
       env: expect.objectContaining({ GH_TOKEN: "ghp_test_pat" }),
@@ -268,7 +279,13 @@ describe("setupGitHubAuth — no auth configured", () => {
 
     await setupGitHubAuth(deps);
 
-    expect(spawnSync).not.toHaveBeenCalled();
+    // safe.directory is set even when no auth is configured
+    expect(spawnSync).toHaveBeenCalledTimes(1);
+    expect(spawnSync).toHaveBeenCalledWith(
+      "git",
+      ["config", "--global", "safe.directory", "*"],
+      { stdio: "inherit", env: expect.any(Object) },
+    );
     expect(createTokenManager).not.toHaveBeenCalled();
     expect(getBotIdentity).not.toHaveBeenCalled();
     expect(writeToken).not.toHaveBeenCalled();
@@ -294,7 +311,13 @@ describe("setupGitHubAuth — no auth configured", () => {
 
     await setupGitHubAuth(deps);
 
-    expect(spawnSync).not.toHaveBeenCalled();
+    // safe.directory is set even with incomplete GH_APP_* vars
+    expect(spawnSync).toHaveBeenCalledTimes(1);
+    expect(spawnSync).toHaveBeenCalledWith(
+      "git",
+      ["config", "--global", "safe.directory", "*"],
+      { stdio: "inherit", env: expect.any(Object) },
+    );
     expect(createTokenManager).not.toHaveBeenCalled();
     expect(getBotIdentity).not.toHaveBeenCalled();
     expect(writeToken).not.toHaveBeenCalled();
