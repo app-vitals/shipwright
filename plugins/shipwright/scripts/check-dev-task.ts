@@ -18,6 +18,7 @@
  *   bun plugins/shipwright/scripts/check-dev-task.ts
  */
 
+import { createTaskStoreClient } from "./check-helpers.ts";
 import type { Task } from "./check-helpers.ts";
 import { type Clock, SystemClock } from "./clock.ts";
 
@@ -107,66 +108,30 @@ function resolveGhUser(): string | undefined {
 }
 
 function buildProductionDeps(): Deps {
-  const taskStoreUrl = (process.env.SHIPWRIGHT_TASK_STORE_URL ?? "").trim();
-  const taskStoreToken = (process.env.SHIPWRIGHT_TASK_STORE_TOKEN ?? "").trim();
-  if (!taskStoreUrl) {
-    process.stderr.write("error: SHIPWRIGHT_TASK_STORE_URL is required\n");
-    process.exit(1);
-  }
-  if (!taskStoreToken) {
-    process.stderr.write("error: SHIPWRIGHT_TASK_STORE_TOKEN is required\n");
-    process.exit(1);
-  }
-  const baseUrl = taskStoreUrl.replace(/\/$/, "");
-  const headers = {
-    Authorization: `Bearer ${taskStoreToken}`,
-    "Content-Type": "application/json",
-  };
-
-  async function queryTasks(params: URLSearchParams): Promise<Task[]> {
-    const res = await fetch(`${baseUrl}/tasks?${params}`, { headers });
-    if (!res.ok)
-      throw new Error(`task-store GET /tasks?${params} → ${res.status}`);
-    return res.json() as Promise<Task[]>;
-  }
-
-  async function updateTask(
-    id: string,
-    fields: Record<string, unknown>,
-  ): Promise<Task> {
-    const res = await fetch(`${baseUrl}/tasks/${id}`, {
-      method: "PATCH",
-      headers,
-      body: JSON.stringify(fields),
-    });
-    if (!res.ok)
-      throw new Error(`task-store PATCH /tasks/${id} → ${res.status}`);
-    return res.json() as Promise<Task>;
-  }
-
+  const client = createTaskStoreClient();
   const assignee = resolveGhUser();
 
   return {
     getReadyTasks: () =>
-      queryTasks(
+      client.query(
         assignee
           ? new URLSearchParams({ ready: "true", assignee })
           : new URLSearchParams({ ready: "true" }),
       ),
     getInProgressTasks: () =>
-      queryTasks(
+      client.query(
         assignee
           ? new URLSearchParams({ status: "in_progress", assignee })
           : new URLSearchParams({ status: "in_progress" }),
       ),
     getHitlPendingTasks: () =>
-      queryTasks(
+      client.query(
         assignee
           ? new URLSearchParams({ status: "pending", hitl: "true", assignee })
           : new URLSearchParams({ status: "pending", hitl: "true" }),
       ),
-    resetTask: (id) => updateTask(id, { status: "pending", startedAt: null }),
-    stampTask: (id, startedAt) => updateTask(id, { startedAt }),
+    resetTask: (id) => client.update(id, { status: "pending", startedAt: null }),
+    stampTask: (id, startedAt) => client.update(id, { startedAt }),
     clock: SystemClock(),
   };
 }
