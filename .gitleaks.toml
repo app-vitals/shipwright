@@ -12,7 +12,8 @@ useDefault = true
 [allowlist]
 description = "Known-safe test fixtures and template placeholders"
 paths = [
-    '''\.test\.ts$''',
+    '''admin/src/admin-ui\.smoke\.test\.ts''',
+    '''agent/src/cutover-validate\.integration\.test\.ts''',
 ]
 regexes = [
     '''BEGIN RSA PRIVATE KEY-----&#10;''',
