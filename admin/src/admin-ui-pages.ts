@@ -854,7 +854,12 @@ export function renderTasksPage(
   filters: { status?: string; session?: string; repo?: string },
   degraded: boolean,
   userName: string,
+  opts?: { error?: string },
 ): string {
+  const errorHtml = opts?.error
+    ? `<div class="alert alert-error">${escapeHtml(opts.error)}</div>`
+    : "";
+
   const degradedHtml = degraded
     ? `<div class="alert alert-warning">Task store unavailable — data shown may be stale or empty.</div>`
     : "";
@@ -914,6 +919,7 @@ export function renderTasksPage(
     <div class="page-header">
       <h1 class="page-title">Tasks</h1>
     </div>
+    ${errorHtml}
     ${degradedHtml}
     <div class="card" style="margin-bottom:16px">
       <form method="GET" action="/admin/tasks" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">

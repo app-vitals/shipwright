@@ -2003,4 +2003,21 @@ describe("admin UI — tasks page", () => {
     expect(res.headers.get("Location")).toBe("/admin/tasks");
     expect(released).toEqual(["task-2"]);
   });
+
+  it("POST /admin/tasks/:id/release redirects with ?error=release_failed when releaseTask throws", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async () => [],
+        releaseTask: async () => {
+          throw new Error("task store unavailable");
+        },
+      }),
+    );
+    const res = await app.request("/admin/tasks/task-2/release", {
+      method: "POST",
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/admin/tasks?error=release_failed");
+  });
 });

@@ -1446,6 +1446,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     const status = c.req.query("status") ?? undefined;
     const session = c.req.query("session") ?? undefined;
     const repo = c.req.query("repo") ?? undefined;
+    const error = c.req.query("error") ?? undefined;
 
     let tasks: TaskItem[] = [];
     let degraded = false;
@@ -1465,7 +1466,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }
 
     return html(
-      renderTasksPage(tasks, { status, session, repo }, degraded, c.var.userEmail),
+      renderTasksPage(tasks, { status, session, repo }, degraded, c.var.userEmail, error ? { error } : undefined),
     );
   });
 
@@ -1475,7 +1476,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       try {
         await releaseTask(taskId);
       } catch {
-        // best-effort — redirect back regardless
+        return c.redirect("/admin/tasks?error=release_failed", 302);
       }
     }
     return c.redirect("/admin/tasks", 302);
