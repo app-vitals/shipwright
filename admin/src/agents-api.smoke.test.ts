@@ -24,10 +24,12 @@ class RecordingProvisioner implements AgentProvisioner {
   readonly deprovisioned: string[] = [];
   reconcileResult: {
     recreated: string[];
+    updated: string[];
     orphans: string[];
     failed: Array<{ agentId: string; error: string }>;
   } = {
     recreated: [],
+    updated: [],
     orphans: [],
     failed: [],
   };
@@ -52,6 +54,7 @@ class RecordingProvisioner implements AgentProvisioner {
     _agents: Array<{ id: string; slug?: string }>,
   ): Promise<{
     recreated: string[];
+    updated: string[];
     orphans: string[];
     failed: Array<{ agentId: string; error: string }>;
   }> {
@@ -999,7 +1002,7 @@ describe("admin API — delete agent", () => {
         throw new Error("k8s API timeout");
       },
       async reconcile() {
-        return { recreated: [], orphans: [], failed: [] };
+        return { recreated: [], updated: [], orphans: [], failed: [] };
       },
     };
     const base = makeMockDeps();
@@ -1096,6 +1099,7 @@ describe("admin API — POST /agents/reconcile", () => {
     const provisioner = new RecordingProvisioner();
     provisioner.reconcileResult = {
       recreated: ["agent-abc"],
+      updated: [],
       orphans: ["agent-orphan"],
       failed: [],
     };

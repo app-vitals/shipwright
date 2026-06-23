@@ -122,6 +122,7 @@ const ReconcileCronResultSchema = z
 const ReconcileAgentsResultSchema = z
   .object({
     recreated: z.array(z.string()),
+    updated: z.array(z.string()),
     orphans: z.array(z.string()),
     failed: z.array(z.object({ agentId: z.string(), error: z.string() })),
   })
