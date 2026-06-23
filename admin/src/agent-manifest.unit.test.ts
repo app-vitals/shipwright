@@ -157,12 +157,13 @@ describe("buildAgentDeploymentManifest — voice env", () => {
   const envNames = (d: ReturnType<typeof buildAgentDeploymentManifest>) =>
     (d.spec.template.spec.containers[0].env ?? []).map((e) => e.name);
 
-  it("injects only the 3 base vars when no voice config is supplied (disabled)", () => {
+  it("injects only the 4 base vars when no voice config is supplied (disabled)", () => {
     const d = buildAgentDeploymentManifest(deployOpts);
     expect(envNames(d)).toEqual([
       "SHIPWRIGHT_AGENT_ID",
       "SHIPWRIGHT_API_URL",
       "SHIPWRIGHT_AGENT_API_KEY",
+      "AGENT_HOME",
     ]);
   });
 
@@ -214,16 +215,17 @@ describe("buildAgentDeploymentManifest — voice env", () => {
     expect(byName.get("ELEVENLABS_VOICE_ID")?.value).toBe("voice-xyz");
   });
 
-  it("keeps the base 3 vars first and appends voice vars after the token", () => {
+  it("keeps the base 4 vars first and appends voice vars after AGENT_HOME", () => {
     const d = buildAgentDeploymentManifest({
       ...deployOpts,
       voice: { whisperServiceUrl: "http://w:9000", elevenLabsApiKey: "k" },
     });
     const names = envNames(d);
-    expect(names.slice(0, 3)).toEqual([
+    expect(names.slice(0, 4)).toEqual([
       "SHIPWRIGHT_AGENT_ID",
       "SHIPWRIGHT_API_URL",
       "SHIPWRIGHT_AGENT_API_KEY",
+      "AGENT_HOME",
     ]);
     expect(names).toContain("WHISPER_SERVICE_URL");
   });

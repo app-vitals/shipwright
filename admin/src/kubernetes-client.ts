@@ -97,6 +97,7 @@ export interface KubernetesDeployment {
   };
   spec: {
     replicas: number;
+    strategy?: { type: string; [key: string]: unknown };
     selector: { matchLabels: Record<string, string> };
     template: {
       metadata: { labels: Record<string, string> };
@@ -160,6 +161,18 @@ export interface KubernetesClient {
   createDeployment(
     namespace: string,
     spec: DeploymentSpec,
+  ): Promise<KubernetesDeployment>;
+  /**
+   * Submit a full KubernetesDeployment manifest to the API server. Unlike
+   * createDeployment(), this method POSTs the manifest as-is — volumes,
+   * securityContext, ownerReferences, strategy, etc. are all preserved.
+   * Use this when the manifest is already fully shaped (e.g. via
+   * buildAgentDeploymentManifest()); use createDeployment() for simple
+   * ad-hoc deployments expressed as a DeploymentSpec.
+   */
+  createDeploymentManifest(
+    namespace: string,
+    manifest: KubernetesDeployment,
   ): Promise<KubernetesDeployment>;
   getDeployment(namespace: string, name: string): Promise<KubernetesDeployment>;
   /** Returns true if the deployment exists, false if 404, throws on other errors. */
@@ -480,6 +493,20 @@ export class HttpKubernetesClient implements KubernetesClient {
     );
   }
 
+  async createDeploymentManifest(
+    namespace: string,
+    manifest: KubernetesDeployment,
+  ): Promise<KubernetesDeployment> {
+    return this.request<KubernetesDeployment>(
+      deploymentUrl(this.apiServer, namespace),
+      {
+        method: "POST",
+        headers: this.authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify(manifest),
+      },
+    );
+  }
+
   async getDeployment(
     namespace: string,
     name: string,
@@ -614,6 +641,20 @@ export class RecordedKubernetesClient implements KubernetesClient {
     const dep = deploymentBody(namespace, spec);
     this.deployments.set(key, dep);
     return dep;
+  }
+
+  async createDeploymentManifest(
+    namespace: string,
+    manifest: KubernetesDeployment,
+  ): Promise<KubernetesDeployment> {
+    const key = RecordedKubernetesClient.key(namespace, manifest.metadata.name);
+    if (this.deployments.has(key)) {
+      throw new ConflictError(
+        `deployments.apps "${manifest.metadata.name}" already exists`,
+      );
+    }
+    this.deployments.set(key, manifest);
+    return manifest;
   }
 
   async getDeployment(
