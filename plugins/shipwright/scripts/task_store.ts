@@ -408,6 +408,12 @@ async function main(): Promise<void> {
 
   const { config, configSource } = loadConfig();
 
+  // backend is a config-level command — doesn't need the adapter
+  if (command === "backend") {
+    cmdBackend(config);
+    return;
+  }
+
   const adapter = createTaskStore(config);
 
   switch (command) {
