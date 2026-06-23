@@ -40,8 +40,6 @@ const baseOpts: AgentDeploymentOpts = {
   apiUrl: "http://shipwright-admin.shipwright.svc:3001",
   pvcName: "agent-42-home",
   secretName: "agent-42-token",
-  adminDeploymentName: "shipwright-admin",
-  adminDeploymentUid: "11112222-3333-4444-5555-666677778888",
 };
 
 /** The exact env var the agent reads for the self-hosted Whisper Service URL. */

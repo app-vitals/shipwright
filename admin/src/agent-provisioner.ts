@@ -95,10 +95,6 @@ export interface KubernetesAgentProvisionerConfig {
   imageTag: string;
   /** In-cluster admin/API base URL the agent calls home to. */
   apiUrl: string;
-  /** Admin Deployment name — ownerReference target for GC. */
-  adminDeploymentName: string;
-  /** Admin Deployment uid — ownerReference target for GC. */
-  adminDeploymentUid: string;
   /**
    * Build the PVC name for an agent from a single pre-resolved, RFC1123-safe
    * name string. When a slug is provided (via `provision(agentId, { slug })`),
@@ -232,8 +228,6 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
           pvcName: this.pvcNameFor(resourceName, opts?.slug),
           secretName,
           tokenSecretKey: this.tokenKey,
-          adminDeploymentName: this.config.adminDeploymentName,
-          adminDeploymentUid: this.config.adminDeploymentUid,
           replicas: this.config.replicas,
           voice: this.config.voice,
         }),
@@ -347,8 +341,6 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
       namespace: this.config.namespace,
       token: rawToken,
       tokenKey: this.tokenKey,
-      adminDeploymentName: this.config.adminDeploymentName,
-      adminDeploymentUid: this.config.adminDeploymentUid,
     });
     const stringData: Record<string, string> = {};
     for (const [key, value] of Object.entries(manifest.data)) {

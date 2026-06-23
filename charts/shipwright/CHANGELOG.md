@@ -10,11 +10,24 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
-## [1.6.6] - 2026-06-22
+## [1.6.8] - 2026-06-23
 
 ### Added
 
-- task-store HTTP adapter in the shipwright plugin; drop GitHub and Jira backends
+- task-store HTTP adapter in the shipwright plugin; drop GitHub and Jira backends (TSS-2.1)
+
+## [1.6.7] - 2026-06-23
+
+### Changed
+
+- auto-bump to chart v1.6.7 triggered by release tag `admin-v0.79.1`
+
+## [1.6.6] - 2026-06-23
+
+### Changed
+
+- Remove `ownerReferences` from provisioned agent Deployments, Secrets, and PVCs — ineffective cross-namespace and unsafe same-namespace (cascade-deletes all agents on admin uninstall)
+- Align provisioned agent Deployment spec with Helm-managed agents: `strategy: Recreate`, `terminationGracePeriodSeconds: 120`, `readinessProbe`, `AGENT_HOME` env var, `fsGroupChangePolicy: OnRootMismatch`, `failureThreshold: 3` on liveness probe, `containerPort` declaration
 
 ## [1.6.5] - 2026-06-23
 

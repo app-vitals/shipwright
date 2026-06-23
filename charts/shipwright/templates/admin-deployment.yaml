@@ -183,18 +183,6 @@ spec:
             # agent.provisioning.apiUrl for an external gateway.
             - name: SHIPWRIGHT_API_URL
               value: {{ .Values.agent.provisioning.apiUrl | default (printf "http://%s:%v" (include "shipwright.admin.fullname" .) .Values.admin.service.port) | quote }}
-            # Static admin Deployment name (this Deployment).
-            - name: SHIPWRIGHT_ADMIN_DEPLOYMENT_NAME
-              value: {{ include "shipwright.admin.fullname" . | quote }}
-            {{- with .Values.agent.provisioning.adminDeploymentUid }}
-            # Optional: the parent Deployment's UID is NOT exposed to its pods via
-            # the downward API (that surfaces the POD uid, not the Deployment's), so
-            # it can only come from an explicit override. Omitted when unset —
-            # ownerRef propagation through KubernetesClient is a separate follow-up
-            # (HD-1.4); a missing UID is acceptable rather than a fabricated one.
-            - name: SHIPWRIGHT_ADMIN_DEPLOYMENT_UID
-              value: {{ . | quote }}
-            {{- end }}
             {{- with .Values.agent.provisioning.pvcNameTemplate }}
             # PVC name template: when set, the provisioner substitutes {name} with
             # the agent's human-readable name (slug) to derive the PVC name. Used
