@@ -24,6 +24,7 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { sign, verify } from "hono/jwt";
 import {
+  type TaskItem,
   renderAgentDetailPage,
   renderAgentsPage,
   renderLoginPage,
@@ -31,7 +32,6 @@ import {
   renderProvisionStartPage,
   renderProvisionXappTokenPage,
   renderTasksPage,
-  type TaskItem,
 } from "./admin-ui-pages.ts";
 import type { AgentCronJobService } from "./agent-cron-jobs.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
@@ -1466,11 +1466,18 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }
 
     return html(
-      renderTasksPage(tasks, { status, session, repo }, degraded, c.var.userEmail, error ? { error } : undefined),
+      renderTasksPage(
+        tasks,
+        { status, session, repo },
+        degraded,
+        c.var.userEmail,
+        error ? { error } : undefined,
+      ),
     );
   });
 
   app.post("/admin/tasks/:id/release", requireAuth, async (c) => {
+    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
     const taskId = c.req.param("id");
     if (releaseTask) {
       try {
