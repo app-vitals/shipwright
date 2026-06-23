@@ -7,7 +7,7 @@ import { describe, expect, it } from "bun:test";
 import { buildAgentManifest } from "./slack-provisioning-client.ts";
 
 const NAME = "test-agent";
-const REDIRECT = "https://shipwright.vitals-os.com/admin/provision/complete";
+const REDIRECT = "https://shipwright.example.com/admin/provision/complete";
 
 describe("buildAgentManifest", () => {
   describe("buildAgentManifest without redirectUri (unit)", () => {
