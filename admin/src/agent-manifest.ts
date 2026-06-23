@@ -266,6 +266,9 @@ export function buildAgentDeploymentManifest(
     },
     spec: {
       replicas: opts.replicas ?? 1,
+      // Recreate: Slack Socket Mode allows only one active connection per token.
+      // RollingUpdate would briefly create a second pod that fights for the socket.
+      strategy: { type: "Recreate" },
       selector: { matchLabels: selectorLabels },
       template: {
         metadata: { labels: selectorLabels },
@@ -275,6 +278,9 @@ export function buildAgentDeploymentManifest(
             runAsNonRoot: true,
             runAsUser: AGENT_RUN_AS,
           },
+          // 120s grace period mirrors the Helm-managed agent template and gives
+          // the agent time to finish an in-flight Claude response before SIGKILL.
+          terminationGracePeriodSeconds: 120,
           volumes: [
             {
               name: volumeName,
@@ -294,8 +300,10 @@ export function buildAgentDeploymentManifest(
                     secretKeyRef: { name: opts.secretName, key: tokenKey },
                   },
                 },
+                // Tell the agent where its persistent home directory is mounted.
+                { name: "AGENT_HOME", value: AGENT_HOME_MOUNT_PATH },
                 // Voice (STT/TTS) env — appended only for the keys that are set
-                // (none when voice is disabled, preserving the 3 base vars).
+                // (none when voice is disabled, preserving the 4 base vars).
                 ...voiceEnvEntries(opts.voice),
               ],
               volumeMounts: [
@@ -305,6 +313,12 @@ export function buildAgentDeploymentManifest(
                 httpGet: { path: "/health", port: AGENT_HEALTH_PORT },
                 initialDelaySeconds: 10,
                 periodSeconds: 15,
+              },
+              readinessProbe: {
+                httpGet: { path: "/health", port: AGENT_HEALTH_PORT },
+                initialDelaySeconds: 10,
+                periodSeconds: 10,
+                failureThreshold: 3,
               },
               securityContext: {
                 runAsNonRoot: true,

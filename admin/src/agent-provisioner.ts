@@ -32,7 +32,6 @@ import {
 import type { AgentTokenService } from "./agent-tokens.ts";
 import { ConflictError, NotFoundError } from "./errors.ts";
 import type {
-  DeploymentSpec,
   KubernetesClient,
   PvcSpec,
   SecretSpec,
@@ -222,9 +221,22 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
     //    roll the Secret back (best-effort) so a retry starts clean and never
     //    leaks a half-provisioned state. The PVC is NOT rolled back (data safety).
     try {
-      await this.k8s.createDeployment(
+      await this.k8s.createDeploymentManifest(
         this.config.namespace,
-        this.deploymentSpec(agentId, resourceName, secretName, opts?.slug),
+        buildAgentDeploymentManifest({
+          agentId,
+          namespace: this.config.namespace,
+          image: this.config.image,
+          imageTag: this.config.imageTag,
+          apiUrl: this.config.apiUrl,
+          pvcName: this.pvcNameFor(resourceName, opts?.slug),
+          secretName,
+          tokenSecretKey: this.tokenKey,
+          adminDeploymentName: this.config.adminDeploymentName,
+          adminDeploymentUid: this.config.adminDeploymentUid,
+          replicas: this.config.replicas,
+          voice: this.config.voice,
+        }),
       );
     } catch (err) {
       if (isConflict(err)) {
@@ -343,40 +355,6 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
       stringData[key] = Buffer.from(value, "base64").toString("utf-8");
     }
     return { name: manifest.metadata.name, stringData };
-  }
-
-  private deploymentSpec(
-    agentId: string,
-    resourceName: string,
-    secretName: string,
-    slug?: string,
-  ): DeploymentSpec {
-    const manifest = buildAgentDeploymentManifest({
-      agentId,
-      namespace: this.config.namespace,
-      image: this.config.image,
-      imageTag: this.config.imageTag,
-      apiUrl: this.config.apiUrl,
-      pvcName: this.pvcNameFor(resourceName, slug),
-      secretName,
-      tokenSecretKey: this.tokenKey,
-      adminDeploymentName: this.config.adminDeploymentName,
-      adminDeploymentUid: this.config.adminDeploymentUid,
-      replicas: this.config.replicas,
-      voice: this.config.voice,
-    });
-    const container = manifest.spec.template.spec.containers[0];
-    // Pull the env entries directly from the manifest so the Deployment spec
-    // faithfully reflects what the pure builder produced — including the
-    // SHIPWRIGHT_AGENT_API_KEY valueFrom/secretKeyRef entry that cannot be
-    // expressed in the plain `env: Record<string, string>` map.
-    return {
-      name: resourceName,
-      image: container.image,
-      replicas: manifest.spec.replicas,
-      labels: manifest.spec.selector.matchLabels,
-      envVars: container.env,
-    };
   }
 
   private async deleteSecretBestEffort(name: string): Promise<void> {
