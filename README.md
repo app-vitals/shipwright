@@ -18,6 +18,8 @@
 
 ## Install
 
+> 🚧 **Not yet ready for general installation.** The plugin (Phase A) is still being built. The command below will work once Phase A ships — follow the [`shipwright-oss` milestone](https://github.com/app-vitals/shipwright/milestones) for progress.
+
 ```text
 /plugin install shipwright@app-vitals/shipwright
 ```
@@ -57,6 +59,39 @@ Set up Shipwright Harness locally and open the metrics dashboard.
 Step 1 runs in your **terminal**; step 2 is a slash command that runs **inside the Claude Code session**. The dashboard comes up at <http://localhost:3460/dashboard>.
 
 Prerequisites: [Claude Code](https://www.anthropic.com/claude-code), [git](https://git-scm.com/downloads), [Bun](https://bun.sh), and [go-task](https://taskfile.dev/installation/). Full details, the `QUICKSTART_SKIP_SERVE` CI guard, and the offline-default explanation live in [`docs/quickstart.md`](./docs/quickstart.md).
+
+**Full dev stack**
+
+Want the complete local stack — metrics dashboard, admin UI, task-store, and the Shipwright agent running in Docker? This requires [tmux](https://github.com/tmux/tmux), [Docker](https://docs.docker.com/get-docker/), and a local [PostgreSQL](https://www.postgresql.org/) instance (port 5432). Paste this into a **Claude Code** session:
+
+```text
+Set up the full Shipwright Harness dev stack locally.
+
+Prerequisites: tmux, Docker, PostgreSQL running on localhost:5432, Bun, go-task.
+
+1. In a terminal, clone and set up:
+     git clone https://github.com/app-vitals/shipwright.git && cd shipwright && task setup
+
+2. Copy the env example and add your auth token:
+     cp state/dev-agent.env.example state/dev-agent.env
+   Open state/dev-agent.env and set one of:
+     CLAUDE_CODE_OAUTH_TOKEN=<your token>   (run: claude /oauth-token)
+     ANTHROPIC_API_KEY=<your key>           (https://console.anthropic.com/ → API Keys)
+
+3. Launch the full stack (6-pane tmux session):
+     task stack
+
+   This opens a tmux session named "shipwright" with 6 panes:
+     metrics (:3460)  admin (:3001)  task-store (:3002)  agent (:3000)  chat  logs
+
+4. Open the dashboard in your browser:
+     http://localhost:3460/dashboard
+
+5. (Coming soon — Phase A not yet ready for general use) Inside a Claude Code session:
+     /plugin install shipwright@app-vitals/shipwright
+
+To stop: tmux kill-session -t shipwright
+```
 
 ## What is Shipwright Harness?
 
@@ -116,10 +151,10 @@ The metrics dashboard is runnable locally today — the [Quickstart](#quickstart
 task setup      # bun install
 task api        # start metrics dashboard in offline mode → http://localhost:3460/dashboard
 task dev        # dev supervisor: starts metrics + Ctrl-C kills all children
-task stack      # full dev stack in a tmux session (4 panes) — requires tmux
+task stack      # full dev stack in a tmux session (6 panes) — requires tmux
 ```
 
-`task stack` brings up a single tmux session (`shipwright`) with a 4-pane dashboard: **metrics** (offline SQLite, :3460), the **agent** with the dev `/chat` endpoint enabled (:3000), the **chat** REPL, and a scratch **logs** shell. It runs a Prisma `migrate deploy` preflight first so the agent's local SQLite DB exists, then a chat message drives real agent work whose events surface on the local dashboard. `task stack` requires `tmux`; if it isn't installed, use `task dev` (the no-tmux fallback that starts the metrics dashboard).
+`task stack` brings up a single tmux session (`shipwright`) with a 6-pane dashboard: **metrics** (SQLite, :3460), **admin** (CRUD API + UI, :3001), **task-store** (:3002), the **agent** with the dev `/chat` endpoint enabled (:3000), the **chat** REPL, and a scratch **logs** shell. It runs a Prisma `migrate deploy` preflight first so the admin service's Postgres schema is up to date; on macOS the preflight checks Postgres is reachable and offers to run the needed `brew`/`createdb` commands if it isn't. `task stack` requires `tmux`; if it isn't installed, use `task dev` (the no-tmux fallback that starts the metrics dashboard).
 
 See [`docs/quickstart.md`](./docs/quickstart.md) for the full onboarding prompt and offline-default behavior.
 
