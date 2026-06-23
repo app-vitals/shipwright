@@ -36,6 +36,7 @@ import type {
   PvcSpec,
   SecretSpec,
 } from "./kubernetes-client.ts";
+import type { TaskStoreProvisioningClient } from "./task-store-provisioning-client.ts";
 
 // ─── Interface ──────────────────────────────────────────────────────────────
 
@@ -120,6 +121,22 @@ export interface KubernetesAgentProvisionerConfig {
    * Whisper Service URL). Omitted/empty → voice disabled (no voice env injected).
    */
   voice?: AgentVoiceEnv;
+  /**
+   * When set, the provisioner will mint a per-agent task-store token on
+   * provision() and store it in the agent Secret under "task-store-token".
+   * The Deployment manifest will include SHIPWRIGHT_TASK_STORE_TOKEN (from the
+   * Secret) and SHIPWRIGHT_TASK_STORE_URL (from taskStoreUrl). On rollback,
+   * the minted token is revoked via revokeToken().
+   *
+   * Omit to skip task-store wiring (for agents that don't need it or when
+   * SHIPWRIGHT_TASK_STORE_URL / SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN are not set).
+   */
+  taskStore?: TaskStoreProvisioningClient;
+  /**
+   * In-cluster base URL of the task-store service. Injected into the agent
+   * Deployment as SHIPWRIGHT_TASK_STORE_URL. Required when taskStore is set.
+   */
+  taskStoreUrl?: string;
 }
 
 function isConflict(err: unknown): boolean {
@@ -195,27 +212,54 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
       if (!isNotFound(err)) throw err;
     }
 
-    if (!secretAlreadyExists) {
-      const { rawToken } = await this.tokens.create(agentId, "k8s-provision");
-      result.rawToken = rawToken;
+    // Track the task-store token minted in THIS call so we can revoke it on
+    // rollback. Only set when config.taskStore is provided and we actually minted.
+    let tsTokenId: string | undefined;
 
-      // 3. Secret — must exist before the Deployment that references it.
-      //    A 409 here is unexpected (we just confirmed it was absent), but treat
-      //    it as already-present and continue to the Deployment step.
-      try {
-        await this.k8s.createSecret(
-          this.config.namespace,
-          this.secretSpec(secretName, rawToken),
-        );
-        secretCreated = true;
-      } catch (err) {
-        if (!isConflict(err)) throw err;
+    if (!secretAlreadyExists) {
+      // Mint task-store token before creating the Secret so it can be included
+      // in the same Secret write (atomic from the agent's perspective).
+      if (this.config.taskStore) {
+        const { id, rawToken: tsRawToken } =
+          await this.config.taskStore.mintToken(`agent:${agentId}`);
+        tsTokenId = id;
+        // tsRawToken is passed to secretSpec below
+        const { rawToken } = await this.tokens.create(agentId, "k8s-provision");
+        result.rawToken = rawToken;
+
+        // 3. Secret — includes both the agent API token and the task-store token.
+        try {
+          await this.k8s.createSecret(
+            this.config.namespace,
+            this.secretSpec(secretName, rawToken, tsRawToken),
+          );
+          secretCreated = true;
+        } catch (err) {
+          if (!isConflict(err)) throw err;
+        }
+      } else {
+        const { rawToken } = await this.tokens.create(agentId, "k8s-provision");
+        result.rawToken = rawToken;
+
+        // 3. Secret — must exist before the Deployment that references it.
+        //    A 409 here is unexpected (we just confirmed it was absent), but treat
+        //    it as already-present and continue to the Deployment step.
+        try {
+          await this.k8s.createSecret(
+            this.config.namespace,
+            this.secretSpec(secretName, rawToken),
+          );
+          secretCreated = true;
+        } catch (err) {
+          if (!isConflict(err)) throw err;
+        }
       }
     }
 
     // 4. Deployment. If creation fails AFTER we created the Secret in THIS call,
     //    roll the Secret back (best-effort) so a retry starts clean and never
     //    leaks a half-provisioned state. The PVC is NOT rolled back (data safety).
+    //    Also revoke any task-store token minted in THIS call on the same path.
     try {
       await this.k8s.createDeploymentManifest(
         this.config.namespace,
@@ -230,6 +274,7 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
           tokenSecretKey: this.tokenKey,
           replicas: this.config.replicas,
           voice: this.config.voice,
+          taskStoreUrl: this.config.taskStoreUrl,
         }),
       );
     } catch (err) {
@@ -240,11 +285,13 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
         // never leak it. Only ever delete a Secret THIS call created.
         if (secretCreated) {
           await this.deleteSecretBestEffort(secretName);
+          await this.revokeTaskStoreTokenBestEffort(tsTokenId);
         }
         return result;
       }
       if (secretCreated) {
         await this.deleteSecretBestEffort(secretName);
+        await this.revokeTaskStoreTokenBestEffort(tsTokenId);
       }
       throw err;
     }
@@ -331,7 +378,11 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
     };
   }
 
-  private secretSpec(secretName: string, rawToken: string): SecretSpec {
+  private secretSpec(
+    secretName: string,
+    rawToken: string,
+    taskStoreToken?: string,
+  ): SecretSpec {
     // The pure builder is the single source of truth for the Secret body (name,
     // token key, base64 encoding). Derive the KubernetesClient SecretSpec from
     // its output so the builder actually drives the secret — decoding `data`
@@ -346,7 +397,26 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
     for (const [key, value] of Object.entries(manifest.data)) {
       stringData[key] = Buffer.from(value, "base64").toString("utf-8");
     }
+    // When a task-store token was minted for this agent, include it in the same
+    // Secret so a single Secret holds all per-agent credentials.
+    if (taskStoreToken !== undefined) {
+      stringData["task-store-token"] = taskStoreToken;
+    }
     return { name: manifest.metadata.name, stringData };
+  }
+
+  private async revokeTaskStoreTokenBestEffort(
+    tsTokenId: string | undefined,
+  ): Promise<void> {
+    if (!tsTokenId || !this.config.taskStore) return;
+    try {
+      await this.config.taskStore.revokeToken(tsTokenId);
+    } catch {
+      // Best-effort — log but don't propagate so the original error surfaces.
+      console.warn(
+        `[provisioner] failed to revoke task-store token ${tsTokenId} during rollback`,
+      );
+    }
   }
 
   private async deleteSecretBestEffort(name: string): Promise<void> {

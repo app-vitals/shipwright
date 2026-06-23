@@ -150,6 +150,17 @@ export interface AgentDeploymentOpts {
    * env contract (agent/src/config.ts).
    */
   voice?: AgentVoiceEnv;
+  /**
+   * When set, inject SHIPWRIGHT_TASK_STORE_TOKEN (via secretKeyRef from the
+   * agent Secret) and SHIPWRIGHT_TASK_STORE_URL (as a plain value) into the
+   * agent Deployment. Placed after AGENT_HOME and before voice env vars.
+   */
+  taskStoreUrl?: string;
+  /**
+   * Key within the agent Secret under which the task-store token is stored.
+   * Defaults to "task-store-token".
+   */
+  taskStoreTokenSecretKey?: string;
 }
 
 /**
@@ -194,6 +205,31 @@ function voiceEnvEntries(
     entries.push({ name: "ELEVENLABS_VOICE_ID", value: voice.voiceId });
   }
   return entries;
+}
+
+/**
+ * Build task-store env entries when taskStoreUrl is configured. Returns two
+ * entries: SHIPWRIGHT_TASK_STORE_TOKEN (secretKeyRef from the agent Secret)
+ * and SHIPWRIGHT_TASK_STORE_URL (plain value). Returns an empty array when
+ * taskStoreUrl is absent (task-store wiring disabled).
+ */
+function taskStoreEnvEntries(
+  opts: AgentDeploymentOpts,
+): { name: string; value?: string; valueFrom?: unknown }[] {
+  if (!opts.taskStoreUrl) return [];
+  const tsKey = opts.taskStoreTokenSecretKey ?? "task-store-token";
+  return [
+    {
+      name: "SHIPWRIGHT_TASK_STORE_TOKEN",
+      valueFrom: {
+        secretKeyRef: { name: opts.secretName, key: tsKey },
+      },
+    },
+    {
+      name: "SHIPWRIGHT_TASK_STORE_URL",
+      value: opts.taskStoreUrl,
+    },
+  ];
 }
 
 export function buildAgentDeploymentManifest(
@@ -265,6 +301,9 @@ export function buildAgentDeploymentManifest(
                 },
                 // Tell the agent where its persistent home directory is mounted.
                 { name: "AGENT_HOME", value: AGENT_HOME_MOUNT_PATH },
+                // Task-store env — injected after AGENT_HOME when task-store is
+                // configured; omitted entirely when taskStoreUrl is absent.
+                ...taskStoreEnvEntries(opts),
                 // Voice (STT/TTS) env — appended only for the keys that are set
                 // (none when voice is disabled, preserving the 4 base vars).
                 ...voiceEnvEntries(opts.voice),

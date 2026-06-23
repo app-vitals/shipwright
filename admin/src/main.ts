@@ -36,6 +36,7 @@ import { isDevAuthAllowed } from "./dev-auth-guard.ts";
 import { HttpGoogleAuthClient } from "./google-auth-client.ts";
 import { HttpKubernetesClient } from "./kubernetes-client.ts";
 import { HttpSlackProvisioningClient } from "./slack-provisioning-client.ts";
+import { HttpTaskStoreProvisioningClient } from "./task-store-provisioning-client.ts";
 import { makeTokenCrypto } from "./token-crypto.ts";
 
 // ─── Migration preflight ──────────────────────────────────────────────────────
@@ -129,6 +130,13 @@ function buildProvisioner(
     ...(env.ELEVENLABS_VOICE_ID ? { voiceId: env.ELEVENLABS_VOICE_ID } : {}),
   };
 
+  const taskStoreUrl = env.SHIPWRIGHT_TASK_STORE_URL;
+  const taskStoreAdminToken = env.SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN;
+  const taskStore =
+    taskStoreUrl && taskStoreAdminToken
+      ? new HttpTaskStoreProvisioningClient(taskStoreUrl, taskStoreAdminToken)
+      : undefined;
+
   const k8s = new HttpKubernetesClient();
 
   return new KubernetesAgentProvisioner(k8s, agentTokenService, {
@@ -152,6 +160,10 @@ function buildProvisioner(
           pvcName: (name: string) => pvcNameTemplate.replace("{name}", name),
         }
       : {}),
+    // Task-store token minting: when both SHIPWRIGHT_TASK_STORE_URL and
+    // SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN are set, mint a per-agent token on
+    // provision and inject it into the agent Secret + Deployment.
+    ...(taskStore ? { taskStore, taskStoreUrl } : {}),
   });
 }
 

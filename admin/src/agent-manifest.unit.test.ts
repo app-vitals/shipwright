@@ -417,3 +417,68 @@ describe("sanitizeAgentName", () => {
     expect(sanitizeAgentName("agent_42")).toBe(sanitizeAgentName("agent_42"));
   });
 });
+
+// ─── task-store env injection ───────────────────────────────────────────────
+
+describe("buildAgentDeploymentManifest — task-store env", () => {
+  it("injects SHIPWRIGHT_TASK_STORE_TOKEN and SHIPWRIGHT_TASK_STORE_URL when taskStoreUrl is set", () => {
+    const d = buildAgentDeploymentManifest({
+      ...deployOpts,
+      taskStoreUrl: "http://task-store.svc:4000",
+    });
+    const env = d.spec.template.spec.containers[0].env ?? [];
+    const byName = new Map(env.map((e) => [e.name, e]));
+
+    const tokenEnv = byName.get("SHIPWRIGHT_TASK_STORE_TOKEN");
+    expect(tokenEnv).toBeDefined();
+    expect(tokenEnv?.value).toBeUndefined();
+    expect(tokenEnv?.valueFrom?.secretKeyRef).toEqual({
+      name: deployOpts.secretName,
+      key: "task-store-token",
+    });
+
+    const urlEnv = byName.get("SHIPWRIGHT_TASK_STORE_URL");
+    expect(urlEnv).toBeDefined();
+    expect(urlEnv?.value).toBe("http://task-store.svc:4000");
+  });
+
+  it("does not inject task-store env vars when taskStoreUrl is absent", () => {
+    const d = buildAgentDeploymentManifest(deployOpts);
+    const env = d.spec.template.spec.containers[0].env ?? [];
+    const names = env.map((e) => e.name);
+    expect(names).not.toContain("SHIPWRIGHT_TASK_STORE_TOKEN");
+    expect(names).not.toContain("SHIPWRIGHT_TASK_STORE_URL");
+  });
+
+  it("honours a custom taskStoreTokenSecretKey when provided", () => {
+    const d = buildAgentDeploymentManifest({
+      ...deployOpts,
+      taskStoreUrl: "http://task-store.svc:4000",
+      taskStoreTokenSecretKey: "my-ts-token",
+    });
+    const env = d.spec.template.spec.containers[0].env ?? [];
+    const tokenEnv = env.find((e) => e.name === "SHIPWRIGHT_TASK_STORE_TOKEN");
+    expect(tokenEnv?.valueFrom?.secretKeyRef?.key).toBe("my-ts-token");
+  });
+
+  it("places task-store env vars AFTER AGENT_HOME and BEFORE voice env vars", () => {
+    const d = buildAgentDeploymentManifest({
+      ...deployOpts,
+      taskStoreUrl: "http://task-store.svc:4000",
+      voice: { whisperServiceUrl: "http://w:9000" },
+    });
+    const names = (d.spec.template.spec.containers[0].env ?? []).map(
+      (e) => e.name,
+    );
+    const agentHomeIdx = names.indexOf("AGENT_HOME");
+    const tsTokenIdx = names.indexOf("SHIPWRIGHT_TASK_STORE_TOKEN");
+    const tsUrlIdx = names.indexOf("SHIPWRIGHT_TASK_STORE_URL");
+    const whisperIdx = names.indexOf("WHISPER_SERVICE_URL");
+
+    expect(agentHomeIdx).toBeGreaterThanOrEqual(0);
+    expect(tsTokenIdx).toBeGreaterThan(agentHomeIdx);
+    expect(tsUrlIdx).toBeGreaterThan(agentHomeIdx);
+    expect(whisperIdx).toBeGreaterThan(tsUrlIdx);
+    expect(whisperIdx).toBeGreaterThan(tsTokenIdx);
+  });
+});
