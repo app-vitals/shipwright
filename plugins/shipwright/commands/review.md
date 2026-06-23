@@ -18,7 +18,7 @@ agents — each agent maintains its own.
 Parse `$ARGUMENTS`:
 - `org/repo#number` (e.g. `app-vitals/shipwright#123`): target a specific PR. If a staged
   review exists in `state/reviews.json`, post it. Otherwise, review it.
-- `number` or `#number`: same, using the first repo from `task_store.ts repos`
+- `number` or `#number`: same, using the repo from the task store API
 - No arguments: normal review flow — find the next PR to review from the queue
 
 ---
@@ -104,8 +104,8 @@ processed or skipped, continue to Step 3b.
 If `review_external_prs` is true, resolve the configured repos and fetch open PRs for each:
 
 ```bash
-PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | awk -F/ '{print $(NF-2), $0}' | sort -V | tail -1 | cut -d' ' -f2- | xargs dirname 2>/dev/null)
-REPOS=$(bun "$PLUGIN_SCRIPTS/task_store.ts" repos)
+REPOS=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/repo" | jq -r '.repo // empty')
 ```
 
 ```bash
@@ -118,9 +118,14 @@ Exclude:
 - PRs where `author.login == CURRENT_USER` and `allow_self_review` is false
 - PRs where `author.login == "app/dependabot"` — handled exclusively by the dependabot-review plugin
 
-When a PR is checked out for review, also search `state/todos.json` for a task whose `pr`
+When a PR is checked out for review, also query the task store for a task whose `pr`
 field matches the PR number — if found, record the `id` and `session` for metrics enrichment
-in Steps 12 and 13.
+in Steps 12 and 13:
+
+```bash
+curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?pr=$PR_NUMBER" | jq '.[0] // empty'
+```
 
 ### Deduplication and Filtering
 
@@ -557,13 +562,13 @@ Update the entry for this PR:
 
 Write `state/reviews.json`.
 
-**Never update `state/todos.json` task status when posting a review.** The deploy skill looks up tasks in todos.json by PR number (expecting `status: 'pr_open'`) to perform post-deployment tracking — changing status here breaks that linkage. Task status transitions in todos are owned by the deploy skill (`pr_open` → `deployed`).
+**Never update task status when posting a review.** The deploy skill looks up tasks by PR number (expecting `status: 'pr_open'`) to perform post-deployment tracking — changing status here breaks that linkage. Task status transitions are owned by the deploy skill (`pr_open` → `deployed`).
 
 ---
 
 ## Step 13: Enrich Metrics (if shipwright task)
 
-If the PR maps to a task in `state/todos.json` (via `taskId`):
+If the PR maps to a task in the task store (via `taskId`):
 
 1. Find the task's planning folder: `planning/{session}/`
 2. Read `planning/{session}/metrics.jsonl`
@@ -579,7 +584,7 @@ If the PR maps to a task in `state/todos.json` (via `taskId`):
    - `findings_count`: integer count of findings (for backward compat — consumers that read `review.findings` as an integer should use this field instead)
 
    **Review latency** (`review_latency_h`):
-   - Read the task's `prCreatedAt` field from its entry in `state/todos.json`
+   - Read the task's `prCreatedAt` field from the task store
    - Compute: `(Date.now() - Date.parse(prCreatedAt)) / 3600000` — float, hours from PR creation to verdict
    - If `prCreatedAt` is missing or unparseable, omit `review_latency_h`
 
@@ -636,8 +641,8 @@ When invoked with a specific PR (e.g. `/shipwright:review app-vitals/shipwright#
 1. Parse the argument: extract `org`, `repo`, and `pr` number. For bare numbers,
    infer `org/repo` via:
    ```bash
-   PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | awk -F/ '{print $(NF-2), $0}' | sort -V | tail -1 | cut -d' ' -f2- | xargs dirname 2>/dev/null)
-   bun "$PLUGIN_SCRIPTS/task_store.ts" repos | head -1
+   curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+     "$SHIPWRIGHT_TASK_STORE_URL/tasks/repo" | jq -r '.repo // empty'
    ```
    Fall back to the current workspace repo if the command fails.
 2. Read `state/reviews.json`, find the entry for this PR.

@@ -849,7 +849,7 @@ Run these across ALL scenarios to verify genericization:
 - [ ] Handoff line is `NEXT: /plan-session {detected-repo} april-2026-notifications` (two args, no `{repo}` placeholder literal)
 - [ ] Handoff includes the "⚠ Do NOT skip /plan-session" block
 - [ ] Running the printed handoff command succeeds (reads the spec)
-- [ ] Resulting `state/todos.json` entries all have `repo` populated with the detected value
+- [ ] Resulting task store entries all have `repo` populated with the detected value
 
 ---
 

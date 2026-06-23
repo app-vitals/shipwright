@@ -34,8 +34,8 @@ FROM oven/bun:1-slim AS base
 #   - jq           — bash JSON parsing in the time-tracking Claude Code hooks
 #   - build-essential / libssl-dev / pkg-config — native + Rust toolchain so the
 #     agent can build client code at runtime (e.g. Rust projects + OpenSSL crates).
-#     Mirrors the vitals-os runtime image. (voice deps — python/edge-tts/ffmpeg —
-#     deliberately omitted; voice is not deployed on the Shipwright harness yet.)
+#     (voice deps — python/edge-tts/ffmpeg — deliberately omitted; voice is not
+#     deployed on the Shipwright harness yet.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     curl \
@@ -60,7 +60,7 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 # non-root runtime user can invoke it).
 RUN curl https://mise.run | MISE_INSTALL_PATH=/usr/local/bin/mise sh
 
-# Install Node.js + Claude Code CLI system-wide (as root), matching vitals-os.
+# Install Node.js + Claude Code CLI system-wide (as root) on /usr/bin.
 # claude is a plain binary on PATH (/usr/bin/claude) backed by system node — it is
 # NOT a mise shim, so its resolution never depends on the active mise/workspace
 # context (which is what broke the previous mise-reshim approach: "claude is not a

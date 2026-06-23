@@ -90,12 +90,14 @@ If it doesn't, skip this step.
 
 For any module that has no corresponding doc (identified by scanning for modules without a `docs/{module}.md` counterpart among the changed source files):
 
-Do NOT generate the doc automatically. Instead, write a follow-on task via `task_store.ts append`:
+Do NOT generate the doc automatically. Instead, write a follow-on task via the task store API:
 
 ```bash
-PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | awk -F/ '{print $(NF-2), $0}' | sort -V | tail -1 | cut -d' ' -f2- | xargs dirname 2>/dev/null)
-# Write task JSON to temp file, then:
-bun "$PLUGIN_SCRIPTS/task_store.ts" append --file /tmp/missing-docs-tasks.json
+curl -sf -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/bulk" \
+  --data-binary @/tmp/missing-docs-tasks.json | jq .
 ```
 
 Each missing module produces one task with: `title: "Document {module} module"`, `layer: "CLI"`, `session: "docs-freshness-cron"`.

@@ -21,8 +21,8 @@ Follow all steps in order.
 5. Query task_store for live statuses:
 
 ```bash
-PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | awk -F/ '{print $(NF-2), $0}' | sort -V | tail -1 | cut -d' ' -f2- | xargs dirname 2>/dev/null)
-bun "$PLUGIN_SCRIPTS/task_store.ts" query --session $ARGUMENTS
+curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?session=$ARGUMENTS" | jq .
 ```
 
 If the result is a non-empty JSON array, use these live statuses to build the status summary:
@@ -134,7 +134,7 @@ Tasks updated: {count}
 
 AVAILABLE TASKS
 ───────────────
-{Run: bun "$PLUGIN_SCRIPTS/task_store.ts" query --ready --session $ARGUMENTS
+{Run: curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" "$SHIPWRIGHT_TASK_STORE_URL/tasks?ready=true&session=$ARGUMENTS" | jq .
 If this returns tasks, list those. If empty (pre-task-store doc), fall back to listing [ ] tasks with all deps satisfied from the Appendix.}
 - {PREFIX-N.M}: {task title} ({hours}h)
 

@@ -63,7 +63,7 @@ from a local status field.
 | `title` | string | PR title |
 | `author` | string | PR author login |
 | `branch` | string | Head branch name |
-| `taskId` | string \| null | Shipwright task ID if from todos.json |
+| `taskId` | string \| null | Shipwright task ID (from the task store) |
 | `session` | string \| null | Shipwright session slug |
 | `additions` | number | Lines added at time of discovery |
 | `deletions` | number | Lines deleted at time of discovery |

@@ -3,11 +3,9 @@
 The task store exposes one object type — the **Task**. This is the **backend-agnostic**
 contract: the same shape whether the backend is GitHub Issues, Jira, or the local JSON file.
 
-> **Operate the store only through `task_store.ts` (`query` / `update` / `append`).**
-> The `Task` below is the contract you read and write; *how* it is persisted — a local file,
-> GitHub issues, Jira — is the backend's business, not yours. Editing the underlying storage
-> directly bypasses validation, the status-label↔body sync, and the backend abstraction, and
-> is the most common way tasks get corrupted or orphaned.
+> **Operate the store only through the HTTP API** (`GET/POST/PATCH /tasks`).
+> The `Task` below is the contract you read and write; *how* it is persisted is the
+> backend's business. Never edit the underlying storage directly.
 
 ## Fields
 
@@ -73,4 +71,4 @@ absent — set them in the **same `update`** that changes status:
 | → `pr_open` | `pr` (or `prUrl`) **and** `prCreatedAt` |
 | `pr_open` → `approved` / `merged` | `ciFixAttempts` |
 
-The exact `update --set …` invocations for each transition are in `SKILL.md` (Standard lifecycle).
+The exact `PATCH` invocations for each transition are in `SKILL.md` (Standard lifecycle).

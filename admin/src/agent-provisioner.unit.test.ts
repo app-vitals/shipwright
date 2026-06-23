@@ -115,7 +115,7 @@ describe("KubernetesAgentProvisioner.provision() — templated PVC naming", () =
 
     const config: KubernetesAgentProvisionerConfig = {
       ...BASE_CONFIG,
-      pvcName: (name) => `vitals-os-agent-${name}-home`,
+      pvcName: (name) => `acme-agent-${name}-home`,
     };
 
     const k8s = emptyClient();
@@ -129,24 +129,24 @@ describe("KubernetesAgentProvisioner.provision() — templated PVC naming", () =
 
     // PVC must use the slug, not the sanitized agentId
     await expect(
-      k8s.getPvc(NAMESPACE, "vitals-os-agent-okwow-home"),
+      k8s.getPvc(NAMESPACE, "acme-agent-okwow-home"),
     ).resolves.toBeDefined();
 
     // The default name must NOT exist
     const resourceName = sanitizeAgentName(agentId);
     await expect(
-      k8s.getPvc(NAMESPACE, `vitals-os-agent-${resourceName}-home`),
+      k8s.getPvc(NAMESPACE, `acme-agent-${resourceName}-home`),
     ).rejects.toThrow();
   });
 
   it("Deployment is created alongside the template-derived PVC", async () => {
     const agentId = "cmqalfjcm000m4101iharq28k";
     const slug = "okwow";
-    const expectedPvcName = "vitals-os-agent-okwow-home";
+    const expectedPvcName = "acme-agent-okwow-home";
 
     const config: KubernetesAgentProvisionerConfig = {
       ...BASE_CONFIG,
-      pvcName: (name) => `vitals-os-agent-${name}-home`,
+      pvcName: (name) => `acme-agent-${name}-home`,
     };
 
     const k8s = emptyClient();
@@ -369,7 +369,7 @@ describe("KubernetesAgentProvisioner.reconcile() — template respected", () => 
     const config: KubernetesAgentProvisionerConfig = {
       ...BASE_CONFIG,
       // Template with no slug falls back to resourceName (resolved by pvcNameFor)
-      pvcName: (name) => `vitals-os-agent-${name}-home`,
+      pvcName: (name) => `acme-agent-${name}-home`,
     };
 
     const k8s = emptyClient();
@@ -387,7 +387,7 @@ describe("KubernetesAgentProvisioner.reconcile() — template respected", () => 
 
     // PVC was created using the template (with resourceName as fallback for slug)
     const resourceName = sanitizeAgentName(agentId);
-    const expectedPvcName = `vitals-os-agent-${resourceName}-home`;
+    const expectedPvcName = `acme-agent-${resourceName}-home`;
     await expect(k8s.getPvc(NAMESPACE, expectedPvcName)).resolves.toBeDefined();
   });
 });

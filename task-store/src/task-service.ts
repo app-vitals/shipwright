@@ -23,6 +23,8 @@ export interface TaskListFilters {
   session?: string;
   assignee?: string;
   claimedBy?: string;
+  pr?: number;
+  branch?: string;
 }
 
 /** The subset of TaskService the routes depend on. */
@@ -31,6 +33,7 @@ export interface TaskServiceLike {
   listReady(): Promise<Task[]>;
   get(id: string): Promise<Task | null>;
   create(data: Prisma.TaskCreateInput): Promise<Task>;
+  bulk(tasks: Prisma.TaskCreateInput[]): Promise<{ inserted: number; updated: number }>;
   update(id: string, data: Prisma.TaskUpdateInput): Promise<Task>;
   remove(id: string): Promise<void>;
   claim(id: string, claimedBy: string): Promise<Task>;
@@ -54,6 +57,8 @@ export class TaskService implements TaskServiceLike {
     if (filters.session) where.session = filters.session;
     if (filters.assignee) where.assignee = filters.assignee;
     if (filters.claimedBy) where.claimedBy = filters.claimedBy;
+    if (filters.pr !== undefined) where.pr = filters.pr;
+    if (filters.branch !== undefined) where.branch = filters.branch;
     return this.prisma.task.findMany({
       where,
       orderBy: { createdAt: "asc" },
@@ -80,6 +85,30 @@ export class TaskService implements TaskServiceLike {
 
   async create(data: Prisma.TaskCreateInput): Promise<Task> {
     return this.prisma.task.create({ data });
+  }
+
+  async bulk(
+    tasks: Prisma.TaskCreateInput[],
+  ): Promise<{ inserted: number; updated: number }> {
+    let inserted = 0;
+    for (const task of tasks) {
+      try {
+        await this.prisma.task.create({ data: task });
+        inserted++;
+      } catch (err: unknown) {
+        // P2002 = unique constraint violation (id already exists) — skip silently
+        if (
+          typeof err === "object" &&
+          err !== null &&
+          "code" in err &&
+          (err as { code: string }).code === "P2002"
+        ) {
+          continue;
+        }
+        throw err;
+      }
+    }
+    return { inserted, updated: 0 };
   }
 
   async update(id: string, data: Prisma.TaskUpdateInput): Promise<Task> {

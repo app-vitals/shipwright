@@ -32,29 +32,28 @@ Example: /shipwright:hitl HIT-3.1
 
 ## Step 2: Load Task
 
-Resolve the task store script and query by ID:
+Query the task store by ID:
 
 ```bash
-PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | awk -F/ '{print $(NF-2), $0}' | sort -V | tail -1 | cut -d' ' -f2- | xargs dirname 2>/dev/null)
-TASK_JSON=$(bun "$PLUGIN_SCRIPTS/task_store.ts" query --id "$TASK_ID" 2>/dev/null)
+TASK_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID")
 ```
 
-If `TASK_JSON` is empty, an error, or an empty array (`[]`), print and stop:
+If `TASK_JSON` is empty or an error, print and stop:
 ```
 ✗ Task not found: {TASK_ID}
   Check the ID and try again, or run the task store query manually:
-  bun "$PLUGIN_SCRIPTS/task_store.ts" query --id {TASK_ID}
+  curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" "$SHIPWRIGHT_TASK_STORE_URL/tasks/{TASK_ID}"
 ```
 
-Extract fields from the first result:
+Extract fields:
 
 ```bash
-TASK_TITLE=$(echo "$TASK_JSON" | jq -r '.[0].title // empty')
-TASK_DESC=$(echo "$TASK_JSON" | jq -r '.[0].description // empty')
-TASK_STATUS=$(echo "$TASK_JSON" | jq -r '.[0].status // empty')
-TASK_HITL=$(echo "$TASK_JSON" | jq -r '.[0].hitl // empty')
-TASK_LAYER=$(echo "$TASK_JSON" | jq -r '.[0].layer // empty')
-TASK_AC=$(echo "$TASK_JSON" | jq -r '.[0].acceptanceCriteria // empty | if type == "array" then .[] else . end')
+TASK_TITLE=$(echo "$TASK_JSON" | jq -r '.title // empty')
+TASK_DESC=$(echo "$TASK_JSON" | jq -r '.description // empty')
+TASK_STATUS=$(echo "$TASK_JSON" | jq -r '.status // empty')
+TASK_HITL=$(echo "$TASK_JSON" | jq -r '.hitl // empty')
+TASK_LAYER=$(echo "$TASK_JSON" | jq -r '.layer // empty')
+TASK_AC=$(echo "$TASK_JSON" | jq -r '.acceptanceCriteria // empty | if type == "array" then .[] else . end')
 ```
 
 ---
@@ -142,9 +141,11 @@ When the human confirms the task is complete (e.g. says "done", "finished", "all
 
 ```bash
 COMPLETED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-bun "$PLUGIN_SCRIPTS/task_store.ts" update --id "$TASK_ID" \
-  --set status=done \
-  --set completedAt="$COMPLETED_AT"
+curl -sf -X PATCH \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
+  -d "{\"status\": \"done\", \"completedAt\": \"$COMPLETED_AT\"}" | jq .
 ```
 
 Print:

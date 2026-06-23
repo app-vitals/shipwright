@@ -382,19 +382,19 @@ describeOrSkip("KubernetesAgentProvisioner (integration)", () => {
     const k8s = emptyClient();
     const provisioner = new KubernetesAgentProvisioner(k8s, tokens, {
       ...CONFIG,
-      pvcName: (name) => `vitals-os-agent-${name}-home`,
+      pvcName: (name) => `acme-agent-${name}-home`,
     });
 
     await provisioner.provision(agentId, { slug: "okwow" });
 
     // PVC must use the slug, not the sanitized agentId.
     await expect(
-      k8s.getPvc(NAMESPACE, "vitals-os-agent-okwow-home"),
+      k8s.getPvc(NAMESPACE, "acme-agent-okwow-home"),
     ).resolves.toBeDefined();
     // Default-named PVC must NOT exist.
     const resourceName = sanitizeAgentName(agentId);
     await expect(
-      k8s.getPvc(NAMESPACE, `vitals-os-agent-${resourceName}-home`),
+      k8s.getPvc(NAMESPACE, `acme-agent-${resourceName}-home`),
     ).rejects.toThrow();
   });
 
@@ -404,7 +404,7 @@ describeOrSkip("KubernetesAgentProvisioner (integration)", () => {
     const resourceName = sanitizeAgentName(agentId);
     const provisioner = new KubernetesAgentProvisioner(k8s, tokens, {
       ...CONFIG,
-      pvcName: (name) => `vitals-os-agent-${name}-home`,
+      pvcName: (name) => `acme-agent-${name}-home`,
     });
 
     // Call provision() with no opts — slug is absent.
@@ -412,7 +412,7 @@ describeOrSkip("KubernetesAgentProvisioner (integration)", () => {
 
     // PVC must use the sanitized resourceName (not a slug).
     await expect(
-      k8s.getPvc(NAMESPACE, `vitals-os-agent-${resourceName}-home`),
+      k8s.getPvc(NAMESPACE, `acme-agent-${resourceName}-home`),
     ).resolves.toBeDefined();
   });
 
@@ -421,7 +421,7 @@ describeOrSkip("KubernetesAgentProvisioner (integration)", () => {
     const k8s = emptyClient();
     const provisioner = new KubernetesAgentProvisioner(k8s, tokens, {
       ...CONFIG,
-      pvcName: (name) => `vitals-os-agent-${name}-home`,
+      pvcName: (name) => `acme-agent-${name}-home`,
     });
 
     // slug contains uppercase and spaces — must be RFC1123 sanitized.
@@ -430,11 +430,11 @@ describeOrSkip("KubernetesAgentProvisioner (integration)", () => {
     // sanitizeAgentName("My Agent") → "my-agent-<hash>" (lossy path → hash suffix)
     const sanitized = sanitizeAgentName("My Agent");
     await expect(
-      k8s.getPvc(NAMESPACE, `vitals-os-agent-${sanitized}-home`),
+      k8s.getPvc(NAMESPACE, `acme-agent-${sanitized}-home`),
     ).resolves.toBeDefined();
     // Raw unsanitized PVC name must NOT exist.
     await expect(
-      k8s.getPvc(NAMESPACE, "vitals-os-agent-My Agent-home"),
+      k8s.getPvc(NAMESPACE, "acme-agent-My Agent-home"),
     ).rejects.toThrow();
   });
 
@@ -443,7 +443,7 @@ describeOrSkip("KubernetesAgentProvisioner (integration)", () => {
     const k8s = emptyClient();
     const provisioner = new KubernetesAgentProvisioner(k8s, tokens, {
       ...CONFIG,
-      pvcName: (name) => `vitals-os-agent-${name}-home`,
+      pvcName: (name) => `acme-agent-${name}-home`,
     });
 
     // Agent exists in DB, no k8s Deployment — reconcile should provision it.
@@ -454,7 +454,7 @@ describeOrSkip("KubernetesAgentProvisioner (integration)", () => {
     expect(result.recreated).toEqual([agentId]);
     // PVC must use the slug passed through reconcile.
     await expect(
-      k8s.getPvc(NAMESPACE, "vitals-os-agent-okwow-home"),
+      k8s.getPvc(NAMESPACE, "acme-agent-okwow-home"),
     ).resolves.toBeDefined();
   });
 
