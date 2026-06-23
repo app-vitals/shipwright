@@ -51,7 +51,7 @@ Mounted at `/agents/*` (unified with the runtime API surface). Auth: **admin key
 | Agents | `POST /agents` (admin-only: creates agent, returns `{id, name, slackId, createdAt}` with `201`) |
 | Envs | `POST` / `GET` / `PATCH` `/agents/:id/envs`, `DELETE /agents/:id/envs/:key` |
 | Crons | `POST` `/agents/:id/crons`, `PATCH` / `DELETE` `/agents/:id/crons/:cronId`, `POST /agents/:id/crons/reconcile` |
-| Reconciliation | `POST /agents/reconcile` (admin-only: reconciles K8s Deployments against all known agents; returns `{recreated: string[], orphans: string[]}`) |
+| Reconciliation | `POST /agents/reconcile` (admin-only: reconciles K8s Deployments against all known agents; returns `{recreated: string[], updated: string[], orphans: string[], failed: Array<{agentId, error}>}`) |
 | Tools | `POST` / `GET` `/agents/:id/tools`, `PATCH` / `DELETE` `/agents/:id/tools/:toolId` |
 | Tokens | `POST` / `GET` `/agents/:id/tokens`, `DELETE /agents/:id/tokens/:tokenId` |
 | Plugins | `POST` / `GET` / `PATCH` `/agents/:id/plugins`, `DELETE /agents/:id/plugins` |

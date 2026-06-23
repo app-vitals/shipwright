@@ -67,6 +67,8 @@ export interface ReconcileResult {
    * non-empty `failed` arrays.
    */
   failed: Array<{ agentId: string; error: string }>;
+  /** Agent IDs whose Deployments were stale and have been patched to the current image. */
+  updated: string[];
 }
 
 export interface AgentProvisioner {
@@ -320,12 +322,14 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
     }
 
     const recreated: string[] = [];
+    const updated: string[] = [];
     const orphans: string[] = [];
     const failed: Array<{ agentId: string; error: string }> = [];
 
     // Recreate Deployments that should exist but are missing in k8s.
-    // Each provision() call is wrapped in try/catch so a single transient K8s
-    // error does not abort the loop — the remaining agents are always checked.
+    // For Deployments that already exist, check whether the image is stale and
+    // patch it if so. Each operation is wrapped in try/catch so a single transient
+    // K8s error does not abort the loop — the remaining agents are always checked.
     for (const [resourceName, agent] of expectedNames) {
       if (!k8sNameSet.has(resourceName)) {
         // provision() is idempotent — it handles ConflictError on Secret/Deployment.
@@ -347,6 +351,40 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
             error: err instanceof Error ? err.message : String(err),
           });
         }
+      } else {
+        // Deployment already exists — check for a stale image and patch if needed.
+        try {
+          const deployment = await this.k8s.getDeployment(
+            this.config.namespace,
+            resourceName,
+          );
+          const currentImage =
+            deployment.spec.template.spec.containers[0]?.image;
+          const desiredImage = `${this.config.image}:${this.config.imageTag}`;
+          if (currentImage !== desiredImage) {
+            await this.k8s.patchDeployment(
+              this.config.namespace,
+              resourceName,
+              {
+                spec: {
+                  template: {
+                    spec: {
+                      containers: [
+                        { name: "shipwright-agent", image: desiredImage },
+                      ],
+                    },
+                  },
+                },
+              },
+            );
+            updated.push(agent.id);
+          }
+        } catch (err) {
+          failed.push({
+            agentId: agent.id,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
       }
     }
 
@@ -357,7 +395,7 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
       }
     }
 
-    return { recreated, orphans, failed };
+    return { recreated, updated, orphans, failed };
   }
 
   // ─── Spec derivation (via the pure manifest builders) ─────────────────────
@@ -454,6 +492,6 @@ export class NoopAgentProvisioner implements AgentProvisioner {
   async reconcile(
     _agents: Array<{ id: string; slug?: string }>,
   ): Promise<ReconcileResult> {
-    return { recreated: [], orphans: [], failed: [] };
+    return { recreated: [], updated: [], orphans: [], failed: [] };
   }
 }

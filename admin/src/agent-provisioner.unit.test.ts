@@ -15,7 +15,10 @@ import {
 } from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 import { ConflictError } from "./errors.ts";
-import { RecordedKubernetesClient } from "./kubernetes-client.ts";
+import {
+  type KubernetesClient,
+  RecordedKubernetesClient,
+} from "./kubernetes-client.ts";
 import type { TaskStoreProvisioningClient } from "./task-store-provisioning-client.ts";
 
 const NAMESPACE = "shipwright";
@@ -167,6 +170,196 @@ describe("KubernetesAgentProvisioner.provision() — templated PVC naming", () =
     await expect(
       k8s.getDeployment(NAMESPACE, resourceName),
     ).resolves.toBeDefined();
+  });
+});
+
+// ─── AC 2b: Reconcile image-update detection ──────────────────────────────────
+
+describe("KubernetesAgentProvisioner.reconcile() — image-update detection", () => {
+  it("patches a stale image and adds agent to updated[]", async () => {
+    const agentId = "cmqalfjcm000m4101iharq28k";
+    const resourceName = sanitizeAgentName(agentId);
+
+    // Pre-seed a deployment with a stale image tag.
+    const k8s = new RecordedKubernetesClient({
+      deployments: {
+        [`${NAMESPACE}/${resourceName}`]: {
+          apiVersion: "apps/v1",
+          kind: "Deployment",
+          metadata: { name: resourceName, namespace: NAMESPACE },
+          spec: {
+            replicas: 1,
+            selector: { matchLabels: { app: resourceName } },
+            template: {
+              metadata: { labels: { app: resourceName } },
+              spec: {
+                containers: [
+                  {
+                    name: "shipwright-agent",
+                    image: "ghcr.io/app-vitals/shipwright-agent:v0.9.0", // stale
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+      secrets: {},
+      pvcs: {},
+    });
+
+    const provisioner = new KubernetesAgentProvisioner(
+      k8s,
+      stubTokens() as AgentTokenService,
+      BASE_CONFIG, // imageTag: "v1.0.0"
+    );
+
+    const result = await provisioner.reconcile([{ id: agentId }]);
+
+    expect(result.updated).toEqual([agentId]);
+    expect(result.recreated).toEqual([]);
+    expect(result.failed).toEqual([]);
+
+    // Verify image was actually patched in the recorded client.
+    const dep = await k8s.getDeployment(NAMESPACE, resourceName);
+    expect(dep.spec.template.spec.containers[0].image).toBe(
+      "ghcr.io/app-vitals/shipwright-agent:v1.0.0",
+    );
+  });
+
+  it("skips patch when image is already up-to-date", async () => {
+    const agentId = "cmqalfjcm000m4101iharq28k";
+    const resourceName = sanitizeAgentName(agentId);
+
+    let patchCalled = false;
+    const recorded = new RecordedKubernetesClient({
+      deployments: {
+        [`${NAMESPACE}/${resourceName}`]: {
+          apiVersion: "apps/v1",
+          kind: "Deployment",
+          metadata: { name: resourceName, namespace: NAMESPACE },
+          spec: {
+            replicas: 1,
+            selector: { matchLabels: { app: resourceName } },
+            template: {
+              metadata: { labels: { app: resourceName } },
+              spec: {
+                containers: [
+                  {
+                    name: "shipwright-agent",
+                    // Matches BASE_CONFIG: image:imageTag
+                    image: "ghcr.io/app-vitals/shipwright-agent:v1.0.0",
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+      secrets: {},
+      pvcs: {},
+    });
+
+    // Build a full KubernetesClient that delegates everything to `recorded`
+    // but intercepts patchDeployment to track whether it was called.
+    const spied: KubernetesClient = {
+      createDeployment: (ns, spec) => recorded.createDeployment(ns, spec),
+      createDeploymentManifest: (ns, manifest) =>
+        recorded.createDeploymentManifest(ns, manifest),
+      getDeployment: (ns, name) => recorded.getDeployment(ns, name),
+      deploymentExists: (ns, name) => recorded.deploymentExists(ns, name),
+      listDeployments: (ns, sel) => recorded.listDeployments(ns, sel),
+      deleteDeployment: (ns, name) => recorded.deleteDeployment(ns, name),
+      patchDeployment: async (ns, name, patch) => {
+        patchCalled = true;
+        return recorded.patchDeployment(ns, name, patch);
+      },
+      createSecret: (ns, spec) => recorded.createSecret(ns, spec),
+      getSecret: (ns, name) => recorded.getSecret(ns, name),
+      deleteSecret: (ns, name) => recorded.deleteSecret(ns, name),
+      createPvc: (ns, spec) => recorded.createPvc(ns, spec),
+      getPvc: (ns, name) => recorded.getPvc(ns, name),
+      deletePvc: (ns, name) => recorded.deletePvc(ns, name),
+    };
+
+    const provisioner = new KubernetesAgentProvisioner(
+      spied,
+      stubTokens() as AgentTokenService,
+      BASE_CONFIG,
+    );
+
+    const result = await provisioner.reconcile([{ id: agentId }]);
+
+    expect(result.updated).toEqual([]);
+    expect(result.recreated).toEqual([]);
+    expect(result.failed).toEqual([]);
+    expect(patchCalled).toBe(false);
+  });
+
+  it("adds agent to failed[] (not updated[]) when patchDeployment throws", async () => {
+    const agentId = "cmqalfjcm000m4101iharq28k";
+    const resourceName = sanitizeAgentName(agentId);
+
+    const recorded = new RecordedKubernetesClient({
+      deployments: {
+        [`${NAMESPACE}/${resourceName}`]: {
+          apiVersion: "apps/v1",
+          kind: "Deployment",
+          metadata: { name: resourceName, namespace: NAMESPACE },
+          spec: {
+            replicas: 1,
+            selector: { matchLabels: { app: resourceName } },
+            template: {
+              metadata: { labels: { app: resourceName } },
+              spec: {
+                containers: [
+                  {
+                    name: "shipwright-agent",
+                    image: "ghcr.io/app-vitals/shipwright-agent:v0.9.0", // stale
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+      secrets: {},
+      pvcs: {},
+    });
+
+    // Full KubernetesClient that delegates everything except patchDeployment.
+    const failing: KubernetesClient = {
+      createDeployment: (ns, spec) => recorded.createDeployment(ns, spec),
+      createDeploymentManifest: (ns, manifest) =>
+        recorded.createDeploymentManifest(ns, manifest),
+      getDeployment: (ns, name) => recorded.getDeployment(ns, name),
+      deploymentExists: (ns, name) => recorded.deploymentExists(ns, name),
+      listDeployments: (ns, sel) => recorded.listDeployments(ns, sel),
+      deleteDeployment: (ns, name) => recorded.deleteDeployment(ns, name),
+      patchDeployment: async (_ns, _name, _patch) => {
+        throw new Error("patch failed: server error");
+      },
+      createSecret: (ns, spec) => recorded.createSecret(ns, spec),
+      getSecret: (ns, name) => recorded.getSecret(ns, name),
+      deleteSecret: (ns, name) => recorded.deleteSecret(ns, name),
+      createPvc: (ns, spec) => recorded.createPvc(ns, spec),
+      getPvc: (ns, name) => recorded.getPvc(ns, name),
+      deletePvc: (ns, name) => recorded.deletePvc(ns, name),
+    };
+
+    const provisioner = new KubernetesAgentProvisioner(
+      failing,
+      stubTokens() as AgentTokenService,
+      BASE_CONFIG,
+    );
+
+    const result = await provisioner.reconcile([{ id: agentId }]);
+
+    expect(result.updated).toEqual([]);
+    expect(result.recreated).toEqual([]);
+    expect(result.failed).toEqual([
+      { agentId, error: "patch failed: server error" },
+    ]);
   });
 });
 
