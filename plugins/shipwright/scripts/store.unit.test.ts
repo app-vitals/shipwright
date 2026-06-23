@@ -27,7 +27,12 @@ import { resolveReadyTasks } from "./store.ts";
 //     "pr_open" | "approved" | "merged" → satisfied
 //
 function depSatisfied(dep: Task, candidateBranch: string | undefined): boolean {
-  if (dep.status === "merged" || dep.status === "done" || dep.status === "cancelled") return true;
+  if (
+    dep.status === "merged" ||
+    dep.status === "done" ||
+    dep.status === "cancelled"
+  )
+    return true;
   if (
     dep.branch &&
     dep.branch === candidateBranch &&
@@ -216,66 +221,21 @@ describe("TaskStoreConfig type", () => {
     expect(cfg.taskStore).toBe("json");
   });
 
-  test("github backend config is valid", () => {
+  test("task-store backend config is valid with taskStoreUrl", () => {
     const cfg: TaskStoreConfig = {
-      taskStore: "github",
-      github: {
-        owner: "app-vitals",
-        repo: "example-repo",
-      },
+      taskStore: "task-store",
+      taskStoreUrl: "https://ts.example.com",
     };
-    expect(cfg.taskStore).toBe("github");
-    expect(cfg.github?.owner).toBe("app-vitals");
+    expect(cfg.taskStore).toBe("task-store");
+    expect(cfg.taskStoreUrl).toBe("https://ts.example.com");
   });
 
-  test("github config with only owner and repo", () => {
+  test("task-store backend config without taskStoreUrl is valid (resolved from env)", () => {
     const cfg: TaskStoreConfig = {
-      taskStore: "github",
-      github: {
-        owner: "danmcaulay",
-        repo: "my-repo",
-      },
+      taskStore: "task-store",
     };
-    expect(cfg.github?.repo).toBe("my-repo");
-  });
-
-  test("jira backend config is valid with required fields", () => {
-    const cfg: TaskStoreConfig = {
-      taskStore: "jira",
-      jira: {
-        baseUrl: "https://example.atlassian.net",
-        projectKey: "SHIP",
-      },
-    };
-    expect(cfg.taskStore).toBe("jira");
-    expect(cfg.jira?.baseUrl).toBe("https://example.atlassian.net");
-    expect(cfg.jira?.projectKey).toBe("SHIP");
-  });
-
-  test("jira backend config accepts optional readyJql and statusMap", () => {
-    const cfg: TaskStoreConfig = {
-      taskStore: "jira",
-      jira: {
-        baseUrl: "https://example.atlassian.net",
-        projectKey: "SHIP",
-        readyJql: 'status = "Ready for Dev"',
-        statusMap: { "In Progress": "in_progress", Done: "merged" },
-      },
-    };
-    expect(cfg.jira?.readyJql).toBe('status = "Ready for Dev"');
-    expect(cfg.jira?.statusMap?.Done).toBe("merged");
-  });
-
-  test("jira backend config without optional fields is valid", () => {
-    const cfg: TaskStoreConfig = {
-      taskStore: "jira",
-      jira: {
-        baseUrl: "https://acme.atlassian.net",
-        projectKey: "ACME",
-      },
-    };
-    expect(cfg.jira?.readyJql).toBeUndefined();
-    expect(cfg.jira?.statusMap).toBeUndefined();
+    expect(cfg.taskStore).toBe("task-store");
+    expect(cfg.taskStoreUrl).toBeUndefined();
   });
 });
 

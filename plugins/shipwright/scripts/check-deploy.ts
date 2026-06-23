@@ -100,7 +100,10 @@ function hasSelfApproveReview(reviews: GhReview[], userLogin: string): boolean {
       r.author.login === userLogin &&
       // Strip leading markdown bold markers (**) before checking — the review
       // skill posts "**APPROVE**" but the body must still be treated as APPROVE.
-      r.body.trimStart().replace(/^\*+/, "").startsWith("APPROVE"),
+      r.body
+        .trimStart()
+        .replace(/^\*+/, "")
+        .startsWith("APPROVE"),
   );
 }
 
@@ -194,7 +197,9 @@ export async function run(deps: Deps): Promise<RunResult> {
         if (!isCiGreen(ciRuns)) continue;
 
         if (deps.isBundleComplete) {
-          const bundleComplete = await deps.isBundleComplete(pr.headRefName).catch(() => true);
+          const bundleComplete = await deps
+            .isBundleComplete(pr.headRefName)
+            .catch(() => true);
           if (!bundleComplete) continue;
         }
 
@@ -264,7 +269,11 @@ async function buildProductionDeps(): Promise<Deps> {
       ]);
       return [...inProgress.workflow_runs, ...queued.workflow_runs]
         .filter((r) => r.name === "Deploy")
-        .map((r) => ({ name: r.name, status: r.status, createdAt: r.created_at }));
+        .map((r) => ({
+          name: r.name,
+          status: r.status,
+          createdAt: r.created_at,
+        }));
     },
     listOpenPrs: async (repo: string) => {
       return ghJson<GhPrListJson[]>([
@@ -383,10 +392,11 @@ async function buildProductionDeps(): Promise<Deps> {
       const { config } = loadConfig();
       const store = createTaskStore(config);
       const branchTasks = await store.query({ branch: headBranch });
-      const incomplete = branchTasks.filter((t) =>
-        t.status === "pending" ||
-        t.status === "in_progress" ||
-        t.status === "blocked",
+      const incomplete = branchTasks.filter(
+        (t) =>
+          t.status === "pending" ||
+          t.status === "in_progress" ||
+          t.status === "blocked",
       );
       return incomplete.length === 0;
     },

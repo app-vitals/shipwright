@@ -41,7 +41,9 @@ describe("checkDuplicateIds", () => {
       { id: "T-1", title: "Task 1 copy 2", status: "pending" },
     ];
     const result = checkDuplicateIds(tasks);
-    const failure = result.find((r) => r.level === "fail" && r.message.includes("T-1"));
+    const failure = result.find(
+      (r) => r.level === "fail" && r.message.includes("T-1"),
+    );
     expect(failure).toBeDefined();
     expect(failure?.message).toContain("3");
   });
@@ -146,7 +148,12 @@ describe("checkDanglingDeps", () => {
 
   test("returns fail with check='dangling-deps'", () => {
     const tasks: Task[] = [
-      { id: "T-1", title: "Task 1", status: "pending", dependencies: ["UNKNOWN"] },
+      {
+        id: "T-1",
+        title: "Task 1",
+        status: "pending",
+        dependencies: ["UNKNOWN"],
+      },
     ];
     const allKnownIds = new Set(["T-1"]);
     const result = checkDanglingDeps(tasks, allKnownIds);

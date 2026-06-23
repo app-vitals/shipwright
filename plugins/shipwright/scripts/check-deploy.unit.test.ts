@@ -427,7 +427,9 @@ describe("check-deploy (new behaviors)", () => {
       makeDeps({
         prs: { "acme/example-repo": [pr] },
         ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
-        isBundleComplete: async (_branch: string) => { throw new Error("task store unavailable"); },
+        isBundleComplete: async (_branch: string) => {
+          throw new Error("task store unavailable");
+        },
       }),
     );
     expect(result.exit).toBe(0);

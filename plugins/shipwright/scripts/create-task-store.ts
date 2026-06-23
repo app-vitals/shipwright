@@ -17,9 +17,8 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { GitHubTaskStore } from "./adapters/github";
-import { JiraTaskStore } from "./adapters/jira";
 import { JsonTaskStore } from "./adapters/json";
+import { TaskStoreHttpAdapter } from "./adapters/task-store";
 import type { TaskStore, TaskStoreConfig } from "./store";
 
 // ─── Config loading ───────────────────────────────────────────────────────────
@@ -87,24 +86,9 @@ function readConfigFile(cfgPath: string): TaskStoreConfig {
 export function loadConfig(cwd: string = process.cwd()): LoadedConfig {
   // Step 0: check SHIPWRIGHT_TASK_STORE env var — takes full precedence
   const taskStoreEnv = (process.env.SHIPWRIGHT_TASK_STORE ?? "").trim();
-  if (taskStoreEnv === "github") {
-    const owner = process.env.SHIPWRIGHT_GITHUB_OWNER;
-    const repo = process.env.SHIPWRIGHT_GITHUB_REPO;
-    // Include github sub-config only when both vars are present; otherwise let
-    // createTaskStore surface the missing-fields error at instantiation time.
-    const config: TaskStoreConfig =
-      owner !== undefined && repo !== undefined
-        ? { taskStore: "github", github: { owner, repo } }
-        : { taskStore: "github" };
-    return { config, configSource: "env" };
-  }
-  if (taskStoreEnv === "jira") {
-    const baseUrl = process.env.JIRA_BASE_URL ?? "";
-    const projectKey = process.env.JIRA_PROJECT_KEY ?? "";
-    const config: TaskStoreConfig = {
-      taskStore: "jira",
-      jira: { baseUrl, projectKey },
-    };
+  if (taskStoreEnv === "task-store") {
+    const taskStoreUrl = process.env.SHIPWRIGHT_TASK_STORE_URL ?? "";
+    const config: TaskStoreConfig = { taskStore: "task-store", taskStoreUrl };
     return { config, configSource: "env" };
   }
   if (taskStoreEnv === "json") {
@@ -112,7 +96,7 @@ export function loadConfig(cwd: string = process.cwd()): LoadedConfig {
   }
   if (taskStoreEnv !== "") {
     process.stderr.write(
-      `warning: unrecognized SHIPWRIGHT_TASK_STORE value: "${taskStoreEnv}" — expected github, jira, or json. Falling through to file config.\n`,
+      `warning: unrecognized SHIPWRIGHT_TASK_STORE value: "${taskStoreEnv}" — expected task-store or json. Falling through to file config.\n`,
     );
   }
 
@@ -159,7 +143,7 @@ export function doctorCheck(
     console.log(`config: ${configSource}`);
   }
 
-  // For non-JSON backends (github, jira), check for a coexisting non-empty todos.json
+  // For non-JSON backends (task-store), check for a coexisting non-empty todos.json
   if (backend !== "json") {
     const todosPath = join(cwd, "state", "todos.json");
     if (existsSync(todosPath)) {
@@ -193,28 +177,22 @@ export function doctorCheck(
  * Create a TaskStore instance for the given config.
  *
  * - `taskStore: "json"` → JsonTaskStore backed by state/todos.json in process.cwd()
- * - `taskStore: "github"` → GitHubTaskStore backed by GitHub Issues via gh CLI
- * - `taskStore: "jira"` → JiraTaskStore backed by Jira REST API v3
+ * - `taskStore: "task-store"` → TaskStoreHttpAdapter backed by a remote HTTP service
  */
 export function createTaskStore(config: TaskStoreConfig): TaskStore {
-  if (config.taskStore === "github") {
-    if (!config.github) {
+  if (config.taskStore === "task-store") {
+    const taskStoreUrl =
+      (config as { taskStoreUrl?: string }).taskStoreUrl ??
+      process.env.SHIPWRIGHT_TASK_STORE_URL ??
+      "";
+    if (!taskStoreUrl) {
       process.stderr.write(
-        "error: github.owner and github.repo are required when taskStore is 'github'\n",
-      );
-      process.exit(1);
-    }
-    return new GitHubTaskStore(config);
-  }
-  if (config.taskStore === "jira") {
-    if (!config.jira?.baseUrl || !config.jira?.projectKey) {
-      process.stderr.write(
-        "error: jira.baseUrl and jira.projectKey are required when taskStore is 'jira'\n",
+        "error: taskStoreUrl is required when taskStore is 'task-store' (or set SHIPWRIGHT_TASK_STORE_URL)\n",
       );
       process.exit(1);
     }
     try {
-      return new JiraTaskStore(config, fetch);
+      return new TaskStoreHttpAdapter({ ...config, taskStoreUrl }, fetch);
     } catch (e) {
       process.stderr.write(`error: ${String(e)}\n`);
       process.exit(1);

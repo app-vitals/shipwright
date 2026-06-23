@@ -333,7 +333,12 @@ describe("JsonTaskStore", () => {
     test("--branch filters by branch (returns only matching tasks)", async () => {
       writeTodos([
         { id: "T-1", title: "On branch", status: "pending", branch: "feat/x" },
-        { id: "T-2", title: "Other branch", status: "pending", branch: "feat/y" },
+        {
+          id: "T-2",
+          title: "Other branch",
+          status: "pending",
+          branch: "feat/y",
+        },
         { id: "T-3", title: "No branch", status: "pending" },
       ]);
       const adapter = new JsonTaskStore(tmpDir);
@@ -344,7 +349,12 @@ describe("JsonTaskStore", () => {
 
     test("--branch returns empty when no tasks match", async () => {
       writeTodos([
-        { id: "T-1", title: "On branch", status: "pending", branch: "feat/other" },
+        {
+          id: "T-1",
+          title: "On branch",
+          status: "pending",
+          branch: "feat/other",
+        },
       ]);
       const adapter = new JsonTaskStore(tmpDir);
       const results = await adapter.query({ branch: "feat/x" });
@@ -354,11 +364,24 @@ describe("JsonTaskStore", () => {
     test("--branch can be combined with --status", async () => {
       writeTodos([
         { id: "T-1", title: "Match both", status: "pending", branch: "feat/x" },
-        { id: "T-2", title: "Right branch wrong status", status: "in_progress", branch: "feat/x" },
-        { id: "T-3", title: "Wrong branch right status", status: "pending", branch: "feat/y" },
+        {
+          id: "T-2",
+          title: "Right branch wrong status",
+          status: "in_progress",
+          branch: "feat/x",
+        },
+        {
+          id: "T-3",
+          title: "Wrong branch right status",
+          status: "pending",
+          branch: "feat/y",
+        },
       ]);
       const adapter = new JsonTaskStore(tmpDir);
-      const results = await adapter.query({ branch: "feat/x", status: "pending" });
+      const results = await adapter.query({
+        branch: "feat/x",
+        status: "pending",
+      });
       expect(results).toHaveLength(1);
       expect(results[0].id).toBe("T-1");
     });
@@ -366,7 +389,12 @@ describe("JsonTaskStore", () => {
     test("--ready --branch filters ready tasks by branch", async () => {
       writeTodos([
         { id: "T-1", title: "On branch", status: "pending", branch: "feat/x" },
-        { id: "T-2", title: "Other branch", status: "pending", branch: "feat/y" },
+        {
+          id: "T-2",
+          title: "Other branch",
+          status: "pending",
+          branch: "feat/y",
+        },
       ]);
       const adapter = new JsonTaskStore(tmpDir);
       const results = await adapter.query({ ready: true, branch: "feat/x" });
@@ -496,7 +524,9 @@ describe("JsonTaskStore", () => {
 
   describe("update", () => {
     test("updates specific fields on a task", async () => {
-      writeTodos([{ id: "T-1", title: "Original", status: "pending", model: "sonnet" }]);
+      writeTodos([
+        { id: "T-1", title: "Original", status: "pending", model: "sonnet" },
+      ]);
       const adapter = new JsonTaskStore(tmpDir);
       const updated = await adapter.update("T-1", { status: "in_progress" });
       expect(updated.status).toBe("in_progress");
@@ -850,7 +880,9 @@ describe("JsonTaskStore", () => {
     });
 
     test("does NOT warn about pr_open or ciFixAttempts for in_progress transitions", async () => {
-      writeTodos([{ id: "T-1", title: "Task", status: "pending", model: "sonnet" }]);
+      writeTodos([
+        { id: "T-1", title: "Task", status: "pending", model: "sonnet" },
+      ]);
       const warnings: string[] = [];
       const adapter = new JsonTaskStore(tmpDir, (msg) => warnings.push(msg));
       await adapter.update("T-1", { status: "in_progress" });
@@ -999,7 +1031,9 @@ describe("JsonTaskStore", () => {
       const warnings: string[] = [];
       const adapter = new JsonTaskStore(tmpDir, (msg) => warnings.push(msg));
       await adapter.update("T-1", { complexity: 0 });
-      expect(warnings.some((w) => w.includes("complexity must be 1"))).toBe(true);
+      expect(warnings.some((w) => w.includes("complexity must be 1"))).toBe(
+        true,
+      );
     });
 
     test("warns when complexity is out of range (6)", async () => {
@@ -1007,7 +1041,9 @@ describe("JsonTaskStore", () => {
       const warnings: string[] = [];
       const adapter = new JsonTaskStore(tmpDir, (msg) => warnings.push(msg));
       await adapter.update("T-1", { complexity: 6 });
-      expect(warnings.some((w) => w.includes("complexity must be 1"))).toBe(true);
+      expect(warnings.some((w) => w.includes("complexity must be 1"))).toBe(
+        true,
+      );
     });
 
     test("does NOT warn for valid complexity values (1–5)", async () => {

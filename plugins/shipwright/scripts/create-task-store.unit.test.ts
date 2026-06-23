@@ -6,9 +6,10 @@
  * Tests use real temp directories — no mocks.
  *
  * Precedence:
- *   1. .shipwright.json found by walking up from cwd
- *   2. SHIPWRIGHT_CONFIG env var
- *   3. Default JSON config
+ *   1. SHIPWRIGHT_TASK_STORE env var → highest precedence
+ *   2. .shipwright.json found by walking up from cwd
+ *   3. SHIPWRIGHT_CONFIG env var
+ *   4. Default JSON config
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -21,18 +22,15 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { GitHubTaskStore } from "./adapters/github";
 import { JsonTaskStore } from "./adapters/json";
+import { TaskStoreHttpAdapter } from "./adapters/task-store";
 import { createTaskStore, doctorCheck, loadConfig } from "./create-task-store";
 
 describe("loadConfig discovery", () => {
   let tmpDir: string;
   const origEnv = process.env.SHIPWRIGHT_CONFIG;
   const origTaskStore = process.env.SHIPWRIGHT_TASK_STORE;
-  const origGhOwner = process.env.SHIPWRIGHT_GITHUB_OWNER;
-  const origGhRepo = process.env.SHIPWRIGHT_GITHUB_REPO;
-  const origJiraUrl = process.env.JIRA_BASE_URL;
-  const origJiraKey = process.env.JIRA_PROJECT_KEY;
+  const origTaskStoreUrl = process.env.SHIPWRIGHT_TASK_STORE_URL;
 
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), "sw-test-"));
@@ -41,13 +39,7 @@ describe("loadConfig discovery", () => {
     // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
     delete process.env.SHIPWRIGHT_TASK_STORE;
     // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
-    delete process.env.SHIPWRIGHT_GITHUB_OWNER;
-    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
-    delete process.env.SHIPWRIGHT_GITHUB_REPO;
-    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
-    delete process.env.JIRA_BASE_URL;
-    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
-    delete process.env.JIRA_PROJECT_KEY;
+    delete process.env.SHIPWRIGHT_TASK_STORE_URL;
   });
 
   afterEach(() => {
@@ -64,29 +56,11 @@ describe("loadConfig discovery", () => {
       // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
       delete process.env.SHIPWRIGHT_TASK_STORE;
     }
-    if (origGhOwner !== undefined) {
-      process.env.SHIPWRIGHT_GITHUB_OWNER = origGhOwner;
+    if (origTaskStoreUrl !== undefined) {
+      process.env.SHIPWRIGHT_TASK_STORE_URL = origTaskStoreUrl;
     } else {
       // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
-      delete process.env.SHIPWRIGHT_GITHUB_OWNER;
-    }
-    if (origGhRepo !== undefined) {
-      process.env.SHIPWRIGHT_GITHUB_REPO = origGhRepo;
-    } else {
-      // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
-      delete process.env.SHIPWRIGHT_GITHUB_REPO;
-    }
-    if (origJiraUrl !== undefined) {
-      process.env.JIRA_BASE_URL = origJiraUrl;
-    } else {
-      // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
-      delete process.env.JIRA_BASE_URL;
-    }
-    if (origJiraKey !== undefined) {
-      process.env.JIRA_PROJECT_KEY = origJiraKey;
-    } else {
-      // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
-      delete process.env.JIRA_PROJECT_KEY;
+      delete process.env.SHIPWRIGHT_TASK_STORE_URL;
     }
   });
 
@@ -95,12 +69,12 @@ describe("loadConfig discovery", () => {
     writeFileSync(
       join(tmpDir, ".shipwright.json"),
       JSON.stringify({
-        taskStore: "github",
-        github: { owner: "example-org", repo: "example-repo" },
+        taskStore: "task-store",
+        taskStoreUrl: "https://example.com",
       }),
     );
     const result = loadConfig(tmpDir);
-    expect(result.config.taskStore).toBe("github");
+    expect(result.config.taskStore).toBe("task-store");
     expect(result.configSource).toBe(join(tmpDir, ".shipwright.json"));
   });
 
@@ -109,14 +83,14 @@ describe("loadConfig discovery", () => {
     writeFileSync(
       join(tmpDir, ".shipwright.json"),
       JSON.stringify({
-        taskStore: "github",
-        github: { owner: "example-org", repo: "example-repo" },
+        taskStore: "task-store",
+        taskStoreUrl: "https://example.com",
       }),
     );
     const subDir = join(tmpDir, "nested", "subdir");
     mkdirSync(subDir, { recursive: true });
     const result = loadConfig(subDir);
-    expect(result.config.taskStore).toBe("github");
+    expect(result.config.taskStore).toBe("task-store");
     expect(result.configSource).toBe(join(tmpDir, ".shipwright.json"));
   });
 
@@ -126,8 +100,8 @@ describe("loadConfig discovery", () => {
     writeFileSync(
       cfgFile,
       JSON.stringify({
-        taskStore: "github",
-        github: { owner: "example-org", repo: "example-repo" },
+        taskStore: "task-store",
+        taskStoreUrl: "https://example.com",
       }),
     );
     process.env.SHIPWRIGHT_CONFIG = cfgFile;
@@ -135,7 +109,7 @@ describe("loadConfig discovery", () => {
     const isolatedDir = mkdtempSync(join(tmpdir(), "sw-isolated-"));
     try {
       const result = loadConfig(isolatedDir);
-      expect(result.config.taskStore).toBe("github");
+      expect(result.config.taskStore).toBe("task-store");
       expect(result.configSource).toBe(cfgFile);
     } finally {
       rmSync(isolatedDir, { recursive: true, force: true });
@@ -147,15 +121,15 @@ describe("loadConfig discovery", () => {
     writeFileSync(
       join(tmpDir, ".shipwright.json"),
       JSON.stringify({
-        taskStore: "github",
-        github: { owner: "example-org", repo: "example-repo" },
+        taskStore: "task-store",
+        taskStoreUrl: "https://example.com",
       }),
     );
     const cfgFile = join(tmpDir, "other-config.json");
     writeFileSync(cfgFile, JSON.stringify({ taskStore: "json" }));
     process.env.SHIPWRIGHT_CONFIG = cfgFile;
     const result = loadConfig(tmpDir);
-    expect(result.config.taskStore).toBe("github");
+    expect(result.config.taskStore).toBe("task-store");
     expect(result.configSource).toContain(".shipwright.json");
   });
 
@@ -176,10 +150,7 @@ describe("loadConfig discovery", () => {
 describe("loadConfig env var fallbacks", () => {
   let isolatedDir: string;
   const origTaskStore = process.env.SHIPWRIGHT_TASK_STORE;
-  const origGhOwner = process.env.SHIPWRIGHT_GITHUB_OWNER;
-  const origGhRepo = process.env.SHIPWRIGHT_GITHUB_REPO;
-  const origJiraUrl = process.env.JIRA_BASE_URL;
-  const origJiraKey = process.env.JIRA_PROJECT_KEY;
+  const origTaskStoreUrl = process.env.SHIPWRIGHT_TASK_STORE_URL;
   const origConfig = process.env.SHIPWRIGHT_CONFIG;
 
   beforeEach(() => {
@@ -188,13 +159,7 @@ describe("loadConfig env var fallbacks", () => {
     // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
     delete process.env.SHIPWRIGHT_TASK_STORE;
     // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
-    delete process.env.SHIPWRIGHT_GITHUB_OWNER;
-    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
-    delete process.env.SHIPWRIGHT_GITHUB_REPO;
-    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
-    delete process.env.JIRA_BASE_URL;
-    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
-    delete process.env.JIRA_PROJECT_KEY;
+    delete process.env.SHIPWRIGHT_TASK_STORE_URL;
     // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
     delete process.env.SHIPWRIGHT_CONFIG;
   });
@@ -207,29 +172,11 @@ describe("loadConfig env var fallbacks", () => {
       // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
       delete process.env.SHIPWRIGHT_TASK_STORE;
     }
-    if (origGhOwner !== undefined) {
-      process.env.SHIPWRIGHT_GITHUB_OWNER = origGhOwner;
+    if (origTaskStoreUrl !== undefined) {
+      process.env.SHIPWRIGHT_TASK_STORE_URL = origTaskStoreUrl;
     } else {
       // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
-      delete process.env.SHIPWRIGHT_GITHUB_OWNER;
-    }
-    if (origGhRepo !== undefined) {
-      process.env.SHIPWRIGHT_GITHUB_REPO = origGhRepo;
-    } else {
-      // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
-      delete process.env.SHIPWRIGHT_GITHUB_REPO;
-    }
-    if (origJiraUrl !== undefined) {
-      process.env.JIRA_BASE_URL = origJiraUrl;
-    } else {
-      // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
-      delete process.env.JIRA_BASE_URL;
-    }
-    if (origJiraKey !== undefined) {
-      process.env.JIRA_PROJECT_KEY = origJiraKey;
-    } else {
-      // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
-      delete process.env.JIRA_PROJECT_KEY;
+      delete process.env.SHIPWRIGHT_TASK_STORE_URL;
     }
     if (origConfig !== undefined) {
       process.env.SHIPWRIGHT_CONFIG = origConfig;
@@ -239,77 +186,60 @@ describe("loadConfig env var fallbacks", () => {
     }
   });
 
-  // Test 6: GitHub env vars → github config, configSource="env"
-  test("SHIPWRIGHT_TASK_STORE=github + owner + repo → github config with configSource=env", () => {
-    process.env.SHIPWRIGHT_TASK_STORE = "github";
-    process.env.SHIPWRIGHT_GITHUB_OWNER = "my-org";
-    process.env.SHIPWRIGHT_GITHUB_REPO = "my-repo";
+  // Test 6: task-store env vars → task-store config, configSource="env"
+  test("SHIPWRIGHT_TASK_STORE=task-store + URL → task-store config with configSource=env", () => {
+    process.env.SHIPWRIGHT_TASK_STORE = "task-store";
+    process.env.SHIPWRIGHT_TASK_STORE_URL = "https://ts.example.com";
     const result = loadConfig(isolatedDir);
-    expect(result.config.taskStore).toBe("github");
-    expect(result.config.github?.owner).toBe("my-org");
-    expect(result.config.github?.repo).toBe("my-repo");
+    expect(result.config.taskStore).toBe("task-store");
+    expect((result.config as { taskStoreUrl?: string }).taskStoreUrl).toBe(
+      "https://ts.example.com",
+    );
     expect(result.configSource).toBe("env");
   });
 
-  // Test 7: Jira env vars → jira config, configSource="env"
-  test("SHIPWRIGHT_TASK_STORE=jira + JIRA_BASE_URL + JIRA_PROJECT_KEY → jira config with configSource=env", () => {
-    process.env.SHIPWRIGHT_TASK_STORE = "jira";
-    process.env.JIRA_BASE_URL = "https://example.atlassian.net";
-    process.env.JIRA_PROJECT_KEY = "SHIP";
-    const result = loadConfig(isolatedDir);
-    expect(result.config.taskStore).toBe("jira");
-    expect(result.config.jira?.baseUrl).toBe("https://example.atlassian.net");
-    expect(result.config.jira?.projectKey).toBe("SHIP");
-    expect(result.configSource).toBe("env");
-  });
-
-  // Test 8: env vars take precedence over .shipwright.json
+  // Test 7: env vars take precedence over .shipwright.json
   test("env vars take precedence over .shipwright.json", () => {
     writeFileSync(
       join(isolatedDir, ".shipwright.json"),
       JSON.stringify({ taskStore: "json" }),
     );
-    process.env.SHIPWRIGHT_TASK_STORE = "github";
-    process.env.SHIPWRIGHT_GITHUB_OWNER = "env-org";
-    process.env.SHIPWRIGHT_GITHUB_REPO = "env-repo";
+    process.env.SHIPWRIGHT_TASK_STORE = "task-store";
+    process.env.SHIPWRIGHT_TASK_STORE_URL = "https://ts.example.com";
     const result = loadConfig(isolatedDir);
-    expect(result.config.taskStore).toBe("github");
-    expect(result.config.github?.owner).toBe("env-org");
+    expect(result.config.taskStore).toBe("task-store");
     expect(result.configSource).toBe("env");
   });
 
-  // Test 9: env vars take precedence over SHIPWRIGHT_CONFIG file
+  // Test 8: env vars take precedence over SHIPWRIGHT_CONFIG file
   test("env vars take precedence over SHIPWRIGHT_CONFIG", () => {
     const cfgFile = join(isolatedDir, "other-config.json");
     writeFileSync(cfgFile, JSON.stringify({ taskStore: "json" }));
     process.env.SHIPWRIGHT_CONFIG = cfgFile;
-    process.env.SHIPWRIGHT_TASK_STORE = "github";
-    process.env.SHIPWRIGHT_GITHUB_OWNER = "env-org";
-    process.env.SHIPWRIGHT_GITHUB_REPO = "env-repo";
+    process.env.SHIPWRIGHT_TASK_STORE = "task-store";
+    process.env.SHIPWRIGHT_TASK_STORE_URL = "https://ts.example.com";
     const result = loadConfig(isolatedDir);
-    expect(result.config.taskStore).toBe("github");
-    expect(result.config.github?.owner).toBe("env-org");
+    expect(result.config.taskStore).toBe("task-store");
     expect(result.configSource).toBe("env");
   });
 
-  // Test 10: SHIPWRIGHT_TASK_STORE=github with no owner/repo → github config with undefined owner/repo
-  test("SHIPWRIGHT_TASK_STORE=github with no owner/repo → github config, owner and repo are undefined", () => {
-    process.env.SHIPWRIGHT_TASK_STORE = "github";
+  // Test 9: SHIPWRIGHT_TASK_STORE=task-store with no URL → task-store config with empty URL
+  test("SHIPWRIGHT_TASK_STORE=task-store with no URL → task-store config, taskStoreUrl is empty", () => {
+    process.env.SHIPWRIGHT_TASK_STORE = "task-store";
     const result = loadConfig(isolatedDir);
-    expect(result.config.taskStore).toBe("github");
-    expect(result.config.github?.owner).toBeUndefined();
-    expect(result.config.github?.repo).toBeUndefined();
+    expect(result.config.taskStore).toBe("task-store");
+    expect((result.config as { taskStoreUrl?: string }).taskStoreUrl).toBe("");
     expect(result.configSource).toBe("env");
   });
 
-  // Test 11: SHIPWRIGHT_TASK_STORE=json → json config with configSource="env", skips file walk-up
+  // Test 10: SHIPWRIGHT_TASK_STORE=json → json config with configSource="env", skips file walk-up
   test("SHIPWRIGHT_TASK_STORE=json → json config with configSource=env, skips .shipwright.json walk-up", () => {
     // Place a .shipwright.json that would otherwise be picked up by the walk-up
     writeFileSync(
       join(isolatedDir, ".shipwright.json"),
       JSON.stringify({
-        taskStore: "github",
-        github: { owner: "example-org", repo: "example-repo" },
+        taskStore: "task-store",
+        taskStoreUrl: "https://example.com",
       }),
     );
     process.env.SHIPWRIGHT_TASK_STORE = "json";
@@ -318,7 +248,7 @@ describe("loadConfig env var fallbacks", () => {
     expect(result.configSource).toBe("env");
   });
 
-  // Test 12: unrecognized SHIPWRIGHT_TASK_STORE value → warning on stderr, falls through to file config
+  // Test 11: unrecognized SHIPWRIGHT_TASK_STORE value → warning on stderr, falls through to file config
   test("unrecognized SHIPWRIGHT_TASK_STORE value emits a warning and falls through to file config", () => {
     writeFileSync(
       join(isolatedDir, ".shipwright.json"),
@@ -328,22 +258,25 @@ describe("loadConfig env var fallbacks", () => {
 
     const stderrWrites: string[] = [];
     const origWrite = process.stderr.write.bind(process.stderr);
-    // biome-ignore lint/suspicious/noExplicitAny: intercepting stderr.write for test assertion
-    (process.stderr as any).write = (chunk: string, ...rest: unknown[]) => {
-      stderrWrites.push(chunk);
-      return true;
-    };
+    (process.stderr as unknown as { write: (chunk: string) => boolean }).write =
+      (chunk: string) => {
+        stderrWrites.push(chunk);
+        return true;
+      };
 
     let result: ReturnType<typeof loadConfig>;
     try {
       result = loadConfig(isolatedDir);
     } finally {
-      // biome-ignore lint/suspicious/noExplicitAny: restoring original stderr.write
-      (process.stderr as any).write = origWrite;
+      process.stderr.write = origWrite;
     }
 
     // Should have emitted the warning
-    expect(stderrWrites.some((s) => s.includes("unrecognized SHIPWRIGHT_TASK_STORE value"))).toBe(true);
+    expect(
+      stderrWrites.some((s) =>
+        s.includes("unrecognized SHIPWRIGHT_TASK_STORE value"),
+      ),
+    ).toBe(true);
     expect(stderrWrites.some((s) => s.includes('"GitHub"'))).toBe(true);
 
     // Should have fallen through to the .shipwright.json file config
@@ -357,8 +290,7 @@ describe("loadConfig env var fallbacks", () => {
 describe("createTaskStore single-backend enforcement", () => {
   let tmpDir: string;
   const origTaskStore = process.env.SHIPWRIGHT_TASK_STORE;
-  const origGhOwner = process.env.SHIPWRIGHT_GITHUB_OWNER;
-  const origGhRepo = process.env.SHIPWRIGHT_GITHUB_REPO;
+  const origTaskStoreUrl = process.env.SHIPWRIGHT_TASK_STORE_URL;
   const origConfig = process.env.SHIPWRIGHT_CONFIG;
 
   beforeEach(() => {
@@ -366,9 +298,7 @@ describe("createTaskStore single-backend enforcement", () => {
     // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
     delete process.env.SHIPWRIGHT_TASK_STORE;
     // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
-    delete process.env.SHIPWRIGHT_GITHUB_OWNER;
-    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
-    delete process.env.SHIPWRIGHT_GITHUB_REPO;
+    delete process.env.SHIPWRIGHT_TASK_STORE_URL;
     // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
     delete process.env.SHIPWRIGHT_CONFIG;
   });
@@ -381,17 +311,11 @@ describe("createTaskStore single-backend enforcement", () => {
       // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
       delete process.env.SHIPWRIGHT_TASK_STORE;
     }
-    if (origGhOwner !== undefined) {
-      process.env.SHIPWRIGHT_GITHUB_OWNER = origGhOwner;
+    if (origTaskStoreUrl !== undefined) {
+      process.env.SHIPWRIGHT_TASK_STORE_URL = origTaskStoreUrl;
     } else {
       // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
-      delete process.env.SHIPWRIGHT_GITHUB_OWNER;
-    }
-    if (origGhRepo !== undefined) {
-      process.env.SHIPWRIGHT_GITHUB_REPO = origGhRepo;
-    } else {
-      // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
-      delete process.env.SHIPWRIGHT_GITHUB_REPO;
+      delete process.env.SHIPWRIGHT_TASK_STORE_URL;
     }
     if (origConfig !== undefined) {
       process.env.SHIPWRIGHT_CONFIG = origConfig;
@@ -401,18 +325,28 @@ describe("createTaskStore single-backend enforcement", () => {
     }
   });
 
-  // Test: when GitHub backend configured, createTaskStore returns a GitHubTaskStore (not JsonTaskStore)
-  test("GitHub config → createTaskStore returns GitHubTaskStore, not JsonTaskStore", () => {
-    process.env.SHIPWRIGHT_TASK_STORE = "github";
-    process.env.SHIPWRIGHT_GITHUB_OWNER = "test-org";
-    process.env.SHIPWRIGHT_GITHUB_REPO = "test-repo";
-    const { config } = loadConfig(tmpDir);
-    const store = createTaskStore(config);
-    expect(store).not.toBeInstanceOf(JsonTaskStore);
-    expect(store).toBeInstanceOf(GitHubTaskStore);
+  // Test: when task-store backend configured, createTaskStore returns a TaskStoreHttpAdapter
+  test("task-store config → createTaskStore returns TaskStoreHttpAdapter, not JsonTaskStore", () => {
+    process.env.SHIPWRIGHT_TASK_STORE = "task-store";
+    process.env.SHIPWRIGHT_TASK_STORE_URL = "https://ts.example.com";
+    process.env.SHIPWRIGHT_TASK_STORE_TOKEN = "test-token";
+    const origToken = process.env.SHIPWRIGHT_TASK_STORE_TOKEN;
+    try {
+      const { config } = loadConfig(tmpDir);
+      const store = createTaskStore(config);
+      expect(store).not.toBeInstanceOf(JsonTaskStore);
+      expect(store).toBeInstanceOf(TaskStoreHttpAdapter);
+    } finally {
+      if (origToken !== undefined) {
+        process.env.SHIPWRIGHT_TASK_STORE_TOKEN = origToken;
+      } else {
+        // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+        delete process.env.SHIPWRIGHT_TASK_STORE_TOKEN;
+      }
+    }
   });
 
-  // Test: when no backend configured, createTaskStore returns a JsonTaskStore (no GitHub calls)
+  // Test: when no backend configured, createTaskStore returns a JsonTaskStore
   test("no backend configured → createTaskStore returns JsonTaskStore", () => {
     const isolatedDir = mkdtempSync(join(tmpdir(), "sw-json-default-"));
     try {
@@ -420,41 +354,53 @@ describe("createTaskStore single-backend enforcement", () => {
       expect(config.taskStore).toBe("json");
       const store = createTaskStore(config);
       expect(store).toBeInstanceOf(JsonTaskStore);
-      expect(store).not.toBeInstanceOf(GitHubTaskStore);
+      expect(store).not.toBeInstanceOf(TaskStoreHttpAdapter);
     } finally {
       rmSync(isolatedDir, { recursive: true, force: true });
     }
   });
 
-  // Test: GitHub backend configured → todos.json is NOT read during createTaskStore
-  test("GitHub backend configured → todos.json is not read by createTaskStore", () => {
+  // Test: task-store backend configured → todos.json is NOT read during createTaskStore
+  test("task-store backend configured → todos.json is not read by createTaskStore", () => {
     // Create a todos.json that would be picked up by JsonTaskStore
     mkdirSync(join(tmpDir, "state"), { recursive: true });
-    writeFileSync(join(tmpDir, "state", "todos.json"), JSON.stringify([
-      { id: "T-1", title: "Should not appear", status: "pending" },
-    ]));
-    process.env.SHIPWRIGHT_TASK_STORE = "github";
-    process.env.SHIPWRIGHT_GITHUB_OWNER = "test-org";
-    process.env.SHIPWRIGHT_GITHUB_REPO = "test-repo";
-    const { config } = loadConfig(tmpDir);
-    expect(config.taskStore).toBe("github");
-    // Creating the store should not read todos.json — simply instantiating GitHubTaskStore
-    // should not touch the file at all. We verify by checking the factory returns the
-    // right type without any interaction with todos.json.
-    const store = createTaskStore(config);
-    expect(store).toBeInstanceOf(GitHubTaskStore);
-    // todos.json still exists and is unchanged (not read/written by createTaskStore)
-    const todosContent = readFileSync(join(tmpDir, "state", "todos.json"), "utf-8");
-    const todos = JSON.parse(todosContent) as unknown[];
-    expect(todos).toHaveLength(1);
+    writeFileSync(
+      join(tmpDir, "state", "todos.json"),
+      JSON.stringify([
+        { id: "T-1", title: "Should not appear", status: "pending" },
+      ]),
+    );
+    process.env.SHIPWRIGHT_TASK_STORE = "task-store";
+    process.env.SHIPWRIGHT_TASK_STORE_URL = "https://ts.example.com";
+    process.env.SHIPWRIGHT_TASK_STORE_TOKEN = "test-token";
+    const origToken = process.env.SHIPWRIGHT_TASK_STORE_TOKEN;
+    try {
+      const { config } = loadConfig(tmpDir);
+      expect(config.taskStore).toBe("task-store");
+      const store = createTaskStore(config);
+      expect(store).toBeInstanceOf(TaskStoreHttpAdapter);
+      // todos.json still exists and is unchanged (not read/written by createTaskStore)
+      const todosContent = readFileSync(
+        join(tmpDir, "state", "todos.json"),
+        "utf-8",
+      );
+      const todos = JSON.parse(todosContent) as unknown[];
+      expect(todos).toHaveLength(1);
+    } finally {
+      if (origToken !== undefined) {
+        process.env.SHIPWRIGHT_TASK_STORE_TOKEN = origToken;
+      } else {
+        // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+        delete process.env.SHIPWRIGHT_TASK_STORE_TOKEN;
+      }
+    }
   });
 });
 
 describe("doctor coexistence warning", () => {
   let tmpDir: string;
   const origTaskStore = process.env.SHIPWRIGHT_TASK_STORE;
-  const origGhOwner = process.env.SHIPWRIGHT_GITHUB_OWNER;
-  const origGhRepo = process.env.SHIPWRIGHT_GITHUB_REPO;
+  const origTaskStoreUrl = process.env.SHIPWRIGHT_TASK_STORE_URL;
   const origConfig = process.env.SHIPWRIGHT_CONFIG;
 
   beforeEach(() => {
@@ -462,9 +408,7 @@ describe("doctor coexistence warning", () => {
     // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
     delete process.env.SHIPWRIGHT_TASK_STORE;
     // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
-    delete process.env.SHIPWRIGHT_GITHUB_OWNER;
-    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
-    delete process.env.SHIPWRIGHT_GITHUB_REPO;
+    delete process.env.SHIPWRIGHT_TASK_STORE_URL;
     // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
     delete process.env.SHIPWRIGHT_CONFIG;
   });
@@ -477,17 +421,11 @@ describe("doctor coexistence warning", () => {
       // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
       delete process.env.SHIPWRIGHT_TASK_STORE;
     }
-    if (origGhOwner !== undefined) {
-      process.env.SHIPWRIGHT_GITHUB_OWNER = origGhOwner;
+    if (origTaskStoreUrl !== undefined) {
+      process.env.SHIPWRIGHT_TASK_STORE_URL = origTaskStoreUrl;
     } else {
       // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
-      delete process.env.SHIPWRIGHT_GITHUB_OWNER;
-    }
-    if (origGhRepo !== undefined) {
-      process.env.SHIPWRIGHT_GITHUB_REPO = origGhRepo;
-    } else {
-      // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
-      delete process.env.SHIPWRIGHT_GITHUB_REPO;
+      delete process.env.SHIPWRIGHT_TASK_STORE_URL;
     }
     if (origConfig !== undefined) {
       process.env.SHIPWRIGHT_CONFIG = origConfig;
@@ -497,20 +435,21 @@ describe("doctor coexistence warning", () => {
     }
   });
 
-  // Test: doctor warns when todos.json exists + non-empty while GitHub backend active
-  test("doctor warns when todos.json exists and is non-empty while GitHub backend is active", () => {
+  // Test: doctor warns when todos.json exists + non-empty while task-store backend active
+  test("doctor warns when todos.json exists and is non-empty while task-store backend is active", () => {
     // Create a non-empty todos.json
     mkdirSync(join(tmpDir, "state"), { recursive: true });
-    writeFileSync(join(tmpDir, "state", "todos.json"), JSON.stringify([
-      { id: "T-1", title: "Stale task", status: "pending" },
-    ]));
+    writeFileSync(
+      join(tmpDir, "state", "todos.json"),
+      JSON.stringify([{ id: "T-1", title: "Stale task", status: "pending" }]),
+    );
 
-    // Write .shipwright.json with github backend
+    // Write .shipwright.json with task-store backend
     writeFileSync(
       join(tmpDir, ".shipwright.json"),
       JSON.stringify({
-        taskStore: "github",
-        github: { owner: "test-org", repo: "test-repo" },
+        taskStore: "task-store",
+        taskStoreUrl: "https://ts.example.com",
       }),
     );
 
@@ -531,19 +470,19 @@ describe("doctor coexistence warning", () => {
 
     // Should emit the coexistence warning
     const allOutput = [...warnings, ...logs].join("\n");
-    expect(allOutput).toMatch(/\[warn\].*todos\.json.*github/i);
+    expect(allOutput).toMatch(/\[warn\].*todos\.json.*task-store/i);
   });
 
-  // Test: doctor does NOT warn when todos.json is empty while GitHub backend active
-  test("doctor does NOT warn when todos.json is empty while GitHub backend is active", () => {
+  // Test: doctor does NOT warn when todos.json is empty while task-store backend active
+  test("doctor does NOT warn when todos.json is empty while task-store backend is active", () => {
     mkdirSync(join(tmpDir, "state"), { recursive: true });
     writeFileSync(join(tmpDir, "state", "todos.json"), JSON.stringify([]));
 
     writeFileSync(
       join(tmpDir, ".shipwright.json"),
       JSON.stringify({
-        taskStore: "github",
-        github: { owner: "test-org", repo: "test-repo" },
+        taskStore: "task-store",
+        taskStoreUrl: "https://ts.example.com",
       }),
     );
 
@@ -563,16 +502,16 @@ describe("doctor coexistence warning", () => {
     }
 
     const allOutput = [...warnings, ...logs].join("\n");
-    expect(allOutput).not.toMatch(/\[warn\].*todos\.json.*github/i);
+    expect(allOutput).not.toMatch(/\[warn\].*todos\.json.*task-store/i);
   });
 
-  // Test: doctor does NOT warn when todos.json absent while GitHub backend active
-  test("doctor does NOT warn when todos.json is absent while GitHub backend is active", () => {
+  // Test: doctor does NOT warn when todos.json absent while task-store backend active
+  test("doctor does NOT warn when todos.json is absent while task-store backend is active", () => {
     writeFileSync(
       join(tmpDir, ".shipwright.json"),
       JSON.stringify({
-        taskStore: "github",
-        github: { owner: "test-org", repo: "test-repo" },
+        taskStore: "task-store",
+        taskStoreUrl: "https://ts.example.com",
       }),
     );
 
@@ -592,15 +531,16 @@ describe("doctor coexistence warning", () => {
     }
 
     const allOutput = [...warnings, ...logs].join("\n");
-    expect(allOutput).not.toMatch(/\[warn\].*todos\.json.*github/i);
+    expect(allOutput).not.toMatch(/\[warn\].*todos\.json.*task-store/i);
   });
 
   // Test: doctor does NOT warn for JSON backend even when todos.json exists and is non-empty
   test("doctor does NOT emit coexistence warning when JSON backend is active", () => {
     mkdirSync(join(tmpDir, "state"), { recursive: true });
-    writeFileSync(join(tmpDir, "state", "todos.json"), JSON.stringify([
-      { id: "T-1", title: "Active task", status: "pending" },
-    ]));
+    writeFileSync(
+      join(tmpDir, "state", "todos.json"),
+      JSON.stringify([{ id: "T-1", title: "Active task", status: "pending" }]),
+    );
 
     const warnings: string[] = [];
     const logs: string[] = [];
@@ -614,9 +554,12 @@ describe("doctor coexistence warning", () => {
       try {
         // Copy todos.json to isolated dir
         mkdirSync(join(isolatedDir, "state"), { recursive: true });
-        writeFileSync(join(isolatedDir, "state", "todos.json"), JSON.stringify([
-          { id: "T-1", title: "Active task", status: "pending" },
-        ]));
+        writeFileSync(
+          join(isolatedDir, "state", "todos.json"),
+          JSON.stringify([
+            { id: "T-1", title: "Active task", status: "pending" },
+          ]),
+        );
         const { config, configSource } = loadConfig(isolatedDir);
         expect(config.taskStore).toBe("json");
         doctorCheck(config, configSource, isolatedDir);
@@ -629,6 +572,6 @@ describe("doctor coexistence warning", () => {
     }
 
     const allOutput = [...warnings, ...logs].join("\n");
-    expect(allOutput).not.toMatch(/\[warn\].*todos\.json.*github/i);
+    expect(allOutput).not.toMatch(/\[warn\].*todos\.json.*task-store/i);
   });
 });
