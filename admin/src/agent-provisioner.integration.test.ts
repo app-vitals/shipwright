@@ -33,6 +33,7 @@ import {
   RecordedKubernetesClient,
   type SecretSpec,
 } from "./kubernetes-client.ts";
+import type { TaskStoreProvisioningClient } from "./task-store-provisioning-client.ts";
 
 const TEST_DB = process.env.DATABASE_URL_ADMIN_TEST;
 const describeOrSkip = TEST_DB ? describe : describe.skip;
@@ -484,6 +485,40 @@ describeOrSkip("KubernetesAgentProvisioner (integration)", () => {
     await provisioner.provision(agentId);
     await provisioner.deprovision(agentId);
     await expect(provisioner.deprovision(agentId)).resolves.toBeUndefined();
+  });
+
+  // ─── task-store token in Secret ──────────────────────────────────────────────
+
+  it("provision() stores task-store token in the Secret under 'task-store-token' key", async () => {
+    const agentId = await createAgent("TaskStoreAgent");
+    const k8s = emptyClient();
+
+    const EXPECTED_RAW_TOKEN = "ts-raw-token-abc123";
+
+    const fakeTaskStore: TaskStoreProvisioningClient = {
+      async mintToken(_label: string) {
+        return { id: "ts-id-1", rawToken: EXPECTED_RAW_TOKEN };
+      },
+      async revokeToken(_id: string) {
+        // no-op in this test
+      },
+    };
+
+    const provisioner = new KubernetesAgentProvisioner(k8s, tokens, {
+      ...CONFIG,
+      taskStore: fakeTaskStore,
+    });
+
+    await provisioner.provision(agentId);
+
+    const name = sanitizeAgentName(agentId);
+    const secret = await k8s.getSecret(NAMESPACE, `${name}-token`);
+
+    // The 'task-store-token' key must be present in the Secret's data.
+    const encoded = secret.data["task-store-token"];
+    expect(encoded).toBeDefined();
+    const decoded = Buffer.from(encoded, "base64").toString("utf-8");
+    expect(decoded).toBe(EXPECTED_RAW_TOKEN);
   });
 });
 

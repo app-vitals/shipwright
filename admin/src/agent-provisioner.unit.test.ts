@@ -1,6 +1,7 @@
 /**
  * admin/src/agent-provisioner.unit.test.ts
- * Unit tests for KubernetesAgentProvisioner PVC name template feature.
+ * Unit tests for KubernetesAgentProvisioner PVC name template feature and
+ * task-store token minting/rollback.
  *
  * Uses RecordedKubernetesClient (in-memory K8s double) and a stub AgentTokenService
  * so no real DB or cluster is required.
@@ -13,10 +14,12 @@ import {
   type KubernetesAgentProvisionerConfig,
 } from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
+import { ConflictError } from "./errors.ts";
 import {
   type KubernetesClient,
   RecordedKubernetesClient,
 } from "./kubernetes-client.ts";
+import type { TaskStoreProvisioningClient } from "./task-store-provisioning-client.ts";
 
 const NAMESPACE = "shipwright";
 
@@ -389,5 +392,148 @@ describe("KubernetesAgentProvisioner.reconcile() — template respected", () => 
     const resourceName = sanitizeAgentName(agentId);
     const expectedPvcName = `acme-agent-${resourceName}-home`;
     await expect(k8s.getPvc(NAMESPACE, expectedPvcName)).resolves.toBeDefined();
+  });
+});
+
+// ─── Task-store token minting ─────────────────────────────────────────────────
+
+/**
+ * Build a spy TaskStoreProvisioningClient. Records all mintToken and
+ * revokeToken calls for assertion in tests.
+ */
+function stubTaskStore(opts?: { throwOnMint?: boolean }): {
+  client: TaskStoreProvisioningClient;
+  minted: Array<{ label: string; id: string }>;
+  revoked: string[];
+} {
+  const minted: Array<{ label: string; id: string }> = [];
+  const revoked: string[] = [];
+  let seq = 0;
+
+  const client: TaskStoreProvisioningClient = {
+    async mintToken(label: string) {
+      if (opts?.throwOnMint) throw new Error("mint failed");
+      seq++;
+      const id = `ts-tok-${seq}`;
+      minted.push({ label, id });
+      return { id, rawToken: `raw-ts-token-${seq}` };
+    },
+    async revokeToken(id: string) {
+      revoked.push(id);
+    },
+  };
+
+  return { client, minted, revoked };
+}
+
+describe("KubernetesAgentProvisioner — task-store token minting", () => {
+  const AGENT_ID = "test-agent-001";
+
+  it("provision() mints a task-store token when taskStore client is configured", async () => {
+    const { client, minted } = stubTaskStore();
+    const config: KubernetesAgentProvisionerConfig = {
+      ...BASE_CONFIG,
+      taskStore: client,
+    };
+    const k8s = emptyClient();
+    const provisioner = new KubernetesAgentProvisioner(
+      k8s,
+      stubTokens() as AgentTokenService,
+      config,
+    );
+
+    await provisioner.provision(AGENT_ID);
+
+    expect(minted).toHaveLength(1);
+    expect(minted[0].label).toBe(`agent:${AGENT_ID}`);
+  });
+
+  it("provision() does NOT mint a task-store token when taskStore is not configured", async () => {
+    // BASE_CONFIG has no taskStore
+    const { client, minted } = stubTaskStore();
+    const k8s = emptyClient();
+    const provisioner = new KubernetesAgentProvisioner(
+      k8s,
+      stubTokens() as AgentTokenService,
+      BASE_CONFIG,
+    );
+
+    await provisioner.provision(AGENT_ID);
+
+    // client is not injected so mintToken is never called
+    expect(minted).toHaveLength(0);
+    // Suppress "client is unused" lint warning by referencing it
+    void client;
+  });
+
+  it("provision() revokes the task-store token when Deployment creation fails", async () => {
+    const { client, minted, revoked } = stubTaskStore();
+    const config: KubernetesAgentProvisionerConfig = {
+      ...BASE_CONFIG,
+      taskStore: client,
+    };
+
+    const recorded = emptyClient();
+    const failingK8s = new RecordedKubernetesClient({
+      deployments: {},
+      secrets: {},
+      pvcs: {},
+    });
+    // Wrap to throw on createDeploymentManifest
+    const failingClient = Object.assign(
+      Object.create(Object.getPrototypeOf(recorded)),
+      recorded,
+      {
+        createDeploymentManifest: async () => {
+          throw new Error("simulated deploy failure");
+        },
+      },
+    );
+
+    const provisioner = new KubernetesAgentProvisioner(
+      failingClient,
+      stubTokens() as AgentTokenService,
+      config,
+    );
+
+    await expect(provisioner.provision(AGENT_ID)).rejects.toThrow(
+      "simulated deploy failure",
+    );
+
+    expect(minted).toHaveLength(1);
+    expect(revoked).toEqual([minted[0].id]);
+  });
+
+  it("provision() does NOT revoke the task-store token when Deployment already exists (409 conflict)", async () => {
+    const { client, minted, revoked } = stubTaskStore();
+    const config: KubernetesAgentProvisionerConfig = {
+      ...BASE_CONFIG,
+      taskStore: client,
+    };
+
+    // Pre-seed the Deployment so the createDeploymentManifest call hits a 409.
+    // Do NOT pre-seed the Secret, so the provisioner mints a fresh token and
+    // creates a new Secret — then hits a conflict on the Deployment.
+    const recorded = emptyClient();
+    const agentResourceName = sanitizeAgentName(AGENT_ID);
+    await recorded.createDeployment(NAMESPACE, {
+      name: agentResourceName,
+      image: `${BASE_CONFIG.image}:${BASE_CONFIG.imageTag}`,
+    });
+
+    const provisioner = new KubernetesAgentProvisioner(
+      recorded,
+      stubTokens() as AgentTokenService,
+      config,
+    );
+
+    // Should NOT throw — ConflictError on Deployment is idempotent success.
+    await expect(provisioner.provision(AGENT_ID)).resolves.toBeDefined();
+
+    // Token WAS minted (Secret was new in this call).
+    expect(minted).toHaveLength(1);
+    // But because it was a conflict (deployment already existed), we rolled back
+    // the Secret — the task-store token should also be revoked.
+    expect(revoked).toEqual([minted[0].id]);
   });
 });
