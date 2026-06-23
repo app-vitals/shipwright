@@ -1481,12 +1481,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
     const taskId = c.req.param("id");
     if (!releaseTask) return c.redirect("/admin/tasks?error=task_store_unavailable", 302);
-    if (releaseTask) {
-      try {
-        await releaseTask(taskId);
-      } catch {
-        return c.redirect("/admin/tasks?error=release_failed", 302);
-      }
+    try {
+      await releaseTask(taskId);
+    } catch {
+      return c.redirect("/admin/tasks?error=release_failed", 302);
     }
     return c.redirect("/admin/tasks", 302);
   });
