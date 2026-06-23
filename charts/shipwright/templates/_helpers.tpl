@@ -264,3 +264,13 @@ Task-store labels — common labels plus the component label.
 {{ include "shipwright.labels" . }}
 app.kubernetes.io/component: task-store
 {{- end }}
+{{/*
+Task-store ServiceAccount name.
+*/}}
+{{- define "shipwright.taskStore.serviceAccountName" -}}
+{{- if .Values.taskStore.serviceAccount.create }}
+{{- default (include "shipwright.taskStore.fullname" .) .Values.taskStore.serviceAccount.name }}
+{{- else }}
+{{- default "default" .Values.taskStore.serviceAccount.name }}
+{{- end }}
+{{- end }}
