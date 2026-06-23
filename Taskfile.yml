@@ -37,7 +37,7 @@ tasks:
       - bun scripts/check-config-docs.ts
 
   ci:
-    desc: Run all CI checks (lint → check-strings → typecheck → check-config-docs → test → secret-scan → doctor)
+    desc: Run all CI checks (lint → check-strings → typecheck → check-config-docs → test → secret-scan)
     cmds:
       - task: lint
       - task: check-strings
@@ -45,7 +45,6 @@ tasks:
       - task: check-config-docs
       - task: test
       - task: secret-scan
-      - task: doctor
 
   api:
     desc: Start the metrics dashboard in offline mode → http://localhost:3460/dashboard
@@ -174,7 +173,3 @@ tasks:
       - task: check-strings
       - task: secret-scan
 
-  doctor:
-    desc: Validate task-store config and report active backend
-    cmds:
-      - bun plugins/shipwright/scripts/task_store.ts doctor

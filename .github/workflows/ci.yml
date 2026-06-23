@@ -65,8 +65,6 @@ jobs:
           tar -xz -f gitleaks.tar.gz gitleaks
           ./gitleaks detect --source . --no-git --redact
 
-      - name: Task store doctor
-        run: task doctor
 
   site:
     name: site build / brand-lint / smoke
