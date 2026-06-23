@@ -414,6 +414,21 @@ async function main(): Promise<void> {
     return;
   }
 
+  // Doctor command: run local checks even if task-store URL is not configured.
+  if (command === "doctor" && config.taskStore === "task-store") {
+    const taskStoreUrl =
+      (config as { taskStoreUrl?: string }).taskStoreUrl ??
+      process.env.SHIPWRIGHT_TASK_STORE_URL ??
+      "";
+    if (!taskStoreUrl) {
+      doctorCheck(config, configSource);
+      process.stdout.write(
+        "[warn] SHIPWRIGHT_TASK_STORE_URL not set — skipping remote task-store health checks\n",
+      );
+      process.exit(0);
+    }
+  }
+
   const adapter = createTaskStore(config);
 
   switch (command) {
