@@ -24,18 +24,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Generate app token for tag push
-        id: app-token
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ secrets.RELEASE_APP_ID }}
-          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-
       - name: Bump version and push tag
         id: tag
         uses: mathieudutour/github-tag-action@v6.2
         with:
-          github_token: ${{ steps.app-token.outputs.token }}
+          github_token: ${{ secrets.DISPATCH_TOKEN }}
           tag_prefix: "agent-v"
           default_bump: patch
           fetch_all_tags: true
@@ -59,3 +52,14 @@ jobs:
       - name: Push Docker image
         run: |
           docker push ${{ secrets.ARTIFACT_REGISTRY_REPO }}/shipwright-agent:${{ steps.tag.outputs.new_tag }}
+
+      - name: Dispatch agent-released to downstream
+        env:
+          GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+          NEW_TAG: ${{ steps.tag.outputs.new_tag }}
+          DISPATCH_REPO: ${{ vars.CHART_DISPATCH_REPO }}
+        run: |
+          [ -z "$DISPATCH_REPO" ] && echo "CHART_DISPATCH_REPO not configured, skipping" && exit 0
+          printf '{"event_type":"shipwright-agent-released","client_payload":{"base_tag":"%s"}}' "$NEW_TAG" \
+            | gh api "repos/$DISPATCH_REPO/dispatches" --method POST --input -
+          echo "Dispatched shipwright-agent-released with base_tag: ${NEW_TAG}"

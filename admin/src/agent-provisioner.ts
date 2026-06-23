@@ -36,6 +36,7 @@ import type {
   PvcSpec,
   SecretSpec,
 } from "./kubernetes-client.ts";
+import type { TaskStoreProvisioningClient } from "./task-store-provisioning-client.ts";
 
 // ─── Interface ──────────────────────────────────────────────────────────────
 
@@ -83,7 +84,9 @@ export interface AgentProvisioner {
    * Re-provisions agents whose Deployments are missing; surfaces orphaned
    * Deployments that have no corresponding agent.
    */
-  reconcile(agents: Array<{ id: string; slug?: string }>): Promise<ReconcileResult>;
+  reconcile(
+    agents: Array<{ id: string; slug?: string }>,
+  ): Promise<ReconcileResult>;
 }
 
 // ─── Configuration ──────────────────────────────────────────────────────────
@@ -122,6 +125,22 @@ export interface KubernetesAgentProvisionerConfig {
    * Whisper Service URL). Omitted/empty → voice disabled (no voice env injected).
    */
   voice?: AgentVoiceEnv;
+  /**
+   * When set, the provisioner will mint a per-agent task-store token on
+   * provision() and store it in the agent Secret under "task-store-token".
+   * The Deployment manifest will include SHIPWRIGHT_TASK_STORE_TOKEN (from the
+   * Secret) and SHIPWRIGHT_TASK_STORE_URL (from taskStoreUrl). On rollback,
+   * the minted token is revoked via revokeToken().
+   *
+   * Omit to skip task-store wiring (for agents that don't need it or when
+   * SHIPWRIGHT_TASK_STORE_URL / SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN are not set).
+   */
+  taskStore?: TaskStoreProvisioningClient;
+  /**
+   * In-cluster base URL of the task-store service. Injected into the agent
+   * Deployment as SHIPWRIGHT_TASK_STORE_URL. Required when taskStore is set.
+   */
+  taskStoreUrl?: string;
 }
 
 function isConflict(err: unknown): boolean {
@@ -197,7 +216,21 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
       if (!isNotFound(err)) throw err;
     }
 
+    // Track the task-store token minted in THIS call so we can revoke it on
+    // rollback. Only set when config.taskStore is provided and we actually minted.
+    let tsTokenId: string | undefined;
+
     if (!secretAlreadyExists) {
+      // Optionally mint a task-store token to co-locate in the same Secret write.
+      let tsRawToken: string | undefined;
+      if (this.config.taskStore) {
+        const { id, rawToken } = await this.config.taskStore.mintToken(
+          `agent:${agentId}`,
+        );
+        tsTokenId = id;
+        tsRawToken = rawToken;
+      }
+
       const { rawToken } = await this.tokens.create(agentId, "k8s-provision");
       result.rawToken = rawToken;
 
@@ -207,7 +240,7 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
       try {
         await this.k8s.createSecret(
           this.config.namespace,
-          this.secretSpec(secretName, rawToken),
+          this.secretSpec(secretName, rawToken, tsRawToken),
         );
         secretCreated = true;
       } catch (err) {
@@ -218,6 +251,7 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
     // 4. Deployment. If creation fails AFTER we created the Secret in THIS call,
     //    roll the Secret back (best-effort) so a retry starts clean and never
     //    leaks a half-provisioned state. The PVC is NOT rolled back (data safety).
+    //    Also revoke any task-store token minted in THIS call on the same path.
     try {
       await this.k8s.createDeploymentManifest(
         this.config.namespace,
@@ -232,6 +266,7 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
           tokenSecretKey: this.tokenKey,
           replicas: this.config.replicas,
           voice: this.config.voice,
+          taskStoreUrl: this.config.taskStoreUrl,
         }),
       );
     } catch (err) {
@@ -242,11 +277,13 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
         // never leak it. Only ever delete a Secret THIS call created.
         if (secretCreated) {
           await this.deleteSecretBestEffort(secretName);
+          await this.revokeTaskStoreTokenBestEffort(tsTokenId);
         }
         return result;
       }
       if (secretCreated) {
         await this.deleteSecretBestEffort(secretName);
+        await this.revokeTaskStoreTokenBestEffort(tsTokenId);
       }
       throw err;
     }
@@ -264,7 +301,9 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
     await this.deleteSecretBestEffort(secretName);
   }
 
-  async reconcile(agents: Array<{ id: string; slug?: string }>): Promise<ReconcileResult> {
+  async reconcile(
+    agents: Array<{ id: string; slug?: string }>,
+  ): Promise<ReconcileResult> {
     const labelSelector =
       "app.kubernetes.io/name=shipwright-agent,app.kubernetes.io/managed-by=shipwright-admin";
 
@@ -369,7 +408,11 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
     };
   }
 
-  private secretSpec(secretName: string, rawToken: string): SecretSpec {
+  private secretSpec(
+    secretName: string,
+    rawToken: string,
+    taskStoreToken?: string,
+  ): SecretSpec {
     // The pure builder is the single source of truth for the Secret body (name,
     // token key, base64 encoding). Derive the KubernetesClient SecretSpec from
     // its output so the builder actually drives the secret — decoding `data`
@@ -384,7 +427,26 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
     for (const [key, value] of Object.entries(manifest.data)) {
       stringData[key] = Buffer.from(value, "base64").toString("utf-8");
     }
+    // When a task-store token was minted for this agent, include it in the same
+    // Secret so a single Secret holds all per-agent credentials.
+    if (taskStoreToken !== undefined) {
+      stringData["task-store-token"] = taskStoreToken;
+    }
     return { name: manifest.metadata.name, stringData };
+  }
+
+  private async revokeTaskStoreTokenBestEffort(
+    tsTokenId: string | undefined,
+  ): Promise<void> {
+    if (!tsTokenId || !this.config.taskStore) return;
+    try {
+      await this.config.taskStore.revokeToken(tsTokenId);
+    } catch {
+      // Best-effort — log but don't propagate so the original error surfaces.
+      console.warn(
+        `[provisioner] failed to revoke task-store token ${tsTokenId} during rollback`,
+      );
+    }
   }
 
   private async deleteSecretBestEffort(name: string): Promise<void> {
@@ -411,7 +473,10 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
  * admin service construct and run unchanged without a cluster.
  */
 export class NoopAgentProvisioner implements AgentProvisioner {
-  async provision(agentId: string, _opts?: { slug?: string }): Promise<ProvisionResult> {
+  async provision(
+    agentId: string,
+    _opts?: { slug?: string },
+  ): Promise<ProvisionResult> {
     const resourceName = sanitizeAgentName(agentId);
     return {
       resourceName,
@@ -424,7 +489,9 @@ export class NoopAgentProvisioner implements AgentProvisioner {
     // intentionally a no-op
   }
 
-  async reconcile(_agents: Array<{ id: string; slug?: string }>): Promise<ReconcileResult> {
+  async reconcile(
+    _agents: Array<{ id: string; slug?: string }>,
+  ): Promise<ReconcileResult> {
     return { recreated: [], updated: [], orphans: [], failed: [] };
   }
 }
