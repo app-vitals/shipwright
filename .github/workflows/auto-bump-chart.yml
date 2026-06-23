@@ -28,7 +28,6 @@ name: Auto-Bump Chart Version
 #
 # Logic tests live in .github/workflows/test-auto-bump-chart.sh.
 # Run locally: bash .github/workflows/test-auto-bump-chart.sh
-# Run locally: bash .github/workflows/test-auto-bump-chart.sh
 
 on:
   push:
