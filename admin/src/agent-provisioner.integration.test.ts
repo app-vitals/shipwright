@@ -17,8 +17,8 @@ import {
   sanitizeAgentName,
 } from "./agent-manifest.ts";
 import {
-  type KubernetesAgentProvisionerConfig,
   KubernetesAgentProvisioner,
+  type KubernetesAgentProvisionerConfig,
   NoopAgentProvisioner,
 } from "./agent-provisioner.ts";
 import { AgentTokenService } from "./agent-tokens.ts";
@@ -26,10 +26,11 @@ import { ConflictError } from "./errors.ts";
 import {
   type DeploymentSpec,
   type KubernetesClient,
+  type KubernetesDeployment,
   type KubernetesPvc,
   type KubernetesSecret,
-  RecordedKubernetesClient,
   type PvcSpec,
+  RecordedKubernetesClient,
   type SecretSpec,
 } from "./kubernetes-client.ts";
 
@@ -54,7 +55,11 @@ function makePrisma(): PrismaClient {
 }
 
 function emptyClient(): RecordedKubernetesClient {
-  return new RecordedKubernetesClient({ deployments: {}, secrets: {}, pvcs: {} });
+  return new RecordedKubernetesClient({
+    deployments: {},
+    secrets: {},
+    pvcs: {},
+  });
 }
 
 /** Decode the token value the Secret carries under the default "token" key. */
@@ -125,8 +130,14 @@ describeOrSkip("KubernetesAgentProvisioner (integration)", () => {
         return recorded.createSecret(ns, spec);
       },
       createDeployment: (ns: string, spec: DeploymentSpec) => {
-        order.push("deployment");
         return recorded.createDeployment(ns, spec);
+      },
+      createDeploymentManifest: (
+        ns: string,
+        manifest: KubernetesDeployment,
+      ) => {
+        order.push("deployment");
+        return recorded.createDeploymentManifest(ns, manifest);
       },
       createPvc: (ns: string, spec: PvcSpec) => {
         order.push("pvc");
@@ -189,6 +200,9 @@ describeOrSkip("KubernetesAgentProvisioner (integration)", () => {
       createPvc: (ns, spec) => recorded.createPvc(ns, spec),
       createSecret: (ns, spec) => recorded.createSecret(ns, spec),
       createDeployment: async () => {
+        throw new Error("simulated API server failure");
+      },
+      createDeploymentManifest: async () => {
         throw new Error("simulated API server failure");
       },
       getSecret: (ns, n) => recorded.getSecret(ns, n),
@@ -390,7 +404,9 @@ describeOrSkip("KubernetesAgentProvisioner (integration)", () => {
     });
 
     // Agent exists in DB, no k8s Deployment — reconcile should provision it.
-    const result = await provisioner.reconcile([{ id: agentId, slug: "okwow" }]);
+    const result = await provisioner.reconcile([
+      { id: agentId, slug: "okwow" },
+    ]);
 
     expect(result.recreated).toEqual([agentId]);
     // PVC must use the slug passed through reconcile.
