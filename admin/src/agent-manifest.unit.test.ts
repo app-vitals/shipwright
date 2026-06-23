@@ -121,7 +121,10 @@ describe("buildAgentDeploymentManifest", () => {
   it("declares a containerPort for the health port", () => {
     const d = buildAgentDeploymentManifest(deployOpts);
     const ports = d.spec.template.spec.containers[0].ports ?? [];
-    expect(ports).toContainEqual({ containerPort: AGENT_HEALTH_PORT, protocol: "TCP" });
+    expect(ports).toContainEqual({
+      containerPort: AGENT_HEALTH_PORT,
+      protocol: "TCP",
+    });
   });
 
   it("sets AGENT_HOME env var to the mount path", () => {
@@ -164,6 +167,32 @@ describe("buildAgentDeploymentManifest", () => {
   it("honours an explicit replicas override", () => {
     const d = buildAgentDeploymentManifest({ ...deployOpts, replicas: 0 });
     expect(d.spec.replicas).toBe(0);
+  });
+
+  it("applies default resources including 4Gi/8Gi ephemeral-storage when none specified", () => {
+    const d = buildAgentDeploymentManifest(deployOpts);
+    const resources = d.spec.template.spec.containers[0].resources as {
+      requests: Record<string, string>;
+      limits: Record<string, string>;
+    };
+    expect(resources.requests["ephemeral-storage"]).toBe("4Gi");
+    expect(resources.limits["ephemeral-storage"]).toBe("8Gi");
+  });
+
+  it("uses caller-supplied resources when provided", () => {
+    const d = buildAgentDeploymentManifest({
+      ...deployOpts,
+      resources: {
+        requests: { "ephemeral-storage": "10Gi" },
+        limits: { "ephemeral-storage": "20Gi" },
+      },
+    });
+    const resources = d.spec.template.spec.containers[0].resources as {
+      requests: Record<string, string>;
+      limits: Record<string, string>;
+    };
+    expect(resources.requests["ephemeral-storage"]).toBe("10Gi");
+    expect(resources.limits["ephemeral-storage"]).toBe("20Gi");
   });
 });
 
@@ -318,7 +347,10 @@ describe("buildAgentPvcManifest", () => {
   });
 
   it("includes storageClassName when provided", () => {
-    const p = buildAgentPvcManifest({ ...pvcOpts, storageClassName: "premium" });
+    const p = buildAgentPvcManifest({
+      ...pvcOpts,
+      storageClassName: "premium",
+    });
     expect(p.spec.storageClassName).toBe("premium");
   });
 

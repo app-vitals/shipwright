@@ -29,6 +29,17 @@ export const AGENT_HOME_MOUNT_PATH = "/data/agent-home";
 /** Non-root uid/gid the agent runs as (matches the agent image). */
 const AGENT_RUN_AS = 1000;
 
+/**
+ * Default container resource requests/limits. GKE Autopilot injects a 1Gi
+ * ephemeral-storage cap when none is specified, which evicts agents that write
+ * scratch outside the PVC-backed AGENT_HOME. Explicit 4Gi/8Gi values give
+ * agents headroom for transient work (clones, builds, logs).
+ */
+const DEFAULT_AGENT_RESOURCES = {
+  requests: { cpu: "250m", memory: "512Mi", "ephemeral-storage": "4Gi" },
+  limits: { cpu: "1000m", memory: "2Gi", "ephemeral-storage": "8Gi" },
+};
+
 /** RFC1123 label length cap. */
 const MAX_NAME_LEN = 63;
 
@@ -150,6 +161,16 @@ export interface AgentDeploymentOpts {
    * env contract (agent/src/config.ts).
    */
   voice?: AgentVoiceEnv;
+  /**
+   * Container resource requests/limits for the agent pod. When omitted, defaults
+   * are applied that are safe on GKE Autopilot: 4Gi ephemeral-storage request and
+   * 8Gi limit prevent Autopilot's 1Gi default eviction — agents whose tasks write
+   * scratch outside the PVC-backed AGENT_HOME otherwise get evicted immediately.
+   */
+  resources?: {
+    requests?: Record<string, string>;
+    limits?: Record<string, string>;
+  };
 }
 
 /**
@@ -202,6 +223,7 @@ export function buildAgentDeploymentManifest(
   const name = sanitizeAgentName(opts.agentId);
   const tokenKey = opts.tokenSecretKey ?? "token";
   const volumeName = "agent-home";
+  const resources = opts.resources ?? DEFAULT_AGENT_RESOURCES;
 
   const labels: Record<string, string> = {
     [NAME_LABEL]: AGENT_APP_NAME,
@@ -284,6 +306,7 @@ export function buildAgentDeploymentManifest(
                 periodSeconds: 10,
                 failureThreshold: 3,
               },
+              resources,
               securityContext: {
                 runAsNonRoot: true,
                 runAsUser: AGENT_RUN_AS,
