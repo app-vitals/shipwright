@@ -3,6 +3,9 @@ contact_links:
   - name: Questions & discussion
     url: https://github.com/app-vitals/shipwright/discussions
     about: Ask questions, share ideas, or show what you built with Shipwright.
+  - name: Community support
+    url: https://PLACEHOLDER_SUPPORT_CHANNEL_URL
+    about: Join our community for real-time help and announcements.
   - name: Security report
     url: https://github.com/app-vitals/shipwright/security/advisories/new
     about: Report a vulnerability privately (do not open a public issue).
