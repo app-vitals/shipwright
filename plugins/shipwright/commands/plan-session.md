@@ -22,7 +22,7 @@ Parse `$ARGUMENTS` to extract:
 Then print:
 ```
 ⚠ Auto-detected repo: {repo}
-This will be written to every task in state/todos.json and used by /dev-task to
+This will be written to every task in the task store and used by /dev-task to
 locate the source tree (~/src/{repo}). Confirm it is correct before proceeding.
 ```
 Wait for user confirmation before continuing to Step 1.
@@ -30,15 +30,7 @@ Wait for user confirmation before continuing to Step 1.
 This is the engineering planning pass. The product spec (what and why) is already done — either from `/prd` or handed in directly. This session translates that spec into a concrete technical design and task queue.
 
 **Input:** `planning/{session}/PRODUCT-SPEC.md` (or a verbal description if no spec exists)
-**Output:** Tasks in `state/todos.json`, ready for `dev-task` to execute
-
----
-
-## Phase-0: Backend Setup (GitHub only)
-
-Detect the active backend and, when it is `"github"`, run the task store setup before any context loading:
-
-The task store is now an HTTP service. This step is no longer needed — skip it entirely.
+**Output:** Tasks in the task store, ready for `dev-task` to execute
 
 ---
 
@@ -311,66 +303,9 @@ Before constructing any JSON, apply bundle inheritance to the full task list:
 
 A task on its own branch is unaffected. This ensures a `haiku`-scored task bundled with a `sonnet`-scored task is written as `model: "sonnet"`.
 
-The task store is now an HTTP service. The code path depends on whether `SHIPWRIGHT_TASK_STORE_URL` is set.
-
-```bash
-SHIPWRIGHT_CONFIG_VALUE=$([ -n "$SHIPWRIGHT_TASK_STORE_URL" ] && echo "task-store" || echo "json")
-```
-
-**Branch gate — choose exactly one path based on `SHIPWRIGHT_CONFIG_VALUE`:**
-
-- If `SHIPWRIGHT_CONFIG_VALUE` == `"task-store"` → follow **Path B** (HTTP task store) below.
-- Otherwise (value is `"json"` or empty) → follow **Path A** (local JSON) below.
-
-Do not execute both paths. Skip the path that does not apply.
-
 ---
 
-### Path A: taskStore is "json" (default)
-
-Write the new tasks to a temp file `/tmp/new-tasks-{session}.json` as a JSON array:
-
-```json
-[
-  {
-    "id": "{PREFIX}-{N}.{M}",
-    "source": "shipwright",
-    "session": "{session}",
-    "repo": "{repo}",
-    "title": "...",
-    "description": "...",
-    "acceptanceCriteria": ["...", "..."],
-    "layer": "API | Frontend | Database | Shared | Background | CLI",
-    "branch": "feat/...",
-    "dependencies": [],
-    "status": "pending",
-    "hitl": false,
-    "pr": null,
-    "addedAt": "{ISO timestamp}",
-    "hours": 2,
-    "complexity": {complexity},
-    "model": "{model}"
-  }
-]
-```
-
-Set `"hitl": true` (and include the `## Human steps` section in `description`) for any task flagged in Step 5.5.
-
-Append them to `state/todos.json` via the task store API (idempotent by id — safe to re-run):
-
-```bash
-curl -sf -X POST \
-  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  -H "Content-Type: application/json" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks/bulk" \
-  --data-binary @/tmp/new-tasks-{session}.json | jq .
-```
-
----
-
-### Path B: HTTP task store
-
-**Step 6a — Read owner/repo from config:**
+**Step 6a — Read owner/repo from the task store:**
 
 ```bash
 SHIPWRIGHT_REPO_FULL=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" "$SHIPWRIGHT_TASK_STORE_URL/tasks/repo" | jq -r '.repo // empty')
@@ -473,7 +408,7 @@ curl -sf -X POST \
   --data-binary @/tmp/new-tasks-{session}-linked.json | jq .
 ```
 
-This creates individual GitHub Issues for each task with the `status:pending` label, and the `source` field in each issue's metadata block links back to the parent plan issue.
+The `source` field on each task links back to the parent plan issue for traceability.
 
 ---
 
@@ -485,7 +420,7 @@ QUEUED
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Session: {session}
 Tasks queued: {count}
-{If github: Parent issue: https://github.com/{owner}/{repo}/issues/{parent_number}}
+Parent issue: https://github.com/{owner}/{repo}/issues/{parent_number}
 
 READY TO START (no dependencies):
 {list tasks with no deps}
