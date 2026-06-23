@@ -86,11 +86,12 @@ describe("research-docs.md — auto mode doc updates", () => {
 });
 
 describe("research-docs.md — auto mode follow-on tasks", () => {
-  it("creates follow-on tasks for missing docs via task_store.ts append", () => {
-    expect(content).toContain("task_store.ts");
-    const hasAppend =
-      content.includes("append") && content.includes("task_store");
-    expect(hasAppend).toBe(true);
+  it("creates follow-on tasks for missing docs via task store bulk API", () => {
+    expect(content).not.toContain("task_store.ts");
+    const hasBulkInsert =
+      content.includes("/tasks/bulk") &&
+      content.includes("SHIPWRIGHT_TASK_STORE_URL");
+    expect(hasBulkInsert).toBe(true);
   });
 
   it("does NOT generate docs for missing modules in auto mode", () => {

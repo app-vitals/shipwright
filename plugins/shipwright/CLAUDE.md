@@ -19,15 +19,15 @@ and the skill will discover what it needs from live state.
 ### 1. GitHub is the Source of Truth
 
 Skills query GitHub directly for PR state, CI status, authorship, and review decisions.
-Local files (`state/reviews.json`, `state/todos.json`) are caches — convenient shortcuts
+Local file `state/reviews.json` is a cache — a convenient shortcut
 when available, but never load-bearing.
 
 Applies to: **review**, **deploy**, **patch**, **dev-task**
 
 ### 2. State Files Are Caches, Not Prerequisites
 
-`state/reviews.json` and `state/todos.json` are local dedup caches that speed up common
-paths. Skills must not fail or behave incorrectly when these files are absent, empty, or
+`state/reviews.json` is a local dedup cache that speeds up common
+paths. Skills must not fail or behave incorrectly when this file is absent, empty, or
 stale. When a cache entry conflicts with live GitHub data, GitHub wins.
 
 Applies to: **review** (dedup by headRefOid), **deploy** (falls back to `gh pr view --json

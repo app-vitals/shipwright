@@ -18,9 +18,9 @@
  *   bun plugins/shipwright/scripts/check-dev-task.ts
  */
 
+import { createTaskStoreClient } from "./check-helpers.ts";
+import type { Task } from "./check-helpers.ts";
 import { type Clock, SystemClock } from "./clock.ts";
-import { createTaskStore, loadConfig } from "./create-task-store.ts";
-import type { Task } from "./store.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -108,18 +108,30 @@ function resolveGhUser(): string | undefined {
 }
 
 function buildProductionDeps(): Deps {
-  const { config } = loadConfig();
-  const store = createTaskStore(config);
+  const client = createTaskStoreClient();
   const assignee = resolveGhUser();
 
   return {
-    getReadyTasks: () => store.query({ ready: true, assignee }),
-    getInProgressTasks: () => store.query({ status: "in_progress", assignee }),
+    getReadyTasks: () =>
+      client.query(
+        assignee
+          ? new URLSearchParams({ ready: "true", assignee })
+          : new URLSearchParams({ ready: "true" }),
+      ),
+    getInProgressTasks: () =>
+      client.query(
+        assignee
+          ? new URLSearchParams({ status: "in_progress", assignee })
+          : new URLSearchParams({ status: "in_progress" }),
+      ),
     getHitlPendingTasks: () =>
-      store.query({ status: "pending", hitl: true, assignee }),
-    resetTask: (id) =>
-      store.update(id, { status: "pending", startedAt: undefined }),
-    stampTask: (id, startedAt) => store.update(id, { startedAt }),
+      client.query(
+        assignee
+          ? new URLSearchParams({ status: "pending", hitl: "true", assignee })
+          : new URLSearchParams({ status: "pending", hitl: "true" }),
+      ),
+    resetTask: (id) => client.update(id, { status: "pending", startedAt: null }),
+    stampTask: (id, startedAt) => client.update(id, { startedAt }),
     clock: SystemClock(),
   };
 }

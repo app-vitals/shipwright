@@ -1,4 +1,4 @@
-# Shipwright v4.28.4
+# Shipwright v4.29.0
 
 A structured dev pipeline plugin for Claude Code. Plan sessions, execute tasks, run autonomous dev loops, perform multi-agent code reviews, and conduct integrated project research — for any software project.
 
@@ -281,58 +281,18 @@ All commands look for planning docs at `planning/**/*_Task_Breakdown.md`. Create
 
 `/plan-session` Phase 7 auto-detects env-var prefixed commands that won't auto-approve, and presents patterns to add to `.claude/settings.local.json`. After `/dev-loop` completes, it offers to roll back pipeline-specific permissions.
 
-## Task Store Backends
+## Task Store
 
-Shipwright delegates task persistence to a pluggable task store. Two backends are built in:
+Shipwright uses an HTTP task store service for task persistence. The service exposes a REST API; agents call it directly via curl.
 
-### JSON (default)
+**Required env vars** (provisioned automatically by the agent harness):
 
-Tasks live in `state/todos.json`. No credentials required. Best for single-machine or single-agent workflows.
+| Var | Description |
+|-----|-------------|
+| `SHIPWRIGHT_TASK_STORE_URL` | Base URL of the task store service |
+| `SHIPWRIGHT_TASK_STORE_TOKEN` | Bearer token for this agent |
 
-```jsonc
-// .shipwright.json — or omit entirely to use JSON backend
-{
-  "taskStore": "json"
-}
-```
-
-### GitHub Issues
-
-Tasks live as GitHub Issues with label-based status tracking. Best for multi-agent workflows where task state needs to be visible on GitHub.
-
-Status is tracked via labels:
-
-| Label | Color | Meaning |
-|-------|-------|---------|
-| `status:pending` | gray | Queued, not yet started |
-| `status:in_progress` | yellow | Currently being worked on |
-| `status:pr_open` | blue | PR created, awaiting CI/review |
-| `status:approved` | green | PR approved, ready to merge |
-| `status:merged` | purple | Merged and done |
-| `status:blocked` | red | Blocked, needs human intervention |
-
-Full task metadata (description, acceptance criteria, branch, hours, dependencies) is stored in a fenced `shipwright` JSON block in the issue body.
-
-**Config:**
-
-```jsonc
-{
-  "taskStore": "github",
-  "github": {
-    "owner": "app-vitals",   // GitHub org or user (required)
-    "repo": "shipwright"     // Repository for issues (required)
-  }
-}
-```
-
-**Auth:** Set `GH_TOKEN` to any token with `repo` scope — a classic PAT, fine-grained PAT with Issues write, or `GITHUB_TOKEN` in GitHub Actions all work. No `project` scope required.
-
-**Setup:**
-
-```bash
-bun task_store.ts setup --backend github
-# Creates all 6 status labels in the configured repo
-```
+See the `task-store` skill for the full API reference and lifecycle commands.
 
 ---
 

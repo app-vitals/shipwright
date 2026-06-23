@@ -6,8 +6,9 @@
  * parent app, so these handlers assume the caller is already authenticated.
  *
  * Routes:
- *   GET    /tasks               list (?status, ?session, ?assignee, ?ready=true)
- *   POST   /tasks               create
+ *   GET    /tasks               list (?status, ?session, ?assignee, ?pr, ?branch, ?ready=true)
+ *   POST   /tasks               create one (409 if id exists)
+ *   POST   /tasks/bulk          insert array, skip 409s → { inserted, updated }
  *   GET    /tasks/:id           fetch one (404 when missing)
  *   PATCH  /tasks/:id           update
  *   DELETE /tasks/:id           delete
@@ -45,11 +46,14 @@ export function createTasksRoutes(taskService: TaskServiceLike): Hono {
     if (c.req.query("ready") === "true") {
       return c.json(await taskService.listReady(), 200);
     }
+    const prRaw = c.req.query("pr");
     const tasks = await taskService.list({
       status: c.req.query("status"),
       session: c.req.query("session"),
       assignee: c.req.query("assignee"),
       claimedBy: c.req.query("claimedBy"),
+      pr: prRaw !== undefined ? Number.parseInt(prRaw, 10) : undefined,
+      branch: c.req.query("branch"),
     });
     return c.json(tasks, 200);
   });
@@ -65,6 +69,21 @@ export function createTasksRoutes(taskService: TaskServiceLike): Hono {
     }
     const created = await taskService.create(body as Prisma.TaskCreateInput);
     return c.json(created, 201);
+  });
+
+  // ─── Bulk insert ───────────────────────────────────────────────────────────
+  app.post("/bulk", async (c) => {
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      throw new BadRequestError("body must be a JSON array of tasks");
+    }
+    if (!Array.isArray(body)) {
+      throw new BadRequestError("body must be a JSON array of tasks");
+    }
+    const result = await taskService.bulk(body as Prisma.TaskCreateInput[]);
+    return c.json(result, 200);
   });
 
   // ─── Get one ───────────────────────────────────────────────────────────────

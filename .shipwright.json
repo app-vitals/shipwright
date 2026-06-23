@@ -1,7 +1,0 @@
-{
-  "taskStore": "github",
-  "github": {
-    "owner": "app-vitals",
-    "repo": "shipwright"
-  }
-}
