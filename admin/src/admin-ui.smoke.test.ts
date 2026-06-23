@@ -1883,3 +1883,141 @@ describe("admin UI — manifest sync route", () => {
     expect(res.headers.get("Set-Cookie") ?? "").not.toContain("slack_provision_state=");
   });
 });
+
+// ─── Tasks page ───────────────────────────────────────────────────────────────
+
+describe("admin UI — tasks page", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  it("GET /admin/tasks renders tasks table with mock data", async () => {
+    const mockTasks = [
+      {
+        id: "task-1",
+        title: "Build auth module",
+        status: "pending",
+        session: "session-abc",
+        repo: "example-org/example-repo",
+        assignee: null,
+        claimedBy: null,
+      },
+      {
+        id: "task-2",
+        title: "Fix login bug",
+        status: "in_progress",
+        session: "session-abc",
+        repo: "example-org/example-repo",
+        assignee: "dmcaulay",
+        claimedBy: "agent-123",
+      },
+    ];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async () => mockTasks,
+      }),
+    );
+    const res = await app.request("/admin/tasks", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Build auth module");
+    expect(html).toContain("Fix login bug");
+    expect(html).toContain("Tasks");
+  });
+
+  it("GET /admin/tasks renders degraded notice when taskStoreUrl is absent", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        // No fetchTaskStoreTasks provided — simulates missing SHIPWRIGHT_TASK_STORE_URL
+      }),
+    );
+    const res = await app.request("/admin/tasks", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Task store unavailable");
+  });
+
+  it("GET /admin/tasks unauthenticated redirects to /admin/login", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request("/admin/tasks");
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/admin/login");
+  });
+
+  it("GET /admin/tasks shows Release button only for in_progress tasks", async () => {
+    const mockTasks = [
+      {
+        id: "task-1",
+        title: "Pending task",
+        status: "pending",
+        session: null,
+        repo: null,
+        assignee: null,
+        claimedBy: null,
+      },
+      {
+        id: "task-2",
+        title: "In progress task",
+        status: "in_progress",
+        session: null,
+        repo: null,
+        assignee: null,
+        claimedBy: "agent-123",
+      },
+    ];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async () => mockTasks,
+      }),
+    );
+    const res = await app.request("/admin/tasks", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("/admin/tasks/task-2/release");
+    expect(html).not.toContain("/admin/tasks/task-1/release");
+  });
+
+  it("POST /admin/tasks/:id/release calls releaseTask and redirects to /admin/tasks", async () => {
+    const released: string[] = [];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async () => [],
+        releaseTask: async (id: string) => {
+          released.push(id);
+        },
+      }),
+    );
+    const res = await app.request("/admin/tasks/task-2/release", {
+      method: "POST",
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/admin/tasks");
+    expect(released).toEqual(["task-2"]);
+  });
+
+  it("POST /admin/tasks/:id/release redirects with ?error=release_failed when releaseTask throws", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async () => [],
+        releaseTask: async () => {
+          throw new Error("task store unavailable");
+        },
+      }),
+    );
+    const res = await app.request("/admin/tasks/task-2/release", {
+      method: "POST",
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/admin/tasks?error=release_failed");
+  });
+});

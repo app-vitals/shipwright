@@ -68,6 +68,16 @@ export interface MemberItem {
   createdAt: Date;
 }
 
+export interface TaskItem {
+  id: string;
+  title: string;
+  status: string;
+  session?: string | null;
+  repo?: string | null;
+  assignee?: string | null;
+  claimedBy?: string | null;
+}
+
 // ─── Login page ───────────────────────────────────────────────────────────────
 
 export function renderLoginPage(opts?: {
@@ -831,6 +841,119 @@ export function renderProvisionPasteForm(
         </div>
         <button type="submit" class="btn btn-primary">Save Credentials →</button>
       </form>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+// ─── Tasks page ──────────────────────────────────────────────────────────────
+
+export function renderTasksPage(
+  tasks: TaskItem[],
+  filters: { status?: string; session?: string; repo?: string },
+  degraded: boolean,
+  userName: string,
+  opts?: { error?: string },
+): string {
+  const errorHtml = opts?.error
+    ? `<div class="alert alert-error">${escapeHtml(opts.error)}</div>`
+    : "";
+
+  const degradedHtml = degraded
+    ? `<div class="alert alert-warning">Task store unavailable — data shown may be stale or empty.</div>`
+    : "";
+
+  const rows =
+    tasks.length === 0
+      ? `<tr><td colspan="6" class="empty-state">No tasks found.</td></tr>`
+      : tasks
+          .map(
+            (t) => `<tr>
+    <td class="mono" style="font-size:11px">${escapeHtml(t.id)}</td>
+    <td>${escapeHtml(t.title)}</td>
+    <td><span class="badge ${t.status === "in_progress" ? "badge-blue" : t.status === "done" ? "badge-green" : "badge-gray"}">${escapeHtml(t.status)}</span></td>
+    <td class="mono" style="font-size:11px">${t.session ? escapeHtml(t.session) : '<span style="color:#9ca3af">—</span>'}</td>
+    <td class="mono" style="font-size:11px">${t.repo ? escapeHtml(t.repo) : '<span style="color:#9ca3af">—</span>'}</td>
+    <td>${
+      t.status === "in_progress"
+        ? `<form method="POST" action="/admin/tasks/${escapeHtml(t.id)}/release" style="display:inline">
+        <button type="submit" class="btn btn-secondary" style="font-size:11px;padding:3px 8px">Release</button>
+      </form>`
+        : ""
+    }</td>
+  </tr>`,
+          )
+          .join("\n");
+
+  const statusOptions = [
+    "",
+    "pending",
+    "in_progress",
+    "pr_open",
+    "approved",
+    "done",
+    "blocked",
+    "cancelled",
+  ]
+    .map(
+      (s) =>
+        `<option value="${escapeHtml(s)}" ${filters.status === s ? "selected" : ""}>${s === "" ? "All statuses" : escapeHtml(s)}</option>`,
+    )
+    .join("");
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tasks — Shipwright Admin</title>
+  <style>${baseStyles()}
+    .badge-blue { background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe; }
+    .alert-warning { background:#fefce8;color:#854d0e;border:1px solid #fde047;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:13px; }
+  </style>
+</head>
+<body>
+  ${renderAdminToolbar(userName, "/admin/tasks")}
+  <div class="vos-page">
+    <div class="page-header">
+      <h1 class="page-title">Tasks</h1>
+    </div>
+    ${errorHtml}
+    ${degradedHtml}
+    <div class="card" style="margin-bottom:16px">
+      <form method="GET" action="/admin/tasks" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label" style="font-size:11px">Status</label>
+          <select name="status" class="form-input" style="font-size:12px;padding:4px 8px">${statusOptions}</select>
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label" style="font-size:11px">Session</label>
+          <input name="session" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.session ?? "")}" placeholder="session-id" />
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label" style="font-size:11px">Repo</label>
+          <input name="repo" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.repo ?? "")}" placeholder="org/repo" />
+        </div>
+        <button type="submit" class="btn btn-secondary" style="font-size:12px">Filter</button>
+      </form>
+    </div>
+    <div class="card">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Title</th>
+            <th>Status</th>
+            <th>Session</th>
+            <th>Repo</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows}
+        </tbody>
+      </table>
     </div>
   </div>
 </body>
