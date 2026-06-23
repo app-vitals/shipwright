@@ -14,6 +14,7 @@ import { resolve } from "node:path";
 const PACKAGE_JSON_PATHS = [
   "package.json",
   "plugins/shipwright/package.json",
+  "plugins/shipwright/.claude-plugin/plugin.json",
   "metrics/package.json",
   "agent/package.json",
 ] as const;
@@ -63,7 +64,7 @@ function writeMarketplaceJson(path: string, version: string): void {
 }
 
 /**
- * Syncs `version` into all 4 package.json files, version.txt, and
+ * Syncs `version` into all 5 package.json/plugin.json files, version.txt, and
  * .claude-plugin/marketplace.json.
  *
  * @param version - A valid semver string (e.g. "1.2.3" or "1.0.0-alpha.1")

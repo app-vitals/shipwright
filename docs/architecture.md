@@ -1,16 +1,17 @@
 # Architecture
 
-> How Shipwright Harness is structured: three sequenced artifacts (plugin → metrics → agent) plus supporting surfaces, all MIT, all local-first.
+> How Shipwright Harness is structured: four sequenced artifacts (plugin → metrics → agent → task-store) plus supporting surfaces, all MIT, all local-first.
 
 ## Overview
 
-Shipwright Harness is the open-source autonomous delivery agent for [Claude Code](https://www.anthropic.com/claude-code). It ships as three artifacts, built and sequenced **A → B → C**, each independently runnable and depending on **no external platform service**:
+Shipwright Harness is the open-source autonomous delivery agent for [Claude Code](https://www.anthropic.com/claude-code). It ships as four artifacts, built and sequenced **A → B → C → D**, each independently runnable and depending on **no external platform service**:
 
 | Phase | Artifact | Directory | What it is |
 |---|---|---|---|
 | **A** | **Plugin** (the system) | `plugins/shipwright/` | The Claude Code plugin users `/plugin install` — commands, skills, agents, scripts for the full delivery loop. Repo-agnostic. |
 | **B** | **Metrics dashboard** | `metrics/` | Hono service: backend-agnostic `MetricsProvider` JSON endpoints + a server-rendered dashboard. Four modes: fixtures (offline), posthog (live), postgres (Postgres event store), sqlite (default — local SQLite store + `POST /batch/` ingest). |
 | **C** | **Shipwright agent** | `agent/` + `admin/` | Hono service + Prisma store (in `@shipwright/admin`); a thin autonomous runner: pick next ready task → build → ship PR → forward metrics. |
+| **D** | **Task store service** | `task-store/` | Postgres-backed task queue + scoped tokens. Prisma schema defines `Task` and `TaskToken` models; re-exported as `@shipwright/task-store` for use by plugin scripts and agent services. Replaces the JSON file fallback. |
 
 The hard architectural rule: **no new coupling.** The plugin stays repo-agnostic; the metrics service and the agent each stand alone. Everything runs offline by default (fixtures / injected doubles / scratch queue); live external calls happen only when an env var explicitly enables them.
 
@@ -20,7 +21,7 @@ The plugin drives the delivery loop: **spec → plan → execute → review → 
 
 Key surfaces (see `plugins/shipwright/README.md` and `plugins/shipwright/CLAUDE.md` for the full command/skill catalog):
 
-- **Commands** (`commands/`) — `brainstorm`, `plan-session`, `dev-task`, `review`, `patch`, `deploy`, the five-phase test-readiness pipeline (`test-inventory` → `test-design` → `test-migration` → `test-roadmap` → `test-publish`), `metrics`, `research`, `research-docs`, and more.
+- **Commands** (`commands/`) — `prd`, `plan-session`, `dev-task`, `review`, `patch`, `deploy`, the five-phase test-readiness pipeline (`test-inventory` → `test-design` → `test-migration` → `test-roadmap` → `test-publish`), `metrics`, `research`, `research-docs`, and more.
 - **Skills** (`skills/`) — autonomous behaviors including `ship-loop` (drains the task queue one pipeline step per call) and `shipwright-brand`.
 - **Scripts** (`scripts/`) — the task-store adapters, `check-dev-task.ts`, and supporting tooling.
 - **References** (`references/`) — schemas and recipes (`metrics-schema.md`, `task-store.md`, `doc-refresh-recipe.md`, `reviews-schema.md`, …).
@@ -43,11 +44,11 @@ A thin autonomous runner with a Prisma-backed store (PostgreSQL) and four HTTP s
 |---|---|---|
 | Marketing site | `site/` | Astro + Tailwind (**shipwright-harness.com**). **Not** a Bun workspace; Playwright smoke tests (`*.spec.ts`). |
 | Brand system | `brand/` | Locked design system (`BRAND.md`, `tokens.json`) + CSS build + lint, consumed by `site/`. |
-| Local state | `state/` | Git-ignored JSON task-store fallback + cached review state (only written when neither the GitHub nor the Jira backend is active). |
+| Local state | `state/` | Git-ignored JSON fallback (local-only, used when neither the Postgres task-store service nor GitHub/Jira backend is available) + cached review state. |
 
 ## Workspace layout
 
-The repo is a Bun-workspaces monorepo with **go-task** (`Taskfile.yml`) as the single local entrypoint. Four workspaces — `plugins/shipwright`, `metrics`, `agent`, `admin` — are wired into the root `package.json`. The `site/` is intentionally excluded from the root `bun test` scan (its Playwright `*.spec.ts` files would crash Bun's runner).
+The repo is a Bun-workspaces monorepo with **go-task** (`Taskfile.yml`) as the single local entrypoint. Five workspaces — `plugins/shipwright`, `metrics`, `agent`, `admin`, `task-store` — are wired into the root `package.json`. The `site/` is intentionally excluded from the root `bun test` scan (its Playwright `*.spec.ts` files would crash Bun's runner).
 
 ```
 shipwright/
@@ -55,6 +56,7 @@ shipwright/
 ├── metrics/              B — provider-agnostic Hono service (sqlite default / posthog / postgres / fixtures)
 ├── agent/                C — Shipwright agent runtime (entrypoint, cron, Slack, GitHub auth)
 ├── admin/                C — Admin service: CRUD API, admin UI, Prisma store (@shipwright/admin)
+├── task-store/           D — Task queue service: Postgres + Prisma, exports @shipwright/task-store
 ├── site/                 marketing site (Astro, separate toolchain)
 ├── brand/                locked design system
 ├── state/                local task-store / review-cache fallback

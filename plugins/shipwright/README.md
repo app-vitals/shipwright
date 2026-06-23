@@ -31,7 +31,7 @@ Every feature moves through the same stages. One `planning/{folder}/` directory 
 
 | Command | Description |
 |---------|-------------|
-| `/brainstorm {folder}` | Interactive PRD session — qualifying questions, codebase research, and PRODUCT-SPEC.md output ready for /plan-session |
+| `/prd {folder}` | Interactive PRD session — qualifying questions, codebase research, and PRODUCT-SPEC.md output ready for /plan-session |
 | `/plan-session {repo} {session}` | Structured planning — reads input docs, analyzes codebase, produces a stateful task breakdown. Accepts 1 arg (session) with auto-detected repo as a fallback. |
 | `/dev-task {task-id}` | Single task execution — branch, implement, test, simplify, review, PR |
 | `/dev-task {task-id} --merge` | Same as above, but auto-merges after review (used by dev-loop) |
@@ -62,12 +62,12 @@ Three cross-cutting contracts back the pipeline: **canary-execution** (dual-mode
 ## Workflow
 
 ```
-/brainstorm → /plan-session → /dev-task (or /dev-loop) → /review → merge
+/prd → /plan-session → /dev-task (or /dev-loop) → /review → merge
 ```
 
-### 0. Brainstorm
+### 0. PRD
 
-Have an idea but no spec yet? `/brainstorm` turns a rough concept into a structured `PRODUCT-SPEC.md` through an interactive session:
+Have an idea but no spec yet? `/prd` turns a rough concept into a structured `PRODUCT-SPEC.md` through an interactive session:
 
 1. Detects toolchain and reads existing project context
 2. Asks qualifying questions one at a time: problem statement, users, features (with depth probes per feature), constraints, out-of-scope, priorities, open questions, success criteria
@@ -347,7 +347,7 @@ shipwright/
 │   ├── code-reviewer.md         # Multi-angle code review sub-agent
 │   └── docs-refresher.md        # Targeted docs refresh sub-agent (used by /dev-task Step 8.5)
 ├── commands/
-│   ├── brainstorm.md            # Interactive PRD session → PRODUCT-SPEC.md
+│   ├── prd.md                   # Interactive PRD session → PRODUCT-SPEC.md
 │   ├── plan-session.md          # Planning session workflow
 │   ├── dev-task.md              # Single task execution
 │   ├── dev-loop.md              # Autonomous continuous loop
@@ -367,7 +367,7 @@ shipwright/
 │   ├── doc-refresh-recipe.md    # Shared staleness + section-rewrite recipe (research-docs + docs-refresher)
 │   ├── metrics-schema.md        # Metrics JSONL schema reference
 │   ├── planning-doc-template.md # Task breakdown document template
-│   ├── product-spec-template.md # PRODUCT-SPEC.md template for /brainstorm
+│   ├── product-spec-template.md # PRODUCT-SPEC.md template for /prd
 │   └── toolchain-patterns.md    # Config file → command mapping
 ├── scripts/
 │   └── posthog_send.py          # PostHog event sender (stdlib Python, no deps)

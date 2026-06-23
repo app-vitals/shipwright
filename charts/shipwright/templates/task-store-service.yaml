@@ -1,0 +1,17 @@
+{{- if .Values.taskStore.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "shipwright.taskStore.fullname" . }}
+  labels:
+    {{- include "shipwright.taskStore.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.taskStore.service.type | default "ClusterIP" }}
+  ports:
+    - name: http
+      port: {{ .Values.taskStore.service.port }}
+      targetPort: 3000
+      protocol: TCP
+  selector:
+    {{- include "shipwright.taskStore.selectorLabels" . | nindent 4 }}
+{{- end }}

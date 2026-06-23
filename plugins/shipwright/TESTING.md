@@ -15,8 +15,8 @@ Manual test scenarios for each command across different project types.
 
 | # | Command | Project Type | Scenario | Key Verification |
 |---|---------|-------------|----------|-----------------|
-| 30 | `/brainstorm` | Any | Full interactive session | Questions asked one at a time, PRODUCT-SPEC.md written with all sections, valid input for /plan-session |
-| 31 | `/brainstorm` | Any | Vague/minimal input | Probes trigger, open questions captured, no requirements invented |
+| 30 | `/prd` | Any | Full interactive session | Questions asked one at a time, PRODUCT-SPEC.md written with all sections, valid input for /plan-session |
+| 31 | `/prd` | Any | Vague/minimal input | Probes trigger, open questions captured, no requirements invented |
 | 1 | `/plan-session` | Node.js (pnpm) | New feature planning | Toolchain detected, layers auto-detected, template correct |
 | 17 | `/plan-session` | Any | Complexity scoring | Complexity column (1-5) in task table, scores correlate with task characteristics |
 | 18 | `/dev-loop` | Any | Cross-session handoff | Handoff section written after each batch, restored on restart |
@@ -809,7 +809,7 @@ Run these across ALL scenarios to verify genericization:
 
 ---
 
-## Scenario 30: /brainstorm — Full Interactive Session
+## Scenario 30: /prd — Full Interactive Session
 
 ### Setup
 1. Open any software project with a `CLAUDE.md` and at least one code directory
@@ -817,7 +817,7 @@ Run these across ALL scenarios to verify genericization:
 
 ### Run
 ```
-/brainstorm april-2026-notifications
+/prd april-2026-notifications
 ```
 
 ### Verify
@@ -836,10 +836,15 @@ Run these across ALL scenarios to verify genericization:
   - [ ] Overview, Problem Statement, Users & Context
   - [ ] Feature sections with ### headings
   - [ ] Acceptance criteria as `- [ ]` checkboxes
-  - [ ] Technical Constraints, Scope (In/Out), Priorities, Open Questions, Success Criteria
+  - [ ] Technical Constraints, Scope (In/Out), Priorities, Success Criteria
+  - [ ] Each feature has a **Source Map** field listing existing files the feature touches (populated from Phase 2 researcher pass; present even if empty with a note)
+  - [ ] Each feature has a **Testing Strategy** field naming the test layer and a one-sentence rationale (populated from Phase 2 test-layer probe)
+  - [ ] Top-level **Testing Strategy** section contains a table mapping every feature to its test layer and rationale
+  - [ ] **Resolved Decisions** section (replacing Open Questions) records every uncertainty from Q8 as a decision or default + rationale — no "TBD" or "defer to plan-session" entries
+  - [ ] No section contains a TODO placeholder or an unresolved question that would block plan-session from generating tasks
 - [ ] Phase 4 presents complete spec and iterates on feedback
 - [ ] Phase 5 writes `planning/april-2026-notifications/PRODUCT-SPEC.md`
-- [ ] Phase 5 prints BRAINSTORM COMPLETE block with feature count and next step
+- [ ] Phase 5 prints PRD COMPLETE block with feature count and next step
 - [ ] Phase 0 detected repo name is printed in the summary
 - [ ] Handoff line is `NEXT: /plan-session {detected-repo} april-2026-notifications` (two args, no `{repo}` placeholder literal)
 - [ ] Handoff includes the "⚠ Do NOT skip /plan-session" block
@@ -848,14 +853,14 @@ Run these across ALL scenarios to verify genericization:
 
 ---
 
-## Scenario 31: /brainstorm — Vague/Minimal Input
+## Scenario 31: /prd — Vague/Minimal Input
 
 ### Setup
 1. Prepare to give very short, vague answers (e.g., "something better", "it should work faster")
 
 ### Run
 ```
-/brainstorm test-vague-input
+/prd test-vague-input
 ```
 
 ### Verify

@@ -32,6 +32,7 @@ state/dev-agent.env
 # --- Prisma generated client (regenerated from schema on install) ---
 agent/prisma/client/
 admin/prisma/client/
+task-store/prisma/client/
 
 # --- Dependencies ---
 node_modules/

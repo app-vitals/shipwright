@@ -1,0 +1,24 @@
+{
+  "name": "@shipwright/task-store",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "description": "Shipwright task-store service — Postgres-backed Task queue + scoped tokens",
+  "scripts": {
+    "postinstall": "prisma generate --schema=prisma/schema.prisma",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "db:generate": "prisma generate --schema=prisma/schema.prisma",
+    "db:migrate": "prisma migrate deploy --schema=prisma/schema.prisma"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.2",
+    "hono": "^4.12.26"
+  },
+  "devDependencies": {
+    "bun-types": "^1.3.14",
+    "prisma": "^6.19.2",
+    "typescript": "*"
+  }
+}

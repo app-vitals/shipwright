@@ -28,6 +28,7 @@ const INITIAL_PKG = `{
 const PKG_PATHS = [
   "package.json",
   "plugins/shipwright/package.json",
+  "plugins/shipwright/.claude-plugin/plugin.json",
   "metrics/package.json",
   "agent/package.json",
 ];
@@ -77,7 +78,7 @@ afterEach(() => {
 });
 
 describe("syncVersion", () => {
-  it("updates all 4 package.json files with the new version", () => {
+  it("updates all 5 package.json/plugin.json files with the new version", () => {
     syncVersion("1.2.3", tmpDir);
     for (const rel of PKG_PATHS) {
       const content = readFileSync(resolve(tmpDir, rel), "utf8");

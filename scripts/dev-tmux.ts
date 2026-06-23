@@ -1,13 +1,14 @@
 /**
  * scripts/dev-tmux.ts
  * `task stack` launcher — ties the full local dev stack together in a single
- * tmux session ("shipwright") with one window and 5 panes:
+ * tmux session ("shipwright") with one window and 6 panes:
  *
- *   0. metrics — metrics dashboard, offline SQLite mode            (:3460)
- *   1. admin   — standalone admin service (CRUD API + UI)          (:3001)
- *   2. agent   — thin Shipwright agent with the dev /chat endpoint  (:3000)
- *   3. chat    — the TUI chat REPL (scripts/chat.ts)
- *   4. logs    — a scratch shell pane
+ *   0. metrics    — metrics dashboard, offline SQLite mode             (:3460)
+ *   1. admin      — standalone admin service (CRUD API + UI)           (:3001)
+ *   2. task-store — task-store service (Postgres-backed task queue)    (:3002)
+ *   3. agent      — thin Shipwright agent with the dev /chat endpoint  (:3000)
+ *   4. chat       — the TUI chat REPL (scripts/chat.ts)
+ *   5. logs       — a scratch shell pane
  *
  * `task dev` is deliberately left untouched — it is the no-tmux fallback that
  * the quickstart depends on. This launcher is additive.
@@ -39,6 +40,7 @@ export const SESSION_NAME = "shipwright";
 export const WINDOW_INDEX = 0;
 export const METRICS_PORT = 3460;
 export const ADMIN_PORT = 3001;
+export const TASK_STORE_PORT = 3002;
 export const AGENT_PORT = 3000;
 /** The metrics dashboard UI — a browser page (NOT a tmux pane). */
 export const DASHBOARD_URL = `http://localhost:${METRICS_PORT}/dashboard`;
@@ -72,6 +74,11 @@ const DEV_DB_USER = process.env.USER ?? "";
 const DEV_DATABASE_URL = `postgresql://${
   DEV_DB_USER ? `${DEV_DB_USER}@` : ""
 }localhost:5432/shipwright_dev`;
+// The task-store service owns a dedicated database (its schema warns against a
+// shared one). Same local Postgres server, distinct database name.
+const DEV_TASK_STORE_DATABASE_URL = `postgresql://${
+  DEV_DB_USER ? `${DEV_DB_USER}@` : ""
+}localhost:5432/shipwright_task_store_dev`;
 /** Homebrew formula `task stack` provisions Postgres from on macOS. */
 const PG_FORMULA = "postgresql@16";
 /**
@@ -81,7 +88,7 @@ const PG_FORMULA = "postgresql@16";
  * `bun install` (as `admin` was) silently has none, and the pane crashes on a
  * missing package. The preflight installs deps when any of these is missing.
  */
-const STACK_WORKSPACE_DIRS = ["metrics", "agent", "admin"];
+const STACK_WORKSPACE_DIRS = ["metrics", "agent", "admin", "task-store"];
 const DEV_AGENT_HOME = "state/agent-home";
 
 // ---------------------------------------------------------------------------
@@ -137,10 +144,11 @@ export type BuildOpts = {
 export function buildLogsBanner(): string {
   const lines = [
     "Shipwright dev stack",
-    `  dashboard  ${DASHBOARD_URL}   (opening in your browser)`,
-    `  admin      http://localhost:${ADMIN_PORT}`,
-    `  agent      http://localhost:${AGENT_PORT}`,
-    "  chat       <- the pane to the left",
+    `  dashboard   ${DASHBOARD_URL}   (opening in your browser)`,
+    `  admin       http://localhost:${ADMIN_PORT}`,
+    `  task-store  http://localhost:${TASK_STORE_PORT}`,
+    `  agent       http://localhost:${AGENT_PORT}`,
+    "  chat        <- the pane to the left",
     "",
     "Scratch shell — run ad-hoc commands here.",
   ];
@@ -179,6 +187,17 @@ export const STACK_PANES: Pane[] = [
       // dashboard (:3460). Without this it uses the same-host relative /dashboard,
       // which in dev points to :3001 instead of the metrics service on :3460.
       METRICS_DASHBOARD_URL: `http://localhost:${METRICS_PORT}/dashboard`,
+    },
+  },
+  {
+    label: "task-store",
+    cmd: ["bun", "run", "task-store/src/main.ts"],
+    env: {
+      PORT: String(TASK_STORE_PORT),
+      // Dedicated database for the task-store service — its Prisma schema reads
+      // DATABASE_URL_SHIPWRIGHT_TASK_STORE. Shares the local Postgres server with
+      // the admin service but a distinct database, per the schema's warning.
+      DATABASE_URL_SHIPWRIGHT_TASK_STORE: DEV_TASK_STORE_DATABASE_URL,
     },
   },
   {
@@ -350,6 +369,7 @@ export function buildStackCommands(
   });
 
   const adminIndex = panes.findIndex((p) => p.label === "admin");
+  const taskStoreIndex = panes.findIndex((p) => p.label === "task-store");
   const agentIndex = panes.findIndex((p) => p.label === "agent");
 
   // 3+4+5. For each pane, send its command.
@@ -365,6 +385,19 @@ export function buildStackCommands(
           "sh",
           "-c",
           `cd admin && bunx prisma generate --schema=prisma/schema.prisma && DATABASE_URL_SHIPWRIGHT_ADMIN=${DEV_DATABASE_URL} bunx prisma migrate deploy --schema=prisma/schema.prisma`,
+        ],
+      });
+    }
+    if (i === taskStoreIndex) {
+      // Preflight: generate the task-store Prisma client then apply migrations
+      // against its dedicated database, so the service's schema is up to date
+      // before it starts. Mirrors the admin preflight, scoped to task-store.
+      cmds.push({
+        kind: "preflight",
+        argv: [
+          "sh",
+          "-c",
+          `cd task-store && bunx prisma generate --schema=prisma/schema.prisma && DATABASE_URL_SHIPWRIGHT_TASK_STORE=${DEV_TASK_STORE_DATABASE_URL} bunx prisma migrate deploy --schema=prisma/schema.prisma`,
         ],
       });
     }
@@ -815,7 +848,7 @@ if (import.meta.main) {
   await ensurePostgresReady(DEV_DATABASE_URL);
 
   console.log(
-    `[stack] launching tmux session "${SESSION_NAME}" — metrics :${METRICS_PORT}, admin :${ADMIN_PORT}, agent :${AGENT_PORT}, chat REPL, logs`,
+    `[stack] launching tmux session "${SESSION_NAME}" — metrics :${METRICS_PORT}, admin :${ADMIN_PORT}, task-store :${TASK_STORE_PORT}, agent :${AGENT_PORT}, chat REPL, logs`,
   );
   try {
     runStack(STACK_PANES, realExec, { repoPath: process.cwd() });
