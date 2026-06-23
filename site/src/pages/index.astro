@@ -1,5 +1,5 @@
 ---
-// Home page — hero, install, problem, how-it-works, differentiators, demo,
+// Home page — hero, two-ways, problem, how-it-works, differentiators, demo,
 // social proof (SWW-2.1 + SWW-2.2).
 // No runtime JS, no hardcoded hex colors, no competitor names.
 import BaseLayout from "../layouts/BaseLayout.astro";
@@ -10,6 +10,82 @@ const tagline = `${taglinePrefix}${taglineGradient}.`;
 const install = "/plugin install shipwright@app-vitals/shipwright";
 const githubUrl = "https://github.com/app-vitals/shipwright";
 const discoveryUrl = "https://cal.com/app-vitals/discovery";
+
+// Two ways to run it: the plugin (in Claude Code) and the cloud agent (in your cloud).
+// Both run the same autonomous coding system; only the surface differs.
+const pillars = [
+  {
+    kind: "plugin",
+    num: "01",
+    name: "The plugin",
+    surface: "In Claude Code",
+    title: "Drive it at your prompt",
+    body: "Install it into Claude Code and run the full loop — spec → plan → build → review → deploy — on any repository. It writes the feature and its tests, opens the PR, and ships, autonomously, with you in the loop where it counts.",
+    points: [
+      "End to end — planning through deployment",
+      "Repo-agnostic — Node, Go, Rust, Python, Ruby",
+      "Driven by /shipwright:* commands",
+    ],
+  },
+  {
+    kind: "agent",
+    num: "02",
+    name: "The cloud agent",
+    surface: "In your cloud",
+    title: "Talk to it in Slack. It ships on a schedule.",
+    body: "Deploy the same system to your cloud as an agent you reach in Slack — DM it, @mention it in a thread, drop a voice note. It runs on a pool of scheduled jobs, picking up ready work and shipping PRs on its own — coding while you're away, at the same review and test bar.",
+    points: [
+      "Slack-native — DMs, mentions, voice notes, reactions",
+      "Cron-driven — two jobs on by default, ten in the pool",
+      "Deploys on Docker and Kubernetes",
+    ],
+  },
+];
+
+// Default cron jobs the cloud agent seeds onto every new agent.
+// Source of truth: admin/src/system-crons.ts (keep this list in sync).
+const crons = [
+  { name: "dev-task", cadence: "every 30 min", on: true, desc: "Picks the next ready task, builds it with tests, opens a PR." },
+  { name: "review-patch", cadence: "every 30 min", on: true, desc: "Reviews open PRs and patches the ones failing CI or review." },
+  { name: "review", cadence: "every 30 min", on: false, desc: "Review-only pass over open PRs." },
+  { name: "patch", cadence: "every 30 min", on: false, desc: "Fixes failing CI and unresolved review findings." },
+  { name: "deploy", cadence: "every 30 min", on: false, desc: "Merges approved PRs and deploys them." },
+  { name: "test-readiness", cadence: "daily · 6am", on: false, desc: "Audits test coverage and publishes the report." },
+  { name: "docs-freshness", cadence: "daily · 7am", on: false, desc: "Refreshes docs that drifted from the code." },
+  { name: "learn-dream", cadence: "daily · 3am", on: false, desc: "Mines merged PRs for durable learnings." },
+  { name: "dependabot-triage", cadence: "daily · 8am", on: false, desc: "Reviews and triages Dependabot PRs." },
+  { name: "entropy-patrol", cadence: "weekly · Mon", on: false, desc: "Scans for code entropy and fixes what's PR-worthy." },
+];
+
+// Metrics section — illustrative figures for the simulated dashboard screenshot.
+// Not live data; representative of /metrics/* (see docs/metrics.md).
+const metricStats = [
+  { value: "87%", label: "First-time quality", note: "merged without rework" },
+  { value: "1.4d", label: "Avg cycle time", note: "task → shipped" },
+  { value: "92%", label: "Estimation accuracy", note: "planned vs. actual" },
+  { value: "48", label: "Tasks shipped", note: "last 30 days" },
+];
+// Illustrative weekly throughput bars (relative heights, %).
+const metricBars = [42, 58, 36, 70, 54, 88, 76];
+
+// "Inside a task" tab — the ordered steps /shipwright:dev-task runs.
+// Faithful to plugins/shipwright/commands/dev-task.md (its phase headings).
+const devTaskSteps = [
+  { n: "01", title: "Detect the toolchain", body: "Scan the repo's build config and extract the test, lint, typecheck, and validate commands to use later." },
+  { n: "02", title: "Pick the next task", body: "Resume an in-progress task, or pull the next ready item from the queue and validate its fields." },
+  { n: "03", title: "Mark in-progress", body: "Clean up any orphaned branches or PRs from a prior run, then flip the task's status label." },
+  { n: "04", title: "Build the brief", body: "Assemble a spec prompt from the task's title, description, acceptance criteria, and layer." },
+  { n: "05", title: "Set up a worktree", body: "Create or reuse an isolated git worktree on the task's branch — never on main." },
+  { n: "06", title: "Tests first, then code", body: "Write failing tests, make them pass, then refactor. No production code before a failing test exists." },
+  { n: "07", title: "Simplify", body: "Review the diff for duplication, dead code, naming, and needless complexity — and fix it." },
+  { n: "08", title: "Verify the spec", body: "An independent subagent checks every acceptance criterion against the diff and auto-fixes gaps." },
+  { n: "09", title: "Grade requirements", body: "Score each criterion met / partial / not-met, and block the task if anything is unmet after fixes." },
+  { n: "10", title: "Pre-ship checks", body: "Run validate, lint, test, and typecheck, and report the coverage delta against the threshold." },
+  { n: "11", title: "Refresh the docs", body: "A docs agent updates any docs the change made stale, in a separate commit on the branch." },
+  { n: "12", title: "Push & open the PR", body: "Push the branch and open a pull request — or add commits to the existing one." },
+  { n: "13", title: "Watch CI, fix failures", body: "Poll CI, collect failure logs, and retry fixes up to six times before blocking the task." },
+  { n: "14", title: "Record metrics & hand off", body: "Move the task to pr_open, append the metrics line, and print a handoff summary." },
+];
 
 // How-it-works: the four pipeline stages (plan → build → review → ship).
 const stages = [
@@ -77,55 +153,685 @@ $ /shipwright:deploy
 ---
 
 <BaseLayout title="Shipwright Harness" description={tagline}>
-  <!-- ── Hero ── -->
-  <section
-    class="relative z-10 flex min-h-screen flex-col justify-center py-24"
-  >
+  <!-- ── Hero ── (minimal: eyebrow + tagline; flows straight into two-ways) -->
+  <section class="relative z-10 pt-12 pb-8">
     <p class="sw-label">Built on Claude Code</p>
     <h1 class="sw-display mt-4 max-w-3xl">
       {taglinePrefix}<span class="sw-gradient-text">{taglineGradient}</span>.
     </h1>
-    <p class="mt-4 max-w-xl text-lg">
-      A deployable cloud agent and the autonomous coding system that powers it —
-      running on your own codebase.
-    </p>
-
-    <div class="mt-8 flex flex-wrap items-center gap-4">
-      <a class="sw-btn" href="#install">Get started</a>
-      <a class="sw-btn sw-btn-secondary" href={githubUrl}>View on GitHub</a>
-    </div>
-
-    <div id="install" class="mt-10 max-w-xl">
-      <p class="sw-label">Install</p>
-      <pre class="sw-code mt-3 w-fit"><code>{install}</code></pre>
-    </div>
   </section>
 
-  <!-- 1. Problem -->
-  <section id="problem" class="relative z-10 py-24">
-    <p class="sw-label">The bottleneck</p>
-    <h2 class="sw-h1 mt-4 max-w-2xl">
-      AI tools are fast. Your pipeline isn't.
+  <!-- Showcase: four tabbed panels (Two ways · Crons · Metrics · Demo).
+       CSS-only tabs via the radio-input pattern — no runtime JS. -->
+  <section id="showcase" class="relative z-10 pt-6 pb-24">
+    <input class="sw-tab-input" type="radio" name="sw-showcase" id="sw-tab-two-ways" checked />
+    <input class="sw-tab-input" type="radio" name="sw-showcase" id="sw-tab-devtask" />
+    <input class="sw-tab-input" type="radio" name="sw-showcase" id="sw-tab-crons" />
+    <input class="sw-tab-input" type="radio" name="sw-showcase" id="sw-tab-metrics" />
+    <input class="sw-tab-input" type="radio" name="sw-showcase" id="sw-tab-demo" />
+
+    <div class="sw-tablist" role="tablist" aria-label="Product showcase">
+      <label class="sw-tab" for="sw-tab-two-ways">Two ways to run it</label>
+      <label class="sw-tab" for="sw-tab-devtask">Inside a task</label>
+      <label class="sw-tab" for="sw-tab-crons">Ships on a schedule</label>
+      <label class="sw-tab" for="sw-tab-metrics">Metrics</label>
+      <label class="sw-tab" for="sw-tab-demo">Demo</label>
+    </div>
+
+    <div class="sw-panels">
+      <!-- Panel: Two ways to run it -->
+      <div id="two-ways" class="sw-panel sw-panel--two-ways">
+        <!-- Centered header: make the "one system, two surfaces" idea unmistakable. -->
+    <div class="flex flex-col items-center text-center">
+      <p class="sw-label">Two ways to run it</p>
+      <h2 class="sw-h1 mt-3 max-w-3xl">
+        One system. <span class="sw-gradient-text">A plugin and a cloud agent.</span>
+      </h2>
+      <p class="mt-5 max-w-2xl text-lg">
+        The same autonomous coding system, two ways to put it to work — drive it
+        yourself from Claude Code, or deploy it to your cloud and let it ship on
+        its own.
+      </p>
+    </div>
+
+    <!-- Two pillars with a centered "+" connector: plugin + agent = one system. -->
+    <div class="relative mt-12 grid items-stretch gap-6 lg:grid-cols-2">
+      <!-- Connector badge (lg only): visually fuses the two cards into one system. -->
+      <div
+        class="pointer-events-none absolute left-1/2 top-1/2 z-20 hidden -translate-x-1/2 -translate-y-1/2 lg:flex"
+        aria-hidden="true"
+      >
+        <span
+          class="flex h-14 w-14 items-center justify-center rounded-full text-2xl"
+          style="background: var(--sw-color-bg-overlay); border: 1px solid var(--sw-color-border-strong);"
+        >
+          <span class="sw-gradient-text">+</span>
+        </span>
+      </div>
+
+      {
+        pillars.map((p) => {
+          const accent =
+            p.kind === "agent"
+              ? "var(--sw-color-support-patriot-bright)"
+              : "var(--sw-color-brand-default)";
+          return (
+            <div
+              class="sw-card flex flex-col gap-4"
+              style={`border-top: 2px solid ${accent};`}
+            >
+              {/* Header: glyph + surface label + big number */}
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                  <span
+                    class="flex h-11 w-11 items-center justify-center rounded-lg"
+                    style={`background: var(--sw-color-bg-overlay); color: ${accent};`}
+                  >
+                    {p.kind === "plugin" ? (
+                      <svg
+                        width="22"
+                        height="22"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                      >
+                        <polyline points="5 8 9 12 5 16" />
+                        <line x1="12" y1="16" x2="18" y2="16" />
+                      </svg>
+                    ) : (
+                      <svg
+                        width="22"
+                        height="22"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M21 11.5a8.4 8.4 0 0 1-8.5 8.5 8.5 8.5 0 0 1-3.8-.9L3 21l1.9-5.7a8.5 8.5 0 0 1-.9-3.8 8.4 8.4 0 0 1 8.5-8.5 8.5 8.5 0 0 1 8.5 8.5z" />
+                      </svg>
+                    )}
+                  </span>
+                  <div class="text-left">
+                    <p class="text-lg" style={`color: ${accent};`}>{p.name}</p>
+                    <p class="sw-label">{p.surface}</p>
+                  </div>
+                </div>
+                <span
+                  class="sw-mono text-2xl"
+                  style="color: var(--sw-color-text-muted);"
+                >
+                  {p.num}
+                </span>
+              </div>
+
+              <h3 class="text-2xl">{p.title}</h3>
+              <p>{p.body}</p>
+
+              {/* Mini-visual: terminal for the plugin, a Slack thread for the agent */}
+              {p.kind === "plugin" ? (
+                <pre class="sw-code text-sm leading-relaxed"><code>$ /shipwright:dev-task
+→ build · test · review · ship
+✓ PR #128 opened</code></pre>
+              ) : (
+                <div
+                  class="flex flex-col gap-2 rounded-lg p-3"
+                  style="background: var(--sw-color-bg-overlay); border: 1px solid var(--sw-color-border-muted);"
+                >
+                  <div class="flex items-start gap-2">
+                    <span
+                      class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded text-xs"
+                      style="background: var(--sw-color-border-strong); color: var(--sw-color-text-body);"
+                    >
+                      you
+                    </span>
+                    <p class="text-sm">@shipwright take the next ready task</p>
+                  </div>
+                  <div class="flex items-start gap-2">
+                    <img
+                      src="/shipwright-icon.svg"
+                      alt=""
+                      width="24"
+                      height="24"
+                      class="mt-0.5 shrink-0 rounded"
+                    />
+                    <p class="text-sm">
+                      <span style="color: var(--sw-color-brand-default);">✓</span>{" "}
+                      Shipped <strong>PR #128</strong> — reviewed, tests green,
+                      deployed.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <ul class="mt-1 flex flex-col gap-2">
+                {p.points.map((pt) => (
+                  <li class="flex gap-2">
+                    <span style={`color: ${accent};`} aria-hidden="true">→</span>
+                    <span>{pt}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })
+      }
+    </div>
+
+    <!-- Tie both pillars back to the shared engine. -->
+    <p class="mt-8 text-center">
+      <a href="#how-it-works">Either way, the same four-stage engine ships it →</a>
+    </p>
+      </div>
+
+      <!-- Panel: Ships on a schedule -->
+      <div id="crons" class="sw-panel sw-panel--crons">
+    <p class="sw-label">Ships on a schedule</p>
+    <h2 class="sw-h1 mt-3 max-w-2xl">
+      Ten cron jobs, ready out of the box.
     </h2>
     <p class="mt-5 max-w-2xl text-lg">
-      AI writes a feature in seconds. Then it sits — waiting on planning, code
-      review, test coverage, and the manual steps it takes to actually ship.
-      Generation got cheap; everything around it stayed human-paced. The work
-      didn't disappear, it just moved downstream.
+      Every cloud agent is seeded with ten scheduled jobs. Two run from day
+      one; the rest are a single toggle away. Each guards itself with a
+      pre-check, so it only spends a turn when there's real work to do.
     </p>
+
+    <div class="mt-10 grid gap-3 sm:grid-cols-2">
+      {
+        crons.map((c) => (
+          <div class="sw-card flex items-start justify-between gap-4 py-4">
+            <div class="flex flex-col gap-1">
+              <code
+                class="sw-mono text-sm"
+                style="color: var(--sw-color-text-heading);"
+              >
+                {c.name}
+              </code>
+              <p class="text-sm">{c.desc}</p>
+              <p class="sw-label">{c.cadence}</p>
+            </div>
+            <span class={c.on ? "sw-pill sw-pill-success" : "sw-pill"}>
+              {c.on ? "On" : "Opt-in"}
+            </span>
+          </div>
+        ))
+      }
+    </div>
+      </div>
+
+      <!-- Panel: Metrics -->
+      <div id="metrics" class="sw-panel sw-panel--metrics">
+    <p class="sw-label">Measured, not vibes</p>
+    <h2 class="sw-h1 mt-3 max-w-2xl">
+      A dashboard that grades the work.
+    </h2>
+    <p class="mt-5 max-w-2xl text-lg">
+      Every task emits telemetry — first-time-quality, estimation accuracy,
+      review verdicts, cycle time, and token cost — to a dashboard you host
+      yourself. PostHog, Postgres, or a local SQLite store; no data leaves your
+      control.
+    </p>
+
+    <!-- Simulated dashboard screenshot (on-brand mock, no runtime JS). -->
+    <div
+      class="mt-10 overflow-hidden rounded-xl"
+      style="background: var(--sw-color-bg-raised); border: 1px solid var(--sw-color-border-muted);"
+      role="img"
+      aria-label="Simulated Shipwright metrics dashboard showing first-time quality, cycle time, estimation accuracy, tasks shipped, and a weekly throughput chart."
+    >
+      <!-- Window chrome -->
+      <div
+        class="flex items-center gap-3 px-4 py-3"
+        style="border-bottom: 1px solid var(--sw-color-border-subtle);"
+      >
+        <span class="flex gap-1.5" aria-hidden="true">
+          <span
+            class="h-3 w-3 rounded-full"
+            style="background: var(--sw-color-border-strong);"></span>
+          <span
+            class="h-3 w-3 rounded-full"
+            style="background: var(--sw-color-border-strong);"></span>
+          <span
+            class="h-3 w-3 rounded-full"
+            style="background: var(--sw-color-border-strong);"></span>
+        </span>
+        <span class="sw-label">shipwright metrics · last 30 days</span>
+      </div>
+
+      <!-- Dashboard body -->
+      <div class="p-5">
+        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {
+            metricStats.map((s) => (
+              <div
+                class="rounded-lg p-4"
+                style="background: var(--sw-color-bg-overlay); border-top: 2px solid var(--sw-color-brand-default);"
+              >
+                <p class="sw-stat" style="color: var(--sw-color-text-heading);">
+                  {s.value}
+                </p>
+                <p class="sw-label mt-1">{s.label}</p>
+                <p
+                  class="mt-1 text-sm"
+                  style="color: var(--sw-color-text-muted);"
+                >
+                  {s.note}
+                </p>
+              </div>
+            ))
+          }
+        </div>
+
+        <!-- Throughput chart (pure-CSS bars) -->
+        <div
+          class="mt-4 rounded-lg p-4"
+          style="background: var(--sw-color-bg-overlay);"
+        >
+          <div class="flex items-center justify-between">
+            <p class="sw-label">Weekly throughput</p>
+            <p class="sw-label" style="color: var(--sw-color-brand-default);">
+              ▲ trending up
+            </p>
+          </div>
+          <div class="mt-4 flex h-24 items-end gap-2" aria-hidden="true">
+            {
+              metricBars.map((h) => (
+                <div
+                  class="flex-1 rounded-t"
+                  style={`height: ${h}%; background: linear-gradient(180deg, var(--sw-color-brand-default), var(--sw-color-brand-strong));`}
+                />
+              ))
+            }
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="mt-4 text-sm" style="color: var(--sw-color-text-muted);">
+      Illustrative figures. Run <code class="sw-mono">task api</code> to see the
+      live dashboard on your own data.
+    </p>
+      </div>
+
+      <!-- Panel: Demo -->
+      <div id="demo" class="sw-panel sw-panel--demo">
+    <p class="sw-label">A run, end to end</p>
+    <h2 class="sw-h1 mt-4 max-w-2xl">
+      Watch it ship — from your terminal or from Slack.
+    </h2>
+    <p class="mt-5 max-w-2xl text-lg">
+      The plugin runs the loop from the command line. The cloud agent does the
+      same from a Slack thread — you ask, it builds, reviews, and ships.
+    </p>
+
+    <div class="mt-10 grid items-start gap-6 lg:grid-cols-2">
+      <!-- Plugin demo: terminal (animated GIF + text-fallback transcript). -->
+      <div class="flex flex-col gap-3">
+        <p class="sw-label" style="color: var(--sw-color-brand-default);">
+          From the command line
+        </p>
+        <img
+          src="/demo.gif"
+          alt="Shipwright Harness in a Claude Code terminal: install, then plan, build, review, and ship a task end to end."
+          width="900"
+          class="w-full rounded-xl"
+          style="border: 1px solid var(--sw-color-border-muted);"
+        />
+        <pre class="sw-code text-sm leading-relaxed"><code>{demoTranscript}</code></pre>
+      </div>
+
+      <!-- Cloud-agent demo: animated Slack thread (pure CSS, no runtime JS). -->
+      <div class="flex flex-col gap-3">
+        <p
+          class="sw-label"
+          style="color: var(--sw-color-support-patriot-bright);"
+        >
+          From Slack
+        </p>
+        <div
+          class="overflow-hidden rounded-xl"
+          style="background: var(--sw-color-bg-raised); border: 1px solid var(--sw-color-border-muted);"
+          role="img"
+          aria-label="Simulated Slack thread: a user asks the Shipwright agent to take the next task; the agent builds it, passes review, and ships PR #128, which a teammate reacts to."
+        >
+          <!-- Channel header -->
+          <div
+            class="flex items-center gap-2 px-4 py-3"
+            style="border-bottom: 1px solid var(--sw-color-border-subtle);"
+          >
+            <img
+              src="/shipwright-icon.svg"
+              alt=""
+              width="20"
+              height="20"
+              class="rounded"
+            />
+            <strong
+              class="text-sm"
+              style="color: var(--sw-color-text-heading);">shipwright</strong>
+            <span class="sw-pill">APP</span>
+            <span class="sw-label" style="margin-left: auto;">#engineering</span>
+          </div>
+
+          <!-- Messages -->
+          <div class="flex flex-col gap-3 p-4">
+            <div class="sw-slack-msg sw-slack-msg--1 flex gap-2">
+              <span
+                class="sw-slack-av"
+                style="background: var(--sw-color-border-strong); color: var(--sw-color-text-body);"
+                >you</span>
+              <div>
+                <p class="text-sm">
+                  <strong style="color: var(--sw-color-text-heading);">you</strong>
+                  <span style="color: var(--sw-color-text-muted);"> 9:14</span>
+                </p>
+                <p class="text-sm">@shipwright take the next ready task</p>
+              </div>
+            </div>
+
+            <div class="sw-slack-typing flex items-center gap-2">
+              <img
+                src="/shipwright-icon.svg"
+                alt=""
+                width="24"
+                height="24"
+                class="rounded"
+              />
+              <span class="sw-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+            </div>
+
+            <div class="sw-slack-msg sw-slack-msg--2 flex gap-2">
+              <img
+                src="/shipwright-icon.svg"
+                alt=""
+                width="24"
+                height="24"
+                class="shrink-0 rounded"
+              />
+              <div>
+                <p class="text-sm">
+                  <strong style="color: var(--sw-color-text-heading);">Shipwright</strong>
+                  <span style="color: var(--sw-color-text-muted);"> 9:14</span>
+                </p>
+                <p class="text-sm">
+                  On it — picking up SWW-2.4. Branching, writing tests…
+                </p>
+              </div>
+            </div>
+
+            <div class="sw-slack-msg sw-slack-msg--3 flex gap-2">
+              <img
+                src="/shipwright-icon.svg"
+                alt=""
+                width="24"
+                height="24"
+                class="shrink-0 rounded"
+              />
+              <div>
+                <p class="text-sm">
+                  <strong style="color: var(--sw-color-text-heading);">Shipwright</strong>
+                  <span style="color: var(--sw-color-text-muted);"> 9:16</span>
+                </p>
+                <p class="text-sm">
+                  Tests green · review approved · 0 blocking findings
+                </p>
+              </div>
+            </div>
+
+            <div class="sw-slack-msg sw-slack-msg--4 flex gap-2">
+              <img
+                src="/shipwright-icon.svg"
+                alt=""
+                width="24"
+                height="24"
+                class="shrink-0 rounded"
+              />
+              <div>
+                <p class="text-sm">
+                  <strong style="color: var(--sw-color-text-heading);">Shipwright</strong>
+                  <span style="color: var(--sw-color-text-muted);"> 9:17</span>
+                </p>
+                <p class="text-sm">
+                  <span style="color: var(--sw-color-brand-default);">✓</span>
+                  Shipped <strong>PR #128</strong> — merged &amp; deployed.
+                  Metrics forwarded.
+                </p>
+                <span
+                  class="sw-slack-react mt-2 inline-flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-xs"
+                  style="background: var(--sw-color-bg-overlay); border: 1px solid var(--sw-color-border-muted);"
+                  >👍 1</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+      </div>
+
+      <!-- Panel: Inside /shipwright:dev-task -->
+      <div id="devtask" class="sw-panel sw-panel--devtask">
+        <p class="sw-label">Inside /shipwright:dev-task</p>
+        <h2 class="sw-h1 mt-3 max-w-2xl">
+          From a ready task to a green PR.
+        </h2>
+        <p class="mt-5 max-w-2xl text-lg">
+          One command runs the whole sequence — pick a task, write the tests,
+          build, simplify, verify, and open a reviewed, green pull request.
+        </p>
+
+        <div class="sw-callout mt-6 max-w-3xl">
+          <p>
+            Enforced order: <strong>tests before code</strong> ·
+            <strong>simplify after green</strong> ·
+            <strong>spec verified before the PR</strong> ·
+            <strong>CI must pass</strong>.
+          </p>
+        </div>
+
+        <ol class="mt-8 grid gap-3 sm:grid-cols-2">
+          {
+            devTaskSteps.map((s) => (
+              <li class="sw-card flex gap-3">
+                <span
+                  class="sw-mono text-sm"
+                  style="color: var(--sw-color-brand-default);"
+                >
+                  {s.n}
+                </span>
+                <div>
+                  <h3
+                    class="text-base"
+                    style="color: var(--sw-color-text-heading);"
+                  >
+                    {s.title}
+                  </h3>
+                  <p class="mt-1 text-sm">{s.body}</p>
+                </div>
+              </li>
+            ))
+          }
+        </ol>
+      </div>
+    </div>
   </section>
 
-  <!-- 2. How it works -->
+  <!--
+    Animated Slack thread styling (cloud-agent demo). Pure CSS keyframes — NO
+    runtime JS. Messages are visible by default (and for reduced-motion users);
+    the staggered reveal only runs when motion is allowed.
+  -->
+  <style>
+    /* CSS-only tabs (radio-input pattern) — switches panels with NO runtime JS. */
+    .sw-tab-input {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+    .sw-tablist {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+    .sw-tab {
+      cursor: pointer;
+      user-select: none;
+      padding: 0.5rem 1rem;
+      border-radius: 9999px;
+      border: 1px solid var(--sw-color-border-muted);
+      color: var(--sw-color-text-body);
+      font-size: 0.875rem;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+    .sw-tab:hover {
+      border-color: var(--sw-color-border-strong);
+    }
+    .sw-panel {
+      display: none;
+      padding-top: 2.5rem;
+    }
+    /* Active tab label (checked radio) → green fill, navy text. */
+    #sw-tab-two-ways:checked ~ .sw-tablist label[for="sw-tab-two-ways"],
+    #sw-tab-devtask:checked ~ .sw-tablist label[for="sw-tab-devtask"],
+    #sw-tab-crons:checked ~ .sw-tablist label[for="sw-tab-crons"],
+    #sw-tab-metrics:checked ~ .sw-tablist label[for="sw-tab-metrics"],
+    #sw-tab-demo:checked ~ .sw-tablist label[for="sw-tab-demo"] {
+      background: var(--sw-color-brand-default);
+      border-color: var(--sw-color-brand-default);
+      color: var(--sw-color-brand-on-brand-text);
+    }
+    /* Keyboard focus ring on the focused tab. */
+    #sw-tab-two-ways:focus-visible ~ .sw-tablist label[for="sw-tab-two-ways"],
+    #sw-tab-devtask:focus-visible ~ .sw-tablist label[for="sw-tab-devtask"],
+    #sw-tab-crons:focus-visible ~ .sw-tablist label[for="sw-tab-crons"],
+    #sw-tab-metrics:focus-visible ~ .sw-tablist label[for="sw-tab-metrics"],
+    #sw-tab-demo:focus-visible ~ .sw-tablist label[for="sw-tab-demo"] {
+      outline: 2px solid var(--sw-color-support-patriot-bright);
+      outline-offset: 2px;
+    }
+    /* Show only the active panel. */
+    #sw-tab-two-ways:checked ~ .sw-panels .sw-panel--two-ways,
+    #sw-tab-devtask:checked ~ .sw-panels .sw-panel--devtask,
+    #sw-tab-crons:checked ~ .sw-panels .sw-panel--crons,
+    #sw-tab-metrics:checked ~ .sw-panels .sw-panel--metrics,
+    #sw-tab-demo:checked ~ .sw-panels .sw-panel--demo {
+      display: block;
+    }
+
+    .sw-slack-av {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 24px;
+      width: 24px;
+      flex-shrink: 0;
+      border-radius: 6px;
+      font-size: 11px;
+    }
+    .sw-dots {
+      display: inline-flex;
+      gap: 4px;
+    }
+    .sw-dots i {
+      display: block;
+      width: 6px;
+      height: 6px;
+      border-radius: 9999px;
+      background: var(--sw-color-text-muted);
+    }
+    /* Typing indicator is hidden by default; only the animation reveals it. */
+    .sw-slack-typing {
+      opacity: 0;
+    }
+
+    @media (prefers-reduced-motion: no-preference) {
+      .sw-slack-msg,
+      .sw-slack-react {
+        opacity: 0;
+      }
+      .sw-slack-msg--1 {
+        animation: sw-msg-1 14s infinite;
+      }
+      .sw-slack-msg--2 {
+        animation: sw-msg-2 14s infinite;
+      }
+      .sw-slack-msg--3 {
+        animation: sw-msg-3 14s infinite;
+      }
+      .sw-slack-msg--4 {
+        animation: sw-msg-4 14s infinite;
+      }
+      .sw-slack-typing {
+        animation: sw-typing 14s infinite;
+      }
+      .sw-slack-react {
+        animation: sw-react 14s infinite;
+      }
+      .sw-dots i {
+        animation: sw-dot 1.2s infinite;
+      }
+      .sw-dots i:nth-child(2) {
+        animation-delay: 0.15s;
+      }
+      .sw-dots i:nth-child(3) {
+        animation-delay: 0.3s;
+      }
+    }
+
+    @keyframes sw-msg-1 {
+      0%, 3% { opacity: 0; transform: translateY(8px); }
+      6%, 94% { opacity: 1; transform: none; }
+      99%, 100% { opacity: 0; }
+    }
+    @keyframes sw-msg-2 {
+      0%, 19% { opacity: 0; transform: translateY(8px); }
+      23%, 94% { opacity: 1; transform: none; }
+      99%, 100% { opacity: 0; }
+    }
+    @keyframes sw-msg-3 {
+      0%, 31% { opacity: 0; transform: translateY(8px); }
+      35%, 94% { opacity: 1; transform: none; }
+      99%, 100% { opacity: 0; }
+    }
+    @keyframes sw-msg-4 {
+      0%, 43% { opacity: 0; transform: translateY(8px); }
+      47%, 94% { opacity: 1; transform: none; }
+      99%, 100% { opacity: 0; }
+    }
+    @keyframes sw-typing {
+      0%, 11% { opacity: 0; }
+      13%, 18% { opacity: 1; }
+      21%, 100% { opacity: 0; }
+    }
+    @keyframes sw-react {
+      0%, 55% { opacity: 0; transform: scale(0.5); }
+      60%, 94% { opacity: 1; transform: scale(1); }
+      99%, 100% { opacity: 0; }
+    }
+    @keyframes sw-dot {
+      0%, 80%, 100% { transform: translateY(0); opacity: 0.5; }
+      40% { transform: translateY(-3px); opacity: 1; }
+    }
+  </style>
+
+  <!-- How it works (shared engine, below the tabbed showcase) -->
   <section id="how-it-works" class="relative z-10 py-24">
     <p class="sw-label">How it works</p>
     <h2 class="sw-h1 mt-4 max-w-2xl">
-      A deployable agent, backed by a system that does the work.
+      The same four stages, however you run it.
     </h2>
     <p class="mt-5 max-w-2xl text-lg">
-      Shipwright Harness is a deployable agent you run on your own codebase, and
-      an autonomous coding system that powers it. The agent picks up ready work
-      and drives it through four stages — end to end, with you in the loop only
-      where it counts.
+      Plugin or cloud agent, the work runs through the same four stages. The
+      deployable agent picks up each ready task and drives it end to end — with
+      you in the loop only where it counts.
     </p>
 
     <div class="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -144,7 +850,7 @@ $ /shipwright:deploy
     </div>
   </section>
 
-  <!-- 3. Differentiators -->
+  <!-- Differentiators -->
   <section id="differentiators" class="relative z-10 py-24">
     <p class="sw-label">Why Shipwright Harness</p>
     <h2 class="sw-h1 mt-4 max-w-2xl">
@@ -175,30 +881,7 @@ $ /shipwright:deploy
     </div>
   </section>
 
-  <!-- 4. Demo -->
-  <section id="demo" class="relative z-10 py-24">
-    <p class="sw-label">A run, end to end</p>
-    <h2 class="sw-h1 mt-4 max-w-2xl">
-      Install, then watch it ship.
-    </h2>
-    <p class="mt-5 max-w-2xl text-lg">
-      One install, then plan → build → review → ship from the command line.
-      Here's a single task moving through the pipeline.
-    </p>
-
-    <!-- Animated demo (static asset, no runtime JS). Transcript below stays as the SEO/text fallback. -->
-    <img
-      src="/demo.gif"
-      alt="Shipwright Harness in a Claude Code terminal: install, then plan, build, review, and ship a task end to end."
-      width="900"
-      class="mt-8 w-full max-w-3xl rounded-xl"
-      style="border: 1px solid var(--sw-color-border-muted);"
-    />
-
-    <pre class="sw-code mt-6 max-w-3xl text-sm leading-relaxed"><code>{demoTranscript}</code></pre>
-  </section>
-
-  <!-- 5. Social proof -->
+  <!-- 6. Social proof -->
   <section id="social-proof" class="relative z-10 py-24">
     <p class="sw-label">Get started</p>
     <h2 class="sw-h1 mt-4 max-w-2xl">
@@ -229,7 +912,7 @@ $ /shipwright:deploy
     </p>
   </section>
 
-  <!-- 6. Services bridge (COSS) — soft, no-pressure, no pricing -->
+  <!-- 7. Services bridge (COSS) — soft, no-pressure, no pricing -->
   <section id="services" class="relative z-10 py-24">
     <p class="sw-label">Work with us</p>
     <h2 class="sw-h1 mt-4 max-w-2xl">
