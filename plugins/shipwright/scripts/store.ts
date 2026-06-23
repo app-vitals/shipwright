@@ -395,22 +395,10 @@ export class TaskStoreHttpClient implements TaskStore {
   }
 
   async append(tasks: Task[]): Promise<{ inserted: number; updated: number }> {
-    let inserted = 0;
-    for (const task of tasks) {
-      const res = await this.apiFetch("/tasks", {
-        method: "POST",
-        body: JSON.stringify(task),
-      });
-      if (res.status === 409) continue; // already exists — insert-only semantics
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(
-          `task-store API error (${res.status}) POST /tasks for task ${task.id}: ${text}`,
-        );
-      }
-      inserted++;
-    }
-    return { inserted, updated: 0 };
+    return this.apiFetchJson<{ inserted: number; updated: number }>(
+      "/tasks/bulk",
+      { method: "POST", body: JSON.stringify(tasks) },
+    );
   }
 
   async update(id: string, fields: Partial<Task>): Promise<Task> {

@@ -18,7 +18,7 @@ agents — each agent maintains its own.
 Parse `$ARGUMENTS`:
 - `org/repo#number` (e.g. `app-vitals/shipwright#123`): target a specific PR. If a staged
   review exists in `state/reviews.json`, post it. Otherwise, review it.
-- `number` or `#number`: same, using the first repo from `task_store.ts repos`
+- `number` or `#number`: same, using the repo from the task store API
 - No arguments: normal review flow — find the next PR to review from the queue
 
 ---
@@ -104,8 +104,8 @@ processed or skipped, continue to Step 3b.
 If `review_external_prs` is true, resolve the configured repos and fetch open PRs for each:
 
 ```bash
-PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | awk -F/ '{print $(NF-2), $0}' | sort -V | tail -1 | cut -d' ' -f2- | xargs dirname 2>/dev/null)
-REPOS=$(bun "$PLUGIN_SCRIPTS/task_store.ts" repos)
+REPOS=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/repo" | jq -r '.repo // empty')
 ```
 
 ```bash
@@ -636,8 +636,8 @@ When invoked with a specific PR (e.g. `/shipwright:review app-vitals/shipwright#
 1. Parse the argument: extract `org`, `repo`, and `pr` number. For bare numbers,
    infer `org/repo` via:
    ```bash
-   PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | awk -F/ '{print $(NF-2), $0}' | sort -V | tail -1 | cut -d' ' -f2- | xargs dirname 2>/dev/null)
-   bun "$PLUGIN_SCRIPTS/task_store.ts" repos | head -1
+   curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+     "$SHIPWRIGHT_TASK_STORE_URL/tasks/repo" | jq -r '.repo // empty'
    ```
    Fall back to the current workspace repo if the command fails.
 2. Read `state/reviews.json`, find the entry for this PR.

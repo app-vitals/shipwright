@@ -17,7 +17,7 @@ Before starting, check for flags:
 
 - `--dry-run` — print what PRs would be opened without creating branches, making changes, or creating PRs
 - `--rule {id}` — fix only violations of a specific rule ID (e.g., `--rule dead_exports`)
-- `--queue` — instead of opening PRs, push findings as tasks to the task store (via shipwright task_store.ts). Enables automated deferred fixing.
+- `--queue` — instead of opening PRs, push findings as tasks to the task store (via the task store API). Enables automated deferred fixing.
 
 ---
 
@@ -132,25 +132,14 @@ Process only the first 10 groups (sorted by severity).
 
 If `--queue` was passed, run this workflow instead of Steps 6a-6e.
 
-### 6q.1 Locate task_store.ts
-
-```bash
-TASK_STORE_DIR=$(find ~/.claude/plugins/cache -maxdepth 6 -name "task_store.ts" -path "*/shipwright/*" | awk -F/ '{print $(NF-2), $0}' | sort -V | tail -1 | cut -d' ' -f2- | xargs dirname 2>/dev/null)
-```
-
-If `TASK_STORE_DIR` is empty, print:
-```
-task_store.ts not found — is the shipwright plugin installed?
-Cannot queue tasks without the task store. Use /entropy-fix without --queue to open PRs directly.
-```
-Then stop.
-
-### 6q.2 Dedup Check
+### 6q.1 Dedup Check
 
 Run:
 ```bash
-bun "$TASK_STORE_DIR/task_store.ts" query --status pending
-bun "$TASK_STORE_DIR/task_store.ts" query --status in_progress
+curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=pending" | jq .
+curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=in_progress" | jq .
 ```
 
 Parse both JSON arrays. From the combined results, collect tasks where:
@@ -203,7 +192,14 @@ The `{YYYY-Www}` suffix in the task ID uses ISO week format. Compute from the cu
 ### 6q.4 Write and Append
 
 1. Write all task objects to `/tmp/entropy-tasks-{unix-timestamp}.json` as a JSON array
-2. Run: `bun "$TASK_STORE_DIR/task_store.ts" append --file /tmp/entropy-tasks-{unix-timestamp}.json`
+2. Run:
+   ```bash
+   curl -sf -X POST \
+     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+     -H "Content-Type: application/json" \
+     "$SHIPWRIGHT_TASK_STORE_URL/tasks/bulk" \
+     --data-binary @/tmp/entropy-tasks-{unix-timestamp}.json | jq .
+   ```
 3. Delete the temp file after appending
 
 ### 6q.5 Print Summary

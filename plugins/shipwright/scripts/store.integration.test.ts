@@ -121,15 +121,12 @@ describe("TaskStoreHttpClient — query", () => {
 // ─── Tests: append ────────────────────────────────────────────────────────────
 
 describe("TaskStoreHttpClient — append", () => {
-  test("append([newTask]) posts via POST /tasks and returns inserted:1", async () => {
+  test("append([newTask]) posts via POST /tasks/bulk and returns inserted:1", async () => {
     const capturedPaths: string[] = [];
     const fetchFn: FetchFn = async (input, init) => {
       const { method, path } = resolveRequest(input, init);
       capturedPaths.push(`${method} ${path}`);
-      return jsonResponse(
-        { id: "TSS-INT.1", title: "New task", status: "pending" },
-        201,
-      );
+      return jsonResponse({ inserted: 1, updated: 0 }, 200);
     };
     const store = new TaskStoreHttpClient(BASE_URL, fetchFn, TOKEN);
     const result = await store.append([
@@ -137,12 +134,12 @@ describe("TaskStoreHttpClient — append", () => {
     ]);
     expect(result.inserted).toBe(1);
     expect(result.updated).toBe(0);
-    expect(capturedPaths).toContain("POST /tasks");
+    expect(capturedPaths).toContain("POST /tasks/bulk");
   });
 
-  test("append with 409 conflict skips without error and returns inserted:0", async () => {
+  test("append with all-duplicate tasks returns inserted:0 (server deduplicates)", async () => {
     const fetchFn: FetchFn = async () =>
-      jsonResponse({ error: "conflict" }, 409);
+      jsonResponse({ inserted: 0, updated: 0 }, 200);
     const store = new TaskStoreHttpClient(BASE_URL, fetchFn, TOKEN);
     const result = await store.append([
       { id: "TSS-EXIST.1", title: "Already exists", status: "pending" },
@@ -151,18 +148,18 @@ describe("TaskStoreHttpClient — append", () => {
     expect(result.updated).toBe(0);
   });
 
-  test("append([task1, task2]) posts each task and returns inserted:2", async () => {
+  test("append([task1, task2]) sends one bulk request and returns inserted:2", async () => {
     let callCount = 0;
     const fetchFn: FetchFn = async () => {
       callCount++;
-      return jsonResponse({}, 201);
+      return jsonResponse({ inserted: 2, updated: 0 }, 200);
     };
     const store = new TaskStoreHttpClient(BASE_URL, fetchFn, TOKEN);
     const result = await store.append([
       { id: "TSS-A.1", title: "Task A1", status: "pending" },
       { id: "TSS-A.2", title: "Task A2", status: "pending" },
     ]);
-    expect(callCount).toBe(2);
+    expect(callCount).toBe(1);
     expect(result.inserted).toBe(2);
   });
 });
