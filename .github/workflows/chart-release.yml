@@ -61,6 +61,19 @@ jobs:
         env:
           CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Notify downstream of chart release
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+          DISPATCH_REPO: ${{ vars.CHART_DISPATCH_REPO }}
+        run: |
+          [ -z "$DISPATCH_REPO" ] && echo "CHART_DISPATCH_REPO not configured, skipping" && exit 0
+          CHART_VERSION=$(grep '^version:' charts/shipwright/Chart.yaml | sed 's/^version: //')
+          [ -z "$CHART_VERSION" ] && echo "Error: could not parse chart version" && exit 1
+          echo "Chart version: $CHART_VERSION"
+          printf '{"event_type":"shipwright-chart-released","client_payload":{"chart_version":"%s"}}' "$CHART_VERSION" \
+            | gh api "repos/$DISPATCH_REPO/dispatches" --method POST --input -
+
   # Dry-run validation — runs ONLY on pull_request. Proves the chart packages and
   # an index renders; publishes nothing (no gh-pages push, no GitHub Release).
   dry-run:
