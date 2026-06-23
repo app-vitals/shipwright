@@ -19,7 +19,7 @@
  */
 
 import { type Clock, SystemClock } from "./clock.ts";
-import { createTaskStore, loadConfig } from "./create-task-store.ts";
+import { TaskStoreHttpClient } from "./store.ts";
 import type { Task } from "./store.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -108,8 +108,12 @@ function resolveGhUser(): string | undefined {
 }
 
 function buildProductionDeps(): Deps {
-  const { config } = loadConfig();
-  const store = createTaskStore(config);
+  const taskStoreUrl = (process.env.SHIPWRIGHT_TASK_STORE_URL ?? "").trim();
+  if (!taskStoreUrl) {
+    process.stderr.write("error: SHIPWRIGHT_TASK_STORE_URL is required\n");
+    process.exit(1);
+  }
+  const store = new TaskStoreHttpClient(taskStoreUrl, fetch);
   const assignee = resolveGhUser();
 
   return {

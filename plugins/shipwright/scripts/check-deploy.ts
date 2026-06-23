@@ -21,7 +21,7 @@ import {
   resolveAllRepos,
   resolveWorkspacePath,
 } from "./check-helpers.ts";
-import { createTaskStore, loadConfig } from "./create-task-store.ts";
+import { TaskStoreHttpClient } from "./store.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -246,6 +246,15 @@ interface GhWorkflowRunsJson {
   }>;
 }
 
+function makeStore() {
+  const taskStoreUrl = (process.env.SHIPWRIGHT_TASK_STORE_URL ?? "").trim();
+  if (!taskStoreUrl) {
+    process.stderr.write("error: SHIPWRIGHT_TASK_STORE_URL is required\n");
+    process.exit(1);
+  }
+  return new TaskStoreHttpClient(taskStoreUrl, fetch);
+}
+
 async function buildProductionDeps(): Promise<Deps> {
   const workspacePath = resolveWorkspacePath();
   const allRepos = resolveAllRepos(workspacePath);
@@ -309,8 +318,7 @@ async function buildProductionDeps(): Promise<Deps> {
         .map((r) => ({ status: r.status, conclusion: r.conclusion }));
     },
     reconcileStalePrOpenTasks: async () => {
-      const { config } = loadConfig();
-      const store = createTaskStore(config);
+      const store = makeStore();
       const prOpenTasks = await store.query({ status: "pr_open" });
       if (prOpenTasks.length === 0) return;
 
@@ -379,8 +387,7 @@ async function buildProductionDeps(): Promise<Deps> {
       }
     },
     cleanupStaleIssues: async () => {
-      const { config } = loadConfig();
-      const store = createTaskStore(config);
+      const store = makeStore();
       const { closed, milestonesClosed, plansClosed } = await store.cleanup();
       if (closed > 0 || milestonesClosed > 0 || plansClosed > 0) {
         process.stderr.write(
@@ -389,8 +396,7 @@ async function buildProductionDeps(): Promise<Deps> {
       }
     },
     isBundleComplete: async (headBranch: string) => {
-      const { config } = loadConfig();
-      const store = createTaskStore(config);
+      const store = makeStore();
       const branchTasks = await store.query({ branch: headBranch });
       const incomplete = branchTasks.filter(
         (t) =>

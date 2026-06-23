@@ -18,14 +18,14 @@
  *   backend     Print the active backend name
  *
  * Environment:
- *   SHIPWRIGHT_CONFIG   Path to JSON config file (optional)
- *                       If absent or empty, defaults to JSON backend.
+ *   SHIPWRIGHT_TASK_STORE_URL    Base URL of the task-store service (required)
+ *   SHIPWRIGHT_TASK_STORE_TOKEN  Bearer token for authentication (required)
  */
 
 import { existsSync, readFileSync } from "node:fs";
 import { resolveRepos } from "./check-helpers";
-import { createTaskStore, loadConfig } from "./create-task-store";
-import type { Task, TaskStore, TaskStoreConfig } from "./store";
+import { TaskStoreHttpClient } from "./store";
+import type { Task, TaskStore } from "./store";
 
 const NUMERIC_FIELDS = new Set(["pr", "hours", "complexity"]);
 const BOOLEAN_FIELDS = new Set(["hitl"]);
@@ -340,20 +340,20 @@ async function cmdCleanup(adapter: TaskStore): Promise<void> {
   );
 }
 
-export function getBackend(_config: TaskStoreConfig): string {
+export function getBackend(): string {
   return "task-store";
 }
 
-export function cmdBackend(_config: TaskStoreConfig): void {
+export function cmdBackend(): void {
   process.stdout.write("task-store\n");
 }
 
 async function cmdDoctor(
   _adapter: TaskStore,
-  config: TaskStoreConfig,
+  taskStoreUrl: string,
 ): Promise<void> {
   console.log("backend: task-store");
-  console.log(`taskStoreUrl: ${config.taskStoreUrl}`);
+  console.log(`taskStoreUrl: ${taskStoreUrl}`);
   const token = process.env.SHIPWRIGHT_TASK_STORE_TOKEN ?? "";
   if (token) {
     console.log("[ok]  SHIPWRIGHT_TASK_STORE_TOKEN: set");
@@ -388,15 +388,24 @@ async function main(): Promise<void> {
     printUsageAndExit();
   }
 
-  const config = loadConfig();
-
-  // backend is a config-level command — doesn't need the adapter
   if (command === "backend") {
-    cmdBackend(config);
+    cmdBackend();
     return;
   }
 
-  const adapter = createTaskStore(config);
+  const taskStoreUrl = (process.env.SHIPWRIGHT_TASK_STORE_URL ?? "").trim();
+  if (!taskStoreUrl) {
+    process.stderr.write("error: SHIPWRIGHT_TASK_STORE_URL is required\n");
+    process.exit(1);
+  }
+
+  let adapter: TaskStore;
+  try {
+    adapter = new TaskStoreHttpClient(taskStoreUrl, fetch);
+  } catch (e) {
+    process.stderr.write(`error: ${String(e)}\n`);
+    process.exit(1);
+  }
 
   switch (command) {
     case "query":
@@ -421,10 +430,7 @@ async function main(): Promise<void> {
       await cmdCleanup(adapter);
       break;
     case "doctor":
-      await cmdDoctor(adapter, config);
-      break;
-    case "backend":
-      cmdBackend(config);
+      await cmdDoctor(adapter, taskStoreUrl);
       break;
   }
 }

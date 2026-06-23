@@ -167,16 +167,6 @@ export interface QueryFilters {
   hitl?: boolean;
 }
 
-// ─── TaskStoreConfig ──────────────────────────────────────────────────────────
-
-/**
- * Configuration for a TaskStore instance.
- */
-export interface TaskStoreConfig {
-  /** Base URL of the task-store service, e.g. "https://task-store.example.com". */
-  taskStoreUrl: string;
-}
-
 // ─── resolveReadyTasks ────────────────────────────────────────────────────────
 
 /**
@@ -333,9 +323,10 @@ export type FetchFn = (
  */
 export class TaskStoreHttpClient implements TaskStore {
   private readonly authHeader: string;
+  private readonly baseUrl: string;
 
   constructor(
-    private readonly config: TaskStoreConfig,
+    taskStoreUrl: string,
     private readonly fetchFn: FetchFn,
     token?: string,
   ) {
@@ -347,10 +338,7 @@ export class TaskStoreHttpClient implements TaskStore {
       );
     }
     this.authHeader = `Bearer ${resolvedToken}`;
-  }
-
-  private get baseUrl(): string {
-    return this.config.taskStoreUrl.replace(/\/$/, "");
+    this.baseUrl = taskStoreUrl.replace(/\/$/, "");
   }
 
   private async apiFetch(

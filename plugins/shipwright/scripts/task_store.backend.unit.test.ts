@@ -8,7 +8,5 @@ import { expect, test } from "bun:test";
 import { getBackend } from "./task_store";
 
 test("getBackend always returns 'task-store'", () => {
-  expect(getBackend({ taskStoreUrl: "https://ts.example.com" })).toBe(
-    "task-store",
-  );
+  expect(getBackend()).toBe("task-store");
 });

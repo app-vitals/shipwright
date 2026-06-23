@@ -6,11 +6,11 @@
  * fetchFn injected via constructor; no mock.module() or global overrides.
  */
 
+import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, test } from "bun:test";
 import { TaskStoreHttpClient } from "./store.ts";
-import type { FetchFn, TaskStoreConfig } from "./store.ts";
+import type { FetchFn } from "./store.ts";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -29,9 +29,6 @@ const REPO_FIXTURE = loadFixture("repo.json");
 
 const BASE_URL = "https://task-store.test";
 const TOKEN = "test-bearer-token";
-const CONFIG: TaskStoreConfig = {
-  taskStoreUrl: BASE_URL,
-};
 
 // ─── Cassette fetchFn factory ─────────────────────────────────────────────────
 
@@ -74,7 +71,7 @@ describe("TaskStoreHttpClient — query", () => {
     const fetchFn = makeCassetteFetch({
       "GET /tasks?ready=true": { status: 200, body: TASKS_READY_FIXTURE },
     });
-    const store = new TaskStoreHttpClient(CONFIG, fetchFn, TOKEN);
+    const store = new TaskStoreHttpClient(BASE_URL, fetchFn, TOKEN);
     const tasks = await store.query({ ready: true });
     expect(Array.isArray(tasks)).toBe(true);
     expect(tasks.length).toBeGreaterThan(0);
@@ -89,7 +86,7 @@ describe("TaskStoreHttpClient — query", () => {
       capturedPaths.push(`${method} ${path}`);
       return jsonResponse(TASKS_READY_FIXTURE);
     };
-    const store = new TaskStoreHttpClient(CONFIG, fetchFn, TOKEN);
+    const store = new TaskStoreHttpClient(BASE_URL, fetchFn, TOKEN);
     await store.query({ status: "pending" });
     expect(capturedPaths).toContain("GET /tasks?status=pending");
   });
@@ -101,7 +98,7 @@ describe("TaskStoreHttpClient — query", () => {
       capturedPaths.push(`${method} ${path}`);
       return jsonResponse([]);
     };
-    const store = new TaskStoreHttpClient(CONFIG, fetchFn, TOKEN);
+    const store = new TaskStoreHttpClient(BASE_URL, fetchFn, TOKEN);
     await store.query({ assignee: "dev" });
     expect(capturedPaths).toContain("GET /tasks?assignee=dev");
   });
@@ -113,7 +110,7 @@ describe("TaskStoreHttpClient — query", () => {
       capturedPaths.push(`${method} ${path}`);
       return jsonResponse([]);
     };
-    const store = new TaskStoreHttpClient(CONFIG, fetchFn, TOKEN);
+    const store = new TaskStoreHttpClient(BASE_URL, fetchFn, TOKEN);
     await store.query({ ready: true, assignee: "dev" });
     expect(capturedPaths[0]).toMatch(/^GET \/tasks\?/);
     expect(capturedPaths[0]).toContain("ready=true");
@@ -134,7 +131,7 @@ describe("TaskStoreHttpClient — append", () => {
         201,
       );
     };
-    const store = new TaskStoreHttpClient(CONFIG, fetchFn, TOKEN);
+    const store = new TaskStoreHttpClient(BASE_URL, fetchFn, TOKEN);
     const result = await store.append([
       { id: "TSS-INT.1", title: "New task", status: "pending" },
     ]);
@@ -144,8 +141,9 @@ describe("TaskStoreHttpClient — append", () => {
   });
 
   test("append with 409 conflict skips without error and returns inserted:0", async () => {
-    const fetchFn: FetchFn = async () => jsonResponse({ error: "conflict" }, 409);
-    const store = new TaskStoreHttpClient(CONFIG, fetchFn, TOKEN);
+    const fetchFn: FetchFn = async () =>
+      jsonResponse({ error: "conflict" }, 409);
+    const store = new TaskStoreHttpClient(BASE_URL, fetchFn, TOKEN);
     const result = await store.append([
       { id: "TSS-EXIST.1", title: "Already exists", status: "pending" },
     ]);
@@ -155,8 +153,11 @@ describe("TaskStoreHttpClient — append", () => {
 
   test("append([task1, task2]) posts each task and returns inserted:2", async () => {
     let callCount = 0;
-    const fetchFn: FetchFn = async () => { callCount++; return jsonResponse({}, 201); };
-    const store = new TaskStoreHttpClient(CONFIG, fetchFn, TOKEN);
+    const fetchFn: FetchFn = async () => {
+      callCount++;
+      return jsonResponse({}, 201);
+    };
+    const store = new TaskStoreHttpClient(BASE_URL, fetchFn, TOKEN);
     const result = await store.append([
       { id: "TSS-A.1", title: "Task A1", status: "pending" },
       { id: "TSS-A.2", title: "Task A2", status: "pending" },
@@ -178,7 +179,7 @@ describe("TaskStoreHttpClient — update", () => {
       if (init?.body) capturedBodies.push(init.body as string);
       return jsonResponse(TASK_UPDATED_FIXTURE);
     };
-    const store = new TaskStoreHttpClient(CONFIG, fetchFn, TOKEN);
+    const store = new TaskStoreHttpClient(BASE_URL, fetchFn, TOKEN);
     const updated = await store.update("TSS-F.1", { status: "in_progress" });
     expect(capturedPaths).toContain("PATCH /tasks/TSS-F.1");
     expect(updated.id).toBe("TSS-F.1");
@@ -188,8 +189,9 @@ describe("TaskStoreHttpClient — update", () => {
   });
 
   test("update throws on non-2xx response", async () => {
-    const fetchFn: FetchFn = async () => jsonResponse({ error: "not found" }, 404);
-    const store = new TaskStoreHttpClient(CONFIG, fetchFn, TOKEN);
+    const fetchFn: FetchFn = async () =>
+      jsonResponse({ error: "not found" }, 404);
+    const store = new TaskStoreHttpClient(BASE_URL, fetchFn, TOKEN);
     await expect(
       store.update("MISSING", { status: "in_progress" }),
     ).rejects.toThrow();
@@ -206,7 +208,7 @@ describe("TaskStoreHttpClient — claim", () => {
       capturedPaths.push(`${method} ${path}`);
       return jsonResponse(TASK_CLAIMED_FIXTURE);
     };
-    const store = new TaskStoreHttpClient(CONFIG, fetchFn, TOKEN);
+    const store = new TaskStoreHttpClient(BASE_URL, fetchFn, TOKEN);
     const claimed = await store.claim("TSS-F.1");
     expect(capturedPaths).toContain("POST /tasks/TSS-F.1/claim");
     expect(claimed.id).toBe("TSS-F.1");
@@ -221,7 +223,7 @@ describe("TaskStoreHttpClient — resolveRepo", () => {
     const fetchFn = makeCassetteFetch({
       "GET /tasks/repo": { status: 200, body: REPO_FIXTURE },
     });
-    const store = new TaskStoreHttpClient(CONFIG, fetchFn, TOKEN);
+    const store = new TaskStoreHttpClient(BASE_URL, fetchFn, TOKEN);
     const repo = await store.resolveRepo();
     expect(repo).toBe("app-vitals/shipwright");
   });
@@ -229,10 +231,11 @@ describe("TaskStoreHttpClient — resolveRepo", () => {
   test("resolveRepo falls back to first task repo when /tasks/repo returns 404", async () => {
     const fetchFn: FetchFn = async (input, init) => {
       const { path } = resolveRequest(input, init);
-      if (path === "/tasks/repo") return jsonResponse({ error: "not found" }, 404);
+      if (path === "/tasks/repo")
+        return jsonResponse({ error: "not found" }, 404);
       return jsonResponse(TASKS_READY_FIXTURE);
     };
-    const store = new TaskStoreHttpClient(CONFIG, fetchFn, TOKEN);
+    const store = new TaskStoreHttpClient(BASE_URL, fetchFn, TOKEN);
     const repo = await store.resolveRepo();
     expect(repo).toBe("app-vitals/shipwright");
   });
@@ -241,7 +244,7 @@ describe("TaskStoreHttpClient — resolveRepo", () => {
     const fetchFn = makeCassetteFetch({
       "GET /tasks/repo": { status: 200, body: REPO_FIXTURE },
     });
-    const store = new TaskStoreHttpClient(CONFIG, fetchFn, TOKEN);
+    const store = new TaskStoreHttpClient(BASE_URL, fetchFn, TOKEN);
     const repos = await store.resolveRepos();
     expect(repos).toEqual(["app-vitals/shipwright"]);
   });
@@ -257,7 +260,7 @@ describe("TaskStoreHttpClient — cleanup", () => {
       capturedPaths.push(`${method} ${path}`);
       return jsonResponse({});
     };
-    const store = new TaskStoreHttpClient(CONFIG, fetchFn, TOKEN);
+    const store = new TaskStoreHttpClient(BASE_URL, fetchFn, TOKEN);
     const result = await store.cleanup();
     expect(result).toEqual({ closed: 0, milestonesClosed: 0, plansClosed: 0 });
     expect(capturedPaths).toHaveLength(0);
@@ -273,7 +276,7 @@ describe("TaskStoreHttpClient — auth", () => {
       capturedHeaders.push((init?.headers ?? {}) as Record<string, string>);
       return jsonResponse([]);
     };
-    const store = new TaskStoreHttpClient(CONFIG, fetchFn, TOKEN);
+    const store = new TaskStoreHttpClient(BASE_URL, fetchFn, TOKEN);
     await store.query({});
     expect(capturedHeaders.length).toBeGreaterThan(0);
     expect(capturedHeaders[0].Authorization).toBe(`Bearer ${TOKEN}`);
@@ -281,7 +284,7 @@ describe("TaskStoreHttpClient — auth", () => {
 
   test("throws if token is missing", () => {
     expect(
-      () => new TaskStoreHttpClient(CONFIG, makeCassetteFetch({}), ""),
+      () => new TaskStoreHttpClient(BASE_URL, makeCassetteFetch({}), ""),
     ).toThrow("SHIPWRIGHT_TASK_STORE_TOKEN");
   });
 });
