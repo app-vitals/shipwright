@@ -276,7 +276,7 @@ describeOrSkip("KubernetesAgentProvisioner (integration)", () => {
     const k8s = emptyClient();
     const provisioner = new KubernetesAgentProvisioner(k8s, tokens, CONFIG);
     const result = await provisioner.reconcile([]);
-    expect(result).toEqual({ recreated: [], orphans: [], failed: [] });
+    expect(result).toEqual({ recreated: [], updated: [], orphans: [], failed: [] });
   });
 
   it("reconcile() recreates a Deployment for a known agent missing from K8s", async () => {
@@ -328,6 +328,51 @@ describeOrSkip("KubernetesAgentProvisioner (integration)", () => {
     const result = await provisioner.reconcile([{ id: agentId }]);
     expect(result.recreated).toEqual([]);
     expect(result.orphans).toEqual([]);
+  });
+
+  it("reconcile() detects a stale image, patches the deployment, and adds to updated[]", async () => {
+    const agentId = await createAgent("StaleImageAgent");
+    const resourceName = sanitizeAgentName(agentId);
+    const k8s = emptyClient();
+
+    // Seed a deployment with a stale image directly in the cassette.
+    const staleDeployment: import("./kubernetes-client.ts").KubernetesDeployment = {
+      apiVersion: "apps/v1",
+      kind: "Deployment",
+      metadata: { name: resourceName, namespace: NAMESPACE },
+      spec: {
+        replicas: 1,
+        selector: { matchLabels: { app: resourceName } },
+        template: {
+          metadata: { labels: { app: resourceName } },
+          spec: {
+            containers: [
+              {
+                name: "shipwright-agent",
+                image: `${CONFIG.image}:v0.0.1`, // stale — CONFIG.imageTag is v1.2.3
+              },
+            ],
+          },
+        },
+      },
+    };
+    // Inject directly via the internal map by provisioning with a fake client,
+    // then overwriting through createDeploymentManifest on an empty client.
+    await k8s.createDeploymentManifest(NAMESPACE, staleDeployment);
+
+    const provisioner = new KubernetesAgentProvisioner(k8s, tokens, CONFIG);
+
+    const result = await provisioner.reconcile([{ id: agentId }]);
+
+    expect(result.updated).toEqual([agentId]);
+    expect(result.recreated).toEqual([]);
+    expect(result.failed).toEqual([]);
+
+    // RecordedKubernetesClient mutates containers[0].image on patchDeployment.
+    const dep = await k8s.getDeployment(NAMESPACE, resourceName);
+    expect(dep.spec.template.spec.containers[0].image).toBe(
+      `${CONFIG.image}:${CONFIG.imageTag}`,
+    );
   });
 
   // ─── PVC name template ───────────────────────────────────────────────────────
@@ -466,7 +511,7 @@ describe("NoopAgentProvisioner", () => {
       { id: "agent_42" },
       { id: "agent_99" },
     ]);
-    expect(result).toEqual({ recreated: [], orphans: [], failed: [] });
+    expect(result).toEqual({ recreated: [], updated: [], orphans: [], failed: [] });
   });
 
   it("ConflictError remains importable for typed-error narrowing", () => {
