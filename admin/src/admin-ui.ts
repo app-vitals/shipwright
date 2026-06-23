@@ -1443,6 +1443,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   // ─── Tasks page ───────────────────────────────────────────────────────────
 
   app.get("/admin/tasks", requireAuth, async (c) => {
+    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
     const status = c.req.query("status") ?? undefined;
     const session = c.req.query("session") ?? undefined;
     const repo = c.req.query("repo") ?? undefined;
@@ -1479,6 +1480,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   app.post("/admin/tasks/:id/release", requireAuth, async (c) => {
     if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
     const taskId = c.req.param("id");
+    if (!releaseTask) return c.redirect("/admin/tasks?error=task_store_unavailable", 302);
     if (releaseTask) {
       try {
         await releaseTask(taskId);
