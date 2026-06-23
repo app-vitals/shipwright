@@ -1,7 +1,7 @@
 /**
  * agent/src/cutover-values.ts
- * Pure function that generates a Helm values patch for cutting an agent over
- * from vitals-os to shipwright.
+ * Pure function that generates a Helm values patch for configuring an agent
+ * with Shipwright platform credentials.
  *
  * Adds:    SHIPWRIGHT_API_URL, SHIPWRIGHT_AGENT_API_KEY, SHIPWRIGHT_AGENT_ID
  * Removes: VITALS_OS_API_URL, VITALS_INTERNAL_API_KEY, VITALS_OS_AGENT_USER_ID

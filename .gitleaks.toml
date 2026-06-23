@@ -1,0 +1,20 @@
+title = "Shipwright Harness — gitleaks configuration"
+
+# Extend the default ruleset; overrides and allowlists are applied on top.
+[extend]
+useDefault = true
+
+# ---------------------------------------------------------------------------
+# Global allowlist — applied after rule matching; suppress known-safe findings.
+# Allowlists instruct gitleaks on what is allowed, i.e. not a secret.
+# ---------------------------------------------------------------------------
+
+[allowlist]
+description = "Known-safe test fixtures and template placeholders"
+paths = [
+    '''admin/src/admin-ui\.smoke\.test\.ts''',
+    '''agent/src/cutover-validate\.integration\.test\.ts''',
+]
+regexes = [
+    '''BEGIN RSA PRIVATE KEY-----&#10;''',
+]

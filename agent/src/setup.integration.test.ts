@@ -675,8 +675,8 @@ describe("findStalePluginSpecs", () => {
       JSON.stringify({
         version: 2,
         plugins: {
-          "vitals-os@vitals-os": [
-            { installPath: "/root/.claude/plugins/cache/vitals-os/0.4.5" },
+          "example-platform@example-platform": [
+            { installPath: "/root/.claude/plugins/cache/example-platform/0.4.5" },
           ],
           "shipwright@shipwright": [
             { installPath: "/root/.claude/plugins/cache/shipwright/1.0.0" },
@@ -686,10 +686,10 @@ describe("findStalePluginSpecs", () => {
     );
 
     const result = findStalePluginSpecs(
-      ["vitals-os@vitals-os", "shipwright@shipwright"],
+      ["example-platform@example-platform", "shipwright@shipwright"],
       manifestPath,
     );
-    expect(result).toContain("vitals-os@vitals-os");
+    expect(result).toContain("example-platform@example-platform");
     expect(result).toContain("shipwright@shipwright");
   });
 
@@ -1100,11 +1100,11 @@ describe("installPlugins — extra marketplace discovery", () => {
     const conventionRoot = join(testHome, "marketplaces");
 
     // Create a baked marketplace dir
-    const extraMarketDir = join(conventionRoot, "vitals-os");
+    const extraMarketDir = join(conventionRoot, "example-platform");
     mkdirSync(join(extraMarketDir, ".claude-plugin"), { recursive: true });
     writeFileSync(
       join(extraMarketDir, ".claude-plugin", "marketplace.json"),
-      JSON.stringify({ name: "vitals-os" }),
+      JSON.stringify({ name: "example-platform" }),
       "utf8",
     );
 
