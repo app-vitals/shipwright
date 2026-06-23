@@ -193,6 +193,16 @@ export interface KubernetesClient {
   createPvc(namespace: string, spec: PvcSpec): Promise<KubernetesPvc>;
   getPvc(namespace: string, name: string): Promise<KubernetesPvc>;
   deletePvc(namespace: string, name: string): Promise<void>;
+  /**
+   * Apply a strategic merge patch to a named Deployment. The patch object is
+   * JSON-serialized and sent with Content-Type application/strategic-merge-patch+json.
+   * Typical use: update containers[0].image for a rolling restart.
+   */
+  patchDeployment(
+    namespace: string,
+    name: string,
+    patch: object,
+  ): Promise<void>;
 }
 
 // ─── Pure URL builders ────────────────────────────────────────────────────────
@@ -552,6 +562,23 @@ export class HttpKubernetesClient implements KubernetesClient {
     );
   }
 
+  async patchDeployment(
+    namespace: string,
+    name: string,
+    patch: object,
+  ): Promise<void> {
+    await this.request<void>(
+      deploymentUrl(this.apiServer, namespace, name),
+      {
+        method: "PATCH",
+        headers: this.authHeaders({
+          "Content-Type": "application/strategic-merge-patch+json",
+        }),
+        body: JSON.stringify(patch),
+      },
+    );
+  }
+
   async createSecret(
     namespace: string,
     spec: SecretSpec,
@@ -700,6 +727,35 @@ export class RecordedKubernetesClient implements KubernetesClient {
       throw new NotFoundError(`deployments.apps "${name}" not found`);
     }
     this.deployments.delete(key);
+  }
+
+  async patchDeployment(
+    namespace: string,
+    name: string,
+    patch: object,
+  ): Promise<void> {
+    const key = RecordedKubernetesClient.key(namespace, name);
+    const dep = this.deployments.get(key);
+    if (!dep) {
+      throw new NotFoundError(`deployments.apps "${name}" not found`);
+    }
+    const p = patch as {
+      spec?: {
+        template?: {
+          spec?: {
+            containers?: Array<{ name: string; image: string }>;
+          };
+        };
+      };
+    };
+    const newImage = p.spec?.template?.spec?.containers?.[0]?.image;
+    const existing = dep.spec.template.spec.containers[0];
+    if (newImage !== undefined && existing !== undefined) {
+      dep.spec.template.spec.containers[0] = {
+        ...existing,
+        image: newImage,
+      };
+    }
   }
 
   async createSecret(
