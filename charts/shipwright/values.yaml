@@ -285,7 +285,7 @@ agent:
     # -- PVC name template for provisioned agents. When non-empty, the provisioner
     # substitutes `{name}` with the agent's human-readable name (slug) to derive the
     # PVC name. Use this when migrating from static agents whose PVCs were created
-    # with a specific naming convention (e.g. "vitals-os-agent-{name}-home").
+    # with a specific naming convention (e.g. "my-org-agent-{name}-home").
     # When empty (the default), PVCs are named `{sanitizedAgentId}-home`.
     pvcNameTemplate: ""
     # -- Provisioned workspace PVCs: created per-agent when the provisioner spins
@@ -501,7 +501,7 @@ taskStore:
 # When enabled, a cloud-sql-proxy sidecar is added to the admin Deployment so
 # a GCP Cloud SQL instance is reachable at 127.0.0.1:5432 from the admin pod.
 # This lets a Cloud SQL DSN (e.g. postgresql://user:pass@127.0.0.1:5432/db) be
-# used directly in externalDatabase.existingSecret — mirrors the vitals-os pattern.
+# used directly in externalDatabase.existingSecret.
 cloudSqlProxy:
   # -- When true, add the cloud-sql-proxy sidecar to the admin Deployment.
   # Default false — purely additive, safe to deploy without this.
