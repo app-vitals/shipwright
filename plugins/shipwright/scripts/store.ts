@@ -292,46 +292,174 @@ export interface TaskStore {
    */
   update(id: string, fields: Partial<Task>): Promise<Task>;
 
-  /**
-   * Initialize the backing store if it does not already exist.
-   *
-   * For the JSON backend: creates state/todos.json with an empty array.
-   * For the GitHub backend: performs board setup (field creation, etc.).
-   * No-op if the store is already initialized.
-   */
+  /** Initialize the backing store if it does not already exist. No-op for the HTTP backend. */
   setup(): Promise<void>;
 
-  /**
-   * Resolve the canonical "owner/repo" string for this task store.
-   *
-   * For the GitHub backend: returns `config.github.owner + "/" + config.github.repo`.
-   * For the JSON backend: reads the first task's `repo` field, or throws if none found.
-   */
+  /** Resolve the canonical "owner/repo" string for this task store. */
   resolveRepo(): Promise<string>;
 
-  /**
-   * Return all unique repos known to this task store as an array.
-   *
-   * For the JSON backend: collects all unique `repo` field values from tasks in todos.json.
-   * For the GitHub backend: returns the single configured `owner/repo` as a one-element array.
-   *
-   * Returns an empty array if no repos are found (no error).
-   */
+  /** Return all unique repos known to this task store. */
   resolveRepos(): Promise<string[]>;
 
-  /**
-   * Close any open GitHub issues that carry a terminal status label (merged, done, deployed,
-   * cancelled), close open plan issues whose sessions are fully terminal, and close any open
-   * milestones that have no remaining open issues.
-   *
-   * For the JSON backend: closes issues referenced by `task.issue` URLs.
-   * For the GitHub backend: scans all issues with a `status:*` label plus open `[plan]` issues.
-   *
-   * Returns counts for logging.
-   */
+  /** Close stale open issues/milestones. Returns counts. */
   cleanup(): Promise<{
     closed: number;
     milestonesClosed: number;
     plansClosed: number;
   }>;
+}
+
+// ─── TaskStoreHttpClient ──────────────────────────────────────────────────────
+
+/** Minimal fetch signature used for dependency injection in tests. */
+export type FetchFn = (
+  url: string | URL | Request,
+  init?: RequestInit,
+) => Promise<Response>;
+
+/**
+ * TaskStore implementation backed by the remote task-store HTTP service.
+ *
+ * Auth:     Bearer token via SHIPWRIGHT_TASK_STORE_TOKEN env var.
+ * Base URL: config.taskStoreUrl
+ *
+ * API contract:
+ *   GET  /tasks               → Task[]
+ *   GET  /tasks?ready=true    → ready Task[]
+ *   POST /tasks               → insert (409 if id exists — skip silently)
+ *   PATCH /tasks/{id}         → partial update → updated Task
+ *   POST /tasks/{id}/claim    → atomic claim → updated Task
+ *   GET  /tasks/repo          → { repo: string }
+ */
+export class TaskStoreHttpClient implements TaskStore {
+  private readonly authHeader: string;
+
+  constructor(
+    private readonly config: TaskStoreConfig,
+    private readonly fetchFn: FetchFn,
+    token?: string,
+  ) {
+    const resolvedToken =
+      token ?? process.env.SHIPWRIGHT_TASK_STORE_TOKEN ?? "";
+    if (!resolvedToken) {
+      throw new Error(
+        "SHIPWRIGHT_TASK_STORE_TOKEN environment variable is required",
+      );
+    }
+    this.authHeader = `Bearer ${resolvedToken}`;
+  }
+
+  private get baseUrl(): string {
+    return this.config.taskStoreUrl.replace(/\/$/, "");
+  }
+
+  private async apiFetch(
+    path: string,
+    options: RequestInit = {},
+  ): Promise<Response> {
+    const url = `${this.baseUrl}${path}`;
+    const headers: Record<string, string> = {
+      Authorization: this.authHeader,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      ...(options.headers as Record<string, string> | undefined),
+    };
+    return this.fetchFn(url, { ...options, headers });
+  }
+
+  private async apiFetchJson<T>(
+    path: string,
+    options: RequestInit = {},
+  ): Promise<T> {
+    const res = await this.apiFetch(path, options);
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(
+        `task-store API error (${res.status}) ${options.method ?? "GET"} ${path}: ${text}`,
+      );
+    }
+    return res.json() as Promise<T>;
+  }
+
+  async query(filters: QueryFilters): Promise<Task[]> {
+    const params = new URLSearchParams();
+    if (filters.ready === true) {
+      params.set("ready", "true");
+    } else {
+      if (filters.status !== undefined) params.set("status", filters.status);
+      if (filters.session !== undefined) params.set("session", filters.session);
+      if (filters.id !== undefined) params.set("id", filters.id);
+      if (filters.pr !== undefined) params.set("pr", String(filters.pr));
+      if (filters.branch !== undefined) params.set("branch", filters.branch);
+      if (filters.hitl !== undefined) params.set("hitl", String(filters.hitl));
+    }
+    if (filters.assignee !== undefined)
+      params.set("assignee", filters.assignee);
+    const qs = params.toString();
+    return this.apiFetchJson<Task[]>(qs ? `/tasks?${qs}` : "/tasks");
+  }
+
+  async append(tasks: Task[]): Promise<{ inserted: number; updated: number }> {
+    let inserted = 0;
+    for (const task of tasks) {
+      const res = await this.apiFetch("/tasks", {
+        method: "POST",
+        body: JSON.stringify(task),
+      });
+      if (res.status === 409) continue; // already exists — insert-only semantics
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(
+          `task-store API error (${res.status}) POST /tasks for task ${task.id}: ${text}`,
+        );
+      }
+      inserted++;
+    }
+    return { inserted, updated: 0 };
+  }
+
+  async update(id: string, fields: Partial<Task>): Promise<Task> {
+    return this.apiFetchJson<Task>(`/tasks/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(fields),
+    });
+  }
+
+  async claim(id: string): Promise<Task> {
+    return this.apiFetchJson<Task>(`/tasks/${id}/claim`, { method: "POST" });
+  }
+
+  async setup(): Promise<void> {}
+
+  async resolveRepo(): Promise<string> {
+    try {
+      const res = await this.apiFetch("/tasks/repo");
+      if (res.ok) {
+        const data = (await res.json()) as { repo?: string };
+        if (data.repo) return data.repo;
+      }
+    } catch {
+      // fall through
+    }
+    const tasks = await this.apiFetchJson<Task[]>("/tasks");
+    const first = tasks.find((t) => t.repo);
+    if (!first?.repo) {
+      throw new Error(
+        "task-store: cannot resolveRepo — no tasks with a repo field found",
+      );
+    }
+    return first.repo;
+  }
+
+  async resolveRepos(): Promise<string[]> {
+    return [await this.resolveRepo()];
+  }
+
+  async cleanup(): Promise<{
+    closed: number;
+    milestonesClosed: number;
+    plansClosed: number;
+  }> {
+    return { closed: 0, milestonesClosed: 0, plansClosed: 0 };
+  }
 }

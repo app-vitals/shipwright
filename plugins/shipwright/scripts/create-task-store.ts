@@ -9,7 +9,7 @@
  *   SHIPWRIGHT_TASK_STORE_TOKEN  Bearer token for authentication
  */
 
-import { TaskStoreHttpAdapter } from "./adapters/task-store";
+import { TaskStoreHttpClient } from "./store";
 import type { TaskStore, TaskStoreConfig } from "./store";
 
 export function loadConfig(): TaskStoreConfig {
@@ -25,7 +25,7 @@ export function loadConfig(): TaskStoreConfig {
 
 export function createTaskStore(config: TaskStoreConfig): TaskStore {
   try {
-    return new TaskStoreHttpAdapter(config, fetch);
+    return new TaskStoreHttpClient(config, fetch);
   } catch (e) {
     process.stderr.write(`error: ${String(e)}\n`);
     process.exit(1);

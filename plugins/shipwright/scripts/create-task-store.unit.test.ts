@@ -6,7 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { TaskStoreHttpAdapter } from "./adapters/task-store";
+import { TaskStoreHttpClient } from "./store";
 import { createTaskStore, loadConfig } from "./create-task-store";
 
 describe("loadConfig", () => {
@@ -67,9 +67,9 @@ describe("createTaskStore", () => {
     }
   });
 
-  test("returns a TaskStoreHttpAdapter", () => {
+  test("returns a TaskStoreHttpClient", () => {
     process.env.SHIPWRIGHT_TASK_STORE_TOKEN = "test-token";
     const store = createTaskStore({ taskStoreUrl: "https://ts.example.com" });
-    expect(store).toBeInstanceOf(TaskStoreHttpAdapter);
+    expect(store).toBeInstanceOf(TaskStoreHttpClient);
   });
 });
