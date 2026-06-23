@@ -31,8 +31,8 @@ import type { AgentPlugin } from "@shipwright/admin";
 const WORKSPACE_TEMPLATE_DIR = join(import.meta.dir, "..", "workspace");
 
 // Repo root — two levels up from agent/src/. In Docker this is /app; on the Pi
-// it resolves to the checkout root. Mirrors the vitals-os approach so the local
-// marketplace is always used regardless of whether the GitHub repo is accessible.
+// it resolves to the checkout root. Uses a local marketplace so plugins are always
+// available regardless of whether the GitHub repo is accessible.
 const SHIPWRIGHT_REPO_ROOT = join(import.meta.dir, "..", "..");
 
 // Local marketplace name — matches the `name` field in .claude-plugin/marketplace.json.
@@ -449,10 +449,10 @@ const DEFAULT_DOT_CLAUDE_FS: DotClaudeFs = {
  * add`) and lives OUTSIDE `~/.claude/`, so it needs its own symlink to survive
  * pod restarts. Without it, registered MCP servers (e.g. Linear) silently
  * disappear — Claude reads the ephemeral image copy instead of the PVC's. The
- * target is `$AGENT_HOME/claude.json` (sibling of the dot-claude dir), matching
- * the path the vitals-os runtime used, so a migrated PVC's existing MCP config
- * is picked up. Unlike the dir, the target is NOT pre-created: it is a FILE that
- * Claude writes on first use, so a dangling symlink is correct until then.
+ * target is `$AGENT_HOME/claude.json` (sibling of the dot-claude dir), so
+ * existing MCP config from prior deployments is picked up. Unlike the dir, the
+ * target is NOT pre-created: it is a FILE that Claude writes on first use, so a
+ * dangling symlink is correct until then.
  */
 export function ensureDotClaudeSymlink(
   target: string,
@@ -632,9 +632,8 @@ export async function runMiseStartup(
   // tool). The shims-on-PATH prepend below only reaches direct subprocesses;
   // login/interactive shells re-source profile files that reset PATH, so
   // workspace-declared tools (e.g. fern's Rust toolchain) would be missing
-  // without this. Ported from the vitals-os runtime; dropped in the extraction.
-  // Unconditional (before the mise.toml check) so it's ready for any workspace
-  // tools; idempotent so repeated boots don't stack duplicate lines.
+  // without this. Unconditional (before the mise.toml check) so it's ready for
+  // any workspace tools; idempotent so repeated boots don't stack duplicate lines.
   const bashrc = join(process.env.HOME ?? home, ".bashrc");
   if (
     !existsSync(bashrc) ||
