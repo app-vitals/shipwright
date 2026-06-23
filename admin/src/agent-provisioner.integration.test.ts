@@ -149,6 +149,7 @@ describeOrSkip("KubernetesAgentProvisioner (integration)", () => {
       deletePvc: (ns, n) => recorded.deletePvc(ns, n),
       deploymentExists: (ns, n) => recorded.deploymentExists(ns, n),
       listDeployments: (ns, sel) => recorded.listDeployments(ns, sel),
+      patchDeployment: (ns, n, p) => recorded.patchDeployment(ns, n, p),
     };
     const provisioner = new KubernetesAgentProvisioner(ordered, tokens, CONFIG);
 
@@ -211,6 +212,7 @@ describeOrSkip("KubernetesAgentProvisioner (integration)", () => {
       deletePvc: (ns, n) => recorded.deletePvc(ns, n),
       deploymentExists: (ns, n) => recorded.deploymentExists(ns, n),
       listDeployments: (ns, sel) => recorded.listDeployments(ns, sel),
+      patchDeployment: (ns, n, p) => recorded.patchDeployment(ns, n, p),
     };
     const provisioner = new KubernetesAgentProvisioner(failing, tokens, CONFIG);
 
