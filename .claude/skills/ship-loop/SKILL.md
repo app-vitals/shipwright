@@ -60,8 +60,8 @@ at startup):
 - `SHIPWRIGHT_REPOS_DIR` is how the **PR gates** (`check-deploy` / `check-review` / `check-patch`)
   discover which repo to query. They do **not** read `.shipwright.json` — `resolveRepos()` scans
   `<WORKSPACE_PATH>/repos/` then `$SHIPWRIGHT_REPOS_DIR` for git clones and parses each
-  `.git/config` origin URL. **Unset ⇒ it returns `[]` and the gates silently fall back to the
-  hardcoded `app-vitals/vitals-os`** — i.e. they query the wrong repo and never see your PRs
+  `.git/config` origin URL. **Unset ⇒ it returns `[]` and the gates silently fall back to a
+  hardcoded internal default repo (not yours)** — i.e. they query the wrong repo and never see your PRs
   (DEPLOY and review-patch go permanently idle while real PRs sit open). Point this at a directory
   that contains **only one clone (or a symlink) of this repo** — the gates use `repos[0]`, so a
   multi-repo parent dir resolves an arbitrary sibling. Example:
@@ -77,7 +77,7 @@ at startup):
 ```bash
 echo "$SHIPWRIGHT_CONFIG"; echo "$WORKSPACE_PATH"; ls -d "$SHIPWRIGHT_REPO_DIR"/* >/dev/null && echo "repo dir ok"
 # Gate repo resolution: SHIPWRIGHT_REPOS_DIR must contain a clone whose origin matches .shipwright.json.
-# If this prints nothing, the gates will silently query app-vitals/vitals-os instead of your repo.
+# If this prints nothing, the gates will silently query a hardcoded default repo instead of yours.
 for d in "$SHIPWRIGHT_REPOS_DIR"/*/.git/config; do grep -h 'url = ' "$d" 2>/dev/null; done
 D=$(find ~/.claude/plugins/cache -maxdepth 5 -name task_store.ts -path '*/shipwright/*' | head -1 | xargs dirname)
 bun "$D/task_store.ts" doctor                          # must report the github backend
