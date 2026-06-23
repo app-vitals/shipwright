@@ -82,7 +82,9 @@ export interface AgentProvisioner {
    * Re-provisions agents whose Deployments are missing; surfaces orphaned
    * Deployments that have no corresponding agent.
    */
-  reconcile(agents: Array<{ id: string; slug?: string }>): Promise<ReconcileResult>;
+  reconcile(
+    agents: Array<{ id: string; slug?: string }>,
+  ): Promise<ReconcileResult>;
 }
 
 // ─── Configuration ──────────────────────────────────────────────────────────
@@ -309,7 +311,9 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
     await this.deleteSecretBestEffort(secretName);
   }
 
-  async reconcile(agents: Array<{ id: string; slug?: string }>): Promise<ReconcileResult> {
+  async reconcile(
+    agents: Array<{ id: string; slug?: string }>,
+  ): Promise<ReconcileResult> {
     const labelSelector =
       "app.kubernetes.io/name=shipwright-agent,app.kubernetes.io/managed-by=shipwright-admin";
 
@@ -443,7 +447,10 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
  * admin service construct and run unchanged without a cluster.
  */
 export class NoopAgentProvisioner implements AgentProvisioner {
-  async provision(agentId: string, _opts?: { slug?: string }): Promise<ProvisionResult> {
+  async provision(
+    agentId: string,
+    _opts?: { slug?: string },
+  ): Promise<ProvisionResult> {
     const resourceName = sanitizeAgentName(agentId);
     return {
       resourceName,
@@ -456,7 +463,9 @@ export class NoopAgentProvisioner implements AgentProvisioner {
     // intentionally a no-op
   }
 
-  async reconcile(_agents: Array<{ id: string; slug?: string }>): Promise<ReconcileResult> {
+  async reconcile(
+    _agents: Array<{ id: string; slug?: string }>,
+  ): Promise<ReconcileResult> {
     return { recreated: [], orphans: [], failed: [] };
   }
 }

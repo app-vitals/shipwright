@@ -121,7 +121,10 @@ describe("buildAgentDeploymentManifest", () => {
   it("declares a containerPort for the health port", () => {
     const d = buildAgentDeploymentManifest(deployOpts);
     const ports = d.spec.template.spec.containers[0].ports ?? [];
-    expect(ports).toContainEqual({ containerPort: AGENT_HEALTH_PORT, protocol: "TCP" });
+    expect(ports).toContainEqual({
+      containerPort: AGENT_HEALTH_PORT,
+      protocol: "TCP",
+    });
   });
 
   it("sets AGENT_HOME env var to the mount path", () => {
@@ -318,7 +321,10 @@ describe("buildAgentPvcManifest", () => {
   });
 
   it("includes storageClassName when provided", () => {
-    const p = buildAgentPvcManifest({ ...pvcOpts, storageClassName: "premium" });
+    const p = buildAgentPvcManifest({
+      ...pvcOpts,
+      storageClassName: "premium",
+    });
     expect(p.spec.storageClassName).toBe("premium");
   });
 
