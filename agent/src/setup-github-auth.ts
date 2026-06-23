@@ -61,6 +61,16 @@ export async function setupGitHubAuth(deps: GitHubAuthDeps): Promise<void> {
     logger,
   } = deps;
 
+  // Repos on the PVC may be owned by root (uid 0) while the agent runs as uid 1000.
+  // Set safe.directory unconditionally so git can operate on them regardless of auth path.
+  runOrWarn(
+    spawnSync,
+    "git",
+    ["config", "--global", "safe.directory", "*"],
+    env,
+    logger,
+  );
+
   const appId = env.GH_APP_ID;
   const installationId = env.GH_APP_INSTALLATION_ID;
   const privateKey = env.GH_APP_PRIVATE_KEY;
