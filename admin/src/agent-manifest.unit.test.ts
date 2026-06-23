@@ -108,11 +108,37 @@ describe("buildAgentDeploymentManifest", () => {
     expect(mount?.name).toBe(vol?.name);
   });
 
-  it("defines a liveness probe on the health port 3459", () => {
+  it("sets strategy Recreate", () => {
     const d = buildAgentDeploymentManifest(deployOpts);
-    const probe = d.spec.template.spec.containers[0].livenessProbe;
+    expect(d.spec.strategy).toEqual({ type: "Recreate" });
+  });
+
+  it("sets terminationGracePeriodSeconds to 120", () => {
+    const d = buildAgentDeploymentManifest(deployOpts);
+    expect(d.spec.template.spec.terminationGracePeriodSeconds).toBe(120);
+  });
+
+  it("declares a containerPort for the health port", () => {
+    const d = buildAgentDeploymentManifest(deployOpts);
+    const ports = d.spec.template.spec.containers[0].ports ?? [];
+    expect(ports).toContainEqual({ containerPort: AGENT_HEALTH_PORT, protocol: "TCP" });
+  });
+
+  it("sets AGENT_HOME env var to the mount path", () => {
+    const d = buildAgentDeploymentManifest(deployOpts);
+    const env = d.spec.template.spec.containers[0].env ?? [];
+    const agentHome = env.find((e) => e.name === "AGENT_HOME");
+    expect(agentHome?.value).toBe(AGENT_HOME_MOUNT_PATH);
+  });
+
+  it("defines liveness and readiness probes on the health port", () => {
+    const d = buildAgentDeploymentManifest(deployOpts);
+    const c = d.spec.template.spec.containers[0];
     expect(AGENT_HEALTH_PORT).toBe(3459);
-    expect(probe?.httpGet?.port).toBe(3459);
+    expect(c.livenessProbe?.httpGet?.port).toBe(3459);
+    expect(c.livenessProbe?.failureThreshold).toBe(3);
+    expect(c.readinessProbe?.httpGet?.port).toBe(3459);
+    expect(c.readinessProbe?.failureThreshold).toBe(3);
   });
 
   it("applies a hardened security context (fsGroup, fsGroupChangePolicy, runAsNonRoot, runAsUser)", () => {

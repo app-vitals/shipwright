@@ -253,6 +253,7 @@ export function buildAgentDeploymentManifest(
             {
               name: AGENT_APP_NAME,
               image: `${opts.image}:${opts.imageTag}`,
+              ports: [{ containerPort: AGENT_HEALTH_PORT, protocol: "TCP" }],
               env: [
                 { name: "SHIPWRIGHT_AGENT_ID", value: opts.agentId },
                 { name: "SHIPWRIGHT_API_URL", value: opts.apiUrl },
@@ -273,8 +274,15 @@ export function buildAgentDeploymentManifest(
               ],
               livenessProbe: {
                 httpGet: { path: "/health", port: AGENT_HEALTH_PORT },
+                initialDelaySeconds: 15,
+                periodSeconds: 30,
+                failureThreshold: 3,
+              },
+              readinessProbe: {
+                httpGet: { path: "/health", port: AGENT_HEALTH_PORT },
                 initialDelaySeconds: 10,
-                periodSeconds: 15,
+                periodSeconds: 10,
+                failureThreshold: 3,
               },
               readinessProbe: {
                 httpGet: { path: "/health", port: AGENT_HEALTH_PORT },
