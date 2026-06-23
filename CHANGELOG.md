@@ -7,26 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Breaking Changes
-
-#### `AgentProvisioner.reconcile()` interface change
-
-- **`reconcile(agentIds: string[])` → `reconcile(agents: Array<{ id: string; slug?: string }>)`**: The `AgentProvisioner` interface's `reconcile()` method now accepts structured agent objects instead of raw ID strings. This is a **compile-time breaking change** for any code that implements or calls `AgentProvisioner` directly.
-
-  **Why**: The new `slug` field enables PVC name templates to use a human-readable agent slug instead of the raw agent ID, supporting custom PVC naming conventions (e.g. per-client storage naming).
-
-  **Migration**: callers passing a `string[]` must change to `agents.map(id => ({ id }))`. The `slug` field is optional — existing callers that do not need custom PVC naming can omit it.
-
-  ```ts
-  // Before
-  await provisioner.reconcile(["agent-id-1", "agent-id-2"]);
-
-  // After
-  await provisioner.reconcile([{ id: "agent-id-1" }, { id: "agent-id-2" }]);
-
-  // With optional slug for custom PVC naming
-  await provisioner.reconcile([{ id: "agent-id-1", slug: "my-agent" }]);
-  ```
+<!-- This section is managed by @semantic-release/changelog. Do not edit by hand. -->
 
 ## [4.28.0] - 2026-06-17
 
