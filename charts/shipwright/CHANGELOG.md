@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.6.4] - 2026-06-22
+
+### Added
+
+- wire full manifest through provisioner for proper PVC mounts
+
 ## [1.6.3] - 2026-06-23
 
 ### Fixed
