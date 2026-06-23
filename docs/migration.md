@@ -22,3 +22,14 @@ Durable notes for breaking changes and the steps needed to migrate across versio
   // With optional slug for custom PVC naming
   await provisioner.reconcile([{ id: "agent-id-1", slug: "my-agent" }]);
   ```
+
+- **`ReconcileResult` now includes `updated: string[]` field**: In v4.30.0, the return type of `reconcile()` was extended to include a new `updated` field tracking agent IDs whose Deployments were already running but had stale images that were patched to the current version. This is **backward compatible** — code that only reads `recreated` and `orphans` fields will continue to work. The complete return shape is now:
+
+  ```ts
+  {
+    recreated: string[];      // Deployments that were missing and re-provisioned
+    updated: string[];        // Deployments that were patched with the current image
+    orphans: string[];        // Deployments with no matching agent ID
+    failed: Array<{ agentId: string; error: string }>  // Operations that failed
+  }
+  ```

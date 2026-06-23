@@ -212,7 +212,7 @@ function makeMockDeps(
     provisioner: {
       provision: async () => ({ resourceName: "r", secretName: "s", deploymentName: "d" }),
       deprovision: async () => {},
-      reconcile: async () => ({ recreated: [], orphans: [], failed: [] }),
+      reconcile: async () => ({ recreated: [], updated: [], orphans: [], failed: [] }),
     },
     appBaseUrl: "https://example.com",
     ...rest,
@@ -1499,7 +1499,7 @@ describe("admin UI — agent delete route", () => {
         deprovision: async (agentId: string) => {
           deprovisioned = agentId;
         },
-        reconcile: async () => ({ recreated: [], orphans: [], failed: [] }),
+        reconcile: async () => ({ recreated: [], updated: [], orphans: [], failed: [] }),
       },
       prisma: {
         agent: {
