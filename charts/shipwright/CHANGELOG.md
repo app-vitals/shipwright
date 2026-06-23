@@ -10,6 +10,24 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.6.6] - 2026-06-22
+
+### Added
+
+- task-store HTTP adapter in the shipwright plugin; drop GitHub and Jira backends
+
+## [1.6.5] - 2026-06-23
+
+### Changed
+
+- auto-bump to chart v1.6.5 triggered by release tag `admin-v0.79.0`
+
+## [1.6.4] - 2026-06-22
+
+### Added
+
+- wire full manifest through provisioner for proper PVC mounts
+
 ## [1.6.3] - 2026-06-23
 
 ### Fixed

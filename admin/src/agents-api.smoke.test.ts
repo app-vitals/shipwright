@@ -1226,3 +1226,65 @@ describe("admin API — Zod validation", () => {
     expect(res.status).toBe(400);
   });
 });
+
+// ─── Provision agent smoke tests ──────────────────────────────────────────────
+
+describe("admin API — provision agent", () => {
+  it("POST /agents/:id/provision without auth → 401", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}/provision`, {
+      method: "POST",
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("POST /agents/:id/provision with per-agent bearer → 403 (no provision call)", async () => {
+    const provisioner = new RecordingProvisioner();
+    const deps: AdminDeps = {
+      ...makeDepsWithTokenValidation(async () => ({ agentId: AGENT_ID })),
+      provisioner,
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}/provision`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${VALID_BEARER_TOKEN}` },
+    });
+    expect(res.status).toBe(403);
+    expect(provisioner.provisioned).toEqual([]);
+  });
+
+  it("POST /agents/does-not-exist/provision with session cookie → 404 (no provision call)", async () => {
+    const cookie = await makeSessionCookie();
+    const provisioner = new RecordingProvisioner();
+    const deps: AdminDeps = { ...makeMockDeps(), provisioner };
+    const app = createAdminApp(deps);
+    const res = await app.request("/agents/does-not-exist/provision", {
+      method: "POST",
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(404);
+    expect(provisioner.provisioned).toEqual([]);
+  });
+
+  it("POST /agents/:id/provision with admin bearer → 200 with provision result", async () => {
+    const provisioner = new RecordingProvisioner();
+    const deps: AdminDeps = {
+      ...makeMockDeps(),
+      provisioner,
+      adminApiKeys: parseAdminApiKeys(`admin:${ADMIN_API_KEY}:*`),
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}/provision`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${ADMIN_API_KEY}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual({
+      resourceName: AGENT_ID,
+      secretName: `${AGENT_ID}-token`,
+      deploymentName: AGENT_ID,
+    });
+    expect(provisioner.provisioned).toEqual([AGENT_ID]);
+  });
+});
