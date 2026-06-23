@@ -284,12 +284,6 @@ export function buildAgentDeploymentManifest(
                 periodSeconds: 10,
                 failureThreshold: 3,
               },
-              readinessProbe: {
-                httpGet: { path: "/health", port: AGENT_HEALTH_PORT },
-                initialDelaySeconds: 10,
-                periodSeconds: 10,
-                failureThreshold: 3,
-              },
               securityContext: {
                 runAsNonRoot: true,
                 runAsUser: AGENT_RUN_AS,
