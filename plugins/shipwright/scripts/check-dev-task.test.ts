@@ -17,8 +17,8 @@
 
 import { describe, expect, test } from "bun:test";
 import { run } from "./check-dev-task.ts";
+import type { Task } from "./check-helpers.ts";
 import type { Clock } from "./clock.ts";
-import type { Task } from "./store.ts";
 import { FixedClock } from "./test-helpers/doubles.ts";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

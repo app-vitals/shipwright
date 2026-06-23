@@ -5,16 +5,69 @@
  *
  * Covers:
  * - Workspace path resolution (WORKSPACE_PATH env var or cwd heuristic)
- * - Org/repo resolution from todos.json
+ * - Org/repo resolution from repos/ dir and shipwright.config.json
  * - gh CLI execution helper
  * - reviews.json reading
- * - todos.json reading
  */
 
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import type { Task } from "./store.ts";
+
+// ─── Task types ───────────────────────────────────────────────────────────────
+
+export type TaskStatus =
+  | "pending"
+  | "in_progress"
+  | "pr_open"
+  | "approved"
+  | "merged"
+  | "done"
+  | "deploying"
+  | "deployed"
+  | "blocked"
+  | "cancelled";
+
+export interface Task {
+  id: string;
+  title: string;
+  status: TaskStatus;
+  source?: string;
+  session?: string;
+  repo?: string;
+  description?: string;
+  acceptanceCriteria?: string[];
+  layer?: string;
+  branch?: string;
+  dependencies?: string[];
+  pr?: number;
+  hours?: number;
+  addedAt?: string;
+  startedAt?: string;
+  prCreatedAt?: string;
+  mergedAt?: string;
+  blockedAt?: string;
+  blockedReason?: string;
+  note?: string;
+  type?: string;
+  priority?: string;
+  size?: string;
+  file?: string;
+  cancelledAt?: string;
+  completedAt?: string;
+  deployingAt?: string;
+  ciFixAttempts?: number;
+  mergeCommit?: string;
+  prNumber?: number;
+  prOpenedAt?: string;
+  prUrl?: string;
+  assignee?: string;
+  issue?: string;
+  model?: "haiku" | "sonnet" | "opus";
+  complexity?: number;
+  hitl?: boolean;
+  hitlNotifiedAt?: string;
+}
 
 // ─── ReviewEntry ──────────────────────────────────────────────────────────────
 
@@ -69,14 +122,6 @@ export function resolveWorkspacePath(): string {
   if (!agentHome)
     throw new Error("AGENT_HOME is not set — cannot resolve workspace path");
   return join(agentHome, "workspace");
-}
-
-// ─── todos.json reading ───────────────────────────────────────────────────────
-
-export function readTodos(workspacePath: string): Task[] {
-  const todosPath = join(workspacePath, "state", "todos.json");
-  if (!existsSync(todosPath)) return [];
-  return JSON.parse(readFileSync(todosPath, "utf-8")) as Task[];
 }
 
 // ─── reviews.json reading ─────────────────────────────────────────────────────
@@ -261,6 +306,56 @@ export async function isMergeOnlyUpdate(
   } catch {
     return false;
   }
+}
+
+// ─── Task store HTTP client ───────────────────────────────────────────────────
+
+/**
+ * Reads SHIPWRIGHT_TASK_STORE_URL and SHIPWRIGHT_TASK_STORE_TOKEN from the
+ * environment, validates they are present, and returns a minimal fetch client
+ * for the task-store HTTP API.
+ *
+ * Exits with code 1 if either variable is missing so callers (precheck scripts)
+ * get a clean error rather than a confusing undefined/TypeError at call-time.
+ */
+export function createTaskStoreClient(): {
+  query(params: URLSearchParams): Promise<Task[]>;
+  update(id: string, fields: Record<string, unknown>): Promise<Task>;
+} {
+  const taskStoreUrl = (process.env.SHIPWRIGHT_TASK_STORE_URL ?? "").trim();
+  const taskStoreToken = (process.env.SHIPWRIGHT_TASK_STORE_TOKEN ?? "").trim();
+  if (!taskStoreUrl) {
+    process.stderr.write("error: SHIPWRIGHT_TASK_STORE_URL is required\n");
+    process.exit(1);
+  }
+  if (!taskStoreToken) {
+    process.stderr.write("error: SHIPWRIGHT_TASK_STORE_TOKEN is required\n");
+    process.exit(1);
+  }
+  const baseUrl = taskStoreUrl.replace(/\/$/, "");
+  const headers = {
+    Authorization: `Bearer ${taskStoreToken}`,
+    "Content-Type": "application/json",
+  };
+
+  return {
+    async query(params: URLSearchParams): Promise<Task[]> {
+      const res = await fetch(`${baseUrl}/tasks?${params}`, { headers });
+      if (!res.ok)
+        throw new Error(`task-store GET /tasks?${params} → ${res.status}`);
+      return res.json() as Promise<Task[]>;
+    },
+    async update(id: string, fields: Record<string, unknown>): Promise<Task> {
+      const res = await fetch(`${baseUrl}/tasks/${id}`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify(fields),
+      });
+      if (!res.ok)
+        throw new Error(`task-store PATCH /tasks/${id} → ${res.status}`);
+      return res.json() as Promise<Task>;
+    },
+  };
 }
 
 // ─── gh CLI helper ────────────────────────────────────────────────────────────

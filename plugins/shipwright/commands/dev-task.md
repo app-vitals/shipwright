@@ -19,9 +19,9 @@ Auto-detect the project toolchain (run once, reuse throughout). Skip this step u
 **First, check for an interrupted task** — if a prior session left a task `in_progress`, resume it:
 
 ```bash
-PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | awk -F/ '{print $(NF-2), $0}' | sort -V | tail -1 | cut -d' ' -f2- | xargs dirname 2>/dev/null)
 CURRENT_USER=$(gh api graphql -f "query=query{viewer{login}}" --jq '.data.viewer.login' 2>/dev/null)
-bun "$PLUGIN_SCRIPTS/task_store.ts" query --status in_progress ${CURRENT_USER:+--assignee "$CURRENT_USER"}
+curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=in_progress${CURRENT_USER:+&assignee=$CURRENT_USER}" | jq .
 ```
 
 If the result is a non-empty array, use the first task returned. The Step 2 orphan check will clean up any stale branch/PR from the prior session before restarting. Print:
@@ -35,9 +35,9 @@ Record `task_started_at` (current ISO timestamp) for metrics.
 **If no in_progress task**, pick the next ready pending task:
 
 ```bash
-PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | awk -F/ '{print $(NF-2), $0}' | sort -V | tail -1 | cut -d' ' -f2- | xargs dirname 2>/dev/null)
 CURRENT_USER=$(gh api graphql -f "query=query{viewer{login}}" --jq '.data.viewer.login' 2>/dev/null)
-bun "$PLUGIN_SCRIPTS/task_store.ts" query --ready ${CURRENT_USER:+--assignee "$CURRENT_USER"}
+curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?ready=true${CURRENT_USER:+&assignee=$CURRENT_USER}" | jq .
 ```
 
 The command returns `pending` shipwright tasks whose dependencies are all satisfied, sorted by `addedAt`. Pick the first result.
@@ -48,14 +48,20 @@ If the output is an empty JSON array (`[]`), respond `[silent]` and stop.
 
 ```
 ⚠ Task {id} has no branch field set. Set it with:
-  bun "$PLUGIN_SCRIPTS/task_store.ts" update --id {id} --set branch=feat/{id-lowercase}
+  curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}" \
+    -d '{"branch": "feat/{id-lowercase}"}' | jq .
 Then re-run /shipwright:dev-task.
 ```
 
 Before stopping, mark the task blocked so the cron does not keep re-queuing it:
 
 ```bash
-bun "$PLUGIN_SCRIPTS/task_store.ts" update --id {id} --set status=blocked
+curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}" \
+  -d '{"status": "blocked"}' | jq .
 ```
 
 Post the message above and stop. A missing branch cannot be recovered from at runtime — worktree creation will fail silently if attempted.
@@ -139,8 +145,11 @@ If the task's current status is already `in_progress`:
 ### Mark In-Progress
 
 ```bash
-PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | awk -F/ '{print $(NF-2), $0}' | sort -V | tail -1 | cut -d' ' -f2- | xargs dirname 2>/dev/null)
-bun "$PLUGIN_SCRIPTS/task_store.ts" update --id {id} --set startedAt={ISO timestamp} --set status=in_progress
+STARTED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}" \
+  -d "{\"status\": \"in_progress\", \"startedAt\": \"$STARTED_AT\"}" | jq .
 ```
 
 Fire `shipwright_task_started` — re-resolve the script path inline:
@@ -464,11 +473,13 @@ REQUIREMENTS VERIFICATION
 - `req_total`: total criteria evaluated
 Store these counts for use in Step 10b metrics.
 
-If any criterion is PARTIAL or NOT MET after the fix loop, mark the task blocked via task_store.ts, then fire `shipwright_task_blocked`:
+If any criterion is PARTIAL or NOT MET after the fix loop, mark the task blocked via the task store API, then fire `shipwright_task_blocked`:
 
 ```bash
-PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | awk -F/ '{print $(NF-2), $0}' | sort -V | tail -1 | cut -d' ' -f2- | xargs dirname 2>/dev/null)
-bun "$PLUGIN_SCRIPTS/task_store.ts" update --id {id} --set blockedReason=requirements_not_met --set status=blocked
+curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}" \
+  -d '{"status": "blocked", "blockedReason": "requirements_not_met"}' | jq .
 ```
 
 ```bash
@@ -690,11 +701,13 @@ If PR creation fails, OR if CI checks fail after max retries (Step 9b.5), after 
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    ```
 
-This cleanup ensures no orphaned PRs or branches are left behind. Mark the task blocked via task_store.ts, then fire `shipwright_task_blocked`:
+This cleanup ensures no orphaned PRs or branches are left behind. Mark the task blocked via the task store API, then fire `shipwright_task_blocked`:
 
 ```bash
-PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | awk -F/ '{print $(NF-2), $0}' | sort -V | tail -1 | cut -d' ' -f2- | xargs dirname 2>/dev/null)
-bun "$PLUGIN_SCRIPTS/task_store.ts" update --id {id} --set blockedReason=pr_creation_failed --set status=blocked
+curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}" \
+  -d '{"status": "blocked", "blockedReason": "pr_creation_failed"}' | jq .
 ```
 
 ```bash
@@ -881,11 +894,13 @@ Failing checks:
 ```
 
 **When merge-mode is OFF (standalone):**
-Run PR Failure Cleanup (Step 9) and stop. Mark the task blocked via task_store.ts, then fire `shipwright_task_blocked`:
+Run PR Failure Cleanup (Step 9) and stop. Mark the task blocked via the task store API, then fire `shipwright_task_blocked`:
 
 ```bash
-PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | awk -F/ '{print $(NF-2), $0}' | sort -V | tail -1 | cut -d' ' -f2- | xargs dirname 2>/dev/null)
-bun "$PLUGIN_SCRIPTS/task_store.ts" update --id {id} --set blockedReason=ci_max_retries_exhausted --set status=blocked
+curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}" \
+  -d '{"status": "blocked", "blockedReason": "ci_max_retries_exhausted"}' | jq .
 ```
 
 ```bash
@@ -899,8 +914,11 @@ POSTHOG_SCRIPT=$(find ~/.claude/plugins/cache -name "posthog_send.py" -path "*/s
 ### 10a. Update Queue
 
 ```bash
-PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | awk -F/ '{print $(NF-2), $0}' | sort -V | tail -1 | cut -d' ' -f2- | xargs dirname 2>/dev/null)
-bun "$PLUGIN_SCRIPTS/task_store.ts" update --id {id} --set pr={pr_number} --set prCreatedAt={ISO timestamp} --set status=pr_open
+PR_CREATED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}" \
+  -d "{\"status\": \"pr_open\", \"pr\": {pr_number}, \"prCreatedAt\": \"$PR_CREATED_AT\"}" | jq .
 ```
 
 ### 10b. Append Metrics
@@ -1085,7 +1103,7 @@ This step is silent. JSONL format — one JSON object per line; append-only.
 
 Fire the canonical task-completion event. This is the event the metrics dashboard and PostHog aggregates read for `tasks_completed`, cycle time, and actual-vs-estimated hours — it MUST fire at the end of every successful task.
 
-Derive `actual_h` from the timestamps already in hand (no extra state): the elapsed wall-clock hours between `task_started_at` (recorded in Step 1) and the metrics `{ISO timestamp}` from Step 10b, rounded to one decimal. `retries` is the CI fix-attempt count (`ci_attempt`). `complexity` is the task's `complexity` field from `state/todos.json` if present; the queue schema does not require it, so omit the `complexity=` argument entirely when the task has none (downstream renders absent → em-dash; never emit a fabricated value).
+Derive `actual_h` from the timestamps already in hand (no extra state): the elapsed wall-clock hours between `task_started_at` (recorded in Step 1) and the metrics `{ISO timestamp}` from Step 10b, rounded to one decimal. `retries` is the CI fix-attempt count (`ci_attempt`). `complexity` is the task's `complexity` field from the task store if present; the queue schema does not require it, so omit the `complexity=` argument entirely when the task has none (downstream renders absent → em-dash; never emit a fabricated value).
 
 Re-resolve the script path inline:
 

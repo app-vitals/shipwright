@@ -17,7 +17,7 @@ metrics on success.
 
 Parse `$ARGUMENTS` to extract `org`, `repo`, and `pr` number:
 - `org/repo#number` (e.g. `app-vitals/shipwright#123`): explicit
-- `number` or `#number`: infer org/repo from the task store (`bun "$PLUGIN_SCRIPTS/task_store.ts" repos`),
+- `number` or `#number`: infer org/repo from the task store (`curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" "$SHIPWRIGHT_TASK_STORE_URL/tasks/repo" | jq -r '.repo // empty'`),
   defaulting to `app-vitals/shipwright`
 - _(no arguments)_: scan mode — find the next ready PR to deploy (see Step 1)
 
@@ -38,8 +38,7 @@ AGENT_LOGIN=$(gh api user --jq '.login')
 
 Resolve the configured repos:
 ```bash
-PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | awk -F/ '{print $(NF-2), $0}' | sort -V | tail -1 | cut -d' ' -f2- | xargs dirname 2>/dev/null)
-REPOS=$(bun "$PLUGIN_SCRIPTS/task_store.ts" repos)
+REPOS=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" "$SHIPWRIGHT_TASK_STORE_URL/tasks/repo" | jq -r '.repo // empty')
 ```
 
 For each configured repo, fetch all open PRs authored by `AGENT_LOGIN`:
@@ -84,7 +83,7 @@ section above to extract `org`, `repo`, and `pr`.
 Look up the task via the task store:
 
 ```bash
-TASK_JSON=$(bun "$PLUGIN_SCRIPTS/task_store.ts" query --pr {pr})
+TASK_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" "$SHIPWRIGHT_TASK_STORE_URL/tasks?pr={pr}" | jq .)
 TASK_ID=$(echo "$TASK_JSON" | jq -r '.[0].id // empty')
 TASK_TITLE=$(echo "$TASK_JSON" | jq -r '.[0].title // empty')
 TASK_STATUS=$(echo "$TASK_JSON" | jq -r '.[0].status // empty')
@@ -121,9 +120,8 @@ beyond (i.e., no bundle-mates are still in flight). This prevents deploying a PR
 sibling tasks on the same branch are still being developed or are blocked.
 
 ```bash
-PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | awk -F/ '{print $(NF-2), $0}' | sort -V | tail -1 | cut -d' ' -f2- | xargs dirname 2>/dev/null)
 HEAD_BRANCH=$(gh pr view {pr} --repo {org}/{repo} --json headRefName --jq '.headRefName')
-BRANCH_TASKS=$(bun "$PLUGIN_SCRIPTS/task_store.ts" query --branch "$HEAD_BRANCH" 2>/dev/null || echo '[]')
+BRANCH_TASKS=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" "$SHIPWRIGHT_TASK_STORE_URL/tasks?branch=$HEAD_BRANCH" 2>/dev/null || echo '[]')
 INCOMPLETE_TASKS=$(echo "$BRANCH_TASKS" | jq '[.[] | select(.status == "pending" or .status == "in_progress" or .status == "blocked") | {id, status}]')
 INCOMPLETE=$(echo "$INCOMPLETE_TASKS" | jq 'length')
 ```
@@ -248,9 +246,11 @@ Print:
 Mark the task merged via the task store — skip if in deploy-only mode:
 
 ```bash
-bun "$PLUGIN_SCRIPTS/task_store.ts" update --id "$TASK_ID" \
-  --set status=merged \
-  --set mergedAt="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+curl -sf -X PATCH \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
+  -d "{\"status\": \"merged\", \"mergedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" | jq .
 ```
 
 ---
@@ -302,9 +302,11 @@ Use `-` for runs not yet seen.
 ```
 Compute `pipeline_minutes = elapsed`. Update the task store — skip if deploy-only mode:
 ```bash
-bun "$PLUGIN_SCRIPTS/task_store.ts" update --id "$TASK_ID" \
-  --set status=deployed \
-  --set deployedAt="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+curl -sf -X PATCH \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
+  -d "{\"status\": \"deployed\", \"deployedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" | jq .
 ```
 Fire `shipwright_task_deployed` — skip if deploy-only mode:
 ```bash
@@ -322,9 +324,11 @@ Print the handoff block (Step 9) with `Pipeline: post-merge CI ({pipeline_minute
 ```
 Update via task store — skip if deploy-only mode:
 ```bash
-bun "$PLUGIN_SCRIPTS/task_store.ts" update --id "$TASK_ID" \
-  --set status=blocked \
-  --set note="Post-merge CI failed — run ID: {id}"
+curl -sf -X PATCH \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
+  -d "{\"status\": \"blocked\", \"note\": \"Post-merge CI failed — run ID: {id}\"}" | jq .
 ```
 Stop.
 
@@ -335,9 +339,11 @@ Stop.
 ```
 Update the task store to `status=deployed` — skip if deploy-only mode:
 ```bash
-bun "$PLUGIN_SCRIPTS/task_store.ts" update --id "$TASK_ID" \
-  --set status=deployed \
-  --set deployedAt="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+curl -sf -X PATCH \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
+  -d "{\"status\": \"deployed\", \"deployedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" | jq .
 ```
 Fire `shipwright_task_deployed` — skip if deploy-only mode:
 ```bash
@@ -407,9 +413,11 @@ Re-surface this message every 5 minutes while the queue remains stuck.
 ```
 Update via task store — skip if deploy-only mode:
 ```bash
-bun "$PLUGIN_SCRIPTS/task_store.ts" update --id "$TASK_ID" \
-  --set status=blocked \
-  --set note="Deploy stage failed — run ID: {id}"
+curl -sf -X PATCH \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
+  -d "{\"status\": \"blocked\", \"note\": \"Deploy stage failed — run ID: {id}\"}" | jq .
 ```
 Stop.
 
@@ -425,9 +433,11 @@ Go to Step 6.
 ```
 Update via task store — skip if deploy-only mode:
 ```bash
-bun "$PLUGIN_SCRIPTS/task_store.ts" update --id "$TASK_ID" \
-  --set status=blocked \
-  --set note="canary_blocked: Promote skipped after canary success"
+curl -sf -X PATCH \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
+  -d '{"status": "blocked", "note": "canary_blocked: Promote skipped after canary success"}' | jq .
 ```
 Stop.
 
@@ -444,9 +454,11 @@ Go to Step 7.
 ```
 Update via task store — skip if deploy-only mode:
 ```bash
-bun "$PLUGIN_SCRIPTS/task_store.ts" update --id "$TASK_ID" \
-  --set status=blocked \
-  --set note="Pipeline timeout after 30 minutes"
+curl -sf -X PATCH \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
+  -d '{"status": "blocked", "note": "Pipeline timeout after 30 minutes"}' | jq .
 ```
 Stop.
 
@@ -508,10 +520,11 @@ Canary logs: gh run view {canary_run_id} --log --failed
 Update via task store — skip if deploy-only mode:
 
 ```bash
-bun "$PLUGIN_SCRIPTS/task_store.ts" update --id "$TASK_ID" \
-  --set status=blocked \
-  --set blockedAt="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  --set note="Canary failed after deploy. Revert PR opened: {revert_pr_url}"
+curl -sf -X PATCH \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
+  -d "{\"status\": \"blocked\", \"blockedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\", \"note\": \"Canary failed after deploy. Revert PR opened: {revert_pr_url}\"}" | jq .
 ```
 
 Fire `shipwright_task_blocked` — only if a task was found (skip in deploy-only mode):
@@ -568,9 +581,11 @@ pipeline_minutes = floor((now - deploy_started_at) / 60)
 Skip if no task was found (deploy-only mode):
 
 ```bash
-bun "$PLUGIN_SCRIPTS/task_store.ts" update --id "$TASK_ID" \
-  --set status=deployed \
-  --set deployedAt="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+curl -sf -X PATCH \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
+  -d "{\"status\": \"deployed\", \"deployedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" | jq .
 ```
 
 ### 8c. Enrich Metrics JSONL

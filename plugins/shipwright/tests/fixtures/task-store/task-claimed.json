@@ -1,0 +1,10 @@
+{
+  "id": "TSS-F.1",
+  "title": "First fixture task",
+  "status": "in_progress",
+  "repo": "app-vitals/shipwright",
+  "session": "fixture-session",
+  "branch": "feat/tss-f-1",
+  "assignee": "test-agent",
+  "startedAt": "2026-06-22T10:00:00.000Z"
+}

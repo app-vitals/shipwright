@@ -1,0 +1,18 @@
+[
+  {
+    "id": "TSS-F.1",
+    "title": "First fixture task",
+    "status": "pending",
+    "repo": "app-vitals/shipwright",
+    "session": "fixture-session",
+    "branch": "feat/tss-f-1"
+  },
+  {
+    "id": "TSS-F.2",
+    "title": "Second fixture task",
+    "status": "pending",
+    "repo": "app-vitals/shipwright",
+    "session": "fixture-session",
+    "dependencies": ["TSS-F.1"]
+  }
+]

@@ -22,7 +22,7 @@ Parse `$ARGUMENTS` to extract:
 Then print:
 ```
 ⚠ Auto-detected repo: {repo}
-This will be written to every task in state/todos.json and used by /dev-task to
+This will be written to every task in the task store and used by /dev-task to
 locate the source tree (~/src/{repo}). Confirm it is correct before proceeding.
 ```
 Wait for user confirmation before continuing to Step 1.
@@ -30,25 +30,7 @@ Wait for user confirmation before continuing to Step 1.
 This is the engineering planning pass. The product spec (what and why) is already done — either from `/prd` or handed in directly. This session translates that spec into a concrete technical design and task queue.
 
 **Input:** `planning/{session}/PRODUCT-SPEC.md` (or a verbal description if no spec exists)
-**Output:** Tasks in `state/todos.json`, ready for `dev-task` to execute
-
----
-
-## Phase-0: Backend Setup (GitHub only)
-
-Detect the active backend and, when it is `"github"`, run the task store setup before any context loading:
-
-```bash
-PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | awk -F/ '{print $(NF-2), $0}' | sort -V | tail -1 | cut -d' ' -f2- | xargs dirname 2>/dev/null)
-PHASE0_BACKEND=$([ -n "$PLUGIN_SCRIPTS" ] && bun "$PLUGIN_SCRIPTS/task_store.ts" backend 2>/dev/null)
-PHASE0_BACKEND=${PHASE0_BACKEND:-json}
-[ "$PHASE0_BACKEND" = "github" ] && bun "$PLUGIN_SCRIPTS/task_store.ts" setup
-```
-
-If the `setup` command exits non-zero, print the error and **stop** — a misconfigured board means
-tasks written in Step 6 won't land on the board and the queue will be out of sync.
-
-If the active backend is `"json"` (the default), skip this step.
+**Output:** Tasks in the task store, ready for `dev-task` to execute
 
 ---
 
@@ -58,8 +40,7 @@ If the active backend is `"json"` (the default), skip this step.
 2. Glob the repo structure to understand the codebase layout
 3. Check for any existing tasks in this session to avoid duplicates:
    ```bash
-   PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | awk -F/ '{print $(NF-2), $0}' | sort -V | tail -1 | cut -d' ' -f2- | xargs dirname 2>/dev/null)
-   [ -n "$PLUGIN_SCRIPTS" ] && bun "$PLUGIN_SCRIPTS/task_store.ts" query --session {session}
+   curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" "$SHIPWRIGHT_TASK_STORE_URL/tasks?session=$SESSION" | jq .
    ```
    The output is a JSON array. If non-empty, print the existing task IDs and skip re-adding them.
 4. Read `planning/{session}/PRODUCT-SPEC.md` if it exists — this is the primary input
@@ -310,7 +291,7 @@ HITL scan: no tasks require human steps
 
 ## Step 6: Write to Queue
 
-Once the task breakdown is approved, write each task to the task store via `task_store.ts`.
+Once the task breakdown is approved, write each task to the task store via HTTP API calls.
 
 ### Bundle Model Inheritance (Pre-Write)
 
@@ -322,72 +303,18 @@ Before constructing any JSON, apply bundle inheritance to the full task list:
 
 A task on its own branch is unaffected. This ensures a `haiku`-scored task bundled with a `sonnet`-scored task is written as `model: "sonnet"`.
 
-The code path depends on `taskStore` in `SHIPWRIGHT_CONFIG`. Read it the same way Phase-0 does:
-
-```bash
-SHIPWRIGHT_CONFIG_VALUE=$(bun "$PLUGIN_SCRIPTS/task_store.ts" backend 2>/dev/null || echo "json")
-```
-
-**Branch gate — choose exactly one path based on `SHIPWRIGHT_CONFIG_VALUE`:**
-
-- If `SHIPWRIGHT_CONFIG_VALUE` == `"github"` → follow **Path B** (GitHub Issues) below.
-- Otherwise (value is `"json"` or empty) → follow **Path A** (local JSON) below.
-
-Do not execute both paths. Skip the path that does not apply.
-
 ---
 
-### Path A: taskStore is "json" (default)
-
-Write the new tasks to a temp file `/tmp/new-tasks-{session}.json` as a JSON array:
-
-```json
-[
-  {
-    "id": "{PREFIX}-{N}.{M}",
-    "source": "shipwright",
-    "session": "{session}",
-    "repo": "{repo}",
-    "title": "...",
-    "description": "...",
-    "acceptanceCriteria": ["...", "..."],
-    "layer": "API | Frontend | Database | Shared | Background | CLI",
-    "branch": "feat/...",
-    "dependencies": [],
-    "status": "pending",
-    "hitl": false,
-    "pr": null,
-    "addedAt": "{ISO timestamp}",
-    "hours": 2,
-    "complexity": {complexity},
-    "model": "{model}"
-  }
-]
-```
-
-Set `"hitl": true` (and include the `## Human steps` section in `description`) for any task flagged in Step 5.5.
-
-Append them to `state/todos.json` via task_store.ts (idempotent by id — safe to re-run):
+**Step 6a — Read owner/repo from the task store:**
 
 ```bash
-PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | awk -F/ '{print $(NF-2), $0}' | sort -V | tail -1 | cut -d' ' -f2- | xargs dirname 2>/dev/null)
-bun "$PLUGIN_SCRIPTS/task_store.ts" append --file /tmp/new-tasks-{session}.json
-```
-
----
-
-### Path B: taskStore is "github"
-
-**Step 6a — Read owner/repo from config:**
-
-```bash
-SHIPWRIGHT_REPO_FULL=$(bun "$PLUGIN_SCRIPTS/task_store.ts" repos 2>/dev/null | head -1)
-[ -z "$SHIPWRIGHT_REPO_FULL" ] && { echo 'ERROR: repos returned no output — ensure github.owner and github.repo are set in .shipwright.json' >&2; false; }
+SHIPWRIGHT_REPO_FULL=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" "$SHIPWRIGHT_TASK_STORE_URL/tasks/repo" | jq -r '.repo // empty')
+[ -z "$SHIPWRIGHT_REPO_FULL" ] && { echo 'ERROR: /tasks/repo returned no output — ensure the task store is configured with a repo' >&2; false; }
 SHIPWRIGHT_OWNER=$(echo "$SHIPWRIGHT_REPO_FULL" | cut -d'/' -f1)
 SHIPWRIGHT_REPO=$(echo "$SHIPWRIGHT_REPO_FULL" | cut -d'/' -f2)
 ```
 
-If `SHIPWRIGHT_REPO_FULL` is empty (i.e. `repos` returned no output), stop immediately. Ensure `github.owner` and `github.repo` are configured in the active task store config before retrying.
+If `SHIPWRIGHT_REPO_FULL` is empty (i.e. `/tasks/repo` returned no output), stop immediately. Ensure the task store service is configured with a repo before retrying.
 
 **Step 6b — Create a parent GitHub Issue for the plan:**
 
@@ -474,11 +401,14 @@ jq --arg src "$PARENT_REF" \
 **Step 6d — Append tasks to the store:**
 
 ```bash
-PLUGIN_SCRIPTS=$(find ~/.claude/plugins/cache -maxdepth 5 -name "task_store.ts" -path "*/shipwright/*" 2>/dev/null | awk -F/ '{print $(NF-2), $0}' | sort -V | tail -1 | cut -d' ' -f2- | xargs dirname 2>/dev/null)
-bun "$PLUGIN_SCRIPTS/task_store.ts" append --file /tmp/new-tasks-{session}-linked.json
+curl -sf -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/bulk" \
+  --data-binary @/tmp/new-tasks-{session}-linked.json | jq .
 ```
 
-This creates individual GitHub Issues for each task with the `status:pending` label, and the `source` field in each issue's metadata block links back to the parent plan issue.
+The `source` field on each task links back to the parent plan issue for traceability.
 
 ---
 
@@ -490,7 +420,7 @@ QUEUED
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Session: {session}
 Tasks queued: {count}
-{If github: Parent issue: https://github.com/{owner}/{repo}/issues/{parent_number}}
+Parent issue: https://github.com/{owner}/{repo}/issues/{parent_number}
 
 READY TO START (no dependencies):
 {list tasks with no deps}

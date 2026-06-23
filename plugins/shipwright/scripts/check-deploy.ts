@@ -15,13 +15,14 @@
  */
 
 import {
+  createTaskStoreClient,
   getCurrentUser,
   ghJson,
   readAllowSelfReview,
   resolveAllRepos,
   resolveWorkspacePath,
 } from "./check-helpers.ts";
-import { createTaskStore, loadConfig } from "./create-task-store.ts";
+import type { Task } from "./check-helpers.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -100,7 +101,10 @@ function hasSelfApproveReview(reviews: GhReview[], userLogin: string): boolean {
       r.author.login === userLogin &&
       // Strip leading markdown bold markers (**) before checking — the review
       // skill posts "**APPROVE**" but the body must still be treated as APPROVE.
-      r.body.trimStart().replace(/^\*+/, "").startsWith("APPROVE"),
+      r.body
+        .trimStart()
+        .replace(/^\*+/, "")
+        .startsWith("APPROVE"),
   );
 }
 
@@ -194,7 +198,9 @@ export async function run(deps: Deps): Promise<RunResult> {
         if (!isCiGreen(ciRuns)) continue;
 
         if (deps.isBundleComplete) {
-          const bundleComplete = await deps.isBundleComplete(pr.headRefName).catch(() => true);
+          const bundleComplete = await deps
+            .isBundleComplete(pr.headRefName)
+            .catch(() => true);
           if (!bundleComplete) continue;
         }
 
@@ -241,6 +247,8 @@ interface GhWorkflowRunsJson {
   }>;
 }
 
+const makeTaskStoreFetch = createTaskStoreClient;
+
 async function buildProductionDeps(): Promise<Deps> {
   const workspacePath = resolveWorkspacePath();
   const allRepos = resolveAllRepos(workspacePath);
@@ -264,7 +272,11 @@ async function buildProductionDeps(): Promise<Deps> {
       ]);
       return [...inProgress.workflow_runs, ...queued.workflow_runs]
         .filter((r) => r.name === "Deploy")
-        .map((r) => ({ name: r.name, status: r.status, createdAt: r.created_at }));
+        .map((r) => ({
+          name: r.name,
+          status: r.status,
+          createdAt: r.created_at,
+        }));
     },
     listOpenPrs: async (repo: string) => {
       return ghJson<GhPrListJson[]>([
@@ -300,9 +312,10 @@ async function buildProductionDeps(): Promise<Deps> {
         .map((r) => ({ status: r.status, conclusion: r.conclusion }));
     },
     reconcileStalePrOpenTasks: async () => {
-      const { config } = loadConfig();
-      const store = createTaskStore(config);
-      const prOpenTasks = await store.query({ status: "pr_open" });
+      const taskStore = makeTaskStoreFetch();
+      const prOpenTasks = await taskStore.query(
+        new URLSearchParams({ status: "pr_open" }),
+      );
       if (prOpenTasks.length === 0) return;
 
       const now = clock();
@@ -325,7 +338,10 @@ async function buildProductionDeps(): Promise<Deps> {
               "state",
             ]);
             if (prData.state === "MERGED") {
-              await store.update(task.id, { status: "merged", mergedAt: now });
+              await taskStore.update(task.id, {
+                status: "merged",
+                mergedAt: now,
+              });
               process.stderr.write(
                 `[check-deploy] reconciled task ${task.id} (PR #${task.pr}) → merged\n`,
               );
@@ -352,7 +368,7 @@ async function buildProductionDeps(): Promise<Deps> {
             ]);
             const first = merged[0];
             if (first !== undefined) {
-              await store.update(task.id, {
+              await taskStore.update(task.id, {
                 status: "merged",
                 pr: first.number,
                 mergedAt: now,
@@ -370,23 +386,18 @@ async function buildProductionDeps(): Promise<Deps> {
       }
     },
     cleanupStaleIssues: async () => {
-      const { config } = loadConfig();
-      const store = createTaskStore(config);
-      const { closed, milestonesClosed, plansClosed } = await store.cleanup();
-      if (closed > 0 || milestonesClosed > 0 || plansClosed > 0) {
-        process.stderr.write(
-          `[check-deploy] cleanup: closed ${closed} issue(s), ${plansClosed} plan(s), ${milestonesClosed} milestone(s)\n`,
-        );
-      }
+      // cleanup() is a no-op on the HTTP task store backend — nothing to do.
     },
     isBundleComplete: async (headBranch: string) => {
-      const { config } = loadConfig();
-      const store = createTaskStore(config);
-      const branchTasks = await store.query({ branch: headBranch });
-      const incomplete = branchTasks.filter((t) =>
-        t.status === "pending" ||
-        t.status === "in_progress" ||
-        t.status === "blocked",
+      const taskStore = makeTaskStoreFetch();
+      const branchTasks = await taskStore.query(
+        new URLSearchParams({ branch: headBranch }),
+      );
+      const incomplete = branchTasks.filter(
+        (t) =>
+          t.status === "pending" ||
+          t.status === "in_progress" ||
+          t.status === "blocked",
       );
       return incomplete.length === 0;
     },
