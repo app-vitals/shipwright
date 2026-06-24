@@ -84,9 +84,9 @@ Look up the task via the task store:
 
 ```bash
 TASK_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" "$SHIPWRIGHT_TASK_STORE_URL/tasks?pr={pr}" | jq .)
-TASK_ID=$(echo "$TASK_JSON" | jq -r '.[0].id // empty')
-TASK_TITLE=$(echo "$TASK_JSON" | jq -r '.[0].title // empty')
-TASK_STATUS=$(echo "$TASK_JSON" | jq -r '.[0].status // empty')
+TASK_ID=$(echo "$TASK_JSON" | jq -r '.tasks[0].id // empty')
+TASK_TITLE=$(echo "$TASK_JSON" | jq -r '.tasks[0].title // empty')
+TASK_STATUS=$(echo "$TASK_JSON" | jq -r '.tasks[0].status // empty')
 ```
 
 If `TASK_ID` is empty or `TASK_STATUS` is not `"pr_open"`, proceed in **deploy-only mode** — no
@@ -121,8 +121,8 @@ sibling tasks on the same branch are still being developed or are blocked.
 
 ```bash
 HEAD_BRANCH=$(gh pr view {pr} --repo {org}/{repo} --json headRefName --jq '.headRefName')
-BRANCH_TASKS=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" "$SHIPWRIGHT_TASK_STORE_URL/tasks?branch=$HEAD_BRANCH" 2>/dev/null || echo '[]')
-INCOMPLETE_TASKS=$(echo "$BRANCH_TASKS" | jq '[.[] | select(.status == "pending" or .status == "in_progress" or .status == "blocked") | {id, status}]')
+BRANCH_TASKS=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" "$SHIPWRIGHT_TASK_STORE_URL/tasks?branch=$HEAD_BRANCH" 2>/dev/null || echo '{"tasks":[],"total":0,"limit":50,"offset":0}')
+INCOMPLETE_TASKS=$(echo "$BRANCH_TASKS" | jq '[.tasks[] | select(.status == "pending" or .status == "in_progress" or .status == "blocked") | {id, status}]')
 INCOMPLETE=$(echo "$INCOMPLETE_TASKS" | jq 'length')
 ```
 
