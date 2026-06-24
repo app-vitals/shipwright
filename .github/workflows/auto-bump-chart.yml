@@ -35,6 +35,7 @@ on:
       - "admin-v*"
       - "metrics-v*"
       - "agent-v*"
+      - "task-store-v*"
 
 # Queue concurrent bumps rather than cancelling them — if multiple tags land
 # at nearly the same time, each should produce its own chart bump PR. Using
