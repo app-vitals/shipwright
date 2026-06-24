@@ -76,6 +76,34 @@ export interface TaskItem {
   repo?: string | null;
   assignee?: string | null;
   claimedBy?: string | null;
+  // Detail fields — populated on single-task fetch
+  description?: string | null;
+  acceptanceCriteria?: string[];
+  branch?: string | null;
+  pr?: number | null;
+  prUrl?: string | null;
+  dependencies?: string[];
+  priority?: string | null;
+  type?: string | null;
+  layer?: string | null;
+  source?: string | null;
+  issue?: string | null;
+  note?: string | null;
+  blockedReason?: string | null;
+  model?: string | null;
+  complexity?: number | null;
+  hitl?: boolean | null;
+  hours?: number | null;
+  addedAt?: string | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  blockedAt?: string | null;
+  claimedAt?: string | null;
+  heartbeatAt?: string | null;
+  agentHint?: string | null;
+  mergeCommit?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
 }
 
 // ─── Login page ───────────────────────────────────────────────────────────────
@@ -870,8 +898,8 @@ export function renderTasksPage(
       : tasks
           .map(
             (t) => `<tr>
-    <td class="mono" style="font-size:11px">${escapeHtml(t.id)}</td>
-    <td>${escapeHtml(t.title)}</td>
+    <td class="mono" style="font-size:11px"><a href="/admin/tasks/${escapeHtml(t.id)}" style="color:#6366f1;text-decoration:none" title="View details">${escapeHtml(t.id)}</a></td>
+    <td><a href="/admin/tasks/${escapeHtml(t.id)}" style="color:inherit;text-decoration:none">${escapeHtml(t.title)}</a></td>
     <td><span class="badge ${t.status === "in_progress" ? "badge-blue" : t.status === "done" ? "badge-green" : "badge-gray"}">${escapeHtml(t.status)}</span></td>
     <td class="mono" style="font-size:11px">${t.session ? escapeHtml(t.session) : '<span style="color:#9ca3af">—</span>'}</td>
     <td class="mono" style="font-size:11px">${t.repo ? escapeHtml(t.repo) : '<span style="color:#9ca3af">—</span>'}</td>
@@ -960,9 +988,207 @@ export function renderTasksPage(
 </html>`;
 }
 
+// ─── Task detail page ────────────────────────────────────────────────────────
+
+export function renderTaskDetailPage(task: TaskItem, userName: string): string {
+  const statusClass =
+    task.status === "in_progress"
+      ? "badge-blue"
+      : task.status === "done"
+        ? "badge-green"
+        : "badge-gray";
+
+  function field(
+    label: string,
+    value: string | null | undefined,
+    mono = false,
+  ): string {
+    if (!value) return "";
+    return `<tr>
+      <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top;white-space:nowrap">${escapeHtml(label)}</td>
+      <td style="padding:8px 12px;font-size:13px${mono ? ";font-family:monospace;font-size:12px" : ""}">${escapeHtml(value)}</td>
+    </tr>`;
+  }
+
+  function linkField(
+    label: string,
+    url: string | null | undefined,
+    text?: string,
+  ): string {
+    if (!url) return "";
+    return `<tr>
+      <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top">${escapeHtml(label)}</td>
+      <td style="padding:8px 12px;font-size:13px"><a href="${escapeHtml(url)}" target="_blank" rel="noopener" style="color:#6366f1">${escapeHtml(text ?? url)}</a></td>
+    </tr>`;
+  }
+
+  function listField(label: string, items: string[] | undefined): string {
+    if (!items || items.length === 0) return "";
+    const listItems = items
+      .map(
+        (i) =>
+          `<li style="font-size:13px;margin-bottom:4px">${escapeHtml(i)}</li>`,
+      )
+      .join("");
+    return `<tr>
+      <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top">${escapeHtml(label)}</td>
+      <td style="padding:8px 12px"><ul style="margin:0;padding-left:16px">${listItems}</ul></td>
+    </tr>`;
+  }
+
+  function dateField(label: string, iso: string | null | undefined): string {
+    if (!iso) return "";
+    const d = new Date(iso);
+    const fmt = Number.isNaN(d.getTime())
+      ? iso
+      : d.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
+    return `<tr>
+      <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top">${escapeHtml(label)}</td>
+      <td style="padding:8px 12px;font-size:13px" title="${escapeHtml(iso)}">${escapeHtml(fmt)}</td>
+    </tr>`;
+  }
+
+  const releaseButton =
+    task.status === "in_progress"
+      ? `<form method="POST" action="/admin/tasks/${escapeHtml(task.id)}/release" style="display:inline">
+          <button type="submit" class="btn btn-secondary" style="font-size:12px">Release</button>
+        </form>`
+      : "";
+
+  const descriptionSection = task.description
+    ? `<div class="card" style="margin-bottom:16px">
+        <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Description</div>
+        <div style="font-size:14px;line-height:1.6;white-space:pre-wrap">${escapeHtml(task.description)}</div>
+      </div>`
+    : "";
+
+  const acSection =
+    task.acceptanceCriteria && task.acceptanceCriteria.length > 0
+      ? `<div class="card" style="margin-bottom:16px">
+          <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Acceptance Criteria</div>
+          <ul style="margin:0;padding-left:16px">
+            ${task.acceptanceCriteria.map((c) => `<li style="font-size:14px;line-height:1.6;margin-bottom:6px">${escapeHtml(c)}</li>`).join("")}
+          </ul>
+        </div>`
+      : "";
+
+  const metaRows = [
+    field("Status", task.status),
+    field("Priority", task.priority),
+    field("Type", task.type),
+    field("Layer", task.layer),
+    field("Source", task.source),
+    field("Assignee", task.assignee, true),
+    field("Agent Hint", task.agentHint, true),
+    field("Claimed By", task.claimedBy, true),
+    field("Session", task.session, true),
+    field("Repo", task.repo, true),
+    field("Branch", task.branch, true),
+    task.pr
+      ? linkField(
+          "PR",
+          task.prUrl ?? `https://github.com/${task.repo}/pull/${task.pr}`,
+          `#${task.pr}`,
+        )
+      : "",
+    task.issue
+      ? linkField(
+          "Issue",
+          task.issue.startsWith("http") ? task.issue : undefined,
+          task.issue,
+        )
+      : "",
+    field("Model", task.model),
+    task.complexity !== null && task.complexity !== undefined
+      ? field("Complexity", String(task.complexity))
+      : "",
+    task.hours !== null && task.hours !== undefined
+      ? field("Hours", String(task.hours))
+      : "",
+    task.hitl !== null && task.hitl !== undefined
+      ? field("HITL", task.hitl ? "yes" : "no")
+      : "",
+    field("Note", task.note),
+    field("Blocked Reason", task.blockedReason),
+    field("Merge Commit", task.mergeCommit, true),
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const datesRows = [
+    dateField("Added", task.addedAt),
+    dateField("Started", task.startedAt),
+    dateField("Claimed", task.claimedAt),
+    dateField("Last Heartbeat", task.heartbeatAt),
+    dateField("Blocked", task.blockedAt),
+    dateField("Completed", task.completedAt),
+    dateField("Created", task.createdAt),
+    dateField("Updated", task.updatedAt),
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const depsSection =
+    task.dependencies && task.dependencies.length > 0
+      ? listField("Dependencies", task.dependencies)
+      : "";
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${escapeHtml(task.title)} — Tasks — Shipwright Admin</title>
+  <style>${baseStyles()}
+    .badge-blue { background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe; }
+    .detail-table { width:100%;border-collapse:collapse; }
+    .detail-table tr:not(:last-child) td { border-bottom:1px solid #f3f4f6; }
+  </style>
+</head>
+<body>
+  ${renderAdminToolbar(userName, "/admin/tasks")}
+  <div class="vos-page">
+    <div class="page-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <a href="/admin/tasks" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>
+      <h1 class="page-title" style="margin:0;flex:1">${escapeHtml(task.title)}</h1>
+      <span class="badge ${statusClass}">${escapeHtml(task.status)}</span>
+      ${releaseButton}
+    </div>
+    <div style="margin-top:4px;margin-bottom:16px;font-family:monospace;font-size:11px;color:#9ca3af">${escapeHtml(task.id)}</div>
+
+    ${descriptionSection}
+    ${acSection}
+
+    <div class="card" style="margin-bottom:16px">
+      <table class="detail-table">
+        <tbody>
+          ${metaRows}
+          ${depsSection}
+        </tbody>
+      </table>
+    </div>
+
+    ${
+      datesRows
+        ? `<div class="card" style="margin-bottom:16px">
+      <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Timeline</div>
+      <table class="detail-table"><tbody>${datesRows}</tbody></table>
+    </div>`
+        : ""
+    }
+  </div>
+</body>
+</html>`;
+}
+
 export function renderProvisionCompletePage(
   userName: string,
-  opts: { success: boolean; agentId?: string; error?: string; rawToken?: string },
+  opts: {
+    success: boolean;
+    agentId?: string;
+    error?: string;
+    rawToken?: string;
+  },
 ): string {
   const rawTokenHtml = opts.rawToken
     ? `<div class="alert alert-success" style="margin-top:16px">

@@ -31,6 +31,7 @@ import {
   renderProvisionCompletePage,
   renderProvisionStartPage,
   renderProvisionXappTokenPage,
+  renderTaskDetailPage,
   renderTasksPage,
 } from "./admin-ui-pages.ts";
 import type { AgentCronJobService } from "./agent-cron-jobs.ts";
@@ -188,6 +189,11 @@ export interface AdminUIDeps {
    */
   fetchTaskStoreTasks?: (params: URLSearchParams) => Promise<TaskItem[]>;
   /**
+   * Fetch a single task by ID from the task-store service. If absent, the
+   * detail route redirects back to the list.
+   */
+  fetchTaskStoreTask?: (id: string) => Promise<TaskItem | null>;
+  /**
    * Release a task (unclaim → pending) via the task-store service.
    */
   releaseTask?: (id: string) => Promise<void>;
@@ -285,6 +291,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     appBaseUrl,
     devAuthEnabled = false,
     fetchTaskStoreTasks,
+    fetchTaskStoreTask,
     releaseTask,
   } = deps;
 
@@ -1477,16 +1484,32 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     );
   });
 
+  app.get("/admin/tasks/:id", requireAuth, async (c) => {
+    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+    const taskId = c.req.param("id");
+    if (!fetchTaskStoreTask)
+      return c.redirect("/admin/tasks?error=task_store_unavailable", 302);
+    let task: TaskItem | null = null;
+    try {
+      task = await fetchTaskStoreTask(taskId);
+    } catch {
+      return c.redirect("/admin/tasks?error=task_fetch_failed", 302);
+    }
+    if (!task) return c.redirect("/admin/tasks?error=task_not_found", 302);
+    return html(renderTaskDetailPage(task, c.var.userEmail));
+  });
+
   app.post("/admin/tasks/:id/release", requireAuth, async (c) => {
     if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
     const taskId = c.req.param("id");
-    if (!releaseTask) return c.redirect("/admin/tasks?error=task_store_unavailable", 302);
+    if (!releaseTask)
+      return c.redirect("/admin/tasks?error=task_store_unavailable", 302);
     try {
       await releaseTask(taskId);
     } catch {
       return c.redirect("/admin/tasks?error=release_failed", 302);
     }
-    return c.redirect("/admin/tasks", 302);
+    return c.redirect(`/admin/tasks/${taskId}`, 302);
   });
 
   // ─── Agent delete (danger zone) ───────────────────────────────────────────
