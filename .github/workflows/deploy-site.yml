@@ -1,0 +1,72 @@
+name: Deploy Site
+
+# Builds the Astro marketing site (site/) and deploys site/dist/ to the root
+# of the gh-pages branch.  Coexists with the Helm chart publisher (chart-release.yml)
+# which writes index.yaml and *.tgz to the same branch — clean-exclude preserves
+# those files so a site deploy never clobbers the Helm repository.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - ".github/workflows/deploy-site.yml"
+
+# Least privilege at the workflow level; the deploy job widens to contents:write.
+permissions:
+  contents: read
+
+# Serialize site deploys — a newer push cancels an in-flight deploy (safe: the
+# site deploy is idempotent and we always want the latest build on gh-pages).
+# Kept SEPARATE from the `chart-release` concurrency group so Helm publishes and
+# site deploys never block each other.
+concurrency:
+  group: site-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: build + deploy (gh-pages)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push site/dist to gh-pages
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.x"
+
+      - name: Install site dependencies
+        run: cd site && bun install
+
+      - name: Build site
+        run: cd site && bunx astro build
+
+      - name: Deploy to gh-pages
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          branch: gh-pages
+          folder: site/dist
+          # clean: true removes stale site files from previous deploys, but
+          # clean-exclude preserves the Helm chart artifacts that chart-release.yml
+          # writes to the same branch root.  These two globs cover every file the
+          # Helm publisher ever commits: the regenerated repo index and all packaged
+          # chart tarballs.
+          clean: true
+          clean-exclude: |
+            index.yaml
+            *.tgz
+
+      # Post-deploy assertion: verify that the Helm index.yaml was NOT deleted.
+      # If the clean-exclude logic ever regresses, this step fails the workflow
+      # immediately rather than silently breaking the Helm repo.
+      - name: Assert Helm index.yaml survived deploy
+        run: |
+          git fetch origin gh-pages
+          git checkout origin/gh-pages -- index.yaml 2>/dev/null \
+            && echo "index.yaml is present on gh-pages — Helm repo intact." \
+            || { echo "ERROR: index.yaml is missing from gh-pages after site deploy!"; exit 1; }
