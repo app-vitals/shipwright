@@ -221,7 +221,7 @@ jobs:
         if: steps.idempotency.outputs.skip != 'true' && steps.commit-push.outputs.push_skipped != 'true'
         id: pr
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
         run: |
           NEW_VERSION="${{ steps.new.outputs.version }}"
           CURRENT_VERSION="${{ steps.current.outputs.version }}"
@@ -257,7 +257,7 @@ jobs:
       - name: Enable auto-merge
         if: steps.idempotency.outputs.skip != 'true' && steps.commit-push.outputs.push_skipped != 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
         run: |
           PR_URL="${{ steps.pr.outputs.pr_url }}"
           gh pr merge "$PR_URL" --auto --squash
