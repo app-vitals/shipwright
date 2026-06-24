@@ -48,10 +48,10 @@ Mounted at `/agents/*` (unified with the runtime API surface). Auth: **admin key
 
 | Resource | Endpoints |
 |---|---|
-| Agents | `POST /agents` (admin-only: creates agent, returns `{id, name, slackId, createdAt}` with `201`) |
+| Agents | `POST /agents` (admin-only: creates agent, returns `{id, name, slackId, selfHosted, createdAt, updatedAt}` with `201`), `GET /agents/:id` (admin-only: fetches agent record), `GET /agents` (admin-only: lists agents), `PATCH /agents/:id` (admin-only: updates agent fields like `selfHosted`), `POST /agents/:id/provision` (admin-only: provisions a managed agent or returns `{skipped: true, reason: "self-hosted"}` for self-hosted agents) |
 | Envs | `POST` / `GET` / `PATCH` `/agents/:id/envs`, `DELETE /agents/:id/envs/:key` |
 | Crons | `POST` `/agents/:id/crons`, `PATCH` / `DELETE` `/agents/:id/crons/:cronId`, `POST /agents/:id/crons/reconcile` |
-| Reconciliation | `POST /agents/reconcile` (admin-only: reconciles K8s Deployments against all known agents; returns `{recreated: string[], updated: string[], orphans: string[], failed: Array<{agentId, error}>}`) |
+| Reconciliation | `POST /agents/reconcile` (admin-only: reconciles K8s Deployments against all managed (non-self-hosted) agents; returns `{recreated: string[], updated: string[], orphans: string[], failed: Array<{agentId, error}>}`) |
 | Tools | `POST` / `GET` `/agents/:id/tools`, `PATCH` / `DELETE` `/agents/:id/tools/:toolId` |
 | Tokens | `POST` / `GET` `/agents/:id/tokens`, `DELETE /agents/:id/tokens/:tokenId` |
 | Plugins | `POST` / `GET` / `PATCH` `/agents/:id/plugins`, `DELETE /agents/:id/plugins` |
@@ -84,7 +84,7 @@ Each REPL session generates a single `session` UUID so successive messages resum
 
 | Model | Owns | Notable fields |
 |---|---|---|
-| `Agent` | The runner identity | `name`, `slackId` (unique), `slackBotToken` / `anthropicApiKey` (AES-256-GCM encrypted). |
+| `Agent` | The runner identity | `name`, `slackId` (unique), `selfHosted` (boolean; when true, agent manages its own workload and skips K8s provisioning), `slackBotToken` / `anthropicApiKey` (AES-256-GCM encrypted). |
 | `AgentEnv` | Key/value env store | `key`, `value` (encrypted); unique per `[agentId, key]`. |
 | `AgentCronJob` | Scheduled prompts | `schedule` (cron expr), `prompt`, `channel` **xor** `user`, `silent`, `enabled`, `preCheck`, `name`/`system` (system-cron key). |
 | `AgentTool` | Allowed tool patterns | `pattern` (e.g. `Read`, `Bash`), `enabled`; unique per `[agentId, pattern]`. |
