@@ -4,6 +4,23 @@ Durable notes for breaking changes and the steps needed to migrate across versio
 
 ---
 
+## `GET /tasks` response shape change
+
+**Version**: next (feat/task-filters)
+
+`GET /tasks` previously returned a bare `Task[]`. It now returns an envelope:
+
+```json
+{ "tasks": Task[], "total": number, "limit": number, "offset": number }
+```
+
+**What to update:**
+- Any code that calls `GET /tasks` and expects an array must unwrap `.tasks` from the response.
+- `check-helpers.ts` in the plugin is updated in this PR. Custom scripts or agents calling `/tasks` directly need the same fix.
+- `GET /tasks?ready=true` is unchanged — it still returns `Task[]`.
+
+---
+
 ## `AgentProvisioner.reconcile()` interface change _(v4.29.0)_
 
 - **`reconcile(agentIds: string[])` → `reconcile(agents: Array<{ id: string; slug?: string }>)`**: The `AgentProvisioner` interface's `reconcile()` method now accepts structured agent objects instead of raw ID strings. This is a **compile-time breaking change** for any code that implements or calls `AgentProvisioner` directly.

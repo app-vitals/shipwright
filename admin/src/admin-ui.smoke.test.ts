@@ -2084,7 +2084,12 @@ describe("admin UI — tasks page", () => {
     ];
     const app = createAdminUIApp(
       makeMockDeps({
-        fetchTaskStoreTasks: async () => mockTasks,
+        fetchTaskStoreTasks: async () => ({
+          tasks: mockTasks,
+          total: mockTasks.length,
+          limit: 50,
+          offset: 0,
+        }),
       }),
     );
     const res = await app.request("/admin/tasks", {
@@ -2141,7 +2146,12 @@ describe("admin UI — tasks page", () => {
     ];
     const app = createAdminUIApp(
       makeMockDeps({
-        fetchTaskStoreTasks: async () => mockTasks,
+        fetchTaskStoreTasks: async () => ({
+          tasks: mockTasks,
+          total: mockTasks.length,
+          limit: 50,
+          offset: 0,
+        }),
       }),
     );
     const res = await app.request("/admin/tasks", {
@@ -2176,7 +2186,14 @@ describe("admin UI — tasks page", () => {
       },
     ];
     const app = createAdminUIApp(
-      makeMockDeps({ fetchTaskStoreTasks: async () => mockTasks }),
+      makeMockDeps({
+        fetchTaskStoreTasks: async () => ({
+          tasks: mockTasks,
+          total: mockTasks.length,
+          limit: 50,
+          offset: 0,
+        }),
+      }),
     );
     const res = await app.request("/admin/tasks?agent=test", {
       headers: { Cookie: `admin_session=${cookie}` },
@@ -2191,7 +2208,12 @@ describe("admin UI — tasks page", () => {
     const released: string[] = [];
     const app = createAdminUIApp(
       makeMockDeps({
-        fetchTaskStoreTasks: async () => [],
+        fetchTaskStoreTasks: async () => ({
+          tasks: [],
+          total: 0,
+          limit: 50,
+          offset: 0,
+        }),
         fetchTaskStoreTask: async () => null,
         releaseTask: async (id: string) => {
           released.push(id);
@@ -2211,7 +2233,12 @@ describe("admin UI — tasks page", () => {
     const released: string[] = [];
     const app = createAdminUIApp(
       makeMockDeps({
-        fetchTaskStoreTasks: async () => [],
+        fetchTaskStoreTasks: async () => ({
+          tasks: [],
+          total: 0,
+          limit: 50,
+          offset: 0,
+        }),
         releaseTask: async (id: string) => {
           released.push(id);
         },
@@ -2229,7 +2256,12 @@ describe("admin UI — tasks page", () => {
   it("POST /admin/tasks/:id/release redirects with ?error=release_failed when releaseTask throws", async () => {
     const app = createAdminUIApp(
       makeMockDeps({
-        fetchTaskStoreTasks: async () => [],
+        fetchTaskStoreTasks: async () => ({
+          tasks: [],
+          total: 0,
+          limit: 50,
+          offset: 0,
+        }),
         releaseTask: async () => {
           throw new Error("task store unavailable");
         },

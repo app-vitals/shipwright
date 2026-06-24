@@ -12,7 +12,8 @@
  * Admin tokens (agentId null) have no restrictions.
  *
  * Routes:
- *   GET    /tasks               list (?status, ?session, ?assignee, ?pr, ?branch, ?ready=true)
+ *   GET    /tasks               list (?status, ?state=open|closed, ?session, ?assignee, ?pr, ?branch, ?limit, ?offset, ?ready=true)
+ *                              returns { tasks, total, limit, offset } — or Task[] when ?ready=true
  *   POST   /tasks               create one (409 if id exists)
  *   POST   /tasks/bulk          insert array, skip 409s → { inserted, updated }
  *   GET    /tasks/:id           fetch one (404 when missing)
@@ -73,8 +74,14 @@ export function createTasksRoutes(
     }
 
     const prRaw = c.req.query("pr");
-    const tasks = await taskService.list({
+    const limitRaw = c.req.query("limit");
+    const offsetRaw = c.req.query("offset");
+    const stateRaw = c.req.query("state");
+    const state =
+      stateRaw === "open" || stateRaw === "closed" ? stateRaw : undefined;
+    const result = await taskService.list({
       status: c.req.query("status"),
+      state,
       session: c.req.query("session"),
       repo: c.req.query("repo"),
       // Agent tokens always scope to their own tasks; ignore any provided ?assignee.
@@ -82,8 +89,11 @@ export function createTasksRoutes(
       claimedBy: c.req.query("claimedBy"),
       pr: prRaw !== undefined ? Number.parseInt(prRaw, 10) : undefined,
       branch: c.req.query("branch"),
+      limit: limitRaw !== undefined ? (Number.parseInt(limitRaw, 10) || undefined) : undefined,
+      offset:
+        offsetRaw !== undefined ? (Number.parseInt(offsetRaw, 10) || undefined) : undefined,
     });
-    return c.json(tasks, 200);
+    return c.json(result, 200);
   });
 
   // ─── Create ────────────────────────────────────────────────────────────────

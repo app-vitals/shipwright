@@ -16,7 +16,7 @@ import { describe, expect, it } from "bun:test";
 import { createTaskStoreApp } from "./app.ts";
 import { ConflictError, NotFoundError } from "./errors.ts";
 import type { Task } from "./index.ts";
-import type { TaskListFilters, TaskServiceLike } from "./task-service.ts";
+import type { TaskListFilters, TaskListResult, TaskServiceLike } from "./task-service.ts";
 import type { TokenServiceLike } from "./token-service.ts";
 
 // ─── Fakes ────────────────────────────────────────────────────────────────────
@@ -135,8 +135,14 @@ function fakeTaskService(
   } = {},
 ): TaskServiceLike {
   return {
-    async list() {
-      return opts.listResult ?? [];
+    async list(filters?) {
+      const tasks = opts.listResult ?? [];
+      return {
+        tasks,
+        total: tasks.length,
+        limit: filters?.limit ?? 50,
+        offset: filters?.offset ?? 0,
+      };
     },
     async listReady() {
       return opts.listReadyResult ?? [];
@@ -401,9 +407,9 @@ describe("task-store API (smoke)", () => {
       headers: { Authorization: `Bearer ${AGENT_TOKEN}` },
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as Task[];
-    expect(body).toHaveLength(1);
-    expect(body[0].assignee).toBe("agent-1");
+    const body = (await res.json()) as TaskListResult;
+    expect(body.tasks).toHaveLength(1);
+    expect(body.tasks[0].assignee).toBe("agent-1");
   });
 
   it("PATCH /tasks/:id with agent token pins assignee to the agent's ID", async () => {
@@ -461,7 +467,7 @@ describe("task-store API (smoke)", () => {
       ...fakeTaskService(),
       async list(opts?) {
         capturedAssignees.push(opts?.assignee);
-        return [];
+        return { tasks: [], total: 0, limit: 50, offset: 0 };
       },
     };
 
