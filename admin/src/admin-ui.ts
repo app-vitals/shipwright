@@ -1496,7 +1496,20 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       return c.redirect("/admin/tasks?error=task_fetch_failed", 302);
     }
     if (!task) return c.redirect("/admin/tasks?error=task_not_found", 302);
-    return html(renderTaskDetailPage(task, c.var.userEmail));
+
+    // Resolve agent IDs → names from the local admin DB
+    const agentIds = [task.assignee, task.claimedBy, task.agentHint].filter(
+      (id): id is string => !!id,
+    );
+    const agentNames: Record<string, string> = {};
+    if (agentIds.length > 0) {
+      const agents = await prisma.agent.findMany({
+        where: { id: { in: agentIds } },
+      });
+      for (const a of agents) agentNames[a.id] = a.name;
+    }
+
+    return html(renderTaskDetailPage(task, c.var.userEmail, agentNames));
   });
 
   app.post("/admin/tasks/:id/release", requireAuth, async (c) => {

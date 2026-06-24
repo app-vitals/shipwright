@@ -2198,8 +2198,8 @@ describe("admin UI — tasks page", () => {
       status: "in_progress",
       description: "Do the work",
       branch: "feat/thing",
-      assignee: "agent-1",
-      claimedBy: "agent-1",
+      assignee: "agent-unknown",
+      claimedBy: "agent-unknown",
       session: null,
       repo: "org/repo",
       claimedAt: "2024-01-15T10:00:00.000Z",
@@ -2219,6 +2219,34 @@ describe("admin UI — tasks page", () => {
     expect(html).toContain("Do the work");
     expect(html).toContain("feat/thing");
     expect(html).toContain("← Tasks");
+    // Unknown agent ID shown as raw ID (no name resolution)
+    expect(html).toContain("agent-unknown");
+  });
+
+  it("GET /admin/tasks/:id resolves agent IDs to names", async () => {
+    const mockTask = {
+      id: "task-43",
+      title: "Task with known agent",
+      status: "in_progress",
+      assignee: AGENT_ID,
+      claimedBy: AGENT_ID,
+      session: null,
+      repo: null,
+    };
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTask: async (id: string) =>
+          id === "task-43" ? mockTask : null,
+      }),
+    );
+    const res = await app.request("/admin/tasks/task-43", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    // Name resolved from the admin DB — shown as "Test Agent (agent-test-123)"
+    expect(html).toContain("Test Agent");
+    expect(html).toContain(AGENT_ID);
   });
 
   it("GET /admin/tasks/:id redirects to list when task not found", async () => {

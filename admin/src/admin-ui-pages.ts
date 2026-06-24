@@ -990,7 +990,11 @@ export function renderTasksPage(
 
 // ─── Task detail page ────────────────────────────────────────────────────────
 
-export function renderTaskDetailPage(task: TaskItem, userName: string): string {
+export function renderTaskDetailPage(
+  task: TaskItem,
+  userName: string,
+  agentNames: Record<string, string> = {},
+): string {
   const statusClass =
     task.status === "in_progress"
       ? "badge-blue"
@@ -1078,9 +1082,33 @@ export function renderTaskDetailPage(task: TaskItem, userName: string): string {
     field("Type", task.type),
     field("Layer", task.layer),
     field("Source", task.source),
-    field("Assignee", task.assignee, true),
-    field("Agent Hint", task.agentHint, true),
-    field("Claimed By", task.claimedBy, true),
+    field(
+      "Assignee",
+      task.assignee
+        ? agentNames[task.assignee]
+          ? `${agentNames[task.assignee]} (${task.assignee})`
+          : task.assignee
+        : null,
+      true,
+    ),
+    field(
+      "Agent Hint",
+      task.agentHint
+        ? agentNames[task.agentHint]
+          ? `${agentNames[task.agentHint]} (${task.agentHint})`
+          : task.agentHint
+        : null,
+      true,
+    ),
+    field(
+      "Claimed By",
+      task.claimedBy
+        ? agentNames[task.claimedBy]
+          ? `${agentNames[task.claimedBy]} (${task.claimedBy})`
+          : task.claimedBy
+        : null,
+      true,
+    ),
     field("Session", task.session, true),
     field("Repo", task.repo, true),
     field("Branch", task.branch, true),
