@@ -16,6 +16,12 @@ independent of `appVersion`. CI enforces this with
 
 - Replace chart-releaser with direct gh-pages packaging for Helm chart releases (REL-2.2)
 
+## [1.6.21] - 2026-06-24
+
+### Changed
+
+- auto-bump to chart v1.6.21 triggered by release tag `agent-v0.65.0`
+
 ## [1.6.20] - 2026-06-24
 
 ### Changed
