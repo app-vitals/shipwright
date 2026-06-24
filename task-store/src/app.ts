@@ -26,6 +26,8 @@ import type { TokenServiceLike } from "./token-service.ts";
 export interface TaskStoreDeps {
   taskService: TaskServiceLike;
   tokenService: TokenServiceLike;
+  /** Optional scope resolver for agent tokens — returns repos from agents service. */
+  scopeResolver?: (agentId: string) => Promise<string[]>;
 }
 
 export function createTaskStoreApp(
@@ -49,7 +51,13 @@ export function createTaskStoreApp(
   );
 
   // Everything below requires a valid bearer token.
-  app.use("*", createBearerAuthMiddleware({ tokenService: deps.tokenService }));
+  app.use(
+    "*",
+    createBearerAuthMiddleware({
+      tokenService: deps.tokenService,
+      scopeResolver: deps.scopeResolver,
+    }),
+  );
 
   app.route("/tasks", createTasksRoutes(deps.taskService));
   app.route("/tokens", createTokensRoutes(deps.tokenService));
