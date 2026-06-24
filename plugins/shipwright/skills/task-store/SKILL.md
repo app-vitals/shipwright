@@ -139,9 +139,16 @@ When `?ready=true` is set, `?status` and `?id` filters are ignored. Only
 - Admin tokens: results include all agents' tasks.
 - `?session` — filter by planning session slug. Omit to return ready tasks across all sessions.
 
-A task is ready when:
+A task is ready when **all** of the following are true:
 - `status === "pending"`, AND
-- all `dependencies` are satisfied (merged, or same branch with `pr_open`/`approved`)
+- `hitl` is not `true` (HITL tasks are excluded until manually cleared), AND
+- every dependency is satisfied per the dependency rules below (terminal status, same-branch PR, or merged cross-branch PR)
+
+**Dependency-satisfied rules** (first match wins):
+1. `dep.status ∈ { merged, done, deploying, deployed, cancelled }` → satisfied
+2. Same-branch dep with `status ∈ { pr_open, approved }` → satisfied (bundled PR)
+3. `pr_open` dep with a PR number, GitHub reports the PR as merged → satisfied
+4. Anything else → **not satisfied** (task is excluded from `?ready=true`)
 
 ---
 
@@ -152,7 +159,8 @@ When `?ready=true` returns `[]`:
 | Likely cause | How to check |
 |---|---|
 | No tasks assigned to this agent | Use an admin token to see all ready tasks |
-| Deps not satisfied | Query `?status=pending` — tasks present but blocked on deps |
+| HITL flag set | Query `?status=pending` — check if tasks have `"hitl": true`. Clear the flag once the human action is complete. |
+| Deps not satisfied | Query `?status=pending` — tasks present but blocked on a dependency. Check each dependency against the satisfaction rules above: terminal status, same-branch `pr_open`/`approved`, or a `pr_open` dep whose GitHub PR is merged all satisfy. Any dep failing all three rules blocks the task. |
 | Queue empty | No pending tasks exist at all |
 
 ---
