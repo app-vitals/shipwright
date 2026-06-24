@@ -19,9 +19,8 @@ Auto-detect the project toolchain (run once, reuse throughout). Skip this step u
 **First, check for an interrupted task** — if a prior session left a task `in_progress`, resume it:
 
 ```bash
-CURRENT_USER=$(gh api graphql -f "query=query{viewer{login}}" --jq '.data.viewer.login' 2>/dev/null)
 curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=in_progress${CURRENT_USER:+&assignee=$CURRENT_USER}" | jq .
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=in_progress" | jq .
 ```
 
 If the result is a non-empty array, use the first task returned. The Step 2 orphan check will clean up any stale branch/PR from the prior session before restarting. Print:
@@ -35,9 +34,8 @@ Record `task_started_at` (current ISO timestamp) for metrics.
 **If no in_progress task**, pick the next ready pending task:
 
 ```bash
-CURRENT_USER=$(gh api graphql -f "query=query{viewer{login}}" --jq '.data.viewer.login' 2>/dev/null)
 curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks?ready=true${CURRENT_USER:+&assignee=$CURRENT_USER}" | jq .
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?ready=true" | jq .
 ```
 
 The command returns `pending` shipwright tasks whose dependencies are all satisfied, sorted by `addedAt`. Pick the first result.

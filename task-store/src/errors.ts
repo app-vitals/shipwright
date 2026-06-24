@@ -45,3 +45,10 @@ export class UnauthorizedError extends ApiError {
     this.name = "UnauthorizedError";
   }
 }
+
+export class ForbiddenError extends ApiError {
+  constructor(message = "Forbidden") {
+    super(403, message);
+    this.name = "ForbiddenError";
+  }
+}

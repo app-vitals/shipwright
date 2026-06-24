@@ -16,12 +16,13 @@ import { describe, expect, it } from "bun:test";
 import { createTaskStoreApp } from "./app.ts";
 import { ConflictError, NotFoundError } from "./errors.ts";
 import type { Task } from "./index.ts";
-import type { TaskServiceLike } from "./task-service.ts";
+import type { TaskListFilters, TaskServiceLike } from "./task-service.ts";
 import type { TokenServiceLike } from "./token-service.ts";
 
 // ─── Fakes ────────────────────────────────────────────────────────────────────
 
 const VALID_TOKEN = "valid-token";
+const AGENT_TOKEN = "agent-token";
 
 function fakeTokenService(): TokenServiceLike {
   return {
@@ -31,6 +32,7 @@ function fakeTokenService(): TokenServiceLike {
           id: "tok-1",
           token: "hash",
           label: label ?? null,
+          agentId: null,
           createdAt: new Date(),
           revokedAt: null,
         },
@@ -38,7 +40,35 @@ function fakeTokenService(): TokenServiceLike {
       };
     },
     async validate(raw: string) {
-      return raw === VALID_TOKEN ? { id: "tok-1" } : null;
+      return raw === VALID_TOKEN ? { id: "tok-1", agentId: null } : null;
+    },
+    async revoke() {
+      return null;
+    },
+    async list() {
+      return [];
+    },
+  };
+}
+
+/** Token service that validates AGENT_TOKEN as a scoped agent-1 token. */
+function fakeAgentTokenService(): TokenServiceLike {
+  return {
+    async create(label?: string) {
+      return {
+        token: {
+          id: "tok-2",
+          token: "hash",
+          label: label ?? null,
+          agentId: "agent-1",
+          createdAt: new Date(),
+          revokedAt: null,
+        },
+        rawToken: "raw",
+      };
+    },
+    async validate(raw: string) {
+      return raw === AGENT_TOKEN ? { id: "tok-2", agentId: "agent-1" } : null;
     },
     async revoke() {
       return null;
@@ -100,14 +130,16 @@ function fakeTaskService(
   opts: {
     getResult?: Task | null;
     claimThrows?: Error;
+    listResult?: Task[];
+    listReadyResult?: Task[];
   } = {},
 ): TaskServiceLike {
   return {
     async list() {
-      return [];
+      return opts.listResult ?? [];
     },
     async listReady() {
-      return [];
+      return opts.listReadyResult ?? [];
     },
     async get(id: string) {
       if ("getResult" in opts) return opts.getResult ?? null;
@@ -280,5 +312,174 @@ describe("task-store API (smoke)", () => {
     expect(res.status).toBe(201);
     const body = (await res.json()) as { rawToken: string };
     expect(body.rawToken).toBe("raw");
+  });
+
+  // ─── Agent token scoping ──────────────────────────────────────────────────
+
+  it("POST /tasks with agent token forces assignee to the agent's ID", async () => {
+    const app = makeApp({ tokenService: fakeAgentTokenService() });
+    const res = await app.request("/tasks", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${AGENT_TOKEN}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ title: "New task", status: "pending" }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as Task;
+    expect(body.assignee).toBe("agent-1");
+  });
+
+  it("GET /tasks/:id returns 403 when agent token tries to read a task owned by a different agent", async () => {
+    const app = makeApp({
+      tokenService: fakeAgentTokenService(),
+      // Task is owned by agent-2, not agent-1.
+      taskService: fakeTaskService({
+        getResult: makeTask({ id: "task-1", assignee: "agent-2" }),
+      }),
+    });
+    const res = await app.request("/tasks/task-1", {
+      headers: { Authorization: `Bearer ${AGENT_TOKEN}` },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("POST /tokens returns 403 for an agent token (admin-only route)", async () => {
+    const app = makeApp({ tokenService: fakeAgentTokenService() });
+    const res = await app.request("/tokens", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${AGENT_TOKEN}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ label: "ci" }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("GET /tasks/:id returns 403 when agent token reads an unassigned task", async () => {
+    const app = makeApp({
+      tokenService: fakeAgentTokenService(),
+      // Unassigned tasks are not accessible to agent tokens — only admins.
+      taskService: fakeTaskService({
+        getResult: makeTask({ id: "task-1", assignee: null }),
+      }),
+    });
+    const res = await app.request("/tasks/task-1", {
+      headers: { Authorization: `Bearer ${AGENT_TOKEN}` },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("GET /tasks?ready=true with agent token returns only the agent's ready tasks", async () => {
+    const ownedTask = makeTask({ id: "task-1", assignee: "agent-1" });
+    const app = makeApp({
+      tokenService: fakeAgentTokenService(),
+      taskService: fakeTaskService({ listReadyResult: [ownedTask] }),
+    });
+    const res = await app.request("/tasks?ready=true", {
+      headers: { Authorization: `Bearer ${AGENT_TOKEN}` },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Task[];
+    expect(body).toHaveLength(1);
+    expect(body[0].id).toBe("task-1");
+  });
+
+  it("GET /tasks?status=in_progress with agent token scopes to the agent's tasks", async () => {
+    const ownedTask = makeTask({
+      id: "task-2",
+      assignee: "agent-1",
+      status: "in_progress",
+    });
+    const app = makeApp({
+      tokenService: fakeAgentTokenService(),
+      taskService: fakeTaskService({ listResult: [ownedTask] }),
+    });
+    const res = await app.request("/tasks?status=in_progress", {
+      headers: { Authorization: `Bearer ${AGENT_TOKEN}` },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Task[];
+    expect(body).toHaveLength(1);
+    expect(body[0].assignee).toBe("agent-1");
+  });
+
+  it("PATCH /tasks/:id with agent token pins assignee to the agent's ID", async () => {
+    const app = makeApp({
+      tokenService: fakeAgentTokenService(),
+      // Task is owned by agent-1 (the token's agent).
+      taskService: fakeTaskService({
+        getResult: makeTask({ id: "task-1", assignee: "agent-1" }),
+      }),
+    });
+    const res = await app.request("/tasks/task-1", {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${AGENT_TOKEN}`,
+        "content-type": "application/json",
+      },
+      // Attempt to reassign to a different agent.
+      body: JSON.stringify({ assignee: "agent-2", status: "in_progress" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Task;
+    // Assignee must be pinned back to agent-1, not agent-2.
+    expect(body.assignee).toBe("agent-1");
+  });
+
+  it("GET /tasks?ready=true with agent token forwards agentId to listReady", async () => {
+    const capturedArgs: Array<string | undefined> = [];
+
+    const spyTaskService: TaskServiceLike = {
+      ...fakeTaskService(),
+      async listReady(agentId?: string) {
+        capturedArgs.push(agentId);
+        return [];
+      },
+    };
+
+    const app = makeApp({
+      tokenService: fakeAgentTokenService(),
+      taskService: spyTaskService,
+    });
+
+    const res = await app.request("/tasks?ready=true", {
+      headers: { Authorization: `Bearer ${AGENT_TOKEN}` },
+    });
+
+    expect(res.status).toBe(200);
+    // The token's agentId ("agent-1") must be forwarded to listReady.
+    expect(capturedArgs[0]).toBe("agent-1");
+  });
+
+  it("GET /tasks?status=in_progress with agent token ignores caller-supplied ?assignee", async () => {
+    const capturedAssignees: Array<string | undefined> = [];
+
+    const spyTaskService: TaskServiceLike = {
+      ...fakeTaskService(),
+      async list(opts?) {
+        capturedAssignees.push(opts?.assignee);
+        return [];
+      },
+    };
+
+    const app = makeApp({
+      tokenService: fakeAgentTokenService(),
+      taskService: spyTaskService,
+    });
+
+    // Caller tries to supply ?assignee=other-agent to peek at another agent's tasks.
+    const res = await app.request(
+      "/tasks?status=in_progress&assignee=other-agent",
+      {
+        headers: { Authorization: `Bearer ${AGENT_TOKEN}` },
+      },
+    );
+
+    expect(res.status).toBe(200);
+    // Token's agentId must win; caller-supplied assignee must be ignored.
+    expect(capturedAssignees[0]).toBe("agent-1");
   });
 });

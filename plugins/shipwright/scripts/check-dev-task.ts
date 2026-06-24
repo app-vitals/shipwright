@@ -87,50 +87,17 @@ export async function run(deps: Deps): Promise<RunResult> {
 
 // ─── Production deps ──────────────────────────────────────────────────────────
 
-function resolveGhUser(): string | undefined {
-  // GraphQL viewer works under both PAT and GitHub App installation tokens.
-  // REST /user 403s under installation tokens. Same "name[bot]" → "app/name"
-  // normalisation as getCurrentUser() in check-helpers.ts.
-  const proc = Bun.spawnSync(
-    ["gh", "api", "graphql", "-f", "query=query{viewer{login}}"],
-    { stdout: "pipe", stderr: "pipe" },
-  );
-  if (proc.exitCode !== 0) return undefined;
-  try {
-    const data = JSON.parse(proc.stdout.toString()) as {
-      data: { viewer: { login: string } };
-    };
-    const login = data.data.viewer.login;
-    return login.endsWith("[bot]") ? `app/${login.slice(0, -5)}` : login;
-  } catch {
-    return undefined;
-  }
-}
-
 function buildProductionDeps(): Deps {
   const client = createTaskStoreClient();
-  const assignee = resolveGhUser();
 
   return {
-    getReadyTasks: () =>
-      client.query(
-        assignee
-          ? new URLSearchParams({ ready: "true", assignee })
-          : new URLSearchParams({ ready: "true" }),
-      ),
+    getReadyTasks: () => client.query(new URLSearchParams({ ready: "true" })),
     getInProgressTasks: () =>
-      client.query(
-        assignee
-          ? new URLSearchParams({ status: "in_progress", assignee })
-          : new URLSearchParams({ status: "in_progress" }),
-      ),
+      client.query(new URLSearchParams({ status: "in_progress" })),
     getHitlPendingTasks: () =>
-      client.query(
-        assignee
-          ? new URLSearchParams({ status: "pending", hitl: "true", assignee })
-          : new URLSearchParams({ status: "pending", hitl: "true" }),
-      ),
-    resetTask: (id) => client.update(id, { status: "pending", startedAt: null }),
+      client.query(new URLSearchParams({ status: "pending", hitl: "true" })),
+    resetTask: (id) =>
+      client.update(id, { status: "pending", startedAt: null }),
     stampTask: (id, startedAt) => client.update(id, { startedAt }),
     clock: SystemClock(),
   };

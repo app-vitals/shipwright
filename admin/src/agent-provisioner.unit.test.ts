@@ -403,19 +403,19 @@ describe("KubernetesAgentProvisioner.reconcile() — template respected", () => 
  */
 function stubTaskStore(opts?: { throwOnMint?: boolean }): {
   client: TaskStoreProvisioningClient;
-  minted: Array<{ label: string; id: string }>;
+  minted: Array<{ label: string; agentId: string | undefined; id: string }>;
   revoked: string[];
 } {
-  const minted: Array<{ label: string; id: string }> = [];
+  const minted: Array<{ label: string; agentId: string | undefined; id: string }> = [];
   const revoked: string[] = [];
   let seq = 0;
 
   const client: TaskStoreProvisioningClient = {
-    async mintToken(label: string) {
+    async mintToken(label: string, agentId?: string) {
       if (opts?.throwOnMint) throw new Error("mint failed");
       seq++;
       const id = `ts-tok-${seq}`;
-      minted.push({ label, id });
+      minted.push({ label, agentId, id });
       return { id, rawToken: `raw-ts-token-${seq}` };
     },
     async revokeToken(id: string) {
@@ -446,6 +446,7 @@ describe("KubernetesAgentProvisioner — task-store token minting", () => {
 
     expect(minted).toHaveLength(1);
     expect(minted[0].label).toBe(`agent:${AGENT_ID}`);
+    expect(minted[0].agentId).toBe(AGENT_ID);
   });
 
   it("provision() does NOT mint a task-store token when taskStore is not configured", async () => {
