@@ -84,10 +84,13 @@ jobs:
         # --merge preserves every existing entry (including legacy entries whose
         # urls still point at old GitHub Release assets); only newly packaged
         # versions gain a <PAGES_URL>/<name>-<version>.tgz url.
+        # Guard: --merge fails if index.yaml doesn't exist yet (first-time publish
+        # on a gh-pages branch initialized with an empty orphan commit). The flag
+        # is only passed when the file is already present.
         run: |
-          helm repo index gh-pages/ \
-            --merge gh-pages/index.yaml \
-            --url "$PAGES_URL"
+          MERGE_FLAG=""
+          [ -f gh-pages/index.yaml ] && MERGE_FLAG="--merge gh-pages/index.yaml"
+          helm repo index gh-pages/ $MERGE_FLAG --url "$PAGES_URL"
 
       - name: Parse chart version
         id: chart-version
