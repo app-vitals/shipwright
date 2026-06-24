@@ -49,10 +49,12 @@ describe("StaleClaimReaper", () => {
   const clock = FixedClock(NOW);
 
   beforeEach(() => {
+    // biome-ignore lint/performance/noDelete: env var must be fully removed, not set to "undefined" string
     delete process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS;
   });
 
   afterEach(() => {
+    // biome-ignore lint/performance/noDelete: env var must be fully removed, not set to "undefined" string
     delete process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS;
   });
 
