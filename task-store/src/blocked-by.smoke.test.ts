@@ -198,7 +198,7 @@ describe("blockedBy field on API responses (smoke)", () => {
     expect(body.blockedBy).toContainEqual({ type: "hitl" });
   });
 
-  it("GET /tasks/:id blockedBy is empty when hitl=true but hitlNotifiedAt is set", async () => {
+  it("GET /tasks/:id includes { type: 'hitl', notified: true } when hitl=true and hitlNotifiedAt is set", async () => {
     const task = makeTask({
       id: "t1",
       status: "pending",
@@ -209,7 +209,7 @@ describe("blockedBy field on API responses (smoke)", () => {
     const res = await app.request("/tasks/t1", { headers: auth() });
     expect(res.status).toBe(200);
     const body = (await res.json()) as TaskWithBlockedBy;
-    expect(body.blockedBy).toEqual([]);
+    expect(body.blockedBy).toEqual([{ type: "hitl", notified: true }]);
   });
 
   it("GET /tasks/:id includes dep block when dep is in non-terminal status", async () => {

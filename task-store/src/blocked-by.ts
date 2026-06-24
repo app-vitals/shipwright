@@ -20,9 +20,20 @@ import { CLOSED_STATUSES } from "./statuses.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-/** A single reason why a task is not yet ready. */
+/**
+ * A single reason why a task is not yet ready.
+ *
+ * `{ type: "hitl" }` — notification has not yet been sent; task is awaiting
+ * the HITL gate to be opened.
+ *
+ * `{ type: "hitl"; notified: true }` — notification was already sent
+ * (`hitlNotifiedAt` is set) so the agent-actionable block is cleared, but the
+ * task is still excluded from `listReady` because `hitl=true` tasks are never
+ * considered ready. Consumers MUST NOT infer that `blockedBy: []` means
+ * "this task is ready" — it only means there are no agent-actionable blocks.
+ */
 export type BlockedByEntry =
-  | { type: "hitl" }
+  | { type: "hitl"; notified?: true }
   | { type: "dependency"; id: string; status: string };
 
 // ─── Terminal statuses ────────────────────────────────────────────────────────
@@ -44,9 +55,17 @@ export function computeBlockedBy(
 ): BlockedByEntry[] {
   const blocks: BlockedByEntry[] = [];
 
-  // HITL gate: blocked when hitl=true and the notification hasn't been sent yet.
-  if (task.hitl === true && task.hitlNotifiedAt == null) {
-    blocks.push({ type: "hitl" });
+  // HITL gate.
+  // - hitl=true, hitlNotifiedAt=null  → notification not yet sent; agent-actionable block.
+  // - hitl=true, hitlNotifiedAt set   → notification already sent; passive wait.
+  //   Emit { type: "hitl", notified: true } so consumers can distinguish the
+  //   two states. The task is still excluded from listReady in both cases.
+  if (task.hitl === true) {
+    if (task.hitlNotifiedAt == null) {
+      blocks.push({ type: "hitl" });
+    } else {
+      blocks.push({ type: "hitl", notified: true });
+    }
   }
 
   // Dependency gate.

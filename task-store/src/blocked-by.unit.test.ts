@@ -45,14 +45,14 @@ describe("computeBlockedBy", () => {
     expect(result).toEqual([{ type: "hitl" }]);
   });
 
-  it("does NOT include hitl block when hitl=true but hitlNotifiedAt is set", () => {
+  it("includes { type: 'hitl', notified: true } when hitl=true and hitlNotifiedAt is set", () => {
     const task = makeTask({
       id: "t1",
       hitl: true,
       hitlNotifiedAt: "2026-06-24T10:00:00.000Z",
     });
     const result = computeBlockedBy(task, [task]);
-    expect(result).toEqual([]);
+    expect(result).toEqual([{ type: "hitl", notified: true }]);
   });
 
   it("includes dep block for dependency in non-terminal status (pending)", () => {
