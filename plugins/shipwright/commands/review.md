@@ -124,7 +124,7 @@ in Steps 12 and 13:
 
 ```bash
 curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks?pr=$PR_NUMBER" | jq '.[0] // empty'
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?pr=$PR_NUMBER" | jq '.tasks[0] // empty'
 ```
 
 ### Deduplication and Filtering

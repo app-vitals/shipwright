@@ -58,7 +58,7 @@ curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   "$SHIPWRIGHT_TASK_STORE_URL/tasks?ready=true" | jq .
 ```
 
-Both return a JSON array. Use the first element.
+`?ready=true` returns a bare `Task[]`. All other list calls (`?status=`, `?session=`, `?pr=`, `?branch=`, etc.) return a paginated envelope: `{ tasks: Task[], total: number, limit: number, offset: number }` — unwrap `.tasks` before accessing elements.
 
 ### Start a task
 

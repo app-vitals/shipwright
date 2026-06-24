@@ -40,9 +40,9 @@ This is the engineering planning pass. The product spec (what and why) is alread
 2. Glob the repo structure to understand the codebase layout
 3. Check for any existing tasks in this session to avoid duplicates:
    ```bash
-   curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" "$SHIPWRIGHT_TASK_STORE_URL/tasks?session=$SESSION" | jq .
+   curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" "$SHIPWRIGHT_TASK_STORE_URL/tasks?session=$SESSION" | jq '.tasks'
    ```
-   The output is a JSON array. If non-empty, print the existing task IDs and skip re-adding them.
+   The response is a paginated envelope — unwrap `.tasks` to get the array. If non-empty, print the existing task IDs and skip re-adding them.
 4. Read `planning/{session}/PRODUCT-SPEC.md` if it exists — this is the primary input
 
 Present a brief orientation:

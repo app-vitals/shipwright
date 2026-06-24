@@ -137,12 +137,12 @@ If `--queue` was passed, run this workflow instead of Steps 6a-6e.
 Run:
 ```bash
 curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=pending" | jq .
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=pending" | jq '.tasks'
 curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=in_progress" | jq .
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=in_progress" | jq '.tasks'
 ```
 
-Parse both JSON arrays. From the combined results, collect tasks where:
+Parse both `.tasks` arrays. From the combined results, collect tasks where:
 - `source == "shipwright"`, OR
 - `title` starts with `"Entropy fix:"`
 
