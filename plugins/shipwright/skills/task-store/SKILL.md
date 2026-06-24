@@ -40,30 +40,20 @@ curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
 
 ---
 
-## Resolve your assignee
-
-Always resolve the current GitHub user before querying. Pass it to every query:
-
-```bash
-CURRENT_USER=$(gh api graphql -f "query=query{viewer{login}}" --jq '.data.viewer.login' 2>/dev/null)
-```
-
----
-
 ## Standard lifecycle
 
 ### Pick next task
 
-Check for an interrupted task first, then fall back to the next ready one:
+The API scopes results to the calling agent automatically via the bearer token — no assignee parameter needed. Check for an interrupted task first, then fall back to the next ready one:
 
 ```bash
 # 1. Resume interrupted task (in_progress assigned to you)
 curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=in_progress&assignee=$CURRENT_USER" | jq .
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=in_progress" | jq .
 
 # 2. If empty, pick next ready task
 curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks?ready=true&assignee=$CURRENT_USER" | jq .
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?ready=true" | jq .
 ```
 
 Both return a JSON array. Use the first element.
@@ -132,7 +122,7 @@ curl -sf -X POST \
 | `status` | Must be `"pending"` on creation |
 | `repo` | Routes `dev-task` to the correct worktree |
 | `branch` | `dev-task` creates the worktree from this; absent → task is skipped |
-| `assignee` | Without it, any agent can pick up the task |
+| `assignee` | Agent ID of the agent that should own this task |
 
 Convention: `branch` = `feat/{id-lowercase}` (e.g. `feat/tss-x-1-my-task`).
 
@@ -141,10 +131,10 @@ Convention: `branch` = `feat/{id-lowercase}` (e.g. `feat/tss-x-1-my-task`).
 ## `?ready=true` semantics
 
 When `?ready=true` is set, `?status` and `?id` filters are ignored. Only
-`?assignee` and `?session` apply as post-filters.
+`?session` applies as a post-filter.
 
-- `?assignee` — filter by GitHub login; pass `$CURRENT_USER`.
-  Unassigned tasks (no `assignee` field) are included — available to any agent.
+- Agent tokens: results are automatically scoped to the calling agent's tasks.
+- Admin tokens: results include all agents' tasks.
 - `?session` — filter by planning session slug. Omit to return ready tasks across all sessions.
 
 A task is ready when:
@@ -159,7 +149,7 @@ When `?ready=true` returns `[]`:
 
 | Likely cause | How to check |
 |---|---|
-| Wrong assignee | Re-run without `?assignee` to see the full ready set |
+| No tasks assigned to this agent | Use an admin token to see all ready tasks |
 | Deps not satisfied | Query `?status=pending` — tasks present but blocked on deps |
 | Queue empty | No pending tasks exist at all |
 
