@@ -506,7 +506,12 @@ describe("createTaskStoreClient query()", () => {
     globalThis.fetch = async () =>
       ({
         ok: true,
-        json: async () => ({ tasks: [FAKE_TASK], total: 1, limit: 50, offset: 0 }),
+        json: async () => ({
+          tasks: [FAKE_TASK],
+          total: 1,
+          limit: 50,
+          offset: 0,
+        }),
       }) as Response;
 
     const client = createTaskStoreClient();
