@@ -142,4 +142,14 @@ describe("StaleClaimReaper", () => {
 
     expect(count).toBe(3);
   });
+
+  test("clears startedAt in reap SET clause so re-claims get a fresh timestamp", async () => {
+    const prisma = makePrismaDouble(1);
+    const reaper = new StaleClaimReaper(prisma as never, clock);
+
+    await reaper.reap();
+
+    const sql = prisma._calls[0].strings.join("?");
+    expect(sql).toContain('"startedAt" = NULL');
+  });
 });

@@ -45,6 +45,7 @@ export class StaleClaimReaper {
           "claimedBy" = NULL,
           "claimedAt" = NULL,
           "heartbeatAt" = NULL,
+          "startedAt" = NULL,
           "updatedAt" = now()
       WHERE status = 'in_progress'
         AND (
