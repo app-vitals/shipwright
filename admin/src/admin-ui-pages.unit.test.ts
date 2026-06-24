@@ -1052,15 +1052,15 @@ describe("renderTasksPage — row click navigation", () => {
   }
 
   // AC1: clicking anywhere on a task row navigates to the task detail page
-  test("each task row has an onclick that navigates to the task detail URL", () => {
+  test("each task row has a data-href that navigates to the task detail URL", () => {
     const html = render([TASK_ITEM]);
-    expect(html).toContain(`onclick="window.location='/admin/tasks/${TASK_ITEM.id}'"`);
+    expect(html).toContain(`data-href="/admin/tasks/${TASK_ITEM.id}"`);
   });
 
-  test("onclick URL uses the escaped task id", () => {
+  test("data-href URL uses the escaped task id", () => {
     const xssTask: TaskItem = { ...TASK_ITEM, id: "TASK-XSS" };
     const html = render([xssTask]);
-    expect(html).toContain(`onclick="window.location='/admin/tasks/TASK-XSS'"`);
+    expect(html).toContain(`data-href="/admin/tasks/TASK-XSS"`);
   });
 
   // AC2: cursor changes to pointer on row hover
@@ -1071,11 +1071,12 @@ describe("renderTasksPage — row click navigation", () => {
   });
 
   // AC3: buttons/links within the row still handle their own click events
-  // The Release button for in_progress tasks must stop propagation so clicking
-  // it does not also trigger the row onclick navigation.
-  test("Release button has stopPropagation to prevent row navigation", () => {
-    const html = render([TASK_ITEM]); // TASK_ITEM is in_progress → has Release button
-    expect(html).toContain("stopPropagation");
+  // The script block uses event delegation on data-href rows and skips clicks on
+  // A, BUTTON, FORM, INPUT elements — no inline stopPropagation needed.
+  test("row click handler script is present and delegates via data-href attribute", () => {
+    const html = render([TASK_ITEM]);
+    expect(html).toContain("data-href");
+    expect(html).toContain(`getAttribute("data-href")`);
   });
 
   test("Release button is still present for in_progress tasks", () => {
@@ -1084,22 +1085,22 @@ describe("renderTasksPage — row click navigation", () => {
     expect(html).toContain(`/admin/tasks/${TASK_ITEM.id}/release`);
   });
 
-  test("no Release button for non-in_progress tasks, but row is still clickable", () => {
+  test("no Release button for non-in_progress tasks, but row is still navigable", () => {
     const html = render([TASK_ITEM_PENDING]);
     expect(html).not.toContain("Release");
-    expect(html).toContain(`onclick="window.location='/admin/tasks/${TASK_ITEM_PENDING.id}'"`);
+    expect(html).toContain(`data-href="/admin/tasks/${TASK_ITEM_PENDING.id}"`);
   });
 
   test("empty task list renders no clickable rows", () => {
     const html = render([]);
-    expect(html).not.toContain("onclick=\"window.location=");
+    expect(html).not.toContain("data-href=\"/admin/tasks/");
     expect(html).toContain("No tasks found");
   });
 
-  test("multiple tasks each get their own row onclick pointing to their detail URL", () => {
+  test("multiple tasks each get their own data-href pointing to their detail URL", () => {
     const html = render([TASK_ITEM, TASK_ITEM_PENDING]);
-    expect(html).toContain(`onclick="window.location='/admin/tasks/${TASK_ITEM.id}'"`);
-    expect(html).toContain(`onclick="window.location='/admin/tasks/${TASK_ITEM_PENDING.id}'"`);
+    expect(html).toContain(`data-href="/admin/tasks/${TASK_ITEM.id}"`);
+    expect(html).toContain(`data-href="/admin/tasks/${TASK_ITEM_PENDING.id}"`);
   });
 });
 
