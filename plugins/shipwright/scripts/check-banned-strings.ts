@@ -43,6 +43,8 @@ const BANNED_PATTERNS: string[] = [
   "vitals-os-" + "prod",
   "vitals-os-" + "staging",
   "vitals-os-" + "dev",
+  "vitals-" + "os",
+  "VITALS_" + "OS",
 ];
 
 /**
@@ -69,6 +71,7 @@ const EXCLUDED_DIRS: Set<string> = new Set([
   "build",
   "coverage",
   ".turbo",
+  "planning",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -137,15 +140,26 @@ function scanFile(root: string, filePath: string, hits: Hit[]): void {
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+    // Collect all matching patterns for this line, then report only the longest
+    // (most specific) match to avoid double-counting when a pattern is a substring
+    // of another (e.g., "vitals-os" is a substring of "vitals-os-prod").
+    const matchedPatterns: string[] = [];
     for (const pattern of BANNED_PATTERNS) {
       if (line.includes(pattern)) {
-        hits.push({
-          file: relPath,
-          lineNum: i + 1,
-          line,
-          pattern,
-        });
+        matchedPatterns.push(pattern);
       }
+    }
+    // Report the longest pattern (most specific)
+    if (matchedPatterns.length > 0) {
+      const longestPattern = matchedPatterns.reduce((a, b) =>
+        a.length > b.length ? a : b,
+      );
+      hits.push({
+        file: relPath,
+        lineNum: i + 1,
+        line,
+        pattern: longestPattern,
+      });
     }
   }
 }
