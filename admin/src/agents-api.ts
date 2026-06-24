@@ -55,6 +55,7 @@ import {
   EnvKeyParamSchema,
   ErrorSchema,
   OkSchema,
+  PatchAgentBodySchema,
   PatchAgentCronJobBodySchema,
   PatchAgentPluginBodySchema,
   PatchAgentToolBodySchema,
@@ -136,6 +137,24 @@ const ProvisionAgentResultSchema = z
   })
   .openapi("ProvisionAgentResult");
 
+const ProvisionSkippedResultSchema = z
+  .object({
+    skipped: z.literal(true),
+    reason: z.string(),
+  })
+  .openapi("ProvisionSkippedResult");
+
+const GetAgentResultSchema = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    slackId: z.string().nullable().optional(),
+    selfHosted: z.boolean(),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+  })
+  .openapi("GetAgentResult");
+
 const CronWrapperSchema = z
   .object({ cron: AgentCronJobSchema })
   .openapi("CronWrapper");
@@ -202,8 +221,12 @@ const provisionAgentRoute = createRoute({
   request: { params: AgentIdParamSchema },
   responses: {
     200: {
-      description: "Agent provisioned (or already-provisioned — idempotent)",
-      content: { "application/json": { schema: ProvisionAgentResultSchema } },
+      description: "Agent provisioned (or already-provisioned — idempotent), or skipped for self-hosted agents",
+      content: {
+        "application/json": {
+          schema: z.union([ProvisionAgentResultSchema, ProvisionSkippedResultSchema]),
+        },
+      },
     },
     403: { description: "Forbidden", ...jsonError },
     404: { description: "Agent not found", ...jsonError },
@@ -219,6 +242,40 @@ const listAgentsRoute = createRoute({
       content: { "application/json": { schema: z.array(AgentSummarySchema) } },
     },
     403: { description: "Forbidden", ...jsonError },
+  },
+});
+
+const getAgentRoute = createRoute({
+  method: "get",
+  path: "/agents/{id}",
+  request: { params: AgentIdParamSchema },
+  responses: {
+    200: {
+      description: "Full agent record",
+      content: { "application/json": { schema: GetAgentResultSchema } },
+    },
+    403: { description: "Forbidden", ...jsonError },
+    404: { description: "Agent not found", ...jsonError },
+  },
+});
+
+const patchAgentRoute = createRoute({
+  method: "patch",
+  path: "/agents/{id}",
+  request: {
+    params: AgentIdParamSchema,
+    body: {
+      content: { "application/json": { schema: PatchAgentBodySchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: "Agent updated",
+      content: { "application/json": { schema: GetAgentResultSchema } },
+    },
+    400: { description: "Bad request", ...jsonError },
+    403: { description: "Forbidden", ...jsonError },
+    404: { description: "Agent not found", ...jsonError },
   },
 });
 
@@ -577,7 +634,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     }
     const body = c.req.valid("json");
     const agent = await prisma.agent.create({
-      data: { name: body.name, slackId: body.slackId ?? null },
+      data: { name: body.name, slackId: body.slackId ?? null, selfHosted: body.selfHosted ?? false },
     });
 
     // Provision the backing workload AFTER the row exists (the provisioner
@@ -585,18 +642,21 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     // roll the agent row back so we never leave a half-created agent with no
     // workload — then surface the failure as a 5xx via onError. The Noop
     // provisioner never throws, preserving today's create behavior exactly.
-    try {
-      await provisioner.provision(agent.id, { slug: agent.name });
-    } catch (err) {
-      await prisma.agent
-        .delete({ where: { id: agent.id } })
-        .catch((cleanupErr) => {
-          console.error(
-            "[agents-api] failed to roll back agent after provision error:",
-            cleanupErr,
-          );
-        });
-      throw err;
+    // Self-hosted agents manage their own workload — skip provisioning.
+    if (!agent.selfHosted) {
+      try {
+        await provisioner.provision(agent.id, { slug: agent.name });
+      } catch (err) {
+        await prisma.agent
+          .delete({ where: { id: agent.id } })
+          .catch((cleanupErr) => {
+            console.error(
+              "[agents-api] failed to roll back agent after provision error:",
+              cleanupErr,
+            );
+          });
+        throw err;
+      }
     }
 
     return c.json(
@@ -604,6 +664,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
         id: agent.id,
         name: agent.name,
         slackId: agent.slackId,
+        selfHosted: agent.selfHosted,
         createdAt: agent.createdAt.toISOString(),
         updatedAt: agent.updatedAt.toISOString(),
       },
@@ -618,8 +679,10 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
         "Only admin bearers and session users can reconcile agents",
       );
     }
-    const agents = await prisma.agent.findMany({ select: { id: true, name: true } });
-    const result = await provisioner.reconcile(agents.map((a) => ({ id: a.id, slug: a.name })));
+    const agents = await prisma.agent.findMany({ select: { id: true, name: true, selfHosted: true } });
+    // Self-hosted agents manage their own workloads — exclude them from K8s reconciliation.
+    const managedAgents = agents.filter((a) => !a.selfHosted);
+    const result = await provisioner.reconcile(managedAgents.map((a) => ({ id: a.id, slug: a.name })));
     return c.json(result, 200);
   });
 
@@ -635,10 +698,14 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
 
     const agent = await prisma.agent.findUnique({
       where: { id: agentId },
-      select: { id: true, name: true },
+      select: { id: true, name: true, selfHosted: true },
     });
     if (!agent) {
       throw new NotFoundError(`agent ${agentId} not found`);
+    }
+
+    if (agent.selfHosted) {
+      return c.json({ skipped: true as const, reason: "self-hosted" }, 200);
     }
 
     const { resourceName, secretName, deploymentName } = await provisioner.provision(
@@ -646,6 +713,64 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
       { slug: agent.name },
     );
     return c.json({ resourceName, secretName, deploymentName }, 200);
+  });
+
+  // GET /agents/:id — get full agent record including selfHosted
+  app.openapi(getAgentRoute, async (c) => {
+    if (c.get("isAdmin") !== true) {
+      throw new ForbiddenError("Admin access required to get agent");
+    }
+    const { id: agentId } = c.req.valid("param");
+    const agent = await prisma.agent.findUnique({
+      where: { id: agentId },
+      select: { id: true, name: true, slackId: true, selfHosted: true, createdAt: true, updatedAt: true },
+    });
+    if (!agent) {
+      throw new NotFoundError(`agent ${agentId} not found`);
+    }
+    return c.json(
+      {
+        id: agent.id,
+        name: agent.name,
+        slackId: agent.slackId,
+        selfHosted: agent.selfHosted,
+        createdAt: agent.createdAt.toISOString(),
+        updatedAt: agent.updatedAt.toISOString(),
+      },
+      200,
+    );
+  });
+
+  // PATCH /agents/:id — update agent fields (currently: selfHosted)
+  app.openapi(patchAgentRoute, async (c) => {
+    if (c.get("isAdmin") !== true) {
+      throw new ForbiddenError("Admin access required to update agent");
+    }
+    const { id: agentId } = c.req.valid("param");
+    const body = c.req.valid("json");
+    const existing = await prisma.agent.findUnique({
+      where: { id: agentId },
+      select: { id: true },
+    });
+    if (!existing) {
+      throw new NotFoundError(`agent ${agentId} not found`);
+    }
+    const agent = await prisma.agent.update({
+      where: { id: agentId },
+      data: { selfHosted: body.selfHosted },
+      select: { id: true, name: true, slackId: true, selfHosted: true, createdAt: true, updatedAt: true },
+    });
+    return c.json(
+      {
+        id: agent.id,
+        name: agent.name,
+        slackId: agent.slackId,
+        selfHosted: agent.selfHosted,
+        createdAt: agent.createdAt.toISOString(),
+        updatedAt: agent.updatedAt.toISOString(),
+      },
+      200,
+    );
   });
 
   // DELETE /agents/:id — delete an agent and tear down its workload (admin only)
@@ -676,13 +801,13 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     return c.body(null, 204);
   });
 
-  // GET /agents — list all agents (id + name) for metrics name resolution.
+  // GET /agents — list all agents (id + name + selfHosted) for metrics name resolution.
   app.openapi(listAgentsRoute, async (c) => {
     if (c.get("isAdmin") !== true) {
       throw new ForbiddenError("Admin access required to list agents");
     }
     const agents = await prisma.agent.findMany({
-      select: { id: true, name: true },
+      select: { id: true, name: true, selfHosted: true },
       orderBy: { name: "asc" },
     });
     return c.json(agents, 200);

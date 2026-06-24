@@ -283,23 +283,47 @@ function makeMockDeps(): AdminDeps {
     prisma: {
       agent: {
         create: async (args: {
-          data: { name: string; slackId: string | null };
+          data: { name: string; slackId: string | null; selfHosted?: boolean };
         }) => ({
           id: "agent-new-id",
           name: args.data.name,
           slackId: args.data.slackId,
+          selfHosted: args.data.selfHosted ?? false,
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
         }),
         findUnique: async (args: { where: { id: string } }) =>
           args.where.id === AGENT_ID
-            ? { id: AGENT_ID, name: "Existing Agent" }
+            ? {
+                id: AGENT_ID,
+                name: "Existing Agent",
+                slackId: null,
+                selfHosted: false,
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+              }
             : null,
-        findMany: async () => [{ id: AGENT_ID }, { id: "agent-other-id" }],
+        findMany: async () => [
+          { id: AGENT_ID, name: "Existing Agent", selfHosted: false },
+          { id: "agent-other-id", name: "Other Agent", selfHosted: false },
+        ],
         delete: async (args: { where: { id: string } }) => ({
           id: args.where.id,
           name: "Existing Agent",
           slackId: null,
+          selfHosted: false,
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+        }),
+        update: async (args: {
+          where: { id: string };
+          data: { selfHosted?: boolean };
+          select?: Record<string, boolean>;
+        }) => ({
+          id: args.where.id,
+          name: "Existing Agent",
+          slackId: null,
+          selfHosted: args.data.selfHosted ?? false,
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
         }),
@@ -1290,5 +1314,292 @@ describe("admin API — provision agent", () => {
       deploymentName: AGENT_ID,
     });
     expect(provisioner.provisioned).toEqual([AGENT_ID]);
+  });
+
+  it("POST /agents/:id/provision on self-hosted agent returns 200 { skipped: true } without calling provisioner", async () => {
+    const cookie = await makeSessionCookie();
+    const provisioner = new RecordingProvisioner();
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      provisioner,
+      prisma: {
+        agent: {
+          ...base.prisma.agent,
+          findUnique: async (args: { where: { id: string } }) =>
+            args.where.id === AGENT_ID
+              ? {
+                  id: AGENT_ID,
+                  name: "Self-Hosted Agent",
+                  selfHosted: true,
+                }
+              : null,
+        },
+      } as unknown as AdminDeps["prisma"],
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}/provision`, {
+      method: "POST",
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({ skipped: true, reason: "self-hosted" });
+    expect(provisioner.provisioned).toEqual([]);
+  });
+});
+
+// ─── selfHosted field smoke tests ─────────────────────────────────────────────
+
+describe("admin API — selfHosted field", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  it("POST /agents with selfHosted:true stores and returns flag (201)", async () => {
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      prisma: {
+        agent: {
+          ...base.prisma.agent,
+          create: async (args: {
+            data: { name: string; slackId: string | null; selfHosted: boolean };
+          }) => ({
+            id: "agent-new-id",
+            name: args.data.name,
+            slackId: args.data.slackId,
+            selfHosted: args.data.selfHosted,
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+          }),
+        },
+      } as unknown as AdminDeps["prisma"],
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({ name: "Self-Hosted Agent", selfHosted: true }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.selfHosted).toBe(true);
+  });
+
+  it("POST /agents without selfHosted defaults to false (201)", async () => {
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      prisma: {
+        agent: {
+          ...base.prisma.agent,
+          create: async (args: {
+            data: { name: string; slackId: string | null; selfHosted: boolean };
+          }) => ({
+            id: "agent-new-id",
+            name: args.data.name,
+            slackId: args.data.slackId,
+            selfHosted: args.data.selfHosted ?? false,
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+          }),
+        },
+      } as unknown as AdminDeps["prisma"],
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({ name: "Regular Agent" }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.selfHosted).toBe(false);
+  });
+
+  it("GET /agents includes selfHosted in response", async () => {
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      prisma: {
+        agent: {
+          ...base.prisma.agent,
+          findMany: async () => [
+            { id: AGENT_ID, name: "Existing Agent", selfHosted: false },
+            { id: "agent-other-id", name: "Other Agent", selfHosted: true },
+          ],
+        },
+      } as unknown as AdminDeps["prisma"],
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request("/agents", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Array.isArray(body)).toBe(true);
+    expect(body[0].selfHosted).toBeDefined();
+    expect(typeof body[0].selfHosted).toBe("boolean");
+  });
+
+  it("GET /agents/:id returns full agent record with selfHosted", async () => {
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      prisma: {
+        agent: {
+          ...base.prisma.agent,
+          findUnique: async (args: { where: { id: string } }) =>
+            args.where.id === AGENT_ID
+              ? {
+                  id: AGENT_ID,
+                  name: "Existing Agent",
+                  slackId: null,
+                  selfHosted: false,
+                  createdAt: new Date("2024-01-01"),
+                  updatedAt: new Date("2024-01-01"),
+                }
+              : null,
+        },
+      } as unknown as AdminDeps["prisma"],
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.id).toBe(AGENT_ID);
+    expect(typeof body.selfHosted).toBe("boolean");
+  });
+
+  it("GET /agents/:id unknown id → 404", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request("/agents/does-not-exist", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("PATCH /agents/:id with {selfHosted: true} updates flag and returns 200", async () => {
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      prisma: {
+        agent: {
+          ...base.prisma.agent,
+          findUnique: async (args: { where: { id: string } }) =>
+            args.where.id === AGENT_ID
+              ? {
+                  id: AGENT_ID,
+                  name: "Existing Agent",
+                  slackId: null,
+                  selfHosted: false,
+                  createdAt: new Date("2024-01-01"),
+                  updatedAt: new Date("2024-01-01"),
+                }
+              : null,
+          update: async (args: {
+            where: { id: string };
+            data: { selfHosted?: boolean };
+          }) => ({
+            id: args.where.id,
+            name: "Existing Agent",
+            slackId: null,
+            selfHosted: args.data.selfHosted ?? false,
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+          }),
+        },
+      } as unknown as AdminDeps["prisma"],
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({ selfHosted: true }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.selfHosted).toBe(true);
+  });
+
+  it("PATCH /agents/:id unknown id → 404", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request("/agents/does-not-exist", {
+      method: "PATCH",
+      body: JSON.stringify({ selfHosted: true }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("POST /agents/reconcile excludes self-hosted agents and response includes updated field", async () => {
+    const provisioner = new RecordingProvisioner();
+    provisioner.reconcileResult = {
+      recreated: [],
+      updated: [],
+      orphans: [],
+      failed: [],
+    };
+
+    // Track which agents are passed to reconcile
+    const agentsPassed: Array<{ id: string; slug?: string }> = [];
+    const trackingProvisioner: AdminDeps["provisioner"] = {
+      async provision(agentId, opts) {
+        return provisioner.provision(agentId, opts);
+      },
+      async deprovision(agentId) {
+        return provisioner.deprovision(agentId);
+      },
+      async reconcile(agents) {
+        agentsPassed.push(...agents);
+        return provisioner.reconcileResult;
+      },
+    };
+
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      provisioner: trackingProvisioner,
+      prisma: {
+        agent: {
+          ...base.prisma.agent,
+          findMany: async () => [
+            { id: AGENT_ID, name: "Regular Agent", selfHosted: false },
+            { id: "self-hosted-id", name: "Self-Hosted Agent", selfHosted: true },
+          ],
+        },
+      } as unknown as AdminDeps["prisma"],
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request("/agents/reconcile", {
+      method: "POST",
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // Response must include updated field
+    expect(body).toHaveProperty("updated");
+    expect(Array.isArray(body.updated)).toBe(true);
+    // Self-hosted agent must NOT be passed to the provisioner
+    expect(agentsPassed.map((a) => a.id)).not.toContain("self-hosted-id");
+    // Regular agent IS passed
+    expect(agentsPassed.map((a) => a.id)).toContain(AGENT_ID);
   });
 });
