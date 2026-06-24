@@ -307,7 +307,16 @@ All filters are AND-combined. `--ready` takes precedence and ignores `--status`,
 | `--branch` | string | Match tasks whose `branch` field equals this branch name — useful for querying all tasks in a bundle |
 | `--session` | string | Match tasks belonging to this planning session slug |
 | `--hitl` | boolean | `true` returns only HITL tasks; `false` returns only non-HITL tasks |
-| `--ready` | flag | Return only tasks that are `pending` with all dependencies satisfied |
+| `--ready` | flag | Return only tasks with `status === pending`, no `hitl` flag set, and all dependencies satisfied (see Dependency satisfaction rules below) |
+
+#### Dependency satisfaction rules
+
+When determining whether a task is ready (via `--ready`), each dependency is evaluated in order. The first matching rule wins:
+
+1. **Terminal status** — dependency has `status ∈ { merged, done, deploying, deployed, cancelled }` → **satisfied**
+2. **Same-branch PR** — dependency is on the same branch as the dependent task with `status ∈ { pr_open, approved }` → **satisfied** (bundled PR)
+3. **`pr_open` with a PR number** — dependency has `status === pr_open` and a PR number; check whether the PR is merged in GitHub → **satisfied** if merged
+4. **Anything else** → **not satisfied** (task is excluded from `--ready` results)
 
 **`--branch` example** — find all tasks sharing a bundle branch:
 
@@ -320,6 +329,18 @@ The deploy cron uses this internally to check bundle completeness before merging
 ---
 
 ## Troubleshooting
+
+### `--ready` returns empty
+
+If `task_store.ts query --ready` returns an empty array even though tasks exist:
+
+1. **No tasks assigned to this agent** — The CLI command returns only tasks assigned to the authenticated user. Use an admin token or check the task store directly to see all ready tasks.
+
+2. **HITL flag set** — Query `task_store.ts query --status pending` to check if tasks have `"hitl": true`. Clear the flag once the human action is complete (remove the `hitl` label on GitHub, or set `hitl: false` in Jira metadata).
+
+3. **Dependencies not satisfied** — Query `task_store.ts query --status pending` to find pending tasks. See the dependency satisfaction rules above — terminal status, same-branch PR open/approved, or a merged cross-branch PR all count. Check the `dependencies` array and verify each referenced task ID exists and meets at least one rule.
+
+4. **Queue empty** — No pending tasks exist at all. Check with `task_store.ts query --status pending` to confirm.
 
 ### Jira: 401 Unauthorized
 
