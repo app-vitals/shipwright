@@ -49,12 +49,11 @@ describe("StaleClaimReaper", () => {
   const clock = FixedClock(NOW);
 
   beforeEach(() => {
-    // Ensure no env override leaks between tests
-    process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS = undefined;
+    delete process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS;
   });
 
   afterEach(() => {
-    process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS = undefined;
+    delete process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS;
   });
 
   test("reaps stale task with heartbeatAt < cutoff", async () => {

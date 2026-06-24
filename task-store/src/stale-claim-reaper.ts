@@ -14,8 +14,7 @@
  * Usage: register via setInterval(() => reaper.reap(), 60_000) in main.ts.
  */
 
-import type { Clock } from "./clock.ts";
-import { SystemClock } from "./clock.ts";
+import { type Clock, SystemClock } from "./clock.ts";
 import type { PrismaClient } from "./index.ts";
 
 const DEFAULT_TTL_MS = 300_000;
