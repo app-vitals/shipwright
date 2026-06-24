@@ -273,7 +273,7 @@ jobs:
       # Actions UI — a chart bump PR that never merged within the window needs
       # investigation (e.g. a required check stalled or auto-merge was disabled).
       - name: Wait for PR to merge
-        if: steps.idempotency.outputs.skip != 'true' && steps.commit-push.outputs.push_skipped != 'true'
+        if: steps.idempotency.outputs.skip != 'true' && steps.commit-push.outputs.push_skipped != 'true' && steps.pr.outcome == 'success'
         env:
           GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
         run: |
