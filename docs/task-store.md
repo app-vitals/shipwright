@@ -338,7 +338,7 @@ If `task_store.ts query --ready` returns an empty array even though tasks exist:
 
 2. **HITL flag set** — Query `task_store.ts query --status pending` to check if tasks have `"hitl": true`. Clear the flag once the human action is complete (remove the `hitl` label on GitHub, or set `hitl: false` in Jira metadata).
 
-3. **Dependencies not satisfied** — Query `task_store.ts query --status pending` to find pending tasks. They may be waiting on a dependency that is not yet in a terminal status (`merged`, `done`, `deploying`, `deployed`, `cancelled`). Check the `dependencies` array and verify each referenced task ID exists and has reached a terminal status.
+3. **Dependencies not satisfied** — Query `task_store.ts query --status pending` to find pending tasks. See the dependency satisfaction rules above — terminal status, same-branch PR open/approved, or a merged cross-branch PR all count. Check the `dependencies` array and verify each referenced task ID exists and meets at least one rule.
 
 4. **Queue empty** — No pending tasks exist at all. Check with `task_store.ts query --status pending` to confirm.
 

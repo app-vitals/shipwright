@@ -142,7 +142,7 @@ When `?ready=true` is set, `?status` and `?id` filters are ignored. Only
 A task is ready when **all** of the following are true:
 - `status === "pending"`, AND
 - `hitl` is not `true` (HITL tasks are excluded until manually cleared), AND
-- every dependency ID resolves to a task in a terminal status
+- every dependency is satisfied per the dependency rules below (terminal status, same-branch PR, or merged cross-branch PR)
 
 **Dependency-satisfied rules** (first match wins):
 1. `dep.status ∈ { merged, done, deploying, deployed, cancelled }` → satisfied
