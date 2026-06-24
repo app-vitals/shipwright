@@ -31,6 +31,8 @@ Both env vars are provisioned automatically by the agent harness:
 | `SHIPWRIGHT_TASK_STORE_URL` | Base URL of the task store service |
 | `SHIPWRIGHT_TASK_STORE_TOKEN` | Bearer token for this agent |
 
+The bearer token scopes all API operations to the calling agent's own tasks automatically — the same token that authenticates you also filters results. No `?assignee=` parameter is needed on any endpoint.
+
 Verify the service is reachable before doing anything:
 
 ```bash
@@ -176,6 +178,8 @@ Branch statuses: `blocked`, `cancelled`, `deploying`, `deployed`
 | `POST` | `/tasks/:id/release` | Unclaim → `pending` |
 | `POST` | `/tasks/:id/complete` | Mark `done` |
 | `POST` | `/tasks/:id/fail` | Mark `blocked` |
+
+> **Scoping:** All endpoints automatically scope to the calling agent's tasks via the bearer token. Admin tokens see all agents' tasks.
 
 ---
 
