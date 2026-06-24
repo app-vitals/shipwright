@@ -61,16 +61,22 @@ jobs:
         env:
           CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Parse chart version
+        id: chart-version
+        run: |
+          CHART_VERSION=$(grep '^version:' charts/shipwright/Chart.yaml | sed 's/^version: //')
+          [ -z "$CHART_VERSION" ] && echo "Error: could not parse chart version from Chart.yaml" && exit 1
+          echo "version=${CHART_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Chart version: ${CHART_VERSION}"
+
       - name: Notify downstream of chart release
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
           DISPATCH_REPO: ${{ vars.CHART_DISPATCH_REPO }}
+          CHART_VERSION: ${{ steps.chart-version.outputs.version }}
         run: |
           [ -z "$DISPATCH_REPO" ] && echo "CHART_DISPATCH_REPO not configured, skipping" && exit 0
-          CHART_VERSION=$(grep '^version:' charts/shipwright/Chart.yaml | sed 's/^version: //')
-          [ -z "$CHART_VERSION" ] && echo "Error: could not parse chart version" && exit 1
-          echo "Chart version: $CHART_VERSION"
           printf '{"event_type":"shipwright-chart-released","client_payload":{"chart_version":"%s"}}' "$CHART_VERSION" \
             | gh api "repos/$DISPATCH_REPO/dispatches" --method POST --input -
 
