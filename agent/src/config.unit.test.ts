@@ -3,7 +3,7 @@
  *
  * Strategy: call createConfig(agentHome) factory directly with a temp dir.
  * No mock.module() needed — the factory reads env vars at call time.
- * Uses SHIPWRIGHT_* env vars (not VITALS_OS_*).
+ * Uses SHIPWRIGHT_* env vars only.
  */
 
 import { afterAll, describe, expect, test } from "bun:test";

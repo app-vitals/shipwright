@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.6.22] - 2026-06-24
+
+### Changed
+
+- Add bare platform-name banned-string patterns and exclude planning dir from check-strings
+
 ## [1.6.21] - 2026-06-24
 
 ### Changed
@@ -84,8 +90,8 @@ independent of `appVersion`. CI enforces this with
 
 ### Removed
 
-- Deleted `ci/vitals-os-values.yaml` (internal CI install-test profile; no longer ships).
-- Scrubbed all internal `vitals-os` references from chart templates, tests, CHANGELOG, and docs; replaced with generic placeholders.
+- Deleted internal CI install-test config (no longer ships).
+- Scrubbed all internal platform references from chart templates, tests, CHANGELOG, and docs; replaced with generic placeholders.
 
 ## [1.6.8] - 2026-06-23
 

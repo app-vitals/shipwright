@@ -263,4 +263,45 @@ describe("scanForBannedStrings", () => {
       "vitals-os-prod",
     ]);
   });
+
+  test("detects bare 'vitals-os' in a file", () => {
+    writeFile(tmpDir, "config.ts", "const platform = 'vitals-os';\n");
+    const hits = scanForBannedStrings(tmpDir);
+    expect(hits).toHaveLength(1);
+    expect(hits[0].pattern).toBe("vitals-os");
+    expect(hits[0].lineNum).toBe(1);
+    expect(hits[0].line).toContain("vitals-os");
+  });
+
+  test("detects 'VITALS_OS' in a file", () => {
+    writeFile(tmpDir, "env.ts", "const env = process.env.VITALS_OS;\n");
+    const hits = scanForBannedStrings(tmpDir);
+    expect(hits).toHaveLength(1);
+    expect(hits[0].pattern).toBe("VITALS_OS");
+    expect(hits[0].lineNum).toBe(1);
+    expect(hits[0].line).toContain("VITALS_OS");
+  });
+
+  test("skips planning/ directory", () => {
+    mkdirSync(join(tmpDir, "planning"), { recursive: true });
+    writeFile(
+      tmpDir,
+      "planning/notes.md",
+      "We need to migrate off vitals-os completely.\n",
+    );
+    const hits = scanForBannedStrings(tmpDir);
+    expect(hits).toEqual([]);
+  });
+
+  test("dedup invariant: a line matching both 'vitals-os' and 'vitals-os-prod' reports exactly 1 hit with the longer pattern", () => {
+    // Use string concat so this test file is not itself flagged by the scanner.
+    writeFile(
+      tmpDir,
+      "config.ts",
+      "const env = 'vitals-os-" + "prod';\n",
+    );
+    const hits = scanForBannedStrings(tmpDir);
+    expect(hits).toHaveLength(1);
+    expect(hits[0].pattern).toBe("vitals-os-" + "prod");
+  });
 });
