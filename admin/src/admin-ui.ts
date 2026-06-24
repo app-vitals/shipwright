@@ -1485,10 +1485,11 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }
 
     if (agentFilterIds !== null) {
+      const ids = agentFilterIds;
       tasks = tasks.filter(
         (t) =>
-          (t.assignee && agentFilterIds!.has(t.assignee)) ||
-          (t.claimedBy && agentFilterIds!.has(t.claimedBy)),
+          (t.assignee && ids.has(t.assignee)) ||
+          (t.claimedBy && ids.has(t.claimedBy)),
       );
     }
 
