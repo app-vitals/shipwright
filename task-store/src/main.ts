@@ -14,6 +14,7 @@
 import { join } from "node:path";
 import { createTaskStoreApp } from "./app.ts";
 import { PrismaClient } from "./index.ts";
+import { StaleClaimReaper } from "./stale-claim-reaper.ts";
 import { TaskService } from "./task-service.ts";
 import { TaskTokenService } from "./token-service.ts";
 
@@ -77,6 +78,14 @@ async function startServer(): Promise<void> {
   const taskService = new TaskService(prisma);
   const tokenService = new TaskTokenService(prisma);
   const app = createTaskStoreApp({ taskService, tokenService });
+
+  const reaper = new StaleClaimReaper(prisma);
+  setInterval(() => {
+    reaper.reap().catch((err) => {
+      console.error("[stale-claim-reaper] reap error:", err);
+    });
+  }, 60_000);
+  console.log("[task-store] stale-claim reaper started (interval: 60s)");
 
   const server = Bun.serve({ port, fetch: app.fetch });
   console.log(`[task-store] listening on http://localhost:${server.port}`);
