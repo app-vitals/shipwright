@@ -343,8 +343,18 @@ export function createTaskStoreClient(): {
       const res = await fetch(`${baseUrl}/tasks?${params}`, { headers });
       if (!res.ok)
         throw new Error(`task-store GET /tasks?${params} → ${res.status}`);
-      const result = (await res.json()) as { tasks: Task[] };
-      return result.tasks;
+      const data = (await res.json()) as unknown;
+      // ?ready=true returns Task[]; all other queries return { tasks, total, limit, offset }
+      if (Array.isArray(data)) return data as Task[];
+      if (
+        data !== null &&
+        typeof data === "object" &&
+        Array.isArray((data as Record<string, unknown>).tasks)
+      )
+        return (data as Record<string, unknown>).tasks as Task[];
+      throw new Error(
+        `Unexpected task-store response format: ${JSON.stringify(data)}`,
+      );
     },
     async update(id: string, fields: Record<string, unknown>): Promise<Task> {
       const res = await fetch(`${baseUrl}/tasks/${id}`, {

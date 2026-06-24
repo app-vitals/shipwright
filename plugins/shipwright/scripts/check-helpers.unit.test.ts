@@ -1,10 +1,11 @@
 /**
  * plugins/shipwright/scripts/check-helpers.unit.test.ts
  *
- * Unit tests for resolveRepos() and getCurrentUser() in check-helpers.ts
+ * Unit tests for resolveRepos(), getCurrentUser(), and createTaskStoreClient()
+ * in check-helpers.ts
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import {
   chmodSync,
   mkdirSync,
@@ -15,6 +16,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  createTaskStoreClient,
   getCurrentUser,
   readShipwrightConfig,
   resolveAllRepos,
@@ -446,5 +448,98 @@ describe("getCurrentUser", () => {
     process.env.PATH = `${tmpDir}:${savedPath}`;
     const result = await getCurrentUser();
     expect(result).toBe("app/example-repo-agent");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createTaskStoreClient — query() response shape handling
+// ---------------------------------------------------------------------------
+
+describe("createTaskStoreClient query()", () => {
+  const FAKE_TASK = {
+    id: "T-1",
+    title: "Do the thing",
+    status: "pending",
+  };
+
+  let savedEnv: { url?: string; token?: string };
+
+  beforeEach(() => {
+    savedEnv = {
+      url: process.env.SHIPWRIGHT_TASK_STORE_URL,
+      token: process.env.SHIPWRIGHT_TASK_STORE_TOKEN,
+    };
+    process.env.SHIPWRIGHT_TASK_STORE_URL = "https://task-store.example.com";
+    process.env.SHIPWRIGHT_TASK_STORE_TOKEN = "test-token";
+  });
+
+  afterEach(() => {
+    if (savedEnv.url !== undefined) {
+      process.env.SHIPWRIGHT_TASK_STORE_URL = savedEnv.url;
+    } else {
+      // biome-ignore lint/performance/noDelete: intentional env cleanup
+      delete process.env.SHIPWRIGHT_TASK_STORE_URL;
+    }
+    if (savedEnv.token !== undefined) {
+      process.env.SHIPWRIGHT_TASK_STORE_TOKEN = savedEnv.token;
+    } else {
+      // biome-ignore lint/performance/noDelete: intentional env cleanup
+      delete process.env.SHIPWRIGHT_TASK_STORE_TOKEN;
+    }
+    mock.restore();
+  });
+
+  test("handles bare Task[] response (returned by ?ready=true)", async () => {
+    mock.module("node:fetch", () => ({}));
+    globalThis.fetch = async () =>
+      ({
+        ok: true,
+        json: async () => [FAKE_TASK],
+      }) as Response;
+
+    const client = createTaskStoreClient();
+    const result = await client.query(new URLSearchParams({ ready: "true" }));
+    expect(result).toEqual([FAKE_TASK]);
+  });
+
+  test("unwraps paginated { tasks } envelope (returned by ?status=...)", async () => {
+    globalThis.fetch = async () =>
+      ({
+        ok: true,
+        json: async () => ({ tasks: [FAKE_TASK], total: 1, limit: 50, offset: 0 }),
+      }) as Response;
+
+    const client = createTaskStoreClient();
+    const result = await client.query(
+      new URLSearchParams({ status: "in_progress" }),
+    );
+    expect(result).toEqual([FAKE_TASK]);
+  });
+
+  test("returns empty array when paginated envelope has empty tasks list", async () => {
+    globalThis.fetch = async () =>
+      ({
+        ok: true,
+        json: async () => ({ tasks: [], total: 0, limit: 50, offset: 0 }),
+      }) as Response;
+
+    const client = createTaskStoreClient();
+    const result = await client.query(
+      new URLSearchParams({ status: "in_progress" }),
+    );
+    expect(result).toEqual([]);
+  });
+
+  test("throws on unrecognised response shape", async () => {
+    globalThis.fetch = async () =>
+      ({
+        ok: true,
+        json: async () => ({ unexpected: true }),
+      }) as Response;
+
+    const client = createTaskStoreClient();
+    await expect(
+      client.query(new URLSearchParams({ status: "in_progress" })),
+    ).rejects.toThrow("Unexpected task-store response format");
   });
 });
