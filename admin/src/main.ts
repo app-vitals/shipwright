@@ -265,6 +265,15 @@ async function startServer(): Promise<void> {
               throw new Error(`task-store GET /tasks → ${res.status}`);
             return res.json();
           },
+          fetchTaskStoreTask: async (id: string) => {
+            const res = await fetch(`${taskStoreUrl}/tasks/${id}`, {
+              headers: { Authorization: `Bearer ${taskStoreAdminToken}` },
+            });
+            if (res.status === 404) return null;
+            if (!res.ok)
+              throw new Error(`task-store GET /tasks/${id} → ${res.status}`);
+            return res.json();
+          },
           releaseTask: async (id: string) => {
             const res = await fetch(`${taskStoreUrl}/tasks/${id}/release`, {
               method: "POST",

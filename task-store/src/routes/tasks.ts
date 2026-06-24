@@ -76,6 +76,7 @@ export function createTasksRoutes(
     const tasks = await taskService.list({
       status: c.req.query("status"),
       session: c.req.query("session"),
+      repo: c.req.query("repo"),
       // Agent tokens always scope to their own tasks; ignore any provided ?assignee.
       assignee: agentId ?? c.req.query("assignee"),
       claimedBy: c.req.query("claimedBy"),

@@ -21,6 +21,7 @@ import { resolveReadyTasks } from "./ready.ts";
 export interface TaskListFilters {
   status?: string;
   session?: string;
+  repo?: string;
   assignee?: string;
   claimedBy?: string;
   pr?: number;
@@ -57,6 +58,7 @@ export class TaskService implements TaskServiceLike {
     const where: Prisma.TaskWhereInput = {};
     if (filters.status) where.status = filters.status as Task["status"];
     if (filters.session) where.session = filters.session;
+    if (filters.repo) where.repo = filters.repo;
     if (filters.assignee) where.assignee = filters.assignee;
     if (filters.claimedBy) where.claimedBy = filters.claimedBy;
     if (filters.pr !== undefined) where.pr = filters.pr;
