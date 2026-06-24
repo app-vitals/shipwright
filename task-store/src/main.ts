@@ -81,18 +81,18 @@ async function startServer(): Promise<void> {
 
   // Build scope resolver when agents service URL is configured.
   const agentsServiceUrl = process.env.SHIPWRIGHT_AGENTS_SERVICE_URL;
-  const adminApiKey = process.env.SHIPWRIGHT_ADMIN_API_KEY;
+  const agentsServiceApiKey = process.env.SHIPWRIGHT_AGENTS_SERVICE_API_KEY;
   const scopeResolver =
-    agentsServiceUrl && adminApiKey
-      ? createScopeResolver(agentsServiceUrl, adminApiKey)
+    agentsServiceUrl && agentsServiceApiKey
+      ? createScopeResolver(agentsServiceUrl, agentsServiceApiKey)
       : undefined;
 
   if (scopeResolver) {
-    console.log(
-      `[task-store] scope resolver configured (${agentsServiceUrl})`,
-    );
+    console.log(`[task-store] scope resolver configured (${agentsServiceUrl})`);
   } else {
-    console.log("[task-store] scope resolver disabled (SHIPWRIGHT_AGENTS_SERVICE_URL not set)");
+    console.log(
+      "[task-store] scope resolver disabled (SHIPWRIGHT_AGENTS_SERVICE_URL not set)",
+    );
   }
 
   const app = createTaskStoreApp({ taskService, tokenService, scopeResolver });
