@@ -66,8 +66,8 @@ independent of `appVersion`. CI enforces this with
 
 ### Removed
 
-- Deleted `ci/vitals-os-values.yaml` (internal CI install-test profile; no longer ships).
-- Scrubbed all internal `vitals-os` references from chart templates, tests, CHANGELOG, and docs; replaced with generic placeholders.
+- Deleted internal CI install-test config (no longer ships).
+- Scrubbed all internal platform references from chart templates, tests, CHANGELOG, and docs; replaced with generic placeholders.
 
 ## [1.6.8] - 2026-06-23
 

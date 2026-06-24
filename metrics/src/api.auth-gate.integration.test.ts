@@ -350,7 +350,7 @@ describe("dashboard HTML — no dead nav links", () => {
     expect(html.toLowerCase()).not.toContain("/time");
   });
 
-  test("rendered HTML has no vitals-os platform links (/cal, /time, /billing)", async () => {
+  test("rendered HTML has no platform-specific links (/cal, /time, /billing)", async () => {
     const cookie = await makeSessionCookie();
     const deps: MetricsDeps = {
       sessionSecret: TEST_SESSION_SECRET,

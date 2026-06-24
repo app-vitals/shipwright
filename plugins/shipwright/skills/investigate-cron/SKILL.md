@@ -314,8 +314,8 @@ Possible reasons:
 1. The preCheck script returned non-zero — the cron was suppressed before Claude ran.
    Check logs/bodhi.log for "[preCheck]" lines around <time>.
 2. The cron was disabled at the time. Verify via:
-      curl -s -H "Authorization: Bearer $VITALS_OS_API_KEY" \
-        "$VITALS_OS_API_URL/accounts/agents/$VITALS_OS_AGENT_USER_ID/crons" | jq '.[] | select(.name | test("<name>"))'
+      curl -s -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
+        "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/crons" | jq '.[] | select(.name | test("<name>"))'
 3. The cron fired in a different workspace — check if $AGENT_HOME differs.
 4. The ±90 minute search window was too narrow. Try a broader time range.
 ```
