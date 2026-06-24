@@ -76,7 +76,7 @@ export const PatchAgentBodySchema = z
     repos: z
       .array(z.string())
       .optional()
-      .openapi({ example: ["app-vitals/vitals-os"] }),
+      .openapi({ example: ["my-org/my-repo"] }),
   })
   .openapi("PatchAgentBody");
 

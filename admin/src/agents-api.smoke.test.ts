@@ -1614,11 +1614,11 @@ describe("admin API — repos field", () => {
     cookie = await makeSessionCookie();
   });
 
-  it("PATCH /agents/:id with repos: ['vitals-os'] returns 400 (missing org)", async () => {
+  it("PATCH /agents/:id with repos: ['my-repo'] returns 400 (missing org)", async () => {
     const app = createAdminApp(makeMockDeps());
     const res = await app.request(`/agents/${AGENT_ID}`, {
       method: "PATCH",
-      body: JSON.stringify({ repos: ["vitals-os"] }),
+      body: JSON.stringify({ repos: ["my-repo"] }),
       headers: {
         "Content-Type": "application/json",
         Cookie: `admin_session=${cookie}`,
@@ -1629,7 +1629,7 @@ describe("admin API — repos field", () => {
     expect(body.error).toMatch(/org\/repo/i);
   });
 
-  it("PATCH /agents/:id with repos: ['app-vitals/vitals-os'] returns 200", async () => {
+  it("PATCH /agents/:id with repos: ['my-org/my-repo'] returns 200", async () => {
     const base = makeMockDeps();
     const deps: AdminDeps = {
       ...base,
@@ -1666,7 +1666,7 @@ describe("admin API — repos field", () => {
     const app = createAdminApp(deps);
     const res = await app.request(`/agents/${AGENT_ID}`, {
       method: "PATCH",
-      body: JSON.stringify({ repos: ["app-vitals/vitals-os"] }),
+      body: JSON.stringify({ repos: ["my-org/my-repo"] }),
       headers: {
         "Content-Type": "application/json",
         Cookie: `admin_session=${cookie}`,
@@ -1674,7 +1674,7 @@ describe("admin API — repos field", () => {
     });
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.repos).toEqual(["app-vitals/vitals-os"]);
+    expect(body.repos).toEqual(["my-org/my-repo"]);
   });
 
   it("GET /agents/:id returns repos field (empty array for existing agents)", async () => {

@@ -202,7 +202,7 @@ describeOrSkip("admin CRUD API (integration)", () => {
     // PATCH to set repos
     const patchRes = await app.request(`/agents/${agentId}`, {
       method: "PATCH",
-      body: JSON.stringify({ repos: ["app-vitals/vitals-os"] }),
+      body: JSON.stringify({ repos: ["my-org/my-repo"] }),
       headers: {
         "Content-Type": "application/json",
         Cookie: `admin_session=${cookie}`,
@@ -210,7 +210,7 @@ describeOrSkip("admin CRUD API (integration)", () => {
     });
     expect(patchRes.status).toBe(200);
     const patchBody = await patchRes.json();
-    expect(patchBody.repos).toEqual(["app-vitals/vitals-os"]);
+    expect(patchBody.repos).toEqual(["my-org/my-repo"]);
 
     // GET to confirm persisted value
     const getRes = await app.request(`/agents/${agentId}`, {
@@ -218,6 +218,6 @@ describeOrSkip("admin CRUD API (integration)", () => {
     });
     expect(getRes.status).toBe(200);
     const getBody = await getRes.json();
-    expect(getBody.repos).toEqual(["app-vitals/vitals-os"]);
+    expect(getBody.repos).toEqual(["my-org/my-repo"]);
   });
 });
