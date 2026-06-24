@@ -315,7 +315,7 @@ When determining whether a task is ready (via `--ready`), each dependency is eva
 
 1. **Terminal status** — dependency has `status ∈ { merged, done, deploying, deployed, cancelled }` → **satisfied**
 2. **Same-branch PR** — dependency is on the same branch as the dependent task with `status ∈ { pr_open, approved }` → **satisfied** (bundled PR)
-3. **Cross-branch merged PR** — dependency is on a different branch with `status === pr_open` AND the PR is already merged in GitHub → **satisfied**
+3. **`pr_open` with a PR number** — dependency has `status === pr_open` and a PR number; check whether the PR is merged in GitHub → **satisfied** if merged
 4. **Anything else** → **not satisfied** (task is excluded from `--ready` results)
 
 **`--branch` example** — find all tasks sharing a bundle branch:
