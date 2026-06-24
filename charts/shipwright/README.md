@@ -15,7 +15,7 @@ License: **MIT**.
 
 ## Helm Repository
 
-The chart is published via [chart-releaser](https://github.com/helm/chart-releaser) to GitHub Pages on every merge to `main` that bumps `Chart.yaml` version.
+The chart is published to a [GitHub Pages](https://pages.github.com/) Helm repository on every merge to `main` that bumps the `Chart.yaml` version. The [`chart-release.yml`](../../.github/workflows/chart-release.yml) workflow packages the chart and commits the `.tgz` plus a merged `index.yaml` directly to the `gh-pages` branch root — no GitHub Releases are created. See [docs/helm-repo.md](../../docs/helm-repo.md) for the full mechanism.
 
 **Add the repo:**
 
@@ -25,13 +25,12 @@ helm repo update
 helm install my-release shipwright/shipwright
 ```
 
-**GitHub Pages publish path:** On the first push to `main` with a chart version bump, chart-releaser packages the chart, creates the `gh-pages` branch, and publishes the index. GitHub Pages will be auto-enabled at that point, or can be enabled manually via **Settings → Pages → gh-pages branch → / (root)**.
+**GitHub Pages publish path:** On each push to `main` with a chart version bump, `chart-release.yml` packages the chart, merges it into the `gh-pages` `index.yaml` (with `--url https://app-vitals.github.io/shipwright`), and commits the `.tgz` + `index.yaml` to the `gh-pages` root. The `gh-pages` branch must exist and GitHub Pages must be serving from it (**Settings → Pages → gh-pages branch → / (root)**) — see [docs/helm-repo.md](../../docs/helm-repo.md) for the one-time setup.
 
-**Fallback — direct .tgz download:** If the Helm repo is not yet available (before the first release lands), you can install directly from the GitHub Releases page:
+**Fallback — direct .tgz download:** If the Helm repo is not yet available (before the first release lands), you can install directly from the published `.tgz` on GitHub Pages:
 
 ```bash
-# Find the release at https://github.com/app-vitals/shipwright/releases
-helm install my-release https://github.com/app-vitals/shipwright/releases/download/shipwright-1.0.0/shipwright-1.0.0.tgz
+helm install my-release https://app-vitals.github.io/shipwright/shipwright-1.0.0.tgz
 ```
 
 ## Versioning
