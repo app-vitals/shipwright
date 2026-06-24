@@ -142,6 +142,10 @@ export function createTasksRoutes(
     const agentId = c.get("agentId");
     await requireOwnership(taskService, c.req.param("id"), agentId);
     const body = await readJson(c);
+    // Prevent agent tokens from reassigning tasks outside their ownership scope.
+    if (agentId !== null) {
+      body.assignee = undefined;
+    }
     const updated = await taskService.update(
       c.req.param("id"),
       body as Prisma.TaskUpdateInput,

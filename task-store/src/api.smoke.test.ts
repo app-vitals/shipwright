@@ -22,6 +22,7 @@ import type { TokenServiceLike } from "./token-service.ts";
 // ─── Fakes ────────────────────────────────────────────────────────────────────
 
 const VALID_TOKEN = "valid-token";
+const AGENT_TOKEN = "agent-token";
 
 function fakeTokenService(): TokenServiceLike {
   return {
@@ -40,6 +41,34 @@ function fakeTokenService(): TokenServiceLike {
     },
     async validate(raw: string) {
       return raw === VALID_TOKEN ? { id: "tok-1", agentId: null } : null;
+    },
+    async revoke() {
+      return null;
+    },
+    async list() {
+      return [];
+    },
+  };
+}
+
+/** Token service that validates AGENT_TOKEN as a scoped agent-1 token. */
+function fakeAgentTokenService(): TokenServiceLike {
+  return {
+    async create(label?: string) {
+      return {
+        token: {
+          id: "tok-2",
+          token: "hash",
+          label: label ?? null,
+          agentId: "agent-1",
+          createdAt: new Date(),
+          revokedAt: null,
+        },
+        rawToken: "raw",
+      };
+    },
+    async validate(raw: string) {
+      return raw === AGENT_TOKEN ? { id: "tok-2", agentId: "agent-1" } : null;
     },
     async revoke() {
       return null;
@@ -281,5 +310,49 @@ describe("task-store API (smoke)", () => {
     expect(res.status).toBe(201);
     const body = (await res.json()) as { rawToken: string };
     expect(body.rawToken).toBe("raw");
+  });
+
+  // ─── Agent token scoping ──────────────────────────────────────────────────
+
+  it("POST /tasks with agent token forces assignee to the agent's ID", async () => {
+    const app = makeApp({ tokenService: fakeAgentTokenService() });
+    const res = await app.request("/tasks", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${AGENT_TOKEN}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ title: "New task", status: "pending" }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as Task;
+    expect(body.assignee).toBe("agent-1");
+  });
+
+  it("GET /tasks/:id returns 403 when agent token tries to read a task owned by a different agent", async () => {
+    const app = makeApp({
+      tokenService: fakeAgentTokenService(),
+      // Task is owned by agent-2, not agent-1.
+      taskService: fakeTaskService({
+        getResult: makeTask({ id: "task-1", assignee: "agent-2" }),
+      }),
+    });
+    const res = await app.request("/tasks/task-1", {
+      headers: { Authorization: `Bearer ${AGENT_TOKEN}` },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("POST /tokens returns 403 for an agent token (admin-only route)", async () => {
+    const app = makeApp({ tokenService: fakeAgentTokenService() });
+    const res = await app.request("/tokens", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${AGENT_TOKEN}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ label: "ci" }),
+    });
+    expect(res.status).toBe(403);
   });
 });
