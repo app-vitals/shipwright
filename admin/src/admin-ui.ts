@@ -1454,7 +1454,18 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     const status = c.req.query("status") ?? undefined;
     const session = c.req.query("session") ?? undefined;
     const repo = c.req.query("repo") ?? undefined;
+    const agent = c.req.query("agent") ?? undefined;
     const error = c.req.query("error") ?? undefined;
+
+    // When filtering by agent name, resolve matching IDs upfront so we can
+    // filter tasks client-side (task store only supports a single assignee ID).
+    let agentFilterIds: Set<string> | null = null;
+    if (agent) {
+      const matched = await prisma.agent.findMany({
+        where: { name: { contains: agent, mode: "insensitive" } },
+      });
+      agentFilterIds = new Set(matched.map((a) => a.id));
+    }
 
     let tasks: TaskItem[] = [];
     let degraded = false;
@@ -1471,6 +1482,14 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       } catch {
         degraded = true;
       }
+    }
+
+    if (agentFilterIds !== null) {
+      tasks = tasks.filter(
+        (t) =>
+          (t.assignee && agentFilterIds!.has(t.assignee)) ||
+          (t.claimedBy && agentFilterIds!.has(t.claimedBy)),
+      );
     }
 
     const agentIds = [
@@ -1491,7 +1510,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     return html(
       renderTasksPage(
         tasks,
-        { status, session, repo },
+        { status, session, repo, agent },
         degraded,
         c.var.userEmail,
         agentNames,

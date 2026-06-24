@@ -2153,6 +2153,40 @@ describe("admin UI — tasks page", () => {
     expect(html).not.toContain("/admin/tasks/task-1/release");
   });
 
+  it("GET /admin/tasks?agent= filters by agent name (case-insensitive)", async () => {
+    // makeMockDeps prisma.agent.findMany returns the agent with id AGENT_ID, name "Test Agent"
+    const mockTasks = [
+      {
+        id: "task-1",
+        title: "Task for Test Agent",
+        status: "pending",
+        session: null,
+        repo: null,
+        assignee: AGENT_ID,
+        claimedBy: null,
+      },
+      {
+        id: "task-2",
+        title: "Unassigned task",
+        status: "pending",
+        session: null,
+        repo: null,
+        assignee: null,
+        claimedBy: null,
+      },
+    ];
+    const app = createAdminUIApp(
+      makeMockDeps({ fetchTaskStoreTasks: async () => mockTasks }),
+    );
+    const res = await app.request("/admin/tasks?agent=test", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Task for Test Agent");
+    expect(html).not.toContain("Unassigned task");
+  });
+
   it("POST /admin/tasks/:id/release calls releaseTask and redirects to /admin/tasks", async () => {
     const released: string[] = [];
     const app = createAdminUIApp(

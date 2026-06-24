@@ -879,7 +879,7 @@ export function renderProvisionPasteForm(
 
 export function renderTasksPage(
   tasks: TaskItem[],
-  filters: { status?: string; session?: string; repo?: string },
+  filters: { status?: string; session?: string; repo?: string; agent?: string },
   degraded: boolean,
   userName: string,
   agentNames: Record<string, string> = {},
@@ -968,6 +968,10 @@ export function renderTasksPage(
         <div class="form-group" style="margin-bottom:0">
           <label class="form-label" style="font-size:11px">Repo</label>
           <input name="repo" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.repo ?? "")}" placeholder="org/repo" />
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label" style="font-size:11px">Agent</label>
+          <input name="agent" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.agent ?? "")}" placeholder="agent name" />
         </div>
         <button type="submit" class="btn btn-secondary" style="font-size:12px">Filter</button>
       </form>
