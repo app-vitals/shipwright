@@ -343,8 +343,10 @@ export function createTaskStoreClient(): {
       const res = await fetch(`${baseUrl}/tasks?${params}`, { headers });
       if (!res.ok)
         throw new Error(`task-store GET /tasks?${params} → ${res.status}`);
-      const result = (await res.json()) as { tasks: Task[] };
-      return result.tasks;
+      const json = await res.json();
+      // ?ready=true returns bare Task[]; all other list calls return { tasks, total, limit, offset }
+      if (Array.isArray(json)) return json as Task[];
+      return (json as { tasks: Task[] }).tasks;
     },
     async update(id: string, fields: Record<string, unknown>): Promise<Task> {
       const res = await fetch(`${baseUrl}/tasks/${id}`, {
