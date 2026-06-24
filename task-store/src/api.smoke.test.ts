@@ -356,10 +356,10 @@ describe("task-store API (smoke)", () => {
     expect(res.status).toBe(403);
   });
 
-  it("GET /tasks/:id returns 200 when agent token reads an unassigned task", async () => {
+  it("GET /tasks/:id returns 403 when agent token reads an unassigned task", async () => {
     const app = makeApp({
       tokenService: fakeAgentTokenService(),
-      // Task has no assignee — should be accessible to any agent token.
+      // Unassigned tasks are not accessible to agent tokens — only admins.
       taskService: fakeTaskService({
         getResult: makeTask({ id: "task-1", assignee: null }),
       }),
@@ -367,7 +367,7 @@ describe("task-store API (smoke)", () => {
     const res = await app.request("/tasks/task-1", {
       headers: { Authorization: `Bearer ${AGENT_TOKEN}` },
     });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(403);
   });
 
   it("PATCH /tasks/:id with agent token pins assignee to the agent's ID", async () => {
