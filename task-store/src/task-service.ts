@@ -86,9 +86,14 @@ export class TaskService implements TaskServiceLike {
 
   async list(filters: TaskListFilters = {}): Promise<TaskListResult> {
     const where: Prisma.TaskWhereInput = {};
-    if (filters.status) where.status = filters.status as Task["status"];
-    if (filters.state === "open") where.status = { in: [...OPEN_STATUSES] };
-    if (filters.state === "closed") where.status = { in: [...CLOSED_STATUSES] };
+    if (filters.status) {
+      // status takes precedence over state when both are provided
+      where.status = filters.status as Task["status"];
+    } else if (filters.state === "open") {
+      where.status = { in: [...OPEN_STATUSES] };
+    } else if (filters.state === "closed") {
+      where.status = { in: [...CLOSED_STATUSES] };
+    }
     if (filters.session) where.session = filters.session;
     if (filters.repo) where.repo = filters.repo;
     if (filters.assignee) where.assignee = filters.assignee;

@@ -894,7 +894,7 @@ export function renderTasksPage(
     limit: 50,
     page: 1,
   },
-  opts?: { error?: string },
+  opts?: { error?: string; agentFilterActive?: boolean },
 ): string {
   const errorHtml = opts?.error
     ? `<div class="alert alert-error">${escapeHtml(opts.error)}</div>`
@@ -902,6 +902,10 @@ export function renderTasksPage(
 
   const degradedHtml = degraded
     ? `<div class="alert alert-warning">Task store unavailable — data shown may be stale or empty.</div>`
+    : "";
+
+  const agentFilterHtml = opts?.agentFilterActive
+    ? `<div class="alert alert-warning">Showing up to 500 results — agent name filter is applied client-side and may not reflect all matching tasks.</div>`
     : "";
 
   const statusBadgeClass = (s: string) => {
@@ -1033,6 +1037,7 @@ export function renderTasksPage(
     </div>
     ${errorHtml}
     ${degradedHtml}
+    ${agentFilterHtml}
     <div class="card" style="margin-bottom:16px">
       <form method="GET" action="/admin/tasks" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
         ${filters.state && !filters.status ? `<input type="hidden" name="state" value="${escapeHtml(filters.state)}" />` : ""}

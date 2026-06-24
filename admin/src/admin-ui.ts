@@ -1543,7 +1543,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         c.var.userEmail,
         agentNames,
         { total, limit, page },
-        error ? { error } : undefined,
+        { ...(error ? { error } : {}), agentFilterActive: agentFilterIds !== null },
       ),
     );
   });
