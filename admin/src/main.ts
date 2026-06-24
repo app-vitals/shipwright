@@ -251,6 +251,33 @@ async function startServer(): Promise<void> {
   root.route("/", adminApiApp);
 
   // 4. Admin UI — /admin/* — session JWT
+  const taskStoreUrl = process.env.SHIPWRIGHT_TASK_STORE_URL;
+  const taskStoreAdminToken = process.env.SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN;
+  const taskStoreFetchers =
+    taskStoreUrl && taskStoreAdminToken
+      ? {
+          fetchTaskStoreTasks: async (params: URLSearchParams) => {
+            const url = `${taskStoreUrl}/tasks${params.size > 0 ? `?${params}` : ""}`;
+            const res = await fetch(url, {
+              headers: { Authorization: `Bearer ${taskStoreAdminToken}` },
+            });
+            if (!res.ok)
+              throw new Error(`task-store GET /tasks → ${res.status}`);
+            return res.json();
+          },
+          releaseTask: async (id: string) => {
+            const res = await fetch(`${taskStoreUrl}/tasks/${id}/release`, {
+              method: "POST",
+              headers: { Authorization: `Bearer ${taskStoreAdminToken}` },
+            });
+            if (!res.ok)
+              throw new Error(
+                `task-store POST /tasks/${id}/release → ${res.status}`,
+              );
+          },
+        }
+      : {};
+
   const adminUIApp = createAdminUIApp({
     prisma: prisma as never,
     agentEnvService,
@@ -267,6 +294,7 @@ async function startServer(): Promise<void> {
     slackClient,
     appBaseUrl,
     devAuthEnabled: isDevAuthAllowed(process.env),
+    ...taskStoreFetchers,
   });
   root.route("/", adminUIApp);
 
