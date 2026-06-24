@@ -1558,7 +1558,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     } catch {
       return c.redirect("/admin/tasks?error=release_failed", 302);
     }
-    return c.redirect(`/admin/tasks/${taskId}`, 302);
+    return c.redirect(
+      fetchTaskStoreTask ? `/admin/tasks/${taskId}` : "/admin/tasks",
+      302,
+    );
   });
 
   // ─── Agent delete (danger zone) ───────────────────────────────────────────

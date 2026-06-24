@@ -2187,7 +2187,27 @@ describe("admin UI — tasks page", () => {
     expect(html).not.toContain("Unassigned task");
   });
 
-  it("POST /admin/tasks/:id/release calls releaseTask and redirects to /admin/tasks", async () => {
+  it("POST /admin/tasks/:id/release calls releaseTask and redirects to task detail when fetchTaskStoreTask is wired", async () => {
+    const released: string[] = [];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async () => [],
+        fetchTaskStoreTask: async () => null,
+        releaseTask: async (id: string) => {
+          released.push(id);
+        },
+      }),
+    );
+    const res = await app.request("/admin/tasks/task-2/release", {
+      method: "POST",
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/admin/tasks/task-2");
+    expect(released).toEqual(["task-2"]);
+  });
+
+  it("POST /admin/tasks/:id/release redirects to task list in degraded mode (no fetchTaskStoreTask)", async () => {
     const released: string[] = [];
     const app = createAdminUIApp(
       makeMockDeps({
@@ -2202,7 +2222,7 @@ describe("admin UI — tasks page", () => {
       headers: { Cookie: `admin_session=${cookie}` },
     });
     expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/admin/tasks/task-2");
+    expect(res.headers.get("Location")).toBe("/admin/tasks");
     expect(released).toEqual(["task-2"]);
   });
 

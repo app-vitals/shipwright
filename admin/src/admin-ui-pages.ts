@@ -1131,11 +1131,9 @@ export function renderTaskDetailPage(
         )
       : "",
     task.issue
-      ? linkField(
-          "Issue",
-          task.issue.startsWith("http") ? task.issue : undefined,
-          task.issue,
-        )
+      ? task.issue.startsWith("http")
+        ? linkField("Issue", task.issue, task.issue)
+        : field("Issue", task.issue)
       : "",
     field("Model", task.model),
     task.complexity !== null && task.complexity !== undefined
