@@ -3,6 +3,40 @@ entries:
   shipwright:
   - annotations:
       artifacthub.io/changes: |
+        - kind: changed
+          description: "auto-bump to chart v1.6.16 triggered by release tag task-store-v0.3.0"
+      licenses: MIT
+    apiVersion: v2
+    appVersion: 0.1.0
+    created: "2026-06-24T06:43:20.555708435Z"
+    dependencies:
+    - condition: postgresql.enabled
+      name: postgresql
+      repository: oci://registry-1.docker.io/bitnamicharts
+      version: 16.7.27
+    description: Shipwright Harness — the open-source autonomous delivery agent for
+      Claude Code. This chart packages the three Shipwright services (admin, metrics,
+      agent) and an optional PostgreSQL dependency for Kubernetes (Minikube-friendly
+      defaults).
+    digest: 418d788d4efcf9103bfc3486de9ff1cbfd4fba54ffbd3ae51bb7ee08770ed43d
+    home: https://shipwright-harness.com
+    keywords:
+    - shipwright
+    - claude-code
+    - delivery-agent
+    - ci-cd
+    maintainers:
+    - name: Shipwright Harness
+      url: https://shipwright-harness.com
+    name: shipwright
+    sources:
+    - https://github.com/app-vitals/shipwright
+    type: application
+    urls:
+    - https://github.com/app-vitals/shipwright/releases/download/shipwright-1.6.16/shipwright-1.6.16.tgz
+    version: 1.6.16
+  - annotations:
+      artifacthub.io/changes: |
         - kind: fixed
           description: "chart: add task-store to GKE HealthCheckPolicy so the GKE Gateway probes /health instead of / (which 404s)"
       licenses: MIT
@@ -1745,4 +1779,4 @@ entries:
     urls:
     - https://app-vitals.github.io/shipwright/shipwright-1.0.0.tgz
     version: 1.0.0
-generated: "2026-06-24T05:50:55.259470828Z"
+generated: "2026-06-24T06:43:20.555818764Z"
