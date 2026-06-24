@@ -16,7 +16,7 @@ import { describe, expect, it } from "bun:test";
 import { createTaskStoreApp } from "./app.ts";
 import { ConflictError, NotFoundError } from "./errors.ts";
 import type { Task } from "./index.ts";
-import type { TaskListFilters, TaskServiceLike } from "./task-service.ts";
+import type { TaskListFilters, TaskListResult, TaskServiceLike } from "./task-service.ts";
 import type { TokenServiceLike } from "./token-service.ts";
 
 // ─── Fakes ────────────────────────────────────────────────────────────────────
@@ -407,9 +407,9 @@ describe("task-store API (smoke)", () => {
       headers: { Authorization: `Bearer ${AGENT_TOKEN}` },
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as Task[];
-    expect(body).toHaveLength(1);
-    expect(body[0].assignee).toBe("agent-1");
+    const body = (await res.json()) as TaskListResult;
+    expect(body.tasks).toHaveLength(1);
+    expect(body.tasks[0].assignee).toBe("agent-1");
   });
 
   it("PATCH /tasks/:id with agent token pins assignee to the agent's ID", async () => {
