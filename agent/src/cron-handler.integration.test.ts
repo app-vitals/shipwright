@@ -570,6 +570,39 @@ describe("handleCronRequest — preCheck", () => {
     expect(runArg).toContain("precheck prompt");
   });
 
+  test("preCheck inherits runtime process.env mutations (env: process.env passthrough)", async () => {
+    // config-sync mutates process.env at runtime (Object.assign every 60s). The
+    // preCheck child must see those mutations, not a Bun-startup snapshot —
+    // regression for a rotated SHIPWRIGHT_TASK_STORE_TOKEN causing 401s until
+    // the pod restarted. The probe key is absent from the process's boot env, so
+    // without env: process.env the child reads "MISSING".
+    const key = "CRON_PRECHECK_ENV_PROBE";
+    process.env[key] = "runtime-value";
+    try {
+      const script = join(tmpDir, "check.ts");
+      writeFileSync(
+        script,
+        `console.log(process.env.${key} ?? "MISSING"); process.exit(0);`,
+      );
+
+      await handleCronRequest(
+        {
+          jobId: "j1",
+          prompt: "original",
+          channel: "C-TEST",
+          preCheck: script,
+        },
+        deps,
+      );
+
+      expect(mockRunner).toHaveBeenCalledTimes(1);
+      const runArg = (mockRunner.mock.calls as unknown as string[][])[0][0];
+      expect(runArg).toContain("runtime-value");
+    } finally {
+      delete process.env[key];
+    }
+  });
+
   test("runs preCheck with cwd = workspace (resolves state relative to workspace)", async () => {
     // Mirrors check-dev-task.ts → JsonTaskStore(process.cwd()) reading
     // `state/todos.json`. The file lives in the workspace; the preCheck must run
