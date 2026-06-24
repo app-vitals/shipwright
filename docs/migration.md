@@ -4,9 +4,9 @@ Durable notes for breaking changes and the steps needed to migrate across versio
 
 ---
 
-## `GET /tasks` response shape change
+## `GET /tasks` and `GET /tasks/:id` response shape change
 
-**Version**: next (feat/task-filters)
+**Version**: next (feat/task-filters, feat/ts-api-blocked-by)
 
 `GET /tasks` previously returned a bare `Task[]`. It now returns an envelope:
 
@@ -14,10 +14,38 @@ Durable notes for breaking changes and the steps needed to migrate across versio
 { "tasks": Task[], "total": number, "limit": number, "offset": number }
 ```
 
+Each `Task` in the response now includes a `blockedBy` array describing why the task is not yet ready:
+
+```json
+{
+  "tasks": [
+    {
+      "id": "task-1",
+      "status": "pending",
+      ...
+      "blockedBy": [
+        { "type": "hitl" },
+        { "type": "dependency", "id": "dep-1", "status": "in_progress" }
+      ]
+    }
+  ],
+  "total": 1,
+  "limit": 50,
+  "offset": 0
+}
+```
+
+`BlockedByEntry` is one of:
+- `{ type: "hitl" }` — the task has `hitl: true` and `hitlNotifiedAt` is null (awaiting human confirmation)
+- `{ type: "dependency"; id: string; status: string }` — a dependency task is not satisfied (see dependency satisfaction rules in `docs/task-store.md`)
+
+When `blockedBy` is empty, the task is ready to execute (assuming it has `status: pending`).
+
 **What to update:**
 - Any code that calls `GET /tasks` and expects an array must unwrap `.tasks` from the response.
 - `check-helpers.ts` in the plugin is updated in this PR. Custom scripts or agents calling `/tasks` directly need the same fix.
-- `GET /tasks?ready=true` is unchanged — it still returns `Task[]`.
+- Code that checks task readiness should use the `blockedBy` array instead of duplicating dependency logic.
+- `GET /tasks?ready=true` is unchanged — it still returns `Task[]` (filtered to ready tasks only, with `blockedBy` also present).
 
 ---
 
