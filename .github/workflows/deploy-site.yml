@@ -46,6 +46,18 @@ jobs:
       - name: Build site
         run: cd site && bunx astro build
 
+      # Pre-deploy check: record whether index.yaml already exists on gh-pages.
+      # This guards against a false-positive failure on fresh gh-pages branches or
+      # forks where chart-release.yml has never run — the assertion below is
+      # skipped unless index.yaml was already present before the deploy.
+      - name: Check Helm index.yaml exists on gh-pages
+        id: helm-check
+        run: |
+          git fetch origin gh-pages
+          git ls-tree origin/gh-pages index.yaml | grep -q . \
+            && echo "helm_index_exists=true" >> $GITHUB_ENV \
+            || echo "helm_index_exists=false" >> $GITHUB_ENV
+
       - name: Deploy to gh-pages
         uses: JamesIves/github-pages-deploy-action@v4
         with:
@@ -64,7 +76,10 @@ jobs:
       # Post-deploy assertion: verify that the Helm index.yaml was NOT deleted.
       # If the clean-exclude logic ever regresses, this step fails the workflow
       # immediately rather than silently breaking the Helm repo.
+      # Skipped when index.yaml was absent before the deploy (bootstrap / fresh
+      # gh-pages) so the workflow doesn't fail before chart-release.yml has run.
       - name: Assert Helm index.yaml survived deploy
+        if: env.helm_index_exists == 'true'
         run: |
           git fetch origin gh-pages
           git checkout origin/gh-pages -- index.yaml 2>/dev/null \
