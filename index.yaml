@@ -4,11 +4,45 @@ entries:
   - annotations:
       artifacthub.io/changes: |
         - kind: changed
+          description: "auto-bump to chart v1.6.29 triggered by release tag admin-v0.87.0"
+      licenses: MIT
+    apiVersion: v2
+    appVersion: 0.1.0
+    created: "2026-06-24T21:42:18.73233331Z"
+    dependencies:
+    - condition: postgresql.enabled
+      name: postgresql
+      repository: oci://registry-1.docker.io/bitnamicharts
+      version: 16.7.27
+    description: Shipwright Harness — the open-source autonomous delivery agent for
+      Claude Code. This chart packages the three Shipwright services (admin, metrics,
+      agent) and an optional PostgreSQL dependency for Kubernetes (Minikube-friendly
+      defaults).
+    digest: f030944e068a64e3c5045b780821d4596c798d688622b60da088ab5d43234966
+    home: https://shipwright-harness.com
+    keywords:
+    - shipwright
+    - claude-code
+    - delivery-agent
+    - ci-cd
+    maintainers:
+    - name: Shipwright Harness
+      url: https://shipwright-harness.com
+    name: shipwright
+    sources:
+    - https://github.com/app-vitals/shipwright
+    type: application
+    urls:
+    - https://app-vitals.github.io/shipwright/shipwright-1.6.29.tgz
+    version: 1.6.29
+  - annotations:
+      artifacthub.io/changes: |
+        - kind: changed
           description: "auto-bump to chart v1.6.28 triggered by release tag agent-v0.68.1"
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-24T21:33:49.772418475Z"
+    created: "2026-06-24T21:42:18.725115995Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -42,7 +76,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-24T21:33:49.759037413Z"
+    created: "2026-06-24T21:42:18.716729017Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -76,7 +110,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-24T21:33:49.746721514Z"
+    created: "2026-06-24T21:42:18.708854468Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -110,7 +144,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-24T21:33:49.738887046Z"
+    created: "2026-06-24T21:42:18.700714584Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -144,7 +178,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-24T21:33:49.727928606Z"
+    created: "2026-06-24T21:42:18.694225144Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -2160,7 +2194,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-24T21:33:49.721311294Z"
+    created: "2026-06-24T21:42:18.685659819Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -2187,4 +2221,4 @@ entries:
     urls:
     - https://app-vitals.github.io/shipwright/shipwright-1.0.0.tgz
     version: 1.0.0
-generated: "2026-06-24T21:33:49.713769186Z"
+generated: "2026-06-24T21:42:18.677557674Z"
