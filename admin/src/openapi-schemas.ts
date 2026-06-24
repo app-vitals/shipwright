@@ -39,6 +39,7 @@ export const AgentSchema = z
       .nullable()
       .optional()
       .openapi({ example: "U0AALR8M69X" }),
+    selfHosted: z.boolean().openapi({ example: false }),
     createdAt: z
       .string()
       .datetime()
@@ -57,6 +58,7 @@ export const AgentSummarySchema = z
   .object({
     id: z.string().openapi({ example: "clx1234567890" }),
     name: z.string().openapi({ example: "Bodhi" }),
+    selfHosted: z.boolean().openapi({ example: false }),
   })
   .openapi("AgentSummary");
 
@@ -64,8 +66,15 @@ export const CreateAgentBodySchema = z
   .object({
     name: z.string().min(1).openapi({ example: "Bodhi" }),
     slackId: z.string().optional().openapi({ example: "U0AALR8M69X" }),
+    selfHosted: z.boolean().optional().openapi({ example: false }),
   })
   .openapi("CreateAgentBody");
+
+export const PatchAgentBodySchema = z
+  .object({
+    selfHosted: z.boolean().optional().openapi({ example: false }),
+  })
+  .openapi("PatchAgentBody");
 
 // ─── AgentCronJob ─────────────────────────────────────────────────────────────
 

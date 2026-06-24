@@ -27,6 +27,7 @@ const validAgent = {
   id: "cuid1",
   name: "Bodhi",
   slackId: "U01234567",
+  selfHosted: false,
   createdAt: now,
   updatedAt: now,
 };
