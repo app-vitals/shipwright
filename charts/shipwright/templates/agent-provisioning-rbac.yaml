@@ -8,8 +8,10 @@
 # its own release namespace (e.g. provisioning agents into a dedicated target namespace).
 # A ClusterRole bound via ClusterRoleBinding is required to reach across namespace boundaries.
 # The verb set is exactly what the provisioner (HD-1.3 KubernetesAgentProvisioner /
-# HD-1.4 wiring) exercises: create + get + delete on Deployments (apps),
-# Secrets (core), and PersistentVolumeClaims (core).
+# HD-1.4 wiring) exercises: create + get + list + patch + update + delete on
+# Deployments (apps) — patch/update are required by the reconcile path, which
+# strategic-merge-patches existing Deployments — and create + get + delete on
+# Secrets (core) and PersistentVolumeClaims (core).
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -19,7 +21,7 @@ metadata:
 rules:
   - apiGroups: ["apps"]
     resources: ["deployments"]
-    verbs: ["create", "get", "list", "delete"]
+    verbs: ["create", "get", "list", "patch", "update", "delete"]
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["create", "get", "delete"]
@@ -61,7 +63,7 @@ metadata:
 rules:
   - apiGroups: ["apps"]
     resources: ["deployments"]
-    verbs: ["create", "get", "list", "delete"]
+    verbs: ["create", "get", "list", "patch", "update", "delete"]
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["create", "get", "delete"]

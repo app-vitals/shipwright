@@ -10,6 +10,15 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.6.14] - 2026-06-24
+
+### Fixed
+
+- agent-provisioner RBAC: grant `patch`/`update` on Deployments (apps) so the
+  reconcile path can strategic-merge-patch existing agent Deployments. Without
+  these verbs, `POST /agents/reconcile` returned 200 but every agent failed with
+  `cannot patch resource "deployments"` from the K8s API (SHI-1.3).
+
 ## [1.6.13] - 2026-06-24
 
 ### Changed

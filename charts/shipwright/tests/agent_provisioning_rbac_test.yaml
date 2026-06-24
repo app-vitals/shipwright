@@ -12,7 +12,7 @@ suite: agent-provisioning RBAC + admin env contract (HD-4.2 / K8S-NS-1.1)
 tests:
   # ── (a) enabled → RBAC + agent SA ────────────────────────────────────────────
   # Cross-namespace mode (agent.provisioning.namespace set) → ClusterRole + ClusterRoleBinding
-  - it: renders a cluster-scoped ClusterRole with exactly create/get/delete on Deployments, Secrets, and PVCs (cross-namespace mode)
+  - it: renders a cluster-scoped ClusterRole with create/get/list/patch/update/delete on Deployments and create/get/delete on Secrets and PVCs (cross-namespace mode)
     template: templates/agent-provisioning-rbac.yaml
     documentIndex: 0
     set:
@@ -34,7 +34,7 @@ tests:
           value: ["deployments"]
       - equal:
           path: rules[0].verbs
-          value: ["create", "get", "list", "delete"]
+          value: ["create", "get", "list", "patch", "update", "delete"]
       - equal:
           path: rules[1].apiGroups
           value: [""]
@@ -108,7 +108,7 @@ tests:
           value: ["deployments"]
       - equal:
           path: rules[0].verbs
-          value: ["create", "get", "list", "delete"]
+          value: ["create", "get", "list", "patch", "update", "delete"]
       - equal:
           path: rules[1].resources
           value: ["secrets"]
