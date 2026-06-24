@@ -98,6 +98,7 @@ export function createScopeResolver(
     try {
       res = await fetch(`${baseUrl}/agents/${agentId}`, {
         headers: { Authorization: `Bearer ${adminApiKey}` },
+        signal: AbortSignal.timeout(5000),
       });
     } catch {
       return [];
