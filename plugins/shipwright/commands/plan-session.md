@@ -240,8 +240,7 @@ Flag a task as HITL if its title or description contains any of the following ke
 terraform, helm, kubectl, GKE, GCP, deploy (image/cluster context),
 container registry, image push, certificate, Cloud SQL, kube-context,
 rollout, helm upgrade, kubectl apply, PAT, personal access token,
-provision secret, GitHub settings, branch protection, allow_auto_merge,
-GitHub App, app-id, create-github-app-token, private-key (in workflow context)
+provision secret, GitHub settings, branch protection, allow_auto_merge
 ```
 
 ### Judgment Step
@@ -251,6 +250,8 @@ Even without a keyword match, flag the task HITL if it fundamentally requires:
 - Provisioning or rotating a credential, secret, or API key
 - Approving a privileged workflow that requires human authorization
 - Any action that cannot be expressed as a CLI command the agent can run
+
+**CI workflow secret scan**: if a task adds or modifies a CI workflow file, extract every `${{ secrets.* }}` reference in the changed file and check whether each secret name already appears in other workflow files in the repo. Any secret that is net-new — not referenced anywhere else — requires a human to provision it. Flag the task HITL and list the new secret names in the `## Human steps` section.
 
 Apply judgment: if the task description implies "someone must click approve in the console" or "create a secret in 1Password," it's HITL regardless of the keywords present.
 
