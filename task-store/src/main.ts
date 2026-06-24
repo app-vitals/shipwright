@@ -87,7 +87,7 @@ async function startServer(): Promise<void> {
       ? createScopeResolver(agentsServiceUrl, adminApiKey)
       : undefined;
 
-  if (agentsServiceUrl) {
+  if (scopeResolver) {
     console.log(
       `[task-store] scope resolver configured (${agentsServiceUrl})`,
     );
