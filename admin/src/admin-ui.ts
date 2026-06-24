@@ -1470,7 +1470,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     const agent = c.req.query("agent") ?? undefined;
     const error = c.req.query("error") ?? undefined;
     const pageRaw = c.req.query("page");
-    const page = pageRaw ? Math.max(1, Number.parseInt(pageRaw, 10)) : 1;
+    const page = pageRaw ? Math.max(1, Number.parseInt(pageRaw, 10) || 1) : 1;
     const limit = 50;
     const offset = (page - 1) * limit;
 

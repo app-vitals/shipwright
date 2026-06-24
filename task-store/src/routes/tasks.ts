@@ -89,9 +89,9 @@ export function createTasksRoutes(
       claimedBy: c.req.query("claimedBy"),
       pr: prRaw !== undefined ? Number.parseInt(prRaw, 10) : undefined,
       branch: c.req.query("branch"),
-      limit: limitRaw !== undefined ? Number.parseInt(limitRaw, 10) : undefined,
+      limit: limitRaw !== undefined ? (Number.parseInt(limitRaw, 10) || undefined) : undefined,
       offset:
-        offsetRaw !== undefined ? Number.parseInt(offsetRaw, 10) : undefined,
+        offsetRaw !== undefined ? (Number.parseInt(offsetRaw, 10) || undefined) : undefined,
     });
     return c.json(result, 200);
   });
