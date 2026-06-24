@@ -291,7 +291,7 @@ HITL scan: no tasks require human steps
 
 ## Step 6: Write to Queue
 
-Once the task breakdown is approved, write each task to the task store via HTTP API calls.
+Once the task breakdown is approved, write the plan to disk and post tasks to the task store.
 
 ### Bundle Model Inheritance (Pre-Write)
 
@@ -305,69 +305,21 @@ A task on its own branch is unaffected. This ensures a `haiku`-scored task bundl
 
 ---
 
-**Step 6a — Read owner/repo from the task store:**
+**Step 6a — Save the plan to disk:**
 
-```bash
-SHIPWRIGHT_REPO_FULL=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" "$SHIPWRIGHT_TASK_STORE_URL/tasks/repo" | jq -r '.repo // empty')
-[ -z "$SHIPWRIGHT_REPO_FULL" ] && { echo 'ERROR: /tasks/repo returned no output — ensure the task store is configured with a repo' >&2; false; }
-SHIPWRIGHT_OWNER=$(echo "$SHIPWRIGHT_REPO_FULL" | cut -d'/' -f1)
-SHIPWRIGHT_REPO=$(echo "$SHIPWRIGHT_REPO_FULL" | cut -d'/' -f2)
-```
+Write the full plan markdown (session name, technical design, and task table from Steps 4–5) to `planning/{session}/PLAN.md`. Create the directory if it doesn't exist.
 
-If `SHIPWRIGHT_REPO_FULL` is empty (i.e. `/tasks/repo` returned no output), stop immediately. Ensure the task store service is configured with a repo before retrying.
+This mirrors the PRD pattern (`planning/{session}/PRODUCT-SPEC.md`) and keeps the plan co-located with the spec that produced it.
 
-**Step 6b — Create a parent GitHub Issue for the plan:**
+**Step 6b — Write tasks to the store:**
 
-The parent issue body is the full plan markdown from Steps 4 and 5: the session name, technical design, and task table. Because the body contains newlines, backticks, and double-quotes, it must be written to a temp file first — passing it inline via `--body "..."` will break.
-
-Write the plan body to a temp file, then create the issue using `--body-file`:
-
-```bash
-# Write the full plan markdown to a temp file
-cat > /tmp/plan-body.md << 'PLANEOF'
-{full plan markdown — session name, technical design summary, and task table from Steps 4–5}
-PLANEOF
-
-# Create the parent issue using --body-file to safely handle newlines, quotes, and backticks
-PARENT_ISSUE_URL=$(gh issue create \
-  --repo "$SHIPWRIGHT_OWNER/$SHIPWRIGHT_REPO" \
-  --title "[plan] {session}" \
-  --body-file /tmp/plan-body.md)
-
-# Extract the issue number from the URL (e.g. https://github.com/owner/repo/issues/42 → 42)
-PARENT_ISSUE_NUMBER=$(echo "$PARENT_ISSUE_URL" | grep -o '[0-9]*$')
-
-# Create session label (idempotent) and apply to parent plan issue
-gh label create "session:{session}" --color 0075CA --force \
-  --repo "$SHIPWRIGHT_OWNER/$SHIPWRIGHT_REPO"
-gh issue edit "$PARENT_ISSUE_NUMBER" \
-  --repo "$SHIPWRIGHT_OWNER/$SHIPWRIGHT_REPO" \
-  --add-label "session:{session}"
-```
-
-If `PARENT_ISSUE_URL` is empty after the `gh issue create` call, stop immediately — do not write tasks. Print:
-
-```
-✗ Failed to create parent plan issue — cannot proceed. Check repo permissions and try again.
-```
-
-If `PARENT_ISSUE_NUMBER` is empty (URL was returned but the number could not be parsed), stop immediately — do not write tasks. Print:
-
-```
-✗ Could not extract issue number from URL: {PARENT_ISSUE_URL} — cannot proceed.
-```
-
-The content between `PLANEOF` markers should be the verbatim markdown you produced in Steps 4 and 5 — the design section and the full task table.
-
-**Step 6c — Write tasks with source referencing the parent issue:**
-
-Write the tasks to `/tmp/new-tasks-{session}.json`. Set `source` to `"gh:{owner}/{repo}#{parent_number}"` on every task — this links each child task issue back to the parent plan issue:
+Write the tasks to `/tmp/new-tasks-{session}.json`. Set `source` to `"planning/{session}/PLAN.md"` on every task — this links each task back to the plan on disk:
 
 ```json
 [
   {
     "id": "{PREFIX}-{N}.{M}",
-    "source": "gh:{owner}/{repo}#{parent_issue_number}",
+    "source": "planning/{session}/PLAN.md",
     "session": "{session}",
     "repo": "{repo}",
     "title": "...",
@@ -389,26 +341,15 @@ Write the tasks to `/tmp/new-tasks-{session}.json`. Set `source` to `"gh:{owner}
 
 Set `"hitl": true` (and include the `## Human steps` section in `description`) for any task flagged in Step 5.5.
 
-To inject the source field into an already-assembled tasks array using `jq`:
-
-```bash
-PARENT_REF="gh:$SHIPWRIGHT_OWNER/$SHIPWRIGHT_REPO#$PARENT_ISSUE_NUMBER"
-jq --arg src "$PARENT_REF" \
-  'map(. + {"source": $src})' \
-  /tmp/new-tasks-{session}.json > /tmp/new-tasks-{session}-linked.json
-```
-
-**Step 6d — Append tasks to the store:**
+Post the tasks to the store:
 
 ```bash
 curl -sf -X POST \
   -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   -H "Content-Type: application/json" \
   "$SHIPWRIGHT_TASK_STORE_URL/tasks/bulk" \
-  --data-binary @/tmp/new-tasks-{session}-linked.json | jq .
+  --data-binary @/tmp/new-tasks-{session}.json | jq .
 ```
-
-The `source` field on each task links back to the parent plan issue for traceability.
 
 ---
 
@@ -419,8 +360,8 @@ Confirm with:
 QUEUED
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Session: {session}
+Plan: planning/{session}/PLAN.md
 Tasks queued: {count}
-Parent issue: https://github.com/{owner}/{repo}/issues/{parent_number}
 
 READY TO START (no dependencies):
 {list tasks with no deps}
