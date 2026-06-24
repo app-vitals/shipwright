@@ -7,6 +7,12 @@ The `shipwright` chart (`charts/shipwright`) is published to a
 the chart and commits the artifact **directly to the `gh-pages` branch** — it
 creates **no GitHub Releases**.
 
+> **Note:** The marketing site (`site/`) also deploys to the same `gh-pages`
+> branch via the [`deploy-site.yml`](../.github/workflows/deploy-site.yml)
+> workflow. Both the Helm repository and the site coexist on `gh-pages` — the
+> site deploy uses `clean-exclude` to preserve Helm artifacts (`index.yaml` and
+> `*.tgz` files) when clearing stale content.
+
 On a push to `main` the publish job:
 
 1. Checks out `main` and the `gh-pages` branch (side by side).
