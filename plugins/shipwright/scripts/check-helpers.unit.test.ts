@@ -459,7 +459,7 @@ describe("createTaskStoreClient query()", () => {
   const FAKE_TASK = {
     id: "T-1",
     title: "Do the thing",
-    status: "pending",
+    status: "pending" as const,
   };
 
   let savedEnv: { url?: string; token?: string };
@@ -491,11 +491,11 @@ describe("createTaskStoreClient query()", () => {
 
   test("handles bare Task[] response (returned by ?ready=true)", async () => {
     mock.module("node:fetch", () => ({}));
-    globalThis.fetch = async () =>
+    globalThis.fetch = (async () =>
       ({
         ok: true,
         json: async () => [FAKE_TASK],
-      }) as Response;
+      }) as Response) as unknown as typeof fetch;
 
     const client = createTaskStoreClient();
     const result = await client.query(new URLSearchParams({ ready: "true" }));
@@ -503,7 +503,7 @@ describe("createTaskStoreClient query()", () => {
   });
 
   test("unwraps paginated { tasks } envelope (returned by ?status=...)", async () => {
-    globalThis.fetch = async () =>
+    globalThis.fetch = (async () =>
       ({
         ok: true,
         json: async () => ({
@@ -512,7 +512,7 @@ describe("createTaskStoreClient query()", () => {
           limit: 50,
           offset: 0,
         }),
-      }) as Response;
+      }) as Response) as unknown as typeof fetch;
 
     const client = createTaskStoreClient();
     const result = await client.query(
@@ -522,11 +522,11 @@ describe("createTaskStoreClient query()", () => {
   });
 
   test("returns empty array when paginated envelope has empty tasks list", async () => {
-    globalThis.fetch = async () =>
+    globalThis.fetch = (async () =>
       ({
         ok: true,
         json: async () => ({ tasks: [], total: 0, limit: 50, offset: 0 }),
-      }) as Response;
+      }) as Response) as unknown as typeof fetch;
 
     const client = createTaskStoreClient();
     const result = await client.query(
@@ -536,11 +536,11 @@ describe("createTaskStoreClient query()", () => {
   });
 
   test("throws on unrecognised response shape", async () => {
-    globalThis.fetch = async () =>
+    globalThis.fetch = (async () =>
       ({
         ok: true,
         json: async () => ({ unexpected: true }),
-      }) as Response;
+      }) as Response) as unknown as typeof fetch;
 
     const client = createTaskStoreClient();
     await expect(
