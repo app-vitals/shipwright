@@ -10,11 +10,17 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
-## [1.6.23] - 2026-06-24
+## [1.6.24] - 2026-06-24
 
 ### Changed
 
 - Replace chart-releaser with direct gh-pages packaging for Helm chart releases (REL-2.2)
+
+## [1.6.23] - 2026-06-24
+
+### Changed
+
+- auto-bump to chart v1.6.23 triggered by release tag `metrics-v0.81.0`
 
 ## [1.6.22] - 2026-06-24
 
