@@ -240,7 +240,8 @@ Flag a task as HITL if its title or description contains any of the following ke
 terraform, helm, kubectl, GKE, GCP, deploy (image/cluster context),
 container registry, image push, certificate, Cloud SQL, kube-context,
 rollout, helm upgrade, kubectl apply, PAT, personal access token,
-provision secret, GitHub settings, branch protection, allow_auto_merge
+provision secret, GitHub settings, branch protection, allow_auto_merge,
+GitHub App, app-id, create-github-app-token, private-key (in workflow context)
 ```
 
 ### Judgment Step
