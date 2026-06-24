@@ -74,7 +74,15 @@ export const PatchAgentBodySchema = z
   .object({
     selfHosted: z.boolean().optional().openapi({ example: false }),
     repos: z
-      .array(z.string())
+      .array(
+        z.string().refine(
+          (r) => {
+            const p = r.split("/");
+            return p.length === 2 && p[0].length > 0 && p[1].length > 0;
+          },
+          { message: "each repo must be in org/repo format" },
+        ),
+      )
       .optional()
       .openapi({ example: ["my-org/my-repo"] }),
   })

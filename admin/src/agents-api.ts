@@ -730,19 +730,6 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     const { id: agentId } = c.req.valid("param");
     const body = c.req.valid("json");
 
-    // Validate repos format: each entry must be "org/repo" (exactly one /, both sides non-empty)
-    if (body.repos !== undefined) {
-      const invalid = body.repos.filter((r) => {
-        const parts = r.split("/");
-        return !(parts.length === 2 && parts[0].length > 0 && parts[1].length > 0);
-      });
-      if (invalid.length > 0) {
-        throw new BadRequestError(
-          `invalid repos format (expected org/repo): ${invalid.join(", ")}`,
-        );
-      }
-    }
-
     const existing = await prisma.agent.findUnique({
       where: { id: agentId },
       select: { id: true },
