@@ -73,6 +73,10 @@ export const CreateAgentBodySchema = z
 export const PatchAgentBodySchema = z
   .object({
     selfHosted: z.boolean().optional().openapi({ example: false }),
+    repos: z
+      .array(z.string())
+      .optional()
+      .openapi({ example: ["app-vitals/vitals-os"] }),
   })
   .openapi("PatchAgentBody");
 

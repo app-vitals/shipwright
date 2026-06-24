@@ -195,4 +195,29 @@ describeOrSkip("admin CRUD API (integration)", () => {
     expect(listedToken.token).toBeUndefined();
     expect(listedToken.id).toBe(dbRecord?.id);
   });
+
+  // ─── repos field round-trip ───────────────────────────────────────────────────
+
+  it("PATCH /agents/:id with repos sets the field; GET /agents/:id returns it", async () => {
+    // PATCH to set repos
+    const patchRes = await app.request(`/agents/${agentId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ repos: ["app-vitals/vitals-os"] }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(patchRes.status).toBe(200);
+    const patchBody = await patchRes.json();
+    expect(patchBody.repos).toEqual(["app-vitals/vitals-os"]);
+
+    // GET to confirm persisted value
+    const getRes = await app.request(`/agents/${agentId}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(getRes.status).toBe(200);
+    const getBody = await getRes.json();
+    expect(getBody.repos).toEqual(["app-vitals/vitals-os"]);
+  });
 });
