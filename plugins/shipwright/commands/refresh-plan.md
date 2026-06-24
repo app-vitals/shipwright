@@ -22,10 +22,10 @@ Follow all steps in order.
 
 ```bash
 curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks?session=$ARGUMENTS" | jq .
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?session=$ARGUMENTS" | jq '.tasks'
 ```
 
-If the result is a non-empty JSON array, use these live statuses to build the status summary:
+If the result is a non-empty array (unwrapped from `.tasks`), use these live statuses to build the status summary:
 - Map task_store statuses: `pending` → "not started", `in_progress` → "in-progress", `pr_open`/`approved`/`merged`/`deployed`/`done` → "done", `blocked` → "blocked", `cancelled` → "skipped"
 
 If the result is empty (`[]`), fall back to parsing the Appendix markers in the planning doc ([ ] = not started, [🔨] = in-progress, [x] = done, [⏸] = blocked, [—] = skipped).
