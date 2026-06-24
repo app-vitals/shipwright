@@ -135,8 +135,14 @@ function fakeTaskService(
   } = {},
 ): TaskServiceLike {
   return {
-    async list() {
-      return opts.listResult ?? [];
+    async list(filters?) {
+      const tasks = opts.listResult ?? [];
+      return {
+        tasks,
+        total: tasks.length,
+        limit: filters?.limit ?? 50,
+        offset: filters?.offset ?? 0,
+      };
     },
     async listReady() {
       return opts.listReadyResult ?? [];
@@ -461,7 +467,7 @@ describe("task-store API (smoke)", () => {
       ...fakeTaskService(),
       async list(opts?) {
         capturedAssignees.push(opts?.assignee);
-        return [];
+        return { tasks: [], total: 0, limit: 50, offset: 0 };
       },
     };
 

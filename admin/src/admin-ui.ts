@@ -187,7 +187,12 @@ export interface AdminUIDeps {
    * Fetch tasks from the task-store service. If absent, the tasks page renders
    * in degraded mode (empty table + yellow notice) rather than returning 500.
    */
-  fetchTaskStoreTasks?: (params: URLSearchParams) => Promise<TaskItem[]>;
+  fetchTaskStoreTasks?: (params: URLSearchParams) => Promise<{
+    tasks: TaskItem[];
+    total: number;
+    limit: number;
+    offset: number;
+  }>;
   /**
    * Fetch a single task by ID from the task-store service. If absent, the
    * detail route redirects back to the list.
@@ -1452,10 +1457,22 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   app.get("/admin/tasks", requireAuth, async (c) => {
     if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
     const status = c.req.query("status") ?? undefined;
+    const stateRaw = c.req.query("state");
+    // Default to "open" when neither state nor status is provided.
+    const state: "open" | "closed" | undefined =
+      stateRaw === "open" || stateRaw === "closed"
+        ? stateRaw
+        : status
+          ? undefined
+          : "open";
     const session = c.req.query("session") ?? undefined;
     const repo = c.req.query("repo") ?? undefined;
     const agent = c.req.query("agent") ?? undefined;
     const error = c.req.query("error") ?? undefined;
+    const pageRaw = c.req.query("page");
+    const page = pageRaw ? Math.max(1, Number.parseInt(pageRaw, 10)) : 1;
+    const limit = 50;
+    const offset = (page - 1) * limit;
 
     // When filtering by agent name, resolve matching IDs upfront so we can
     // filter tasks client-side (task store only supports a single assignee ID).
@@ -1468,6 +1485,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }
 
     let tasks: TaskItem[] = [];
+    let total = 0;
     let degraded = false;
 
     if (!fetchTaskStoreTasks) {
@@ -1475,10 +1493,17 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     } else {
       const params = new URLSearchParams();
       if (status) params.set("status", status);
+      if (state) params.set("state", state);
       if (session) params.set("session", session);
       if (repo) params.set("repo", repo);
+      // Agent-name filtering is done client-side, so we fetch a larger slice
+      // when an agent filter is active to avoid under-counting across pages.
+      params.set("limit", agentFilterIds !== null ? "500" : String(limit));
+      params.set("offset", agentFilterIds !== null ? "0" : String(offset));
       try {
-        tasks = await fetchTaskStoreTasks(params);
+        const result = await fetchTaskStoreTasks(params);
+        tasks = result.tasks;
+        total = result.total;
       } catch {
         degraded = true;
       }
@@ -1491,6 +1516,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
           (t.assignee && ids.has(t.assignee)) ||
           (t.claimedBy && ids.has(t.claimedBy)),
       );
+      total = tasks.length;
+      tasks = tasks.slice(offset, offset + limit);
     }
 
     const agentIds = [
@@ -1511,10 +1538,11 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     return html(
       renderTasksPage(
         tasks,
-        { status, session, repo, agent },
+        { status, state, session, repo, agent },
         degraded,
         c.var.userEmail,
         agentNames,
+        { total, limit, page },
         error ? { error } : undefined,
       ),
     );

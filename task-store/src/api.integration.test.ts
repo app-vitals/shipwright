@@ -230,6 +230,110 @@ describeOrSkip("task-store API (integration)", () => {
     expect(res.status).toBe(404);
   });
 
+  // ─── List response shape ───────────────────────────────────────────────────
+
+  it("GET /tasks returns { tasks, total, limit, offset }", async () => {
+    await createPendingTask("A");
+    await createPendingTask("B");
+    const res = await app.request("/tasks", { headers: auth() });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      tasks: unknown[];
+      total: number;
+      limit: number;
+      offset: number;
+    };
+    expect(Array.isArray(body.tasks)).toBe(true);
+    expect(body.total).toBe(2);
+    expect(body.limit).toBe(50);
+    expect(body.offset).toBe(0);
+  });
+
+  // ─── ?state filter ─────────────────────────────────────────────────────────
+
+  it("GET /tasks?state=open returns only active statuses", async () => {
+    await createPendingTask("open-task");
+    await prisma.task.create({ data: { title: "done-task", status: "done" } });
+    await prisma.task.create({
+      data: { title: "cancelled-task", status: "cancelled" },
+    });
+
+    const res = await app.request("/tasks?state=open", { headers: auth() });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      tasks: Array<{ title: string }>;
+      total: number;
+    };
+    expect(body.total).toBe(1);
+    expect(body.tasks.map((t) => t.title)).toContain("open-task");
+    expect(body.tasks.map((t) => t.title)).not.toContain("done-task");
+  });
+
+  it("GET /tasks?state=closed returns only terminal statuses", async () => {
+    await createPendingTask("open-task");
+    await prisma.task.create({
+      data: { title: "merged-task", status: "merged" },
+    });
+    await prisma.task.create({
+      data: { title: "deployed-task", status: "deployed" },
+    });
+
+    const res = await app.request("/tasks?state=closed", { headers: auth() });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      tasks: Array<{ title: string }>;
+      total: number;
+    };
+    expect(body.total).toBe(2);
+    const titles = body.tasks.map((t) => t.title);
+    expect(titles).toContain("merged-task");
+    expect(titles).toContain("deployed-task");
+    expect(titles).not.toContain("open-task");
+  });
+
+  // ─── Pagination ────────────────────────────────────────────────────────────
+
+  it("GET /tasks?limit=2&offset=0 returns first page", async () => {
+    await createPendingTask("T1");
+    await createPendingTask("T2");
+    await createPendingTask("T3");
+
+    const res = await app.request("/tasks?limit=2&offset=0", {
+      headers: auth(),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      tasks: unknown[];
+      total: number;
+      limit: number;
+      offset: number;
+    };
+    expect(body.total).toBe(3);
+    expect(body.tasks.length).toBe(2);
+    expect(body.limit).toBe(2);
+    expect(body.offset).toBe(0);
+  });
+
+  it("GET /tasks?limit=2&offset=2 returns second page", async () => {
+    await createPendingTask("T1");
+    await createPendingTask("T2");
+    await createPendingTask("T3");
+
+    const res = await app.request("/tasks?limit=2&offset=2", {
+      headers: auth(),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      tasks: unknown[];
+      total: number;
+      limit: number;
+      offset: number;
+    };
+    expect(body.total).toBe(3);
+    expect(body.tasks.length).toBe(1);
+    expect(body.offset).toBe(2);
+  });
+
   // ─── ready=true filter ─────────────────────────────────────────────────────
 
   it("GET /tasks?ready=true returns only pending tasks with satisfied deps", async () => {

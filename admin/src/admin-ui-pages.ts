@@ -879,10 +879,21 @@ export function renderProvisionPasteForm(
 
 export function renderTasksPage(
   tasks: TaskItem[],
-  filters: { status?: string; session?: string; repo?: string; agent?: string },
+  filters: {
+    status?: string;
+    state?: "open" | "closed";
+    session?: string;
+    repo?: string;
+    agent?: string;
+  },
   degraded: boolean,
   userName: string,
   agentNames: Record<string, string> = {},
+  pagination: { total: number; limit: number; page: number } = {
+    total: 0,
+    limit: 50,
+    page: 1,
+  },
   opts?: { error?: string },
 ): string {
   const errorHtml = opts?.error
@@ -892,6 +903,15 @@ export function renderTasksPage(
   const degradedHtml = degraded
     ? `<div class="alert alert-warning">Task store unavailable — data shown may be stale or empty.</div>`
     : "";
+
+  const statusBadgeClass = (s: string) => {
+    if (s === "in_progress" || s === "pr_open" || s === "approved")
+      return "badge-blue";
+    if (s === "done" || s === "deployed" || s === "merged")
+      return "badge-green";
+    if (s === "blocked" || s === "cancelled") return "badge-red";
+    return "badge-gray";
+  };
 
   const rows =
     tasks.length === 0
@@ -905,7 +925,7 @@ export function renderTasksPage(
             return `<tr>
     <td class="mono" style="font-size:11px"><a href="/admin/tasks/${escapeHtml(t.id)}" style="color:#6366f1;text-decoration:none" title="View details">${escapeHtml(t.id)}</a></td>
     <td><a href="/admin/tasks/${escapeHtml(t.id)}" style="color:inherit;text-decoration:none">${escapeHtml(t.title)}</a></td>
-    <td><span class="badge ${t.status === "in_progress" ? "badge-blue" : t.status === "done" ? "badge-green" : "badge-gray"}">${escapeHtml(t.status)}</span></td>
+    <td><span class="badge ${statusBadgeClass(t.status)}">${escapeHtml(t.status)}</span></td>
     <td style="font-size:12px">${agentCell}</td>
     <td class="mono" style="font-size:11px">${t.session ? escapeHtml(t.session) : '<span style="color:#9ca3af">—</span>'}</td>
     <td class="mono" style="font-size:11px">${t.repo ? escapeHtml(t.repo) : '<span style="color:#9ca3af">—</span>'}</td>
@@ -920,21 +940,76 @@ export function renderTasksPage(
           })
           .join("\n");
 
+  // State toggle params (preserve other filters, reset page)
+  const makeStateParams = (newState: string) => {
+    const p = new URLSearchParams();
+    if (newState !== "open") p.set("state", newState);
+    if (filters.session) p.set("session", filters.session);
+    if (filters.repo) p.set("repo", filters.repo);
+    if (filters.agent) p.set("agent", filters.agent);
+    const qs = p.toString();
+    return qs ? `?${qs}` : "";
+  };
+
+  const activeState = filters.state ?? "open";
+  const stateToggle = `
+    <div style="display:flex;gap:0;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;width:fit-content">
+      <a href="/admin/tasks${makeStateParams("open")}"
+         style="padding:5px 14px;font-size:12px;text-decoration:none;${activeState === "open" ? "background:#6366f1;color:#fff;font-weight:600" : "background:#fff;color:#374151"}">Open</a>
+      <a href="/admin/tasks${makeStateParams("closed")}"
+         style="padding:5px 14px;font-size:12px;text-decoration:none;border-left:1px solid #e5e7eb;${activeState === "closed" ? "background:#6366f1;color:#fff;font-weight:600" : "background:#fff;color:#374151"}">Closed</a>
+    </div>`;
+
   const statusOptions = [
     "",
     "pending",
     "in_progress",
     "pr_open",
     "approved",
+    "merged",
     "done",
+    "deploying",
+    "deployed",
     "blocked",
     "cancelled",
   ]
     .map(
       (s) =>
-        `<option value="${escapeHtml(s)}" ${filters.status === s ? "selected" : ""}>${s === "" ? "All statuses" : escapeHtml(s)}</option>`,
+        `<option value="${escapeHtml(s)}" ${filters.status === s ? "selected" : ""}>${s === "" ? "Any status" : escapeHtml(s)}</option>`,
     )
     .join("");
+
+  // Pagination
+  const totalPages = Math.max(
+    1,
+    Math.ceil(pagination.total / pagination.limit),
+  );
+  const page = pagination.page;
+  const makePageUrl = (p: number) => {
+    const params = new URLSearchParams();
+    if (filters.status) params.set("status", filters.status);
+    else if (filters.state && filters.state !== "open")
+      params.set("state", filters.state);
+    if (filters.session) params.set("session", filters.session);
+    if (filters.repo) params.set("repo", filters.repo);
+    if (filters.agent) params.set("agent", filters.agent);
+    if (p > 1) params.set("page", String(p));
+    const qs = params.toString();
+    return `/admin/tasks${qs ? `?${qs}` : ""}`;
+  };
+
+  const from = pagination.total === 0 ? 0 : (page - 1) * pagination.limit + 1;
+  const to = Math.min(page * pagination.limit, pagination.total);
+  const paginationHtml =
+    pagination.total === 0
+      ? ""
+      : `<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0 0;font-size:12px;color:#6b7280">
+      <span>${from}–${to} of ${pagination.total}</span>
+      <div style="display:flex;gap:4px">
+        ${page > 1 ? `<a href="${makePageUrl(page - 1)}" class="btn btn-secondary" style="font-size:11px;padding:3px 10px">← Prev</a>` : ""}
+        ${page < totalPages ? `<a href="${makePageUrl(page + 1)}" class="btn btn-secondary" style="font-size:11px;padding:3px 10px">Next →</a>` : ""}
+      </div>
+    </div>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -944,19 +1019,23 @@ export function renderTasksPage(
   <title>Tasks — Shipwright Admin</title>
   <style>${baseStyles()}
     .badge-blue { background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe; }
+    .badge-green { background:#dcfce7;color:#166534;border:1px solid #bbf7d0; }
+    .badge-red { background:#fee2e2;color:#991b1b;border:1px solid #fecaca; }
     .alert-warning { background:#fefce8;color:#854d0e;border:1px solid #fde047;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:13px; }
   </style>
 </head>
 <body>
   ${renderAdminToolbar(userName, "/admin/tasks")}
   <div class="vos-page">
-    <div class="page-header">
-      <h1 class="page-title">Tasks</h1>
+    <div class="page-header" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+      <h1 class="page-title" style="margin:0">Tasks</h1>
+      ${stateToggle}
     </div>
     ${errorHtml}
     ${degradedHtml}
     <div class="card" style="margin-bottom:16px">
       <form method="GET" action="/admin/tasks" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+        ${filters.state && !filters.status ? `<input type="hidden" name="state" value="${escapeHtml(filters.state)}" />` : ""}
         <div class="form-group" style="margin-bottom:0">
           <label class="form-label" style="font-size:11px">Status</label>
           <select name="status" class="form-input" style="font-size:12px;padding:4px 8px">${statusOptions}</select>
@@ -993,6 +1072,7 @@ export function renderTasksPage(
           ${rows}
         </tbody>
       </table>
+      ${paginationHtml}
     </div>
   </div>
 </body>

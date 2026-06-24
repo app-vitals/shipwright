@@ -17,20 +17,50 @@ import { ConflictError, NotFoundError } from "./errors.ts";
 import type { Prisma, PrismaClient, Task } from "./index.ts";
 import { resolveReadyTasks } from "./ready.ts";
 
+/** Terminal statuses — a task in one of these is considered "closed". */
+export const CLOSED_STATUSES = [
+  "merged",
+  "done",
+  "deploying",
+  "deployed",
+  "cancelled",
+] as const;
+
+/** Open statuses — everything not closed. */
+export const OPEN_STATUSES = [
+  "pending",
+  "in_progress",
+  "pr_open",
+  "approved",
+  "blocked",
+] as const;
+
 /** Filters accepted by TaskService.list. */
 export interface TaskListFilters {
   status?: string;
+  /** High-level lifecycle filter: "open" = active, "closed" = terminal. */
+  state?: "open" | "closed";
   session?: string;
   repo?: string;
   assignee?: string;
   claimedBy?: string;
   pr?: number;
   branch?: string;
+  limit?: number;
+  offset?: number;
+}
+
+/** Paginated list result from TaskService.list. */
+export interface TaskListResult {
+  tasks: Task[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 /** The subset of TaskService the routes depend on. */
 export interface TaskServiceLike {
-  list(filters?: TaskListFilters): Promise<Task[]>;
+  list(filters?: TaskListFilters): Promise<TaskListResult>;
   listReady(agentId?: string): Promise<Task[]>;
   get(id: string): Promise<Task | null>;
   create(data: Prisma.TaskCreateInput): Promise<Task>;
@@ -54,19 +84,32 @@ export class TaskService implements TaskServiceLike {
 
   // ─── Reads ─────────────────────────────────────────────────────────────────
 
-  async list(filters: TaskListFilters = {}): Promise<Task[]> {
+  async list(filters: TaskListFilters = {}): Promise<TaskListResult> {
     const where: Prisma.TaskWhereInput = {};
     if (filters.status) where.status = filters.status as Task["status"];
+    if (filters.state === "open") where.status = { in: [...OPEN_STATUSES] };
+    if (filters.state === "closed") where.status = { in: [...CLOSED_STATUSES] };
     if (filters.session) where.session = filters.session;
     if (filters.repo) where.repo = filters.repo;
     if (filters.assignee) where.assignee = filters.assignee;
     if (filters.claimedBy) where.claimedBy = filters.claimedBy;
     if (filters.pr !== undefined) where.pr = filters.pr;
     if (filters.branch !== undefined) where.branch = filters.branch;
-    return this.prisma.task.findMany({
-      where,
-      orderBy: { createdAt: "asc" },
-    });
+
+    const limit = filters.limit ?? 50;
+    const offset = filters.offset ?? 0;
+
+    const [tasks, total] = await this.prisma.$transaction([
+      this.prisma.task.findMany({
+        where,
+        orderBy: { createdAt: "asc" },
+        take: limit,
+        skip: offset,
+      }),
+      this.prisma.task.count({ where }),
+    ]);
+
+    return { tasks, total, limit, offset };
   }
 
   /**
