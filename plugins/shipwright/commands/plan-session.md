@@ -102,10 +102,12 @@ Example flags:
 - **DB**: dropping or renaming a table or column — who reads or writes it?
 - **API**: removing or renaming an endpoint or response field — who calls it?
 - **Client/types**: removing or renaming a method or interface — who imports it?
+- **CI/workflow auth identity**: replacing a credential type (e.g. a personal access token with a machine token, or vice versa) changes the actor identity for any PR creation, commit, or merge step in that workflow. Actor identity determines how platform policies apply — code ownership requirements, branch protection rules, auto-merge eligibility. If a workflow creates PRs or triggers automated merges, verify the new actor satisfies those requirements.
+- **Published artifact location or format**: if a task changes *how* something is packaged or distributed — moving to a different registry or host, switching the publish mechanism, renaming the package — search for downstream consumers of the old location. Consumers often live in other repos and won't appear in a local grep. If cross-repo access is limited, flag it explicitly: "⚠ This changes where/how {artifact} is published — downstream consumers of the old location will silently break."
 
 List every consumer found. A task that drops the old interface while leaving consumers on the old code creates a broken intermediate state that cannot be deployed safely.
 
-Additions (new tables, nullable columns, new endpoints, new optional fields, new methods) are safe. Flag only renames and removals.
+Additions (new tables, nullable columns, new endpoints, new optional fields, new methods) are safe. Flag only renames, removals, and substitutions that change behavior.
 
 ---
 
