@@ -13,11 +13,17 @@
 
 export interface TaskStoreProvisioningClient {
   /**
-   * Mint a new task-store token with the given label. Returns the token `id`
-   * (needed to revoke it on rollback) and the `rawToken` (stored in the agent
-   * Secret and later used by the agent to authenticate with the task store).
+   * Mint a new task-store token. Returns the token `id` (needed to revoke it
+   * on rollback) and the `rawToken` (stored in the agent Secret and later used
+   * by the agent to authenticate with the task store).
+   *
+   * Pass `agentId` to create a scoped agent token — the task store will scope
+   * all reads and writes to tasks assigned to this agent. Omit for admin tokens.
    */
-  mintToken(label: string): Promise<{ id: string; rawToken: string }>;
+  mintToken(
+    label: string,
+    agentId?: string,
+  ): Promise<{ id: string; rawToken: string }>;
 
   /**
    * Revoke a previously-minted task-store token. Called as part of the rollback
@@ -46,14 +52,17 @@ export class HttpTaskStoreProvisioningClient
     private readonly adminToken: string,
   ) {}
 
-  async mintToken(label: string): Promise<{ id: string; rawToken: string }> {
+  async mintToken(
+    label: string,
+    agentId?: string,
+  ): Promise<{ id: string; rawToken: string }> {
     const res = await fetch(`${this.baseUrl}/tokens`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${this.adminToken}`,
       },
-      body: JSON.stringify({ label }),
+      body: JSON.stringify({ label, ...(agentId ? { agentId } : {}) }),
     });
     if (!res.ok) {
       throw new Error(
@@ -89,7 +98,10 @@ export class HttpTaskStoreProvisioningClient
 export class NoopTaskStoreProvisioningClient
   implements TaskStoreProvisioningClient
 {
-  async mintToken(_label: string): Promise<{ id: string; rawToken: string }> {
+  async mintToken(
+    _label: string,
+    _agentId?: string,
+  ): Promise<{ id: string; rawToken: string }> {
     return { id: "", rawToken: "" };
   }
 

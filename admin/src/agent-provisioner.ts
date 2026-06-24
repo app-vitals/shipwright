@@ -226,6 +226,7 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
       if (this.config.taskStore) {
         const { id, rawToken } = await this.config.taskStore.mintToken(
           `agent:${agentId}`,
+          agentId,
         );
         tsTokenId = id;
         tsRawToken = rawToken;
