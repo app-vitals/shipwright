@@ -13,6 +13,7 @@ import {
   type CronJobItem,
   type MemberItem,
   type PluginItem,
+  type TaskItem,
   type TokenItem,
   type ToolItem,
   renderAgentDetailPage,
@@ -21,6 +22,7 @@ import {
   renderProvisionCompletePage,
   renderProvisionPasteForm,
   renderProvisionStartPage,
+  renderTasksPage,
 } from "./admin-ui-pages.ts";
 import { renderAdminToolbar } from "./admin-ui-styles.ts";
 
@@ -368,8 +370,8 @@ describe("renderAgentDetailPage — overview", () => {
       name: "O'Brien",
     };
     const html = renderAgentDetailPage(xssAgent, {}, [], [], [], [], [], USER_NAME, true);
-    // Agent name stored as a data attribute (safe in double-quoted HTML attribute context)
-    expect(html).toContain("data-agent-name=\"O'Brien\"");
+    // Agent name stored as a data attribute; single quotes are encoded as &#39; for defense-in-depth
+    expect(html).toContain("data-agent-name=\"O&#39;Brien\"");
     // No inline onsubmit with unescaped single quotes
     expect(html).not.toContain("onsubmit");
   });
@@ -1016,6 +1018,97 @@ describe("renderProvisionCompletePage", () => {
     });
     expect(html).not.toContain("<script>");
     expect(html).toContain("&lt;script&gt;");
+  });
+});
+
+// ─── renderTasksPage — row click navigation ──────────────────────────────────
+
+const TASK_ITEM: TaskItem = {
+  id: "TASK-1",
+  title: "Build the thing",
+  status: "in_progress",
+  session: "session-abc",
+  repo: "org/repo",
+  assignee: null,
+  claimedBy: null,
+};
+
+const TASK_ITEM_PENDING: TaskItem = {
+  id: "TASK-2",
+  title: "Plan the thing",
+  status: "pending",
+  session: null,
+  repo: null,
+  assignee: null,
+  claimedBy: null,
+};
+
+describe("renderTasksPage — row click navigation", () => {
+  function render(
+    tasks: TaskItem[] = [TASK_ITEM],
+    opts?: Parameters<typeof renderTasksPage>[6],
+  ): string {
+    return renderTasksPage(tasks, {}, false, USER_NAME, {}, { total: tasks.length, limit: 50, page: 1 }, opts);
+  }
+
+  // AC1: clicking anywhere on a task row navigates to the task detail page
+  test("each task row has a data-href that navigates to the task detail URL", () => {
+    const html = render([TASK_ITEM]);
+    expect(html).toContain(`data-href="/admin/tasks/${TASK_ITEM.id}"`);
+  });
+
+  test("data-href URL uses the escaped task id", () => {
+    const xssTask: TaskItem = { ...TASK_ITEM, id: "TASK-XSS" };
+    const html = render([xssTask]);
+    expect(html).toContain(`data-href="/admin/tasks/TASK-XSS"`);
+  });
+
+  test("data-href URL escapes single quotes in task id", () => {
+    const singleQuoteTask: TaskItem = { ...TASK_ITEM, id: "TASK-IT'S" };
+    const html = render([singleQuoteTask]);
+    // Single quote must be encoded as &#39; — raw ' in the attribute would break HTML parsing
+    expect(html).toContain(`data-href="/admin/tasks/TASK-IT&#39;S"`);
+    expect(html).not.toContain(`data-href="/admin/tasks/TASK-IT'S"`);
+  });
+
+  // AC2: cursor changes to pointer on row hover
+  test("task row has cursor:pointer style", () => {
+    const html = render([TASK_ITEM]);
+    // The <tr> element for a task row must carry cursor:pointer
+    expect(html).toMatch(/<tr[^>]*cursor:\s*pointer/);
+  });
+
+  // AC3: buttons/links within the row still handle their own click events
+  // The script block uses event delegation on data-href rows and skips clicks on
+  // A, BUTTON, FORM, INPUT elements — no inline stopPropagation needed.
+  test("row click handler script is present and delegates via data-href attribute", () => {
+    const html = render([TASK_ITEM]);
+    expect(html).toContain("data-href");
+    expect(html).toContain(`getAttribute("data-href")`);
+  });
+
+  test("Release button is still present for in_progress tasks", () => {
+    const html = render([TASK_ITEM]);
+    expect(html).toContain("Release");
+    expect(html).toContain(`/admin/tasks/${TASK_ITEM.id}/release`);
+  });
+
+  test("no Release button for non-in_progress tasks, but row is still navigable", () => {
+    const html = render([TASK_ITEM_PENDING]);
+    expect(html).not.toContain("Release");
+    expect(html).toContain(`data-href="/admin/tasks/${TASK_ITEM_PENDING.id}"`);
+  });
+
+  test("empty task list renders no clickable rows", () => {
+    const html = render([]);
+    expect(html).not.toContain("data-href=\"/admin/tasks/");
+    expect(html).toContain("No tasks found");
+  });
+
+  test("multiple tasks each get their own data-href pointing to their detail URL", () => {
+    const html = render([TASK_ITEM, TASK_ITEM_PENDING]);
+    expect(html).toContain(`data-href="/admin/tasks/${TASK_ITEM.id}"`);
+    expect(html).toContain(`data-href="/admin/tasks/${TASK_ITEM_PENDING.id}"`);
   });
 });
 

@@ -926,7 +926,7 @@ export function renderTasksPage(
             const agentCell = agentId
               ? escapeHtml(agentNames[agentId] ?? agentId)
               : '<span style="color:#9ca3af">—</span>';
-            return `<tr>
+            return `<tr data-href="/admin/tasks/${escapeHtml(t.id)}" style="cursor:pointer">
     <td class="mono" style="font-size:11px"><a href="/admin/tasks/${escapeHtml(t.id)}" style="color:#6366f1;text-decoration:none" title="View details">${escapeHtml(t.id)}</a></td>
     <td><a href="/admin/tasks/${escapeHtml(t.id)}" style="color:inherit;text-decoration:none">${escapeHtml(t.title)}</a></td>
     <td><span class="badge ${statusBadgeClass(t.status)}">${escapeHtml(t.status)}</span></td>
@@ -1080,6 +1080,18 @@ export function renderTasksPage(
       ${paginationHtml}
     </div>
   </div>
+  <script>
+    document.querySelectorAll("tr[data-href]").forEach(function(row) {
+      row.addEventListener("click", function(e) {
+        var target = e.target;
+        while (target && target !== row) {
+          if (target.tagName === "A" || target.tagName === "BUTTON" || target.tagName === "FORM" || target.tagName === "INPUT") return;
+          target = target.parentElement;
+        }
+        window.location.href = row.getAttribute("data-href");
+      });
+    });
+  </script>
 </body>
 </html>`;
 }
