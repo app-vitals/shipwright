@@ -39,8 +39,10 @@ on:
 
 # Queue concurrent bumps rather than cancelling them — if multiple tags land
 # at nearly the same time, each should produce its own chart bump PR. Using
-# cancel-in-progress: false ensures they queue up and run sequentially so
-# each run sees the version committed by the previous one.
+# cancel-in-progress: false ensures they queue up and run sequentially. The
+# "Wait for PR to merge" step at the end of the job holds the slot until the
+# merge actually lands on main, so the next queued run always reads the
+# post-merge chart version and computes a fresh increment.
 concurrency:
   group: chart-bump
   cancel-in-progress: false
@@ -92,19 +94,13 @@ jobs:
           echo "branch=${BRANCH}"       >> "$GITHUB_OUTPUT"
           echo "New chart version: ${NEW_VERSION} (branch: ${BRANCH})"
 
-      # Idempotency: if a PR for this exact chart version already exists
-      # (e.g. because two tags landed almost simultaneously), skip safely.
-      #
-      # Burst-collapse note: when multiple build tags push at nearly the same
-      # time, the concurrency group (cancel-in-progress: false) queues the runs
-      # and they execute sequentially. The first run opens chore/chart-vX.Y.Z
-      # and sets auto-merge. By the time the second run reaches this check, the
-      # branch already exists — it skips. This means a burst of N simultaneous
-      # tag pushes collapses to a single chart-version bump, not N bumps. This
-      # is intentional: the chart version is a monotonic counter tied to chart
-      # content changes, not to image releases. One PR per chart-content delta
-      # keeps the chart history readable and avoids a cascade of concurrent
-      # bump PRs from a coordinated multi-service release.
+      # Idempotency guard: if the branch for this exact chart version already
+      # exists on the remote, a prior run already opened the bump PR — skip.
+      # This handles the rare race where two runs slip past the concurrency
+      # group's ls-remote check before either has pushed (non-atomic window).
+      # With the "Wait for PR to merge" step holding the slot until the PR
+      # lands on main, this guard is only a safety net for true edge cases;
+      # under normal sequencing each run computes a distinct new version.
       - name: Check for existing bump branch
         id: idempotency
         env:
@@ -262,3 +258,34 @@ jobs:
           PR_URL="${{ steps.pr.outputs.pr_url }}"
           gh pr merge "$PR_URL" --auto --squash
           echo "Auto-merge enabled on ${PR_URL}"
+
+      # Hold the concurrency slot until the PR merges.
+      #
+      # Without this wait the workflow exits immediately after enabling auto-merge
+      # while the PR is still open. The next queued run then starts, checks out
+      # main (which still carries the pre-bump chart version), computes the same
+      # new-version branch name, finds the branch already exists, and silently
+      # skips — dropping that release's chart bump entirely (burst-collapse).
+      #
+      # By blocking here until the merge lands, we guarantee the next run always
+      # reads the post-merge chart version and computes a fresh increment.
+      # Timeout is 10 minutes; on expiry we warn but do not fail — the worst case
+      # is that a subsequent run may still encounter burst-collapse, which is the
+      # same behaviour as before this fix.
+      - name: Wait for PR to merge
+        if: steps.idempotency.outputs.skip != 'true' && steps.commit-push.outputs.push_skipped != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+        run: |
+          PR_URL="${{ steps.pr.outputs.pr_url }}"
+          echo "Waiting for ${PR_URL} to merge (up to 10 minutes)..."
+          for i in $(seq 1 60); do
+            STATE=$(gh pr view "$PR_URL" --json state --jq '.state' 2>/dev/null || echo "UNKNOWN")
+            if [ "$STATE" = "MERGED" ] || [ "$STATE" = "CLOSED" ]; then
+              echo "PR is ${STATE} — releasing concurrency slot."
+              exit 0
+            fi
+            echo "  attempt ${i}/60: state=${STATE}"
+            sleep 10
+          done
+          echo "WARNING: timed out after 10 minutes — next queued run may encounter burst-collapse."
