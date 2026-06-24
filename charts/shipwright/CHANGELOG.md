@@ -10,11 +10,17 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
-## [1.6.21] - 2026-06-24
+## [1.6.22] - 2026-06-24
 
 ### Changed
 
 - Add bare platform-name banned-string patterns and exclude planning dir from check-strings
+
+## [1.6.21] - 2026-06-24
+
+### Changed
+
+- auto-bump to chart v1.6.21 triggered by release tag `agent-v0.65.0`
 
 ## [1.6.20] - 2026-06-24
 
