@@ -37,6 +37,7 @@ Each `Task` in the response now includes a `blockedBy` array describing why the 
 
 `BlockedByEntry` is one of:
 - `{ type: "hitl" }` — the task has `hitl: true` and `hitlNotifiedAt` is null (awaiting human confirmation)
+- `{ type: "hitl", notified: true }` — notification was already sent (`hitlNotifiedAt` is set); the task is still excluded from `?ready=true` but no agent-actionable block remains
 - `{ type: "dependency"; id: string; status: string }` — a dependency task is not satisfied (see dependency satisfaction rules in `docs/task-store.md`)
 
 When `blockedBy` is empty, the task is ready to execute (assuming it has `status: pending`).
