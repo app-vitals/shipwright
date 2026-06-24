@@ -176,7 +176,6 @@ Branch statuses: `blocked`, `cancelled`, `deploying`, `deployed`
 | `POST` | `/tasks/:id/release` | Unclaim → `pending` |
 | `POST` | `/tasks/:id/complete` | Mark `done` |
 | `POST` | `/tasks/:id/fail` | Mark `blocked` |
-| `GET` | `/tasks/repo` | Resolve the canonical `owner/repo` for this store |
 
 ---
 
