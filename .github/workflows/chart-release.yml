@@ -1,20 +1,22 @@
 name: Chart Release
 
-# Publishes the Helm chart at charts/shipwright to a chart repository so it is
-# consumable via `helm repo add` (GitHub Pages, gh-pages branch).
+# Publishes the Helm chart at charts/shipwright to a GitHub Pages Helm repository
+# (the `gh-pages` branch) so it is consumable via `helm repo add`.
 #
 # Kept SEPARATE from release.yml (the app's semantic-release): this workflow only
 # concerns the Helm chart artifact. Two concerns:
 #
-#   publish (push to main) — chart-releaser packages charts/ and, for any
-#     Chart.yaml `version` not already published, creates a GitHub Release with
-#     the .tgz attached and updates the gh-pages index.yaml. chart-releaser is
-#     idempotent: already-released versions are skipped, so the effective trigger
-#     is "a chart version bump landed on main" (HD-2.3's versioning discipline).
+#   publish (push to main) — packages charts/shipwright into a `.tgz`, merges it
+#     into the existing gh-pages `index.yaml` (with the public Pages `--url`), and
+#     commits BOTH the `.tgz` and the regenerated `index.yaml` directly to the
+#     `gh-pages` branch root. It creates NO GitHub Releases. The publish is keyed
+#     off `Chart.yaml`'s `version`: a re-run with an unchanged version repackages
+#     an identical `.tgz` (same digest) and produces no committable diff, so the
+#     effective trigger is "a chart version bump landed on main".
 #
-#   dry-run (pull_request) — validates that the chart packages and an index can
-#     be generated, WITHOUT publishing anything. This is the PR-time test for the
-#     publish path.
+#   dry-run (pull_request) — validates that the chart packages and the index
+#     merges, WITHOUT publishing anything. This is the PR-time test for the
+#     publish path (see also .github/workflows/helm.yml for lint/install gates).
 on:
   push:
     branches: [main]
@@ -30,36 +32,65 @@ on:
 permissions:
   contents: read
 
+env:
+  # Public GitHub Pages URL the gh-pages branch is served from. Every newly
+  # packaged chart's index entry resolves to <PAGES_URL>/<name>-<version>.tgz.
+  PAGES_URL: https://app-vitals.github.io/shipwright
+
 jobs:
   # Publish job — runs ONLY on push to main, never on pull_request.
+  #
+  # Serialized by a concurrency group: two chart releases can never run at once,
+  # which closes the index-corruption race (concurrent `--merge` + push to the
+  # same gh-pages index.yaml). cancel-in-progress is FALSE so an in-flight
+  # release that has already packaged a `.tgz` is allowed to finish and push
+  # rather than being aborted mid-publish.
   publish:
-    name: chart-releaser (gh-pages)
+    name: package + publish (gh-pages)
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    concurrency:
+      group: chart-release
+      cancel-in-progress: false
     permissions:
-      contents: write # create GitHub Releases + push to gh-pages
+      contents: write # push the .tgz + index.yaml to gh-pages
     steps:
-      - name: Checkout
+      - name: Checkout main
+        uses: actions/checkout@v4
+
+      - name: Checkout gh-pages
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # chart-releaser needs full history to diff/tag
+          ref: gh-pages
+          path: gh-pages
 
       - name: Configure Git identity
         run: |
-          git config user.name "$GITHUB_ACTOR"
-          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+          git config --global user.name "$GITHUB_ACTOR"
+          git config --global user.email "$GITHUB_ACTOR@users.noreply.github.com"
 
       - name: Install Helm
         uses: azure/setup-helm@v4
         with:
           version: v3.18.6
 
-      - name: Run chart-releaser
-        uses: helm/chart-releaser-action@cae68fefc6b5f367a0275617c9f83181ba54714f # v1.7.0
-        with:
-          charts_dir: charts
-        env:
-          CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build chart dependencies
+        run: helm dependency build charts/shipwright
+
+      - name: Package chart into gh-pages
+        run: helm package charts/shipwright -d gh-pages/
+
+      - name: Merge repo index
+        # --merge preserves every existing entry (including legacy entries whose
+        # urls still point at old GitHub Release assets); only newly packaged
+        # versions gain a <PAGES_URL>/<name>-<version>.tgz url.
+        # Guard: --merge fails if index.yaml doesn't exist yet (first-time publish
+        # on a gh-pages branch initialized with an empty orphan commit). The flag
+        # is only passed when the file is already present.
+        run: |
+          MERGE_FLAG=""
+          [ -f gh-pages/index.yaml ] && MERGE_FLAG="--merge gh-pages/index.yaml"
+          helm repo index gh-pages/ $MERGE_FLAG --url "$PAGES_URL"
 
       - name: Parse chart version
         id: chart-version
@@ -69,19 +100,34 @@ jobs:
           echo "version=${CHART_VERSION}" >> "$GITHUB_OUTPUT"
           echo "Chart version: ${CHART_VERSION}"
 
+      - name: Commit and push to gh-pages
+        working-directory: gh-pages
+        run: |
+          git add -- '*.tgz' index.yaml
+          if git diff --cached --quiet; then
+            echo "No chart changes to publish (version ${{ steps.chart-version.outputs.version }} already on gh-pages)."
+            exit 0
+          fi
+          git commit -m "chart: publish shipwright ${{ steps.chart-version.outputs.version }}"
+          git push origin gh-pages
+
       - name: Notify downstream of chart release
+        # Guarded: exits 0 when DISPATCH_TOKEN / CHART_DISPATCH_REPO are unset, and
+        # continue-on-error keeps a notification failure from failing the publish.
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
           DISPATCH_REPO: ${{ vars.CHART_DISPATCH_REPO }}
           CHART_VERSION: ${{ steps.chart-version.outputs.version }}
         run: |
+          [ -z "$GH_TOKEN" ] && echo "DISPATCH_TOKEN not configured, skipping" && exit 0
           [ -z "$DISPATCH_REPO" ] && echo "CHART_DISPATCH_REPO not configured, skipping" && exit 0
           printf '{"event_type":"shipwright-chart-released","client_payload":{"chart_version":"%s"}}' "$CHART_VERSION" \
             | gh api "repos/$DISPATCH_REPO/dispatches" --method POST --input -
 
   # Dry-run validation — runs ONLY on pull_request. Proves the chart packages and
-  # an index renders; publishes nothing (no gh-pages push, no GitHub Release).
+  # the index merges with the production --url; publishes nothing (no gh-pages
+  # push, no GitHub Release). No concurrency guard: dry runs touch no shared state.
   dry-run:
     name: package + index (dry run)
     if: github.event_name == 'pull_request'
@@ -102,7 +148,9 @@ jobs:
         run: helm package charts/shipwright -d .cr-release-packages
 
       - name: Generate repo index (no publish)
-        run: helm repo index .cr-release-packages
+        # Mirrors the publish job's --url so the dry run exercises the exact index
+        # entries production will write.
+        run: helm repo index .cr-release-packages --url "$PAGES_URL"
 
       - name: Show packaged artifacts
         run: ls -la .cr-release-packages

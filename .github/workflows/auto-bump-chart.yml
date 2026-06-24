@@ -14,7 +14,7 @@ name: Auto-Bump Chart Version
 #       → enable auto-merge (squash)
 #     → PR merges to main
 #       → chart-release.yml triggers (paths: charts/shipwright/**)
-#         → chart-releaser publishes new chart version
+#         → packages the chart + commits .tgz + index.yaml to gh-pages
 #
 # Manual test plan (cannot be tested in CI without real tag + secrets):
 #   1. Push a dummy tag matching one of the trigger patterns:
