@@ -17,30 +17,14 @@ import { type BlockedByEntry, computeBlockedBy } from "./blocked-by.ts";
 import { ConflictError, NotFoundError } from "./errors.ts";
 import type { Prisma, PrismaClient, Task } from "./index.ts";
 import { resolveReadyTasks } from "./ready.ts";
+import { CLOSED_STATUSES, OPEN_STATUSES } from "./statuses.ts";
 
 // Re-export so callers can import from task-service without reaching into blocked-by.
 export type { BlockedByEntry };
+export { CLOSED_STATUSES, OPEN_STATUSES };
 
 /** A Task augmented with a computed blockedBy array. */
 export type TaskWithBlockedBy = Task & { blockedBy: BlockedByEntry[] };
-
-/** Terminal statuses — a task in one of these is considered "closed". */
-export const CLOSED_STATUSES = [
-  "merged",
-  "done",
-  "deploying",
-  "deployed",
-  "cancelled",
-] as const;
-
-/** Open statuses — everything not closed. */
-export const OPEN_STATUSES = [
-  "pending",
-  "in_progress",
-  "pr_open",
-  "approved",
-  "blocked",
-] as const;
 
 /** Filters accepted by TaskService.list. */
 export interface TaskListFilters {
@@ -150,8 +134,11 @@ export class TaskService implements TaskServiceLike {
   async get(id: string): Promise<TaskWithBlockedBy | null> {
     const task = await this.prisma.task.findUnique({ where: { id } });
     if (!task) return null;
-    // Load all tasks for dependency resolution.
-    const allTasks = await this.prisma.task.findMany();
+    // Scope the dependency lookup to only the IDs this task depends on —
+    // avoids a full-table scan when GET /tasks/:id is called frequently.
+    const allTasks = task.dependencies?.length
+      ? await this.prisma.task.findMany({ where: { id: { in: task.dependencies } } })
+      : [];
     return { ...task, blockedBy: computeBlockedBy(task, allTasks) };
   }
 

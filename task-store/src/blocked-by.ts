@@ -16,6 +16,7 @@
  */
 
 import type { ReadyTaskLike } from "./ready.ts";
+import { CLOSED_STATUSES } from "./statuses.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -24,15 +25,9 @@ export type BlockedByEntry =
   | { type: "hitl" }
   | { type: "dependency"; id: string; status: string };
 
-// ─── Terminal statuses (mirrors task-service.ts CLOSED_STATUSES) ──────────────
+// ─── Terminal statuses ────────────────────────────────────────────────────────
 
-const TERMINAL_STATUSES = new Set([
-  "merged",
-  "done",
-  "deploying",
-  "deployed",
-  "cancelled",
-]);
+const TERMINAL_STATUSES = new Set<string>(CLOSED_STATUSES);
 
 // ─── Core helper ─────────────────────────────────────────────────────────────
 
