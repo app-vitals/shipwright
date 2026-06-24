@@ -269,9 +269,9 @@ jobs:
       #
       # By blocking here until the merge lands, we guarantee the next run always
       # reads the post-merge chart version and computes a fresh increment.
-      # Timeout is 10 minutes; on expiry we warn but do not fail — the worst case
-      # is that a subsequent run may still encounter burst-collapse, which is the
-      # same behaviour as before this fix.
+      # Timeout is 10 minutes; on expiry we exit 1 so the failure surfaces in the
+      # Actions UI — a chart bump PR that never merged within the window needs
+      # investigation (e.g. a required check stalled or auto-merge was disabled).
       - name: Wait for PR to merge
         if: steps.idempotency.outputs.skip != 'true' && steps.commit-push.outputs.push_skipped != 'true'
         env:
@@ -288,4 +288,5 @@ jobs:
             echo "  attempt ${i}/60: state=${STATE}"
             sleep 10
           done
-          echo "WARNING: timed out after 10 minutes — next queued run may encounter burst-collapse."
+          echo "ERROR: timed out after 10 minutes waiting for ${PR_URL} to merge."
+          exit 1
