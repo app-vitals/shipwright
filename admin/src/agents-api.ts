@@ -659,17 +659,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
       }
     }
 
-    return c.json(
-      {
-        id: agent.id,
-        name: agent.name,
-        slackId: agent.slackId,
-        selfHosted: agent.selfHosted,
-        createdAt: agent.createdAt.toISOString(),
-        updatedAt: agent.updatedAt.toISOString(),
-      },
-      201,
-    );
+    return c.json(serializeAgent(agent), 201);
   });
 
   // POST /agents/reconcile — reconcile K8s Deployment state against the DB (admin only)
@@ -728,17 +718,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     if (!agent) {
       throw new NotFoundError(`agent ${agentId} not found`);
     }
-    return c.json(
-      {
-        id: agent.id,
-        name: agent.name,
-        slackId: agent.slackId,
-        selfHosted: agent.selfHosted,
-        createdAt: agent.createdAt.toISOString(),
-        updatedAt: agent.updatedAt.toISOString(),
-      },
-      200,
-    );
+    return c.json(serializeAgent(agent), 200);
   });
 
   // PATCH /agents/:id — update agent fields (currently: selfHosted)
@@ -760,17 +740,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
       data: { selfHosted: body.selfHosted },
       select: { id: true, name: true, slackId: true, selfHosted: true, createdAt: true, updatedAt: true },
     });
-    return c.json(
-      {
-        id: agent.id,
-        name: agent.name,
-        slackId: agent.slackId,
-        selfHosted: agent.selfHosted,
-        createdAt: agent.createdAt.toISOString(),
-        updatedAt: agent.updatedAt.toISOString(),
-      },
-      200,
-    );
+    return c.json(serializeAgent(agent), 200);
   });
 
   // DELETE /agents/:id — delete an agent and tear down its workload (admin only)
@@ -1104,4 +1074,22 @@ function serializePlugin(plugin: {
     createdAt: plugin.createdAt.toISOString(),
     updatedAt: plugin.updatedAt.toISOString(),
   } as z.infer<typeof AgentPluginSchema>;
+}
+
+function serializeAgent(agent: {
+  id: string;
+  name: string;
+  slackId: string | null | undefined;
+  selfHosted: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}): z.infer<typeof GetAgentResultSchema> {
+  return {
+    id: agent.id,
+    name: agent.name,
+    slackId: agent.slackId,
+    selfHosted: agent.selfHosted,
+    createdAt: agent.createdAt.toISOString(),
+    updatedAt: agent.updatedAt.toISOString(),
+  };
 }

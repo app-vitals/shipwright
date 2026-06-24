@@ -1118,12 +1118,12 @@ describe("admin API — POST /agents/reconcile", () => {
     expect(res.status).toBe(403);
   });
 
-  it("POST /agents/reconcile with admin session → calls reconcile and returns { recreated, orphans }", async () => {
+  it("POST /agents/reconcile with admin session → calls reconcile and returns { recreated, updated, orphans }", async () => {
     const cookie = await makeSessionCookie();
     const provisioner = new RecordingProvisioner();
     provisioner.reconcileResult = {
       recreated: ["agent-abc"],
-      updated: [],
+      updated: ["agent-stale"],
       orphans: ["agent-orphan"],
       failed: [],
     };
@@ -1137,6 +1137,7 @@ describe("admin API — POST /agents/reconcile", () => {
     const body = await res.json();
     expect(body).toMatchObject({
       recreated: ["agent-abc"],
+      updated: ["agent-stale"],
       orphans: ["agent-orphan"],
     });
   });
