@@ -882,6 +882,7 @@ export function renderTasksPage(
   filters: { status?: string; session?: string; repo?: string },
   degraded: boolean,
   userName: string,
+  agentNames: Record<string, string> = {},
   opts?: { error?: string },
 ): string {
   const errorHtml = opts?.error
@@ -894,13 +895,18 @@ export function renderTasksPage(
 
   const rows =
     tasks.length === 0
-      ? `<tr><td colspan="6" class="empty-state">No tasks found.</td></tr>`
+      ? `<tr><td colspan="7" class="empty-state">No tasks found.</td></tr>`
       : tasks
-          .map(
-            (t) => `<tr>
+          .map((t) => {
+            const agentId = t.claimedBy ?? t.assignee;
+            const agentCell = agentId
+              ? escapeHtml(agentNames[agentId] ?? agentId)
+              : '<span style="color:#9ca3af">—</span>';
+            return `<tr>
     <td class="mono" style="font-size:11px"><a href="/admin/tasks/${escapeHtml(t.id)}" style="color:#6366f1;text-decoration:none" title="View details">${escapeHtml(t.id)}</a></td>
     <td><a href="/admin/tasks/${escapeHtml(t.id)}" style="color:inherit;text-decoration:none">${escapeHtml(t.title)}</a></td>
     <td><span class="badge ${t.status === "in_progress" ? "badge-blue" : t.status === "done" ? "badge-green" : "badge-gray"}">${escapeHtml(t.status)}</span></td>
+    <td style="font-size:12px">${agentCell}</td>
     <td class="mono" style="font-size:11px">${t.session ? escapeHtml(t.session) : '<span style="color:#9ca3af">—</span>'}</td>
     <td class="mono" style="font-size:11px">${t.repo ? escapeHtml(t.repo) : '<span style="color:#9ca3af">—</span>'}</td>
     <td>${
@@ -910,8 +916,8 @@ export function renderTasksPage(
       </form>`
         : ""
     }</td>
-  </tr>`,
-          )
+  </tr>`;
+          })
           .join("\n");
 
   const statusOptions = [
@@ -973,6 +979,7 @@ export function renderTasksPage(
             <th>ID</th>
             <th>Title</th>
             <th>Status</th>
+            <th>Assignee</th>
             <th>Session</th>
             <th>Repo</th>
             <th></th>

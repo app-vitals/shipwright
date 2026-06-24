@@ -1473,12 +1473,28 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       }
     }
 
+    const agentIds = [
+      ...new Set(
+        tasks
+          .flatMap((t) => [t.assignee, t.claimedBy])
+          .filter((id): id is string => !!id),
+      ),
+    ];
+    const agentNames: Record<string, string> = {};
+    if (agentIds.length > 0) {
+      const agents = await prisma.agent.findMany({
+        where: { id: { in: agentIds } },
+      });
+      for (const a of agents) agentNames[a.id] = a.name;
+    }
+
     return html(
       renderTasksPage(
         tasks,
         { status, session, repo },
         degraded,
         c.var.userEmail,
+        agentNames,
         error ? { error } : undefined,
       ),
     );
