@@ -355,4 +355,41 @@ describe("task-store API (smoke)", () => {
     });
     expect(res.status).toBe(403);
   });
+
+  it("GET /tasks/:id returns 200 when agent token reads an unassigned task", async () => {
+    const app = makeApp({
+      tokenService: fakeAgentTokenService(),
+      // Task has no assignee — should be accessible to any agent token.
+      taskService: fakeTaskService({
+        getResult: makeTask({ id: "task-1", assignee: null }),
+      }),
+    });
+    const res = await app.request("/tasks/task-1", {
+      headers: { Authorization: `Bearer ${AGENT_TOKEN}` },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("PATCH /tasks/:id with agent token pins assignee to the agent's ID", async () => {
+    const app = makeApp({
+      tokenService: fakeAgentTokenService(),
+      // Task is owned by agent-1 (the token's agent).
+      taskService: fakeTaskService({
+        getResult: makeTask({ id: "task-1", assignee: "agent-1" }),
+      }),
+    });
+    const res = await app.request("/tasks/task-1", {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${AGENT_TOKEN}`,
+        "content-type": "application/json",
+      },
+      // Attempt to reassign to a different agent.
+      body: JSON.stringify({ assignee: "agent-2", status: "in_progress" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Task;
+    // Assignee must be pinned back to agent-1, not agent-2.
+    expect(body.assignee).toBe("agent-1");
+  });
 });

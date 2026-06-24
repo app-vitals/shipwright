@@ -53,7 +53,7 @@ async function requireOwnership(
 ) {
   const task = await taskService.get(id);
   if (!task) throw new NotFoundError("task not found");
-  if (agentId !== null && task.assignee !== agentId) {
+  if (agentId !== null && task.assignee !== null && task.assignee !== agentId) {
     throw new ForbiddenError("task belongs to a different agent");
   }
   return task;
@@ -131,7 +131,7 @@ export function createTasksRoutes(
     const agentId = c.get("agentId");
     const task = await taskService.get(c.req.param("id"));
     if (!task) throw new NotFoundError("task not found");
-    if (agentId !== null && task.assignee !== agentId) {
+    if (agentId !== null && task.assignee !== null && task.assignee !== agentId) {
       throw new ForbiddenError("task belongs to a different agent");
     }
     return c.json(task, 200);
@@ -144,7 +144,7 @@ export function createTasksRoutes(
     const body = await readJson(c);
     // Prevent agent tokens from reassigning tasks outside their ownership scope.
     if (agentId !== null) {
-      body.assignee = undefined;
+      body.assignee = agentId;
     }
     const updated = await taskService.update(
       c.req.param("id"),
