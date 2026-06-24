@@ -29,7 +29,7 @@ annotations:
   # entry in CHANGELOG.md (keep the two in sync on every bump).
   artifacthub.io/changes: |
     - kind: changed
-      description: "Add bare vitals-os/VITALS_OS banned patterns and exclude planning dir from check-strings"
+      description: "Add bare platform-name banned-string patterns and exclude planning dir from check-strings"
 dependencies:
   # Bitnami PostgreSQL subchart. Pinned to a chart version whose default image tag
   # is concrete (NOT `latest`), because Bitnami's 2025 catalog change moved newer

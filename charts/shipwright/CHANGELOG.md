@@ -14,7 +14,7 @@ independent of `appVersion`. CI enforces this with
 
 ### Changed
 
-- Add bare `vitals-os/VITALS_OS` banned patterns and exclude planning dir from check-strings
+- Add bare platform-name banned-string patterns and exclude planning dir from check-strings
 
 ## [1.6.20] - 2026-06-24
 
