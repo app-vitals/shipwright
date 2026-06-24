@@ -145,6 +145,10 @@ The schema uses `provider = "postgresql"`. All database connection strings must 
 
 For the full configuration reference (all env vars, agent config, policy config), see [`docs/configuration.md`](./docs/configuration.md).
 
+## Debugging
+
+- **A 401 with no `WWW-Authenticate` header is not the auth middleware.** `createAdminAuthMiddleware` always sets `WWW-Authenticate` on its bearer-path 401s. A `{"error":"Unauthorized"}` 401 *without* that header is surfaced via the app's `onError` from a downstream call inside a handler — typically a `KubernetesClient` request the K8s API rejected. Tell-tale: read-only routes (DB only) return 200 while a route that calls the K8s API (agent `reconcile` / `provision`) 401s with the *same* token — that's a calls-the-dependency correlation, not an auth or routing bug. Check the response header (`curl -sD - -o /dev/null …`) before suspecting the token. Common cause of the K8s 401: the pod's ServiceAccount was deleted+recreated (new UID), invalidating the bound token in the already-running pod even though its `exp` is far in the future — restart the pod, and don't render the SA as a Helm hook (hooks recreate it every `helm upgrade`).
+
 ## Reference
 
 To load additional context into a session, add `@docs/filename.md` entries here — don't create separate `CLAUDE-REFERENCE.md` or similar files.
