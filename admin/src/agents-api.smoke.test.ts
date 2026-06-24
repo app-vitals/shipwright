@@ -1604,3 +1604,156 @@ describe("admin API — selfHosted field", () => {
     expect(agentsPassed.map((a) => a.id)).toContain(AGENT_ID);
   });
 });
+
+// ─── repos field smoke tests ──────────────────────────────────────────────────
+
+describe("admin API — repos field", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  it("PATCH /agents/:id with repos: ['my-repo'] returns 400 (missing org)", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({ repos: ["my-repo"] }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/org\/repo/i);
+  });
+
+  it("PATCH /agents/:id with repos: ['my-org/my-repo'] returns 200", async () => {
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      prisma: {
+        agent: {
+          ...base.prisma.agent,
+          findUnique: async (args: { where: { id: string } }) =>
+            args.where.id === AGENT_ID
+              ? {
+                  id: AGENT_ID,
+                  name: "Existing Agent",
+                  slackId: null,
+                  selfHosted: false,
+                  repos: [],
+                  createdAt: new Date("2024-01-01"),
+                  updatedAt: new Date("2024-01-01"),
+                }
+              : null,
+          update: async (args: {
+            where: { id: string };
+            data: { selfHosted?: boolean; repos?: string[] };
+          }) => ({
+            id: args.where.id,
+            name: "Existing Agent",
+            slackId: null,
+            selfHosted: args.data.selfHosted ?? false,
+            repos: args.data.repos ?? [],
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+          }),
+        },
+      } as unknown as AdminDeps["prisma"],
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({ repos: ["my-org/my-repo"] }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.repos).toEqual(["my-org/my-repo"]);
+  });
+
+  it("PATCH /agents/:id with repos: [] clears repos and returns 200 with repos: []", async () => {
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      prisma: {
+        agent: {
+          ...base.prisma.agent,
+          findUnique: async (args: { where: { id: string } }) =>
+            args.where.id === AGENT_ID
+              ? {
+                  id: AGENT_ID,
+                  name: "Existing Agent",
+                  slackId: null,
+                  selfHosted: false,
+                  repos: ["my-org/my-repo"],
+                  createdAt: new Date("2024-01-01"),
+                  updatedAt: new Date("2024-01-01"),
+                }
+              : null,
+          update: async (args: {
+            where: { id: string };
+            data: { selfHosted?: boolean; repos?: string[] };
+          }) => ({
+            id: args.where.id,
+            name: "Existing Agent",
+            slackId: null,
+            selfHosted: args.data.selfHosted ?? false,
+            repos: args.data.repos ?? [],
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+          }),
+        },
+      } as unknown as AdminDeps["prisma"],
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({ repos: [] }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.repos).toEqual([]);
+  });
+
+  it("GET /agents/:id returns repos field (empty array for existing agents)", async () => {
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      prisma: {
+        agent: {
+          ...base.prisma.agent,
+          findUnique: async (args: { where: { id: string } }) =>
+            args.where.id === AGENT_ID
+              ? {
+                  id: AGENT_ID,
+                  name: "Existing Agent",
+                  slackId: null,
+                  selfHosted: false,
+                  repos: [],
+                  createdAt: new Date("2024-01-01"),
+                  updatedAt: new Date("2024-01-01"),
+                }
+              : null,
+        },
+      } as unknown as AdminDeps["prisma"],
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Array.isArray(body.repos)).toBe(true);
+    expect(body.repos).toEqual([]);
+  });
+});
