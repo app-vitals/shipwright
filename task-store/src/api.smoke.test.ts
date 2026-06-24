@@ -392,4 +392,58 @@ describe("task-store API (smoke)", () => {
     // Assignee must be pinned back to agent-1, not agent-2.
     expect(body.assignee).toBe("agent-1");
   });
+
+  it("GET /tasks?ready=true with agent token forwards agentId to listReady", async () => {
+    let capturedAgentId: string | undefined = undefined;
+
+    const spyTaskService: TaskServiceLike = {
+      ...fakeTaskService(),
+      async listReady(agentId?: string) {
+        capturedAgentId = agentId;
+        return [];
+      },
+    };
+
+    const app = makeApp({
+      tokenService: fakeAgentTokenService(),
+      taskService: spyTaskService,
+    });
+
+    const res = await app.request("/tasks?ready=true", {
+      headers: { Authorization: `Bearer ${AGENT_TOKEN}` },
+    });
+
+    expect(res.status).toBe(200);
+    // The token's agentId ("agent-1") must be forwarded to listReady.
+    expect(capturedAgentId).toBe("agent-1");
+  });
+
+  it("GET /tasks?status=in_progress with agent token ignores caller-supplied ?assignee", async () => {
+    let capturedAssignee: string | undefined = undefined;
+
+    const spyTaskService: TaskServiceLike = {
+      ...fakeTaskService(),
+      async list(opts) {
+        capturedAssignee = opts.assignee;
+        return [];
+      },
+    };
+
+    const app = makeApp({
+      tokenService: fakeAgentTokenService(),
+      taskService: spyTaskService,
+    });
+
+    // Caller tries to supply ?assignee=other-agent to peek at another agent's tasks.
+    const res = await app.request(
+      "/tasks?status=in_progress&assignee=other-agent",
+      {
+        headers: { Authorization: `Bearer ${AGENT_TOKEN}` },
+      },
+    );
+
+    expect(res.status).toBe(200);
+    // Token's agentId must win; caller-supplied assignee must be ignored.
+    expect(capturedAssignee).toBe("agent-1");
+  });
 });
