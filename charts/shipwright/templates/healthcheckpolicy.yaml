@@ -1,6 +1,6 @@
 {{- if and (eq .Values.networking.type "gateway") .Values.networking.gateway.healthCheckPolicy.enabled }}
 {{- /*
-  GKE HealthCheckPolicies for the admin and metrics Services.
+  GKE HealthCheckPolicies for the admin, metrics, and task-store Services.
 
   The GKE Gateway controller default-probes "/" — both services return 404 there —
   and marks each backend UNHEALTHY, returning 503 on the external host. These
@@ -55,5 +55,28 @@ spec:
     group: ""
     kind: Service
     name: {{ include "shipwright.metrics.fullname" . }}
+{{- end }}
+{{- if .Values.taskStore.enabled }}
+---
+apiVersion: networking.gke.io/v1
+kind: HealthCheckPolicy
+metadata:
+  name: {{ include "shipwright.taskStore.fullname" . }}
+  labels:
+    {{- include "shipwright.taskStore.labels" . | nindent 4 }}
+spec:
+  default:
+    checkIntervalSec: 15
+    timeoutSec: 5
+    healthyThreshold: 1
+    unhealthyThreshold: 2
+    config:
+      type: HTTP
+      httpHealthCheck:
+        requestPath: /health
+  targetRef:
+    group: ""
+    kind: Service
+    name: {{ include "shipwright.taskStore.fullname" . }}
 {{- end }}
 {{- end }}
