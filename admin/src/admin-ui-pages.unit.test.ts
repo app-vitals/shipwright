@@ -370,8 +370,8 @@ describe("renderAgentDetailPage — overview", () => {
       name: "O'Brien",
     };
     const html = renderAgentDetailPage(xssAgent, {}, [], [], [], [], [], USER_NAME, true);
-    // Agent name stored as a data attribute (safe in double-quoted HTML attribute context)
-    expect(html).toContain("data-agent-name=\"O'Brien\"");
+    // Agent name stored as a data attribute; single quotes are encoded as &#39; for defense-in-depth
+    expect(html).toContain("data-agent-name=\"O&#39;Brien\"");
     // No inline onsubmit with unescaped single quotes
     expect(html).not.toContain("onsubmit");
   });
@@ -1061,6 +1061,14 @@ describe("renderTasksPage — row click navigation", () => {
     const xssTask: TaskItem = { ...TASK_ITEM, id: "TASK-XSS" };
     const html = render([xssTask]);
     expect(html).toContain(`data-href="/admin/tasks/TASK-XSS"`);
+  });
+
+  test("data-href URL escapes single quotes in task id", () => {
+    const singleQuoteTask: TaskItem = { ...TASK_ITEM, id: "TASK-IT'S" };
+    const html = render([singleQuoteTask]);
+    // Single quote must be encoded as &#39; — raw ' in the attribute would break HTML parsing
+    expect(html).toContain(`data-href="/admin/tasks/TASK-IT&#39;S"`);
+    expect(html).not.toContain(`data-href="/admin/tasks/TASK-IT'S"`);
   });
 
   // AC2: cursor changes to pointer on row hover
