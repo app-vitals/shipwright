@@ -24,6 +24,7 @@ model Agent {
   slackId         String?  @unique
   slackBotToken   String?  // AES-256-GCM encrypted at the service layer
   anthropicApiKey String?  // AES-256-GCM encrypted at the service layer
+  selfHosted      Boolean  @default(false)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
