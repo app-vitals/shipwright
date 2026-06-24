@@ -130,14 +130,16 @@ function fakeTaskService(
   opts: {
     getResult?: Task | null;
     claimThrows?: Error;
+    listResult?: Task[];
+    listReadyResult?: Task[];
   } = {},
 ): TaskServiceLike {
   return {
     async list() {
-      return [];
+      return opts.listResult ?? [];
     },
     async listReady() {
-      return [];
+      return opts.listReadyResult ?? [];
     },
     async get(id: string) {
       if ("getResult" in opts) return opts.getResult ?? null;
@@ -368,6 +370,40 @@ describe("task-store API (smoke)", () => {
       headers: { Authorization: `Bearer ${AGENT_TOKEN}` },
     });
     expect(res.status).toBe(403);
+  });
+
+  it("GET /tasks?ready=true with agent token returns only the agent's ready tasks", async () => {
+    const ownedTask = makeTask({ id: "task-1", assignee: "agent-1" });
+    const app = makeApp({
+      tokenService: fakeAgentTokenService(),
+      taskService: fakeTaskService({ listReadyResult: [ownedTask] }),
+    });
+    const res = await app.request("/tasks?ready=true", {
+      headers: { Authorization: `Bearer ${AGENT_TOKEN}` },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Task[];
+    expect(body).toHaveLength(1);
+    expect(body[0].id).toBe("task-1");
+  });
+
+  it("GET /tasks?status=in_progress with agent token scopes to the agent's tasks", async () => {
+    const ownedTask = makeTask({
+      id: "task-2",
+      assignee: "agent-1",
+      status: "in_progress",
+    });
+    const app = makeApp({
+      tokenService: fakeAgentTokenService(),
+      taskService: fakeTaskService({ listResult: [ownedTask] }),
+    });
+    const res = await app.request("/tasks?status=in_progress", {
+      headers: { Authorization: `Bearer ${AGENT_TOKEN}` },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Task[];
+    expect(body).toHaveLength(1);
+    expect(body[0].assignee).toBe("agent-1");
   });
 
   it("PATCH /tasks/:id with agent token pins assignee to the agent's ID", async () => {
