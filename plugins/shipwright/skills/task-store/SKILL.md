@@ -160,7 +160,7 @@ When `?ready=true` returns `[]`:
 |---|---|
 | No tasks assigned to this agent | Use an admin token to see all ready tasks |
 | HITL flag set | Query `?status=pending` — check if tasks have `"hitl": true`. Clear the flag once the human action is complete. |
-| Deps not satisfied | Query `?status=pending` — tasks present but waiting on a dependency not yet in a terminal status (`merged`, `done`, `deploying`, `deployed`, `cancelled`) |
+| Deps not satisfied | Query `?status=pending` — tasks present but blocked on a dependency. Check each dependency against the satisfaction rules above: terminal status, same-branch `pr_open`/`approved`, or a `pr_open` dep whose GitHub PR is merged all satisfy. Any dep failing all three rules blocks the task. |
 | Queue empty | No pending tasks exist at all |
 
 ---
