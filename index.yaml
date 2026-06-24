@@ -4,6 +4,40 @@ entries:
   - annotations:
       artifacthub.io/changes: |
         - kind: changed
+          description: "replace chart-releaser with direct gh-pages packaging for Helm chart releases (REL-2.2)"
+      licenses: MIT
+    apiVersion: v2
+    appVersion: 0.1.0
+    created: "2026-06-24T12:32:09.95600576Z"
+    dependencies:
+    - condition: postgresql.enabled
+      name: postgresql
+      repository: oci://registry-1.docker.io/bitnamicharts
+      version: 16.7.27
+    description: Shipwright Harness — the open-source autonomous delivery agent for
+      Claude Code. This chart packages the three Shipwright services (admin, metrics,
+      agent) and an optional PostgreSQL dependency for Kubernetes (Minikube-friendly
+      defaults).
+    digest: 1898f05acef6b59d545cb992574f9fd5eda11d36486fe29dbb249d5c136e9c74
+    home: https://shipwright-harness.com
+    keywords:
+    - shipwright
+    - claude-code
+    - delivery-agent
+    - ci-cd
+    maintainers:
+    - name: Shipwright Harness
+      url: https://shipwright-harness.com
+    name: shipwright
+    sources:
+    - https://github.com/app-vitals/shipwright
+    type: application
+    urls:
+    - https://app-vitals.github.io/shipwright/shipwright-1.6.24.tgz
+    version: 1.6.24
+  - annotations:
+      artifacthub.io/changes: |
+        - kind: changed
           description: "auto-bump to chart v1.6.23 triggered by release tag metrics-v0.81.0"
       licenses: MIT
     apiVersion: v2
@@ -1990,7 +2024,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-16T03:43:01.757772519Z"
+    created: "2026-06-24T12:32:09.949403435Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -2017,4 +2051,4 @@ entries:
     urls:
     - https://app-vitals.github.io/shipwright/shipwright-1.0.0.tgz
     version: 1.0.0
-generated: "2026-06-24T11:33:38.186697547Z"
+generated: "2026-06-24T12:32:09.941810563Z"
