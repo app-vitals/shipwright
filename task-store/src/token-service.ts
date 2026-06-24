@@ -15,11 +15,16 @@ export type { TaskToken };
 export interface TaskTokenValidated {
   /** The TaskToken row id. */
   id: string;
+  /** null = admin token; set = agent token scoped to this agent ID. */
+  agentId: string | null;
 }
 
 /** The subset of TaskTokenService the auth middleware and routes depend on. */
 export interface TokenServiceLike {
-  create(label?: string): Promise<{ token: TaskToken; rawToken: string }>;
+  create(
+    label?: string,
+    agentId?: string,
+  ): Promise<{ token: TaskToken; rawToken: string }>;
   validate(raw: string): Promise<TaskTokenValidated | null>;
   revoke(tokenId: string): Promise<TaskToken | null>;
   list(): Promise<TaskToken[]>;
@@ -45,11 +50,12 @@ export class TaskTokenService implements TokenServiceLike {
    */
   async create(
     label?: string,
+    agentId?: string,
   ): Promise<{ token: TaskToken; rawToken: string }> {
     const rawToken = generateRawToken();
     const hashed = hashToken(rawToken);
     const token = await this.prisma.taskToken.create({
-      data: { token: hashed, label: label ?? null },
+      data: { token: hashed, label: label ?? null, agentId: agentId ?? null },
     });
     return { token, rawToken };
   }
@@ -65,7 +71,7 @@ export class TaskTokenService implements TokenServiceLike {
       where: { token: hashed },
     });
     if (!record || record.revokedAt !== null) return null;
-    return { id: record.id };
+    return { id: record.id, agentId: record.agentId };
   }
 
   /**

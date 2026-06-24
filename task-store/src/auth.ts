@@ -13,7 +13,13 @@
 import type { MiddlewareHandler } from "hono";
 import type { TokenServiceLike } from "./token-service.ts";
 
-export type TaskStoreAuthEnv = { Variables: { tokenId: string } };
+export type TaskStoreAuthEnv = {
+  Variables: {
+    tokenId: string;
+    /** null = admin token (unrestricted); set = agent token scoped to this agent. */
+    agentId: string | null;
+  };
+};
 
 export function createBearerAuthMiddleware(deps: {
   tokenService: Pick<TokenServiceLike, "validate">;
@@ -44,6 +50,7 @@ export function createBearerAuthMiddleware(deps: {
     }
 
     c.set("tokenId", result.id);
+    c.set("agentId", result.agentId);
     return next();
   };
 }

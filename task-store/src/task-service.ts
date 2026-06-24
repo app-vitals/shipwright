@@ -30,10 +30,12 @@ export interface TaskListFilters {
 /** The subset of TaskService the routes depend on. */
 export interface TaskServiceLike {
   list(filters?: TaskListFilters): Promise<Task[]>;
-  listReady(): Promise<Task[]>;
+  listReady(agentId?: string): Promise<Task[]>;
   get(id: string): Promise<Task | null>;
   create(data: Prisma.TaskCreateInput): Promise<Task>;
-  bulk(tasks: Prisma.TaskCreateInput[]): Promise<{ inserted: number; updated: number }>;
+  bulk(
+    tasks: Prisma.TaskCreateInput[],
+  ): Promise<{ inserted: number; updated: number }>;
   update(id: string, data: Prisma.TaskUpdateInput): Promise<Task>;
   remove(id: string): Promise<void>;
   claim(id: string, claimedBy: string): Promise<Task>;
@@ -72,9 +74,13 @@ export class TaskService implements TaskServiceLike {
    * The task-store has no GitHub access, so cross-branch pr_open deps are never
    * treated as merged (isPrMerged resolves to false).
    */
-  async listReady(): Promise<Task[]> {
+  async listReady(agentId?: string): Promise<Task[]> {
+    // Load all tasks so dependency resolution sees the full graph, then filter
+    // the result set to the caller's agent if one is specified.
     const tasks = await this.prisma.task.findMany();
-    return resolveReadyTasks(tasks, async () => false);
+    const ready = await resolveReadyTasks(tasks, async () => false);
+    if (agentId) return ready.filter((t) => t.assignee === agentId);
+    return ready;
   }
 
   async get(id: string): Promise<Task | null> {

@@ -31,6 +31,7 @@ function fakeTokenService(): TokenServiceLike {
           id: "tok-1",
           token: "hash",
           label: label ?? null,
+          agentId: null,
           createdAt: new Date(),
           revokedAt: null,
         },
@@ -38,7 +39,7 @@ function fakeTokenService(): TokenServiceLike {
       };
     },
     async validate(raw: string) {
-      return raw === VALID_TOKEN ? { id: "tok-1" } : null;
+      return raw === VALID_TOKEN ? { id: "tok-1", agentId: null } : null;
     },
     async revoke() {
       return null;
