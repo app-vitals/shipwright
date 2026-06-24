@@ -4,11 +4,45 @@ entries:
   - annotations:
       artifacthub.io/changes: |
         - kind: changed
+          description: "auto-bump to chart v1.6.25 triggered by release tag agent-v0.67.0"
+      licenses: MIT
+    apiVersion: v2
+    appVersion: 0.1.0
+    created: "2026-06-24T18:03:27.590618421Z"
+    dependencies:
+    - condition: postgresql.enabled
+      name: postgresql
+      repository: oci://registry-1.docker.io/bitnamicharts
+      version: 16.7.27
+    description: Shipwright Harness — the open-source autonomous delivery agent for
+      Claude Code. This chart packages the three Shipwright services (admin, metrics,
+      agent) and an optional PostgreSQL dependency for Kubernetes (Minikube-friendly
+      defaults).
+    digest: 47ef98dfe4e3154245e66c8fde5e543f20f224bdd712ae9d6fbbb58775788c2f
+    home: https://shipwright-harness.com
+    keywords:
+    - shipwright
+    - claude-code
+    - delivery-agent
+    - ci-cd
+    maintainers:
+    - name: Shipwright Harness
+      url: https://shipwright-harness.com
+    name: shipwright
+    sources:
+    - https://github.com/app-vitals/shipwright
+    type: application
+    urls:
+    - https://app-vitals.github.io/shipwright/shipwright-1.6.25.tgz
+    version: 1.6.25
+  - annotations:
+      artifacthub.io/changes: |
+        - kind: changed
           description: "replace chart-releaser with direct gh-pages packaging for Helm chart releases (REL-2.2)"
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-24T12:32:09.95600576Z"
+    created: "2026-06-24T18:03:27.58373361Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -2024,7 +2058,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-24T12:32:09.949403435Z"
+    created: "2026-06-24T18:03:27.575638547Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -2051,4 +2085,4 @@ entries:
     urls:
     - https://app-vitals.github.io/shipwright/shipwright-1.0.0.tgz
     version: 1.0.0
-generated: "2026-06-24T12:32:09.941810563Z"
+generated: "2026-06-24T18:03:27.568183673Z"
