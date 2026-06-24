@@ -16,7 +16,7 @@ import { describe, expect, it } from "bun:test";
 import { createTaskStoreApp } from "./app.ts";
 import { ConflictError, NotFoundError } from "./errors.ts";
 import type { Task } from "./index.ts";
-import type { TaskServiceLike } from "./task-service.ts";
+import type { TaskListFilters, TaskServiceLike } from "./task-service.ts";
 import type { TokenServiceLike } from "./token-service.ts";
 
 // ─── Fakes ────────────────────────────────────────────────────────────────────
@@ -430,12 +430,12 @@ describe("task-store API (smoke)", () => {
   });
 
   it("GET /tasks?ready=true with agent token forwards agentId to listReady", async () => {
-    let capturedAgentId: string | undefined = undefined;
+    const capturedArgs: Array<string | undefined> = [];
 
     const spyTaskService: TaskServiceLike = {
       ...fakeTaskService(),
       async listReady(agentId?: string) {
-        capturedAgentId = agentId;
+        capturedArgs.push(agentId);
         return [];
       },
     };
@@ -451,16 +451,16 @@ describe("task-store API (smoke)", () => {
 
     expect(res.status).toBe(200);
     // The token's agentId ("agent-1") must be forwarded to listReady.
-    expect(capturedAgentId).toBe("agent-1");
+    expect(capturedArgs[0]).toBe("agent-1");
   });
 
   it("GET /tasks?status=in_progress with agent token ignores caller-supplied ?assignee", async () => {
-    let capturedAssignee: string | undefined = undefined;
+    const capturedAssignees: Array<string | undefined> = [];
 
     const spyTaskService: TaskServiceLike = {
       ...fakeTaskService(),
-      async list(opts) {
-        capturedAssignee = opts.assignee;
+      async list(opts?) {
+        capturedAssignees.push(opts?.assignee);
         return [];
       },
     };
@@ -480,6 +480,6 @@ describe("task-store API (smoke)", () => {
 
     expect(res.status).toBe(200);
     // Token's agentId must win; caller-supplied assignee must be ignored.
-    expect(capturedAssignee).toBe("agent-1");
+    expect(capturedAssignees[0]).toBe("agent-1");
   });
 });
