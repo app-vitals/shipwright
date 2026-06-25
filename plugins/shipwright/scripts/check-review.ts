@@ -4,12 +4,11 @@
  *
  * Pre-check for the review cron.
  *
- * Queries GitHub for open PRs across the configured repo. Uses state/reviews.json
- * to deduplicate by headRefOid (lastReviewedCommit field) so already-reviewed
- * commits are not re-triggered.
+ * Queries GitHub for open PRs across the configured repo. Uses the PR table
+ * (task-store /prs endpoint) to deduplicate by commitSha + reviewState so
+ * already-reviewed commits are not re-triggered.
  *
  * Skips own PRs when allow_self_review is false (read from policy at startup).
- * Skips terminal entries (status: "cleaned" | "merged").
  *
  * Exit 0 + one-line prompt → at least one PR needs review
  * Exit 1 + no output       → nothing to do
@@ -18,20 +17,15 @@
  *   bun plugins/shipwright/scripts/check-review.ts
  */
 
-import type { CommitInfo, ReviewEntry } from "./check-helpers.ts";
 import {
   getCurrentUser,
   ghJson,
-  isMergeOnlyUpdate,
   parseAllowSelfReview,
   readAllowSelfReview,
-  readReviews,
   resolveAllRepos,
   resolveWorkspacePath,
 } from "./check-helpers.ts";
 
-export type { CommitInfo } from "./check-helpers.ts";
-export { isMergeOnlyUpdate } from "./check-helpers.ts";
 export { parseAllowSelfReview } from "./check-helpers.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -45,17 +39,20 @@ interface PrInfo {
   repo?: string;
 }
 
+interface PrRecord {
+  commitSha?: string | null;
+  reviewState: string;
+}
+
 interface Deps {
   getCurrentUser: () => string;
   isSelfReviewAllowed: boolean;
   listOpenPrs: (repo: string) => Promise<PrInfo[]>;
-  readReviews: () => ReviewEntry[];
-  listPrCommits: (prNumber: number, repo?: string) => Promise<CommitInfo[]>;
+  queryPrRecord: (
+    repo: string,
+    prNumber: number,
+  ) => Promise<PrRecord | null>;
 }
-
-// ─── Terminal statuses ────────────────────────────────────────────────────────
-
-const TERMINAL_STATUSES = new Set(["cleaned", "merged"]);
 
 // ─── Core logic ───────────────────────────────────────────────────────────────
 
@@ -66,65 +63,37 @@ interface RunResult {
 
 export async function run(deps: Deps): Promise<RunResult> {
   const currentUser = await deps.getCurrentUser();
-  const reviews = deps.readReviews();
 
-  // Build a lookup from "repo:pr-number" → review entry.
-  // Keying on number alone causes cross-repo collisions when multiple repos
-  // are configured — two repos can share PR numbers. Include the repo in the key.
-  const reviewByPr = new Map<string, ReviewEntry>();
-  for (const entry of reviews) {
-    reviewByPr.set(`${entry.repo ?? ""}:${entry.pr}`, entry);
-  }
-
-  // We don't know the repo here without a context — use a placeholder for tests.
-  // In production, the deps.listOpenPrs is called with the resolved repo.
   const prs = await deps.listOpenPrs("default");
 
   for (const pr of prs) {
     if (!deps.isSelfReviewAllowed && pr.author.login === currentUser) continue;
 
-    const entry = reviewByPr.get(`${pr.repo ?? ""}:${pr.number}`);
+    let record: PrRecord | null = null;
+    try {
+      record = await deps.queryPrRecord(pr.repo ?? "", pr.number);
+    } catch {
+      // Query failed → treat as eligible (no dedup)
+    }
 
-    // No entry → eligible
-    if (!entry) {
+    // No record → eligible
+    if (!record) {
       return {
         exit: 0,
         output: "Review open PRs and post findings via /shipwright:review",
       };
     }
 
-    // Terminal status → skip regardless
-    if (entry.status && TERMINAL_STATUSES.has(entry.status)) continue;
-
-    // Has entry — check if lastReviewedCommit matches current headRefOid
-    if (!entry.lastReviewedCommit) {
-      // Never reviewed → eligible
-      return {
-        exit: 0,
-        output: "Review open PRs and post findings via /shipwright:review",
-      };
+    // commitSha matches and reviewState is not pending → already reviewed at this HEAD, skip
+    if (record.commitSha === pr.headRefOid && record.reviewState !== "pending") {
+      continue;
     }
 
-    if (entry.lastReviewedCommit !== pr.headRefOid) {
-      // Staged (unposted) review + new commits = Tier 3: the review skill deliberately
-      // defers these on no-arg runs. Match that behaviour so the cron doesn't spin.
-      if (entry.posted === false) continue;
-
-      // New commits since last review — check if they are all merge commits
-      const mergeOnly = await isMergeOnlyUpdate(
-        pr.number,
-        entry.lastReviewedCommit,
-        deps,
-        pr.repo,
-      );
-      if (mergeOnly) continue; // skip: only merge-from-main activity, no real work
-      return {
-        exit: 0,
-        output: "Review open PRs and post findings via /shipwright:review",
-      };
-    }
-
-    // lastReviewedCommit matches → already reviewed at this HEAD, skip
+    // Different SHA or pending → eligible
+    return {
+      exit: 0,
+      output: "Review open PRs and post findings via /shipwright:review",
+    };
   }
 
   return { exit: 1, output: "" };
@@ -135,6 +104,9 @@ export async function run(deps: Deps): Promise<RunResult> {
 export async function buildProductionDeps(): Promise<Deps> {
   const workspacePath = resolveWorkspacePath();
   const allRepos = resolveAllRepos(workspacePath);
+
+  const taskStoreUrl = (process.env.SHIPWRIGHT_TASK_STORE_URL ?? "").trim();
+  const taskStoreToken = (process.env.SHIPWRIGHT_TASK_STORE_TOKEN ?? "").trim();
 
   return {
     getCurrentUser,
@@ -156,19 +128,39 @@ export async function buildProductionDeps(): Promise<Deps> {
       }
       return allPrs;
     },
-    readReviews: () => readReviews(workspacePath),
-    listPrCommits: async (prNumber: number, repo?: string) => {
-      const targetRepo = repo ?? allRepos[0];
-      if (!repo) {
-        process.stderr.write(
-          `warn: listPrCommits called without repo for PR #${prNumber}; falling back to ${targetRepo}\n`,
-        );
+    queryPrRecord: async (
+      repo: string,
+      prNumber: number,
+    ): Promise<PrRecord | null> => {
+      if (!taskStoreUrl || !taskStoreToken) return null;
+      try {
+        const baseUrl = taskStoreUrl.replace(/\/$/, "");
+        const params = new URLSearchParams({
+          repo,
+          prNumber: String(prNumber),
+        });
+        const res = await fetch(`${baseUrl}/prs?${params}`, {
+          headers: {
+            Authorization: `Bearer ${taskStoreToken}`,
+            "Content-Type": "application/json",
+          },
+        });
+        if (!res.ok) return null;
+        const data = (await res.json()) as unknown;
+        let prs: PrRecord[] = [];
+        if (Array.isArray(data)) {
+          prs = data as PrRecord[];
+        } else if (
+          data !== null &&
+          typeof data === "object" &&
+          Array.isArray((data as Record<string, unknown>).prs)
+        ) {
+          prs = (data as Record<string, unknown>).prs as PrRecord[];
+        }
+        return prs[0] ?? null;
+      } catch {
+        return null;
       }
-      return ghJson<CommitInfo[]>([
-        "api",
-        `repos/${targetRepo}/pulls/${prNumber}/commits`,
-        "--paginate",
-      ]);
     },
   };
 }
