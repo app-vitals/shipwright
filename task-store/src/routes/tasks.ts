@@ -47,16 +47,7 @@ async function readJson(c: {
   }
 }
 
-/**
- * Validate the `repo` field in a task body.
- *
- * Format check: if `repo` is present, it must be "org/repo" — applies to all tokens.
- * Scope check: if `repo` is present and the token is an agent token (repos !== null),
- *   the repo must be in the agent's allowed list.
- *
- * Throws BadRequestError when either check fails.
- * No-ops when repo is absent or null.
- */
+// repos === null means admin token — bypass scope check; still enforce format.
 function validateRepo(repo: unknown, repos: string[] | null): void {
   if (repo === undefined || repo === null) return;
   if (typeof repo !== "string" || !isOrgRepo(repo)) {
@@ -64,7 +55,6 @@ function validateRepo(repo: unknown, repos: string[] | null): void {
       `repo '${repo}' must be in org/repo format`,
     );
   }
-  // repos === null means admin token — bypass scope check.
   if (repos !== null && !repos.includes(repo)) {
     throw new BadRequestError(
       `repo '${repo}' is not in this agent's scope`,

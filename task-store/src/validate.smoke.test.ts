@@ -1,34 +1,3 @@
-/**
- * task-store/src/validate.smoke.test.ts
- *
- * Smoke tests for org/repo format validation on task and token writes.
- * All cases run in-process via app.request() — no real socket, no real DB.
- *
- * Covers:
- *   Tokens:
- *   - POST /tokens with repos: ['vitals-os'] → 400 (invalid format)
- *   - POST /tokens with repos: ['app-vitals/vitals-os'] → 201 (valid)
- *
- *   Tasks (format validation, any token):
- *   - POST /tasks with repo: 'vitals-os' → 400 (invalid format)
- *   - POST /tasks with repo: 'app-vitals/vitals-os' (admin token) → 201
- *
- *   Tasks (scope validation, agent tokens):
- *   - POST /tasks with repo: 'app-vitals/vitals-os' + agent scoped to 'app-vitals/shipwright' → 400
- *   - POST /tasks with repo: 'app-vitals/vitals-os' + agent scoped to 'app-vitals/vitals-os' → 201
- *   - POST /tasks without repo field + agent token → 201 (no validation triggered)
- *
- *   Bulk:
- *   - POST /tasks/bulk validates each task's repo; tasks with null/absent repo are skipped
- *
- *   Admin bypass:
- *   - Admin tokens bypass scope check but still get format validation
- *
- *   PATCH:
- *   - PATCH /tasks/:id with repo: 'vitals-os' → 400 (format)
- *   - PATCH /tasks/:id with repo: 'app-vitals/vitals-os' + agent scoped elsewhere → 400 (scope)
- */
-
 import { describe, expect, it } from "bun:test";
 import { createTaskStoreApp } from "./app.ts";
 import type { Task } from "./index.ts";
