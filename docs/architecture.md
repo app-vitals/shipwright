@@ -11,7 +11,7 @@ Shipwright Harness is the open-source autonomous delivery agent for [Claude Code
 | **A** | **Plugin** (the system) | `plugins/shipwright/` | The Claude Code plugin users `/plugin install` — commands, skills, agents, scripts for the full delivery loop. Repo-agnostic. |
 | **B** | **Metrics dashboard** | `metrics/` | Hono service: backend-agnostic `MetricsProvider` JSON endpoints + a server-rendered dashboard. Four modes: fixtures (offline), posthog (live), postgres (Postgres event store), sqlite (default — local SQLite store + `POST /batch/` ingest). |
 | **C** | **Shipwright agent** | `agent/` + `admin/` | Hono service + Prisma store (in `@shipwright/admin`); a thin autonomous runner: pick next ready task → build → ship PR → forward metrics. |
-| **D** | **Task store service** | `task-store/` | Postgres-backed task queue + scoped tokens. Prisma schema defines `Task` and `TaskToken` models; re-exported as `@shipwright/task-store` for use by plugin scripts and agent services. Replaces the JSON file fallback. |
+| **D** | **Task store service** | `task-store/` | Postgres-backed task queue, PR tracking, and scoped tokens. Prisma schema defines `Task`, `PullRequest`, and `TaskToken` models; re-exported as `@shipwright/task-store` for use by plugin scripts and agent services. Replaces the JSON file fallback. |
 
 The hard architectural rule: **no new coupling.** The plugin stays repo-agnostic; the metrics service and the agent each stand alone. Everything runs offline by default (fixtures / injected doubles / scratch queue); live external calls happen only when an env var explicitly enables them.
 
