@@ -152,6 +152,7 @@ function makeMockDeps(
     },
     agentCronJobService: {
       list: async () => [],
+      listWithRunSummary: async () => [],
       get: async () => {
         throw new Error("not implemented");
       },

@@ -197,6 +197,7 @@ function makeMockDeps(
     },
     agentCronJobService: {
       list: async () => [MOCK_CRON],
+      listWithRunSummary: async () => [{ ...MOCK_CRON, lastRun: null, runCountToday: 0 }],
       get: async () => MOCK_CRON,
       create: async () => MOCK_CRON,
       setEnabled: async () => MOCK_CRON,

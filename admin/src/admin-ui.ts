@@ -173,6 +173,7 @@ export interface AdminUIDeps {
   agentCronJobService: Pick<
     AgentCronJobService,
     | "list"
+    | "listWithRunSummary"
     | "create"
     | "update"
     | "setEnabled"
@@ -589,7 +590,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     const [envVars, crons, tools, tokens, plugins, members] = await Promise.all(
       [
         agentEnvService.getByAgentId(agentId).then((e) => e ?? {}),
-        agentCronJobService.list(agentId),
+        agentCronJobService.listWithRunSummary(agentId),
         agentToolService.list(agentId),
         agentTokenService.listForAgent(agentId),
         agentPluginService.list(agentId),
@@ -972,7 +973,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       const [envVars, crons, tools, tokens, plugins, members] =
         await Promise.all([
           agentEnvService.getByAgentId(agentId).then((e) => e ?? {}),
-          agentCronJobService.list(agentId),
+          agentCronJobService.listWithRunSummary(agentId),
           agentToolService.list(agentId),
           agentTokenService.listForAgent(agentId),
           agentPluginService.list(agentId),

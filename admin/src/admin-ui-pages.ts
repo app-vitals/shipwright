@@ -13,6 +13,29 @@ import {
   renderAdminToolbar,
 } from "./admin-ui-styles.ts";
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Returns a human-friendly relative timestamp.
+ * Examples: "just now", "5 minutes ago", "2 hours ago", "3 days ago", "1 week ago"
+ */
+function relativeTime(date: Date): string {
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffSec = Math.floor(diffMs / 1000);
+  const diffMin = Math.floor(diffSec / 60);
+  const diffHour = Math.floor(diffMin / 60);
+  const diffDay = Math.floor(diffHour / 24);
+  const diffWeek = Math.floor(diffDay / 7);
+
+  if (diffSec < 60) return "just now";
+  if (diffMin < 60)
+    return `${diffMin} minute${diffMin === 1 ? "" : "s"} ago`;
+  if (diffHour < 24) return `${diffHour} hour${diffHour === 1 ? "" : "s"} ago`;
+  if (diffDay < 7) return `${diffDay} day${diffDay === 1 ? "" : "s"} ago`;
+  return `${diffWeek} week${diffWeek === 1 ? "" : "s"} ago`;
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 // Inline type — mirrors task-store/src/blocked-by.ts without cross-package coupling.
@@ -46,6 +69,8 @@ export interface CronJobItem {
   name: string | null;
   system: boolean;
   preCheck?: string | null;
+  lastRun?: { startedAt: Date; completedAt: Date | null; skipped: boolean; outcome: string | null } | null;
+  runCountToday?: number;
 }
 
 export interface ToolItem {
@@ -390,24 +415,66 @@ export function renderAgentDetailPage(
           <button type="submit" class="btn btn-primary" style="font-size:11px;padding:3px 8px;align-self:flex-start">Save</button>
         </form>
       </details>`;
+    // Outcome badge color mapping
+    const getOutcomeBadgeClass = (outcome: string | null): string => {
+      switch (outcome) {
+        case "posted":
+          return "badge-green";
+        case "dm":
+          return "badge-blue";
+        case "silent":
+          return "badge-gray";
+        case "skipped":
+          return "badge-amber";
+        case "error":
+          return "badge-red";
+        default:
+          return "badge-gray";
+      }
+    };
+
+    const getOutcomeBadgeStyle = (outcome: string | null): string => {
+      switch (outcome) {
+        case "dm":
+          return "background:#3b82f6;color:white";
+        case "skipped":
+          return "background:#f59e0b;color:white";
+        case "error":
+          return "background:#ef4444;color:white";
+        default:
+          return "";
+      }
+    };
+
+    const lastRunHtml =
+      c.lastRun?.startedAt
+        ? `
+      <div style="font-size:11px;color:#6b7280;margin-bottom:4px">${relativeTime(c.lastRun.startedAt)}</div>
+      <div>
+        <span class="badge ${getOutcomeBadgeClass(c.lastRun.outcome)}" ${getOutcomeBadgeStyle(c.lastRun.outcome) ? `style="${getOutcomeBadgeStyle(c.lastRun.outcome)}"` : ""}>${escapeHtml(c.lastRun.outcome || "unknown")}</span>
+      </div>
+      <div style="font-size:11px;color:#6b7280;margin-top:4px">${c.runCountToday ?? 0} run${(c.runCountToday ?? 0) === 1 ? "" : "s"}</div>`
+        : `<div style="color:#d1d5db">never</div>`;
+
     return `<tr>
       <td class="mono">${escapeHtml(c.schedule)}</td>
       <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis">${escapeHtml(c.name ? `${c.name}: ${c.prompt}` : c.prompt)}</td>
       <td class="mono" style="font-size:11px;color:#6b7280;max-width:170px;overflow:hidden;text-overflow:ellipsis">${c.preCheck ? escapeHtml(c.preCheck) : "—"}</td>
       <td>${c.channel ? escapeHtml(c.channel) : c.user ? escapeHtml(c.user) : "—"}</td>
       <td><span class="badge ${c.enabled ? "badge-green" : "badge-gray"}">${c.enabled ? "enabled" : "disabled"}</span></td>
+      <td style="font-size:11px">${lastRunHtml}</td>
       <td style="white-space:nowrap">${actions}${editForm}</td>
     </tr>`;
   }
 
   const systemCronRows =
     systemCrons.length === 0
-      ? `<tr><td colspan="6" class="empty-state">No system crons configured.</td></tr>`
+      ? `<tr><td colspan="7" class="empty-state">No system crons configured.</td></tr>`
       : systemCrons.map(renderCronRow).join("\n");
 
   const customCronRows =
     customCrons.length === 0
-      ? `<tr><td colspan="6" class="empty-state">No custom crons yet.</td></tr>`
+      ? `<tr><td colspan="7" class="empty-state">No custom crons yet.</td></tr>`
       : customCrons.map(renderCronRow).join("\n");
 
   const toolRows =
@@ -645,6 +712,7 @@ export function renderAgentDetailPage(
               <th>Pre-check</th>
               <th>Target</th>
               <th>Status</th>
+              <th>Last run</th>
               <th></th>
             </tr>
           </thead>
@@ -682,6 +750,7 @@ export function renderAgentDetailPage(
               <th>Pre-check</th>
               <th>Target</th>
               <th>Status</th>
+              <th>Last run</th>
               <th></th>
             </tr>
           </thead>

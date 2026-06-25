@@ -570,6 +570,45 @@ describe("renderAgentDetailPage — crons", () => {
     expect(html).not.toContain("<img src=x");
     expect(html).toContain("&lt;img");
   });
+
+  test("renderCronRow with lastRun: shows relative time and outcome badge", () => {
+    const twoHoursAgo = new Date(Date.now() - 2 * 3600 * 1000);
+    const cronWithLastRun: CronJobItem = {
+      ...CUSTOM_CRON,
+      lastRun: {
+        startedAt: twoHoursAgo,
+        completedAt: new Date(twoHoursAgo.getTime() + 60000),
+        skipped: false,
+        outcome: "posted",
+      },
+      runCountToday: 3,
+    };
+    const html = render([cronWithLastRun]);
+    expect(html).toContain("hours ago");
+    expect(html).toContain("posted");
+    expect(html).toContain("3 runs");
+  });
+
+  test("renderCronRow without lastRun: shows 'never'", () => {
+    const html = render([CUSTOM_CRON]);
+    expect(html).toContain("never");
+  });
+
+  test("renderCronRow today count: 1 run (singular)", () => {
+    const twoHoursAgo = new Date(Date.now() - 2 * 3600 * 1000);
+    const cronWithOneRun: CronJobItem = {
+      ...CUSTOM_CRON,
+      lastRun: {
+        startedAt: twoHoursAgo,
+        completedAt: new Date(twoHoursAgo.getTime() + 60000),
+        skipped: false,
+        outcome: "posted",
+      },
+      runCountToday: 1,
+    };
+    const html = render([cronWithOneRun]);
+    expect(html).toContain("1 run");
+  });
 });
 
 // ─── renderAgentDetailPage — tools section ───────────────────────────────────

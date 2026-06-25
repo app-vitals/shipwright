@@ -28,6 +28,9 @@ function buildSpecApp() {
       async list() {
         return [];
       },
+      async listWithRunSummary() {
+        return [];
+      },
     },
     prisma: {
       agent: {

@@ -101,6 +101,7 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
     },
     agentCronJobService: {
       list: async () => [],
+      listWithRunSummary: async () => [],
       get: async () => {
         throw new Error("not found");
       },

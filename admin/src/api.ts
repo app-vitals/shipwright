@@ -53,6 +53,7 @@ interface AgentEnvServiceLike {
 
 interface AgentCronJobServiceLike {
   list(agentId: string): Promise<AgentCronJob[]>;
+  listWithRunSummary?(agentId: string): Promise<Array<AgentCronJob & { lastRun: null | { startedAt: Date; completedAt: Date | null; skipped: boolean; outcome: string | null }; runCountToday: number }>>;
 }
 
 interface PrismaLike {
