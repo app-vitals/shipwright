@@ -4,11 +4,45 @@ entries:
   - annotations:
       artifacthub.io/changes: |
         - kind: changed
+          description: "auto-bump to chart v1.6.58 triggered by release tag agent-v0.75.0"
+      licenses: MIT
+    apiVersion: v2
+    appVersion: 0.1.0
+    created: "2026-06-25T14:06:31.370457175Z"
+    dependencies:
+    - condition: postgresql.enabled
+      name: postgresql
+      repository: oci://registry-1.docker.io/bitnamicharts
+      version: 16.7.27
+    description: Shipwright Harness — the open-source autonomous delivery agent for
+      Claude Code. This chart packages the three Shipwright services (admin, metrics,
+      agent) and an optional PostgreSQL dependency for Kubernetes (Minikube-friendly
+      defaults).
+    digest: 0e8f3a6efde8802181cf2b49cd8fdc5e5e614d543dbf69f41cbe1e37e8371706
+    home: https://shipwright-harness.com
+    keywords:
+    - shipwright
+    - claude-code
+    - delivery-agent
+    - ci-cd
+    maintainers:
+    - name: Shipwright Harness
+      url: https://shipwright-harness.com
+    name: shipwright
+    sources:
+    - https://github.com/app-vitals/shipwright
+    type: application
+    urls:
+    - https://app-vitals.github.io/shipwright/shipwright-1.6.58.tgz
+    version: 1.6.58
+  - annotations:
+      artifacthub.io/changes: |
+        - kind: changed
           description: "auto-bump to chart v1.6.57 triggered by release tag task-store-v0.20.0"
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-25T14:04:25.580957284Z"
+    created: "2026-06-25T14:06:31.358456527Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -42,7 +76,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-25T14:04:25.569788577Z"
+    created: "2026-06-25T14:06:31.346732861Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -76,7 +110,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-25T14:04:25.556532128Z"
+    created: "2026-06-25T14:06:31.340132395Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -110,7 +144,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-25T14:04:25.545112965Z"
+    created: "2026-06-25T14:06:31.332266214Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -144,7 +178,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-25T14:04:25.53267011Z"
+    created: "2026-06-25T14:06:31.324376183Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -178,7 +212,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-25T14:04:25.524817251Z"
+    created: "2026-06-25T14:06:31.316576957Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -212,7 +246,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-25T14:04:25.516996005Z"
+    created: "2026-06-25T14:06:31.309284057Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -246,7 +280,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-25T14:04:25.51040269Z"
+    created: "2026-06-25T14:06:31.302398133Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -280,7 +314,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-25T14:04:25.502516137Z"
+    created: "2026-06-25T14:06:31.294149128Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -314,7 +348,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-25T14:04:25.494344456Z"
+    created: "2026-06-25T14:06:31.2858845Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -348,7 +382,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-25T14:04:25.486330573Z"
+    created: "2026-06-25T14:06:31.278107366Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -382,7 +416,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-25T14:04:25.478761219Z"
+    created: "2026-06-25T14:06:31.271545208Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -416,7 +450,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-25T14:04:25.471083273Z"
+    created: "2026-06-25T14:06:31.263339001Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -450,7 +484,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-25T14:04:25.464668872Z"
+    created: "2026-06-25T14:06:31.255665231Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -484,7 +518,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-25T14:04:25.456504749Z"
+    created: "2026-06-25T14:06:31.247603916Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -518,7 +552,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-25T14:04:25.448922797Z"
+    created: "2026-06-25T14:06:31.240472376Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -552,7 +586,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-25T14:04:25.440999651Z"
+    created: "2026-06-25T14:06:31.233419593Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -586,7 +620,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-25T14:04:25.434619257Z"
+    created: "2026-06-25T14:06:31.225220709Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -620,7 +654,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-25T14:04:25.426287363Z"
+    created: "2026-06-25T14:06:31.217513784Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -654,7 +688,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-25T14:04:25.417956884Z"
+    created: "2026-06-25T14:06:31.20983723Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -688,7 +722,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-25T14:04:25.410352844Z"
+    created: "2026-06-25T14:06:31.20299818Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -722,7 +756,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-25T14:04:25.403790133Z"
+    created: "2026-06-25T14:06:31.194091147Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -756,7 +790,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-25T14:04:25.395931444Z"
+    created: "2026-06-25T14:06:31.186370663Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -790,7 +824,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-25T14:04:25.388277006Z"
+    created: "2026-06-25T14:06:31.179685462Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -824,7 +858,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-25T14:04:25.380382539Z"
+    created: "2026-06-25T14:06:31.171773112Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -858,7 +892,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-25T14:04:25.37331337Z"
+    created: "2026-06-25T14:06:31.163035862Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -892,7 +926,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-25T14:04:25.365421626Z"
+    created: "2026-06-25T14:06:31.155768786Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -926,7 +960,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-25T14:04:25.357480659Z"
+    created: "2026-06-25T14:06:31.144961962Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -960,7 +994,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-25T14:04:25.349872863Z"
+    created: "2026-06-25T14:06:31.133461487Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -994,7 +1028,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-25T14:04:25.342074088Z"
+    created: "2026-06-25T14:06:31.121367736Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -1028,7 +1062,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-25T14:04:25.335605392Z"
+    created: "2026-06-25T14:06:31.105911334Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -1062,7 +1096,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-25T14:04:25.322200421Z"
+    created: "2026-06-25T14:06:31.092005365Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -1096,7 +1130,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-25T14:04:25.307971844Z"
+    created: "2026-06-25T14:06:31.08096927Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -1130,7 +1164,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-25T14:04:25.298736304Z"
+    created: "2026-06-25T14:06:31.065694338Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -3146,7 +3180,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-06-25T14:04:25.290730695Z"
+    created: "2026-06-25T14:06:31.054318187Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -3173,4 +3207,4 @@ entries:
     urls:
     - https://app-vitals.github.io/shipwright/shipwright-1.0.0.tgz
     version: 1.0.0
-generated: "2026-06-25T14:04:25.282546787Z"
+generated: "2026-06-25T14:06:31.040053876Z"
