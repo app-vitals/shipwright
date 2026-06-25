@@ -148,6 +148,7 @@ function makeMockDeps(
           slackId: "U123456",
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
+          repos: [],
         }),
         create: async () => ({
           id: AGENT_ID,
@@ -155,6 +156,15 @@ function makeMockDeps(
           slackId: "U123456",
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
+          repos: [],
+        }),
+        update: async () => ({
+          id: AGENT_ID,
+          name: "Test Agent",
+          slackId: "U123456",
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+          repos: [],
         }),
         delete: async () => ({
           id: AGENT_ID,
@@ -162,6 +172,7 @@ function makeMockDeps(
           slackId: "U123456",
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
+          repos: [],
         }),
       },
       agentPlugin: {
@@ -1320,6 +1331,7 @@ describe("admin UI — member access control", () => {
             slackId: "U123456",
             createdAt: new Date("2024-01-01"),
             updatedAt: new Date("2024-01-01"),
+            repos: [],
           }),
           create: async () => ({
             id: AGENT_ID,
@@ -1327,6 +1339,15 @@ describe("admin UI — member access control", () => {
             slackId: "U123456",
             createdAt: new Date("2024-01-01"),
             updatedAt: new Date("2024-01-01"),
+            repos: [],
+          }),
+          update: async () => ({
+            id: AGENT_ID,
+            name: "Test Agent",
+            slackId: "U123456",
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+            repos: [],
           }),
           delete: async () => ({
             id: AGENT_ID,
@@ -1334,6 +1355,7 @@ describe("admin UI — member access control", () => {
             slackId: "U123456",
             createdAt: new Date("2024-01-01"),
             updatedAt: new Date("2024-01-01"),
+            repos: [],
           }),
         },
         agentPlugin: { findMany: async () => [] },
@@ -1417,6 +1439,15 @@ describe("admin UI — member access control", () => {
             slackId: "U1",
             createdAt: new Date(),
             updatedAt: new Date(),
+            repos: [],
+          }),
+          update: async () => ({
+            id: AGENT_ID,
+            name: "My Agent",
+            slackId: "U1",
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            repos: [],
           }),
           delete: async () => ({
             id: AGENT_ID,
@@ -1424,6 +1455,7 @@ describe("admin UI — member access control", () => {
             slackId: "U1",
             createdAt: new Date(),
             updatedAt: new Date(),
+            repos: [],
           }),
         },
         agentPlugin: { findMany: async () => [] },
@@ -1497,6 +1529,15 @@ describe("admin UI — member access control", () => {
             slackId: "U1",
             createdAt: new Date(),
             updatedAt: new Date(),
+            repos: [],
+          }),
+          update: async () => ({
+            id: AGENT_ID,
+            name: "Test Agent",
+            slackId: "U1",
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            repos: [],
           }),
           delete: async () => ({
             id: AGENT_ID,
@@ -1504,6 +1545,7 @@ describe("admin UI — member access control", () => {
             slackId: "U1",
             createdAt: new Date(),
             updatedAt: new Date(),
+            repos: [],
           }),
         },
         agentPlugin: { findMany: async () => [] },
@@ -1616,6 +1658,7 @@ describe("admin UI — agent delete route", () => {
             slackId: "U123456",
             createdAt: new Date("2024-01-01"),
             updatedAt: new Date("2024-01-01"),
+            repos: [],
           }),
           create: async () => ({
             id: AGENT_ID,
@@ -1623,6 +1666,15 @@ describe("admin UI — agent delete route", () => {
             slackId: "U123456",
             createdAt: new Date("2024-01-01"),
             updatedAt: new Date("2024-01-01"),
+            repos: [],
+          }),
+          update: async () => ({
+            id: AGENT_ID,
+            name: "Test Agent",
+            slackId: "U123456",
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+            repos: [],
           }),
           delete: async ({ where }: { where: { id: string } }) => {
             deleted = where.id;
@@ -1632,6 +1684,7 @@ describe("admin UI — agent delete route", () => {
               slackId: null,
               createdAt: new Date(),
               updatedAt: new Date(),
+              repos: [],
             };
           },
         },
@@ -1692,6 +1745,7 @@ describe("admin UI — member management routes", () => {
             slackId: "U1",
             createdAt: new Date(),
             updatedAt: new Date(),
+            repos: [],
           }),
           create: async () => ({
             id: AGENT_ID,
@@ -1699,6 +1753,15 @@ describe("admin UI — member management routes", () => {
             slackId: "U1",
             createdAt: new Date(),
             updatedAt: new Date(),
+            repos: [],
+          }),
+          update: async () => ({
+            id: AGENT_ID,
+            name: "Test Agent",
+            slackId: "U1",
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            repos: [],
           }),
           delete: async () => ({
             id: AGENT_ID,
@@ -1706,6 +1769,7 @@ describe("admin UI — member management routes", () => {
             slackId: "U1",
             createdAt: new Date(),
             updatedAt: new Date(),
+            repos: [],
           }),
         },
         agentPlugin: { findMany: async () => [] },
@@ -1751,6 +1815,7 @@ describe("admin UI — member management routes", () => {
             slackId: "U1",
             createdAt: new Date(),
             updatedAt: new Date(),
+            repos: [],
           }),
           create: async () => ({
             id: AGENT_ID,
@@ -1758,6 +1823,15 @@ describe("admin UI — member management routes", () => {
             slackId: "U1",
             createdAt: new Date(),
             updatedAt: new Date(),
+            repos: [],
+          }),
+          update: async () => ({
+            id: AGENT_ID,
+            name: "Test Agent",
+            slackId: "U1",
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            repos: [],
           }),
           delete: async () => ({
             id: AGENT_ID,
@@ -1765,6 +1839,7 @@ describe("admin UI — member management routes", () => {
             slackId: "U1",
             createdAt: new Date(),
             updatedAt: new Date(),
+            repos: [],
           }),
         },
         agentPlugin: { findMany: async () => [] },
