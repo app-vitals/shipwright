@@ -1,27 +1,11 @@
-/**
- * task-store/src/task-service.unit.test.ts
- *
- * Unit tests for TaskService state filter logic and listBlocked().
- * No real DB — tests the filtering / listBlocked logic directly using
- * a minimal in-memory stub that mirrors the TaskService interface.
- *
- * Focuses on:
- *   - state=ready delegates to listReady()
- *   - state=in_progress filters by status IN (in_progress, pr_open, approved)
- *   - state=blocked returns tasks where status=blocked OR
- *     (status=pending AND blockedBy.length > 0)
- *   - state=open and state=closed continue to work unchanged
- */
-
 import { describe, expect, it } from "bun:test";
 import { computeBlockedBy } from "./blocked-by.ts";
 import type { ReadyTaskLike } from "./ready.ts";
 import { CLOSED_STATUSES, OPEN_STATUSES } from "./statuses.ts";
-import type { TaskListFilters, TaskWithBlockedBy } from "./task-service.ts";
+import type { TaskListFilters } from "./task-service.ts";
 
 // ─── Minimal in-memory stub matching only the logic under test ────────────────
 
-/** Minimal task shape for filter logic tests. */
 interface MinimalTask extends ReadyTaskLike {
   title: string;
   assignee?: string | null;
@@ -42,12 +26,6 @@ function makeMinimalTask(overrides: Partial<MinimalTask> = {}): MinimalTask {
   };
 }
 
-/**
- * Pure in-memory implementation of listBlocked logic for unit testing.
- * Mirrors the algorithm described in the acceptance criteria:
- *   - status === 'blocked'
- *   - OR (status === 'pending' AND blockedBy.length > 0)
- */
 function listBlockedLogic(
   allTasks: MinimalTask[],
 ): (MinimalTask & { blockedBy: ReturnType<typeof computeBlockedBy> })[] {
@@ -63,10 +41,6 @@ function listBlockedLogic(
     .map((t) => ({ ...t, blockedBy: computeBlockedBy(t, allTasks) }));
 }
 
-/**
- * Pure in-memory implementation of state filter for list() for unit testing.
- * Matches the logic planned for TaskService.list().
- */
 function applyStateFilter(
   tasks: MinimalTask[],
   filters: TaskListFilters,
