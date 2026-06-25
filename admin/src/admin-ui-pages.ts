@@ -18,9 +18,11 @@ import {
 /**
  * Returns a human-friendly relative timestamp.
  * Examples: "just now", "5 minutes ago", "2 hours ago", "3 days ago", "1 week ago"
+ *
+ * @param date - the timestamp to describe
+ * @param now  - the reference "current" time (defaults to wall clock; override in tests for determinism)
  */
-function relativeTime(date: Date): string {
-  const now = new Date();
+function relativeTime(date: Date, now: Date = new Date()): string {
   const diffMs = now.getTime() - date.getTime();
   const diffSec = Math.floor(diffMs / 1000);
   const diffMin = Math.floor(diffSec / 60);
@@ -360,8 +362,11 @@ export function renderAgentDetailPage(
   members: MemberItem[],
   userName: string,
   isAdmin: boolean,
-  opts?: { error?: string; newToken?: string; successMsg?: string },
+  opts?: { error?: string; newToken?: string; successMsg?: string; now?: Date },
 ): string {
+  // Reference time for relative timestamps — injected by tests for determinism,
+  // defaults to wall clock in production.
+  const now = opts?.now ?? new Date();
   const envRows =
     Object.keys(envVars).length === 0
       ? `<tr><td colspan="3" class="empty-state">No env vars set.</td></tr>`
@@ -426,7 +431,7 @@ export function renderAgentDetailPage(
     const lastRunHtml =
       c.lastRun?.startedAt
         ? `
-      <div style="font-size:11px;color:#6b7280;margin-bottom:4px">${relativeTime(c.lastRun.startedAt)}</div>
+      <div style="font-size:11px;color:#6b7280;margin-bottom:4px">${relativeTime(c.lastRun.startedAt, now)}</div>
       <div>
         <span class="badge" style="${outcomeStyle[c.lastRun.outcome ?? ""] ?? "background:#9ca3af;color:white"}">${escapeHtml(c.lastRun.outcome || "unknown")}</span>
       </div>

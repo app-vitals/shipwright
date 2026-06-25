@@ -101,26 +101,30 @@ export class AgentCronJobService {
     const cronIds = jobs.map((j) => j.id);
     if (cronIds.length === 0) return [];
 
-    // Most recent run per cron job — use findMany ordered by startedAt desc,
-    // one record per cronId. Prisma doesn't support DISTINCT ON so we fetch
-    // the latest run for each cron individually in a parallel batch.
+    // Most recent run per cron job — use DISTINCT ON to get the latest run
+    // per cronId in a single query instead of N parallel findFirst calls.
     const [lastRunsRaw, todayCounts] = await Promise.all([
-      // Fetch the most recent run for each cronId
-      Promise.all(
-        cronIds.map((cronId) =>
-          this.prisma.agentCronRun.findFirst({
-            where: { cronId },
-            orderBy: { startedAt: "desc" },
-            select: {
-              cronId: true,
-              startedAt: true,
-              completedAt: true,
-              skipped: true,
-              outcome: true,
-            },
-          }),
-        ),
-      ),
+      // Single query: DISTINCT ON ("cronId") ordered by startedAt DESC gives
+      // the most-recent run row per cron, reducing N+1 to one round-trip.
+      this.prisma.$queryRaw<
+        {
+          cronId: string;
+          startedAt: Date;
+          completedAt: Date | null;
+          skipped: boolean;
+          outcome: string | null;
+        }[]
+      >`
+        SELECT DISTINCT ON ("cronId")
+          "cronId",
+          "startedAt",
+          "completedAt",
+          "skipped",
+          "outcome"
+        FROM "AgentCronRun"
+        WHERE "cronId" = ANY(${cronIds}::text[])
+        ORDER BY "cronId", "startedAt" DESC
+      `,
       // Count today's runs per cronId
       this.prisma.agentCronRun.groupBy({
         by: ["cronId"],
@@ -133,20 +137,16 @@ export class AgentCronJobService {
     ]);
 
     // Build lookup maps
-    const lastRunByCronId = new Map<string, CronRunSummary | null>();
-    for (let i = 0; i < cronIds.length; i++) {
-      const run = lastRunsRaw[i];
-      lastRunByCronId.set(
-        cronIds[i],
-        run
-          ? {
-              startedAt: run.startedAt,
-              completedAt: run.completedAt,
-              skipped: run.skipped,
-              outcome: run.outcome,
-            }
-          : null,
-      );
+    // lastRunsRaw is a flat array of one row per cronId (DISTINCT ON result) —
+    // crons with no runs are simply absent, so we default to null via Map.get().
+    const lastRunByCronId = new Map<string, CronRunSummary>();
+    for (const run of lastRunsRaw) {
+      lastRunByCronId.set(run.cronId, {
+        startedAt: run.startedAt,
+        completedAt: run.completedAt,
+        skipped: run.skipped,
+        outcome: run.outcome,
+      });
     }
 
     const todayCountByCronId = new Map<string, number>();

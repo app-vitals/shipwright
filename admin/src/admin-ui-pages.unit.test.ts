@@ -572,7 +572,9 @@ describe("renderAgentDetailPage — crons", () => {
   });
 
   test("renderCronRow with lastRun: shows relative time and outcome badge", () => {
-    const twoHoursAgo = new Date(Date.now() - 2 * 3600 * 1000);
+    // Use a fixed reference time so the test is deterministic at any wall-clock instant.
+    const fixedNow = new Date("2024-06-01T12:00:00Z");
+    const twoHoursAgo = new Date(fixedNow.getTime() - 2 * 3600 * 1000);
     const cronWithLastRun: CronJobItem = {
       ...CUSTOM_CRON,
       lastRun: {
@@ -583,7 +585,8 @@ describe("renderAgentDetailPage — crons", () => {
       },
       runCountToday: 3,
     };
-    const html = render([cronWithLastRun]);
+    // Pass now via opts so relativeTime uses a fixed reference — deterministic at any wall-clock instant.
+    const html = renderAgentDetailPage(AGENT, {}, [cronWithLastRun], [], [], [], [], USER_NAME, true, { now: fixedNow });
     expect(html).toContain("hours ago");
     expect(html).toContain("posted");
     expect(html).toContain("3 runs");
@@ -595,7 +598,8 @@ describe("renderAgentDetailPage — crons", () => {
   });
 
   test("renderCronRow today count: 1 run (singular)", () => {
-    const twoHoursAgo = new Date(Date.now() - 2 * 3600 * 1000);
+    const fixedNow = new Date("2024-06-01T12:00:00Z");
+    const twoHoursAgo = new Date(fixedNow.getTime() - 2 * 3600 * 1000);
     const cronWithOneRun: CronJobItem = {
       ...CUSTOM_CRON,
       lastRun: {
@@ -606,7 +610,8 @@ describe("renderAgentDetailPage — crons", () => {
       },
       runCountToday: 1,
     };
-    const html = render([cronWithOneRun]);
+    // Pass now via opts so relativeTime uses a fixed reference — deterministic at any wall-clock instant.
+    const html = renderAgentDetailPage(AGENT, {}, [cronWithOneRun], [], [], [], [], USER_NAME, true, { now: fixedNow });
     expect(html).toContain("1 run");
   });
 });
