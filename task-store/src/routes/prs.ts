@@ -151,6 +151,7 @@ export function createPrsRoutes(
     "commitSha",
     "taskId",
     "agentId",
+    "reviewState",
   ];
 
   app.patch("/:id", async (c) => {

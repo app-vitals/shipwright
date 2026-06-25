@@ -639,6 +639,21 @@ describe("/prs routes (smoke)", () => {
     expect(res.status).toBe(401);
   });
 
+  it("PATCH /prs/:id with reviewState=approved updates reviewState", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1", reviewState: "in_progress" }));
+    const app = makeApp({ prService: fakePrService({ store }) });
+
+    const res = await app.request("/prs/pr-1", {
+      method: "PATCH",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({ reviewState: "approved" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PullRequest;
+    expect(body.reviewState).toBe("approved");
+  });
+
   it("PATCH /prs/:id returns 400 for agent token with out-of-scope repo", async () => {
     const store = new Map<string, PullRequest>();
     store.set("pr-1", makePr({ id: "pr-1", repo: "other-org/other-repo" }));

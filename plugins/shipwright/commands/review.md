@@ -504,9 +504,10 @@ should be held; the inline comments convey the specific feedback to the author.
      --input state/reviews/pr_review_{pr}.json
    ```
 2. Capture `html_url` from response
-3. Update `state/reviews.json`: `posted: true`, `postedAt: now`, `status: "posted"`
-4. Print: `Posted review for #{pr}: {html_url}`
-5. Post Slack message (see below)
+3. Run Step 11b to upsert the PullRequest record.
+4. Update `state/reviews.json`: `posted: true`, `postedAt: now`, `status: "posted"`
+5. Print: `Posted review for #{pr}: {html_url}`
+6. Post Slack message (see below)
 
 ### If `auto_post_reviews` is false (default):
 
@@ -539,6 +540,64 @@ Send to the configured engineering channel:
 ```
 
 Use the Slack MCP tool if available. If no Slack integration is configured, print the formatted message.
+
+---
+
+## Step 11b: Upsert PullRequest Record
+
+Run this step immediately after posting a review (applies to both the `auto_post_reviews` path in Step 11 and the targeted PR posting path in Step 14). Skip this step when the review is staged (not posted). The `reviews.json` write in Step 12 is unchanged — this is a side effect only.
+
+Use `{org}`, `{repo}`, `{pr}`, `{headRefOid}` (from Step 5), `{verdict}` (from Step 10), and `{taskId}` (from Step 3b if a matching task was found).
+
+### 1. Claim the PR record
+
+```bash
+PR_CLAIM=$(curl -sf -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "${SHIPWRIGHT_TASK_STORE_URL}/prs/claim" \
+  -d "{\"repo\": \"{org}/{repo}\", \"prNumber\": {pr}, \"commitSha\": \"{headRefOid}\"$([ -n \"{taskId}\" ] && echo \", \\\"taskId\\\": \\\"{taskId}\\\"\" || true)}" \
+  2>/dev/null)
+if [ -z "$PR_CLAIM" ]; then
+  echo "Warning: failed to upsert PR record in task store — continuing"
+fi
+```
+
+If `PR_CLAIM` is empty (env var absent or call failed), print the warning and skip steps 2–4.
+
+### 2. Extract record ID
+
+```bash
+PR_RECORD_ID=$(echo "$PR_CLAIM" | jq -r '.id // empty')
+```
+
+### 3. Mark review as posted
+
+```bash
+curl -sf -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "${SHIPWRIGHT_TASK_STORE_URL}/prs/${PR_RECORD_ID}/complete" >/dev/null 2>&1
+```
+
+### 4. Set agentId (and reviewState=approved for APPROVE verdict)
+
+Always set `agentId` from `$SHIPWRIGHT_AGENT_ID`. For APPROVE verdicts, include `reviewState: "approved"` in the same PATCH call. For COMMENT or CHANGES_REQUESTED verdicts, set `agentId` only.
+
+```bash
+# COMMENT / CHANGES_REQUESTED:
+curl -sf -X PATCH \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "${SHIPWRIGHT_TASK_STORE_URL}/prs/${PR_RECORD_ID}" \
+  -d "{\"agentId\": \"$SHIPWRIGHT_AGENT_ID\"}" >/dev/null 2>&1
+
+# APPROVE — additionally update reviewState:
+curl -sf -X PATCH \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "${SHIPWRIGHT_TASK_STORE_URL}/prs/${PR_RECORD_ID}" \
+  -d "{\"reviewState\": \"approved\"}" >/dev/null 2>&1
+```
 
 ---
 
@@ -707,9 +766,10 @@ review was staged:
      --input state/reviews/pr_review_{pr}.json
    ```
 7. Capture `html_url`
-8. Update `state/reviews.json`: `posted: true`, `postedAt: now`, `status: "posted"`
-9. Print: `Posted review for #{pr}: {html_url}`
-10. Post Slack message using the format from Step 11
+8. Run Step 11b to upsert the PullRequest record.
+9. Update `state/reviews.json`: `posted: true`, `postedAt: now`, `status: "posted"`
+10. Print: `Posted review for #{pr}: {html_url}`
+11. Post Slack message using the format from Step 11
 
 **If no entry or entry is not staged** — review it:
 3. Skip Step 3 (queue building) and go directly to Step 4 (checkout) with this
