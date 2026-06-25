@@ -46,7 +46,10 @@ export function createTokensRoutes(
       };
       if (typeof body.label === "string") label = body.label;
       if (typeof body.agentId === "string") agentId = body.agentId;
-    } catch {
+      // Note: `repos` field is intentionally not validated here — repo-scoped
+      // tokens are not yet persisted (no TaskToken.repos column). The field is
+      // silently ignored until persistence is implemented.
+    } catch (_err) {
       // No body / invalid JSON → create an unlabeled admin token.
     }
     const { token, rawToken } = await tokenService.create(label, agentId);
