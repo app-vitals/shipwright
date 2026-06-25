@@ -13,9 +13,8 @@
 
 import { Hono } from "hono";
 import type { TaskStoreAuthEnv } from "../auth.ts";
-import { BadRequestError, ForbiddenError, NotFoundError } from "../errors.ts";
+import { ForbiddenError, NotFoundError } from "../errors.ts";
 import type { TokenServiceLike } from "../token-service.ts";
-import { isOrgRepo } from "../validate.ts";
 
 export function createTokensRoutes(
   tokenService: TokenServiceLike,
@@ -44,21 +43,13 @@ export function createTokensRoutes(
       const body = (await c.req.json()) as {
         label?: unknown;
         agentId?: unknown;
-        repos?: unknown;
       };
       if (typeof body.label === "string") label = body.label;
       if (typeof body.agentId === "string") agentId = body.agentId;
-      if (Array.isArray(body.repos)) {
-        for (const entry of body.repos) {
-          if (typeof entry !== "string" || !isOrgRepo(entry)) {
-            throw new BadRequestError(
-              `invalid repos entry: "${entry}" — expected "org/repo" format`,
-            );
-          }
-        }
-      }
-    } catch (err) {
-      if (err instanceof BadRequestError) throw err;
+      // Note: `repos` field is intentionally not validated here — repo-scoped
+      // tokens are not yet persisted (no TaskToken.repos column). The field is
+      // silently ignored until persistence is implemented.
+    } catch (_err) {
       // No body / invalid JSON → create an unlabeled admin token.
     }
     const { token, rawToken } = await tokenService.create(label, agentId);

@@ -193,19 +193,20 @@ function makeAgentApp(scopedRepos: string[], deps: { taskService?: TaskServiceLi
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe("org/repo format validation — POST /tokens", () => {
-  it("rejects repos entry without a slash (e.g. 'myrepo') with 400", async () => {
+  // repos field is not yet persisted (no TaskToken.repos column) — it is
+  // silently ignored. Validation is deferred until persistence lands.
+
+  it("silently ignores repos field with invalid format and returns 201", async () => {
     const app = makeAdminApp();
     const res = await app.request("/tokens", {
       method: "POST",
       headers: { ...adminAuth(), "content-type": "application/json" },
       body: JSON.stringify({ label: "ci", agentId: "agent-1", repos: ["myrepo"] }),
     });
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as { error: string };
-    expect(body.error).toContain("myrepo");
+    expect(res.status).toBe(201);
   });
 
-  it("accepts repos entries with valid org/repo format and returns 201", async () => {
+  it("silently ignores repos field with valid org/repo format and returns 201", async () => {
     const app = makeAdminApp();
     const res = await app.request("/tokens", {
       method: "POST",
