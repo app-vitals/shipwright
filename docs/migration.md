@@ -4,6 +4,27 @@ Durable notes for breaking changes and the steps needed to migrate across versio
 
 ---
 
+## New: `GET /tasks/distinct` endpoint for filter autocomplete
+
+**Version**: next (feat/afa-task-filter-autocomplete)
+
+A new endpoint returns distinct non-null `session` and `repo` values across tasks, limited to the top 100 of each. This powers filter autocomplete in the UI:
+
+```json
+{
+  "sessions": ["session-name-1", "session-name-2"],
+  "repos": ["org/repo-1", "org/repo-2"]
+}
+```
+
+Agent tokens are scoped to their own assigned tasks; admin tokens see all. Returns `200` with empty arrays if no tasks exist.
+
+**What to update:**
+- UI/client code implementing filter autocomplete can now call `GET /tasks/distinct` instead of fetching all tasks and computing distinct values client-side.
+- The endpoint is backward compatible — existing code continues to work without changes.
+
+---
+
 ## `GET /tasks` and `GET /tasks/:id` response shape change
 
 **Version**: next (feat/task-filters, feat/ts-api-blocked-by)
