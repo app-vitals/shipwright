@@ -1833,8 +1833,6 @@ export function renderPrsPage(
     ${degradedHtml}
     <div class="card" style="margin-bottom:16px">
       <form method="GET" action="/admin/prs" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
-        ${filters.state ? `<input type="hidden" name="state" value="${escapeHtml(filters.state)}" />` : ""}
-        ${filters.reviewState ? `<input type="hidden" name="reviewState" value="${escapeHtml(filters.reviewState)}" />` : ""}
         <div class="form-group" style="margin-bottom:0">
           <label class="form-label" style="font-size:11px">Repo</label>
           <input name="repo" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.repo ?? "")}" placeholder="org/repo" />
@@ -1880,8 +1878,11 @@ export function renderPrsPage(
   <script>
     document.querySelectorAll("tr[data-href]").forEach(function(row) {
       row.addEventListener("click", function(e) {
-        var tag = e.target.tagName;
-        if (tag === "A" || tag === "BUTTON" || tag === "FORM" || tag === "INPUT") return;
+        var target = e.target;
+        while (target && target !== row) {
+          if (target.tagName === "A" || target.tagName === "BUTTON" || target.tagName === "FORM" || target.tagName === "INPUT") return;
+          target = target.parentElement;
+        }
         window.location.href = row.getAttribute("data-href");
       });
     });
