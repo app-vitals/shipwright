@@ -11,6 +11,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type { WebClient } from "@slack/web-api";
 import type { TokenUsage } from "./claude.ts";
+import type { CronRunReporter } from "./cron-run-reporter.ts";
 import { markdownToSlack } from "./format.ts";
 import { parseMarkers } from "./markers.ts";
 import {
@@ -51,6 +52,10 @@ export interface CronHandlerDeps {
   pluginCacheDir?: string;
   pluginManifestPath?: string;
   alertsChannel?: string;
+  /** Reports cron run outcomes to the admin API (fire-and-forget). */
+  cronRunReporter?: CronRunReporter;
+  /** The agent's own ID — forwarded to the reporter. */
+  agentId?: string;
 }
 
 export async function handleCronRequest(
@@ -75,7 +80,26 @@ export async function handleCronRequest(
       "plugins",
       "installed_plugins.json",
     ),
+    cronRunReporter,
+    agentId,
   } = deps;
+
+  const startedAt = new Date();
+
+  async function reportRun(
+    opts:
+      | { skipped: true; skipReason: string; error?: string }
+      | { skipped: false; outcome: string },
+  ): Promise<void> {
+    if (!cronRunReporter) return;
+    await cronRunReporter.report({
+      cronId: jobId,
+      agentId: agentId ?? "",
+      startedAt,
+      completedAt: new Date(),
+      ...opts,
+    });
+  }
 
   if (!prompt) {
     throw new ValidationError("missing required field: prompt");
@@ -98,6 +122,7 @@ export async function handleCronRequest(
         console.warn(
           `[agent:cron] preCheck is a relative path but no workspace is set — skipping job "${jobId}"`,
         );
+        await reportRun({ skipped: true, skipReason: "preCheck:not-found" });
         return;
       }
       const candidate = isRelative
@@ -138,6 +163,7 @@ export async function handleCronRequest(
       console.warn(
         `[agent:cron] preCheck script not found for "${req.preCheck}" — skipping job "${jobId}"`,
       );
+      await reportRun({ skipped: true, skipReason: "preCheck:not-found" });
       return;
     }
 
@@ -184,6 +210,11 @@ export async function handleCronRequest(
           );
         }
       }
+      await reportRun({
+        skipped: true,
+        skipReason: "preCheck:crash",
+        error: detail || undefined,
+      });
       return;
     }
 
@@ -191,6 +222,7 @@ export async function handleCronRequest(
       console.log(
         `[agent:cron] preCheck returned no work for job "${jobId}" — skipping tick`,
       );
+      await reportRun({ skipped: true, skipReason: "preCheck:no-output" });
       return;
     }
 
@@ -216,6 +248,7 @@ export async function handleCronRequest(
 
   if (silent) {
     console.log(`[agent:cron] job "${jobId}" completed (silent — no post)`);
+    await reportRun({ skipped: false, outcome: "silent" });
     return;
   }
   const isDmOnly = !!user && !channel;
@@ -223,6 +256,7 @@ export async function handleCronRequest(
     // [silent] marker suppresses channel posts (and channel-wins-over-user posts)
     // DMs always get a reply — [silent] is ignored when routing to a DM
     console.log(`[agent:cron] job "${jobId}" completed (silent — no post)`);
+    await reportRun({ skipped: false, outcome: "silent" });
     return;
   }
 
@@ -254,6 +288,7 @@ export async function handleCronRequest(
       synthesizeSpeechFn,
       voiceConfig,
     });
+    await reportRun({ skipped: false, outcome: "posted" });
   } else if (user) {
     const dmResult = await slack.conversations.open({ users: user });
     const dmChannel = dmResult.channel?.id;
@@ -281,6 +316,7 @@ export async function handleCronRequest(
       synthesizeSpeechFn,
       voiceConfig,
     });
+    await reportRun({ skipped: false, outcome: "dm" });
   }
 }
 

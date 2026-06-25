@@ -954,6 +954,217 @@ describe("handleCronRequest — preCheck", () => {
   });
 });
 
+// ─── CronRunReporter integration ─────────────────────────────────────────────
+
+describe("handleCronRequest — CronRunReporter", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "cron-reporter-test-"));
+    mkdirSync(join(tmpDir, "shipwright", "scripts"), { recursive: true });
+  });
+
+  function makeRecorder() {
+    const calls: Parameters<import("./cron-run-reporter.ts").CronRunReporter["report"]>[0][] = [];
+    const reporter: import("./cron-run-reporter.ts").CronRunReporter = {
+      report: async (run) => { calls.push(run); },
+    };
+    return { calls, reporter };
+  }
+
+  test("no reporter dep — existing tests unaffected (no-op)", async () => {
+    mockRunner.mockResolvedValueOnce({ result: "reply", sessionId: "s1" });
+    // no cronRunReporter in deps — should not throw
+    await expect(
+      handleCronRequest(
+        { jobId: "j1", prompt: "hello", channel: "C-X" },
+        deps,
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  test("preCheck not found → reporter called with skipped:true, skipReason:'preCheck:not-found'", async () => {
+    const { calls, reporter } = makeRecorder();
+
+    await handleCronRequest(
+      {
+        jobId: "missing-precheck",
+        prompt: "hello",
+        channel: "C-TEST",
+        preCheck: "nonexistent-plugin:check.ts",
+      },
+      { ...deps, pluginCacheDir: tmpDir, cronRunReporter: reporter },
+    );
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      cronId: "missing-precheck",
+      skipped: true,
+      skipReason: "preCheck:not-found",
+    });
+    expect(calls[0].startedAt).toBeInstanceOf(Date);
+    expect(calls[0].completedAt).toBeInstanceOf(Date);
+    expect(mockRunner).not.toHaveBeenCalled();
+  });
+
+  test("preCheck exit 1 (no output) → reporter called with skipped:true, skipReason:'preCheck:no-output'", async () => {
+    const { calls, reporter } = makeRecorder();
+    const scriptPath = join(tmpDir, "shipwright", "scripts", "check-no-output.ts");
+    writeFileSync(scriptPath, "process.exit(1);", { mode: 0o755 });
+
+    await handleCronRequest(
+      {
+        jobId: "precheck-no-output",
+        prompt: "original",
+        channel: "C-TEST",
+        preCheck: "shipwright:check-no-output.ts",
+      },
+      { ...deps, pluginCacheDir: tmpDir, cronRunReporter: reporter },
+    );
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      cronId: "precheck-no-output",
+      skipped: true,
+      skipReason: "preCheck:no-output",
+    });
+    expect(mockRunner).not.toHaveBeenCalled();
+  });
+
+  test("preCheck exit 0 with no output → reporter called with skipped:true, skipReason:'preCheck:no-output'", async () => {
+    const { calls, reporter } = makeRecorder();
+    const scriptPath = join(tmpDir, "shipwright", "scripts", "check-empty-exit0.ts");
+    writeFileSync(scriptPath, "process.exit(0);", { mode: 0o755 });
+
+    await handleCronRequest(
+      {
+        jobId: "precheck-empty-exit0",
+        prompt: "original",
+        channel: "C-TEST",
+        preCheck: "shipwright:check-empty-exit0.ts",
+      },
+      { ...deps, pluginCacheDir: tmpDir, cronRunReporter: reporter },
+    );
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      cronId: "precheck-empty-exit0",
+      skipped: true,
+      skipReason: "preCheck:no-output",
+    });
+    expect(mockRunner).not.toHaveBeenCalled();
+  });
+
+  test("preCheck crash (exit ≥2) → reporter called with skipped:true, skipReason:'preCheck:crash', error:stderr", async () => {
+    const { calls, reporter } = makeRecorder();
+    const scriptPath = join(tmpDir, "shipwright", "scripts", "check-crash.ts");
+    writeFileSync(
+      scriptPath,
+      `process.stderr.write("something blew up\\n"); process.exit(2);`,
+      { mode: 0o755 },
+    );
+
+    await handleCronRequest(
+      {
+        jobId: "precheck-crash-reporter",
+        prompt: "original",
+        silent: true,
+        preCheck: "shipwright:check-crash.ts",
+      },
+      { ...deps, pluginCacheDir: tmpDir, cronRunReporter: reporter },
+    );
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      cronId: "precheck-crash-reporter",
+      skipped: true,
+      skipReason: "preCheck:crash",
+      error: "something blew up",
+    });
+  });
+
+  test("silent=true → reporter called with skipped:false, outcome:'silent'", async () => {
+    const { calls, reporter } = makeRecorder();
+    mockRunner.mockResolvedValueOnce({ result: "reply", sessionId: "s1" });
+
+    await handleCronRequest(
+      { jobId: "silent-job", prompt: "hello", silent: true },
+      { ...deps, cronRunReporter: reporter },
+    );
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      cronId: "silent-job",
+      skipped: false,
+      outcome: "silent",
+    });
+  });
+
+  test("[silent] marker → reporter called with skipped:false, outcome:'silent'", async () => {
+    const { calls, reporter } = makeRecorder();
+    mockRunner.mockResolvedValueOnce({ result: "text [silent]", sessionId: "s1" });
+
+    await handleCronRequest(
+      { jobId: "silent-marker-job", prompt: "hello", channel: "C-MAIN" },
+      { ...deps, cronRunReporter: reporter },
+    );
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      cronId: "silent-marker-job",
+      skipped: false,
+      outcome: "silent",
+    });
+  });
+
+  test("channel post → reporter called with skipped:false, outcome:'posted'", async () => {
+    const { calls, reporter } = makeRecorder();
+    mockRunner.mockResolvedValueOnce({ result: "the report", sessionId: "s1" });
+
+    await handleCronRequest(
+      { jobId: "channel-job", prompt: "hello", channel: "C-REPORTS" },
+      { ...deps, cronRunReporter: reporter },
+    );
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      cronId: "channel-job",
+      skipped: false,
+      outcome: "posted",
+    });
+  });
+
+  test("DM post → reporter called with skipped:false, outcome:'dm'", async () => {
+    const { calls, reporter } = makeRecorder();
+    mockRunner.mockResolvedValueOnce({ result: "dm reply", sessionId: "s1" });
+
+    await handleCronRequest(
+      { jobId: "dm-job", prompt: "hello", user: "U-DAN" },
+      { ...deps, cronRunReporter: reporter },
+    );
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      cronId: "dm-job",
+      skipped: false,
+      outcome: "dm",
+    });
+  });
+
+  test("reporter receives agentId when provided", async () => {
+    const { calls, reporter } = makeRecorder();
+    mockRunner.mockResolvedValueOnce({ result: "reply", sessionId: "s1" });
+
+    await handleCronRequest(
+      { jobId: "j-with-agent", prompt: "hello", channel: "C-X" },
+      { ...deps, cronRunReporter: reporter, agentId: "agent-xyz" },
+    );
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].agentId).toBe("agent-xyz");
+  });
+});
+
 // ─── POST /cron HTTP endpoint ─────────────────────────────────────────────────
 
 describe("POST /cron HTTP endpoint", () => {
