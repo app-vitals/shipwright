@@ -16,7 +16,12 @@ import { describe, expect, it } from "bun:test";
 import { createTaskStoreApp } from "./app.ts";
 import { ConflictError, NotFoundError } from "./errors.ts";
 import type { Task } from "./index.ts";
-import type { TaskListFilters, TaskListResult, TaskServiceLike, TaskWithBlockedBy } from "./task-service.ts";
+import type {
+  TaskListFilters,
+  TaskListResult,
+  TaskServiceLike,
+  TaskWithBlockedBy,
+} from "./task-service.ts";
 import type { TokenServiceLike } from "./token-service.ts";
 
 // ─── Fakes ────────────────────────────────────────────────────────────────────
@@ -158,7 +163,8 @@ function fakeTaskService(
       return opts.listReadyResult ?? [];
     },
     async get(id: string) {
-      if ("getResult" in opts) return opts.getResult ? withBlockedBy(opts.getResult) : null;
+      if ("getResult" in opts)
+        return opts.getResult ? withBlockedBy(opts.getResult) : null;
       return withBlockedBy(makeTask({ id }));
     },
     async create(data) {
@@ -192,16 +198,56 @@ function fakeTaskService(
   };
 }
 
+/** Token service that validates AGENT_TOKEN as agent-1 with repos scope. */
+function fakeRepoAgentTokenService(repos: string[]): TokenServiceLike {
+  return {
+    async create(label?: string) {
+      return {
+        token: {
+          id: "tok-3",
+          token: "hash",
+          label: label ?? null,
+          agentId: "agent-1",
+          createdAt: new Date(),
+          revokedAt: null,
+        },
+        rawToken: "raw",
+      };
+    },
+    async validate(raw: string) {
+      return raw === AGENT_TOKEN ? { id: "tok-3", agentId: "agent-1" } : null;
+    },
+    async revoke() {
+      return null;
+    },
+    async list() {
+      return [];
+    },
+    async update() {
+      return null;
+    },
+  };
+}
+
 function makeApp(
   deps: {
     taskService?: TaskServiceLike;
     tokenService?: TokenServiceLike;
+    scopeResolver?: (agentId: string) => Promise<string[]>;
   } = {},
 ) {
   return createTaskStoreApp({
     taskService: deps.taskService ?? fakeTaskService(),
     tokenService: deps.tokenService ?? fakeTokenService(),
+    scopeResolver: deps.scopeResolver,
   });
+}
+
+/** Build a scope resolver that returns fixed repos for agent-1. */
+function makeScopeResolver(
+  repos: string[],
+): (agentId: string) => Promise<string[]> {
+  return async (agentId: string) => (agentId === "agent-1" ? repos : []);
 }
 
 function auth(token = VALID_TOKEN): Record<string, string> {
@@ -497,5 +543,238 @@ describe("task-store API (smoke)", () => {
     expect(res.status).toBe(200);
     // Token's agentId must win; caller-supplied assignee must be ignored.
     expect(capturedAssignees[0]).toBe("agent-1");
+  });
+
+  // ─── Repo-scoped visibility ───────────────────────────────────────────────
+
+  it("GET /tasks/:id returns 200 when agent token has the pool task's repo in scope", async () => {
+    const poolTask = makeTask({
+      id: "pool-1",
+      assignee: null,
+      repo: "app-vitals/vitals-os",
+    });
+    const app = makeApp({
+      tokenService: fakeRepoAgentTokenService(["app-vitals/vitals-os"]),
+      taskService: fakeTaskService({ getResult: poolTask }),
+      scopeResolver: makeScopeResolver(["app-vitals/vitals-os"]),
+    });
+    const res = await app.request("/tasks/pool-1", {
+      headers: { Authorization: `Bearer ${AGENT_TOKEN}` },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("GET /tasks/:id returns 403 when agent token does NOT have the pool task's repo in scope", async () => {
+    const poolTask = makeTask({
+      id: "pool-1",
+      assignee: null,
+      repo: "app-vitals/vitals-os",
+    });
+    const app = makeApp({
+      tokenService: fakeRepoAgentTokenService([]),
+      taskService: fakeTaskService({ getResult: poolTask }),
+      scopeResolver: makeScopeResolver([]),
+    });
+    const res = await app.request("/tasks/pool-1", {
+      headers: { Authorization: `Bearer ${AGENT_TOKEN}` },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("GET /tasks/:id returns 200 for admin token on unassigned pool task", async () => {
+    const poolTask = makeTask({
+      id: "pool-1",
+      assignee: null,
+      repo: "app-vitals/vitals-os",
+    });
+    const app = makeApp({
+      tokenService: fakeTokenService(),
+      taskService: fakeTaskService({ getResult: poolTask }),
+    });
+    const res = await app.request("/tasks/pool-1", { headers: auth() });
+    expect(res.status).toBe(200);
+  });
+
+  it("GET /tasks?ready=true with repo-scoped agent token passes repos to listReady", async () => {
+    const capturedArgs: Array<{ agentId?: string; repos?: string[] }> = [];
+
+    const spyTaskService: TaskServiceLike = {
+      ...fakeTaskService(),
+      async listReady(agentId?: string, repos?: string[]) {
+        capturedArgs.push({ agentId, repos });
+        return [];
+      },
+    };
+
+    const app = makeApp({
+      tokenService: fakeRepoAgentTokenService(["app-vitals/vitals-os"]),
+      taskService: spyTaskService,
+      scopeResolver: makeScopeResolver(["app-vitals/vitals-os"]),
+    });
+
+    const res = await app.request("/tasks?ready=true", {
+      headers: { Authorization: `Bearer ${AGENT_TOKEN}` },
+    });
+
+    expect(res.status).toBe(200);
+    expect(capturedArgs[0]?.agentId).toBe("agent-1");
+    expect(capturedArgs[0]?.repos).toEqual(["app-vitals/vitals-os"]);
+  });
+
+  it("GET /tasks?repo=app-vitals/vitals-os&pr=42 returns pool task for agent with matching repo", async () => {
+    const capturedFilters: TaskListFilters[] = [];
+
+    const spyTaskService: TaskServiceLike = {
+      ...fakeTaskService(),
+      async list(filters?) {
+        capturedFilters.push(filters ?? {});
+        return { tasks: [], total: 0, limit: 50, offset: 0 };
+      },
+    };
+
+    const app = makeApp({
+      tokenService: fakeRepoAgentTokenService(["app-vitals/vitals-os"]),
+      taskService: spyTaskService,
+      scopeResolver: makeScopeResolver(["app-vitals/vitals-os"]),
+    });
+
+    const res = await app.request("/tasks?repo=app-vitals%2Fvitals-os&pr=42", {
+      headers: { Authorization: `Bearer ${AGENT_TOKEN}` },
+    });
+
+    expect(res.status).toBe(200);
+    // Should pass agentScope, not a plain assignee filter
+    expect(capturedFilters[0]?.agentScope).toEqual({
+      agentId: "agent-1",
+      repos: ["app-vitals/vitals-os"],
+    });
+    // assignee should NOT be set when agentScope is used
+    expect(capturedFilters[0]?.assignee).toBeUndefined();
+    expect(capturedFilters[0]?.repo).toBe("app-vitals/vitals-os");
+    expect(capturedFilters[0]?.pr).toBe(42);
+  });
+
+  it("POST /tasks/:id/claim with agent token pins claimedBy to the token's agentId", async () => {
+    const poolTask = makeTask({
+      id: "pool-1",
+      assignee: null,
+      repo: "app-vitals/vitals-os",
+    });
+    const capturedClaimedBy: string[] = [];
+
+    const spyTaskService: TaskServiceLike = {
+      ...fakeTaskService({ getResult: poolTask }),
+      async claim(id: string, claimedBy: string) {
+        capturedClaimedBy.push(claimedBy);
+        return makeTask({
+          id,
+          status: "in_progress",
+          assignee: null,
+          claimedBy,
+        });
+      },
+    };
+
+    const app = makeApp({
+      tokenService: fakeRepoAgentTokenService(["app-vitals/vitals-os"]),
+      taskService: spyTaskService,
+      scopeResolver: makeScopeResolver(["app-vitals/vitals-os"]),
+    });
+
+    const res = await app.request("/tasks/pool-1/claim", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${AGENT_TOKEN}`,
+        "content-type": "application/json",
+      },
+      // Body tries to claim as a different agent — must be ignored.
+      body: JSON.stringify({ claimedBy: "some-other-agent" }),
+    });
+
+    expect(res.status).toBe(200);
+    // claimedBy must be pinned to the token's agentId
+    expect(capturedClaimedBy[0]).toBe("agent-1");
+  });
+
+  it("POST /tasks/:id/claim: pool task keeps assignee null, claimedBy=agentId after claim", async () => {
+    const poolTask = makeTask({
+      id: "pool-1",
+      assignee: null,
+      repo: "app-vitals/vitals-os",
+    });
+
+    const app = makeApp({
+      tokenService: fakeRepoAgentTokenService(["app-vitals/vitals-os"]),
+      taskService: fakeTaskService({ getResult: poolTask }),
+      scopeResolver: makeScopeResolver(["app-vitals/vitals-os"]),
+    });
+
+    const res = await app.request("/tasks/pool-1/claim", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${AGENT_TOKEN}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ claimedBy: "agent-1" }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Task;
+    // assignee stays null (pool task), claimedBy is set
+    expect(body.assignee).toBeNull();
+    expect(body.claimedBy).toBe("agent-1");
+  });
+
+  it("POST /tasks/:id/heartbeat works for pool task claimed by agent (claimedBy check)", async () => {
+    // After claiming, the task has assignee=null but claimedBy=agent-1
+    const claimedPoolTask = makeTask({
+      id: "pool-1",
+      assignee: null,
+      claimedBy: "agent-1",
+      repo: "app-vitals/vitals-os",
+      status: "in_progress",
+    });
+
+    const app = makeApp({
+      tokenService: fakeRepoAgentTokenService(["app-vitals/vitals-os"]),
+      taskService: fakeTaskService({ getResult: claimedPoolTask }),
+      scopeResolver: makeScopeResolver(["app-vitals/vitals-os"]),
+    });
+
+    const res = await app.request("/tasks/pool-1/heartbeat", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${AGENT_TOKEN}` },
+    });
+
+    expect(res.status).toBe(200);
+  });
+
+  it("GET /tasks with repo-scoped agent token passes agentScope (not assignee) to list()", async () => {
+    const capturedFilters: TaskListFilters[] = [];
+
+    const spyTaskService: TaskServiceLike = {
+      ...fakeTaskService(),
+      async list(filters?) {
+        capturedFilters.push(filters ?? {});
+        return { tasks: [], total: 0, limit: 50, offset: 0 };
+      },
+    };
+
+    const app = makeApp({
+      tokenService: fakeRepoAgentTokenService(["app-vitals/vitals-os"]),
+      taskService: spyTaskService,
+      scopeResolver: makeScopeResolver(["app-vitals/vitals-os"]),
+    });
+
+    const res = await app.request("/tasks", {
+      headers: { Authorization: `Bearer ${AGENT_TOKEN}` },
+    });
+
+    expect(res.status).toBe(200);
+    expect(capturedFilters[0]?.agentScope).toEqual({
+      agentId: "agent-1",
+      repos: ["app-vitals/vitals-os"],
+    });
+    expect(capturedFilters[0]?.assignee).toBeUndefined();
   });
 });
