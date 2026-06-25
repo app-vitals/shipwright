@@ -363,13 +363,13 @@ describeOrSkip("task-store API (integration)", () => {
 
     const res = await app.request("/tasks?ready=true", { headers: auth() });
     expect(res.status).toBe(200);
-    const tasks = (await res.json()) as Array<{ id: string; title: string }>;
-    const ids = tasks.map((t) => t.id);
+    const body = (await res.json()) as { tasks: Array<{ id: string; title: string }>; total: number };
+    const ids = body.tasks.map((t) => t.id);
     // ready task qualifies; blockingDep is pending with no deps → also ready.
     expect(ids).toContain(ready.id);
     expect(ids).toContain(blockingDep.id);
     // the "blocked" task must NOT appear
-    const titles = tasks.map((t) => t.title);
+    const titles = body.tasks.map((t) => t.title);
     expect(titles).not.toContain("blocked");
     expect(titles).not.toContain("inprog");
   });

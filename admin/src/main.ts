@@ -301,6 +301,7 @@ async function startServer(): Promise<void> {
           },
         }
       : {};
+  // TODO: wire fetchTaskStorePr once task-store exposes a per-task PR endpoint
 
   const adminUIApp = createAdminUIApp({
     prisma: prisma as never,
