@@ -2360,4 +2360,40 @@ describe("admin UI — tasks page", () => {
       "/admin/tasks?error=task_store_unavailable",
     );
   });
+
+  it("GET /admin/tasks with no ?state= forwards state=ready to task-store by default", async () => {
+    let capturedParams: URLSearchParams | null = null;
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async (params: URLSearchParams) => {
+          capturedParams = params;
+          return { tasks: [], total: 0, limit: 50, offset: 0 };
+        },
+      }),
+    );
+    const res = await app.request("/admin/tasks", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    expect(capturedParams).not.toBeNull();
+    expect((capturedParams as unknown as URLSearchParams).get("state")).toBe("ready");
+  });
+
+  it("GET /admin/tasks?state=blocked returns 200 and forwards state=blocked to task-store", async () => {
+    let capturedParams: URLSearchParams | null = null;
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async (params: URLSearchParams) => {
+          capturedParams = params;
+          return { tasks: [], total: 0, limit: 50, offset: 0 };
+        },
+      }),
+    );
+    const res = await app.request("/admin/tasks?state=blocked", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    expect(capturedParams).not.toBeNull();
+    expect((capturedParams as unknown as URLSearchParams).get("state")).toBe("blocked");
+  });
 });

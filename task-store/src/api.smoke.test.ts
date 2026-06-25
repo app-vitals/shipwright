@@ -154,6 +154,7 @@ function fakeTaskService(
     claimThrows?: Error;
     listResult?: Task[];
     listReadyResult?: Task[];
+    listBlockedResult?: Task[];
   } = {},
 ): TaskServiceLike {
   return {
@@ -168,6 +169,9 @@ function fakeTaskService(
     },
     async listReady() {
       return opts.listReadyResult ?? [];
+    },
+    async listBlocked() {
+      return (opts.listBlockedResult ?? []).map(withBlockedBy);
     },
     async get(id: string) {
       if ("getResult" in opts)

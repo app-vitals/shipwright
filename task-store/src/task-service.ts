@@ -29,8 +29,8 @@ export type TaskWithBlockedBy = Task & { blockedBy: BlockedByEntry[] };
 /** Filters accepted by TaskService.list. */
 export interface TaskListFilters {
   status?: string;
-  /** High-level lifecycle filter: "open" = active, "closed" = terminal. */
-  state?: "open" | "closed";
+  /** High-level lifecycle filter: "open" | "closed" | "in_progress". */
+  state?: "open" | "closed" | "in_progress";
   session?: string;
   repo?: string;
   assignee?: string;
@@ -61,6 +61,7 @@ export interface TaskListResult {
 export interface TaskServiceLike {
   list(filters?: TaskListFilters): Promise<TaskListResult>;
   listReady(agentId?: string, repos?: string[]): Promise<Task[]>;
+  listBlocked(agentId?: string): Promise<TaskWithBlockedBy[]>;
   distinct(agentId?: string): Promise<{ sessions: string[]; repos: string[] }>;
   get(id: string): Promise<TaskWithBlockedBy | null>;
   create(data: Prisma.TaskCreateInput): Promise<Task>;
@@ -93,6 +94,8 @@ export class TaskService implements TaskServiceLike {
       where.status = { in: [...OPEN_STATUSES] };
     } else if (filters.state === "closed") {
       where.status = { in: [...CLOSED_STATUSES] };
+    } else if (filters.state === "in_progress") {
+      where.status = { in: ["in_progress", "pr_open", "approved"] };
     }
     if (filters.session) where.session = filters.session;
     if (filters.claimedBy) where.claimedBy = filters.claimedBy;
@@ -162,6 +165,26 @@ export class TaskService implements TaskServiceLike {
       );
     }
     return ready;
+  }
+
+  /**
+   * Blocked tasks: status === "blocked" OR (status === "pending" AND blockedBy.length > 0).
+   *
+   * Captures explicitly blocked tasks, HITL-gated tasks, and dep-blocked pending tasks.
+   * Loads the full task graph so computeBlockedBy can resolve all dependency IDs.
+   *
+   * Agent tokens are scoped to their own tasks: pass agentId to filter by assignee.
+   */
+  async listBlocked(agentId?: string): Promise<TaskWithBlockedBy[]> {
+    const allTasks = await this.prisma.task.findMany();
+    return allTasks
+      .map((t: Task) => ({ ...t, blockedBy: computeBlockedBy(t, allTasks) }))
+      .filter((t: TaskWithBlockedBy) => {
+        if (agentId && t.assignee !== agentId) return false;
+        if (t.status === "blocked") return true;
+        if (t.status === "pending") return t.blockedBy.length > 0;
+        return false;
+      });
   }
 
   async distinct(

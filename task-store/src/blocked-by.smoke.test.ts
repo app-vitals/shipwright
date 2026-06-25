@@ -110,6 +110,7 @@ function fakeTaskService(
     getResult?: Task | null;
     listResult?: Task[];
     listReadyResult?: Task[];
+    listBlockedResult?: Task[];
     allTasks?: Task[];
   } = {},
 ): TaskServiceLike {
@@ -127,6 +128,9 @@ function fakeTaskService(
     },
     async listReady() {
       return opts.listReadyResult ?? [];
+    },
+    async listBlocked() {
+      return (opts.listBlockedResult ?? []).map((t) => withBlockedBy(t, allTasks));
     },
     async get(id: string) {
       if ("getResult" in opts) {
