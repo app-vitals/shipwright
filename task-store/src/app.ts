@@ -18,14 +18,45 @@
 import { Hono } from "hono";
 import { type TaskStoreAuthEnv, createBearerAuthMiddleware } from "./auth.ts";
 import { ApiError } from "./errors.ts";
+import type { PullRequestServiceLike } from "./pull-request-service.ts";
+import { createPrsRoutes } from "./routes/prs.ts";
 import { createTasksRoutes } from "./routes/tasks.ts";
 import { createTokensRoutes } from "./routes/tokens.ts";
 import type { TaskServiceLike } from "./task-service.ts";
 import type { TokenServiceLike } from "./token-service.ts";
 
+/** No-op PullRequestService used when the feature is not wired up in a test context. */
+const noopPrService: PullRequestServiceLike = {
+  async list() {
+    return { prs: [], total: 0, limit: 50, offset: 0 };
+  },
+  async get() {
+    return null;
+  },
+  async update(_id, _data) {
+    return {} as never;
+  },
+  async claim(_repo, _prNumber, _commitSha, _claimedBy) {
+    return { status: 201 as const, record: {} as never };
+  },
+  async heartbeat(_id) {
+    return {} as never;
+  },
+  async complete(_id) {
+    return {} as never;
+  },
+  async patch(_id) {
+    return {} as never;
+  },
+  async release(_id) {
+    return {} as never;
+  },
+};
+
 export interface TaskStoreDeps {
   taskService: TaskServiceLike;
   tokenService: TokenServiceLike;
+  pullRequestService?: PullRequestServiceLike;
   /** Optional scope resolver for agent tokens — returns repos from agents service. */
   scopeResolver?: (agentId: string) => Promise<string[]>;
 }
@@ -61,6 +92,7 @@ export function createTaskStoreApp(
 
   app.route("/tasks", createTasksRoutes(deps.taskService));
   app.route("/tokens", createTokensRoutes(deps.tokenService));
+  app.route("/prs", createPrsRoutes(deps.pullRequestService ?? noopPrService));
 
   return app;
 }
