@@ -504,6 +504,18 @@ describe("createTaskStoreClient query()", () => {
     expect(result).toEqual([FAKE_TASK]);
   });
 
+  test("accepts legacy bare Task[] response from older task-store", async () => {
+    globalThis.fetch = (async () =>
+      ({
+        ok: true,
+        json: async () => [FAKE_TASK],
+      }) as Response) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient();
+    const result = await client.query(new URLSearchParams({ ready: "true" }));
+    expect(result).toEqual([FAKE_TASK]);
+  });
+
   test("unwraps paginated { tasks } envelope (returned by ?status=...)", async () => {
     globalThis.fetch = (async () =>
       ({
