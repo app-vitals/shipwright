@@ -20,6 +20,7 @@
 import { join } from "node:path";
 import { Hono } from "hono";
 import { PrismaClient } from "../prisma/client/index.js";
+import type { PullRequestItem } from "./admin-ui-pages.ts";
 import { createAdminUIApp } from "./admin-ui.ts";
 import { AgentCronJobService } from "./agent-cron-jobs.ts";
 import { AgentCronRunService } from "./agent-cron-runs.ts";
@@ -311,7 +312,7 @@ async function startServer(): Promise<void> {
               throw new Error(`task-store GET /prs?taskId=${taskId} → ${res.status}`);
             const data = await res.json() as { prs?: unknown[] };
             const prs = data.prs ?? [];
-            return prs.length > 0 ? (prs[0] as ReturnType<typeof Object>) : null;
+            return prs.length > 0 ? (prs[0] as PullRequestItem) : null;
           },
           fetchTaskStorePrs: async (params: URLSearchParams) => {
             const url = `${taskStoreUrl}/prs${params.size > 0 ? `?${params}` : ""}`;
