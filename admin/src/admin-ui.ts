@@ -25,6 +25,7 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { sign, verify } from "hono/jwt";
 import {
+  type PrListItem,
   type PullRequestItem,
   type TaskItem,
   renderAgentDetailPage,
@@ -33,6 +34,8 @@ import {
   renderProvisionCompletePage,
   renderProvisionStartPage,
   renderProvisionXappTokenPage,
+  renderPrDetailPage,
+  renderPrsPage,
   renderTaskDetailPage,
   renderTasksPage,
 } from "./admin-ui-pages.ts";
@@ -1728,6 +1731,29 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       fetchTaskStoreTask ? `/admin/tasks/${taskId}` : "/admin/tasks",
       302,
     );
+  });
+
+  // ─── PRs ─────────────────────────────────────────────────────────────────
+
+  app.get("/admin/prs", requireAuth, (c) => {
+    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+    const prs: PrListItem[] = [];
+    return html(
+      renderPrsPage(
+        prs,
+        {},
+        false,
+        c.var.userEmail,
+        {},
+        { total: 0, limit: 50, page: 1 },
+        timezone,
+      ),
+    );
+  });
+
+  app.get("/admin/prs/:id", requireAuth, (c) => {
+    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+    return c.redirect("/admin/prs", 302);
   });
 
   // ─── Agent delete (danger zone) ───────────────────────────────────────────

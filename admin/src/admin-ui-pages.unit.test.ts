@@ -2444,6 +2444,17 @@ describe("renderPrDetailPage", () => {
     expect(html).toContain("&lt;script&gt;");
   });
 
+  test("Timeline section includes heartbeatAt as Last Heartbeat", () => {
+    const html = render();
+    // PR_DETAIL has heartbeatAt: "2026-06-11T12:00:00Z"
+    expect(html).toContain("Last Heartbeat");
+  });
+
+  test("Timeline section omits Last Heartbeat when heartbeatAt is null", () => {
+    const html = render({ ...PR_DETAIL, heartbeatAt: null });
+    expect(html).not.toContain("Last Heartbeat");
+  });
+
   test("uses renderAdminToolbar with /admin/prs active path", () => {
     const html = render();
     expect(html).toContain('href="/admin/prs"');

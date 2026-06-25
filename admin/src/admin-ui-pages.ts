@@ -1686,6 +1686,7 @@ export function renderPrsPage(
     limit: 50,
     page: 1,
   },
+  timezone = "America/Los_Angeles",
 ): string {
   const degradedHtml = degraded
     ? `<div class="alert alert-warning">PR store unavailable — data shown may be stale or empty.</div>`
@@ -1724,7 +1725,7 @@ export function renderPrsPage(
                       : d.toLocaleString("en-US", {
                           dateStyle: "medium",
                           timeStyle: "short",
-                          timeZone: "UTC",
+                          timeZone: timezone,
                         });
                   })(),
                 )
@@ -1953,6 +1954,7 @@ export function renderPrDetailPage(
     dateField("Reviewed", pr.reviewedAt),
     dateField("Patched", pr.patchedAt),
     dateField("Merged", pr.mergedAt),
+    dateField("Last Heartbeat", pr.heartbeatAt),
     dateField("Updated", pr.updatedAt),
   ]
     .filter(Boolean)
