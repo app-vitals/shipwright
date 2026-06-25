@@ -13,6 +13,7 @@ import {
   type CronJobItem,
   type MemberItem,
   type PluginItem,
+  type PrListItem,
   type PullRequestItem,
   type TaskItem,
   type TokenItem,
@@ -20,6 +21,8 @@ import {
   renderAgentDetailPage,
   renderAgentsPage,
   renderLoginPage,
+  renderPrDetailPage,
+  renderPrsPage,
   renderProvisionCompletePage,
   renderProvisionPasteForm,
   renderProvisionStartPage,
@@ -2110,5 +2113,350 @@ describe("renderTaskDetailPage — Pull Request Review section", () => {
     const html = render(xssPr);
     expect(html).not.toContain("<script>xss");
     expect(html).toContain("&lt;script&gt;");
+  });
+});
+
+// ─── renderPrsPage ────────────────────────────────────────────────────────────
+
+const PR_LIST_ITEM_1: PrListItem = {
+  id: "pr-001",
+  repo: "org/repo-a",
+  prNumber: 10,
+  taskId: "TASK-1",
+  staged: false,
+  state: "open",
+  reviewState: "pending",
+  commitSha: "abc123",
+  patchCycles: 0,
+  agentId: "agent-001",
+  claimedBy: "agent-001",
+  reviewedAt: null,
+  patchedAt: null,
+  mergedAt: null,
+  claimedAt: "2026-06-01T10:00:00Z",
+  heartbeatAt: null,
+  createdAt: "2026-06-01T09:00:00Z",
+  updatedAt: "2026-06-01T10:00:00Z",
+};
+
+const PR_LIST_ITEM_2: PrListItem = {
+  id: "pr-002",
+  repo: "org/repo-b",
+  prNumber: 20,
+  taskId: null,
+  staged: true,
+  state: "closed",
+  reviewState: "in_review",
+  commitSha: null,
+  patchCycles: 3,
+  agentId: null,
+  claimedBy: null,
+  reviewedAt: "2026-06-02T10:00:00Z",
+  patchedAt: "2026-06-02T11:00:00Z",
+  mergedAt: "2026-06-03T09:00:00Z",
+  claimedAt: null,
+  heartbeatAt: null,
+  createdAt: "2026-06-01T08:00:00Z",
+  updatedAt: "2026-06-03T09:00:00Z",
+};
+
+const EMPTY_PR_PAGINATION = { total: 0, limit: 50, page: 1 };
+
+describe("renderPrsPage", () => {
+  function render(
+    prs: PrListItem[] = [],
+    filters: Parameters<typeof renderPrsPage>[1] = {},
+    degraded = false,
+  ): string {
+    return renderPrsPage(
+      prs,
+      filters,
+      degraded,
+      USER_NAME,
+      { "agent-001": "Alpha Agent" },
+      { total: prs.length, limit: 50, page: 1 },
+    );
+  }
+
+  test("returns a valid HTML document", () => {
+    const html = render();
+    expect(html).toContain("<!DOCTYPE html>");
+    expect(html).toContain("<html");
+    expect(html).toContain("</html>");
+  });
+
+  test("empty state shows 'No PRs found'", () => {
+    const html = render([]);
+    expect(html).toContain("No PRs found");
+  });
+
+  test("renders table with required column headers", () => {
+    const html = render([PR_LIST_ITEM_1]);
+    expect(html).toContain("ID");
+    expect(html).toContain("Repo");
+    expect(html).toContain("PR#");
+    expect(html).toContain("Task");
+    expect(html).toContain("State");
+    expect(html).toContain("Review State");
+    expect(html).toContain("Patch Cycles");
+    expect(html).toContain("Claimed By");
+    expect(html).toContain("Updated");
+  });
+
+  test("renders 2+ PRs as table rows", () => {
+    const html = render([PR_LIST_ITEM_1, PR_LIST_ITEM_2]);
+    expect(html).toContain("org/repo-a");
+    expect(html).toContain("org/repo-b");
+    expect(html).toContain("10");
+    expect(html).toContain("20");
+  });
+
+  test("renders repo field for each PR", () => {
+    const html = render([PR_LIST_ITEM_1, PR_LIST_ITEM_2]);
+    expect(html).toContain("org/repo-a");
+    expect(html).toContain("org/repo-b");
+  });
+
+  test("renders state and reviewState fields", () => {
+    const html = render([PR_LIST_ITEM_1]);
+    expect(html).toContain("open");
+    expect(html).toContain("pending");
+  });
+
+  test("renders patchCycles field", () => {
+    const html = render([PR_LIST_ITEM_2]);
+    expect(html).toContain("3");
+  });
+
+  test("renders taskId when present", () => {
+    const html = render([PR_LIST_ITEM_1]);
+    expect(html).toContain("TASK-1");
+  });
+
+  test("degraded warning shown when degraded=true", () => {
+    const html = render([], {}, true);
+    expect(html).toContain("unavailable");
+  });
+
+  test("no degraded warning when degraded=false", () => {
+    const html = render([], {}, false);
+    expect(html).not.toContain("unavailable");
+  });
+
+  test("state tabs render All / Open / In Review / Closed", () => {
+    const html = render();
+    expect(html).toContain("All");
+    expect(html).toContain("Open");
+    expect(html).toContain("In Review");
+    expect(html).toContain("Closed");
+  });
+
+  test("All tab has no state/reviewState query param", () => {
+    const html = render();
+    // The All tab href should be /admin/prs with no query params
+    expect(html).toContain('href="/admin/prs"');
+    expect(html).toContain(">All<");
+  });
+
+  test("Open tab links to ?state=open", () => {
+    const html = render();
+    expect(html).toContain("state=open");
+  });
+
+  test("In Review tab links to ?reviewState=in_review", () => {
+    const html = render();
+    expect(html).toContain("reviewState=in_review");
+  });
+
+  test("Closed tab links to ?state=closed", () => {
+    const html = render();
+    expect(html).toContain("state=closed");
+  });
+
+  test("filter form includes repo input", () => {
+    const html = render();
+    expect(html).toContain('name="repo"');
+  });
+
+  test("filter form includes state input", () => {
+    const html = render();
+    expect(html).toContain('name="state"');
+  });
+
+  test("filter form includes reviewState input", () => {
+    const html = render();
+    expect(html).toContain('name="reviewState"');
+  });
+
+  test("filter form includes taskId input", () => {
+    const html = render();
+    expect(html).toContain('name="taskId"');
+  });
+
+  test("filter values are pre-filled in form", () => {
+    const html = render([], { repo: "org/my-repo", taskId: "TASK-42" });
+    expect(html).toContain("org/my-repo");
+    expect(html).toContain("TASK-42");
+  });
+
+  test("XSS: repo name in list is escaped", () => {
+    const xssPr: PrListItem = { ...PR_LIST_ITEM_1, repo: "<script>alert(1)</script>" };
+    const html = render([xssPr]);
+    expect(html).not.toContain("<script>alert(1)</script>");
+    expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+  });
+
+  test("XSS: filter repo value is escaped in form", () => {
+    const html = render([], { repo: '<script>xss()</script>' });
+    expect(html).not.toContain("<script>xss");
+    expect(html).toContain("&lt;script&gt;");
+  });
+
+  test("uses renderAdminToolbar with /admin/prs active path", () => {
+    const html = render();
+    expect(html).toContain('href="/admin/prs" class="vos-nav-link active"');
+  });
+});
+
+// ─── renderPrDetailPage ──────────────────────────────────────────────────────
+
+const PR_DETAIL: PrListItem = {
+  id: "pr-detail-001",
+  repo: "org/detail-repo",
+  prNumber: 99,
+  taskId: "TASK-99",
+  staged: false,
+  state: "open",
+  reviewState: "in_review",
+  commitSha: "deadbeef",
+  patchCycles: 2,
+  agentId: "agent-x",
+  claimedBy: "agent-x",
+  reviewedAt: "2026-06-10T10:00:00Z",
+  patchedAt: "2026-06-11T11:00:00Z",
+  mergedAt: null,
+  claimedAt: "2026-06-09T08:00:00Z",
+  heartbeatAt: "2026-06-11T12:00:00Z",
+  createdAt: "2026-06-09T07:00:00Z",
+  updatedAt: "2026-06-11T12:00:00Z",
+};
+
+describe("renderPrDetailPage", () => {
+  function render(pr: PrListItem = PR_DETAIL): string {
+    return renderPrDetailPage(pr, USER_NAME, { "agent-x": "Xray Agent" });
+  }
+
+  test("returns a valid HTML document", () => {
+    const html = render();
+    expect(html).toContain("<!DOCTYPE html>");
+    expect(html).toContain("<html");
+    expect(html).toContain("</html>");
+  });
+
+  test("renders repo field", () => {
+    const html = render();
+    expect(html).toContain("org/detail-repo");
+  });
+
+  test("renders prNumber field", () => {
+    const html = render();
+    expect(html).toContain("99");
+  });
+
+  test("renders state field", () => {
+    const html = render();
+    expect(html).toContain("open");
+  });
+
+  test("renders reviewState field", () => {
+    const html = render();
+    expect(html).toContain("in_review");
+  });
+
+  test("renders patchCycles field", () => {
+    const html = render();
+    expect(html).toContain("2");
+  });
+
+  test("renders taskId field when present", () => {
+    const html = render();
+    expect(html).toContain("TASK-99");
+  });
+
+  test("renders commitSha field when present", () => {
+    const html = render();
+    expect(html).toContain("deadbeef");
+  });
+
+  test("renders claimedBy field", () => {
+    const html = render();
+    // agent-x maps to "Xray Agent"
+    expect(html).toContain("Xray Agent");
+  });
+
+  test("renders Timeline section with date fields", () => {
+    const html = render();
+    expect(html).toContain("Timeline");
+  });
+
+  test("Timeline section includes createdAt", () => {
+    const html = render();
+    expect(html).toContain("Created");
+    expect(html).toContain("2026");
+  });
+
+  test("Timeline section includes claimedAt when present", () => {
+    const html = render();
+    expect(html).toContain("Claimed");
+  });
+
+  test("Timeline section includes reviewedAt when present", () => {
+    const html = render();
+    expect(html).toContain("Reviewed");
+  });
+
+  test("Timeline section includes patchedAt when present", () => {
+    const html = render();
+    expect(html).toContain("Patched");
+  });
+
+  test("Timeline section omits mergedAt when null", () => {
+    // mergedAt is null in PR_DETAIL — no 'Merged' label should appear in the timeline
+    const html = render({ ...PR_DETAIL, mergedAt: null, patchedAt: null });
+    // Only check that 'Merged' as a timeline label is absent (it might appear in state fields)
+    expect(html).not.toMatch(/>\s*Merged\s*<\/td>/);
+  });
+
+  test("Timeline section includes mergedAt when present", () => {
+    const html = render({ ...PR_DETAIL, mergedAt: "2026-06-12T10:00:00Z" });
+    expect(html).toContain("Merged");
+  });
+
+  test("renders id field", () => {
+    const html = render();
+    expect(html).toContain("pr-detail-001");
+  });
+
+  test("XSS: repo name in detail is escaped", () => {
+    const xssPr: PrListItem = { ...PR_DETAIL, repo: "<script>alert(1)</script>" };
+    const html = render(xssPr);
+    expect(html).not.toContain("<script>alert(1)</script>");
+    expect(html).toContain("&lt;script&gt;");
+  });
+
+  test("Timeline section includes heartbeatAt as Last Heartbeat", () => {
+    const html = render();
+    // PR_DETAIL has heartbeatAt: "2026-06-11T12:00:00Z"
+    expect(html).toContain("Last Heartbeat");
+  });
+
+  test("Timeline section omits Last Heartbeat when heartbeatAt is null", () => {
+    const html = render({ ...PR_DETAIL, heartbeatAt: null });
+    expect(html).not.toContain("Last Heartbeat");
+  });
+
+  test("uses renderAdminToolbar with /admin/prs active path", () => {
+    const html = render();
+    expect(html).toContain('href="/admin/prs" class="vos-nav-link active"');
   });
 });

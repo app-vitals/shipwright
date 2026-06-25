@@ -15,7 +15,7 @@ import type {
   GoogleTokenResponse,
   GoogleUserInfo,
 } from "./google-auth-client.ts";
-import type { PullRequestItem } from "./admin-ui-pages.ts";
+import type { PrListItem, PullRequestItem } from "./admin-ui-pages.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -2721,5 +2721,102 @@ describe("admin UI — repos mutation routes", () => {
     });
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe(`/admin/agents/${AGENT_ID}`);
+  });
+});
+
+// ─── PRs page ─────────────────────────────────────────────────────────────────
+
+describe("admin UI — PRs page", () => {
+  let cookie: string;
+  let nonAdminCookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+    nonAdminCookie = await makeSessionCookie(
+      SESSION_SECRET,
+      "google-sub-member",
+      "member@example.com",
+      false,
+    );
+  });
+
+  const MOCK_PR: PrListItem = {
+    id: "pr-smoke-1",
+    repo: "app-vitals/shipwright",
+    prNumber: 42,
+    taskId: "task-abc",
+    staged: false,
+    state: "open",
+    reviewState: "in_review",
+    patchCycles: 0,
+    agentId: null,
+    claimedBy: null,
+    createdAt: "2026-06-01T00:00:00Z",
+    updatedAt: "2026-06-20T00:00:00Z",
+  };
+
+  it("GET /admin/prs returns 200 with PR table data when fetchTaskStorePrs is injected", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStorePrs: async () => ({
+          prs: [MOCK_PR],
+          total: 1,
+          limit: 50,
+          offset: 0,
+        }),
+      }),
+    );
+    const res = await app.request("/admin/prs", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("app-vitals/shipwright");
+    expect(html).toContain("#42");
+  });
+
+  it("GET /admin/prs returns 200 with degraded warning banner when fetchTaskStorePrs is absent", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        // fetchTaskStorePrs intentionally absent — degraded mode
+      }),
+    );
+    const res = await app.request("/admin/prs", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("PR store unavailable");
+  });
+
+  it("GET /admin/prs/:id returns 200 with PR detail when fetchTaskStorePrById is injected and returns a PR", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStorePrById: async (id: string) =>
+          id === "pr-smoke-1" ? MOCK_PR : null,
+      }),
+    );
+    const res = await app.request("/admin/prs/pr-smoke-1", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("app-vitals/shipwright");
+    expect(html).toContain("42");
+  });
+
+  it("GET /admin/prs unauthenticated redirects to /admin/login", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request("/admin/prs");
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/admin/login");
+  });
+
+  it("GET /admin/prs returns 403 for non-admin authenticated user", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request("/admin/prs", {
+      headers: { Cookie: `admin_session=${nonAdminCookie}` },
+    });
+    expect(res.status).toBe(403);
   });
 });

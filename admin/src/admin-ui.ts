@@ -25,6 +25,7 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { sign, verify } from "hono/jwt";
 import {
+  type PrListItem,
   type PullRequestItem,
   type TaskItem,
   renderAgentDetailPage,
@@ -33,6 +34,8 @@ import {
   renderProvisionCompletePage,
   renderProvisionStartPage,
   renderProvisionXappTokenPage,
+  renderPrDetailPage,
+  renderPrsPage,
   renderTaskDetailPage,
   renderTasksPage,
 } from "./admin-ui-pages.ts";
@@ -239,6 +242,21 @@ export interface AdminUIDeps {
    * If absent or the query fails, the task detail page renders without a PR section.
    */
   fetchTaskStorePr?: (taskId: string) => Promise<PullRequestItem | null>;
+  /**
+   * Fetch a paginated list of pull requests from the task-store service.
+   * If absent, the PRs page renders in degraded mode (empty table + warning banner).
+   */
+  fetchTaskStorePrs?: (params: URLSearchParams) => Promise<{
+    prs: PrListItem[];
+    total: number;
+    limit: number;
+    offset: number;
+  }>;
+  /**
+   * Fetch a single pull request by its ID from the task-store service.
+   * If absent or returns null, the PR detail route redirects to /admin/prs.
+   */
+  fetchTaskStorePrById?: (id: string) => Promise<PrListItem | null>;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -338,6 +356,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     fetchDistinctTaskValues,
     timezone = "America/Los_Angeles",
     fetchTaskStorePr,
+    fetchTaskStorePrs,
+    fetchTaskStorePrById,
   } = deps;
 
   const app = new Hono<AdminUIEnv>();
@@ -1728,6 +1748,97 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       fetchTaskStoreTask ? `/admin/tasks/${taskId}` : "/admin/tasks",
       302,
     );
+  });
+
+  // ─── PRs ─────────────────────────────────────────────────────────────────
+
+  app.get("/admin/prs", requireAuth, async (c) => {
+    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+
+    const stateParam = c.req.query("state") ?? undefined;
+    const reviewState = c.req.query("reviewState") ?? undefined;
+    const repo = c.req.query("repo") ?? undefined;
+    const taskId = c.req.query("taskId") ?? undefined;
+    const pageRaw = c.req.query("page");
+    const page = pageRaw ? Math.max(1, Number.parseInt(pageRaw, 10) || 1) : 1;
+    const limit = 50;
+    const offset = (page - 1) * limit;
+
+    let prs: PrListItem[] = [];
+    let total = 0;
+    let degraded = false;
+
+    if (!fetchTaskStorePrs) {
+      degraded = true;
+    } else {
+      const params = new URLSearchParams();
+      if (stateParam) params.set("state", stateParam);
+      if (reviewState) params.set("reviewState", reviewState);
+      if (repo) params.set("repo", repo);
+      if (taskId) params.set("taskId", taskId);
+      params.set("limit", String(limit));
+      params.set("offset", String(offset));
+      try {
+        const result = await fetchTaskStorePrs(params);
+        prs = result.prs;
+        total = result.total;
+      } catch {
+        degraded = true;
+      }
+    }
+
+    const agentIds = [
+      ...new Set(
+        prs
+          .flatMap((pr) => [pr.agentId, pr.claimedBy])
+          .filter((id): id is string => !!id),
+      ),
+    ];
+    const agentNames: Record<string, string> = {};
+    if (agentIds.length > 0) {
+      const agents = await prisma.agent.findMany({
+        where: { id: { in: agentIds } },
+      });
+      for (const a of agents) agentNames[a.id] = a.name;
+    }
+
+    return html(
+      renderPrsPage(
+        prs,
+        { state: stateParam, reviewState, repo, taskId },
+        degraded,
+        c.var.userEmail,
+        agentNames,
+        { total, limit, page },
+        timezone,
+      ),
+    );
+  });
+
+  app.get("/admin/prs/:id", requireAuth, async (c) => {
+    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+    if (!fetchTaskStorePrById) return c.redirect("/admin/prs", 302);
+    const prId = c.req.param("id");
+    let pr: PrListItem | null = null;
+    try {
+      pr = await fetchTaskStorePrById(prId);
+    } catch {
+      return c.redirect("/admin/prs", 302);
+    }
+    if (!pr) return c.redirect("/admin/prs", 302);
+
+    const agentIds = [pr.agentId, pr.claimedBy].filter(
+      (id): id is string => !!id,
+    );
+    const agentNames: Record<string, string> = {};
+    if (agentIds.length > 0) {
+      const agents = await prisma.agent.findMany({
+        where: { id: { in: agentIds } },
+      });
+      for (const a of agents) agentNames[a.id] = a.name;
+    }
+
+    return html(renderPrDetailPage(pr, c.var.userEmail, agentNames, timezone));
   });
 
   // ─── Agent delete (danger zone) ───────────────────────────────────────────

@@ -57,6 +57,29 @@ export interface PullRequestItem {
   patchedAt?: string | null;
 }
 
+// Inline type for the PR list/detail admin UI.
+// Mirrors PullRequest model fields without cross-package coupling.
+export interface PrListItem {
+  id: string;
+  repo: string;
+  prNumber: number;
+  taskId?: string | null;
+  staged: boolean;
+  state: string;
+  reviewState: string;
+  commitSha?: string | null;
+  patchCycles: number;
+  agentId?: string | null;
+  claimedBy?: string | null;
+  reviewedAt?: string | null;
+  patchedAt?: string | null;
+  mergedAt?: string | null;
+  claimedAt?: string | null;
+  heartbeatAt?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
 export interface AgentListItem {
   id: string;
   name: string;
@@ -1649,6 +1672,336 @@ export function renderTaskDetailPage(
         : ""
     }
     ${prSection}
+  </div>
+</body>
+</html>`;
+}
+
+export function renderPrsPage(
+  prs: PrListItem[],
+  filters: { repo?: string; state?: string; reviewState?: string; taskId?: string },
+  degraded: boolean,
+  userName: string,
+  agentNames: Record<string, string> = {},
+  pagination: { total: number; limit: number; page: number } = {
+    total: 0,
+    limit: 50,
+    page: 1,
+  },
+  timezone = "America/Los_Angeles",
+): string {
+  const degradedHtml = degraded
+    ? `<div class="alert alert-warning">PR store unavailable — data shown may be stale or empty.</div>`
+    : "";
+
+  const prStateBadgeClass = (s: string) => {
+    if (s === "open") return "badge-blue";
+    if (s === "closed" || s === "merged") return "badge-green";
+    return "badge-gray";
+  };
+
+  const reviewStateBadgeClass = (s: string) => {
+    if (s === "in_review") return "badge-blue";
+    if (s === "approved" || s === "merged") return "badge-green";
+    if (s === "changes_requested") return "badge-red";
+    return "badge-gray";
+  };
+
+  const rows =
+    prs.length === 0
+      ? `<tr><td colspan="9" class="empty-state">No PRs found.</td></tr>`
+      : prs
+          .map((pr) => {
+            const claimedCell = pr.claimedBy
+              ? escapeHtml(agentNames[pr.claimedBy] ?? pr.claimedBy)
+              : '<span style="color:#9ca3af">—</span>';
+            const taskCell = pr.taskId
+              ? `<a href="/admin/tasks/${escapeHtml(pr.taskId)}" style="color:#6366f1;text-decoration:none">${escapeHtml(pr.taskId)}</a>`
+              : '<span style="color:#9ca3af">—</span>';
+            const updatedCell = pr.updatedAt
+              ? escapeHtml(
+                  (() => {
+                    const d = new Date(pr.updatedAt);
+                    return Number.isNaN(d.getTime())
+                      ? pr.updatedAt
+                      : d.toLocaleString("en-US", {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                          timeZone: timezone,
+                        });
+                  })(),
+                )
+              : '<span style="color:#9ca3af">—</span>';
+            return `<tr data-href="/admin/prs/${escapeHtml(pr.id)}" style="cursor:pointer">
+    <td class="mono" style="font-size:11px"><a href="/admin/prs/${escapeHtml(pr.id)}" style="color:#6366f1;text-decoration:none">${escapeHtml(pr.id)}</a></td>
+    <td style="font-size:12px">${escapeHtml(pr.repo)}</td>
+    <td style="font-size:12px">#${escapeHtml(String(pr.prNumber))}</td>
+    <td style="font-size:12px">${taskCell}</td>
+    <td><span class="badge ${prStateBadgeClass(pr.state)}">${escapeHtml(pr.state)}</span></td>
+    <td><span class="badge ${reviewStateBadgeClass(pr.reviewState)}">${escapeHtml(pr.reviewState)}</span></td>
+    <td style="font-size:12px;text-align:center">${escapeHtml(String(pr.patchCycles))}</td>
+    <td style="font-size:12px">${claimedCell}</td>
+    <td style="font-size:12px">${updatedCell}</td>
+  </tr>`;
+          })
+          .join("\n");
+
+  // State tab helpers — state tabs drive state/reviewState query params
+  const activeState = filters.state;
+  const activeReviewState = filters.reviewState;
+  const isTabActive = (tabState?: string, tabReviewState?: string): boolean => {
+    if (!tabState && !tabReviewState) {
+      // "All" tab is active when neither state nor reviewState is set
+      return !activeState && !activeReviewState;
+    }
+    if (tabState) return activeState === tabState;
+    if (tabReviewState) return activeReviewState === tabReviewState;
+    return false;
+  };
+
+  const makeTabParams = (tabState?: string, tabReviewState?: string): string => {
+    const p = new URLSearchParams();
+    if (tabState) p.set("state", tabState);
+    if (tabReviewState) p.set("reviewState", tabReviewState);
+    if (filters.repo) p.set("repo", filters.repo);
+    if (filters.taskId) p.set("taskId", filters.taskId);
+    const qs = p.toString();
+    return qs ? `?${qs}` : "";
+  };
+
+  const tabStyle = (tabState?: string, tabReviewState?: string) =>
+    isTabActive(tabState, tabReviewState)
+      ? "background:#6366f1;color:#fff;font-weight:600"
+      : "background:#fff;color:#374151";
+
+  const stateToggle = `
+    <div style="display:flex;gap:0;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;width:fit-content">
+      <a href="/admin/prs${makeTabParams()}"
+         style="padding:5px 14px;font-size:12px;text-decoration:none;${tabStyle()}">All</a>
+      <a href="/admin/prs${makeTabParams("open")}"
+         style="padding:5px 14px;font-size:12px;text-decoration:none;border-left:1px solid #e5e7eb;${tabStyle("open")}">Open</a>
+      <a href="/admin/prs${makeTabParams(undefined, "in_review")}"
+         style="padding:5px 14px;font-size:12px;text-decoration:none;border-left:1px solid #e5e7eb;${tabStyle(undefined, "in_review")}">In Review</a>
+      <a href="/admin/prs${makeTabParams("closed")}"
+         style="padding:5px 14px;font-size:12px;text-decoration:none;border-left:1px solid #e5e7eb;${tabStyle("closed")}">Closed</a>
+    </div>`;
+
+  // Pagination
+  const totalPages = Math.max(1, Math.ceil(pagination.total / pagination.limit));
+  const page = pagination.page;
+  const makePageUrl = (p: number) => {
+    const params = new URLSearchParams();
+    if (filters.state) params.set("state", filters.state);
+    if (filters.reviewState) params.set("reviewState", filters.reviewState);
+    if (filters.repo) params.set("repo", filters.repo);
+    if (filters.taskId) params.set("taskId", filters.taskId);
+    if (p > 1) params.set("page", String(p));
+    const qs = params.toString();
+    return `/admin/prs${qs ? `?${qs}` : ""}`;
+  };
+
+  const from = pagination.total === 0 ? 0 : (page - 1) * pagination.limit + 1;
+  const to = Math.min(page * pagination.limit, pagination.total);
+  const paginationHtml =
+    pagination.total === 0
+      ? ""
+      : `<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0 0;font-size:12px;color:#6b7280">
+      <span>${from}–${to} of ${pagination.total}</span>
+      <div style="display:flex;gap:4px">
+        ${page > 1 ? `<a href="${makePageUrl(page - 1)}" class="btn btn-secondary" style="font-size:11px;padding:3px 10px">← Prev</a>` : ""}
+        ${page < totalPages ? `<a href="${makePageUrl(page + 1)}" class="btn btn-secondary" style="font-size:11px;padding:3px 10px">Next →</a>` : ""}
+      </div>
+    </div>`;
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PRs — Shipwright Admin</title>
+  <style>${baseStyles()}
+    .badge-blue { background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe; }
+    .badge-green { background:#dcfce7;color:#166534;border:1px solid #bbf7d0; }
+    .badge-red { background:#fee2e2;color:#991b1b;border:1px solid #fecaca; }
+    .alert-warning { background:#fefce8;color:#854d0e;border:1px solid #fde047;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:13px; }
+  </style>
+</head>
+<body>
+  ${renderAdminToolbar(userName, "/admin/prs")}
+  <div class="vos-page">
+    <div class="page-header" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+      <h1 class="page-title" style="margin:0">PRs</h1>
+      ${stateToggle}
+    </div>
+    ${degradedHtml}
+    <div class="card" style="margin-bottom:16px">
+      <form method="GET" action="/admin/prs" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label" style="font-size:11px">Repo</label>
+          <input name="repo" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.repo ?? "")}" placeholder="org/repo" />
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label" style="font-size:11px">State</label>
+          <input name="state" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.state ?? "")}" placeholder="open / closed" />
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label" style="font-size:11px">Review State</label>
+          <input name="reviewState" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.reviewState ?? "")}" placeholder="in_review / approved" />
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label" style="font-size:11px">Task ID</label>
+          <input name="taskId" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.taskId ?? "")}" placeholder="TASK-123" />
+        </div>
+        <button type="submit" class="btn btn-secondary" style="font-size:12px;padding:4px 12px">Filter</button>
+        <a href="/admin/prs" class="btn btn-secondary" style="font-size:12px;padding:4px 12px">Reset</a>
+      </form>
+    </div>
+    <div class="card">
+      <table class="data-table" style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr>
+            <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">ID</th>
+            <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Repo</th>
+            <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">PR#</th>
+            <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Task</th>
+            <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">State</th>
+            <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Review State</th>
+            <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Patch Cycles</th>
+            <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Claimed By</th>
+            <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Updated</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows}
+        </tbody>
+      </table>
+      ${paginationHtml}
+    </div>
+  </div>
+  <script>
+    document.querySelectorAll("tr[data-href]").forEach(function(row) {
+      row.addEventListener("click", function(e) {
+        var target = e.target;
+        while (target && target !== row) {
+          if (target.tagName === "A" || target.tagName === "BUTTON" || target.tagName === "FORM" || target.tagName === "INPUT") return;
+          target = target.parentElement;
+        }
+        window.location.href = row.getAttribute("data-href");
+      });
+    });
+  </script>
+</body>
+</html>`;
+}
+
+export function renderPrDetailPage(
+  pr: PrListItem,
+  userName: string,
+  agentNames: Record<string, string> = {},
+  timezone = "America/Los_Angeles",
+): string {
+  function field(
+    label: string,
+    value: string | null | undefined,
+    mono = false,
+  ): string {
+    if (value === null || value === undefined || value === "") return "";
+    return `<tr>
+      <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top;white-space:nowrap">${escapeHtml(label)}</td>
+      <td style="padding:8px 12px;font-size:13px${mono ? ";font-family:monospace;font-size:12px" : ""}">${escapeHtml(value)}</td>
+    </tr>`;
+  }
+
+  function dateField(label: string, iso: string | null | undefined): string {
+    if (!iso) return "";
+    const d = new Date(iso);
+    const fmt = Number.isNaN(d.getTime())
+      ? iso
+      : d.toLocaleString("en-US", {
+          dateStyle: "medium",
+          timeStyle: "short",
+          timeZone: timezone,
+        });
+    return `<tr>
+      <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top">${escapeHtml(label)}</td>
+      <td style="padding:8px 12px;font-size:13px" title="${escapeHtml(iso)}">${escapeHtml(fmt)}</td>
+    </tr>`;
+  }
+
+  const claimedByDisplay = pr.claimedBy
+    ? agentNames[pr.claimedBy]
+      ? `${agentNames[pr.claimedBy]} (${pr.claimedBy})`
+      : pr.claimedBy
+    : null;
+
+  const metaRows = [
+    field("ID", pr.id, true),
+    field("Repo", pr.repo),
+    field("PR Number", String(pr.prNumber)),
+    field("Task", pr.taskId),
+    field("State", pr.state),
+    field("Review State", pr.reviewState),
+    field("Patch Cycles", String(pr.patchCycles)),
+    field("Commit SHA", pr.commitSha, true),
+    field("Staged", pr.staged ? "yes" : "no"),
+    field("Claimed By", claimedByDisplay, true),
+    field("Agent ID", pr.agentId, true),
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const timelineRows = [
+    dateField("Created", pr.createdAt),
+    dateField("Claimed", pr.claimedAt),
+    dateField("Reviewed", pr.reviewedAt),
+    dateField("Patched", pr.patchedAt),
+    dateField("Merged", pr.mergedAt),
+    dateField("Last Heartbeat", pr.heartbeatAt),
+    dateField("Updated", pr.updatedAt),
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PR #${escapeHtml(String(pr.prNumber))} — ${escapeHtml(pr.repo)} — Shipwright Admin</title>
+  <style>${baseStyles()}
+    .badge-blue { background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe; }
+    .badge-green { background:#dcfce7;color:#166534;border:1px solid #bbf7d0; }
+    .badge-gray { background:#f3f4f6;color:#374151;border:1px solid #e5e7eb; }
+    .detail-table { width:100%;border-collapse:collapse; }
+    .detail-table tr:not(:last-child) td { border-bottom:1px solid #f3f4f6; }
+  </style>
+</head>
+<body>
+  ${renderAdminToolbar(userName, "/admin/prs")}
+  <div class="vos-page">
+    <div class="page-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <a href="/admin/prs" style="color:#6b7280;font-size:13px;text-decoration:none">← PRs</a>
+      <h1 class="page-title" style="margin:0;flex:1">${escapeHtml(pr.repo)} #${escapeHtml(String(pr.prNumber))}</h1>
+      <span class="badge badge-gray">${escapeHtml(pr.state)}</span>
+    </div>
+    <div style="margin-top:4px;margin-bottom:16px;font-family:monospace;font-size:11px;color:#9ca3af">${escapeHtml(pr.id)}</div>
+
+    <div class="card" style="margin-bottom:16px">
+      <table class="detail-table">
+        <tbody>
+          ${metaRows}
+        </tbody>
+      </table>
+    </div>
+
+    ${
+      timelineRows
+        ? `<div class="card" style="margin-bottom:16px">
+      <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Timeline</div>
+      <table class="detail-table"><tbody>${timelineRows}</tbody></table>
+    </div>`
+        : ""
+    }
   </div>
 </body>
 </html>`;
