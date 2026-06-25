@@ -35,6 +35,7 @@ const AGENT: AgentDetail = {
   slackId: "U12345",
   createdAt: new Date("2024-01-01T00:00:00Z"),
   updatedAt: new Date("2024-01-02T00:00:00Z"),
+  repos: [],
 };
 
 const AGENT_LIST_ITEM: AgentListItem = {
@@ -1110,6 +1111,37 @@ describe("renderTasksPage — row click navigation", () => {
     const html = render([TASK_ITEM, TASK_ITEM_PENDING]);
     expect(html).toContain(`data-href="/admin/tasks/${TASK_ITEM.id}"`);
     expect(html).toContain(`data-href="/admin/tasks/${TASK_ITEM_PENDING.id}"`);
+  });
+});
+
+// ─── renderAgentDetailPage — repos section ───────────────────────────────────
+
+describe("renderAgentDetailPage — repos", () => {
+  function render(repos: string[]): string {
+    const agent: AgentDetail = { ...AGENT, repos };
+    return renderAgentDetailPage(agent, {}, [], [], [], [], [], USER_NAME, true);
+  }
+
+  test("renders empty repos state", () => {
+    const html = render([]);
+    expect(html).toContain("No repos configured.");
+  });
+
+  test("renders repos list", () => {
+    const html = render(["my-org/my-repo"]);
+    expect(html).toContain("my-org/my-repo");
+  });
+
+  test("repos section has add form", () => {
+    const html = render([]);
+    expect(html).toContain(`action="/admin/agents/${AGENT.id}/repos/add"`);
+    expect(html).toContain('name="repo"');
+  });
+
+  test("repos section has remove button for existing repo", () => {
+    const html = render(["my-org/my-repo"]);
+    expect(html).toContain(`action="/admin/agents/${AGENT.id}/repos/delete"`);
+    expect(html).toContain('value="my-org/my-repo"');
   });
 });
 

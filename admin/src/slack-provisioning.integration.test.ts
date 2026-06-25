@@ -105,6 +105,7 @@ function makeMockDeps(
           slackId: "U123456",
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
+          repos: [],
         }),
         create: async () => ({
           id: AGENT_ID,
@@ -112,6 +113,15 @@ function makeMockDeps(
           slackId: null,
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
+          repos: [],
+        }),
+        update: async () => ({
+          id: AGENT_ID,
+          name: "Test Agent",
+          slackId: null,
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+          repos: [],
         }),
         delete: async () => ({
           id: AGENT_ID,
@@ -119,6 +129,7 @@ function makeMockDeps(
           slackId: null,
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
+          repos: [],
         }),
       },
       agentPlugin: {

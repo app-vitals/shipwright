@@ -7,6 +7,7 @@
  */
 
 import { z } from "@hono/zod-openapi";
+import { isOrgRepo } from "@shipwright/lib/org-repo";
 
 // ─── Common ───────────────────────────────────────────────────────────────────
 
@@ -75,13 +76,7 @@ export const PatchAgentBodySchema = z
     selfHosted: z.boolean().optional().openapi({ example: false }),
     repos: z
       .array(
-        z.string().refine(
-          (r) => {
-            const p = r.split("/");
-            return p.length === 2 && p[0].length > 0 && p[1].length > 0;
-          },
-          { message: "each repo must be in org/repo format" },
-        ),
+        z.string().refine(isOrgRepo, { message: "each repo must be in org/repo format" }),
       )
       .optional()
       .openapi({ example: ["my-org/my-repo"] }),
