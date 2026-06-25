@@ -1857,10 +1857,10 @@ describe("admin API — cron runs", () => {
     expect(typeof body.offset).toBe("number");
   });
 
-  it("GET /agents/:id/crons response includes lastRun and runCountToday", async () => {
+  it("GET /agents/:id/crons/summary response includes lastRun and runCountToday", async () => {
     const deps = makeMockDepsWithRunSummary();
     const app = createAdminApp(deps);
-    const res = await app.request(`/agents/${AGENT_ID}/crons`, {
+    const res = await app.request(`/agents/${AGENT_ID}/crons/summary`, {
       headers: { Cookie: `admin_session=${cookie}` },
     });
     expect(res.status).toBe(200);

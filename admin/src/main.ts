@@ -13,7 +13,8 @@
  * Both runtimeApp and adminApiApp serve routes under /agents/*.
  * They use non-overlapping sub-paths so Hono resolves them correctly:
  *   runtime  → GET  /agents/:id/config, GET /agents/:id/crons
- *   admin    → POST/PATCH/DELETE /agents/:id/envs, /crons, /tools, /tokens, /plugins
+ *   admin    → GET /agents/:id/crons/summary (enriched with run stats)
+ *              POST/PATCH/DELETE /agents/:id/envs, /crons, /tools, /tokens, /plugins
  */
 
 import { join } from "node:path";
