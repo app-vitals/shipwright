@@ -13,6 +13,7 @@ import {
   type CronJobItem,
   type MemberItem,
   type PluginItem,
+  type TaskItem,
   type TokenItem,
   type ToolItem,
   renderAgentDetailPage,
@@ -21,6 +22,7 @@ import {
   renderProvisionCompletePage,
   renderProvisionPasteForm,
   renderProvisionStartPage,
+  renderTaskDetailPage,
 } from "./admin-ui-pages.ts";
 import { renderAdminToolbar } from "./admin-ui-styles.ts";
 
@@ -1047,5 +1049,132 @@ describe("renderAdminToolbar — active nav highlight", () => {
     expect(html).not.toContain('class="vos-nav-link active"');
     expect(html).toContain('href="/admin/agents" class="vos-nav-link"');
     expect(html).toContain('href="/admin/provision" class="vos-nav-link"');
+  });
+});
+
+// ─── renderTaskDetailPage ────────────────────────────────────────────────────
+
+const TASK_DETAIL: TaskItem = {
+  id: "TS-1",
+  title: "Do the thing",
+  status: "blocked",
+  description: "## Overview\nThis task does something.",
+  acceptanceCriteria: ["AC1: `foo` is set", "AC2: List works:\n- item one\n- item two"],
+  blockedBy: [
+    { type: "dependency", id: "TS-dep", status: "pending" },
+    { type: "hitl" },
+  ],
+};
+
+describe("renderTaskDetailPage — blockers", () => {
+  function render(task: Partial<TaskItem> = {}): string {
+    return renderTaskDetailPage({ ...TASK_DETAIL, ...task }, "user@example.com");
+  }
+
+  test("shows blockers section when blockedBy is non-empty", () => {
+    const html = render();
+    expect(html.toLowerCase()).toContain("blocker");
+  });
+
+  test("shows dependency blocker with dep id and status", () => {
+    const html = render();
+    expect(html).toContain("TS-dep");
+    expect(html).toContain("pending");
+  });
+
+  test("shows hitl blocker type", () => {
+    const html = render();
+    expect(html.toLowerCase()).toContain("hitl");
+  });
+
+  test("no blockers section when blockedBy is empty", () => {
+    const html = render({ blockedBy: [] });
+    expect(html).not.toMatch(/Blockers<\/div>/i);
+  });
+
+  test("no blockers section when blockedBy is null", () => {
+    const html = render({ blockedBy: null });
+    expect(html).not.toMatch(/Blockers<\/div>/i);
+  });
+
+  test("no blockers section when blockedBy is undefined", () => {
+    const html = render({ blockedBy: undefined });
+    expect(html).not.toMatch(/Blockers<\/div>/i);
+  });
+
+  test("hitl notified variant shows different text", () => {
+    const html = render({
+      blockedBy: [{ type: "hitl", notified: true }],
+    });
+    expect(html.toLowerCase()).toContain("hitl");
+  });
+
+  test("XSS: dep id in blockers is escaped", () => {
+    const html = render({
+      blockedBy: [{ type: "dependency", id: "<script>xss()</script>", status: "pending" }],
+    });
+    expect(html).not.toContain("<script>xss");
+    expect(html).toContain("&lt;script&gt;");
+  });
+});
+
+describe("renderTaskDetailPage — markdown", () => {
+  function render(task: Partial<TaskItem> = {}): string {
+    return renderTaskDetailPage({ ...TASK_DETAIL, ...task }, "user@example.com");
+  }
+
+  test("description headings rendered as HTML heading tags", () => {
+    const html = render({ description: "## My heading\nsome text" });
+    expect(html).toMatch(/<h[1-6][^>]*>.*My heading.*<\/h[1-6]>/s);
+  });
+
+  test("description code block rendered as pre/code", () => {
+    const html = render({ description: "```\nconst x = 1;\n```" });
+    expect(html).toContain("<pre");
+    expect(html).toContain("<code");
+  });
+
+  test("description inline code rendered as code tag", () => {
+    const html = render({ description: "Use `foo()` here." });
+    expect(html).toContain("<code>");
+  });
+
+  test("description lists rendered as ul/li", () => {
+    const html = render({ description: "- item one\n- item two" });
+    expect(html).toContain("<ul");
+    expect(html).toContain("<li");
+  });
+
+  test("acceptance criteria items support inline code", () => {
+    const html = render({
+      acceptanceCriteria: ["AC with `code` inside"],
+    });
+    expect(html).toContain("<code>");
+    expect(html).toContain("code");
+  });
+
+  test("acceptance criteria items support bold", () => {
+    const html = render({
+      acceptanceCriteria: ["AC with **bold** text"],
+    });
+    expect(html).toContain("<strong>");
+  });
+
+  test("plain text fields (title, id, status) are not treated as markdown", () => {
+    const html = render({ title: "## Not a heading", id: "TS-**bold**-1" });
+    expect(html).toContain("## Not a heading");
+    expect(html).toContain("TS-**bold**-1");
+  });
+
+  test("XSS: markdown description with script tag is escaped", () => {
+    const html = render({ description: "<script>evil()</script>" });
+    expect(html).not.toContain("<script>evil");
+    expect(html).toContain("&lt;script&gt;");
+  });
+
+  test("XSS: markdown description with img onerror is escaped", () => {
+    const html = render({ description: "<img src=x onerror=bad()>" });
+    expect(html).not.toContain("<img src=x");
+    expect(html).toContain("&lt;img");
   });
 });
