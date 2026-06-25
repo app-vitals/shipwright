@@ -256,6 +256,17 @@ export function baseStyles(): string {
     .data-table-wrapper {
       overflow-x: auto;
       -webkit-overflow-scrolling: touch;
+      /* Scroll-shadow: fades appear at edges when content overflows */
+      background-color: #fff;
+      background-image:
+        linear-gradient(to right, #fff, #fff),
+        linear-gradient(to right, rgba(0,0,0,0.05), transparent),
+        linear-gradient(to left, #fff, #fff),
+        linear-gradient(to left, rgba(0,0,0,0.05), transparent);
+      background-position: left, left, right, right;
+      background-size: 20px 100%, 20px 100%, 24px 100%, 24px 100%;
+      background-repeat: no-repeat;
+      background-attachment: local, scroll, local, scroll;
     }
     @media (max-width: 600px) {
       .vos-page {
@@ -270,6 +281,15 @@ export function baseStyles(): string {
       .vos-toolbar {
         padding: 0 12px;
         gap: 12px;
+      }
+      .data-table th,
+      .data-table td {
+        white-space: nowrap;
+      }
+      /* Let the table bleed to card edges on mobile so scroll shadow aligns */
+      .card .data-table-wrapper {
+        margin: 0 -12px;
+        padding: 0 12px;
       }
     }
   `;
