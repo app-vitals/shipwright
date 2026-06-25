@@ -67,6 +67,7 @@ model Task {
   cancelledAt        String?
   completedAt        String?
   deployingAt        String?
+  deployedAt         String?
   ciFixAttempts      Int?
   mergeCommit        String?
   prUrl              String?
