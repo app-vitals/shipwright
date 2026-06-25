@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.6.35] - 2026-06-24
+
+### Added
+
+- `taskStore.extraEnv` passthrough for additional env vars on the task-store pod (enables scope resolver wiring via `SHIPWRIGHT_TASK_STORE_AGENTS_URL` + `SHIPWRIGHT_TASK_STORE_AGENTS_API_KEY`)
+
 ## [1.6.34] - 2026-06-25
 
 ### Changed

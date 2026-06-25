@@ -487,6 +487,10 @@ taskStore:
     # Defaults to "shipwright-secrets" (the canonical cluster secret name).
     # The chart does NOT manage this Secret — create it before deploying.
     existingSecret: "shipwright-secrets"
+  # -- Extra env vars to inject into the task-store container. Use for service
+  # wiring (e.g. SHIPWRIGHT_TASK_STORE_AGENTS_URL + AGENTS_API_KEY for the
+  # scope resolver) without baking those into the chart template.
+  extraEnv: []
   # -- ServiceAccount for the task-store pod. Set create: false and name: <sa>
   # to reuse an existing SA (e.g. the umbrella chart'''s Workload Identity SA).
   serviceAccount:
