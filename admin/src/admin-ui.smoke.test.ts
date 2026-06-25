@@ -15,6 +15,7 @@ import type {
   GoogleTokenResponse,
   GoogleUserInfo,
 } from "./google-auth-client.ts";
+import type { PullRequestItem } from "./admin-ui-pages.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -2434,6 +2435,102 @@ describe("admin UI — tasks page", () => {
     expect(res.headers.get("Location")).toBe(
       "/admin/tasks?error=task_store_unavailable",
     );
+  });
+
+  it("GET /admin/tasks/:id renders PR section when fetchTaskStorePr returns a result", async () => {
+    const mockTask = {
+      id: "task-42",
+      title: "Build the thing",
+      status: "in_progress",
+      description: "Do the work",
+      branch: "feat/thing",
+      assignee: "agent-unknown",
+      claimedBy: "agent-unknown",
+      session: null,
+      repo: "org/repo",
+      claimedAt: "2024-01-15T10:00:00.000Z",
+    };
+    const MOCK_PR_ITEM: PullRequestItem = {
+      id: "pr-test-1",
+      repo: "app-vitals/shipwright",
+      prNumber: 100,
+      state: "open",
+      reviewState: "approved",
+      patchCycles: 1,
+      reviewedAt: "2026-06-20T10:00:00Z",
+      patchedAt: null,
+    };
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTask: async (id: string) =>
+          id === "task-42" ? mockTask : null,
+        fetchTaskStorePr: async (_id: string) => MOCK_PR_ITEM,
+      }),
+    );
+    const res = await app.request("/admin/tasks/task-42", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Pull Request Review");
+    expect(html).toContain("#100");
+  });
+
+  it("GET /admin/tasks/:id renders without PR section when fetchTaskStorePr throws", async () => {
+    const mockTask = {
+      id: "task-42",
+      title: "Build the thing",
+      status: "in_progress",
+      description: "Do the work",
+      branch: "feat/thing",
+      assignee: "agent-unknown",
+      claimedBy: "agent-unknown",
+      session: null,
+      repo: "org/repo",
+      claimedAt: "2024-01-15T10:00:00.000Z",
+    };
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTask: async (id: string) =>
+          id === "task-42" ? mockTask : null,
+        fetchTaskStorePr: async (_id: string) => {
+          throw new Error("task store unavailable");
+        },
+      }),
+    );
+    const res = await app.request("/admin/tasks/task-42", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).not.toContain("Pull Request Review");
+  });
+
+  it("GET /admin/tasks/:id renders without PR section when fetchTaskStorePr is absent", async () => {
+    const mockTask = {
+      id: "task-42",
+      title: "Build the thing",
+      status: "in_progress",
+      description: "Do the work",
+      branch: "feat/thing",
+      assignee: "agent-unknown",
+      claimedBy: "agent-unknown",
+      session: null,
+      repo: "org/repo",
+      claimedAt: "2024-01-15T10:00:00.000Z",
+    };
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTask: async (id: string) =>
+          id === "task-42" ? mockTask : null,
+      }),
+    );
+    const res = await app.request("/admin/tasks/task-42", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).not.toContain("Pull Request Review");
   });
 
   it("GET /admin/tasks with no ?state= forwards state=ready to task-store by default", async () => {
