@@ -25,6 +25,7 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { sign, verify } from "hono/jwt";
 import {
+  type PullRequestItem,
   type TaskItem,
   renderAgentDetailPage,
   renderAgentsPage,
@@ -228,6 +229,11 @@ export interface AdminUIDeps {
     sessions: string[];
     repos: string[];
   }>;
+  /**
+   * Fetch the pull request linked to a task from the task-store service.
+   * If absent or the query fails, the task detail page renders without a PR section.
+   */
+  fetchTaskStorePr?: (taskId: string) => Promise<PullRequestItem | null>;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -325,6 +331,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     fetchTaskStoreTask,
     releaseTask,
     fetchDistinctTaskValues,
+    fetchTaskStorePr,
   } = deps;
 
   const app = new Hono<AdminUIEnv>();
@@ -1691,7 +1698,17 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       for (const a of agents) agentNames[a.id] = a.name;
     }
 
-    return html(renderTaskDetailPage(task, c.var.userEmail, agentNames));
+    // Fetch linked pull request — failure or absence renders the page without a PR section
+    let pullRequest: PullRequestItem | undefined;
+    if (fetchTaskStorePr) {
+      try {
+        pullRequest = (await fetchTaskStorePr(taskId)) ?? undefined;
+      } catch {
+        // swallow — page renders without PR section
+      }
+    }
+
+    return html(renderTaskDetailPage(task, c.var.userEmail, agentNames, pullRequest));
   });
 
   app.post("/admin/tasks/:id/release", requireAuth, async (c) => {
