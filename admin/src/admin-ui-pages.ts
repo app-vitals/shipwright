@@ -887,7 +887,7 @@ export function renderTasksPage(
   tasks: TaskItem[],
   filters: {
     status?: string;
-    state?: "open" | "closed";
+    state?: "ready" | "in_progress" | "blocked" | "closed";
     session?: string;
     repo?: string;
     agent?: string;
@@ -901,6 +901,7 @@ export function renderTasksPage(
     page: 1,
   },
   opts?: { error?: string; agentFilterActive?: boolean },
+  suggestions?: { sessions?: string[]; repos?: string[]; agents?: string[] },
 ): string {
   const errorHtml = opts?.error
     ? `<div class="alert alert-error">${escapeHtml(opts.error)}</div>`
@@ -966,7 +967,7 @@ export function renderTasksPage(
   // State toggle params (preserve other filters, reset page)
   const makeStateParams = (newState: string) => {
     const p = new URLSearchParams();
-    if (newState !== "open") p.set("state", newState);
+    if (newState !== "ready") p.set("state", newState);
     if (filters.session) p.set("session", filters.session);
     if (filters.repo) p.set("repo", filters.repo);
     if (filters.agent) p.set("agent", filters.agent);
@@ -974,13 +975,21 @@ export function renderTasksPage(
     return qs ? `?${qs}` : "";
   };
 
-  const activeState = filters.state ?? "open";
+  const activeState = filters.state ?? "ready";
+  const tabStyle = (state: string) =>
+    activeState === state
+      ? "background:#6366f1;color:#fff;font-weight:600"
+      : "background:#fff;color:#374151";
   const stateToggle = `
     <div style="display:flex;gap:0;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;width:fit-content">
-      <a href="/admin/tasks${makeStateParams("open")}"
-         style="padding:5px 14px;font-size:12px;text-decoration:none;${activeState === "open" ? "background:#6366f1;color:#fff;font-weight:600" : "background:#fff;color:#374151"}">Open</a>
+      <a href="/admin/tasks${makeStateParams("ready")}"
+         style="padding:5px 14px;font-size:12px;text-decoration:none;${tabStyle("ready")}">Ready</a>
+      <a href="/admin/tasks${makeStateParams("in_progress")}"
+         style="padding:5px 14px;font-size:12px;text-decoration:none;border-left:1px solid #e5e7eb;${tabStyle("in_progress")}">In Progress</a>
+      <a href="/admin/tasks${makeStateParams("blocked")}"
+         style="padding:5px 14px;font-size:12px;text-decoration:none;border-left:1px solid #e5e7eb;${tabStyle("blocked")}">Blocked</a>
       <a href="/admin/tasks${makeStateParams("closed")}"
-         style="padding:5px 14px;font-size:12px;text-decoration:none;border-left:1px solid #e5e7eb;${activeState === "closed" ? "background:#6366f1;color:#fff;font-weight:600" : "background:#fff;color:#374151"}">Closed</a>
+         style="padding:5px 14px;font-size:12px;text-decoration:none;border-left:1px solid #e5e7eb;${tabStyle("closed")}">Closed</a>
     </div>`;
 
   const statusOptions = [
@@ -1011,7 +1020,7 @@ export function renderTasksPage(
   const makePageUrl = (p: number) => {
     const params = new URLSearchParams();
     if (filters.status) params.set("status", filters.status);
-    else if (filters.state && filters.state !== "open")
+    else if (filters.state && filters.state !== "ready")
       params.set("state", filters.state);
     if (filters.session) params.set("session", filters.session);
     if (filters.repo) params.set("repo", filters.repo);
@@ -1068,17 +1077,20 @@ export function renderTasksPage(
         </div>
         <div class="form-group" style="margin-bottom:0">
           <label class="form-label" style="font-size:11px">Session</label>
-          <input name="session" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.session ?? "")}" placeholder="session-id" />
+          <input name="session" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.session ?? "")}" placeholder="session-id"${suggestions?.sessions?.length ? ' list="sessions-list"' : ""} />
         </div>
         <div class="form-group" style="margin-bottom:0">
           <label class="form-label" style="font-size:11px">Repo</label>
-          <input name="repo" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.repo ?? "")}" placeholder="org/repo" />
+          <input name="repo" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.repo ?? "")}" placeholder="org/repo"${suggestions?.repos?.length ? ' list="repos-list"' : ""} />
         </div>
         <div class="form-group" style="margin-bottom:0">
           <label class="form-label" style="font-size:11px">Agent</label>
-          <input name="agent" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.agent ?? "")}" placeholder="agent name" />
+          <input name="agent" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.agent ?? "")}" placeholder="agent name"${suggestions?.agents?.length ? ' list="agents-list"' : ""} />
         </div>
         <button type="submit" class="btn btn-secondary" style="font-size:12px">Filter</button>
+        ${suggestions?.sessions?.length ? `<datalist id="sessions-list">${suggestions.sessions.map((s) => `<option value="${escapeHtml(s)}">`).join("")}</datalist>` : ""}
+        ${suggestions?.repos?.length ? `<datalist id="repos-list">${suggestions.repos.map((r) => `<option value="${escapeHtml(r)}">`).join("")}</datalist>` : ""}
+        ${suggestions?.agents?.length ? `<datalist id="agents-list">${suggestions.agents.map((a) => `<option value="${escapeHtml(a)}">`).join("")}</datalist>` : ""}
       </form>
     </div>
     <div class="card">

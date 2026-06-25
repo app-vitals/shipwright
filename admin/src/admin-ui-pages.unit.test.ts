@@ -1112,6 +1112,48 @@ describe("renderTasksPage — row click navigation", () => {
   });
 });
 
+// ─── renderTasksPage — datalist autocomplete (AFA-1.2) ───────────────────────
+
+describe("renderTasksPage — datalist autocomplete", () => {
+  const pagination = { total: 0, limit: 50, page: 1 };
+
+  test("renderTasksPage with sessions suggestions renders session datalist", () => {
+    const html = renderTasksPage([], {}, false, "user@test.com", {}, pagination, undefined, { sessions: ["session-abc", "session-xyz"] });
+    expect(html).toContain('<datalist id="sessions-list">');
+    expect(html).toContain('<option value="session-abc">');
+    expect(html).toContain('<option value="session-xyz">');
+    expect(html).toContain('list="sessions-list"');
+  });
+
+  test("renderTasksPage with repos suggestions renders repo datalist", () => {
+    const html = renderTasksPage([], {}, false, "user@test.com", {}, pagination, undefined, { repos: ["org/repo-a", "org/repo-b"] });
+    expect(html).toContain('<datalist id="repos-list">');
+    expect(html).toContain('<option value="org/repo-a">');
+    expect(html).toContain('list="repos-list"');
+  });
+
+  test("renderTasksPage with agents suggestions renders agent datalist", () => {
+    const html = renderTasksPage([], {}, false, "user@test.com", {}, pagination, undefined, { agents: ["Agent Alpha", "Agent Beta"] });
+    expect(html).toContain('<datalist id="agents-list">');
+    expect(html).toContain('<option value="Agent Alpha">');
+    expect(html).toContain('list="agents-list"');
+  });
+
+  test("renderTasksPage without suggestions renders plain text inputs (no datalists)", () => {
+    const html = renderTasksPage([], {}, false, "user@test.com", {}, pagination);
+    expect(html).not.toContain('<datalist');
+    expect(html).not.toContain('list="sessions-list"');
+    expect(html).not.toContain('list="repos-list"');
+    expect(html).not.toContain('list="agents-list"');
+  });
+
+  test("renderTasksPage escapes suggestion values to prevent XSS", () => {
+    const html = renderTasksPage([], {}, false, "user@test.com", {}, pagination, undefined, { sessions: ['<script>alert("xss")</script>'] });
+    expect(html).not.toContain('<script>alert("xss")</script>');
+    expect(html).toContain('&lt;script&gt;');
+  });
+});
+
 // ─── renderTasksPage — blocker badges ────────────────────────────────────────
 
 describe("renderTasksPage — blocker badges", () => {
@@ -1242,6 +1284,88 @@ describe("renderTasksPage — blocker badges", () => {
     const html = render([xssTask]);
     expect(html).not.toContain("<script>alert(1)</script>");
     expect(html).toContain("&lt;script&gt;");
+  });
+});
+
+// ─── renderTasksPage — 4-state toggle ────────────────────────────────────────
+
+const EMPTY_PAGINATION = { total: 0, limit: 50, page: 1 };
+
+describe("renderTasksPage — 4-state toggle", () => {
+  test("Ready tab is active by default (no state filter)", () => {
+    const html = renderTasksPage([], {}, false, USER_NAME, {}, EMPTY_PAGINATION);
+    // Ready link URL should NOT contain ?state= (it's the default)
+    expect(html).toMatch(/href="\/admin\/tasks"[^>]*>Ready</);
+    // Ready tab has active styling
+    expect(html).toContain("background:#6366f1;color:#fff");
+    // Other tabs are present
+    expect(html).toContain("In Progress");
+    expect(html).toContain("Blocked");
+    expect(html).toContain("Closed");
+  });
+
+  test("In Progress tab is active when state=in_progress", () => {
+    const html = renderTasksPage([], { state: "in_progress" }, false, USER_NAME, {}, EMPTY_PAGINATION);
+    // In Progress tab link contains ?state=in_progress
+    expect(html).toContain("state=in_progress");
+    // In Progress tab has active styling — find the active tab text near the indigo bg
+    const activePattern = /background:#6366f1;color:#fff[^>]*>In Progress/;
+    expect(html).toMatch(activePattern);
+    // Ready, Blocked, Closed tabs are not active (no indigo on those links)
+    // They should be white background
+    expect(html).toMatch(/background:#fff;color:#374151[^>]*>Ready/);
+    expect(html).toMatch(/background:#fff;color:#374151[^>]*>Blocked/);
+    expect(html).toMatch(/background:#fff;color:#374151[^>]*>Closed/);
+  });
+
+  test("Blocked tab is active when state=blocked", () => {
+    const html = renderTasksPage([], { state: "blocked" }, false, USER_NAME, {}, EMPTY_PAGINATION);
+    expect(html).toContain("state=blocked");
+    expect(html).toMatch(/background:#6366f1;color:#fff[^>]*>Blocked/);
+    expect(html).toMatch(/background:#fff;color:#374151[^>]*>Ready/);
+    expect(html).toMatch(/background:#fff;color:#374151[^>]*>In Progress/);
+    expect(html).toMatch(/background:#fff;color:#374151[^>]*>Closed/);
+  });
+
+  test("Closed tab is active when state=closed", () => {
+    const html = renderTasksPage([], { state: "closed" }, false, USER_NAME, {}, EMPTY_PAGINATION);
+    expect(html).toContain("state=closed");
+    expect(html).toMatch(/background:#6366f1;color:#fff[^>]*>Closed/);
+    expect(html).toMatch(/background:#fff;color:#374151[^>]*>Ready/);
+    expect(html).toMatch(/background:#fff;color:#374151[^>]*>In Progress/);
+    expect(html).toMatch(/background:#fff;color:#374151[^>]*>Blocked/);
+  });
+
+  test("Tab links preserve session and repo query params", () => {
+    const html = renderTasksPage(
+      [],
+      { state: "in_progress", session: "my-session", repo: "org/repo" },
+      false,
+      USER_NAME,
+      {},
+      EMPTY_PAGINATION,
+    );
+    // All tab links should contain session and repo params
+    const tabLinkPattern = /href="\/admin\/tasks\?[^"]*session=my-session[^"]*"/g;
+    const matches = html.match(tabLinkPattern);
+    // We expect at least 3 tab links (Ready, Blocked, Closed) to preserve session (In Progress is active tab)
+    expect(matches).not.toBeNull();
+    expect((matches ?? []).length).toBeGreaterThanOrEqual(3);
+    expect(html).toContain("repo=org");
+  });
+
+  test("Pagination URL carries correct ?state param for non-default states", () => {
+    const html = renderTasksPage(
+      [],
+      { state: "blocked" },
+      false,
+      USER_NAME,
+      {},
+      { total: 100, limit: 50, page: 1 },
+    );
+    // Next button should link to page 2 with state=blocked
+    expect(html).toContain("state=blocked");
+    expect(html).toContain("page=2");
   });
 });
 
