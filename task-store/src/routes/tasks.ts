@@ -31,6 +31,7 @@ import type { TaskStoreAuthEnv } from "../auth.ts";
 import { BadRequestError, ForbiddenError, NotFoundError } from "../errors.ts";
 import type { Prisma } from "../index.ts";
 import type { TaskServiceLike } from "../task-service.ts";
+import { isOrgRepo } from "../validate.ts";
 
 async function readJson(c: {
   req: { json: () => Promise<unknown> };
@@ -43,6 +44,31 @@ async function readJson(c: {
     return {};
   } catch {
     return {};
+  }
+}
+
+/**
+ * Validate the `repo` field in a task body.
+ *
+ * Format check: if `repo` is present, it must be "org/repo" — applies to all tokens.
+ * Scope check: if `repo` is present and the token is an agent token (repos !== null),
+ *   the repo must be in the agent's allowed list.
+ *
+ * Throws BadRequestError when either check fails.
+ * No-ops when repo is absent or null.
+ */
+function validateRepo(repo: unknown, repos: string[] | null): void {
+  if (repo === undefined || repo === null) return;
+  if (typeof repo !== "string" || !isOrgRepo(repo)) {
+    throw new BadRequestError(
+      `repo '${repo}' must be in org/repo format`,
+    );
+  }
+  // repos === null means admin token — bypass scope check.
+  if (repos !== null && !repos.includes(repo)) {
+    throw new BadRequestError(
+      `repo '${repo}' is not in this agent's scope`,
+    );
   }
 }
 
@@ -99,6 +125,7 @@ export function createTasksRoutes(
   // ─── Create ────────────────────────────────────────────────────────────────
   app.post("/", async (c) => {
     const agentId = c.get("agentId");
+    const repos = c.get("repos");
     const body = await readJson(c);
     if (typeof body.title !== "string" || !body.title) {
       throw new BadRequestError("title is required");
@@ -106,6 +133,7 @@ export function createTasksRoutes(
     if (typeof body.status !== "string" || !body.status) {
       throw new BadRequestError("status is required");
     }
+    validateRepo(body.repo, agentId !== null ? repos : null);
     // Agent tokens force assignee to their own ID.
     if (agentId !== null) {
       body.assignee = agentId;
@@ -117,6 +145,7 @@ export function createTasksRoutes(
   // ─── Bulk insert ───────────────────────────────────────────────────────────
   app.post("/bulk", async (c) => {
     const agentId = c.get("agentId");
+    const repos = c.get("repos");
     let body: unknown;
     try {
       body = await c.req.json();
@@ -125,6 +154,10 @@ export function createTasksRoutes(
     }
     if (!Array.isArray(body)) {
       throw new BadRequestError("body must be a JSON array of tasks");
+    }
+    // Validate repo field on each task that has one.
+    for (const task of body as Record<string, unknown>[]) {
+      validateRepo(task.repo, agentId !== null ? repos : null);
     }
     const tasks =
       agentId !== null
@@ -151,8 +184,10 @@ export function createTasksRoutes(
   // ─── Update ────────────────────────────────────────────────────────────────
   app.patch("/:id", async (c) => {
     const agentId = c.get("agentId");
+    const repos = c.get("repos");
     await requireOwnership(taskService, c.req.param("id"), agentId);
     const body = await readJson(c);
+    validateRepo(body.repo, agentId !== null ? repos : null);
     // Prevent agent tokens from reassigning tasks outside their ownership scope.
     if (agentId !== null) {
       body.assignee = agentId;
