@@ -160,6 +160,9 @@ function fakeTaskService(
     async bulk(_tasks) {
       return { inserted: 0, updated: 0 };
     },
+    async distinct(_agentId?: string): Promise<{ sessions: string[]; repos: string[] }> {
+      return Promise.resolve({ sessions: [], repos: [] });
+    },
   };
 }
 
