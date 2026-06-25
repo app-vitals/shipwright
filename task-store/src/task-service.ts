@@ -13,27 +13,18 @@
  */
 
 import { type Clock, SystemClock } from "./clock.ts";
+import { type BlockedByEntry, computeBlockedBy } from "./blocked-by.ts";
 import { ConflictError, NotFoundError } from "./errors.ts";
 import type { Prisma, PrismaClient, Task } from "./index.ts";
 import { resolveReadyTasks } from "./ready.ts";
+import { CLOSED_STATUSES, OPEN_STATUSES } from "./statuses.ts";
 
-/** Terminal statuses — a task in one of these is considered "closed". */
-export const CLOSED_STATUSES = [
-  "merged",
-  "done",
-  "deploying",
-  "deployed",
-  "cancelled",
-] as const;
+// Re-export so callers can import from task-service without reaching into blocked-by.
+export type { BlockedByEntry };
+export { CLOSED_STATUSES, OPEN_STATUSES };
 
-/** Open statuses — everything not closed. */
-export const OPEN_STATUSES = [
-  "pending",
-  "in_progress",
-  "pr_open",
-  "approved",
-  "blocked",
-] as const;
+/** A Task augmented with a computed blockedBy array. */
+export type TaskWithBlockedBy = Task & { blockedBy: BlockedByEntry[] };
 
 /** Filters accepted by TaskService.list. */
 export interface TaskListFilters {
@@ -52,7 +43,7 @@ export interface TaskListFilters {
 
 /** Paginated list result from TaskService.list. */
 export interface TaskListResult {
-  tasks: Task[];
+  tasks: TaskWithBlockedBy[];
   total: number;
   limit: number;
   offset: number;
@@ -62,7 +53,7 @@ export interface TaskListResult {
 export interface TaskServiceLike {
   list(filters?: TaskListFilters): Promise<TaskListResult>;
   listReady(agentId?: string): Promise<Task[]>;
-  get(id: string): Promise<Task | null>;
+  get(id: string): Promise<TaskWithBlockedBy | null>;
   create(data: Prisma.TaskCreateInput): Promise<Task>;
   bulk(
     tasks: Prisma.TaskCreateInput[],
@@ -104,7 +95,8 @@ export class TaskService implements TaskServiceLike {
     const limit = filters.limit ?? 50;
     const offset = filters.offset ?? 0;
 
-    const [tasks, total] = await this.prisma.$transaction([
+    // Load all tasks for dependency resolution (computeBlockedBy needs the full graph).
+    const [pageTasks, total, allTasks] = await this.prisma.$transaction([
       this.prisma.task.findMany({
         where,
         orderBy: { createdAt: "asc" },
@@ -112,7 +104,13 @@ export class TaskService implements TaskServiceLike {
         skip: offset,
       }),
       this.prisma.task.count({ where }),
+      this.prisma.task.findMany(),
     ]);
+
+    const tasks: TaskWithBlockedBy[] = pageTasks.map((t: Task) => ({
+      ...t,
+      blockedBy: computeBlockedBy(t, allTasks),
+    }));
 
     return { tasks, total, limit, offset };
   }
@@ -133,8 +131,15 @@ export class TaskService implements TaskServiceLike {
     return ready;
   }
 
-  async get(id: string): Promise<Task | null> {
-    return this.prisma.task.findUnique({ where: { id } });
+  async get(id: string): Promise<TaskWithBlockedBy | null> {
+    const task = await this.prisma.task.findUnique({ where: { id } });
+    if (!task) return null;
+    // Scope the dependency lookup to only the IDs this task depends on —
+    // avoids a full-table scan when GET /tasks/:id is called frequently.
+    const allTasks = task.dependencies?.length
+      ? await this.prisma.task.findMany({ where: { id: { in: task.dependencies } } })
+      : [];
+    return { ...task, blockedBy: computeBlockedBy(task, allTasks) };
   }
 
   // ─── Writes ────────────────────────────────────────────────────────────────
