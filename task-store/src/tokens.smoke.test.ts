@@ -146,6 +146,9 @@ function fakeTaskService(): TaskServiceLike {
     async listBlocked() {
       return [];
     },
+    async distinct() {
+      return { sessions: [], repos: [] };
+    },
     async get() {
       return null;
     },

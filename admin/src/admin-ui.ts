@@ -202,6 +202,15 @@ export interface AdminUIDeps {
    * Release a task (unclaim → pending) via the task-store service.
    */
   releaseTask?: (id: string) => Promise<void>;
+  /**
+   * Fetch distinct session and repo values from the task-store service.
+   * Used to populate datalist autocomplete suggestions in the tasks filter form.
+   * If absent, no datalists are rendered (inputs remain plain text).
+   */
+  fetchDistinctTaskValues?: () => Promise<{
+    sessions: string[];
+    repos: string[];
+  }>;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -298,6 +307,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     fetchTaskStoreTasks,
     fetchTaskStoreTask,
     releaseTask,
+    fetchDistinctTaskValues,
   } = deps;
 
   const app = new Hono<AdminUIEnv>();
@@ -1487,6 +1497,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     let tasks: TaskItem[] = [];
     let total = 0;
     let degraded = false;
+    let distinctValues: { sessions: string[]; repos: string[] } | null = null;
 
     if (!fetchTaskStoreTasks) {
       degraded = true;
@@ -1501,9 +1512,13 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       params.set("limit", agentFilterIds !== null ? "500" : String(limit));
       params.set("offset", agentFilterIds !== null ? "0" : String(offset));
       try {
-        const result = await fetchTaskStoreTasks(params);
+        const [result, distinct] = await Promise.all([
+          fetchTaskStoreTasks(params),
+          fetchDistinctTaskValues ? fetchDistinctTaskValues().catch(() => null) : Promise.resolve(null),
+        ]);
         tasks = result.tasks;
         total = result.total;
+        distinctValues = distinct;
       } catch {
         degraded = true;
       }
@@ -1535,6 +1550,19 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       for (const a of agents) agentNames[a.id] = a.name;
     }
 
+    // Build suggestions for autocomplete datalists only when task-store integration is active.
+    // Skip the DB query entirely when fetchDistinctTaskValues is not configured.
+    const suggestions =
+      fetchDistinctTaskValues && distinctValues
+        ? {
+            sessions: distinctValues.sessions,
+            repos: distinctValues.repos,
+            agents: (
+              await prisma.agent.findMany({ select: { name: true } })
+            ).map((a) => a.name),
+          }
+        : undefined;
+
     return html(
       renderTasksPage(
         tasks,
@@ -1544,6 +1572,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         agentNames,
         { total, limit, page },
         { ...(error ? { error } : {}), agentFilterActive: agentFilterIds !== null },
+        suggestions,
       ),
     );
   });

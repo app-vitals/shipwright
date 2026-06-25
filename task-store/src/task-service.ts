@@ -62,6 +62,7 @@ export interface TaskServiceLike {
   list(filters?: TaskListFilters): Promise<TaskListResult>;
   listReady(agentId?: string, repos?: string[]): Promise<Task[]>;
   listBlocked(agentId?: string): Promise<TaskWithBlockedBy[]>;
+  distinct(agentId?: string): Promise<{ sessions: string[]; repos: string[] }>;
   get(id: string): Promise<TaskWithBlockedBy | null>;
   create(data: Prisma.TaskCreateInput): Promise<Task>;
   bulk(
@@ -184,6 +185,31 @@ export class TaskService implements TaskServiceLike {
         if (t.status === "pending") return t.blockedBy.length > 0;
         return false;
       });
+  }
+
+  async distinct(
+    agentId?: string,
+  ): Promise<{ sessions: string[]; repos: string[] }> {
+    const where = agentId ? { assignee: agentId } : {};
+    const rows = await this.prisma.task.findMany({
+      where,
+      select: { session: true, repo: true },
+    });
+    const sessions = [
+      ...new Set(
+        rows.map((r) => r.session).filter((s): s is string => s !== null),
+      ),
+    ]
+      .sort()
+      .slice(0, 100);
+    const repos = [
+      ...new Set(
+        rows.map((r) => r.repo).filter((r): r is string => r !== null),
+      ),
+    ]
+      .sort()
+      .slice(0, 100);
+    return { sessions, repos };
   }
 
   async get(id: string): Promise<TaskWithBlockedBy | null> {
