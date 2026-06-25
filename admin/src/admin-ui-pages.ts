@@ -126,7 +126,12 @@ function renderMarkdown(text: string): string {
   // Step 2: extract code blocks into placeholder tokens before line processing
   // so that interior lines of a fenced block are never handed to the line loop.
   const codeBlocks: string[] = [];
-  const placeholder = (n: number) => `\x00CODE_BLOCK_${n}\x00`;
+  // Use Unicode Private Use Area sentinels — never appear in HTML-escaped markdown,
+  // and are not control characters (biome noControlCharactersInRegex safe).
+  const PLACEHOLDER_PREFIX = "CODE_BLOCK_";
+  const PLACEHOLDER_SUFFIX = "";
+  const placeholder = (n: number) => `${PLACEHOLDER_PREFIX}${n}${PLACEHOLDER_SUFFIX}`;
+  const PLACEHOLDER_RE = /^CODE_BLOCK_(\d+)$/;
 
   // Multi-line fenced blocks: ```\n...\n```
   out = out.replace(/```[\r\n]([\s\S]*?)[\r\n]```/g, (_m, code) => {
@@ -160,9 +165,10 @@ function renderMarkdown(text: string): string {
 
   for (const line of lines) {
     // Placeholder lines are pre-rendered code blocks — emit as-is
-    if (/^\x00CODE_BLOCK_\d+\x00$/.test(line)) {
+    const placeholderMatch = PLACEHOLDER_RE.exec(line);
+    if (placeholderMatch) {
       closeList();
-      result.push(codeBlocks[parseInt(line.replace(/\x00CODE_BLOCK_(\d+)\x00/, "$1"), 10)]);
+      result.push(codeBlocks[Number.parseInt(placeholderMatch[1], 10)]);
       continue;
     }
 
