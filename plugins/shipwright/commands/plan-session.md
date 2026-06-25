@@ -43,7 +43,28 @@ This is the engineering planning pass. The product spec (what and why) is alread
    curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" "$SHIPWRIGHT_TASK_STORE_URL/tasks?session=$SESSION" | jq '.tasks'
    ```
    The response is a paginated envelope — unwrap `.tasks` to get the array. If non-empty, print the existing task IDs and skip re-adding them.
-4. Read `planning/{session}/PRODUCT-SPEC.md` if it exists — this is the primary input
+4. Scan for open tasks from prior sessions that may be prerequisites for this work:
+   ```bash
+   {
+     curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+       "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=pending" | jq '.tasks // []'
+     curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+       "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=in_progress" | jq '.tasks // []'
+     curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+       "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=blocked" | jq '.tasks // []'
+     curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+       "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=pr_open" | jq '.tasks // []'
+   } | jq -s --arg s "{session}" 'add // [] | map(select(.session != $s)) | unique_by(.id)'
+   ```
+   If the result is non-empty, print a brief summary before the orientation header:
+   ```
+   ⚠ Open cross-session tasks ({count}):
+   {ID} [{status}] — {title}  (session: {session_slug})
+   ...
+   Keep these in mind when designing the dependency map in Step 5 — new tasks may depend on them.
+   ```
+   If empty, continue silently. These IDs are valid `dependencies` values in Step 5.
+5. Read `planning/{session}/PRODUCT-SPEC.md` if it exists — this is the primary input
 
 Present a brief orientation:
 
@@ -150,7 +171,7 @@ For each task:
 - **Title**: short, verb-first (e.g., "Add billing schema migration")
 - **Description**: what to build, not how
 - **Acceptance Criteria**: 2-5 bullet points — specific, testable. Every task **must** include at least one test decision bullet that names: (a) which test layers are affected, (b) what tests are added (layer + scenario, e.g., "add integration test for X"), and (c) what existing tests are retired and why (be specific — "remove mocked unit test Y because real integration test now covers this path", not just "update tests"). If no test change is needed, state that explicitly and justify it.
-- **Dependencies**: which tasks must complete before this task is ready (task IDs or empty)
+- **Dependencies**: which tasks must complete before this task is ready — task IDs from this session or from prior open sessions (listed in Step 1.4); empty if none
 - **Branch**: `feat/{id-lowered-dashes}-{first-3-words-kebab}` — or a shared branch name for bundled tasks (see below)
 - **Layer**: API | Frontend | Database | Shared | Background | CLI
 - **Hours**: rough estimate (1-8h; break tasks larger than 8h)
@@ -197,9 +218,12 @@ Present the map in two forms:
 
 **1. Visual graph:**
 ```
+[PRIOR SESSIONS]  ← include only if open cross-session tasks exist (Step 1.4)
+  └─ {PRIOR-ID}: {title} [{status}]  (session: {prior_session})
+
 [START]
   ├─ {PREFIX}-1.1: {title} (no deps)
-  └─ {PREFIX}-1.2: {title} (no deps)
+  └─ {PREFIX}-1.2: {title} (no deps, depends on {PRIOR-ID} from prior session)
         └─ {PREFIX}-2.1: {title} (needs 1.1, 1.2)
               └─ {PREFIX}-2.2: {title} (needs 2.1)
 ```
