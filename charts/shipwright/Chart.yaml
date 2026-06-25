@@ -28,6 +28,8 @@ annotations:
   # Artifact Hub change log for this release. Must mirror the matching version
   # entry in CHANGELOG.md (keep the two in sync on every bump).
   artifacthub.io/changes: |
+    - kind: added
+      description: "taskStore.extraEnv passthrough for additional env vars on the task-store pod"
     - kind: changed
       description: "auto-bump to chart v1.6.36 triggered by release tag agent-v0.70.0"
 dependencies:
