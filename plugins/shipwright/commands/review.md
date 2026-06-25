@@ -581,22 +581,22 @@ curl -sf -X POST \
 
 ### 4. Set agentId (and reviewState=approved for APPROVE verdict)
 
-Always set `agentId` from `$SHIPWRIGHT_AGENT_ID`. For APPROVE verdicts, include `reviewState: "approved"` in the same PATCH call. For COMMENT or CHANGES_REQUESTED verdicts, set `agentId` only.
+Always set `agentId` from `$SHIPWRIGHT_AGENT_ID`. For APPROVE verdicts, include `reviewState: "approved"` in the same call. One PATCH per verdict:
 
 ```bash
-# COMMENT / CHANGES_REQUESTED:
+# COMMENT / CHANGES_REQUESTED — agentId only:
 curl -sf -X PATCH \
   -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   -H "Content-Type: application/json" \
   "${SHIPWRIGHT_TASK_STORE_URL}/prs/${PR_RECORD_ID}" \
   -d "{\"agentId\": \"$SHIPWRIGHT_AGENT_ID\"}" >/dev/null 2>&1
 
-# APPROVE — additionally update reviewState:
+# APPROVE — agentId + reviewState=approved in one call:
 curl -sf -X PATCH \
   -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   -H "Content-Type: application/json" \
   "${SHIPWRIGHT_TASK_STORE_URL}/prs/${PR_RECORD_ID}" \
-  -d "{\"reviewState\": \"approved\"}" >/dev/null 2>&1
+  -d "{\"agentId\": \"$SHIPWRIGHT_AGENT_ID\", \"reviewState\": \"approved\"}" >/dev/null 2>&1
 ```
 
 ---
