@@ -85,7 +85,6 @@ export class AgentCronRunService {
    * Update an existing run record with completion data and/or token fields.
    * Validates that the runId exists and belongs to agentId.
    * Throws NotFoundError if the run doesn't exist or is not owned by agentId.
-   * Throws BadRequestError if no fields are provided.
    */
   async patch(
     runId: string,
