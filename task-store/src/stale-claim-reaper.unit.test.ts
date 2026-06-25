@@ -20,7 +20,10 @@ function makePrismaDouble(affectedRows = 0) {
   const calls: ExecuteRawCall[] = [];
 
   const prisma = {
-    $executeRaw(strings: TemplateStringsArray, ...values: unknown[]): Promise<number> {
+    $executeRaw(
+      strings: TemplateStringsArray,
+      ...values: unknown[]
+    ): Promise<number> {
       calls.push({ strings, values });
       return Promise.resolve(affectedRows);
     },
@@ -28,7 +31,10 @@ function makePrismaDouble(affectedRows = 0) {
   };
 
   return prisma as unknown as {
-    $executeRaw: (strings: TemplateStringsArray, ...values: unknown[]) => Promise<number>;
+    $executeRaw: (
+      strings: TemplateStringsArray,
+      ...values: unknown[]
+    ) => Promise<number>;
     _calls: ExecuteRawCall[];
   };
 }
@@ -81,7 +87,9 @@ describe("StaleClaimReaper", () => {
     await reaper.reap();
 
     // Verify that the cutoff value passed to $executeRaw is exactly now - TTL
-    const expectedCutoff = new Date(NOW.getTime() - DEFAULT_TTL_MS).toISOString();
+    const expectedCutoff = new Date(
+      NOW.getTime() - DEFAULT_TTL_MS,
+    ).toISOString();
     const call = prisma._calls[0];
     expect(call.values[0]).toBe(expectedCutoff);
 
@@ -116,7 +124,9 @@ describe("StaleClaimReaper", () => {
     expect(count).toBe(0);
     // Confirm the WHERE clause includes the cutoff used to filter claimedAt too
     const call = prisma._calls[0];
-    expect(call.values[0]).toBe(new Date(NOW.getTime() - DEFAULT_TTL_MS).toISOString());
+    expect(call.values[0]).toBe(
+      new Date(NOW.getTime() - DEFAULT_TTL_MS).toISOString(),
+    );
   });
 
   test("env var SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS overrides default TTL", async () => {

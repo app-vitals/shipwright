@@ -189,6 +189,13 @@ export function createTasksRoutes(
     return c.json(result, 200);
   });
 
+  // ─── Distinct values ───────────────────────────────────────────────────────
+  // Must be registered before /:id routes to avoid param capture.
+  app.get("/distinct", async (c) => {
+    const agentId = c.get("agentId");
+    return c.json(await taskService.distinct(agentId ?? undefined), 200);
+  });
+
   // ─── Get one ───────────────────────────────────────────────────────────────
   app.get("/:id", async (c) => {
     const agentId = c.get("agentId");

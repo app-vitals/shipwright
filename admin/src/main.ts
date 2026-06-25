@@ -284,6 +284,16 @@ async function startServer(): Promise<void> {
                 `task-store POST /tasks/${id}/release → ${res.status}`,
               );
           },
+          fetchDistinctTaskValues: async () => {
+            const res = await fetch(`${taskStoreUrl}/tasks/distinct`, {
+              headers: { Authorization: `Bearer ${taskStoreAdminToken}` },
+            });
+            if (!res.ok)
+              throw new Error(
+                `task-store GET /tasks/distinct → ${res.status}`,
+              );
+            return res.json() as Promise<{ sessions: string[]; repos: string[] }>;
+          },
         }
       : {};
 

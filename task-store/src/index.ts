@@ -8,4 +8,8 @@
 
 export { PrismaClient, Prisma, TaskStatus } from "../prisma/client/index.js";
 export type { Task, TaskToken } from "../prisma/client/index.js";
-export type { BlockedByEntry, TaskWithBlockedBy, TaskListResult } from "./task-service.ts";
+export type {
+  BlockedByEntry,
+  TaskWithBlockedBy,
+  TaskListResult,
+} from "./task-service.ts";
