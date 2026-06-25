@@ -269,11 +269,13 @@ PR_RECORD_ID=$(echo "$PR_RECORD" | jq -r '.id // empty')
 If `PR_RECORD_ID` is non-empty, update the record to mark it as merged:
 
 ```bash
-[ -n "$PR_RECORD_ID" ] && curl -sf -X PATCH \
-  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  -H "Content-Type: application/json" \
-  "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
-  -d "{\"state\": \"merged\", \"mergedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\", \"reviewState\": \"approved\"}" 2>/dev/null
+[ -n "$PR_RECORD_ID" ] && \
+  curl -sf -X PATCH \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
+    -d "{\"state\": \"merged\", \"mergedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\", \"reviewState\": \"approved\"}" \
+    > /dev/null 2>&1 || echo "⚠ PATCH /prs/$PR_RECORD_ID failed — continuing"
 ```
 
 If the claim or patch call fails (or `PR_RECORD_ID` is empty), print a warning and continue:
