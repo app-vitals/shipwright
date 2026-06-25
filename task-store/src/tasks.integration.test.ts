@@ -8,6 +8,7 @@
 
 import { beforeEach, describe, expect, it } from "bun:test";
 import { PrismaClient } from "../prisma/client/index.js";
+import { TaskService } from "./task-service.ts";
 
 const TEST_DB = process.env.DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST;
 
@@ -183,5 +184,113 @@ describeOrSkip("Task store schema (integration)", () => {
       threw = true;
     }
     expect(threw).toBe(true);
+  });
+
+  // ─── TaskService.list() agentScope OR-query ────────────────────────────────
+
+  it("list() with agentScope returns correct OR union: assigned tasks + pool tasks in repos", async () => {
+    const taskService = new TaskService(prisma);
+
+    // Task explicitly assigned to agent-1
+    await prisma.task.create({
+      data: {
+        title: "Assigned to agent-1",
+        status: "pending",
+        assignee: "agent-1",
+        repo: "app-vitals/other-repo",
+      },
+    });
+
+    // Unassigned pool task in agent-1's scope
+    await prisma.task.create({
+      data: {
+        title: "Pool task in scope",
+        status: "pending",
+        assignee: null,
+        repo: "acme-inc/backend-api",
+      },
+    });
+
+    // Unassigned pool task NOT in agent-1's scope
+    await prisma.task.create({
+      data: {
+        title: "Pool task out of scope",
+        status: "pending",
+        assignee: null,
+        repo: "app-vitals/shipwright",
+      },
+    });
+
+    // Task assigned to a different agent
+    await prisma.task.create({
+      data: {
+        title: "Assigned to agent-2",
+        status: "pending",
+        assignee: "agent-2",
+        repo: "acme-inc/backend-api",
+      },
+    });
+
+    const result = await taskService.list({
+      agentScope: { agentId: "agent-1", repos: ["acme-inc/backend-api"] },
+    });
+
+    const titles = result.tasks.map((t) => t.title).sort();
+
+    // Should include: explicitly assigned + pool task in scope
+    expect(titles).toContain("Assigned to agent-1");
+    expect(titles).toContain("Pool task in scope");
+
+    // Should NOT include: pool task out of scope OR assigned to agent-2
+    expect(titles).not.toContain("Pool task out of scope");
+    expect(titles).not.toContain("Assigned to agent-2");
+
+    expect(result.total).toBe(2);
+  });
+
+  it("list() with agentScope AND repo filter applies repo as additional AND condition", async () => {
+    const taskService = new TaskService(prisma);
+
+    // Assigned task in the filtered repo
+    await prisma.task.create({
+      data: {
+        title: "Assigned in target repo",
+        status: "pending",
+        assignee: "agent-1",
+        repo: "acme-inc/backend-api",
+      },
+    });
+
+    // Assigned task in a different repo
+    await prisma.task.create({
+      data: {
+        title: "Assigned in other repo",
+        status: "pending",
+        assignee: "agent-1",
+        repo: "app-vitals/other-repo",
+      },
+    });
+
+    // Pool task in the filtered repo
+    await prisma.task.create({
+      data: {
+        title: "Pool task in target repo",
+        status: "pending",
+        assignee: null,
+        repo: "acme-inc/backend-api",
+      },
+    });
+
+    const result = await taskService.list({
+      agentScope: { agentId: "agent-1", repos: ["acme-inc/backend-api"] },
+      repo: "acme-inc/backend-api",
+    });
+
+    const titles = result.tasks.map((t) => t.title).sort();
+
+    expect(titles).toContain("Assigned in target repo");
+    expect(titles).toContain("Pool task in target repo");
+    expect(titles).not.toContain("Assigned in other repo");
+    expect(result.total).toBe(2);
   });
 });
