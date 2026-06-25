@@ -77,6 +77,10 @@ export interface KubernetesContainer {
     mountPath: string;
     [key: string]: unknown;
   }>;
+  startupProbe?: {
+    httpGet?: { path?: string; port: number | string; [key: string]: unknown };
+    [key: string]: unknown;
+  };
   livenessProbe?: {
     httpGet?: { path?: string; port: number | string; [key: string]: unknown };
     [key: string]: unknown;

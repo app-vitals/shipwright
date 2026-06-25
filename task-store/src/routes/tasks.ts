@@ -13,7 +13,7 @@
  *
  * Routes:
  *   GET    /tasks               list (?status, ?state=open|closed, ?session, ?assignee, ?pr, ?branch, ?limit, ?offset, ?ready=true)
- *                              returns { tasks, total, limit, offset } — or Task[] when ?ready=true
+ *                              returns { tasks, total }
  *   POST   /tasks               create one (409 if id exists)
  *   POST   /tasks/bulk          insert array, skip 409s → { inserted, updated }
  *   GET    /tasks/:id           fetch one (404 when missing)
@@ -100,15 +100,17 @@ export function createTasksRoutes(
     // ?ready=true is the legacy spelling; ?state=ready is the new form.
     if (c.req.query("ready") === "true" || stateRaw === "ready") {
       // Pass repos to listReady for repo-scoped agent tokens.
-      return c.json(
-        await taskService.listReady(agentId ?? undefined, repos ?? undefined),
-        200,
+      const tasks = await taskService.listReady(
+        agentId ?? undefined,
+        repos ?? undefined,
       );
+      return c.json({ tasks, total: tasks.length }, 200);
     }
 
     // ?state=blocked delegates to listBlocked().
     if (stateRaw === "blocked") {
-      return c.json(await taskService.listBlocked(agentId ?? undefined), 200);
+      const tasks = await taskService.listBlocked(agentId ?? undefined);
+      return c.json({ tasks, total: tasks.length }, 200);
     }
 
     const prRaw = c.req.query("pr");

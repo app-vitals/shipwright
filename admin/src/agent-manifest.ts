@@ -310,6 +310,17 @@ export function buildAgentDeploymentManifest(
               volumeMounts: [
                 { name: volumeName, mountPath: AGENT_HOME_MOUNT_PATH },
               ],
+              // Gate liveness/readiness until the agent's health server binds.
+              // Startup runs `mise install` + plugin install, which can exceed a
+              // minute on a cold/contended node; without this, liveness would
+              // restart the container (~75s in) before startup ever finished.
+              // 18 × 10s = 180s grace, aligned with the entrypoint startup
+              // watchdog (DEFAULT_STARTUP_TIMEOUT_MS in agent/src/entrypoint.ts).
+              startupProbe: {
+                httpGet: { path: "/health", port: AGENT_HEALTH_PORT },
+                periodSeconds: 10,
+                failureThreshold: 18,
+              },
               livenessProbe: {
                 httpGet: { path: "/health", port: AGENT_HEALTH_PORT },
                 initialDelaySeconds: 15,

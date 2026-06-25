@@ -59,6 +59,7 @@ describeOrSkip("Task store schema (integration)", () => {
         cancelledAt: "2026-06-22T14:00:00.000Z",
         completedAt: "2026-06-22T15:00:00.000Z",
         deployingAt: "2026-06-22T15:30:00.000Z",
+        deployedAt: "2026-06-22T15:45:00.000Z",
         ciFixAttempts: 2,
         mergeCommit: "abc123",
         prUrl: "https://github.com/org/repo/pull/42",
@@ -103,6 +104,7 @@ describeOrSkip("Task store schema (integration)", () => {
     expect(read.cancelledAt).toBe("2026-06-22T14:00:00.000Z");
     expect(read.completedAt).toBe("2026-06-22T15:00:00.000Z");
     expect(read.deployingAt).toBe("2026-06-22T15:30:00.000Z");
+    expect(read.deployedAt).toBe("2026-06-22T15:45:00.000Z");
     expect(read.ciFixAttempts).toBe(2);
     expect(read.mergeCommit).toBe("abc123");
     expect(read.prUrl).toBe("https://github.com/org/repo/pull/42");
