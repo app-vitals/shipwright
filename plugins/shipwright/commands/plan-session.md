@@ -102,10 +102,11 @@ Example flags:
 - **DB**: dropping or renaming a table or column — who reads or writes it?
 - **API**: removing or renaming an endpoint or response field — who calls it?
 - **Client/types**: removing or renaming a method or interface — who imports it?
+- **Release/deployment pipeline**: the pipeline itself is an interface with external consumers. Changes to how artifacts are built, packaged, or published; where they land; what events or signals are emitted during the process; or what triggers downstream workflows — any of these can silently break systems in other repos that depend on the current behavior. Those consumers won't appear in a local grep and won't error loudly; they'll just stop running. Before designing any task that modifies the build, release, or deploy pipeline, identify what depends on its current behavior and how the change affects each dependency.
 
 List every consumer found. A task that drops the old interface while leaving consumers on the old code creates a broken intermediate state that cannot be deployed safely.
 
-Additions (new tables, nullable columns, new endpoints, new optional fields, new methods) are safe. Flag only renames and removals.
+Additions (new tables, nullable columns, new endpoints, new optional fields, new methods) are safe. Flag only renames, removals, and substitutions that change behavior.
 
 ---
 
@@ -249,6 +250,8 @@ Even without a keyword match, flag the task HITL if it fundamentally requires:
 - Provisioning or rotating a credential, secret, or API key
 - Approving a privileged workflow that requires human authorization
 - Any action that cannot be expressed as a CLI command the agent can run
+
+**CI workflow secret scan**: if a task adds or modifies a CI workflow file, extract every `${{ secrets.* }}` reference in the changed file and check whether each secret name already appears in other workflow files in the repo. Any secret that is net-new — not referenced anywhere else — requires a human to provision it. Flag the task HITL and list the new secret names in the `## Human steps` section.
 
 Apply judgment: if the task description implies "someone must click approve in the console" or "create a secret in 1Password," it's HITL regardless of the keywords present.
 
