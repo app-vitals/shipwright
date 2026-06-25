@@ -257,6 +257,18 @@ curl -sf -X PATCH \
 
 ## Step 5: Poll Deploy → Canary → Promote
 
+Mark the task `deploying` — the merge has landed and the deploy pipeline is now in
+flight. This stamps `deployingAt`, the start of the deploy window (`deployedAt − deployingAt`
+is the deploy duration). Skip if in deploy-only mode:
+
+```bash
+curl -sf -X PATCH \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
+  -d "{\"status\": \"deploying\", \"deployingAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" | jq .
+```
+
 ### 5a. No-Pipeline Detection
 
 Before starting the full 30-minute pipeline watch, poll for a Deploy workflow run matching `SQUASH_SHA` for up to **5 minutes** (poll every 30 seconds, up to 10 polls):

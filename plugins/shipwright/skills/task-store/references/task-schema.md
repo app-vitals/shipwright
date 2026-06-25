@@ -44,7 +44,7 @@ contract: the same shape whether the backend is GitHub Issues, Jira, or the loca
 | `ciFixAttempts` | number | before `pr_open` → `approved` / `merged` |
 | `mergedAt` | ISO string | → `merged` |
 | `blockedAt` / `blockedReason` | ISO string / string | → `blocked` |
-| `cancelledAt` / `deployingAt` / `completedAt` | ISO string | corresponding status |
+| `cancelledAt` / `deployingAt` / `deployedAt` / `completedAt` | ISO string | corresponding status |
 | `mergeCommit` | string | merge commit SHA |
 | `source` / `issue` | string | backend tracking ref (e.g. `gh:owner/repo#123`) |
 
