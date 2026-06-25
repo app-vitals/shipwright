@@ -45,16 +45,9 @@ This is the engineering planning pass. The product spec (what and why) is alread
    The response is a paginated envelope — unwrap `.tasks` to get the array. If non-empty, print the existing task IDs and skip re-adding them.
 4. Scan for open tasks from prior sessions that may be prerequisites for this work:
    ```bash
-   {
-     curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-       "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=pending" | jq '.tasks // []'
-     curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-       "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=in_progress" | jq '.tasks // []'
-     curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-       "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=blocked" | jq '.tasks // []'
-     curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-       "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=pr_open" | jq '.tasks // []'
-   } | jq -s --arg s "{session}" 'add // [] | map(select(.session != $s)) | unique_by(.id)'
+   curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+     "$SHIPWRIGHT_TASK_STORE_URL/tasks?state=open" | jq --arg s "$SESSION" \
+     '.tasks // [] | map(select(.session != $s)) | unique_by(.id)'
    ```
    If the result is non-empty, print a brief summary before the orientation header:
    ```
