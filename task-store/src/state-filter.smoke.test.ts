@@ -158,6 +158,9 @@ function fakeTaskService(opts: {
     async bulk(_tasks) {
       return { inserted: 0, updated: 0 };
     },
+    async distinct() {
+      return { sessions: [], repos: [] };
+    },
   };
 }
 
