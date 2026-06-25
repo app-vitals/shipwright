@@ -16,7 +16,7 @@ import { describe, expect, it } from "bun:test";
 import { createTaskStoreApp } from "./app.ts";
 import { ConflictError, NotFoundError } from "./errors.ts";
 import type { Task } from "./index.ts";
-import type { TaskListFilters, TaskListResult, TaskServiceLike } from "./task-service.ts";
+import type { TaskListFilters, TaskListResult, TaskServiceLike, TaskWithBlockedBy } from "./task-service.ts";
 import type { TokenServiceLike } from "./token-service.ts";
 
 // ─── Fakes ────────────────────────────────────────────────────────────────────
@@ -125,6 +125,10 @@ function makeTask(overrides: Partial<Task> = {}): Task {
   } as Task;
 }
 
+function withBlockedBy(task: Task): TaskWithBlockedBy {
+  return { ...task, blockedBy: [] };
+}
+
 /** Minimal TaskService fake — only the methods exercised by smoke tests. */
 function fakeTaskService(
   opts: {
@@ -136,7 +140,7 @@ function fakeTaskService(
 ): TaskServiceLike {
   return {
     async list(filters?) {
-      const tasks = opts.listResult ?? [];
+      const tasks = (opts.listResult ?? []).map(withBlockedBy);
       return {
         tasks,
         total: tasks.length,
@@ -148,8 +152,8 @@ function fakeTaskService(
       return opts.listReadyResult ?? [];
     },
     async get(id: string) {
-      if ("getResult" in opts) return opts.getResult ?? null;
-      return makeTask({ id });
+      if ("getResult" in opts) return opts.getResult ? withBlockedBy(opts.getResult) : null;
+      return withBlockedBy(makeTask({ id }));
     },
     async create(data) {
       return makeTask({ ...(data as Partial<Task>), id: "created-1" });
