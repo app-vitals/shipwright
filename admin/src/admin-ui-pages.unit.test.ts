@@ -1318,7 +1318,6 @@ describe("renderTasksPage — row click navigation", () => {
       { total: tasks.length, limit: 50, page: 1 },
       opts,
       undefined,
-      "UTC",
     );
   }
 
@@ -1440,7 +1439,6 @@ describe("renderTasksPage — datalist autocomplete", () => {
       pagination,
       undefined,
       { sessions: ["session-abc", "session-xyz"] },
-      "UTC",
     );
     expect(html).toContain('<datalist id="sessions-list">');
     expect(html).toContain('<option value="session-abc">');
@@ -1458,7 +1456,6 @@ describe("renderTasksPage — datalist autocomplete", () => {
       pagination,
       undefined,
       { repos: ["org/repo-a", "org/repo-b"] },
-      "UTC",
     );
     expect(html).toContain('<datalist id="repos-list">');
     expect(html).toContain('<option value="org/repo-a">');
@@ -1475,7 +1472,6 @@ describe("renderTasksPage — datalist autocomplete", () => {
       pagination,
       undefined,
       { agents: ["Agent Alpha", "Agent Beta"] },
-      "UTC",
     );
     expect(html).toContain('<datalist id="agents-list">');
     expect(html).toContain('<option value="Agent Alpha">');
@@ -1492,7 +1488,6 @@ describe("renderTasksPage — datalist autocomplete", () => {
       pagination,
       undefined,
       undefined,
-      "UTC",
     );
     expect(html).not.toContain("<datalist");
     expect(html).not.toContain('list="sessions-list"');
@@ -1510,7 +1505,6 @@ describe("renderTasksPage — datalist autocomplete", () => {
       pagination,
       undefined,
       { sessions: ['<script>alert("xss")</script>'] },
-      "UTC",
     );
     expect(html).not.toContain('<script>alert("xss")</script>');
     expect(html).toContain("&lt;script&gt;");
@@ -1530,7 +1524,6 @@ describe("renderTasksPage — blocker badges", () => {
       { total: tasks.length, limit: 50, page: 1 },
       undefined,
       undefined,
-      "UTC",
     );
   }
 
@@ -1681,7 +1674,6 @@ describe("renderTasksPage — 4-state toggle", () => {
       EMPTY_PAGINATION,
       undefined,
       undefined,
-      "UTC",
     );
     // Ready link URL should NOT contain ?state= (it's the default)
     expect(html).toMatch(/href="\/admin\/tasks"[^>]*>Ready</);
@@ -1703,7 +1695,6 @@ describe("renderTasksPage — 4-state toggle", () => {
       EMPTY_PAGINATION,
       undefined,
       undefined,
-      "UTC",
     );
     // In Progress tab link contains ?state=in_progress
     expect(html).toContain("state=in_progress");
@@ -1727,7 +1718,6 @@ describe("renderTasksPage — 4-state toggle", () => {
       EMPTY_PAGINATION,
       undefined,
       undefined,
-      "UTC",
     );
     expect(html).toContain("state=blocked");
     expect(html).toMatch(/background:#6366f1;color:#fff[^>]*>Blocked/);
@@ -1746,7 +1736,6 @@ describe("renderTasksPage — 4-state toggle", () => {
       EMPTY_PAGINATION,
       undefined,
       undefined,
-      "UTC",
     );
     expect(html).toContain("state=closed");
     expect(html).toMatch(/background:#6366f1;color:#fff[^>]*>Closed/);
@@ -1765,7 +1754,6 @@ describe("renderTasksPage — 4-state toggle", () => {
       EMPTY_PAGINATION,
       undefined,
       undefined,
-      "UTC",
     );
     // All tab links should contain session and repo params
     const tabLinkPattern =
@@ -1787,7 +1775,6 @@ describe("renderTasksPage — 4-state toggle", () => {
       { total: 100, limit: 50, page: 1 },
       undefined,
       undefined,
-      "UTC",
     );
     // Next button should link to page 2 with state=blocked
     expect(html).toContain("state=blocked");

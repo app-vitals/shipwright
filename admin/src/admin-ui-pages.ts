@@ -1140,7 +1140,6 @@ export function renderTasksPage(
   },
   opts?: { error?: string; agentFilterActive?: boolean },
   suggestions?: { sessions?: string[]; repos?: string[]; agents?: string[] },
-  timezone = "America/Los_Angeles",
 ): string {
   const errorHtml = opts?.error
     ? `<div class="alert alert-error">${escapeHtml(opts.error)}</div>`
