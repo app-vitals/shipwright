@@ -569,7 +569,12 @@ If `PR_CLAIM` is empty (env var absent or call failed), print the warning and sk
 
 ```bash
 PR_RECORD_ID=$(echo "$PR_CLAIM" | jq -r '.id // empty')
+if [ -z "$PR_RECORD_ID" ]; then
+  echo "Warning: could not extract PR record ID from claim response — skipping"
+else
 ```
+
+Wrap steps 3–4 in the `else` branch and close with `fi` after step 4.
 
 ### 3. Mark review as posted
 
@@ -579,24 +584,17 @@ curl -sf -X POST \
   "${SHIPWRIGHT_TASK_STORE_URL}/prs/${PR_RECORD_ID}/complete" >/dev/null 2>&1
 ```
 
-### 4. Set agentId (and reviewState=approved for APPROVE verdict)
+### 4. Set agentId
 
-Always set `agentId` from `$SHIPWRIGHT_AGENT_ID`. For APPROVE verdicts, include `reviewState: "approved"` in the same call. One PATCH per verdict:
+Set `agentId` from `$SHIPWRIGHT_AGENT_ID` (applies to all verdicts — COMMENT, CHANGES_REQUESTED, and APPROVE):
 
 ```bash
-# COMMENT / CHANGES_REQUESTED — agentId only:
 curl -sf -X PATCH \
   -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   -H "Content-Type: application/json" \
   "${SHIPWRIGHT_TASK_STORE_URL}/prs/${PR_RECORD_ID}" \
   -d "{\"agentId\": \"$SHIPWRIGHT_AGENT_ID\"}" >/dev/null 2>&1
-
-# APPROVE — agentId + reviewState=approved in one call:
-curl -sf -X PATCH \
-  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  -H "Content-Type: application/json" \
-  "${SHIPWRIGHT_TASK_STORE_URL}/prs/${PR_RECORD_ID}" \
-  -d "{\"agentId\": \"$SHIPWRIGHT_AGENT_ID\", \"reviewState\": \"approved\"}" >/dev/null 2>&1
+fi
 ```
 
 ---
