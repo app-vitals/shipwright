@@ -206,7 +206,7 @@ export function createTasksRoutes(
   app.patch("/:id", async (c) => {
     const agentId = c.get("agentId");
     const repos = c.get("repos");
-    await requireOwnership(
+    const task = await requireOwnership(
       taskService,
       c.req.param("id"),
       agentId,
@@ -215,7 +215,8 @@ export function createTasksRoutes(
     const body = await readJson(c);
     validateRepo(body.repo, agentId !== null ? repos : null);
     // Prevent agent tokens from reassigning tasks outside their ownership scope.
-    if (agentId !== null) {
+    // Only force-assign for explicitly assigned tasks; leave pool task assignee null.
+    if (agentId !== null && task.assignee !== null) {
       body.assignee = agentId;
     }
     const updated = await taskService.update(
