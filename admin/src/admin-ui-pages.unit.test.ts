@@ -2046,6 +2046,7 @@ describe("renderTaskDetailPage — timezone formatting", () => {
   });
 });
 
+
 // ─── renderTaskDetailPage — Pull Request Review section ──────────────────────
 
 const PR_ITEM: PullRequestItem = {
