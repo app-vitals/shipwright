@@ -13,7 +13,7 @@
  *
  * Routes:
  *   GET    /tasks               list (?status, ?state=open|closed, ?session, ?assignee, ?pr, ?branch, ?limit, ?offset, ?ready=true)
- *                              returns { tasks, total, limit, offset } — or Task[] when ?ready=true
+ *                              returns { tasks, total }
  *   POST   /tasks               create one (409 if id exists)
  *   POST   /tasks/bulk          insert array, skip 409s → { inserted, updated }
  *   GET    /tasks/:id           fetch one (404 when missing)
