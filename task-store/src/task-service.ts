@@ -29,8 +29,8 @@ export type TaskWithBlockedBy = Task & { blockedBy: BlockedByEntry[] };
 /** Filters accepted by TaskService.list. */
 export interface TaskListFilters {
   status?: string;
-  /** High-level lifecycle filter: "open" = active, "closed" = terminal. */
-  state?: "open" | "closed";
+  /** High-level lifecycle filter: "open" | "closed" | "in_progress". */
+  state?: "open" | "closed" | "in_progress";
   session?: string;
   repo?: string;
   assignee?: string;
@@ -53,6 +53,7 @@ export interface TaskListResult {
 export interface TaskServiceLike {
   list(filters?: TaskListFilters): Promise<TaskListResult>;
   listReady(agentId?: string): Promise<Task[]>;
+  listBlocked(): Promise<TaskWithBlockedBy[]>;
   get(id: string): Promise<TaskWithBlockedBy | null>;
   create(data: Prisma.TaskCreateInput): Promise<Task>;
   bulk(
@@ -84,6 +85,8 @@ export class TaskService implements TaskServiceLike {
       where.status = { in: [...OPEN_STATUSES] };
     } else if (filters.state === "closed") {
       where.status = { in: [...CLOSED_STATUSES] };
+    } else if (filters.state === "in_progress") {
+      where.status = { in: ["in_progress", "pr_open", "approved"] };
     }
     if (filters.session) where.session = filters.session;
     if (filters.repo) where.repo = filters.repo;
@@ -127,8 +130,27 @@ export class TaskService implements TaskServiceLike {
     // the result set to the caller's agent if one is specified.
     const tasks = await this.prisma.task.findMany();
     const ready = await resolveReadyTasks(tasks, async () => false);
-    if (agentId) return ready.filter((t) => t.assignee === agentId);
+    if (agentId) return ready.filter((t: Task) => t.assignee === agentId);
     return ready;
+  }
+
+  /**
+   * Blocked tasks: status === "blocked" OR (status === "pending" AND blockedBy.length > 0).
+   *
+   * Captures explicitly blocked tasks, HITL-gated tasks, and dep-blocked pending tasks.
+   * Loads the full task graph so computeBlockedBy can resolve all dependency IDs.
+   */
+  async listBlocked(): Promise<TaskWithBlockedBy[]> {
+    const allTasks = await this.prisma.task.findMany();
+    return allTasks
+      .filter((t: Task) => {
+        if (t.status === "blocked") return true;
+        if (t.status === "pending") {
+          return computeBlockedBy(t, allTasks).length > 0;
+        }
+        return false;
+      })
+      .map((t: Task) => ({ ...t, blockedBy: computeBlockedBy(t, allTasks) }));
   }
 
   async get(id: string): Promise<TaskWithBlockedBy | null> {

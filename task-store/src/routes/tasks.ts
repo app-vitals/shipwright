@@ -68,17 +68,25 @@ export function createTasksRoutes(
   // ─── List ──────────────────────────────────────────────────────────────────
   app.get("/", async (c) => {
     const agentId = c.get("agentId");
+    const stateRaw = c.req.query("state");
 
-    if (c.req.query("ready") === "true") {
+    // ?ready=true is the legacy spelling; ?state=ready is the new form.
+    if (c.req.query("ready") === "true" || stateRaw === "ready") {
       return c.json(await taskService.listReady(agentId ?? undefined), 200);
+    }
+
+    // ?state=blocked delegates to listBlocked().
+    if (stateRaw === "blocked") {
+      return c.json(await taskService.listBlocked(), 200);
     }
 
     const prRaw = c.req.query("pr");
     const limitRaw = c.req.query("limit");
     const offsetRaw = c.req.query("offset");
-    const stateRaw = c.req.query("state");
     const state =
-      stateRaw === "open" || stateRaw === "closed" ? stateRaw : undefined;
+      stateRaw === "open" || stateRaw === "closed" || stateRaw === "in_progress"
+        ? stateRaw
+        : undefined;
     const result = await taskService.list({
       status: c.req.query("status"),
       state,
