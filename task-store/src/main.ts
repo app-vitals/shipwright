@@ -80,8 +80,8 @@ async function startServer(): Promise<void> {
   const tokenService = new TaskTokenService(prisma);
 
   // Build scope resolver when agents service URL is configured.
-  const agentsServiceUrl = process.env.SHIPWRIGHT_AGENTS_SERVICE_URL;
-  const agentsServiceApiKey = process.env.SHIPWRIGHT_AGENTS_SERVICE_API_KEY;
+  const agentsServiceUrl = process.env.SHIPWRIGHT_TASK_STORE_AGENTS_URL;
+  const agentsServiceApiKey = process.env.SHIPWRIGHT_TASK_STORE_AGENTS_API_KEY;
   const scopeResolver =
     agentsServiceUrl && agentsServiceApiKey
       ? createScopeResolver(agentsServiceUrl, agentsServiceApiKey)
@@ -91,7 +91,7 @@ async function startServer(): Promise<void> {
     console.log(`[task-store] scope resolver configured (${agentsServiceUrl})`);
   } else {
     console.log(
-      "[task-store] scope resolver disabled (SHIPWRIGHT_AGENTS_SERVICE_URL not set)",
+      "[task-store] scope resolver disabled (SHIPWRIGHT_TASK_STORE_AGENTS_URL not set)",
     );
   }
 

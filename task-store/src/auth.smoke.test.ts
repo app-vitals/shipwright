@@ -8,7 +8,7 @@
  *   1. When resolver returns repos, c.get('repos') is populated for agent tokens
  *   2. No scope resolver (URL not set path) → repos defaults to []
  *   3. Scope resolver throws → repos defaults to [] (no crash)
- *   4. Admin token (agentId null) → repos = [], resolver not called
+ *   4. Admin token (agentId null) → repos = null (unrestricted), resolver not called
  */
 
 import { describe, expect, it } from "bun:test";
@@ -100,7 +100,7 @@ describe("bearer auth middleware — scope resolver", () => {
     expect(body.repos).toEqual([]);
   });
 
-  it("admin tokens always get repos: [] and scope resolver is not called", async () => {
+  it("admin tokens always get repos: null (unrestricted) and scope resolver is not called", async () => {
     let resolverCalled = false;
     const resolver = async (_agentId: string) => {
       resolverCalled = true;
@@ -113,9 +113,9 @@ describe("bearer auth middleware — scope resolver", () => {
     });
 
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { repos: string[]; agentId: string | null };
+    const body = (await res.json()) as { repos: string[] | null; agentId: string | null };
     expect(body.agentId).toBeNull();
-    expect(body.repos).toEqual([]);
+    expect(body.repos).toBeNull();
     expect(resolverCalled).toBe(false);
   });
 });
