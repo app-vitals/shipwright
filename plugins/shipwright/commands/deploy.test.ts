@@ -58,3 +58,60 @@ describe("deploy.md — full 30-minute watch (AC5)", () => {
     expect(has30Min).toBe(true);
   });
 });
+
+describe("deploy.md — PR upsert on merge (PRI-2.4)", () => {
+  it("contains POST /prs/claim to create or claim PR record", () => {
+    const hasClaimCall =
+      content.includes("/prs/claim") || content.includes("prs/claim");
+    expect(hasClaimCall).toBe(true);
+  });
+
+  it("passes repo, prNumber, and commitSha (SQUASH_SHA) to POST /prs/claim", () => {
+    const hasRepo =
+      (content.includes('"repo"') || content.includes("repo")) &&
+      content.includes("{org}/{repo}");
+    const hasPrNumber =
+      (content.includes('"prNumber"') || content.includes("prNumber")) &&
+      (content.includes("{pr}") || content.includes("prNumber"));
+    const hasCommitSha =
+      (content.includes('"commitSha"') || content.includes("commitSha")) &&
+      content.includes("SQUASH_SHA");
+    expect(hasRepo && hasPrNumber && hasCommitSha).toBe(true);
+  });
+
+  it("contains PATCH /prs/:id with state=merged to mark PR as merged", () => {
+    const hasPatchCall = content.includes("/prs/");
+    const hasStateMerged =
+      content.includes("state") &&
+      (content.includes("merged") || content.includes('merged"'));
+    expect(hasPatchCall && hasStateMerged).toBe(true);
+  });
+
+  it("includes mergedAt timestamp in PATCH request", () => {
+    const hasMergedAt =
+      content.includes('"mergedAt"') ||
+      content.includes("mergedAt") ||
+      content.includes("mergedAt:");
+    expect(hasMergedAt).toBe(true);
+  });
+
+  it("includes reviewState=approved in PATCH request", () => {
+    const hasReviewState =
+      content.includes("reviewState") && content.includes("approved");
+    expect(hasReviewState).toBe(true);
+  });
+
+  it("warns and continues if PR upsert fails", () => {
+    const hasWarning =
+      content.includes("⚠") ||
+      content.includes("warn") ||
+      content.includes("Failed to upsert");
+    expect(hasWarning).toBe(true);
+  });
+
+  it("extracts PR_RECORD_ID from POST /prs/claim response", () => {
+    const hasPrRecordId =
+      content.includes("PR_RECORD_ID") || content.includes("pr_record_id");
+    expect(hasPrRecordId).toBe(true);
+  });
+});

@@ -1593,12 +1593,15 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       params.set("limit", agentFilterIds !== null ? "500" : String(limit));
       params.set("offset", agentFilterIds !== null ? "0" : String(offset));
       try {
-        const [result, distinct] = await Promise.all([
+        const [rawResult, distinct] = await Promise.all([
           fetchTaskStoreTasks(params),
           fetchDistinctTaskValues
             ? fetchDistinctTaskValues().catch(() => null)
             : Promise.resolve(null),
         ]);
+        const result = Array.isArray(rawResult)
+          ? { tasks: rawResult, total: rawResult.length }
+          : rawResult;
         tasks = result.tasks;
         total = result.total;
         distinctValues = distinct;

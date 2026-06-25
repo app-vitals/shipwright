@@ -253,6 +253,39 @@ curl -sf -X PATCH \
   -d "{\"status\": \"merged\", \"mergedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" | jq .
 ```
 
+### Upsert PullRequest record
+
+Upsert a PullRequest record to mark this PR as merged. First, claim or create the record:
+
+```bash
+PR_RECORD=$(curl -sf -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs/claim" \
+  -d "{\"repo\": \"{org}/{repo}\", \"prNumber\": {pr}, \"commitSha\": \"$SQUASH_SHA\"}" 2>&1)
+PR_RECORD_ID=$(echo "$PR_RECORD" | jq -r '.id // empty')
+```
+
+If `PR_RECORD_ID` is non-empty, update the record to mark it as merged:
+
+```bash
+[ -n "$PR_RECORD_ID" ] && \
+  curl -sf -X PATCH \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
+    -d "{\"state\": \"merged\", \"mergedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\", \"reviewState\": \"approved\"}" \
+    > /dev/null 2>&1 || echo "⚠ PATCH /prs/$PR_RECORD_ID failed — continuing"
+```
+
+If the claim or patch call fails (or `PR_RECORD_ID` is empty), print a warning and continue:
+
+```bash
+if [ -z "$PR_RECORD_ID" ]; then
+  echo "⚠ Failed to upsert PullRequest record — continuing"
+fi
+```
+
 ---
 
 ## Step 5: Poll Deploy → Canary → Promote
