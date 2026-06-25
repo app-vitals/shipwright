@@ -349,6 +349,12 @@ function makeMockDeps(): AdminDeps {
         skipReason: null,
         outcome: "success",
         error: null,
+        inputTokens: null,
+        outputTokens: null,
+        cacheReadTokens: null,
+        cacheCreationTokens: null,
+        costUsd: null,
+        model: null,
         createdAt: new Date("2024-01-01T09:00:00.000Z"),
       }),
       list: async () => ({
@@ -356,6 +362,24 @@ function makeMockDeps(): AdminDeps {
         total: 0,
         limit: 20,
         offset: 0,
+      }),
+      patch: async () => ({
+        id: RUN_ID,
+        cronId: CRON_ID,
+        agentId: AGENT_ID,
+        startedAt: new Date("2024-01-01T09:00:00.000Z"),
+        completedAt: null,
+        skipped: false,
+        skipReason: null,
+        outcome: null,
+        error: null,
+        inputTokens: null,
+        outputTokens: null,
+        cacheReadTokens: null,
+        cacheCreationTokens: null,
+        costUsd: null,
+        model: null,
+        createdAt: new Date("2024-01-01T09:00:00.000Z"),
       }),
     },
     provisioner: new RecordingProvisioner(),
@@ -1857,6 +1881,72 @@ describe("admin API — cron runs", () => {
     expect(typeof body.offset).toBe("number");
   });
 
+  it("PATCH /agents/:id/crons/:cronId/runs/:runId returns 200 with updated run including token fields", async () => {
+    const deps = makeMockDepsWithRunService();
+    const app = createAdminApp(deps);
+    const res = await app.request(
+      `/agents/${AGENT_ID}/crons/${CRON_ID}/runs/${RUN_ID}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          completedAt: "2026-01-01T08:05:00.000Z",
+          outcome: "success",
+          inputTokens: 1000,
+          outputTokens: 500,
+          cacheReadTokens: 100,
+          cacheCreationTokens: 50,
+          costUsd: 0.003,
+          model: "claude-sonnet-4-5",
+        }),
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.run).toBeDefined();
+    expect(body.run.id).toBe(RUN_ID);
+    expect(body.run.inputTokens).toBe(1000);
+    expect(body.run.outputTokens).toBe(500);
+    expect(body.run.model).toBe("claude-sonnet-4-5");
+  });
+
+  it("PATCH /agents/:id/crons/:cronId/runs/:runId returns 404 when ownership check fails", async () => {
+    const deps = makeMockDepsWithRunService({ notFound: true });
+    const app = createAdminApp(deps);
+    const res = await app.request(
+      `/agents/${AGENT_ID}/crons/${CRON_ID}/runs/${RUN_ID}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ outcome: "success" }),
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("PATCH /agents/:id/crons/:cronId/runs/:runId with empty body returns 400", async () => {
+    const deps = makeMockDepsWithRunService();
+    const app = createAdminApp(deps);
+    const res = await app.request(
+      `/agents/${AGENT_ID}/crons/${CRON_ID}/runs/${RUN_ID}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({}),
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(400);
+  });
+
   it("GET /agents/:id/crons/summary response includes lastRun and runCountToday", async () => {
     const deps = makeMockDepsWithRunSummary();
     const app = createAdminApp(deps);
@@ -1889,6 +1979,12 @@ function makeMockDepsWithRunService(opts?: {
     skipReason: null,
     outcome: "success",
     error: null,
+    inputTokens: null,
+    outputTokens: null,
+    cacheReadTokens: null,
+    cacheCreationTokens: null,
+    costUsd: null,
+    model: null,
     createdAt: new Date("2026-01-01T08:00:00.000Z"),
   };
 
@@ -1909,6 +2005,23 @@ function makeMockDepsWithRunService(opts?: {
         limit: 20,
         offset: 0,
       }),
+      patch: opts?.notFound
+        ? async () => {
+            throw new (await import("./errors.ts")).NotFoundError(
+              "run not found",
+            );
+          }
+        : async () => ({
+            ...mockRun,
+            completedAt: new Date("2026-01-01T08:05:00.000Z"),
+            outcome: "success",
+            inputTokens: 1000,
+            outputTokens: 500,
+            cacheReadTokens: 100,
+            cacheCreationTokens: 50,
+            costUsd: 0.003,
+            model: "claude-sonnet-4-5",
+          }),
     },
   };
 }

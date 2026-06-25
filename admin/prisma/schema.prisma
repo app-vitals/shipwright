@@ -147,17 +147,23 @@ model AgentMember {
 // agentId is denormalized for efficient agent-level history queries.
 
 model AgentCronRun {
-  id          String    @id @default(cuid())
-  cronId      String
-  cron        AgentCronJob @relation(fields: [cronId], references: [id], onDelete: Cascade)
-  agentId     String    // denormalized from cron.agentId for efficient queries
-  startedAt   DateTime
-  completedAt DateTime?
-  skipped     Boolean   @default(false)
-  skipReason  String?
-  outcome     String?
-  error       String?
-  createdAt   DateTime  @default(now())
+  id                 String    @id @default(cuid())
+  cronId             String
+  cron               AgentCronJob @relation(fields: [cronId], references: [id], onDelete: Cascade)
+  agentId            String    // denormalized from cron.agentId for efficient queries
+  startedAt          DateTime
+  completedAt        DateTime?
+  skipped            Boolean   @default(false)
+  skipReason         String?
+  outcome            String?
+  error              String?
+  inputTokens        Int?
+  outputTokens       Int?
+  cacheReadTokens    Int?
+  cacheCreationTokens Int?
+  costUsd            Float?
+  model              String?
+  createdAt          DateTime  @default(now())
 
   @@index([cronId])
   @@index([agentId, startedAt])

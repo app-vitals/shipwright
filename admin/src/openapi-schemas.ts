@@ -184,6 +184,12 @@ export const AgentCronRunSchema = z
       .openapi({ example: "pre-check returned false" }),
     outcome: z.string().nullable().openapi({ example: "success" }),
     error: z.string().nullable().openapi({ example: null }),
+    inputTokens: z.number().int().nullable().optional().openapi({ example: 1234 }),
+    outputTokens: z.number().int().nullable().optional().openapi({ example: 567 }),
+    cacheReadTokens: z.number().int().nullable().optional().openapi({ example: 89 }),
+    cacheCreationTokens: z.number().int().nullable().optional().openapi({ example: 10 }),
+    costUsd: z.number().nullable().optional().openapi({ example: 0.0042 }),
+    model: z.string().nullable().optional().openapi({ example: "claude-sonnet-4-5" }),
     createdAt: z
       .string()
       .datetime()
@@ -226,6 +232,39 @@ export const CreateAgentCronRunBodySchema = z
     error: z.string().nullable().optional().openapi({ example: null }),
   })
   .openapi("CreateAgentCronRunBody");
+
+/**
+ * PATCH /agents/:id/crons/:cronId/runs/:runId body.
+ * All fields are optional. At least one must be provided (enforced at the handler level).
+ */
+export const PatchAgentCronRunBodySchema = z
+  .object({
+    completedAt: z
+      .string()
+      .datetime()
+      .nullable()
+      .optional()
+      .openapi({ example: "2026-01-01T08:05:00.000Z" }),
+    outcome: z.string().nullable().optional().openapi({ example: "success" }),
+    error: z.string().nullable().optional().openapi({ example: null }),
+    skipped: z.boolean().optional().openapi({ example: false }),
+    skipReason: z
+      .string()
+      .nullable()
+      .optional()
+      .openapi({ example: "pre-check returned false" }),
+    inputTokens: z.number().int().nullable().optional().openapi({ example: 1234 }),
+    outputTokens: z.number().int().nullable().optional().openapi({ example: 567 }),
+    cacheReadTokens: z.number().int().nullable().optional().openapi({ example: 89 }),
+    cacheCreationTokens: z.number().int().nullable().optional().openapi({ example: 10 }),
+    costUsd: z.number().nullable().optional().openapi({ example: 0.0042 }),
+    model: z
+      .string()
+      .nullable()
+      .optional()
+      .openapi({ example: "claude-sonnet-4-5" }),
+  })
+  .openapi("PatchAgentCronRunBody");
 
 export const ListCronRunsQuerySchema = z
   .object({
@@ -403,6 +442,12 @@ export const AgentIdParamSchema = z.object({
 export const CronIdParamSchema = z.object({
   id: z.string().openapi({ example: "clx1234567890" }),
   cronId: z.string().openapi({ example: "clx0987654321" }),
+});
+
+export const CronRunIdParamSchema = z.object({
+  id: z.string().openapi({ example: "clx1234567890" }),
+  cronId: z.string().openapi({ example: "clx0987654321" }),
+  runId: z.string().openapi({ example: "clx1111111111" }),
 });
 
 export const ToolIdParamSchema = z.object({

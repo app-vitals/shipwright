@@ -58,6 +58,7 @@ import {
   CreateAgentTokenResponseSchema,
   CreateAgentToolBodySchema,
   CronIdParamSchema,
+  CronRunIdParamSchema,
   CronRunsListSchema,
   CronsWithSummaryWrapperSchema,
   EnvKeyParamSchema,
@@ -66,6 +67,7 @@ import {
   OkSchema,
   PatchAgentBodySchema,
   PatchAgentCronJobBodySchema,
+  PatchAgentCronRunBodySchema,
   PatchAgentPluginBodySchema,
   PatchAgentToolBodySchema,
   PluginNameQuerySchema,
@@ -92,7 +94,7 @@ export interface AdminDeps {
     | "setEnabled"
     | "updatePreCheck"
   >;
-  agentCronRunService: Pick<AgentCronRunService, "create" | "list">;
+  agentCronRunService: Pick<AgentCronRunService, "create" | "list" | "patch">;
   agentToolService: Pick<
     AgentToolService,
     "list" | "add" | "remove" | "toggle"
@@ -474,6 +476,33 @@ const listCronRunsRoute = createRoute({
       content: { "application/json": { schema: CronRunsListSchema } },
     },
     404: { description: "Cron job not found", ...jsonError },
+  },
+});
+
+const patchCronRunRoute = createRoute({
+  method: "patch",
+  path: "/agents/{id}/crons/{cronId}/runs/{runId}",
+  request: {
+    params: CronRunIdParamSchema,
+    body: {
+      content: {
+        "application/json": { schema: PatchAgentCronRunBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Run record updated",
+      content: {
+        "application/json": {
+          schema: z
+            .object({ run: AgentCronRunSchema })
+            .openapi("PatchCronRunWrapper"),
+        },
+      },
+    },
+    400: { description: "Bad request", ...jsonError },
+    404: { description: "Run not found or not owned by agent", ...jsonError },
   },
 });
 
@@ -1057,6 +1086,40 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     );
   });
 
+  // PATCH /agents/:id/crons/:cronId/runs/:runId — update a cron run record
+  app.openapi(patchCronRunRoute, async (c) => {
+    const { id: agentId, runId } = c.req.valid("param");
+    const body = c.req.valid("json");
+
+    // At least one field must be provided
+    if (Object.keys(body).length === 0) {
+      throw new BadRequestError("provide at least one field to update");
+    }
+
+    const run = await agentCronRunService.patch(runId, agentId, {
+      ...(body.completedAt !== undefined && {
+        completedAt: body.completedAt ? new Date(body.completedAt) : null,
+      }),
+      ...(body.outcome !== undefined && { outcome: body.outcome }),
+      ...(body.error !== undefined && { error: body.error }),
+      ...(body.skipped !== undefined && { skipped: body.skipped }),
+      ...(body.skipReason !== undefined && { skipReason: body.skipReason }),
+      ...(body.inputTokens !== undefined && { inputTokens: body.inputTokens }),
+      ...(body.outputTokens !== undefined && {
+        outputTokens: body.outputTokens,
+      }),
+      ...(body.cacheReadTokens !== undefined && {
+        cacheReadTokens: body.cacheReadTokens,
+      }),
+      ...(body.cacheCreationTokens !== undefined && {
+        cacheCreationTokens: body.cacheCreationTokens,
+      }),
+      ...(body.costUsd !== undefined && { costUsd: body.costUsd }),
+      ...(body.model !== undefined && { model: body.model }),
+    });
+    return c.json({ run: serializeCronRun(run) }, 200);
+  });
+
   // ─── Tools ─────────────────────────────────────────────────────────────────
 
   // POST /agents/:id/tools — add a tool pattern
@@ -1246,6 +1309,12 @@ function serializeCronRun(run: {
   skipReason: string | null;
   outcome: string | null;
   error: string | null;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  cacheReadTokens?: number | null;
+  cacheCreationTokens?: number | null;
+  costUsd?: number | null;
+  model?: string | null;
   createdAt: Date;
 }): z.infer<typeof AgentCronRunSchema> {
   return {
@@ -1258,6 +1327,12 @@ function serializeCronRun(run: {
     skipReason: run.skipReason,
     outcome: run.outcome,
     error: run.error,
+    inputTokens: run.inputTokens ?? null,
+    outputTokens: run.outputTokens ?? null,
+    cacheReadTokens: run.cacheReadTokens ?? null,
+    cacheCreationTokens: run.cacheCreationTokens ?? null,
+    costUsd: run.costUsd ?? null,
+    model: run.model ?? null,
     createdAt: run.createdAt.toISOString(),
   };
 }

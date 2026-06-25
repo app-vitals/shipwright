@@ -200,6 +200,88 @@ describeOrSkip("AgentCronRunService (integration)", () => {
     );
   });
 
+  // ─── patch ──────────────────────────────────────────────────────────────────
+
+  it("patch() updates token fields and completion fields on a run", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId);
+    const startedAt = new Date("2026-01-15T10:00:00Z");
+    const completedAt = new Date("2026-01-15T10:05:00Z");
+
+    const run = await runService.create(cronId, agentId, {
+      startedAt,
+      skipped: false,
+    });
+
+    const updated = await runService.patch(run.id, agentId, {
+      completedAt,
+      outcome: "success",
+      inputTokens: 1234,
+      outputTokens: 567,
+      cacheReadTokens: 89,
+      cacheCreationTokens: 10,
+      costUsd: 0.0042,
+      model: "claude-sonnet-4-5",
+    });
+
+    expect(updated.id).toBe(run.id);
+    expect(updated.completedAt).toEqual(completedAt);
+    expect(updated.outcome).toBe("success");
+    expect(updated.inputTokens).toBe(1234);
+    expect(updated.outputTokens).toBe(567);
+    expect(updated.cacheReadTokens).toBe(89);
+    expect(updated.cacheCreationTokens).toBe(10);
+    expect(updated.costUsd).toBeCloseTo(0.0042);
+    expect(updated.model).toBe("claude-sonnet-4-5");
+  });
+
+  it("patch() updates error and skipped fields", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId);
+    const startedAt = new Date("2026-01-15T10:00:00Z");
+
+    const run = await runService.create(cronId, agentId, {
+      startedAt,
+      skipped: false,
+    });
+
+    const updated = await runService.patch(run.id, agentId, {
+      completedAt: new Date("2026-01-15T10:01:00Z"),
+      outcome: "error",
+      error: "something went wrong",
+    });
+
+    expect(updated.outcome).toBe("error");
+    expect(updated.error).toBe("something went wrong");
+  });
+
+  it("patch() throws NotFoundError when runId does not exist", async () => {
+    const agentId = await createAgent(prisma);
+
+    await expect(
+      runService.patch("nonexistent-run-id", agentId, {
+        outcome: "success",
+      }),
+    ).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it("patch() throws NotFoundError when runId belongs to a different agent", async () => {
+    const agentId1 = await createAgent(prisma, "Agent 1");
+    const agentId2 = await createAgent(prisma, "Agent 2");
+    const cronId = await createCron(cronJobService, agentId1);
+
+    const run = await runService.create(cronId, agentId1, {
+      startedAt: new Date(),
+      skipped: false,
+    });
+
+    await expect(
+      runService.patch(run.id, agentId2, {
+        outcome: "success",
+      }),
+    ).rejects.toBeInstanceOf(NotFoundError);
+  });
+
   // ─── listWithRunSummary ─────────────────────────────────────────────────────
 
   it("listWithRunSummary() returns lastRun null when no runs exist", async () => {

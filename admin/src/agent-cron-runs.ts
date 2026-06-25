@@ -20,6 +20,20 @@ export interface CreateAgentCronRunInput {
   error?: string | null;
 }
 
+export interface PatchAgentCronRunInput {
+  completedAt?: Date | null;
+  outcome?: string | null;
+  error?: string | null;
+  skipped?: boolean;
+  skipReason?: string | null;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  cacheReadTokens?: number | null;
+  cacheCreationTokens?: number | null;
+  costUsd?: number | null;
+  model?: string | null;
+}
+
 export interface ListAgentCronRunsOptions {
   limit?: number;
   offset?: number;
@@ -63,6 +77,52 @@ export class AgentCronRunService {
         skipReason: input.skipReason ?? null,
         outcome: input.outcome ?? null,
         error: input.error ?? null,
+      },
+    });
+  }
+
+  /**
+   * Update an existing run record with completion data and/or token fields.
+   * Validates that the runId exists and belongs to agentId.
+   * Throws NotFoundError if the run doesn't exist or is not owned by agentId.
+   * Throws BadRequestError if no fields are provided.
+   */
+  async patch(
+    runId: string,
+    agentId: string,
+    input: PatchAgentCronRunInput,
+  ): Promise<AgentCronRun> {
+    const run = await this.prisma.agentCronRun.findUnique({
+      where: { id: runId },
+    });
+    if (!run || run.agentId !== agentId) {
+      throw new NotFoundError(`cron run ${runId} not found`);
+    }
+
+    return this.prisma.agentCronRun.update({
+      where: { id: runId },
+      data: {
+        ...(input.completedAt !== undefined && {
+          completedAt: input.completedAt,
+        }),
+        ...(input.outcome !== undefined && { outcome: input.outcome }),
+        ...(input.error !== undefined && { error: input.error }),
+        ...(input.skipped !== undefined && { skipped: input.skipped }),
+        ...(input.skipReason !== undefined && { skipReason: input.skipReason }),
+        ...(input.inputTokens !== undefined && {
+          inputTokens: input.inputTokens,
+        }),
+        ...(input.outputTokens !== undefined && {
+          outputTokens: input.outputTokens,
+        }),
+        ...(input.cacheReadTokens !== undefined && {
+          cacheReadTokens: input.cacheReadTokens,
+        }),
+        ...(input.cacheCreationTokens !== undefined && {
+          cacheCreationTokens: input.cacheCreationTokens,
+        }),
+        ...(input.costUsd !== undefined && { costUsd: input.costUsd }),
+        ...(input.model !== undefined && { model: input.model }),
       },
     });
   }

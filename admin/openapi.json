@@ -25,7 +25,10 @@
             "example": "Bodhi"
           },
           "slackId": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "example": "U0AALR8M69X"
           },
           "selfHosted": {
@@ -43,7 +46,13 @@
             "example": "2026-01-01T00:00:00.000Z"
           }
         },
-        "required": ["id", "name", "selfHosted", "createdAt", "updatedAt"]
+        "required": [
+          "id",
+          "name",
+          "selfHosted",
+          "createdAt",
+          "updatedAt"
+        ]
       },
       "Error": {
         "type": "object",
@@ -53,7 +62,9 @@
             "example": "not found"
           }
         },
-        "required": ["error"]
+        "required": [
+          "error"
+        ]
       },
       "CreateAgentBody": {
         "type": "object",
@@ -72,7 +83,9 @@
             "example": false
           }
         },
-        "required": ["name"]
+        "required": [
+          "name"
+        ]
       },
       "ReconcileAgentsResult": {
         "type": "object",
@@ -107,11 +120,19 @@
                   "type": "string"
                 }
               },
-              "required": ["agentId", "error"]
+              "required": [
+                "agentId",
+                "error"
+              ]
             }
           }
         },
-        "required": ["recreated", "updated", "orphans", "failed"]
+        "required": [
+          "recreated",
+          "updated",
+          "orphans",
+          "failed"
+        ]
       },
       "ProvisionAgentResult": {
         "type": "object",
@@ -126,20 +147,29 @@
             "type": "string"
           }
         },
-        "required": ["resourceName", "secretName", "deploymentName"]
+        "required": [
+          "resourceName",
+          "secretName",
+          "deploymentName"
+        ]
       },
       "ProvisionSkippedResult": {
         "type": "object",
         "properties": {
           "skipped": {
             "type": "boolean",
-            "enum": [true]
+            "enum": [
+              true
+            ]
           },
           "reason": {
             "type": "string"
           }
         },
-        "required": ["skipped", "reason"]
+        "required": [
+          "skipped",
+          "reason"
+        ]
       },
       "GetAgentResult": {
         "type": "object",
@@ -151,7 +181,10 @@
             "type": "string"
           },
           "slackId": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "selfHosted": {
             "type": "boolean"
@@ -192,7 +225,9 @@
             "items": {
               "type": "string"
             },
-            "example": ["my-org/my-repo"]
+            "example": [
+              "my-org/my-repo"
+            ]
           }
         }
       },
@@ -212,17 +247,25 @@
             "example": false
           }
         },
-        "required": ["id", "name", "selfHosted"]
+        "required": [
+          "id",
+          "name",
+          "selfHosted"
+        ]
       },
       "Ok": {
         "type": "object",
         "properties": {
           "ok": {
             "type": "boolean",
-            "enum": [true]
+            "enum": [
+              true
+            ]
           }
         },
-        "required": ["ok"]
+        "required": [
+          "ok"
+        ]
       },
       "AgentEnvBody": {
         "type": "object",
@@ -243,7 +286,9 @@
             }
           }
         },
-        "required": ["env"]
+        "required": [
+          "env"
+        ]
       },
       "AgentCronJob": {
         "type": "object",
@@ -265,11 +310,17 @@
             "example": "Run the morning brief."
           },
           "channel": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "example": "C01234567"
           },
           "user": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "example": "U0AALR8M69X"
           },
           "silent": {
@@ -281,11 +332,17 @@
             "example": true
           },
           "preCheck": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "example": "shipwright:check-dev-task.ts"
           },
           "name": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "example": "morning-brief"
           },
           "system": {
@@ -326,7 +383,9 @@
             "$ref": "#/components/schemas/AgentCronJob"
           }
         },
-        "required": ["cron"]
+        "required": [
+          "cron"
+        ]
       },
       "CreateAgentCronJobBody": {
         "type": "object",
@@ -340,11 +399,17 @@
             "example": "Run the morning brief."
           },
           "channel": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "example": "C01234567"
           },
           "user": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "example": "U0AALR8M69X"
           },
           "silent": {
@@ -356,15 +421,24 @@
             "example": true
           },
           "preCheck": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "example": "shipwright:check-dev-task.ts"
           },
           "name": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "example": "morning-brief"
           }
         },
-        "required": ["schedule", "prompt"]
+        "required": [
+          "schedule",
+          "prompt"
+        ]
       },
       "ReconcileCronResult": {
         "type": "object",
@@ -379,7 +453,11 @@
             "type": "integer"
           }
         },
-        "required": ["created", "updated", "deleted"]
+        "required": [
+          "created",
+          "updated",
+          "deleted"
+        ]
       },
       "PatchAgentCronJobBody": {
         "type": "object",
@@ -393,11 +471,17 @@
             "example": "Run the morning brief."
           },
           "channel": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "example": "C01234567"
           },
           "user": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "example": "U0AALR8M69X"
           },
           "silent": {
@@ -405,7 +489,10 @@
             "example": false
           },
           "preCheck": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "example": "shipwright:check-dev-task.ts"
           },
           "enabled": {
@@ -415,7 +502,10 @@
         }
       },
       "CronRunLastRun": {
-        "type": ["object", "null"],
+        "type": [
+          "object",
+          "null"
+        ],
         "properties": {
           "startedAt": {
             "type": "string",
@@ -423,7 +513,10 @@
             "example": "2026-01-01T08:00:00.000Z"
           },
           "completedAt": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "date-time",
             "example": null
           },
@@ -432,11 +525,19 @@
             "example": false
           },
           "outcome": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "example": "success"
           }
         },
-        "required": ["startedAt", "completedAt", "skipped", "outcome"],
+        "required": [
+          "startedAt",
+          "completedAt",
+          "skipped",
+          "outcome"
+        ],
         "example": null
       },
       "AgentCronJobWithRunSummary": {
@@ -455,7 +556,10 @@
                 "example": 3
               }
             },
-            "required": ["lastRun", "runCountToday"]
+            "required": [
+              "lastRun",
+              "runCountToday"
+            ]
           }
         ]
       },
@@ -469,7 +573,9 @@
             }
           }
         },
-        "required": ["crons"]
+        "required": [
+          "crons"
+        ]
       },
       "AgentCronRun": {
         "type": "object",
@@ -492,7 +598,10 @@
             "example": "2026-01-01T08:00:00.000Z"
           },
           "completedAt": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "date-time",
             "example": "2026-01-01T08:00:05.000Z"
           },
@@ -501,16 +610,67 @@
             "example": false
           },
           "skipReason": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "example": "pre-check returned false"
           },
           "outcome": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "example": "success"
           },
           "error": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "example": null
+          },
+          "inputTokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 1234
+          },
+          "outputTokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 567
+          },
+          "cacheReadTokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 89
+          },
+          "cacheCreationTokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 10
+          },
+          "costUsd": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "example": 0.0042
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "claude-sonnet-4-5"
           },
           "createdAt": {
             "type": "string",
@@ -538,7 +698,9 @@
             "$ref": "#/components/schemas/AgentCronRun"
           }
         },
-        "required": ["run"]
+        "required": [
+          "run"
+        ]
       },
       "CreateAgentCronRunBody": {
         "type": "object",
@@ -549,7 +711,10 @@
             "example": "2026-01-01T08:00:00.000Z"
           },
           "completedAt": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "date-time",
             "example": null
           },
@@ -558,19 +723,30 @@
             "example": false
           },
           "skipReason": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "example": "pre-check returned false"
           },
           "outcome": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "example": "success"
           },
           "error": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "example": null
           }
         },
-        "required": ["startedAt"]
+        "required": [
+          "startedAt"
+        ]
       },
       "CronRunsList": {
         "type": "object",
@@ -594,7 +770,103 @@
             "example": 0
           }
         },
-        "required": ["items", "total", "limit", "offset"]
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ]
+      },
+      "PatchCronRunWrapper": {
+        "type": "object",
+        "properties": {
+          "run": {
+            "$ref": "#/components/schemas/AgentCronRun"
+          }
+        },
+        "required": [
+          "run"
+        ]
+      },
+      "PatchAgentCronRunBody": {
+        "type": "object",
+        "properties": {
+          "completedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": "2026-01-01T08:05:00.000Z"
+          },
+          "outcome": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "success"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          },
+          "skipped": {
+            "type": "boolean",
+            "example": false
+          },
+          "skipReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "pre-check returned false"
+          },
+          "inputTokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 1234
+          },
+          "outputTokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 567
+          },
+          "cacheReadTokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 89
+          },
+          "cacheCreationTokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 10
+          },
+          "costUsd": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "example": 0.0042
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "claude-sonnet-4-5"
+          }
+        }
       },
       "AgentTool": {
         "type": "object",
@@ -621,7 +893,13 @@
             "example": "2026-01-01T00:00:00.000Z"
           }
         },
-        "required": ["id", "agentId", "pattern", "enabled", "createdAt"]
+        "required": [
+          "id",
+          "agentId",
+          "pattern",
+          "enabled",
+          "createdAt"
+        ]
       },
       "ToolWrapper": {
         "type": "object",
@@ -630,7 +908,9 @@
             "$ref": "#/components/schemas/AgentTool"
           }
         },
-        "required": ["tool"]
+        "required": [
+          "tool"
+        ]
       },
       "CreateAgentToolBody": {
         "type": "object",
@@ -641,7 +921,9 @@
             "example": "Bash"
           }
         },
-        "required": ["pattern"]
+        "required": [
+          "pattern"
+        ]
       },
       "ToolsWrapper": {
         "type": "object",
@@ -653,7 +935,9 @@
             }
           }
         },
-        "required": ["tools"]
+        "required": [
+          "tools"
+        ]
       },
       "PatchAgentToolBody": {
         "type": "object",
@@ -663,7 +947,9 @@
             "example": false
           }
         },
-        "required": ["enabled"]
+        "required": [
+          "enabled"
+        ]
       },
       "AgentToken": {
         "type": "object",
@@ -677,7 +963,10 @@
             "example": "clx1234567890"
           },
           "label": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "example": "ci-runner"
           },
           "createdAt": {
@@ -686,12 +975,19 @@
             "example": "2026-01-01T00:00:00.000Z"
           },
           "revokedAt": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "date-time",
             "example": null
           }
         },
-        "required": ["id", "agentId", "createdAt"]
+        "required": [
+          "id",
+          "agentId",
+          "createdAt"
+        ]
       },
       "CreateAgentTokenResponse": {
         "type": "object",
@@ -704,7 +1000,10 @@
             "example": "swt_v1_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
           }
         },
-        "required": ["token", "rawToken"]
+        "required": [
+          "token",
+          "rawToken"
+        ]
       },
       "CreateAgentTokenBody": {
         "type": "object",
@@ -725,7 +1024,9 @@
             }
           }
         },
-        "required": ["tokens"]
+        "required": [
+          "tokens"
+        ]
       },
       "AgentPlugin": {
         "type": "object",
@@ -743,7 +1044,10 @@
             "example": "@shipwright/plugin"
           },
           "version": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "example": "1.2.3"
           },
           "enabled": {
@@ -777,7 +1081,9 @@
             "$ref": "#/components/schemas/AgentPlugin"
           }
         },
-        "required": ["plugin"]
+        "required": [
+          "plugin"
+        ]
       },
       "CreateAgentPluginBody": {
         "type": "object",
@@ -788,11 +1094,16 @@
             "example": "@shipwright/plugin"
           },
           "version": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "example": "1.2.3"
           }
         },
-        "required": ["name"]
+        "required": [
+          "name"
+        ]
       },
       "PluginsWrapper": {
         "type": "object",
@@ -804,13 +1115,18 @@
             }
           }
         },
-        "required": ["plugins"]
+        "required": [
+          "plugins"
+        ]
       },
       "PatchAgentPluginBody": {
         "type": "object",
         "properties": {
           "version": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "example": "1.3.0"
           }
         }
@@ -827,7 +1143,10 @@
             "example": "shipwright"
           }
         },
-        "required": ["marketplace", "plugin"]
+        "required": [
+          "marketplace",
+          "plugin"
+        ]
       },
       "AgentConfigResponse": {
         "type": "object",
@@ -846,7 +1165,10 @@
             "items": {
               "type": "string"
             },
-            "example": ["Read", "Write"]
+            "example": [
+              "Read",
+              "Write"
+            ]
           },
           "plugins": {
             "type": "array",
@@ -855,7 +1177,11 @@
             }
           }
         },
-        "required": ["env", "allowedTools", "plugins"]
+        "required": [
+          "env",
+          "allowedTools",
+          "plugins"
+        ]
       },
       "RuntimeError": {
         "type": "object",
@@ -865,7 +1191,9 @@
             "example": "Not found"
           }
         },
-        "required": ["error"]
+        "required": [
+          "error"
+        ]
       }
     },
     "parameters": {}
@@ -1362,7 +1690,9 @@
         }
       },
       "get": {
-        "tags": ["runtime"],
+        "tags": [
+          "runtime"
+        ],
         "summary": "List agent cron jobs",
         "security": [
           {
@@ -1536,6 +1866,43 @@
         }
       }
     },
+    "/agents/{id}/crons/summary": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of cron jobs with run summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CronsWithSummaryWrapper"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agents/{id}/crons/{cronId}/runs": {
       "post": {
         "parameters": [
@@ -1652,6 +2019,80 @@
           },
           "404": {
             "description": "Cron job not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/crons/{cronId}/runs/{runId}": {
+      "patch": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx0987654321"
+            },
+            "required": true,
+            "name": "cronId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1111111111"
+            },
+            "required": true,
+            "name": "runId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchAgentCronRunBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Run record updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatchCronRunWrapper"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Run not found or not owned by agent",
             "content": {
               "application/json": {
                 "schema": {
@@ -2070,7 +2511,9 @@
     },
     "/agents/{id}/config": {
       "get": {
-        "tags": ["runtime"],
+        "tags": [
+          "runtime"
+        ],
         "summary": "Get agent config bundle",
         "security": [
           {
