@@ -1144,6 +1144,139 @@ describe("renderAgentDetailPage — repos", () => {
   });
 });
 
+// ─── renderTasksPage — blocker badges ────────────────────────────────────────
+
+describe("renderTasksPage — blocker badges", () => {
+  function render(tasks: TaskItem[]): string {
+    return renderTasksPage(tasks, {}, false, USER_NAME, {}, { total: tasks.length, limit: 50, page: 1 });
+  }
+
+  const PENDING_TASK_NO_BLOCKERS: TaskItem = {
+    id: "TASK-3",
+    title: "Pending nothing",
+    status: "pending",
+    session: null,
+    repo: null,
+    assignee: null,
+    claimedBy: null,
+    blockedBy: [],
+  };
+
+  const PENDING_TASK_HITL: TaskItem = {
+    id: "TASK-4",
+    title: "Waiting on human",
+    status: "pending",
+    session: null,
+    repo: null,
+    assignee: null,
+    claimedBy: null,
+    blockedBy: [{ type: "hitl" }],
+  };
+
+  const PENDING_TASK_DEP: TaskItem = {
+    id: "TASK-5",
+    title: "Blocked by dep",
+    status: "pending",
+    session: null,
+    repo: null,
+    assignee: null,
+    claimedBy: null,
+    blockedBy: [{ type: "dependency", id: "REL-2.2", status: "pending" }],
+  };
+
+  const PENDING_TASK_MULTI: TaskItem = {
+    id: "TASK-6",
+    title: "Multiple blockers",
+    status: "pending",
+    session: null,
+    repo: null,
+    assignee: null,
+    claimedBy: null,
+    blockedBy: [
+      { type: "hitl" },
+      { type: "dependency", id: "REL-3.1", status: "in_progress" },
+    ],
+  };
+
+  // AC1: pending task with blockedBy entries shows badge(s) in the list view
+  test("pending task with HITL block shows a blocker badge", () => {
+    const html = render([PENDING_TASK_HITL]);
+    expect(html).toContain("Waiting: HITL");
+  });
+
+  // AC2: HITL block renders as a distinct badge "Waiting: HITL"
+  test("HITL badge renders as 'Waiting: HITL'", () => {
+    const html = render([PENDING_TASK_HITL]);
+    expect(html).toContain("Waiting: HITL");
+    expect(html).toContain("badge-hitl");
+  });
+
+  // AC3: dep block renders with the dep ID "Blocked: REL-2.2"
+  test("dep block renders as 'Blocked: <dep-id>'", () => {
+    const html = render([PENDING_TASK_DEP]);
+    expect(html).toContain("Blocked: REL-2.2");
+    expect(html).toContain("badge-dep");
+  });
+
+  // AC4: tasks with blockedBy: [] show no blocker badges
+  test("empty blockedBy shows no blocker badges", () => {
+    const html = render([PENDING_TASK_NO_BLOCKERS]);
+    expect(html).not.toContain("Waiting: HITL");
+    expect(html).not.toContain("Blocked:");
+  });
+
+  // AC5: multiple blockers all render
+  test("task with multiple blockers renders all badges", () => {
+    const html = render([PENDING_TASK_MULTI]);
+    expect(html).toContain("Waiting: HITL");
+    expect(html).toContain("Blocked: REL-3.1");
+  });
+
+  // AC5: badges are visually distinct from status badges (different CSS class)
+  test("blocker badges use different CSS classes than status badges", () => {
+    const html = render([PENDING_TASK_HITL]);
+    // Status badge uses badge-blue/badge-green/badge-red/badge-gray
+    // Blocker badges must use badge-hitl or badge-dep — not the status classes
+    expect(html).toContain("badge-hitl");
+    expect(html).not.toContain('<span class="badge badge-blue">pending</span>');
+    // The status badge for pending should use badge-gray
+    expect(html).toContain('<span class="badge badge-gray">pending</span>');
+  });
+
+  // Task with undefined blockedBy shows no badges (backward compat)
+  test("task without blockedBy field shows no blocker badges", () => {
+    const taskNoBLockedBy: TaskItem = {
+      id: "TASK-7",
+      title: "Old task no blockedBy",
+      status: "pending",
+      session: null,
+      repo: null,
+      assignee: null,
+      claimedBy: null,
+    };
+    const html = render([taskNoBLockedBy]);
+    expect(html).not.toContain("Waiting: HITL");
+    expect(html).not.toContain("Blocked:");
+  });
+
+  // XSS: dep id is escaped
+  test("dep id is HTML-escaped in the badge", () => {
+    const xssTask: TaskItem = {
+      id: "TASK-8",
+      title: "XSS task",
+      status: "pending",
+      session: null,
+      repo: null,
+      assignee: null,
+      claimedBy: null,
+      blockedBy: [{ type: "dependency", id: "<script>alert(1)</script>", status: "pending" }],
+    };
+    const html = render([xssTask]);
+    expect(html).not.toContain("<script>alert(1)</script>");
+    expect(html).toContain("&lt;script&gt;");
+  });
+});
+
 // ─── renderAdminToolbar — active nav highlight ────────────────────────────────
 
 describe("renderAdminToolbar — active nav highlight", () => {
