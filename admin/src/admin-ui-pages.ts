@@ -109,7 +109,122 @@ export interface TaskItem {
   mergeCommit?: string | null;
   createdAt?: string | null;
   updatedAt?: string | null;
-  blockedBy?: BlockedByEntry[];
+  blockedBy?: BlockedByEntry[] | null;
+}
+
+// ─── Inline markdown renderer ─────────────────────────────────────────────────
+
+/**
+ * Render a markdown string to safe HTML.
+ * HTML is escaped FIRST to prevent XSS, then markdown patterns are applied
+ * to generate a known-safe set of HTML tags.
+ */
+function renderMarkdown(text: string): string {
+  // Step 1: escape all HTML entities so raw user input can't inject tags
+  let out = escapeHtml(text);
+
+  // Step 2: extract code blocks into placeholder tokens before line processing
+  // so that interior lines of a fenced block are never handed to the line loop.
+  const codeBlocks: string[] = [];
+  // Use Unicode Private Use Area sentinels — never appear in HTML-escaped markdown,
+  // and are not control characters (biome noControlCharactersInRegex safe).
+  const PLACEHOLDER_PREFIX = "CODE_BLOCK_";
+  const PLACEHOLDER_SUFFIX = "";
+  const placeholder = (n: number) => `${PLACEHOLDER_PREFIX}${n}${PLACEHOLDER_SUFFIX}`;
+  const PLACEHOLDER_RE = /^CODE_BLOCK_(\d+)$/;
+
+  // Multi-line fenced blocks: ```\n...\n```
+  out = out.replace(/```[\r\n]([\s\S]*?)[\r\n]```/g, (_m, code) => {
+    const idx = codeBlocks.length;
+    codeBlocks.push(`<pre><code>${code}</code></pre>`);
+    return placeholder(idx);
+  });
+  // Same-line fenced blocks: ```code```
+  out = out.replace(/```([^`\n]+)```/g, (_m, code) => {
+    const idx = codeBlocks.length;
+    codeBlocks.push(`<pre><code>${code}</code></pre>`);
+    return placeholder(idx);
+  });
+
+  // Step 3: process line-by-line for block-level elements
+  const lines = out.split("\n");
+  const result: string[] = [];
+  let inUl = false;
+  let inOl = false;
+
+  const closeList = () => {
+    if (inUl) {
+      result.push("</ul>");
+      inUl = false;
+    }
+    if (inOl) {
+      result.push("</ol>");
+      inOl = false;
+    }
+  };
+
+  for (const line of lines) {
+    // Placeholder lines are pre-rendered code blocks — emit as-is
+    const placeholderMatch = PLACEHOLDER_RE.exec(line);
+    if (placeholderMatch) {
+      closeList();
+      result.push(codeBlocks[Number.parseInt(placeholderMatch[1], 10)]);
+      continue;
+    }
+
+    // Headings
+    const h3 = line.match(/^### (.+)$/);
+    const h2 = line.match(/^## (.+)$/);
+    const h1 = line.match(/^# (.+)$/);
+
+    if (h3) {
+      closeList();
+      result.push(`<h3>${applyInline(h3[1])}</h3>`);
+    } else if (h2) {
+      closeList();
+      result.push(`<h2>${applyInline(h2[1])}</h2>`);
+    } else if (h1) {
+      closeList();
+      result.push(`<h1>${applyInline(h1[1])}</h1>`);
+    } else if (/^[-*] /.test(line)) {
+      // Unordered list item
+      if (inOl) {
+        closeList();
+      }
+      if (!inUl) {
+        result.push("<ul>");
+        inUl = true;
+      }
+      result.push(`<li>${applyInline(line.replace(/^[-*] /, ""))}</li>`);
+    } else if (/^\d+\. /.test(line)) {
+      // Ordered list item
+      if (inUl) {
+        closeList();
+      }
+      if (!inOl) {
+        result.push("<ol>");
+        inOl = true;
+      }
+      result.push(`<li>${applyInline(line.replace(/^\d+\. /, ""))}</li>`);
+    } else if (line.trim() === "") {
+      closeList();
+      result.push("");
+    } else {
+      closeList();
+      result.push(applyInline(line));
+    }
+  }
+  closeList();
+
+  return result.join("\n");
+}
+
+/** Apply inline markdown transforms (bold, inline code) to an already-escaped string. */
+function applyInline(s: string): string {
+  // Inline code: `code` — must come before bold to avoid double-processing
+  const withCode = s.replace(/`([^`]+)`/g, (_m, code) => `<code>${code}</code>`);
+  // Bold: **text**
+  return withCode.replace(/\*\*([^*]+)\*\*/g, (_m, text) => `<strong>${text}</strong>`);
 }
 
 // ─── Login page ───────────────────────────────────────────────────────────────
@@ -924,7 +1039,7 @@ export function renderTasksPage(
     return "badge-gray";
   };
 
-  const renderBlockerBadges = (blockedBy: BlockedByEntry[] | undefined): string => {
+  const renderBlockerBadges = (blockedBy: BlockedByEntry[] | null | undefined): string => {
     if (!blockedBy || blockedBy.length === 0) return "";
     return blockedBy
       .map((b) => {
@@ -1203,7 +1318,7 @@ export function renderTaskDetailPage(
   const descriptionSection = task.description
     ? `<div class="card" style="margin-bottom:16px">
         <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Description</div>
-        <div style="font-size:14px;line-height:1.6;white-space:pre-wrap">${escapeHtml(task.description)}</div>
+        <div class="markdown-body" style="font-size:14px;line-height:1.6">${renderMarkdown(task.description)}</div>
       </div>`
     : "";
 
@@ -1212,7 +1327,27 @@ export function renderTaskDetailPage(
       ? `<div class="card" style="margin-bottom:16px">
           <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Acceptance Criteria</div>
           <ul style="margin:0;padding-left:16px">
-            ${task.acceptanceCriteria.map((c) => `<li style="font-size:14px;line-height:1.6;margin-bottom:6px">${escapeHtml(c)}</li>`).join("")}
+            ${task.acceptanceCriteria.map((c) => `<li style="font-size:14px;line-height:1.6;margin-bottom:6px">${renderMarkdown(c)}</li>`).join("")}
+          </ul>
+        </div>`
+      : "";
+
+  const blockersSection =
+    task.blockedBy && task.blockedBy.length > 0
+      ? `<div class="card" style="margin-bottom:16px">
+          <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Blockers</div>
+          <ul style="margin:0;padding-left:16px">
+            ${task.blockedBy
+              .map((b) => {
+                if (b.type === "hitl") {
+                  const label = b.notified
+                    ? "HITL gate (notification sent — awaiting clearance)"
+                    : "HITL gate (notification pending)";
+                  return `<li style="font-size:14px;line-height:1.6;margin-bottom:4px">${escapeHtml(label)}</li>`;
+                }
+                return `<li style="font-size:14px;line-height:1.6;margin-bottom:4px">dep:${escapeHtml(b.id)} (${escapeHtml(b.status)})</li>`;
+              })
+              .join("")}
           </ul>
         </div>`
       : "";
@@ -1310,6 +1445,11 @@ export function renderTaskDetailPage(
     .badge-blue { background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe; }
     .detail-table { width:100%;border-collapse:collapse; }
     .detail-table tr:not(:last-child) td { border-bottom:1px solid #f3f4f6; }
+    .markdown-body pre { background:#f3f4f6; border-radius:4px; padding:12px; overflow-x:auto; font-size:12px; }
+    .markdown-body code { background:#f3f4f6; border-radius:3px; padding:1px 4px; font-size:12px; }
+    .markdown-body pre code { background:none; padding:0; }
+    .markdown-body ul, .markdown-body ol { padding-left:20px; margin:8px 0; }
+    .markdown-body li { margin-bottom:4px; }
   </style>
 </head>
 <body>
@@ -1325,6 +1465,7 @@ export function renderTaskDetailPage(
 
     ${descriptionSection}
     ${acSection}
+    ${blockersSection}
 
     <div class="card" style="margin-bottom:16px">
       <table class="detail-table">
