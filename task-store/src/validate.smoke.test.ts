@@ -193,16 +193,16 @@ function makeAgentApp(scopedRepos: string[], deps: { taskService?: TaskServiceLi
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe("org/repo format validation — POST /tokens", () => {
-  it("rejects repos entry without a slash (e.g. 'vitals-os') with 400", async () => {
+  it("rejects repos entry without a slash (e.g. 'myrepo') with 400", async () => {
     const app = makeAdminApp();
     const res = await app.request("/tokens", {
       method: "POST",
       headers: { ...adminAuth(), "content-type": "application/json" },
-      body: JSON.stringify({ label: "ci", agentId: "agent-1", repos: ["vitals-os"] }),
+      body: JSON.stringify({ label: "ci", agentId: "agent-1", repos: ["myrepo"] }),
     });
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };
-    expect(body.error).toContain("vitals-os");
+    expect(body.error).toContain("myrepo");
   });
 
   it("accepts repos entries with valid org/repo format and returns 201", async () => {
@@ -210,7 +210,7 @@ describe("org/repo format validation — POST /tokens", () => {
     const res = await app.request("/tokens", {
       method: "POST",
       headers: { ...adminAuth(), "content-type": "application/json" },
-      body: JSON.stringify({ label: "ci", agentId: "agent-1", repos: ["app-vitals/vitals-os"] }),
+      body: JSON.stringify({ label: "ci", agentId: "agent-1", repos: ["example-org/my-service"] }),
     });
     expect(res.status).toBe(201);
   });
@@ -232,7 +232,7 @@ describe("org/repo format validation — POST /tasks", () => {
     const res = await app.request("/tasks", {
       method: "POST",
       headers: { ...adminAuth(), "content-type": "application/json" },
-      body: JSON.stringify({ title: "T", status: "pending", repo: "vitals-os" }),
+      body: JSON.stringify({ title: "T", status: "pending", repo: "myrepo" }),
     });
     expect(res.status).toBe(400);
   });
@@ -242,13 +242,13 @@ describe("org/repo format validation — POST /tasks", () => {
     const res = await app.request("/tasks", {
       method: "POST",
       headers: { ...adminAuth(), "content-type": "application/json" },
-      body: JSON.stringify({ title: "T", status: "pending", repo: "app-vitals/vitals-os" }),
+      body: JSON.stringify({ title: "T", status: "pending", repo: "example-org/my-service" }),
     });
     expect(res.status).toBe(201);
   });
 
   it("accepts POST /tasks without a repo field → 201 (no validation triggered)", async () => {
-    const app = makeAgentApp(["app-vitals/vitals-os"]);
+    const app = makeAgentApp(["example-org/my-service"]);
     const res = await app.request("/tasks", {
       method: "POST",
       headers: { ...agentAuth(), "content-type": "application/json" },
@@ -260,22 +260,22 @@ describe("org/repo format validation — POST /tasks", () => {
 
 describe("org/repo scope validation — POST /tasks (agent tokens)", () => {
   it("rejects repo outside agent scope with 400", async () => {
-    // Agent is scoped to 'app-vitals/shipwright', tries to create task for 'app-vitals/vitals-os'
+    // Agent is scoped to 'app-vitals/shipwright', tries to create task for 'example-org/my-service'
     const app = makeAgentApp(["app-vitals/shipwright"]);
     const res = await app.request("/tasks", {
       method: "POST",
       headers: { ...agentAuth(), "content-type": "application/json" },
-      body: JSON.stringify({ title: "T", status: "pending", repo: "app-vitals/vitals-os" }),
+      body: JSON.stringify({ title: "T", status: "pending", repo: "example-org/my-service" }),
     });
     expect(res.status).toBe(400);
   });
 
   it("accepts repo within agent scope → 201", async () => {
-    const app = makeAgentApp(["app-vitals/vitals-os"]);
+    const app = makeAgentApp(["example-org/my-service"]);
     const res = await app.request("/tasks", {
       method: "POST",
       headers: { ...agentAuth(), "content-type": "application/json" },
-      body: JSON.stringify({ title: "T", status: "pending", repo: "app-vitals/vitals-os" }),
+      body: JSON.stringify({ title: "T", status: "pending", repo: "example-org/my-service" }),
     });
     expect(res.status).toBe(201);
   });
@@ -296,7 +296,7 @@ describe("org/repo scope validation — POST /tasks (agent tokens)", () => {
     const res = await app.request("/tasks", {
       method: "POST",
       headers: { ...adminAuth(), "content-type": "application/json" },
-      body: JSON.stringify({ title: "T", status: "pending", repo: "app-vitals/vitals-os" }),
+      body: JSON.stringify({ title: "T", status: "pending", repo: "example-org/my-service" }),
     });
     expect(res.status).toBe(201);
   });
@@ -309,7 +309,7 @@ describe("org/repo validation — POST /tasks/bulk", () => {
       method: "POST",
       headers: { ...adminAuth(), "content-type": "application/json" },
       body: JSON.stringify([
-        { title: "T1", status: "pending", repo: "app-vitals/vitals-os" },
+        { title: "T1", status: "pending", repo: "example-org/my-service" },
         { title: "T2", status: "pending", repo: "bad-repo" },
       ]),
     });
@@ -322,7 +322,7 @@ describe("org/repo validation — POST /tasks/bulk", () => {
       method: "POST",
       headers: { ...adminAuth(), "content-type": "application/json" },
       body: JSON.stringify([
-        { title: "T1", status: "pending", repo: "app-vitals/vitals-os" },
+        { title: "T1", status: "pending", repo: "example-org/my-service" },
         { title: "T2", status: "pending", repo: "app-vitals/shipwright" },
       ]),
     });
@@ -348,7 +348,7 @@ describe("org/repo validation — POST /tasks/bulk", () => {
       method: "POST",
       headers: { ...agentAuth(), "content-type": "application/json" },
       body: JSON.stringify([
-        { title: "T1", status: "pending", repo: "app-vitals/vitals-os" },
+        { title: "T1", status: "pending", repo: "example-org/my-service" },
       ]),
     });
     expect(res.status).toBe(400);
@@ -375,7 +375,7 @@ describe("org/repo validation — PATCH /tasks/:id", () => {
     const res = await app.request("/tasks/task-1", {
       method: "PATCH",
       headers: { ...adminAuth(), "content-type": "application/json" },
-      body: JSON.stringify({ repo: "app-vitals/vitals-os" }),
+      body: JSON.stringify({ repo: "example-org/my-service" }),
     });
     expect(res.status).toBe(200);
   });
@@ -387,19 +387,19 @@ describe("org/repo validation — PATCH /tasks/:id", () => {
     const res = await app.request("/tasks/task-1", {
       method: "PATCH",
       headers: { ...agentAuth(), "content-type": "application/json" },
-      body: JSON.stringify({ repo: "app-vitals/vitals-os" }),
+      body: JSON.stringify({ repo: "example-org/my-service" }),
     });
     expect(res.status).toBe(400);
   });
 
   it("agent token accepts patch with repo within scope → 200", async () => {
-    const app = makeAgentApp(["app-vitals/vitals-os"], {
+    const app = makeAgentApp(["example-org/my-service"], {
       taskService: fakeTaskService({ getResult: makeTask({ id: "task-1", assignee: AGENT_ID }) }),
     });
     const res = await app.request("/tasks/task-1", {
       method: "PATCH",
       headers: { ...agentAuth(), "content-type": "application/json" },
-      body: JSON.stringify({ repo: "app-vitals/vitals-os" }),
+      body: JSON.stringify({ repo: "example-org/my-service" }),
     });
     expect(res.status).toBe(200);
   });
