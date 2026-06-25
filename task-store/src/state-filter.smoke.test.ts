@@ -12,6 +12,8 @@ import type { TokenServiceLike } from "./token-service.ts";
 // ─── Fakes ────────────────────────────────────────────────────────────────────
 
 const VALID_TOKEN = "valid-token";
+const AGENT_TOKEN = "agent-token";
+const AGENT_ID = "agent-1";
 
 function fakeTokenService(): TokenServiceLike {
   return {
@@ -29,7 +31,9 @@ function fakeTokenService(): TokenServiceLike {
       };
     },
     async validate(raw: string) {
-      return raw === VALID_TOKEN ? { id: "tok-1", agentId: null } : null;
+      if (raw === VALID_TOKEN) return { id: "tok-1", agentId: null };
+      if (raw === AGENT_TOKEN) return { id: "tok-2", agentId: AGENT_ID };
+      return null;
     },
     async revoke() {
       return null;
@@ -97,6 +101,7 @@ function fakeTaskService(opts: {
   capturedListFilters?: TaskListFilters[];
   capturedListReadyArgs?: Array<string | undefined>;
   capturedListBlockedCalls?: number[];
+  capturedListBlockedArgs?: Array<string | undefined>;
 }): TaskServiceLike {
   return {
     async list(filters?: TaskListFilters) {
@@ -115,8 +120,9 @@ function fakeTaskService(opts: {
       if (opts.capturedListReadyArgs) opts.capturedListReadyArgs.push(agentId);
       return opts.listReadyResult ?? [];
     },
-    async listBlocked() {
+    async listBlocked(agentId?: string) {
       if (opts.capturedListBlockedCalls) opts.capturedListBlockedCalls.push(1);
+      if (opts.capturedListBlockedArgs) opts.capturedListBlockedArgs.push(agentId);
       return (opts.listBlockedResult ?? []).map((t) => withBlockedBy(t));
     },
     async get(id: string) {
@@ -161,6 +167,10 @@ function makeApp(taskService: TaskServiceLike) {
 
 function auth(): Record<string, string> {
   return { Authorization: `Bearer ${VALID_TOKEN}` };
+}
+
+function agentAuth(): Record<string, string> {
+  return { Authorization: `Bearer ${AGENT_TOKEN}` };
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -365,5 +375,25 @@ describe("GET /tasks state filter (smoke)", () => {
     const res = await app.request("/tasks?state=blocked", { headers: auth() });
     const body = (await res.json()) as TaskWithBlockedBy[];
     expect(Array.isArray(body[0].blockedBy)).toBe(true);
+  });
+
+  // ─── agent token scoping for state=blocked ────────────────────────────────
+
+  it("GET /tasks?state=blocked passes agentId to listBlocked() for agent tokens", async () => {
+    const capturedListBlockedArgs: Array<string | undefined> = [];
+    const taskService = fakeTaskService({ capturedListBlockedArgs });
+    const app = makeApp(taskService);
+    await app.request("/tasks?state=blocked", { headers: agentAuth() });
+    expect(capturedListBlockedArgs).toHaveLength(1);
+    expect(capturedListBlockedArgs[0]).toBe(AGENT_ID);
+  });
+
+  it("GET /tasks?state=blocked passes undefined agentId to listBlocked() for admin tokens", async () => {
+    const capturedListBlockedArgs: Array<string | undefined> = [];
+    const taskService = fakeTaskService({ capturedListBlockedArgs });
+    const app = makeApp(taskService);
+    await app.request("/tasks?state=blocked", { headers: auth() });
+    expect(capturedListBlockedArgs).toHaveLength(1);
+    expect(capturedListBlockedArgs[0]).toBeUndefined();
   });
 });

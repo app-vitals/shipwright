@@ -53,7 +53,7 @@ export interface TaskListResult {
 export interface TaskServiceLike {
   list(filters?: TaskListFilters): Promise<TaskListResult>;
   listReady(agentId?: string): Promise<Task[]>;
-  listBlocked(): Promise<TaskWithBlockedBy[]>;
+  listBlocked(agentId?: string): Promise<TaskWithBlockedBy[]>;
   get(id: string): Promise<TaskWithBlockedBy | null>;
   create(data: Prisma.TaskCreateInput): Promise<Task>;
   bulk(
@@ -139,18 +139,19 @@ export class TaskService implements TaskServiceLike {
    *
    * Captures explicitly blocked tasks, HITL-gated tasks, and dep-blocked pending tasks.
    * Loads the full task graph so computeBlockedBy can resolve all dependency IDs.
+   *
+   * Agent tokens are scoped to their own tasks: pass agentId to filter by assignee.
    */
-  async listBlocked(): Promise<TaskWithBlockedBy[]> {
+  async listBlocked(agentId?: string): Promise<TaskWithBlockedBy[]> {
     const allTasks = await this.prisma.task.findMany();
     return allTasks
-      .filter((t: Task) => {
+      .map((t: Task) => ({ ...t, blockedBy: computeBlockedBy(t, allTasks) }))
+      .filter((t: TaskWithBlockedBy) => {
+        if (agentId && t.assignee !== agentId) return false;
         if (t.status === "blocked") return true;
-        if (t.status === "pending") {
-          return computeBlockedBy(t, allTasks).length > 0;
-        }
+        if (t.status === "pending") return t.blockedBy.length > 0;
         return false;
-      })
-      .map((t: Task) => ({ ...t, blockedBy: computeBlockedBy(t, allTasks) }));
+      });
   }
 
   async get(id: string): Promise<TaskWithBlockedBy | null> {

@@ -93,7 +93,7 @@ export function createTasksRoutes(
 
     // ?state=blocked delegates to listBlocked().
     if (stateRaw === "blocked") {
-      return c.json(await taskService.listBlocked(), 200);
+      return c.json(await taskService.listBlocked(agentId ?? undefined), 200);
     }
 
     const prRaw = c.req.query("pr");
