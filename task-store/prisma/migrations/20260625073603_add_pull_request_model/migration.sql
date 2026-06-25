@@ -2,7 +2,7 @@
 CREATE TYPE "PrState" AS ENUM ('open', 'merged', 'closed');
 
 -- CreateEnum
-CREATE TYPE "PrReviewState" AS ENUM ('pending', 'in_progress', 'posted', 'patching', 'approved');
+CREATE TYPE "PrReviewState" AS ENUM ('pending', 'in_progress', 'posted', 'approved');
 
 -- CreateTable
 CREATE TABLE "PullRequest" (

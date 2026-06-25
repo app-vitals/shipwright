@@ -158,20 +158,35 @@ export class PullRequestService implements PullRequestServiceLike {
         return { status: 200 as const, record };
       }
 
-      // No existing record → create
-      const record = await tx.pullRequest.create({
-        data: {
-          repo,
-          prNumber,
-          commitSha,
-          reviewState: "in_progress",
-          claimedBy,
-          claimedAt: now,
-          heartbeatAt: now,
-          ...(taskId !== undefined ? { taskId } : {}),
-        },
-      });
-      return { status: 201 as const, record };
+      // No existing record → create.
+      // Guard against a concurrent INSERT winning the race: Postgres enforces
+      // @@unique([repo, prNumber]) and the losing writer gets a P2002. Map that
+      // to ConflictError(409) so callers see a clean error instead of a raw 500.
+      try {
+        const record = await tx.pullRequest.create({
+          data: {
+            repo,
+            prNumber,
+            commitSha,
+            reviewState: "in_progress",
+            claimedBy,
+            claimedAt: now,
+            heartbeatAt: now,
+            ...(taskId !== undefined ? { taskId } : {}),
+          },
+        });
+        return { status: 201 as const, record };
+      } catch (err: unknown) {
+        if (
+          typeof err === "object" &&
+          err !== null &&
+          "code" in err &&
+          (err as { code: string }).code === "P2002"
+        ) {
+          throw new ConflictError(`pr ${repo}#${prNumber} is already claimed`);
+        }
+        throw err;
+      }
     });
   }
 

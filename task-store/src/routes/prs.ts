@@ -143,6 +143,16 @@ export function createPrsRoutes(
   });
 
   // ─── Update ────────────────────────────────────────────────────────────────
+  // Only these fields are writable via PATCH. All other fields are managed by
+  // dedicated lifecycle endpoints (claim, complete, patch, release) that enforce
+  // valid state transitions atomically.
+  const PATCH_ALLOWED_FIELDS: Array<keyof PullRequest> = [
+    "staged",
+    "commitSha",
+    "taskId",
+    "agentId",
+  ];
+
   app.patch("/:id", async (c) => {
     const agentId = c.get("agentId");
     const repos = c.get("repos");
@@ -155,15 +165,18 @@ export function createPrsRoutes(
       validateRepo(pr.repo, repos);
     }
 
-    // If a repo field is being updated, validate it
-    if ("repo" in body) {
-      validateRepo(body.repo, agentId !== null ? repos : null);
+    // Apply field allowlist — silently drop any fields not in the list
+    const filtered: Partial<PullRequest> = {};
+    for (const key of PATCH_ALLOWED_FIELDS) {
+      if (key in body) {
+        (filtered as Record<string, unknown>)[key] = body[key];
+      }
+    }
+    if (Object.keys(filtered).length === 0) {
+      throw new BadRequestError("no updatable fields provided");
     }
 
-    const updated = await prService.update(
-      c.req.param("id"),
-      body as Partial<PullRequest>,
-    );
+    const updated = await prService.update(c.req.param("id"), filtered);
     return c.json(updated, 200);
   });
 

@@ -9,6 +9,7 @@
 
 import { beforeEach, describe, expect, it } from "bun:test";
 import { PrismaClient } from "../prisma/client/index.js";
+import { ConflictError } from "./errors.ts";
 import { PullRequestService } from "./pull-request-service.ts";
 
 const TEST_DB = process.env.DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST;
@@ -111,37 +112,31 @@ describeOrSkip("PullRequestService.claim() atomicity (integration)", () => {
     const fulfilled = results.filter((r) => r.status === "fulfilled");
     const rejected = results.filter((r) => r.status === "rejected");
 
-    // Exactly one should succeed (create the record) and one should fail.
-    // Note: with two concurrent claims on a fresh record, both will attempt to
-    // INSERT. Postgres serializes via the unique constraint — one INSERT wins
-    // (status 201), the other gets a P2002 unique violation. The service maps
-    // P2002 → ConflictError on the transaction retry path, or the second
-    // caller sees an existing record with same commitSha + in_progress →
-    // ConflictError(409) on its own read-then-decide path.
-    //
-    // The invariant: at most one record exists and at most one caller gets a
-    // non-error result.
-    expect(fulfilled.length + rejected.length).toBe(2);
+    // Exactly one INSERT wins (status 201); the other hits the P2002 unique
+    // constraint and the service maps it to ConflictError(409).
+    expect(fulfilled.length).toBe(1);
+    expect(rejected.length).toBe(1);
 
-    // At least one must have succeeded (created the PR)
-    expect(fulfilled.length).toBeGreaterThanOrEqual(1);
+    // The winning caller gets a 201 with an in_progress record.
+    const winner = fulfilled[0];
+    if (winner.status === "fulfilled") {
+      expect(winner.value.status).toBe(201);
+      expect(winner.value.record.repo).toBe(repo);
+      expect(winner.value.record.prNumber).toBe(prNumber);
+      expect(winner.value.record.reviewState).toBe("in_progress");
+    }
+
+    // The losing caller must reject with ConflictError, not a generic 500.
+    const loser = rejected[0];
+    if (loser.status === "rejected") {
+      expect(loser.reason).toBeInstanceOf(ConflictError);
+    }
 
     // Verify exactly one record in the DB
     const records = await prisma.pullRequest.findMany({
       where: { repo, prNumber },
     });
     expect(records).toHaveLength(1);
-
-    // If both happened to succeed (possible if second concurrent claim saw
-    // reviewState=pending from first and updated it), both are fine — the
-    // record is still consistent and in_progress.
-    for (const result of fulfilled) {
-      if (result.status === "fulfilled") {
-        expect(result.value.record.repo).toBe(repo);
-        expect(result.value.record.prNumber).toBe(prNumber);
-        expect(result.value.record.reviewState).toBe("in_progress");
-      }
-    }
   });
 
   it("second claim with same commitSha on in_progress record returns ConflictError", async () => {

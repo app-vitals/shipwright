@@ -105,7 +105,6 @@ enum PrReviewState {
   pending
   in_progress
   posted
-  patching
   approved
 }
 
