@@ -1550,14 +1550,18 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       for (const a of agents) agentNames[a.id] = a.name;
     }
 
-    // Build suggestions for autocomplete datalists.
-    // Agent names come from all agents in the DB (not just those in the current page).
-    const allAgents = await prisma.agent.findMany({ select: { name: true } });
-    const suggestions = {
-      sessions: distinctValues?.sessions ?? [],
-      repos: distinctValues?.repos ?? [],
-      agents: allAgents.map((a) => a.name),
-    };
+    // Build suggestions for autocomplete datalists only when task-store integration is active.
+    // Skip the DB query entirely when fetchDistinctTaskValues is not configured.
+    const suggestions =
+      fetchDistinctTaskValues && distinctValues
+        ? {
+            sessions: distinctValues.sessions,
+            repos: distinctValues.repos,
+            agents: (
+              await prisma.agent.findMany({ select: { name: true } })
+            ).map((a) => a.name),
+          }
+        : undefined;
 
     return html(
       renderTasksPage(
