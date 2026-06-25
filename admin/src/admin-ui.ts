@@ -1458,13 +1458,13 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
     const status = c.req.query("status") ?? undefined;
     const stateRaw = c.req.query("state");
-    // Default to "open" when neither state nor status is provided.
-    const state: "open" | "closed" | undefined =
-      stateRaw === "open" || stateRaw === "closed"
+    // Default to "ready" when neither state nor status is provided.
+    const state: "ready" | "in_progress" | "blocked" | "closed" | undefined =
+      stateRaw === "ready" || stateRaw === "in_progress" || stateRaw === "blocked" || stateRaw === "closed"
         ? stateRaw
         : status
           ? undefined
-          : "open";
+          : "ready";
     const session = c.req.query("session") ?? undefined;
     const repo = c.req.query("repo") ?? undefined;
     const agent = c.req.query("agent") ?? undefined;

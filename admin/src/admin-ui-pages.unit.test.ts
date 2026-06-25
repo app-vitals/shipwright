@@ -1245,6 +1245,88 @@ describe("renderTasksPage — blocker badges", () => {
   });
 });
 
+// ─── renderTasksPage — 4-state toggle ────────────────────────────────────────
+
+const EMPTY_PAGINATION = { total: 0, limit: 50, page: 1 };
+
+describe("renderTasksPage — 4-state toggle", () => {
+  test("Ready tab is active by default (no state filter)", () => {
+    const html = renderTasksPage([], {}, false, USER_NAME, {}, EMPTY_PAGINATION);
+    // Ready link URL should NOT contain ?state= (it's the default)
+    expect(html).toMatch(/href="\/admin\/tasks"[^>]*>Ready</);
+    // Ready tab has active styling
+    expect(html).toContain("background:#6366f1;color:#fff");
+    // Other tabs are present
+    expect(html).toContain("In Progress");
+    expect(html).toContain("Blocked");
+    expect(html).toContain("Closed");
+  });
+
+  test("In Progress tab is active when state=in_progress", () => {
+    const html = renderTasksPage([], { state: "in_progress" }, false, USER_NAME, {}, EMPTY_PAGINATION);
+    // In Progress tab link contains ?state=in_progress
+    expect(html).toContain("state=in_progress");
+    // In Progress tab has active styling — find the active tab text near the indigo bg
+    const activePattern = /background:#6366f1;color:#fff[^>]*>In Progress/;
+    expect(html).toMatch(activePattern);
+    // Ready, Blocked, Closed tabs are not active (no indigo on those links)
+    // They should be white background
+    expect(html).toMatch(/background:#fff;color:#374151[^>]*>Ready/);
+    expect(html).toMatch(/background:#fff;color:#374151[^>]*>Blocked/);
+    expect(html).toMatch(/background:#fff;color:#374151[^>]*>Closed/);
+  });
+
+  test("Blocked tab is active when state=blocked", () => {
+    const html = renderTasksPage([], { state: "blocked" }, false, USER_NAME, {}, EMPTY_PAGINATION);
+    expect(html).toContain("state=blocked");
+    expect(html).toMatch(/background:#6366f1;color:#fff[^>]*>Blocked/);
+    expect(html).toMatch(/background:#fff;color:#374151[^>]*>Ready/);
+    expect(html).toMatch(/background:#fff;color:#374151[^>]*>In Progress/);
+    expect(html).toMatch(/background:#fff;color:#374151[^>]*>Closed/);
+  });
+
+  test("Closed tab is active when state=closed", () => {
+    const html = renderTasksPage([], { state: "closed" }, false, USER_NAME, {}, EMPTY_PAGINATION);
+    expect(html).toContain("state=closed");
+    expect(html).toMatch(/background:#6366f1;color:#fff[^>]*>Closed/);
+    expect(html).toMatch(/background:#fff;color:#374151[^>]*>Ready/);
+    expect(html).toMatch(/background:#fff;color:#374151[^>]*>In Progress/);
+    expect(html).toMatch(/background:#fff;color:#374151[^>]*>Blocked/);
+  });
+
+  test("Tab links preserve session and repo query params", () => {
+    const html = renderTasksPage(
+      [],
+      { state: "in_progress", session: "my-session", repo: "org/repo" },
+      false,
+      USER_NAME,
+      {},
+      EMPTY_PAGINATION,
+    );
+    // All tab links should contain session and repo params
+    const tabLinkPattern = /href="\/admin\/tasks\?[^"]*session=my-session[^"]*"/g;
+    const matches = html.match(tabLinkPattern);
+    // We expect at least 3 tab links (Ready, Blocked, Closed) to preserve session (In Progress is active tab)
+    expect(matches).not.toBeNull();
+    expect((matches ?? []).length).toBeGreaterThanOrEqual(3);
+    expect(html).toContain("repo=org");
+  });
+
+  test("Pagination URL carries correct ?state param for non-default states", () => {
+    const html = renderTasksPage(
+      [],
+      { state: "blocked" },
+      false,
+      USER_NAME,
+      {},
+      { total: 100, limit: 50, page: 1 },
+    );
+    // Next button should link to page 2 with state=blocked
+    expect(html).toContain("state=blocked");
+    expect(html).toContain("page=2");
+  });
+});
+
 // ─── renderAdminToolbar — active nav highlight ────────────────────────────────
 
 describe("renderAdminToolbar — active nav highlight", () => {
