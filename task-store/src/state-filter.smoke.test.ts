@@ -240,15 +240,15 @@ describe("GET /tasks state filter (smoke)", () => {
     expect(res.status).toBe(200);
   });
 
-  it("GET /tasks?state=ready returns a Task[] array (not paginated list shape)", async () => {
+  it("GET /tasks?state=ready returns paginated list shape", async () => {
     const readyTask = makeTask({ id: "t1", status: "pending" });
     const taskService = fakeTaskService({ listReadyResult: [readyTask] });
     const app = makeApp(taskService);
     const res = await app.request("/tasks?state=ready", { headers: auth() });
-    const body = (await res.json()) as unknown;
-    expect(Array.isArray(body)).toBe(true);
-    const tasks = body as Task[];
-    expect(tasks[0].id).toBe("t1");
+    const body = (await res.json()) as { tasks: Task[]; total: number };
+    expect(Array.isArray(body.tasks)).toBe(true);
+    expect(typeof body.total).toBe("number");
+    expect(body.tasks[0].id).toBe("t1");
   });
 
   it("GET /tasks?state=ready delegates to listReady()", async () => {
@@ -267,18 +267,20 @@ describe("GET /tasks state filter (smoke)", () => {
     });
     const app = makeApp(taskService);
     const res = await app.request("/tasks?state=ready", { headers: auth() });
-    const body = (await res.json()) as Task[];
-    expect(body).toHaveLength(2);
-    expect(body.map((t) => t.id)).toEqual(["t1", "t2"]);
+    const body = (await res.json()) as { tasks: Task[]; total: number };
+    expect(body.tasks).toHaveLength(2);
+    expect(body.tasks.map((t) => t.id)).toEqual(["t1", "t2"]);
+    expect(body.total).toBe(2);
   });
 
-  it("GET /tasks?state=ready returns empty array when no ready tasks", async () => {
+  it("GET /tasks?state=ready returns empty tasks when no ready tasks", async () => {
     const taskService = fakeTaskService({ listReadyResult: [] });
     const app = makeApp(taskService);
     const res = await app.request("/tasks?state=ready", { headers: auth() });
-    const body = (await res.json()) as Task[];
-    expect(Array.isArray(body)).toBe(true);
-    expect(body).toHaveLength(0);
+    const body = (await res.json()) as { tasks: Task[]; total: number };
+    expect(Array.isArray(body.tasks)).toBe(true);
+    expect(body.tasks).toHaveLength(0);
+    expect(body.total).toBe(0);
   });
 
   // ─── state=in_progress ───────────────────────────────────────────────────────
@@ -341,13 +343,14 @@ describe("GET /tasks state filter (smoke)", () => {
     expect(res.status).toBe(200);
   });
 
-  it("GET /tasks?state=blocked returns a Task[] array (not paginated list shape)", async () => {
+  it("GET /tasks?state=blocked returns paginated list shape", async () => {
     const blockedTask = makeTask({ id: "t1", status: "blocked" });
     const taskService = fakeTaskService({ listBlockedResult: [blockedTask] });
     const app = makeApp(taskService);
     const res = await app.request("/tasks?state=blocked", { headers: auth() });
-    const body = (await res.json()) as unknown;
-    expect(Array.isArray(body)).toBe(true);
+    const body = (await res.json()) as { tasks: TaskWithBlockedBy[]; total: number };
+    expect(Array.isArray(body.tasks)).toBe(true);
+    expect(typeof body.total).toBe("number");
   });
 
   it("GET /tasks?state=blocked delegates to listBlocked()", async () => {
@@ -364,18 +367,20 @@ describe("GET /tasks state filter (smoke)", () => {
     const taskService = fakeTaskService({ listBlockedResult: [b1, b2] });
     const app = makeApp(taskService);
     const res = await app.request("/tasks?state=blocked", { headers: auth() });
-    const body = (await res.json()) as TaskWithBlockedBy[];
-    expect(body).toHaveLength(2);
-    expect(body.map((t) => t.id)).toEqual(["t1", "t2"]);
+    const body = (await res.json()) as { tasks: TaskWithBlockedBy[]; total: number };
+    expect(body.tasks).toHaveLength(2);
+    expect(body.tasks.map((t) => t.id)).toEqual(["t1", "t2"]);
+    expect(body.total).toBe(2);
   });
 
-  it("GET /tasks?state=blocked returns empty array when no blocked tasks", async () => {
+  it("GET /tasks?state=blocked returns empty tasks when no blocked tasks", async () => {
     const taskService = fakeTaskService({ listBlockedResult: [] });
     const app = makeApp(taskService);
     const res = await app.request("/tasks?state=blocked", { headers: auth() });
-    const body = (await res.json()) as TaskWithBlockedBy[];
-    expect(Array.isArray(body)).toBe(true);
-    expect(body).toHaveLength(0);
+    const body = (await res.json()) as { tasks: TaskWithBlockedBy[]; total: number };
+    expect(Array.isArray(body.tasks)).toBe(true);
+    expect(body.tasks).toHaveLength(0);
+    expect(body.total).toBe(0);
   });
 
   it("GET /tasks?state=blocked response includes blockedBy on each task", async () => {
@@ -383,8 +388,8 @@ describe("GET /tasks state filter (smoke)", () => {
     const taskService = fakeTaskService({ listBlockedResult: [blockedTask] });
     const app = makeApp(taskService);
     const res = await app.request("/tasks?state=blocked", { headers: auth() });
-    const body = (await res.json()) as TaskWithBlockedBy[];
-    expect(Array.isArray(body[0].blockedBy)).toBe(true);
+    const body = (await res.json()) as { tasks: TaskWithBlockedBy[]; total: number };
+    expect(Array.isArray(body.tasks[0].blockedBy)).toBe(true);
   });
 
   // ─── agent token scoping for state=blocked ────────────────────────────────

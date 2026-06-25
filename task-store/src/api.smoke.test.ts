@@ -458,9 +458,9 @@ describe("task-store API (smoke)", () => {
       headers: { Authorization: `Bearer ${AGENT_TOKEN}` },
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as Task[];
-    expect(body).toHaveLength(1);
-    expect(body[0].id).toBe("task-1");
+    const body = (await res.json()) as { tasks: Task[]; total: number };
+    expect(body.tasks).toHaveLength(1);
+    expect(body.tasks[0].id).toBe("task-1");
   });
 
   it("GET /tasks?status=in_progress with agent token scopes to the agent's tasks", async () => {

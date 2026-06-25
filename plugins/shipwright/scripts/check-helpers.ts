@@ -345,7 +345,7 @@ export function createTaskStoreClient(): {
       if (!res.ok)
         throw new Error(`task-store GET /tasks?${params} → ${res.status}`);
       const data = (await res.json()) as unknown;
-      // ?ready=true returns Task[]; all other queries return { tasks, total, limit, offset }
+      // Temporary: accept legacy bare Task[] from older task-store instances
       if (Array.isArray(data)) return data as Task[];
       if (
         data !== null &&

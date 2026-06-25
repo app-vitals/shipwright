@@ -492,12 +492,11 @@ describe("createTaskStoreClient query()", () => {
     mock.restore();
   });
 
-  test("handles bare Task[] response (returned by ?ready=true)", async () => {
-    mock.module("node:fetch", () => ({}));
+  test("unwraps { tasks } envelope from ?ready=true", async () => {
     globalThis.fetch = (async () =>
       ({
         ok: true,
-        json: async () => [FAKE_TASK],
+        json: async () => ({ tasks: [FAKE_TASK], total: 1 }),
       }) as Response) as unknown as typeof fetch;
 
     const client = createTaskStoreClient();
