@@ -282,8 +282,8 @@ export function baseStyles(): string {
         padding: 0 12px;
         gap: 12px;
       }
-      .data-table th,
-      .data-table td {
+      .data-table-wrapper .data-table th,
+      .data-table-wrapper .data-table td {
         white-space: nowrap;
       }
       /* Let the table bleed to card edges on mobile so scroll shadow aligns */
