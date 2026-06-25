@@ -56,6 +56,7 @@ export interface Task {
   cancelledAt?: string;
   completedAt?: string;
   deployingAt?: string;
+  deployedAt?: string;
   ciFixAttempts?: number;
   mergeCommit?: string;
   prNumber?: number;
