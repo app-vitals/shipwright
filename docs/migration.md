@@ -100,3 +100,4 @@ Agent tokens (as opposed to admin tokens) can now have a scoped list of reposito
     failed: Array<{ agentId: string; error: string }>  // Operations that failed
   }
   ```
+
