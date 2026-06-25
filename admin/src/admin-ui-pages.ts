@@ -109,7 +109,7 @@ export interface TaskItem {
   mergeCommit?: string | null;
   createdAt?: string | null;
   updatedAt?: string | null;
-  blockedBy?: BlockedByEntry[];
+  blockedBy?: BlockedByEntry[] | null;
 }
 
 // ─── Inline markdown renderer ─────────────────────────────────────────────────
@@ -1017,7 +1017,7 @@ export function renderTasksPage(
     return "badge-gray";
   };
 
-  const renderBlockerBadges = (blockedBy: BlockedByEntry[] | undefined): string => {
+  const renderBlockerBadges = (blockedBy: BlockedByEntry[] | null | undefined): string => {
     if (!blockedBy || blockedBy.length === 0) return "";
     return blockedBy
       .map((b) => {
