@@ -36,6 +36,9 @@ function fakeAdminTokenService(): TokenServiceLike {
     async list() {
       return [];
     },
+    async update() {
+      return null;
+    },
   };
 }
 
@@ -63,6 +66,9 @@ function fakeAgentTokenService(scopedRepos: string[]): TokenServiceLike {
     },
     async list() {
       return [];
+    },
+    async update() {
+      return null;
     },
   };
 }
