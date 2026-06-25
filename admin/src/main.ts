@@ -22,6 +22,7 @@ import { Hono } from "hono";
 import { PrismaClient } from "../prisma/client/index.js";
 import type { PullRequestItem } from "./admin-ui-pages.ts";
 import { createAdminUIApp } from "./admin-ui.ts";
+import { AgentChatTokenService } from "./agent-chat-tokens.ts";
 import { AgentCronJobService } from "./agent-cron-jobs.ts";
 import { AgentCronRunService } from "./agent-cron-runs.ts";
 import { AgentEnvService } from "./agent-envs.ts";
@@ -195,6 +196,7 @@ async function startServer(): Promise<void> {
   const agentToolService = new AgentToolService(prisma);
   const agentTokenService = new AgentTokenService(prisma);
   const agentPluginService = new AgentPluginService(prisma);
+  const agentChatTokenService = new AgentChatTokenService(prisma);
 
   // Real K8s provisioner when SHIPWRIGHT_K8S_PROVISIONING=enabled, else Noop.
   const provisioner = buildProvisioner(process.env, agentTokenService);
@@ -248,6 +250,7 @@ async function startServer(): Promise<void> {
     agentToolService,
     agentTokenService,
     agentPluginService,
+    agentChatTokenService,
     prisma,
     provisioner,
     sessionSecret,

@@ -469,6 +469,56 @@ export const PluginNameQuerySchema = z.object({
   name: z.string().openapi({ example: "@shipwright/plugin" }),
 });
 
+// ─── AgentChatTokenUsageDaily ─────────────────────────────────────────────────
+
+/**
+ * POST /agents/:id/chat-tokens/daily request body.
+ * date is YYYY-MM-DD; token counts and cost are additive increments.
+ */
+export const UpsertChatTokenDailyBodySchema = z
+  .object({
+    date: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "date must be in YYYY-MM-DD format")
+      .openapi({ example: "2026-01-15" }),
+    inputTokens: z.number().int().min(0).openapi({ example: 100 }),
+    outputTokens: z.number().int().min(0).openapi({ example: 50 }),
+    cacheReadTokens: z.number().int().min(0).openapi({ example: 10 }),
+    cacheCreationTokens: z.number().int().min(0).openapi({ example: 5 }),
+    costUsd: z.number().min(0).openapi({ example: 0.0012 }),
+  })
+  .openapi("UpsertChatTokenDailyBody");
+
+export type UpsertChatTokenDailyBody = z.infer<
+  typeof UpsertChatTokenDailyBodySchema
+>;
+
+/** Serialized AgentChatTokenUsageDaily row returned by the upsert endpoint. */
+export const AgentChatTokenUsageDailySchema = z
+  .object({
+    id: z.string().openapi({ example: "clx1234567890" }),
+    agentId: z.string().openapi({ example: "clx1234567890" }),
+    date: z.string().openapi({ example: "2026-01-15" }),
+    inputTokens: z.number().int().openapi({ example: 100 }),
+    outputTokens: z.number().int().openapi({ example: 50 }),
+    cacheReadTokens: z.number().int().openapi({ example: 10 }),
+    cacheCreationTokens: z.number().int().openapi({ example: 5 }),
+    costUsd: z.number().openapi({ example: 0.0012 }),
+    createdAt: z
+      .string()
+      .datetime()
+      .openapi({ example: "2026-01-15T00:00:00.000Z" }),
+    updatedAt: z
+      .string()
+      .datetime()
+      .openapi({ example: "2026-01-15T12:00:00.000Z" }),
+  })
+  .openapi("AgentChatTokenUsageDaily");
+
+export type AgentChatTokenUsageDailyType = z.infer<
+  typeof AgentChatTokenUsageDailySchema
+>;
+
 // ─── AgentConfig (runtime GET /agents/:id/config response) ───────────────────
 
 export const AgentConfigPluginSchema = z

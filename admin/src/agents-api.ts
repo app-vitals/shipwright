@@ -21,6 +21,7 @@
 
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import type { PrismaClient } from "../prisma/client/index.js";
+import type { AgentChatTokenService } from "./agent-chat-tokens.ts";
 import type {
   AgentCronJobService,
   AgentCronJobWithRunSummary,
@@ -40,6 +41,7 @@ import {
   NotFoundError,
 } from "./errors.ts";
 import {
+  AgentChatTokenUsageDailySchema,
   AgentCronJobSchema,
   AgentCronRunSchema,
   AgentEnvBodySchema,
@@ -73,6 +75,7 @@ import {
   PluginNameQuerySchema,
   TokenIdParamSchema,
   ToolIdParamSchema,
+  UpsertChatTokenDailyBodySchema,
 } from "./openapi-schemas.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -107,6 +110,7 @@ export interface AdminDeps {
     AgentPluginService,
     "list" | "add" | "remove" | "removeByName"
   >;
+  agentChatTokenService: Pick<AgentChatTokenService, "upsertDaily">;
   prisma: Pick<PrismaClient, "agent">;
   /**
    * Provisions (and tears down) the workload backing an agent. Defaults to a
@@ -672,6 +676,27 @@ const deletePluginRoute = createRoute({
   },
 });
 
+const upsertChatTokenDailyRoute = createRoute({
+  method: "post",
+  path: "/agents/{id}/chat-tokens/daily",
+  request: {
+    params: AgentIdParamSchema,
+    body: {
+      content: {
+        "application/json": { schema: UpsertChatTokenDailyBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Updated daily chat token usage row",
+      content: { "application/json": { schema: AgentChatTokenUsageDailySchema } },
+    },
+    400: { description: "Bad request", ...jsonError },
+    404: { description: "Agent not found", ...jsonError },
+  },
+});
+
 // ─── App factory ──────────────────────────────────────────────────────────────
 
 export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
@@ -682,6 +707,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     agentToolService,
     agentTokenService,
     agentPluginService,
+    agentChatTokenService,
     prisma,
     provisioner,
     sessionSecret,
@@ -1240,6 +1266,22 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     return c.body(null, 204);
   });
 
+  // ─── Chat token usage ──────────────────────────────────────────────────────
+
+  // POST /agents/:id/chat-tokens/daily — atomically accumulate daily chat token usage
+  app.openapi(upsertChatTokenDailyRoute, async (c) => {
+    const { id: agentId } = c.req.valid("param");
+    const body = c.req.valid("json");
+    const row = await agentChatTokenService.upsertDaily(agentId, body.date, {
+      inputTokens: body.inputTokens,
+      outputTokens: body.outputTokens,
+      cacheReadTokens: body.cacheReadTokens,
+      cacheCreationTokens: body.cacheCreationTokens,
+      costUsd: body.costUsd,
+    });
+    return c.json(serializeChatTokenDaily(row), 200);
+  });
+
   return app;
 }
 
@@ -1376,5 +1418,31 @@ function serializeAgent(agent: {
     repos: agent.repos ?? [],
     createdAt: agent.createdAt.toISOString(),
     updatedAt: agent.updatedAt.toISOString(),
+  };
+}
+
+function serializeChatTokenDaily(row: {
+  id: string;
+  agentId: string;
+  date: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  costUsd: number;
+  createdAt: Date;
+  updatedAt: Date;
+}): z.infer<typeof AgentChatTokenUsageDailySchema> {
+  return {
+    id: row.id,
+    agentId: row.agentId,
+    date: row.date,
+    inputTokens: row.inputTokens,
+    outputTokens: row.outputTokens,
+    cacheReadTokens: row.cacheReadTokens,
+    cacheCreationTokens: row.cacheCreationTokens,
+    costUsd: row.costUsd,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
   };
 }

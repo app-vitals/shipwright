@@ -568,6 +568,20 @@ function buildCombinedApp() {
       remove: async () => {},
       removeByName: async () => {},
     },
+    agentChatTokenService: {
+      upsertDaily: async (_agentId: string, date: string) => ({
+        id: "daily-id",
+        agentId: _agentId,
+        date,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        costUsd: 0,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    },
     prisma: {
       agent: {
         create: async () => ({

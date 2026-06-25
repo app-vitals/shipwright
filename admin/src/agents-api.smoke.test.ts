@@ -289,6 +289,20 @@ function makeMockDeps(): AdminDeps {
       remove: async () => {},
       removeByName: async () => {},
     },
+    agentChatTokenService: {
+      upsertDaily: async (_agentId: string, date: string) => ({
+        id: "daily-test-id",
+        agentId: _agentId,
+        date,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        costUsd: 0,
+        createdAt: new Date("2024-01-01"),
+        updatedAt: new Date("2024-01-01"),
+      }),
+    },
     prisma: {
       agent: {
         create: async (args: {
