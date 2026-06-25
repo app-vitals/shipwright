@@ -230,6 +230,11 @@ export interface AdminUIDeps {
     repos: string[];
   }>;
   /**
+   * IANA timezone name for date/time display in the admin UI.
+   * Defaults to "America/Los_Angeles" when absent.
+   */
+  timezone?: string;
+  /**
    * Fetch the pull request linked to a task from the task-store service.
    * If absent or the query fails, the task detail page renders without a PR section.
    */
@@ -331,6 +336,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     fetchTaskStoreTask,
     releaseTask,
     fetchDistinctTaskValues,
+    timezone = "America/Los_Angeles",
     fetchTaskStorePr,
   } = deps;
 
@@ -545,7 +551,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       const agentIds = memberships.map((m) => m.agentId);
       agents = await prisma.agent.findMany({ where: { id: { in: agentIds } } });
     }
-    return html(renderAgentsPage(agents, c.var.userEmail, c.var.isAdmin));
+    return html(renderAgentsPage(agents, c.var.userEmail, c.var.isAdmin, timezone));
   });
 
   // ─── Agent detail ─────────────────────────────────────────────────────────
@@ -618,7 +624,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         members,
         c.var.userEmail,
         c.var.isAdmin,
-        { error, newToken, successMsg },
+        { error, newToken, successMsg, timezone },
       ),
     );
   });
@@ -999,7 +1005,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
           members,
           c.var.userEmail,
           c.var.isAdmin,
-          { newToken: rawToken },
+          { newToken: rawToken, timezone },
         ),
       );
     } catch {
@@ -1705,7 +1711,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       }
     }
 
-    return html(renderTaskDetailPage(task, c.var.userEmail, agentNames, pullRequest));
+    return html(renderTaskDetailPage(task, c.var.userEmail, agentNames, timezone, pullRequest));
   });
 
   app.post("/admin/tasks/:id/release", requireAuth, async (c) => {
