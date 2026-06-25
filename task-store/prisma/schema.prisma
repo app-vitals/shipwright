@@ -92,6 +92,55 @@ model Task {
   @@index([claimedBy])
 }
 
+// ─── Pull Request State ───────────────────────────────────────────────────────
+// Lifecycle of a PR through the review/patch/deploy pipeline.
+
+enum PrState {
+  open
+  merged
+  closed
+}
+
+enum PrReviewState {
+  pending
+  in_progress
+  posted
+  patching
+  approved
+}
+
+// ─── Pull Request ─────────────────────────────────────────────────────────────
+// Tracks a GitHub PR through the Shipwright review → patch → deploy pipeline.
+// repo is in org/repo format (e.g. "app-vitals/shipwright").
+// @@unique([repo, prNumber]) ensures one record per GitHub PR.
+
+model PullRequest {
+  id          String        @id @default(cuid())
+  repo        String        // org/repo format
+  prNumber    Int
+  taskId      String?
+  staged      Boolean       @default(false)
+  state       PrState       @default(open)
+  reviewState PrReviewState @default(pending)
+  commitSha   String?
+  patchCycles Int           @default(0)
+  agentId     String?
+  reviewedAt  String?
+  patchedAt   String?
+  mergedAt    String?
+  claimedBy   String?
+  claimedAt   String?
+  heartbeatAt String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([repo, prNumber])
+  @@index([taskId])
+  @@index([state])
+  @@index([reviewState])
+}
+
 // ─── Task Token ───────────────────────────────────────────────────────────────
 // Scoped API tokens for task-store authentication. The raw token is returned
 // once at creation; only the SHA-256 hash is stored.
