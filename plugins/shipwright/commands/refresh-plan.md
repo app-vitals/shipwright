@@ -134,7 +134,7 @@ Tasks updated: {count}
 
 AVAILABLE TASKS
 ───────────────
-{Run: curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" "$SHIPWRIGHT_TASK_STORE_URL/tasks?ready=true&session=$ARGUMENTS" | jq .
+{Run: curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" "$SHIPWRIGHT_TASK_STORE_URL/tasks?ready=true&session=$ARGUMENTS" | jq '.tasks'
 If this returns tasks, list those. If empty (pre-task-store doc), fall back to listing [ ] tasks with all deps satisfied from the Appendix.}
 - {PREFIX-N.M}: {task title} ({hours}h)
 

@@ -37,7 +37,7 @@ Verify the service is reachable before doing anything:
 
 ```bash
 curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks?ready=true" | jq 'length'
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?ready=true" | jq '.total'
 ```
 
 ---
@@ -55,10 +55,10 @@ curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
 
 # 2. If empty, pick next ready task
 curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks?ready=true" | jq .
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?ready=true" | jq '.tasks'
 ```
 
-`?ready=true` returns a bare `Task[]`. All other list calls (`?status=`, `?session=`, `?pr=`, `?branch=`, etc.) return a paginated envelope: `{ tasks: Task[], total: number, limit: number, offset: number }` — unwrap `.tasks` before accessing elements.
+All list calls return an envelope with a `.tasks` array. Paginated calls (`?status=`, `?session=`, `?pr=`, `?branch=`, etc.) also include `total`, `limit`, and `offset`. Ready/blocked calls (`?ready=true`, `?state=ready`, `?state=blocked`) return `{ tasks, total }` without pagination. Always unwrap `.tasks` before accessing elements.
 
 ### Start a task
 
@@ -154,7 +154,7 @@ A task is ready when **all** of the following are true:
 
 ## Empty results
 
-When `?ready=true` returns `[]`:
+When `?ready=true` returns `{ tasks: [], total: 0 }`:
 
 | Likely cause | How to check |
 |---|---|
