@@ -2314,7 +2314,7 @@ describe("renderPrsPage", () => {
 
   test("uses renderAdminToolbar with /admin/prs active path", () => {
     const html = render();
-    expect(html).toContain('href="/admin/prs"');
+    expect(html).toContain('href="/admin/prs" class="vos-nav-link active"');
   });
 });
 
@@ -2457,6 +2457,6 @@ describe("renderPrDetailPage", () => {
 
   test("uses renderAdminToolbar with /admin/prs active path", () => {
     const html = render();
-    expect(html).toContain('href="/admin/prs"');
+    expect(html).toContain('href="/admin/prs" class="vos-nav-link active"');
   });
 });

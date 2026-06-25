@@ -1753,7 +1753,17 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
   app.get("/admin/prs/:id", requireAuth, (c) => {
     if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
-    return c.redirect("/admin/prs", 302);
+    const id = c.req.param("id");
+    const stub: PrListItem = {
+      id,
+      repo: "",
+      prNumber: 0,
+      staged: false,
+      state: "",
+      reviewState: "",
+      patchCycles: 0,
+    };
+    return html(renderPrDetailPage(stub, c.var.userEmail, {}, timezone));
   });
 
   // ─── Agent delete (danger zone) ───────────────────────────────────────────
