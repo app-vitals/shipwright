@@ -39,6 +39,14 @@ export interface TaskListFilters {
   branch?: string;
   limit?: number;
   offset?: number;
+  /**
+   * Repo-scoped visibility for agent tokens.
+   * When set, replaces the simple `assignee` filter with an OR clause:
+   *   - tasks explicitly assigned to this agent, OR
+   *   - unassigned pool tasks whose repo is in the agent's scope
+   * A separate `?repo=X` filter still applies as an additional AND condition.
+   */
+  agentScope?: { agentId: string; repos: string[] };
 }
 
 /** Paginated list result from TaskService.list. */
@@ -52,7 +60,7 @@ export interface TaskListResult {
 /** The subset of TaskService the routes depend on. */
 export interface TaskServiceLike {
   list(filters?: TaskListFilters): Promise<TaskListResult>;
-  listReady(agentId?: string): Promise<Task[]>;
+  listReady(agentId?: string, repos?: string[]): Promise<Task[]>;
   distinct(agentId?: string): Promise<{ sessions: string[]; repos: string[] }>;
   get(id: string): Promise<TaskWithBlockedBy | null>;
   create(data: Prisma.TaskCreateInput): Promise<Task>;
@@ -87,11 +95,23 @@ export class TaskService implements TaskServiceLike {
       where.status = { in: [...CLOSED_STATUSES] };
     }
     if (filters.session) where.session = filters.session;
-    if (filters.repo) where.repo = filters.repo;
-    if (filters.assignee) where.assignee = filters.assignee;
     if (filters.claimedBy) where.claimedBy = filters.claimedBy;
     if (filters.pr !== undefined) where.pr = filters.pr;
     if (filters.branch !== undefined) where.branch = filters.branch;
+
+    if (filters.agentScope) {
+      // Repo-scoped visibility: include tasks explicitly assigned to the agent,
+      // OR unassigned pool tasks whose repo is in the agent's scope.
+      where.OR = [
+        { assignee: filters.agentScope.agentId },
+        { assignee: null, repo: { in: filters.agentScope.repos } },
+      ];
+      // A ?repo=X filter still applies as an additional AND condition.
+      if (filters.repo) where.repo = filters.repo;
+    } else {
+      if (filters.repo) where.repo = filters.repo;
+      if (filters.assignee) where.assignee = filters.assignee;
+    }
 
     const limit = filters.limit ?? 50;
     const offset = filters.offset ?? 0;
@@ -122,13 +142,25 @@ export class TaskService implements TaskServiceLike {
    *
    * The task-store has no GitHub access, so cross-branch pr_open deps are never
    * treated as merged (isPrMerged resolves to false).
+   *
+   * When `repos` is provided (repo-scoped agent token), unassigned pool tasks
+   * whose repo is in the repos list are also included.
    */
-  async listReady(agentId?: string): Promise<Task[]> {
+  async listReady(agentId?: string, repos?: string[]): Promise<Task[]> {
     // Load all tasks so dependency resolution sees the full graph, then filter
     // the result set to the caller's agent if one is specified.
     const tasks = await this.prisma.task.findMany();
     const ready = await resolveReadyTasks(tasks, async () => false);
-    if (agentId) return ready.filter((t) => t.assignee === agentId);
+    if (agentId) {
+      return ready.filter(
+        (t) =>
+          t.assignee === agentId ||
+          (repos !== undefined &&
+            t.assignee === null &&
+            t.repo !== null &&
+            repos.includes(t.repo)),
+      );
+    }
     return ready;
   }
 

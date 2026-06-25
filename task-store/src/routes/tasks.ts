@@ -51,27 +51,37 @@ async function readJson(c: {
 function validateRepo(repo: unknown, repos: string[] | null): void {
   if (repo === undefined || repo === null) return;
   if (typeof repo !== "string" || !isOrgRepo(repo)) {
-    throw new BadRequestError(
-      `repo '${repo}' must be in org/repo format`,
-    );
+    throw new BadRequestError(`repo '${repo}' must be in org/repo format`);
   }
   if (repos !== null && !repos.includes(repo)) {
-    throw new BadRequestError(
-      `repo '${repo}' is not in this agent's scope`,
-    );
+    throw new BadRequestError(`repo '${repo}' is not in this agent's scope`);
   }
 }
 
-/** Fetch a task and enforce agent ownership. Throws 404 or 403 as appropriate. */
+/** Fetch a task and enforce agent ownership. Throws 404 or 403 as appropriate.
+ *
+ * Ownership is granted when any of:
+ *   1. agentId is null (admin token — unrestricted)
+ *   2. task.assignee === agentId (explicitly assigned)
+ *   3. task.claimedBy === agentId (claimed pool task)
+ *   4. task.assignee === null AND task.repo is in repos (repo-scoped pool task)
+ */
 async function requireOwnership(
   taskService: TaskServiceLike,
   id: string,
   agentId: string | null,
+  repos: string[] = [],
 ) {
   const task = await taskService.get(id);
   if (!task) throw new NotFoundError("task not found");
-  if (agentId !== null && task.assignee !== agentId) {
-    throw new ForbiddenError("task belongs to a different agent");
+  if (agentId !== null) {
+    const ownedByAssignee = task.assignee === agentId;
+    const ownedByClaim = task.claimedBy === agentId;
+    const inRepoScope =
+      task.assignee === null && task.repo !== null && repos.includes(task.repo);
+    if (!ownedByAssignee && !ownedByClaim && !inRepoScope) {
+      throw new ForbiddenError("task belongs to a different agent");
+    }
   }
   return task;
 }
@@ -84,9 +94,14 @@ export function createTasksRoutes(
   // ─── List ──────────────────────────────────────────────────────────────────
   app.get("/", async (c) => {
     const agentId = c.get("agentId");
+    const repos = c.get("repos");
 
     if (c.req.query("ready") === "true") {
-      return c.json(await taskService.listReady(agentId ?? undefined), 200);
+      // Pass repos to listReady for repo-scoped agent tokens.
+      return c.json(
+        await taskService.listReady(agentId ?? undefined, repos ?? undefined),
+        200,
+      );
     }
 
     const prRaw = c.req.query("pr");
@@ -95,13 +110,18 @@ export function createTasksRoutes(
     const stateRaw = c.req.query("state");
     const state =
       stateRaw === "open" || stateRaw === "closed" ? stateRaw : undefined;
+
+    // Agent tokens with a repos scope use agentScope (OR union of assigned + pool tasks).
+    // Agent tokens without repos (repos=[]) fall back to simple assignee filter.
+    // Admin tokens (repos=null) use caller-supplied ?assignee with no restriction.
+    const useAgentScope =
+      agentId !== null && repos !== null && repos.length > 0;
+
     const result = await taskService.list({
       status: c.req.query("status"),
       state,
       session: c.req.query("session"),
       repo: c.req.query("repo"),
-      // Agent tokens always scope to their own tasks; ignore any provided ?assignee.
-      assignee: agentId ?? c.req.query("assignee"),
       claimedBy: c.req.query("claimedBy"),
       pr: prRaw !== undefined ? Number.parseInt(prRaw, 10) : undefined,
       branch: c.req.query("branch"),
@@ -113,6 +133,10 @@ export function createTasksRoutes(
         offsetRaw !== undefined
           ? Number.parseInt(offsetRaw, 10) || undefined
           : undefined,
+      // Use agentScope for repo-scoped agent tokens; otherwise use assignee filter.
+      ...(useAgentScope
+        ? { agentScope: { agentId: agentId as string, repos } }
+        : { assignee: agentId ?? c.req.query("assignee") }),
     });
     return c.json(result, 200);
   });
@@ -175,11 +199,13 @@ export function createTasksRoutes(
   // ─── Get one ───────────────────────────────────────────────────────────────
   app.get("/:id", async (c) => {
     const agentId = c.get("agentId");
-    const task = await taskService.get(c.req.param("id"));
-    if (!task) throw new NotFoundError("task not found");
-    if (agentId !== null && task.assignee !== agentId) {
-      throw new ForbiddenError("task belongs to a different agent");
-    }
+    const repos = c.get("repos") ?? [];
+    const task = await requireOwnership(
+      taskService,
+      c.req.param("id"),
+      agentId,
+      repos,
+    );
     return c.json(task, 200);
   });
 
@@ -187,11 +213,17 @@ export function createTasksRoutes(
   app.patch("/:id", async (c) => {
     const agentId = c.get("agentId");
     const repos = c.get("repos");
-    await requireOwnership(taskService, c.req.param("id"), agentId);
+    const task = await requireOwnership(
+      taskService,
+      c.req.param("id"),
+      agentId,
+      repos ?? [],
+    );
     const body = await readJson(c);
     validateRepo(body.repo, agentId !== null ? repos : null);
     // Prevent agent tokens from reassigning tasks outside their ownership scope.
-    if (agentId !== null) {
+    // Only force-assign for explicitly assigned tasks; leave pool task assignee null.
+    if (agentId !== null && task.assignee !== null) {
       body.assignee = agentId;
     }
     const updated = await taskService.update(
@@ -204,7 +236,8 @@ export function createTasksRoutes(
   // ─── Delete ────────────────────────────────────────────────────────────────
   app.delete("/:id", async (c) => {
     const agentId = c.get("agentId");
-    await requireOwnership(taskService, c.req.param("id"), agentId);
+    const repos = c.get("repos") ?? [];
+    await requireOwnership(taskService, c.req.param("id"), agentId, repos);
     await taskService.remove(c.req.param("id"));
     return c.body(null, 204);
   });
@@ -212,11 +245,19 @@ export function createTasksRoutes(
   // ─── Claim (atomic) ────────────────────────────────────────────────────────
   app.post("/:id/claim", async (c) => {
     const agentId = c.get("agentId");
-    await requireOwnership(taskService, c.req.param("id"), agentId);
-    const body = await readJson(c);
-    const claimedBy = body.claimedBy;
-    if (typeof claimedBy !== "string" || !claimedBy) {
-      throw new BadRequestError("claimedBy is required");
+    const repos = c.get("repos") ?? [];
+    await requireOwnership(taskService, c.req.param("id"), agentId, repos);
+    // Agent tokens: pin claimedBy to the token's agentId (ignore request body).
+    // Admin tokens: read claimedBy from the request body (existing behaviour).
+    let claimedBy: string;
+    if (agentId !== null) {
+      claimedBy = agentId;
+    } else {
+      const body = await readJson(c);
+      if (typeof body.claimedBy !== "string" || !body.claimedBy) {
+        throw new BadRequestError("claimedBy is required");
+      }
+      claimedBy = body.claimedBy;
     }
     const task = await taskService.claim(c.req.param("id"), claimedBy);
     return c.json(task, 200);
@@ -225,7 +266,8 @@ export function createTasksRoutes(
   // ─── Heartbeat ─────────────────────────────────────────────────────────────
   app.post("/:id/heartbeat", async (c) => {
     const agentId = c.get("agentId");
-    await requireOwnership(taskService, c.req.param("id"), agentId);
+    const repos = c.get("repos") ?? [];
+    await requireOwnership(taskService, c.req.param("id"), agentId, repos);
     const task = await taskService.heartbeat(c.req.param("id"));
     return c.json(task, 200);
   });
@@ -233,7 +275,8 @@ export function createTasksRoutes(
   // ─── Complete ──────────────────────────────────────────────────────────────
   app.post("/:id/complete", async (c) => {
     const agentId = c.get("agentId");
-    await requireOwnership(taskService, c.req.param("id"), agentId);
+    const repos = c.get("repos") ?? [];
+    await requireOwnership(taskService, c.req.param("id"), agentId, repos);
     const task = await taskService.complete(c.req.param("id"));
     return c.json(task, 200);
   });
@@ -241,7 +284,8 @@ export function createTasksRoutes(
   // ─── Fail ──────────────────────────────────────────────────────────────────
   app.post("/:id/fail", async (c) => {
     const agentId = c.get("agentId");
-    await requireOwnership(taskService, c.req.param("id"), agentId);
+    const repos = c.get("repos") ?? [];
+    await requireOwnership(taskService, c.req.param("id"), agentId, repos);
     const body = await readJson(c);
     const reason = typeof body.reason === "string" ? body.reason : undefined;
     const task = await taskService.fail(c.req.param("id"), reason);
@@ -251,7 +295,8 @@ export function createTasksRoutes(
   // ─── Release ───────────────────────────────────────────────────────────────
   app.post("/:id/release", async (c) => {
     const agentId = c.get("agentId");
-    await requireOwnership(taskService, c.req.param("id"), agentId);
+    const repos = c.get("repos") ?? [];
+    await requireOwnership(taskService, c.req.param("id"), agentId, repos);
     const task = await taskService.release(c.req.param("id"));
     return c.json(task, 200);
   });
