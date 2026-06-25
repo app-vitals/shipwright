@@ -33,6 +33,7 @@ export interface AgentDetail {
   slackId: string | null;
   createdAt: Date;
   updatedAt: Date;
+  repos: string[];
 }
 
 export interface CronJobItem {
@@ -586,6 +587,46 @@ export function renderAgentDetailPage(
         </thead>
         <tbody>
           ${envRows}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Repos -->
+    <div class="card">
+      <div class="card-title">Repos</div>
+      <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/repos/add" style="margin-bottom:16px">
+        <div class="form-row">
+          <div class="form-group" style="flex:1">
+            <input name="repo" type="text" class="form-input" placeholder="org/repo" required />
+          </div>
+          <button type="submit" class="btn btn-primary">Add</button>
+        </div>
+      </form>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Repo</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${
+            agent.repos.length === 0
+              ? `<tr><td colspan="2" class="empty-state">No repos configured.</td></tr>`
+              : agent.repos
+                  .map(
+                    (repo) => `<tr>
+            <td class="mono">${escapeHtml(repo)}</td>
+            <td>
+              <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/repos/delete" style="display:inline">
+                <input type="hidden" name="repo" value="${escapeHtml(repo)}" />
+                <button type="submit" class="btn btn-danger" style="font-size:11px;padding:3px 8px">Remove</button>
+              </form>
+            </td>
+          </tr>`,
+                  )
+                  .join("\n")
+          }
         </tbody>
       </table>
     </div>
