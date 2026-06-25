@@ -303,6 +303,19 @@ async function startServer(): Promise<void> {
       : {};
   // TODO: wire fetchTaskStorePr once task-store exposes a per-task PR endpoint
 
+  // Validate SHIPWRIGHT_ADMIN_TZ at startup — toLocaleDateString/toLocaleString
+  // will throw RangeError at render time if the timezone is invalid, causing a 500
+  // on every admin page. Catch it early with a clean error and exit.
+  const adminTz = process.env.SHIPWRIGHT_ADMIN_TZ;
+  if (adminTz) {
+    try {
+      Intl.DateTimeFormat(undefined, { timeZone: adminTz });
+    } catch {
+      console.error("[admin] Invalid SHIPWRIGHT_ADMIN_TZ:", adminTz);
+      process.exit(1);
+    }
+  }
+
   const adminUIApp = createAdminUIApp({
     prisma: prisma as never,
     agentEnvService,
@@ -319,6 +332,7 @@ async function startServer(): Promise<void> {
     slackClient,
     appBaseUrl,
     devAuthEnabled: isDevAuthAllowed(process.env),
+    timezone: adminTz,
     ...taskStoreFetchers,
   });
   root.route("/", adminUIApp);

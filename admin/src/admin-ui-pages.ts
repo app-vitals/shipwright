@@ -320,6 +320,7 @@ export function renderAgentsPage(
   agents: AgentListItem[],
   userName: string,
   isAdmin: boolean,
+  timezone: string,
 ): string {
   const rows =
     agents.length === 0
@@ -329,7 +330,7 @@ export function renderAgentsPage(
             (a) => `<tr>
     <td><a href="/admin/agents/${escapeHtml(a.id)}" class="agent-link">${escapeHtml(a.name)}</a></td>
     <td class="mono">${a.slackId ? escapeHtml(a.slackId) : '<span style="color:#9ca3af">—</span>'}</td>
-    <td>${escapeHtml(a.createdAt.toISOString().split("T")[0])}</td>
+    <td>${escapeHtml(new Date(a.createdAt).toLocaleDateString("en-US", { timeZone: timezone }))}</td>
     <td><a href="/admin/agents/${escapeHtml(a.id)}" class="btn btn-secondary" style="font-size:12px;padding:4px 10px">Manage</a></td>
   </tr>`,
           )
@@ -386,11 +387,18 @@ export function renderAgentDetailPage(
   members: MemberItem[],
   userName: string,
   isAdmin: boolean,
-  opts?: { error?: string; newToken?: string; successMsg?: string; now?: Date },
+  opts?: {
+    error?: string;
+    newToken?: string;
+    successMsg?: string;
+    now?: Date;
+    timezone?: string;
+  },
 ): string {
   // Reference time for relative timestamps — injected by tests for determinism,
   // defaults to wall clock in production.
   const now = opts?.now ?? new Date();
+  const timezone = opts?.timezone ?? "America/Los_Angeles";
   const envRows =
     Object.keys(envVars).length === 0
       ? `<tr><td colspan="3" class="empty-state">No env vars set.</td></tr>`
@@ -510,8 +518,8 @@ export function renderAgentDetailPage(
           .map(
             (t) => `<tr>
       <td>${t.label ? escapeHtml(t.label) : '<span style="color:#9ca3af">—</span>'}</td>
-      <td>${escapeHtml(t.createdAt.toISOString().split("T")[0])}</td>
-      <td>${t.revokedAt ? `<span class="badge badge-gray">Revoked ${escapeHtml(t.revokedAt.toISOString().split("T")[0])}</span>` : '<span class="badge badge-green">Active</span>'}</td>
+      <td>${escapeHtml(new Date(t.createdAt).toLocaleDateString("en-US", { timeZone: timezone }))}</td>
+      <td>${t.revokedAt ? `<span class="badge badge-gray">Revoked ${escapeHtml(new Date(t.revokedAt).toLocaleDateString("en-US", { timeZone: timezone }))}</span>` : '<span class="badge badge-green">Active</span>'}</td>
       <td>${
         !t.revokedAt
           ? `<form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/tokens/${escapeHtml(t.id)}/revoke" style="display:inline">
@@ -543,7 +551,7 @@ export function renderAgentDetailPage(
           .map(
             (m) => `<tr>
       <td>${escapeHtml(m.email)}</td>
-      <td>${escapeHtml(m.createdAt.toISOString().split("T")[0])}</td>
+      <td>${escapeHtml(new Date(m.createdAt).toLocaleDateString("en-US", { timeZone: timezone }))}</td>
       <td>
         <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/members/delete" style="display:inline">
           <input type="hidden" name="memberId" value="${escapeHtml(m.id)}" />
@@ -1369,6 +1377,7 @@ export function renderTaskDetailPage(
   task: TaskItem,
   userName: string,
   agentNames: Record<string, string> = {},
+  timezone = "America/Los_Angeles",
   pullRequest?: PullRequestItem,
 ): string {
   const statusClass =
@@ -1421,7 +1430,11 @@ export function renderTaskDetailPage(
     const d = new Date(iso);
     const fmt = Number.isNaN(d.getTime())
       ? iso
-      : d.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
+      : d.toLocaleString("en-US", {
+          dateStyle: "medium",
+          timeStyle: "short",
+          timeZone: timezone,
+        });
     return `<tr>
       <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top">${escapeHtml(label)}</td>
       <td style="padding:8px 12px;font-size:13px" title="${escapeHtml(iso)}">${escapeHtml(fmt)}</td>

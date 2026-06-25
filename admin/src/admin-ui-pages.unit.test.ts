@@ -164,30 +164,30 @@ describe("renderLoginPage", () => {
 
 describe("renderAgentsPage", () => {
   test("returns a valid HTML document", () => {
-    const html = renderAgentsPage([], USER_NAME, true);
+    const html = renderAgentsPage([], USER_NAME, true, "UTC");
     expect(html).toContain("<!DOCTYPE html>");
     expect(html).toContain("<html");
     expect(html).toContain("</html>");
   });
 
   test("empty agents array shows 'No agents yet' empty state", () => {
-    const html = renderAgentsPage([], USER_NAME, true);
+    const html = renderAgentsPage([], USER_NAME, true, "UTC");
     expect(html).toContain("No agents yet");
   });
 
   test("empty state includes link to /admin/provision", () => {
-    const html = renderAgentsPage([], USER_NAME, true);
+    const html = renderAgentsPage([], USER_NAME, true, "UTC");
     expect(html).toContain("/admin/provision");
   });
 
   test("agent name appears as a link", () => {
-    const html = renderAgentsPage([AGENT_LIST_ITEM], USER_NAME, true);
+    const html = renderAgentsPage([AGENT_LIST_ITEM], USER_NAME, true, "UTC");
     expect(html).toContain("Test Agent");
     expect(html).toContain('href="/admin/agents/agent-123"');
   });
 
   test("Manage button links to agent detail page", () => {
-    const html = renderAgentsPage([AGENT_LIST_ITEM], USER_NAME, true);
+    const html = renderAgentsPage([AGENT_LIST_ITEM], USER_NAME, true, "UTC");
     expect(html).toContain("Manage");
     expect(html).toContain(`/admin/agents/${AGENT_LIST_ITEM.id}`);
   });
@@ -197,7 +197,7 @@ describe("renderAgentsPage", () => {
       ...AGENT_LIST_ITEM,
       name: '<script>alert("xss")</script>',
     };
-    const html = renderAgentsPage([xssAgent], USER_NAME, true);
+    const html = renderAgentsPage([xssAgent], USER_NAME, true, "UTC");
     expect(html).not.toContain("<script>");
     expect(html).toContain("&lt;script&gt;");
   });
@@ -207,7 +207,7 @@ describe("renderAgentsPage", () => {
       ...AGENT_LIST_ITEM,
       id: 'agent-"><script>',
     };
-    const html = renderAgentsPage([xssAgent], USER_NAME, true);
+    const html = renderAgentsPage([xssAgent], USER_NAME, true, "UTC");
     expect(html).not.toContain('"><script>');
     expect(html).toContain("&quot;&gt;&lt;script&gt;");
   });
@@ -218,25 +218,40 @@ describe("renderAgentsPage", () => {
       id: "agent-456",
       name: "Second Agent",
     };
-    const html = renderAgentsPage([AGENT_LIST_ITEM, second], USER_NAME, true);
+    const html = renderAgentsPage([AGENT_LIST_ITEM, second], USER_NAME, true, "UTC");
     expect(html).toContain("Test Agent");
     expect(html).toContain("Second Agent");
   });
 
   test("no empty-state message when agents present", () => {
-    const html = renderAgentsPage([AGENT_LIST_ITEM], USER_NAME, true);
+    const html = renderAgentsPage([AGENT_LIST_ITEM], USER_NAME, true, "UTC");
     expect(html).not.toContain("No agents yet");
   });
 
   test("non-admin: provision button is hidden", () => {
-    const html = renderAgentsPage([AGENT_LIST_ITEM], USER_NAME, false);
+    const html = renderAgentsPage([AGENT_LIST_ITEM], USER_NAME, false, "UTC");
     expect(html).not.toContain("+ Provision agent");
   });
 
   test("non-admin: empty state shows 'No agents.' without provision link", () => {
-    const html = renderAgentsPage([], USER_NAME, false);
+    const html = renderAgentsPage([], USER_NAME, false, "UTC");
     expect(html).toContain("No agents.");
     expect(html).not.toContain("Provision one");
+  });
+
+  test("createdAt date uses the provided timezone", () => {
+    // 2025-01-15T20:00:00Z = Jan 15 in UTC but also Jan 15 in America/Los_Angeles (UTC-8)
+    // However this specific UTC time is 12:00 PM Pacific — still Jan 15 in both.
+    // Use a time that's Jan 15 in UTC but Jan 14 in Pacific: e.g. 2025-01-15T05:00:00Z = Jan 14 in Pacific (UTC-8)
+    const agent: AgentListItem = {
+      ...AGENT_LIST_ITEM,
+      createdAt: new Date("2025-01-15T05:00:00Z"), // Jan 14 Pacific, Jan 15 UTC
+    };
+    const htmlUTC = renderAgentsPage([agent], USER_NAME, true, "UTC");
+    const htmlPacific = renderAgentsPage([agent], USER_NAME, true, "America/Los_Angeles");
+    // In UTC: 1/15/2025; in Pacific (UTC-8): 1/14/2025
+    expect(htmlUTC).toContain("1/15/2025");
+    expect(htmlPacific).toContain("1/14/2025");
   });
 });
 
@@ -260,6 +275,7 @@ describe("renderAgentDetailPage — members section", () => {
       [],
       USER_NAME,
       true,
+      { timezone: "UTC" },
     );
     expect(html).toContain("Members");
   });
@@ -275,6 +291,7 @@ describe("renderAgentDetailPage — members section", () => {
       [],
       USER_NAME,
       false,
+      { timezone: "UTC" },
     );
     expect(html).not.toContain("Members");
   });
@@ -290,6 +307,7 @@ describe("renderAgentDetailPage — members section", () => {
       [MEMBER],
       USER_NAME,
       true,
+      { timezone: "UTC" },
     );
     expect(html).toContain("member@example.com");
   });
@@ -305,8 +323,10 @@ describe("renderAgentDetailPage — members section", () => {
       [MEMBER],
       USER_NAME,
       true,
+      { timezone: "UTC" },
     );
-    expect(html).toContain("2025-01-15");
+    // With timezone-aware formatting (UTC), 2025-01-15T00:00:00Z renders as 1/15/2025
+    expect(html).toContain("1/15/2025");
   });
 
   test("member remove button posts to the delete route with memberId", () => {
@@ -320,6 +340,7 @@ describe("renderAgentDetailPage — members section", () => {
       [MEMBER],
       USER_NAME,
       true,
+      { timezone: "UTC" },
     );
     expect(html).toContain(`/admin/agents/${AGENT.id}/members/delete`);
     expect(html).toContain('name="memberId"');
@@ -337,6 +358,7 @@ describe("renderAgentDetailPage — members section", () => {
       [],
       USER_NAME,
       true,
+      { timezone: "UTC" },
     );
     expect(html).toContain("No members yet");
   });
@@ -357,6 +379,7 @@ describe("renderAgentDetailPage — members section", () => {
       [xssMember],
       USER_NAME,
       true,
+      { timezone: "UTC" },
     );
     // The raw XSS payload must not appear unescaped in the output
     expect(html).not.toContain('alert("xss")');
@@ -379,7 +402,7 @@ describe("renderAgentDetailPage — overview", () => {
       [],
       USER_NAME,
       true,
-      opts,
+      { timezone: "UTC", ...opts },
     );
   }
 
@@ -410,6 +433,7 @@ describe("renderAgentDetailPage — overview", () => {
       [],
       USER_NAME,
       true,
+      { timezone: "UTC" },
     );
     // The raw XSS payload must not appear unescaped in the output
     expect(html).not.toContain('alert("xss")');
@@ -473,6 +497,7 @@ describe("renderAgentDetailPage — overview", () => {
       [],
       USER_NAME,
       true,
+      { timezone: "UTC" },
     );
     // Agent name stored as a data attribute; single quotes are encoded as &#39; for defense-in-depth
     expect(html).toContain('data-agent-name="O&#39;Brien"');
@@ -491,6 +516,7 @@ describe("renderAgentDetailPage — overview", () => {
       [],
       USER_NAME,
       false,
+      { timezone: "UTC" },
     );
     expect(html).not.toContain("Danger Zone");
     expect(html).not.toContain("delete-agent-form");
@@ -511,6 +537,7 @@ describe("renderAgentDetailPage — env vars", () => {
       [],
       USER_NAME,
       true,
+      { timezone: "UTC" },
     );
   }
 
@@ -583,6 +610,7 @@ describe("renderAgentDetailPage — crons", () => {
       [],
       USER_NAME,
       true,
+      { timezone: "UTC" },
     );
   }
 
@@ -728,7 +756,7 @@ describe("renderAgentDetailPage — crons", () => {
       [],
       USER_NAME,
       true,
-      { now: fixedNow },
+      { now: fixedNow, timezone: "UTC" },
     );
     expect(html).toContain("hours ago");
     expect(html).toContain("posted");
@@ -764,7 +792,7 @@ describe("renderAgentDetailPage — crons", () => {
       [],
       USER_NAME,
       true,
-      { now: fixedNow },
+      { now: fixedNow, timezone: "UTC" },
     );
     expect(html).toContain("1 run");
   });
@@ -784,6 +812,7 @@ describe("renderAgentDetailPage — tools", () => {
       [],
       USER_NAME,
       true,
+      { timezone: "UTC" },
     );
   }
 
@@ -854,6 +883,7 @@ describe("renderAgentDetailPage — tokens", () => {
       [],
       USER_NAME,
       true,
+      { timezone: "UTC" },
     );
   }
 
@@ -938,6 +968,7 @@ describe("renderAgentDetailPage — plugins", () => {
       [],
       USER_NAME,
       true,
+      { timezone: "UTC" },
     );
   }
 
@@ -1286,6 +1317,7 @@ describe("renderTasksPage — row click navigation", () => {
       {},
       { total: tasks.length, limit: 50, page: 1 },
       opts,
+      undefined,
     );
   }
 
@@ -1365,6 +1397,7 @@ describe("renderAgentDetailPage — repos", () => {
       [],
       USER_NAME,
       true,
+      { timezone: "UTC" },
     );
   }
 
@@ -1453,6 +1486,8 @@ describe("renderTasksPage — datalist autocomplete", () => {
       "user@test.com",
       {},
       pagination,
+      undefined,
+      undefined,
     );
     expect(html).not.toContain("<datalist");
     expect(html).not.toContain('list="sessions-list"');
@@ -1487,6 +1522,8 @@ describe("renderTasksPage — blocker badges", () => {
       USER_NAME,
       {},
       { total: tasks.length, limit: 50, page: 1 },
+      undefined,
+      undefined,
     );
   }
 
@@ -1635,6 +1672,8 @@ describe("renderTasksPage — 4-state toggle", () => {
       USER_NAME,
       {},
       EMPTY_PAGINATION,
+      undefined,
+      undefined,
     );
     // Ready link URL should NOT contain ?state= (it's the default)
     expect(html).toMatch(/href="\/admin\/tasks"[^>]*>Ready</);
@@ -1654,6 +1693,8 @@ describe("renderTasksPage — 4-state toggle", () => {
       USER_NAME,
       {},
       EMPTY_PAGINATION,
+      undefined,
+      undefined,
     );
     // In Progress tab link contains ?state=in_progress
     expect(html).toContain("state=in_progress");
@@ -1675,6 +1716,8 @@ describe("renderTasksPage — 4-state toggle", () => {
       USER_NAME,
       {},
       EMPTY_PAGINATION,
+      undefined,
+      undefined,
     );
     expect(html).toContain("state=blocked");
     expect(html).toMatch(/background:#6366f1;color:#fff[^>]*>Blocked/);
@@ -1691,6 +1734,8 @@ describe("renderTasksPage — 4-state toggle", () => {
       USER_NAME,
       {},
       EMPTY_PAGINATION,
+      undefined,
+      undefined,
     );
     expect(html).toContain("state=closed");
     expect(html).toMatch(/background:#6366f1;color:#fff[^>]*>Closed/);
@@ -1707,6 +1752,8 @@ describe("renderTasksPage — 4-state toggle", () => {
       USER_NAME,
       {},
       EMPTY_PAGINATION,
+      undefined,
+      undefined,
     );
     // All tab links should contain session and repo params
     const tabLinkPattern =
@@ -1726,6 +1773,8 @@ describe("renderTasksPage — 4-state toggle", () => {
       USER_NAME,
       {},
       { total: 100, limit: 50, page: 1 },
+      undefined,
+      undefined,
     );
     // Next button should link to page 2 with state=blocked
     expect(html).toContain("state=blocked");
@@ -1794,6 +1843,8 @@ describe("renderTaskDetailPage — blockers", () => {
     return renderTaskDetailPage(
       { ...TASK_DETAIL, ...task },
       "user@example.com",
+      {},
+      "UTC",
     );
   }
 
@@ -1851,6 +1902,8 @@ describe("renderTaskDetailPage — markdown", () => {
     return renderTaskDetailPage(
       { ...TASK_DETAIL, ...task },
       "user@example.com",
+      {},
+      "UTC",
     );
   }
 
@@ -1923,6 +1976,8 @@ describe("renderTaskDetailPage — markdown", () => {
         blockedBy: [],
       },
       "user@example.com",
+      {},
+      "UTC",
     );
     // Content must be inside <pre><code>, not broken out into list items
     expect(html).toContain("<pre>");
@@ -1933,6 +1988,48 @@ describe("renderTaskDetailPage — markdown", () => {
     // The interior lines must NOT produce orphaned <li> tags — there is no actual
     // list in this input, so no <li> should appear anywhere in the rendered page.
     expect(html).not.toContain("<li>");
+  });
+});
+
+// ─── renderTaskDetailPage — timezone formatting ───────────────────────────────
+
+describe("renderTaskDetailPage — timezone formatting", () => {
+  test("dateField renders timestamp in Pacific time for America/Los_Angeles", () => {
+    // 2025-01-15T20:00:00Z = Jan 15 8pm UTC = Jan 15 12pm Pacific (UTC-8 in January)
+    // So this should show Jan 15 in both UTC and Pacific. Use a time that crosses midnight.
+    // 2025-01-16T05:00:00Z = Jan 16 5am UTC = Jan 15 9pm Pacific (UTC-8)
+    const html = renderTaskDetailPage(
+      {
+        id: "TZ-1",
+        title: "Timezone test",
+        status: "pending",
+        addedAt: "2025-01-16T05:00:00Z", // Jan 16 UTC, Jan 15 Pacific
+      },
+      "user@example.com",
+      {},
+      "America/Los_Angeles",
+    );
+    // In Pacific time (UTC-8), 2025-01-16T05:00:00Z is Jan 15 9pm → displays Jan 15
+    // toLocaleString("en-US", { dateStyle:"medium", timeStyle:"short", timeZone:"America/Los_Angeles" })
+    // produces something like "Jan 15, 2025 at 9:00 PM"
+    expect(html).toContain("Jan 15, 2025");
+  });
+
+  test("dateField renders timestamp in UTC when timezone is UTC", () => {
+    // Same timestamp: 2025-01-16T05:00:00Z = Jan 16 in UTC
+    const html = renderTaskDetailPage(
+      {
+        id: "TZ-2",
+        title: "Timezone test UTC",
+        status: "pending",
+        addedAt: "2025-01-16T05:00:00Z",
+      },
+      "user@example.com",
+      {},
+      "UTC",
+    );
+    // In UTC, 2025-01-16T05:00:00Z displays as Jan 16, 2025
+    expect(html).toContain("Jan 16, 2025");
   });
 });
 
@@ -1951,7 +2048,7 @@ const PR_ITEM: PullRequestItem = {
 
 describe("renderTaskDetailPage — Pull Request Review section", () => {
   function render(pr?: PullRequestItem): string {
-    return renderTaskDetailPage({ ...TASK_DETAIL, id: "TS-PR-1" }, "user@example.com", {}, pr);
+    return renderTaskDetailPage({ ...TASK_DETAIL, id: "TS-PR-1" }, "user@example.com", {}, "America/Los_Angeles", pr);
   }
 
   test("renders PR section heading when pullRequest is present", () => {
