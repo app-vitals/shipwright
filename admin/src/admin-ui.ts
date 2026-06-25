@@ -42,6 +42,7 @@ import type { AgentTokenService } from "./agent-tokens.ts";
 import type { AgentToolService } from "./agent-tools.ts";
 import { ForbiddenError, UnprocessableEntityError } from "./errors.ts";
 import type { GoogleAuthClient } from "./google-auth-client.ts";
+import { isOrgRepo } from "@shipwright/lib/org-repo";
 import type { AppManifest } from "./slack-provisioning-client.ts";
 import {
   AGENT_BOT_SCOPES,
@@ -89,6 +90,7 @@ interface PrismaAgentLike {
       slackId: string | null;
       createdAt: Date;
       updatedAt?: Date;
+      repos?: string[];
     }>
   >;
   findUnique(args: { where: { id: string } }): Promise<{
@@ -97,6 +99,7 @@ interface PrismaAgentLike {
     slackId: string | null;
     createdAt: Date;
     updatedAt: Date;
+    repos: string[];
   } | null>;
   create(args: {
     data: { name: string; slackId?: string | null };
@@ -106,6 +109,18 @@ interface PrismaAgentLike {
     slackId: string | null;
     createdAt: Date;
     updatedAt: Date;
+    repos: string[];
+  }>;
+  update(args: {
+    where: { id: string };
+    data: { repos: string[] };
+  }): Promise<{
+    id: string;
+    name: string;
+    slackId: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+    repos: string[];
   }>;
   delete(args: { where: { id: string } }): Promise<{
     id: string;
@@ -113,6 +128,7 @@ interface PrismaAgentLike {
     slackId: string | null;
     createdAt: Date;
     updatedAt: Date;
+    repos: string[];
   }>;
 }
 
@@ -544,6 +560,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     invalid_schedule: "Invalid cron schedule expression.",
     invalid_target:
       "Invalid delivery target — set channel or user (or enable silent mode).",
+    invalid_repo_format:
+      "Repo must be in org/repo format (e.g. my-org/my-repo).",
   };
 
   app.get("/admin/agents/:id", requireAuth, async (c) => {
@@ -634,6 +652,65 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }
     if (key) {
       await agentEnvService.deleteKey(agentId, key);
+    }
+    return c.redirect(`/admin/agents/${agentId}`, 302);
+  });
+
+  // ─── Repo mutations ───────────────────────────────────────────────────────
+
+  app.post("/admin/agents/:id/repos/add", requireAuth, async (c) => {
+    const agentId = c.req.param("id");
+    if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
+      return new Response("Forbidden", { status: 403 });
+    }
+    let repo: string | undefined;
+    try {
+      const formData = await c.req.formData();
+      repo = formData.get("repo")?.toString()?.trim();
+    } catch {
+      return c.redirect(`/admin/agents/${agentId}`, 302);
+    }
+    if (!repo || !isOrgRepo(repo)) {
+      return c.redirect(
+        `/admin/agents/${agentId}?error=invalid_repo_format`,
+        302,
+      );
+    }
+    const agent = await prisma.agent.findUnique({ where: { id: agentId } });
+    if (!agent) {
+      return new Response("Agent not found", { status: 404 });
+    }
+    const existing = agent.repos ?? [];
+    const deduped = existing.includes(repo) ? existing : [...existing, repo];
+    await prisma.agent.update({
+      where: { id: agentId },
+      data: { repos: deduped },
+    });
+    return c.redirect(`/admin/agents/${agentId}`, 302);
+  });
+
+  app.post("/admin/agents/:id/repos/delete", requireAuth, async (c) => {
+    const agentId = c.req.param("id");
+    if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
+      return new Response("Forbidden", { status: 403 });
+    }
+    let repo: string | undefined;
+    try {
+      const formData = await c.req.formData();
+      repo = formData.get("repo")?.toString()?.trim();
+    } catch {
+      return c.redirect(`/admin/agents/${agentId}`, 302);
+    }
+    if (repo) {
+      const agent = await prisma.agent.findUnique({ where: { id: agentId } });
+      if (!agent) {
+        return new Response("Agent not found", { status: 404 });
+      }
+      const updated = (agent.repos ?? []).filter((r) => r !== repo);
+      await prisma.agent.update({
+        where: { id: agentId },
+        data: { repos: updated },
+      });
     }
     return c.redirect(`/admin/agents/${agentId}`, 302);
   });

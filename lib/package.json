@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     "./admin-types": "./admin-types.ts",
+    "./org-repo": "./org-repo.ts",
     "./web/*": "./web/*"
   }
 }

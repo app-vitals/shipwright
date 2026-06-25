@@ -148,6 +148,7 @@ function makeMockDeps(
           slackId: "U123456",
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
+          repos: [],
         }),
         create: async () => ({
           id: AGENT_ID,
@@ -155,6 +156,15 @@ function makeMockDeps(
           slackId: "U123456",
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
+          repos: [],
+        }),
+        update: async () => ({
+          id: AGENT_ID,
+          name: "Test Agent",
+          slackId: "U123456",
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+          repos: [],
         }),
         delete: async () => ({
           id: AGENT_ID,
@@ -162,6 +172,7 @@ function makeMockDeps(
           slackId: "U123456",
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
+          repos: [],
         }),
       },
       agentPlugin: {
@@ -1320,6 +1331,7 @@ describe("admin UI — member access control", () => {
             slackId: "U123456",
             createdAt: new Date("2024-01-01"),
             updatedAt: new Date("2024-01-01"),
+            repos: [],
           }),
           create: async () => ({
             id: AGENT_ID,
@@ -1327,6 +1339,15 @@ describe("admin UI — member access control", () => {
             slackId: "U123456",
             createdAt: new Date("2024-01-01"),
             updatedAt: new Date("2024-01-01"),
+            repos: [],
+          }),
+          update: async () => ({
+            id: AGENT_ID,
+            name: "Test Agent",
+            slackId: "U123456",
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+            repos: [],
           }),
           delete: async () => ({
             id: AGENT_ID,
@@ -1334,6 +1355,7 @@ describe("admin UI — member access control", () => {
             slackId: "U123456",
             createdAt: new Date("2024-01-01"),
             updatedAt: new Date("2024-01-01"),
+            repos: [],
           }),
         },
         agentPlugin: { findMany: async () => [] },
@@ -1417,6 +1439,15 @@ describe("admin UI — member access control", () => {
             slackId: "U1",
             createdAt: new Date(),
             updatedAt: new Date(),
+            repos: [],
+          }),
+          update: async () => ({
+            id: AGENT_ID,
+            name: "My Agent",
+            slackId: "U1",
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            repos: [],
           }),
           delete: async () => ({
             id: AGENT_ID,
@@ -1424,6 +1455,7 @@ describe("admin UI — member access control", () => {
             slackId: "U1",
             createdAt: new Date(),
             updatedAt: new Date(),
+            repos: [],
           }),
         },
         agentPlugin: { findMany: async () => [] },
@@ -1497,6 +1529,15 @@ describe("admin UI — member access control", () => {
             slackId: "U1",
             createdAt: new Date(),
             updatedAt: new Date(),
+            repos: [],
+          }),
+          update: async () => ({
+            id: AGENT_ID,
+            name: "Test Agent",
+            slackId: "U1",
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            repos: [],
           }),
           delete: async () => ({
             id: AGENT_ID,
@@ -1504,6 +1545,7 @@ describe("admin UI — member access control", () => {
             slackId: "U1",
             createdAt: new Date(),
             updatedAt: new Date(),
+            repos: [],
           }),
         },
         agentPlugin: { findMany: async () => [] },
@@ -1616,6 +1658,7 @@ describe("admin UI — agent delete route", () => {
             slackId: "U123456",
             createdAt: new Date("2024-01-01"),
             updatedAt: new Date("2024-01-01"),
+            repos: [],
           }),
           create: async () => ({
             id: AGENT_ID,
@@ -1623,6 +1666,15 @@ describe("admin UI — agent delete route", () => {
             slackId: "U123456",
             createdAt: new Date("2024-01-01"),
             updatedAt: new Date("2024-01-01"),
+            repos: [],
+          }),
+          update: async () => ({
+            id: AGENT_ID,
+            name: "Test Agent",
+            slackId: "U123456",
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+            repos: [],
           }),
           delete: async ({ where }: { where: { id: string } }) => {
             deleted = where.id;
@@ -1632,6 +1684,7 @@ describe("admin UI — agent delete route", () => {
               slackId: null,
               createdAt: new Date(),
               updatedAt: new Date(),
+              repos: [],
             };
           },
         },
@@ -1692,6 +1745,7 @@ describe("admin UI — member management routes", () => {
             slackId: "U1",
             createdAt: new Date(),
             updatedAt: new Date(),
+            repos: [],
           }),
           create: async () => ({
             id: AGENT_ID,
@@ -1699,6 +1753,15 @@ describe("admin UI — member management routes", () => {
             slackId: "U1",
             createdAt: new Date(),
             updatedAt: new Date(),
+            repos: [],
+          }),
+          update: async () => ({
+            id: AGENT_ID,
+            name: "Test Agent",
+            slackId: "U1",
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            repos: [],
           }),
           delete: async () => ({
             id: AGENT_ID,
@@ -1706,6 +1769,7 @@ describe("admin UI — member management routes", () => {
             slackId: "U1",
             createdAt: new Date(),
             updatedAt: new Date(),
+            repos: [],
           }),
         },
         agentPlugin: { findMany: async () => [] },
@@ -1751,6 +1815,7 @@ describe("admin UI — member management routes", () => {
             slackId: "U1",
             createdAt: new Date(),
             updatedAt: new Date(),
+            repos: [],
           }),
           create: async () => ({
             id: AGENT_ID,
@@ -1758,6 +1823,15 @@ describe("admin UI — member management routes", () => {
             slackId: "U1",
             createdAt: new Date(),
             updatedAt: new Date(),
+            repos: [],
+          }),
+          update: async () => ({
+            id: AGENT_ID,
+            name: "Test Agent",
+            slackId: "U1",
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            repos: [],
           }),
           delete: async () => ({
             id: AGENT_ID,
@@ -1765,6 +1839,7 @@ describe("admin UI — member management routes", () => {
             slackId: "U1",
             createdAt: new Date(),
             updatedAt: new Date(),
+            repos: [],
           }),
         },
         agentPlugin: { findMany: async () => [] },
@@ -2395,5 +2470,148 @@ describe("admin UI — tasks page", () => {
     expect(res.status).toBe(200);
     expect(capturedParams).not.toBeNull();
     expect((capturedParams as unknown as URLSearchParams).get("state")).toBe("blocked");
+  });
+});
+
+describe("admin UI — repos mutation routes", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  it("POST /admin/agents/:id/repos/add returns 403 for non-admin non-member", async () => {
+    const outsiderCookie = await makeSessionCookie(
+      SESSION_SECRET,
+      "google-sub-outsider",
+      "outsider@example.com",
+      false,
+    );
+    const app = createAdminUIApp(makeMockDeps());
+    const body = new URLSearchParams({ repo: "org/repo" });
+    const res = await app.request(`/admin/agents/${AGENT_ID}/repos/add`, {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${outsiderCookie}`,
+      },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("POST /admin/agents/:id/repos/add with invalid repo format redirects with error=invalid_repo_format", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const body = new URLSearchParams({ repo: "not-a-valid-repo" });
+    const res = await app.request(`/admin/agents/${AGENT_ID}/repos/add`, {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(
+      `/admin/agents/${AGENT_ID}?error=invalid_repo_format`,
+    );
+  });
+
+  it("POST /admin/agents/:id/repos/add returns 404 when agent not found", async () => {
+    const deps = makeMockDeps();
+    deps.prisma = {
+      ...deps.prisma,
+      agent: {
+        ...deps.prisma.agent,
+        findUnique: async () => null,
+      },
+    };
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({ repo: "org/repo" });
+    const res = await app.request(`/admin/agents/${AGENT_ID}/repos/add`, {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("POST /admin/agents/:id/repos/add with valid repo redirects to agent detail", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const body = new URLSearchParams({ repo: "my-org/my-repo" });
+    const res = await app.request(`/admin/agents/${AGENT_ID}/repos/add`, {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(`/admin/agents/${AGENT_ID}`);
+  });
+
+  it("POST /admin/agents/:id/repos/add deduplicates — does not add the same repo twice", async () => {
+    let capturedRepos: string[] | undefined;
+    const deps = makeMockDeps();
+    deps.prisma = {
+      ...deps.prisma,
+      agent: {
+        ...deps.prisma.agent,
+        findUnique: async () => ({
+          id: AGENT_ID,
+          name: "Test Agent",
+          slackId: "U123456",
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+          repos: ["my-org/my-repo"],
+        }),
+        update: async (_args: { where: unknown; data: { repos: string[] } }) => {
+          capturedRepos = _args.data.repos;
+          return {
+            id: AGENT_ID,
+            name: "Test Agent",
+            slackId: "U123456",
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+            repos: capturedRepos,
+          };
+        },
+      },
+    };
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({ repo: "my-org/my-repo" });
+    const res = await app.request(`/admin/agents/${AGENT_ID}/repos/add`, {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    // update should not have been called — no-op deduplication returns existing list
+    // If update was called, repos should still be exactly ["my-org/my-repo"]
+    if (capturedRepos !== undefined) {
+      expect(capturedRepos).toEqual(["my-org/my-repo"]);
+    }
+  });
+
+  it("POST /admin/agents/:id/repos/delete with valid repo redirects to agent detail", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const body = new URLSearchParams({ repo: "my-org/my-repo" });
+    const res = await app.request(`/admin/agents/${AGENT_ID}/repos/delete`, {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(`/admin/agents/${AGENT_ID}`);
   });
 });
