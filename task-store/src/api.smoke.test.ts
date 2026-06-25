@@ -16,8 +16,20 @@ import { describe, expect, it } from "bun:test";
 import { createTaskStoreApp } from "./app.ts";
 import { ConflictError, NotFoundError } from "./errors.ts";
 import type { Task } from "./index.ts";
-import type { TaskListFilters, TaskListResult, TaskServiceLike, TaskWithBlockedBy } from "./task-service.ts";
+import type {
+  TaskListFilters,
+  TaskListResult,
+  TaskServiceLike,
+  TaskWithBlockedBy,
+} from "./task-service.ts";
 import type { TokenServiceLike } from "./token-service.ts";
+
+// ─── Distinct result shape ────────────────────────────────────────────────────
+
+interface DistinctResult {
+  sessions: string[];
+  repos: string[];
+}
 
 // ─── Fakes ────────────────────────────────────────────────────────────────────
 
@@ -152,7 +164,8 @@ function fakeTaskService(
       return opts.listReadyResult ?? [];
     },
     async get(id: string) {
-      if ("getResult" in opts) return opts.getResult ? withBlockedBy(opts.getResult) : null;
+      if ("getResult" in opts)
+        return opts.getResult ? withBlockedBy(opts.getResult) : null;
       return withBlockedBy(makeTask({ id }));
     },
     async create(data) {
@@ -182,6 +195,9 @@ function fakeTaskService(
     },
     async bulk(_tasks) {
       return { inserted: 0, updated: 0 };
+    },
+    async distinct(_agentId?) {
+      return { sessions: [], repos: [] };
     },
   };
 }
@@ -491,5 +507,55 @@ describe("task-store API (smoke)", () => {
     expect(res.status).toBe(200);
     // Token's agentId must win; caller-supplied assignee must be ignored.
     expect(capturedAssignees[0]).toBe("agent-1");
+  });
+
+  // ─── GET /tasks/distinct ──────────────────────────────────────────────────
+
+  it("GET /tasks/distinct returns 401 without a token", async () => {
+    const app = makeApp();
+    const res = await app.request("/tasks/distinct");
+    expect(res.status).toBe(401);
+  });
+
+  it("GET /tasks/distinct returns 200 with correct shape", async () => {
+    const app = makeApp();
+    const res = await app.request("/tasks/distinct", { headers: auth() });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as DistinctResult;
+    expect(Array.isArray(body.sessions)).toBe(true);
+    expect(Array.isArray(body.repos)).toBe(true);
+  });
+
+  it("GET /tasks/distinct returns empty arrays when no tasks exist", async () => {
+    const app = makeApp({ taskService: fakeTaskService() });
+    const res = await app.request("/tasks/distinct", { headers: auth() });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as DistinctResult;
+    expect(body.sessions).toEqual([]);
+    expect(body.repos).toEqual([]);
+  });
+
+  it("GET /tasks/distinct with agent token forwards agentId to distinct()", async () => {
+    const capturedAgentIds: Array<string | undefined> = [];
+
+    const spyTaskService: TaskServiceLike = {
+      ...fakeTaskService(),
+      async distinct(agentId?: string) {
+        capturedAgentIds.push(agentId);
+        return { sessions: [], repos: [] };
+      },
+    };
+
+    const app = makeApp({
+      tokenService: fakeAgentTokenService(),
+      taskService: spyTaskService,
+    });
+
+    const res = await app.request("/tasks/distinct", {
+      headers: { Authorization: `Bearer ${AGENT_TOKEN}` },
+    });
+
+    expect(res.status).toBe(200);
+    expect(capturedAgentIds[0]).toBe("agent-1");
   });
 });

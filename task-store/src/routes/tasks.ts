@@ -89,9 +89,14 @@ export function createTasksRoutes(
       claimedBy: c.req.query("claimedBy"),
       pr: prRaw !== undefined ? Number.parseInt(prRaw, 10) : undefined,
       branch: c.req.query("branch"),
-      limit: limitRaw !== undefined ? (Number.parseInt(limitRaw, 10) || undefined) : undefined,
+      limit:
+        limitRaw !== undefined
+          ? Number.parseInt(limitRaw, 10) || undefined
+          : undefined,
       offset:
-        offsetRaw !== undefined ? (Number.parseInt(offsetRaw, 10) || undefined) : undefined,
+        offsetRaw !== undefined
+          ? Number.parseInt(offsetRaw, 10) || undefined
+          : undefined,
     });
     return c.json(result, 200);
   });
@@ -135,6 +140,13 @@ export function createTasksRoutes(
         : body;
     const result = await taskService.bulk(tasks as Prisma.TaskCreateInput[]);
     return c.json(result, 200);
+  });
+
+  // ─── Distinct values ───────────────────────────────────────────────────────
+  // Must be registered before /:id routes to avoid param capture.
+  app.get("/distinct", async (c) => {
+    const agentId = c.get("agentId");
+    return c.json(await taskService.distinct(agentId ?? undefined), 200);
   });
 
   // ─── Get one ───────────────────────────────────────────────────────────────
