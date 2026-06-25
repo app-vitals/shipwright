@@ -305,11 +305,37 @@ INSTRUCTIONS — follow in order:
 
 Parse the subagent's STATUS:
 
-- **DONE**: Record the conflicts resolved. Proceed to Step 4d (cleanup).
+- **DONE**: Record the conflicts resolved. Proceed to Step 4c.5 (upsert PR record).
 - **DONE_WITH_CONCERNS**: Read concerns. If the push already happened, log concerns and
-  continue. If the subagent did not push, note it in the final report.
-- **BLOCKED**: Log the blocker. Skip cleanup. Move to the next PR in List C.
+  proceed to Step 4c.5 (upsert PR record). If the subagent did not push, note it in the
+  final report and skip Step 4c.5.
+- **BLOCKED**: Log the blocker. Skip Steps 4c.5 and 4d. Move to the next PR in List C.
   Include the blocker in the final report.
+
+### Step 4c.5: Upsert PR Record
+
+After a successful push, upsert a PullRequest record in the task store to track that a
+patch cycle has occurred. Warn and continue on any failure — do not stop.
+
+```bash
+HEAD_SHA=$(git -C ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} rev-parse HEAD)
+CLAIM_RESULT=$(curl -sf -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs/claim" \
+  -d "{\"repo\":\"{org}/{repo}\",\"prNumber\":{pr},\"commitSha\":\"$HEAD_SHA\"}" 2>/dev/null)
+PR_ID=$(echo "$CLAIM_RESULT" | jq -r '.id // empty' 2>/dev/null)
+if [ -n "$PR_ID" ]; then
+  curl -sf -X POST \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_ID/patch" > /dev/null 2>&1 || \
+    echo "⚠ POST /prs/$PR_ID/patch failed — continuing"
+else
+  echo "⚠ POST /prs/claim failed — continuing"
+fi
+```
+
+Proceed to Step 4d (cleanup).
 
 ### Step 4d: Cleanup Worktree
 
@@ -498,12 +524,37 @@ INSTRUCTIONS — follow in order:
 
 Parse the subagent's STATUS:
 
-- **DONE**: Record the findings addressed. Proceed to Step 5d (cleanup).
+- **DONE**: Record the findings addressed. Proceed to Step 5c.5 (upsert PR record).
 - **DONE_WITH_CONCERNS**: Read concerns. If they are correctness gaps, log them in the
-  report but proceed (the push already happened). If the subagent did not push due to
-  a concern, note it and include it in the final report.
-- **BLOCKED**: Log the blocker. Skip cleanup. Move to the next qualifying PR.
+  report but proceed (the push already happened) to Step 5c.5 (upsert PR record). If the
+  subagent did not push due to a concern, note it and skip Step 5c.5.
+- **BLOCKED**: Log the blocker. Skip Steps 5c.5 and 5d. Move to the next qualifying PR.
   Include the blocker in the final report.
+
+### Step 5c.5: Upsert PR Record
+
+After a successful push, upsert a PullRequest record in the task store to track that a
+patch cycle has occurred. Warn and continue on any failure — do not stop.
+
+```bash
+HEAD_SHA=$(git -C ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} rev-parse HEAD)
+CLAIM_RESULT=$(curl -sf -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs/claim" \
+  -d "{\"repo\":\"{org}/{repo}\",\"prNumber\":{pr},\"commitSha\":\"$HEAD_SHA\"}" 2>/dev/null)
+PR_ID=$(echo "$CLAIM_RESULT" | jq -r '.id // empty' 2>/dev/null)
+if [ -n "$PR_ID" ]; then
+  curl -sf -X POST \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_ID/patch" > /dev/null 2>&1 || \
+    echo "⚠ POST /prs/$PR_ID/patch failed — continuing"
+else
+  echo "⚠ POST /prs/claim failed — continuing"
+fi
+```
+
+Proceed to Step 5d (cleanup).
 
 ### Step 5d: Cleanup Worktree
 
@@ -633,11 +684,37 @@ INSTRUCTIONS — follow in order:
 
 Parse the subagent's STATUS:
 
-- **DONE**: Record the failures fixed. Proceed to Step 6e (cleanup).
+- **DONE**: Record the failures fixed. Proceed to Step 6d.5 (upsert PR record).
 - **DONE_WITH_CONCERNS**: Read concerns. If the push already happened, log concerns and
-  continue. If the subagent did not push, note it in the final report.
-- **BLOCKED**: Log the blocker. Skip cleanup. Move to the next PR in List D.
+  proceed to Step 6d.5 (upsert PR record). If the subagent did not push, note it in the
+  final report and skip Step 6d.5.
+- **BLOCKED**: Log the blocker. Skip Steps 6d.5 and 6e. Move to the next PR in List D.
   Include the blocker in the final report.
+
+### Step 6d.5: Upsert PR Record
+
+After a successful push, upsert a PullRequest record in the task store to track that a
+patch cycle has occurred. Warn and continue on any failure — do not stop.
+
+```bash
+HEAD_SHA=$(git -C ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} rev-parse HEAD)
+CLAIM_RESULT=$(curl -sf -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs/claim" \
+  -d "{\"repo\":\"{org}/{repo}\",\"prNumber\":{pr},\"commitSha\":\"$HEAD_SHA\"}" 2>/dev/null)
+PR_ID=$(echo "$CLAIM_RESULT" | jq -r '.id // empty' 2>/dev/null)
+if [ -n "$PR_ID" ]; then
+  curl -sf -X POST \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_ID/patch" > /dev/null 2>&1 || \
+    echo "⚠ POST /prs/$PR_ID/patch failed — continuing"
+else
+  echo "⚠ POST /prs/claim failed — continuing"
+fi
+```
+
+Proceed to Step 6e (cleanup).
 
 ### Step 6e: Cleanup Worktree
 
