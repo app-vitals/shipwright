@@ -143,6 +143,12 @@ function fakeTaskService(): TaskServiceLike {
     async listReady() {
       return [];
     },
+    async listBlocked() {
+      return [];
+    },
+    async distinct() {
+      return { sessions: [], repos: [] };
+    },
     async get() {
       return null;
     },

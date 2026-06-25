@@ -37,7 +37,9 @@ export class StaleClaimReaper {
    * Returns the number of tasks that were reaped.
    */
   async reap(): Promise<number> {
-    const cutoff = new Date(this.clock.now().getTime() - this.ttlMs).toISOString();
+    const cutoff = new Date(
+      this.clock.now().getTime() - this.ttlMs,
+    ).toISOString();
 
     const affected = await this.prisma.$executeRaw`
       UPDATE "Task"

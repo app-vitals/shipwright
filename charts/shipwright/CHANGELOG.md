@@ -10,6 +10,36 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.6.45] - 2026-06-25
+
+### Changed
+
+- auto-bump to chart v1.6.45 triggered by release tag `task-store-v0.15.0`
+
+## [1.6.44] - 2026-06-25
+
+### Changed
+
+- auto-bump to chart v1.6.44 triggered by release tag `admin-v0.91.0`
+
+## [1.6.43] - 2026-06-25
+
+### Changed
+
+- auto-bump to chart v1.6.43 triggered by release tag `admin-v0.90.0`
+
+## [1.6.42] - 2026-06-25
+
+### Changed
+
+- auto-bump to chart v1.6.42 triggered by release tag `task-store-v0.14.0`
+
+## [1.6.41] - 2026-06-24
+
+### Added
+
+- task-store `distinct` endpoint for filter autocomplete (sessions and repos)
+
 ## [1.6.40] - 2026-06-25
 
 ### Changed
@@ -36,15 +66,13 @@ independent of `appVersion`. CI enforces this with
 
 ## [1.6.36] - 2026-06-25
 
-### Changed
-
-- auto-bump to chart v1.6.36 triggered by release tag `agent-v0.70.0`
-
-## [1.6.35] - 2026-06-24
-
 ### Added
 
 - `taskStore.extraEnv` passthrough for additional env vars on the task-store pod (enables scope resolver wiring via `SHIPWRIGHT_TASK_STORE_AGENTS_URL` + `SHIPWRIGHT_TASK_STORE_AGENTS_API_KEY`)
+
+### Changed
+
+- auto-bump to chart v1.6.36 triggered by release tag `agent-v0.70.0`
 
 ## [1.6.34] - 2026-06-25
 
