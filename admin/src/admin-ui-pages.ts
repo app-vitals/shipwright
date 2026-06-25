@@ -1357,22 +1357,24 @@ export function renderTasksPage(
       </form>
     </div>
     <div class="card">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Title</th>
-            <th>Status</th>
-            <th>Assignee</th>
-            <th>Session</th>
-            <th>Repo</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rows}
-        </tbody>
-      </table>
+      <div class="data-table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Title</th>
+              <th>Status</th>
+              <th>Assignee</th>
+              <th>Session</th>
+              <th>Repo</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows}
+          </tbody>
+        </table>
+      </div>
       ${paginationHtml}
     </div>
   </div>
