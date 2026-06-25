@@ -13,6 +13,7 @@
 
 import { join } from "node:path";
 import { createTaskStoreApp } from "./app.ts";
+import { createScopeResolver } from "./auth.ts";
 import { PrismaClient } from "./index.ts";
 import { StaleClaimReaper } from "./stale-claim-reaper.ts";
 import { TaskService } from "./task-service.ts";
@@ -77,7 +78,24 @@ async function startServer(): Promise<void> {
   const prisma = new PrismaClient();
   const taskService = new TaskService(prisma);
   const tokenService = new TaskTokenService(prisma);
-  const app = createTaskStoreApp({ taskService, tokenService });
+
+  // Build scope resolver when agents service URL is configured.
+  const agentsServiceUrl = process.env.SHIPWRIGHT_TASK_STORE_AGENTS_URL;
+  const agentsServiceApiKey = process.env.SHIPWRIGHT_TASK_STORE_AGENTS_API_KEY;
+  const scopeResolver =
+    agentsServiceUrl && agentsServiceApiKey
+      ? createScopeResolver(agentsServiceUrl, agentsServiceApiKey)
+      : undefined;
+
+  if (scopeResolver) {
+    console.log(`[task-store] scope resolver configured (${agentsServiceUrl})`);
+  } else {
+    console.log(
+      "[task-store] scope resolver disabled (SHIPWRIGHT_TASK_STORE_AGENTS_URL not set)",
+    );
+  }
+
+  const app = createTaskStoreApp({ taskService, tokenService, scopeResolver });
 
   const reaper = new StaleClaimReaper(prisma);
   setInterval(() => {

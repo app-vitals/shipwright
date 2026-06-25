@@ -40,10 +40,24 @@ This is the engineering planning pass. The product spec (what and why) is alread
 2. Glob the repo structure to understand the codebase layout
 3. Check for any existing tasks in this session to avoid duplicates:
    ```bash
-   curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" "$SHIPWRIGHT_TASK_STORE_URL/tasks?session=$SESSION" | jq .
+   curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" "$SHIPWRIGHT_TASK_STORE_URL/tasks?session=$SESSION" | jq '.tasks'
    ```
-   The output is a JSON array. If non-empty, print the existing task IDs and skip re-adding them.
-4. Read `planning/{session}/PRODUCT-SPEC.md` if it exists — this is the primary input
+   The response is a paginated envelope — unwrap `.tasks` to get the array. If non-empty, print the existing task IDs and skip re-adding them.
+4. Scan for open tasks from prior sessions that may be prerequisites for this work:
+   ```bash
+   curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+     "$SHIPWRIGHT_TASK_STORE_URL/tasks?state=open" | jq --arg s "$SESSION" \
+     '.tasks // [] | map(select(.session != $s)) | unique_by(.id)'
+   ```
+   If the result is non-empty, print a brief summary before the orientation header:
+   ```
+   ⚠ Open cross-session tasks ({count}):
+   {ID} [{status}] — {title}  (session: {session_slug})
+   ...
+   Keep these in mind when designing the dependency map in Step 5 — new tasks may depend on them.
+   ```
+   If empty, continue silently. These IDs are valid `dependencies` values in Step 5.
+5. Read `planning/{session}/PRODUCT-SPEC.md` if it exists — this is the primary input
 
 Present a brief orientation:
 
@@ -102,10 +116,11 @@ Example flags:
 - **DB**: dropping or renaming a table or column — who reads or writes it?
 - **API**: removing or renaming an endpoint or response field — who calls it?
 - **Client/types**: removing or renaming a method or interface — who imports it?
+- **Release/deployment pipeline**: the pipeline itself is an interface with external consumers. Changes to how artifacts are built, packaged, or published; where they land; what events or signals are emitted during the process; or what triggers downstream workflows — any of these can silently break systems in other repos that depend on the current behavior. Those consumers won't appear in a local grep and won't error loudly; they'll just stop running. Before designing any task that modifies the build, release, or deploy pipeline, identify what depends on its current behavior and how the change affects each dependency.
 
 List every consumer found. A task that drops the old interface while leaving consumers on the old code creates a broken intermediate state that cannot be deployed safely.
 
-Additions (new tables, nullable columns, new endpoints, new optional fields, new methods) are safe. Flag only renames and removals.
+Additions (new tables, nullable columns, new endpoints, new optional fields, new methods) are safe. Flag only renames, removals, and substitutions that change behavior.
 
 ---
 
@@ -149,7 +164,7 @@ For each task:
 - **Title**: short, verb-first (e.g., "Add billing schema migration")
 - **Description**: what to build, not how
 - **Acceptance Criteria**: 2-5 bullet points — specific, testable. Every task **must** include at least one test decision bullet that names: (a) which test layers are affected, (b) what tests are added (layer + scenario, e.g., "add integration test for X"), and (c) what existing tests are retired and why (be specific — "remove mocked unit test Y because real integration test now covers this path", not just "update tests"). If no test change is needed, state that explicitly and justify it.
-- **Dependencies**: which tasks must complete before this task is ready (task IDs or empty)
+- **Dependencies**: which tasks must complete before this task is ready — task IDs from this session or from prior open sessions (listed in Step 1.4); empty if none
 - **Branch**: `feat/{id-lowered-dashes}-{first-3-words-kebab}` — or a shared branch name for bundled tasks (see below)
 - **Layer**: API | Frontend | Database | Shared | Background | CLI
 - **Hours**: rough estimate (1-8h; break tasks larger than 8h)
@@ -196,9 +211,12 @@ Present the map in two forms:
 
 **1. Visual graph:**
 ```
+[PRIOR SESSIONS]  ← include only if open cross-session tasks exist (Step 1.4)
+  └─ {PRIOR-ID}: {title} [{status}]  (session: {prior_session})
+
 [START]
   ├─ {PREFIX}-1.1: {title} (no deps)
-  └─ {PREFIX}-1.2: {title} (no deps)
+  └─ {PREFIX}-1.2: {title} (no deps, depends on {PRIOR-ID} from prior session)
         └─ {PREFIX}-2.1: {title} (needs 1.1, 1.2)
               └─ {PREFIX}-2.2: {title} (needs 2.1)
 ```
@@ -249,6 +267,8 @@ Even without a keyword match, flag the task HITL if it fundamentally requires:
 - Provisioning or rotating a credential, secret, or API key
 - Approving a privileged workflow that requires human authorization
 - Any action that cannot be expressed as a CLI command the agent can run
+
+**CI workflow secret scan**: if a task adds or modifies a CI workflow file, extract every `${{ secrets.* }}` reference in the changed file and check whether each secret name already appears in other workflow files in the repo. Any secret that is net-new — not referenced anywhere else — requires a human to provision it. Flag the task HITL and list the new secret names in the `## Human steps` section.
 
 Apply judgment: if the task description implies "someone must click approve in the console" or "create a secret in 1Password," it's HITL regardless of the keywords present.
 

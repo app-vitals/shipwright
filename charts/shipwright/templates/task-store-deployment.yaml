@@ -55,6 +55,11 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.taskStore.database.existingSecret | default "shipwright-secrets" }}
                   key: DATABASE_URL_SHIPWRIGHT_TASK_STORE
+            {{- with .Values.taskStore.extraEnv }}
+            # taskStore.extraEnv: caller-supplied env vars appended last so they can
+            # override anything above if needed.
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           {{- with .Values.taskStore.resources }}
           resources:
             {{- toYaml . | nindent 12 }}

@@ -20,10 +20,10 @@ Auto-detect the project toolchain (run once, reuse throughout). Skip this step u
 
 ```bash
 curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=in_progress" | jq .
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=in_progress" | jq '.tasks'
 ```
 
-If the result is a non-empty array, use the first task returned. The Step 2 orphan check will clean up any stale branch/PR from the prior session before restarting. Print:
+If `result.tasks` is non-empty, use the first task (`result.tasks[0]`). The Step 2 orphan check will clean up any stale branch/PR from the prior session before restarting. Print:
 
 ```
 ↩ Resuming interrupted task: {id} — {title}

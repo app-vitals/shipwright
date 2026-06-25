@@ -15,6 +15,11 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+// Inline type — mirrors task-store/src/blocked-by.ts without cross-package coupling.
+export type BlockedByEntry =
+  | { type: "hitl"; notified?: true }
+  | { type: "dependency"; id: string; status: string };
+
 export interface AgentListItem {
   id: string;
   name: string;
@@ -104,12 +109,7 @@ export interface TaskItem {
   mergeCommit?: string | null;
   createdAt?: string | null;
   updatedAt?: string | null;
-  blockedBy?:
-    | Array<
-        | { type: "hitl"; notified?: boolean }
-        | { type: "dependency"; id: string; status: string }
-      >
-    | null;
+  blockedBy?: BlockedByEntry[];
 }
 
 // ─── Inline markdown renderer ─────────────────────────────────────────────────
@@ -1017,6 +1017,18 @@ export function renderTasksPage(
     return "badge-gray";
   };
 
+  const renderBlockerBadges = (blockedBy: BlockedByEntry[] | undefined): string => {
+    if (!blockedBy || blockedBy.length === 0) return "";
+    return blockedBy
+      .map((b) => {
+        if (b.type === "hitl") {
+          return `<span class="badge badge-hitl" style="font-size:10px;margin-left:6px">Waiting: HITL</span>`;
+        }
+        return `<span class="badge badge-dep" style="font-size:10px;margin-left:6px">Blocked: ${escapeHtml(b.id)}</span>`;
+      })
+      .join("");
+  };
+
   const rows =
     tasks.length === 0
       ? `<tr><td colspan="7" class="empty-state">No tasks found.</td></tr>`
@@ -1026,9 +1038,10 @@ export function renderTasksPage(
             const agentCell = agentId
               ? escapeHtml(agentNames[agentId] ?? agentId)
               : '<span style="color:#9ca3af">—</span>';
-            return `<tr>
+            const blockerBadges = renderBlockerBadges(t.blockedBy);
+            return `<tr data-href="/admin/tasks/${escapeHtml(t.id)}" style="cursor:pointer">
     <td class="mono" style="font-size:11px"><a href="/admin/tasks/${escapeHtml(t.id)}" style="color:#6366f1;text-decoration:none" title="View details">${escapeHtml(t.id)}</a></td>
-    <td><a href="/admin/tasks/${escapeHtml(t.id)}" style="color:inherit;text-decoration:none">${escapeHtml(t.title)}</a></td>
+    <td><a href="/admin/tasks/${escapeHtml(t.id)}" style="color:inherit;text-decoration:none">${escapeHtml(t.title)}</a>${blockerBadges}</td>
     <td><span class="badge ${statusBadgeClass(t.status)}">${escapeHtml(t.status)}</span></td>
     <td style="font-size:12px">${agentCell}</td>
     <td class="mono" style="font-size:11px">${t.session ? escapeHtml(t.session) : '<span style="color:#9ca3af">—</span>'}</td>
@@ -1125,6 +1138,8 @@ export function renderTasksPage(
     .badge-blue { background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe; }
     .badge-green { background:#dcfce7;color:#166534;border:1px solid #bbf7d0; }
     .badge-red { background:#fee2e2;color:#991b1b;border:1px solid #fecaca; }
+    .badge-hitl { background:#fff7ed;color:#c2410c;border:1px solid #fed7aa; }
+    .badge-dep { background:#fefce8;color:#a16207;border:1px solid #fde047; }
     .alert-warning { background:#fefce8;color:#854d0e;border:1px solid #fde047;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:13px; }
   </style>
 </head>
@@ -1180,6 +1195,18 @@ export function renderTasksPage(
       ${paginationHtml}
     </div>
   </div>
+  <script>
+    document.querySelectorAll("tr[data-href]").forEach(function(row) {
+      row.addEventListener("click", function(e) {
+        var target = e.target;
+        while (target && target !== row) {
+          if (target.tagName === "A" || target.tagName === "BUTTON" || target.tagName === "FORM" || target.tagName === "INPUT") return;
+          target = target.parentElement;
+        }
+        window.location.href = row.getAttribute("data-href");
+      });
+    });
+  </script>
 </body>
 </html>`;
 }

@@ -133,7 +133,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/agents/{id}": {
+    "/agents/{id}/provision": {
         parameters: {
             query?: never;
             header?: never;
@@ -141,6 +141,100 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Agent provisioned (or already-provisioned — idempotent), or skipped for self-hosted agents */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProvisionAgentResult"] | components["schemas"]["ProvisionSkippedResult"];
+                    };
+                };
+                /** @description Forbidden */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Agent not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agents/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Full agent record */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["GetAgentResult"];
+                    };
+                };
+                /** @description Forbidden */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Agent not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
         put?: never;
         post?: never;
         delete: {
@@ -183,7 +277,59 @@ export interface paths {
         };
         options?: never;
         head?: never;
-        patch?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["PatchAgentBody"];
+                };
+            };
+            responses: {
+                /** @description Agent updated */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["GetAgentResult"];
+                    };
+                };
+                /** @description Bad request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Forbidden */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Agent not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
         trace?: never;
     };
     "/agents/{id}/envs": {
@@ -978,6 +1124,8 @@ export interface components {
             name: string;
             /** @example U0AALR8M69X */
             slackId?: string | null;
+            /** @example false */
+            selfHosted: boolean;
             /**
              * Format: date-time
              * @example 2026-01-01T00:00:00.000Z
@@ -998,20 +1146,56 @@ export interface components {
             name: string;
             /** @example U0AALR8M69X */
             slackId?: string;
+            /** @example false */
+            selfHosted?: boolean;
         };
         ReconcileAgentsResult: {
             recreated: string[];
+            updated: string[];
             orphans: string[];
             failed: {
                 agentId: string;
                 error: string;
             }[];
         };
+        ProvisionAgentResult: {
+            resourceName: string;
+            secretName: string;
+            deploymentName: string;
+        };
+        ProvisionSkippedResult: {
+            /** @enum {boolean} */
+            skipped: true;
+            reason: string;
+        };
+        GetAgentResult: {
+            id: string;
+            name: string;
+            slackId?: string | null;
+            selfHosted: boolean;
+            repos: string[];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        PatchAgentBody: {
+            /** @example false */
+            selfHosted?: boolean;
+            /**
+             * @example [
+             *       "my-org/my-repo"
+             *     ]
+             */
+            repos?: string[];
+        };
         AgentSummary: {
             /** @example clx1234567890 */
             id: string;
             /** @example Bodhi */
             name: string;
+            /** @example false */
+            selfHosted: boolean;
         };
         Ok: {
             /** @enum {boolean} */

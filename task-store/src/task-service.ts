@@ -12,28 +12,19 @@
  * application contract; only createdAt/updatedAt are DateTime columns.
  */
 
+import { type BlockedByEntry, computeBlockedBy } from "./blocked-by.ts";
 import { type Clock, SystemClock } from "./clock.ts";
 import { ConflictError, NotFoundError } from "./errors.ts";
 import type { Prisma, PrismaClient, Task } from "./index.ts";
 import { resolveReadyTasks } from "./ready.ts";
+import { CLOSED_STATUSES, OPEN_STATUSES } from "./statuses.ts";
 
-/** Terminal statuses — a task in one of these is considered "closed". */
-export const CLOSED_STATUSES = [
-  "merged",
-  "done",
-  "deploying",
-  "deployed",
-  "cancelled",
-] as const;
+// Re-export so callers can import from task-service without reaching into blocked-by.
+export type { BlockedByEntry };
+export { CLOSED_STATUSES, OPEN_STATUSES };
 
-/** Open statuses — everything not closed. */
-export const OPEN_STATUSES = [
-  "pending",
-  "in_progress",
-  "pr_open",
-  "approved",
-  "blocked",
-] as const;
+/** A Task augmented with a computed blockedBy array. */
+export type TaskWithBlockedBy = Task & { blockedBy: BlockedByEntry[] };
 
 /** Filters accepted by TaskService.list. */
 export interface TaskListFilters {
@@ -48,11 +39,19 @@ export interface TaskListFilters {
   branch?: string;
   limit?: number;
   offset?: number;
+  /**
+   * Repo-scoped visibility for agent tokens.
+   * When set, replaces the simple `assignee` filter with an OR clause:
+   *   - tasks explicitly assigned to this agent, OR
+   *   - unassigned pool tasks whose repo is in the agent's scope
+   * A separate `?repo=X` filter still applies as an additional AND condition.
+   */
+  agentScope?: { agentId: string; repos: string[] };
 }
 
 /** Paginated list result from TaskService.list. */
 export interface TaskListResult {
-  tasks: Task[];
+  tasks: TaskWithBlockedBy[];
   total: number;
   limit: number;
   offset: number;
@@ -61,8 +60,8 @@ export interface TaskListResult {
 /** The subset of TaskService the routes depend on. */
 export interface TaskServiceLike {
   list(filters?: TaskListFilters): Promise<TaskListResult>;
-  listReady(agentId?: string): Promise<Task[]>;
-  get(id: string): Promise<Task | null>;
+  listReady(agentId?: string, repos?: string[]): Promise<Task[]>;
+  get(id: string): Promise<TaskWithBlockedBy | null>;
   create(data: Prisma.TaskCreateInput): Promise<Task>;
   bulk(
     tasks: Prisma.TaskCreateInput[],
@@ -95,16 +94,29 @@ export class TaskService implements TaskServiceLike {
       where.status = { in: [...CLOSED_STATUSES] };
     }
     if (filters.session) where.session = filters.session;
-    if (filters.repo) where.repo = filters.repo;
-    if (filters.assignee) where.assignee = filters.assignee;
     if (filters.claimedBy) where.claimedBy = filters.claimedBy;
     if (filters.pr !== undefined) where.pr = filters.pr;
     if (filters.branch !== undefined) where.branch = filters.branch;
 
+    if (filters.agentScope) {
+      // Repo-scoped visibility: include tasks explicitly assigned to the agent,
+      // OR unassigned pool tasks whose repo is in the agent's scope.
+      where.OR = [
+        { assignee: filters.agentScope.agentId },
+        { assignee: null, repo: { in: filters.agentScope.repos } },
+      ];
+      // A ?repo=X filter still applies as an additional AND condition.
+      if (filters.repo) where.repo = filters.repo;
+    } else {
+      if (filters.repo) where.repo = filters.repo;
+      if (filters.assignee) where.assignee = filters.assignee;
+    }
+
     const limit = filters.limit ?? 50;
     const offset = filters.offset ?? 0;
 
-    const [tasks, total] = await this.prisma.$transaction([
+    // Load all tasks for dependency resolution (computeBlockedBy needs the full graph).
+    const [pageTasks, total, allTasks] = await this.prisma.$transaction([
       this.prisma.task.findMany({
         where,
         orderBy: { createdAt: "asc" },
@@ -112,7 +124,13 @@ export class TaskService implements TaskServiceLike {
         skip: offset,
       }),
       this.prisma.task.count({ where }),
+      this.prisma.task.findMany(),
     ]);
+
+    const tasks: TaskWithBlockedBy[] = pageTasks.map((t: Task) => ({
+      ...t,
+      blockedBy: computeBlockedBy(t, allTasks),
+    }));
 
     return { tasks, total, limit, offset };
   }
@@ -123,18 +141,39 @@ export class TaskService implements TaskServiceLike {
    *
    * The task-store has no GitHub access, so cross-branch pr_open deps are never
    * treated as merged (isPrMerged resolves to false).
+   *
+   * When `repos` is provided (repo-scoped agent token), unassigned pool tasks
+   * whose repo is in the repos list are also included.
    */
-  async listReady(agentId?: string): Promise<Task[]> {
+  async listReady(agentId?: string, repos?: string[]): Promise<Task[]> {
     // Load all tasks so dependency resolution sees the full graph, then filter
     // the result set to the caller's agent if one is specified.
     const tasks = await this.prisma.task.findMany();
     const ready = await resolveReadyTasks(tasks, async () => false);
-    if (agentId) return ready.filter((t) => t.assignee === agentId);
+    if (agentId) {
+      return ready.filter(
+        (t) =>
+          t.assignee === agentId ||
+          (repos !== undefined &&
+            t.assignee === null &&
+            t.repo !== null &&
+            repos.includes(t.repo)),
+      );
+    }
     return ready;
   }
 
-  async get(id: string): Promise<Task | null> {
-    return this.prisma.task.findUnique({ where: { id } });
+  async get(id: string): Promise<TaskWithBlockedBy | null> {
+    const task = await this.prisma.task.findUnique({ where: { id } });
+    if (!task) return null;
+    // Scope the dependency lookup to only the IDs this task depends on —
+    // avoids a full-table scan when GET /tasks/:id is called frequently.
+    const allTasks = task.dependencies?.length
+      ? await this.prisma.task.findMany({
+          where: { id: { in: task.dependencies } },
+        })
+      : [];
+    return { ...task, blockedBy: computeBlockedBy(task, allTasks) };
   }
 
   // ─── Writes ────────────────────────────────────────────────────────────────

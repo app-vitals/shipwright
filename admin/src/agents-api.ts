@@ -150,6 +150,7 @@ const GetAgentResultSchema = z
     name: z.string(),
     slackId: z.string().nullable().optional(),
     selfHosted: z.boolean(),
+    repos: z.array(z.string()),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
   })
@@ -705,7 +706,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     return c.json({ resourceName, secretName, deploymentName }, 200);
   });
 
-  // GET /agents/:id — get full agent record including selfHosted
+  // GET /agents/:id — get full agent record including selfHosted and repos
   app.openapi(getAgentRoute, async (c) => {
     if (c.get("isAdmin") !== true) {
       throw new ForbiddenError("Admin access required to get agent");
@@ -713,7 +714,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     const { id: agentId } = c.req.valid("param");
     const agent = await prisma.agent.findUnique({
       where: { id: agentId },
-      select: { id: true, name: true, slackId: true, selfHosted: true, createdAt: true, updatedAt: true },
+      select: { id: true, name: true, slackId: true, selfHosted: true, repos: true, createdAt: true, updatedAt: true },
     });
     if (!agent) {
       throw new NotFoundError(`agent ${agentId} not found`);
@@ -721,13 +722,14 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     return c.json(serializeAgent(agent), 200);
   });
 
-  // PATCH /agents/:id — update agent fields (currently: selfHosted)
+  // PATCH /agents/:id — update agent fields (selfHosted, repos)
   app.openapi(patchAgentRoute, async (c) => {
     if (c.get("isAdmin") !== true) {
       throw new ForbiddenError("Admin access required to update agent");
     }
     const { id: agentId } = c.req.valid("param");
     const body = c.req.valid("json");
+
     const existing = await prisma.agent.findUnique({
       where: { id: agentId },
       select: { id: true },
@@ -737,8 +739,11 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     }
     const agent = await prisma.agent.update({
       where: { id: agentId },
-      data: { selfHosted: body.selfHosted },
-      select: { id: true, name: true, slackId: true, selfHosted: true, createdAt: true, updatedAt: true },
+      data: {
+        selfHosted: body.selfHosted,
+        ...(body.repos !== undefined ? { repos: body.repos } : {}),
+      },
+      select: { id: true, name: true, slackId: true, selfHosted: true, repos: true, createdAt: true, updatedAt: true },
     });
     return c.json(serializeAgent(agent), 200);
   });
@@ -1081,6 +1086,7 @@ function serializeAgent(agent: {
   name: string;
   slackId: string | null | undefined;
   selfHosted: boolean;
+  repos?: string[];
   createdAt: Date;
   updatedAt: Date;
 }): z.infer<typeof GetAgentResultSchema> {
@@ -1089,6 +1095,7 @@ function serializeAgent(agent: {
     name: agent.name,
     slackId: agent.slackId,
     selfHosted: agent.selfHosted,
+    repos: agent.repos ?? [],
     createdAt: agent.createdAt.toISOString(),
     updatedAt: agent.updatedAt.toISOString(),
   };
