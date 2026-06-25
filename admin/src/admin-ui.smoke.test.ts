@@ -2376,7 +2376,7 @@ describe("admin UI — tasks page", () => {
     });
     expect(res.status).toBe(200);
     expect(capturedParams).not.toBeNull();
-    expect((capturedParams as URLSearchParams).get("state")).toBe("ready");
+    expect((capturedParams as unknown as URLSearchParams).get("state")).toBe("ready");
   });
 
   it("GET /admin/tasks?state=blocked returns 200 and forwards state=blocked to task-store", async () => {
@@ -2394,6 +2394,6 @@ describe("admin UI — tasks page", () => {
     });
     expect(res.status).toBe(200);
     expect(capturedParams).not.toBeNull();
-    expect((capturedParams as URLSearchParams).get("state")).toBe("blocked");
+    expect((capturedParams as unknown as URLSearchParams).get("state")).toBe("blocked");
   });
 });
