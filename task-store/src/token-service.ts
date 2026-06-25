@@ -28,6 +28,10 @@ export interface TokenServiceLike {
   validate(raw: string): Promise<TaskTokenValidated | null>;
   revoke(tokenId: string): Promise<TaskToken | null>;
   list(): Promise<TaskToken[]>;
+  update(
+    tokenId: string,
+    data: { label?: string; agentId?: string },
+  ): Promise<TaskToken | null>;
 }
 
 function hashToken(raw: string): string {
@@ -83,6 +87,57 @@ export class TaskTokenService implements TokenServiceLike {
       return await this.prisma.taskToken.update({
         where: { id: tokenId },
         data: { revokedAt: this.clock.now() },
+      });
+    } catch (err: unknown) {
+      if (
+        typeof err === "object" &&
+        err !== null &&
+        "code" in err &&
+        (err as { code: string }).code === "P2025"
+      ) {
+        return null;
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Update a token's label and/or agentId. Returns the updated record, or null if not found.
+   * Throws an error if the token is already revoked.
+   * Re-throws all errors other than Prisma's "record not found" (P2025).
+   */
+  async update(
+    tokenId: string,
+    data: { label?: string; agentId?: string },
+  ): Promise<TaskToken | null> {
+    try {
+      // Fetch the token first to check if it's revoked.
+      const existing = await this.prisma.taskToken.findUnique({
+        where: { id: tokenId },
+      });
+
+      if (!existing) return null;
+
+      // Check if the token is revoked
+      if (existing.revokedAt !== null) {
+        const err = new Error("token is revoked");
+        (err as { code?: string }).code = "REVOKED";
+        throw err;
+      }
+
+      // Build the update data from provided fields only
+      const updateData: { label?: string | null; agentId?: string | null } = {};
+      if ("label" in data) {
+        updateData.label = data.label ?? null;
+      }
+      if ("agentId" in data) {
+        updateData.agentId = data.agentId ?? null;
+      }
+
+      // Update only the provided fields
+      return await this.prisma.taskToken.update({
+        where: { id: tokenId },
+        data: updateData,
       });
     } catch (err: unknown) {
       if (
