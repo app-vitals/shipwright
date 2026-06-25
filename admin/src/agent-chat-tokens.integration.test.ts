@@ -133,19 +133,19 @@ describeOrSkip("AgentChatTokenService (integration)", () => {
     });
 
     expect(final).not.toBeNull();
-    expect(final!.inputTokens).toBe(
+    expect(final?.inputTokens).toBe(
       tokens1.inputTokens + tokens2.inputTokens,
     );
-    expect(final!.outputTokens).toBe(
+    expect(final?.outputTokens).toBe(
       tokens1.outputTokens + tokens2.outputTokens,
     );
-    expect(final!.cacheReadTokens).toBe(
+    expect(final?.cacheReadTokens).toBe(
       tokens1.cacheReadTokens + tokens2.cacheReadTokens,
     );
-    expect(final!.cacheCreationTokens).toBe(
+    expect(final?.cacheCreationTokens).toBe(
       tokens1.cacheCreationTokens + tokens2.cacheCreationTokens,
     );
-    expect(final!.costUsd).toBeCloseTo(tokens1.costUsd + tokens2.costUsd);
+    expect(final?.costUsd).toBeCloseTo(tokens1.costUsd + tokens2.costUsd);
   });
 
   // ─── upsertDaily: 404 when agentId doesn't exist ─────────────────────────────
