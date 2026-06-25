@@ -51,7 +51,12 @@ export interface EntrypointDeps {
 
 // ─── Main entrypoint ──────────────────────────────────────────────────────────
 
-const DEFAULT_STARTUP_TIMEOUT_MS = 60_000;
+// 180s, not 60s: `mise install` during startup can take well over a minute on a
+// cold or contended node (e.g. during a GKE node rotation), and the original 60s
+// budget crash-looped agents that were otherwise healthy. Overridable per-agent
+// via SHIPWRIGHT_STARTUP_TIMEOUT_MS. Keep this aligned with the manifest
+// startupProbe grace window in admin/src/agent-manifest.ts.
+const DEFAULT_STARTUP_TIMEOUT_MS = 180_000;
 
 export async function runEntrypoint(deps: EntrypointDeps): Promise<void> {
   const {
