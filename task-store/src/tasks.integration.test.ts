@@ -207,7 +207,7 @@ describeOrSkip("Task store schema (integration)", () => {
         title: "Pool task in scope",
         status: "pending",
         assignee: null,
-        repo: "app-vitals/vitals-os",
+        repo: "acme-inc/backend-api",
       },
     });
 
@@ -227,12 +227,12 @@ describeOrSkip("Task store schema (integration)", () => {
         title: "Assigned to agent-2",
         status: "pending",
         assignee: "agent-2",
-        repo: "app-vitals/vitals-os",
+        repo: "acme-inc/backend-api",
       },
     });
 
     const result = await taskService.list({
-      agentScope: { agentId: "agent-1", repos: ["app-vitals/vitals-os"] },
+      agentScope: { agentId: "agent-1", repos: ["acme-inc/backend-api"] },
     });
 
     const titles = result.tasks.map((t) => t.title).sort();
@@ -257,7 +257,7 @@ describeOrSkip("Task store schema (integration)", () => {
         title: "Assigned in target repo",
         status: "pending",
         assignee: "agent-1",
-        repo: "app-vitals/vitals-os",
+        repo: "acme-inc/backend-api",
       },
     });
 
@@ -277,13 +277,13 @@ describeOrSkip("Task store schema (integration)", () => {
         title: "Pool task in target repo",
         status: "pending",
         assignee: null,
-        repo: "app-vitals/vitals-os",
+        repo: "acme-inc/backend-api",
       },
     });
 
     const result = await taskService.list({
-      agentScope: { agentId: "agent-1", repos: ["app-vitals/vitals-os"] },
-      repo: "app-vitals/vitals-os",
+      agentScope: { agentId: "agent-1", repos: ["acme-inc/backend-api"] },
+      repo: "acme-inc/backend-api",
     });
 
     const titles = result.tasks.map((t) => t.title).sort();

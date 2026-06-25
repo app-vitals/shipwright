@@ -551,12 +551,12 @@ describe("task-store API (smoke)", () => {
     const poolTask = makeTask({
       id: "pool-1",
       assignee: null,
-      repo: "app-vitals/vitals-os",
+      repo: "acme-inc/backend-api",
     });
     const app = makeApp({
-      tokenService: fakeRepoAgentTokenService(["app-vitals/vitals-os"]),
+      tokenService: fakeRepoAgentTokenService(["acme-inc/backend-api"]),
       taskService: fakeTaskService({ getResult: poolTask }),
-      scopeResolver: makeScopeResolver(["app-vitals/vitals-os"]),
+      scopeResolver: makeScopeResolver(["acme-inc/backend-api"]),
     });
     const res = await app.request("/tasks/pool-1", {
       headers: { Authorization: `Bearer ${AGENT_TOKEN}` },
@@ -568,7 +568,7 @@ describe("task-store API (smoke)", () => {
     const poolTask = makeTask({
       id: "pool-1",
       assignee: null,
-      repo: "app-vitals/vitals-os",
+      repo: "acme-inc/backend-api",
     });
     const app = makeApp({
       tokenService: fakeRepoAgentTokenService([]),
@@ -585,7 +585,7 @@ describe("task-store API (smoke)", () => {
     const poolTask = makeTask({
       id: "pool-1",
       assignee: null,
-      repo: "app-vitals/vitals-os",
+      repo: "acme-inc/backend-api",
     });
     const app = makeApp({
       tokenService: fakeTokenService(),
@@ -607,9 +607,9 @@ describe("task-store API (smoke)", () => {
     };
 
     const app = makeApp({
-      tokenService: fakeRepoAgentTokenService(["app-vitals/vitals-os"]),
+      tokenService: fakeRepoAgentTokenService(["acme-inc/backend-api"]),
       taskService: spyTaskService,
-      scopeResolver: makeScopeResolver(["app-vitals/vitals-os"]),
+      scopeResolver: makeScopeResolver(["acme-inc/backend-api"]),
     });
 
     const res = await app.request("/tasks?ready=true", {
@@ -618,10 +618,10 @@ describe("task-store API (smoke)", () => {
 
     expect(res.status).toBe(200);
     expect(capturedArgs[0]?.agentId).toBe("agent-1");
-    expect(capturedArgs[0]?.repos).toEqual(["app-vitals/vitals-os"]);
+    expect(capturedArgs[0]?.repos).toEqual(["acme-inc/backend-api"]);
   });
 
-  it("GET /tasks?repo=app-vitals/vitals-os&pr=42 returns pool task for agent with matching repo", async () => {
+  it("GET /tasks?repo=acme-inc/backend-api&pr=42 returns pool task for agent with matching repo", async () => {
     const capturedFilters: TaskListFilters[] = [];
 
     const spyTaskService: TaskServiceLike = {
@@ -633,12 +633,12 @@ describe("task-store API (smoke)", () => {
     };
 
     const app = makeApp({
-      tokenService: fakeRepoAgentTokenService(["app-vitals/vitals-os"]),
+      tokenService: fakeRepoAgentTokenService(["acme-inc/backend-api"]),
       taskService: spyTaskService,
-      scopeResolver: makeScopeResolver(["app-vitals/vitals-os"]),
+      scopeResolver: makeScopeResolver(["acme-inc/backend-api"]),
     });
 
-    const res = await app.request("/tasks?repo=app-vitals%2Fvitals-os&pr=42", {
+    const res = await app.request("/tasks?repo=acme-inc%2Fbackend-api&pr=42", {
       headers: { Authorization: `Bearer ${AGENT_TOKEN}` },
     });
 
@@ -646,11 +646,11 @@ describe("task-store API (smoke)", () => {
     // Should pass agentScope, not a plain assignee filter
     expect(capturedFilters[0]?.agentScope).toEqual({
       agentId: "agent-1",
-      repos: ["app-vitals/vitals-os"],
+      repos: ["acme-inc/backend-api"],
     });
     // assignee should NOT be set when agentScope is used
     expect(capturedFilters[0]?.assignee).toBeUndefined();
-    expect(capturedFilters[0]?.repo).toBe("app-vitals/vitals-os");
+    expect(capturedFilters[0]?.repo).toBe("acme-inc/backend-api");
     expect(capturedFilters[0]?.pr).toBe(42);
   });
 
@@ -658,7 +658,7 @@ describe("task-store API (smoke)", () => {
     const poolTask = makeTask({
       id: "pool-1",
       assignee: null,
-      repo: "app-vitals/vitals-os",
+      repo: "acme-inc/backend-api",
     });
     const capturedClaimedBy: string[] = [];
 
@@ -676,9 +676,9 @@ describe("task-store API (smoke)", () => {
     };
 
     const app = makeApp({
-      tokenService: fakeRepoAgentTokenService(["app-vitals/vitals-os"]),
+      tokenService: fakeRepoAgentTokenService(["acme-inc/backend-api"]),
       taskService: spyTaskService,
-      scopeResolver: makeScopeResolver(["app-vitals/vitals-os"]),
+      scopeResolver: makeScopeResolver(["acme-inc/backend-api"]),
     });
 
     const res = await app.request("/tasks/pool-1/claim", {
@@ -700,13 +700,13 @@ describe("task-store API (smoke)", () => {
     const poolTask = makeTask({
       id: "pool-1",
       assignee: null,
-      repo: "app-vitals/vitals-os",
+      repo: "acme-inc/backend-api",
     });
 
     const app = makeApp({
-      tokenService: fakeRepoAgentTokenService(["app-vitals/vitals-os"]),
+      tokenService: fakeRepoAgentTokenService(["acme-inc/backend-api"]),
       taskService: fakeTaskService({ getResult: poolTask }),
-      scopeResolver: makeScopeResolver(["app-vitals/vitals-os"]),
+      scopeResolver: makeScopeResolver(["acme-inc/backend-api"]),
     });
 
     const res = await app.request("/tasks/pool-1/claim", {
@@ -731,14 +731,14 @@ describe("task-store API (smoke)", () => {
       id: "pool-1",
       assignee: null,
       claimedBy: "agent-1",
-      repo: "app-vitals/vitals-os",
+      repo: "acme-inc/backend-api",
       status: "in_progress",
     });
 
     const app = makeApp({
-      tokenService: fakeRepoAgentTokenService(["app-vitals/vitals-os"]),
+      tokenService: fakeRepoAgentTokenService(["acme-inc/backend-api"]),
       taskService: fakeTaskService({ getResult: claimedPoolTask }),
-      scopeResolver: makeScopeResolver(["app-vitals/vitals-os"]),
+      scopeResolver: makeScopeResolver(["acme-inc/backend-api"]),
     });
 
     const res = await app.request("/tasks/pool-1/heartbeat", {
@@ -761,9 +761,9 @@ describe("task-store API (smoke)", () => {
     };
 
     const app = makeApp({
-      tokenService: fakeRepoAgentTokenService(["app-vitals/vitals-os"]),
+      tokenService: fakeRepoAgentTokenService(["acme-inc/backend-api"]),
       taskService: spyTaskService,
-      scopeResolver: makeScopeResolver(["app-vitals/vitals-os"]),
+      scopeResolver: makeScopeResolver(["acme-inc/backend-api"]),
     });
 
     const res = await app.request("/tasks", {
@@ -773,7 +773,7 @@ describe("task-store API (smoke)", () => {
     expect(res.status).toBe(200);
     expect(capturedFilters[0]?.agentScope).toEqual({
       agentId: "agent-1",
-      repos: ["app-vitals/vitals-os"],
+      repos: ["acme-inc/backend-api"],
     });
     expect(capturedFilters[0]?.assignee).toBeUndefined();
   });
