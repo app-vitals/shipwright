@@ -22,6 +22,7 @@ import { SystemClock } from "./clock.ts";
 import { createConfig } from "./config.ts";
 import { handleCronRequest } from "./cron-handler.ts";
 import type { CronHandlerDeps } from "./cron-handler.ts";
+import { HttpCronRunReporter } from "./cron-run-reporter.ts";
 import { markdownToSlack } from "./format.ts";
 import {
   DEFAULT_HEALTH_PORT,
@@ -76,6 +77,17 @@ const runner = createRunClaude(
   analytics.track,
 );
 
+const cronRunReporter =
+  config.shipwright.apiUrl &&
+  config.shipwright.apiKey &&
+  config.shipwright.agentId
+    ? new HttpCronRunReporter({
+        apiUrl: config.shipwright.apiUrl,
+        agentId: config.shipwright.agentId,
+        apiKey: config.shipwright.apiKey,
+      })
+    : undefined;
+
 const cronDeps: CronHandlerDeps = {
   slack,
   runner,
@@ -87,6 +99,8 @@ const cronDeps: CronHandlerDeps = {
   voiceConfig: config.voice,
   workspace: config.paths.workspace,
   alertsChannel: config.alerts.channel,
+  cronRunReporter,
+  agentId: config.shipwright.agentId,
 };
 
 const healthPort = Number(
