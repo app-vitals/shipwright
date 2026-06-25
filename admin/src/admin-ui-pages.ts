@@ -44,6 +44,19 @@ export type BlockedByEntry =
   | { type: "hitl"; notified?: true }
   | { type: "dependency"; id: string; status: string };
 
+// Inline type mirroring PullRequest fields relevant to the task detail UI.
+// Avoids cross-package coupling to @shipwright/task-store.
+export interface PullRequestItem {
+  id: string;
+  repo: string;
+  prNumber: number;
+  state: string;
+  reviewState: string;
+  patchCycles: number;
+  reviewedAt?: string | null;
+  patchedAt?: string | null;
+}
+
 export interface AgentListItem {
   id: string;
   name: string;
@@ -1364,6 +1377,7 @@ export function renderTaskDetailPage(
   userName: string,
   agentNames: Record<string, string> = {},
   timezone = "America/Los_Angeles",
+  pullRequest?: PullRequestItem,
 ): string {
   const statusClass =
     task.status === "in_progress"
@@ -1425,6 +1439,37 @@ export function renderTaskDetailPage(
       <td style="padding:8px 12px;font-size:13px" title="${escapeHtml(iso)}">${escapeHtml(fmt)}</td>
     </tr>`;
   }
+
+  const prSection = pullRequest
+    ? (() => {
+        const prUrl = `https://github.com/${pullRequest.repo}/pull/${pullRequest.prNumber}`;
+        const reviewedFmt = pullRequest.reviewedAt ? dateField("Reviewed", pullRequest.reviewedAt) : "";
+        const patchedFmt = pullRequest.patchedAt ? dateField("Patched", pullRequest.patchedAt) : "";
+        return `<div class="card" style="margin-bottom:16px">
+      <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Pull Request Review</div>
+      <table class="detail-table"><tbody>
+        <tr>
+          <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top">GitHub PR</td>
+          <td style="padding:8px 12px;font-size:13px"><a href="${escapeHtml(prUrl)}" target="_blank" rel="noopener" style="color:#6366f1">#${escapeHtml(String(pullRequest.prNumber))}</a></td>
+        </tr>
+        <tr>
+          <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top">State</td>
+          <td style="padding:8px 12px;font-size:13px"><span class="badge badge-gray">${escapeHtml(pullRequest.state)}</span></td>
+        </tr>
+        <tr>
+          <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top">Review State</td>
+          <td style="padding:8px 12px;font-size:13px"><span class="badge badge-gray">${escapeHtml(pullRequest.reviewState)}</span></td>
+        </tr>
+        <tr>
+          <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top">Patch Cycles</td>
+          <td style="padding:8px 12px;font-size:13px">${escapeHtml(String(pullRequest.patchCycles))}</td>
+        </tr>
+        ${reviewedFmt}
+        ${patchedFmt}
+      </tbody></table>
+    </div>`;
+      })()
+    : "";
 
   const releaseButton =
     task.status === "in_progress"
@@ -1602,6 +1647,7 @@ export function renderTaskDetailPage(
     </div>`
         : ""
     }
+    ${prSection}
   </div>
 </body>
 </html>`;
