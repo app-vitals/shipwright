@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { CommitInfo, ReviewEntry } from "./check-helpers.ts";
+import type { CommitInfo } from "./check-helpers.ts";
 import type { PrReviewData } from "./check-patch.ts";
 import { run } from "./check-review-patch.ts";
 
@@ -59,8 +59,7 @@ function makeReviewDepsTriggering() {
         headRefOid: "sha-abc",
       },
     ],
-    readReviews: (): ReviewEntry[] => [], // no prior reviews → triggers
-    listPrCommits: async (_prNumber: number) => [],
+    queryPrRecord: async (_repo: string, _prNumber: number) => null, // no record → triggers
   };
 }
 
@@ -70,8 +69,7 @@ function makeReviewDepsIdle() {
     getCurrentUser: () => "bot-user",
     isSelfReviewAllowed: false,
     listOpenPrs: async (_repo: string): Promise<PrInfo[]> => [],
-    readReviews: (): ReviewEntry[] => [],
-    listPrCommits: async (_prNumber: number) => [],
+    queryPrRecord: async (_repo: string, _prNumber: number) => null,
   };
 }
 
