@@ -342,9 +342,7 @@ describeOrSkip("KubernetesAgentProvisioner (integration)", () => {
     const k8s = emptyClient();
 
     // Seed a deployment with a stale image directly in the cassette.
-    const staleDeployment: import(
-      "./kubernetes-client.ts",
-    ).KubernetesDeployment = {
+    const staleDeployment: KubernetesDeployment = {
       apiVersion: "apps/v1",
       kind: "Deployment",
       metadata: { name: resourceName, namespace: NAMESPACE },

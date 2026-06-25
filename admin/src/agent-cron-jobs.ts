@@ -98,7 +98,7 @@ export class AgentCronJobService {
     });
 
     // Compute midnight UTC today for the runCountToday boundary
-    const todayMidnightUtc = this.clock.now();
+    const todayMidnightUtc = new Date(this.clock.now());
     todayMidnightUtc.setUTCHours(0, 0, 0, 0);
 
     // Fetch run summaries for all cron IDs in one pass
