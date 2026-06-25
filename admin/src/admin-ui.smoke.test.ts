@@ -198,6 +198,9 @@ function makeMockDeps(
     },
     agentCronJobService: {
       list: async () => [MOCK_CRON],
+      listWithRunSummary: async () => [
+        { ...MOCK_CRON, lastRun: null, runCountToday: 0 },
+      ],
       get: async () => MOCK_CRON,
       create: async () => MOCK_CRON,
       setEnabled: async () => MOCK_CRON,
@@ -2548,7 +2551,9 @@ describe("admin UI — tasks page", () => {
     });
     expect(res.status).toBe(200);
     expect(capturedParams).not.toBeNull();
-    expect((capturedParams as unknown as URLSearchParams).get("state")).toBe("ready");
+    expect((capturedParams as unknown as URLSearchParams).get("state")).toBe(
+      "ready",
+    );
   });
 
   it("GET /admin/tasks?state=blocked returns 200 and forwards state=blocked to task-store", async () => {
@@ -2566,7 +2571,59 @@ describe("admin UI — tasks page", () => {
     });
     expect(res.status).toBe(200);
     expect(capturedParams).not.toBeNull();
-    expect((capturedParams as unknown as URLSearchParams).get("state")).toBe("blocked");
+    expect((capturedParams as unknown as URLSearchParams).get("state")).toBe(
+      "blocked",
+    );
+  });
+
+  it("GET /admin/tasks renders without 500 when task-store returns bare array for ready state", async () => {
+    const mockTasks = [
+      {
+        id: "task-1",
+        title: "Build auth module",
+        status: "pending",
+        session: "session-abc",
+        repo: "example-org/example-repo",
+        assignee: null,
+        claimedBy: null,
+      },
+    ];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async () => mockTasks as never,
+      }),
+    );
+    const res = await app.request("/admin/tasks", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Build auth module");
+  });
+
+  it("GET /admin/tasks?state=blocked renders without 500 when task-store returns bare array", async () => {
+    const mockTasks = [
+      {
+        id: "task-2",
+        title: "Blocked migration task",
+        status: "pending",
+        session: "session-xyz",
+        repo: "example-org/example-repo",
+        assignee: null,
+        claimedBy: null,
+      },
+    ];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async () => mockTasks as never,
+      }),
+    );
+    const res = await app.request("/admin/tasks?state=blocked", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Blocked migration task");
   });
 });
 
@@ -2666,7 +2723,10 @@ describe("admin UI — repos mutation routes", () => {
           updatedAt: new Date("2024-01-01"),
           repos: ["my-org/my-repo"],
         }),
-        update: async (_args: { where: unknown; data: { repos: string[] } }) => {
+        update: async (_args: {
+          where: unknown;
+          data: { repos: string[] };
+        }) => {
           capturedRepos = _args.data.repos;
           return {
             id: AGENT_ID,

@@ -30,7 +30,9 @@ describe("buildAgentManifest", () => {
 
     it("includes assistant_view", () => {
       expect(manifest.features?.assistant_view).toBeDefined();
-      expect(manifest.features?.assistant_view?.assistant_description).toContain(NAME);
+      expect(
+        manifest.features?.assistant_view?.assistant_description,
+      ).toContain(NAME);
     });
 
     it("sets always_online: true", () => {

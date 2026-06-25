@@ -121,7 +121,9 @@ function fakeAgentTokenService(): TokenServiceLike {
       };
     },
     async validate(raw: string) {
-      return raw === AGENT_TOKEN ? { id: "tok-agent", agentId: "agent-1" } : null;
+      return raw === AGENT_TOKEN
+        ? { id: "tok-agent", agentId: "agent-1" }
+        : null;
     },
     async revoke() {
       return null;

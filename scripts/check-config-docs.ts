@@ -119,7 +119,13 @@ export function extractDocumentedVars(markdownContent: string): string[] {
  * Skips node_modules, .git, dist, and worktrees directories.
  */
 function collectTsFiles(dir: string, out: string[]): void {
-  const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "worktrees", "build"]);
+  const SKIP_DIRS = new Set([
+    "node_modules",
+    ".git",
+    "dist",
+    "worktrees",
+    "build",
+  ]);
   let entries: string[];
   try {
     entries = readdirSync(dir);

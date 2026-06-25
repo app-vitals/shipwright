@@ -51,10 +51,23 @@ function makeMockAgentEnvService(bundles: Map<string, AgentEnvBundle | null>): {
 
 function makeMockAgentCronJobService(crons: Map<string, AgentCronJob[]>): {
   list: (id: string) => Promise<AgentCronJob[]>;
+  listWithRunSummary: (
+    id: string,
+  ) => Promise<(AgentCronJob & { lastRun: null; runCountToday: number })[]>;
 } {
   return {
     async list(id: string): Promise<AgentCronJob[]> {
       return crons.get(id) ?? [];
+    },
+    async listWithRunSummary(
+      id: string,
+    ): Promise<(AgentCronJob & { lastRun: null; runCountToday: number })[]> {
+      const items = crons.get(id) ?? [];
+      return items.map((item) => ({
+        ...item,
+        lastRun: null,
+        runCountToday: 0,
+      }));
     },
   };
 }
@@ -343,6 +356,9 @@ function buildCombinedApp() {
       async list() {
         return [];
       },
+      async listWithRunSummary() {
+        return [];
+      },
     },
     prisma: {
       agent: {
@@ -370,6 +386,7 @@ function buildCombinedApp() {
     },
     agentCronJobService: {
       list: async () => [],
+      listWithRunSummary: async () => [],
       create: async () => ({
         id: "c1",
         agentId: COMBINED_AGENT_ID,
@@ -451,7 +468,6 @@ function buildCombinedApp() {
         createdAt: new Date(),
         updatedAt: new Date(),
       }),
-      listWithRunSummary: async () => [],
     },
     agentCronRunService: {
       create: async () => ({

@@ -22,9 +22,9 @@ import {
 } from "./errors.ts";
 import {
   HttpKubernetesClient,
-  type KubernetesPvc,
   type KubernetesClient,
   type KubernetesDeployment,
+  type KubernetesPvc,
   RecordedKubernetesClient,
 } from "./kubernetes-client.ts";
 
@@ -454,9 +454,9 @@ describe("HttpKubernetesClient — PVCs", () => {
 
   it("getPvc maps 404 to NotFoundError", async () => {
     const { client } = makeClient("getPvc_404");
-    await expect(
-      client.getPvc("shipwright", "missing"),
-    ).rejects.toBeInstanceOf(NotFoundError);
+    await expect(client.getPvc("shipwright", "missing")).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
   });
 });
 
@@ -603,11 +603,19 @@ describe("RecordedKubernetesClient", () => {
         "shipwright/agent-abc": baseDeployment,
         "shipwright/agent-def": {
           ...baseDeployment,
-          metadata: { ...baseDeployment.metadata, name: "agent-def", namespace: "shipwright" },
+          metadata: {
+            ...baseDeployment.metadata,
+            name: "agent-def",
+            namespace: "shipwright",
+          },
         },
         "other-ns/agent-xyz": {
           ...baseDeployment,
-          metadata: { ...baseDeployment.metadata, name: "agent-xyz", namespace: "other-ns" },
+          metadata: {
+            ...baseDeployment.metadata,
+            name: "agent-xyz",
+            namespace: "other-ns",
+          },
         },
       },
       secrets: {},

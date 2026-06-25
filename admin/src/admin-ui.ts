@@ -20,6 +20,7 @@
  * Allowed users are controlled by the adminAllowedEmails allowlist in deps.
  */
 
+import { isOrgRepo } from "@shipwright/lib/org-repo";
 import { Hono, type MiddlewareHandler } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { sign, verify } from "hono/jwt";
@@ -43,7 +44,6 @@ import type { AgentTokenService } from "./agent-tokens.ts";
 import type { AgentToolService } from "./agent-tools.ts";
 import { ForbiddenError, UnprocessableEntityError } from "./errors.ts";
 import type { GoogleAuthClient } from "./google-auth-client.ts";
-import { isOrgRepo } from "@shipwright/lib/org-repo";
 import type { AppManifest } from "./slack-provisioning-client.ts";
 import {
   AGENT_BOT_SCOPES,
@@ -174,6 +174,7 @@ export interface AdminUIDeps {
   agentCronJobService: Pick<
     AgentCronJobService,
     | "list"
+    | "listWithRunSummary"
     | "create"
     | "update"
     | "setEnabled"
@@ -596,7 +597,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     const [envVars, crons, tools, tokens, plugins, members] = await Promise.all(
       [
         agentEnvService.getByAgentId(agentId).then((e) => e ?? {}),
-        agentCronJobService.list(agentId),
+        agentCronJobService.listWithRunSummary(agentId),
         agentToolService.list(agentId),
         agentTokenService.listForAgent(agentId),
         agentPluginService.list(agentId),
@@ -979,7 +980,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       const [envVars, crons, tools, tokens, plugins, members] =
         await Promise.all([
           agentEnvService.getByAgentId(agentId).then((e) => e ?? {}),
-          agentCronJobService.list(agentId),
+          agentCronJobService.listWithRunSummary(agentId),
           agentToolService.list(agentId),
           agentTokenService.listForAgent(agentId),
           agentPluginService.list(agentId),
@@ -1554,7 +1555,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     const stateRaw = c.req.query("state");
     // Default to "ready" when neither state nor status is provided.
     const state: "ready" | "in_progress" | "blocked" | "closed" | undefined =
-      stateRaw === "ready" || stateRaw === "in_progress" || stateRaw === "blocked" || stateRaw === "closed"
+      stateRaw === "ready" ||
+      stateRaw === "in_progress" ||
+      stateRaw === "blocked" ||
+      stateRaw === "closed"
         ? stateRaw
         : status
           ? undefined
@@ -1596,10 +1600,15 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       params.set("limit", agentFilterIds !== null ? "500" : String(limit));
       params.set("offset", agentFilterIds !== null ? "0" : String(offset));
       try {
-        const [result, distinct] = await Promise.all([
+        const [rawResult, distinct] = await Promise.all([
           fetchTaskStoreTasks(params),
-          fetchDistinctTaskValues ? fetchDistinctTaskValues().catch(() => null) : Promise.resolve(null),
+          fetchDistinctTaskValues
+            ? fetchDistinctTaskValues().catch(() => null)
+            : Promise.resolve(null),
         ]);
+        const result = Array.isArray(rawResult)
+          ? { tasks: rawResult, total: rawResult.length }
+          : rawResult;
         tasks = result.tasks;
         total = result.total;
         distinctValues = distinct;
@@ -1655,7 +1664,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         c.var.userEmail,
         agentNames,
         { total, limit, page },
-        { ...(error ? { error } : {}), agentFilterActive: agentFilterIds !== null },
+        {
+          ...(error ? { error } : {}),
+          agentFilterActive: agentFilterIds !== null,
+        },
         suggestions,
       ),
     );

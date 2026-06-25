@@ -390,7 +390,12 @@ describeOrSkip("task-store API (integration)", () => {
       body: JSON.stringify({ label: "updated", agentId: "agent-new" }),
     });
     expect(patch.status).toBe(200);
-    const body = (await patch.json()) as { id: string; label: string | null; agentId: string | null; rawToken?: string };
+    const body = (await patch.json()) as {
+      id: string;
+      label: string | null;
+      agentId: string | null;
+      rawToken?: string;
+    };
     expect(body.id).toBe(id);
     expect(body.label).toBe("updated");
     expect(body.agentId).toBe("agent-new");

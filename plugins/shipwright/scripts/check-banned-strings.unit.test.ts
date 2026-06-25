@@ -295,11 +295,7 @@ describe("scanForBannedStrings", () => {
 
   test("dedup invariant: a line matching both 'vitals-os' and 'vitals-os-prod' reports exactly 1 hit with the longer pattern", () => {
     // Use string concat so this test file is not itself flagged by the scanner.
-    writeFile(
-      tmpDir,
-      "config.ts",
-      "const env = 'vitals-os-" + "prod';\n",
-    );
+    writeFile(tmpDir, "config.ts", "const env = 'vitals-os-" + "prod';\n");
     const hits = scanForBannedStrings(tmpDir);
     expect(hits).toHaveLength(1);
     expect(hits[0].pattern).toBe("vitals-os-" + "prod");

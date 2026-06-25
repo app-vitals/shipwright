@@ -250,34 +250,94 @@ describe("renderAgentDetailPage — members section", () => {
   };
 
   test("admin sees the Members section", () => {
-    const html = renderAgentDetailPage(AGENT, {}, [], [], [], [], [], USER_NAME, true);
+    const html = renderAgentDetailPage(
+      AGENT,
+      {},
+      [],
+      [],
+      [],
+      [],
+      [],
+      USER_NAME,
+      true,
+    );
     expect(html).toContain("Members");
   });
 
   test("non-admin does not see the Members section", () => {
-    const html = renderAgentDetailPage(AGENT, {}, [], [], [], [], [], USER_NAME, false);
+    const html = renderAgentDetailPage(
+      AGENT,
+      {},
+      [],
+      [],
+      [],
+      [],
+      [],
+      USER_NAME,
+      false,
+    );
     expect(html).not.toContain("Members");
   });
 
   test("member email appears in the members table", () => {
-    const html = renderAgentDetailPage(AGENT, {}, [], [], [], [], [MEMBER], USER_NAME, true);
+    const html = renderAgentDetailPage(
+      AGENT,
+      {},
+      [],
+      [],
+      [],
+      [],
+      [MEMBER],
+      USER_NAME,
+      true,
+    );
     expect(html).toContain("member@example.com");
   });
 
   test("member added date appears in the members table", () => {
-    const html = renderAgentDetailPage(AGENT, {}, [], [], [], [], [MEMBER], USER_NAME, true);
+    const html = renderAgentDetailPage(
+      AGENT,
+      {},
+      [],
+      [],
+      [],
+      [],
+      [MEMBER],
+      USER_NAME,
+      true,
+    );
     expect(html).toContain("2025-01-15");
   });
 
   test("member remove button posts to the delete route with memberId", () => {
-    const html = renderAgentDetailPage(AGENT, {}, [], [], [], [], [MEMBER], USER_NAME, true);
+    const html = renderAgentDetailPage(
+      AGENT,
+      {},
+      [],
+      [],
+      [],
+      [],
+      [MEMBER],
+      USER_NAME,
+      true,
+    );
     expect(html).toContain(`/admin/agents/${AGENT.id}/members/delete`);
     expect(html).toContain('name="memberId"');
     expect(html).toContain(`value="${MEMBER.id}"`);
   });
 
   test("empty members list shows 'No members yet'", () => {
-    const html = renderAgentDetailPage(AGENT, {}, [], [], [], [], [], USER_NAME, true);
+    const html = renderAgentDetailPage(
+      AGENT,
+      {},
+      [],
+      [],
+      [],
+      [],
+      [],
+      USER_NAME,
+      true,
+    );
     expect(html).toContain("No members yet");
   });
 
@@ -287,7 +347,17 @@ describe("renderAgentDetailPage — members section", () => {
       email: '<script>alert("xss")</script>',
       createdAt: new Date("2025-01-01"),
     };
-    const html = renderAgentDetailPage(AGENT, {}, [], [], [], [], [xssMember], USER_NAME, true);
+    const html = renderAgentDetailPage(
+      AGENT,
+      {},
+      [],
+      [],
+      [],
+      [],
+      [xssMember],
+      USER_NAME,
+      true,
+    );
     // The raw XSS payload must not appear unescaped in the output
     expect(html).not.toContain('alert("xss")');
     // The email content must be HTML-escaped
@@ -299,7 +369,18 @@ describe("renderAgentDetailPage — members section", () => {
 
 describe("renderAgentDetailPage — overview", () => {
   function render(opts?: Parameters<typeof renderAgentDetailPage>[9]): string {
-    return renderAgentDetailPage(AGENT, {}, [], [], [], [], [], USER_NAME, true, opts);
+    return renderAgentDetailPage(
+      AGENT,
+      {},
+      [],
+      [],
+      [],
+      [],
+      [],
+      USER_NAME,
+      true,
+      opts,
+    );
   }
 
   test("returns a valid HTML document", () => {
@@ -319,7 +400,17 @@ describe("renderAgentDetailPage — overview", () => {
       ...AGENT,
       name: '<script>alert("xss")</script>',
     };
-    const html = renderAgentDetailPage(xssAgent, {}, [], [], [], [], [], USER_NAME, true);
+    const html = renderAgentDetailPage(
+      xssAgent,
+      {},
+      [],
+      [],
+      [],
+      [],
+      [],
+      USER_NAME,
+      true,
+    );
     // The raw XSS payload must not appear unescaped in the output
     expect(html).not.toContain('alert("xss")');
     // The agent name must be HTML-escaped wherever it appears
@@ -372,15 +463,35 @@ describe("renderAgentDetailPage — overview", () => {
       ...AGENT,
       name: "O'Brien",
     };
-    const html = renderAgentDetailPage(xssAgent, {}, [], [], [], [], [], USER_NAME, true);
+    const html = renderAgentDetailPage(
+      xssAgent,
+      {},
+      [],
+      [],
+      [],
+      [],
+      [],
+      USER_NAME,
+      true,
+    );
     // Agent name stored as a data attribute; single quotes are encoded as &#39; for defense-in-depth
-    expect(html).toContain("data-agent-name=\"O&#39;Brien\"");
+    expect(html).toContain('data-agent-name="O&#39;Brien"');
     // No inline onsubmit with unescaped single quotes
     expect(html).not.toContain("onsubmit");
   });
 
   test("danger zone: delete form absent for non-admins", () => {
-    const html = renderAgentDetailPage(AGENT, {}, [], [], [], [], [], USER_NAME, false);
+    const html = renderAgentDetailPage(
+      AGENT,
+      {},
+      [],
+      [],
+      [],
+      [],
+      [],
+      USER_NAME,
+      false,
+    );
     expect(html).not.toContain("Danger Zone");
     expect(html).not.toContain("delete-agent-form");
   });
@@ -390,7 +501,17 @@ describe("renderAgentDetailPage — overview", () => {
 
 describe("renderAgentDetailPage — env vars", () => {
   function render(envVars: Record<string, string>): string {
-    return renderAgentDetailPage(AGENT, envVars, [], [], [], [], [], USER_NAME, true);
+    return renderAgentDetailPage(
+      AGENT,
+      envVars,
+      [],
+      [],
+      [],
+      [],
+      [],
+      USER_NAME,
+      true,
+    );
   }
 
   test("empty envVars shows 'No env vars set.' empty state", () => {
@@ -452,7 +573,17 @@ describe("renderAgentDetailPage — env vars", () => {
 
 describe("renderAgentDetailPage — crons", () => {
   function render(crons: CronJobItem[]): string {
-    return renderAgentDetailPage(AGENT, {}, crons, [], [], [], [], USER_NAME, true);
+    return renderAgentDetailPage(
+      AGENT,
+      {},
+      crons,
+      [],
+      [],
+      [],
+      [],
+      USER_NAME,
+      true,
+    );
   }
 
   test("empty crons: 'No system crons configured.' shown", () => {
@@ -571,13 +702,89 @@ describe("renderAgentDetailPage — crons", () => {
     expect(html).not.toContain("<img src=x");
     expect(html).toContain("&lt;img");
   });
+
+  test("renderCronRow with lastRun: shows relative time and outcome badge", () => {
+    // Use a fixed reference time so the test is deterministic at any wall-clock instant.
+    const fixedNow = new Date("2024-06-01T12:00:00Z");
+    const twoHoursAgo = new Date(fixedNow.getTime() - 2 * 3600 * 1000);
+    const cronWithLastRun: CronJobItem = {
+      ...CUSTOM_CRON,
+      lastRun: {
+        startedAt: twoHoursAgo,
+        completedAt: new Date(twoHoursAgo.getTime() + 60000),
+        skipped: false,
+        outcome: "posted",
+      },
+      runCountToday: 3,
+    };
+    // Pass now via opts so relativeTime uses a fixed reference — deterministic at any wall-clock instant.
+    const html = renderAgentDetailPage(
+      AGENT,
+      {},
+      [cronWithLastRun],
+      [],
+      [],
+      [],
+      [],
+      USER_NAME,
+      true,
+      { now: fixedNow },
+    );
+    expect(html).toContain("hours ago");
+    expect(html).toContain("posted");
+    expect(html).toContain("3 runs");
+  });
+
+  test("renderCronRow without lastRun: shows 'never'", () => {
+    const html = render([CUSTOM_CRON]);
+    expect(html).toContain("never");
+  });
+
+  test("renderCronRow today count: 1 run (singular)", () => {
+    const fixedNow = new Date("2024-06-01T12:00:00Z");
+    const twoHoursAgo = new Date(fixedNow.getTime() - 2 * 3600 * 1000);
+    const cronWithOneRun: CronJobItem = {
+      ...CUSTOM_CRON,
+      lastRun: {
+        startedAt: twoHoursAgo,
+        completedAt: new Date(twoHoursAgo.getTime() + 60000),
+        skipped: false,
+        outcome: "posted",
+      },
+      runCountToday: 1,
+    };
+    // Pass now via opts so relativeTime uses a fixed reference — deterministic at any wall-clock instant.
+    const html = renderAgentDetailPage(
+      AGENT,
+      {},
+      [cronWithOneRun],
+      [],
+      [],
+      [],
+      [],
+      USER_NAME,
+      true,
+      { now: fixedNow },
+    );
+    expect(html).toContain("1 run");
+  });
 });
 
 // ─── renderAgentDetailPage — tools section ───────────────────────────────────
 
 describe("renderAgentDetailPage — tools", () => {
   function render(tools: ToolItem[]): string {
-    return renderAgentDetailPage(AGENT, {}, [], tools, [], [], [], USER_NAME, true);
+    return renderAgentDetailPage(
+      AGENT,
+      {},
+      [],
+      tools,
+      [],
+      [],
+      [],
+      USER_NAME,
+      true,
+    );
   }
 
   test("empty tools: 'No tools configured.' empty state", () => {
@@ -637,7 +844,17 @@ describe("renderAgentDetailPage — tools", () => {
 
 describe("renderAgentDetailPage — tokens", () => {
   function render(tokens: TokenItem[]): string {
-    return renderAgentDetailPage(AGENT, {}, [], [], tokens, [], [], USER_NAME, true);
+    return renderAgentDetailPage(
+      AGENT,
+      {},
+      [],
+      [],
+      tokens,
+      [],
+      [],
+      USER_NAME,
+      true,
+    );
   }
 
   test("empty tokens: 'No tokens created.' empty state", () => {
@@ -711,7 +928,17 @@ describe("renderAgentDetailPage — tokens", () => {
 
 describe("renderAgentDetailPage — plugins", () => {
   function render(plugins: PluginItem[]): string {
-    return renderAgentDetailPage(AGENT, {}, [], [], [], plugins, [], USER_NAME, true);
+    return renderAgentDetailPage(
+      AGENT,
+      {},
+      [],
+      [],
+      [],
+      plugins,
+      [],
+      USER_NAME,
+      true,
+    );
   }
 
   test("empty plugins: 'No plugins installed.' empty state", () => {
@@ -858,7 +1085,7 @@ describe("renderProvisionStartPage", () => {
   });
 
   test("XSS: agent name in select option is escaped", () => {
-    const xssAgents = [{ id: "a1", name: '<script>evil()</script>' }];
+    const xssAgents = [{ id: "a1", name: "<script>evil()</script>" }];
     const html = renderProvisionStartPage(USER_NAME, xssAgents);
     expect(html).not.toContain("<script>");
     expect(html).toContain("&lt;script&gt;");
@@ -1051,7 +1278,15 @@ describe("renderTasksPage — row click navigation", () => {
     tasks: TaskItem[] = [TASK_ITEM],
     opts?: Parameters<typeof renderTasksPage>[6],
   ): string {
-    return renderTasksPage(tasks, {}, false, USER_NAME, {}, { total: tasks.length, limit: 50, page: 1 }, opts);
+    return renderTasksPage(
+      tasks,
+      {},
+      false,
+      USER_NAME,
+      {},
+      { total: tasks.length, limit: 50, page: 1 },
+      opts,
+    );
   }
 
   // AC1: clicking anywhere on a task row navigates to the task detail page
@@ -1104,7 +1339,7 @@ describe("renderTasksPage — row click navigation", () => {
 
   test("empty task list renders no clickable rows", () => {
     const html = render([]);
-    expect(html).not.toContain("data-href=\"/admin/tasks/");
+    expect(html).not.toContain('data-href="/admin/tasks/');
     expect(html).toContain("No tasks found");
   });
 
@@ -1120,7 +1355,17 @@ describe("renderTasksPage — row click navigation", () => {
 describe("renderAgentDetailPage — repos", () => {
   function render(repos: string[]): string {
     const agent: AgentDetail = { ...AGENT, repos };
-    return renderAgentDetailPage(agent, {}, [], [], [], [], [], USER_NAME, true);
+    return renderAgentDetailPage(
+      agent,
+      {},
+      [],
+      [],
+      [],
+      [],
+      [],
+      USER_NAME,
+      true,
+    );
   }
 
   test("renders empty repos state", () => {
@@ -1152,7 +1397,16 @@ describe("renderTasksPage — datalist autocomplete", () => {
   const pagination = { total: 0, limit: 50, page: 1 };
 
   test("renderTasksPage with sessions suggestions renders session datalist", () => {
-    const html = renderTasksPage([], {}, false, "user@test.com", {}, pagination, undefined, { sessions: ["session-abc", "session-xyz"] });
+    const html = renderTasksPage(
+      [],
+      {},
+      false,
+      "user@test.com",
+      {},
+      pagination,
+      undefined,
+      { sessions: ["session-abc", "session-xyz"] },
+    );
     expect(html).toContain('<datalist id="sessions-list">');
     expect(html).toContain('<option value="session-abc">');
     expect(html).toContain('<option value="session-xyz">');
@@ -1160,31 +1414,65 @@ describe("renderTasksPage — datalist autocomplete", () => {
   });
 
   test("renderTasksPage with repos suggestions renders repo datalist", () => {
-    const html = renderTasksPage([], {}, false, "user@test.com", {}, pagination, undefined, { repos: ["org/repo-a", "org/repo-b"] });
+    const html = renderTasksPage(
+      [],
+      {},
+      false,
+      "user@test.com",
+      {},
+      pagination,
+      undefined,
+      { repos: ["org/repo-a", "org/repo-b"] },
+    );
     expect(html).toContain('<datalist id="repos-list">');
     expect(html).toContain('<option value="org/repo-a">');
     expect(html).toContain('list="repos-list"');
   });
 
   test("renderTasksPage with agents suggestions renders agent datalist", () => {
-    const html = renderTasksPage([], {}, false, "user@test.com", {}, pagination, undefined, { agents: ["Agent Alpha", "Agent Beta"] });
+    const html = renderTasksPage(
+      [],
+      {},
+      false,
+      "user@test.com",
+      {},
+      pagination,
+      undefined,
+      { agents: ["Agent Alpha", "Agent Beta"] },
+    );
     expect(html).toContain('<datalist id="agents-list">');
     expect(html).toContain('<option value="Agent Alpha">');
     expect(html).toContain('list="agents-list"');
   });
 
   test("renderTasksPage without suggestions renders plain text inputs (no datalists)", () => {
-    const html = renderTasksPage([], {}, false, "user@test.com", {}, pagination);
-    expect(html).not.toContain('<datalist');
+    const html = renderTasksPage(
+      [],
+      {},
+      false,
+      "user@test.com",
+      {},
+      pagination,
+    );
+    expect(html).not.toContain("<datalist");
     expect(html).not.toContain('list="sessions-list"');
     expect(html).not.toContain('list="repos-list"');
     expect(html).not.toContain('list="agents-list"');
   });
 
   test("renderTasksPage escapes suggestion values to prevent XSS", () => {
-    const html = renderTasksPage([], {}, false, "user@test.com", {}, pagination, undefined, { sessions: ['<script>alert("xss")</script>'] });
+    const html = renderTasksPage(
+      [],
+      {},
+      false,
+      "user@test.com",
+      {},
+      pagination,
+      undefined,
+      { sessions: ['<script>alert("xss")</script>'] },
+    );
     expect(html).not.toContain('<script>alert("xss")</script>');
-    expect(html).toContain('&lt;script&gt;');
+    expect(html).toContain("&lt;script&gt;");
   });
 });
 
@@ -1192,7 +1480,14 @@ describe("renderTasksPage — datalist autocomplete", () => {
 
 describe("renderTasksPage — blocker badges", () => {
   function render(tasks: TaskItem[]): string {
-    return renderTasksPage(tasks, {}, false, USER_NAME, {}, { total: tasks.length, limit: 50, page: 1 });
+    return renderTasksPage(
+      tasks,
+      {},
+      false,
+      USER_NAME,
+      {},
+      { total: tasks.length, limit: 50, page: 1 },
+    );
   }
 
   const PENDING_TASK_NO_BLOCKERS: TaskItem = {
@@ -1313,7 +1608,13 @@ describe("renderTasksPage — blocker badges", () => {
       repo: null,
       assignee: null,
       claimedBy: null,
-      blockedBy: [{ type: "dependency", id: "<script>alert(1)</script>", status: "pending" }],
+      blockedBy: [
+        {
+          type: "dependency",
+          id: "<script>alert(1)</script>",
+          status: "pending",
+        },
+      ],
     };
     const html = render([xssTask]);
     expect(html).not.toContain("<script>alert(1)</script>");
@@ -1327,7 +1628,14 @@ const EMPTY_PAGINATION = { total: 0, limit: 50, page: 1 };
 
 describe("renderTasksPage — 4-state toggle", () => {
   test("Ready tab is active by default (no state filter)", () => {
-    const html = renderTasksPage([], {}, false, USER_NAME, {}, EMPTY_PAGINATION);
+    const html = renderTasksPage(
+      [],
+      {},
+      false,
+      USER_NAME,
+      {},
+      EMPTY_PAGINATION,
+    );
     // Ready link URL should NOT contain ?state= (it's the default)
     expect(html).toMatch(/href="\/admin\/tasks"[^>]*>Ready</);
     // Ready tab has active styling
@@ -1339,7 +1647,14 @@ describe("renderTasksPage — 4-state toggle", () => {
   });
 
   test("In Progress tab is active when state=in_progress", () => {
-    const html = renderTasksPage([], { state: "in_progress" }, false, USER_NAME, {}, EMPTY_PAGINATION);
+    const html = renderTasksPage(
+      [],
+      { state: "in_progress" },
+      false,
+      USER_NAME,
+      {},
+      EMPTY_PAGINATION,
+    );
     // In Progress tab link contains ?state=in_progress
     expect(html).toContain("state=in_progress");
     // In Progress tab has active styling — find the active tab text near the indigo bg
@@ -1353,7 +1668,14 @@ describe("renderTasksPage — 4-state toggle", () => {
   });
 
   test("Blocked tab is active when state=blocked", () => {
-    const html = renderTasksPage([], { state: "blocked" }, false, USER_NAME, {}, EMPTY_PAGINATION);
+    const html = renderTasksPage(
+      [],
+      { state: "blocked" },
+      false,
+      USER_NAME,
+      {},
+      EMPTY_PAGINATION,
+    );
     expect(html).toContain("state=blocked");
     expect(html).toMatch(/background:#6366f1;color:#fff[^>]*>Blocked/);
     expect(html).toMatch(/background:#fff;color:#374151[^>]*>Ready/);
@@ -1362,7 +1684,14 @@ describe("renderTasksPage — 4-state toggle", () => {
   });
 
   test("Closed tab is active when state=closed", () => {
-    const html = renderTasksPage([], { state: "closed" }, false, USER_NAME, {}, EMPTY_PAGINATION);
+    const html = renderTasksPage(
+      [],
+      { state: "closed" },
+      false,
+      USER_NAME,
+      {},
+      EMPTY_PAGINATION,
+    );
     expect(html).toContain("state=closed");
     expect(html).toMatch(/background:#6366f1;color:#fff[^>]*>Closed/);
     expect(html).toMatch(/background:#fff;color:#374151[^>]*>Ready/);
@@ -1380,7 +1709,8 @@ describe("renderTasksPage — 4-state toggle", () => {
       EMPTY_PAGINATION,
     );
     // All tab links should contain session and repo params
-    const tabLinkPattern = /href="\/admin\/tasks\?[^"]*session=my-session[^"]*"/g;
+    const tabLinkPattern =
+      /href="\/admin\/tasks\?[^"]*session=my-session[^"]*"/g;
     const matches = html.match(tabLinkPattern);
     // We expect at least 3 tab links (Ready, Blocked, Closed) to preserve session (In Progress is active tab)
     expect(matches).not.toBeNull();
@@ -1410,20 +1740,28 @@ describe("renderAdminToolbar — active nav highlight", () => {
     const html = renderAdminToolbar(USER_NAME, "/admin/agents");
     expect(html).toContain('href="/admin/agents" class="vos-nav-link active"');
     expect(html).toContain('href="/admin/provision" class="vos-nav-link"');
-    expect(html).not.toContain('href="/admin/provision" class="vos-nav-link active"');
+    expect(html).not.toContain(
+      'href="/admin/provision" class="vos-nav-link active"',
+    );
   });
 
   test("activePath sub-path /admin/agents/agent-id: Agents link is still active (startsWith)", () => {
     const html = renderAdminToolbar(USER_NAME, "/admin/agents/agent-id");
     expect(html).toContain('href="/admin/agents" class="vos-nav-link active"');
-    expect(html).not.toContain('href="/admin/provision" class="vos-nav-link active"');
+    expect(html).not.toContain(
+      'href="/admin/provision" class="vos-nav-link active"',
+    );
   });
 
   test("activePath /admin/provision: Provision link is active, Agents is not", () => {
     const html = renderAdminToolbar(USER_NAME, "/admin/provision");
-    expect(html).toContain('href="/admin/provision" class="vos-nav-link active"');
+    expect(html).toContain(
+      'href="/admin/provision" class="vos-nav-link active"',
+    );
     expect(html).toContain('href="/admin/agents" class="vos-nav-link"');
-    expect(html).not.toContain('href="/admin/agents" class="vos-nav-link active"');
+    expect(html).not.toContain(
+      'href="/admin/agents" class="vos-nav-link active"',
+    );
   });
 
   test("activePath '' (default): neither link is active", () => {
@@ -1441,7 +1779,10 @@ const TASK_DETAIL: TaskItem = {
   title: "Do the thing",
   status: "blocked",
   description: "## Overview\nThis task does something.",
-  acceptanceCriteria: ["AC1: `foo` is set", "AC2: List works:\n- item one\n- item two"],
+  acceptanceCriteria: [
+    "AC1: `foo` is set",
+    "AC2: List works:\n- item one\n- item two",
+  ],
   blockedBy: [
     { type: "dependency", id: "TS-dep", status: "pending" },
     { type: "hitl" },
@@ -1450,7 +1791,10 @@ const TASK_DETAIL: TaskItem = {
 
 describe("renderTaskDetailPage — blockers", () => {
   function render(task: Partial<TaskItem> = {}): string {
-    return renderTaskDetailPage({ ...TASK_DETAIL, ...task }, "user@example.com");
+    return renderTaskDetailPage(
+      { ...TASK_DETAIL, ...task },
+      "user@example.com",
+    );
   }
 
   test("shows blockers section when blockedBy is non-empty", () => {
@@ -1493,7 +1837,9 @@ describe("renderTaskDetailPage — blockers", () => {
 
   test("XSS: dep id in blockers is escaped", () => {
     const html = render({
-      blockedBy: [{ type: "dependency", id: "<script>xss()</script>", status: "pending" }],
+      blockedBy: [
+        { type: "dependency", id: "<script>xss()</script>", status: "pending" },
+      ],
     });
     expect(html).not.toContain("<script>xss");
     expect(html).toContain("&lt;script&gt;");
@@ -1502,7 +1848,10 @@ describe("renderTaskDetailPage — blockers", () => {
 
 describe("renderTaskDetailPage — markdown", () => {
   function render(task: Partial<TaskItem> = {}): string {
-    return renderTaskDetailPage({ ...TASK_DETAIL, ...task }, "user@example.com");
+    return renderTaskDetailPage(
+      { ...TASK_DETAIL, ...task },
+      "user@example.com",
+    );
   }
 
   test("description headings rendered as HTML heading tags", () => {

@@ -15,7 +15,10 @@ export async function sendBackOnlineDm(
   try {
     const dm = await slack.conversations.open({ users: ownerUser });
     if (dm.channel?.id) {
-      await slack.chat.postMessage({ channel: dm.channel.id, text: "back online" });
+      await slack.chat.postMessage({
+        channel: dm.channel.id,
+        text: "back online",
+      });
     }
   } catch (err) {
     console.warn(

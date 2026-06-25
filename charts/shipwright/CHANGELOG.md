@@ -10,6 +10,42 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.6.59] - 2026-06-25
+
+### Changed
+
+- auto-bump to chart v1.6.59 triggered by release tag `admin-v0.96.0`
+
+## [1.6.58] - 2026-06-25
+
+### Changed
+
+- auto-bump to chart v1.6.58 triggered by release tag `agent-v0.75.0`
+
+## [1.6.57] - 2026-06-25
+
+### Changed
+
+- auto-bump to chart v1.6.57 triggered by release tag `task-store-v0.20.0`
+
+## [1.6.56] - 2026-06-25
+
+### Changed
+
+- auto-bump to chart v1.6.56 triggered by release tag `task-store-v0.19.0`
+
+## [1.6.55] - 2026-06-25
+
+### Changed
+
+- auto-bump to chart v1.6.55 triggered by release tag `agent-v0.74.0`
+
+## [1.6.54] - 2026-06-25
+
+### Added
+
+- admin-ui: show run stats (last run time, outcome badge, today's count) on cron job rows
+
 ## [1.6.53] - 2026-06-25
 
 ### Changed

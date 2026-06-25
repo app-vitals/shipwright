@@ -6,7 +6,7 @@
  * *.integration.test.ts per docs/test-readiness/test-system.md.
  */
 
-import { afterEach, describe, it, expect } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
 import type { Server } from "bun";
 import type { AnalyticsSummary } from "./analytics.ts";
 import { FixedClock } from "./clock.ts";
