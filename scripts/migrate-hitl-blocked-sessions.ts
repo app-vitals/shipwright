@@ -71,12 +71,7 @@ const MIGRATIONS = [
   },
 ];
 
-const UNCHANGED = [
-  "ALM-1.3",
-  "ALM-3.3",
-  "ALM-4.2",
-  "ALM-4.3",
-];
+const UNCHANGED = ["ALM-1.3", "ALM-3.3", "ALM-4.2", "ALM-4.3"];
 
 const TASK_STORE_SCRIPT = "plugins/shipwright/scripts/task_store.ts";
 

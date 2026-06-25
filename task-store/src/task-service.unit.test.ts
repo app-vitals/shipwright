@@ -204,7 +204,10 @@ describe("listBlocked logic (unit)", () => {
     ];
     const result = listBlockedLogic(tasks);
     expect(result.map((t) => t.id)).toEqual(["t1"]);
-    expect(result[0].blockedBy).toContainEqual({ type: "hitl", notified: true });
+    expect(result[0].blockedBy).toContainEqual({
+      type: "hitl",
+      notified: true,
+    });
   });
 
   it("returns pending tasks with unsatisfied dependencies", () => {

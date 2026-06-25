@@ -93,7 +93,10 @@ function makeTask(overrides: Partial<Task> = {}): Task {
   } as Task;
 }
 
-function withBlockedBy(task: Task, blockedBy: TaskWithBlockedBy["blockedBy"] = []): TaskWithBlockedBy {
+function withBlockedBy(
+  task: Task,
+  blockedBy: TaskWithBlockedBy["blockedBy"] = [],
+): TaskWithBlockedBy {
   return { ...task, blockedBy };
 }
 
@@ -125,7 +128,8 @@ function fakeTaskService(opts: {
     },
     async listBlocked(agentId?: string) {
       if (opts.capturedListBlockedCalls) opts.capturedListBlockedCalls.push(1);
-      if (opts.capturedListBlockedArgs) opts.capturedListBlockedArgs.push(agentId);
+      if (opts.capturedListBlockedArgs)
+        opts.capturedListBlockedArgs.push(agentId);
       return (opts.listBlockedResult ?? []).map((t) => withBlockedBy(t));
     },
     async get(id: string) {

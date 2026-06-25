@@ -45,16 +45,66 @@ const pillars = [
 // Default cron jobs the cloud agent seeds onto every new agent.
 // Source of truth: admin/src/system-crons.ts (keep this list in sync).
 const crons = [
-  { name: "dev-task", cadence: "every 30 min", on: true, desc: "Picks the next ready task, builds it with tests, opens a PR." },
-  { name: "review-patch", cadence: "every 30 min", on: true, desc: "Reviews open PRs and patches the ones failing CI or review." },
-  { name: "review", cadence: "every 30 min", on: false, desc: "Review-only pass over open PRs." },
-  { name: "patch", cadence: "every 30 min", on: false, desc: "Fixes failing CI and unresolved review findings." },
-  { name: "deploy", cadence: "every 30 min", on: false, desc: "Merges approved PRs and deploys them." },
-  { name: "test-readiness", cadence: "daily · 6am", on: false, desc: "Audits test coverage and publishes the report." },
-  { name: "docs-freshness", cadence: "daily · 7am", on: false, desc: "Refreshes docs that drifted from the code." },
-  { name: "learn-dream", cadence: "daily · 3am", on: false, desc: "Mines merged PRs for durable learnings." },
-  { name: "dependabot-triage", cadence: "daily · 8am", on: false, desc: "Reviews and triages Dependabot PRs." },
-  { name: "entropy-patrol", cadence: "weekly · Mon", on: false, desc: "Scans for code entropy and fixes what's PR-worthy." },
+  {
+    name: "dev-task",
+    cadence: "every 30 min",
+    on: true,
+    desc: "Picks the next ready task, builds it with tests, opens a PR.",
+  },
+  {
+    name: "review-patch",
+    cadence: "every 30 min",
+    on: true,
+    desc: "Reviews open PRs and patches the ones failing CI or review.",
+  },
+  {
+    name: "review",
+    cadence: "every 30 min",
+    on: false,
+    desc: "Review-only pass over open PRs.",
+  },
+  {
+    name: "patch",
+    cadence: "every 30 min",
+    on: false,
+    desc: "Fixes failing CI and unresolved review findings.",
+  },
+  {
+    name: "deploy",
+    cadence: "every 30 min",
+    on: false,
+    desc: "Merges approved PRs and deploys them.",
+  },
+  {
+    name: "test-readiness",
+    cadence: "daily · 6am",
+    on: false,
+    desc: "Audits test coverage and publishes the report.",
+  },
+  {
+    name: "docs-freshness",
+    cadence: "daily · 7am",
+    on: false,
+    desc: "Refreshes docs that drifted from the code.",
+  },
+  {
+    name: "learn-dream",
+    cadence: "daily · 3am",
+    on: false,
+    desc: "Mines merged PRs for durable learnings.",
+  },
+  {
+    name: "dependabot-triage",
+    cadence: "daily · 8am",
+    on: false,
+    desc: "Reviews and triages Dependabot PRs.",
+  },
+  {
+    name: "entropy-patrol",
+    cadence: "weekly · Mon",
+    on: false,
+    desc: "Scans for code entropy and fixes what's PR-worthy.",
+  },
 ];
 
 // Metrics section — illustrative figures for the simulated dashboard screenshot.
@@ -71,20 +121,76 @@ const metricBars = [42, 58, 36, 70, 54, 88, 76];
 // "Inside a task" tab — the ordered steps /shipwright:dev-task runs.
 // Faithful to plugins/shipwright/commands/dev-task.md (its phase headings).
 const devTaskSteps = [
-  { n: "01", title: "Detect the toolchain", body: "Scan the repo's build config and extract the test, lint, typecheck, and validate commands to use later." },
-  { n: "02", title: "Pick the next task", body: "Resume an in-progress task, or pull the next ready item from the queue and validate its fields." },
-  { n: "03", title: "Mark in-progress", body: "Clean up any orphaned branches or PRs from a prior run, then flip the task's status label." },
-  { n: "04", title: "Build the brief", body: "Assemble a spec prompt from the task's title, description, acceptance criteria, and layer." },
-  { n: "05", title: "Set up a worktree", body: "Create or reuse an isolated git worktree on the task's branch — never on main." },
-  { n: "06", title: "Tests first, then code", body: "Write failing tests, make them pass, then refactor. No production code before a failing test exists." },
-  { n: "07", title: "Simplify", body: "Review the diff for duplication, dead code, naming, and needless complexity — and fix it." },
-  { n: "08", title: "Verify the spec", body: "An independent subagent checks every acceptance criterion against the diff and auto-fixes gaps." },
-  { n: "09", title: "Grade requirements", body: "Score each criterion met / partial / not-met, and block the task if anything is unmet after fixes." },
-  { n: "10", title: "Pre-ship checks", body: "Run validate, lint, test, and typecheck, and report the coverage delta against the threshold." },
-  { n: "11", title: "Refresh the docs", body: "A docs agent updates any docs the change made stale, in a separate commit on the branch." },
-  { n: "12", title: "Push & open the PR", body: "Push the branch and open a pull request — or add commits to the existing one." },
-  { n: "13", title: "Watch CI, fix failures", body: "Poll CI, collect failure logs, and retry fixes up to six times before blocking the task." },
-  { n: "14", title: "Record metrics & hand off", body: "Move the task to pr_open, append the metrics line, and print a handoff summary." },
+  {
+    n: "01",
+    title: "Detect the toolchain",
+    body: "Scan the repo's build config and extract the test, lint, typecheck, and validate commands to use later.",
+  },
+  {
+    n: "02",
+    title: "Pick the next task",
+    body: "Resume an in-progress task, or pull the next ready item from the queue and validate its fields.",
+  },
+  {
+    n: "03",
+    title: "Mark in-progress",
+    body: "Clean up any orphaned branches or PRs from a prior run, then flip the task's status label.",
+  },
+  {
+    n: "04",
+    title: "Build the brief",
+    body: "Assemble a spec prompt from the task's title, description, acceptance criteria, and layer.",
+  },
+  {
+    n: "05",
+    title: "Set up a worktree",
+    body: "Create or reuse an isolated git worktree on the task's branch — never on main.",
+  },
+  {
+    n: "06",
+    title: "Tests first, then code",
+    body: "Write failing tests, make them pass, then refactor. No production code before a failing test exists.",
+  },
+  {
+    n: "07",
+    title: "Simplify",
+    body: "Review the diff for duplication, dead code, naming, and needless complexity — and fix it.",
+  },
+  {
+    n: "08",
+    title: "Verify the spec",
+    body: "An independent subagent checks every acceptance criterion against the diff and auto-fixes gaps.",
+  },
+  {
+    n: "09",
+    title: "Grade requirements",
+    body: "Score each criterion met / partial / not-met, and block the task if anything is unmet after fixes.",
+  },
+  {
+    n: "10",
+    title: "Pre-ship checks",
+    body: "Run validate, lint, test, and typecheck, and report the coverage delta against the threshold.",
+  },
+  {
+    n: "11",
+    title: "Refresh the docs",
+    body: "A docs agent updates any docs the change made stale, in a separate commit on the branch.",
+  },
+  {
+    n: "12",
+    title: "Push & open the PR",
+    body: "Push the branch and open a pull request — or add commits to the existing one.",
+  },
+  {
+    n: "13",
+    title: "Watch CI, fix failures",
+    body: "Poll CI, collect failure logs, and retry fixes up to six times before blocking the task.",
+  },
+  {
+    n: "14",
+    title: "Record metrics & hand off",
+    body: "Move the task to pr_open, append the metrics line, and print a handoff summary.",
+  },
 ];
 
 // How-it-works: the four pipeline stages (plan → build → review → ship).

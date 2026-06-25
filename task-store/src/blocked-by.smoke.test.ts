@@ -130,7 +130,9 @@ function fakeTaskService(
       return opts.listReadyResult ?? [];
     },
     async listBlocked() {
-      return (opts.listBlockedResult ?? []).map((t) => withBlockedBy(t, allTasks));
+      return (opts.listBlockedResult ?? []).map((t) =>
+        withBlockedBy(t, allTasks),
+      );
     },
     async get(id: string) {
       if ("getResult" in opts) {

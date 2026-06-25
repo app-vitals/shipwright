@@ -1,7 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import { createTaskStoreApp } from "./app.ts";
 import type { Task } from "./index.ts";
-import type { TaskListFilters, TaskListResult, TaskServiceLike, TaskWithBlockedBy } from "./task-service.ts";
+import type {
+  TaskListFilters,
+  TaskListResult,
+  TaskServiceLike,
+  TaskWithBlockedBy,
+} from "./task-service.ts";
 import type { TokenServiceLike } from "./token-service.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -59,7 +64,9 @@ function fakeAgentTokenService(scopedRepos: string[]): TokenServiceLike {
       };
     },
     async validate(raw: string) {
-      return raw === AGENT_TOKEN ? { id: "tok-agent", agentId: AGENT_ID } : null;
+      return raw === AGENT_TOKEN
+        ? { id: "tok-agent", agentId: AGENT_ID }
+        : null;
     },
     async revoke() {
       return null;
@@ -139,7 +146,8 @@ function fakeTaskService(
       return [];
     },
     async get(id: string) {
-      if ("getResult" in opts) return opts.getResult ? withBlockedBy(opts.getResult) : null;
+      if ("getResult" in opts)
+        return opts.getResult ? withBlockedBy(opts.getResult) : null;
       return withBlockedBy(makeTask({ id }));
     },
     async create(data) {
@@ -169,7 +177,9 @@ function fakeTaskService(
     async bulk(_tasks) {
       return { inserted: 0, updated: 0 };
     },
-    async distinct(_agentId?: string): Promise<{ sessions: string[]; repos: string[] }> {
+    async distinct(
+      _agentId?: string,
+    ): Promise<{ sessions: string[]; repos: string[] }> {
       return Promise.resolve({ sessions: [], repos: [] });
     },
   };
@@ -192,7 +202,10 @@ function makeAdminApp(deps: { taskService?: TaskServiceLike } = {}) {
 }
 
 /** Build app with agent token scoped to the given repos. */
-function makeAgentApp(scopedRepos: string[], deps: { taskService?: TaskServiceLike } = {}) {
+function makeAgentApp(
+  scopedRepos: string[],
+  deps: { taskService?: TaskServiceLike } = {},
+) {
   const tokenService = fakeAgentTokenService(scopedRepos);
   return createTaskStoreApp({
     taskService: deps.taskService ?? fakeTaskService(),
@@ -213,7 +226,11 @@ describe("org/repo format validation — POST /tokens", () => {
     const res = await app.request("/tokens", {
       method: "POST",
       headers: { ...adminAuth(), "content-type": "application/json" },
-      body: JSON.stringify({ label: "ci", agentId: "agent-1", repos: ["myrepo"] }),
+      body: JSON.stringify({
+        label: "ci",
+        agentId: "agent-1",
+        repos: ["myrepo"],
+      }),
     });
     expect(res.status).toBe(201);
   });
@@ -223,7 +240,11 @@ describe("org/repo format validation — POST /tokens", () => {
     const res = await app.request("/tokens", {
       method: "POST",
       headers: { ...adminAuth(), "content-type": "application/json" },
-      body: JSON.stringify({ label: "ci", agentId: "agent-1", repos: ["example-org/my-service"] }),
+      body: JSON.stringify({
+        label: "ci",
+        agentId: "agent-1",
+        repos: ["example-org/my-service"],
+      }),
     });
     expect(res.status).toBe(201);
   });
@@ -255,7 +276,11 @@ describe("org/repo format validation — POST /tasks", () => {
     const res = await app.request("/tasks", {
       method: "POST",
       headers: { ...adminAuth(), "content-type": "application/json" },
-      body: JSON.stringify({ title: "T", status: "pending", repo: "example-org/my-service" }),
+      body: JSON.stringify({
+        title: "T",
+        status: "pending",
+        repo: "example-org/my-service",
+      }),
     });
     expect(res.status).toBe(201);
   });
@@ -278,7 +303,11 @@ describe("org/repo scope validation — POST /tasks (agent tokens)", () => {
     const res = await app.request("/tasks", {
       method: "POST",
       headers: { ...agentAuth(), "content-type": "application/json" },
-      body: JSON.stringify({ title: "T", status: "pending", repo: "example-org/my-service" }),
+      body: JSON.stringify({
+        title: "T",
+        status: "pending",
+        repo: "example-org/my-service",
+      }),
     });
     expect(res.status).toBe(400);
   });
@@ -288,7 +317,11 @@ describe("org/repo scope validation — POST /tasks (agent tokens)", () => {
     const res = await app.request("/tasks", {
       method: "POST",
       headers: { ...agentAuth(), "content-type": "application/json" },
-      body: JSON.stringify({ title: "T", status: "pending", repo: "example-org/my-service" }),
+      body: JSON.stringify({
+        title: "T",
+        status: "pending",
+        repo: "example-org/my-service",
+      }),
     });
     expect(res.status).toBe(201);
   });
@@ -309,7 +342,11 @@ describe("org/repo scope validation — POST /tasks (agent tokens)", () => {
     const res = await app.request("/tasks", {
       method: "POST",
       headers: { ...adminAuth(), "content-type": "application/json" },
-      body: JSON.stringify({ title: "T", status: "pending", repo: "example-org/my-service" }),
+      body: JSON.stringify({
+        title: "T",
+        status: "pending",
+        repo: "example-org/my-service",
+      }),
     });
     expect(res.status).toBe(201);
   });
@@ -371,7 +408,9 @@ describe("org/repo validation — POST /tasks/bulk", () => {
 describe("org/repo validation — PATCH /tasks/:id", () => {
   it("rejects patch with invalid repo format → 400", async () => {
     const app = makeAdminApp({
-      taskService: fakeTaskService({ getResult: makeTask({ id: "task-1", assignee: null }) }),
+      taskService: fakeTaskService({
+        getResult: makeTask({ id: "task-1", assignee: null }),
+      }),
     });
     const res = await app.request("/tasks/task-1", {
       method: "PATCH",
@@ -383,7 +422,9 @@ describe("org/repo validation — PATCH /tasks/:id", () => {
 
   it("accepts patch with valid repo format → 200", async () => {
     const app = makeAdminApp({
-      taskService: fakeTaskService({ getResult: makeTask({ id: "task-1", assignee: null }) }),
+      taskService: fakeTaskService({
+        getResult: makeTask({ id: "task-1", assignee: null }),
+      }),
     });
     const res = await app.request("/tasks/task-1", {
       method: "PATCH",
@@ -395,7 +436,9 @@ describe("org/repo validation — PATCH /tasks/:id", () => {
 
   it("agent token rejects patch with repo outside scope → 400", async () => {
     const app = makeAgentApp(["app-vitals/shipwright"], {
-      taskService: fakeTaskService({ getResult: makeTask({ id: "task-1", assignee: AGENT_ID }) }),
+      taskService: fakeTaskService({
+        getResult: makeTask({ id: "task-1", assignee: AGENT_ID }),
+      }),
     });
     const res = await app.request("/tasks/task-1", {
       method: "PATCH",
@@ -407,7 +450,9 @@ describe("org/repo validation — PATCH /tasks/:id", () => {
 
   it("agent token accepts patch with repo within scope → 200", async () => {
     const app = makeAgentApp(["example-org/my-service"], {
-      taskService: fakeTaskService({ getResult: makeTask({ id: "task-1", assignee: AGENT_ID }) }),
+      taskService: fakeTaskService({
+        getResult: makeTask({ id: "task-1", assignee: AGENT_ID }),
+      }),
     });
     const res = await app.request("/tasks/task-1", {
       method: "PATCH",

@@ -44,7 +44,10 @@ const SAMPLE_CRONS: AgentCronJob[] = [
 
 // ─── Fake fetch helpers ────────────────────────────────────────────────────────
 
-type FetchFn = (url: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+type FetchFn = (
+  url: RequestInfo | URL,
+  init?: RequestInit,
+) => Promise<Response>;
 type CapturedCall = { url: string; method: string; headers: Headers };
 
 function fakeFetch(statusCode: number, body: unknown): FetchFn {
@@ -227,7 +230,9 @@ describe("HttpShipwrightRuntimeClient.reconcileSystemCrons", () => {
       fetchFn: fakeFetch(200, { created: 1, updated: 0, deleted: 0 }),
     });
 
-    await expect(client.reconcileSystemCrons(AGENT_ID)).resolves.toBeUndefined();
+    await expect(
+      client.reconcileSystemCrons(AGENT_ID),
+    ).resolves.toBeUndefined();
   });
 
   it("throws ShipwrightClientError with statusCode 404 on 404", async () => {
@@ -257,7 +262,11 @@ describe("HttpShipwrightRuntimeClient.reconcileSystemCrons", () => {
   });
 
   it("sends Authorization: Bearer header", async () => {
-    const { fn, calls } = capturingFetch(200, { created: 0, updated: 0, deleted: 0 });
+    const { fn, calls } = capturingFetch(200, {
+      created: 0,
+      updated: 0,
+      deleted: 0,
+    });
     const client = new HttpShipwrightRuntimeClient({
       apiUrl: API_URL,
       apiKey: API_KEY,
@@ -271,7 +280,11 @@ describe("HttpShipwrightRuntimeClient.reconcileSystemCrons", () => {
   });
 
   it("calls the correct URL with POST method", async () => {
-    const { fn, calls } = capturingFetch(200, { created: 0, updated: 0, deleted: 0 });
+    const { fn, calls } = capturingFetch(200, {
+      created: 0,
+      updated: 0,
+      deleted: 0,
+    });
     const client = new HttpShipwrightRuntimeClient({
       apiUrl: API_URL,
       apiKey: API_KEY,
@@ -280,15 +293,17 @@ describe("HttpShipwrightRuntimeClient.reconcileSystemCrons", () => {
 
     await client.reconcileSystemCrons(AGENT_ID);
 
-    expect(calls[0].url).toBe(
-      `${API_URL}/agents/${AGENT_ID}/crons/reconcile`,
-    );
+    expect(calls[0].url).toBe(`${API_URL}/agents/${AGENT_ID}/crons/reconcile`);
     expect(calls[0].method).toBe("POST");
   });
 
   it("uses adminApiUrl for reconcile when provided separately", async () => {
     const ADMIN_URL = "https://admin.test.shipwright.dev";
-    const { fn, calls } = capturingFetch(200, { created: 0, updated: 0, deleted: 0 });
+    const { fn, calls } = capturingFetch(200, {
+      created: 0,
+      updated: 0,
+      deleted: 0,
+    });
     const client = new HttpShipwrightRuntimeClient({
       apiUrl: API_URL,
       adminApiUrl: ADMIN_URL,

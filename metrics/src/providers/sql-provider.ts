@@ -638,8 +638,7 @@ export class SqlEventStoreProvider implements MetricsProvider {
     for (const e of filtered) {
       const agentId = e.properties.agent_id;
       const cronName = e.properties.cron_name;
-      const k1 =
-        typeof agentId === "string" ? agentId : String(agentId ?? "");
+      const k1 = typeof agentId === "string" ? agentId : String(agentId ?? "");
       const k2 =
         typeof cronName === "string" ? cronName : String(cronName ?? "");
       const key = `${k1}\x00${k2}`;
@@ -663,7 +662,10 @@ export class SqlEventStoreProvider implements MetricsProvider {
         ];
       })
       .sort((a, b) => Number(b[6]) - Number(a[6]));
-    return table(["agent_id", "cron_name", ...this.tokenColumns(), "cost_usd"], rows);
+    return table(
+      ["agent_id", "cron_name", ...this.tokenColumns(), "cost_usd"],
+      rows,
+    );
   }
 
   private async tokensTrends(win: {
