@@ -558,12 +558,9 @@ PR_CLAIM=$(curl -sf -X POST \
   "${SHIPWRIGHT_TASK_STORE_URL}/prs/claim" \
   -d "{\"repo\": \"{org}/{repo}\", \"prNumber\": {pr}, \"commitSha\": \"{headRefOid}\"$([ -n \"{taskId}\" ] && echo \", \\\"taskId\\\": \\\"{taskId}\\\"\" || true)}" \
   2>/dev/null)
-if [ -z "$PR_CLAIM" ]; then
-  echo "Warning: failed to upsert PR record in task store — continuing"
-fi
 ```
 
-If `PR_CLAIM` is empty (env var absent or call failed), print the warning and skip steps 2–4.
+If the claim call fails, `PR_CLAIM` will be empty; step 2 handles this case.
 
 ### 2. Extract record ID
 
