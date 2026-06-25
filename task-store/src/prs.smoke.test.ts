@@ -589,9 +589,9 @@ describe("/prs routes (smoke)", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as PullRequestListResult;
     expect(body.prs).toHaveLength(2);
-    expect(
-      body.prs.every((p: PullRequest) => p.reviewState === "posted"),
-    ).toBe(true);
+    expect(body.prs.every((p: PullRequest) => p.reviewState === "posted")).toBe(
+      true,
+    );
   });
 
   // ─── GET /prs/:id ─────────────────────────────────────────────────────────
