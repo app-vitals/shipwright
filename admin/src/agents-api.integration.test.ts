@@ -13,14 +13,15 @@
 import { beforeEach, describe, expect, it } from "bun:test";
 import { sign } from "hono/jwt";
 import { PrismaClient } from "../prisma/client/index.js";
-import { NoopAgentProvisioner } from "./agent-provisioner.ts";
-import { createAdminApp } from "./agents-api.ts";
-import type { AdminDeps } from "./agents-api.ts";
 import { AgentCronJobService } from "./agent-cron-jobs.ts";
+import { AgentCronRunService } from "./agent-cron-runs.ts";
 import { AgentEnvService } from "./agent-envs.ts";
 import { AgentPluginService } from "./agent-plugins.ts";
+import { NoopAgentProvisioner } from "./agent-provisioner.ts";
 import { AgentTokenService } from "./agent-tokens.ts";
 import { AgentToolService } from "./agent-tools.ts";
+import { createAdminApp } from "./agents-api.ts";
+import type { AdminDeps } from "./agents-api.ts";
 import { makeTokenCrypto } from "./token-crypto.ts";
 
 const TEST_DB = process.env.DATABASE_URL_ADMIN_TEST;
@@ -87,6 +88,7 @@ describeOrSkip("admin CRUD API (integration)", () => {
     const deps: AdminDeps = {
       agentEnvService: new AgentEnvService(prisma, crypto),
       agentCronJobService: new AgentCronJobService(prisma),
+      agentCronRunService: new AgentCronRunService(prisma),
       agentToolService: new AgentToolService(prisma),
       agentTokenService: new AgentTokenService(prisma),
       agentPluginService: new AgentPluginService(prisma),

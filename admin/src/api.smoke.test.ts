@@ -451,6 +451,27 @@ function buildCombinedApp() {
         createdAt: new Date(),
         updatedAt: new Date(),
       }),
+      listWithRunSummary: async () => [],
+    },
+    agentCronRunService: {
+      create: async () => ({
+        id: "run-1",
+        cronId: "c1",
+        agentId: COMBINED_AGENT_ID,
+        startedAt: new Date(),
+        completedAt: null,
+        skipped: false,
+        skipReason: null,
+        outcome: null,
+        error: null,
+        createdAt: new Date(),
+      }),
+      list: async () => ({
+        items: [],
+        total: 0,
+        limit: 20,
+        offset: 0,
+      }),
     },
     agentToolService: {
       list: async () => [],
