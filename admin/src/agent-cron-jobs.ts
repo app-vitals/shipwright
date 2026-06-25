@@ -8,6 +8,7 @@
  */
 
 import type { AgentCronJob, PrismaClient } from "../prisma/client/index.js";
+import { type Clock, SystemClock } from "./clock.ts";
 import { NotFoundError, UnprocessableEntityError } from "./errors.ts";
 import { SYSTEM_CRONS } from "./system-crons.ts";
 
@@ -67,7 +68,10 @@ function validateDeliveryTarget(
 }
 
 export class AgentCronJobService {
-  constructor(private prisma: PrismaClient) {}
+  constructor(
+    private prisma: PrismaClient,
+    private clock: Clock = SystemClock(),
+  ) {}
 
   /**
    * List all cron jobs for a given agent.
@@ -94,7 +98,7 @@ export class AgentCronJobService {
     });
 
     // Compute midnight UTC today for the runCountToday boundary
-    const todayMidnightUtc = new Date();
+    const todayMidnightUtc = this.clock.now();
     todayMidnightUtc.setUTCHours(0, 0, 0, 0);
 
     // Fetch run summaries for all cron IDs in one pass
