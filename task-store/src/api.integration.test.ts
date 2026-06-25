@@ -374,6 +374,29 @@ describeOrSkip("task-store API (integration)", () => {
     expect(titles).not.toContain("inprog");
   });
 
+  // ─── Token update route ────────────────────────────────────────────────────
+
+  it("PATCH /tokens/:id updates label and agentId", async () => {
+    const create = await app.request("/tokens", {
+      method: "POST",
+      headers: auth(),
+      body: JSON.stringify({ label: "original", agentId: "agent-old" }),
+    });
+    const { id } = (await create.json()) as { id: string };
+
+    const patch = await app.request(`/tokens/${id}`, {
+      method: "PATCH",
+      headers: { ...auth(), "content-type": "application/json" },
+      body: JSON.stringify({ label: "updated", agentId: "agent-new" }),
+    });
+    expect(patch.status).toBe(200);
+    const body = (await patch.json()) as { id: string; label: string | null; agentId: string | null; rawToken?: string };
+    expect(body.id).toBe(id);
+    expect(body.label).toBe("updated");
+    expect(body.agentId).toBe("agent-new");
+    expect(body.rawToken).toBeUndefined();
+  });
+
   // ─── Token revoke route ────────────────────────────────────────────────────
 
   it("DELETE /tokens/:id revokes a token", async () => {
