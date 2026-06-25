@@ -21,6 +21,7 @@ import { Hono } from "hono";
 import { PrismaClient } from "../prisma/client/index.js";
 import { createAdminUIApp } from "./admin-ui.ts";
 import { AgentCronJobService } from "./agent-cron-jobs.ts";
+import { AgentCronRunService } from "./agent-cron-runs.ts";
 import { AgentEnvService } from "./agent-envs.ts";
 import { AgentPluginService } from "./agent-plugins.ts";
 import type { AgentProvisioner } from "./agent-provisioner.ts";
@@ -188,6 +189,7 @@ async function startServer(): Promise<void> {
   // Construct all services with injected deps
   const agentEnvService = new AgentEnvService(prisma, crypto);
   const agentCronJobService = new AgentCronJobService(prisma);
+  const agentCronRunService = new AgentCronRunService(prisma);
   const agentToolService = new AgentToolService(prisma);
   const agentTokenService = new AgentTokenService(prisma);
   const agentPluginService = new AgentPluginService(prisma);
@@ -240,6 +242,7 @@ async function startServer(): Promise<void> {
   const adminApiApp = createAdminApp({
     agentEnvService,
     agentCronJobService,
+    agentCronRunService,
     agentToolService,
     agentTokenService,
     agentPluginService,
@@ -289,10 +292,11 @@ async function startServer(): Promise<void> {
               headers: { Authorization: `Bearer ${taskStoreAdminToken}` },
             });
             if (!res.ok)
-              throw new Error(
-                `task-store GET /tasks/distinct → ${res.status}`,
-              );
-            return res.json() as Promise<{ sessions: string[]; repos: string[] }>;
+              throw new Error(`task-store GET /tasks/distinct → ${res.status}`);
+            return res.json() as Promise<{
+              sessions: string[];
+              repos: string[];
+            }>;
           },
         }
       : {};

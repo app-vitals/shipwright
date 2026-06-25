@@ -36,7 +36,10 @@ class RecordingProvisioner implements AgentProvisioner {
 
   constructor(private readonly onProvision?: (agentId: string) => void) {}
 
-  async provision(agentId: string, _opts?: { slug?: string }): Promise<ProvisionResult> {
+  async provision(
+    agentId: string,
+    _opts?: { slug?: string },
+  ): Promise<ProvisionResult> {
     this.onProvision?.(agentId);
     this.provisioned.push(agentId);
     return {
@@ -50,9 +53,7 @@ class RecordingProvisioner implements AgentProvisioner {
     this.deprovisioned.push(agentId);
   }
 
-  async reconcile(
-    _agents: Array<{ id: string; slug?: string }>,
-  ): Promise<{
+  async reconcile(_agents: Array<{ id: string; slug?: string }>): Promise<{
     recreated: string[];
     updated: string[];
     orphans: string[];
@@ -70,6 +71,7 @@ const CRON_ID = "cron-test-456";
 const TOKEN_ID = "token-test-789";
 const TOOL_ID = "tool-test-abc";
 const PLUGIN_ID = "plugin-test-def";
+const RUN_ID = "run-test-111";
 
 // ─── JWT helper ───────────────────────────────────────────────────────────────
 
@@ -89,6 +91,22 @@ async function makeSessionCookie(secret = SESSION_SECRET): Promise<string> {
 
 // ─── Mock services ────────────────────────────────────────────────────────────
 
+const MOCK_CRON = {
+  id: CRON_ID,
+  agentId: AGENT_ID,
+  schedule: "0 9 * * 1-5",
+  prompt: "daily standup",
+  channel: "C123" as string | null,
+  user: null as string | null,
+  silent: false,
+  enabled: true,
+  preCheck: null as string | null,
+  name: null as string | null,
+  system: false,
+  createdAt: new Date("2024-01-01"),
+  updatedAt: new Date("2024-01-01"),
+};
+
 function makeMockDeps(): AdminDeps {
   return {
     agentEnvService: {
@@ -98,21 +116,12 @@ function makeMockDeps(): AdminDeps {
       deleteKey: async () => {},
     },
     agentCronJobService: {
-      list: async () => [
+      list: async () => [MOCK_CRON],
+      listWithRunSummary: async () => [
         {
-          id: CRON_ID,
-          agentId: AGENT_ID,
-          schedule: "0 9 * * 1-5",
-          prompt: "daily standup",
-          channel: "C123",
-          user: null,
-          silent: false,
-          enabled: true,
-          preCheck: null,
-          name: null,
-          system: false,
-          createdAt: new Date("2024-01-01"),
-          updatedAt: new Date("2024-01-01"),
+          ...MOCK_CRON,
+          lastRun: null,
+          runCountToday: 0,
         },
       ],
       create: async () => ({
@@ -329,6 +338,26 @@ function makeMockDeps(): AdminDeps {
         }),
       },
     } as unknown as AdminDeps["prisma"],
+    agentCronRunService: {
+      create: async () => ({
+        id: RUN_ID,
+        cronId: CRON_ID,
+        agentId: AGENT_ID,
+        startedAt: new Date("2024-01-01T09:00:00.000Z"),
+        completedAt: null,
+        skipped: false,
+        skipReason: null,
+        outcome: "success",
+        error: null,
+        createdAt: new Date("2024-01-01T09:00:00.000Z"),
+      }),
+      list: async () => ({
+        items: [],
+        total: 0,
+        limit: 20,
+        offset: 0,
+      }),
+    },
     provisioner: new RecordingProvisioner(),
     sessionSecret: SESSION_SECRET,
   };
@@ -1583,7 +1612,11 @@ describe("admin API — selfHosted field", () => {
           ...base.prisma.agent,
           findMany: async () => [
             { id: AGENT_ID, name: "Regular Agent", selfHosted: false },
-            { id: "self-hosted-id", name: "Self-Hosted Agent", selfHosted: true },
+            {
+              id: "self-hosted-id",
+              name: "Self-Hosted Agent",
+              selfHosted: true,
+            },
           ],
         },
       } as unknown as AdminDeps["prisma"],
@@ -1757,3 +1790,159 @@ describe("admin API — repos field", () => {
     expect(body.repos).toEqual([]);
   });
 });
+
+// ─── Cron runs smoke tests ────────────────────────────────────────────────────
+
+describe("admin API — cron runs", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  it("POST /agents/:id/crons/:cronId/runs returns 201 with run record", async () => {
+    const deps = makeMockDepsWithRunService();
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}/crons/${CRON_ID}/runs`, {
+      method: "POST",
+      body: JSON.stringify({
+        startedAt: "2026-01-01T08:00:00.000Z",
+        skipped: false,
+        outcome: "success",
+      }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.run).toBeDefined();
+    expect(body.run.id).toBeDefined();
+    expect(body.run.cronId).toBe(CRON_ID);
+    expect(body.run.agentId).toBe(AGENT_ID);
+  });
+
+  it("POST /agents/:id/crons/:cronId/runs returns 404 for unknown cronId", async () => {
+    const deps = makeMockDepsWithRunService({ notFound: true });
+    const app = createAdminApp(deps);
+    const res = await app.request(
+      `/agents/${AGENT_ID}/crons/nonexistent-cron/runs`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          startedAt: "2026-01-01T08:00:00.000Z",
+          skipped: false,
+        }),
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("GET /agents/:id/crons/:cronId/runs returns 200 with paginated list", async () => {
+    const deps = makeMockDepsWithRunService();
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}/crons/${CRON_ID}/runs`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Array.isArray(body.items)).toBe(true);
+    expect(typeof body.total).toBe("number");
+    expect(typeof body.limit).toBe("number");
+    expect(typeof body.offset).toBe("number");
+  });
+
+  it("GET /agents/:id/crons response includes lastRun and runCountToday", async () => {
+    const deps = makeMockDepsWithRunSummary();
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}/crons`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Array.isArray(body.crons)).toBe(true);
+    expect(body.crons).toHaveLength(1);
+    const cron = body.crons[0];
+    expect("lastRun" in cron).toBe(true);
+    expect("runCountToday" in cron).toBe(true);
+    expect(typeof cron.runCountToday).toBe("number");
+  });
+});
+
+// ─── Mock factories for run service tests ────────────────────────────────────
+
+function makeMockDepsWithRunService(opts?: {
+  notFound?: boolean;
+}): AdminDeps {
+  const mockRun = {
+    id: RUN_ID,
+    cronId: CRON_ID,
+    agentId: AGENT_ID,
+    startedAt: new Date("2026-01-01T08:00:00.000Z"),
+    completedAt: null,
+    skipped: false,
+    skipReason: null,
+    outcome: "success",
+    error: null,
+    createdAt: new Date("2026-01-01T08:00:00.000Z"),
+  };
+
+  const base = makeMockDeps();
+  return {
+    ...base,
+    agentCronRunService: {
+      create: opts?.notFound
+        ? async () => {
+            throw new (await import("./errors.ts")).NotFoundError(
+              "cron not found",
+            );
+          }
+        : async () => mockRun,
+      list: async () => ({
+        items: [mockRun],
+        total: 1,
+        limit: 20,
+        offset: 0,
+      }),
+    },
+  };
+}
+
+function makeMockDepsWithRunSummary(): AdminDeps {
+  const base = makeMockDeps();
+  return {
+    ...base,
+    agentCronJobService: {
+      ...base.agentCronJobService,
+      listWithRunSummary: async () => [
+        {
+          id: CRON_ID,
+          agentId: AGENT_ID,
+          schedule: "0 9 * * 1-5",
+          prompt: "daily standup",
+          channel: "C123",
+          user: null,
+          silent: false,
+          enabled: true,
+          preCheck: null,
+          name: null,
+          system: false,
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+          lastRun: {
+            startedAt: new Date("2024-01-01T09:00:00.000Z"),
+            completedAt: new Date("2024-01-01T09:00:05.000Z"),
+            skipped: false,
+            outcome: "success",
+          },
+          runCountToday: 3,
+        },
+      ],
+    },
+  };
+}
