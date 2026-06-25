@@ -1,16 +1,3 @@
-/**
- * task-store/src/state-filter.smoke.test.ts
- *
- * Smoke tests for the new ?state= values on GET /tasks:
- *   - ?state=ready    → delegates to listReady()
- *   - ?state=in_progress → list() with state=in_progress filter
- *   - ?state=blocked  → delegates to listBlocked()
- *
- * Also verifies that existing ?state=open and ?state=closed continue to work.
- *
- * No real socket, no real DB — services are injected as in-memory fakes.
- */
-
 import { describe, expect, it } from "bun:test";
 import { createTaskStoreApp } from "./app.ts";
 import type { Task } from "./index.ts";
@@ -103,10 +90,6 @@ function withBlockedBy(task: Task, blockedBy: TaskWithBlockedBy["blockedBy"] = [
   return { ...task, blockedBy };
 }
 
-/**
- * Spy-capable task service fake.
- * Captures filters passed to list() and arguments passed to listReady()/listBlocked().
- */
 function fakeTaskService(opts: {
   listResult?: Task[];
   listReadyResult?: Task[];
