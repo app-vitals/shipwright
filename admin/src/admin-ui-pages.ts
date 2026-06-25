@@ -123,13 +123,22 @@ function renderMarkdown(text: string): string {
   // Step 1: escape all HTML entities so raw user input can't inject tags
   let out = escapeHtml(text);
 
-  // Step 2: code blocks (``` ... ```) — must come before inline code
+  // Step 2: extract code blocks into placeholder tokens before line processing
+  // so that interior lines of a fenced block are never handed to the line loop.
+  const codeBlocks: string[] = [];
+  const placeholder = (n: number) => `\x00CODE_BLOCK_${n}\x00`;
+
+  // Multi-line fenced blocks: ```\n...\n```
   out = out.replace(/```[\r\n]([\s\S]*?)[\r\n]```/g, (_m, code) => {
-    return `<pre><code>${code}</code></pre>`;
+    const idx = codeBlocks.length;
+    codeBlocks.push(`<pre><code>${code}</code></pre>`);
+    return placeholder(idx);
   });
-  // Also handle ``` on same line as content: ```code```
+  // Same-line fenced blocks: ```code```
   out = out.replace(/```([^`\n]+)```/g, (_m, code) => {
-    return `<pre><code>${code}</code></pre>`;
+    const idx = codeBlocks.length;
+    codeBlocks.push(`<pre><code>${code}</code></pre>`);
+    return placeholder(idx);
   });
 
   // Step 3: process line-by-line for block-level elements
@@ -150,7 +159,13 @@ function renderMarkdown(text: string): string {
   };
 
   for (const line of lines) {
-    // Skip lines that are part of a pre block (already handled above)
+    // Placeholder lines are pre-rendered code blocks — emit as-is
+    if (/^\x00CODE_BLOCK_\d+\x00$/.test(line)) {
+      closeList();
+      result.push(codeBlocks[parseInt(line.replace(/\x00CODE_BLOCK_(\d+)\x00/, "$1"), 10)]);
+      continue;
+    }
+
     // Headings
     const h3 = line.match(/^### (.+)$/);
     const h2 = line.match(/^## (.+)$/);

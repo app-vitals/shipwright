@@ -1526,4 +1526,30 @@ describe("renderTaskDetailPage — markdown", () => {
     expect(html).not.toContain("<img src=x");
     expect(html).toContain("&lt;img");
   });
+
+  test("multi-line code block: interior lines starting with '- ' are not wrapped in <li>", () => {
+    // Regression: before the placeholder fix, lines inside a fenced block that
+    // started with "- " or "* " were handed to the line loop and wrapped in <li>.
+    // Use a minimal task with no blockers/AC so the only <li>s come from the description.
+    const html = renderTaskDetailPage(
+      {
+        id: "TS-CB",
+        title: "Code block test",
+        status: "pending",
+        description: "```\n- item one\n- item two\n```",
+        acceptanceCriteria: [],
+        blockedBy: [],
+      },
+      "user@example.com",
+    );
+    // Content must be inside <pre><code>, not broken out into list items
+    expect(html).toContain("<pre>");
+    expect(html).toContain("<code>");
+    // The raw list-like text should appear inside the code block, not as HTML list markup
+    expect(html).toContain("- item one");
+    expect(html).toContain("- item two");
+    // The interior lines must NOT produce orphaned <li> tags — there is no actual
+    // list in this input, so no <li> should appear anywhere in the rendered page.
+    expect(html).not.toContain("<li>");
+  });
 });
