@@ -4,7 +4,7 @@
  * Unit tests for check-review.ts
  *
  * Design: the script exports a `run(deps)` function with injectable deps
- * for GH PR listing, current headRefOid fetching, and reviews.json reading.
+ * for GH PR listing, current headRefOid fetching, and PR table querying.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -21,20 +21,12 @@ interface PrInfo {
   repo?: string;
 }
 
-interface ReviewEntry {
-  pr: number;
-  repo: string;
-  lastReviewedCommit?: string;
-  status?: string;
-  posted?: boolean;
+interface PrRecord {
+  commitSha?: string | null;
+  reviewState: string;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-interface CommitInfo {
-  sha: string;
-  parents: Array<{ sha: string }>;
-}
 
 function makePr(overrides: Partial<PrInfo> = {}): PrInfo {
   return {
@@ -50,17 +42,18 @@ function makePr(overrides: Partial<PrInfo> = {}): PrInfo {
 
 function makeDeps(
   prs: PrInfo[],
-  reviewEntries: ReviewEntry[] = [],
+  queryPrRecordFn: (
+    repo: string,
+    prNumber: number,
+  ) => Promise<PrRecord | null> = async () => null,
   currentUser = "bodhi-agent",
   isSelfReviewAllowed = false,
-  prCommits: CommitInfo[] = [],
 ) {
   return {
     listOpenPrs: async (_repo: string) => prs,
-    readReviews: () => reviewEntries,
+    queryPrRecord: queryPrRecordFn,
     getCurrentUser: () => currentUser,
     isSelfReviewAllowed,
-    listPrCommits: async (_prNumber: number) => prCommits,
   };
 }
 
@@ -73,60 +66,71 @@ describe("check-review", () => {
     expect(result.output).toBe("");
   });
 
-  test("exits 0 with prompt when open PR has no review entry", async () => {
-    const result = await run(makeDeps([makePr()], []));
+  test("exits 0 with prompt when open PR has no PR record (queryPrRecord returns null)", async () => {
+    const result = await run(makeDeps([makePr()], async () => null));
     expect(result.exit).toBe(0);
     expect(result.output).toBeTruthy();
   });
 
-  test("exits 1 when open PR entry has matching lastReviewedCommit (already reviewed)", async () => {
+  test("exits 1 when PR record has matching commitSha and reviewState is posted (already reviewed)", async () => {
     const pr = makePr({ headRefOid: "sha111" });
-    const entry: ReviewEntry = {
-      pr: 42,
-      repo: "example-repo",
-      lastReviewedCommit: "sha111",
-      status: "posted",
-    };
-    const result = await run(makeDeps([pr], [entry]));
+    const result = await run(
+      makeDeps([pr], async () => ({
+        commitSha: "sha111",
+        reviewState: "posted",
+      })),
+    );
     expect(result.exit).toBe(1);
     expect(result.output).toBe("");
   });
 
-  test("exits 0 when open PR entry has different lastReviewedCommit (new commits since review)", async () => {
+  test("exits 0 when PR record has different commitSha (new commits since review)", async () => {
     const pr = makePr({ headRefOid: "newsha999" });
-    const entry: ReviewEntry = {
-      pr: 42,
-      repo: "example-repo",
-      lastReviewedCommit: "oldsha111",
-      status: "posted",
-    };
-    const result = await run(makeDeps([pr], [entry]));
+    const result = await run(
+      makeDeps([pr], async () => ({
+        commitSha: "oldsha111",
+        reviewState: "posted",
+      })),
+    );
     expect(result.exit).toBe(0);
     expect(result.output).toBeTruthy();
   });
 
-  test("exits 0 when open PR entry has no lastReviewedCommit field", async () => {
+  test("exits 0 when PR record has reviewState=pending (even if commitSha matches)", async () => {
     const pr = makePr({ headRefOid: "sha111" });
-    const entry: ReviewEntry = {
-      pr: 42,
-      repo: "example-repo",
-      status: "pending",
-    };
-    const result = await run(makeDeps([pr], [entry]));
+    const result = await run(
+      makeDeps([pr], async () => ({
+        commitSha: "sha111",
+        reviewState: "pending",
+      })),
+    );
     expect(result.exit).toBe(0);
     expect(result.output).toBeTruthy();
   });
 
-  test("exits 1 when all open PRs are already reviewed at current HEAD", async () => {
+  test("exits 0 when PR record has null commitSha", async () => {
+    const pr = makePr({ headRefOid: "sha111" });
+    const result = await run(
+      makeDeps([pr], async () => ({
+        commitSha: null,
+        reviewState: "posted",
+      })),
+    );
+    expect(result.exit).toBe(0);
+    expect(result.output).toBeTruthy();
+  });
+
+  test("exits 1 when all open PRs have matching commitSha and non-pending reviewState", async () => {
     const prs = [
       makePr({ number: 1, headRefOid: "sha-A" }),
       makePr({ number: 2, headRefOid: "sha-B" }),
     ];
-    const entries: ReviewEntry[] = [
-      { pr: 1, repo: "example-repo", lastReviewedCommit: "sha-A" },
-      { pr: 2, repo: "example-repo", lastReviewedCommit: "sha-B" },
-    ];
-    const result = await run(makeDeps(prs, entries));
+    const result = await run(
+      makeDeps([...prs], async (_repo, prNumber) => ({
+        commitSha: prNumber === 1 ? "sha-A" : "sha-B",
+        reviewState: "posted",
+      })),
+    );
     expect(result.exit).toBe(1);
     expect(result.output).toBe("");
   });
@@ -136,182 +140,48 @@ describe("check-review", () => {
       makePr({ number: 1, headRefOid: "sha-A" }),
       makePr({ number: 2, headRefOid: "sha-B-new" }),
     ];
-    const entries: ReviewEntry[] = [
-      { pr: 1, repo: "example-repo", lastReviewedCommit: "sha-A" },
-      { pr: 2, repo: "example-repo", lastReviewedCommit: "sha-B-old" },
-    ];
-    const result = await run(makeDeps(prs, entries));
+    const result = await run(
+      makeDeps([...prs], async (_repo, prNumber) => {
+        if (prNumber === 1) return { commitSha: "sha-A", reviewState: "posted" };
+        return { commitSha: "sha-B-old", reviewState: "posted" };
+      }),
+    );
     expect(result.exit).toBe(0);
     expect(result.output).toBeTruthy();
   });
 
   test("exits 1 when only PRs are from current user and isSelfReviewAllowed is false", async () => {
     const pr = makePr({ author: { login: "bodhi-agent" } });
-    const result = await run(makeDeps([pr], [], "bodhi-agent", false));
-    // Own PRs are excluded when allow_self_review is false
+    const result = await run(makeDeps([pr], async () => null, "bodhi-agent", false));
     expect(result.exit).toBe(1);
     expect(result.output).toBe("");
   });
 
   test("exits 0 when PR is authored by current user and isSelfReviewAllowed is true", async () => {
     const pr = makePr({ author: { login: "bodhi-agent" } });
-    const result = await run(makeDeps([pr], [], "bodhi-agent", true));
-    // Own PRs are eligible when isSelfReviewAllowed is true
+    const result = await run(makeDeps([pr], async () => null, "bodhi-agent", true));
     expect(result.exit).toBe(0);
     expect(result.output).toBeTruthy();
   });
 
   test("exits 0 when PR is authored by different user", async () => {
     const pr = makePr({ author: { login: "danmcaulay" } });
-    const result = await run(makeDeps([pr], [], "bodhi-agent"));
+    const result = await run(makeDeps([pr], async () => null, "bodhi-agent"));
     expect(result.exit).toBe(0);
     expect(result.output).toBeTruthy();
   });
 
-  test("exits 1 when entry has status cleaned or merged (terminal)", async () => {
-    const pr = makePr({ headRefOid: "sha111" });
-    const entry: ReviewEntry = {
-      pr: 42,
-      repo: "example-repo",
-      lastReviewedCommit: "sha000",
-      status: "cleaned",
-    };
-    const result = await run(makeDeps([pr], [entry]));
-    // cleaned = terminal, skip regardless of sha mismatch
-    expect(result.exit).toBe(1);
-    expect(result.output).toBe("");
-  });
-
   test("prompt mentions shipwright:review", async () => {
-    const result = await run(makeDeps([makePr()]));
+    const result = await run(makeDeps([makePr()], async () => null));
     expect(result.exit).toBe(0);
     expect(result.output.toLowerCase()).toContain("review");
   });
 
-  test("exits 1 (skips PR) when SHA mismatch but all new commits are merge commits (merge-only update)", async () => {
-    const pr = makePr({ number: 42, headRefOid: "sha-new" });
-    const entry: ReviewEntry = {
-      pr: 42,
-      repo: "example-repo",
-      lastReviewedCommit: "sha-anchor",
-      status: "posted",
-    };
-    const prCommits: CommitInfo[] = [
-      { sha: "sha-anchor", parents: [{ sha: "p1" }] },
-      { sha: "sha-new", parents: [{ sha: "a" }, { sha: "b" }] },
-    ];
-    const result = await run(
-      makeDeps([pr], [entry], "bodhi-agent", false, prCommits),
-    );
-    expect(result.exit).toBe(1);
-    expect(result.output).toBe("");
-  });
-
-  test("exits 0 (triggers review) when SHA mismatch and at least one new commit is not a merge commit", async () => {
-    const pr = makePr({ number: 42, headRefOid: "sha-new2" });
-    const entry: ReviewEntry = {
-      pr: 42,
-      repo: "example-repo",
-      lastReviewedCommit: "sha-anchor",
-      status: "posted",
-    };
-    const prCommits: CommitInfo[] = [
-      { sha: "sha-anchor", parents: [{ sha: "p1" }] },
-      { sha: "sha-real-work", parents: [{ sha: "p2" }] },
-      { sha: "sha-new2", parents: [{ sha: "a" }, { sha: "b" }] },
-    ];
-    const result = await run(
-      makeDeps([pr], [entry], "bodhi-agent", false, prCommits),
-    );
-    expect(result.exit).toBe(0);
-    expect(result.output).toBeTruthy();
-  });
-
-  test("exits 0 (triggers review) when listPrCommits throws (graceful degradation)", async () => {
-    const pr = makePr({ number: 42, headRefOid: "sha-new" });
-    const entry: ReviewEntry = {
-      pr: 42,
-      repo: "example-repo",
-      lastReviewedCommit: "sha-anchor",
-      status: "posted",
-    };
-    const deps = {
-      listOpenPrs: async (_repo: string) => [pr],
-      readReviews: () => [entry],
-      getCurrentUser: () => "bodhi-agent",
-      isSelfReviewAllowed: false,
-      listPrCommits: async (_prNumber: number): Promise<CommitInfo[]> => {
-        throw new Error("API error");
-      },
-    };
-    const result = await run(deps);
-    expect(result.exit).toBe(0);
-    expect(result.output).toBeTruthy();
-  });
-
-  test("does not call listPrCommits when no lastReviewedCommit (never reviewed)", async () => {
-    const pr = makePr({ number: 42, headRefOid: "sha111" });
-    const entry: ReviewEntry = {
-      pr: 42,
-      repo: "example-repo",
-      status: "pending",
-      // no lastReviewedCommit
-    };
-    let listPrCommitsCalled = false;
-    const deps = {
-      listOpenPrs: async (_repo: string) => [pr],
-      readReviews: () => [entry],
-      getCurrentUser: () => "bodhi-agent",
-      isSelfReviewAllowed: false,
-      listPrCommits: async (_prNumber: number): Promise<CommitInfo[]> => {
-        listPrCommitsCalled = true;
-        return [];
-      },
-    };
-    const result = await run(deps);
-    expect(result.exit).toBe(0);
-    expect(listPrCommitsCalled).toBe(false);
-  });
-
-  // ─── Tier 3: staged-but-unposted review + new commits → skip on cron ─────
-
-  test("Tier 3: exits 1 (skips PR) when entry has posted=false and head SHA changed (staged review deferred)", async () => {
-    // posted: false = review written to reviews.json but not yet posted to GitHub.
-    // The review skill explicitly defers these on no-arg runs. The cron precheck
-    // must match that behaviour so it doesn't re-trigger the skill.
-    const pr = makePr({ number: 42, headRefOid: "sha-new" });
-    const entry: ReviewEntry = {
-      pr: 42,
-      repo: "example-repo",
-      lastReviewedCommit: "sha-old",
-      posted: false,
-    };
-    const result = await run(makeDeps([pr], [entry]));
-    expect(result.exit).toBe(1);
-    expect(result.output).toBe("");
-  });
-
-  test("Tier 3: exits 0 (triggers review) when entry has posted=true and head SHA changed (new real commits)", async () => {
-    // posted: true = review was already posted. New commits have landed.
-    // This is regular re-review territory — the cron should fire.
-    const pr = makePr({ number: 42, headRefOid: "sha-new" });
-    const entry: ReviewEntry = {
-      pr: 42,
-      repo: "example-repo",
-      lastReviewedCommit: "sha-old",
-      posted: true,
-    };
-    const result = await run(makeDeps([pr], [entry]));
-    expect(result.exit).toBe(0);
-    expect(result.output).toBeTruthy();
-  });
-
-  // ─── Multi-repo: dedup map keyed on "repo:pr" to avoid cross-repo collisions ─
+  // ─── multi-repo: dedup keyed on repo+prNumber via queryPrRecord ──────────────
 
   test("multi-repo: two repos with the same PR number are deduped independently", async () => {
-    // PR #42 in repo-A is reviewed (matches lastReviewedCommit).
-    // PR #42 in repo-B is NOT reviewed (no entry). Without the repo:pr key fix,
-    // repo-A's entry would suppress repo-B and exit 1 (wrong).
+    // PR #42 in repo-A is reviewed (commitSha matches, reviewState=posted).
+    // PR #42 in repo-B has no record → should trigger.
     const prA = makePr({
       number: 42,
       headRefOid: "sha-A",
@@ -322,21 +192,29 @@ describe("check-review", () => {
       headRefOid: "sha-B",
       repo: "example-org/repo-b",
     });
-    const entries: ReviewEntry[] = [
-      {
-        pr: 42,
-        repo: "example-org/repo-a",
-        lastReviewedCommit: "sha-A",
-        status: "posted",
-      },
-      // No entry for repo-b PR #42 → should trigger
-    ];
+    const result = await run(
+      makeDeps([prA, prB], async (repo, _prNumber) => {
+        if (repo === "example-org/repo-a") {
+          return { commitSha: "sha-A", reviewState: "posted" };
+        }
+        return null; // repo-b has no record → eligible
+      }),
+    );
+    expect(result.exit).toBe(0);
+    expect(result.output).toBeTruthy();
+  });
+
+  // ─── queryPrRecord failure → treat as eligible ───────────────────────────────
+
+  test("exits 0 (eligible) when queryPrRecord throws (graceful degradation)", async () => {
+    const pr = makePr({ headRefOid: "sha111" });
     const deps = {
-      listOpenPrs: async (_repo: string) => [prA, prB],
-      readReviews: () => entries,
+      listOpenPrs: async (_repo: string) => [pr],
+      queryPrRecord: async (_repo: string, _prNumber: number): Promise<PrRecord | null> => {
+        throw new Error("Network error");
+      },
       getCurrentUser: () => "bodhi-agent",
       isSelfReviewAllowed: false,
-      listPrCommits: async (_prNumber: number): Promise<CommitInfo[]> => [],
     };
     const result = await run(deps);
     expect(result.exit).toBe(0);
