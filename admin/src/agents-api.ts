@@ -21,7 +21,10 @@
 
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import type { PrismaClient } from "../prisma/client/index.js";
-import type { AgentCronJobService } from "./agent-cron-jobs.ts";
+import type {
+  AgentCronJobService,
+  AgentCronJobWithRunSummary,
+} from "./agent-cron-jobs.ts";
 import type { AgentCronRunService } from "./agent-cron-runs.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
 import type { AgentPluginService } from "./agent-plugins.ts";
@@ -1016,37 +1019,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
   app.openapi(listCronsRoute, async (c) => {
     const { id: agentId } = c.req.valid("param");
     const jobs = await agentCronJobService.listWithRunSummary(agentId);
-    return c.json(
-      {
-        crons: jobs.map((job) => ({
-          id: job.id,
-          agentId: job.agentId,
-          schedule: job.schedule,
-          prompt: job.prompt,
-          channel: job.channel,
-          user: job.user,
-          silent: job.silent,
-          enabled: job.enabled,
-          preCheck: job.preCheck,
-          name: job.name,
-          system: job.system,
-          createdAt: job.createdAt.toISOString(),
-          updatedAt: job.updatedAt.toISOString(),
-          lastRun: job.lastRun
-            ? {
-                startedAt: job.lastRun.startedAt.toISOString(),
-                completedAt: job.lastRun.completedAt
-                  ? job.lastRun.completedAt.toISOString()
-                  : null,
-                skipped: job.lastRun.skipped,
-                outcome: job.lastRun.outcome,
-              }
-            : null,
-          runCountToday: job.runCountToday,
-        })),
-      },
-      200,
-    );
+    return c.json({ crons: jobs.map(serializeCronWithSummary) }, 200);
   });
 
   // POST /agents/:id/crons/:cronId/runs — create a cron run record
@@ -1222,6 +1195,45 @@ function serializeCron(cron: {
     createdAt: cron.createdAt.toISOString(),
     updatedAt: cron.updatedAt.toISOString(),
   } as z.infer<typeof AgentCronJobSchema>;
+}
+
+function serializeCronWithSummary(job: AgentCronJobWithRunSummary): z.infer<
+  typeof AgentCronJobSchema
+> & {
+  lastRun: {
+    startedAt: string;
+    completedAt: string | null;
+    skipped: boolean;
+    outcome: string | null;
+  } | null;
+  runCountToday: number;
+} {
+  return {
+    id: job.id,
+    agentId: job.agentId,
+    schedule: job.schedule,
+    prompt: job.prompt,
+    channel: job.channel,
+    user: job.user,
+    silent: job.silent,
+    enabled: job.enabled,
+    preCheck: job.preCheck,
+    name: job.name,
+    system: job.system,
+    createdAt: job.createdAt.toISOString(),
+    updatedAt: job.updatedAt.toISOString(),
+    lastRun: job.lastRun
+      ? {
+          startedAt: job.lastRun.startedAt.toISOString(),
+          completedAt: job.lastRun.completedAt
+            ? job.lastRun.completedAt.toISOString()
+            : null,
+          skipped: job.lastRun.skipped,
+          outcome: job.lastRun.outcome,
+        }
+      : null,
+    runCountToday: job.runCountToday,
+  } as ReturnType<typeof serializeCronWithSummary>;
 }
 
 function serializeCronRun(run: {
