@@ -421,7 +421,7 @@ const deleteCronRoute = createRoute({
 
 const listCronsRoute = createRoute({
   method: "get",
-  path: "/agents/{id}/crons",
+  path: "/agents/{id}/crons/summary",
   request: { params: AgentIdParamSchema },
   responses: {
     200: {
