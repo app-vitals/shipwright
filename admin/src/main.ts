@@ -299,9 +299,40 @@ async function startServer(): Promise<void> {
               repos: string[];
             }>;
           },
+          fetchTaskStorePr: async (taskId: string) => {
+            const res = await fetch(
+              `${taskStoreUrl}/prs?taskId=${encodeURIComponent(taskId)}`,
+              {
+                headers: { Authorization: `Bearer ${taskStoreAdminToken}` },
+              },
+            );
+            if (res.status === 404) return null;
+            if (!res.ok)
+              throw new Error(`task-store GET /prs?taskId=${taskId} → ${res.status}`);
+            const data = await res.json() as { prs?: unknown[] };
+            const prs = data.prs ?? [];
+            return prs.length > 0 ? (prs[0] as ReturnType<typeof Object>) : null;
+          },
+          fetchTaskStorePrs: async (params: URLSearchParams) => {
+            const url = `${taskStoreUrl}/prs${params.size > 0 ? `?${params}` : ""}`;
+            const res = await fetch(url, {
+              headers: { Authorization: `Bearer ${taskStoreAdminToken}` },
+            });
+            if (!res.ok)
+              throw new Error(`task-store GET /prs → ${res.status}`);
+            return res.json();
+          },
+          fetchTaskStorePrById: async (id: string) => {
+            const res = await fetch(`${taskStoreUrl}/prs/${id}`, {
+              headers: { Authorization: `Bearer ${taskStoreAdminToken}` },
+            });
+            if (res.status === 404) return null;
+            if (!res.ok)
+              throw new Error(`task-store GET /prs/${id} → ${res.status}`);
+            return res.json();
+          },
         }
       : {};
-  // TODO: wire fetchTaskStorePr once task-store exposes a per-task PR endpoint
 
   // Validate SHIPWRIGHT_ADMIN_TZ at startup — toLocaleDateString/toLocaleString
   // will throw RangeError at render time if the timezone is invalid, causing a 500
