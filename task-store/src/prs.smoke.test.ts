@@ -631,12 +631,95 @@ describe("/prs routes (smoke)", () => {
     expect(body.staged).toBe(true);
   });
 
+  it("PATCH /prs/:id updates state field", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1", state: "open" }));
+    const app = makeApp({ prService: fakePrService({ store }) });
+
+    const res = await app.request("/prs/pr-1", {
+      method: "PATCH",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({ state: "merged" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PullRequest;
+    expect(body.state).toBe("merged");
+  });
+
+  it("PATCH /prs/:id updates mergedAt field", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1" }));
+    const app = makeApp({ prService: fakePrService({ store }) });
+
+    const mergedAtTime = "2024-01-15T10:30:00Z";
+    const res = await app.request("/prs/pr-1", {
+      method: "PATCH",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({ mergedAt: mergedAtTime }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PullRequest;
+    expect(body.mergedAt).toBe(mergedAtTime);
+  });
+
+  it("PATCH /prs/:id updates reviewState field", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1", reviewState: "pending" }));
+    const app = makeApp({ prService: fakePrService({ store }) });
+
+    const res = await app.request("/prs/pr-1", {
+      method: "PATCH",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({ reviewState: "approved" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PullRequest;
+    expect(body.reviewState).toBe("approved");
+  });
+
+  it("PATCH /prs/:id can update state, mergedAt, and reviewState together", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1" }));
+    const app = makeApp({ prService: fakePrService({ store }) });
+
+    const mergedAtTime = "2024-01-15T10:30:00Z";
+    const res = await app.request("/prs/pr-1", {
+      method: "PATCH",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        state: "merged",
+        mergedAt: mergedAtTime,
+        reviewState: "approved",
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PullRequest;
+    expect(body.state).toBe("merged");
+    expect(body.mergedAt).toBe(mergedAtTime);
+    expect(body.reviewState).toBe("approved");
+  });
+
   // ─── Auth ─────────────────────────────────────────────────────────────────
 
   it("GET /prs returns 401 without auth", async () => {
     const app = makeApp();
     const res = await app.request("/prs");
     expect(res.status).toBe(401);
+  });
+
+  it("PATCH /prs/:id with reviewState=approved updates reviewState", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1", reviewState: "in_progress" }));
+    const app = makeApp({ prService: fakePrService({ store }) });
+
+    const res = await app.request("/prs/pr-1", {
+      method: "PATCH",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({ reviewState: "approved" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PullRequest;
+    expect(body.reviewState).toBe("approved");
   });
 
   it("PATCH /prs/:id returns 400 for agent token with out-of-scope repo", async () => {
