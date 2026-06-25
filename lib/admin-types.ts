@@ -1258,6 +1258,65 @@ export interface paths {
         };
         trace?: never;
     };
+    "/agents/{id}/chat-tokens/daily": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["UpsertChatTokenDailyBody"];
+                };
+            };
+            responses: {
+                /** @description Updated daily chat token usage row */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentChatTokenUsageDaily"];
+                    };
+                };
+                /** @description Bad request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Agent not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agents/{id}/config": {
         parameters: {
             query?: never;
@@ -1542,17 +1601,17 @@ export interface components {
             /** @example null */
             error: string | null;
             /** @example 1234 */
-            inputTokens?: number | null;
+            inputTokens: number | null;
             /** @example 567 */
-            outputTokens?: number | null;
+            outputTokens: number | null;
             /** @example 89 */
-            cacheReadTokens?: number | null;
+            cacheReadTokens: number | null;
             /** @example 10 */
-            cacheCreationTokens?: number | null;
+            cacheCreationTokens: number | null;
             /** @example 0.0042 */
-            costUsd?: number | null;
+            costUsd: number | null;
             /** @example claude-sonnet-4-5 */
-            model?: string | null;
+            model: string | null;
             /**
              * Format: date-time
              * @example 2026-01-01T08:00:00.000Z
@@ -1717,6 +1776,48 @@ export interface components {
         PatchAgentPluginBody: {
             /** @example 1.3.0 */
             version?: string | null;
+        };
+        AgentChatTokenUsageDaily: {
+            /** @example clx1234567890 */
+            id: string;
+            /** @example clx1234567890 */
+            agentId: string;
+            /** @example 2026-01-15 */
+            date: string;
+            /** @example 100 */
+            inputTokens: number;
+            /** @example 50 */
+            outputTokens: number;
+            /** @example 10 */
+            cacheReadTokens: number;
+            /** @example 5 */
+            cacheCreationTokens: number;
+            /** @example 0.0012 */
+            costUsd: number;
+            /**
+             * Format: date-time
+             * @example 2026-01-15T00:00:00.000Z
+             */
+            createdAt: string;
+            /**
+             * Format: date-time
+             * @example 2026-01-15T12:00:00.000Z
+             */
+            updatedAt: string;
+        };
+        UpsertChatTokenDailyBody: {
+            /** @example 2026-01-15 */
+            date: string;
+            /** @example 100 */
+            inputTokens: number;
+            /** @example 50 */
+            outputTokens: number;
+            /** @example 10 */
+            cacheReadTokens: number;
+            /** @example 5 */
+            cacheCreationTokens: number;
+            /** @example 0.0012 */
+            costUsd: number;
         };
         AgentConfigPlugin: {
             /** @example shipwright */

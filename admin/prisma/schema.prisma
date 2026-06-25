@@ -29,12 +29,13 @@ model Agent {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  envVars   AgentEnv[]
-  cronJobs  AgentCronJob[]
-  tools     AgentTool[]
-  tokens    AgentToken[]
-  plugins   AgentPlugin[]
-  members   AgentMember[]
+  envVars          AgentEnv[]
+  cronJobs         AgentCronJob[]
+  tools            AgentTool[]
+  tokens           AgentToken[]
+  plugins          AgentPlugin[]
+  members          AgentMember[]
+  chatTokenUsage   AgentChatTokenUsageDaily[]
 }
 
 // ─── Agent Env ────────────────────────────────────────────────────────────────
@@ -176,6 +177,7 @@ model AgentCronRun {
 model AgentChatTokenUsageDaily {
   id                  String   @id @default(cuid())
   agentId             String
+  agent               Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
   date                String   // YYYY-MM-DD
   inputTokens         Int      @default(0)
   outputTokens        Int      @default(0)

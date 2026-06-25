@@ -83,18 +83,23 @@ export class AgentCronRunService {
 
   /**
    * Update an existing run record with completion data and/or token fields.
-   * Validates that the runId exists and belongs to agentId.
-   * Throws NotFoundError if the run doesn't exist or is not owned by agentId.
+   * Validates that the runId exists, belongs to agentId, and belongs to cronId.
+   * Throws NotFoundError if the run doesn't exist, is not owned by agentId, or
+   * does not belong to the given cronId (prevents cross-cron access).
    */
   async patch(
     runId: string,
     agentId: string,
+    cronId: string,
     input: PatchAgentCronRunInput,
   ): Promise<AgentCronRun> {
     const run = await this.prisma.agentCronRun.findUnique({
       where: { id: runId },
     });
     if (!run || run.agentId !== agentId) {
+      throw new NotFoundError(`cron run ${runId} not found`);
+    }
+    if (run.cronId !== cronId) {
       throw new NotFoundError(`cron run ${runId} not found`);
     }
 

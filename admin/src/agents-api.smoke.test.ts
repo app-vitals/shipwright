@@ -1944,6 +1944,27 @@ describe("admin API — cron runs", () => {
     expect(res.status).toBe(404);
   });
 
+  it("PATCH /agents/:id/crons/:cronId/runs/:runId returns 404 when runId belongs to a different cronId (cross-cron access)", async () => {
+    // Run belongs to CRON_ID, but the request URL uses a different cronId (cron-other-999).
+    // The service must enforce cronId ownership and throw NotFoundError.
+    const CRON_OTHER_ID = "cron-other-999";
+    const deps = makeMockDepsWithRunService({ wrongCronId: CRON_OTHER_ID });
+    const app = createAdminApp(deps);
+    const res = await app.request(
+      `/agents/${AGENT_ID}/crons/${CRON_OTHER_ID}/runs/${RUN_ID}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ outcome: "success" }),
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    // cronId in URL doesn't match the run's actual cronId — must 404
+    expect(res.status).toBe(404);
+  });
+
   it("PATCH /agents/:id/crons/:cronId/runs/:runId with empty body returns 400", async () => {
     const deps = makeMockDepsWithRunService();
     const app = createAdminApp(deps);
@@ -1982,6 +2003,8 @@ describe("admin API — cron runs", () => {
 
 function makeMockDepsWithRunService(opts?: {
   notFound?: boolean;
+  /** If set, patch() throws NotFoundError when called with this cronId (simulates cross-cron access). */
+  wrongCronId?: string;
 }): AdminDeps {
   const mockRun = {
     id: RUN_ID,
@@ -2025,17 +2048,27 @@ function makeMockDepsWithRunService(opts?: {
               "run not found",
             );
           }
-        : async () => ({
-            ...mockRun,
-            completedAt: new Date("2026-01-01T08:05:00.000Z"),
-            outcome: "success",
-            inputTokens: 1000,
-            outputTokens: 500,
-            cacheReadTokens: 100,
-            cacheCreationTokens: 50,
-            costUsd: 0.003,
-            model: "claude-sonnet-4-5",
-          }),
+        : opts?.wrongCronId !== undefined
+          ? async (_runId: string, _agentId: string, cronId: string) => {
+              // Simulate cronId validation: run belongs to CRON_ID; any other cronId → 404
+              if (cronId !== CRON_ID) {
+                throw new (await import("./errors.ts")).NotFoundError(
+                  `cron run ${_runId} not found`,
+                );
+              }
+              return { ...mockRun };
+            }
+          : async () => ({
+              ...mockRun,
+              completedAt: new Date("2026-01-01T08:05:00.000Z"),
+              outcome: "success",
+              inputTokens: 1000,
+              outputTokens: 500,
+              cacheReadTokens: 100,
+              cacheCreationTokens: 50,
+              costUsd: 0.003,
+              model: "claude-sonnet-4-5",
+            }),
     },
   };
 }

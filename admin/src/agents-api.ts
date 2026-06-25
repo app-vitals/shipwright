@@ -1114,7 +1114,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
 
   // PATCH /agents/:id/crons/:cronId/runs/:runId — update a cron run record
   app.openapi(patchCronRunRoute, async (c) => {
-    const { id: agentId, runId } = c.req.valid("param");
+    const { id: agentId, cronId, runId } = c.req.valid("param");
     const body = c.req.valid("json");
 
     // At least one field must be provided
@@ -1122,7 +1122,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
       throw new BadRequestError("provide at least one field to update");
     }
 
-    const run = await agentCronRunService.patch(runId, agentId, {
+    const run = await agentCronRunService.patch(runId, agentId, cronId, {
       ...(body.completedAt !== undefined && {
         completedAt: body.completedAt ? new Date(body.completedAt) : null,
       }),

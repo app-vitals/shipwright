@@ -184,12 +184,12 @@ export const AgentCronRunSchema = z
       .openapi({ example: "pre-check returned false" }),
     outcome: z.string().nullable().openapi({ example: "success" }),
     error: z.string().nullable().openapi({ example: null }),
-    inputTokens: z.number().int().nullable().optional().openapi({ example: 1234 }),
-    outputTokens: z.number().int().nullable().optional().openapi({ example: 567 }),
-    cacheReadTokens: z.number().int().nullable().optional().openapi({ example: 89 }),
-    cacheCreationTokens: z.number().int().nullable().optional().openapi({ example: 10 }),
-    costUsd: z.number().nullable().optional().openapi({ example: 0.0042 }),
-    model: z.string().nullable().optional().openapi({ example: "claude-sonnet-4-5" }),
+    inputTokens: z.number().int().nullable().openapi({ example: 1234 }),
+    outputTokens: z.number().int().nullable().openapi({ example: 567 }),
+    cacheReadTokens: z.number().int().nullable().openapi({ example: 89 }),
+    cacheCreationTokens: z.number().int().nullable().openapi({ example: 10 }),
+    costUsd: z.number().nullable().openapi({ example: 0.0042 }),
+    model: z.string().nullable().openapi({ example: "claude-sonnet-4-5" }),
     createdAt: z
       .string()
       .datetime()
