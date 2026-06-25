@@ -463,6 +463,7 @@ describe("createTaskStoreClient query()", () => {
   };
 
   let savedEnv: { url?: string; token?: string };
+  let savedFetch: typeof globalThis.fetch;
 
   beforeEach(() => {
     savedEnv = {
@@ -471,9 +472,11 @@ describe("createTaskStoreClient query()", () => {
     };
     process.env.SHIPWRIGHT_TASK_STORE_URL = "https://task-store.example.com";
     process.env.SHIPWRIGHT_TASK_STORE_TOKEN = "test-token";
+    savedFetch = globalThis.fetch;
   });
 
   afterEach(() => {
+    globalThis.fetch = savedFetch;
     if (savedEnv.url !== undefined) {
       process.env.SHIPWRIGHT_TASK_STORE_URL = savedEnv.url;
     } else {
