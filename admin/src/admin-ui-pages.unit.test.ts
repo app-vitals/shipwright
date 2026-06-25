@@ -1112,6 +1112,48 @@ describe("renderTasksPage — row click navigation", () => {
   });
 });
 
+// ─── renderTasksPage — datalist autocomplete (AFA-1.2) ───────────────────────
+
+describe("renderTasksPage — datalist autocomplete", () => {
+  const pagination = { total: 0, limit: 50, page: 1 };
+
+  test("renderTasksPage with sessions suggestions renders session datalist", () => {
+    const html = renderTasksPage([], {}, false, "user@test.com", {}, pagination, undefined, { sessions: ["session-abc", "session-xyz"] });
+    expect(html).toContain('<datalist id="sessions-list">');
+    expect(html).toContain('<option value="session-abc">');
+    expect(html).toContain('<option value="session-xyz">');
+    expect(html).toContain('list="sessions-list"');
+  });
+
+  test("renderTasksPage with repos suggestions renders repo datalist", () => {
+    const html = renderTasksPage([], {}, false, "user@test.com", {}, pagination, undefined, { repos: ["org/repo-a", "org/repo-b"] });
+    expect(html).toContain('<datalist id="repos-list">');
+    expect(html).toContain('<option value="org/repo-a">');
+    expect(html).toContain('list="repos-list"');
+  });
+
+  test("renderTasksPage with agents suggestions renders agent datalist", () => {
+    const html = renderTasksPage([], {}, false, "user@test.com", {}, pagination, undefined, { agents: ["Agent Alpha", "Agent Beta"] });
+    expect(html).toContain('<datalist id="agents-list">');
+    expect(html).toContain('<option value="Agent Alpha">');
+    expect(html).toContain('list="agents-list"');
+  });
+
+  test("renderTasksPage without suggestions renders plain text inputs (no datalists)", () => {
+    const html = renderTasksPage([], {}, false, "user@test.com", {}, pagination);
+    expect(html).not.toContain('<datalist');
+    expect(html).not.toContain('list="sessions-list"');
+    expect(html).not.toContain('list="repos-list"');
+    expect(html).not.toContain('list="agents-list"');
+  });
+
+  test("renderTasksPage escapes suggestion values to prevent XSS", () => {
+    const html = renderTasksPage([], {}, false, "user@test.com", {}, pagination, undefined, { sessions: ['<script>alert("xss")</script>'] });
+    expect(html).not.toContain('<script>alert("xss")</script>');
+    expect(html).toContain('&lt;script&gt;');
+  });
+});
+
 // ─── renderAdminToolbar — active nav highlight ────────────────────────────────
 
 describe("renderAdminToolbar — active nav highlight", () => {
