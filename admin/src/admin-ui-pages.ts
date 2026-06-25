@@ -415,35 +415,12 @@ export function renderAgentDetailPage(
           <button type="submit" class="btn btn-primary" style="font-size:11px;padding:3px 8px;align-self:flex-start">Save</button>
         </form>
       </details>`;
-    // Outcome badge color mapping
-    const getOutcomeBadgeClass = (outcome: string | null): string => {
-      switch (outcome) {
-        case "posted":
-          return "badge-green";
-        case "dm":
-          return "badge-blue";
-        case "silent":
-          return "badge-gray";
-        case "skipped":
-          return "badge-amber";
-        case "error":
-          return "badge-red";
-        default:
-          return "badge-gray";
-      }
-    };
-
-    const getOutcomeBadgeStyle = (outcome: string | null): string => {
-      switch (outcome) {
-        case "dm":
-          return "background:#3b82f6;color:white";
-        case "skipped":
-          return "background:#f59e0b;color:white";
-        case "error":
-          return "background:#ef4444;color:white";
-        default:
-          return "";
-      }
+    const outcomeStyle: Record<string, string> = {
+      posted: "background:#22c55e;color:white",
+      dm: "background:#3b82f6;color:white",
+      silent: "background:#9ca3af;color:white",
+      skipped: "background:#f59e0b;color:white",
+      error: "background:#ef4444;color:white",
     };
 
     const lastRunHtml =
@@ -451,7 +428,7 @@ export function renderAgentDetailPage(
         ? `
       <div style="font-size:11px;color:#6b7280;margin-bottom:4px">${relativeTime(c.lastRun.startedAt)}</div>
       <div>
-        <span class="badge ${getOutcomeBadgeClass(c.lastRun.outcome)}" ${getOutcomeBadgeStyle(c.lastRun.outcome) ? `style="${getOutcomeBadgeStyle(c.lastRun.outcome)}"` : ""}>${escapeHtml(c.lastRun.outcome || "unknown")}</span>
+        <span class="badge" style="${outcomeStyle[c.lastRun.outcome ?? ""] ?? "background:#9ca3af;color:white"}">${escapeHtml(c.lastRun.outcome || "unknown")}</span>
       </div>
       <div style="font-size:11px;color:#6b7280;margin-top:4px">${c.runCountToday ?? 0} run${(c.runCountToday ?? 0) === 1 ? "" : "s"}</div>`
         : `<div style="color:#d1d5db">never</div>`;
