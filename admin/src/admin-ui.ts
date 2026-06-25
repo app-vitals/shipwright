@@ -42,6 +42,7 @@ import type { AgentTokenService } from "./agent-tokens.ts";
 import type { AgentToolService } from "./agent-tools.ts";
 import { ForbiddenError, UnprocessableEntityError } from "./errors.ts";
 import type { GoogleAuthClient } from "./google-auth-client.ts";
+import { isOrgRepo } from "@shipwright/lib/org-repo";
 import type { AppManifest } from "./slack-provisioning-client.ts";
 import {
   AGENT_BOT_SCOPES,
@@ -647,11 +648,6 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
   // ─── Repo mutations ───────────────────────────────────────────────────────
 
-  function isValidRepo(repo: string): boolean {
-    const parts = repo.split("/");
-    return parts.length === 2 && parts[0].length > 0 && parts[1].length > 0;
-  }
-
   app.post("/admin/agents/:id/repos/add", requireAuth, async (c) => {
     const agentId = c.req.param("id");
     if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
@@ -664,7 +660,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     } catch {
       return c.redirect(`/admin/agents/${agentId}`, 302);
     }
-    if (!repo || !isValidRepo(repo)) {
+    if (!repo || !isOrgRepo(repo)) {
       return c.redirect(
         `/admin/agents/${agentId}?error=invalid_repo_format`,
         302,
