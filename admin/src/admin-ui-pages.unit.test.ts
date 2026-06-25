@@ -13,6 +13,7 @@ import {
   type CronJobItem,
   type MemberItem,
   type PluginItem,
+  type PullRequestItem,
   type TaskItem,
   type TokenItem,
   type ToolItem,
@@ -1932,5 +1933,85 @@ describe("renderTaskDetailPage — markdown", () => {
     // The interior lines must NOT produce orphaned <li> tags — there is no actual
     // list in this input, so no <li> should appear anywhere in the rendered page.
     expect(html).not.toContain("<li>");
+  });
+});
+
+// ─── renderTaskDetailPage — Pull Request Review section ──────────────────────
+
+const PR_ITEM: PullRequestItem = {
+  id: "pr-123",
+  repo: "my-org/my-repo",
+  prNumber: 42,
+  state: "open",
+  reviewState: "posted",
+  patchCycles: 2,
+  reviewedAt: "2026-06-01T10:00:00Z",
+  patchedAt: "2026-06-02T11:00:00Z",
+};
+
+describe("renderTaskDetailPage — Pull Request Review section", () => {
+  function render(pr?: PullRequestItem): string {
+    return renderTaskDetailPage({ ...TASK_DETAIL, id: "TS-PR-1" }, "user@example.com", {}, pr);
+  }
+
+  test("renders PR section heading when pullRequest is present", () => {
+    const html = render(PR_ITEM);
+    expect(html).toContain("Pull Request Review");
+  });
+
+  test("renders state badge when pullRequest is present", () => {
+    const html = render(PR_ITEM);
+    expect(html).toContain("open");
+  });
+
+  test("renders reviewState badge when pullRequest is present", () => {
+    const html = render(PR_ITEM);
+    expect(html).toContain("posted");
+  });
+
+  test("renders patchCycles count when pullRequest is present", () => {
+    const html = render(PR_ITEM);
+    expect(html).toContain("2");
+  });
+
+  test("renders reviewedAt when pullRequest is present", () => {
+    const html = render(PR_ITEM);
+    // The date is formatted; at minimum the year should be visible
+    expect(html).toContain("2026");
+  });
+
+  test("renders patchedAt when pullRequest is present", () => {
+    const html = render(PR_ITEM);
+    // patchedAt is also formatted; year is sufficient
+    expect(html).toContain("2026");
+  });
+
+  test("renders GitHub PR link with correct URL format", () => {
+    const html = render(PR_ITEM);
+    expect(html).toContain("https://github.com/my-org/my-repo/pull/42");
+  });
+
+  test("GitHub PR link opens in new tab (target=_blank)", () => {
+    const html = render(PR_ITEM);
+    expect(html).toContain('target="_blank"');
+  });
+
+  test("no PR section when pullRequest is undefined", () => {
+    const html = render(undefined);
+    expect(html).not.toContain("Pull Request Review");
+  });
+
+  test("no empty placeholder when pullRequest is absent", () => {
+    const html = render(undefined);
+    // The section heading should not appear at all — no placeholder text either
+    expect(html).not.toContain("Pull Request Review");
+    expect(html).not.toContain("No pull request");
+  });
+
+  test("XSS: repo field in PR link is escaped", () => {
+    const xssPr: PullRequestItem = { ...PR_ITEM, repo: 'evil"><script>xss()</script>' };
+    const html = render(xssPr);
+    expect(html).not.toContain("<script>xss");
+    expect(html).toContain("&lt;script&gt;");
   });
 });
