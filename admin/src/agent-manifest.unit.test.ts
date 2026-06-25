@@ -144,6 +144,18 @@ describe("buildAgentDeploymentManifest", () => {
     expect(c.readinessProbe?.failureThreshold).toBe(3);
   });
 
+  it("gates liveness/readiness with a startupProbe granting ~180s for a slow mise startup", () => {
+    const d = buildAgentDeploymentManifest(deployOpts);
+    const c = d.spec.template.spec.containers[0];
+    expect(c.startupProbe?.httpGet?.port).toBe(AGENT_HEALTH_PORT);
+    expect(c.startupProbe?.httpGet?.path).toBe("/health");
+    // periodSeconds × failureThreshold = total grace before liveness engages.
+    const grace =
+      (c.startupProbe?.periodSeconds as number) *
+      (c.startupProbe?.failureThreshold as number);
+    expect(grace).toBe(180);
+  });
+
   it("applies a hardened security context (fsGroup, fsGroupChangePolicy, runAsNonRoot, runAsUser)", () => {
     const d = buildAgentDeploymentManifest(deployOpts);
     const podSpec = d.spec.template.spec;
