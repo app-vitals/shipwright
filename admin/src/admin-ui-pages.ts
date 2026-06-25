@@ -110,7 +110,122 @@ export interface TaskItem {
   mergeCommit?: string | null;
   createdAt?: string | null;
   updatedAt?: string | null;
-  blockedBy?: BlockedByEntry[];
+  blockedBy?: BlockedByEntry[] | null;
+}
+
+// ─── Inline markdown renderer ─────────────────────────────────────────────────
+
+/**
+ * Render a markdown string to safe HTML.
+ * HTML is escaped FIRST to prevent XSS, then markdown patterns are applied
+ * to generate a known-safe set of HTML tags.
+ */
+function renderMarkdown(text: string): string {
+  // Step 1: escape all HTML entities so raw user input can't inject tags
+  let out = escapeHtml(text);
+
+  // Step 2: extract code blocks into placeholder tokens before line processing
+  // so that interior lines of a fenced block are never handed to the line loop.
+  const codeBlocks: string[] = [];
+  // Use Unicode Private Use Area sentinels — never appear in HTML-escaped markdown,
+  // and are not control characters (biome noControlCharactersInRegex safe).
+  const PLACEHOLDER_PREFIX = "CODE_BLOCK_";
+  const PLACEHOLDER_SUFFIX = "";
+  const placeholder = (n: number) => `${PLACEHOLDER_PREFIX}${n}${PLACEHOLDER_SUFFIX}`;
+  const PLACEHOLDER_RE = /^CODE_BLOCK_(\d+)$/;
+
+  // Multi-line fenced blocks: ```\n...\n```
+  out = out.replace(/```[\r\n]([\s\S]*?)[\r\n]```/g, (_m, code) => {
+    const idx = codeBlocks.length;
+    codeBlocks.push(`<pre><code>${code}</code></pre>`);
+    return placeholder(idx);
+  });
+  // Same-line fenced blocks: ```code```
+  out = out.replace(/```([^`\n]+)```/g, (_m, code) => {
+    const idx = codeBlocks.length;
+    codeBlocks.push(`<pre><code>${code}</code></pre>`);
+    return placeholder(idx);
+  });
+
+  // Step 3: process line-by-line for block-level elements
+  const lines = out.split("\n");
+  const result: string[] = [];
+  let inUl = false;
+  let inOl = false;
+
+  const closeList = () => {
+    if (inUl) {
+      result.push("</ul>");
+      inUl = false;
+    }
+    if (inOl) {
+      result.push("</ol>");
+      inOl = false;
+    }
+  };
+
+  for (const line of lines) {
+    // Placeholder lines are pre-rendered code blocks — emit as-is
+    const placeholderMatch = PLACEHOLDER_RE.exec(line);
+    if (placeholderMatch) {
+      closeList();
+      result.push(codeBlocks[Number.parseInt(placeholderMatch[1], 10)]);
+      continue;
+    }
+
+    // Headings
+    const h3 = line.match(/^### (.+)$/);
+    const h2 = line.match(/^## (.+)$/);
+    const h1 = line.match(/^# (.+)$/);
+
+    if (h3) {
+      closeList();
+      result.push(`<h3>${applyInline(h3[1])}</h3>`);
+    } else if (h2) {
+      closeList();
+      result.push(`<h2>${applyInline(h2[1])}</h2>`);
+    } else if (h1) {
+      closeList();
+      result.push(`<h1>${applyInline(h1[1])}</h1>`);
+    } else if (/^[-*] /.test(line)) {
+      // Unordered list item
+      if (inOl) {
+        closeList();
+      }
+      if (!inUl) {
+        result.push("<ul>");
+        inUl = true;
+      }
+      result.push(`<li>${applyInline(line.replace(/^[-*] /, ""))}</li>`);
+    } else if (/^\d+\. /.test(line)) {
+      // Ordered list item
+      if (inUl) {
+        closeList();
+      }
+      if (!inOl) {
+        result.push("<ol>");
+        inOl = true;
+      }
+      result.push(`<li>${applyInline(line.replace(/^\d+\. /, ""))}</li>`);
+    } else if (line.trim() === "") {
+      closeList();
+      result.push("");
+    } else {
+      closeList();
+      result.push(applyInline(line));
+    }
+  }
+  closeList();
+
+  return result.join("\n");
+}
+
+/** Apply inline markdown transforms (bold, inline code) to an already-escaped string. */
+function applyInline(s: string): string {
+  // Inline code: `code` — must come before bold to avoid double-processing
+  const withCode = s.replace(/`([^`]+)`/g, (_m, code) => `<code>${code}</code>`);
+  // Bold: **text**
+  return withCode.replace(/\*\*([^*]+)\*\*/g, (_m, text) => `<strong>${text}</strong>`);
 }
 
 // ─── Login page ───────────────────────────────────────────────────────────────
@@ -928,7 +1043,7 @@ export function renderTasksPage(
   tasks: TaskItem[],
   filters: {
     status?: string;
-    state?: "open" | "closed";
+    state?: "ready" | "in_progress" | "blocked" | "closed";
     session?: string;
     repo?: string;
     agent?: string;
@@ -942,6 +1057,7 @@ export function renderTasksPage(
     page: 1,
   },
   opts?: { error?: string; agentFilterActive?: boolean },
+  suggestions?: { sessions?: string[]; repos?: string[]; agents?: string[] },
 ): string {
   const errorHtml = opts?.error
     ? `<div class="alert alert-error">${escapeHtml(opts.error)}</div>`
@@ -964,7 +1080,7 @@ export function renderTasksPage(
     return "badge-gray";
   };
 
-  const renderBlockerBadges = (blockedBy: BlockedByEntry[] | undefined): string => {
+  const renderBlockerBadges = (blockedBy: BlockedByEntry[] | null | undefined): string => {
     if (!blockedBy || blockedBy.length === 0) return "";
     return blockedBy
       .map((b) => {
@@ -1007,7 +1123,7 @@ export function renderTasksPage(
   // State toggle params (preserve other filters, reset page)
   const makeStateParams = (newState: string) => {
     const p = new URLSearchParams();
-    if (newState !== "open") p.set("state", newState);
+    if (newState !== "ready") p.set("state", newState);
     if (filters.session) p.set("session", filters.session);
     if (filters.repo) p.set("repo", filters.repo);
     if (filters.agent) p.set("agent", filters.agent);
@@ -1015,13 +1131,21 @@ export function renderTasksPage(
     return qs ? `?${qs}` : "";
   };
 
-  const activeState = filters.state ?? "open";
+  const activeState = filters.state ?? "ready";
+  const tabStyle = (state: string) =>
+    activeState === state
+      ? "background:#6366f1;color:#fff;font-weight:600"
+      : "background:#fff;color:#374151";
   const stateToggle = `
     <div style="display:flex;gap:0;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;width:fit-content">
-      <a href="/admin/tasks${makeStateParams("open")}"
-         style="padding:5px 14px;font-size:12px;text-decoration:none;${activeState === "open" ? "background:#6366f1;color:#fff;font-weight:600" : "background:#fff;color:#374151"}">Open</a>
+      <a href="/admin/tasks${makeStateParams("ready")}"
+         style="padding:5px 14px;font-size:12px;text-decoration:none;${tabStyle("ready")}">Ready</a>
+      <a href="/admin/tasks${makeStateParams("in_progress")}"
+         style="padding:5px 14px;font-size:12px;text-decoration:none;border-left:1px solid #e5e7eb;${tabStyle("in_progress")}">In Progress</a>
+      <a href="/admin/tasks${makeStateParams("blocked")}"
+         style="padding:5px 14px;font-size:12px;text-decoration:none;border-left:1px solid #e5e7eb;${tabStyle("blocked")}">Blocked</a>
       <a href="/admin/tasks${makeStateParams("closed")}"
-         style="padding:5px 14px;font-size:12px;text-decoration:none;border-left:1px solid #e5e7eb;${activeState === "closed" ? "background:#6366f1;color:#fff;font-weight:600" : "background:#fff;color:#374151"}">Closed</a>
+         style="padding:5px 14px;font-size:12px;text-decoration:none;border-left:1px solid #e5e7eb;${tabStyle("closed")}">Closed</a>
     </div>`;
 
   const statusOptions = [
@@ -1052,7 +1176,7 @@ export function renderTasksPage(
   const makePageUrl = (p: number) => {
     const params = new URLSearchParams();
     if (filters.status) params.set("status", filters.status);
-    else if (filters.state && filters.state !== "open")
+    else if (filters.state && filters.state !== "ready")
       params.set("state", filters.state);
     if (filters.session) params.set("session", filters.session);
     if (filters.repo) params.set("repo", filters.repo);
@@ -1109,17 +1233,20 @@ export function renderTasksPage(
         </div>
         <div class="form-group" style="margin-bottom:0">
           <label class="form-label" style="font-size:11px">Session</label>
-          <input name="session" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.session ?? "")}" placeholder="session-id" />
+          <input name="session" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.session ?? "")}" placeholder="session-id"${suggestions?.sessions?.length ? ' list="sessions-list"' : ""} />
         </div>
         <div class="form-group" style="margin-bottom:0">
           <label class="form-label" style="font-size:11px">Repo</label>
-          <input name="repo" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.repo ?? "")}" placeholder="org/repo" />
+          <input name="repo" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.repo ?? "")}" placeholder="org/repo"${suggestions?.repos?.length ? ' list="repos-list"' : ""} />
         </div>
         <div class="form-group" style="margin-bottom:0">
           <label class="form-label" style="font-size:11px">Agent</label>
-          <input name="agent" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.agent ?? "")}" placeholder="agent name" />
+          <input name="agent" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.agent ?? "")}" placeholder="agent name"${suggestions?.agents?.length ? ' list="agents-list"' : ""} />
         </div>
         <button type="submit" class="btn btn-secondary" style="font-size:12px">Filter</button>
+        ${suggestions?.sessions?.length ? `<datalist id="sessions-list">${suggestions.sessions.map((s) => `<option value="${escapeHtml(s)}">`).join("")}</datalist>` : ""}
+        ${suggestions?.repos?.length ? `<datalist id="repos-list">${suggestions.repos.map((r) => `<option value="${escapeHtml(r)}">`).join("")}</datalist>` : ""}
+        ${suggestions?.agents?.length ? `<datalist id="agents-list">${suggestions.agents.map((a) => `<option value="${escapeHtml(a)}">`).join("")}</datalist>` : ""}
       </form>
     </div>
     <div class="card">
@@ -1232,7 +1359,7 @@ export function renderTaskDetailPage(
   const descriptionSection = task.description
     ? `<div class="card" style="margin-bottom:16px">
         <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Description</div>
-        <div style="font-size:14px;line-height:1.6;white-space:pre-wrap">${escapeHtml(task.description)}</div>
+        <div class="markdown-body" style="font-size:14px;line-height:1.6">${renderMarkdown(task.description)}</div>
       </div>`
     : "";
 
@@ -1241,7 +1368,27 @@ export function renderTaskDetailPage(
       ? `<div class="card" style="margin-bottom:16px">
           <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Acceptance Criteria</div>
           <ul style="margin:0;padding-left:16px">
-            ${task.acceptanceCriteria.map((c) => `<li style="font-size:14px;line-height:1.6;margin-bottom:6px">${escapeHtml(c)}</li>`).join("")}
+            ${task.acceptanceCriteria.map((c) => `<li style="font-size:14px;line-height:1.6;margin-bottom:6px">${renderMarkdown(c)}</li>`).join("")}
+          </ul>
+        </div>`
+      : "";
+
+  const blockersSection =
+    task.blockedBy && task.blockedBy.length > 0
+      ? `<div class="card" style="margin-bottom:16px">
+          <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Blockers</div>
+          <ul style="margin:0;padding-left:16px">
+            ${task.blockedBy
+              .map((b) => {
+                if (b.type === "hitl") {
+                  const label = b.notified
+                    ? "HITL gate (notification sent — awaiting clearance)"
+                    : "HITL gate (notification pending)";
+                  return `<li style="font-size:14px;line-height:1.6;margin-bottom:4px">${escapeHtml(label)}</li>`;
+                }
+                return `<li style="font-size:14px;line-height:1.6;margin-bottom:4px">dep:${escapeHtml(b.id)} (${escapeHtml(b.status)})</li>`;
+              })
+              .join("")}
           </ul>
         </div>`
       : "";
@@ -1339,6 +1486,11 @@ export function renderTaskDetailPage(
     .badge-blue { background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe; }
     .detail-table { width:100%;border-collapse:collapse; }
     .detail-table tr:not(:last-child) td { border-bottom:1px solid #f3f4f6; }
+    .markdown-body pre { background:#f3f4f6; border-radius:4px; padding:12px; overflow-x:auto; font-size:12px; }
+    .markdown-body code { background:#f3f4f6; border-radius:3px; padding:1px 4px; font-size:12px; }
+    .markdown-body pre code { background:none; padding:0; }
+    .markdown-body ul, .markdown-body ol { padding-left:20px; margin:8px 0; }
+    .markdown-body li { margin-bottom:4px; }
   </style>
 </head>
 <body>
@@ -1354,6 +1506,7 @@ export function renderTaskDetailPage(
 
     ${descriptionSection}
     ${acSection}
+    ${blockersSection}
 
     <div class="card" style="margin-bottom:16px">
       <table class="detail-table">

@@ -11,7 +11,12 @@ import { describe, expect, it } from "bun:test";
 import { createTaskStoreApp } from "./app.ts";
 import { computeBlockedBy } from "./blocked-by.ts";
 import type { Task } from "./index.ts";
-import type { TaskListFilters, TaskListResult, TaskServiceLike, TaskWithBlockedBy } from "./task-service.ts";
+import type {
+  TaskListFilters,
+  TaskListResult,
+  TaskServiceLike,
+  TaskWithBlockedBy,
+} from "./task-service.ts";
 import type { TokenServiceLike } from "./token-service.ts";
 
 // ─── Fakes ────────────────────────────────────────────────────────────────────
@@ -105,6 +110,7 @@ function fakeTaskService(
     getResult?: Task | null;
     listResult?: Task[];
     listReadyResult?: Task[];
+    listBlockedResult?: Task[];
     allTasks?: Task[];
   } = {},
 ): TaskServiceLike {
@@ -122,6 +128,9 @@ function fakeTaskService(
     },
     async listReady() {
       return opts.listReadyResult ?? [];
+    },
+    async listBlocked() {
+      return (opts.listBlockedResult ?? []).map((t) => withBlockedBy(t, allTasks));
     },
     async get(id: string) {
       if ("getResult" in opts) {
@@ -157,6 +166,9 @@ function fakeTaskService(
     },
     async bulk(_tasks) {
       return { inserted: 0, updated: 0 };
+    },
+    async distinct(_agentId?) {
+      return { sessions: [], repos: [] };
     },
   };
 }
@@ -223,7 +235,9 @@ describe("blockedBy field on API responses (smoke)", () => {
       dependencies: ["dep-1"],
     });
     // allTasks includes both so get() can look up the dep
-    const app = makeApp(fakeTaskService({ getResult: task, allTasks: [task, dep] }));
+    const app = makeApp(
+      fakeTaskService({ getResult: task, allTasks: [task, dep] }),
+    );
     const res = await app.request("/tasks/t1", { headers: auth() });
     expect(res.status).toBe(200);
     const body = (await res.json()) as TaskWithBlockedBy;
@@ -241,7 +255,9 @@ describe("blockedBy field on API responses (smoke)", () => {
       status: "pending",
       dependencies: ["dep-1"],
     });
-    const app = makeApp(fakeTaskService({ getResult: task, allTasks: [task, dep] }));
+    const app = makeApp(
+      fakeTaskService({ getResult: task, allTasks: [task, dep] }),
+    );
     const res = await app.request("/tasks/t1", { headers: auth() });
     expect(res.status).toBe(200);
     const body = (await res.json()) as TaskWithBlockedBy;
@@ -255,7 +271,12 @@ describe("blockedBy field on API responses (smoke)", () => {
     const app = makeApp(fakeTaskService({ listResult: [task] }));
     const res = await app.request("/tasks", { headers: auth() });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { tasks: TaskWithBlockedBy[]; total: number; limit: number; offset: number };
+    const body = (await res.json()) as {
+      tasks: TaskWithBlockedBy[];
+      total: number;
+      limit: number;
+      offset: number;
+    };
     expect(Array.isArray(body.tasks)).toBe(true);
     expect(body.tasks).toHaveLength(1);
     expect(Array.isArray(body.tasks[0].blockedBy)).toBe(true);

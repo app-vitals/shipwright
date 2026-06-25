@@ -34,7 +34,9 @@ function fakeAdminTokenService(): Pick<TokenServiceLike, "validate"> {
 function fakeAgentTokenService(): Pick<TokenServiceLike, "validate"> {
   return {
     async validate(raw: string) {
-      return raw === AGENT_TOKEN ? { id: "tok-agent", agentId: AGENT_ID } : null;
+      return raw === AGENT_TOKEN
+        ? { id: "tok-agent", agentId: AGENT_ID }
+        : null;
     },
   };
 }
@@ -113,7 +115,10 @@ describe("bearer auth middleware — scope resolver", () => {
     });
 
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { repos: string[] | null; agentId: string | null };
+    const body = (await res.json()) as {
+      repos: string[] | null;
+      agentId: string | null;
+    };
     expect(body.agentId).toBeNull();
     expect(body.repos).toBeNull();
     expect(resolverCalled).toBe(false);

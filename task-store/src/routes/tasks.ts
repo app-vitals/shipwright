@@ -95,8 +95,10 @@ export function createTasksRoutes(
   app.get("/", async (c) => {
     const agentId = c.get("agentId");
     const repos = c.get("repos");
+    const stateRaw = c.req.query("state");
 
-    if (c.req.query("ready") === "true") {
+    // ?ready=true is the legacy spelling; ?state=ready is the new form.
+    if (c.req.query("ready") === "true" || stateRaw === "ready") {
       // Pass repos to listReady for repo-scoped agent tokens.
       return c.json(
         await taskService.listReady(agentId ?? undefined, repos ?? undefined),
@@ -104,12 +106,18 @@ export function createTasksRoutes(
       );
     }
 
+    // ?state=blocked delegates to listBlocked().
+    if (stateRaw === "blocked") {
+      return c.json(await taskService.listBlocked(agentId ?? undefined), 200);
+    }
+
     const prRaw = c.req.query("pr");
     const limitRaw = c.req.query("limit");
     const offsetRaw = c.req.query("offset");
-    const stateRaw = c.req.query("state");
     const state =
-      stateRaw === "open" || stateRaw === "closed" ? stateRaw : undefined;
+      stateRaw === "open" || stateRaw === "closed" || stateRaw === "in_progress"
+        ? stateRaw
+        : undefined;
 
     // Agent tokens with a repos scope use agentScope (OR union of assigned + pool tasks).
     // Agent tokens without repos (repos=[]) fall back to simple assignee filter.
@@ -187,6 +195,13 @@ export function createTasksRoutes(
         : body;
     const result = await taskService.bulk(tasks as Prisma.TaskCreateInput[]);
     return c.json(result, 200);
+  });
+
+  // ─── Distinct values ───────────────────────────────────────────────────────
+  // Must be registered before /:id routes to avoid param capture.
+  app.get("/distinct", async (c) => {
+    const agentId = c.get("agentId");
+    return c.json(await taskService.distinct(agentId ?? undefined), 200);
   });
 
   // ─── Get one ───────────────────────────────────────────────────────────────
