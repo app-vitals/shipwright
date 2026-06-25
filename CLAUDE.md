@@ -15,7 +15,7 @@ Shipwright Harness is **the open-source (MIT) autonomous delivery agent for Clau
 | **A** | **Plugin** (the system) | `plugins/shipwright/` | Commands, skills, agents, scripts users `/plugin install`. Repo-agnostic. |
 | **B** | **Metrics dashboard** | `metrics/` | Stateless Hono service: PostHog-backed JSON endpoints + a server-rendered dashboard. No database. |
 | **C** | **Shipwright agent** | `agent/` | Hono service + Prisma store; a thin autonomous runner: pick next ready task → build → ship PR → forward metrics. |
-| **D** | **Task store service** | `task-store/` | Postgres-backed task queue + scoped tokens. Prisma schema defines `Task` and `TaskToken` models; re-exported as `@shipwright/task-store`. Replaces the JSON file fallback. |
+| **D** | **Task store service** | `task-store/` | Postgres-backed task queue, PR tracking, and scoped tokens. Prisma schema defines `Task`, `PullRequest`, and `TaskToken` models; re-exported as `@shipwright/task-store`. Replaces the JSON file fallback. |
 
 Supporting surfaces (not phased):
 - `site/` — Astro + Tailwind marketing site (**shipwright-harness.com**). Self-contained; **not** a Bun workspace; Playwright smoke tests.

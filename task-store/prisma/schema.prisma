@@ -1,5 +1,5 @@
 // Shipwright — Task Store Service Schema
-// Owns: Task, TaskToken.
+// Owns: Task, TaskToken, PullRequest.
 //
 // WARNING: This schema uses DATABASE_URL_SHIPWRIGHT_TASK_STORE — a dedicated
 // database for the task-store service. Do NOT point this at a shared database.
@@ -90,6 +90,60 @@ model Task {
   @@index([session])
   @@index([assignee])
   @@index([claimedBy])
+}
+
+// ─── Pull Request State ───────────────────────────────────────────────────────
+// Lifecycle of a PR through the review/patch/deploy pipeline.
+
+enum PrState {
+  open
+  merged
+  closed
+}
+
+enum PrReviewState {
+  pending
+  in_progress
+  posted
+  approved
+}
+
+// ─── Pull Request ─────────────────────────────────────────────────────────────
+// Tracks a GitHub PR through the Shipwright review → patch → deploy pipeline.
+// repo is in org/repo format (e.g. "app-vitals/shipwright").
+// @@unique([repo, prNumber]) ensures one record per GitHub PR.
+//
+// Review state semantics:
+//   staged      — review content has been written but not yet posted to GitHub
+//   reviewState — workflow phase: pending → in_progress → posted (see enum PrReviewState)
+// Both fields encode review progress: staged=true means "ready to post"; reviewState
+// tracks which phase of the full review→patch→deploy cycle the PR is in.
+
+model PullRequest {
+  id          String        @id @default(cuid())
+  repo        String        // org/repo format
+  prNumber    Int
+  taskId      String?
+  staged      Boolean       @default(false) // true = review written but not yet posted
+  state       PrState       @default(open)
+  reviewState PrReviewState @default(pending) // workflow phase within the review cycle
+  commitSha   String?
+  patchCycles Int           @default(0)
+  agentId     String?
+  reviewedAt  String?
+  patchedAt   String?
+  mergedAt    String?
+  claimedBy   String?
+  claimedAt   String?
+  heartbeatAt String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([repo, prNumber])
+  @@index([taskId])
+  @@index([state])
+  @@index([reviewState])
 }
 
 // ─── Task Token ───────────────────────────────────────────────────────────────

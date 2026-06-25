@@ -6,8 +6,8 @@
  * than reaching into the generated prisma/client directory directly.
  */
 
-export { PrismaClient, Prisma, TaskStatus } from "../prisma/client/index.js";
-export type { Task, TaskToken } from "../prisma/client/index.js";
+export { PrismaClient, Prisma, TaskStatus, PrState, PrReviewState } from "../prisma/client/index.js";
+export type { Task, TaskToken, PullRequest } from "../prisma/client/index.js";
 export type {
   BlockedByEntry,
   TaskWithBlockedBy,
