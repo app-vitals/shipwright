@@ -5,10 +5,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import {
-  ConflictError,
-  NotFoundError,
-} from "./errors.ts";
+import { ConflictError, NotFoundError } from "./errors.ts";
 import {
   HttpKubernetesClient,
   RecordedKubernetesClient,
@@ -187,7 +184,11 @@ describe("pvcBody", () => {
 
 describe("RecordedKubernetesClient — PVCs", () => {
   it("createPvc records and returns the PVC", async () => {
-    const rec = new RecordedKubernetesClient({ deployments: {}, secrets: {}, pvcs: {} });
+    const rec = new RecordedKubernetesClient({
+      deployments: {},
+      secrets: {},
+      pvcs: {},
+    });
     const created = await rec.createPvc("ns", {
       name: "agent-abc-home",
       namespace: "ns",
@@ -202,7 +203,11 @@ describe("RecordedKubernetesClient — PVCs", () => {
   });
 
   it("createPvc throws ConflictError on duplicate", async () => {
-    const rec = new RecordedKubernetesClient({ deployments: {}, secrets: {}, pvcs: {} });
+    const rec = new RecordedKubernetesClient({
+      deployments: {},
+      secrets: {},
+      pvcs: {},
+    });
     await rec.createPvc("ns", { name: "dup", namespace: "ns", storageGi: 40 });
     await expect(
       rec.createPvc("ns", { name: "dup", namespace: "ns", storageGi: 40 }),
@@ -210,20 +215,36 @@ describe("RecordedKubernetesClient — PVCs", () => {
   });
 
   it("getPvc throws NotFoundError for missing PVC", async () => {
-    const rec = new RecordedKubernetesClient({ deployments: {}, secrets: {}, pvcs: {} });
-    await expect(rec.getPvc("ns", "missing")).rejects.toBeInstanceOf(NotFoundError);
+    const rec = new RecordedKubernetesClient({
+      deployments: {},
+      secrets: {},
+      pvcs: {},
+    });
+    await expect(rec.getPvc("ns", "missing")).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
   });
 
   it("deletePvc removes the PVC", async () => {
-    const rec = new RecordedKubernetesClient({ deployments: {}, secrets: {}, pvcs: {} });
+    const rec = new RecordedKubernetesClient({
+      deployments: {},
+      secrets: {},
+      pvcs: {},
+    });
     await rec.createPvc("ns", { name: "p", namespace: "ns", storageGi: 40 });
     await rec.deletePvc("ns", "p");
     await expect(rec.getPvc("ns", "p")).rejects.toBeInstanceOf(NotFoundError);
   });
 
   it("deletePvc throws NotFoundError for missing PVC", async () => {
-    const rec = new RecordedKubernetesClient({ deployments: {}, secrets: {}, pvcs: {} });
-    await expect(rec.deletePvc("ns", "missing")).rejects.toBeInstanceOf(NotFoundError);
+    const rec = new RecordedKubernetesClient({
+      deployments: {},
+      secrets: {},
+      pvcs: {},
+    });
+    await expect(rec.deletePvc("ns", "missing")).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
   });
 
   it("getPvc returns a pre-seeded PVC from the cassette", async () => {
@@ -256,7 +277,9 @@ describe("HttpKubernetesClient.patchDeployment()", () => {
     spec: {
       template: {
         spec: {
-          containers: [{ name: "agent-abc", image: "ghcr.io/example/agent:v2" }],
+          containers: [
+            { name: "agent-abc", image: "ghcr.io/example/agent:v2" },
+          ],
         },
       },
     },
@@ -287,7 +310,10 @@ describe("HttpKubernetesClient.patchDeployment()", () => {
   it("sends Content-Type: application/strategic-merge-patch+json", async () => {
     let capturedHeaders: HeadersInit | undefined;
 
-    const fetchFn = async (_url: string | URL | Request, init?: RequestInit) => {
+    const fetchFn = async (
+      _url: string | URL | Request,
+      init?: RequestInit,
+    ) => {
       capturedHeaders = init?.headers;
       return new Response(null, { status: 200 });
     };
@@ -309,7 +335,10 @@ describe("HttpKubernetesClient.patchDeployment()", () => {
   it("sends the patch object as JSON body", async () => {
     let capturedBody: string | undefined;
 
-    const fetchFn = async (_url: string | URL | Request, init?: RequestInit) => {
+    const fetchFn = async (
+      _url: string | URL | Request,
+      init?: RequestInit,
+    ) => {
       capturedBody = init?.body as string;
       return new Response(null, { status: 200 });
     };
@@ -362,7 +391,9 @@ describe("RecordedKubernetesClient.patchDeployment()", () => {
 
   it("updates containers[0].image from the patch payload", async () => {
     const rec = new RecordedKubernetesClient({
-      deployments: { "shipwright/agent-abc": makeDeployment("ghcr.io/example/agent:v1") },
+      deployments: {
+        "shipwright/agent-abc": makeDeployment("ghcr.io/example/agent:v1"),
+      },
       secrets: {},
     });
 
@@ -370,7 +401,9 @@ describe("RecordedKubernetesClient.patchDeployment()", () => {
       spec: {
         template: {
           spec: {
-            containers: [{ name: "agent-abc", image: "ghcr.io/example/agent:v2" }],
+            containers: [
+              { name: "agent-abc", image: "ghcr.io/example/agent:v2" },
+            ],
           },
         },
       },
@@ -390,7 +423,9 @@ describe("RecordedKubernetesClient.patchDeployment()", () => {
         spec: {
           template: {
             spec: {
-              containers: [{ name: "agent-abc", image: "ghcr.io/example/agent:v2" }],
+              containers: [
+                { name: "agent-abc", image: "ghcr.io/example/agent:v2" },
+              ],
             },
           },
         },

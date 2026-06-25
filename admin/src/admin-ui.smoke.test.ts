@@ -197,7 +197,9 @@ function makeMockDeps(
     },
     agentCronJobService: {
       list: async () => [MOCK_CRON],
-      listWithRunSummary: async () => [{ ...MOCK_CRON, lastRun: null, runCountToday: 0 }],
+      listWithRunSummary: async () => [
+        { ...MOCK_CRON, lastRun: null, runCountToday: 0 },
+      ],
       get: async () => MOCK_CRON,
       create: async () => MOCK_CRON,
       setEnabled: async () => MOCK_CRON,
@@ -2452,7 +2454,9 @@ describe("admin UI — tasks page", () => {
     });
     expect(res.status).toBe(200);
     expect(capturedParams).not.toBeNull();
-    expect((capturedParams as unknown as URLSearchParams).get("state")).toBe("ready");
+    expect((capturedParams as unknown as URLSearchParams).get("state")).toBe(
+      "ready",
+    );
   });
 
   it("GET /admin/tasks?state=blocked returns 200 and forwards state=blocked to task-store", async () => {
@@ -2470,7 +2474,9 @@ describe("admin UI — tasks page", () => {
     });
     expect(res.status).toBe(200);
     expect(capturedParams).not.toBeNull();
-    expect((capturedParams as unknown as URLSearchParams).get("state")).toBe("blocked");
+    expect((capturedParams as unknown as URLSearchParams).get("state")).toBe(
+      "blocked",
+    );
   });
 });
 
@@ -2570,7 +2576,10 @@ describe("admin UI — repos mutation routes", () => {
           updatedAt: new Date("2024-01-01"),
           repos: ["my-org/my-repo"],
         }),
-        update: async (_args: { where: unknown; data: { repos: string[] } }) => {
+        update: async (_args: {
+          where: unknown;
+          data: { repos: string[] };
+        }) => {
           capturedRepos = _args.data.repos;
           return {
             id: AGENT_ID,

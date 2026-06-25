@@ -20,6 +20,7 @@
  * Allowed users are controlled by the adminAllowedEmails allowlist in deps.
  */
 
+import { isOrgRepo } from "@shipwright/lib/org-repo";
 import { Hono, type MiddlewareHandler } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { sign, verify } from "hono/jwt";
@@ -42,7 +43,6 @@ import type { AgentTokenService } from "./agent-tokens.ts";
 import type { AgentToolService } from "./agent-tools.ts";
 import { ForbiddenError, UnprocessableEntityError } from "./errors.ts";
 import type { GoogleAuthClient } from "./google-auth-client.ts";
-import { isOrgRepo } from "@shipwright/lib/org-repo";
 import type { AppManifest } from "./slack-provisioning-client.ts";
 import {
   AGENT_BOT_SCOPES,
@@ -1548,7 +1548,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     const stateRaw = c.req.query("state");
     // Default to "ready" when neither state nor status is provided.
     const state: "ready" | "in_progress" | "blocked" | "closed" | undefined =
-      stateRaw === "ready" || stateRaw === "in_progress" || stateRaw === "blocked" || stateRaw === "closed"
+      stateRaw === "ready" ||
+      stateRaw === "in_progress" ||
+      stateRaw === "blocked" ||
+      stateRaw === "closed"
         ? stateRaw
         : status
           ? undefined
@@ -1592,7 +1595,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       try {
         const [result, distinct] = await Promise.all([
           fetchTaskStoreTasks(params),
-          fetchDistinctTaskValues ? fetchDistinctTaskValues().catch(() => null) : Promise.resolve(null),
+          fetchDistinctTaskValues
+            ? fetchDistinctTaskValues().catch(() => null)
+            : Promise.resolve(null),
         ]);
         tasks = result.tasks;
         total = result.total;
@@ -1649,7 +1654,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         c.var.userEmail,
         agentNames,
         { total, limit, page },
-        { ...(error ? { error } : {}), agentFilterActive: agentFilterIds !== null },
+        {
+          ...(error ? { error } : {}),
+          agentFilterActive: agentFilterIds !== null,
+        },
         suggestions,
       ),
     );

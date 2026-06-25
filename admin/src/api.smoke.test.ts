@@ -51,15 +51,23 @@ function makeMockAgentEnvService(bundles: Map<string, AgentEnvBundle | null>): {
 
 function makeMockAgentCronJobService(crons: Map<string, AgentCronJob[]>): {
   list: (id: string) => Promise<AgentCronJob[]>;
-  listWithRunSummary: (id: string) => Promise<(AgentCronJob & { lastRun: null; runCountToday: number })[]>;
+  listWithRunSummary: (
+    id: string,
+  ) => Promise<(AgentCronJob & { lastRun: null; runCountToday: number })[]>;
 } {
   return {
     async list(id: string): Promise<AgentCronJob[]> {
       return crons.get(id) ?? [];
     },
-    async listWithRunSummary(id: string): Promise<(AgentCronJob & { lastRun: null; runCountToday: number })[]> {
+    async listWithRunSummary(
+      id: string,
+    ): Promise<(AgentCronJob & { lastRun: null; runCountToday: number })[]> {
       const items = crons.get(id) ?? [];
-      return items.map((item) => ({ ...item, lastRun: null, runCountToday: 0 }));
+      return items.map((item) => ({
+        ...item,
+        lastRun: null,
+        runCountToday: 0,
+      }));
     },
   };
 }

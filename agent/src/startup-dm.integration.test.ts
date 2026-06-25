@@ -14,18 +14,31 @@ import { sendBackOnlineDm } from "./startup-dm.ts";
 
 // ─── Mock WebClient factory ───────────────────────────────────────────────────
 
-function makeMockSlack(overrides: {
-  conversationsOpenResult?: Awaited<ReturnType<WebClient["conversations"]["open"]>>;
-  conversationsOpenError?: Error;
-  postMessageResult?: Awaited<ReturnType<WebClient["chat"]["postMessage"]>>;
-} = {}) {
+function makeMockSlack(
+  overrides: {
+    conversationsOpenResult?: Awaited<
+      ReturnType<WebClient["conversations"]["open"]>
+    >;
+    conversationsOpenError?: Error;
+    postMessageResult?: Awaited<ReturnType<WebClient["chat"]["postMessage"]>>;
+  } = {},
+) {
   const conversationsOpen = overrides.conversationsOpenError
-    ? mock(async (_args: unknown) => { throw overrides.conversationsOpenError; })
-    : mock(async (_args: unknown) =>
-        overrides.conversationsOpenResult ?? { ok: true, channel: { id: "DM_CHAN_1" } },
+    ? mock(async (_args: unknown) => {
+        throw overrides.conversationsOpenError;
+      })
+    : mock(
+        async (_args: unknown) =>
+          overrides.conversationsOpenResult ?? {
+            ok: true,
+            channel: { id: "DM_CHAN_1" },
+          },
       );
 
-  const postMessage = mock(async (_args: unknown) => ({ ok: true, ts: "123.456" }));
+  const postMessage = mock(async (_args: unknown) => ({
+    ok: true,
+    ts: "123.456",
+  }));
 
   return {
     conversations: { open: conversationsOpen },
@@ -128,7 +141,9 @@ describe("sendBackOnlineDm — error-caught branch", () => {
   test("warns with non-Error thrown value as string", async () => {
     const slack = {
       conversations: {
-        open: mock(async (_args: unknown) => { throw "string-error"; }),
+        open: mock(async (_args: unknown) => {
+          throw "string-error";
+        }),
       },
       chat: { postMessage: mock(async (_args: unknown) => ({})) },
     } as unknown as WebClient;

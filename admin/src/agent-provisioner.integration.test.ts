@@ -277,7 +277,12 @@ describeOrSkip("KubernetesAgentProvisioner (integration)", () => {
     const k8s = emptyClient();
     const provisioner = new KubernetesAgentProvisioner(k8s, tokens, CONFIG);
     const result = await provisioner.reconcile([]);
-    expect(result).toEqual({ recreated: [], updated: [], orphans: [], failed: [] });
+    expect(result).toEqual({
+      recreated: [],
+      updated: [],
+      orphans: [],
+      failed: [],
+    });
   });
 
   it("reconcile() recreates a Deployment for a known agent missing from K8s", async () => {
@@ -337,7 +342,9 @@ describeOrSkip("KubernetesAgentProvisioner (integration)", () => {
     const k8s = emptyClient();
 
     // Seed a deployment with a stale image directly in the cassette.
-    const staleDeployment: import("./kubernetes-client.ts").KubernetesDeployment = {
+    const staleDeployment: import(
+      "./kubernetes-client.ts",
+    ).KubernetesDeployment = {
       apiVersion: "apps/v1",
       kind: "Deployment",
       metadata: { name: resourceName, namespace: NAMESPACE },
@@ -546,7 +553,12 @@ describe("NoopAgentProvisioner", () => {
       { id: "agent_42" },
       { id: "agent_99" },
     ]);
-    expect(result).toEqual({ recreated: [], updated: [], orphans: [], failed: [] });
+    expect(result).toEqual({
+      recreated: [],
+      updated: [],
+      orphans: [],
+      failed: [],
+    });
   });
 
   it("ConflictError remains importable for typed-error narrowing", () => {

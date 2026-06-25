@@ -9,8 +9,8 @@
 import { describe, expect, it } from "bun:test";
 import { Hono } from "hono";
 import { sign } from "hono/jwt";
-import { createAdminAuthMiddleware, parseAdminApiKeys } from "./api-auth.ts";
 import type { AgentTokenService, AgentTokenValidated } from "./agent-tokens.ts";
+import { createAdminAuthMiddleware, parseAdminApiKeys } from "./api-auth.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -54,9 +54,7 @@ function buildApp(
   );
   app.get("/test", (c) => c.json({ ok: true }));
   // Scoped agent route — mirrors real admin API pattern
-  app.get("/agents/:id/envs", (c) =>
-    c.json({ agentId: c.req.param("id") }),
-  );
+  app.get("/agents/:id/envs", (c) => c.json({ agentId: c.req.param("id") }));
   return app;
 }
 
@@ -104,7 +102,10 @@ describe("createAdminAuthMiddleware — session cookie", () => {
   it("returns 401 when session cookie JWT is missing required fields", async () => {
     // Sign a JWT missing userId/email
     const jwt = await sign(
-      { iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 3600 },
+      {
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      },
       SESSION_SECRET,
       "HS256",
     );

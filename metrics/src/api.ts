@@ -773,7 +773,10 @@ export function createMetricsHandlers(
         provider.query({ kind: "tokensBySessionType", range: dateRange }),
         provider.query({ kind: "tokensByAgent", range: dateRange }),
         provider.query({ kind: "tokensTrends", range: dateRange }),
-        provider.query({ kind: "tokensByAgentBySessionType", range: dateRange }),
+        provider.query({
+          kind: "tokensByAgentBySessionType",
+          range: dateRange,
+        }),
         provider.query({ kind: "tokensByAgentByCron", range: dateRange }),
         provider.query({ kind: "tokensByAgentByModel", range: dateRange }),
       ]);
@@ -863,7 +866,9 @@ export function createMetricsHandlers(
 
       const cronDisplayNameMap = new Map<string, string>();
       if (byAgentCronRaw.length > 0) {
-        const uniqueAgentIds = [...new Set(byAgentCronRaw.map((r) => r.agentId))];
+        const uniqueAgentIds = [
+          ...new Set(byAgentCronRaw.map((r) => r.agentId)),
+        ];
         await Promise.all(
           uniqueAgentIds.map(async (agentId) => {
             try {

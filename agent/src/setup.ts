@@ -253,7 +253,9 @@ export function findStalePluginSpecs(
   if (!existsSync(manifestPath)) return [];
   let manifest: { plugins?: Record<string, Array<{ installPath?: string }>> };
   try {
-    manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as typeof manifest;
+    manifest = JSON.parse(
+      readFileSync(manifestPath, "utf8"),
+    ) as typeof manifest;
   } catch {
     return [];
   }
@@ -353,8 +355,12 @@ export async function installPlugins(
     const staleSpecs = findStalePluginSpecs(allSpecs, pluginManifestPath);
     const failedUninstalls = new Set<string>();
     for (const spec of staleSpecs) {
-      console.log(`[agent] stale plugin path for ${spec} — uninstalling to force reinstall`);
-      const uninstall = await execFn("claude", ["plugin", "uninstall", spec], { cwd });
+      console.log(
+        `[agent] stale plugin path for ${spec} — uninstalling to force reinstall`,
+      );
+      const uninstall = await execFn("claude", ["plugin", "uninstall", spec], {
+        cwd,
+      });
       if (uninstall.exitCode !== 0) {
         console.warn(
           `[agent] claude plugin uninstall ${spec} exited ${uninstall.exitCode}: ${uninstall.stdout}`,

@@ -6,17 +6,17 @@
 
 import { describe, expect, test } from "bun:test";
 import {
-  AgentCronJobSchema,
-  AgentPluginSchema,
-  AgentSchema,
-  AgentTokenSchema,
-  AgentToolSchema,
-  ErrorSchema,
   type Agent,
   type AgentCronJob,
+  AgentCronJobSchema,
   type AgentPlugin,
+  AgentPluginSchema,
+  AgentSchema,
   type AgentToken,
+  AgentTokenSchema,
   type AgentTool,
+  AgentToolSchema,
+  ErrorSchema,
 } from "./openapi-schemas.ts";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -120,7 +120,9 @@ describe("AgentSchema", () => {
     // Should still parse (extra fields are stripped), but the type should not include it
     expect(result.success).toBe(true);
     if (result.success) {
-      expect((result.data as Record<string, unknown>).slackBotToken).toBeUndefined();
+      expect(
+        (result.data as Record<string, unknown>).slackBotToken,
+      ).toBeUndefined();
     }
   });
 
@@ -129,7 +131,9 @@ describe("AgentSchema", () => {
     const result = AgentSchema.safeParse(withSecret);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect((result.data as Record<string, unknown>).anthropicApiKey).toBeUndefined();
+      expect(
+        (result.data as Record<string, unknown>).anthropicApiKey,
+      ).toBeUndefined();
     }
   });
 });
@@ -293,7 +297,10 @@ describe("AgentPluginSchema", () => {
   });
 
   test("parses plugin with null version (latest)", () => {
-    const result = AgentPluginSchema.safeParse({ ...validPlugin, version: null });
+    const result = AgentPluginSchema.safeParse({
+      ...validPlugin,
+      version: null,
+    });
     expect(result.success).toBe(true);
   });
 

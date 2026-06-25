@@ -20,9 +20,9 @@ describe("isDevAuthAllowed", () => {
   });
 
   it("returns true when ADMIN_DEV_AUTH=true and NODE_ENV=test", () => {
-    expect(
-      isDevAuthAllowed({ ADMIN_DEV_AUTH: "true", NODE_ENV: "test" }),
-    ).toBe(true);
+    expect(isDevAuthAllowed({ ADMIN_DEV_AUTH: "true", NODE_ENV: "test" })).toBe(
+      true,
+    );
   });
 
   it("returns false when NODE_ENV=production regardless of ADMIN_DEV_AUTH", () => {

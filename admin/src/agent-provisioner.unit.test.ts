@@ -406,7 +406,11 @@ function stubTaskStore(opts?: { throwOnMint?: boolean }): {
   minted: Array<{ label: string; agentId: string | undefined; id: string }>;
   revoked: string[];
 } {
-  const minted: Array<{ label: string; agentId: string | undefined; id: string }> = [];
+  const minted: Array<{
+    label: string;
+    agentId: string | undefined;
+    id: string;
+  }> = [];
   const revoked: string[] = [];
   let seq = 0;
 

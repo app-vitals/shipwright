@@ -31,8 +31,7 @@ function relativeTime(date: Date, now: Date = new Date()): string {
   const diffWeek = Math.floor(diffDay / 7);
 
   if (diffSec < 60) return "just now";
-  if (diffMin < 60)
-    return `${diffMin} minute${diffMin === 1 ? "" : "s"} ago`;
+  if (diffMin < 60) return `${diffMin} minute${diffMin === 1 ? "" : "s"} ago`;
   if (diffHour < 24) return `${diffHour} hour${diffHour === 1 ? "" : "s"} ago`;
   if (diffDay < 7) return `${diffDay} day${diffDay === 1 ? "" : "s"} ago`;
   return `${diffWeek} week${diffWeek === 1 ? "" : "s"} ago`;
@@ -71,7 +70,12 @@ export interface CronJobItem {
   name: string | null;
   system: boolean;
   preCheck?: string | null;
-  lastRun?: { startedAt: Date; completedAt: Date | null; skipped: boolean; outcome: string | null } | null;
+  lastRun?: {
+    startedAt: Date;
+    completedAt: Date | null;
+    skipped: boolean;
+    outcome: string | null;
+  } | null;
   runCountToday?: number;
 }
 
@@ -158,7 +162,8 @@ function renderMarkdown(text: string): string {
   // and are not control characters (biome noControlCharactersInRegex safe).
   const PLACEHOLDER_PREFIX = "CODE_BLOCK_";
   const PLACEHOLDER_SUFFIX = "";
-  const placeholder = (n: number) => `${PLACEHOLDER_PREFIX}${n}${PLACEHOLDER_SUFFIX}`;
+  const placeholder = (n: number) =>
+    `${PLACEHOLDER_PREFIX}${n}${PLACEHOLDER_SUFFIX}`;
   const PLACEHOLDER_RE = /^CODE_BLOCK_(\d+)$/;
 
   // Multi-line fenced blocks: ```\n...\n```
@@ -250,9 +255,15 @@ function renderMarkdown(text: string): string {
 /** Apply inline markdown transforms (bold, inline code) to an already-escaped string. */
 function applyInline(s: string): string {
   // Inline code: `code` — must come before bold to avoid double-processing
-  const withCode = s.replace(/`([^`]+)`/g, (_m, code) => `<code>${code}</code>`);
+  const withCode = s.replace(
+    /`([^`]+)`/g,
+    (_m, code) => `<code>${code}</code>`,
+  );
   // Bold: **text**
-  return withCode.replace(/\*\*([^*]+)\*\*/g, (_m, text) => `<strong>${text}</strong>`);
+  return withCode.replace(
+    /\*\*([^*]+)\*\*/g,
+    (_m, text) => `<strong>${text}</strong>`,
+  );
 }
 
 // ─── Login page ───────────────────────────────────────────────────────────────
@@ -428,15 +439,14 @@ export function renderAgentDetailPage(
       error: "background:#ef4444;color:white",
     };
 
-    const lastRunHtml =
-      c.lastRun?.startedAt
-        ? `
+    const lastRunHtml = c.lastRun?.startedAt
+      ? `
       <div style="font-size:11px;color:#6b7280;margin-bottom:4px">${relativeTime(c.lastRun.startedAt, now)}</div>
       <div>
         <span class="badge" style="${outcomeStyle[c.lastRun.outcome ?? ""] ?? "background:#9ca3af;color:white"}">${escapeHtml(c.lastRun.outcome || "unknown")}</span>
       </div>
       <div style="font-size:11px;color:#6b7280;margin-top:4px">${c.runCountToday ?? 0} run${(c.runCountToday ?? 0) === 1 ? "" : "s"}</div>`
-        : `<div style="color:#d1d5db">never</div>`;
+      : `<div style="color:#d1d5db">never</div>`;
 
     return `<tr>
       <td class="mono">${escapeHtml(c.schedule)}</td>
@@ -1131,7 +1141,9 @@ export function renderTasksPage(
     return "badge-gray";
   };
 
-  const renderBlockerBadges = (blockedBy: BlockedByEntry[] | null | undefined): string => {
+  const renderBlockerBadges = (
+    blockedBy: BlockedByEntry[] | null | undefined,
+  ): string => {
     if (!blockedBy || blockedBy.length === 0) return "";
     return blockedBy
       .map((b) => {

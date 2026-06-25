@@ -5,7 +5,8 @@ import { expect, test } from "@playwright/test";
 test.beforeEach(async ({ page }) => {
   await page.route(
     /fonts\.googleapis\.com|fonts\.gstatic\.com|api\.fontshare\.com/,
-    (route) => route.fulfill({ status: 200, contentType: "text/css", body: "" }),
+    (route) =>
+      route.fulfill({ status: 200, contentType: "text/css", body: "" }),
   );
 });
 
@@ -16,9 +17,13 @@ test("config route responds 200", async ({ page }) => {
   expect(response?.status()).toBe(200);
 });
 
-test("config page contains the main Configuration heading", async ({ page }) => {
+test("config page contains the main Configuration heading", async ({
+  page,
+}) => {
   await page.goto("/docs/configuration");
-  const heading = page.getByRole("heading", { name: /^Configuration$/i }).first();
+  const heading = page
+    .getByRole("heading", { name: /^Configuration$/i })
+    .first();
   await expect(heading).toBeVisible();
 });
 

@@ -7,9 +7,9 @@
 
 import { describe, expect, it } from "bun:test";
 import { verify } from "hono/jwt";
-import type { GoogleAuthClient } from "./google-auth-client.ts";
 import { createAdminUIApp } from "./admin-ui.ts";
 import type { AdminUIDeps } from "./admin-ui.ts";
+import type { GoogleAuthClient } from "./google-auth-client.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -89,7 +89,11 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
       agentMember: {
         findMany: async () => [],
         findUnique: async () => null,
-        create: async () => ({ id: "m1", agentId: "agent-123", email: "member@example.com" }),
+        create: async () => ({
+          id: "m1",
+          agentId: "agent-123",
+          email: "member@example.com",
+        }),
         deleteMany: async () => ({ count: 0 }),
       },
     },
@@ -115,7 +119,11 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
         throw new Error("not found");
       },
       delete: async () => {},
-      reconcileSystemCrons: async () => ({ created: 0, updated: 0, deleted: 0 }),
+      reconcileSystemCrons: async () => ({
+        created: 0,
+        updated: 0,
+        deleted: 0,
+      }),
     },
     agentToolService: {
       list: async () => [],
@@ -156,9 +164,18 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
       exchangeOAuthCode: async () => ({ botToken: "xoxb-mock-bot-token" }),
     },
     provisioner: {
-      provision: async () => ({ resourceName: "r", secretName: "s", deploymentName: "d" }),
+      provision: async () => ({
+        resourceName: "r",
+        secretName: "s",
+        deploymentName: "d",
+      }),
       deprovision: async () => {},
-      reconcile: async () => ({ recreated: [], updated: [], orphans: [], failed: [] }),
+      reconcile: async () => ({
+        recreated: [],
+        updated: [],
+        orphans: [],
+        failed: [],
+      }),
     },
     appBaseUrl: "https://example.com",
     devAuthEnabled: false,
@@ -225,7 +242,11 @@ describe("admin UI — GET /admin/dev-login", () => {
     expect(match).not.toBeNull();
     const sessionToken = decodeURIComponent(match?.[1] ?? "");
 
-    const payload = (await verify(sessionToken, SESSION_SECRET, "HS256")) as Record<string, unknown>;
+    const payload = (await verify(
+      sessionToken,
+      SESSION_SECRET,
+      "HS256",
+    )) as Record<string, unknown>;
     expect(payload.userId).toBe("dev");
     expect(payload.email).toBe("dev@localhost");
   });
