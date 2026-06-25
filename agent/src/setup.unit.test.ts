@@ -19,7 +19,13 @@ describe("installPlugins — local marketplace", () => {
       return { stdout: "", exitCode: 0 };
     };
 
-    await installPlugins(mockExec, "/tmp/cwd", [], "/repo/root", "/tmp/nonexistent-manifest.json");
+    await installPlugins(
+      mockExec,
+      "/tmp/cwd",
+      [],
+      "/repo/root",
+      "/tmp/nonexistent-manifest.json",
+    );
 
     // First call must be marketplace add
     expect(calls[0].args).toEqual([
@@ -41,7 +47,13 @@ describe("installPlugins — local marketplace", () => {
       return { stdout: "", exitCode: 0 };
     };
 
-    await installPlugins(mockExec, "/tmp/cwd", [], "/repo/root", "/tmp/nonexistent-manifest.json");
+    await installPlugins(
+      mockExec,
+      "/tmp/cwd",
+      [],
+      "/repo/root",
+      "/tmp/nonexistent-manifest.json",
+    );
 
     // marketplace add + install + update = 3 calls
     expect(calls).toHaveLength(3);
@@ -98,7 +110,13 @@ describe("installPlugins — local marketplace", () => {
       return { stdout: "", exitCode: 0 };
     };
 
-    await installPlugins(mockExec, "/tmp/cwd", [], "/custom/repo/root", "/tmp/nonexistent-manifest.json");
+    await installPlugins(
+      mockExec,
+      "/tmp/cwd",
+      [],
+      "/custom/repo/root",
+      "/tmp/nonexistent-manifest.json",
+    );
 
     expect(calls[0].args).toEqual([
       "plugin",
@@ -132,7 +150,9 @@ describe("installPlugins — local marketplace", () => {
 
     // Extra marketplace add must come BEFORE the /repo/root marketplace add
     const addCalls = calls.filter((c) => c.args[1] === "marketplace");
-    expect(addCalls[0].args[3]).toBe("/opt/shipwright/marketplaces/my-marketplace");
+    expect(addCalls[0].args[3]).toBe(
+      "/opt/shipwright/marketplaces/my-marketplace",
+    );
     expect(addCalls[1].args[3]).toBe("/repo/root");
   });
 
@@ -168,7 +188,9 @@ describe("discoverBakedMarketplaces", () => {
     // Since discoverBakedMarketplaces uses real fs, we test with a known-absent path
     // The actual fs-based tests live in setup.integration.test.ts.
     // This unit test verifies the function is exported and handles absent roots.
-    const result = discoverBakedMarketplaces("/tmp/nonexistent-convention-root-abc123");
+    const result = discoverBakedMarketplaces(
+      "/tmp/nonexistent-convention-root-abc123",
+    );
     expect(Array.isArray(result)).toBe(true);
     expect(result).toHaveLength(0);
   });

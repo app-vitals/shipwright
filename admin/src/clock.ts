@@ -41,7 +41,7 @@ export function SystemClock(): Clock {
 export function FixedClock(date: Date): Clock {
   return {
     now(): Date {
-      return date;
+      return new Date(date);
     },
   };
 }

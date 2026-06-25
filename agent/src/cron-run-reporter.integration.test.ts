@@ -6,7 +6,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { HttpCronRunReporter, NoopCronRunReporter } from "./cron-run-reporter.ts";
+import {
+  HttpCronRunReporter,
+  NoopCronRunReporter,
+} from "./cron-run-reporter.ts";
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -22,8 +25,11 @@ interface StubState {
   statusToReturn: number;
 }
 
-// biome-ignore lint/suspicious/noExplicitAny: Server type param varies by bun version
-function startStubServer(port: number, state: StubState): ReturnType<typeof Bun.serve<any>> {
+function startStubServer(
+  port: number,
+  state: StubState,
+  // biome-ignore lint/suspicious/noExplicitAny: Server type param varies by bun version
+): ReturnType<typeof Bun.serve<any>> {
   return Bun.serve({
     port,
     fetch: async (req) => {

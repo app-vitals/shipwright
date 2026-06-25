@@ -36,7 +36,11 @@ function makeDevAuthDeps(): MetricsDeps {
 
 describe("dashboardDevAuth — /dashboard", () => {
   test("returns 200 server-rendered HTML with no session cookie", async () => {
-    const app = createMetricsApp(new Map(), noopAccountsClient, makeDevAuthDeps());
+    const app = createMetricsApp(
+      new Map(),
+      noopAccountsClient,
+      makeDevAuthDeps(),
+    );
     const res = await app.request("/dashboard");
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toMatch(/text\/html/);
@@ -48,7 +52,11 @@ describe("dashboardDevAuth — /dashboard", () => {
 
 describe("dashboardDevAuth — /metrics/* without credentials", () => {
   test("/metrics/summary returns 200 with no Authorization header or cookie", async () => {
-    const app = createMetricsApp(new Map(), noopAccountsClient, makeDevAuthDeps());
+    const app = createMetricsApp(
+      new Map(),
+      noopAccountsClient,
+      makeDevAuthDeps(),
+    );
     const res = await app.request("/metrics/summary?preset=7d");
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -56,7 +64,11 @@ describe("dashboardDevAuth — /metrics/* without credentials", () => {
   });
 
   test("/metrics/trends returns 200 with no credentials", async () => {
-    const app = createMetricsApp(new Map(), noopAccountsClient, makeDevAuthDeps());
+    const app = createMetricsApp(
+      new Map(),
+      noopAccountsClient,
+      makeDevAuthDeps(),
+    );
     const res = await app.request("/metrics/trends?preset=7d");
     expect(res.status).toBe(200);
     const body = await res.json();

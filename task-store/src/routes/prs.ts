@@ -146,11 +146,16 @@ export function createPrsRoutes(
   // Only these fields are writable via PATCH. All other fields are managed by
   // dedicated lifecycle endpoints (claim, complete, patch, release) that enforce
   // valid state transitions atomically.
+  //
+  // Extensions for deploy.md upsert flow:
+  //   state, mergedAt, reviewState — set when marking a PR as merged
   const PATCH_ALLOWED_FIELDS: Array<keyof PullRequest> = [
     "staged",
     "commitSha",
     "taskId",
     "agentId",
+    "state",
+    "mergedAt",
     "reviewState",
   ];
 

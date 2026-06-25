@@ -567,16 +567,13 @@ export class HttpKubernetesClient implements KubernetesClient {
     name: string,
     patch: object,
   ): Promise<void> {
-    await this.request<void>(
-      deploymentUrl(this.apiServer, namespace, name),
-      {
-        method: "PATCH",
-        headers: this.authHeaders({
-          "Content-Type": "application/strategic-merge-patch+json",
-        }),
-        body: JSON.stringify(patch),
-      },
-    );
+    await this.request<void>(deploymentUrl(this.apiServer, namespace, name), {
+      method: "PATCH",
+      headers: this.authHeaders({
+        "Content-Type": "application/strategic-merge-patch+json",
+      }),
+      body: JSON.stringify(patch),
+    });
   }
 
   async createSecret(
@@ -616,10 +613,13 @@ export class HttpKubernetesClient implements KubernetesClient {
   }
 
   async getPvc(namespace: string, name: string): Promise<KubernetesPvc> {
-    return this.request<KubernetesPvc>(pvcUrl(this.apiServer, namespace, name), {
-      method: "GET",
-      headers: this.authHeaders(),
-    });
+    return this.request<KubernetesPvc>(
+      pvcUrl(this.apiServer, namespace, name),
+      {
+        method: "GET",
+        headers: this.authHeaders(),
+      },
+    );
   }
 
   async deletePvc(namespace: string, name: string): Promise<void> {

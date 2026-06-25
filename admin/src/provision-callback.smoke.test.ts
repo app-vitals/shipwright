@@ -150,7 +150,11 @@ function makeMockDeps(
       agentMember: {
         findMany: async () => [],
         findUnique: async () => null,
-        create: async () => ({ id: "m1", agentId: AGENT_ID, email: "member@example.com" }),
+        create: async () => ({
+          id: "m1",
+          agentId: AGENT_ID,
+          email: "member@example.com",
+        }),
         deleteMany: async () => ({ count: 0 }),
       },
     },
@@ -164,6 +168,7 @@ function makeMockDeps(
     },
     agentCronJobService: {
       list: async () => [],
+      listWithRunSummary: async () => [],
       get: async () => {
         throw new Error("not implemented");
       },
@@ -230,9 +235,18 @@ function makeMockDeps(
     },
     slackClient: makeMockSlackClient(),
     provisioner: {
-      provision: async () => ({ resourceName: "r", secretName: "s", deploymentName: "d" }),
+      provision: async () => ({
+        resourceName: "r",
+        secretName: "s",
+        deploymentName: "d",
+      }),
       deprovision: async () => {},
-      reconcile: async () => ({ recreated: [], updated: [], orphans: [], failed: [] }),
+      reconcile: async () => ({
+        recreated: [],
+        updated: [],
+        orphans: [],
+        failed: [],
+      }),
     },
     appBaseUrl: "https://example.com",
     ...overrides,
@@ -286,14 +300,11 @@ describe("GET /admin/provision/complete — OAuth callback", () => {
     };
     const app = createAdminUIApp(makeMockDeps(state));
 
-    const res = await app.request(
-      "/admin/provision/complete?code=some-code",
-      {
-        headers: {
-          Cookie: `admin_session=${sessionCookie}`,
-        },
+    const res = await app.request("/admin/provision/complete?code=some-code", {
+      headers: {
+        Cookie: `admin_session=${sessionCookie}`,
       },
-    );
+    });
 
     expect(res.status).toBe(200);
     const html = await res.text();
@@ -318,14 +329,11 @@ describe("GET /admin/provision/complete — OAuth callback", () => {
       expired: true,
     });
 
-    const res = await app.request(
-      "/admin/provision/complete?code=valid-code",
-      {
-        headers: {
-          Cookie: `admin_session=${sessionCookie}; ${PROVISION_STATE_COOKIE}=${expiredProvisionState}`,
-        },
+    const res = await app.request("/admin/provision/complete?code=valid-code", {
+      headers: {
+        Cookie: `admin_session=${sessionCookie}; ${PROVISION_STATE_COOKIE}=${expiredProvisionState}`,
       },
-    );
+    });
 
     expect(res.status).toBe(200);
     const html = await res.text();
@@ -478,8 +486,8 @@ describe("POST /admin/provision/xapp-token", () => {
     const html = await res.text();
 
     // SLACK_APP_TOKEN should be stored
-    const appTokenUpsert = state.upsertCalls.find((c) =>
-      "SLACK_APP_TOKEN" in c.env,
+    const appTokenUpsert = state.upsertCalls.find(
+      (c) => "SLACK_APP_TOKEN" in c.env,
     );
     expect(appTokenUpsert).toBeDefined();
     expect(appTokenUpsert?.env.SLACK_APP_TOKEN).toBe(
@@ -487,8 +495,8 @@ describe("POST /admin/provision/xapp-token", () => {
     );
 
     // SHIPWRIGHT_AGENT_API_KEY should be stored
-    const apiKeyUpsert = state.upsertCalls.find((c) =>
-      "SHIPWRIGHT_AGENT_API_KEY" in c.env,
+    const apiKeyUpsert = state.upsertCalls.find(
+      (c) => "SHIPWRIGHT_AGENT_API_KEY" in c.env,
     );
     expect(apiKeyUpsert).toBeDefined();
     expect(apiKeyUpsert?.env.SHIPWRIGHT_AGENT_API_KEY).toBe(

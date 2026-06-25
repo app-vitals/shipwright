@@ -355,8 +355,7 @@
             dmTotal = (agent.total || 0) - cronTotal;
           }
 
-          const agentLabel =
-            agent.agentName ?? agent.agentId.slice(0, 8);
+          const agentLabel = agent.agentName ?? agent.agentId.slice(0, 8);
 
           // Agent header row
           const headerTr = document.createElement("tr");

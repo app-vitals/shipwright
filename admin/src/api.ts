@@ -22,11 +22,8 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import type { AgentCronJob } from "./agent-cron-jobs.ts";
 import type { AgentEnvBundle } from "./agent-envs.ts";
-import {
-  type AdminApiKey,
-  createAdminAuthMiddleware,
-} from "./api-auth.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
+import { type AdminApiKey, createAdminAuthMiddleware } from "./api-auth.ts";
 import {
   AgentConfigResponseSchema,
   AgentCronJobSchema,
@@ -53,6 +50,19 @@ interface AgentEnvServiceLike {
 
 interface AgentCronJobServiceLike {
   list(agentId: string): Promise<AgentCronJob[]>;
+  listWithRunSummary?(agentId: string): Promise<
+    Array<
+      AgentCronJob & {
+        lastRun: null | {
+          startedAt: Date;
+          completedAt: Date | null;
+          skipped: boolean;
+          outcome: string | null;
+        };
+        runCountToday: number;
+      }
+    >
+  >;
 }
 
 interface PrismaLike {

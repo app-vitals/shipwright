@@ -251,7 +251,9 @@ describe("SqlEventStoreProvider.tokens", () => {
     expect(table.columns).toContain("agent_id");
     expect(table.columns).toContain("session_type");
     const all = rows(table);
-    const agentA = all.find((x) => x.agent_id === "agent-a" && x.session_type === "cron");
+    const agentA = all.find(
+      (x) => x.agent_id === "agent-a" && x.session_type === "cron",
+    );
     expect(agentA).toBeDefined();
     expect(Number(agentA?.input_tokens)).toBe(1000);
     expect(Number(agentA?.cost_usd)).toBeCloseTo(0.01);

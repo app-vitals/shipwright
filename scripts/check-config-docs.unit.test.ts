@@ -26,7 +26,7 @@ describe("extractEnvVarNames", () => {
     expect(extractEnvVarNames(src)).toContain("NODE_ENV");
   });
 
-  test("extracts bracket double-quote notation: process.env[\"VAR_NAME\"]", () => {
+  test('extracts bracket double-quote notation: process.env["VAR_NAME"]', () => {
     const src = `const x = process.env["SLACK_BOT_TOKEN"];`;
     expect(extractEnvVarNames(src)).toContain("SLACK_BOT_TOKEN");
   });

@@ -5,7 +5,8 @@ import { expect, test } from "@playwright/test";
 test.beforeEach(async ({ page }) => {
   await page.route(
     /fonts\.googleapis\.com|fonts\.gstatic\.com|api\.fontshare\.com/,
-    (route) => route.fulfill({ status: 200, contentType: "text/css", body: "" }),
+    (route) =>
+      route.fulfill({ status: 200, contentType: "text/css", body: "" }),
   );
 });
 
@@ -88,7 +89,9 @@ test("showcase tabs switch panels with zero runtime JS", async ({ page }) => {
     "Metrics",
     "Demo",
   ]) {
-    await expect(showcase.locator("label.sw-tab", { hasText: tab })).toBeVisible();
+    await expect(
+      showcase.locator("label.sw-tab", { hasText: tab }),
+    ).toBeVisible();
   }
   // Default panel is "Two ways"; the others are hidden until selected.
   await expect(page.locator("#two-ways")).toBeVisible();
@@ -179,7 +182,9 @@ test("crons section documents the ten default scheduled jobs", async ({
     "dependabot-triage",
     "entropy-patrol",
   ]) {
-    await expect(section.getByText(name, { exact: false }).first()).toBeVisible();
+    await expect(
+      section.getByText(name, { exact: false }).first(),
+    ).toBeVisible();
   }
   // Exactly two run on by default; the rest are opt-in.
   await expect(section.getByText("On", { exact: true })).toHaveCount(2);

@@ -663,7 +663,10 @@ describe("findStalePluginSpecs", () => {
       }),
     );
 
-    const result = findStalePluginSpecs(["shipwright@shipwright"], manifestPath);
+    const result = findStalePluginSpecs(
+      ["shipwright@shipwright"],
+      manifestPath,
+    );
     expect(result).toEqual([]);
   });
 
@@ -676,7 +679,9 @@ describe("findStalePluginSpecs", () => {
         version: 2,
         plugins: {
           "example-platform@example-platform": [
-            { installPath: "/root/.claude/plugins/cache/example-platform/0.4.5" },
+            {
+              installPath: "/root/.claude/plugins/cache/example-platform/0.4.5",
+            },
           ],
           "shipwright@shipwright": [
             { installPath: "/root/.claude/plugins/cache/shipwright/1.0.0" },
@@ -696,12 +701,12 @@ describe("findStalePluginSpecs", () => {
   it("skips specs not present in the manifest", () => {
     mkdirSync(testHome, { recursive: true });
     const manifestPath = join(testHome, "installed_plugins.json");
-    writeFileSync(
-      manifestPath,
-      JSON.stringify({ version: 2, plugins: {} }),
-    );
+    writeFileSync(manifestPath, JSON.stringify({ version: 2, plugins: {} }));
 
-    const result = findStalePluginSpecs(["shipwright@shipwright"], manifestPath);
+    const result = findStalePluginSpecs(
+      ["shipwright@shipwright"],
+      manifestPath,
+    );
     expect(result).toEqual([]);
   });
 
@@ -710,7 +715,10 @@ describe("findStalePluginSpecs", () => {
     const manifestPath = join(testHome, "installed_plugins.json");
     writeFileSync(manifestPath, "not valid json");
 
-    const result = findStalePluginSpecs(["shipwright@shipwright"], manifestPath);
+    const result = findStalePluginSpecs(
+      ["shipwright@shipwright"],
+      manifestPath,
+    );
     expect(result).toEqual([]);
   });
 });
@@ -730,7 +738,13 @@ describe("installPlugins", () => {
       return { stdout: "", exitCode: 0 };
     };
 
-    await installPlugins(mockExec, testHome, [], "/repo/root", join(testHome, "nonexistent.json"));
+    await installPlugins(
+      mockExec,
+      testHome,
+      [],
+      "/repo/root",
+      join(testHome, "nonexistent.json"),
+    );
 
     // marketplace add + 1 install + 1 update = 3 calls (no stale paths)
     expect(calls).toHaveLength(3);
@@ -768,7 +782,13 @@ describe("installPlugins", () => {
       { marketplace: "other-market", plugin: "another-plugin" },
     ];
 
-    await installPlugins(mockExec, testHome, agentPlugins, "/repo/root", join(testHome, "nonexistent.json"));
+    await installPlugins(
+      mockExec,
+      testHome,
+      agentPlugins,
+      "/repo/root",
+      join(testHome, "nonexistent.json"),
+    );
 
     // 1 marketplace add + 3 installs + 3 updates = 7 calls
     expect(calls).toHaveLength(7);
@@ -826,7 +846,13 @@ describe("installPlugins", () => {
       return { stdout: "", exitCode: 0 };
     };
 
-    await installPlugins(mockExec, testHome, [], "/repo/root", join(testHome, "nonexistent.json"));
+    await installPlugins(
+      mockExec,
+      testHome,
+      [],
+      "/repo/root",
+      join(testHome, "nonexistent.json"),
+    );
 
     // marketplace add + 1 install + 1 update = 3 calls
     expect(calls).toHaveLength(3);
@@ -840,7 +866,13 @@ describe("installPlugins", () => {
     };
 
     await expect(
-      installPlugins(throwingExec, testHome, [], "/repo/root", join(testHome, "nonexistent.json")),
+      installPlugins(
+        throwingExec,
+        testHome,
+        [],
+        "/repo/root",
+        join(testHome, "nonexistent.json"),
+      ),
     ).resolves.toBeUndefined();
   });
 
@@ -860,7 +892,13 @@ describe("installPlugins", () => {
     };
 
     await expect(
-      installPlugins(mockExec, testHome, [], "/repo/root", join(testHome, "nonexistent.json")),
+      installPlugins(
+        mockExec,
+        testHome,
+        [],
+        "/repo/root",
+        join(testHome, "nonexistent.json"),
+      ),
     ).resolves.toBeUndefined();
 
     // All calls still happened despite install failures
@@ -883,7 +921,13 @@ describe("installPlugins", () => {
     };
 
     await expect(
-      installPlugins(mockExec, testHome, [], "/repo/root", join(testHome, "nonexistent.json")),
+      installPlugins(
+        mockExec,
+        testHome,
+        [],
+        "/repo/root",
+        join(testHome, "nonexistent.json"),
+      ),
     ).resolves.toBeUndefined();
 
     // All 3 calls still happened despite marketplace add failure
@@ -902,7 +946,13 @@ describe("installPlugins", () => {
     };
 
     await expect(
-      installPlugins(mockExec, testHome, [], "/repo/root", join(testHome, "nonexistent.json")),
+      installPlugins(
+        mockExec,
+        testHome,
+        [],
+        "/repo/root",
+        join(testHome, "nonexistent.json"),
+      ),
     ).resolves.toBeUndefined();
     expect(calls).toHaveLength(3);
   });
@@ -939,9 +989,21 @@ describe("installPlugins", () => {
 
     // marketplace add + uninstall (stale) + install + update = 4 calls
     expect(calls).toHaveLength(4);
-    expect(calls[1].args).toEqual(["plugin", "uninstall", "shipwright@shipwright"]);
-    expect(calls[2].args).toEqual(["plugin", "install", "shipwright@shipwright"]);
-    expect(calls[3].args).toEqual(["plugin", "update", "shipwright@shipwright"]);
+    expect(calls[1].args).toEqual([
+      "plugin",
+      "uninstall",
+      "shipwright@shipwright",
+    ]);
+    expect(calls[2].args).toEqual([
+      "plugin",
+      "install",
+      "shipwright@shipwright",
+    ]);
+    expect(calls[3].args).toEqual([
+      "plugin",
+      "update",
+      "shipwright@shipwright",
+    ]);
   });
 
   it("skips install and update for a stale spec whose uninstall exits non-zero", async () => {
@@ -981,8 +1043,17 @@ describe("installPlugins", () => {
 
     // marketplace add + uninstall (failed) = 2 calls; install and update are skipped
     expect(calls).toHaveLength(2);
-    expect(calls[0].args).toEqual(["plugin", "marketplace", "add", "/repo/root"]);
-    expect(calls[1].args).toEqual(["plugin", "uninstall", "shipwright@shipwright"]);
+    expect(calls[0].args).toEqual([
+      "plugin",
+      "marketplace",
+      "add",
+      "/repo/root",
+    ]);
+    expect(calls[1].args).toEqual([
+      "plugin",
+      "uninstall",
+      "shipwright@shipwright",
+    ]);
     // No install or update calls for the failed spec
     expect(calls.every((c) => c.args[1] !== "install")).toBe(true);
     expect(calls.every((c) => c.args[1] !== "update")).toBe(true);
@@ -1062,7 +1133,11 @@ describe("discoverBakedMarketplaces", () => {
     const invalidDir = join(conventionRoot, "invalid-marketplace");
     mkdirSync(join(invalidDir, ".claude-plugin"), { recursive: true });
     // No marketplace.json — only a different file
-    writeFileSync(join(invalidDir, ".claude-plugin", "plugin.json"), "{}", "utf8");
+    writeFileSync(
+      join(invalidDir, ".claude-plugin", "plugin.json"),
+      "{}",
+      "utf8",
+    );
 
     // Dir with no .claude-plugin at all
     const bareDir = join(conventionRoot, "bare-dir");
@@ -1136,8 +1211,10 @@ describe("installPlugins — extra marketplace discovery", () => {
 
     // All install calls must come after all marketplace add calls
     const installIdx = calls.findIndex((c) => c.args[1] === "install");
-    const lastAddIdx = calls.reduce((max, c, i) =>
-      c.args[1] === "marketplace" ? i : max, -1);
+    const lastAddIdx = calls.reduce(
+      (max, c, i) => (c.args[1] === "marketplace" ? i : max),
+      -1,
+    );
     expect(installIdx).toBeGreaterThan(lastAddIdx);
   });
 

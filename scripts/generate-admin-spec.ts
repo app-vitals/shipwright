@@ -37,8 +37,16 @@ const runtimeApp = createAgentRuntimeApp({
     },
   },
   prisma: {
-    agent: { async findUnique() { return null; } },
-    agentPlugin: { async findMany() { return []; } },
+    agent: {
+      async findUnique() {
+        return null;
+      },
+    },
+    agentPlugin: {
+      async findMany() {
+        return [];
+      },
+    },
   } as never,
   adminApiKeys,
   agentTokenService: { validate: async () => null },
@@ -54,38 +62,38 @@ const adminApp = createAdminApp({
   },
   agentCronJobService: {
     list: async () => [],
-    create: async () => ({} as never),
-    update: async () => ({} as never),
+    create: async () => ({}) as never,
+    update: async () => ({}) as never,
     delete: async () => {},
-    get: async () => ({} as never),
-    setEnabled: async () => ({} as never),
-    updatePreCheck: async () => ({} as never),
+    get: async () => ({}) as never,
+    setEnabled: async () => ({}) as never,
+    updatePreCheck: async () => ({}) as never,
     reconcileSystemCrons: async () => ({ created: 0, updated: 0, deleted: 0 }),
   },
   agentToolService: {
     list: async () => [],
-    add: async () => ({} as never),
+    add: async () => ({}) as never,
     remove: async () => {},
-    toggle: async () => ({} as never),
+    toggle: async () => ({}) as never,
   },
   agentTokenService: {
-    create: async () => ({} as never),
+    create: async () => ({}) as never,
     listForAgent: async () => [],
-    revoke: async () => ({} as never),
+    revoke: async () => ({}) as never,
     validate: async () => null,
   },
   agentPluginService: {
     list: async () => [],
-    add: async () => ({} as never),
+    add: async () => ({}) as never,
     remove: async () => {},
     removeByName: async () => {},
   },
   prisma: {
     agent: {
-      create: async () => ({} as never),
+      create: async () => ({}) as never,
       findUnique: async () => null,
       findMany: async () => [],
-      delete: async () => ({} as never),
+      delete: async () => ({}) as never,
     },
   } as never,
   provisioner: new NoopAgentProvisioner(),
@@ -103,9 +111,7 @@ const docInfo = {
     description:
       "REST API for the Shipwright admin service — CRUD for agents, env vars, cron jobs, tokens, tools, and plugins, plus the agent runtime polling endpoints.",
   },
-  servers: [
-    { url: "http://localhost:3457", description: "Local dev" },
-  ],
+  servers: [{ url: "http://localhost:3457", description: "Local dev" }],
 } as const;
 
 // Admin app spec (uses OpenAPI {id} path notation)

@@ -28,7 +28,13 @@
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["ClusterIP", "NodePort", "LoadBalancer", "ingress", "gateway"]
+          "enum": [
+            "ClusterIP",
+            "NodePort",
+            "LoadBalancer",
+            "ingress",
+            "gateway"
+          ]
         },
         "ingress": {
           "type": "object",
@@ -116,12 +122,14 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "existingSecret":   { "type": "string" },
+                "existingSecret": { "type": "string" },
                 "encryptionKeyRef": { "type": "string" },
                 "sessionSecretRef": { "type": "string" }
               },
               "if": {
-                "properties": { "existingSecret": { "type": "string", "minLength": 1 } },
+                "properties": {
+                  "existingSecret": { "type": "string", "minLength": 1 }
+                },
                 "required": ["existingSecret"]
               },
               "then": {
@@ -164,15 +172,19 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "existingSecret":   { "type": "string" },
+                "existingSecret": { "type": "string" },
                 "sessionSecretRef": { "type": "string" }
               },
               "if": {
-                "properties": { "existingSecret": { "type": "string", "minLength": 1 } },
+                "properties": {
+                  "existingSecret": { "type": "string", "minLength": 1 }
+                },
                 "required": ["existingSecret"]
               },
               "then": {
-                "properties": { "sessionSecretRef": { "type": "string", "minLength": 1 } },
+                "properties": {
+                  "sessionSecretRef": { "type": "string", "minLength": 1 }
+                },
                 "required": ["sessionSecretRef"]
               }
             },
@@ -184,38 +196,44 @@
                   "type": "object",
                   "additionalProperties": false,
                   "properties": {
-                    "existingSecret":    { "type": "string" },
+                    "existingSecret": { "type": "string" },
                     "personalApiKeyRef": { "type": "string" },
-                    "projectIdRef":      { "type": "string" }
+                    "projectIdRef": { "type": "string" }
                   },
                   "if": {
-                    "properties": { "existingSecret": { "type": "string", "minLength": 1 } },
+                    "properties": {
+                      "existingSecret": { "type": "string", "minLength": 1 }
+                    },
                     "required": ["existingSecret"]
                   },
                   "then": {
                     "properties": {
                       "personalApiKeyRef": { "type": "string", "minLength": 1 },
-                      "projectIdRef":      { "type": "string", "minLength": 1 }
+                      "projectIdRef": { "type": "string", "minLength": 1 }
                     },
                     "required": ["personalApiKeyRef", "projectIdRef"]
                   }
                 },
-                "adminUrl":          { "type": "string" },
-                "basePath":          { "type": "string" },
-                "requireOwnerRole":  { "type": "boolean" },
+                "adminUrl": { "type": "string" },
+                "basePath": { "type": "string" },
+                "requireOwnerRole": { "type": "boolean" },
                 "internalKey": {
                   "type": "object",
                   "additionalProperties": false,
                   "properties": {
                     "existingSecret": { "type": "string" },
-                    "key":            { "type": "string" }
+                    "key": { "type": "string" }
                   },
                   "if": {
-                    "properties": { "existingSecret": { "type": "string", "minLength": 1 } },
+                    "properties": {
+                      "existingSecret": { "type": "string", "minLength": 1 }
+                    },
                     "required": ["existingSecret"]
                   },
                   "then": {
-                    "properties": { "key": { "type": "string", "minLength": 1 } },
+                    "properties": {
+                      "key": { "type": "string", "minLength": 1 }
+                    },
                     "required": ["key"]
                   }
                 }
@@ -344,13 +362,13 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "existingSecret":  { "type": "string" },
-            "clientIdRef":     { "type": "string" },
+            "existingSecret": { "type": "string" },
+            "clientIdRef": { "type": "string" },
             "clientSecretRef": { "type": "string" },
-            "allowedEmailsRef":{ "type": "string" },
-            "clientId":        { "type": "string" },
-            "clientSecret":    { "type": "string" },
-            "allowedEmails":   { "type": "string" }
+            "allowedEmailsRef": { "type": "string" },
+            "clientId": { "type": "string" },
+            "clientSecret": { "type": "string" },
+            "allowedEmails": { "type": "string" }
           }
         }
       },
@@ -363,15 +381,17 @@
         "properties": {
           "google": {
             "if": {
-              "properties": { "existingSecret": { "type": "string", "minLength": 1 } },
+              "properties": {
+                "existingSecret": { "type": "string", "minLength": 1 }
+              },
               "required": ["existingSecret"]
             },
             "then": {},
             "else": {
               "required": ["clientId", "clientSecret", "allowedEmails"],
               "properties": {
-                "clientId":      { "type": "string", "minLength": 1 },
-                "clientSecret":  { "type": "string", "minLength": 1 },
+                "clientId": { "type": "string", "minLength": 1 },
+                "clientSecret": { "type": "string", "minLength": 1 },
                 "allowedEmails": { "type": "string", "minLength": 1 }
               }
             }

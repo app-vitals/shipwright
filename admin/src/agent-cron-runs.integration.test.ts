@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it } from "bun:test";
 import { PrismaClient } from "../prisma/client/index.js";
 import { AgentCronJobService } from "./agent-cron-jobs.ts";
 import { AgentCronRunService } from "./agent-cron-runs.ts";
+import { FixedClock } from "./clock.ts";
 import { NotFoundError } from "./errors.ts";
 
 const TEST_DB = process.env.DATABASE_URL_ADMIN_TEST;
@@ -41,6 +42,10 @@ async function createCron(
   return job.id;
 }
 
+// Fixed "now" for deterministic day-boundary tests: 2026-01-15T12:00:00Z
+// setUTCHours(0,0,0,0) on this gives 2026-01-15T00:00:00.000Z
+const FIXED_NOW = new Date("2026-01-15T12:00:00Z");
+
 describeOrSkip("AgentCronRunService (integration)", () => {
   let prisma: PrismaClient;
   let cronJobService: AgentCronJobService;
@@ -54,7 +59,7 @@ describeOrSkip("AgentCronRunService (integration)", () => {
     await prisma.agentTool.deleteMany();
     await prisma.agentEnv.deleteMany();
     await prisma.agent.deleteMany();
-    cronJobService = new AgentCronJobService(prisma);
+    cronJobService = new AgentCronJobService(prisma, FixedClock(FIXED_NOW));
     runService = new AgentCronRunService(prisma);
   });
 
@@ -237,7 +242,9 @@ describeOrSkip("AgentCronRunService (integration)", () => {
     const agentId = await createAgent(prisma);
     const cronId = await createCron(cronJobService, agentId);
 
-    const todayMidnightUtc = new Date();
+    // Derive midnight from the fixed clock so the boundary matches what the
+    // service computes — avoids a narrow race when the real clock rolls over midnight.
+    const todayMidnightUtc = new Date(FIXED_NOW);
     todayMidnightUtc.setUTCHours(0, 0, 0, 0);
 
     const yesterday = new Date(todayMidnightUtc.getTime() - 1000);

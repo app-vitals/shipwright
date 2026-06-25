@@ -235,9 +235,7 @@ export class HttpSlackProvisioningClient implements SlackProvisioningClient {
     }
 
     if (!data.access_token) {
-      throw new Error(
-        "Slack oauth.v2.access response missing access_token",
-      );
+      throw new Error("Slack oauth.v2.access response missing access_token");
     }
 
     return { botToken: data.access_token };
@@ -255,7 +253,10 @@ export class HttpSlackProvisioningClient implements SlackProvisioningClient {
         Authorization: `Bearer ${xoxpToken}`,
         "Content-Type": "application/json; charset=utf-8",
       },
-      body: JSON.stringify({ app_id: appId, manifest: JSON.stringify(manifest) }),
+      body: JSON.stringify({
+        app_id: appId,
+        manifest: JSON.stringify(manifest),
+      }),
     });
 
     if (!resp.ok) {

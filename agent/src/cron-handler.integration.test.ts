@@ -968,9 +968,13 @@ describe("handleCronRequest — CronRunReporter", () => {
   });
 
   function makeRecorder() {
-    const calls: Parameters<import("./cron-run-reporter.ts").CronRunReporter["report"]>[0][] = [];
+    const calls: Parameters<
+      import("./cron-run-reporter.ts").CronRunReporter["report"]
+    >[0][] = [];
     const reporter: import("./cron-run-reporter.ts").CronRunReporter = {
-      report: async (run) => { calls.push(run); },
+      report: async (run) => {
+        calls.push(run);
+      },
     };
     return { calls, reporter };
   }
@@ -979,10 +983,7 @@ describe("handleCronRequest — CronRunReporter", () => {
     mockRunner.mockResolvedValueOnce({ result: "reply", sessionId: "s1" });
     // no cronRunReporter in deps — should not throw
     await expect(
-      handleCronRequest(
-        { jobId: "j1", prompt: "hello", channel: "C-X" },
-        deps,
-      ),
+      handleCronRequest({ jobId: "j1", prompt: "hello", channel: "C-X" }, deps),
     ).resolves.toBeUndefined();
   });
 
@@ -996,7 +997,12 @@ describe("handleCronRequest — CronRunReporter", () => {
         channel: "C-TEST",
         preCheck: "nonexistent-plugin:check.ts",
       },
-      { ...deps, pluginCacheDir: tmpDir, cronRunReporter: reporter, clock: FixedClock(FIXED_TIME) },
+      {
+        ...deps,
+        pluginCacheDir: tmpDir,
+        cronRunReporter: reporter,
+        clock: FixedClock(FIXED_TIME),
+      },
     );
 
     expect(calls).toHaveLength(1);
@@ -1012,7 +1018,12 @@ describe("handleCronRequest — CronRunReporter", () => {
 
   test("preCheck exit 1 (no output) → reporter called with skipped:true, skipReason:'preCheck:no-output'", async () => {
     const { calls, reporter } = makeRecorder();
-    const scriptPath = join(tmpDir, "shipwright", "scripts", "check-no-output.ts");
+    const scriptPath = join(
+      tmpDir,
+      "shipwright",
+      "scripts",
+      "check-no-output.ts",
+    );
     writeFileSync(scriptPath, "process.exit(1);", { mode: 0o755 });
 
     await handleCronRequest(
@@ -1022,7 +1033,12 @@ describe("handleCronRequest — CronRunReporter", () => {
         channel: "C-TEST",
         preCheck: "shipwright:check-no-output.ts",
       },
-      { ...deps, pluginCacheDir: tmpDir, cronRunReporter: reporter, clock: FixedClock(FIXED_TIME) },
+      {
+        ...deps,
+        pluginCacheDir: tmpDir,
+        cronRunReporter: reporter,
+        clock: FixedClock(FIXED_TIME),
+      },
     );
 
     expect(calls).toHaveLength(1);
@@ -1038,7 +1054,12 @@ describe("handleCronRequest — CronRunReporter", () => {
 
   test("preCheck exit 0 with no output → reporter called with skipped:true, skipReason:'preCheck:no-output'", async () => {
     const { calls, reporter } = makeRecorder();
-    const scriptPath = join(tmpDir, "shipwright", "scripts", "check-empty-exit0.ts");
+    const scriptPath = join(
+      tmpDir,
+      "shipwright",
+      "scripts",
+      "check-empty-exit0.ts",
+    );
     writeFileSync(scriptPath, "process.exit(0);", { mode: 0o755 });
 
     await handleCronRequest(
@@ -1048,7 +1069,12 @@ describe("handleCronRequest — CronRunReporter", () => {
         channel: "C-TEST",
         preCheck: "shipwright:check-empty-exit0.ts",
       },
-      { ...deps, pluginCacheDir: tmpDir, cronRunReporter: reporter, clock: FixedClock(FIXED_TIME) },
+      {
+        ...deps,
+        pluginCacheDir: tmpDir,
+        cronRunReporter: reporter,
+        clock: FixedClock(FIXED_TIME),
+      },
     );
 
     expect(calls).toHaveLength(1);
@@ -1078,7 +1104,12 @@ describe("handleCronRequest — CronRunReporter", () => {
         silent: true,
         preCheck: "shipwright:check-crash.ts",
       },
-      { ...deps, pluginCacheDir: tmpDir, cronRunReporter: reporter, clock: FixedClock(FIXED_TIME) },
+      {
+        ...deps,
+        pluginCacheDir: tmpDir,
+        cronRunReporter: reporter,
+        clock: FixedClock(FIXED_TIME),
+      },
     );
 
     expect(calls).toHaveLength(1);
@@ -1113,7 +1144,10 @@ describe("handleCronRequest — CronRunReporter", () => {
 
   test("[silent] marker → reporter called with skipped:false, outcome:'silent'", async () => {
     const { calls, reporter } = makeRecorder();
-    mockRunner.mockResolvedValueOnce({ result: "text [silent]", sessionId: "s1" });
+    mockRunner.mockResolvedValueOnce({
+      result: "text [silent]",
+      sessionId: "s1",
+    });
 
     await handleCronRequest(
       { jobId: "silent-marker-job", prompt: "hello", channel: "C-MAIN" },
@@ -1167,9 +1201,7 @@ describe("handleCronRequest — CronRunReporter", () => {
       completedAt: FIXED_TIME,
     });
   });
-
 });
-
 
 // ─── POST /cron HTTP endpoint ─────────────────────────────────────────────────
 

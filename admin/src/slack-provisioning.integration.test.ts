@@ -138,7 +138,11 @@ function makeMockDeps(
       agentMember: {
         findMany: async () => [],
         findUnique: async () => null,
-        create: async () => ({ id: "m1", agentId: AGENT_ID, email: "member@example.com" }),
+        create: async () => ({
+          id: "m1",
+          agentId: AGENT_ID,
+          email: "member@example.com",
+        }),
         deleteMany: async () => ({ count: 0 }),
       },
     },
@@ -152,6 +156,7 @@ function makeMockDeps(
     },
     agentCronJobService: {
       list: async () => [],
+      listWithRunSummary: async () => [],
       get: async () => {
         throw new Error("not implemented");
       },
@@ -165,7 +170,11 @@ function makeMockDeps(
         throw new Error("not implemented");
       },
       delete: async () => {},
-      reconcileSystemCrons: async () => ({ created: 0, updated: 0, deleted: 0 }),
+      reconcileSystemCrons: async () => ({
+        created: 0,
+        updated: 0,
+        deleted: 0,
+      }),
     },
     agentToolService: {
       list: async () => [],
@@ -204,9 +213,18 @@ function makeMockDeps(
     },
     slackClient,
     provisioner: {
-      provision: async () => ({ resourceName: "r", secretName: "s", deploymentName: "d" }),
+      provision: async () => ({
+        resourceName: "r",
+        secretName: "s",
+        deploymentName: "d",
+      }),
       deprovision: async () => {},
-      reconcile: async () => ({ recreated: [], updated: [], orphans: [], failed: [] }),
+      reconcile: async () => ({
+        recreated: [],
+        updated: [],
+        orphans: [],
+        failed: [],
+      }),
     },
     appBaseUrl: "https://example.com",
   };
@@ -222,7 +240,10 @@ const CASSETTE_PATH = new URL(
 describe("SlackProvisioningClient — cassette", () => {
   it("createAppManifest returns clientId, clientSecret, and signingSecret from cassette", async () => {
     const slackClient = new RecordedSlackClient(CASSETTE_PATH);
-    const result = await slackClient.createAppManifest("xoxe.xoxp-fake", {} as AppManifest);
+    const result = await slackClient.createAppManifest(
+      "xoxe.xoxp-fake",
+      {} as AppManifest,
+    );
     expect(result.clientId).toBe("1234567890.9876543210");
     expect(result.clientSecret).toBe("test-client-secret-value");
     expect(result.signingSecret).toBe("test-signing-secret-value");
