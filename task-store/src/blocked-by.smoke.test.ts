@@ -42,6 +42,9 @@ function fakeTokenService(): TokenServiceLike {
     async list() {
       return [];
     },
+    async update() {
+      return null;
+    },
   };
 }
 
