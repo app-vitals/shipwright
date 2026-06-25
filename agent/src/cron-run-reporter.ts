@@ -7,7 +7,6 @@
 
 export interface CronRunPayload {
   cronId: string;
-  agentId: string;
   startedAt: Date;
   completedAt: Date;
   skipped: boolean;

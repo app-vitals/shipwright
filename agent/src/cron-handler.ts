@@ -11,6 +11,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type { WebClient } from "@slack/web-api";
 import type { TokenUsage } from "./claude.ts";
+import { type Clock, SystemClock } from "./clock.ts";
 import type { CronRunReporter } from "./cron-run-reporter.ts";
 import { markdownToSlack } from "./format.ts";
 import { parseMarkers } from "./markers.ts";
@@ -54,8 +55,10 @@ export interface CronHandlerDeps {
   alertsChannel?: string;
   /** Reports cron run outcomes to the admin API (fire-and-forget). */
   cronRunReporter?: CronRunReporter;
-  /** The agent's own ID — forwarded to the reporter. */
+  /** The agent's own ID — used to construct the reporter URL. */
   agentId?: string;
+  /** Clock for deterministic time in tests. Defaults to SystemClock(). */
+  clock?: Clock;
 }
 
 export async function handleCronRequest(
@@ -82,9 +85,10 @@ export async function handleCronRequest(
     ),
     cronRunReporter,
     agentId,
+    clock = SystemClock(),
   } = deps;
 
-  const startedAt = new Date();
+  const startedAt = clock.now();
 
   async function reportRun(
     opts:
@@ -94,9 +98,8 @@ export async function handleCronRequest(
     if (!cronRunReporter) return;
     await cronRunReporter.report({
       cronId: jobId,
-      agentId: agentId ?? "",
       startedAt,
-      completedAt: new Date(),
+      completedAt: clock.now(),
       ...opts,
     });
   }

@@ -80,7 +80,6 @@ describe("HttpCronRunReporter", () => {
 
     await reporter.report({
       cronId: "cron-123",
-      agentId: AGENT_ID,
       startedAt,
       completedAt,
       skipped: false,
@@ -106,7 +105,6 @@ describe("HttpCronRunReporter", () => {
 
     await reporter.report({
       cronId: "cron-456",
-      agentId: AGENT_ID,
       startedAt,
       completedAt,
       skipped: true,
@@ -131,7 +129,6 @@ describe("HttpCronRunReporter", () => {
 
     await reporter.report({
       cronId: "cron-789",
-      agentId: AGENT_ID,
       startedAt: new Date(),
       completedAt: new Date(),
       skipped: false,
@@ -151,7 +148,6 @@ describe("HttpCronRunReporter", () => {
     await expect(
       reporter.report({
         cronId: "cron-net-err",
-        agentId: AGENT_ID,
         startedAt: new Date(),
         completedAt: new Date(),
         skipped: false,
@@ -172,7 +168,6 @@ describe("HttpCronRunReporter", () => {
     await expect(
       reporter.report({
         cronId: "cron-http-err",
-        agentId: AGENT_ID,
         startedAt: new Date(),
         completedAt: new Date(),
         skipped: false,
@@ -193,7 +188,6 @@ describe("HttpCronRunReporter", () => {
     await expect(
       reporter.report({
         cronId: "cron-404",
-        agentId: AGENT_ID,
         startedAt: new Date(),
         completedAt: new Date(),
         skipped: false,
@@ -211,7 +205,6 @@ describe("HttpCronRunReporter", () => {
 
     await reporter.report({
       cronId: "cron-dm",
-      agentId: AGENT_ID,
       startedAt: new Date(),
       completedAt: new Date(),
       skipped: false,
@@ -233,7 +226,6 @@ describe("NoopCronRunReporter", () => {
     await expect(
       reporter.report({
         cronId: "any",
-        agentId: "any",
         startedAt: new Date(),
         completedAt: new Date(),
         skipped: false,

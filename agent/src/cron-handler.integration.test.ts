@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { WebClient } from "@slack/web-api";
 import type { Server } from "bun";
+import { FixedClock } from "./clock.ts";
 import { ValidationError, handleCronRequest } from "./cron-handler.ts";
 import { startHealthServer } from "./health.ts";
 
@@ -956,6 +957,8 @@ describe("handleCronRequest — preCheck", () => {
 
 // ─── CronRunReporter integration ─────────────────────────────────────────────
 
+const FIXED_TIME = new Date("2026-01-01T00:00:00.000Z");
+
 describe("handleCronRequest — CronRunReporter", () => {
   let tmpDir: string;
 
@@ -993,7 +996,7 @@ describe("handleCronRequest — CronRunReporter", () => {
         channel: "C-TEST",
         preCheck: "nonexistent-plugin:check.ts",
       },
-      { ...deps, pluginCacheDir: tmpDir, cronRunReporter: reporter },
+      { ...deps, pluginCacheDir: tmpDir, cronRunReporter: reporter, clock: FixedClock(FIXED_TIME) },
     );
 
     expect(calls).toHaveLength(1);
@@ -1001,9 +1004,9 @@ describe("handleCronRequest — CronRunReporter", () => {
       cronId: "missing-precheck",
       skipped: true,
       skipReason: "preCheck:not-found",
+      startedAt: FIXED_TIME,
+      completedAt: FIXED_TIME,
     });
-    expect(calls[0].startedAt).toBeInstanceOf(Date);
-    expect(calls[0].completedAt).toBeInstanceOf(Date);
     expect(mockRunner).not.toHaveBeenCalled();
   });
 
@@ -1019,7 +1022,7 @@ describe("handleCronRequest — CronRunReporter", () => {
         channel: "C-TEST",
         preCheck: "shipwright:check-no-output.ts",
       },
-      { ...deps, pluginCacheDir: tmpDir, cronRunReporter: reporter },
+      { ...deps, pluginCacheDir: tmpDir, cronRunReporter: reporter, clock: FixedClock(FIXED_TIME) },
     );
 
     expect(calls).toHaveLength(1);
@@ -1027,6 +1030,8 @@ describe("handleCronRequest — CronRunReporter", () => {
       cronId: "precheck-no-output",
       skipped: true,
       skipReason: "preCheck:no-output",
+      startedAt: FIXED_TIME,
+      completedAt: FIXED_TIME,
     });
     expect(mockRunner).not.toHaveBeenCalled();
   });
@@ -1043,7 +1048,7 @@ describe("handleCronRequest — CronRunReporter", () => {
         channel: "C-TEST",
         preCheck: "shipwright:check-empty-exit0.ts",
       },
-      { ...deps, pluginCacheDir: tmpDir, cronRunReporter: reporter },
+      { ...deps, pluginCacheDir: tmpDir, cronRunReporter: reporter, clock: FixedClock(FIXED_TIME) },
     );
 
     expect(calls).toHaveLength(1);
@@ -1051,6 +1056,8 @@ describe("handleCronRequest — CronRunReporter", () => {
       cronId: "precheck-empty-exit0",
       skipped: true,
       skipReason: "preCheck:no-output",
+      startedAt: FIXED_TIME,
+      completedAt: FIXED_TIME,
     });
     expect(mockRunner).not.toHaveBeenCalled();
   });
@@ -1071,7 +1078,7 @@ describe("handleCronRequest — CronRunReporter", () => {
         silent: true,
         preCheck: "shipwright:check-crash.ts",
       },
-      { ...deps, pluginCacheDir: tmpDir, cronRunReporter: reporter },
+      { ...deps, pluginCacheDir: tmpDir, cronRunReporter: reporter, clock: FixedClock(FIXED_TIME) },
     );
 
     expect(calls).toHaveLength(1);
@@ -1080,6 +1087,8 @@ describe("handleCronRequest — CronRunReporter", () => {
       skipped: true,
       skipReason: "preCheck:crash",
       error: "something blew up",
+      startedAt: FIXED_TIME,
+      completedAt: FIXED_TIME,
     });
   });
 
@@ -1089,7 +1098,7 @@ describe("handleCronRequest — CronRunReporter", () => {
 
     await handleCronRequest(
       { jobId: "silent-job", prompt: "hello", silent: true },
-      { ...deps, cronRunReporter: reporter },
+      { ...deps, cronRunReporter: reporter, clock: FixedClock(FIXED_TIME) },
     );
 
     expect(calls).toHaveLength(1);
@@ -1097,6 +1106,8 @@ describe("handleCronRequest — CronRunReporter", () => {
       cronId: "silent-job",
       skipped: false,
       outcome: "silent",
+      startedAt: FIXED_TIME,
+      completedAt: FIXED_TIME,
     });
   });
 
@@ -1106,7 +1117,7 @@ describe("handleCronRequest — CronRunReporter", () => {
 
     await handleCronRequest(
       { jobId: "silent-marker-job", prompt: "hello", channel: "C-MAIN" },
-      { ...deps, cronRunReporter: reporter },
+      { ...deps, cronRunReporter: reporter, clock: FixedClock(FIXED_TIME) },
     );
 
     expect(calls).toHaveLength(1);
@@ -1114,6 +1125,8 @@ describe("handleCronRequest — CronRunReporter", () => {
       cronId: "silent-marker-job",
       skipped: false,
       outcome: "silent",
+      startedAt: FIXED_TIME,
+      completedAt: FIXED_TIME,
     });
   });
 
@@ -1123,7 +1136,7 @@ describe("handleCronRequest — CronRunReporter", () => {
 
     await handleCronRequest(
       { jobId: "channel-job", prompt: "hello", channel: "C-REPORTS" },
-      { ...deps, cronRunReporter: reporter },
+      { ...deps, cronRunReporter: reporter, clock: FixedClock(FIXED_TIME) },
     );
 
     expect(calls).toHaveLength(1);
@@ -1131,6 +1144,8 @@ describe("handleCronRequest — CronRunReporter", () => {
       cronId: "channel-job",
       skipped: false,
       outcome: "posted",
+      startedAt: FIXED_TIME,
+      completedAt: FIXED_TIME,
     });
   });
 
@@ -1140,7 +1155,7 @@ describe("handleCronRequest — CronRunReporter", () => {
 
     await handleCronRequest(
       { jobId: "dm-job", prompt: "hello", user: "U-DAN" },
-      { ...deps, cronRunReporter: reporter },
+      { ...deps, cronRunReporter: reporter, clock: FixedClock(FIXED_TIME) },
     );
 
     expect(calls).toHaveLength(1);
@@ -1148,22 +1163,13 @@ describe("handleCronRequest — CronRunReporter", () => {
       cronId: "dm-job",
       skipped: false,
       outcome: "dm",
+      startedAt: FIXED_TIME,
+      completedAt: FIXED_TIME,
     });
   });
 
-  test("reporter receives agentId when provided", async () => {
-    const { calls, reporter } = makeRecorder();
-    mockRunner.mockResolvedValueOnce({ result: "reply", sessionId: "s1" });
-
-    await handleCronRequest(
-      { jobId: "j-with-agent", prompt: "hello", channel: "C-X" },
-      { ...deps, cronRunReporter: reporter, agentId: "agent-xyz" },
-    );
-
-    expect(calls).toHaveLength(1);
-    expect(calls[0].agentId).toBe("agent-xyz");
-  });
 });
+
 
 // ─── POST /cron HTTP endpoint ─────────────────────────────────────────────────
 
