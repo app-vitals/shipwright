@@ -318,6 +318,9 @@ async function startServer(): Promise<void> {
     slackClient,
     appBaseUrl,
     devAuthEnabled: isDevAuthAllowed(process.env),
+    ...(process.env.SHIPWRIGHT_ADMIN_TZ
+      ? { timezone: process.env.SHIPWRIGHT_ADMIN_TZ }
+      : {}),
     ...taskStoreFetchers,
   });
   root.route("/", adminUIApp);

@@ -228,6 +228,11 @@ export interface AdminUIDeps {
     sessions: string[];
     repos: string[];
   }>;
+  /**
+   * IANA timezone name for date/time display in the admin UI.
+   * Defaults to "America/Los_Angeles" when absent.
+   */
+  timezone?: string;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -325,6 +330,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     fetchTaskStoreTask,
     releaseTask,
     fetchDistinctTaskValues,
+    timezone = "America/Los_Angeles",
   } = deps;
 
   const app = new Hono<AdminUIEnv>();
@@ -538,7 +544,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       const agentIds = memberships.map((m) => m.agentId);
       agents = await prisma.agent.findMany({ where: { id: { in: agentIds } } });
     }
-    return html(renderAgentsPage(agents, c.var.userEmail, c.var.isAdmin));
+    return html(renderAgentsPage(agents, c.var.userEmail, c.var.isAdmin, timezone));
   });
 
   // ─── Agent detail ─────────────────────────────────────────────────────────
@@ -611,7 +617,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         members,
         c.var.userEmail,
         c.var.isAdmin,
-        { error, newToken, successMsg },
+        { error, newToken, successMsg, timezone },
       ),
     );
   });
@@ -992,7 +998,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
           members,
           c.var.userEmail,
           c.var.isAdmin,
-          { newToken: rawToken },
+          { newToken: rawToken, timezone },
         ),
       );
     } catch {
@@ -1662,6 +1668,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
           agentFilterActive: agentFilterIds !== null,
         },
         suggestions,
+        timezone,
       ),
     );
   });
@@ -1691,7 +1698,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       for (const a of agents) agentNames[a.id] = a.name;
     }
 
-    return html(renderTaskDetailPage(task, c.var.userEmail, agentNames));
+    return html(renderTaskDetailPage(task, c.var.userEmail, agentNames, timezone));
   });
 
   app.post("/admin/tasks/:id/release", requireAuth, async (c) => {
