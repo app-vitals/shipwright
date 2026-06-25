@@ -13,6 +13,18 @@ import { SYSTEM_CRONS } from "./system-crons.ts";
 
 export type { AgentCronJob };
 
+export interface CronRunSummary {
+  startedAt: Date;
+  completedAt: Date | null;
+  skipped: boolean;
+  outcome: string | null;
+}
+
+export interface AgentCronJobWithRunSummary extends AgentCronJob {
+  lastRun: CronRunSummary | null;
+  runCountToday: number;
+}
+
 export interface CreateAgentCronJobInput {
   schedule: string;
   prompt: string;
@@ -65,6 +77,88 @@ export class AgentCronJobService {
       where: { agentId },
       orderBy: { createdAt: "asc" },
     });
+  }
+
+  /**
+   * List all cron jobs for a given agent with run summary data.
+   * Each job includes:
+   *   - lastRun: the most recent run record (null if none)
+   *   - runCountToday: count of runs since midnight UTC today
+   */
+  async listWithRunSummary(
+    agentId: string,
+  ): Promise<AgentCronJobWithRunSummary[]> {
+    const jobs = await this.prisma.agentCronJob.findMany({
+      where: { agentId },
+      orderBy: { createdAt: "asc" },
+    });
+
+    // Compute midnight UTC today for the runCountToday boundary
+    const todayMidnightUtc = new Date();
+    todayMidnightUtc.setUTCHours(0, 0, 0, 0);
+
+    // Fetch run summaries for all cron IDs in one pass
+    const cronIds = jobs.map((j) => j.id);
+    if (cronIds.length === 0) return [];
+
+    // Most recent run per cron job — use findMany ordered by startedAt desc,
+    // one record per cronId. Prisma doesn't support DISTINCT ON so we fetch
+    // the latest run for each cron individually in a parallel batch.
+    const [lastRunsRaw, todayCounts] = await Promise.all([
+      // Fetch the most recent run for each cronId
+      Promise.all(
+        cronIds.map((cronId) =>
+          this.prisma.agentCronRun.findFirst({
+            where: { cronId },
+            orderBy: { startedAt: "desc" },
+            select: {
+              cronId: true,
+              startedAt: true,
+              completedAt: true,
+              skipped: true,
+              outcome: true,
+            },
+          }),
+        ),
+      ),
+      // Count today's runs per cronId
+      this.prisma.agentCronRun.groupBy({
+        by: ["cronId"],
+        where: {
+          cronId: { in: cronIds },
+          startedAt: { gte: todayMidnightUtc },
+        },
+        _count: { id: true },
+      }),
+    ]);
+
+    // Build lookup maps
+    const lastRunByCronId = new Map<string, CronRunSummary | null>();
+    for (let i = 0; i < cronIds.length; i++) {
+      const run = lastRunsRaw[i];
+      lastRunByCronId.set(
+        cronIds[i],
+        run
+          ? {
+              startedAt: run.startedAt,
+              completedAt: run.completedAt,
+              skipped: run.skipped,
+              outcome: run.outcome,
+            }
+          : null,
+      );
+    }
+
+    const todayCountByCronId = new Map<string, number>();
+    for (const row of todayCounts) {
+      todayCountByCronId.set(row.cronId, row._count.id);
+    }
+
+    return jobs.map((job) => ({
+      ...job,
+      lastRun: lastRunByCronId.get(job.id) ?? null,
+      runCountToday: todayCountByCronId.get(job.id) ?? 0,
+    }));
   }
 
   async get(agentId: string, cronId: string): Promise<AgentCronJob> {

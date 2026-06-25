@@ -21,7 +21,11 @@
 
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import type { PrismaClient } from "../prisma/client/index.js";
-import type { AgentCronJobService } from "./agent-cron-jobs.ts";
+import type {
+  AgentCronJobService,
+  AgentCronJobWithRunSummary,
+} from "./agent-cron-jobs.ts";
+import type { AgentCronRunService } from "./agent-cron-runs.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
 import type { AgentPluginService } from "./agent-plugins.ts";
 import type { AgentProvisioner } from "./agent-provisioner.ts";
@@ -37,6 +41,7 @@ import {
 } from "./errors.ts";
 import {
   AgentCronJobSchema,
+  AgentCronRunSchema,
   AgentEnvBodySchema,
   AgentEnvResponseSchema,
   AgentIdParamSchema,
@@ -47,13 +52,17 @@ import {
   AgentToolSchema,
   CreateAgentBodySchema,
   CreateAgentCronJobBodySchema,
+  CreateAgentCronRunBodySchema,
   CreateAgentPluginBodySchema,
   CreateAgentTokenBodySchema,
   CreateAgentTokenResponseSchema,
   CreateAgentToolBodySchema,
   CronIdParamSchema,
+  CronRunsListSchema,
+  CronsWithSummaryWrapperSchema,
   EnvKeyParamSchema,
   ErrorSchema,
+  ListCronRunsQuerySchema,
   OkSchema,
   PatchAgentBodySchema,
   PatchAgentCronJobBodySchema,
@@ -74,6 +83,7 @@ export interface AdminDeps {
   agentCronJobService: Pick<
     AgentCronJobService,
     | "list"
+    | "listWithRunSummary"
     | "create"
     | "update"
     | "delete"
@@ -82,6 +92,7 @@ export interface AdminDeps {
     | "setEnabled"
     | "updatePreCheck"
   >;
+  agentCronRunService: Pick<AgentCronRunService, "create" | "list">;
   agentToolService: Pick<
     AgentToolService,
     "list" | "add" | "remove" | "toggle"
@@ -222,10 +233,14 @@ const provisionAgentRoute = createRoute({
   request: { params: AgentIdParamSchema },
   responses: {
     200: {
-      description: "Agent provisioned (or already-provisioned — idempotent), or skipped for self-hosted agents",
+      description:
+        "Agent provisioned (or already-provisioned — idempotent), or skipped for self-hosted agents",
       content: {
         "application/json": {
-          schema: z.union([ProvisionAgentResultSchema, ProvisionSkippedResultSchema]),
+          schema: z.union([
+            ProvisionAgentResultSchema,
+            ProvisionSkippedResultSchema,
+          ]),
         },
       },
     },
@@ -404,6 +419,64 @@ const deleteCronRoute = createRoute({
   },
 });
 
+const listCronsRoute = createRoute({
+  method: "get",
+  path: "/agents/{id}/crons/summary",
+  request: { params: AgentIdParamSchema },
+  responses: {
+    200: {
+      description: "List of cron jobs with run summary",
+      content: {
+        "application/json": { schema: CronsWithSummaryWrapperSchema },
+      },
+    },
+    403: { description: "Forbidden", ...jsonError },
+  },
+});
+
+const createCronRunRoute = createRoute({
+  method: "post",
+  path: "/agents/{id}/crons/{cronId}/runs",
+  request: {
+    params: CronIdParamSchema,
+    body: {
+      content: {
+        "application/json": { schema: CreateAgentCronRunBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Run record created",
+      content: {
+        "application/json": {
+          schema: z
+            .object({ run: AgentCronRunSchema })
+            .openapi("CronRunWrapper"),
+        },
+      },
+    },
+    400: { description: "Bad request", ...jsonError },
+    404: { description: "Cron job not found", ...jsonError },
+  },
+});
+
+const listCronRunsRoute = createRoute({
+  method: "get",
+  path: "/agents/{id}/crons/{cronId}/runs",
+  request: {
+    params: CronIdParamSchema,
+    query: ListCronRunsQuerySchema,
+  },
+  responses: {
+    200: {
+      description: "Paginated list of cron runs",
+      content: { "application/json": { schema: CronRunsListSchema } },
+    },
+    404: { description: "Cron job not found", ...jsonError },
+  },
+});
+
 const createToolRoute = createRoute({
   method: "post",
   path: "/agents/{id}/tools",
@@ -576,6 +649,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
   const {
     agentEnvService,
     agentCronJobService,
+    agentCronRunService,
     agentToolService,
     agentTokenService,
     agentPluginService,
@@ -635,7 +709,11 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     }
     const body = c.req.valid("json");
     const agent = await prisma.agent.create({
-      data: { name: body.name, slackId: body.slackId ?? null, selfHosted: body.selfHosted ?? false },
+      data: {
+        name: body.name,
+        slackId: body.slackId ?? null,
+        selfHosted: body.selfHosted ?? false,
+      },
     });
 
     // Provision the backing workload AFTER the row exists (the provisioner
@@ -670,10 +748,14 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
         "Only admin bearers and session users can reconcile agents",
       );
     }
-    const agents = await prisma.agent.findMany({ select: { id: true, name: true, selfHosted: true } });
+    const agents = await prisma.agent.findMany({
+      select: { id: true, name: true, selfHosted: true },
+    });
     // Self-hosted agents manage their own workloads — exclude them from K8s reconciliation.
     const managedAgents = agents.filter((a) => !a.selfHosted);
-    const result = await provisioner.reconcile(managedAgents.map((a) => ({ id: a.id, slug: a.name })));
+    const result = await provisioner.reconcile(
+      managedAgents.map((a) => ({ id: a.id, slug: a.name })),
+    );
     return c.json(result, 200);
   });
 
@@ -699,10 +781,8 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
       return c.json({ skipped: true as const, reason: "self-hosted" }, 200);
     }
 
-    const { resourceName, secretName, deploymentName } = await provisioner.provision(
-      agent.id,
-      { slug: agent.name },
-    );
+    const { resourceName, secretName, deploymentName } =
+      await provisioner.provision(agent.id, { slug: agent.name });
     return c.json({ resourceName, secretName, deploymentName }, 200);
   });
 
@@ -714,7 +794,15 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     const { id: agentId } = c.req.valid("param");
     const agent = await prisma.agent.findUnique({
       where: { id: agentId },
-      select: { id: true, name: true, slackId: true, selfHosted: true, repos: true, createdAt: true, updatedAt: true },
+      select: {
+        id: true,
+        name: true,
+        slackId: true,
+        selfHosted: true,
+        repos: true,
+        createdAt: true,
+        updatedAt: true,
+      },
     });
     if (!agent) {
       throw new NotFoundError(`agent ${agentId} not found`);
@@ -743,7 +831,15 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
         selfHosted: body.selfHosted,
         ...(body.repos !== undefined ? { repos: body.repos } : {}),
       },
-      select: { id: true, name: true, slackId: true, selfHosted: true, repos: true, createdAt: true, updatedAt: true },
+      select: {
+        id: true,
+        name: true,
+        slackId: true,
+        selfHosted: true,
+        repos: true,
+        createdAt: true,
+        updatedAt: true,
+      },
     });
     return c.json(serializeAgent(agent), 200);
   });
@@ -919,6 +1015,48 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     return c.body(null, 204);
   });
 
+  // GET /agents/:id/crons — list cron jobs with run summary
+  app.openapi(listCronsRoute, async (c) => {
+    const { id: agentId } = c.req.valid("param");
+    const jobs = await agentCronJobService.listWithRunSummary(agentId);
+    return c.json({ crons: jobs.map(serializeCronWithSummary) }, 200);
+  });
+
+  // POST /agents/:id/crons/:cronId/runs — create a cron run record
+  // Static path /runs suffix must follow the :cronId param routes
+  app.openapi(createCronRunRoute, async (c) => {
+    const { id: agentId, cronId } = c.req.valid("param");
+    const body = c.req.valid("json");
+    const run = await agentCronRunService.create(cronId, agentId, {
+      startedAt: new Date(body.startedAt),
+      completedAt: body.completedAt ? new Date(body.completedAt) : null,
+      skipped: body.skipped,
+      skipReason: body.skipReason,
+      outcome: body.outcome,
+      error: body.error,
+    });
+    return c.json({ run: serializeCronRun(run) }, 201);
+  });
+
+  // GET /agents/:id/crons/:cronId/runs — list cron runs (paginated)
+  app.openapi(listCronRunsRoute, async (c) => {
+    const { id: agentId, cronId } = c.req.valid("param");
+    const { limit, offset } = c.req.valid("query");
+    const result = await agentCronRunService.list(cronId, agentId, {
+      limit,
+      offset,
+    });
+    return c.json(
+      {
+        items: result.items.map(serializeCronRun),
+        total: result.total,
+        limit: result.limit,
+        offset: result.offset,
+      },
+      200,
+    );
+  });
+
   // ─── Tools ─────────────────────────────────────────────────────────────────
 
   // POST /agents/:id/tools — add a tool pattern
@@ -1057,6 +1195,71 @@ function serializeCron(cron: {
     createdAt: cron.createdAt.toISOString(),
     updatedAt: cron.updatedAt.toISOString(),
   } as z.infer<typeof AgentCronJobSchema>;
+}
+
+function serializeCronWithSummary(job: AgentCronJobWithRunSummary): z.infer<
+  typeof AgentCronJobSchema
+> & {
+  lastRun: {
+    startedAt: string;
+    completedAt: string | null;
+    skipped: boolean;
+    outcome: string | null;
+  } | null;
+  runCountToday: number;
+} {
+  return {
+    id: job.id,
+    agentId: job.agentId,
+    schedule: job.schedule,
+    prompt: job.prompt,
+    channel: job.channel,
+    user: job.user,
+    silent: job.silent,
+    enabled: job.enabled,
+    preCheck: job.preCheck,
+    name: job.name,
+    system: job.system,
+    createdAt: job.createdAt.toISOString(),
+    updatedAt: job.updatedAt.toISOString(),
+    lastRun: job.lastRun
+      ? {
+          startedAt: job.lastRun.startedAt.toISOString(),
+          completedAt: job.lastRun.completedAt
+            ? job.lastRun.completedAt.toISOString()
+            : null,
+          skipped: job.lastRun.skipped,
+          outcome: job.lastRun.outcome,
+        }
+      : null,
+    runCountToday: job.runCountToday,
+  } as ReturnType<typeof serializeCronWithSummary>;
+}
+
+function serializeCronRun(run: {
+  id: string;
+  cronId: string;
+  agentId: string;
+  startedAt: Date;
+  completedAt: Date | null;
+  skipped: boolean;
+  skipReason: string | null;
+  outcome: string | null;
+  error: string | null;
+  createdAt: Date;
+}): z.infer<typeof AgentCronRunSchema> {
+  return {
+    id: run.id,
+    cronId: run.cronId,
+    agentId: run.agentId,
+    startedAt: run.startedAt.toISOString(),
+    completedAt: run.completedAt ? run.completedAt.toISOString() : null,
+    skipped: run.skipped,
+    skipReason: run.skipReason,
+    outcome: run.outcome,
+    error: run.error,
+    createdAt: run.createdAt.toISOString(),
+  };
 }
 
 function serializeTool(tool: {

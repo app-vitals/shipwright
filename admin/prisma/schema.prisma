@@ -73,6 +73,8 @@ model AgentCronJob {
   system    Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  runs AgentCronRun[]
 }
 
 // ─── Agent Tools ──────────────────────────────────────────────────────────────
@@ -137,4 +139,26 @@ model AgentMember {
 
   @@unique([agentId, email])
   @@index([email])
+}
+
+// ─── Agent Cron Runs ──────────────────────────────────────────────────────────
+// Execution history for AgentCronJob firings. Each row records one cron invocation:
+// whether it was skipped (pre-check returned false), the outcome, and any error.
+// agentId is denormalized for efficient agent-level history queries.
+
+model AgentCronRun {
+  id          String    @id @default(cuid())
+  cronId      String
+  cron        AgentCronJob @relation(fields: [cronId], references: [id], onDelete: Cascade)
+  agentId     String    // denormalized from cron.agentId for efficient queries
+  startedAt   DateTime
+  completedAt DateTime?
+  skipped     Boolean   @default(false)
+  skipReason  String?
+  outcome     String?
+  error       String?
+  createdAt   DateTime  @default(now())
+
+  @@index([cronId])
+  @@index([agentId, startedAt])
 }

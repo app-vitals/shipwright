@@ -4,1423 +4,1607 @@
  */
 
 export interface paths {
-    "/agents": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description List of agents */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["AgentSummary"][];
-                    };
-                };
-                /** @description Forbidden */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        put?: never;
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": components["schemas"]["CreateAgentBody"];
-                };
-            };
-            responses: {
-                /** @description Agent created */
-                201: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Agent"];
-                    };
-                };
-                /** @description Bad request */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Forbidden */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+  "/agents": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/agents/reconcile": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description List of agents */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["AgentSummary"][];
+          };
         };
-        get?: never;
-        put?: never;
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Reconciliation summary */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ReconcileAgentsResult"];
-                    };
-                };
-                /** @description Forbidden */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
         };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+      };
     };
-    "/agents/{id}/provision": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          "application/json": components["schemas"]["CreateAgentBody"];
         };
-        get?: never;
-        put?: never;
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Agent provisioned (or already-provisioned — idempotent), or skipped for self-hosted agents */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ProvisionAgentResult"] | components["schemas"]["ProvisionSkippedResult"];
-                    };
-                };
-                /** @description Forbidden */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Agent not found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
+      };
+      responses: {
+        /** @description Agent created */
+        201: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Agent"];
+          };
         };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+        /** @description Bad request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
     };
-    "/agents/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Full agent record */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["GetAgentResult"];
-                    };
-                };
-                /** @description Forbidden */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Agent not found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Agent deleted */
-                204: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Forbidden */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Agent not found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        options?: never;
-        head?: never;
-        patch: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": components["schemas"]["PatchAgentBody"];
-                };
-            };
-            responses: {
-                /** @description Agent updated */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["GetAgentResult"];
-                    };
-                };
-                /** @description Bad request */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Forbidden */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Agent not found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        trace?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/agents/reconcile": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/agents/{id}/envs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Reconciliation summary */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["ReconcileAgentsResult"];
+          };
         };
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Decrypted env vars */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["AgentEnvResponse"];
-                    };
-                };
-            };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
         };
-        put?: never;
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": components["schemas"]["AgentEnvBody"];
-                };
-            };
-            responses: {
-                /** @description Env vars replaced */
-                201: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Ok"];
-                    };
-                };
-                /** @description Bad request */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": components["schemas"]["AgentEnvBody"];
-                };
-            };
-            responses: {
-                /** @description Env vars updated */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Ok"];
-                    };
-                };
-                /** @description Bad request */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        trace?: never;
+      };
     };
-    "/agents/{id}/envs/{key}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                    key: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Key deleted */
-                204: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/agents/{id}/provision": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/agents/{id}/crons": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
         };
-        /** List agent cron jobs */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Array of cron jobs */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["AgentCronJob"][];
-                    };
-                };
-                /** @description Unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["RuntimeError"];
-                    };
-                };
-                /** @description Agent not found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["RuntimeError"];
-                    };
-                };
-            };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Agent provisioned (or already-provisioned — idempotent), or skipped for self-hosted agents */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json":
+              | components["schemas"]["ProvisionAgentResult"]
+              | components["schemas"]["ProvisionSkippedResult"];
+          };
         };
-        put?: never;
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": components["schemas"]["CreateAgentCronJobBody"];
-                };
-            };
-            responses: {
-                /** @description Cron job created */
-                201: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["CronWrapper"];
-                    };
-                };
-                /** @description Bad request */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
         };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+        /** @description Agent not found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
     };
-    "/agents/{id}/crons/reconcile": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Reconciliation summary */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ReconcileCronResult"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/agents/{id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/agents/{id}/crons/{cronId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
         };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                    cronId: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Cron job deleted */
-                204: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Forbidden */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Full agent record */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["GetAgentResult"];
+          };
         };
-        options?: never;
-        head?: never;
-        patch: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                    cronId: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": components["schemas"]["PatchAgentCronJobBody"];
-                };
-            };
-            responses: {
-                /** @description Cron job updated */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["CronWrapper"];
-                    };
-                };
-                /** @description Bad request */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
         };
-        trace?: never;
+        /** @description Agent not found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
     };
-    "/agents/{id}/tools": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    put?: never;
+    post?: never;
+    delete: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
         };
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description List of tool patterns */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ToolsWrapper"];
-                    };
-                };
-            };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Agent deleted */
+        204: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
         };
-        put?: never;
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": components["schemas"]["CreateAgentToolBody"];
-                };
-            };
-            responses: {
-                /** @description Tool added */
-                201: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ToolWrapper"];
-                    };
-                };
-                /** @description Bad request */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
         };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+        /** @description Agent not found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
     };
-    "/agents/{id}/tools/{toolId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    options?: never;
+    head?: never;
+    patch: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
         };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                    toolId: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Tool removed */
-                204: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          "application/json": components["schemas"]["PatchAgentBody"];
         };
-        options?: never;
-        head?: never;
-        patch: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                    toolId: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": components["schemas"]["PatchAgentToolBody"];
-                };
-            };
-            responses: {
-                /** @description Tool toggled */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ToolWrapper"];
-                    };
-                };
-                /** @description Bad request */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
+      };
+      responses: {
+        /** @description Agent updated */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["GetAgentResult"];
+          };
         };
-        trace?: never;
+        /** @description Bad request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Agent not found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
     };
-    "/agents/{id}/tokens": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description List of token metadata */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["TokensWrapper"];
-                    };
-                };
-            };
-        };
-        put?: never;
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": components["schemas"]["CreateAgentTokenBody"];
-                };
-            };
-            responses: {
-                /** @description Token created (raw value returned once) */
-                201: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["CreateAgentTokenResponse"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    trace?: never;
+  };
+  "/agents/{id}/envs": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/agents/{id}/tokens/{tokenId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
         };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                    tokenId: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Token revoked */
-                204: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Decrypted env vars */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["AgentEnvResponse"];
+          };
         };
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+      };
     };
-    "/agents/{id}/plugins": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
         };
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description List of plugins */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["PluginsWrapper"];
-                    };
-                };
-            };
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          "application/json": components["schemas"]["AgentEnvBody"];
         };
-        put?: never;
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": components["schemas"]["CreateAgentPluginBody"];
-                };
-            };
-            responses: {
-                /** @description Plugin added */
-                201: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["PluginWrapper"];
-                    };
-                };
-                /** @description Bad request */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
+      };
+      responses: {
+        /** @description Env vars replaced */
+        201: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Ok"];
+          };
         };
-        delete: {
-            parameters: {
-                query: {
-                    name: string;
-                };
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Plugin removed */
-                204: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Bad request */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
+        /** @description Bad request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
         };
-        options?: never;
-        head?: never;
-        patch: {
-            parameters: {
-                query: {
-                    name: string;
-                };
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": components["schemas"]["PatchAgentPluginBody"];
-                };
-            };
-            responses: {
-                /** @description Plugin version updated */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["PluginWrapper"];
-                    };
-                };
-                /** @description Bad request */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        trace?: never;
+      };
     };
-    "/agents/{id}/config": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
         };
-        /** Get agent config bundle */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Agent config bundle */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["AgentConfigResponse"];
-                    };
-                };
-                /** @description Unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["RuntimeError"];
-                    };
-                };
-                /** @description Agent not found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["RuntimeError"];
-                    };
-                };
-            };
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          "application/json": components["schemas"]["AgentEnvBody"];
         };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+      };
+      responses: {
+        /** @description Env vars updated */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Ok"];
+          };
+        };
+        /** @description Bad request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
     };
+    trace?: never;
+  };
+  "/agents/{id}/envs/{key}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+          key: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Key deleted */
+        204: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+      };
+    };
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/agents/{id}/crons": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List agent cron jobs */
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Array of cron jobs */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["AgentCronJob"][];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["RuntimeError"];
+          };
+        };
+        /** @description Agent not found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["RuntimeError"];
+          };
+        };
+      };
+    };
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          "application/json": components["schemas"]["CreateAgentCronJobBody"];
+        };
+      };
+      responses: {
+        /** @description Cron job created */
+        201: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["CronWrapper"];
+          };
+        };
+        /** @description Bad request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/agents/{id}/crons/reconcile": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Reconciliation summary */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["ReconcileCronResult"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/agents/{id}/crons/{cronId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+          cronId: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Cron job deleted */
+        204: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    options?: never;
+    head?: never;
+    patch: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+          cronId: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          "application/json": components["schemas"]["PatchAgentCronJobBody"];
+        };
+      };
+      responses: {
+        /** @description Cron job updated */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["CronWrapper"];
+          };
+        };
+        /** @description Bad request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    trace?: never;
+  };
+  "/agents/{id}/crons/{cronId}/runs": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: {
+          limit?: string;
+          offset?: string;
+        };
+        header?: never;
+        path: {
+          id: string;
+          cronId: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Paginated list of cron runs */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["CronRunsList"];
+          };
+        };
+        /** @description Cron job not found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+          cronId: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          "application/json": components["schemas"]["CreateAgentCronRunBody"];
+        };
+      };
+      responses: {
+        /** @description Run record created */
+        201: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["CronRunWrapper"];
+          };
+        };
+        /** @description Bad request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Cron job not found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/agents/{id}/tools": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description List of tool patterns */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["ToolsWrapper"];
+          };
+        };
+      };
+    };
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          "application/json": components["schemas"]["CreateAgentToolBody"];
+        };
+      };
+      responses: {
+        /** @description Tool added */
+        201: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["ToolWrapper"];
+          };
+        };
+        /** @description Bad request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/agents/{id}/tools/{toolId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+          toolId: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Tool removed */
+        204: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+      };
+    };
+    options?: never;
+    head?: never;
+    patch: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+          toolId: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          "application/json": components["schemas"]["PatchAgentToolBody"];
+        };
+      };
+      responses: {
+        /** @description Tool toggled */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["ToolWrapper"];
+          };
+        };
+        /** @description Bad request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    trace?: never;
+  };
+  "/agents/{id}/tokens": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description List of token metadata */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["TokensWrapper"];
+          };
+        };
+      };
+    };
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          "application/json": components["schemas"]["CreateAgentTokenBody"];
+        };
+      };
+      responses: {
+        /** @description Token created (raw value returned once) */
+        201: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["CreateAgentTokenResponse"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/agents/{id}/tokens/{tokenId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+          tokenId: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Token revoked */
+        204: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+      };
+    };
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/agents/{id}/plugins": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description List of plugins */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["PluginsWrapper"];
+          };
+        };
+      };
+    };
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          "application/json": components["schemas"]["CreateAgentPluginBody"];
+        };
+      };
+      responses: {
+        /** @description Plugin added */
+        201: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["PluginWrapper"];
+          };
+        };
+        /** @description Bad request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    delete: {
+      parameters: {
+        query: {
+          name: string;
+        };
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Plugin removed */
+        204: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+        /** @description Bad request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    options?: never;
+    head?: never;
+    patch: {
+      parameters: {
+        query: {
+          name: string;
+        };
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          "application/json": components["schemas"]["PatchAgentPluginBody"];
+        };
+      };
+      responses: {
+        /** @description Plugin version updated */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["PluginWrapper"];
+          };
+        };
+        /** @description Bad request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    trace?: never;
+  };
+  "/agents/{id}/config": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get agent config bundle */
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Agent config bundle */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["AgentConfigResponse"];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["RuntimeError"];
+          };
+        };
+        /** @description Agent not found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["RuntimeError"];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
-    schemas: {
-        Agent: {
-            /** @example clx1234567890 */
-            id: string;
-            /** @example Bodhi */
-            name: string;
-            /** @example U0AALR8M69X */
-            slackId?: string | null;
-            /** @example false */
-            selfHosted: boolean;
-            /**
-             * Format: date-time
-             * @example 2026-01-01T00:00:00.000Z
-             */
-            createdAt: string;
-            /**
-             * Format: date-time
-             * @example 2026-01-01T00:00:00.000Z
-             */
-            updatedAt: string;
-        };
-        Error: {
-            /** @example not found */
-            error: string;
-        };
-        CreateAgentBody: {
-            /** @example Bodhi */
-            name: string;
-            /** @example U0AALR8M69X */
-            slackId?: string;
-            /** @example false */
-            selfHosted?: boolean;
-        };
-        ReconcileAgentsResult: {
-            recreated: string[];
-            updated: string[];
-            orphans: string[];
-            failed: {
-                agentId: string;
-                error: string;
-            }[];
-        };
-        ProvisionAgentResult: {
-            resourceName: string;
-            secretName: string;
-            deploymentName: string;
-        };
-        ProvisionSkippedResult: {
-            /** @enum {boolean} */
-            skipped: true;
-            reason: string;
-        };
-        GetAgentResult: {
-            id: string;
-            name: string;
-            slackId?: string | null;
-            selfHosted: boolean;
-            repos: string[];
-            /** Format: date-time */
-            createdAt: string;
-            /** Format: date-time */
-            updatedAt: string;
-        };
-        PatchAgentBody: {
-            /** @example false */
-            selfHosted?: boolean;
-            /**
-             * @example [
-             *       "my-org/my-repo"
-             *     ]
-             */
-            repos?: string[];
-        };
-        AgentSummary: {
-            /** @example clx1234567890 */
-            id: string;
-            /** @example Bodhi */
-            name: string;
-            /** @example false */
-            selfHosted: boolean;
-        };
-        Ok: {
-            /** @enum {boolean} */
-            ok: true;
-        };
-        AgentEnvBody: {
-            [key: string]: string;
-        };
-        AgentEnvResponse: {
-            /**
-             * @example {
-             *       "MY_VAR": "value"
-             *     }
-             */
-            env: {
-                [key: string]: string;
-            };
-        };
-        AgentCronJob: {
-            /** @example clx1234567890 */
-            id: string;
-            /** @example clx1234567890 */
-            agentId: string;
-            /** @example 0 9 * * 1-5 */
-            schedule: string;
-            /** @example Run the morning brief. */
-            prompt: string;
-            /** @example C01234567 */
-            channel: string | null;
-            /** @example U0AALR8M69X */
-            user: string | null;
-            /** @example false */
-            silent: boolean;
-            /** @example true */
-            enabled: boolean;
-            /** @example shipwright:check-dev-task.ts */
-            preCheck: string | null;
-            /** @example morning-brief */
-            name: string | null;
-            /** @example false */
-            system: boolean;
-            /**
-             * Format: date-time
-             * @example 2026-01-01T00:00:00.000Z
-             */
-            createdAt: string;
-            /**
-             * Format: date-time
-             * @example 2026-01-01T00:00:00.000Z
-             */
-            updatedAt: string;
-        };
-        CronWrapper: {
-            cron: components["schemas"]["AgentCronJob"];
-        };
-        CreateAgentCronJobBody: {
-            /** @example 0 9 * * 1-5 */
-            schedule: string;
-            /** @example Run the morning brief. */
-            prompt: string;
-            /** @example C01234567 */
-            channel?: string | null;
-            /** @example U0AALR8M69X */
-            user?: string | null;
-            /** @example false */
-            silent?: boolean;
-            /** @example true */
-            enabled?: boolean;
-            /** @example shipwright:check-dev-task.ts */
-            preCheck?: string | null;
-            /** @example morning-brief */
-            name?: string | null;
-        };
-        ReconcileCronResult: {
-            created: number;
-            updated: number;
-            deleted: number;
-        };
-        PatchAgentCronJobBody: {
-            /** @example 0 9 * * 1-5 */
-            schedule?: string;
-            /** @example Run the morning brief. */
-            prompt?: string;
-            /** @example C01234567 */
-            channel?: string | null;
-            /** @example U0AALR8M69X */
-            user?: string | null;
-            /** @example false */
-            silent?: boolean;
-            /** @example shipwright:check-dev-task.ts */
-            preCheck?: string | null;
-            /** @example true */
-            enabled?: boolean;
-        };
-        AgentTool: {
-            /** @example clx1234567890 */
-            id: string;
-            /** @example clx1234567890 */
-            agentId: string;
-            /** @example Read */
-            pattern: string;
-            /** @example true */
-            enabled: boolean;
-            /**
-             * Format: date-time
-             * @example 2026-01-01T00:00:00.000Z
-             */
-            createdAt: string;
-        };
-        ToolWrapper: {
-            tool: components["schemas"]["AgentTool"];
-        };
-        CreateAgentToolBody: {
-            /** @example Bash */
-            pattern: string;
-        };
-        ToolsWrapper: {
-            tools: components["schemas"]["AgentTool"][];
-        };
-        PatchAgentToolBody: {
-            /** @example false */
-            enabled: boolean;
-        };
-        AgentToken: {
-            /** @example clx1234567890 */
-            id: string;
-            /** @example clx1234567890 */
-            agentId: string;
-            /** @example ci-runner */
-            label?: string | null;
-            /**
-             * Format: date-time
-             * @example 2026-01-01T00:00:00.000Z
-             */
-            createdAt: string;
-            /**
-             * Format: date-time
-             * @example null
-             */
-            revokedAt?: string | null;
-        };
-        CreateAgentTokenResponse: {
-            token: components["schemas"]["AgentToken"];
-            /** @example swt_v1_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx */
-            rawToken: string;
-        };
-        CreateAgentTokenBody: {
-            /** @example ci-runner */
-            label?: string;
-        };
-        TokensWrapper: {
-            tokens: components["schemas"]["AgentToken"][];
-        };
-        AgentPlugin: {
-            /** @example clx1234567890 */
-            id: string;
-            /** @example clx1234567890 */
-            agentId: string;
-            /** @example @shipwright/plugin */
-            name: string;
-            /** @example 1.2.3 */
-            version?: string | null;
-            /** @example true */
-            enabled: boolean;
-            /**
-             * Format: date-time
-             * @example 2026-01-01T00:00:00.000Z
-             */
-            createdAt: string;
-            /**
-             * Format: date-time
-             * @example 2026-01-01T00:00:00.000Z
-             */
-            updatedAt: string;
-        };
-        PluginWrapper: {
-            plugin: components["schemas"]["AgentPlugin"];
-        };
-        CreateAgentPluginBody: {
-            /** @example @shipwright/plugin */
-            name: string;
-            /** @example 1.2.3 */
-            version?: string | null;
-        };
-        PluginsWrapper: {
-            plugins: components["schemas"]["AgentPlugin"][];
-        };
-        PatchAgentPluginBody: {
-            /** @example 1.3.0 */
-            version?: string | null;
-        };
-        AgentConfigPlugin: {
-            /** @example shipwright */
-            marketplace: string;
-            /** @example shipwright */
-            plugin: string;
-        };
-        AgentConfigResponse: {
-            /**
-             * @example {
-             *       "SLACK_BOT_TOKEN": "xoxb-..."
-             *     }
-             */
-            env: {
-                [key: string]: string;
-            };
-            /**
-             * @example [
-             *       "Read",
-             *       "Write"
-             *     ]
-             */
-            allowedTools: string[];
-            plugins: components["schemas"]["AgentConfigPlugin"][];
-        };
-        RuntimeError: {
-            /** @example Not found */
-            error: string;
-        };
+  schemas: {
+    Agent: {
+      /** @example clx1234567890 */
+      id: string;
+      /** @example Bodhi */
+      name: string;
+      /** @example U0AALR8M69X */
+      slackId?: string | null;
+      /** @example false */
+      selfHosted: boolean;
+      /**
+       * Format: date-time
+       * @example 2026-01-01T00:00:00.000Z
+       */
+      createdAt: string;
+      /**
+       * Format: date-time
+       * @example 2026-01-01T00:00:00.000Z
+       */
+      updatedAt: string;
     };
-    responses: never;
-    parameters: never;
-    requestBodies: never;
-    headers: never;
-    pathItems: never;
+    Error: {
+      /** @example not found */
+      error: string;
+    };
+    CreateAgentBody: {
+      /** @example Bodhi */
+      name: string;
+      /** @example U0AALR8M69X */
+      slackId?: string;
+      /** @example false */
+      selfHosted?: boolean;
+    };
+    ReconcileAgentsResult: {
+      recreated: string[];
+      updated: string[];
+      orphans: string[];
+      failed: {
+        agentId: string;
+        error: string;
+      }[];
+    };
+    ProvisionAgentResult: {
+      resourceName: string;
+      secretName: string;
+      deploymentName: string;
+    };
+    ProvisionSkippedResult: {
+      /** @enum {boolean} */
+      skipped: true;
+      reason: string;
+    };
+    GetAgentResult: {
+      id: string;
+      name: string;
+      slackId?: string | null;
+      selfHosted: boolean;
+      repos: string[];
+      /** Format: date-time */
+      createdAt: string;
+      /** Format: date-time */
+      updatedAt: string;
+    };
+    PatchAgentBody: {
+      /** @example false */
+      selfHosted?: boolean;
+      /**
+       * @example [
+       *       "my-org/my-repo"
+       *     ]
+       */
+      repos?: string[];
+    };
+    AgentSummary: {
+      /** @example clx1234567890 */
+      id: string;
+      /** @example Bodhi */
+      name: string;
+      /** @example false */
+      selfHosted: boolean;
+    };
+    Ok: {
+      /** @enum {boolean} */
+      ok: true;
+    };
+    AgentEnvBody: {
+      [key: string]: string;
+    };
+    AgentEnvResponse: {
+      /**
+       * @example {
+       *       "MY_VAR": "value"
+       *     }
+       */
+      env: {
+        [key: string]: string;
+      };
+    };
+    AgentCronJob: {
+      /** @example clx1234567890 */
+      id: string;
+      /** @example clx1234567890 */
+      agentId: string;
+      /** @example 0 9 * * 1-5 */
+      schedule: string;
+      /** @example Run the morning brief. */
+      prompt: string;
+      /** @example C01234567 */
+      channel: string | null;
+      /** @example U0AALR8M69X */
+      user: string | null;
+      /** @example false */
+      silent: boolean;
+      /** @example true */
+      enabled: boolean;
+      /** @example shipwright:check-dev-task.ts */
+      preCheck: string | null;
+      /** @example morning-brief */
+      name: string | null;
+      /** @example false */
+      system: boolean;
+      /**
+       * Format: date-time
+       * @example 2026-01-01T00:00:00.000Z
+       */
+      createdAt: string;
+      /**
+       * Format: date-time
+       * @example 2026-01-01T00:00:00.000Z
+       */
+      updatedAt: string;
+    };
+    CronWrapper: {
+      cron: components["schemas"]["AgentCronJob"];
+    };
+    CreateAgentCronJobBody: {
+      /** @example 0 9 * * 1-5 */
+      schedule: string;
+      /** @example Run the morning brief. */
+      prompt: string;
+      /** @example C01234567 */
+      channel?: string | null;
+      /** @example U0AALR8M69X */
+      user?: string | null;
+      /** @example false */
+      silent?: boolean;
+      /** @example true */
+      enabled?: boolean;
+      /** @example shipwright:check-dev-task.ts */
+      preCheck?: string | null;
+      /** @example morning-brief */
+      name?: string | null;
+    };
+    ReconcileCronResult: {
+      created: number;
+      updated: number;
+      deleted: number;
+    };
+    PatchAgentCronJobBody: {
+      /** @example 0 9 * * 1-5 */
+      schedule?: string;
+      /** @example Run the morning brief. */
+      prompt?: string;
+      /** @example C01234567 */
+      channel?: string | null;
+      /** @example U0AALR8M69X */
+      user?: string | null;
+      /** @example false */
+      silent?: boolean;
+      /** @example shipwright:check-dev-task.ts */
+      preCheck?: string | null;
+      /** @example true */
+      enabled?: boolean;
+    };
+    /** @example null */
+    CronRunLastRun: {
+      /**
+       * Format: date-time
+       * @example 2026-01-01T08:00:00.000Z
+       */
+      startedAt: string;
+      /**
+       * Format: date-time
+       * @example null
+       */
+      completedAt: string | null;
+      /** @example false */
+      skipped: boolean;
+      /** @example success */
+      outcome: string | null;
+    } | null;
+    AgentCronJobWithRunSummary: components["schemas"]["AgentCronJob"] & {
+      lastRun: components["schemas"]["CronRunLastRun"];
+      /** @example 3 */
+      runCountToday: number;
+    };
+    CronsWithSummaryWrapper: {
+      crons: components["schemas"]["AgentCronJobWithRunSummary"][];
+    };
+    AgentCronRun: {
+      /** @example clx1234567890 */
+      id: string;
+      /** @example clx0987654321 */
+      cronId: string;
+      /** @example clx1234567890 */
+      agentId: string;
+      /**
+       * Format: date-time
+       * @example 2026-01-01T08:00:00.000Z
+       */
+      startedAt: string;
+      /**
+       * Format: date-time
+       * @example 2026-01-01T08:00:05.000Z
+       */
+      completedAt: string | null;
+      /** @example false */
+      skipped: boolean;
+      /** @example pre-check returned false */
+      skipReason: string | null;
+      /** @example success */
+      outcome: string | null;
+      /** @example null */
+      error: string | null;
+      /**
+       * Format: date-time
+       * @example 2026-01-01T08:00:00.000Z
+       */
+      createdAt: string;
+    };
+    CronRunWrapper: {
+      run: components["schemas"]["AgentCronRun"];
+    };
+    CreateAgentCronRunBody: {
+      /**
+       * Format: date-time
+       * @example 2026-01-01T08:00:00.000Z
+       */
+      startedAt: string;
+      /**
+       * Format: date-time
+       * @example null
+       */
+      completedAt?: string | null;
+      /** @example false */
+      skipped?: boolean;
+      /** @example pre-check returned false */
+      skipReason?: string | null;
+      /** @example success */
+      outcome?: string | null;
+      /** @example null */
+      error?: string | null;
+    };
+    CronRunsList: {
+      items: components["schemas"]["AgentCronRun"][];
+      /** @example 42 */
+      total: number;
+      /** @example 20 */
+      limit: number;
+      /** @example 0 */
+      offset: number;
+    };
+    AgentTool: {
+      /** @example clx1234567890 */
+      id: string;
+      /** @example clx1234567890 */
+      agentId: string;
+      /** @example Read */
+      pattern: string;
+      /** @example true */
+      enabled: boolean;
+      /**
+       * Format: date-time
+       * @example 2026-01-01T00:00:00.000Z
+       */
+      createdAt: string;
+    };
+    ToolWrapper: {
+      tool: components["schemas"]["AgentTool"];
+    };
+    CreateAgentToolBody: {
+      /** @example Bash */
+      pattern: string;
+    };
+    ToolsWrapper: {
+      tools: components["schemas"]["AgentTool"][];
+    };
+    PatchAgentToolBody: {
+      /** @example false */
+      enabled: boolean;
+    };
+    AgentToken: {
+      /** @example clx1234567890 */
+      id: string;
+      /** @example clx1234567890 */
+      agentId: string;
+      /** @example ci-runner */
+      label?: string | null;
+      /**
+       * Format: date-time
+       * @example 2026-01-01T00:00:00.000Z
+       */
+      createdAt: string;
+      /**
+       * Format: date-time
+       * @example null
+       */
+      revokedAt?: string | null;
+    };
+    CreateAgentTokenResponse: {
+      token: components["schemas"]["AgentToken"];
+      /** @example swt_v1_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx */
+      rawToken: string;
+    };
+    CreateAgentTokenBody: {
+      /** @example ci-runner */
+      label?: string;
+    };
+    TokensWrapper: {
+      tokens: components["schemas"]["AgentToken"][];
+    };
+    AgentPlugin: {
+      /** @example clx1234567890 */
+      id: string;
+      /** @example clx1234567890 */
+      agentId: string;
+      /** @example @shipwright/plugin */
+      name: string;
+      /** @example 1.2.3 */
+      version?: string | null;
+      /** @example true */
+      enabled: boolean;
+      /**
+       * Format: date-time
+       * @example 2026-01-01T00:00:00.000Z
+       */
+      createdAt: string;
+      /**
+       * Format: date-time
+       * @example 2026-01-01T00:00:00.000Z
+       */
+      updatedAt: string;
+    };
+    PluginWrapper: {
+      plugin: components["schemas"]["AgentPlugin"];
+    };
+    CreateAgentPluginBody: {
+      /** @example @shipwright/plugin */
+      name: string;
+      /** @example 1.2.3 */
+      version?: string | null;
+    };
+    PluginsWrapper: {
+      plugins: components["schemas"]["AgentPlugin"][];
+    };
+    PatchAgentPluginBody: {
+      /** @example 1.3.0 */
+      version?: string | null;
+    };
+    AgentConfigPlugin: {
+      /** @example shipwright */
+      marketplace: string;
+      /** @example shipwright */
+      plugin: string;
+    };
+    AgentConfigResponse: {
+      /**
+       * @example {
+       *       "SLACK_BOT_TOKEN": "xoxb-..."
+       *     }
+       */
+      env: {
+        [key: string]: string;
+      };
+      /**
+       * @example [
+       *       "Read",
+       *       "Write"
+       *     ]
+       */
+      allowedTools: string[];
+      plugins: components["schemas"]["AgentConfigPlugin"][];
+    };
+    RuntimeError: {
+      /** @example Not found */
+      error: string;
+    };
+  };
+  responses: never;
+  parameters: never;
+  requestBodies: never;
+  headers: never;
+  pathItems: never;
 }
 export type $defs = Record<string, never>;
 export type operations = Record<string, never>;

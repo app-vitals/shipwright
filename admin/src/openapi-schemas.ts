@@ -119,11 +119,7 @@ export const CreateAgentCronJobBodySchema = z
     schedule: z.string().openapi({ example: "0 9 * * 1-5" }),
     prompt: z.string().openapi({ example: "Run the morning brief." }),
     channel: z.string().nullable().optional().openapi({ example: "C01234567" }),
-    user: z
-      .string()
-      .nullable()
-      .optional()
-      .openapi({ example: "U0AALR8M69X" }),
+    user: z.string().nullable().optional().openapi({ example: "U0AALR8M69X" }),
     silent: z.boolean().optional().openapi({ example: false }),
     enabled: z.boolean().optional().openapi({ example: true }),
     preCheck: z
@@ -131,7 +127,11 @@ export const CreateAgentCronJobBodySchema = z
       .nullable()
       .optional()
       .openapi({ example: "shipwright:check-dev-task.ts" }),
-    name: z.string().nullable().optional().openapi({ example: "morning-brief" }),
+    name: z
+      .string()
+      .nullable()
+      .optional()
+      .openapi({ example: "morning-brief" }),
   })
   .openapi("CreateAgentCronJobBody");
 
@@ -148,11 +148,7 @@ export const PatchAgentCronJobBodySchema = z
       .optional()
       .openapi({ example: "Run the morning brief." }),
     channel: z.string().nullable().optional().openapi({ example: "C01234567" }),
-    user: z
-      .string()
-      .nullable()
-      .optional()
-      .openapi({ example: "U0AALR8M69X" }),
+    user: z.string().nullable().optional().openapi({ example: "U0AALR8M69X" }),
     silent: z.boolean().optional().openapi({ example: false }),
     preCheck: z
       .string()
@@ -162,6 +158,112 @@ export const PatchAgentCronJobBodySchema = z
     enabled: z.boolean().optional().openapi({ example: true }),
   })
   .openapi("PatchAgentCronJobBody");
+
+// ─── AgentCronRun ─────────────────────────────────────────────────────────────
+
+export const AgentCronRunSchema = z
+  .object({
+    id: z.string().openapi({ example: "clx1234567890" }),
+    cronId: z.string().openapi({ example: "clx0987654321" }),
+    agentId: z.string().openapi({ example: "clx1234567890" }),
+    startedAt: z
+      .string()
+      .datetime()
+      .openapi({ example: "2026-01-01T08:00:00.000Z" }),
+    completedAt: z
+      .string()
+      .datetime()
+      .nullable()
+      .openapi({ example: "2026-01-01T08:00:05.000Z" }),
+    skipped: z.boolean().openapi({ example: false }),
+    skipReason: z
+      .string()
+      .nullable()
+      .openapi({ example: "pre-check returned false" }),
+    outcome: z.string().nullable().openapi({ example: "success" }),
+    error: z.string().nullable().openapi({ example: null }),
+    createdAt: z
+      .string()
+      .datetime()
+      .openapi({ example: "2026-01-01T08:00:00.000Z" }),
+  })
+  .openapi("AgentCronRun");
+
+export type AgentCronRunType = z.infer<typeof AgentCronRunSchema>;
+
+export const CronRunsListSchema = z
+  .object({
+    items: z.array(AgentCronRunSchema),
+    total: z.number().int().openapi({ example: 42 }),
+    limit: z.number().int().openapi({ example: 20 }),
+    offset: z.number().int().openapi({ example: 0 }),
+  })
+  .openapi("CronRunsList");
+
+export type CronRunsList = z.infer<typeof CronRunsListSchema>;
+
+export const CreateAgentCronRunBodySchema = z
+  .object({
+    startedAt: z
+      .string()
+      .datetime()
+      .openapi({ example: "2026-01-01T08:00:00.000Z" }),
+    completedAt: z
+      .string()
+      .datetime()
+      .nullable()
+      .optional()
+      .openapi({ example: null }),
+    skipped: z.boolean().optional().openapi({ example: false }),
+    skipReason: z
+      .string()
+      .nullable()
+      .optional()
+      .openapi({ example: "pre-check returned false" }),
+    outcome: z.string().nullable().optional().openapi({ example: "success" }),
+    error: z.string().nullable().optional().openapi({ example: null }),
+  })
+  .openapi("CreateAgentCronRunBody");
+
+export const ListCronRunsQuerySchema = z
+  .object({
+    limit: z
+      .string()
+      .optional()
+      .transform((v) => (v ? Number.parseInt(v, 10) : 20))
+      .openapi({ example: "20" }),
+    offset: z
+      .string()
+      .optional()
+      .transform((v) => (v ? Number.parseInt(v, 10) : 0))
+      .openapi({ example: "0" }),
+  })
+  .openapi("ListCronRunsQuery");
+
+const CronRunLastRunSchema = z
+  .object({
+    startedAt: z
+      .string()
+      .datetime()
+      .openapi({ example: "2026-01-01T08:00:00.000Z" }),
+    completedAt: z.string().datetime().nullable().openapi({ example: null }),
+    skipped: z.boolean().openapi({ example: false }),
+    outcome: z.string().nullable().openapi({ example: "success" }),
+  })
+  .openapi("CronRunLastRun");
+
+export const AgentCronJobWithRunSummarySchema = AgentCronJobSchema.extend({
+  lastRun: CronRunLastRunSchema.nullable().openapi({ example: null }),
+  runCountToday: z.number().int().openapi({ example: 3 }),
+}).openapi("AgentCronJobWithRunSummary");
+
+export type AgentCronJobWithRunSummaryType = z.infer<
+  typeof AgentCronJobWithRunSummarySchema
+>;
+
+export const CronsWithSummaryWrapperSchema = z
+  .object({ crons: z.array(AgentCronJobWithRunSummarySchema) })
+  .openapi("CronsWithSummaryWrapper");
 
 // ─── AgentTool ────────────────────────────────────────────────────────────────
 
@@ -202,11 +304,7 @@ export const AgentTokenSchema = z
   .object({
     id: z.string().openapi({ example: "clx1234567890" }),
     agentId: z.string().openapi({ example: "clx1234567890" }),
-    label: z
-      .string()
-      .nullable()
-      .optional()
-      .openapi({ example: "ci-runner" }),
+    label: z.string().nullable().optional().openapi({ example: "ci-runner" }),
     createdAt: z
       .string()
       .datetime()
@@ -250,11 +348,7 @@ export const AgentPluginSchema = z
     id: z.string().openapi({ example: "clx1234567890" }),
     agentId: z.string().openapi({ example: "clx1234567890" }),
     name: z.string().openapi({ example: "@shipwright/plugin" }),
-    version: z
-      .string()
-      .nullable()
-      .optional()
-      .openapi({ example: "1.2.3" }),
+    version: z.string().nullable().optional().openapi({ example: "1.2.3" }),
     enabled: z.boolean().openapi({ example: true }),
     createdAt: z
       .string()
@@ -272,21 +366,13 @@ export type AgentPlugin = z.infer<typeof AgentPluginSchema>;
 export const CreateAgentPluginBodySchema = z
   .object({
     name: z.string().min(1).openapi({ example: "@shipwright/plugin" }),
-    version: z
-      .string()
-      .nullable()
-      .optional()
-      .openapi({ example: "1.2.3" }),
+    version: z.string().nullable().optional().openapi({ example: "1.2.3" }),
   })
   .openapi("CreateAgentPluginBody");
 
 export const PatchAgentPluginBodySchema = z
   .object({
-    version: z
-      .string()
-      .nullable()
-      .optional()
-      .openapi({ example: "1.3.0" }),
+    version: z.string().nullable().optional().openapi({ example: "1.3.0" }),
   })
   .openapi("PatchAgentPluginBody");
 
@@ -304,9 +390,7 @@ export const AgentEnvResponseSchema = z
 /**
  * POST or PATCH /agents/:id/envs body — a plain key/value map.
  */
-export const AgentEnvBodySchema = z
-  .record(z.string())
-  .openapi("AgentEnvBody");
+export const AgentEnvBodySchema = z.record(z.string()).openapi("AgentEnvBody");
 
 // ─── Path param schemas ───────────────────────────────────────────────────────
 
@@ -349,7 +433,9 @@ export const AgentConfigPluginSchema = z
 
 export const AgentConfigResponseSchema = z
   .object({
-    env: z.record(z.string()).openapi({ example: { SLACK_BOT_TOKEN: "xoxb-..." } }),
+    env: z
+      .record(z.string())
+      .openapi({ example: { SLACK_BOT_TOKEN: "xoxb-..." } }),
     allowedTools: z.array(z.string()).openapi({ example: ["Read", "Write"] }),
     plugins: z.array(AgentConfigPluginSchema),
   })
