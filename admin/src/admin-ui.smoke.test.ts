@@ -2536,7 +2536,7 @@ describe("admin UI — tasks page", () => {
     expect(html).not.toContain("Pull Request Review");
   });
 
-  it("GET /admin/tasks with no ?state= forwards state=ready to task-store by default", async () => {
+  it("GET /admin/tasks with no ?state= forwards no state to task-store (show all)", async () => {
     let capturedParams: URLSearchParams | null = null;
     const app = createAdminUIApp(
       makeMockDeps({
@@ -2551,9 +2551,7 @@ describe("admin UI — tasks page", () => {
     });
     expect(res.status).toBe(200);
     expect(capturedParams).not.toBeNull();
-    expect((capturedParams as unknown as URLSearchParams).get("state")).toBe(
-      "ready",
-    );
+    expect((capturedParams as unknown as URLSearchParams).get("state")).toBeNull();
   });
 
   it("GET /admin/tasks?state=blocked returns 200 and forwards state=blocked to task-store", async () => {
