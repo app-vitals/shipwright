@@ -2107,7 +2107,7 @@ export function renderTokensPage(
     : "";
 
   const errorBanner = error
-    ? `<div class="alert alert-danger" style="margin-bottom:16px">${escapeHtml(decodeURIComponent(error))}</div>`
+    ? `<div class="alert alert-danger" style="margin-bottom:16px">${escapeHtml(error)}</div>`
     : "";
 
   const rawTokenBanner = rawToken
