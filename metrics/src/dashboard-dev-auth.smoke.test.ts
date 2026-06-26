@@ -48,6 +48,30 @@ describe("dashboardDevAuth — /dashboard", () => {
     expect(body).toContain("<!DOCTYPE html>");
     expect(body).toContain("Metrics");
   });
+
+  test("adminBaseUrl makes the toolbar's admin links absolute (cross-origin local stack)", async () => {
+    const app = createMetricsApp(new Map(), noopAccountsClient, {
+      ...makeDevAuthDeps(),
+      adminBaseUrl: "http://localhost:3001",
+    });
+    const res = await app.request("/dashboard");
+    const body = await res.text();
+    expect(body).toContain('href="http://localhost:3001/admin/agents"');
+    expect(body).toContain('href="http://localhost:3001/admin/tasks"');
+    expect(body).toContain('href="http://localhost:3001/admin/prs"');
+  });
+
+  test("without adminBaseUrl the admin links stay relative (prod default)", async () => {
+    const app = createMetricsApp(
+      new Map(),
+      noopAccountsClient,
+      makeDevAuthDeps(),
+    );
+    const res = await app.request("/dashboard");
+    const body = await res.text();
+    expect(body).toContain('href="/admin/agents"');
+    expect(body).not.toContain('href="http://localhost:3001/admin/agents"');
+  });
 });
 
 describe("dashboardDevAuth — /metrics/* without credentials", () => {
