@@ -47,6 +47,32 @@ export interface HttpCronRunReporterOptions {
 export class HttpCronRunReporter implements CronRunReporter {
   constructor(private opts: HttpCronRunReporterOptions) {}
 
+  private async patchRun(
+    url: string,
+    body: Record<string, unknown>,
+  ): Promise<void> {
+    const { apiKey } = this.opts;
+    try {
+      const res = await fetch(url, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        console.warn(
+          `[cron-run-reporter] PATCH ${url} returned ${res.status} — swallowing`,
+        );
+      }
+    } catch (err) {
+      console.warn(
+        `[cron-run-reporter] PATCH ${url} failed: ${String(err)} — swallowing`,
+      );
+    }
+  }
+
   async createRun(cronId: string, startedAt: Date): Promise<string | null> {
     const { apiUrl, agentId, apiKey } = this.opts;
     const url = `${apiUrl}/agents/${agentId}/crons/${cronId}/runs`;
@@ -93,7 +119,7 @@ export class HttpCronRunReporter implements CronRunReporter {
   ): Promise<void> {
     if (runId === null) return;
 
-    const { apiUrl, agentId, apiKey } = this.opts;
+    const { apiUrl, agentId } = this.opts;
     const url = `${apiUrl}/agents/${agentId}/crons/${cronId}/runs/${runId}`;
 
     const body: Record<string, unknown> = {
@@ -110,25 +136,7 @@ export class HttpCronRunReporter implements CronRunReporter {
     if (opts?.costUsd !== undefined) body.costUsd = opts.costUsd;
     if (opts?.model !== undefined) body.model = opts.model;
 
-    try {
-      const res = await fetch(url, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        console.warn(
-          `[cron-run-reporter] PATCH ${url} returned ${res.status} — swallowing`,
-        );
-      }
-    } catch (err) {
-      console.warn(
-        `[cron-run-reporter] failed to complete run ${runId} for cron ${cronId}: ${String(err)} — swallowing`,
-      );
-    }
+    await this.patchRun(url, body);
   }
 
   async skipRun(
@@ -140,7 +148,7 @@ export class HttpCronRunReporter implements CronRunReporter {
   ): Promise<void> {
     if (runId === null) return;
 
-    const { apiUrl, agentId, apiKey } = this.opts;
+    const { apiUrl, agentId } = this.opts;
     const url = `${apiUrl}/agents/${agentId}/crons/${cronId}/runs/${runId}`;
 
     const body: Record<string, unknown> = {
@@ -150,25 +158,7 @@ export class HttpCronRunReporter implements CronRunReporter {
     };
     if (opts?.error !== undefined) body.error = opts.error;
 
-    try {
-      const res = await fetch(url, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        console.warn(
-          `[cron-run-reporter] PATCH ${url} returned ${res.status} — swallowing`,
-        );
-      }
-    } catch (err) {
-      console.warn(
-        `[cron-run-reporter] failed to skip run ${runId} for cron ${cronId}: ${String(err)} — swallowing`,
-      );
-    }
+    await this.patchRun(url, body);
   }
 }
 
