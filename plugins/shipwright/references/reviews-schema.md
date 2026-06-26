@@ -1,95 +1,132 @@
 # Reviews Schema -- Shipwright Review Tracking
 
-Review state is tracked in `state/reviews.json`. Each entry represents an agent's
-relationship with a PR -- whether it's been reviewed, posted, merged, or cleaned up.
+PR tracking state lives in the task store's `PullRequest` model. Each record tracks
+an agent's relationship with a PR — claimed commit SHAs, review state, staging status,
+and workflow phases. The task store is the source of truth; atomic claims prevent
+concurrent review of the same commit.
 
-## Schema
+The review narrative itself (findings, verdict, inline comments) is still written locally
+to `state/reviews/PR_REVIEW_{pr}.md` and `state/reviews/pr_review_{pr}.json` for posting
+to GitHub.
+
+## API Endpoint
+
+Access PR records via the task store API:
+
+```bash
+# List all PR records for a repo
+curl -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs?repo={org}/{repo}"
+
+# List staged records only
+curl -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs?repo={org}/{repo}&staged=true"
+
+# Fetch one PR record
+curl -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs/{id}"
+
+# Claim a PR at its current head
+curl -X POST -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs/claim" \
+  -d '{"repo": "{org}/{repo}", "prNumber": {number}, "commitSha": "{sha}"}'
+```
+
+## Record Schema
 
 ```json
 {
-  "pr": 123,
-  "repo": "app-vitals",
-  "org": "app-vitals",
-  "title": "Add billing webhook handler",
-  "author": "agent-bot",
-  "branch": "feat/ts-1.1-billing-webhook",
+  "id": "clp1234abcd",
+  "repo": "app-vitals/shipwright",
+  "prNumber": 123,
   "taskId": "TS-1.1",
-  "session": "may-billing-refactor",
-  "additions": 45,
-  "deletions": 12,
-  "diffSize": 57,
-  "firstSeen": "2026-04-15T08:00:00Z",
-  "lastReviewedAt": "2026-04-15T10:45:00Z",
-  "lastReviewedCommit": "abc1234def5678",
-  "reviewCount": 1,
-  "reviewFile": "state/reviews/PR_REVIEW_123.md",
-  "verdict": "COMMENT",
-  "findingsCount": 3,
-  "posted": false,
-  "postedAt": null,
-  "status": "staged"
+  "staged": true,
+  "state": "open",
+  "reviewState": "posted",
+  "commitSha": "abc1234def5678",
+  "patchCycles": 0,
+  "reviewCycles": 1,
+  "agentId": "agent-123",
+  "reviewedAt": "2026-04-15T10:45:00Z",
+  "patchedAt": null,
+  "mergedAt": null,
+  "claimedBy": "agent-123",
+  "claimedAt": "2026-04-15T10:30:00Z",
+  "heartbeatAt": "2026-04-15T10:45:00Z",
+  "createdAt": "2026-04-15T08:00:00Z",
+  "updatedAt": "2026-04-15T10:45:00Z"
 }
 ```
 
-## Status Flow
+## State and ReviewState Enums
 
-```
-pending -> reviewing -> staged -> posted
-```
+### `state` — Terminal PR state
 
-| Status | Set by | Meaning |
-|---|---|---|
-| `pending` | review Step 3 | PR discovered, not yet reviewed |
-| `reviewing` | review Step 4 | Review in progress (prevents double-review) |
-| `staged` | review Step 10 | Review file written, awaiting owner confirmation |
-| `posted` | review Step 10/13 | Review posted to GitHub |
+| Value | Meaning |
+|-------|---------|
+| `open` | PR is open on GitHub (default) |
+| `merged` | PR was merged; terminal |
+| `closed` | PR was closed without merge; terminal |
 
-**Principle:** Don't track state locally that can be derived from GitHub. PR merge/close
-state lives in GH; CHANGES_REQUESTED state lives in GH — re-derive on every run rather
-than caching in a local terminal status. Worktree cleanup (`review.md` Step 2) queries GH
-directly to find merged/closed PRs instead of relying on a local `merged` status.
+### `reviewState` — Review workflow phase
 
-**Multi-task PRs:** When multiple tasks share one PR, `taskId` holds only one ID. Task
-completion state for the others must be derived from the PR's GH state (open/merged), not
-from a local status field.
+| Value | Set by | Meaning |
+|-------|--------|---------|
+| `pending` | review.md Step 3 | PR discovered, not yet reviewed |
+| `in_progress` | review.md Step 4 (claim) | Review in progress — claim acquired |
+| `posted` | review.md Step 11b | Review posted to GitHub |
+| `approved` | review.md Step 11b (APPROVE verdict) | Review posted with APPROVE verdict |
 
 ## Field Reference
 
 | Field | Type | Description |
 |---|---|---|
-| `pr` | number | PR number |
-| `repo` | string | Repository name (e.g., `app-vitals`) |
-| `org` | string | GitHub org (e.g., `app-vitals`) |
-| `title` | string | PR title |
-| `author` | string | PR author login |
-| `branch` | string | Head branch name |
-| `taskId` | string \| null | Shipwright task ID (from the task store) |
-| `session` | string \| null | Shipwright session slug |
-| `additions` | number | Lines added at time of discovery |
-| `deletions` | number | Lines deleted at time of discovery |
-| `diffSize` | number | `additions + deletions` — used for queue prioritization |
-| `firstSeen` | ISO string | When the PR was first discovered in the queue |
-| `lastReviewedAt` | ISO string | When the last review was performed |
-| `lastReviewedCommit` | string | HEAD SHA at time of last review |
-| `reviewCount` | number | How many times this PR has been reviewed |
-| `reviewFile` | string | Path to PR_REVIEW markdown file |
-| `verdict` | string | APPROVE or COMMENT |
-| `findingsCount` | number | Number of findings in last review |
-| `posted` | boolean | Whether the review has been posted to GitHub |
-| `postedAt` | ISO string \| null | When the review was posted |
-| `status` | string | See Status Flow above |
+| `id` | string | Unique record ID (CUID) |
+| `repo` | string | Repository in `org/repo` format |
+| `prNumber` | number | GitHub PR number |
+| `taskId` | string \| null | Shipwright task ID (if from a task store task) |
+| `staged` | boolean | `true` = review written, not yet posted; `false` = not staged or already posted |
+| `state` | enum | Terminal PR state: `open`, `merged`, or `closed` |
+| `reviewState` | enum | Workflow phase: `pending`, `in_progress`, `posted`, or `approved` |
+| `commitSha` | string \| null | HEAD SHA when the PR was claimed (most recent review point) |
+| `patchCycles` | number | Count of patch attempts on this PR |
+| `reviewCycles` | number | Count of review passes on this PR |
+| `agentId` | string \| null | ID of the agent that posted the review |
+| `reviewedAt` | ISO string \| null | When the review was posted to GitHub |
+| `patchedAt` | ISO string \| null | When the PR was last patched |
+| `mergedAt` | ISO string \| null | When the PR was merged (set during cleanup) |
+| `claimedBy` | string \| null | User or agent ID that acquired the claim |
+| `claimedAt` | ISO string \| null | When the claim was acquired |
+| `heartbeatAt` | ISO string \| null | Last activity timestamp (keep-alive signal) |
+| `createdAt` | ISO string | Record creation time |
+| `updatedAt` | ISO string | Last update time |
 
 ## Key Behaviors
 
-- `lastReviewedCommit` enables "new commits since last review" detection without
-  re-fetching GitHub history. Compare against `gh pr view --json headRefOid`.
-- `diffSize` drives queue prioritization — smallest diffs are reviewed first, keeping
-  small PRs from being starved behind large ones. Set at `pending` time from the
-  `gh pr list` fetch (`additions + deletions`). Missing on entries created before
-  v4.1.0 — populated lazily on next review pass.
-- `firstSeen` is the tiebreaker when `diffSize` is equal or missing — oldest first.
-- `taskId` is nullable -- PRs not from shipwright todos still get reviewed when
+- **Atomic claiming**: the `/prs/claim` endpoint is atomic — two concurrent requests at the same
+  commit return 201 (created) for the first, 409 (conflict) for the second. Prevents concurrent
+  review of the same commit.
+
+- **`commitSha` tracking**: `commitSha` is the HEAD SHA at which the PR was last reviewed (captured
+  during claim in Step 4). Comparing it to the current GitHub head detects "new commits since
+  last review" without re-fetching history. Compare against `gh pr view --json headRefOid`.
+
+- **`staged` flag**: when `auto_post_reviews` is false (default), reviews are staged. Set `staged: true`
+  on Step 11 (before posting). Explicit `/shipwright:review {org}/{repo}#{pr}` invocation
+  posts a staged review (owner confirmation).
+
+- **Workflow phases**: `reviewState` drives the queue prioritization (review.md Step 3):
+  - `in_progress` = another agent is working; skip
+  - `posted` / `approved` + new commits = Tier 1 (re-review, highest priority)
+  - `pending` or no record = Tier 2 (first review)
+
+- **Terminal states**: when a PR is merged or closed, mark `state: merged` or `closed` (Step 2
+  cleanup). `state` is independent of `reviewState` — a record can have `state: merged` while
+  `reviewState: posted` (the review was posted before merge).
+
+- `taskId` is nullable — PRs not from shipwright tasks still get reviewed when
   `review_external_prs` is enabled in agent-policy.md.
-- The `reviewing` status prevents concurrent cron runs from double-reviewing the
-  same PR. If a review was interrupted (agent restart), the status stays `reviewing`
-  and must be manually reset to `pending`.
+
+- **Multi-agent coordination**: the atomic claim + heartbeat mechanism allows multiple agents
+  to review different PRs in parallel without coordination overhead.
