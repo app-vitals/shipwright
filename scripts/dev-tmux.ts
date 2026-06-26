@@ -61,13 +61,12 @@ const DUMMY_AGENT_API_KEY = "dev-agent-key";
 // Obviously-fake dev admin token for the task-store. Seeded (hashed) into the
 // task-store DB by a preflight and handed to the admin pane verbatim so the admin
 // console can read/manage tasks + PRs. NOT a secret — local DB only, public-safe.
-const DEV_TASK_STORE_ADMIN_TOKEN = "dev-task-store-admin-token";
-// Session-cookie signing key (HS256). Must be non-empty — Web Crypto rejects a
-// zero-length HMAC key with "DataError", which surfaces as a 500 on first login.
-const DUMMY_SESSION_SECRET = "dev-session-secret-not-for-production-use!";
 // Bootstrap admin token seeded into the task-store on startup. Not a real
 // secret — used only against the local dev Postgres instance.
 export const DEV_TASK_STORE_ADMIN_TOKEN = "dev-task-store-admin-token";
+// Session-cookie signing key (HS256). Must be non-empty — Web Crypto rejects a
+// zero-length HMAC key with "DataError", which surfaces as a 500 on first login.
+const DUMMY_SESSION_SECRET = "dev-session-secret-not-for-production-use!";
 /** Docker image tag for the agent container. */
 const DEV_DOCKER_IMAGE = "shipwright-agent-dev";
 /** Named Docker volume that persists agent-home across container restarts. */
