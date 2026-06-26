@@ -415,6 +415,33 @@ describe("renderDashboardPage — CCT-2.2 cost KPI and table columns", () => {
   });
 });
 
+describe("renderDashboardPage — adminBaseUrl cross-origin nav (local stack)", () => {
+  test("admin nav links are absolute when adminBaseUrl is set", () => {
+    const html = renderDashboardPage({
+      userName: "Alice",
+      adminBaseUrl: "http://localhost:3001",
+    });
+    expect(html).toContain('href="http://localhost:3001/admin/agents"');
+    expect(html).toContain('href="http://localhost:3001/admin/tasks"');
+    expect(html).toContain('href="http://localhost:3001/admin/prs"');
+  });
+
+  test("admin nav links stay relative when adminBaseUrl is omitted (prod default unchanged)", () => {
+    const html = renderDashboardPage({ userName: "Alice" });
+    expect(html).toContain('href="/admin/agents"');
+    expect(html).not.toContain('href="http://localhost:3001/admin/agents"');
+  });
+
+  test("the Metrics link stays same-origin even when adminBaseUrl is set", () => {
+    const html = renderDashboardPage({
+      userName: "Alice",
+      adminBaseUrl: "http://localhost:3001",
+    });
+    // Metrics points back at this service's own /dashboard, not the admin host.
+    expect(html).toContain('href="/dashboard"');
+  });
+});
+
 describe("renderDashboardPage — basePath", () => {
   test("sets window.__METRICS_BASE__ to the provided basePath", () => {
     const html = renderDashboardPage({ userName: "Alice", basePath: "/sw" });

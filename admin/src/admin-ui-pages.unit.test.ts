@@ -1662,6 +1662,94 @@ describe("renderTasksPage — blocker badges", () => {
   });
 });
 
+// ─── renderTasksPage — PR column ──────────────────────────────────────────────
+
+describe("renderTasksPage — PR column", () => {
+  function render(tasks: TaskItem[]): string {
+    return renderTasksPage(
+      tasks,
+      {},
+      false,
+      USER_NAME,
+      {},
+      { total: tasks.length, limit: 50, page: 1 },
+      undefined,
+      undefined,
+    );
+  }
+
+  test("PR column header is present after Repo column", () => {
+    const html = render([]);
+    // Check for PR header in the table
+    expect(html).toContain("<th>PR</th>");
+  });
+
+  test("task with pr value shows linked #N to GitHub PR", () => {
+    const taskWithPr: TaskItem = {
+      ...TASK_ITEM,
+      pr: 42,
+      repo: "org/repo",
+    };
+    const html = render([taskWithPr]);
+    // Should render a link to the PR
+    expect(html).toContain('https://github.com/org/repo/pull/42');
+    expect(html).toContain("#42");
+    expect(html).toContain('style="color:#6366f1;text-decoration:none"');
+  });
+
+  test("task without pr value shows em-dash", () => {
+    const taskWithoutPr: TaskItem = {
+      ...TASK_ITEM,
+      pr: null,
+      repo: "org/repo",
+    };
+    const html = render([taskWithoutPr]);
+    // Should render an em-dash for no PR
+    expect(html).toContain("—");
+  });
+
+  test("empty state colspan is 8 (7 columns + 1 for new PR column)", () => {
+    const html = render([]);
+    expect(html).toContain('colspan="8"');
+  });
+
+  test("task with pr value uses indigo link color matching ID column style", () => {
+    const taskWithPr: TaskItem = {
+      ...TASK_ITEM,
+      pr: 99,
+      repo: "app-vitals/shipwright",
+    };
+    const html = render([taskWithPr]);
+    // PR link should match ID link style: color:#6366f1
+    const prLinkMatch = html.match(/<a href="https:\/\/github\.com\/[^"]*"[^>]*>.*#99.*<\/a>/);
+    expect(prLinkMatch).not.toBeNull();
+    if (prLinkMatch) {
+      expect(prLinkMatch[0]).toContain('color:#6366f1');
+    }
+  });
+
+  test("PR URL is correctly formatted with repo and pr number", () => {
+    const taskWithPr: TaskItem = {
+      ...TASK_ITEM,
+      pr: 123,
+      repo: "my-org/my-repo",
+    };
+    const html = render([taskWithPr]);
+    expect(html).toContain('https://github.com/my-org/my-repo/pull/123');
+  });
+
+  test("XSS: repo in PR link is escaped", () => {
+    const xssTask: TaskItem = {
+      ...TASK_ITEM,
+      pr: 1,
+      repo: 'evil"><script>xss()</script>',
+    };
+    const html = render([xssTask]);
+    expect(html).not.toContain("<script>xss");
+    expect(html).toContain("&lt;script&gt;");
+  });
+});
+
 // ─── renderTasksPage — 4-state toggle ────────────────────────────────────────
 
 const EMPTY_PAGINATION = { total: 0, limit: 50, page: 1 };
