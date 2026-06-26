@@ -2243,19 +2243,13 @@ describe("renderPrsPage", () => {
     expect(html).not.toContain("unavailable");
   });
 
-  test("state tabs render All / Open / In Review / Closed", () => {
+  test("state tabs render Open / Merged only", () => {
     const html = render();
-    expect(html).toContain("All");
     expect(html).toContain("Open");
-    expect(html).toContain("In Review");
-    expect(html).toContain("Closed");
-  });
-
-  test("All tab has no state/reviewState query param", () => {
-    const html = render();
-    // The All tab href should be /admin/prs with no query params
-    expect(html).toContain('href="/admin/prs"');
-    expect(html).toContain(">All<");
+    expect(html).toContain("Merged");
+    expect(html).not.toContain(">All<");
+    expect(html).not.toContain("In Review");
+    expect(html).not.toContain(">Closed<");
   });
 
   test("Open tab links to ?state=open", () => {
@@ -2263,14 +2257,9 @@ describe("renderPrsPage", () => {
     expect(html).toContain("state=open");
   });
 
-  test("In Review tab links to ?reviewState=in_review", () => {
+  test("Merged tab links to ?state=merged", () => {
     const html = render();
-    expect(html).toContain("reviewState=in_review");
-  });
-
-  test("Closed tab links to ?state=closed", () => {
-    const html = render();
-    expect(html).toContain("state=closed");
+    expect(html).toContain("state=merged");
   });
 
   test("filter form includes repo input", () => {

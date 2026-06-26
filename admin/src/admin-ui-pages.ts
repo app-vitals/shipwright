@@ -1701,9 +1701,8 @@ export function renderPrsPage(
   };
 
   const reviewStateBadgeClass = (s: string) => {
-    if (s === "in_review") return "badge-blue";
-    if (s === "approved" || s === "merged") return "badge-green";
-    if (s === "changes_requested") return "badge-red";
+    if (s === "in_progress" || s === "posted") return "badge-blue";
+    if (s === "approved") return "badge-green";
     return "badge-gray";
   };
 
@@ -1746,44 +1745,28 @@ export function renderPrsPage(
           })
           .join("\n");
 
-  // State tab helpers — state tabs drive state/reviewState query params
+  // State tab helpers
   const activeState = filters.state;
-  const activeReviewState = filters.reviewState;
-  const isTabActive = (tabState?: string, tabReviewState?: string): boolean => {
-    if (!tabState && !tabReviewState) {
-      // "All" tab is active when neither state nor reviewState is set
-      return !activeState && !activeReviewState;
-    }
-    if (tabState) return activeState === tabState;
-    if (tabReviewState) return activeReviewState === tabReviewState;
-    return false;
-  };
 
-  const makeTabParams = (tabState?: string, tabReviewState?: string): string => {
+  const makeTabParams = (tabState: string): string => {
     const p = new URLSearchParams();
-    if (tabState) p.set("state", tabState);
-    if (tabReviewState) p.set("reviewState", tabReviewState);
+    p.set("state", tabState);
     if (filters.repo) p.set("repo", filters.repo);
     if (filters.taskId) p.set("taskId", filters.taskId);
-    const qs = p.toString();
-    return qs ? `?${qs}` : "";
+    return `?${p.toString()}`;
   };
 
-  const tabStyle = (tabState?: string, tabReviewState?: string) =>
-    isTabActive(tabState, tabReviewState)
+  const tabStyle = (tabState: string) =>
+    activeState === tabState
       ? "background:#6366f1;color:#fff;font-weight:600"
       : "background:#fff;color:#374151";
 
   const stateToggle = `
     <div style="display:flex;gap:0;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;width:fit-content">
-      <a href="/admin/prs${makeTabParams()}"
-         style="padding:5px 14px;font-size:12px;text-decoration:none;${tabStyle()}">All</a>
       <a href="/admin/prs${makeTabParams("open")}"
-         style="padding:5px 14px;font-size:12px;text-decoration:none;border-left:1px solid #e5e7eb;${tabStyle("open")}">Open</a>
-      <a href="/admin/prs${makeTabParams(undefined, "in_review")}"
-         style="padding:5px 14px;font-size:12px;text-decoration:none;border-left:1px solid #e5e7eb;${tabStyle(undefined, "in_review")}">In Review</a>
-      <a href="/admin/prs${makeTabParams("closed")}"
-         style="padding:5px 14px;font-size:12px;text-decoration:none;border-left:1px solid #e5e7eb;${tabStyle("closed")}">Closed</a>
+         style="padding:5px 14px;font-size:12px;text-decoration:none;${tabStyle("open")}">Open</a>
+      <a href="/admin/prs${makeTabParams("merged")}"
+         style="padding:5px 14px;font-size:12px;text-decoration:none;border-left:1px solid #e5e7eb;${tabStyle("merged")}">Merged</a>
     </div>`;
 
   // Pagination
@@ -1842,11 +1825,11 @@ export function renderPrsPage(
         </div>
         <div class="form-group" style="margin-bottom:0">
           <label class="form-label" style="font-size:11px">State</label>
-          <input name="state" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.state ?? "")}" placeholder="open / closed" />
+          <input name="state" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.state ?? "")}" placeholder="open / merged" />
         </div>
         <div class="form-group" style="margin-bottom:0">
           <label class="form-label" style="font-size:11px">Review State</label>
-          <input name="reviewState" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.reviewState ?? "")}" placeholder="in_review / approved" />
+          <input name="reviewState" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.reviewState ?? "")}" placeholder="pending / in_progress / posted / approved" />
         </div>
         <div class="form-group" style="margin-bottom:0">
           <label class="form-label" style="font-size:11px">Task ID</label>
