@@ -213,7 +213,7 @@ describeOrSkip("AgentCronRunService (integration)", () => {
       skipped: false,
     });
 
-    const updated = await runService.patch(run.id, agentId, {
+    const updated = await runService.patch(run.id, agentId, cronId, {
       completedAt,
       outcome: "success",
       inputTokens: 1234,
@@ -245,7 +245,7 @@ describeOrSkip("AgentCronRunService (integration)", () => {
       skipped: false,
     });
 
-    const updated = await runService.patch(run.id, agentId, {
+    const updated = await runService.patch(run.id, agentId, cronId, {
       completedAt: new Date("2026-01-15T10:01:00Z"),
       outcome: "error",
       error: "something went wrong",
@@ -257,9 +257,10 @@ describeOrSkip("AgentCronRunService (integration)", () => {
 
   it("patch() throws NotFoundError when runId does not exist", async () => {
     const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId);
 
     await expect(
-      runService.patch("nonexistent-run-id", agentId, {
+      runService.patch("nonexistent-run-id", agentId, cronId, {
         outcome: "success",
       }),
     ).rejects.toBeInstanceOf(NotFoundError);
@@ -276,7 +277,24 @@ describeOrSkip("AgentCronRunService (integration)", () => {
     });
 
     await expect(
-      runService.patch(run.id, agentId2, {
+      runService.patch(run.id, agentId2, cronId, {
+        outcome: "success",
+      }),
+    ).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it("patch() throws NotFoundError when runId belongs to a different cron", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId1 = await createCron(cronJobService, agentId);
+    const cronId2 = await createCron(cronJobService, agentId);
+
+    const run = await runService.create(cronId1, agentId, {
+      startedAt: new Date(),
+      skipped: false,
+    });
+
+    await expect(
+      runService.patch(run.id, agentId, cronId2, {
         outcome: "success",
       }),
     ).rejects.toBeInstanceOf(NotFoundError);
