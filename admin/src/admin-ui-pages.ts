@@ -1213,7 +1213,7 @@ export function renderTasksPage(
 
   const rows =
     tasks.length === 0
-      ? `<tr><td colspan="7" class="empty-state">No tasks found.</td></tr>`
+      ? `<tr><td colspan="8" class="empty-state">No tasks found.</td></tr>`
       : tasks
           .map((t) => {
             const agentId = t.claimedBy ?? t.assignee;
@@ -1221,6 +1221,9 @@ export function renderTasksPage(
               ? escapeHtml(agentNames[agentId] ?? agentId)
               : '<span style="color:#9ca3af">—</span>';
             const blockerBadges = renderBlockerBadges(t.blockedBy);
+            const prCell = t.pr
+              ? `<a href="https://github.com/${escapeHtml(t.repo)}/pull/${t.pr}" style="color:#6366f1;text-decoration:none" title="View PR">#${t.pr}</a>`
+              : '<span style="color:#9ca3af">—</span>';
             return `<tr data-href="/admin/tasks/${escapeHtml(t.id)}" style="cursor:pointer">
     <td class="mono" style="font-size:11px"><a href="/admin/tasks/${escapeHtml(t.id)}" style="color:#6366f1;text-decoration:none" title="View details">${escapeHtml(t.id)}</a></td>
     <td><a href="/admin/tasks/${escapeHtml(t.id)}" style="color:inherit;text-decoration:none">${escapeHtml(t.title)}</a>${blockerBadges}</td>
@@ -1228,6 +1231,7 @@ export function renderTasksPage(
     <td style="font-size:12px">${agentCell}</td>
     <td class="mono" style="font-size:11px">${t.session ? escapeHtml(t.session) : '<span style="color:#9ca3af">—</span>'}</td>
     <td class="mono" style="font-size:11px">${t.repo ? escapeHtml(t.repo) : '<span style="color:#9ca3af">—</span>'}</td>
+    <td class="mono" style="font-size:11px">${prCell}</td>
     <td>${
       t.status === "in_progress"
         ? `<form method="POST" action="/admin/tasks/${escapeHtml(t.id)}/release" style="display:inline">
@@ -1379,6 +1383,7 @@ export function renderTasksPage(
               <th>Assignee</th>
               <th>Session</th>
               <th>Repo</th>
+              <th>PR</th>
               <th></th>
             </tr>
           </thead>
@@ -2099,7 +2104,11 @@ export function renderTokensPage(
   const fmt = (d: Date | string | null | undefined) => {
     if (!d) return "—";
     const date = d instanceof Date ? d : new Date(d);
-    return date.toLocaleString("en-US", { timeZone: tz, dateStyle: "medium", timeStyle: "short" });
+    return date.toLocaleString("en-US", {
+      timeZone: tz,
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
   };
 
   const degradedBanner = degraded
@@ -2121,11 +2130,12 @@ export function renderTokensPage(
       </div>`
     : "";
 
-  const rows = tokens.length === 0
-    ? `<tr><td colspan="6" class="empty-state">No tokens found.</td></tr>`
-    : tokens
-        .map(
-          (t) => `<tr>
+  const rows =
+    tokens.length === 0
+      ? `<tr><td colspan="6" class="empty-state">No tokens found.</td></tr>`
+      : tokens
+          .map(
+            (t) => `<tr>
           <td style="font-size:12px;color:#6b7280;font-family:monospace">${escapeHtml(t.id)}</td>
           <td>${escapeHtml(t.label ?? "—")}</td>
           <td style="font-size:12px;color:#6b7280;font-family:monospace">${escapeHtml(t.agentId ?? "(admin)")}</td>
@@ -2141,8 +2151,8 @@ export function renderTokensPage(
             }
           </td>
         </tr>`,
-        )
-        .join("");
+          )
+          .join("");
 
   const createForm = !degraded
     ? `<div class="card" style="margin-top:24px">
