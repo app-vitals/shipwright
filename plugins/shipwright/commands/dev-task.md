@@ -8,6 +8,8 @@ Pick the next ready task from the task store, build the feature, simplify, verif
 
 **This command runs autonomously. Do not pause for user input unless a build or test failure cannot be auto-resolved.**
 
+> **Task store setup:** This command reads from and writes to the Shipwright task store. If `SHIPWRIGHT_TASK_STORE_URL` or `SHIPWRIGHT_TASK_STORE_TOKEN` is missing, invoke `/shipwright:task-store` for setup instructions.
+
 ---
 
 ## Step 0: Detect Project Toolchain

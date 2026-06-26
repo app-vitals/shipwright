@@ -2168,6 +2168,7 @@ const PR_ITEM: PullRequestItem = {
   state: "open",
   reviewState: "posted",
   patchCycles: 2,
+  reviewCycles: 1,
   reviewedAt: "2026-06-01T10:00:00Z",
   patchedAt: "2026-06-02T11:00:00Z",
 };
@@ -2194,7 +2195,14 @@ describe("renderTaskDetailPage — Pull Request Review section", () => {
 
   test("renders patchCycles count when pullRequest is present", () => {
     const html = render(PR_ITEM);
+    expect(html).toContain("Patch Cycles");
     expect(html).toContain("2");
+  });
+
+  test("renders reviewCycles count when pullRequest is present", () => {
+    const html = render(PR_ITEM);
+    expect(html).toContain("Review Cycles");
+    expect(html).toContain("1");
   });
 
   test("renders reviewedAt when pullRequest is present", () => {
@@ -2251,6 +2259,7 @@ const PR_LIST_ITEM_1: PrListItem = {
   reviewState: "pending",
   commitSha: "abc123",
   patchCycles: 0,
+  reviewCycles: 0,
   agentId: "agent-001",
   claimedBy: "agent-001",
   reviewedAt: null,
@@ -2272,6 +2281,7 @@ const PR_LIST_ITEM_2: PrListItem = {
   reviewState: "in_review",
   commitSha: null,
   patchCycles: 3,
+  reviewCycles: 2,
   agentId: null,
   claimedBy: null,
   reviewedAt: "2026-06-02T10:00:00Z",
@@ -2315,7 +2325,7 @@ describe("renderPrsPage", () => {
 
   test("renders table with required column headers", () => {
     const html = render([PR_LIST_ITEM_1]);
-    expect(html).toContain("ID");
+    expect(html).toContain("Review Cycles");
     expect(html).toContain("Repo");
     expect(html).toContain("PR#");
     expect(html).toContain("Task");
@@ -2442,6 +2452,7 @@ const PR_DETAIL: PrListItem = {
   reviewState: "in_review",
   commitSha: "deadbeef",
   patchCycles: 2,
+  reviewCycles: 3,
   agentId: "agent-x",
   claimedBy: "agent-x",
   reviewedAt: "2026-06-10T10:00:00Z",
@@ -2487,7 +2498,14 @@ describe("renderPrDetailPage", () => {
 
   test("renders patchCycles field", () => {
     const html = render();
+    expect(html).toContain("Patch Cycles");
     expect(html).toContain("2");
+  });
+
+  test("renders reviewCycles field", () => {
+    const html = render();
+    expect(html).toContain("Review Cycles");
+    expect(html).toContain("3");
   });
 
   test("renders taskId field when present", () => {

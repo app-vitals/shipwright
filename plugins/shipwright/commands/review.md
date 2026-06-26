@@ -13,6 +13,8 @@ claims are atomic, so two agents won't review the same commit simultaneously. Th
 narrative itself is still written locally to `state/reviews/PR_REVIEW_{pr}.md` and
 `state/reviews/pr_review_{pr}.json` for posting.
 
+> **Task store setup:** This command updates task status in the Shipwright task store after review. If `SHIPWRIGHT_TASK_STORE_URL` or `SHIPWRIGHT_TASK_STORE_TOKEN` is missing, invoke `/shipwright:task-store` for setup instructions.
+
 ---
 
 ## Arguments
