@@ -11,6 +11,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type { WebClient } from "@slack/web-api";
 import type { TokenUsage } from "./claude.ts";
+import { liveClaudeConfig } from "./claude.ts";
 import { type Clock, SystemClock } from "./clock.ts";
 import type { CronRunReporter } from "./cron-run-reporter.ts";
 import { markdownToSlack } from "./format.ts";
@@ -20,6 +21,7 @@ import {
   forwardTokenUsage,
   snapshotMetrics,
 } from "./posthog.ts";
+import { calculateCost } from "./pricing.ts";
 import { type SynthesizeSpeechFn, dispatchMarkers } from "./slack.ts";
 import type { VoiceConfig } from "./voice.ts";
 
@@ -90,20 +92,6 @@ export async function handleCronRequest(
 
   const startedAt = clock.now();
 
-  async function reportRun(
-    opts:
-      | { skipped: true; skipReason: string; error?: string }
-      | { skipped: false; outcome: string },
-  ): Promise<void> {
-    if (!cronRunReporter) return;
-    await cronRunReporter.report({
-      cronId: jobId,
-      startedAt,
-      completedAt: clock.now(),
-      ...opts,
-    });
-  }
-
   if (!prompt) {
     throw new ValidationError("missing required field: prompt");
   }
@@ -112,6 +100,11 @@ export async function handleCronRequest(
       "missing delivery target: provide channel or user (or set silent=true)",
     );
   }
+
+  // CREATE run at start (before preCheck)
+  const runId = cronRunReporter
+    ? await cronRunReporter.createRun(jobId, startedAt)
+    : null;
 
   if (req.preCheck) {
     const isRelative =
@@ -125,7 +118,12 @@ export async function handleCronRequest(
         console.warn(
           `[agent:cron] preCheck is a relative path but no workspace is set — skipping job "${jobId}"`,
         );
-        await reportRun({ skipped: true, skipReason: "preCheck:not-found" });
+        await cronRunReporter?.skipRun(
+          jobId,
+          runId,
+          clock.now(),
+          "preCheck:not-found",
+        );
         return;
       }
       const candidate = isRelative
@@ -166,7 +164,12 @@ export async function handleCronRequest(
       console.warn(
         `[agent:cron] preCheck script not found for "${req.preCheck}" — skipping job "${jobId}"`,
       );
-      await reportRun({ skipped: true, skipReason: "preCheck:not-found" });
+      await cronRunReporter?.skipRun(
+        jobId,
+        runId,
+        clock.now(),
+        "preCheck:not-found",
+      );
       return;
     }
 
@@ -213,11 +216,13 @@ export async function handleCronRequest(
           );
         }
       }
-      await reportRun({
-        skipped: true,
-        skipReason: "preCheck:crash",
-        error: detail || undefined,
-      });
+      await cronRunReporter?.skipRun(
+        jobId,
+        runId,
+        clock.now(),
+        "preCheck:crash",
+        { error: detail || undefined },
+      );
       return;
     }
 
@@ -225,7 +230,12 @@ export async function handleCronRequest(
       console.log(
         `[agent:cron] preCheck returned no work for job "${jobId}" — skipping tick`,
       );
-      await reportRun({ skipped: true, skipReason: "preCheck:no-output" });
+      await cronRunReporter?.skipRun(
+        jobId,
+        runId,
+        clock.now(),
+        "preCheck:no-output",
+      );
       return;
     }
 
@@ -240,86 +250,153 @@ export async function handleCronRequest(
   console.log(`[agent:cron] running job "${jobId}"`);
 
   const metricsSnapshot = workspace ? snapshotMetrics(workspace) : undefined;
-  const { result, sessionId, usage } = await runner(message);
-  if (workspace && metricsSnapshot) {
-    await forwardNewMetrics(workspace, metricsSnapshot);
-  }
-  await forwardTokenUsage(usage, "cron", undefined, jobId);
 
-  const { cleaned, markers } = parseMarkers(result);
-  const isSilentMarker = markers.some((m) => m.type === "silent");
+  let usage: TokenUsage | undefined;
+  try {
+    const runResult = await runner(message);
+    usage = runResult.usage;
+    const { result, sessionId } = runResult;
 
-  if (silent) {
-    console.log(`[agent:cron] job "${jobId}" completed (silent — no post)`);
-    await reportRun({ skipped: false, outcome: "silent" });
-    return;
-  }
-  const isDmOnly = !!user && !channel;
-  if (isSilentMarker && !isDmOnly) {
-    // [silent] marker suppresses channel posts (and channel-wins-over-user posts)
-    // DMs always get a reply — [silent] is ignored when routing to a DM
-    console.log(`[agent:cron] job "${jobId}" completed (silent — no post)`);
-    await reportRun({ skipped: false, outcome: "silent" });
-    return;
-  }
+    if (workspace && metricsSnapshot) {
+      await forwardNewMetrics(workspace, metricsSnapshot);
+    }
+    await forwardTokenUsage(usage, "cron", undefined, jobId);
 
-  const formatted = formatter(cleaned);
+    const { cleaned, markers } = parseMarkers(result);
+    const isSilentMarker = markers.some((m) => m.type === "silent");
 
-  if (channel) {
-    if (user) {
-      console.warn(
-        `[agent:cron] job "${jobId}" has both channel and user — posting to channel`,
+    if (silent) {
+      console.log(`[agent:cron] job "${jobId}" completed (silent — no post)`);
+      await cronRunReporter?.completeRun(jobId, runId, clock.now(), "completed", {
+        inputTokens: usage?.input_tokens,
+        outputTokens: usage?.output_tokens,
+        cacheReadTokens: usage?.cache_read_input_tokens,
+        cacheCreationTokens: usage?.cache_creation_input_tokens,
+        costUsd: usage
+          ? calculateCost(usage, liveClaudeConfig.model)
+          : undefined,
+        model: liveClaudeConfig.model,
+      });
+      return;
+    }
+    const isDmOnly = !!user && !channel;
+    if (isSilentMarker && !isDmOnly) {
+      // [silent] marker suppresses channel posts (and channel-wins-over-user posts)
+      // DMs always get a reply — [silent] is ignored when routing to a DM
+      console.log(`[agent:cron] job "${jobId}" completed (silent — no post)`);
+      await cronRunReporter?.completeRun(
+        jobId,
+        runId,
+        clock.now(),
+        "completed",
+        {
+          inputTokens: usage?.input_tokens,
+          outputTokens: usage?.output_tokens,
+          cacheReadTokens: usage?.cache_read_input_tokens,
+          cacheCreationTokens: usage?.cache_creation_input_tokens,
+          costUsd: usage
+            ? calculateCost(usage, liveClaudeConfig.model)
+            : undefined,
+          model: liveClaudeConfig.model,
+        },
+      );
+      return;
+    }
+
+    const formatted = formatter(cleaned);
+
+    if (channel) {
+      if (user) {
+        console.warn(
+          `[agent:cron] job "${jobId}" has both channel and user — posting to channel`,
+        );
+      }
+      const postResult = await slack.chat.postMessage({
+        channel,
+        text: formatted,
+      });
+      console.log(`[agent:cron] job "${jobId}" posted to channel ${channel}`);
+      if (postResult.ts) {
+        onPost?.(channel, postResult.ts);
+        if (onSession && sessionId)
+          onSession(channel, postResult.ts, sessionId);
+      } else {
+        console.warn(
+          `[agent:cron] job "${jobId}" postMessage returned no ts — react markers will be skipped`,
+        );
+      }
+      await dispatchMarkers(markers, {
+        client: slack,
+        channel,
+        postedTs: postResult.ts,
+        synthesizeSpeechFn,
+        voiceConfig,
+      });
+      await cronRunReporter?.completeRun(
+        jobId,
+        runId,
+        clock.now(),
+        "completed",
+        {
+          inputTokens: usage?.input_tokens,
+          outputTokens: usage?.output_tokens,
+          cacheReadTokens: usage?.cache_read_input_tokens,
+          cacheCreationTokens: usage?.cache_creation_input_tokens,
+          costUsd: usage
+            ? calculateCost(usage, liveClaudeConfig.model)
+            : undefined,
+          model: liveClaudeConfig.model,
+        },
+      );
+    } else if (user) {
+      const dmResult = await slack.conversations.open({ users: user });
+      const dmChannel = dmResult.channel?.id;
+      if (!dmChannel) {
+        throw new Error(`[agent:cron] could not open DM for user ${user}`);
+      }
+      const dmPostResult = await slack.chat.postMessage({
+        channel: dmChannel,
+        text: formatted,
+      });
+      console.log(`[agent:cron] job "${jobId}" posted DM to user ${user}`);
+      if (dmPostResult.ts) {
+        onPost?.(dmChannel, dmPostResult.ts);
+        if (onSession && sessionId)
+          onSession(dmChannel, dmPostResult.ts, sessionId);
+      } else {
+        console.warn(
+          `[agent:cron] job "${jobId}" DM postMessage returned no ts — react markers will be skipped`,
+        );
+      }
+      await dispatchMarkers(markers, {
+        client: slack,
+        channel: dmChannel,
+        postedTs: dmPostResult.ts,
+        synthesizeSpeechFn,
+        voiceConfig,
+      });
+      await cronRunReporter?.completeRun(
+        jobId,
+        runId,
+        clock.now(),
+        "completed",
+        {
+          inputTokens: usage?.input_tokens,
+          outputTokens: usage?.output_tokens,
+          cacheReadTokens: usage?.cache_read_input_tokens,
+          cacheCreationTokens: usage?.cache_creation_input_tokens,
+          costUsd: usage
+            ? calculateCost(usage, liveClaudeConfig.model)
+            : undefined,
+          model: liveClaudeConfig.model,
+        },
       );
     }
-    const postResult = await slack.chat.postMessage({
-      channel,
-      text: formatted,
+  } catch (err) {
+    await cronRunReporter?.completeRun(jobId, runId, clock.now(), "failed", {
+      error: err instanceof Error ? err.message : String(err),
     });
-    console.log(`[agent:cron] job "${jobId}" posted to channel ${channel}`);
-    if (postResult.ts) {
-      onPost?.(channel, postResult.ts);
-      if (onSession && sessionId) onSession(channel, postResult.ts, sessionId);
-    } else {
-      console.warn(
-        `[agent:cron] job "${jobId}" postMessage returned no ts — react markers will be skipped`,
-      );
-    }
-    await dispatchMarkers(markers, {
-      client: slack,
-      channel,
-      postedTs: postResult.ts,
-      synthesizeSpeechFn,
-      voiceConfig,
-    });
-    await reportRun({ skipped: false, outcome: "posted" });
-  } else if (user) {
-    const dmResult = await slack.conversations.open({ users: user });
-    const dmChannel = dmResult.channel?.id;
-    if (!dmChannel) {
-      throw new Error(`[agent:cron] could not open DM for user ${user}`);
-    }
-    const dmPostResult = await slack.chat.postMessage({
-      channel: dmChannel,
-      text: formatted,
-    });
-    console.log(`[agent:cron] job "${jobId}" posted DM to user ${user}`);
-    if (dmPostResult.ts) {
-      onPost?.(dmChannel, dmPostResult.ts);
-      if (onSession && sessionId)
-        onSession(dmChannel, dmPostResult.ts, sessionId);
-    } else {
-      console.warn(
-        `[agent:cron] job "${jobId}" DM postMessage returned no ts — react markers will be skipped`,
-      );
-    }
-    await dispatchMarkers(markers, {
-      client: slack,
-      channel: dmChannel,
-      postedTs: dmPostResult.ts,
-      synthesizeSpeechFn,
-      voiceConfig,
-    });
-    await reportRun({ skipped: false, outcome: "dm" });
+    throw err;
   }
 }
 
