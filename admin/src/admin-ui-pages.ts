@@ -53,6 +53,7 @@ export interface PullRequestItem {
   state: string;
   reviewState: string;
   patchCycles: number;
+  reviewCycles: number;
   reviewedAt?: string | null;
   patchedAt?: string | null;
 }
@@ -69,6 +70,7 @@ export interface PrListItem {
   reviewState: string;
   commitSha?: string | null;
   patchCycles: number;
+  reviewCycles: number;
   agentId?: string | null;
   claimedBy?: string | null;
   reviewedAt?: string | null;
@@ -1467,8 +1469,12 @@ export function renderTaskDetailPage(
   const prSection = pullRequest
     ? (() => {
         const prUrl = `https://github.com/${pullRequest.repo}/pull/${pullRequest.prNumber}`;
-        const reviewedFmt = pullRequest.reviewedAt ? dateField("Reviewed", pullRequest.reviewedAt) : "";
-        const patchedFmt = pullRequest.patchedAt ? dateField("Patched", pullRequest.patchedAt) : "";
+        const reviewedFmt = pullRequest.reviewedAt
+          ? dateField("Reviewed", pullRequest.reviewedAt)
+          : "";
+        const patchedFmt = pullRequest.patchedAt
+          ? dateField("Patched", pullRequest.patchedAt)
+          : "";
         return `<div class="card" style="margin-bottom:16px">
       <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Pull Request Review</div>
       <table class="detail-table"><tbody>
@@ -1483,6 +1489,10 @@ export function renderTaskDetailPage(
         <tr>
           <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top">Review State</td>
           <td style="padding:8px 12px;font-size:13px"><span class="badge badge-gray">${escapeHtml(pullRequest.reviewState)}</span></td>
+        </tr>
+        <tr>
+          <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top">Review Cycles</td>
+          <td style="padding:8px 12px;font-size:13px">${escapeHtml(String(pullRequest.reviewCycles))}</td>
         </tr>
         <tr>
           <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top">Patch Cycles</td>
@@ -1679,7 +1689,12 @@ export function renderTaskDetailPage(
 
 export function renderPrsPage(
   prs: PrListItem[],
-  filters: { repo?: string; state?: string; reviewState?: string; taskId?: string },
+  filters: {
+    repo?: string;
+    state?: string;
+    reviewState?: string;
+    taskId?: string;
+  },
   degraded: boolean,
   userName: string,
   agentNames: Record<string, string> = {},
@@ -1732,12 +1747,12 @@ export function renderPrsPage(
                 )
               : '<span style="color:#9ca3af">—</span>';
             return `<tr data-href="/admin/prs/${escapeHtml(pr.id)}" style="cursor:pointer">
-    <td class="mono" style="font-size:11px"><a href="/admin/prs/${escapeHtml(pr.id)}" style="color:#6366f1;text-decoration:none">${escapeHtml(pr.id)}</a></td>
+    <td style="font-size:12px"><a href="/admin/prs/${escapeHtml(pr.id)}" style="color:#6366f1;text-decoration:none;font-weight:500">#${escapeHtml(String(pr.prNumber))}</a></td>
     <td style="font-size:12px">${escapeHtml(pr.repo)}</td>
-    <td style="font-size:12px">#${escapeHtml(String(pr.prNumber))}</td>
     <td style="font-size:12px">${taskCell}</td>
     <td><span class="badge ${prStateBadgeClass(pr.state)}">${escapeHtml(pr.state)}</span></td>
     <td><span class="badge ${reviewStateBadgeClass(pr.reviewState)}">${escapeHtml(pr.reviewState)}</span></td>
+    <td style="font-size:12px;text-align:center">${escapeHtml(String(pr.reviewCycles))}</td>
     <td style="font-size:12px;text-align:center">${escapeHtml(String(pr.patchCycles))}</td>
     <td style="font-size:12px">${claimedCell}</td>
     <td style="font-size:12px">${updatedCell}</td>
@@ -1770,7 +1785,10 @@ export function renderPrsPage(
     </div>`;
 
   // Pagination
-  const totalPages = Math.max(1, Math.ceil(pagination.total / pagination.limit));
+  const totalPages = Math.max(
+    1,
+    Math.ceil(pagination.total / pagination.limit),
+  );
   const page = pagination.page;
   const makePageUrl = (p: number) => {
     const params = new URLSearchParams();
@@ -1843,12 +1861,12 @@ export function renderPrsPage(
       <table class="data-table" style="width:100%;border-collapse:collapse">
         <thead>
           <tr>
-            <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">ID</th>
-            <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Repo</th>
             <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">PR#</th>
+            <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Repo</th>
             <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Task</th>
             <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">State</th>
             <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Review State</th>
+            <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Review Cycles</th>
             <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Patch Cycles</th>
             <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Claimed By</th>
             <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Updated</th>
@@ -1924,6 +1942,7 @@ export function renderPrDetailPage(
     field("Task", pr.taskId),
     field("State", pr.state),
     field("Review State", pr.reviewState),
+    field("Review Cycles", String(pr.reviewCycles)),
     field("Patch Cycles", String(pr.patchCycles)),
     field("Commit SHA", pr.commitSha, true),
     field("Staged", pr.staged ? "yes" : "no"),
