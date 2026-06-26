@@ -61,7 +61,9 @@ const DUMMY_AGENT_API_KEY = "dev-agent-key";
 // Obviously-fake dev admin token for the task-store. Seeded (hashed) into the
 // task-store DB by a preflight and handed to the admin pane verbatim so the admin
 // console can read/manage tasks + PRs. NOT a secret — local DB only, public-safe.
-const DEV_TASK_STORE_ADMIN_TOKEN = "dev-task-store-admin-token";
+// Bootstrap admin token seeded into the task-store on startup. Not a real
+// secret — used only against the local dev Postgres instance.
+export const DEV_TASK_STORE_ADMIN_TOKEN = "dev-task-store-admin-token";
 // Session-cookie signing key (HS256). Must be non-empty — Web Crypto rejects a
 // zero-length HMAC key with "DataError", which surfaces as a 500 on first login.
 const DUMMY_SESSION_SECRET = "dev-session-secret-not-for-production-use!";
@@ -219,6 +221,9 @@ export const STACK_PANES: Pane[] = [
       // DATABASE_URL_SHIPWRIGHT_TASK_STORE. Shares the local Postgres server with
       // the admin service but a distinct database, per the schema's warning.
       DATABASE_URL_SHIPWRIGHT_TASK_STORE: DEV_TASK_STORE_DATABASE_URL,
+      // Seed a bootstrap admin token on startup so the admin pane can reach the
+      // task-store API without manual token provisioning.
+      TASK_STORE_SEED_ADMIN_TOKEN: DEV_TASK_STORE_ADMIN_TOKEN,
     },
   },
   {
