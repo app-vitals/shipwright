@@ -43,7 +43,7 @@ export interface TaskListFilters {
    * Repo-scoped visibility for agent tokens.
    * When set, replaces the simple `assignee` filter with an OR clause:
    *   - tasks explicitly assigned to this agent, OR
-   *   - unassigned pool tasks whose repo is in the agent's scope
+   *   - any pool task whose repo is in the agent's scope (regardless of assignee)
    * A separate `?repo=X` filter still applies as an additional AND condition.
    */
   agentScope?: { agentId: string; repos: string[] };
