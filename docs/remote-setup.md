@@ -16,6 +16,22 @@ Your laptop (Claude Code)          Cloud agent (e.g. Warchild)
 
 When you use a token scoped to a specific agent's ID, the task store automatically assigns every task you create to that agent. The cloud agent's execution crons then pick them up without any extra configuration.
 
+## Expected workflow
+
+Remote access is for **planning**, not freeform task injection. The intended pattern is:
+
+```
+/shipwright:plan-session   ← run this locally
+        │
+        ▼
+   tasks queued            ← with dependencies, branch names, acceptance criteria
+        │
+        ▼
+  cloud agent executes     ← dev-task → review → deploy
+```
+
+Posting tasks directly to the task store API from a laptop — without going through `plan-session` — creates work that skips dependency mapping, branch planning, and acceptance criteria. The cloud agent will pick those tasks up and execute them as-is. Don't do this unless you know exactly what you're adding and why.
+
 ---
 
 ## Prerequisites
