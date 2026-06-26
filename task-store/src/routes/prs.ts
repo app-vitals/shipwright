@@ -10,7 +10,7 @@
  * Admin tokens (agentId null) have no restrictions.
  *
  * Routes:
- *   GET    /prs               list (?repo, ?prNumber, ?taskId, ?state, ?reviewState)
+ *   GET    /prs               list (?repo, ?prNumber, ?taskId, ?state, ?reviewState, ?staged)
  *   POST   /prs/claim         atomic claim (201 new, 200 update, 409 conflict)
  *   GET    /prs/:id           fetch one (404 when missing)
  *   PATCH  /prs/:id           update fields
@@ -72,6 +72,10 @@ export function createPrsRoutes(
       taskId: c.req.query("taskId"),
       state: c.req.query("state"),
       reviewState: c.req.query("reviewState"),
+      staged:
+        c.req.query("staged") !== undefined
+          ? c.req.query("staged") === "true"
+          : undefined,
       limit:
         limitRaw !== undefined
           ? Number.parseInt(limitRaw, 10) || undefined
