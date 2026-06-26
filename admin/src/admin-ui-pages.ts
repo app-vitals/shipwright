@@ -98,7 +98,6 @@ export interface AgentDetail {
   createdAt: Date;
   updatedAt: Date;
   repos: string[];
-  selfHosted?: boolean;
 }
 
 export interface CronJobItem {
