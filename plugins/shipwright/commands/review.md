@@ -104,8 +104,8 @@ processed or skipped, continue to Step 3b.
 If `review_external_prs` is true, resolve the configured repos and fetch open PRs for each:
 
 ```bash
-REPOS=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks/repo" | jq -r '.repo // empty')
+REPOS=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
+  "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID" | jq -r '.repos[]')
 ```
 
 ```bash
@@ -700,8 +700,8 @@ When invoked with a specific PR (e.g. `/shipwright:review app-vitals/shipwright#
 1. Parse the argument: extract `org`, `repo`, and `pr` number. For bare numbers,
    infer `org/repo` via:
    ```bash
-   curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-     "$SHIPWRIGHT_TASK_STORE_URL/tasks/repo" | jq -r '.repo // empty'
+   curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
+     "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID" | jq -r '.repos[0] // empty'
    ```
    Fall back to the current workspace repo if the command fails.
 2. Read `state/reviews.json`, find the entry for this PR.

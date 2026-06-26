@@ -109,7 +109,10 @@ export function createTasksRoutes(
 
     // ?state=blocked delegates to listBlocked().
     if (stateRaw === "blocked") {
-      const tasks = await taskService.listBlocked(agentId ?? undefined);
+      const tasks = await taskService.listBlocked(
+        agentId ?? undefined,
+        repos !== null ? repos : undefined,
+      );
       return c.json({ tasks, total: tasks.length }, 200);
     }
 
@@ -203,7 +206,14 @@ export function createTasksRoutes(
   // Must be registered before /:id routes to avoid param capture.
   app.get("/distinct", async (c) => {
     const agentId = c.get("agentId");
-    return c.json(await taskService.distinct(agentId ?? undefined), 200);
+    const repos = c.get("repos");
+    return c.json(
+      await taskService.distinct(
+        agentId ?? undefined,
+        repos !== null ? repos : undefined,
+      ),
+      200,
+    );
   });
 
   // ─── Get one ───────────────────────────────────────────────────────────────

@@ -61,8 +61,11 @@ export interface TaskListResult {
 export interface TaskServiceLike {
   list(filters?: TaskListFilters): Promise<TaskListResult>;
   listReady(agentId?: string, repos?: string[]): Promise<Task[]>;
-  listBlocked(agentId?: string): Promise<TaskWithBlockedBy[]>;
-  distinct(agentId?: string): Promise<{ sessions: string[]; repos: string[] }>;
+  listBlocked(agentId?: string, repos?: string[]): Promise<TaskWithBlockedBy[]>;
+  distinct(
+    agentId?: string,
+    scopeRepos?: string[],
+  ): Promise<{ sessions: string[]; repos: string[] }>;
   get(id: string): Promise<TaskWithBlockedBy | null>;
   create(data: Prisma.TaskCreateInput): Promise<Task>;
   bulk(
@@ -104,10 +107,11 @@ export class TaskService implements TaskServiceLike {
 
     if (filters.agentScope) {
       // Repo-scoped visibility: include tasks explicitly assigned to the agent,
-      // OR unassigned pool tasks whose repo is in the agent's scope.
+      // OR any task whose repo is in the agent's scope (regardless of assignee).
+      // Write access is still enforced separately via requireOwnership.
       where.OR = [
         { assignee: filters.agentScope.agentId },
-        { assignee: null, repo: { in: filters.agentScope.repos } },
+        { repo: { in: filters.agentScope.repos } },
       ];
       // A ?repo=X filter still applies as an additional AND condition.
       if (filters.repo) where.repo = filters.repo;
@@ -175,12 +179,22 @@ export class TaskService implements TaskServiceLike {
    *
    * Agent tokens are scoped to their own tasks: pass agentId to filter by assignee.
    */
-  async listBlocked(agentId?: string): Promise<TaskWithBlockedBy[]> {
+  async listBlocked(
+    agentId?: string,
+    repos?: string[],
+  ): Promise<TaskWithBlockedBy[]> {
     const allTasks = await this.prisma.task.findMany();
+    const useRepoScope =
+      agentId !== undefined && repos !== undefined && repos.length > 0;
     return allTasks
       .map((t: Task) => ({ ...t, blockedBy: computeBlockedBy(t, allTasks) }))
       .filter((t: TaskWithBlockedBy) => {
-        if (agentId && t.assignee !== agentId) return false;
+        if (agentId) {
+          const ownedByAssignee = t.assignee === agentId;
+          const inRepoScope =
+            useRepoScope && t.repo !== null && repos?.includes(t.repo);
+          if (!ownedByAssignee && !inRepoScope) return false;
+        }
         if (t.status === "blocked") return true;
         if (t.status === "pending") return t.blockedBy.length > 0;
         return false;
@@ -189,8 +203,18 @@ export class TaskService implements TaskServiceLike {
 
   async distinct(
     agentId?: string,
+    scopeRepos?: string[],
   ): Promise<{ sessions: string[]; repos: string[] }> {
-    const where = agentId ? { assignee: agentId } : {};
+    const useRepoScope =
+      agentId !== undefined &&
+      scopeRepos !== undefined &&
+      scopeRepos.length > 0;
+    let where: Prisma.TaskWhereInput = {};
+    if (agentId) {
+      where = useRepoScope
+        ? { OR: [{ assignee: agentId }, { repo: { in: scopeRepos } }] }
+        : { assignee: agentId };
+    }
     const rows = await this.prisma.task.findMany({
       where,
       select: { session: true, repo: true },
