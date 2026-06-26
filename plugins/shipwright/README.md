@@ -1,4 +1,4 @@
-# Shipwright v4.30.0
+# Shipwright v4.29.0
 
 A structured dev pipeline plugin for Claude Code. Plan sessions, execute tasks, run autonomous dev loops, perform multi-agent code reviews, and conduct integrated project research — for any software project.
 
