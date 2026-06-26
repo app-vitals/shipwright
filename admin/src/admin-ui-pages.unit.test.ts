@@ -2237,7 +2237,7 @@ describe("renderPrsPage", () => {
 
   test("renders table with required column headers", () => {
     const html = render([PR_LIST_ITEM_1]);
-    expect(html).toContain("ID");
+    expect(html).toContain("Review Cycles");
     expect(html).toContain("Repo");
     expect(html).toContain("PR#");
     expect(html).toContain("Task");
