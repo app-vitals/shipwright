@@ -1721,6 +1721,7 @@ export function renderPrsPage(
     page: 1,
   },
   timezone = "America/Los_Angeles",
+  suggestions?: { repos?: string[] },
 ): string {
   const degradedHtml = degraded
     ? `<div class="alert alert-warning">PR store unavailable — data shown may be stale or empty.</div>`
@@ -1785,6 +1786,7 @@ export function renderPrsPage(
     p.set("state", tabState);
     if (filters.repo) p.set("repo", filters.repo);
     if (filters.taskId) p.set("taskId", filters.taskId);
+    if (filters.reviewState) p.set("reviewState", filters.reviewState);
     return `?${p.toString()}`;
   };
 
@@ -1856,15 +1858,26 @@ export function renderPrsPage(
       <form method="GET" action="/admin/prs" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
         <div class="form-group" style="margin-bottom:0">
           <label class="form-label" style="font-size:11px">Repo</label>
-          <input name="repo" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.repo ?? "")}" placeholder="org/repo" />
+          <input name="repo" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.repo ?? "")}" placeholder="org/repo" ${suggestions?.repos?.length ? 'list="prs-repos-list"' : ""} />
+          ${suggestions?.repos?.length ? `<datalist id="prs-repos-list">${suggestions.repos.map((r) => `<option value="${escapeHtml(r)}"></option>`).join("")}</datalist>` : ""}
         </div>
         <div class="form-group" style="margin-bottom:0">
           <label class="form-label" style="font-size:11px">State</label>
-          <input name="state" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.state ?? "")}" placeholder="open / merged" />
+          <select name="state" class="form-input" style="font-size:12px;padding:4px 8px">
+            <option value="">Any</option>
+            <option value="open" ${filters.state === "open" ? "selected" : ""}>open</option>
+            <option value="merged" ${filters.state === "merged" ? "selected" : ""}>merged</option>
+          </select>
         </div>
         <div class="form-group" style="margin-bottom:0">
           <label class="form-label" style="font-size:11px">Review State</label>
-          <input name="reviewState" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.reviewState ?? "")}" placeholder="pending / in_progress / posted / approved" />
+          <select name="reviewState" class="form-input" style="font-size:12px;padding:4px 8px">
+            <option value="">Any</option>
+            <option value="pending" ${filters.reviewState === "pending" ? "selected" : ""}>pending</option>
+            <option value="in_progress" ${filters.reviewState === "in_progress" ? "selected" : ""}>in_progress</option>
+            <option value="posted" ${filters.reviewState === "posted" ? "selected" : ""}>posted</option>
+            <option value="approved" ${filters.reviewState === "approved" ? "selected" : ""}>approved</option>
+          </select>
         </div>
         <div class="form-group" style="margin-bottom:0">
           <label class="form-label" style="font-size:11px">Task ID</label>
