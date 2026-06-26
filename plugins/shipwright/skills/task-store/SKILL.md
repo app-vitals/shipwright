@@ -16,6 +16,43 @@ The task store is a REST service — call it with curl, no script discovery need
 
 ---
 
+## Setup
+
+### Install the Shipwright plugin
+
+```bash
+/plugin install shipwright@app-vitals/shipwright
+```
+
+### Set the required env vars
+
+| Env var | Description |
+|---|---|
+| `SHIPWRIGHT_TASK_STORE_URL` | Base URL of the task store service |
+| `SHIPWRIGHT_TASK_STORE_TOKEN` | Bearer token scoped to this agent |
+
+**Managed agents** (deployed via the Shipwright admin service) have these injected automatically — no action needed.
+
+**Remote sessions** (e.g. running `/plan-session` from a laptop): set them manually. Get your URL and token from the Shipwright admin app under the target agent's **Task Store Tokens** section, then:
+
+```bash
+export SHIPWRIGHT_TASK_STORE_URL="https://task-store.your-domain.com"
+export SHIPWRIGHT_TASK_STORE_TOKEN="<token from admin app>"
+```
+
+Full remote setup walkthrough: [docs/remote-setup.md](../../../../docs/remote-setup.md).
+
+### Verify the connection
+
+```bash
+curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?ready=true" | jq '.total'
+```
+
+A number (including `0`) confirms the connection works. A `401` means the token is wrong. A connection error means the URL is unreachable.
+
+---
+
 ## Authentication
 
 All requests require a Bearer token:
@@ -24,23 +61,7 @@ All requests require a Bearer token:
 Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN
 ```
 
-Set these env vars before calling the API:
-
-| Env var | Description |
-|---|---|
-| `SHIPWRIGHT_TASK_STORE_URL` | Base URL of the task store service |
-| `SHIPWRIGHT_TASK_STORE_TOKEN` | Bearer token for this agent |
-
-Managed agents have these injected automatically. For remote use (e.g. running `/plan-session` from a laptop), set them manually — see [docs/remote-setup.md](../../../../docs/remote-setup.md).
-
 The bearer token scopes all API operations to the calling agent's own tasks automatically — the same token that authenticates you also filters results. No `?assignee=` parameter is needed on any endpoint.
-
-Verify the service is reachable before doing anything:
-
-```bash
-curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks?ready=true" | jq '.total'
-```
 
 ---
 
