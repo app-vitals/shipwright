@@ -111,6 +111,13 @@ export interface MetricsDeps {
   /** URL path prefix the app is mounted at (e.g. "/sw"). Injected into dashboard HTML for asset + API fetch URLs. */
   basePath?: string;
   /**
+   * Base URL of the admin service (e.g. "http://localhost:3001"), used to make the
+   * dashboard toolbar's Agents/Tasks/PRs links absolute when the admin console runs
+   * on a different origin (local `task stack`). Falls back to METRICS_ADMIN_APP_URL,
+   * then "" (same-origin relative links — the default for single-host ingress).
+   */
+  adminBaseUrl?: string;
+  /**
    * Local event store. When provided, the PostHog-shaped ingest route
    * `POST /batch/` is registered and writes batches to this store. When
    * absent, the route is NOT registered (404) — the default-mode flip is
@@ -1044,6 +1051,11 @@ export function createMetricsApp(
   // `task stack`). Keeps the real provider — only relaxes auth.
   const dashboardDevAuth = deps?.dashboardDevAuth ?? false;
   const basePath = deps?.basePath ?? process.env.METRICS_BASE_PATH ?? "";
+  // Cross-origin admin console URL for the dashboard toolbar's Agents/Tasks/PRs
+  // links. Only set in the local `task stack` (different origin per service); empty
+  // by default so single-host ingress deployments keep relative links unchanged.
+  const adminBaseUrl =
+    deps?.adminBaseUrl ?? process.env.METRICS_ADMIN_APP_URL ?? "";
 
   const app = new OpenAPIHono<AuthEnv>({
     defaultHook: (result, c) => {
@@ -1182,6 +1194,7 @@ export function createMetricsApp(
         userName: offlineMode ? "Offline User" : "Dev User",
         isOwner: true,
         basePath,
+        adminBaseUrl,
       });
       return new Response(body, {
         headers: { "Content-Type": "text/html; charset=utf-8" },
@@ -1219,6 +1232,7 @@ export function createMetricsApp(
           userName,
           isOwner: false,
           basePath,
+          adminBaseUrl,
         });
         return new Response(body, {
           status: 403,
@@ -1227,7 +1241,12 @@ export function createMetricsApp(
       }
     }
 
-    const body = renderDashboardPage({ userName, isOwner: true, basePath });
+    const body = renderDashboardPage({
+      userName,
+      isOwner: true,
+      basePath,
+      adminBaseUrl,
+    });
     return new Response(body, {
       headers: { "Content-Type": "text/html; charset=utf-8" },
     });
