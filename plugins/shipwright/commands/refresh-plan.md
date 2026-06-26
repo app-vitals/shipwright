@@ -8,6 +8,8 @@ arguments:
 
 # Refresh Plan: $ARGUMENTS
 
+> **Task store setup:** This command updates task metadata in the Shipwright task store after refreshing a planning doc. If `SHIPWRIGHT_TASK_STORE_URL` or `SHIPWRIGHT_TASK_STORE_TOKEN` is missing, invoke `/shipwright:task-store` for setup instructions.
+
 Refresh a planning doc's stale tasks against the current codebase state. Preserves stable sections (descriptions, acceptance criteria) and updates sections that reference code (file paths, technical details, dependency statuses).
 
 Follow all steps in order.
