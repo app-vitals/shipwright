@@ -2252,6 +2252,25 @@ describe("renderPrsPage", () => {
     expect(html).not.toContain(">Closed<");
   });
 
+  test("Open tab is active by default when no state filter is set", () => {
+    const html = render();
+    // Open tab should have active (indigo) styling
+    expect(html).toMatch(/background:#6366f1;color:#fff[^>]*>Open/);
+    // Merged tab should not be active
+    expect(html).not.toMatch(/background:#6366f1;color:#fff[^>]*>Merged/);
+  });
+
+  test("Open tab is active when state=open", () => {
+    const html = render([], { state: "open" });
+    expect(html).toMatch(/background:#6366f1;color:#fff[^>]*>Open/);
+  });
+
+  test("Merged tab is active when state=merged", () => {
+    const html = render([], { state: "merged" });
+    expect(html).toMatch(/background:#6366f1;color:#fff[^>]*>Merged/);
+    expect(html).not.toMatch(/background:#6366f1;color:#fff[^>]*>Open/);
+  });
+
   test("Open tab links to ?state=open", () => {
     const html = render();
     expect(html).toContain("state=open");

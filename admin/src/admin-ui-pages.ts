@@ -1745,7 +1745,7 @@ export function renderPrsPage(
           })
           .join("\n");
 
-  // State tab helpers — default to "open" when no state filter is set
+  // State tab helpers — default to "open" when no state param is set
   const activeState = filters.state ?? "open";
 
   const makeTabParams = (tabState: string): string => {
