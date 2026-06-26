@@ -68,9 +68,7 @@ function makeGoogleClient(): GoogleAuthClient {
 
 // ─── Mock deps factory ────────────────────────────────────────────────────────
 
-function makeMockDeps(
-  overrides?: Partial<AdminUIDeps>,
-): AdminUIDeps {
+function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
   const BASE_SLACK_CLIENT: AdminUISlackClient = {
     createAppManifest: async () => ({
       appId: "A123456",
@@ -149,7 +147,11 @@ function makeMockDeps(
         throw new Error("not implemented");
       },
       delete: async () => {},
-      reconcileSystemCrons: async () => ({ created: 0, updated: 0, deleted: 0 }),
+      reconcileSystemCrons: async () => ({
+        created: 0,
+        updated: 0,
+        deleted: 0,
+      }),
     },
     agentToolService: {
       list: async () => [],
@@ -163,8 +165,20 @@ function makeMockDeps(
     },
     agentTokenService: {
       listForAgent: async () => [],
-      create: async () => ({ token: { id: "t1", label: null, createdAt: new Date(), revokedAt: null, agentId: NEW_AGENT_ID, token: "hash" }, rawToken: "sw_raw123456" }),
-      revoke: async () => { throw new Error("not implemented"); },
+      create: async () => ({
+        token: {
+          id: "t1",
+          label: null,
+          createdAt: new Date(),
+          revokedAt: null,
+          agentId: NEW_AGENT_ID,
+          token: "hash",
+        },
+        rawToken: "sw_raw123456",
+      }),
+      revoke: async () => {
+        throw new Error("not implemented");
+      },
     },
     agentPluginService: {
       list: async () => [],
@@ -237,13 +251,16 @@ describe("admin UI — new local agent create flow", () => {
   // ── POST /admin/agents ────────────────────────────────────────────────────
 
   it("POST /admin/agents — admin creates agent with selfHosted:true → 302 redirect to /admin/agents/:id", async () => {
-    let createdArgs: { data: { name: string; selfHosted?: boolean } } | null = null;
+    let createdArgs: { data: { name: string; selfHosted?: boolean } } | null =
+      null;
     const deps = makeMockDeps({
       prisma: {
         ...makeMockDeps().prisma,
         agent: {
           ...makeMockDeps().prisma.agent,
-          create: async (args: { data: { name: string; selfHosted?: boolean } }) => {
+          create: async (args: {
+            data: { name: string; selfHosted?: boolean };
+          }) => {
             createdArgs = args;
             return {
               id: NEW_AGENT_ID,
@@ -291,13 +308,18 @@ describe("admin UI — new local agent create flow", () => {
   });
 
   it("POST /admin/agents with repos — repos are attached to created agent via update", async () => {
-    let updateArgs: { where: { id: string }; data: { repos: string[] } } | null = null;
+    let updateArgs: {
+      where: { id: string };
+      data: { repos: string[] };
+    } | null = null;
     const deps = makeMockDeps({
       prisma: {
         ...makeMockDeps().prisma,
         agent: {
           ...makeMockDeps().prisma.agent,
-          create: async (args: { data: { name: string; selfHosted?: boolean } }) => ({
+          create: async (args: {
+            data: { name: string; selfHosted?: boolean };
+          }) => ({
             id: NEW_AGENT_ID,
             name: args.data.name,
             slackId: null,
@@ -305,7 +327,10 @@ describe("admin UI — new local agent create flow", () => {
             updatedAt: new Date("2024-01-01"),
             repos: [],
           }),
-          update: async (args: { where: { id: string }; data: { repos: string[] } }) => {
+          update: async (args: {
+            where: { id: string };
+            data: { repos: string[] };
+          }) => {
             updateArgs = args;
             return {
               id: args.where.id,
@@ -359,6 +384,71 @@ describe("admin UI — new local agent create flow", () => {
       res.status === 200 ||
       (res.status === 302 && !location.startsWith("/admin/agents/agent-"));
     expect(isErrorResponse).toBe(true);
+  });
+
+  it("POST /admin/agents with invalid repo format — deletes agent and redirects to error page", async () => {
+    let deleteCalled = false;
+    const deps = makeMockDeps({
+      prisma: {
+        ...makeMockDeps().prisma,
+        agent: {
+          ...makeMockDeps().prisma.agent,
+          create: async (args: {
+            data: { name: string; selfHosted?: boolean };
+          }) => ({
+            id: NEW_AGENT_ID,
+            name: args.data.name,
+            slackId: null,
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+            repos: [],
+          }),
+          delete: async () => {
+            deleteCalled = true;
+            return {
+              id: NEW_AGENT_ID,
+              name: "My Local Agent",
+              slackId: null,
+              createdAt: new Date("2024-01-01"),
+              updatedAt: new Date("2024-01-01"),
+              repos: [],
+            };
+          },
+        },
+      },
+    });
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({
+      name: "My Local Agent",
+      repos: "not-valid-repo",
+    });
+    const res = await app.request("/admin/agents", {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${adminCookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(
+      "/admin/agents/new?error=invalid_repo_format",
+    );
+    expect(deleteCalled).toBe(true);
+  });
+
+  it("GET /admin/agents/new with error query param — renders error banner", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request(
+      "/admin/agents/new?error=invalid_repo_format",
+      {
+        headers: { Cookie: `admin_session=${adminCookie}` },
+      },
+    );
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("alert-error");
+    expect(html).toContain("Repo must be in org/repo format");
   });
 
   // ── /admin/agents list page has "New local agent" button ──────────────────
