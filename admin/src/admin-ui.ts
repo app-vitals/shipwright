@@ -1755,7 +1755,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   app.get("/admin/prs", requireAuth, async (c) => {
     if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
 
-    const stateParam = c.req.query("state") ?? undefined;
+    const stateParam = c.req.query("state") ?? "open";
     const reviewState = c.req.query("reviewState") ?? undefined;
     const repo = c.req.query("repo") ?? undefined;
     const taskId = c.req.query("taskId") ?? undefined;
