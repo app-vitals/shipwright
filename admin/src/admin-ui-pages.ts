@@ -2119,6 +2119,9 @@ export function renderTokensPage(
   rawToken?: string,
   timezone?: string,
   error?: string,
+  agents?: Array<{ id: string; name: string }>,
+  selectedAgentId?: string,
+  taskStoreBaseUrl?: string,
 ): string {
   const tz = timezone ?? "America/Los_Angeles";
   const fmt = (d: Date | string | null | undefined) => {
@@ -2139,6 +2142,12 @@ export function renderTokensPage(
     ? `<div class="alert alert-danger" style="margin-bottom:16px">${escapeHtml(error)}</div>`
     : "";
 
+  const envBlock =
+    rawToken && taskStoreBaseUrl
+      ? `<pre style="background:#f3f4f6;border-radius:4px;padding:12px;margin-top:12px;font-size:12px;font-family:monospace;overflow-x:auto">export SHIPWRIGHT_TASK_STORE_URL=${escapeHtml(taskStoreBaseUrl)}
+export SHIPWRIGHT_TASK_STORE_TOKEN=${escapeHtml(rawToken)}</pre>`
+      : "";
+
   const rawTokenBanner = rawToken
     ? `<div class="alert alert-success" style="margin-bottom:16px">
         <strong>Token created.</strong> Copy it now — it will not be shown again.<br>
@@ -2147,6 +2156,7 @@ export function renderTokensPage(
           onclick="navigator.clipboard.writeText(document.getElementById('raw-token').textContent)">
           Copy
         </button>
+        ${envBlock}
       </div>`
     : "";
 
@@ -2174,6 +2184,14 @@ export function renderTokensPage(
           )
           .join("");
 
+  const agentOptions = [
+    `<option value="">— admin token —</option>`,
+    ...(agents ?? []).map(
+      (a) =>
+        `<option value="${escapeHtml(a.id)}"${a.id === selectedAgentId ? " selected" : ""}>${escapeHtml(a.name)}</option>`,
+    ),
+  ].join("");
+
   const createForm = !degraded
     ? `<div class="card" style="margin-top:24px">
         <h2 style="font-size:15px;font-weight:600;margin-bottom:12px">Create token</h2>
@@ -2183,8 +2201,8 @@ export function renderTokensPage(
             <input type="text" name="label" placeholder="e.g. ci-pipeline" class="form-input" style="width:220px" required>
           </div>
           <div>
-            <label style="display:block;font-size:12px;color:#6b7280;margin-bottom:4px">Agent ID (optional — blank for admin token)</label>
-            <input type="text" name="agentId" placeholder="agent-id" class="form-input" style="width:220px">
+            <label style="display:block;font-size:12px;color:#6b7280;margin-bottom:4px">Agent (optional — blank for admin token)</label>
+            <select name="agentId" class="form-input" style="width:220px">${agentOptions}</select>
           </div>
           <button type="submit" class="btn btn-primary">Create</button>
         </form>

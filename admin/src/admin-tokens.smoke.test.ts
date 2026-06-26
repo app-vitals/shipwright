@@ -330,4 +330,40 @@ describe("admin UI — /admin/tokens routes", () => {
     });
     expect(res.status).toBe(503);
   });
+
+  // ─── Agent pre-select ─────────────────────────────────────────────────────
+
+  it("GET /admin/tokens?agentId=agent-test-123 pre-selects agent in dropdown", async () => {
+    const app = createAdminUIApp(makeMockDeps({ adminListTokens: async () => [] }));
+    const res = await app.request("/admin/tokens?agentId=agent-test-123", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('value="agent-test-123" selected');
+  });
+
+  // ─── Env block in success banner ──────────────────────────────────────────
+
+  it("POST /admin/tokens success renders env block with taskStoreBaseUrl", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        adminCreateToken: async () => ({ ...MOCK_TS_TOKEN, rawToken: "sw_raw_abc123" }),
+        taskStoreBaseUrl: "https://tasks.example.com",
+      }),
+    );
+    const body = new URLSearchParams({ label: "ci-token" });
+    const res = await app.request("/admin/tokens", {
+      method: "POST",
+      headers: {
+        Cookie: `admin_session=${cookie}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: body.toString(),
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("SHIPWRIGHT_TASK_STORE_URL=https://tasks.example.com");
+    expect(html).toContain("SHIPWRIGHT_TASK_STORE_TOKEN=sw_raw_abc123");
+  });
 });
