@@ -627,10 +627,16 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     if (!agent) {
       return new Response("Agent not found", { status: 404 });
     }
-    // Type assertion: Prisma Agent has selfHosted field from schema
+    // Construct AgentDetail with selfHosted from Prisma Agent
     const agentDetail: AgentDetail = {
-      ...agent,
-      selfHosted: agent.selfHosted ?? false,
+      id: agent.id,
+      name: agent.name,
+      slackId: agent.slackId ?? null,
+      // biome-ignore lint/suspicious/noExplicitAny: Prisma Agent type doesn't include selfHosted
+      selfHosted: (agent as any).selfHosted ?? false,
+      createdAt: agent.createdAt,
+      updatedAt: agent.updatedAt,
+      repos: agent.repos,
     };
 
     if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
@@ -1027,10 +1033,16 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     if (!agent) {
       return new Response("Agent not found", { status: 404 });
     }
-    // Type assertion: Prisma Agent has selfHosted field from schema
+    // Construct AgentDetail with selfHosted from Prisma Agent
     const agentDetail: AgentDetail = {
-      ...agent,
-      selfHosted: agent.selfHosted ?? false,
+      id: agent.id,
+      name: agent.name,
+      slackId: agent.slackId ?? null,
+      // biome-ignore lint/suspicious/noExplicitAny: Prisma Agent type doesn't include selfHosted
+      selfHosted: (agent as any).selfHosted ?? false,
+      createdAt: agent.createdAt,
+      updatedAt: agent.updatedAt,
+      repos: agent.repos,
     };
     try {
       const { rawToken } = await agentTokenService.create(agentId, label);
