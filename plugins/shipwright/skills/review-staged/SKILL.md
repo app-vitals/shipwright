@@ -32,7 +32,9 @@ gh pr view {prNumber} --repo {org}/{repo} \
 ```
 
 `diffSize` = `additions + deletions`. Treat a record with `reviewState: "approved"` as an
-APPROVE verdict; `reviewState: "posted"` as a COMMENT verdict.
+APPROVE verdict; `reviewState: "posted"` as a COMMENT verdict. `reviewState: "in_progress"`
+also maps to COMMENT — backwards compatibility for records staged before the verdict-persist
+fix (those records had their verdict omitted from the staging PATCH).
 
 If no staged records exist across all repos: print `No staged reviews. Run /shipwright:review to stage some.` and stop.
 
@@ -48,7 +50,9 @@ gh api /user -q '.login'
 
 Sort the staged entries:
 
-1. **APPROVEs first** (`reviewState: "approved"`), then **COMMENTs** (`reviewState: "posted"`)
+1. **APPROVEs first** (`reviewState: "approved"`), then **COMMENTs** (`reviewState: "posted"`
+   or `reviewState: "in_progress"` — the latter for backwards-compat with records staged
+   before the verdict-persist fix)
 2. Within each group, **smallest `diffSize` to largest**
 
 Print the queue header so the owner sees what's coming:
