@@ -102,7 +102,8 @@ stale metadata) to populate the display:
 gh pr view {pr} --repo {org}/{repo} --json title,additions,deletions
 ```
 `diffSize` = `additions + deletions`. Treat a record with `reviewState: "approved"` as an
-APPROVE verdict for sorting.
+APPROVE verdict for sorting. `reviewState: "in_progress"` means COMMENT (records staged
+before the verdict-persist fix — backwards-compatible).
 
 Present them in priority order:
 1. **APPROVE verdicts first** (`reviewState: "approved"`) — unblocking is highest value
@@ -572,7 +573,19 @@ should be held; the inline comments convey the specific feedback to the author.
 
 ### If `auto_post_reviews` is false (default):
 
-1. Mark the PR record staged:
+1. Mark the PR record staged, persisting the verdict so the APPROVE-first sort in
+   `/shipwright:review-staged` (and the drain display above) works correctly:
+
+   If `{verdict}` is `APPROVE`:
+   ```bash
+   curl -sf -X PATCH \
+     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+     -H "Content-Type: application/json" \
+     "$SHIPWRIGHT_TASK_STORE_URL/prs/${PR_RECORD_ID}" \
+     -d '{"staged": true, "reviewState": "approved"}' >/dev/null
+   ```
+
+   If `{verdict}` is `COMMENT`:
    ```bash
    curl -sf -X PATCH \
      -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
@@ -580,6 +593,7 @@ should be held; the inline comments convey the specific feedback to the author.
      "$SHIPWRIGHT_TASK_STORE_URL/prs/${PR_RECORD_ID}" \
      -d '{"staged": true}' >/dev/null
    ```
+
    (`PR_RECORD_ID` is the claim response `.id` from Step 4.)
 2. Post Slack message to the configured channel (see below)
 3. Print: `Review staged for #{pr}. Slack notification sent.`
