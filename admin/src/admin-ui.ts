@@ -104,6 +104,7 @@ interface PrismaAgentLike {
     id: string;
     name: string;
     slackId: string | null;
+    selfHosted: boolean;
     createdAt: Date;
     updatedAt: Date;
     repos: string[];
@@ -627,13 +628,11 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     if (!agent) {
       return new Response("Agent not found", { status: 404 });
     }
-    // Construct AgentDetail with selfHosted from Prisma Agent
     const agentDetail: AgentDetail = {
       id: agent.id,
       name: agent.name,
       slackId: agent.slackId ?? null,
-      // biome-ignore lint/suspicious/noExplicitAny: Prisma Agent type doesn't include selfHosted
-      selfHosted: (agent as any).selfHosted ?? false,
+      selfHosted: agent.selfHosted,
       createdAt: agent.createdAt,
       updatedAt: agent.updatedAt,
       repos: agent.repos,
@@ -1033,13 +1032,11 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     if (!agent) {
       return new Response("Agent not found", { status: 404 });
     }
-    // Construct AgentDetail with selfHosted from Prisma Agent
     const agentDetail: AgentDetail = {
       id: agent.id,
       name: agent.name,
       slackId: agent.slackId ?? null,
-      // biome-ignore lint/suspicious/noExplicitAny: Prisma Agent type doesn't include selfHosted
-      selfHosted: (agent as any).selfHosted ?? false,
+      selfHosted: agent.selfHosted,
       createdAt: agent.createdAt,
       updatedAt: agent.updatedAt,
       repos: agent.repos,

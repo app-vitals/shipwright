@@ -103,6 +103,7 @@ function makeMockDeps(
           id: AGENT_ID,
           name: "Test Agent",
           slackId: "U123456",
+          selfHosted: false,
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
           repos: [],

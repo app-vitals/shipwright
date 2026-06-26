@@ -868,7 +868,6 @@ export function renderAgentDetailPage(
       </a>
     </div>` : ""}
 
-
     <div class="card">
       <div class="card-title">Plugins</div>
       <table class="data-table">
