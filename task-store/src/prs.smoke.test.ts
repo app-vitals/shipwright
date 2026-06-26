@@ -153,6 +153,8 @@ function fakePrService(
       if (filters?.reviewState)
         prs = prs.filter((p) => p.reviewState === filters.reviewState);
       if (filters?.repo) prs = prs.filter((p) => p.repo === filters.repo);
+      if (filters?.staged !== undefined)
+        prs = prs.filter((p) => p.staged === filters.staged);
       return {
         prs,
         total: prs.length,
@@ -594,6 +596,38 @@ describe("/prs routes (smoke)", () => {
     expect(body.prs.every((p: PullRequest) => p.reviewState === "posted")).toBe(
       true,
     );
+  });
+
+  it("GET /prs?staged=true returns only staged records", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1", staged: true }));
+    store.set("pr-2", makePr({ id: "pr-2", staged: false }));
+    store.set("pr-3", makePr({ id: "pr-3", staged: true }));
+    const app = makeApp({ prService: fakePrService({ store }) });
+
+    const res = await app.request("/prs?staged=true", {
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PullRequestListResult;
+    expect(body.prs).toHaveLength(2);
+    expect(body.prs.every((p: PullRequest) => p.staged === true)).toBe(true);
+  });
+
+  it("GET /prs?staged=false returns only non-staged records", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1", staged: true }));
+    store.set("pr-2", makePr({ id: "pr-2", staged: false }));
+    store.set("pr-3", makePr({ id: "pr-3", staged: false }));
+    const app = makeApp({ prService: fakePrService({ store }) });
+
+    const res = await app.request("/prs?staged=false", {
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PullRequestListResult;
+    expect(body.prs).toHaveLength(2);
+    expect(body.prs.every((p: PullRequest) => p.staged === false)).toBe(true);
   });
 
   // ─── GET /prs/:id ─────────────────────────────────────────────────────────

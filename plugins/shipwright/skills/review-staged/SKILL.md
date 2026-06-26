@@ -1,6 +1,6 @@
 ---
 name: review-staged
-description: Walk through staged PR reviews from `state/reviews.json` conversationally — APPROVEs first, then COMMENTs, smallest diff to largest within each. For each PR, present a concise summary and accept owner direction (post, skip, draft, discuss). Use when asked to "drain the staged reviews", "walk through staged reviews", or "what's staged".
+description: Walk through staged PR reviews from the task store conversationally — APPROVEs first, then COMMENTs, smallest diff to largest within each. For each PR, present a concise summary and accept owner direction (post, skip, draft, discuss). Use when asked to "drain the staged reviews", "walk through staged reviews", or "what's staged".
 ---
 
 # Review Staged
@@ -8,18 +8,35 @@ description: Walk through staged PR reviews from `state/reviews.json` conversati
 Conversational walkthrough of staged reviews. The owner sees one PR at a time
 and steers each with a verb. No reviews are posted without an explicit "post it".
 
-This skill assumes `/shipwright:review` has already staged the reviews into
-`state/reviews.json` + `state/reviews/PR_REVIEW_{pr}.md`. It does **not** review
-new PRs and does **not** merge anything — merging is handled exclusively by
-`/shipwright:deploy`.
+This skill assumes `/shipwright:review` has already staged the reviews into the
+task store (`staged: true`) and written review files to `state/reviews/PR_REVIEW_{pr}.md`
+and `state/reviews/pr_review_{pr}.json`. It does **not** review new PRs and does
+**not** merge anything — merging is handled exclusively by `/shipwright:deploy`.
 
 ---
 
 ## 1. Load state
 
-Read `state/reviews.json`. Filter to entries with `status: "staged"`.
+Fetch staged PR records from the task store for each configured repo:
 
-If none: print `No staged reviews. Run /shipwright:review to stage some.` and stop.
+```bash
+curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs?repo={org}/{repo}&staged=true" | jq -c '.prs[]'
+```
+
+For each record, fetch current GitHub metadata (title, additions, deletions, headRefOid, url):
+
+```bash
+gh pr view {prNumber} --repo {org}/{repo} \
+  --json number,title,author,headRefName,baseRefName,headRefOid,isDraft,reviews,commits,additions,deletions,url
+```
+
+`diffSize` = `additions + deletions`. Treat a record with `reviewState: "approved"` as an
+APPROVE verdict; `reviewState: "posted"` as a COMMENT verdict. `reviewState: "in_progress"`
+also maps to COMMENT — backwards compatibility for records staged before the verdict-persist
+fix (those records had their verdict omitted from the staging PATCH).
+
+If no staged records exist across all repos: print `No staged reviews. Run /shipwright:review to stage some.` and stop.
 
 Resolve the current GitHub user once and remember it for the rest of the run:
 
@@ -33,7 +50,9 @@ gh api /user -q '.login'
 
 Sort the staged entries:
 
-1. **APPROVEs first**, then **COMMENTs** (use the `verdict` field)
+1. **APPROVEs first** (`reviewState: "approved"`), then **COMMENTs** (`reviewState: "posted"`
+   or `reviewState: "in_progress"` — the latter for backwards-compat with records staged
+   before the verdict-persist fix)
 2. Within each group, **smallest `diffSize` to largest**
 
 Print the queue header so the owner sees what's coming:
@@ -56,7 +75,7 @@ Walk the queue in order. For each entry:
 ### 3a. Refresh PR state from GitHub
 
 ```bash
-gh pr view {pr} --repo {org}/{repo} \
+gh pr view {prNumber} --repo {org}/{repo} \
   --json number,title,author,headRefName,baseRefName,headRefOid,isDraft,reviews,commits,additions,deletions,url
 ```
 
@@ -70,11 +89,11 @@ gh pr view {pr} --repo {org}/{repo} \
   `Skipping #{pr} — @{login} requested changes on {date} and there are no commits since.`
   (Use the same teammate-comment logic from `/shipwright:review` Step 3b: not a bot,
   not `CURRENT_USER`, no commits pushed after the review.)
-- **Stale staged review** — if `lastReviewedCommit` differs from the current `headRefOid`,
+- **Stale staged review** — if `record.commitSha` differs from the current `headRefOid`,
   skip with: `Skipping #{pr} — new commits since review was staged. Re-run /shipwright:review {org}/{repo}#{pr}.`
 
-When a PR is skipped for any reason, leave its `state/reviews.json` entry untouched
-(status stays `staged`). CHANGES_REQUESTED state is re-derived from GitHub on every run.
+When a PR is skipped for any reason, leave its task store record untouched
+(`staged: true` stays set). CHANGES_REQUESTED state is re-derived from GitHub on every run.
 
 ### 3c. Dependabot cross-check
 
@@ -143,14 +162,49 @@ Match the owner's response:
 
 Use the existing posting mechanics from `/shipwright:review` Step 14 (re-fetch
 for new teammate feedback, then `gh api -X POST /repos/{org}/{repo}/pulls/{pr}/reviews`
-with `state/reviews/pr_review_{pr}.json`). Update `state/reviews.json` with
-`posted: true`, `postedAt`, `status: "posted"`. Print the posted review URL.
+with `state/reviews/pr_review_{pr}.json`).
+
+After posting successfully, update the task store record:
+
+1. Clear the staged flag:
+   ```bash
+   curl -sf -X PATCH \
+     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+     -H "Content-Type: application/json" \
+     "$SHIPWRIGHT_TASK_STORE_URL/prs/{record.id}" \
+     -d '{"staged": false}' >/dev/null
+   ```
+
+2. Mark the review complete:
+   ```bash
+   curl -sf -X POST \
+     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+     "$SHIPWRIGHT_TASK_STORE_URL/prs/{record.id}/complete" >/dev/null
+   ```
+
+3. Re-assert agentId and reviewState. `complete()` unconditionally sets `reviewState: "posted"`,
+   so for APPROVE verdicts (where the staged record had `reviewState: "approved"`), explicitly
+   re-assert `"approved"` in this PATCH — mirroring review.md Step 11b:
+   ```bash
+   if [ "{record.reviewState}" = "approved" ]; then
+     PATCH_DATA="{\"agentId\": \"$SHIPWRIGHT_AGENT_ID\", \"reviewedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\", \"reviewState\": \"approved\"}"
+   else
+     PATCH_DATA="{\"agentId\": \"$SHIPWRIGHT_AGENT_ID\", \"reviewedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}"
+   fi
+   curl -sf -X PATCH \
+     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+     -H "Content-Type: application/json" \
+     "$SHIPWRIGHT_TASK_STORE_URL/prs/{record.id}" \
+     -d "$PATCH_DATA" >/dev/null
+   ```
+
+Print the posted review URL.
 
 Move to the next PR.
 
 ### `skip`
 
-Leave the entry as `status: "staged"`. Do nothing. Move to the next PR.
+Leave the task store record as `staged: true`. Do nothing. Move to the next PR.
 
 ### `next`
 
@@ -213,6 +267,8 @@ Done. {posted}/{N} posted, {skipped}/{N} skipped.
 
 - This skill never auto-posts. Every post requires an explicit "post it" from the owner.
 - This skill never merges. Merging is handled exclusively by `/shipwright:deploy`.
-- This skill never re-reviews. If the head SHA has moved, it skips and points to
-  `/shipwright:review {org}/{repo}#{pr}`.
+- This skill never re-reviews. If the head SHA has moved (current `headRefOid` differs from
+  `record.commitSha`), it skips and points to `/shipwright:review {org}/{repo}#{pr}`.
 - Use `gh` CLI for all GitHub interactions. Respect the active `GH_TOKEN` / `gh auth` context.
+- The task store is the source of truth for staged state. No `state/reviews.json` reads or
+  writes occur in this skill.

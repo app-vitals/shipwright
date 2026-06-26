@@ -37,6 +37,7 @@ const AGENT: AgentDetail = {
   id: "agent-123",
   name: "Test Agent",
   slackId: "U12345",
+  selfHosted: false,
   createdAt: new Date("2024-01-01T00:00:00Z"),
   updatedAt: new Date("2024-01-02T00:00:00Z"),
   repos: [],
@@ -2168,6 +2169,7 @@ const PR_ITEM: PullRequestItem = {
   state: "open",
   reviewState: "posted",
   patchCycles: 2,
+  reviewCycles: 1,
   reviewedAt: "2026-06-01T10:00:00Z",
   patchedAt: "2026-06-02T11:00:00Z",
 };
@@ -2194,7 +2196,14 @@ describe("renderTaskDetailPage — Pull Request Review section", () => {
 
   test("renders patchCycles count when pullRequest is present", () => {
     const html = render(PR_ITEM);
+    expect(html).toContain("Patch Cycles");
     expect(html).toContain("2");
+  });
+
+  test("renders reviewCycles count when pullRequest is present", () => {
+    const html = render(PR_ITEM);
+    expect(html).toContain("Review Cycles");
+    expect(html).toContain("1");
   });
 
   test("renders reviewedAt when pullRequest is present", () => {
@@ -2251,6 +2260,7 @@ const PR_LIST_ITEM_1: PrListItem = {
   reviewState: "pending",
   commitSha: "abc123",
   patchCycles: 0,
+  reviewCycles: 0,
   agentId: "agent-001",
   claimedBy: "agent-001",
   reviewedAt: null,
@@ -2272,6 +2282,7 @@ const PR_LIST_ITEM_2: PrListItem = {
   reviewState: "in_review",
   commitSha: null,
   patchCycles: 3,
+  reviewCycles: 2,
   agentId: null,
   claimedBy: null,
   reviewedAt: "2026-06-02T10:00:00Z",
@@ -2315,7 +2326,7 @@ describe("renderPrsPage", () => {
 
   test("renders table with required column headers", () => {
     const html = render([PR_LIST_ITEM_1]);
-    expect(html).toContain("ID");
+    expect(html).toContain("Review Cycles");
     expect(html).toContain("Repo");
     expect(html).toContain("PR#");
     expect(html).toContain("Task");
@@ -2428,6 +2439,73 @@ describe("renderPrsPage", () => {
     const html = render();
     expect(html).toContain('href="/admin/prs" class="vos-nav-link active"');
   });
+
+  test("tab URLs preserve reviewState filter when reviewState is set", () => {
+    const html = render([], { state: "open", reviewState: "posted" });
+    expect(html).toContain("reviewState=posted");
+    // Both tab hrefs should carry the reviewState param
+    const openTabMatch = html.match(/href="[^"]*state=open[^"]*"/);
+    expect(openTabMatch).toBeTruthy();
+    expect(openTabMatch?.[0]).toContain("reviewState=posted");
+  });
+
+  test("reviewState dropdown pre-selects the active option", () => {
+    const html = render([], { reviewState: "posted" });
+    expect(html).toContain('value="posted" selected');
+  });
+});
+
+// ─── renderPrsPage — datalist autocomplete (AFP-1.2) ─────────────────────────
+
+describe("renderPrsPage — datalist autocomplete", () => {
+  const pagination = { total: 0, limit: 50, page: 1 };
+
+  test("renderPrsPage with repos suggestions renders repo datalist", () => {
+    const html = renderPrsPage(
+      [],
+      {},
+      false,
+      USER_NAME,
+      {},
+      pagination,
+      undefined,
+      { repos: ["org/repo-a", "org/repo-b"] },
+    );
+    expect(html).toContain('<datalist id="prs-repos-list">');
+    expect(html).toContain('<option value="org/repo-a">');
+    expect(html).toContain('<option value="org/repo-b">');
+    expect(html).toContain('list="prs-repos-list"');
+  });
+
+  test("renderPrsPage without suggestions renders plain text input (no datalist)", () => {
+    const html = renderPrsPage(
+      [],
+      {},
+      false,
+      USER_NAME,
+      {},
+      pagination,
+      undefined,
+      undefined,
+    );
+    expect(html).not.toContain("<datalist");
+    expect(html).not.toContain('list="prs-repos-list"');
+  });
+
+  test("renderPrsPage escapes repo suggestion values to prevent XSS", () => {
+    const html = renderPrsPage(
+      [],
+      {},
+      false,
+      USER_NAME,
+      {},
+      pagination,
+      undefined,
+      { repos: ['<script>alert("xss")</script>'] },
+    );
+    expect(html).not.toContain('<script>alert("xss")</script>');
+    expect(html).toContain("&lt;script&gt;");
+  });
 });
 
 // ─── renderPrDetailPage ──────────────────────────────────────────────────────
@@ -2442,6 +2520,7 @@ const PR_DETAIL: PrListItem = {
   reviewState: "in_review",
   commitSha: "deadbeef",
   patchCycles: 2,
+  reviewCycles: 3,
   agentId: "agent-x",
   claimedBy: "agent-x",
   reviewedAt: "2026-06-10T10:00:00Z",
@@ -2487,7 +2566,14 @@ describe("renderPrDetailPage", () => {
 
   test("renders patchCycles field", () => {
     const html = render();
+    expect(html).toContain("Patch Cycles");
     expect(html).toContain("2");
+  });
+
+  test("renders reviewCycles field", () => {
+    const html = render();
+    expect(html).toContain("Review Cycles");
+    expect(html).toContain("3");
   });
 
   test("renders taskId field when present", () => {
