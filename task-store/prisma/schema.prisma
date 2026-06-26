@@ -84,6 +84,22 @@ model Task {
   claimedAt   String? // ISO timestamp when claimed
   heartbeatAt String? // ISO timestamp of last heartbeat (liveness check)
 
+  // ─── Execution data columns ───
+  simplifyTotal       Int?
+  simplifyDry         Int?
+  simplifyDeadCode    Int?
+  simplifyNaming      Int?
+  simplifyComplexity  Int?
+  simplifyConsistency Int?
+  coverageDelta       Float?
+  effortLevel         String? // "low" | "medium" | "high"
+  inputTokens         Int?
+  outputTokens        Int?
+  cacheReadTokens     Int?
+  cacheCreationTokens Int?
+  costUsd             Float?
+  metadata            Json? // escape hatch for structured data without dedicated columns
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

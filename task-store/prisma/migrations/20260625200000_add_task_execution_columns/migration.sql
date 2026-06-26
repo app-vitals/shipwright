@@ -1,0 +1,15 @@
+-- AlterTable
+ALTER TABLE "Task" ADD COLUMN "simplifyTotal" INTEGER,
+ADD COLUMN "simplifyDry" INTEGER,
+ADD COLUMN "simplifyDeadCode" INTEGER,
+ADD COLUMN "simplifyNaming" INTEGER,
+ADD COLUMN "simplifyComplexity" INTEGER,
+ADD COLUMN "simplifyConsistency" INTEGER,
+ADD COLUMN "coverageDelta" DOUBLE PRECISION,
+ADD COLUMN "effortLevel" TEXT,
+ADD COLUMN "inputTokens" INTEGER,
+ADD COLUMN "outputTokens" INTEGER,
+ADD COLUMN "cacheReadTokens" INTEGER,
+ADD COLUMN "cacheCreationTokens" INTEGER,
+ADD COLUMN "costUsd" DOUBLE PRECISION,
+ADD COLUMN "metadata" JSONB;
