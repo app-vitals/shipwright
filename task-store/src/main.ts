@@ -81,6 +81,12 @@ async function startServer(): Promise<void> {
   const tokenService = new TaskTokenService(prisma);
   const pullRequestService = new PullRequestService(prisma);
 
+  const seedToken = process.env.TASK_STORE_SEED_ADMIN_TOKEN;
+  if (seedToken) {
+    await tokenService.seed(seedToken);
+    console.log("[task-store] admin seed token upserted");
+  }
+
   // Build scope resolver when agents service URL is configured.
   const agentsServiceUrl = process.env.SHIPWRIGHT_TASK_STORE_AGENTS_URL;
   const agentsServiceApiKey = process.env.SHIPWRIGHT_TASK_STORE_AGENTS_API_KEY;

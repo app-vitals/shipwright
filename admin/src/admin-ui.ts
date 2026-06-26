@@ -1602,12 +1602,14 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     const status = c.req.query("status") ?? undefined;
     const stateRaw = c.req.query("state");
     const state: "ready" | "in_progress" | "blocked" | "closed" | undefined =
-      stateRaw === "ready" ||
-      stateRaw === "in_progress" ||
-      stateRaw === "blocked" ||
-      stateRaw === "closed"
-        ? stateRaw
-        : undefined;
+      status
+        ? undefined
+        : stateRaw === "ready" ||
+            stateRaw === "in_progress" ||
+            stateRaw === "blocked" ||
+            stateRaw === "closed"
+          ? stateRaw
+          : undefined;
     const session = c.req.query("session") ?? undefined;
     const repo = c.req.query("repo") ?? undefined;
     const agent = c.req.query("agent") ?? undefined;
