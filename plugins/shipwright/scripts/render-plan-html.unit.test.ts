@@ -222,7 +222,8 @@ describe("renderPlanHtml — self-contained", () => {
   test("does not contain <link rel=stylesheet> pointing to external brand files", () => {
     const html = renderPlanHtml(FIXTURE);
     // Should not have any stylesheet link (fonts via @import inside <style> is OK)
-    const linkTags = html.match(/<link[^>]+rel=["']stylesheet["'][^>]*>/gi) ?? [];
+    const linkTags =
+      html.match(/<link[^>]+rel=["']stylesheet["'][^>]*>/gi) ?? [];
     expect(linkTags.length).toBe(0);
   });
 
@@ -325,6 +326,6 @@ describe("renderPlanHtml — edge cases", () => {
       session: '<img src=x onerror="alert(1)">',
     };
     const html = renderPlanHtml(xssPlan);
-    expect(html).not.toContain('<img src=x onerror=');
+    expect(html).not.toContain("<img src=x onerror=");
   });
 });

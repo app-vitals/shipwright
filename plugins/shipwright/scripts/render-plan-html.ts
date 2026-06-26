@@ -68,7 +68,11 @@ function statusPill(status: TaskStatus): PillStyle {
       return { bg: "#0f2d1e", color: "#34c77b", label: status };
     case "in_progress":
     case "pr_open":
-      return { bg: "#002244", color: "#4f8ef7", label: status.replace("_", " ") };
+      return {
+        bg: "#002244",
+        color: "#4f8ef7",
+        label: status.replace("_", " "),
+      };
     case "blocked":
     case "cancelled":
       return { bg: "rgba(248,113,113,0.12)", color: "#f87171", label: status };
@@ -121,7 +125,11 @@ function renderStatCards(plan: PlanData): string {
   const totalHours = plan.tasks.reduce((s, t) => s + t.hours, 0);
   const layers = [...new Set(plan.tasks.map((t) => t.layer))];
 
-  function statCard(value: string | number, label: string, accent?: string): string {
+  function statCard(
+    value: string | number,
+    label: string,
+    accent?: string,
+  ): string {
     const valueStr = String(value);
     return `
       <div class="sw-card" style="background:#0f172a;border:1px solid #1e293b;border-radius:16px;padding:1.5rem;">
@@ -191,7 +199,8 @@ function renderTaskTable(plan: PlanData): string {
   const rows = plan.tasks
     .map((task) => {
       const pill = statusPill(task.status);
-      const deps = task.dependencies.length > 0 ? task.dependencies.join(", ") : "—";
+      const deps =
+        task.dependencies.length > 0 ? task.dependencies.join(", ") : "—";
       return `
         <tr>
           <td style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:0.8125rem;color:rgba(255,255,255,0.5);white-space:nowrap;">${esc(task.id)}</td>
