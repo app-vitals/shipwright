@@ -65,6 +65,9 @@ const DEV_TASK_STORE_ADMIN_TOKEN = "dev-task-store-admin-token";
 // Session-cookie signing key (HS256). Must be non-empty — Web Crypto rejects a
 // zero-length HMAC key with "DataError", which surfaces as a 500 on first login.
 const DUMMY_SESSION_SECRET = "dev-session-secret-not-for-production-use!";
+// Bootstrap admin token seeded into the task-store on startup. Not a real
+// secret — used only against the local dev Postgres instance.
+export const DEV_TASK_STORE_ADMIN_TOKEN = "dev-task-store-admin-token";
 /** Docker image tag for the agent container. */
 const DEV_DOCKER_IMAGE = "shipwright-agent-dev";
 /** Named Docker volume that persists agent-home across container restarts. */
@@ -219,6 +222,9 @@ export const STACK_PANES: Pane[] = [
       // DATABASE_URL_SHIPWRIGHT_TASK_STORE. Shares the local Postgres server with
       // the admin service but a distinct database, per the schema's warning.
       DATABASE_URL_SHIPWRIGHT_TASK_STORE: DEV_TASK_STORE_DATABASE_URL,
+      // Seed a bootstrap admin token on startup so the admin pane can reach the
+      // task-store API without manual token provisioning.
+      TASK_STORE_SEED_ADMIN_TOKEN: DEV_TASK_STORE_ADMIN_TOKEN,
     },
   },
   {
