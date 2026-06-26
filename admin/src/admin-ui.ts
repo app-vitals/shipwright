@@ -628,7 +628,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       return new Response("Agent not found", { status: 404 });
     }
     // Type assertion: Prisma Agent has selfHosted field from schema
-    const agentDetail: AgentDetail = agent as any;
+    const agentDetail: AgentDetail = {
+      ...agent,
+      selfHosted: agent.selfHosted ?? false,
+    };
 
     if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
       return new Response("Forbidden", { status: 403 });
@@ -1025,7 +1028,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       return new Response("Agent not found", { status: 404 });
     }
     // Type assertion: Prisma Agent has selfHosted field from schema
-    const agentDetail: AgentDetail = agent as any;
+    const agentDetail: AgentDetail = {
+      ...agent,
+      selfHosted: agent.selfHosted ?? false,
+    };
     try {
       const { rawToken } = await agentTokenService.create(agentId, label);
       // Render the page directly (200) rather than redirecting with the token in the URL.
