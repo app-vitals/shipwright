@@ -32,7 +32,7 @@ Every feature moves through the same stages. One `planning/{folder}/` directory 
 | Command | Description |
 |---------|-------------|
 | `/prd {folder}` | Interactive PRD session — qualifying questions, codebase research, and PRODUCT-SPEC.md output ready for /plan-session |
-| `/plan-session {repo} {session}` | Structured planning — reads input docs, analyzes codebase, produces a stateful task breakdown. Accepts 1 arg (session) with auto-detected repo as a fallback. |
+| `/plan-session {repo} {session}` (alias: `/plan-sesh`) | Structured planning — reads input docs, analyzes codebase, produces a stateful task breakdown. Accepts 1 arg (session) with auto-detected repo as a fallback. |
 | `/dev-task {task-id}` | Single task execution — branch, implement, test, simplify, review, PR |
 | `/dev-task {task-id} --merge` | Same as above, but auto-merges after review (used by dev-loop) |
 | `/dev-loop {folder?}` | Autonomous continuous dev — picks next task, runs dev-task --merge in a loop |
