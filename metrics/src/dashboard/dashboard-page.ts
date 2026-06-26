@@ -14,6 +14,13 @@ export interface DashboardPageOptions {
   isOwner?: boolean;
   /** Path prefix the app is mounted at (e.g. "/sw"). Empty string or undefined = root. */
   basePath?: string;
+  /**
+   * Base URL of the admin service (e.g. "http://localhost:3001"), used to make the
+   * toolbar's Agents/Tasks/PRs links absolute when the admin console runs on a
+   * different origin than the metrics dashboard (local `task stack`). Empty string
+   * or undefined = same-origin relative links (the default for single-host ingress).
+   */
+  adminBaseUrl?: string;
 }
 
 function infoIcon(tip: string): string {
@@ -32,7 +39,7 @@ export function renderDashboardPage(opts: DashboardPageOptions): string {
   <link rel="stylesheet" href="${base}/dashboard/styles.css" />
 </head>
 <body>
-  ${renderShipwrightToolbar({ userName: opts.userName, activePath: `${base}/dashboard`, logoutAction: "/admin/logout", metricsUrl: `${base}/dashboard` })}
+  ${renderShipwrightToolbar({ userName: opts.userName, activePath: `${base}/dashboard`, logoutAction: "/admin/logout", metricsUrl: `${base}/dashboard`, adminBaseUrl: opts.adminBaseUrl })}
   <div class="app">
 
     <!-- Page Controls -->

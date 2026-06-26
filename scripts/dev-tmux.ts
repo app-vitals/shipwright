@@ -142,13 +142,17 @@ export type BuildOpts = {
  * interactive scratch shell. Returns one shell line for `tmux send-keys`.
  */
 export function buildLogsBanner(): string {
+  // The admin console (:3001) is the front door — it hosts the full nav
+  // (Agents · Tasks · PRs · Metrics) and is what auto-opens. The metrics
+  // dashboard is a separate service on its own port; each line is labeled with
+  // what it serves so nobody guesses /admin/* on the metrics port (a 404).
   const lines = [
     "Shipwright dev stack",
-    `  dashboard   ${DASHBOARD_URL}   (opening in your browser)`,
-    `  admin       http://localhost:${ADMIN_PORT}`,
-    `  task-store  http://localhost:${TASK_STORE_PORT}`,
-    `  agent       http://localhost:${AGENT_PORT}`,
-    "  chat        <- the pane to the left",
+    `  console (agents/tasks/PRs)  ${ADMIN_DEV_LOGIN_URL}   (opening in your browser)`,
+    `  metrics dashboard           ${DASHBOARD_URL}`,
+    `  task-store API              http://localhost:${TASK_STORE_PORT}`,
+    `  agent (use the chat pane)   http://localhost:${AGENT_PORT}`,
+    "  chat                        <- the pane to the left",
     "",
     "Scratch shell — run ad-hoc commands here.",
   ];
@@ -168,6 +172,11 @@ export const STACK_PANES: Pane[] = [
     env: {
       METRICS_DB_PATH: "state/metrics.db",
       METRICS_DASHBOARD_DEV_AUTH: "true",
+      // The admin console runs on a different origin (:3001) than the metrics
+      // dashboard in the local stack, so the dashboard toolbar's Agents/Tasks/PRs
+      // links must be absolute or they 404 on this origin. Production leaves this
+      // unset → relative links (single-host ingress).
+      METRICS_ADMIN_APP_URL: `http://localhost:${ADMIN_PORT}`,
     },
   },
   {

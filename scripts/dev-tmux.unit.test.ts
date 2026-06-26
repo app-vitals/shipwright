@@ -227,6 +227,13 @@ describe("runStack — per-pane commands via injected exec", () => {
     expect(sk?.join(" ")).not.toContain("METRICS_OFFLINE=true");
   });
 
+  test("metrics pane sets METRICS_ADMIN_APP_URL so dashboard nav cross-links to the admin console", () => {
+    const { calls, exec } = makeRecorder();
+    runStack(STACK_PANES, exec);
+    const sk = sendKeysForPane(calls, 0)?.join(" ") ?? "";
+    expect(sk).toContain(`METRICS_ADMIN_APP_URL=http://localhost:${ADMIN_PORT}`);
+  });
+
   test("admin pane (pane 1) runs admin/src/main.ts with PORT=3001 and DATABASE_URL_SHIPWRIGHT_ADMIN", () => {
     const { calls, exec } = makeRecorder();
     runStack(STACK_PANES, exec);
@@ -289,6 +296,20 @@ describe("runStack — per-pane commands via injected exec", () => {
   test("logs banner includes admin service URL", () => {
     const banner = buildLogsBanner();
     expect(banner).toContain(`localhost:${ADMIN_PORT}`);
+  });
+
+  test("logs banner labels the admin console as the front door that opens in the browser", () => {
+    const banner = buildLogsBanner();
+    // The "opening in your browser" annotation is attached to the admin console
+    // (dev-login) URL — the page with the full nav — not the metrics dashboard.
+    expect(banner).toContain(
+      `${ADMIN_DEV_LOGIN_URL}   (opening in your browser)`,
+    );
+    expect(banner).not.toContain(
+      `${DASHBOARD_URL}   (opening in your browser)`,
+    );
+    // Metrics still appears, just as a separate labeled line (not the front door).
+    expect(banner).toContain(DASHBOARD_URL);
   });
 
   test("exec is invoked once per built command, in order", () => {
