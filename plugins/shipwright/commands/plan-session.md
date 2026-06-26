@@ -11,6 +11,8 @@ arguments:
 
 # Plan Session: $ARGUMENTS
 
+> **Task store setup:** This command appends planned tasks to the Shipwright task store. If `SHIPWRIGHT_TASK_STORE_URL` or `SHIPWRIGHT_TASK_STORE_TOKEN` is missing, invoke `/shipwright:task-store` for setup instructions.
+
 Parse `$ARGUMENTS` to extract:
 - **repo**: first argument
 - **session**: second argument

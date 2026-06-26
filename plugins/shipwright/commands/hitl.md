@@ -12,6 +12,8 @@ mark the task `done` when the human confirms completion.
 
 **This skill runs interactively. Pause and assist the human through each step.**
 
+> **Task store setup:** This command reads and updates tasks in the Shipwright task store. If `SHIPWRIGHT_TASK_STORE_URL` or `SHIPWRIGHT_TASK_STORE_TOKEN` is missing, invoke `/shipwright:task-store` for setup instructions. For local HITL use, create an admin token with the Agent ID field left blank.
+
 ---
 
 ## Step 1: Parse Arguments

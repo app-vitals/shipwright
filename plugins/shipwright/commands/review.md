@@ -11,6 +11,8 @@ Evaluate open PRs and post findings. Scope: review only — no patching, merging
 re-posting on PRs that haven't changed. It is not shared state and is not read by other
 agents — each agent maintains its own.
 
+> **Task store setup:** This command updates task status in the Shipwright task store after review. If `SHIPWRIGHT_TASK_STORE_URL` or `SHIPWRIGHT_TASK_STORE_TOKEN` is missing, invoke `/shipwright:task-store` for setup instructions.
+
 ---
 
 ## Arguments
