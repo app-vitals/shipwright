@@ -326,7 +326,7 @@ All subsequent steps run from `worktrees/{repo}-{branch-slug}/`.
 7. **Test-readiness context** (optional): try to read `worktrees/{repo}-{branch-slug}/docs/test-readiness/test-system.md`. If absent, note that no repo-specific test-readiness doc exists. When the changed files include any path that looks like a test file — by common conventions across languages (e.g. files named or located in a way that signals they contain tests, such as files in `test/`, `tests/`, `spec/`, or `__tests__/` directories, or files whose names follow typical test-naming conventions for the project's language), also extract the "## Testing" section from the root CLAUDE.md (if present). Use the project's language and toolchain (visible from the diff and CLAUDE.md) to recognise test files — do not apply a fixed set of glob patterns. Combine both pieces into `testReadinessContext`. If neither produces content, `testReadinessContext` is absent — omit it entirely from the subagent prompt.
 
 `lastReviewedCommit` is the `LAST_REVIEWED_COMMIT` value saved from the pre-claim record in
-Step 4 (the record's `commitSha` before the claim overwrote it).
+Step 3b (the record's `commitSha` before the claim overwrote it).
 
 Apply the unresolved comment check from Step 3 using the fetched `reviews` and `comments`
 (they were just fetched above — no extra API call needed). **If `lastReviewedCommit` is set AND
