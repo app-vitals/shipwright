@@ -33,6 +33,7 @@ describeOrSkip("Task store schema (integration)", () => {
   // ─── Task round-trip ──────────────────────────────────────────────────────────
 
   it("creates a Task row and reads back all columns", async () => {
+    const testMetadata = { key: "value", nested: { field: 123 } };
     const created = await prisma.task.create({
       data: {
         title: "Scaffold the task store",
@@ -73,6 +74,21 @@ describeOrSkip("Task store schema (integration)", () => {
         agentHint: "agent-beta",
         claimedAt: "2026-06-22T16:30:00.000Z",
         heartbeatAt: "2026-06-22T16:45:00.000Z",
+        // Execution data columns
+        simplifyTotal: 15,
+        simplifyDry: 3,
+        simplifyDeadCode: 2,
+        simplifyNaming: 4,
+        simplifyComplexity: 3,
+        simplifyConsistency: 3,
+        coverageDelta: 2.5,
+        effortLevel: "medium",
+        inputTokens: 50000,
+        outputTokens: 25000,
+        cacheReadTokens: 10000,
+        cacheCreationTokens: 5000,
+        costUsd: 1.25,
+        metadata: testMetadata,
       },
     });
 
@@ -120,6 +136,22 @@ describeOrSkip("Task store schema (integration)", () => {
     expect(read.agentHint).toBe("agent-beta");
     expect(read.claimedAt).toBe("2026-06-22T16:30:00.000Z");
     expect(read.heartbeatAt).toBe("2026-06-22T16:45:00.000Z");
+
+    // Execution data columns
+    expect(read.simplifyTotal).toBe(15);
+    expect(read.simplifyDry).toBe(3);
+    expect(read.simplifyDeadCode).toBe(2);
+    expect(read.simplifyNaming).toBe(4);
+    expect(read.simplifyComplexity).toBe(3);
+    expect(read.simplifyConsistency).toBe(3);
+    expect(read.coverageDelta).toBe(2.5);
+    expect(read.effortLevel).toBe("medium");
+    expect(read.inputTokens).toBe(50000);
+    expect(read.outputTokens).toBe(25000);
+    expect(read.cacheReadTokens).toBe(10000);
+    expect(read.cacheCreationTokens).toBe(5000);
+    expect(read.costUsd).toBe(1.25);
+    expect(read.metadata).toEqual(testMetadata);
 
     // System-managed timestamps
     expect(read.createdAt).toBeInstanceOf(Date);
