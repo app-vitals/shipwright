@@ -158,6 +158,52 @@ describeOrSkip("Task store schema (integration)", () => {
     expect(read.updatedAt).toBeInstanceOf(Date);
   });
 
+  it("updates a Task with all execution fields and reads them back (update round-trip)", async () => {
+    const task = await prisma.task.create({
+      data: { title: "Execution fields update test", status: "pending" },
+    });
+
+    const metadata = { model: "claude-sonnet-4-6", session: "metrics-migration" };
+    await prisma.task.update({
+      where: { id: task.id },
+      data: {
+        simplifyTotal: 5,
+        simplifyDry: 1,
+        simplifyDeadCode: 1,
+        simplifyNaming: 1,
+        simplifyComplexity: 1,
+        simplifyConsistency: 1,
+        coverageDelta: 2.5,
+        effortLevel: "medium",
+        inputTokens: 1000,
+        outputTokens: 500,
+        cacheReadTokens: 100,
+        cacheCreationTokens: 50,
+        costUsd: 0.015,
+        metadata,
+      },
+    });
+
+    const updated = await prisma.task.findUnique({ where: { id: task.id } });
+    expect(updated).not.toBeNull();
+    if (!updated) return;
+
+    expect(updated.simplifyTotal).toBe(5);
+    expect(updated.simplifyDry).toBe(1);
+    expect(updated.simplifyDeadCode).toBe(1);
+    expect(updated.simplifyNaming).toBe(1);
+    expect(updated.simplifyComplexity).toBe(1);
+    expect(updated.simplifyConsistency).toBe(1);
+    expect(updated.coverageDelta).toBe(2.5);
+    expect(updated.effortLevel).toBe("medium");
+    expect(updated.inputTokens).toBe(1000);
+    expect(updated.outputTokens).toBe(500);
+    expect(updated.cacheReadTokens).toBe(100);
+    expect(updated.cacheCreationTokens).toBe(50);
+    expect(updated.costUsd).toBe(0.015);
+    expect(updated.metadata).toEqual(metadata);
+  });
+
   it("defaults optional fields to null/empty and applies all status values", async () => {
     const minimal = await prisma.task.create({
       data: { title: "Minimal", status: "in_progress" },
