@@ -7,7 +7,6 @@
  * - Workspace path resolution (WORKSPACE_PATH env var or cwd heuristic)
  * - Org/repo resolution from repos/ dir and shipwright.config.json
  * - gh CLI execution helper
- * - reviews.json reading
  */
 
 import { spawnSync } from "node:child_process";
@@ -70,18 +69,6 @@ export interface Task {
   hitlNotifiedAt?: string;
 }
 
-// ─── ReviewEntry ──────────────────────────────────────────────────────────────
-
-export interface ReviewEntry {
-  pr: number;
-  repo: string;
-  org?: string;
-  verdict?: string;
-  posted?: boolean;
-  lastReviewedCommit?: string;
-  status?: string;
-}
-
 // ─── Policy helpers ───────────────────────────────────────────────────────────
 
 export function parseAllowSelfReview(content: string): boolean {
@@ -123,14 +110,6 @@ export function resolveWorkspacePath(): string {
   if (!agentHome)
     throw new Error("AGENT_HOME is not set — cannot resolve workspace path");
   return join(agentHome, "workspace");
-}
-
-// ─── reviews.json reading ─────────────────────────────────────────────────────
-
-export function readReviews(workspacePath: string): ReviewEntry[] {
-  const reviewsPath = join(workspacePath, "state", "reviews.json");
-  if (!existsSync(reviewsPath)) return [];
-  return JSON.parse(readFileSync(reviewsPath, "utf-8")) as ReviewEntry[];
 }
 
 // ─── Shipwright config ────────────────────────────────────────────────────────
