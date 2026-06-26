@@ -182,13 +182,20 @@ After posting successfully, update the task store record:
      "$SHIPWRIGHT_TASK_STORE_URL/prs/{record.id}/complete" >/dev/null
    ```
 
-3. Update agentId and reviewState (if not already set by `complete`):
+3. Re-assert agentId and reviewState. `complete()` unconditionally sets `reviewState: "posted"`,
+   so for APPROVE verdicts (where the staged record had `reviewState: "approved"`), explicitly
+   re-assert `"approved"` in this PATCH — mirroring review.md Step 11b:
    ```bash
+   if [ "{record.reviewState}" = "approved" ]; then
+     PATCH_DATA="{\"agentId\": \"$SHIPWRIGHT_AGENT_ID\", \"reviewedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\", \"reviewState\": \"approved\"}"
+   else
+     PATCH_DATA="{\"agentId\": \"$SHIPWRIGHT_AGENT_ID\", \"reviewedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}"
+   fi
    curl -sf -X PATCH \
      -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
      -H "Content-Type: application/json" \
      "$SHIPWRIGHT_TASK_STORE_URL/prs/{record.id}" \
-     -d "{\"agentId\": \"$SHIPWRIGHT_AGENT_ID\", \"reviewedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" >/dev/null
+     -d "$PATCH_DATA" >/dev/null
    ```
 
 Print the posted review URL.
