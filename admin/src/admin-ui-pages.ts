@@ -1230,7 +1230,7 @@ export function renderTasksPage(
   // State toggle params (preserve other filters, reset page)
   const makeStateParams = (newState: string) => {
     const p = new URLSearchParams();
-    if (newState !== "ready") p.set("state", newState);
+    p.set("state", newState);
     if (filters.session) p.set("session", filters.session);
     if (filters.repo) p.set("repo", filters.repo);
     if (filters.agent) p.set("agent", filters.agent);

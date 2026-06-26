@@ -1761,6 +1761,27 @@ describe("renderTasksPage — 4-state toggle", () => {
     expect(html).toMatch(/background:#fff;color:#374151[^>]*>Blocked/);
   });
 
+  test("Ready tab is active and links to ?state=ready when state=ready", () => {
+    const html = renderTasksPage(
+      [],
+      { state: "ready" },
+      false,
+      USER_NAME,
+      {},
+      EMPTY_PAGINATION,
+      undefined,
+      undefined,
+    );
+    // Ready tab has active (indigo) styling
+    expect(html).toContain("background:#6366f1;color:#fff");
+    // Ready tab href contains state=ready
+    expect(html).toMatch(/href="\/admin\/tasks\?state=ready"[^>]*>Ready</);
+    // Other tabs are not active
+    expect(html).toMatch(/background:#fff;color:#374151[^>]*>In Progress/);
+    expect(html).toMatch(/background:#fff;color:#374151[^>]*>Blocked/);
+    expect(html).toMatch(/background:#fff;color:#374151[^>]*>Closed/);
+  });
+
   test("Tab links preserve session and repo query params", () => {
     const html = renderTasksPage(
       [],
