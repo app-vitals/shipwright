@@ -25,6 +25,7 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { sign, verify } from "hono/jwt";
 import {
+  type AgentDetail,
   type PrListItem,
   type PullRequestItem,
   type TaskItem,
@@ -103,6 +104,7 @@ interface PrismaAgentLike {
     id: string;
     name: string;
     slackId: string | null;
+    selfHosted: boolean;
     createdAt: Date;
     updatedAt: Date;
     repos: string[];
@@ -633,6 +635,15 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     if (!agent) {
       return new Response("Agent not found", { status: 404 });
     }
+    const agentDetail: AgentDetail = {
+      id: agent.id,
+      name: agent.name,
+      slackId: agent.slackId ?? null,
+      selfHosted: agent.selfHosted,
+      createdAt: agent.createdAt,
+      updatedAt: agent.updatedAt,
+      repos: agent.repos,
+    };
 
     if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
       return new Response("Forbidden", { status: 403 });
@@ -664,7 +675,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
     return html(
       renderAgentDetailPage(
-        agent,
+        agentDetail,
         envVars,
         crons,
         tools,
@@ -1028,6 +1039,15 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     if (!agent) {
       return new Response("Agent not found", { status: 404 });
     }
+    const agentDetail: AgentDetail = {
+      id: agent.id,
+      name: agent.name,
+      slackId: agent.slackId ?? null,
+      selfHosted: agent.selfHosted,
+      createdAt: agent.createdAt,
+      updatedAt: agent.updatedAt,
+      repos: agent.repos,
+    };
     try {
       const { rawToken } = await agentTokenService.create(agentId, label);
       // Render the page directly (200) rather than redirecting with the token in the URL.
@@ -1045,7 +1065,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         ]);
       return html(
         renderAgentDetailPage(
-          agent,
+          agentDetail,
           envVars,
           crons,
           tools,

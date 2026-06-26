@@ -93,6 +93,7 @@ export interface AgentDetail {
   id: string;
   name: string;
   slackId: string | null;
+  selfHosted: boolean;
   createdAt: Date;
   updatedAt: Date;
   repos: string[];
@@ -654,9 +655,9 @@ export function renderAgentDetailPage(
       <div>
         <a href="/admin/agents" style="font-size:13px;color:#6b7280;text-decoration:none">← Agents</a>
         <h1 class="page-title" style="margin-top:4px">${escapeHtml(agent.name)}</h1>
-        ${agent.slackId ? `<span style="font-size:13px;color:#6b7280">Slack ID: <span class="mono">${escapeHtml(agent.slackId)}</span></span>` : ""}
+        ${!agent.selfHosted && agent.slackId ? `<span style="font-size:13px;color:#6b7280">Slack ID: <span class="mono">${escapeHtml(agent.slackId)}</span></span>` : ""}
       </div>
-      <div>
+      ${!agent.selfHosted ? `<div>
         <details>
           <summary class="btn btn-secondary" style="cursor:pointer;font-size:12px;list-style:none">Sync Manifest</summary>
           <div style="position:absolute;right:24px;margin-top:6px;background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);z-index:10;min-width:320px">
@@ -674,14 +675,13 @@ export function renderAgentDetailPage(
             </form>
           </div>
         </details>
-      </div>
+      </div>` : ""}
     </div>
     ${errorHtml}
     ${successHtml}
     ${newTokenHtml}
 
-    <!-- Env Vars -->
-    <div class="card">
+    ${!agent.selfHosted ? `<div class="card">
       <div class="card-title">Env Vars</div>
       <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/envs" style="margin-bottom:16px">
         <div class="form-row">
@@ -706,9 +706,8 @@ export function renderAgentDetailPage(
           ${envRows}
         </tbody>
       </table>
-    </div>
+    </div>` : ""}
 
-    <!-- Repos -->
     <div class="card">
       <div class="card-title">Repos</div>
       <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/repos/add" style="margin-bottom:16px">
@@ -748,11 +747,10 @@ export function renderAgentDetailPage(
       </table>
     </div>
 
-    <!-- Cron Jobs -->
     <div class="card">
       <div class="card-title">Cron Jobs</div>
 
-      <div style="margin-bottom:20px">
+      ${!agent.selfHosted ? `<div style="margin-bottom:20px">
         <div style="font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">System</div>
         <table class="data-table">
           <thead>
@@ -770,7 +768,7 @@ export function renderAgentDetailPage(
             ${systemCronRows}
           </tbody>
         </table>
-      </div>
+      </div>` : ""}
 
       <div>
         <div style="font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Custom</div>
@@ -811,8 +809,7 @@ export function renderAgentDetailPage(
       </div>
     </div>
 
-    <!-- Tools -->
-    <div class="card">
+    ${!agent.selfHosted ? `<div class="card">
       <div class="card-title">Tools</div>
       <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/tools" style="margin-bottom:16px">
         <div class="form-row">
@@ -834,9 +831,8 @@ export function renderAgentDetailPage(
           ${toolRows}
         </tbody>
       </table>
-    </div>
+    </div>` : ""}
 
-    <!-- Tokens -->
     <div class="card">
       <div class="card-title">Tokens</div>
       <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/tokens" style="margin-bottom:16px">
@@ -862,7 +858,16 @@ export function renderAgentDetailPage(
       </table>
     </div>
 
-    <!-- Plugins -->
+    ${agent.selfHosted ? `<div class="card">
+      <div class="card-title">Local CLI Access</div>
+      <p style="font-size:13px;color:#6b7280;margin-bottom:12px">
+        This agent runs locally. Use an API token to authenticate the local agent process with the admin service.
+      </p>
+      <a href="/admin/tokens?agentId=${escapeHtml(agent.id)}" class="btn btn-secondary" style="font-size:13px">
+        Manage Tokens →
+      </a>
+    </div>` : ""}
+
     <div class="card">
       <div class="card-title">Plugins</div>
       <table class="data-table">
