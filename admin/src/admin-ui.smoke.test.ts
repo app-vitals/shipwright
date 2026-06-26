@@ -2140,6 +2140,60 @@ describe("admin UI — tasks page", () => {
     cookie = await makeSessionCookie();
   });
 
+  it("GET /admin/tasks?state=in_progress&status=pr_open forwards only status to task store", async () => {
+    const capturedParams: URLSearchParams[] = [];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async (params) => {
+          capturedParams.push(params);
+          return { tasks: [], total: 0, limit: 50, offset: 0 };
+        },
+      }),
+    );
+    await app.request("/admin/tasks?state=in_progress&status=pr_open", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(capturedParams.length).toBe(1);
+    expect(capturedParams[0].get("status")).toBe("pr_open");
+    expect(capturedParams[0].has("state")).toBe(false);
+  });
+
+  it("GET /admin/tasks?state=ready forwards state to task store when no status set", async () => {
+    const capturedParams: URLSearchParams[] = [];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async (params) => {
+          capturedParams.push(params);
+          return { tasks: [], total: 0, limit: 50, offset: 0 };
+        },
+      }),
+    );
+    await app.request("/admin/tasks?state=ready", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(capturedParams.length).toBe(1);
+    expect(capturedParams[0].get("state")).toBe("ready");
+    expect(capturedParams[0].has("status")).toBe(false);
+  });
+
+  it("GET /admin/tasks with no params forwards neither state nor status", async () => {
+    const capturedParams: URLSearchParams[] = [];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async (params) => {
+          capturedParams.push(params);
+          return { tasks: [], total: 0, limit: 50, offset: 0 };
+        },
+      }),
+    );
+    await app.request("/admin/tasks", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(capturedParams.length).toBe(1);
+    expect(capturedParams[0].has("state")).toBe(false);
+    expect(capturedParams[0].has("status")).toBe(false);
+  });
+
   it("GET /admin/tasks renders tasks table with mock data", async () => {
     const mockTasks = [
       {
