@@ -63,6 +63,10 @@ export function createPrsRoutes(
     const offsetRaw = c.req.query("offset");
     const prNumberRaw = c.req.query("prNumber");
 
+    const stagedRaw = c.req.query("staged");
+    const staged =
+      stagedRaw === "true" ? true : stagedRaw === "false" ? false : undefined;
+
     const result = await prService.list({
       repo: c.req.query("repo"),
       prNumber:
@@ -72,6 +76,7 @@ export function createPrsRoutes(
       taskId: c.req.query("taskId"),
       state: c.req.query("state"),
       reviewState: c.req.query("reviewState"),
+      staged,
       limit:
         limitRaw !== undefined
           ? Number.parseInt(limitRaw, 10) || undefined
