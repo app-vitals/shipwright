@@ -160,3 +160,4 @@ To load additional context into a session, add `@docs/filename.md` entries here 
 - **docs/deploy-kubernetes.md** — Kubernetes deployment guide: Minikube / GKE (Gateway API + cert-manager) / EKS (ALB), the agent runtime-provisioning RBAC model, and auth modes
 - **docs/test-readiness/test-system.md** — the authoritative test blueprint: layer matrix, boundary rules, per-component budgets, CI pipeline shape, and the full isolation contract
 - **docs/migration.md** — breaking changes and migration steps across versions (e.g. `AgentProvisioner.reconcile()` interface change)
+- **docs/remote-setup.md** — how to run Shipwright skills (e.g. `/plan-session`) from a laptop and push tasks to the shared task store

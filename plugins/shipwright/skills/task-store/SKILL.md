@@ -24,12 +24,14 @@ All requests require a Bearer token:
 Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN
 ```
 
-Both env vars are provisioned automatically by the agent harness:
+Set these env vars before calling the API:
 
 | Env var | Description |
 |---|---|
 | `SHIPWRIGHT_TASK_STORE_URL` | Base URL of the task store service |
 | `SHIPWRIGHT_TASK_STORE_TOKEN` | Bearer token for this agent |
+
+Managed agents have these injected automatically. For remote use (e.g. running `/plan-session` from a laptop), set them manually — see [docs/remote-setup.md](../../../../docs/remote-setup.md).
 
 The bearer token scopes all API operations to the calling agent's own tasks automatically — the same token that authenticates you also filters results. No `?assignee=` parameter is needed on any endpoint.
 
