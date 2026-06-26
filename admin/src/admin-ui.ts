@@ -25,6 +25,7 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { sign, verify } from "hono/jwt";
 import {
+  type AgentDetail,
   type PrListItem,
   type PullRequestItem,
   type TaskItem,
@@ -626,6 +627,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     if (!agent) {
       return new Response("Agent not found", { status: 404 });
     }
+    // Type assertion: Prisma Agent has selfHosted field from schema
+    const agentDetail: AgentDetail = agent as any;
 
     if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
       return new Response("Forbidden", { status: 403 });
@@ -657,7 +660,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
     return html(
       renderAgentDetailPage(
-        agent,
+        agentDetail,
         envVars,
         crons,
         tools,
@@ -1021,6 +1024,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     if (!agent) {
       return new Response("Agent not found", { status: 404 });
     }
+    // Type assertion: Prisma Agent has selfHosted field from schema
+    const agentDetail: AgentDetail = agent as any;
     try {
       const { rawToken } = await agentTokenService.create(agentId, label);
       // Render the page directly (200) rather than redirecting with the token in the URL.
@@ -1038,7 +1043,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         ]);
       return html(
         renderAgentDetailPage(
-          agent,
+          agentDetail,
           envVars,
           crons,
           tools,

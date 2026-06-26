@@ -147,6 +147,7 @@ function makeMockDeps(
           id: AGENT_ID,
           name: "Test Agent",
           slackId: "U123456",
+          selfHosted: false,
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
           repos: [],
@@ -155,6 +156,7 @@ function makeMockDeps(
           id: AGENT_ID,
           name: "Test Agent",
           slackId: "U123456",
+          selfHosted: false,
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
           repos: [],
@@ -163,6 +165,7 @@ function makeMockDeps(
           id: AGENT_ID,
           name: "Test Agent",
           slackId: "U123456",
+          selfHosted: false,
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
           repos: [],
@@ -171,6 +174,7 @@ function makeMockDeps(
           id: AGENT_ID,
           name: "Test Agent",
           slackId: "U123456",
+          selfHosted: false,
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
           repos: [],
@@ -547,6 +551,517 @@ describe("admin UI — authenticated pages", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain("raw-token-abc123");
+  });
+
+  describe("self-hosted agent (selfHosted=true) detail page", () => {
+    const SELFHOSTED_AGENT_ID = "agent-selfhosted-123";
+
+    it("managed agent (selfHosted=false) shows Slack info in header", async () => {
+      const app = createAdminUIApp(
+        makeMockDeps({
+          prisma: {
+            agent: {
+              findUnique: async () => ({
+                id: AGENT_ID,
+                name: "Managed Agent",
+                slackId: "U0AALR8M69X",
+                selfHosted: false,
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+                repos: [],
+              }),
+              findMany: async () => [],
+              create: async () => ({
+                id: AGENT_ID,
+                name: "Test Agent",
+                slackId: "U123456",
+                selfHosted: false,
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+                repos: [],
+              }),
+              update: async () => ({
+                id: AGENT_ID,
+                name: "Test Agent",
+                slackId: "U123456",
+                selfHosted: false,
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+                repos: [],
+              }),
+              delete: async () => ({
+                id: AGENT_ID,
+                name: "Test Agent",
+                slackId: "U123456",
+                selfHosted: false,
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+                repos: [],
+              }),
+            },
+            agentPlugin: { findMany: async () => [] },
+            agentMember: {
+              findMany: async () => [],
+              findUnique: async () => null,
+              create: async () => ({
+                id: "m1",
+                agentId: AGENT_ID,
+                email: "member@example.com",
+              }),
+              deleteMany: async () => ({ count: 0 }),
+            },
+          },
+        }),
+      );
+      const res = await app.request(`/admin/agents/${AGENT_ID}`, {
+        headers: { Cookie: `admin_session=${cookie}` },
+      });
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain("Slack ID:");
+      expect(html).toContain("U0AALR8M69X");
+    });
+
+    it("managed agent (selfHosted=false) shows Env Vars card", async () => {
+      const app = createAdminUIApp(makeMockDeps());
+      const res = await app.request(`/admin/agents/${AGENT_ID}`, {
+        headers: { Cookie: `admin_session=${cookie}` },
+      });
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain("Env Vars");
+    });
+
+    it("managed agent (selfHosted=false) shows System crons", async () => {
+      const app = createAdminUIApp(
+        makeMockDeps({
+          agentCronJobService: {
+            list: async () => [
+              { ...MOCK_CRON, system: true, name: "system-cron" },
+            ],
+            listWithRunSummary: async () => [
+              {
+                ...MOCK_CRON,
+                system: true,
+                name: "system-cron",
+                lastRun: null,
+                runCountToday: 0,
+              },
+            ],
+            get: async () => MOCK_CRON,
+            create: async () => MOCK_CRON,
+            setEnabled: async () => MOCK_CRON,
+            update: async () => MOCK_CRON,
+            delete: async () => {},
+            reconcileSystemCrons: async () => ({
+              created: 0,
+              updated: 0,
+              deleted: 0,
+            }),
+          },
+        }),
+      );
+      const res = await app.request(`/admin/agents/${AGENT_ID}`, {
+        headers: { Cookie: `admin_session=${cookie}` },
+      });
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      // System subsection should be present
+      expect(html).toContain("System");
+    });
+
+    it("managed agent (selfHosted=false) shows Tools card", async () => {
+      const app = createAdminUIApp(makeMockDeps());
+      const res = await app.request(`/admin/agents/${AGENT_ID}`, {
+        headers: { Cookie: `admin_session=${cookie}` },
+      });
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain("Bash(git:*)");
+    });
+
+    it("managed agent (selfHosted=false) does NOT show Local CLI access card", async () => {
+      const app = createAdminUIApp(makeMockDeps());
+      const res = await app.request(`/admin/agents/${AGENT_ID}`, {
+        headers: { Cookie: `admin_session=${cookie}` },
+      });
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).not.toContain("Local CLI");
+    });
+
+    it("self-hosted agent (selfHosted=true) does NOT show Slack info in header", async () => {
+      const app = createAdminUIApp(
+        makeMockDeps({
+          prisma: {
+            agent: {
+              findUnique: async () => ({
+                id: SELFHOSTED_AGENT_ID,
+                name: "Self-Hosted Agent",
+                slackId: null,
+                selfHosted: true,
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+                repos: [],
+              }),
+              findMany: async () => [],
+              create: async () => ({
+                id: SELFHOSTED_AGENT_ID,
+                name: "Self-Hosted Agent",
+                slackId: null,
+                selfHosted: true,
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+                repos: [],
+              }),
+              update: async () => ({
+                id: SELFHOSTED_AGENT_ID,
+                name: "Self-Hosted Agent",
+                slackId: null,
+                selfHosted: true,
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+                repos: [],
+              }),
+              delete: async () => ({
+                id: SELFHOSTED_AGENT_ID,
+                name: "Self-Hosted Agent",
+                slackId: null,
+                selfHosted: true,
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+                repos: [],
+              }),
+            },
+            agentPlugin: { findMany: async () => [] },
+            agentMember: {
+              findMany: async () => [],
+              findUnique: async () => null,
+              create: async () => ({
+                id: "m1",
+                agentId: SELFHOSTED_AGENT_ID,
+                email: "member@example.com",
+              }),
+              deleteMany: async () => ({ count: 0 }),
+            },
+          },
+        }),
+      );
+      const res = await app.request(`/admin/agents/${SELFHOSTED_AGENT_ID}`, {
+        headers: { Cookie: `admin_session=${cookie}` },
+      });
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).not.toContain("Slack ID:");
+    });
+
+    it("self-hosted agent (selfHosted=true) does NOT show Env Vars card", async () => {
+      const app = createAdminUIApp(
+        makeMockDeps({
+          prisma: {
+            agent: {
+              findUnique: async () => ({
+                id: SELFHOSTED_AGENT_ID,
+                name: "Self-Hosted Agent",
+                slackId: null,
+                selfHosted: true,
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+                repos: [],
+              }),
+              findMany: async () => [],
+              create: async () => ({
+                id: SELFHOSTED_AGENT_ID,
+                name: "Self-Hosted Agent",
+                slackId: null,
+                selfHosted: true,
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+                repos: [],
+              }),
+              update: async () => ({
+                id: SELFHOSTED_AGENT_ID,
+                name: "Self-Hosted Agent",
+                slackId: null,
+                selfHosted: true,
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+                repos: [],
+              }),
+              delete: async () => ({
+                id: SELFHOSTED_AGENT_ID,
+                name: "Self-Hosted Agent",
+                slackId: null,
+                selfHosted: true,
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+                repos: [],
+              }),
+            },
+            agentPlugin: { findMany: async () => [] },
+            agentMember: {
+              findMany: async () => [],
+              findUnique: async () => null,
+              create: async () => ({
+                id: "m1",
+                agentId: SELFHOSTED_AGENT_ID,
+                email: "member@example.com",
+              }),
+              deleteMany: async () => ({ count: 0 }),
+            },
+          },
+          agentEnvService: {
+            getByAgentId: async () => ({ TEST_VAR: "should-not-show" }),
+            upsert: async () => {},
+            deleteKey: async () => {},
+            getConfigBundle: async () => null,
+          },
+        }),
+      );
+      const res = await app.request(`/admin/agents/${SELFHOSTED_AGENT_ID}`, {
+        headers: { Cookie: `admin_session=${cookie}` },
+      });
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      // The card title "Env Vars" should not appear
+      expect(html).not.toContain("<div class=\"card-title\">Env Vars</div>");
+    });
+
+    it("self-hosted agent (selfHosted=true) does NOT show System crons", async () => {
+      const app = createAdminUIApp(
+        makeMockDeps({
+          prisma: {
+            agent: {
+              findUnique: async () => ({
+                id: SELFHOSTED_AGENT_ID,
+                name: "Self-Hosted Agent",
+                slackId: null,
+                selfHosted: true,
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+                repos: [],
+              }),
+              findMany: async () => [],
+              create: async () => ({
+                id: SELFHOSTED_AGENT_ID,
+                name: "Self-Hosted Agent",
+                slackId: null,
+                selfHosted: true,
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+                repos: [],
+              }),
+              update: async () => ({
+                id: SELFHOSTED_AGENT_ID,
+                name: "Self-Hosted Agent",
+                slackId: null,
+                selfHosted: true,
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+                repos: [],
+              }),
+              delete: async () => ({
+                id: SELFHOSTED_AGENT_ID,
+                name: "Self-Hosted Agent",
+                slackId: null,
+                selfHosted: true,
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+                repos: [],
+              }),
+            },
+            agentPlugin: { findMany: async () => [] },
+            agentMember: {
+              findMany: async () => [],
+              findUnique: async () => null,
+              create: async () => ({
+                id: "m1",
+                agentId: SELFHOSTED_AGENT_ID,
+                email: "member@example.com",
+              }),
+              deleteMany: async () => ({ count: 0 }),
+            },
+          },
+          agentCronJobService: {
+            list: async () => [
+              { ...MOCK_CRON, system: true, name: "system-cron" },
+            ],
+            listWithRunSummary: async () => [
+              {
+                ...MOCK_CRON,
+                system: true,
+                name: "system-cron",
+                lastRun: null,
+                runCountToday: 0,
+              },
+            ],
+            get: async () => MOCK_CRON,
+            create: async () => MOCK_CRON,
+            setEnabled: async () => MOCK_CRON,
+            update: async () => MOCK_CRON,
+            delete: async () => {},
+            reconcileSystemCrons: async () => ({
+              created: 0,
+              updated: 0,
+              deleted: 0,
+            }),
+          },
+        }),
+      );
+      const res = await app.request(`/admin/agents/${SELFHOSTED_AGENT_ID}`, {
+        headers: { Cookie: `admin_session=${cookie}` },
+      });
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      // System crons section should not be present — check that there's no System label in the first table of cron jobs
+      const systemIndex = html.indexOf(">System<");
+      expect(systemIndex).toBe(-1);
+    });
+
+    it("self-hosted agent (selfHosted=true) does NOT show Tools card", async () => {
+      const app = createAdminUIApp(
+        makeMockDeps({
+          prisma: {
+            agent: {
+              findUnique: async () => ({
+                id: SELFHOSTED_AGENT_ID,
+                name: "Self-Hosted Agent",
+                slackId: null,
+                selfHosted: true,
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+                repos: [],
+              }),
+              findMany: async () => [],
+              create: async () => ({
+                id: SELFHOSTED_AGENT_ID,
+                name: "Self-Hosted Agent",
+                slackId: null,
+                selfHosted: true,
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+                repos: [],
+              }),
+              update: async () => ({
+                id: SELFHOSTED_AGENT_ID,
+                name: "Self-Hosted Agent",
+                slackId: null,
+                selfHosted: true,
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+                repos: [],
+              }),
+              delete: async () => ({
+                id: SELFHOSTED_AGENT_ID,
+                name: "Self-Hosted Agent",
+                slackId: null,
+                selfHosted: true,
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+                repos: [],
+              }),
+            },
+            agentPlugin: { findMany: async () => [] },
+            agentMember: {
+              findMany: async () => [],
+              findUnique: async () => null,
+              create: async () => ({
+                id: "m1",
+                agentId: SELFHOSTED_AGENT_ID,
+                email: "member@example.com",
+              }),
+              deleteMany: async () => ({ count: 0 }),
+            },
+          },
+          agentToolService: {
+            list: async () => [
+              { ...MOCK_TOOL, pattern: "Bash(git:*)", agentId: SELFHOSTED_AGENT_ID },
+            ],
+            add: async () => MOCK_TOOL,
+            toggle: async () => MOCK_TOOL,
+            remove: async () => {},
+          },
+        }),
+      );
+      const res = await app.request(`/admin/agents/${SELFHOSTED_AGENT_ID}`, {
+        headers: { Cookie: `admin_session=${cookie}` },
+      });
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      // Tools card title should not appear
+      expect(html).not.toContain("<div class=\"card-title\">Tools</div>");
+      // Tools should not be rendered
+      expect(html).not.toContain("Bash(git:*)");
+    });
+
+    it("self-hosted agent (selfHosted=true) shows Local CLI access card with link to tokens", async () => {
+      const app = createAdminUIApp(
+        makeMockDeps({
+          prisma: {
+            agent: {
+              findUnique: async () => ({
+                id: SELFHOSTED_AGENT_ID,
+                name: "Self-Hosted Agent",
+                slackId: null,
+                selfHosted: true,
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+                repos: [],
+              }),
+              findMany: async () => [],
+              create: async () => ({
+                id: SELFHOSTED_AGENT_ID,
+                name: "Self-Hosted Agent",
+                slackId: null,
+                selfHosted: true,
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+                repos: [],
+              }),
+              update: async () => ({
+                id: SELFHOSTED_AGENT_ID,
+                name: "Self-Hosted Agent",
+                slackId: null,
+                selfHosted: true,
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+                repos: [],
+              }),
+              delete: async () => ({
+                id: SELFHOSTED_AGENT_ID,
+                name: "Self-Hosted Agent",
+                slackId: null,
+                selfHosted: true,
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+                repos: [],
+              }),
+            },
+            agentPlugin: { findMany: async () => [] },
+            agentMember: {
+              findMany: async () => [],
+              findUnique: async () => null,
+              create: async () => ({
+                id: "m1",
+                agentId: SELFHOSTED_AGENT_ID,
+                email: "member@example.com",
+              }),
+              deleteMany: async () => ({ count: 0 }),
+            },
+          },
+        }),
+      );
+      const res = await app.request(`/admin/agents/${SELFHOSTED_AGENT_ID}`, {
+        headers: { Cookie: `admin_session=${cookie}` },
+      });
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      // Local CLI card should be present
+      expect(html).toContain("Local CLI");
+      expect(html).toContain("Manage Tokens");
+      // Link should include the agent ID
+      expect(html).toContain(`/admin/tokens?agentId=${SELFHOSTED_AGENT_ID}`);
+    });
   });
 });
 
