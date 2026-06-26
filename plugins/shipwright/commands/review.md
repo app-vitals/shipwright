@@ -166,10 +166,19 @@ curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
 ```
 
 The record's `commitSha` is the SHA at which the PR was last reviewed (call it
-`lastReviewedCommit`). Apply this eligibility logic:
+`lastReviewedCommit`). When a record is fetched, capture it immediately:
 
-- **No record**: eligible (new PR, Tier 2). No local entry is created — the task store
-  creates the record atomically on first claim in Step 4.
+```bash
+LAST_REVIEWED_COMMIT=$(echo "$record" | jq -r '.commitSha // empty')
+```
+
+`LAST_REVIEWED_COMMIT` is empty when there is no record (first review). This value is
+used in Steps 4, 5, and 9 — do not fetch it again.
+
+Apply this eligibility logic:
+
+- **No record**: eligible (new PR, Tier 2). `LAST_REVIEWED_COMMIT` is empty. No local
+  entry is created — the task store creates the record atomically on first claim in Step 4.
 - **`staged: true`**: exclude — Step 3a owns staged records.
 - **`reviewState: "in_progress"`**: skip (another run has claimed it).
 - **`reviewState: "posted"` or `"approved"`**: check for new commits since last review:
@@ -257,17 +266,12 @@ git -C repos/{repo} worktree remove worktrees/{repo}-{branch-slug} --force
 git -C repos/{repo} worktree add worktrees/{repo}-{branch-slug} origin/{branch}
 ```
 
-### Save the pre-claim commit, then claim
+### Claim using pre-captured commit SHA
 
-Before claiming, save the existing record's `commitSha` — this is `lastReviewedCommit`,
-the SHA the PR was last reviewed at. The claim overwrites `commitSha` with the new head, so
-capture it first:
-```bash
-LAST_REVIEWED_COMMIT=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/prs?repo={org}/{repo}&prNumber={pr}" \
-  | jq -r '.prs[0].commitSha // empty')
-```
-`LAST_REVIEWED_COMMIT` is empty for a first review (no record yet). Use it in Steps 5 and 9.
+`LAST_REVIEWED_COMMIT` was already captured in Step 3b from the PR record fetched during
+deduplication (empty if no record existed). The claim will overwrite `commitSha` with the
+new head — `LAST_REVIEWED_COMMIT` preserves the pre-claim value without an extra fetch.
+Use it in Steps 5 and 9.
 
 Then claim the PR atomically at the current head. Fetch the head SHA first:
 ```bash
@@ -282,8 +286,9 @@ PR_CLAIM=$(curl -s -o /tmp/pr_claim.json -w '%{http_code}' -X POST \
 ```
 - `201` (new) or `200` (update): claimed. Capture `.id` from `/tmp/pr_claim.json` as
   `PR_RECORD_ID`; the claim sets `reviewState: "in_progress"`.
-- `409` (conflict): another agent holds the claim at this commit. **Skip this PR** and
-  return to Step 3b to pick the next candidate.
+- `409` (conflict): another agent holds the claim at this commit. Remove the worktree
+  (`git -C repos/{repo} worktree remove worktrees/{repo}-{branch-slug} --force 2>/dev/null`),
+  **skip this PR**, and return to Step 3b to pick the next candidate.
 
 All subsequent steps run from `worktrees/{repo}-{branch-slug}/`.
 
