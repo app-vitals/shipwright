@@ -18,6 +18,7 @@ import type { Server } from "bun";
 import { FixedClock } from "./clock.ts";
 import type { TokenUsage } from "./claude.ts";
 import { ValidationError, handleCronRequest } from "./cron-handler.ts";
+import { HttpCronRunReporter } from "./cron-run-reporter.ts";
 import { startHealthServer } from "./health.ts";
 
 // ─── Shared mocks ─────────────────────────────────────────────────────────────
@@ -1004,7 +1005,6 @@ describe("handleCronRequest — CronRunReporter", () => {
   const AGENT_ID = "test-agent-id";
 
   function makeHttpReporter() {
-    const { HttpCronRunReporter } = require("./cron-run-reporter.ts");
     return new HttpCronRunReporter({
       apiUrl: REPORTER_BASE_URL,
       agentId: AGENT_ID,

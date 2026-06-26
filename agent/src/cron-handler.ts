@@ -25,6 +25,24 @@ import { calculateCost } from "./pricing.ts";
 import { type SynthesizeSpeechFn, dispatchMarkers } from "./slack.ts";
 import type { VoiceConfig } from "./voice.ts";
 
+function buildTokenPayload(usage: TokenUsage | undefined): {
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
+  costUsd?: number;
+  model?: string;
+} {
+  return {
+    inputTokens: usage?.input_tokens,
+    outputTokens: usage?.output_tokens,
+    cacheReadTokens: usage?.cache_read_input_tokens,
+    cacheCreationTokens: usage?.cache_creation_input_tokens,
+    costUsd: usage ? calculateCost(usage, liveClaudeConfig.model) : undefined,
+    model: liveClaudeConfig.model,
+  };
+}
+
 type ClaudeRunner = (
   message: string,
 ) => Promise<{ result: string; sessionId?: string; usage?: TokenUsage }>;
@@ -251,152 +269,140 @@ export async function handleCronRequest(
 
   const metricsSnapshot = workspace ? snapshotMetrics(workspace) : undefined;
 
+  // ── Runner scope ─────────────────────────────────────────────────────────
+  // Errors here record a genuine failure and re-throw so the caller sees them.
   let usage: TokenUsage | undefined;
+  let result: string;
+  let sessionId: string | undefined;
   try {
     const runResult = await runner(message);
     usage = runResult.usage;
-    const { result, sessionId } = runResult;
-
-    if (workspace && metricsSnapshot) {
-      await forwardNewMetrics(workspace, metricsSnapshot);
-    }
-    await forwardTokenUsage(usage, "cron", undefined, jobId);
-
-    const { cleaned, markers } = parseMarkers(result);
-    const isSilentMarker = markers.some((m) => m.type === "silent");
-
-    if (silent) {
-      console.log(`[agent:cron] job "${jobId}" completed (silent — no post)`);
-      await cronRunReporter?.completeRun(jobId, runId, clock.now(), "completed", {
-        inputTokens: usage?.input_tokens,
-        outputTokens: usage?.output_tokens,
-        cacheReadTokens: usage?.cache_read_input_tokens,
-        cacheCreationTokens: usage?.cache_creation_input_tokens,
-        costUsd: usage
-          ? calculateCost(usage, liveClaudeConfig.model)
-          : undefined,
-        model: liveClaudeConfig.model,
-      });
-      return;
-    }
-    const isDmOnly = !!user && !channel;
-    if (isSilentMarker && !isDmOnly) {
-      // [silent] marker suppresses channel posts (and channel-wins-over-user posts)
-      // DMs always get a reply — [silent] is ignored when routing to a DM
-      console.log(`[agent:cron] job "${jobId}" completed (silent — no post)`);
-      await cronRunReporter?.completeRun(
-        jobId,
-        runId,
-        clock.now(),
-        "completed",
-        {
-          inputTokens: usage?.input_tokens,
-          outputTokens: usage?.output_tokens,
-          cacheReadTokens: usage?.cache_read_input_tokens,
-          cacheCreationTokens: usage?.cache_creation_input_tokens,
-          costUsd: usage
-            ? calculateCost(usage, liveClaudeConfig.model)
-            : undefined,
-          model: liveClaudeConfig.model,
-        },
-      );
-      return;
-    }
-
-    const formatted = formatter(cleaned);
-
-    if (channel) {
-      if (user) {
-        console.warn(
-          `[agent:cron] job "${jobId}" has both channel and user — posting to channel`,
-        );
-      }
-      const postResult = await slack.chat.postMessage({
-        channel,
-        text: formatted,
-      });
-      console.log(`[agent:cron] job "${jobId}" posted to channel ${channel}`);
-      if (postResult.ts) {
-        onPost?.(channel, postResult.ts);
-        if (onSession && sessionId)
-          onSession(channel, postResult.ts, sessionId);
-      } else {
-        console.warn(
-          `[agent:cron] job "${jobId}" postMessage returned no ts — react markers will be skipped`,
-        );
-      }
-      await dispatchMarkers(markers, {
-        client: slack,
-        channel,
-        postedTs: postResult.ts,
-        synthesizeSpeechFn,
-        voiceConfig,
-      });
-      await cronRunReporter?.completeRun(
-        jobId,
-        runId,
-        clock.now(),
-        "completed",
-        {
-          inputTokens: usage?.input_tokens,
-          outputTokens: usage?.output_tokens,
-          cacheReadTokens: usage?.cache_read_input_tokens,
-          cacheCreationTokens: usage?.cache_creation_input_tokens,
-          costUsd: usage
-            ? calculateCost(usage, liveClaudeConfig.model)
-            : undefined,
-          model: liveClaudeConfig.model,
-        },
-      );
-    } else if (user) {
-      const dmResult = await slack.conversations.open({ users: user });
-      const dmChannel = dmResult.channel?.id;
-      if (!dmChannel) {
-        throw new Error(`[agent:cron] could not open DM for user ${user}`);
-      }
-      const dmPostResult = await slack.chat.postMessage({
-        channel: dmChannel,
-        text: formatted,
-      });
-      console.log(`[agent:cron] job "${jobId}" posted DM to user ${user}`);
-      if (dmPostResult.ts) {
-        onPost?.(dmChannel, dmPostResult.ts);
-        if (onSession && sessionId)
-          onSession(dmChannel, dmPostResult.ts, sessionId);
-      } else {
-        console.warn(
-          `[agent:cron] job "${jobId}" DM postMessage returned no ts — react markers will be skipped`,
-        );
-      }
-      await dispatchMarkers(markers, {
-        client: slack,
-        channel: dmChannel,
-        postedTs: dmPostResult.ts,
-        synthesizeSpeechFn,
-        voiceConfig,
-      });
-      await cronRunReporter?.completeRun(
-        jobId,
-        runId,
-        clock.now(),
-        "completed",
-        {
-          inputTokens: usage?.input_tokens,
-          outputTokens: usage?.output_tokens,
-          cacheReadTokens: usage?.cache_read_input_tokens,
-          cacheCreationTokens: usage?.cache_creation_input_tokens,
-          costUsd: usage
-            ? calculateCost(usage, liveClaudeConfig.model)
-            : undefined,
-          model: liveClaudeConfig.model,
-        },
-      );
-    }
+    result = runResult.result;
+    sessionId = runResult.sessionId;
   } catch (err) {
     await cronRunReporter?.completeRun(jobId, runId, clock.now(), "failed", {
       error: err instanceof Error ? err.message : String(err),
     });
     throw err;
+  }
+
+  // ── Post-run scope ───────────────────────────────────────────────────────
+  // Slack delivery errors must NOT corrupt the run record with outcome='failed'
+  // when Claude completed successfully — they are logged and re-thrown, but the
+  // run is already recorded as 'completed' (with full token/cost data) before
+  // any Slack call is attempted.
+  if (workspace && metricsSnapshot) {
+    await forwardNewMetrics(workspace, metricsSnapshot);
+  }
+  await forwardTokenUsage(usage, "cron", undefined, jobId);
+
+  const { cleaned, markers } = parseMarkers(result);
+  const isSilentMarker = markers.some((m) => m.type === "silent");
+
+  if (silent) {
+    console.log(`[agent:cron] job "${jobId}" completed (silent — no post)`);
+    await cronRunReporter?.completeRun(
+      jobId,
+      runId,
+      clock.now(),
+      "completed",
+      buildTokenPayload(usage),
+    );
+    return;
+  }
+  const isDmOnly = !!user && !channel;
+  if (isSilentMarker && !isDmOnly) {
+    // [silent] marker suppresses channel posts (and channel-wins-over-user posts)
+    // DMs always get a reply — [silent] is ignored when routing to a DM
+    console.log(`[agent:cron] job "${jobId}" completed (silent — no post)`);
+    await cronRunReporter?.completeRun(
+      jobId,
+      runId,
+      clock.now(),
+      "completed",
+      buildTokenPayload(usage),
+    );
+    return;
+  }
+
+  const formatted = formatter(cleaned);
+
+  if (channel) {
+    if (user) {
+      console.warn(
+        `[agent:cron] job "${jobId}" has both channel and user — posting to channel`,
+      );
+    }
+
+    // Record completion before Slack delivery — a Slack error must not
+    // overwrite a successful run with outcome='failed'.
+    await cronRunReporter?.completeRun(
+      jobId,
+      runId,
+      clock.now(),
+      "completed",
+      buildTokenPayload(usage),
+    );
+
+    const postResult = await slack.chat.postMessage({
+      channel,
+      text: formatted,
+    });
+    console.log(`[agent:cron] job "${jobId}" posted to channel ${channel}`);
+    if (postResult.ts) {
+      onPost?.(channel, postResult.ts);
+      if (onSession && sessionId)
+        onSession(channel, postResult.ts, sessionId);
+    } else {
+      console.warn(
+        `[agent:cron] job "${jobId}" postMessage returned no ts — react markers will be skipped`,
+      );
+    }
+    await dispatchMarkers(markers, {
+      client: slack,
+      channel,
+      postedTs: postResult.ts,
+      synthesizeSpeechFn,
+      voiceConfig,
+    });
+  } else if (user) {
+    const dmResult = await slack.conversations.open({ users: user });
+    const dmChannel = dmResult.channel?.id;
+    if (!dmChannel) {
+      throw new Error(`[agent:cron] could not open DM for user ${user}`);
+    }
+
+    // Record completion before Slack delivery — same rationale as the channel
+    // branch above.
+    await cronRunReporter?.completeRun(
+      jobId,
+      runId,
+      clock.now(),
+      "completed",
+      buildTokenPayload(usage),
+    );
+
+    const dmPostResult = await slack.chat.postMessage({
+      channel: dmChannel,
+      text: formatted,
+    });
+    console.log(`[agent:cron] job "${jobId}" posted DM to user ${user}`);
+    if (dmPostResult.ts) {
+      onPost?.(dmChannel, dmPostResult.ts);
+      if (onSession && sessionId)
+        onSession(dmChannel, dmPostResult.ts, sessionId);
+    } else {
+      console.warn(
+        `[agent:cron] job "${jobId}" DM postMessage returned no ts — react markers will be skipped`,
+      );
+    }
+    await dispatchMarkers(markers, {
+      client: slack,
+      channel: dmChannel,
+      postedTs: dmPostResult.ts,
+      synthesizeSpeechFn,
+      voiceConfig,
+    });
   }
 }
 
