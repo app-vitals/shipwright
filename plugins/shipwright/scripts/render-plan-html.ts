@@ -120,23 +120,18 @@ function renderHeader(plan: PlanData): string {
 // Section: Stat cards
 // ---------------------------------------------------------------------------
 
+function statCard(value: string | number, label: string, accent?: string): string {
+  return `
+    <div class="sw-card" style="background:#0f172a;border:1px solid #1e293b;border-radius:16px;padding:1.5rem;">
+      <div style="font-family:'Space Grotesk',system-ui,sans-serif;font-size:3rem;font-weight:700;line-height:1.08;color:${accent ?? "#ffffff"};">${esc(String(value))}</div>
+      <div style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:0.8125rem;text-transform:uppercase;letter-spacing:0.08em;color:rgba(255,255,255,0.25);margin-top:0.25rem;">${esc(label)}</div>
+    </div>`;
+}
+
 function renderStatCards(plan: PlanData): string {
   const totalTasks = plan.tasks.length;
   const totalHours = plan.tasks.reduce((s, t) => s + t.hours, 0);
   const layers = [...new Set(plan.tasks.map((t) => t.layer))];
-
-  function statCard(
-    value: string | number,
-    label: string,
-    accent?: string,
-  ): string {
-    const valueStr = String(value);
-    return `
-      <div class="sw-card" style="background:#0f172a;border:1px solid #1e293b;border-radius:16px;padding:1.5rem;">
-        <div style="font-family:'Space Grotesk',system-ui,sans-serif;font-size:3rem;font-weight:700;line-height:1.08;color:${accent ?? "#ffffff"};">${esc(valueStr)}</div>
-        <div style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:0.8125rem;text-transform:uppercase;letter-spacing:0.08em;color:rgba(255,255,255,0.25);margin-top:0.25rem;">${esc(label)}</div>
-      </div>`;
-  }
 
   return `
     <section class="plan-stats" style="margin-bottom:2rem;">
