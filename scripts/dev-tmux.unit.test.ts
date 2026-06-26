@@ -215,6 +215,38 @@ describe("buildStackCommands", () => {
       cmd.indexOf("migrate deploy"),
     );
   });
+
+  test("seeds the task-store admin token AFTER the task-store migrate deploy", () => {
+    const cmds = buildStackCommands(STACK_PANES);
+    const seedIdx = cmds.findIndex((c) =>
+      c.argv.join(" ").includes("seed-task-store-token.ts"),
+    );
+    const tsMigrateIdx = cmds.findIndex((c) =>
+      c.argv
+        .join(" ")
+        .includes("DATABASE_URL_SHIPWRIGHT_TASK_STORE=" /* its migrate */),
+    );
+    const seed = cmds[seedIdx];
+    expect(seedIdx).toBeGreaterThanOrEqual(0);
+    expect(seed?.kind).toBe("preflight");
+    // TaskToken table must exist before seeding into it.
+    expect(tsMigrateIdx).toBeLessThan(seedIdx);
+  });
+
+  test("the seeded token matches the token handed to the admin pane", () => {
+    // Drift guard: a mismatch would seed one token but auth the admin with another
+    // (→ 401 → degraded), which a pure URL/keys check would not catch.
+    const { calls, exec } = makeRecorder();
+    runStack(STACK_PANES, exec);
+    const adminSk = sendKeysForPane(calls, 1)?.join(" ") ?? "";
+    const tokenMatch = adminSk.match(/SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN=(\S+)/);
+    expect(tokenMatch).not.toBeNull();
+    const adminToken = tokenMatch?.[1] ?? "";
+    const seedCmd =
+      calls.find((c) => c.argv.join(" ").includes("seed-task-store-token.ts"))
+        ?.argv.join(" ") ?? "";
+    expect(seedCmd).toContain(`--token ${adminToken}`);
+  });
 });
 
 describe("runStack — per-pane commands via injected exec", () => {
@@ -241,6 +273,18 @@ describe("runStack — per-pane commands via injected exec", () => {
     expect(sk).toContain("admin/src/main.ts");
     expect(sk).toContain(`PORT=${ADMIN_PORT}`);
     expect(sk).toContain("DATABASE_URL_SHIPWRIGHT_ADMIN=");
+  });
+
+  test("admin pane wires the task-store URL + admin token so Tasks/PRs pages are not degraded", () => {
+    const { calls, exec } = makeRecorder();
+    runStack(STACK_PANES, exec);
+    const sk = sendKeysForPane(calls, 1)?.join(" ") ?? "";
+    // Both are required — the admin builds its task-store client only when both
+    // are truthy, otherwise the Tasks page renders the degraded banner.
+    expect(sk).toContain(
+      `SHIPWRIGHT_TASK_STORE_URL=http://localhost:${TASK_STORE_PORT}`,
+    );
+    expect(sk).toContain("SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN=");
   });
 
   test("task-store pane (pane 2) runs task-store with PORT=3002 and DATABASE_URL_SHIPWRIGHT_TASK_STORE", () => {
