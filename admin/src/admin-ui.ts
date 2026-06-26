@@ -1843,6 +1843,12 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       for (const a of agents) agentNames[a.id] = a.name;
     }
 
+    const suggestions = fetchDistinctTaskValues
+      ? await fetchDistinctTaskValues()
+        .then((v) => ({ repos: v.repos }))
+        .catch(() => ({}))
+      : {};
+
     return html(
       renderPrsPage(
         prs,
@@ -1852,6 +1858,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         agentNames,
         { total, limit, page },
         timezone,
+        suggestions,
       ),
     );
   });
