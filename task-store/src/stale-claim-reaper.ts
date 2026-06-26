@@ -1,9 +1,10 @@
 /**
  * task-store/src/stale-claim-reaper.ts
  *
- * StaleClaimReaper — background job that reclaims stuck in_progress tasks.
+ * StaleClaimReaper — background job that reclaims stuck in_progress tasks
+ * and stuck in_progress PullRequest review records.
  *
- * A task is considered stale when the agent holding it has stopped sending
+ * A record is considered stale when the agent holding it has stopped sending
  * heartbeats. Two cases are handled:
  *   1. heartbeatAt IS NOT NULL and heartbeatAt < cutoff (agent stopped beating)
  *   2. heartbeatAt IS NULL and claimedAt < cutoff (agent claimed but never beat)
@@ -33,15 +34,15 @@ export class StaleClaimReaper {
   }
 
   /**
-   * Bulk-reset stale in_progress tasks back to pending.
-   * Returns the number of tasks that were reaped.
+   * Bulk-reset stale in_progress Task and PullRequest records back to pending.
+   * Returns the total number of records that were reaped (tasks + PRs).
    */
   async reap(): Promise<number> {
     const cutoff = new Date(
       this.clock.now().getTime() - this.ttlMs,
     ).toISOString();
 
-    const affected = await this.prisma.$executeRaw`
+    const tasksAffected = await this.prisma.$executeRaw`
       UPDATE "Task"
       SET status = 'pending',
           "claimedBy" = NULL,
@@ -57,10 +58,32 @@ export class StaleClaimReaper {
         )
     `;
 
-    if (affected > 0) {
-      console.log(`[stale-claim-reaper] reaped ${affected} stale task(s)`);
+    const prsAffected = await this.prisma.$executeRaw`
+      UPDATE "PullRequest"
+      SET "reviewState" = 'pending',
+          "claimedBy" = NULL,
+          "claimedAt" = NULL,
+          "heartbeatAt" = NULL,
+          "updatedAt" = now()
+      WHERE "reviewState" = 'in_progress'
+        AND (
+          ("heartbeatAt" IS NOT NULL AND "heartbeatAt" < ${cutoff})
+          OR
+          ("heartbeatAt" IS NULL AND "claimedAt" IS NOT NULL AND "claimedAt" < ${cutoff})
+        )
+    `;
+
+    const total = tasksAffected + prsAffected;
+
+    if (tasksAffected > 0) {
+      console.log(`[stale-claim-reaper] reaped ${tasksAffected} stale task(s)`);
+    }
+    if (prsAffected > 0) {
+      console.log(
+        `[stale-claim-reaper] reaped ${prsAffected} stale PR review(s)`,
+      );
     }
 
-    return affected;
+    return total;
   }
 }

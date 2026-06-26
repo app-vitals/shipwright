@@ -203,13 +203,17 @@ export class PullRequestService implements PullRequestServiceLike {
     }
   }
 
-  /** Mark a PR review as posted. Sets reviewState=posted and reviewedAt. */
+  /** Mark a PR review as posted. Increments reviewCycles, sets reviewState=posted and reviewedAt. */
   async complete(id: string): Promise<PullRequest> {
     const now = this.clock.now().toISOString();
     try {
       return await this.prisma.pullRequest.update({
         where: { id },
-        data: { reviewState: "posted", reviewedAt: now },
+        data: {
+          reviewCycles: { increment: 1 },
+          reviewState: "posted",
+          reviewedAt: now,
+        },
       });
     } catch (err: unknown) {
       throw this.translateNotFound(err, "pr not found");

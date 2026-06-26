@@ -704,6 +704,7 @@ When invoked with a specific PR (e.g. `/shipwright:review app-vitals/shipwright#
      "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID" | jq -r '.repos[0] // empty'
    ```
    Fall back to the current workspace repo if the command fails.
+   **Limitation**: bare numbers only check the first configured repo (`repos[0]`). Multi-repo agents should use the full `org/repo#number` form to target a PR in any repo beyond the first.
 2. Read `state/reviews.json`, find the entry for this PR.
 
 **If entry exists with `status: "staged"`** — check for drift, then post:

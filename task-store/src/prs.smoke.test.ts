@@ -50,6 +50,7 @@ function makePr(overrides: Partial<PullRequest> = {}): PullRequest {
     reviewState: "pending",
     commitSha: null,
     patchCycles: 0,
+    reviewCycles: 0,
     agentId: null,
     reviewedAt: null,
     patchedAt: null,
@@ -220,6 +221,7 @@ function fakePrService(
       if (!existing) throw new NotFoundError("pr not found");
       const updated = {
         ...existing,
+        reviewCycles: (existing.reviewCycles ?? 0) + 1,
         reviewState: "posted" as const,
         reviewedAt: new Date().toISOString(),
         updatedAt: new Date(),
@@ -737,5 +739,43 @@ describe("/prs routes (smoke)", () => {
       body: JSON.stringify({ staged: true }),
     });
     expect(res.status).toBe(400);
+  });
+
+  // ─── reviewCycles ─────────────────────────────────────────────────────────
+
+  it("POST /prs/:id/complete increments reviewCycles to 1 on first call", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set(
+      "pr-1",
+      makePr({ id: "pr-1", reviewState: "in_progress", reviewCycles: 0 }),
+    );
+    const app = makeApp({ prService: fakePrService({ store }) });
+
+    const res = await app.request("/prs/pr-1/complete", {
+      method: "POST",
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PullRequest;
+    expect(body.reviewCycles).toBe(1);
+    expect(body.reviewState).toBe("posted");
+  });
+
+  it("POST /prs/:id/complete increments reviewCycles to 2 on second call", async () => {
+    const store = new Map<string, PullRequest>();
+    // Start with reviewCycles=1 (already reviewed once)
+    store.set(
+      "pr-1",
+      makePr({ id: "pr-1", reviewState: "in_progress", reviewCycles: 1 }),
+    );
+    const app = makeApp({ prService: fakePrService({ store }) });
+
+    const res = await app.request("/prs/pr-1/complete", {
+      method: "POST",
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PullRequest;
+    expect(body.reviewCycles).toBe(2);
   });
 });

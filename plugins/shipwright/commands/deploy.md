@@ -18,7 +18,8 @@ metrics on success.
 Parse `$ARGUMENTS` to extract `org`, `repo`, and `pr` number:
 - `org/repo#number` (e.g. `app-vitals/shipwright#123`): explicit
 - `number` or `#number`: infer org/repo from the agent config (`curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID" | jq -r '.repos[0] // empty'`),
-  defaulting to `app-vitals/shipwright`
+  defaulting to `app-vitals/shipwright`.
+  **Limitation**: bare numbers only check the first configured repo (`repos[0]`). Multi-repo agents should use the full `org/repo#number` form to target a PR in any repo beyond the first.
 - _(no arguments)_: scan mode — find the next ready PR to deploy (see Step 1)
 
 ---
