@@ -87,6 +87,7 @@ export interface AgentListItem {
   name: string;
   slackId: string | null;
   createdAt: Date;
+  selfHosted?: boolean;
 }
 
 export interface AgentDetail {
@@ -375,7 +376,8 @@ export function renderAgentsPage(
           .join("\n");
 
   const provisionButton = isAdmin
-    ? `<a href="/admin/provision" class="btn btn-primary">+ Provision agent</a>`
+    ? `<a href="/admin/provision" class="btn btn-primary">+ Provision agent</a>
+      <a href="/admin/agents/new" class="btn btn-secondary" style="margin-left:8px">+ New local agent</a>`
     : "";
 
   return `<!DOCTYPE html>
@@ -407,6 +409,73 @@ export function renderAgentsPage(
           ${rows}
         </tbody>
       </table>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+// ─── New local agent page ─────────────────────────────────────────────────────
+
+export function renderNewLocalAgentPage(
+  userName: string,
+  error?: string,
+): string {
+  const errorHtml = error
+    ? `<div class="alert alert-error">${escapeHtml(error)}</div>`
+    : "";
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>New Local Agent — Shipwright Admin</title>
+  <style>${baseStyles()}</style>
+</head>
+<body>
+  ${renderAdminToolbar(userName, "/admin/agents")}
+  <div class="vos-page">
+    <div class="page-header">
+      <div>
+        <a href="/admin/agents" style="font-size:13px;color:#6b7280;text-decoration:none">← Agents</a>
+        <h1 class="page-title" style="margin-top:4px">New Local Agent</h1>
+      </div>
+    </div>
+    ${errorHtml}
+    <div class="card">
+      <p style="font-size:14px;color:#6b7280;margin-bottom:20px">
+        Create a self-hosted agent. The agent will run on your own infrastructure.
+        Slack provisioning can be done separately from the agent detail page.
+      </p>
+      <form method="POST" action="/admin/agents" style="display:flex;flex-direction:column;gap:16px">
+        <div class="form-group">
+          <label class="form-label" for="name">Agent name <span style="color:#ef4444">*</span></label>
+          <input
+            id="name"
+            name="name"
+            type="text"
+            class="form-input"
+            placeholder="my-agent"
+            required
+            autofocus
+          />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="repos">Repos (optional, one per line)</label>
+          <textarea
+            id="repos"
+            name="repos"
+            class="form-input"
+            rows="4"
+            placeholder="my-org/repo-one&#10;my-org/repo-two"
+          ></textarea>
+          <p style="font-size:12px;color:#6b7280;margin-top:4px">Format: <span class="mono">org/repo</span></p>
+        </div>
+        <div>
+          <button type="submit" class="btn btn-primary">Create agent →</button>
+          <a href="/admin/agents" class="btn btn-secondary" style="margin-left:8px">Cancel</a>
+        </div>
+      </form>
     </div>
   </div>
 </body>

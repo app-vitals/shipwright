@@ -32,6 +32,7 @@ import {
   renderAgentDetailPage,
   renderAgentsPage,
   renderLoginPage,
+  renderNewLocalAgentPage,
   renderProvisionCompletePage,
   renderProvisionStartPage,
   renderProvisionXappTokenPage,
@@ -110,7 +111,7 @@ interface PrismaAgentLike {
     repos: string[];
   } | null>;
   create(args: {
-    data: { name: string; slackId?: string | null };
+    data: { name: string; slackId?: string | null; selfHosted?: boolean };
   }): Promise<{
     id: string;
     name: string;
@@ -628,6 +629,55 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     invalid_repo_format:
       "Repo must be in org/repo format (e.g. my-org/my-repo).",
   };
+
+  // ─── New local agent form (MUST be before /:id to avoid "new" being captured as param)
+
+  app.get("/admin/agents/new", requireAuth, (c) => {
+    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+    const rawError = c.req.query("error") ?? undefined;
+    const error = rawError ? (ERROR_MESSAGES[rawError] ?? rawError) : undefined;
+    return html(renderNewLocalAgentPage(c.var.userEmail, error));
+  });
+
+  // ─── Create agent (local / self-hosted) ──────────────────────────────────
+
+  app.post("/admin/agents", requireAuth, async (c) => {
+    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+    let name: string | undefined;
+    let reposRaw: string | undefined;
+    try {
+      const formData = await c.req.formData();
+      name = formData.get("name")?.toString()?.trim();
+      reposRaw = formData.get("repos")?.toString()?.trim();
+    } catch {
+      return c.redirect("/admin/agents/new", 302);
+    }
+    if (!name) {
+      return c.redirect("/admin/agents/new?error=missing_fields", 302);
+    }
+    const agent = await prisma.agent.create({
+      data: { name, selfHosted: true },
+    });
+    // Attach repos if provided
+    if (reposRaw) {
+      const repos = reposRaw
+        .split(/\r?\n/)
+        .map((r) => r.trim())
+        .filter((r) => r.length > 0);
+      const invalid = repos.filter((r) => !isOrgRepo(r));
+      if (invalid.length > 0) {
+        await prisma.agent.delete({ where: { id: agent.id } });
+        return c.redirect("/admin/agents/new?error=invalid_repo_format", 302);
+      }
+      if (repos.length > 0) {
+        await prisma.agent.update({
+          where: { id: agent.id },
+          data: { repos },
+        });
+      }
+    }
+    return c.redirect(`/admin/agents/${agent.id}`, 302);
+  });
 
   app.get("/admin/agents/:id", requireAuth, async (c) => {
     const agentId = c.req.param("id");
