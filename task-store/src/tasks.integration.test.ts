@@ -163,7 +163,10 @@ describeOrSkip("Task store schema (integration)", () => {
       data: { title: "Execution fields update test", status: "pending" },
     });
 
-    const metadata = { model: "claude-sonnet-4-6", session: "metrics-migration" };
+    const metadata = {
+      model: "claude-sonnet-4-6",
+      session: "metrics-migration",
+    };
     await prisma.task.update({
       where: { id: task.id },
       data: {
@@ -268,46 +271,46 @@ describeOrSkip("Task store schema (integration)", () => {
 
   // ─── TaskService.list() agentScope OR-query ────────────────────────────────
 
-  it("list() with agentScope returns correct OR union: assigned tasks + pool tasks in repos", async () => {
+  it("list() with agentScope shows own tasks + all tasks in scoped repos regardless of assignee", async () => {
     const taskService = new TaskService(prisma);
 
-    // Task explicitly assigned to agent-1
+    // Task explicitly assigned to agent-1 in a repo NOT in scope — still visible (own task)
     await prisma.task.create({
       data: {
-        title: "Assigned to agent-1",
+        title: "Assigned to agent-1 out-of-scope repo",
         status: "pending",
         assignee: "agent-1",
         repo: "app-vitals/other-repo",
       },
     });
 
-    // Unassigned pool task in agent-1's scope
+    // Unassigned pool task in scope
     await prisma.task.create({
       data: {
-        title: "Pool task in scope",
+        title: "Unassigned in scope repo",
         status: "pending",
         assignee: null,
         repo: "acme-inc/backend-api",
       },
     });
 
-    // Unassigned pool task NOT in agent-1's scope
+    // Task assigned to agent-2 in scope — visible because repo is in scope
     await prisma.task.create({
       data: {
-        title: "Pool task out of scope",
-        status: "pending",
-        assignee: null,
-        repo: "app-vitals/shipwright",
-      },
-    });
-
-    // Task assigned to a different agent
-    await prisma.task.create({
-      data: {
-        title: "Assigned to agent-2",
+        title: "Assigned to agent-2 in scope repo",
         status: "pending",
         assignee: "agent-2",
         repo: "acme-inc/backend-api",
+      },
+    });
+
+    // Task assigned to agent-2 in a repo NOT in scope — not visible
+    await prisma.task.create({
+      data: {
+        title: "Assigned to agent-2 out-of-scope repo",
+        status: "pending",
+        assignee: "agent-2",
+        repo: "app-vitals/shipwright",
       },
     });
 
@@ -317,15 +320,182 @@ describeOrSkip("Task store schema (integration)", () => {
 
     const titles = result.tasks.map((t) => t.title).sort();
 
-    // Should include: explicitly assigned + pool task in scope
-    expect(titles).toContain("Assigned to agent-1");
-    expect(titles).toContain("Pool task in scope");
+    expect(titles).toContain("Assigned to agent-1 out-of-scope repo");
+    expect(titles).toContain("Unassigned in scope repo");
+    expect(titles).toContain("Assigned to agent-2 in scope repo");
+    expect(titles).not.toContain("Assigned to agent-2 out-of-scope repo");
+    expect(result.total).toBe(3);
+  });
 
-    // Should NOT include: pool task out of scope OR assigned to agent-2
-    expect(titles).not.toContain("Pool task out of scope");
-    expect(titles).not.toContain("Assigned to agent-2");
+  // ─── TaskService.listBlocked() repo scope ─────────────────────────────────
 
-    expect(result.total).toBe(2);
+  it("listBlocked() without repos only returns own blocked tasks", async () => {
+    const taskService = new TaskService(prisma);
+
+    await prisma.task.create({
+      data: {
+        title: "Own blocked",
+        status: "blocked",
+        assignee: "agent-1",
+        repo: "acme-inc/backend-api",
+      },
+    });
+    await prisma.task.create({
+      data: {
+        title: "Other blocked in scope",
+        status: "blocked",
+        assignee: "agent-2",
+        repo: "acme-inc/backend-api",
+      },
+    });
+
+    const result = await taskService.listBlocked("agent-1");
+    expect(result.map((t) => t.title)).toEqual(["Own blocked"]);
+  });
+
+  it("listBlocked() with repos returns blocked tasks in scope regardless of assignee", async () => {
+    const taskService = new TaskService(prisma);
+
+    await prisma.task.create({
+      data: {
+        title: "Own blocked",
+        status: "blocked",
+        assignee: "agent-1",
+        repo: "acme-inc/backend-api",
+      },
+    });
+    await prisma.task.create({
+      data: {
+        title: "Other blocked in scope",
+        status: "blocked",
+        assignee: "agent-2",
+        repo: "acme-inc/backend-api",
+      },
+    });
+    await prisma.task.create({
+      data: {
+        title: "Other blocked out of scope",
+        status: "blocked",
+        assignee: "agent-2",
+        repo: "app-vitals/shipwright",
+      },
+    });
+
+    const result = await taskService.listBlocked("agent-1", [
+      "acme-inc/backend-api",
+    ]);
+    const titles = result.map((t) => t.title).sort();
+
+    expect(titles).toContain("Own blocked");
+    expect(titles).toContain("Other blocked in scope");
+    expect(titles).not.toContain("Other blocked out of scope");
+  });
+
+  // ─── TaskService.distinct() repo scope ────────────────────────────────────
+
+  it("distinct() without scopeRepos only returns sessions/repos from own tasks", async () => {
+    const taskService = new TaskService(prisma);
+
+    await prisma.task.create({
+      data: {
+        title: "Own",
+        status: "pending",
+        assignee: "agent-1",
+        session: "own-session",
+        repo: "acme-inc/backend-api",
+      },
+    });
+    await prisma.task.create({
+      data: {
+        title: "Other",
+        status: "pending",
+        assignee: "agent-2",
+        session: "other-session",
+        repo: "acme-inc/backend-api",
+      },
+    });
+
+    const result = await taskService.distinct("agent-1");
+    expect(result.sessions).toEqual(["own-session"]);
+    expect(result.repos).toEqual(["acme-inc/backend-api"]);
+  });
+
+  it("distinct() with scopeRepos surfaces sessions from all tasks in scope", async () => {
+    const taskService = new TaskService(prisma);
+
+    await prisma.task.create({
+      data: {
+        title: "Own",
+        status: "pending",
+        assignee: "agent-1",
+        session: "session-a",
+        repo: "acme-inc/backend-api",
+      },
+    });
+    await prisma.task.create({
+      data: {
+        title: "Warchild task",
+        status: "pending",
+        assignee: "agent-2",
+        session: "session-b",
+        repo: "acme-inc/backend-api",
+      },
+    });
+    await prisma.task.create({
+      data: {
+        title: "Out of scope",
+        status: "pending",
+        assignee: "agent-2",
+        session: "session-c",
+        repo: "app-vitals/shipwright",
+      },
+    });
+
+    const result = await taskService.distinct("agent-1", [
+      "acme-inc/backend-api",
+    ]);
+    expect(result.sessions.sort()).toEqual(["session-a", "session-b"]);
+    expect(result.sessions).not.toContain("session-c");
+  });
+
+  // ─── TaskService.listReady() stays strict (assignee-only for repo pool) ───
+
+  it("listReady() does not return tasks assigned to a different agent even in scope repo", async () => {
+    const taskService = new TaskService(prisma);
+
+    await prisma.task.create({
+      data: {
+        title: "Own pending",
+        status: "pending",
+        assignee: "agent-1",
+        repo: "acme-inc/backend-api",
+      },
+    });
+    await prisma.task.create({
+      data: {
+        title: "Warchild pending in scope",
+        status: "pending",
+        assignee: "agent-2",
+        repo: "acme-inc/backend-api",
+      },
+    });
+    await prisma.task.create({
+      data: {
+        title: "Unassigned pool in scope",
+        status: "pending",
+        assignee: null,
+        repo: "acme-inc/backend-api",
+      },
+    });
+
+    const result = await taskService.listReady("agent-1", [
+      "acme-inc/backend-api",
+    ]);
+    const titles = result.map((t) => t.title);
+
+    expect(titles).toContain("Own pending");
+    expect(titles).toContain("Unassigned pool in scope");
+    expect(titles).not.toContain("Warchild pending in scope");
   });
 
   it("list() with agentScope AND repo filter applies repo as additional AND condition", async () => {
