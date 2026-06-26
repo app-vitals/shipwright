@@ -2460,6 +2460,7 @@ describe("admin UI — tasks page", () => {
       state: "open",
       reviewState: "approved",
       patchCycles: 1,
+      reviewCycles: 0,
       reviewedAt: "2026-06-20T10:00:00Z",
       patchedAt: null,
     };
@@ -2747,6 +2748,7 @@ describe("admin UI — PRs page", () => {
     state: "open",
     reviewState: "in_review",
     patchCycles: 0,
+    reviewCycles: 0,
     agentId: null,
     claimedBy: null,
     createdAt: "2026-06-01T00:00:00Z",
