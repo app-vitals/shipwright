@@ -9,6 +9,8 @@ Read the latest `entropy-report.md` and open focused, human-reviewable PRs for `
 
 **Prerequisites:** Run `/entropy-scan` first to produce `entropy-report.md`.
 
+> **Task store setup:** When using the `--queue` flag, this skill pushes findings to the Shipwright task store. If `SHIPWRIGHT_TASK_STORE_URL` or `SHIPWRIGHT_TASK_STORE_TOKEN` is missing, invoke `/shipwright:task-store` for setup instructions.
+
 ---
 
 ## Setup: Parse Arguments

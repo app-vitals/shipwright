@@ -11,6 +11,8 @@ metrics on success.
 
 **This command runs autonomously. Do not pause for user input unless pre-flight fails.**
 
+> **Task store setup:** This command updates task status in the Shipwright task store on deploy completion. If `SHIPWRIGHT_TASK_STORE_URL` or `SHIPWRIGHT_TASK_STORE_TOKEN` is missing, invoke `/shipwright:task-store` for setup instructions.
+
 ---
 
 ## Arguments
