@@ -1667,7 +1667,7 @@ describe("renderTasksPage — blocker badges", () => {
 const EMPTY_PAGINATION = { total: 0, limit: 50, page: 1 };
 
 describe("renderTasksPage — 4-state toggle", () => {
-  test("Ready tab is active by default (no state filter)", () => {
+  test("no tab highlighted when no state filter (show all)", () => {
     const html = renderTasksPage(
       [],
       {},
@@ -1678,14 +1678,28 @@ describe("renderTasksPage — 4-state toggle", () => {
       undefined,
       undefined,
     );
-    // Ready link URL should NOT contain ?state= (it's the default)
-    expect(html).toMatch(/href="\/admin\/tasks"[^>]*>Ready</);
-    // Ready tab has active styling
-    expect(html).toContain("background:#6366f1;color:#fff");
-    // Other tabs are present
+    // No tab should have active (indigo) styling
+    expect(html).not.toContain("background:#6366f1;color:#fff");
+    // All tabs are present
+    expect(html).toContain("Ready");
     expect(html).toContain("In Progress");
     expect(html).toContain("Blocked");
     expect(html).toContain("Closed");
+  });
+
+  test("Reset button links to /admin/tasks with no params", () => {
+    const html = renderTasksPage(
+      [],
+      {},
+      false,
+      USER_NAME,
+      {},
+      EMPTY_PAGINATION,
+      undefined,
+      undefined,
+    );
+    expect(html).toContain('href="/admin/tasks"');
+    expect(html).toContain("Reset");
   });
 
   test("In Progress tab is active when state=in_progress", () => {

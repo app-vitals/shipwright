@@ -1238,7 +1238,7 @@ export function renderTasksPage(
     return qs ? `?${qs}` : "";
   };
 
-  const activeState = filters.state ?? "ready";
+  const activeState = filters.state;
   const tabStyle = (state: string) =>
     activeState === state
       ? "background:#6366f1;color:#fff;font-weight:600"
@@ -1351,6 +1351,7 @@ export function renderTasksPage(
           <input name="agent" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.agent ?? "")}" placeholder="agent name"${suggestions?.agents?.length ? ' list="agents-list"' : ""} />
         </div>
         <button type="submit" class="btn btn-secondary" style="font-size:12px">Filter</button>
+        <a href="/admin/tasks" class="btn btn-secondary" style="font-size:12px">Reset</a>
         ${suggestions?.sessions?.length ? `<datalist id="sessions-list">${suggestions.sessions.map((s) => `<option value="${escapeHtml(s)}">`).join("")}</datalist>` : ""}
         ${suggestions?.repos?.length ? `<datalist id="repos-list">${suggestions.repos.map((r) => `<option value="${escapeHtml(r)}">`).join("")}</datalist>` : ""}
         ${suggestions?.agents?.length ? `<datalist id="agents-list">${suggestions.agents.map((a) => `<option value="${escapeHtml(a)}">`).join("")}</datalist>` : ""}
