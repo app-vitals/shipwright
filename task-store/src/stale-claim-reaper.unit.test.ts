@@ -16,8 +16,18 @@ interface ExecuteRawCall {
   values: unknown[];
 }
 
-function makePrismaDouble(affectedRows = 0) {
+/**
+ * makePrismaDouble — accepts per-call return values.
+ * `affectedRowsByCall` can be a single number (applied to the first call only;
+ * subsequent calls return 0) or an array of per-call values.
+ * This lets tests isolate Task vs PullRequest reap behaviour without coupling
+ * to the order of $executeRaw calls.
+ */
+function makePrismaDouble(affectedRowsByCall: number | number[] = 0) {
   const calls: ExecuteRawCall[] = [];
+  const rowsByCall = Array.isArray(affectedRowsByCall)
+    ? affectedRowsByCall
+    : [affectedRowsByCall];
 
   const prisma = {
     $executeRaw(
@@ -25,7 +35,8 @@ function makePrismaDouble(affectedRows = 0) {
       ...values: unknown[]
     ): Promise<number> {
       calls.push({ strings, values });
-      return Promise.resolve(affectedRows);
+      const idx = calls.length - 1;
+      return Promise.resolve(rowsByCall[idx] ?? 0);
     },
     _calls: calls,
   };
@@ -71,7 +82,8 @@ describe("StaleClaimReaper", () => {
     const count = await reaper.reap();
 
     expect(count).toBe(1);
-    expect(prisma._calls).toHaveLength(1);
+    // Two $executeRaw calls: one for Task, one for PullRequest
+    expect(prisma._calls).toHaveLength(2);
 
     // The cutoff should be now - DEFAULT_TTL_MS
     const expectedCutoff = msAgo(NOW, DEFAULT_TTL_MS).toISOString();
@@ -106,9 +118,8 @@ describe("StaleClaimReaper", () => {
     const count = await reaper.reap();
 
     expect(count).toBe(1);
-    // The same $executeRaw call covers both branches (heartbeatAt IS NOT NULL stale
-    // AND heartbeatAt IS NULL with stale claimedAt). Both are in the WHERE clause.
-    expect(prisma._calls).toHaveLength(1);
+    // Two $executeRaw calls: one for Task, one for PullRequest
+    expect(prisma._calls).toHaveLength(2);
     const sql = prisma._calls[0].strings.join("?");
     expect(sql).toContain('"heartbeatAt" IS NULL');
     expect(sql).toContain('"claimedAt"');
@@ -161,5 +172,65 @@ describe("StaleClaimReaper", () => {
 
     const sql = prisma._calls[0].strings.join("?");
     expect(sql).toContain('"startedAt" = NULL');
+  });
+
+  // ─── PullRequest reaping ────────────────────────────────────────────────────
+
+  test("reaps 0 stale PRs when none are in_progress", async () => {
+    // Both calls return 0: 0 tasks, 0 PRs
+    const prisma = makePrismaDouble([0, 0]);
+    const reaper = new StaleClaimReaper(prisma as never, clock);
+
+    const count = await reaper.reap();
+
+    expect(count).toBe(0);
+    expect(prisma._calls).toHaveLength(2);
+    // Second call targets PullRequest table
+    const prSql = prisma._calls[1].strings.join("?");
+    expect(prSql).toContain('"PullRequest"');
+    expect(prSql).toContain('"reviewState"');
+  });
+
+  test("reaps N stale PRs with expired heartbeat", async () => {
+    // 0 tasks, 2 stale PRs
+    const prisma = makePrismaDouble([0, 2]);
+    const reaper = new StaleClaimReaper(prisma as never, clock);
+
+    const count = await reaper.reap();
+
+    expect(count).toBe(2);
+    expect(prisma._calls).toHaveLength(2);
+    const prSql = prisma._calls[1].strings.join("?");
+    // Resets to pending, clears claim fields
+    expect(prSql).toContain("'pending'");
+    expect(prSql).toContain('"claimedBy" = NULL');
+    expect(prSql).toContain('"claimedAt" = NULL');
+    expect(prSql).toContain('"heartbeatAt" = NULL');
+    // Same cutoff as Task reap
+    const expectedCutoff = new Date(
+      NOW.getTime() - DEFAULT_TTL_MS,
+    ).toISOString();
+    expect(prisma._calls[1].values[0]).toBe(expectedCutoff);
+  });
+
+  test("combined count: tasks + PRs both reaped", async () => {
+    // 3 tasks + 2 PRs = 5 total
+    const prisma = makePrismaDouble([3, 2]);
+    const reaper = new StaleClaimReaper(prisma as never, clock);
+
+    const count = await reaper.reap();
+
+    expect(count).toBe(5);
+  });
+
+  test("PR reap WHERE clause covers in_progress with heartbeatAt IS NULL", async () => {
+    const prisma = makePrismaDouble([0, 1]);
+    const reaper = new StaleClaimReaper(prisma as never, clock);
+
+    await reaper.reap();
+
+    const prSql = prisma._calls[1].strings.join("?");
+    expect(prSql).toContain('"heartbeatAt" IS NULL');
+    expect(prSql).toContain('"claimedAt"');
   });
 });
