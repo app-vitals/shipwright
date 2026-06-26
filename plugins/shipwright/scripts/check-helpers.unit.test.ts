@@ -553,7 +553,7 @@ describe("createTaskStoreClient query()", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Removed exports — readReviews and ReviewEntry were removed in DRJ-2.3
+// Removed exports
 // ---------------------------------------------------------------------------
 
 describe("removed exports", () => {
