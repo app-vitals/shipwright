@@ -2438,6 +2438,73 @@ describe("renderPrsPage", () => {
     const html = render();
     expect(html).toContain('href="/admin/prs" class="vos-nav-link active"');
   });
+
+  test("tab URLs preserve reviewState filter when reviewState is set", () => {
+    const html = render([], { state: "open", reviewState: "posted" });
+    expect(html).toContain("reviewState=posted");
+    // Both tab hrefs should carry the reviewState param
+    const openTabMatch = html.match(/href="[^"]*state=open[^"]*"/);
+    expect(openTabMatch).toBeTruthy();
+    expect(openTabMatch?.[0]).toContain("reviewState=posted");
+  });
+
+  test("reviewState dropdown pre-selects the active option", () => {
+    const html = render([], { reviewState: "posted" });
+    expect(html).toContain('value="posted" selected');
+  });
+});
+
+// ─── renderPrsPage — datalist autocomplete (AFP-1.2) ─────────────────────────
+
+describe("renderPrsPage — datalist autocomplete", () => {
+  const pagination = { total: 0, limit: 50, page: 1 };
+
+  test("renderPrsPage with repos suggestions renders repo datalist", () => {
+    const html = renderPrsPage(
+      [],
+      {},
+      false,
+      USER_NAME,
+      {},
+      pagination,
+      undefined,
+      { repos: ["org/repo-a", "org/repo-b"] },
+    );
+    expect(html).toContain('<datalist id="prs-repos-list">');
+    expect(html).toContain('<option value="org/repo-a">');
+    expect(html).toContain('<option value="org/repo-b">');
+    expect(html).toContain('list="prs-repos-list"');
+  });
+
+  test("renderPrsPage without suggestions renders plain text input (no datalist)", () => {
+    const html = renderPrsPage(
+      [],
+      {},
+      false,
+      USER_NAME,
+      {},
+      pagination,
+      undefined,
+      undefined,
+    );
+    expect(html).not.toContain("<datalist");
+    expect(html).not.toContain('list="prs-repos-list"');
+  });
+
+  test("renderPrsPage escapes repo suggestion values to prevent XSS", () => {
+    const html = renderPrsPage(
+      [],
+      {},
+      false,
+      USER_NAME,
+      {},
+      pagination,
+      undefined,
+      { repos: ['<script>alert("xss")</script>'] },
+    );
+    expect(html).not.toContain('<script>alert("xss")</script>');
+    expect(html).toContain("&lt;script&gt;");
+  });
 });
 
 // ─── renderPrDetailPage ──────────────────────────────────────────────────────
