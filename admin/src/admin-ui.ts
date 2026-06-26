@@ -38,6 +38,8 @@ import {
   renderPrsPage,
   renderTaskDetailPage,
   renderTasksPage,
+  renderTokensPage,
+  type TaskStoreTokenItem,
 } from "./admin-ui-pages.ts";
 import type { AgentCronJobService } from "./agent-cron-jobs.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
@@ -257,6 +259,23 @@ export interface AdminUIDeps {
    * If absent or returns null, the PR detail route redirects to /admin/prs.
    */
   fetchTaskStorePrById?: (id: string) => Promise<PrListItem | null>;
+  /**
+   * List all tokens from the task-store service (admin token required).
+   * If absent, the tokens page renders in degraded mode.
+   */
+  adminListTokens?: () => Promise<TaskStoreTokenItem[]>;
+  /**
+   * Create a new token in the task-store service (admin token required).
+   * Returns the token record plus the rawToken — shown once, never stored.
+   */
+  adminCreateToken?: (
+    label?: string,
+    agentId?: string,
+  ) => Promise<TaskStoreTokenItem & { rawToken: string }>;
+  /**
+   * Revoke a token by ID via the task-store service (admin token required).
+   */
+  adminRevokeToken?: (id: string) => Promise<void>;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -358,6 +377,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     fetchTaskStorePr,
     fetchTaskStorePrs,
     fetchTaskStorePrById,
+    adminListTokens,
+    adminCreateToken,
+    adminRevokeToken,
   } = deps;
 
   const app = new Hono<AdminUIEnv>();
@@ -1836,6 +1858,66 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }
 
     return html(renderPrDetailPage(pr, c.var.userEmail, agentNames, timezone));
+  });
+
+  // ─── Task-store token proxy routes ────────────────────────────────────────
+
+  app.get("/admin/tokens", requireAuth, async (c) => {
+    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+    const error = c.req.query("error") ?? undefined;
+    let tokens: TaskStoreTokenItem[] = [];
+    let degraded = false;
+    if (!adminListTokens) {
+      degraded = true;
+    } else {
+      try {
+        tokens = await adminListTokens();
+      } catch {
+        degraded = true;
+      }
+    }
+    return html(
+      renderTokensPage(tokens, degraded, c.var.userEmail, c.req.path, undefined, timezone, error),
+    );
+  });
+
+  app.post("/admin/tokens", requireAuth, async (c) => {
+    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+    if (!adminCreateToken) return new Response("Token store not configured", { status: 503 });
+    const form = await c.req.formData();
+    const label = form.get("label")?.toString()?.trim() || undefined;
+    if (!label) return c.redirect("/admin/tokens?error=Label+is+required", 302);
+    const agentId = form.get("agentId")?.toString() || undefined;
+    let result: (TaskStoreTokenItem & { rawToken: string }) | undefined;
+    try {
+      result = await adminCreateToken(label, agentId);
+    } catch (err) {
+      const msg = err instanceof Error ? encodeURIComponent(err.message) : "create_failed";
+      return c.redirect(`/admin/tokens?error=${msg}`, 302);
+    }
+    // Render inline — never redirect with the raw token in the URL.
+    let tokens: TaskStoreTokenItem[] = [];
+    try {
+      if (adminListTokens) tokens = await adminListTokens();
+    } catch {
+      // best-effort refresh; show the new token even if list fails
+    }
+    return html(
+      renderTokensPage(tokens, false, c.var.userEmail, "/admin/tokens", result.rawToken, timezone),
+    );
+  });
+
+  app.post("/admin/tokens/:id/revoke", requireAuth, async (c) => {
+    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+    if (!adminRevokeToken) return new Response("Token store not configured", { status: 503 });
+    const tokenId = c.req.param("id");
+    try {
+      await adminRevokeToken(tokenId);
+    } catch (err) {
+      const msg = err instanceof Error ? encodeURIComponent(err.message) : "revoke_failed";
+      return c.redirect(`/admin/tokens?error=${msg}`, 302);
+    }
+    return c.redirect("/admin/tokens", 302);
   });
 
   // ─── Agent delete (danger zone) ───────────────────────────────────────────

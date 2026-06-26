@@ -335,6 +335,35 @@ async function startServer(): Promise<void> {
               throw new Error(`task-store GET /prs/${id} → ${res.status}`);
             return res.json();
           },
+          adminListTokens: async () => {
+            const res = await fetch(`${taskStoreUrl}/tokens`, {
+              headers: { Authorization: `Bearer ${taskStoreAdminToken}` },
+            });
+            if (!res.ok)
+              throw new Error(`task-store GET /tokens → ${res.status}`);
+            return res.json();
+          },
+          adminCreateToken: async (label?: string, agentId?: string) => {
+            const res = await fetch(`${taskStoreUrl}/tokens`, {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${taskStoreAdminToken}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ label, agentId }),
+            });
+            if (!res.ok)
+              throw new Error(`task-store POST /tokens → ${res.status}`);
+            return res.json();
+          },
+          adminRevokeToken: async (id: string) => {
+            const res = await fetch(`${taskStoreUrl}/tokens/${id}`, {
+              method: "DELETE",
+              headers: { Authorization: `Bearer ${taskStoreAdminToken}` },
+            });
+            if (!res.ok)
+              throw new Error(`task-store DELETE /tokens/${id} → ${res.status}`);
+          },
         }
       : {};
 
