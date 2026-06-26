@@ -15,7 +15,7 @@ For each PR, apply the appropriate fix. Goes silent when nothing needs addressin
 
 **This command runs autonomously. Do not pause for user input.**
 
-> **Task store setup:** This command reads task state from the Shipwright task store when correlating CI failures with open tasks. If `SHIPWRIGHT_TASK_STORE_URL` or `SHIPWRIGHT_TASK_STORE_TOKEN` is missing, invoke `/shipwright:task-store` for setup instructions.
+> **Task store setup:** This command records patch cycles in the Shipwright task store after pushing fixes. If `SHIPWRIGHT_TASK_STORE_URL` or `SHIPWRIGHT_TASK_STORE_TOKEN` is missing, invoke `/shipwright:task-store` for setup instructions.
 
 ---
 
