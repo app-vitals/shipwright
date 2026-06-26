@@ -211,6 +211,19 @@ Branch statuses: `blocked`, `cancelled`, `deploying`, `deployed`
 | `POST` | `/tasks/:id/complete` | Mark `done` |
 | `POST` | `/tasks/:id/fail` | Mark `blocked` |
 
+**PR tracking (`/prs`)**
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/prs` | List PR records (`?repo`, `?prNumber`, `?taskId`, `?state`, `?reviewState`, `?staged`, `?limit`, `?offset`) |
+| `POST` | `/prs/claim` | Upsert + claim a PR record → `in_progress` (body: `repo`, `prNumber`, `commitSha`; optional: `claimedBy`, `taskId`) |
+| `GET` | `/prs/:id` | Fetch one PR record (404 if missing) |
+| `PATCH` | `/prs/:id` | Update PR fields (partial update) |
+| `POST` | `/prs/:id/heartbeat` | Extend review TTL (prevents StaleClaimReaper from auto-releasing) |
+| `POST` | `/prs/:id/complete` | Mark review complete |
+| `POST` | `/prs/:id/patch` | Record a patch cycle on this PR |
+| `POST` | `/prs/:id/release` | Release claim → `pending` |
+
 > **Scoping:** All endpoints automatically scope to the calling agent's tasks via the bearer token. Admin tokens see all agents' tasks.
 
 ---

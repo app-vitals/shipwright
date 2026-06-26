@@ -7,9 +7,11 @@ argument-hint: "[org/repo#number]"
 
 Evaluate open PRs and post findings. Scope: review only — no patching, merging, or deploying.
 
-`state/reviews.json` is a local dedup cache. It tracks reviewed commit SHAs to avoid
-re-posting on PRs that haven't changed. It is not shared state and is not read by other
-agents — each agent maintains its own.
+PR tracking state — claimed commit SHAs, review state, and staging status — lives in the
+task store PR API (`$SHIPWRIGHT_TASK_STORE_URL/prs`). This is shared state across agents:
+claims are atomic, so two agents won't review the same commit simultaneously. The review
+narrative itself is still written locally to `state/reviews/PR_REVIEW_{pr}.md` and
+`state/reviews/pr_review_{pr}.json` for posting.
 
 > **Task store setup:** This command updates task status in the Shipwright task store after review. If `SHIPWRIGHT_TASK_STORE_URL` or `SHIPWRIGHT_TASK_STORE_TOKEN` is missing, invoke `/shipwright:task-store` for setup instructions.
 
@@ -19,7 +21,7 @@ agents — each agent maintains its own.
 
 Parse `$ARGUMENTS`:
 - `org/repo#number` (e.g. `app-vitals/shipwright#123`): target a specific PR. If a staged
-  review exists in `state/reviews.json`, post it. Otherwise, review it.
+  review exists (PR record with `staged: true`), post it. Otherwise, review it.
 - `number` or `#number`: same, using the repo from the task store API
 - No arguments: normal review flow — find the next PR to review from the queue
 
@@ -51,18 +53,30 @@ Policy: {staging|auto-posting} reviews
 
 If `cleanup_merged_worktrees` is true:
 
-1. Read `state/reviews.json` (create as `[]` if missing)
-2. For entries with `status` of `staged`, `posted`, or `reviewing`:
+1. List PR records for each configured repo:
+   ```bash
+   curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+     "$SHIPWRIGHT_TASK_STORE_URL/prs?repo={org}/{repo}" | jq -c '.prs[]'
+   ```
+2. For each record whose `reviewState` is `in_progress`, `posted`, or `approved`:
    - Check if the PR is merged or closed: `gh pr view {pr} --repo {org}/{repo} --json state -q '.state'`
-   - If `MERGED` or `CLOSED`: remove the worktree if it exists (`git -C repos/{repo} worktree remove worktrees/{repo}-{branch-slug} --force 2>/dev/null`), update `status: "merged"`, set `mergedAt`
-3. For entries with `status: "merged"`: set `status: "cleaned"` (terminal)
-4. Remove stale worktrees older than `cleanup_after_days`:
+   - If `MERGED` or `CLOSED`:
+     - Remove the worktree if it exists: `git -C repos/{repo} worktree remove worktrees/{repo}-{branch-slug} --force 2>/dev/null`
+     - Mark the record terminal in one PATCH:
+       ```bash
+       curl -sf -X PATCH \
+         -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+         -H "Content-Type: application/json" \
+         "$SHIPWRIGHT_TASK_STORE_URL/prs/{record.id}" \
+         -d "{\"state\": \"merged\", \"mergedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" >/dev/null
+       ```
+       `state: "merged"` is the terminal state — no further status progression is needed.
+3. Remove stale worktrees older than `cleanup_after_days`:
    ```bash
    find worktrees/ -maxdepth 1 -type d -mtime +{cleanup_after_days} -exec basename {} \;
    ```
    For each, remove via `git worktree remove`.
-5. Write updated `state/reviews.json`
-6. If any cleaned: print `Cleaned {N} worktrees`
+4. If any cleaned: print `Cleaned {N} worktrees`
 
 ---
 
@@ -76,10 +90,22 @@ gh api /user -q '.login'
 
 ### Step 3a: Drain Staged Queue (interactive mode)
 
-Read `state/reviews.json` for entries with `status: "staged"`.
+Fetch staged PR records for each configured repo:
+```bash
+curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs?repo={org}/{repo}&staged=true" | jq -c '.prs[]'
+```
 
-If any staged reviews exist, present them in priority order:
-1. **APPROVE verdicts first** — unblocking is highest value
+If any staged records exist, fetch current GitHub metadata for each (the record may hold
+stale metadata) to populate the display:
+```bash
+gh pr view {pr} --repo {org}/{repo} --json title,additions,deletions
+```
+`diffSize` = `additions + deletions`. Treat a record with `reviewState: "approved"` as an
+APPROVE verdict for sorting.
+
+Present them in priority order:
+1. **APPROVE verdicts first** (`reviewState: "approved"`) — unblocking is highest value
 2. **Then by `diffSize` ascending** — smallest diffs are fastest to confirm
 
 Display:
@@ -92,6 +118,8 @@ Display:
 
 Post staged reviews, or skip to new reviews?
 ```
+
+The "Staged" column comes from `record.updatedAt`.
 
 **If posting**: work through them one at a time using the Step 14 posting mechanics
 (show review summary → confirm → post → move to next). After all staged reviews are
@@ -112,7 +140,7 @@ REPOS=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
 
 ```bash
 gh pr list --state open --repo {org}/{repo} \
-  --json number,title,author,headRefName,baseRefName,isDraft,reviews,updatedAt,additions,deletions
+  --json number,title,author,headRefName,baseRefName,isDraft,reviews,createdAt,updatedAt,additions,deletions
 ```
 
 Exclude:
@@ -122,7 +150,7 @@ Exclude:
 
 When a PR is checked out for review, also query the task store for a task whose `pr`
 field matches the PR number — if found, record the `id` and `session` for metrics enrichment
-in Steps 12 and 13:
+in Step 13:
 
 ```bash
 curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
@@ -131,40 +159,46 @@ curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
 
 ### Deduplication and Filtering
 
-Read `state/reviews.json`. For each candidate PR:
+For each candidate PR, fetch its PR record from the task store:
+```bash
+curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs?repo={org}/{repo}&prNumber={number}" | jq -c '.prs[0] // empty'
+```
 
-- **No entry**: eligible (new PR). Create a `pending` entry immediately:
-  ```json
-  {
-    "pr": {number}, "repo": "{repo}", "org": "{org}",
-    "title": "{title}", "author": "{author.login}", "branch": "{headRefName}",
-    "additions": {additions}, "deletions": {deletions},
-    "diffSize": {additions + deletions},
-    "firstSeen": "{now ISO}", "status": "pending"
-  }
-  ```
-- **Entry with `status: "reviewing"`**: skip (another run is working on it)
-- **Entry with `status: "staged"` or `"posted"`**: check for new commits since last review:
+The record's `commitSha` is the SHA at which the PR was last reviewed (call it
+`lastReviewedCommit`). When a record is fetched, capture it immediately:
+
+```bash
+LAST_REVIEWED_COMMIT=$(echo "$record" | jq -r '.commitSha // empty')
+```
+
+`LAST_REVIEWED_COMMIT` is empty when there is no record (first review). This value is
+used in Steps 4, 5, and 9 — do not fetch it again.
+
+Apply this eligibility logic:
+
+- **No record**: eligible (new PR, Tier 2). `LAST_REVIEWED_COMMIT` is empty. No local
+  entry is created — the task store creates the record atomically on first claim in Step 4.
+- **`staged: true`**: exclude — Step 3a owns staged records.
+- **`reviewState: "in_progress"`**: skip (another run has claimed it).
+- **`reviewState: "posted"` or `"approved"`**: check for new commits since last review:
   ```bash
   gh pr view {pr} --repo {org}/{repo} --json headRefOid -q '.headRefOid'
   ```
-  If `headRefOid` differs from `lastReviewedCommit`: check whether the update is merge-only before marking eligible:
+  If `headRefOid` differs from `record.commitSha`: check whether the update is merge-only before marking eligible:
   ```bash
   gh api repos/{org}/{repo}/pulls/{pr}/commits --paginate
   ```
-  Find `lastReviewedCommit` in the commit list. Check if every commit after it has `parents.length >= 2` (i.e., all are merge commits — merge-from-base or merge-from-main). If yes: skip and print `Skipping #{pr} — merge-only update since {lastReviewedCommit[0..7]}`. If no (real code changes exist), or if the anchor commit is not found, or if the API call fails: eligible for re-review.
-  If `headRefOid` is the same as `lastReviewedCommit`: skip.
-- **Entry with `status: "cleaned"` or `"merged"`**: skip.
-
-If a `pending` entry is missing `diffSize` (created before this field was added), populate
-it from the `gh pr list` fetch before sorting.
+  Find `record.commitSha` in the commit list. Check if every commit after it has `parents.length >= 2` (i.e., all are merge commits — merge-from-base or merge-from-main). If yes: skip and print `Skipping #{pr} — merge-only update since {record.commitSha[0..7]}`. If no (real code changes exist), or if the anchor commit is not found, or if the API call fails: eligible for re-review (Tier 1).
+  If `headRefOid` is the same as `record.commitSha`: skip.
+- **`reviewState: "pending"`**: eligible.
 
 #### Unresolved Comment Check
 
-> **If `lastReviewedCommit` is set AND `headRefOid != lastReviewedCommit`: stop — do not run this check. Mark the PR eligible and proceed. New commits from the author unconditionally override all unresolved thread skip conditions.**
+> **If a record exists AND `headRefOid != record.commitSha`: stop — do not run this check. Mark the PR eligible and proceed. New commits from the author unconditionally override all unresolved thread skip conditions.**
 
 Only run the check below when BOTH of the following are true:
-- `lastReviewedCommit` is not set (first review), OR `headRefOid == lastReviewedCommit` (head has not moved)
+- There is no record (first review), OR `headRefOid == record.commitSha` (head has not moved)
 - i.e. there is no evidence the author has pushed anything new
 
 Fetch reviews and comment timeline:
@@ -185,32 +219,29 @@ Print: `Skipping #{pr} — unresolved feedback from @{login} ({type} on {date}).
 
 ### Pick Next PR
 
-Selection is based on the **value of the review action**, not diff size. Each eligible PR
-has a `state/reviews.json` entry with `status`, `posted`, `lastReviewedCommit`, and
-`firstSeen`. Compare `lastReviewedCommit` to the PR's current head SHA to detect new
-commits since the last review.
+Selection is based on the **value of the review action**, not diff size. Eligibility is
+determined by the PR record (from the task store) plus the PR's current head SHA. Compare
+`record.commitSha` to the current head SHA to detect new commits since the last review.
 
 **Tier 1 — Re-review of posted reviews** (highest priority)
-Entry has `status: "posted"` (or `posted: true`) AND the current head SHA differs from
-`lastReviewedCommit`, AND the new commits are not merge-only (as determined by the
+Record has `reviewState: "posted"` or `"approved"` AND the current head SHA differs from
+`record.commitSha`, AND the new commits are not merge-only (as determined by the
 deduplication check above). The author pushed real code changes after seeing our feedback —
 re-reviewing closes the loop and can unblock a merge.
 
-**Tier 2 — First review of pending PRs**
-Entry has `status: "pending"`, or the PR has no entry yet. Never been reviewed — give
-it first feedback so every open PR gets coverage.
+**Tier 2 — First review of new PRs**
+The PR has no record yet, or the record has `reviewState: "pending"`. Never been reviewed —
+give it first feedback so every open PR gets coverage.
 
-**Tier 3 — Stale unposted staged reviews — DO NOT auto-process**
-Entry has `status: "staged"`, `posted: false`, and head SHA differs from
-`lastReviewedCommit`. Do NOT pick these during a cron run: nobody has seen the staged
-review yet, so refreshing it just burns the slot. Leave them stale. They are re-reviewed
-only on demand via an explicit `/shipwright:review {org}/{repo}#{pr}` invocation (the
-`/shipwright:review-staged` walkthrough already skips stale entries and directs the owner
-there).
+Staged records (`staged: true`) are NOT picked here — Step 3a owns them. During a cron run,
+nobody has seen a staged review yet, so refreshing it just burns the slot. Staged records
+are re-reviewed only on demand via an explicit `/shipwright:review {org}/{repo}#{pr}`
+invocation (the `/shipwright:review-staged` walkthrough already skips stale entries and
+directs the owner there).
 
-Pick the first PR from the highest non-empty tier. Within each tier, sort by `firstSeen`
-ascending (oldest first) so no PR starves. `diffSize` is no longer used for ordering;
-it may be used only as a final tie-breaker within the same `firstSeen` value.
+Pick the first PR from the highest non-empty tier. Order within tiers:
+- **Tier 1**: sort by `record.updatedAt` descending (most recently touched first).
+- **Tier 2**: sort by the GitHub PR `createdAt` ascending (oldest open PR first) so no PR starves.
 
 If nothing to review:
 ```
@@ -235,7 +266,29 @@ git -C repos/{repo} worktree remove worktrees/{repo}-{branch-slug} --force
 git -C repos/{repo} worktree add worktrees/{repo}-{branch-slug} origin/{branch}
 ```
 
-Update `state/reviews.json`: add or update the entry with `status: "reviewing"`.
+### Claim using pre-captured commit SHA
+
+`LAST_REVIEWED_COMMIT` was already captured in Step 3b from the PR record fetched during
+deduplication (empty if no record existed). The claim will overwrite `commitSha` with the
+new head — `LAST_REVIEWED_COMMIT` preserves the pre-claim value without an extra fetch.
+Use it in Steps 5 and 9.
+
+Then claim the PR atomically at the current head. Fetch the head SHA first:
+```bash
+headRefOid=$(gh pr view {pr} --repo {org}/{repo} --json headRefOid -q '.headRefOid')
+```
+```bash
+PR_CLAIM=$(curl -s -o /tmp/pr_claim.json -w '%{http_code}' -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs/claim" \
+  -d "{\"repo\": \"{org}/{repo}\", \"prNumber\": {pr}, \"commitSha\": \"{headRefOid}\"$([ -n \"{taskId}\" ] && echo \", \\\"taskId\\\": \\\"{taskId}\\\"\" || true)}")
+```
+- `201` (new) or `200` (update): claimed. Capture `.id` from `/tmp/pr_claim.json` as
+  `PR_RECORD_ID`; the claim sets `reviewState: "in_progress"`.
+- `409` (conflict): another agent holds the claim at this commit. Remove the worktree
+  (`git -C repos/{repo} worktree remove worktrees/{repo}-{branch-slug} --force 2>/dev/null`),
+  **skip this PR**, and return to Step 3b to pick the next candidate.
 
 All subsequent steps run from `worktrees/{repo}-{branch-slug}/`.
 
@@ -272,13 +325,17 @@ All subsequent steps run from `worktrees/{repo}-{branch-slug}/`.
 
 7. **Test-readiness context** (optional): try to read `worktrees/{repo}-{branch-slug}/docs/test-readiness/test-system.md`. If absent, note that no repo-specific test-readiness doc exists. When the changed files include any path that looks like a test file — by common conventions across languages (e.g. files named or located in a way that signals they contain tests, such as files in `test/`, `tests/`, `spec/`, or `__tests__/` directories, or files whose names follow typical test-naming conventions for the project's language), also extract the "## Testing" section from the root CLAUDE.md (if present). Use the project's language and toolchain (visible from the diff and CLAUDE.md) to recognise test files — do not apply a fixed set of glob patterns. Combine both pieces into `testReadinessContext`. If neither produces content, `testReadinessContext` is absent — omit it entirely from the subagent prompt.
 
+`lastReviewedCommit` is the `LAST_REVIEWED_COMMIT` value saved from the pre-claim record in
+Step 3b (the record's `commitSha` before the claim overwrote it).
+
 Apply the unresolved comment check from Step 3 using the fetched `reviews` and `comments`
 (they were just fetched above — no extra API call needed). **If `lastReviewedCommit` is set AND
 `headRefOid != lastReviewedCommit`: skip this check entirely and continue — head has moved,
 re-review unconditionally.** Only run the check for first reviews (no `lastReviewedCommit`) or
 when the head has not moved (`headRefOid == lastReviewedCommit`). If any substantive unresolved
-feedback is found: update `state/reviews.json` status to `pending`, skip this PR,
-and return to Step 3b to pick the next candidate.
+feedback is found: release the claim so the record returns to `pending`
+(`POST $SHIPWRIGHT_TASK_STORE_URL/prs/{PR_RECORD_ID}/release`), skip this PR, and return to
+Step 3b to pick the next candidate.
 
 ---
 
@@ -420,9 +477,12 @@ Write `state/reviews/PR_REVIEW_{pr}.md`:
 
 ### Re-Review (Update)
 
-If this PR was reviewed before (entry in reviews.json with `reviewCount >= 1`):
+If this agent reviewed this PR before — detected by the local file `state/reviews/PR_REVIEW_{pr}.md`
+already existing (`test -f state/reviews/PR_REVIEW_{pr}.md`):
 
-Append an update section instead of creating a new file:
+Append an update section instead of creating a new file. (Do not use `reviewCycles` from the
+task store — another agent may have incremented it without this agent ever reviewing, so the
+local file is the authoritative signal that *this* agent has a prior review to append to.)
 
 ```markdown
 ---
@@ -506,14 +566,21 @@ should be held; the inline comments convey the specific feedback to the author.
      --input state/reviews/pr_review_{pr}.json
    ```
 2. Capture `html_url` from response
-3. Run Step 11b to upsert the PullRequest record.
-4. Update `state/reviews.json`: `posted: true`, `postedAt: now`, `status: "posted"`
-5. Print: `Posted review for #{pr}: {html_url}`
-6. Post Slack message (see below)
+3. Run Step 11b to mark the PR record posted.
+4. Print: `Posted review for #{pr}: {html_url}`
+5. Post Slack message (see below)
 
 ### If `auto_post_reviews` is false (default):
 
-1. Update `state/reviews.json`: `status: "staged"`
+1. Mark the PR record staged:
+   ```bash
+   curl -sf -X PATCH \
+     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+     -H "Content-Type: application/json" \
+     "$SHIPWRIGHT_TASK_STORE_URL/prs/${PR_RECORD_ID}" \
+     -d '{"staged": true}' >/dev/null
+   ```
+   (`PR_RECORD_ID` is the claim response `.id` from Step 4.)
 2. Post Slack message to the configured channel (see below)
 3. Print: `Review staged for #{pr}. Slack notification sent.`
 
@@ -545,37 +612,23 @@ Use the Slack MCP tool if available. If no Slack integration is configured, prin
 
 ---
 
-## Step 11b: Upsert PullRequest Record
+## Step 11b: Mark PullRequest Record Posted
 
-Run this step immediately after posting a review (applies to both the `auto_post_reviews` path in Step 11 and the targeted PR posting path in Step 14). Skip this step when the review is staged (not posted). The `reviews.json` write in Step 12 is unchanged — this is a side effect only.
+Run this step immediately after posting a review (applies to both the `auto_post_reviews` path in Step 11 and the targeted PR posting path in Step 14). Skip this step when the review is staged (not posted).
 
-Use `{org}`, `{repo}`, `{pr}`, `{headRefOid}` (from Step 5), `{verdict}` (from Step 10), and `{taskId}` (from Step 3b if a matching task was found).
+Use `{verdict}` (from Step 10) and `PR_RECORD_ID` — the record ID captured from the claim in Step 4 (targeted flow: from the staged record fetched in Step 14).
 
-### 1. Claim the PR record
-
-```bash
-PR_CLAIM=$(curl -sf -X POST \
-  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  -H "Content-Type: application/json" \
-  "${SHIPWRIGHT_TASK_STORE_URL}/prs/claim" \
-  -d "{\"repo\": \"{org}/{repo}\", \"prNumber\": {pr}, \"commitSha\": \"{headRefOid}\"$([ -n \"{taskId}\" ] && echo \", \\\"taskId\\\": \\\"{taskId}\\\"\" || true)}" \
-  2>/dev/null)
-```
-
-If the claim call fails, `PR_CLAIM` will be empty; step 2 handles this case.
-
-### 2. Extract record ID
+### 1. Confirm the record ID
 
 ```bash
-PR_RECORD_ID=$(echo "$PR_CLAIM" | jq -r '.id // empty')
 if [ -z "$PR_RECORD_ID" ]; then
-  echo "Warning: could not extract PR record ID from claim response — skipping"
+  echo "Warning: no PR record ID available — skipping"
 else
 ```
 
-Wrap steps 3–4 in the `else` branch and close with `fi` after step 4.
+Wrap steps 2–3 in the `else` branch and close with `fi` after step 3.
 
-### 3. Mark review as posted
+### 2. Mark review as posted
 
 ```bash
 curl -sf -X POST \
@@ -583,7 +636,7 @@ curl -sf -X POST \
   "${SHIPWRIGHT_TASK_STORE_URL}/prs/${PR_RECORD_ID}/complete" >/dev/null 2>&1
 ```
 
-### 4. Set agentId (and reviewState for APPROVE)
+### 3. Set agentId (and reviewState for APPROVE)
 
 Set `agentId` from `$SHIPWRIGHT_AGENT_ID`. For APPROVE verdicts, also set `reviewState=approved`; for COMMENT/CHANGES_REQUESTED, set agentId only:
 
@@ -601,29 +654,7 @@ curl -sf -X PATCH \
 fi
 ```
 
----
-
-## Step 12: Update reviews.json
-
-Update the entry for this PR:
-
-```json
-{
-  "lastReviewedAt": "{now}",
-  "lastReviewedCommit": "{head_sha}",
-  "reviewCount": "{increment}",
-  "reviewFile": "state/reviews/PR_REVIEW_{pr}.md",
-  "verdict": "{APPROVE|COMMENT}",
-  "findingsCount": "{count}",
-  "posted": "{true|false}",
-  "postedAt": "{timestamp|null}",
-  "status": "{staged|posted}"
-}
-```
-
-Write `state/reviews.json`.
-
-**Never update task status when posting a review.** The deploy skill looks up tasks by PR number (expecting `status: 'pr_open'`) to perform post-deployment tracking — changing status here breaks that linkage. Task status transitions are owned by the deploy skill (`pr_open` → `deployed`).
+**Never update task status when posting a review.** The deploy skill looks up tasks by PR number (expecting `status: 'pr_open'`) to perform post-deployment tracking — changing task status here breaks that linkage. Task status transitions are owned by the deploy skill (`pr_open` → `deployed`). This applies to the task store *task* record only; the PR *record* updates above (`complete`, `agentId`, `reviewState`) are expected.
 
 ---
 
@@ -707,9 +738,14 @@ When invoked with a specific PR (e.g. `/shipwright:review app-vitals/shipwright#
    ```
    Fall back to the current workspace repo if the command fails.
    **Limitation**: bare numbers only check the first configured repo (`repos[0]`). Multi-repo agents should use the full `org/repo#number` form to target a PR in any repo beyond the first.
-2. Read `state/reviews.json`, find the entry for this PR.
+2. Fetch the PR record from the task store:
+   ```bash
+   curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+     "$SHIPWRIGHT_TASK_STORE_URL/prs?repo={org}/{repo}&prNumber={pr}" | jq -c '.prs[0] // empty'
+   ```
+   Capture the record's `id` as `PR_RECORD_ID` and `commitSha` as `lastReviewedCommit`.
 
-**If entry exists with `status: "staged"`** — check for drift, then post:
+**If a record exists with `staged: true`** — check for drift, then post:
 
 > **Design note**: When `auto_post_reviews` is false, the cron stages reviews and
 > notifies the owner. Explicitly targeting a staged PR (`/shipwright:review {pr}`) IS
@@ -720,19 +756,26 @@ When invoked with a specific PR (e.g. `/shipwright:review app-vitals/shipwright#
 ```bash
 gh pr view {pr} --repo {org}/{repo} --json headRefOid --jq '.headRefOid'
 ```
-Compare to `lastReviewedCommit` in the reviews.json entry.
+Compare to `record.commitSha` (`lastReviewedCommit`).
 
-If `headRefOid != lastReviewedCommit` (author pushed new commits since the review was staged):
+If `headRefOid != record.commitSha` (author pushed new commits since the review was staged):
 - Do **not** post the stale review body.
-- Update `state/reviews.json`: `status: "reviewing"`
+- Re-claim the record at the new head to flip it to `in_progress` and clear staged:
+  ```bash
+  curl -sf -X POST \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/claim" \
+    -d "{\"repo\": \"{org}/{repo}\", \"prNumber\": {pr}, \"commitSha\": \"{headRefOid}\"}" >/dev/null
+  ```
 - Print:
   ```
-  Staged review is stale — {pr} has new commits since the review was written ({lastReviewedCommit[0..7]} → {headRefOid[0..7]}).
+  Staged review is stale — {pr} has new commits since the review was written ({record.commitSha[0..7]} → {headRefOid[0..7]}).
   Re-reviewing now.
   ```
 - Continue from **Step 4** (checkout into worktree) with this PR as the target.
   The Step 9 "Re-Review (Update)" mechanics will append an update section to the
-  existing `state/reviews/PR_REVIEW_{pr}.md` and re-stage the entry.
+  existing `state/reviews/PR_REVIEW_{pr}.md` and re-stage the record.
 - Stop the post flow here.
 
 **2b. Re-fetch for new unresolved feedback** before posting (only reached when head SHA matches):
@@ -740,11 +783,11 @@ If `headRefOid != lastReviewedCommit` (author pushed new commits since the revie
 gh pr view {pr} --repo {org}/{repo} --json reviews,comments,commits
 ```
 Apply the unresolved comment check from Step 3, but restricted to feedback that arrived
-**after `lastReviewedAt`** in the reviews.json entry.
+**after the record's `reviewedAt`** timestamp.
 
 If any substantive unresolved comments or `CHANGES_REQUESTED` reviews arrived since the
 review was staged:
-- Update `state/reviews.json`: `status: "staged"`, `needsRereviewReason: "{summary}"`
+- No state change is needed — the record stays staged.
 - Print:
   ```
   Not posting — new unresolved feedback arrived since the review was staged:
@@ -769,12 +812,19 @@ review was staged:
      --input state/reviews/pr_review_{pr}.json
    ```
 7. Capture `html_url`
-8. Run Step 11b to upsert the PullRequest record.
-9. Update `state/reviews.json`: `posted: true`, `postedAt: now`, `status: "posted"`
-10. Print: `Posted review for #{pr}: {html_url}`
-11. Post Slack message using the format from Step 11
+8. Clear the staged flag, then run Step 11b to mark the record posted:
+   ```bash
+   curl -sf -X PATCH \
+     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+     -H "Content-Type: application/json" \
+     "$SHIPWRIGHT_TASK_STORE_URL/prs/${PR_RECORD_ID}" \
+     -d '{"staged": false}' >/dev/null
+   ```
+   Then run Step 11b (using `PR_RECORD_ID`) to `complete()` and set `agentId`/`reviewState`.
+9. Print: `Posted review for #{pr}: {html_url}`
+10. Post Slack message using the format from Step 11
 
-**If no entry or entry is not staged** — review it:
+**If no record or record is not staged** — review it:
 3. Skip Step 3 (queue building) and go directly to Step 4 (checkout) with this
    specific PR as the target.
 
