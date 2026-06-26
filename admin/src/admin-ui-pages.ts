@@ -1222,7 +1222,7 @@ export function renderTasksPage(
               : '<span style="color:#9ca3af">—</span>';
             const blockerBadges = renderBlockerBadges(t.blockedBy);
             const prCell = t.pr
-              ? `<a href="https://github.com/${escapeHtml(t.repo)}/pull/${t.pr}" style="color:#6366f1;text-decoration:none" title="View PR">#${t.pr}</a>`
+              ? `<a href="https://github.com/${escapeHtml(t.repo ?? "")}/pull/${t.pr}" style="color:#6366f1;text-decoration:none" title="View PR">#${t.pr}</a>`
               : '<span style="color:#9ca3af">—</span>';
             return `<tr data-href="/admin/tasks/${escapeHtml(t.id)}" style="cursor:pointer">
     <td class="mono" style="font-size:11px"><a href="/admin/tasks/${escapeHtml(t.id)}" style="color:#6366f1;text-decoration:none" title="View details">${escapeHtml(t.id)}</a></td>
