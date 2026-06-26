@@ -33,11 +33,11 @@ CURRENT_USER=$(gh api /user -q '.login')
 Resolve the list of repos to scan. Use the same resolver as other shipwright commands:
 
 ```bash
-REPOS=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks/repo" | jq -r '.repo // empty')
+REPOS=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
+  "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID" | jq -r '.repos[]')
 ```
 
-This returns a single repo. Iterate over the result to scan it.
+Iterate over the results to scan each repo.
 
 For each repo, fetch open PRs authored by `CURRENT_USER`:
 
