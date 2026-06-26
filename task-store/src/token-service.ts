@@ -156,4 +156,19 @@ export class TaskTokenService implements TokenServiceLike {
   async list(): Promise<TaskToken[]> {
     return this.prisma.taskToken.findMany({ orderBy: { createdAt: "asc" } });
   }
+
+  /**
+   * Seed a bootstrap admin token. Hashes `rawToken` and upserts it as an admin
+   * token (agentId: null) if not already present. Idempotent — safe to call on
+   * every startup. No-ops when `rawToken` is empty.
+   */
+  async seed(rawToken: string): Promise<void> {
+    if (!rawToken) return;
+    const hashed = hashToken(rawToken);
+    await this.prisma.taskToken.upsert({
+      where: { token: hashed },
+      update: {},
+      create: { token: hashed, agentId: null, label: "seed" },
+    });
+  }
 }
