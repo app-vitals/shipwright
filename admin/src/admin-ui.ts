@@ -276,6 +276,12 @@ export interface AdminUIDeps {
    * Revoke a token by ID via the task-store service (admin token required).
    */
   adminRevokeToken?: (id: string) => Promise<void>;
+  /**
+   * Base URL of the task-store service. When provided, the mint-success banner
+   * renders a ready-to-paste env block with SHIPWRIGHT_TASK_STORE_URL and
+   * SHIPWRIGHT_TASK_STORE_TOKEN so operators can copy-paste into their shell.
+   */
+  taskStoreBaseUrl?: string;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -380,6 +386,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     adminListTokens,
     adminCreateToken,
     adminRevokeToken,
+    taskStoreBaseUrl,
   } = deps;
 
   const app = new Hono<AdminUIEnv>();
@@ -1874,6 +1881,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   app.get("/admin/tokens", requireAuth, async (c) => {
     if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
     const error = c.req.query("error") ?? undefined;
+    const selectedAgentId = c.req.query("agentId") ?? undefined;
     let tokens: TaskStoreTokenItem[] = [];
     let degraded = false;
     if (!adminListTokens) {
@@ -1885,8 +1893,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         degraded = true;
       }
     }
+    const agents = await prisma.agent.findMany();
     return html(
-      renderTokensPage(tokens, degraded, c.var.userEmail, c.req.path, undefined, timezone, error),
+      renderTokensPage(tokens, degraded, c.var.userEmail, c.req.path, undefined, timezone, error, agents, selectedAgentId),
     );
   });
 
@@ -1911,8 +1920,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     } catch {
       // best-effort refresh; show the new token even if list fails
     }
+    const agents = await prisma.agent.findMany();
     return html(
-      renderTokensPage(tokens, false, c.var.userEmail, "/admin/tokens", result.rawToken, timezone),
+      renderTokensPage(tokens, false, c.var.userEmail, "/admin/tokens", result.rawToken, timezone, undefined, agents, agentId, taskStoreBaseUrl),
     );
   });
 
