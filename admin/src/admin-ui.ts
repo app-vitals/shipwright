@@ -634,7 +634,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
   app.get("/admin/agents/new", requireAuth, (c) => {
     if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
-    return html(renderNewLocalAgentPage(c.var.userEmail));
+    const rawError = c.req.query("error") ?? undefined;
+    const error = rawError ? (ERROR_MESSAGES[rawError] ?? rawError) : undefined;
+    return html(renderNewLocalAgentPage(c.var.userEmail, error));
   });
 
   // ─── Create agent (local / self-hosted) ──────────────────────────────────
@@ -662,6 +664,11 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         .split(/\r?\n/)
         .map((r) => r.trim())
         .filter((r) => r.length > 0);
+      const invalid = repos.filter((r) => !isOrgRepo(r));
+      if (invalid.length > 0) {
+        await prisma.agent.delete({ where: { id: agent.id } });
+        return c.redirect("/admin/agents/new?error=invalid_repo_format", 302);
+      }
       if (repos.length > 0) {
         await prisma.agent.update({
           where: { id: agent.id },

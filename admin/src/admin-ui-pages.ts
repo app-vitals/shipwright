@@ -418,7 +418,13 @@ export function renderAgentsPage(
 
 // ─── New local agent page ─────────────────────────────────────────────────────
 
-export function renderNewLocalAgentPage(userName: string): string {
+export function renderNewLocalAgentPage(
+  userName: string,
+  error?: string,
+): string {
+  const errorHtml = error
+    ? `<div class="alert alert-error">${escapeHtml(error)}</div>`
+    : "";
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -436,6 +442,7 @@ export function renderNewLocalAgentPage(userName: string): string {
         <h1 class="page-title" style="margin-top:4px">New Local Agent</h1>
       </div>
     </div>
+    ${errorHtml}
     <div class="card">
       <p style="font-size:14px;color:#6b7280;margin-bottom:20px">
         Create a self-hosted agent. The agent will run on your own infrastructure.
