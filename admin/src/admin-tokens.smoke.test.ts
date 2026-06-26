@@ -269,6 +269,25 @@ describe("admin UI — /admin/tokens routes", () => {
     expect(html).toContain("sw_raw_abc123");
   });
 
+  it("POST /admin/tokens redirects with error when label is empty", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        adminCreateToken: async () => ({ ...MOCK_TS_TOKEN, rawToken: "sw_raw_abc123" }),
+      }),
+    );
+    const body = new URLSearchParams({ label: "" });
+    const res = await app.request("/admin/tokens", {
+      method: "POST",
+      headers: {
+        Cookie: `admin_session=${cookie}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: body.toString(),
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toContain("/admin/tokens?error=");
+  });
+
   it("POST /admin/tokens returns 503 when adminCreateToken is absent", async () => {
     const app = createAdminUIApp(makeMockDeps());
     const body = new URLSearchParams({ label: "my-token" });

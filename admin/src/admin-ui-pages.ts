@@ -2093,6 +2093,7 @@ export function renderTokensPage(
   activePath = "/admin/tokens",
   rawToken?: string,
   timezone?: string,
+  error?: string,
 ): string {
   const tz = timezone ?? "America/Los_Angeles";
   const fmt = (d: Date | string | null | undefined) => {
@@ -2103,6 +2104,10 @@ export function renderTokensPage(
 
   const degradedBanner = degraded
     ? `<div class="alert alert-warning">Token store unavailable — configure SHIPWRIGHT_TASK_STORE_URL and SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN.</div>`
+    : "";
+
+  const errorBanner = error
+    ? `<div class="alert alert-danger" style="margin-bottom:16px">${escapeHtml(decodeURIComponent(error))}</div>`
     : "";
 
   const rawTokenBanner = rawToken
@@ -2123,7 +2128,7 @@ export function renderTokensPage(
           (t) => `<tr>
           <td style="font-size:12px;color:#6b7280;font-family:monospace">${escapeHtml(t.id)}</td>
           <td>${escapeHtml(t.label ?? "—")}</td>
-          <td style="font-size:12px;color:#6b7280;font-family:monospace">${escapeHtml(t.agentId ?? "admin")}</td>
+          <td style="font-size:12px;color:#6b7280;font-family:monospace">${escapeHtml(t.agentId ?? "(admin)")}</td>
           <td>${fmt(t.createdAt)}</td>
           <td>${t.revokedAt ? `<span style="color:#dc2626">Revoked ${fmt(t.revokedAt)}</span>` : '<span style="color:#16a34a">Active</span>'}</td>
           <td>
@@ -2144,8 +2149,8 @@ export function renderTokensPage(
         <h2 style="font-size:15px;font-weight:600;margin-bottom:12px">Create token</h2>
         <form method="POST" action="/admin/tokens" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
           <div>
-            <label style="display:block;font-size:12px;color:#6b7280;margin-bottom:4px">Label (optional)</label>
-            <input type="text" name="label" placeholder="e.g. ci-pipeline" class="form-input" style="width:220px">
+            <label style="display:block;font-size:12px;color:#6b7280;margin-bottom:4px">Label <span style="color:#dc2626">*</span></label>
+            <input type="text" name="label" placeholder="e.g. ci-pipeline" class="form-input" style="width:220px" required>
           </div>
           <div>
             <label style="display:block;font-size:12px;color:#6b7280;margin-bottom:4px">Agent ID (optional — blank for admin token)</label>
@@ -2171,6 +2176,7 @@ export function renderTokensPage(
       <h1 class="page-title">Tokens</h1>
     </div>
     ${degradedBanner}
+    ${errorBanner}
     ${rawTokenBanner}
     <div class="card" style="overflow:auto">
       <table class="data-table" style="width:100%">

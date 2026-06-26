@@ -1864,6 +1864,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
   app.get("/admin/tokens", requireAuth, async (c) => {
     if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+    const error = c.req.query("error") ?? undefined;
     let tokens: TaskStoreTokenItem[] = [];
     let degraded = false;
     if (!adminListTokens) {
@@ -1876,7 +1877,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       }
     }
     return html(
-      renderTokensPage(tokens, degraded, c.var.userEmail, c.req.path, undefined, timezone),
+      renderTokensPage(tokens, degraded, c.var.userEmail, c.req.path, undefined, timezone, error),
     );
   });
 
@@ -1884,7 +1885,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
     if (!adminCreateToken) return new Response("Token store not configured", { status: 503 });
     const form = await c.req.formData();
-    const label = form.get("label")?.toString() || undefined;
+    const label = form.get("label")?.toString()?.trim() || undefined;
+    if (!label) return c.redirect("/admin/tokens?error=Label+is+required", 302);
     const agentId = form.get("agentId")?.toString() || undefined;
     let result: (TaskStoreTokenItem & { rawToken: string }) | undefined;
     try {
