@@ -1230,7 +1230,7 @@ export function renderTasksPage(
   // State toggle params (preserve other filters, reset page)
   const makeStateParams = (newState: string) => {
     const p = new URLSearchParams();
-    if (newState !== "ready") p.set("state", newState);
+    p.set("state", newState);
     if (filters.session) p.set("session", filters.session);
     if (filters.repo) p.set("repo", filters.repo);
     if (filters.agent) p.set("agent", filters.agent);
@@ -1238,7 +1238,7 @@ export function renderTasksPage(
     return qs ? `?${qs}` : "";
   };
 
-  const activeState = filters.state ?? "ready";
+  const activeState = filters.state;
   const tabStyle = (state: string) =>
     activeState === state
       ? "background:#6366f1;color:#fff;font-weight:600"
@@ -1283,8 +1283,7 @@ export function renderTasksPage(
   const makePageUrl = (p: number) => {
     const params = new URLSearchParams();
     if (filters.status) params.set("status", filters.status);
-    else if (filters.state && filters.state !== "ready")
-      params.set("state", filters.state);
+    else if (filters.state) params.set("state", filters.state);
     if (filters.session) params.set("session", filters.session);
     if (filters.repo) params.set("repo", filters.repo);
     if (filters.agent) params.set("agent", filters.agent);
@@ -1351,6 +1350,7 @@ export function renderTasksPage(
           <input name="agent" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.agent ?? "")}" placeholder="agent name"${suggestions?.agents?.length ? ' list="agents-list"' : ""} />
         </div>
         <button type="submit" class="btn btn-secondary" style="font-size:12px">Filter</button>
+        <a href="/admin/tasks" class="btn btn-secondary" style="font-size:12px">Reset</a>
         ${suggestions?.sessions?.length ? `<datalist id="sessions-list">${suggestions.sessions.map((s) => `<option value="${escapeHtml(s)}">`).join("")}</datalist>` : ""}
         ${suggestions?.repos?.length ? `<datalist id="repos-list">${suggestions.repos.map((r) => `<option value="${escapeHtml(r)}">`).join("")}</datalist>` : ""}
         ${suggestions?.agents?.length ? `<datalist id="agents-list">${suggestions.agents.map((a) => `<option value="${escapeHtml(a)}">`).join("")}</datalist>` : ""}
@@ -1467,8 +1467,12 @@ export function renderTaskDetailPage(
   const prSection = pullRequest
     ? (() => {
         const prUrl = `https://github.com/${pullRequest.repo}/pull/${pullRequest.prNumber}`;
-        const reviewedFmt = pullRequest.reviewedAt ? dateField("Reviewed", pullRequest.reviewedAt) : "";
-        const patchedFmt = pullRequest.patchedAt ? dateField("Patched", pullRequest.patchedAt) : "";
+        const reviewedFmt = pullRequest.reviewedAt
+          ? dateField("Reviewed", pullRequest.reviewedAt)
+          : "";
+        const patchedFmt = pullRequest.patchedAt
+          ? dateField("Patched", pullRequest.patchedAt)
+          : "";
         return `<div class="card" style="margin-bottom:16px">
       <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Pull Request Review</div>
       <table class="detail-table"><tbody>
@@ -1679,7 +1683,12 @@ export function renderTaskDetailPage(
 
 export function renderPrsPage(
   prs: PrListItem[],
-  filters: { repo?: string; state?: string; reviewState?: string; taskId?: string },
+  filters: {
+    repo?: string;
+    state?: string;
+    reviewState?: string;
+    taskId?: string;
+  },
   degraded: boolean,
   userName: string,
   agentNames: Record<string, string> = {},
@@ -1770,7 +1779,10 @@ export function renderPrsPage(
     </div>`;
 
   // Pagination
-  const totalPages = Math.max(1, Math.ceil(pagination.total / pagination.limit));
+  const totalPages = Math.max(
+    1,
+    Math.ceil(pagination.total / pagination.limit),
+  );
   const page = pagination.page;
   const makePageUrl = (p: number) => {
     const params = new URLSearchParams();
