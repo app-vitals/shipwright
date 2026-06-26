@@ -144,9 +144,10 @@ model PullRequest {
   staged      Boolean       @default(false) // true = review written but not yet posted
   state       PrState       @default(open)
   reviewState PrReviewState @default(pending) // workflow phase within the review cycle
-  commitSha   String?
-  patchCycles Int           @default(0)
-  agentId     String?
+  commitSha    String?
+  patchCycles  Int           @default(0)
+  reviewCycles Int           @default(0)
+  agentId      String?
   reviewedAt  String?
   patchedAt   String?
   mergedAt    String?
