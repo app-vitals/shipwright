@@ -614,6 +614,22 @@ describe("/prs routes (smoke)", () => {
     expect(body.prs.every((p: PullRequest) => p.staged === true)).toBe(true);
   });
 
+  it("GET /prs?staged=false returns unstaged records only", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1", staged: true }));
+    store.set("pr-2", makePr({ id: "pr-2", staged: false }));
+    store.set("pr-3", makePr({ id: "pr-3", staged: true }));
+    const app = makeApp({ prService: fakePrService({ store }) });
+
+    const res = await app.request("/prs?staged=false", {
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PullRequestListResult;
+    expect(body.prs).toHaveLength(1);
+    expect(body.prs.every((p: PullRequest) => p.staged === false)).toBe(true);
+  });
+
   // ─── GET /prs/:id ─────────────────────────────────────────────────────────
 
   it("GET /prs/:id returns 200 with the record", async () => {
