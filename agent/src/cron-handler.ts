@@ -366,14 +366,9 @@ export async function handleCronRequest(
       voiceConfig,
     });
   } else if (user) {
-    const dmResult = await slack.conversations.open({ users: user });
-    const dmChannel = dmResult.channel?.id;
-    if (!dmChannel) {
-      throw new Error(`[agent:cron] could not open DM for user ${user}`);
-    }
-
-    // Record completion before Slack delivery — same rationale as the channel
-    // branch above.
+    // Record completion before any Slack calls — conversations.open can also
+    // fail (network error or null channel), and we must not leave the
+    // AgentCronRun row permanently open if it does.
     await cronRunReporter?.completeRun(
       jobId,
       runId,
@@ -381,6 +376,12 @@ export async function handleCronRequest(
       "completed",
       buildTokenPayload(usage),
     );
+
+    const dmResult = await slack.conversations.open({ users: user });
+    const dmChannel = dmResult.channel?.id;
+    if (!dmChannel) {
+      throw new Error(`[agent:cron] could not open DM for user ${user}`);
+    }
 
     const dmPostResult = await slack.chat.postMessage({
       channel: dmChannel,
