@@ -58,6 +58,10 @@ const DUMMY_ENCRYPTION_KEY =
 // Agent API key for dev-agent. Must be registered in SHIPWRIGHT_ADMIN_API_KEYS on the
 // admin pane so that runtime polling (config sync) succeeds at startup.
 const DUMMY_AGENT_API_KEY = "dev-agent-key";
+// Obviously-fake dev admin token for the task-store. Seeded (hashed) into the
+// task-store DB by a preflight and handed to the admin pane verbatim so the admin
+// console can read/manage tasks + PRs. NOT a secret — local DB only, public-safe.
+const DEV_TASK_STORE_ADMIN_TOKEN = "dev-task-store-admin-token";
 // Session-cookie signing key (HS256). Must be non-empty — Web Crypto rejects a
 // zero-length HMAC key with "DataError", which surfaces as a 500 on first login.
 const DUMMY_SESSION_SECRET = "dev-session-secret-not-for-production-use!";
@@ -142,13 +146,17 @@ export type BuildOpts = {
  * interactive scratch shell. Returns one shell line for `tmux send-keys`.
  */
 export function buildLogsBanner(): string {
+  // The admin console (:3001) is the front door — it hosts the full nav
+  // (Agents · Tasks · PRs · Metrics) and is what auto-opens. The metrics
+  // dashboard is a separate service on its own port; each line is labeled with
+  // what it serves so nobody guesses /admin/* on the metrics port (a 404).
   const lines = [
     "Shipwright dev stack",
-    `  dashboard   ${DASHBOARD_URL}   (opening in your browser)`,
-    `  admin       http://localhost:${ADMIN_PORT}`,
-    `  task-store  http://localhost:${TASK_STORE_PORT}`,
-    `  agent       http://localhost:${AGENT_PORT}`,
-    "  chat        <- the pane to the left",
+    `  console (agents/tasks/PRs)  ${ADMIN_DEV_LOGIN_URL}   (opening in your browser)`,
+    `  metrics dashboard           ${DASHBOARD_URL}`,
+    `  task-store API              http://localhost:${TASK_STORE_PORT}`,
+    `  agent (use the chat pane)   http://localhost:${AGENT_PORT}`,
+    "  chat                        <- the pane to the left",
     "",
     "Scratch shell — run ad-hoc commands here.",
   ];
@@ -168,6 +176,11 @@ export const STACK_PANES: Pane[] = [
     env: {
       METRICS_DB_PATH: "state/metrics.db",
       METRICS_DASHBOARD_DEV_AUTH: "true",
+      // The admin console runs on a different origin (:3001) than the metrics
+      // dashboard in the local stack, so the dashboard toolbar's Agents/Tasks/PRs
+      // links must be absolute or they 404 on this origin. Production leaves this
+      // unset → relative links (single-host ingress).
+      METRICS_ADMIN_APP_URL: `http://localhost:${ADMIN_PORT}`,
     },
   },
   {
@@ -187,6 +200,14 @@ export const STACK_PANES: Pane[] = [
       // dashboard (:3460). Without this it uses the same-host relative /dashboard,
       // which in dev points to :3001 instead of the metrics service on :3460.
       METRICS_DASHBOARD_URL: `http://localhost:${METRICS_PORT}/dashboard`,
+      // Wire the admin console to the task-store service so the Tasks/PRs pages
+      // show live data instead of the "Task store unavailable" degraded banner.
+      // The admin builds its task-store client only when BOTH of these are set;
+      // the token is seeded (hashed) into the task-store DB by a preflight. The
+      // inline pane prefix overrides any empty SHIPWRIGHT_TASK_STORE_URL the login
+      // shell may export.
+      SHIPWRIGHT_TASK_STORE_URL: `http://localhost:${TASK_STORE_PORT}`,
+      SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN: DEV_TASK_STORE_ADMIN_TOKEN,
     },
   },
   {
@@ -398,6 +419,17 @@ export function buildStackCommands(
           "sh",
           "-c",
           `cd task-store && bunx prisma generate --schema=prisma/schema.prisma && DATABASE_URL_SHIPWRIGHT_TASK_STORE=${DEV_TASK_STORE_DATABASE_URL} bunx prisma migrate deploy --schema=prisma/schema.prisma`,
+        ],
+      });
+      // Preflight: seed the admin token the admin console uses to read the
+      // task-store. Idempotent upsert (no-op if it already exists). Runs after the
+      // migrate-deploy above so the TaskToken table exists.
+      cmds.push({
+        kind: "preflight",
+        argv: [
+          "sh",
+          "-c",
+          `bun run scripts/seed-task-store-token.ts --db-url ${DEV_TASK_STORE_DATABASE_URL} --token ${DEV_TASK_STORE_ADMIN_TOKEN}`,
         ],
       });
     }
