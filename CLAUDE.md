@@ -77,14 +77,19 @@ This repo is **private today but destined to be a public, MIT open-source projec
 
 ## How work is tracked
 
-The task store is **GitHub Issues** in this repo, configured via `.shipwright.json` (`taskStore: "github"`, owner `app-vitals`, repo `shipwright`). Work is planned as issues under the **`shipwright-oss`** milestone, each with a machine-readable ```` ```shipwright ```` YAML block (`id`, `layer`, `branch`, `dependencies`, `hours`, `status`, `pr`) and a `status:*` label.
+Two surfaces — do not conflate them:
 
-**Find the next ready task:**
-```bash
-gh issue list --milestone shipwright-oss --state open --label status:pending
-```
+1. **Automated task store** (what `/shipwright:dev-task` and the agents read/write): the **HTTP Shipwright task-store service** (artifact D). Individual tasks like `PV-1.2` live here. Query it directly — **`gh issue list` does not see these tasks.**
+   ```bash
+   curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+     "$SHIPWRIGHT_TASK_STORE_URL/tasks?ready=true" | jq '.tasks'
+   ```
+2. **Manual human planning** (historical): GitHub Issues under the **`shipwright-oss`** milestone, each with a machine-readable ```` ```shipwright ```` YAML block and a `status:*` label. A record/planning surface for humans; the automated loop does **not** read it.
+   ```bash
+   gh issue list --milestone shipwright-oss --state open --label status:pending
+   ```
 
-**Status lifecycle** (the label is the single signal of where a task is):
+**Status lifecycle:**
 ```
 pending → in_progress → pr_open → merged → deployed → done
 ```
@@ -92,14 +97,14 @@ plus `approved`, `blocked`, `cancelled`.
 
 ### Execution loop
 
-1. Pick a `status:pending` task whose every `dependencies` entry is `status:done`.
-2. Branch from the task's YAML `branch` field (`feat/sw-x-y-slug`) — never work on `main`.
+1. Pick a `pending` task whose every `dependencies` entry is done.
+2. Branch from the task's `branch` field (`feat/sw-x-y-slug`) — never work on `main`.
 3. Build + land tests **in the same PR, at the correct layer** (no "tests later").
-4. Open a PR; move the status label through its lifecycle.
+4. Open a PR; move the status through its lifecycle.
 
 Driven by Shipwright's own commands: `/shipwright:dev-task` → `/shipwright:review` / `/shipwright:patch` → `/shipwright:deploy`. The `ship-loop` skill drains the queue autonomously (one pipeline step per call, wrapped by `/loop`).
 
-**Task-store config resolution** (`plugins/shipwright/scripts/create-task-store.ts` → `loadConfig`): (1) walk up from cwd for `.shipwright.json`; (2) fall back to `SHIPWRIGHT_CONFIG` env var; (3) fall back to local JSON (`state/`). If task operations seem to no-op, confirm which backend is active.
+**Task-store backend resolution** (`plugins/shipwright/scripts/check-helpers.ts` → `resolveTaskStoreBackend`): (1) explicit `taskStore` in `state/shipwright.config.json` (`"shipwright"` | `"github"`); (2) otherwise, when both `SHIPWRIGHT_TASK_STORE_URL` and `SHIPWRIGHT_TASK_STORE_TOKEN` are set → `"shipwright"` (how managed GKE agents *and* local installs select it — the provisioner injects only those two env vars, never a config file); (3) otherwise → `"github"`. The HTTP store is the only backend with a runtime task-data client today; connection details always come from env, never the committed config file. If task operations seem to no-op, check `SHIPWRIGHT_TASK_STORE_URL` first.
 
 ## Test conventions
 

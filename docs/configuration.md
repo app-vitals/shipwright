@@ -41,35 +41,32 @@ Configuration for the Shipwright Claude Code plugin (`plugins/shipwright/`). The
 
 `.shipwright.json` is for use when you **install and run the Shipwright plugin in Claude Code (or a compatible system)** directly — without a managed Shipwright agent. Managed agents receive all configuration via env vars from the admin service; they do not read `.shipwright.json`.
 
-Config-file resolution (`create-task-store.ts` → `loadConfig`):
-1. Check `SHIPWRIGHT_TASK_STORE` env var — if set, use env vars directly and skip file-based config.
-2. Walk up from `cwd` looking for `.shipwright.json`.
-3. Fall back to `SHIPWRIGHT_CONFIG` env var.
-4. Fall back to local JSON state (`state/`).
+The config file lives at `state/shipwright.config.json` (relative to the resolved workspace path). Backend resolution (`plugins/shipwright/scripts/check-helpers.ts` → `resolveTaskStoreBackend`):
+1. Explicit `taskStore` in `state/shipwright.config.json` (`"shipwright"` | `"github"`).
+2. Otherwise, when both `SHIPWRIGHT_TASK_STORE_URL` and `SHIPWRIGHT_TASK_STORE_TOKEN` are set → `"shipwright"`. This is how managed agents (the admin provisioner injects only those two env vars) **and** env-configured local installs select the HTTP store.
+3. Otherwise → `"github"`.
+
+Connection details (URL/token) always come from env, never the config file — so the file is safe to commit.
 
 #### Task store keys
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `taskStore` | `"json" \| "github" \| "jira"` | required | Backend for the task store. |
-| `github.owner` | `string` | required if `taskStore="github"` | GitHub org or user that owns the issues repo. |
-| `github.repo` | `string` | required if `taskStore="github"` | GitHub repo name containing issues used as tasks. |
-| `jira.baseUrl` | `string` | required if `taskStore="jira"` | Base URL of the Jira instance (e.g. `https://yourorg.atlassian.net`). |
-| `jira.projectKey` | `string` | required if `taskStore="jira"` | Jira project key (e.g. `SHIP`). |
-| `jira.readyJql` | `string` | — | Custom JQL to filter ready tasks. Overrides the default status-based query. |
-| `jira.statusMap` | `Record<string, TaskStatus>` | — | Maps Jira status names to Shipwright task statuses. |
+| `taskStore` | `"shipwright" \| "github"` | inferred (see resolution above) | Backend for the task store. `"shipwright"` = the HTTP Shipwright task-store service (the only backend with a runtime task-data client). `"github"` = GitHub Issues; used today only for PR-repo discovery, not as a task-data source. |
+| `github.owner` | `string` | required if `taskStore="github"` | GitHub org or user for PR-repo discovery. |
+| `github.repo` | `string` | required if `taskStore="github"` | GitHub repo name for PR-repo discovery. |
+
+> **Not yet implemented:** `taskStore: "jira"` and `taskStore: "json"` (and the `jira.*` keys / `SHIPWRIGHT_TASK_STORE`, `JIRA_*` env vars) are reserved for planned pluggable backends. There is no Jira or JSON task-data client in the code today; only `"shipwright"` and `"github"` are recognized by `resolveTaskStoreBackend`.
 
 #### Minimal example
 
 ```json
 {
-  "taskStore": "github",
-  "github": {
-    "owner": "your-org",
-    "repo": "your-repo"
-  }
+  "taskStore": "shipwright"
 }
 ```
+
+with `SHIPWRIGHT_TASK_STORE_URL` and `SHIPWRIGHT_TASK_STORE_TOKEN` set in the environment.
 
 ---
 
