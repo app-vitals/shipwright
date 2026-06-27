@@ -52,3 +52,10 @@ export class ForbiddenError extends ApiError {
     this.name = "ForbiddenError";
   }
 }
+
+export class PayloadTooLargeError extends ApiError {
+  constructor(message = "Payload too large") {
+    super(413, message);
+    this.name = "PayloadTooLargeError";
+  }
+}
