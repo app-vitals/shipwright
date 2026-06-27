@@ -598,7 +598,7 @@ describe("/prs routes (smoke)", () => {
     );
   });
 
-  it("GET /prs?staged=true returns only staged records", async () => {
+  it("GET /prs?staged=true returns staged records only", async () => {
     const store = new Map<string, PullRequest>();
     store.set("pr-1", makePr({ id: "pr-1", staged: true }));
     store.set("pr-2", makePr({ id: "pr-2", staged: false }));
@@ -614,7 +614,7 @@ describe("/prs routes (smoke)", () => {
     expect(body.prs.every((p: PullRequest) => p.staged === true)).toBe(true);
   });
 
-  it("GET /prs?staged=false returns only non-staged records", async () => {
+  it("GET /prs?staged=false returns unstaged records only", async () => {
     const store = new Map<string, PullRequest>();
     store.set("pr-1", makePr({ id: "pr-1", staged: true }));
     store.set("pr-2", makePr({ id: "pr-2", staged: false }));
