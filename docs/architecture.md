@@ -38,6 +38,21 @@ A thin autonomous runner with a Prisma-backed store (PostgreSQL) and four HTTP s
 
 > The Dockerfile `ENTRYPOINT` is `bun run admin/src/main.ts`, the standalone admin service that runs migrations and mounts all admin + runtime routes. The agent process (`agent/src/run-agent.ts`) is now a minimal server: dev `/chat` transport only (health check and `/agents/*` proxy were removed in UNI-1.3; health runs on a dedicated port via `startHealthServer`). For a full agent startup sequence (env validation, config fetch, GitHub auth, mise, plugin install) run `agent/src/entrypoint-main.ts`, which starts the health server in-process before setup and then spawns `run-agent.ts`. Implemented surfaces: the admin CRUD API, the admin UI, and the runtime API (all in `admin/src/` — package `@shipwright/admin`), the Prisma store (`admin/prisma/schema.prisma`), the Slack event handler (`slack.ts`), the cron runtime (`cron-handler.ts`), and the dev-only chat transport (`chat.ts`, gated by `SHIPWRIGHT_DEV_CHAT=true`).
 
+## D — Task store service
+
+Postgres-backed task queue, PR tracking, and scoped tokens (`@shipwright/task-store`). The Hono app is composed from injected services by `createTaskStoreApp` (`task-store/src/app.ts`); `/health` and the `/docs/:id` capability URL are unauthenticated, everything else requires a bearer token.
+
+### Ephemeral document store (`/docs`)
+
+A small in-memory HTML store for short-lived, regenerable artifacts (one-pagers, reports) shared via capability URL:
+
+- `POST /docs` — bearer auth; body is the raw HTML string; returns `201 { id, url, expiresIn }`.
+- `GET /docs/:id` — **no auth** (the unguessable id is the credential); serves the HTML as `text/html; charset=utf-8`; `404` on miss or expiry.
+
+TTL is configurable via `SHIPWRIGHT_TASK_STORE_DOC_TTL_SECONDS` (default `3600`); expiry is driven by an injected `Clock`. The capability URL is built from `SHIPWRIGHT_TASK_STORE_PUBLIC_URL` when set, otherwise the request origin.
+
+> ⚠️ **Single-replica caveat.** Storage is process-local (a plain `Map` in `task-store/src/doc-store.ts`) — a document POSTed to one replica is **not** visible from another, and all documents are lost on restart. Acceptable for the ephemeral MVP; it requires a single replica or sticky routing, and is flagged for a future durable backend (object storage / DB-backed blob).
+
 ## Supporting surfaces
 
 | Surface | Directory | Notes |
