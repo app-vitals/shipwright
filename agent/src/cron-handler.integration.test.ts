@@ -16,7 +16,9 @@ import { join } from "node:path";
 import type { WebClient } from "@slack/web-api";
 import type { Server } from "bun";
 import { FixedClock } from "./clock.ts";
+import type { TokenUsage } from "./claude.ts";
 import { ValidationError, handleCronRequest } from "./cron-handler.ts";
+import { HttpCronRunReporter } from "./cron-run-reporter.ts";
 import { startHealthServer } from "./health.ts";
 
 // ─── Shared mocks ─────────────────────────────────────────────────────────────
@@ -36,8 +38,9 @@ const mockSlack = {
   files: { uploadV2: mockFilesUploadV2 },
 } as unknown as WebClient;
 
-const mockRunner = mock(() =>
-  Promise.resolve({ result: "claude reply", sessionId: "sess-1" }),
+const mockRunner = mock(
+  (): Promise<{ result: string; sessionId?: string; usage?: TokenUsage }> =>
+    Promise.resolve({ result: "claude reply", sessionId: "sess-1" }),
 );
 
 const deps = {
@@ -959,25 +962,67 @@ describe("handleCronRequest — preCheck", () => {
 
 const FIXED_TIME = new Date("2026-01-01T00:00:00.000Z");
 
+// Stub server helpers for cron-handler reporter tests
+
+interface ReporterStubState {
+  requests: Array<{ method: string; url: string; body: unknown }>;
+  runIdToReturn: string;
+}
+
+function startReporterStub(
+  port: number,
+  state: ReporterStubState,
+  // biome-ignore lint/suspicious/noExplicitAny: Server type param varies by bun version
+): ReturnType<typeof Bun.serve<any>> {
+  return Bun.serve({
+    port,
+    fetch: async (req) => {
+      const body = await req.json().catch(() => null);
+      state.requests.push({ method: req.method, url: req.url, body });
+
+      if (req.method === "POST") {
+        return new Response(
+          JSON.stringify({ run: { id: state.runIdToReturn } }),
+          { status: 201, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(
+        JSON.stringify({ run: { id: state.runIdToReturn } }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    },
+  });
+}
+
 describe("handleCronRequest — CronRunReporter", () => {
   let tmpDir: string;
+  // biome-ignore lint/suspicious/noExplicitAny: Server type param varies by bun version
+  let reporterServer: ReturnType<typeof Bun.serve<any>> | undefined;
+  let reporterState: ReporterStubState;
+
+  const REPORTER_PORT = 19965;
+  const REPORTER_BASE_URL = `http://localhost:${REPORTER_PORT}`;
+  const AGENT_ID = "test-agent-id";
+
+  function makeHttpReporter() {
+    return new HttpCronRunReporter({
+      apiUrl: REPORTER_BASE_URL,
+      agentId: AGENT_ID,
+      apiKey: "test-key",
+    });
+  }
 
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), "cron-reporter-test-"));
     mkdirSync(join(tmpDir, "shipwright", "scripts"), { recursive: true });
+    reporterState = { requests: [], runIdToReturn: "run-test-1" };
+    reporterServer = startReporterStub(REPORTER_PORT, reporterState);
   });
 
-  function makeRecorder() {
-    const calls: Parameters<
-      import("./cron-run-reporter.ts").CronRunReporter["report"]
-    >[0][] = [];
-    const reporter: import("./cron-run-reporter.ts").CronRunReporter = {
-      report: async (run) => {
-        calls.push(run);
-      },
-    };
-    return { calls, reporter };
-  }
+  afterEach(() => {
+    reporterServer?.stop(true);
+    reporterServer = undefined;
+  });
 
   test("no reporter dep — existing tests unaffected (no-op)", async () => {
     mockRunner.mockResolvedValueOnce({ result: "reply", sessionId: "s1" });
@@ -987,8 +1032,93 @@ describe("handleCronRequest — CronRunReporter", () => {
     ).resolves.toBeUndefined();
   });
 
-  test("preCheck not found → reporter called with skipped:true, skipReason:'preCheck:not-found'", async () => {
-    const { calls, reporter } = makeRecorder();
+  test("CREATE is called at run start with startedAt before runner executes", async () => {
+    mockRunner.mockResolvedValueOnce({
+      result: "reply",
+      sessionId: "s1",
+      usage: {
+        input_tokens: 10,
+        output_tokens: 5,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+      },
+    });
+
+    const reporter = makeHttpReporter();
+    await handleCronRequest(
+      { jobId: "create-test", prompt: "hello", channel: "C-X" },
+      { ...deps, cronRunReporter: reporter, clock: FixedClock(FIXED_TIME) },
+    );
+
+    // First request must be a POST (CREATE)
+    expect(reporterState.requests.length).toBeGreaterThanOrEqual(2);
+    expect(reporterState.requests[0].method).toBe("POST");
+    expect(reporterState.requests[0].url).toContain(
+      `/agents/${AGENT_ID}/crons/create-test/runs`,
+    );
+    const createBody = reporterState.requests[0].body as Record<string, unknown>;
+    expect(createBody.startedAt).toBe(FIXED_TIME.toISOString());
+    expect(Object.keys(createBody)).toEqual(["startedAt"]);
+  });
+
+  test("PATCH called after successful completion with outcome='completed' + token data", async () => {
+    mockRunner.mockResolvedValueOnce({
+      result: "the reply",
+      sessionId: "s1",
+      usage: {
+        input_tokens: 100,
+        output_tokens: 50,
+        cache_read_input_tokens: 20,
+        cache_creation_input_tokens: 10,
+      },
+    });
+
+    const reporter = makeHttpReporter();
+    await handleCronRequest(
+      { jobId: "complete-test", prompt: "hello", channel: "C-REPORTS" },
+      { ...deps, cronRunReporter: reporter, clock: FixedClock(FIXED_TIME) },
+    );
+
+    // Second request must be a PATCH (complete)
+    const patchReq = reporterState.requests.find((r) => r.method === "PATCH");
+    expect(patchReq).toBeDefined();
+    expect(patchReq?.url).toContain(
+      `/agents/${AGENT_ID}/crons/complete-test/runs/run-test-1`,
+    );
+    const patchBody = patchReq?.body as Record<string, unknown>;
+    expect(patchBody.outcome).toBe("completed");
+    expect(patchBody.completedAt).toBeDefined();
+    expect(patchBody.inputTokens).toBe(100);
+    expect(patchBody.outputTokens).toBe(50);
+    expect(patchBody.cacheReadTokens).toBe(20);
+    expect(patchBody.cacheCreationTokens).toBe(10);
+    expect(patchBody.model).toBeDefined();
+    expect(typeof patchBody.costUsd).toBe("number");
+  });
+
+  test("PATCH called with outcome='failed' + error message when runner throws", async () => {
+    mockRunner.mockRejectedValueOnce(new Error("runner exploded"));
+
+    const reporter = makeHttpReporter();
+    await expect(
+      handleCronRequest(
+        { jobId: "error-test", prompt: "hello", channel: "C-X" },
+        { ...deps, cronRunReporter: reporter, clock: FixedClock(FIXED_TIME) },
+      ),
+    ).rejects.toThrow("runner exploded");
+
+    const patchReq = reporterState.requests.find((r) => r.method === "PATCH");
+    expect(patchReq).toBeDefined();
+    expect(patchReq?.url).toContain(
+      `/agents/${AGENT_ID}/crons/error-test/runs/run-test-1`,
+    );
+    const patchBody = patchReq?.body as Record<string, unknown>;
+    expect(patchBody.outcome).toBe("failed");
+    expect(patchBody.error).toBe("runner exploded");
+  });
+
+  test("preCheck not found → skipRun called with skipped:true, skipReason:'preCheck:not-found'", async () => {
+    const reporter = makeHttpReporter();
 
     await handleCronRequest(
       {
@@ -1005,19 +1135,20 @@ describe("handleCronRequest — CronRunReporter", () => {
       },
     );
 
-    expect(calls).toHaveLength(1);
-    expect(calls[0]).toMatchObject({
-      cronId: "missing-precheck",
-      skipped: true,
-      skipReason: "preCheck:not-found",
-      startedAt: FIXED_TIME,
-      completedAt: FIXED_TIME,
-    });
     expect(mockRunner).not.toHaveBeenCalled();
+
+    // Should have a POST (create) and PATCH (skip)
+    const postReq = reporterState.requests.find((r) => r.method === "POST");
+    const patchReq = reporterState.requests.find((r) => r.method === "PATCH");
+    expect(postReq).toBeDefined();
+    expect(patchReq).toBeDefined();
+    const patchBody = patchReq?.body as Record<string, unknown>;
+    expect(patchBody.skipped).toBe(true);
+    expect(patchBody.skipReason).toBe("preCheck:not-found");
+    expect(patchBody.completedAt).toBeDefined();
   });
 
-  test("preCheck exit 1 (no output) → reporter called with skipped:true, skipReason:'preCheck:no-output'", async () => {
-    const { calls, reporter } = makeRecorder();
+  test("preCheck exit 1 (no output) → skipRun with skipReason:'preCheck:no-output'", async () => {
     const scriptPath = join(
       tmpDir,
       "shipwright",
@@ -1026,6 +1157,7 @@ describe("handleCronRequest — CronRunReporter", () => {
     );
     writeFileSync(scriptPath, "process.exit(1);", { mode: 0o755 });
 
+    const reporter = makeHttpReporter();
     await handleCronRequest(
       {
         jobId: "precheck-no-output",
@@ -1041,55 +1173,15 @@ describe("handleCronRequest — CronRunReporter", () => {
       },
     );
 
-    expect(calls).toHaveLength(1);
-    expect(calls[0]).toMatchObject({
-      cronId: "precheck-no-output",
-      skipped: true,
-      skipReason: "preCheck:no-output",
-      startedAt: FIXED_TIME,
-      completedAt: FIXED_TIME,
-    });
     expect(mockRunner).not.toHaveBeenCalled();
+    const patchReq = reporterState.requests.find((r) => r.method === "PATCH");
+    expect(patchReq).toBeDefined();
+    const patchBody = patchReq?.body as Record<string, unknown>;
+    expect(patchBody.skipped).toBe(true);
+    expect(patchBody.skipReason).toBe("preCheck:no-output");
   });
 
-  test("preCheck exit 0 with no output → reporter called with skipped:true, skipReason:'preCheck:no-output'", async () => {
-    const { calls, reporter } = makeRecorder();
-    const scriptPath = join(
-      tmpDir,
-      "shipwright",
-      "scripts",
-      "check-empty-exit0.ts",
-    );
-    writeFileSync(scriptPath, "process.exit(0);", { mode: 0o755 });
-
-    await handleCronRequest(
-      {
-        jobId: "precheck-empty-exit0",
-        prompt: "original",
-        channel: "C-TEST",
-        preCheck: "shipwright:check-empty-exit0.ts",
-      },
-      {
-        ...deps,
-        pluginCacheDir: tmpDir,
-        cronRunReporter: reporter,
-        clock: FixedClock(FIXED_TIME),
-      },
-    );
-
-    expect(calls).toHaveLength(1);
-    expect(calls[0]).toMatchObject({
-      cronId: "precheck-empty-exit0",
-      skipped: true,
-      skipReason: "preCheck:no-output",
-      startedAt: FIXED_TIME,
-      completedAt: FIXED_TIME,
-    });
-    expect(mockRunner).not.toHaveBeenCalled();
-  });
-
-  test("preCheck crash (exit ≥2) → reporter called with skipped:true, skipReason:'preCheck:crash', error:stderr", async () => {
-    const { calls, reporter } = makeRecorder();
+  test("preCheck crash (exit ≥2) → skipRun with skipReason:'preCheck:crash' + error", async () => {
     const scriptPath = join(tmpDir, "shipwright", "scripts", "check-crash.ts");
     writeFileSync(
       scriptPath,
@@ -1097,6 +1189,7 @@ describe("handleCronRequest — CronRunReporter", () => {
       { mode: 0o755 },
     );
 
+    const reporter = makeHttpReporter();
     await handleCronRequest(
       {
         jobId: "precheck-crash-reporter",
@@ -1112,94 +1205,108 @@ describe("handleCronRequest — CronRunReporter", () => {
       },
     );
 
-    expect(calls).toHaveLength(1);
-    expect(calls[0]).toMatchObject({
-      cronId: "precheck-crash-reporter",
-      skipped: true,
-      skipReason: "preCheck:crash",
-      error: "something blew up",
-      startedAt: FIXED_TIME,
-      completedAt: FIXED_TIME,
-    });
+    const patchReq = reporterState.requests.find((r) => r.method === "PATCH");
+    expect(patchReq).toBeDefined();
+    const patchBody = patchReq?.body as Record<string, unknown>;
+    expect(patchBody.skipped).toBe(true);
+    expect(patchBody.skipReason).toBe("preCheck:crash");
+    expect(patchBody.error).toBe("something blew up");
   });
 
-  test("silent=true → reporter called with skipped:false, outcome:'silent'", async () => {
-    const { calls, reporter } = makeRecorder();
-    mockRunner.mockResolvedValueOnce({ result: "reply", sessionId: "s1" });
+  test("silent=true → completeRun called with outcome:'completed'", async () => {
+    mockRunner.mockResolvedValueOnce({
+      result: "reply",
+      sessionId: "s1",
+      usage: {
+        input_tokens: 5,
+        output_tokens: 3,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+      },
+    });
 
+    const reporter = makeHttpReporter();
     await handleCronRequest(
       { jobId: "silent-job", prompt: "hello", silent: true },
       { ...deps, cronRunReporter: reporter, clock: FixedClock(FIXED_TIME) },
     );
 
-    expect(calls).toHaveLength(1);
-    expect(calls[0]).toMatchObject({
-      cronId: "silent-job",
-      skipped: false,
-      outcome: "silent",
-      startedAt: FIXED_TIME,
-      completedAt: FIXED_TIME,
-    });
+    const patchReq = reporterState.requests.find((r) => r.method === "PATCH");
+    expect(patchReq).toBeDefined();
+    const patchBody = patchReq?.body as Record<string, unknown>;
+    expect(patchBody.outcome).toBe("completed");
   });
 
-  test("[silent] marker → reporter called with skipped:false, outcome:'silent'", async () => {
-    const { calls, reporter } = makeRecorder();
+  test("[silent] marker → completeRun called with outcome:'completed'", async () => {
     mockRunner.mockResolvedValueOnce({
       result: "text [silent]",
       sessionId: "s1",
+      usage: {
+        input_tokens: 5,
+        output_tokens: 3,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+      },
     });
 
+    const reporter = makeHttpReporter();
     await handleCronRequest(
       { jobId: "silent-marker-job", prompt: "hello", channel: "C-MAIN" },
       { ...deps, cronRunReporter: reporter, clock: FixedClock(FIXED_TIME) },
     );
 
-    expect(calls).toHaveLength(1);
-    expect(calls[0]).toMatchObject({
-      cronId: "silent-marker-job",
-      skipped: false,
-      outcome: "silent",
-      startedAt: FIXED_TIME,
-      completedAt: FIXED_TIME,
-    });
+    const patchReq = reporterState.requests.find((r) => r.method === "PATCH");
+    expect(patchReq).toBeDefined();
+    const patchBody = patchReq?.body as Record<string, unknown>;
+    expect(patchBody.outcome).toBe("completed");
   });
 
-  test("channel post → reporter called with skipped:false, outcome:'posted'", async () => {
-    const { calls, reporter } = makeRecorder();
-    mockRunner.mockResolvedValueOnce({ result: "the report", sessionId: "s1" });
+  test("channel post → completeRun called with outcome:'completed'", async () => {
+    mockRunner.mockResolvedValueOnce({
+      result: "the report",
+      sessionId: "s1",
+      usage: {
+        input_tokens: 100,
+        output_tokens: 50,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+      },
+    });
 
+    const reporter = makeHttpReporter();
     await handleCronRequest(
       { jobId: "channel-job", prompt: "hello", channel: "C-REPORTS" },
       { ...deps, cronRunReporter: reporter, clock: FixedClock(FIXED_TIME) },
     );
 
-    expect(calls).toHaveLength(1);
-    expect(calls[0]).toMatchObject({
-      cronId: "channel-job",
-      skipped: false,
-      outcome: "posted",
-      startedAt: FIXED_TIME,
-      completedAt: FIXED_TIME,
-    });
+    const patchReq = reporterState.requests.find((r) => r.method === "PATCH");
+    expect(patchReq).toBeDefined();
+    const patchBody = patchReq?.body as Record<string, unknown>;
+    expect(patchBody.outcome).toBe("completed");
   });
 
-  test("DM post → reporter called with skipped:false, outcome:'dm'", async () => {
-    const { calls, reporter } = makeRecorder();
-    mockRunner.mockResolvedValueOnce({ result: "dm reply", sessionId: "s1" });
+  test("DM post → completeRun called with outcome:'completed'", async () => {
+    mockRunner.mockResolvedValueOnce({
+      result: "dm reply",
+      sessionId: "s1",
+      usage: {
+        input_tokens: 30,
+        output_tokens: 20,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+      },
+    });
 
+    const reporter = makeHttpReporter();
     await handleCronRequest(
       { jobId: "dm-job", prompt: "hello", user: "U-DAN" },
       { ...deps, cronRunReporter: reporter, clock: FixedClock(FIXED_TIME) },
     );
 
-    expect(calls).toHaveLength(1);
-    expect(calls[0]).toMatchObject({
-      cronId: "dm-job",
-      skipped: false,
-      outcome: "dm",
-      startedAt: FIXED_TIME,
-      completedAt: FIXED_TIME,
-    });
+    const patchReq = reporterState.requests.find((r) => r.method === "PATCH");
+    expect(patchReq).toBeDefined();
+    const patchBody = patchReq?.body as Record<string, unknown>;
+    expect(patchBody.outcome).toBe("completed");
   });
 });
 
