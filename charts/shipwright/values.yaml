@@ -144,6 +144,13 @@ admin:
   # redirect URIs use the public host instead of localhost:3001. Leave empty to
   # omit the env var.
   appBaseUrl: ""
+  # -- Externally-reachable task-store base URL advertised in the mint-token env
+  # block (sets SHIPWRIGHT_TASK_STORE_PUBLIC_URL). Set this to the public route a
+  # local/laptop agent can reach (e.g. https://<host>/task-store when
+  # taskStore.expose.enabled). Admin's own in-cluster task-store calls keep using
+  # the internal SHIPWRIGHT_TASK_STORE_URL; when empty the env block falls back to
+  # that internal URL.
+  taskStorePublicUrl: ""
   # -- Extra environment variables injected into the admin container.
   # List of Kubernetes envVar objects (name/value or name/valueFrom). Use for
   # env vars not otherwise covered by chart values.

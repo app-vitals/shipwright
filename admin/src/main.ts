@@ -175,6 +175,19 @@ function buildProvisioner(
 
 const DEFAULT_PORT = 3000;
 
+/**
+ * Resolve the task-store base URL advertised in the admin mint-token env block.
+ * Prefers the externally-reachable SHIPWRIGHT_TASK_STORE_PUBLIC_URL (so a
+ * local/laptop agent can resolve it) and falls back to the internal
+ * SHIPWRIGHT_TASK_STORE_URL when unset. The admin service's own in-cluster
+ * task-store calls always use the internal URL — only the displayed value changes.
+ */
+export function resolveTaskStoreBaseUrl(
+  env: Record<string, string | undefined>,
+): string | undefined {
+  return env.SHIPWRIGHT_TASK_STORE_PUBLIC_URL ?? env.SHIPWRIGHT_TASK_STORE_URL;
+}
+
 async function startServer(): Promise<void> {
   const port = Number(process.env.PORT ?? DEFAULT_PORT);
 
@@ -364,7 +377,10 @@ async function startServer(): Promise<void> {
             if (!res.ok)
               throw new Error(`task-store DELETE /tokens/${id} → ${res.status}`);
           },
-          taskStoreBaseUrl: taskStoreUrl,
+          // Advertise the PUBLIC task-store URL in the mint-token env block so a
+          // local/laptop agent can resolve it; the in-cluster fetchers above keep
+          // using the internal SHIPWRIGHT_TASK_STORE_URL.
+          taskStoreBaseUrl: resolveTaskStoreBaseUrl(process.env),
         }
       : {};
 

@@ -11,6 +11,7 @@ import { sign } from "hono/jwt";
 import { createAdminUIApp } from "./admin-ui.ts";
 import type { AdminUIDeps, AdminUISlackClient } from "./admin-ui.ts";
 import type { GoogleAuthClient } from "./google-auth-client.ts";
+import { resolveTaskStoreBaseUrl } from "./main.ts";
 
 const SESSION_SECRET = "test-admin-session-secret-32-bytes!";
 const AGENT_ID = "agent-test-123";
@@ -366,5 +367,76 @@ describe("admin UI — /admin/tokens routes", () => {
     const html = await res.text();
     expect(html).toContain("SHIPWRIGHT_TASK_STORE_URL=https://tasks.example.com");
     expect(html).toContain("SHIPWRIGHT_TASK_STORE_TOKEN=sw_raw_abc123");
+  });
+
+  it("env block renders the public task-store URL when one is advertised", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        adminCreateToken: async () => ({ ...MOCK_TS_TOKEN, rawToken: "sw_raw_pub" }),
+        taskStoreBaseUrl: "https://shipwright.example.com/task-store",
+      }),
+    );
+    const res = await app.request("/admin/tokens", {
+      method: "POST",
+      headers: {
+        Cookie: `admin_session=${cookie}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({ label: "ci-token" }).toString(),
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain(
+      "SHIPWRIGHT_TASK_STORE_URL=https://shipwright.example.com/task-store",
+    );
+    expect(html).not.toContain("http://shipwright-task-store:3000");
+  });
+
+  it("env block renders the internal task-store URL when no public URL is set", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        adminCreateToken: async () => ({ ...MOCK_TS_TOKEN, rawToken: "sw_raw_int" }),
+        taskStoreBaseUrl: "http://shipwright-task-store:3000",
+      }),
+    );
+    const res = await app.request("/admin/tokens", {
+      method: "POST",
+      headers: {
+        Cookie: `admin_session=${cookie}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({ label: "ci-token" }).toString(),
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain(
+      "SHIPWRIGHT_TASK_STORE_URL=http://shipwright-task-store:3000",
+    );
+  });
+});
+
+// resolveTaskStoreBaseUrl is the pure precedence rule wired into main.ts:
+// the admin env block advertises the PUBLIC task-store URL when set and falls
+// back to the internal URL otherwise. Tested without touching process.env.
+describe("resolveTaskStoreBaseUrl", () => {
+  it("prefers the public URL when set", () => {
+    expect(
+      resolveTaskStoreBaseUrl({
+        SHIPWRIGHT_TASK_STORE_PUBLIC_URL: "https://host/task-store",
+        SHIPWRIGHT_TASK_STORE_URL: "http://shipwright-task-store:3000",
+      }),
+    ).toBe("https://host/task-store");
+  });
+
+  it("falls back to the internal URL when the public URL is unset", () => {
+    expect(
+      resolveTaskStoreBaseUrl({
+        SHIPWRIGHT_TASK_STORE_URL: "http://shipwright-task-store:3000",
+      }),
+    ).toBe("http://shipwright-task-store:3000");
+  });
+
+  it("returns undefined when neither is set", () => {
+    expect(resolveTaskStoreBaseUrl({})).toBeUndefined();
   });
 });
