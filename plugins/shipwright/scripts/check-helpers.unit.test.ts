@@ -21,6 +21,7 @@ import {
   readShipwrightConfig,
   resolveAllRepos,
   resolveRepos,
+  resolveTaskStoreBackend,
 } from "./check-helpers.ts";
 import * as checkHelpers from "./check-helpers.ts";
 
@@ -288,6 +289,103 @@ describe("readShipwrightConfig", () => {
       owner: "app-vitals",
       repo: "shipwright",
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveTaskStoreBackend
+// ---------------------------------------------------------------------------
+
+describe("resolveTaskStoreBackend", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "shipwright-backend-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function writeConfig(obj: unknown): void {
+    mkdirSync(join(tmpDir, "state"), { recursive: true });
+    writeFileSync(
+      join(tmpDir, "state", "shipwright.config.json"),
+      typeof obj === "string" ? obj : JSON.stringify(obj),
+    );
+  }
+
+  test("explicit taskStore 'shipwright' wins even without env vars", () => {
+    writeConfig({ taskStore: "shipwright" });
+    expect(resolveTaskStoreBackend(tmpDir, {})).toBe("shipwright");
+  });
+
+  test("explicit taskStore 'github' wins even when env vars are set", () => {
+    writeConfig({ taskStore: "github", github: { owner: "o", repo: "r" } });
+    expect(
+      resolveTaskStoreBackend(tmpDir, {
+        SHIPWRIGHT_TASK_STORE_URL: "https://ts.example.com",
+        SHIPWRIGHT_TASK_STORE_TOKEN: "tok",
+      }),
+    ).toBe("github");
+  });
+
+  test("infers 'shipwright' from env when no config file exists", () => {
+    expect(
+      resolveTaskStoreBackend(tmpDir, {
+        SHIPWRIGHT_TASK_STORE_URL: "https://ts.example.com",
+        SHIPWRIGHT_TASK_STORE_TOKEN: "tok",
+      }),
+    ).toBe("shipwright");
+  });
+
+  test("requires BOTH env vars to infer 'shipwright' (url only → github)", () => {
+    expect(
+      resolveTaskStoreBackend(tmpDir, {
+        SHIPWRIGHT_TASK_STORE_URL: "https://ts.example.com",
+      }),
+    ).toBe("github");
+  });
+
+  test("requires BOTH env vars to infer 'shipwright' (token only → github)", () => {
+    expect(
+      resolveTaskStoreBackend(tmpDir, {
+        SHIPWRIGHT_TASK_STORE_TOKEN: "tok",
+      }),
+    ).toBe("github");
+  });
+
+  test("treats whitespace-only env vars as unset", () => {
+    expect(
+      resolveTaskStoreBackend(tmpDir, {
+        SHIPWRIGHT_TASK_STORE_URL: "   ",
+        SHIPWRIGHT_TASK_STORE_TOKEN: "   ",
+      }),
+    ).toBe("github");
+  });
+
+  test("defaults to 'github' with no config and no env", () => {
+    expect(resolveTaskStoreBackend(tmpDir, {})).toBe("github");
+  });
+
+  test("falls back to env inference when config is invalid JSON", () => {
+    writeConfig("not valid json");
+    expect(
+      resolveTaskStoreBackend(tmpDir, {
+        SHIPWRIGHT_TASK_STORE_URL: "https://ts.example.com",
+        SHIPWRIGHT_TASK_STORE_TOKEN: "tok",
+      }),
+    ).toBe("shipwright");
+  });
+
+  test("ignores an unrecognized taskStore value and infers from env", () => {
+    writeConfig({ taskStore: "jira" });
+    expect(
+      resolveTaskStoreBackend(tmpDir, {
+        SHIPWRIGHT_TASK_STORE_URL: "https://ts.example.com",
+        SHIPWRIGHT_TASK_STORE_TOKEN: "tok",
+      }),
+    ).toBe("shipwright");
   });
 });
 
