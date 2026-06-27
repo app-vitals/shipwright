@@ -258,6 +258,148 @@ tests:
       - hasDocuments:
           count: 0
 
+  # ---- task-store opt-in external HTTPRoute (TSP-1.1) ----
+  - it: renders a task-store HTTPRoute on /task-store with a URLRewrite/ReplacePrefixMatch filter when taskStore.expose.enabled (no TLS)
+    template: templates/httproute.yaml
+    set:
+      networking.type: gateway
+      taskStore.enabled: true
+      taskStore.expose.enabled: true
+    release:
+      name: r
+    asserts:
+      # metrics (0), task-store (1), admin (2)
+      - hasDocuments:
+          count: 3
+      - isKind:
+          of: HTTPRoute
+        documentIndex: 1
+      - equal:
+          path: metadata.name
+          value: r-shipwright-task-store
+        documentIndex: 1
+      - equal:
+          path: spec.parentRefs[0].name
+          value: r-shipwright
+        documentIndex: 1
+      # No sectionName when TLS is off (single HTTP listener)
+      - notExists:
+          path: spec.parentRefs[0].sectionName
+        documentIndex: 1
+      - equal:
+          path: spec.rules[0].matches[0].path.type
+          value: PathPrefix
+        documentIndex: 1
+      - equal:
+          path: spec.rules[0].matches[0].path.value
+          value: /task-store
+        documentIndex: 1
+      # URLRewrite filter strips the /task-store prefix back to "/"
+      - equal:
+          path: spec.rules[0].filters[0].type
+          value: URLRewrite
+        documentIndex: 1
+      - equal:
+          path: spec.rules[0].filters[0].urlRewrite.path.type
+          value: ReplacePrefixMatch
+        documentIndex: 1
+      - equal:
+          path: spec.rules[0].filters[0].urlRewrite.path.replacePrefixMatch
+          value: /
+        documentIndex: 1
+      - equal:
+          path: spec.rules[0].backendRefs[0].name
+          value: r-shipwright-task-store
+        documentIndex: 1
+      - equal:
+          path: spec.rules[0].backendRefs[0].port
+          value: 3000
+        documentIndex: 1
+
+  - it: honors an overridden task-store pathPrefix
+    template: templates/httproute.yaml
+    set:
+      networking.type: gateway
+      taskStore.enabled: true
+      taskStore.expose.enabled: true
+      taskStore.expose.pathPrefix: /tasks-api
+    release:
+      name: r
+    asserts:
+      - equal:
+          path: spec.rules[0].matches[0].path.value
+          value: /tasks-api
+        documentIndex: 1
+
+  - it: pins the task-store HTTPRoute to the https listener when certManager is enabled
+    template: templates/httproute.yaml
+    set:
+      networking.type: gateway
+      tls.certManager.enabled: true
+      tls.certManager.issuerRef.name: letsencrypt
+      taskStore.enabled: true
+      taskStore.expose.enabled: true
+    release:
+      name: r
+    asserts:
+      # redirect (0), metrics (1), task-store (2), admin (3)
+      - hasDocuments:
+          count: 4
+      - equal:
+          path: metadata.name
+          value: r-shipwright-task-store
+        documentIndex: 2
+      - equal:
+          path: spec.parentRefs[0].sectionName
+          value: https
+        documentIndex: 2
+      - equal:
+          path: spec.rules[0].matches[0].path.value
+          value: /task-store
+        documentIndex: 2
+
+  - it: renders NO task-store HTTPRoute when taskStore.expose is disabled (default)
+    template: templates/httproute.yaml
+    set:
+      networking.type: gateway
+      taskStore.enabled: true
+    release:
+      name: r
+    asserts:
+      # Only metrics + admin routes — no task-store route.
+      - hasDocuments:
+          count: 2
+      - notEqual:
+          path: metadata.name
+          value: r-shipwright-task-store
+        documentIndex: 0
+      - notEqual:
+          path: metadata.name
+          value: r-shipwright-task-store
+        documentIndex: 1
+
+  - it: renders NO task-store HTTPRoute when expose.enabled but taskStore.enabled=false (guarded — no dangling route to an absent Service)
+    template: templates/httproute.yaml
+    set:
+      networking.type: gateway
+      taskStore.enabled: false
+      taskStore.expose.enabled: true
+    release:
+      name: r
+    asserts:
+      # Only metrics + admin routes — the task-store workload is not rendered, so
+      # no task-store route is rendered either.
+      - hasDocuments:
+          count: 2
+      - notEqual:
+          path: metadata.name
+          value: r-shipwright-task-store
+        documentIndex: 0
+      - notEqual:
+          path: metadata.name
+          value: r-shipwright-task-store
+        documentIndex: 1
+
   # ---- cert-manager Certificate ----
   - it: renders a cert-manager.io/v1 Certificate wired to the host + issuerRef when enabled with gateway
     template: templates/certificate.yaml

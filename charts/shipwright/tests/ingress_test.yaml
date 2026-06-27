@@ -98,6 +98,87 @@ tests:
           path: spec.rules[0].http.paths[0].backend.service.name
           value: r-shipwright-admin
 
+  # ---- task-store opt-in external path (TSP-1.1) ----
+  - it: routes /task-store to the task-store Service with prefix-strip rewrite when taskStore.expose.enabled
+    template: templates/ingress.yaml
+    set:
+      networking.type: ingress
+      taskStore.enabled: true
+      taskStore.expose.enabled: true
+    release:
+      name: r
+    asserts:
+      # nginx prefix-strip rewrite annotation is present only when exposed
+      - equal:
+          path: metadata.annotations["nginx.ingress.kubernetes.io/rewrite-target"]
+          value: /$2
+      # paths: /dashboard (0), /task-store (1), / (2) — task-store before admin catch-all
+      - lengthEqual:
+          path: spec.rules[0].http.paths
+          count: 3
+      - equal:
+          path: spec.rules[0].http.paths[1].path
+          value: /task-store(/|$)(.*)
+      - equal:
+          path: spec.rules[0].http.paths[1].pathType
+          value: ImplementationSpecific
+      - equal:
+          path: spec.rules[0].http.paths[1].backend.service.name
+          value: r-shipwright-task-store
+      - equal:
+          path: spec.rules[0].http.paths[1].backend.service.port.name
+          value: http
+      # admin "/" catch-all remains last
+      - equal:
+          path: spec.rules[0].http.paths[2].path
+          value: /
+
+  - it: honors an overridden task-store pathPrefix on the Ingress path
+    template: templates/ingress.yaml
+    set:
+      networking.type: ingress
+      taskStore.enabled: true
+      taskStore.expose.enabled: true
+      taskStore.expose.pathPrefix: /tasks-api
+    release:
+      name: r
+    asserts:
+      - equal:
+          path: spec.rules[0].http.paths[1].path
+          value: /tasks-api(/|$)(.*)
+
+  - it: omits the /task-store path and rewrite annotation when taskStore.expose is disabled (default)
+    template: templates/ingress.yaml
+    set:
+      networking.type: ingress
+      taskStore.enabled: true
+    release:
+      name: r
+    asserts:
+      # only /dashboard + / paths — no task-store path
+      - lengthEqual:
+          path: spec.rules[0].http.paths
+          count: 2
+      - notExists:
+          path: metadata.annotations["nginx.ingress.kubernetes.io/rewrite-target"]
+
+  - it: omits the /task-store path and rewrite annotation when expose.enabled but taskStore.enabled=false (guarded — no dangling path to an absent Service)
+    template: templates/ingress.yaml
+    set:
+      networking.type: ingress
+      taskStore.enabled: false
+      taskStore.expose.enabled: true
+    release:
+      name: r
+    asserts:
+      # only /dashboard + / paths — the task-store workload is not rendered, so no
+      # task-store path or rewrite annotation is rendered either
+      - lengthEqual:
+          path: spec.rules[0].http.paths
+          count: 2
+      - notExists:
+          path: metadata.annotations["nginx.ingress.kubernetes.io/rewrite-target"]
+
   - it: renders NO Ingress with the default networking.type (ClusterIP)
     template: templates/ingress.yaml
     asserts:

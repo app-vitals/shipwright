@@ -10,6 +10,16 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.6.100] - 2026-06-27
+
+### Added
+
+- opt-in external route for the task-store API (`taskStore.expose.enabled`) via
+  HTTPRoute (Gateway API) and Ingress, mounted under a configurable path prefix
+  (`/task-store`) with prefix-strip so the task-store app's root routes are
+  reachable. Guarded on `taskStore.enabled`; documented in
+  `docs/deploy-kubernetes.md` (incl. AWS ALB rewrite caveat).
+
 ## [1.6.99] - 2026-06-27
 
 ### Changed
