@@ -58,6 +58,45 @@ spec:
           port: {{ .Values.metrics.service.port }}
 ---
 {{- end }}
+{{- if .Values.taskStore.expose.enabled }}
+# Task-store route (opt-in). Declared as its OWN HTTPRoute (rendered only when
+# taskStore.expose.enabled) so the configured pathPrefix routes to the task-store
+# Service. The task-store app serves its routes at root (/tasks, /tokens, /prs,
+# /health), so a URLRewrite filter strips the prefix back to "/" before traffic
+# reaches the Service. The pathPrefix is more specific than the admin "/" route,
+# so Gateway most-specific-path matching keeps it from being shadowed.
+# When cert-manager is enabled this attaches to the "https" listener only
+# (sectionName: https); plaintext traffic is handled by the redirect route above.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "shipwright.taskStore.fullname" . }}
+  labels:
+    {{- include "shipwright.taskStore.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - name: {{ include "shipwright.fullname" . }}
+      {{- if .Values.tls.certManager.enabled }}
+      sectionName: https
+      {{- end }}
+  hostnames:
+    - {{ .Values.networking.gateway.host | quote }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: {{ .Values.taskStore.expose.pathPrefix }}
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /
+      backendRefs:
+        - name: {{ include "shipwright.taskStore.fullname" . }}
+          port: {{ .Values.taskStore.service.port }}
+---
+{{- end }}
 # Admin UI/API route. Everything not matched by the more-specific /dashboard
 # route above is routed to the admin Service at the root.
 # When cert-manager is enabled this attaches to the "https" listener only

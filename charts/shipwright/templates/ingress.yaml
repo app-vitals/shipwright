@@ -5,9 +5,17 @@ metadata:
   name: {{ include "shipwright.fullname" . }}
   labels:
     {{- include "shipwright.labels" . | nindent 4 }}
-  {{- with .Values.networking.ingress.annotations }}
+  {{- if or .Values.networking.ingress.annotations .Values.taskStore.expose.enabled }}
   annotations:
+    {{- if .Values.taskStore.expose.enabled }}
+    # Strip the task-store path prefix before traffic reaches the Service (the
+    # task-store app serves /tasks, /tokens, /prs, /health at root). Only set when
+    # the task-store route is exposed, so non-exposed installs are unaffected.
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    {{- end }}
+    {{- with .Values.networking.ingress.annotations }}
     {{- toYaml . | nindent 4 }}
+    {{- end }}
   {{- end }}
 spec:
   {{- with .Values.networking.ingress.className }}
@@ -27,6 +35,19 @@ spec:
             backend:
               service:
                 name: {{ include "shipwright.metrics.fullname" . }}
+                port:
+                  name: http
+          {{- end }}
+          {{- if .Values.taskStore.expose.enabled }}
+          # Task-store API (opt-in). Declared BEFORE the admin "/" catch-all so the
+          # more-specific task-store prefix wins. The nginx rewrite-target
+          # annotation above strips the prefix (capture group $2) so the app sees
+          # its root paths (/tasks, /tokens, /prs, /health).
+          - path: {{ .Values.taskStore.expose.pathPrefix }}(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: {{ include "shipwright.taskStore.fullname" . }}
                 port:
                   name: http
           {{- end }}

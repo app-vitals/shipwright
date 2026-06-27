@@ -472,6 +472,19 @@ taskStore:
     # -- Service type for the task-store service. ClusterIP is Minikube-friendly.
     type: ClusterIP
     port: 3000
+  # -- Opt-in external route for the task-store API. Default OFF — the task-store
+  # is ClusterIP-only unless this is enabled. When enabled, the configured
+  # networking path (ingress or gateway HTTPRoute) exposes the task-store under
+  # `pathPrefix`; the prefix is STRIPPED to "/" before traffic reaches the Service
+  # (the app serves /tasks, /tokens, /prs, /health at root). Requires
+  # taskStore.enabled=true.
+  expose:
+    # -- Whether to render an external route to the task-store Service.
+    enabled: false
+    # -- External path prefix the task-store answers on. Stripped to "/" before
+    # reaching the Service. More specific than the admin "/" route, so it is not
+    # shadowed.
+    pathPrefix: /task-store
   replicas: 1
   # -- Compute resources for the task-store container. Minikube-friendly defaults.
   resources:

@@ -47,6 +47,34 @@ rendered. TLS via cert-manager (`tls.certManager.enabled`) currently applies to
 the **gateway** path only; on the ingress path TLS is configured through
 controller-specific annotations (see the EKS section).
 
+### Exposing the task-store externally (opt-in)
+
+By default the task-store Service is `ClusterIP`-only and has no external route —
+reachable only inside the cluster. To make it reachable from outside (e.g. for a
+local/self-hosted agent holding a scoped token), set:
+
+```bash
+--set taskStore.enabled=true --set taskStore.expose.enabled=true
+```
+
+This adds a `/task-store` path on the existing host (no extra DNS/cert work):
+
+- **gateway**: an `HTTPRoute` on `/task-store` with a `URLRewrite`
+  (`ReplacePrefixMatch: /`) filter, attached to the same `Gateway` (and the
+  `https` listener when cert-manager is enabled).
+- **ingress**: a `/task-store(/|$)(.*)` path plus the
+  `nginx.ingress.kubernetes.io/rewrite-target: /$2` annotation.
+
+Both **strip the `/task-store` prefix** before traffic reaches the Service (the
+app serves `/tasks`, `/tokens`, `/prs`, `/health` at root). Reach it at
+`https://<host>/task-store`. Requires `taskStore.enabled=true`; the prefix is
+configurable via `taskStore.expose.pathPrefix`.
+
+> **ALB caveat:** AWS ALB ingress does **not** support the
+> `nginx.ingress.kubernetes.io/rewrite-target` annotation. On EKS/ALB, configure
+> path rewriting via ALB actions (`alb.ingress.kubernetes.io/actions.*`) or
+> expose the task-store on a dedicated host instead.
+
 ---
 
 ## Minikube (local)
