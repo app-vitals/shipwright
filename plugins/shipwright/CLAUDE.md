@@ -24,14 +24,22 @@ when available, but never load-bearing.
 
 Applies to: **review**, **deploy**, **patch**, **dev-task**
 
-### 2. State Files Are Caches, Not Prerequisites
+### 2. Task Store PR Record Is the Dedup Source
 
-`state/reviews.json` is a local dedup cache that speeds up common
-paths. Skills must not fail or behave incorrectly when this file is absent, empty, or
-stale. When a cache entry conflicts with live GitHub data, GitHub wins.
+The task store `PullRequest` record (accessible via `GET /prs?repo=X`) is the source of
+truth for review deduplication. `commitSha` on the record is compared to the current
+`headRefOid` from GitHub to detect "new commits since last review" without re-fetching
+history. Skills must not fail or behave incorrectly when no PR record exists — a missing
+record means the PR has not been reviewed yet and should be treated as eligible.
 
-Applies to: **review** (dedup by headRefOid), **deploy** (falls back to `gh pr view --json
-reviewDecision` when no local APPROVE entry exists)
+Local files (`state/reviews/PR_REVIEW_{pr}.md`, `state/reviews/pr_review_{pr}.json`) hold
+the review narrative (findings, verdict, inline comments) for posting to GitHub. They are
+written by `/shipwright:review` and consumed by `/shipwright:review-staged`. They are not
+dedup state — the task store record owns that.
+
+Applies to: **review** (dedup by `commitSha`), **review-staged** (stale check via `commitSha`
+vs current `headRefOid`), **deploy** (falls back to `gh pr view --json reviewDecision`
+when no task store APPROVE record exists)
 
 ### 3. A PR Created Outside Shipwright Is Fully Serviceable
 
@@ -113,7 +121,7 @@ favors permissive: false positives are visible and self-correcting; false negati
 
 | Script | Guards | What it checks |
 |---|---|---|
-| `check-review.ts` | `review` cron | Open PRs with unreviewed commits (by headRefOid dedup against `state/reviews.json`); respects `allow_self_review` policy |
+| `check-review.ts` | `review` cron | Open PRs with unreviewed commits (by headRefOid dedup against task store `/prs` records); respects `allow_self_review` policy |
 | `check-deploy.ts` | `deploy` cron | Open PRs with `APPROVED` review decision and green CI; respects `allow_self_review` for self-authored PRs |
 | `check-dev-task.ts` | `dev-task` cron | Pending tasks with all dependencies satisfied (task store `ready: true` query) |
 | `check-patch.ts` | `patch` cron | Auto-updates BEHIND branches via `gh pr update-branch`; signals patch skill for unaddressed review findings, stuck-BEHIND branches (update-branch failures), merge conflicts, and failing CI; queries GitHub directly — does NOT read `state/reviews.json` |

@@ -364,6 +364,7 @@ async function startServer(): Promise<void> {
             if (!res.ok)
               throw new Error(`task-store DELETE /tokens/${id} → ${res.status}`);
           },
+          taskStoreBaseUrl: taskStoreUrl,
         }
       : {};
 

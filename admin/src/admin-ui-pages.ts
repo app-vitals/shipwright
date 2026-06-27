@@ -87,12 +87,14 @@ export interface AgentListItem {
   name: string;
   slackId: string | null;
   createdAt: Date;
+  selfHosted?: boolean;
 }
 
 export interface AgentDetail {
   id: string;
   name: string;
   slackId: string | null;
+  selfHosted: boolean;
   createdAt: Date;
   updatedAt: Date;
   repos: string[];
@@ -374,7 +376,8 @@ export function renderAgentsPage(
           .join("\n");
 
   const provisionButton = isAdmin
-    ? `<a href="/admin/provision" class="btn btn-primary">+ Provision agent</a>`
+    ? `<a href="/admin/provision" class="btn btn-primary">+ Provision agent</a>
+      <a href="/admin/agents/new" class="btn btn-secondary" style="margin-left:8px">+ New local agent</a>`
     : "";
 
   return `<!DOCTYPE html>
@@ -406,6 +409,73 @@ export function renderAgentsPage(
           ${rows}
         </tbody>
       </table>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+// ─── New local agent page ─────────────────────────────────────────────────────
+
+export function renderNewLocalAgentPage(
+  userName: string,
+  error?: string,
+): string {
+  const errorHtml = error
+    ? `<div class="alert alert-error">${escapeHtml(error)}</div>`
+    : "";
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>New Local Agent — Shipwright Admin</title>
+  <style>${baseStyles()}</style>
+</head>
+<body>
+  ${renderAdminToolbar(userName, "/admin/agents")}
+  <div class="vos-page">
+    <div class="page-header">
+      <div>
+        <a href="/admin/agents" style="font-size:13px;color:#6b7280;text-decoration:none">← Agents</a>
+        <h1 class="page-title" style="margin-top:4px">New Local Agent</h1>
+      </div>
+    </div>
+    ${errorHtml}
+    <div class="card">
+      <p style="font-size:14px;color:#6b7280;margin-bottom:20px">
+        Create a self-hosted agent. The agent will run on your own infrastructure.
+        Slack provisioning can be done separately from the agent detail page.
+      </p>
+      <form method="POST" action="/admin/agents" style="display:flex;flex-direction:column;gap:16px">
+        <div class="form-group">
+          <label class="form-label" for="name">Agent name <span style="color:#ef4444">*</span></label>
+          <input
+            id="name"
+            name="name"
+            type="text"
+            class="form-input"
+            placeholder="my-agent"
+            required
+            autofocus
+          />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="repos">Repos (optional, one per line)</label>
+          <textarea
+            id="repos"
+            name="repos"
+            class="form-input"
+            rows="4"
+            placeholder="my-org/repo-one&#10;my-org/repo-two"
+          ></textarea>
+          <p style="font-size:12px;color:#6b7280;margin-top:4px">Format: <span class="mono">org/repo</span></p>
+        </div>
+        <div>
+          <button type="submit" class="btn btn-primary">Create agent →</button>
+          <a href="/admin/agents" class="btn btn-secondary" style="margin-left:8px">Cancel</a>
+        </div>
+      </form>
     </div>
   </div>
 </body>
@@ -654,9 +724,9 @@ export function renderAgentDetailPage(
       <div>
         <a href="/admin/agents" style="font-size:13px;color:#6b7280;text-decoration:none">← Agents</a>
         <h1 class="page-title" style="margin-top:4px">${escapeHtml(agent.name)}</h1>
-        ${agent.slackId ? `<span style="font-size:13px;color:#6b7280">Slack ID: <span class="mono">${escapeHtml(agent.slackId)}</span></span>` : ""}
+        ${!agent.selfHosted && agent.slackId ? `<span style="font-size:13px;color:#6b7280">Slack ID: <span class="mono">${escapeHtml(agent.slackId)}</span></span>` : ""}
       </div>
-      <div>
+      ${!agent.selfHosted ? `<div>
         <details>
           <summary class="btn btn-secondary" style="cursor:pointer;font-size:12px;list-style:none">Sync Manifest</summary>
           <div style="position:absolute;right:24px;margin-top:6px;background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);z-index:10;min-width:320px">
@@ -674,14 +744,13 @@ export function renderAgentDetailPage(
             </form>
           </div>
         </details>
-      </div>
+      </div>` : ""}
     </div>
     ${errorHtml}
     ${successHtml}
     ${newTokenHtml}
 
-    <!-- Env Vars -->
-    <div class="card">
+    ${!agent.selfHosted ? `<div class="card">
       <div class="card-title">Env Vars</div>
       <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/envs" style="margin-bottom:16px">
         <div class="form-row">
@@ -706,9 +775,8 @@ export function renderAgentDetailPage(
           ${envRows}
         </tbody>
       </table>
-    </div>
+    </div>` : ""}
 
-    <!-- Repos -->
     <div class="card">
       <div class="card-title">Repos</div>
       <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/repos/add" style="margin-bottom:16px">
@@ -748,11 +816,10 @@ export function renderAgentDetailPage(
       </table>
     </div>
 
-    <!-- Cron Jobs -->
     <div class="card">
       <div class="card-title">Cron Jobs</div>
 
-      <div style="margin-bottom:20px">
+      ${!agent.selfHosted ? `<div style="margin-bottom:20px">
         <div style="font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">System</div>
         <table class="data-table">
           <thead>
@@ -770,7 +837,7 @@ export function renderAgentDetailPage(
             ${systemCronRows}
           </tbody>
         </table>
-      </div>
+      </div>` : ""}
 
       <div>
         <div style="font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Custom</div>
@@ -811,8 +878,7 @@ export function renderAgentDetailPage(
       </div>
     </div>
 
-    <!-- Tools -->
-    <div class="card">
+    ${!agent.selfHosted ? `<div class="card">
       <div class="card-title">Tools</div>
       <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/tools" style="margin-bottom:16px">
         <div class="form-row">
@@ -834,9 +900,8 @@ export function renderAgentDetailPage(
           ${toolRows}
         </tbody>
       </table>
-    </div>
+    </div>` : ""}
 
-    <!-- Tokens -->
     <div class="card">
       <div class="card-title">Tokens</div>
       <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/tokens" style="margin-bottom:16px">
@@ -862,7 +927,16 @@ export function renderAgentDetailPage(
       </table>
     </div>
 
-    <!-- Plugins -->
+    ${agent.selfHosted ? `<div class="card">
+      <div class="card-title">Local CLI Access</div>
+      <p style="font-size:13px;color:#6b7280;margin-bottom:12px">
+        This agent runs locally. Use an API token to authenticate the local agent process with the admin service.
+      </p>
+      <a href="/admin/tokens?agentId=${escapeHtml(agent.id)}" class="btn btn-secondary" style="font-size:13px">
+        Manage Tokens →
+      </a>
+    </div>` : ""}
+
     <div class="card">
       <div class="card-title">Plugins</div>
       <table class="data-table">
@@ -1721,6 +1795,7 @@ export function renderPrsPage(
     page: 1,
   },
   timezone = "America/Los_Angeles",
+  suggestions?: { repos?: string[] },
 ): string {
   const degradedHtml = degraded
     ? `<div class="alert alert-warning">PR store unavailable — data shown may be stale or empty.</div>`
@@ -1785,6 +1860,7 @@ export function renderPrsPage(
     p.set("state", tabState);
     if (filters.repo) p.set("repo", filters.repo);
     if (filters.taskId) p.set("taskId", filters.taskId);
+    if (filters.reviewState) p.set("reviewState", filters.reviewState);
     return `?${p.toString()}`;
   };
 
@@ -1856,15 +1932,26 @@ export function renderPrsPage(
       <form method="GET" action="/admin/prs" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
         <div class="form-group" style="margin-bottom:0">
           <label class="form-label" style="font-size:11px">Repo</label>
-          <input name="repo" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.repo ?? "")}" placeholder="org/repo" />
+          <input name="repo" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.repo ?? "")}" placeholder="org/repo" ${suggestions?.repos?.length ? 'list="prs-repos-list"' : ""} />
+          ${suggestions?.repos?.length ? `<datalist id="prs-repos-list">${suggestions.repos.map((r) => `<option value="${escapeHtml(r)}"></option>`).join("")}</datalist>` : ""}
         </div>
         <div class="form-group" style="margin-bottom:0">
           <label class="form-label" style="font-size:11px">State</label>
-          <input name="state" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.state ?? "")}" placeholder="open / merged" />
+          <select name="state" class="form-input" style="font-size:12px;padding:4px 8px">
+            <option value="">Any</option>
+            <option value="open" ${filters.state === "open" ? "selected" : ""}>open</option>
+            <option value="merged" ${filters.state === "merged" ? "selected" : ""}>merged</option>
+          </select>
         </div>
         <div class="form-group" style="margin-bottom:0">
           <label class="form-label" style="font-size:11px">Review State</label>
-          <input name="reviewState" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.reviewState ?? "")}" placeholder="pending / in_progress / posted / approved" />
+          <select name="reviewState" class="form-input" style="font-size:12px;padding:4px 8px">
+            <option value="">Any</option>
+            <option value="pending" ${filters.reviewState === "pending" ? "selected" : ""}>pending</option>
+            <option value="in_progress" ${filters.reviewState === "in_progress" ? "selected" : ""}>in_progress</option>
+            <option value="posted" ${filters.reviewState === "posted" ? "selected" : ""}>posted</option>
+            <option value="approved" ${filters.reviewState === "approved" ? "selected" : ""}>approved</option>
+          </select>
         </div>
         <div class="form-group" style="margin-bottom:0">
           <label class="form-label" style="font-size:11px">Task ID</label>
@@ -2106,6 +2193,9 @@ export function renderTokensPage(
   rawToken?: string,
   timezone?: string,
   error?: string,
+  agents?: Array<{ id: string; name: string }>,
+  selectedAgentId?: string,
+  taskStoreBaseUrl?: string,
 ): string {
   const tz = timezone ?? "America/Los_Angeles";
   const fmt = (d: Date | string | null | undefined) => {
@@ -2126,6 +2216,12 @@ export function renderTokensPage(
     ? `<div class="alert alert-danger" style="margin-bottom:16px">${escapeHtml(error)}</div>`
     : "";
 
+  const envBlock =
+    rawToken && taskStoreBaseUrl
+      ? `<pre style="background:#f3f4f6;border-radius:4px;padding:12px;margin-top:12px;font-size:12px;font-family:monospace;overflow-x:auto">export SHIPWRIGHT_TASK_STORE_URL=${escapeHtml(taskStoreBaseUrl)}
+export SHIPWRIGHT_TASK_STORE_TOKEN=${escapeHtml(rawToken)}</pre>`
+      : "";
+
   const rawTokenBanner = rawToken
     ? `<div class="alert alert-success" style="margin-bottom:16px">
         <strong>Token created.</strong> Copy it now — it will not be shown again.<br>
@@ -2134,6 +2230,7 @@ export function renderTokensPage(
           onclick="navigator.clipboard.writeText(document.getElementById('raw-token').textContent)">
           Copy
         </button>
+        ${envBlock}
       </div>`
     : "";
 
@@ -2161,6 +2258,14 @@ export function renderTokensPage(
           )
           .join("");
 
+  const agentOptions = [
+    `<option value="">— admin token —</option>`,
+    ...(agents ?? []).map(
+      (a) =>
+        `<option value="${escapeHtml(a.id)}"${a.id === selectedAgentId ? " selected" : ""}>${escapeHtml(a.name)}</option>`,
+    ),
+  ].join("");
+
   const createForm = !degraded
     ? `<div class="card" style="margin-top:24px">
         <h2 style="font-size:15px;font-weight:600;margin-bottom:12px">Create token</h2>
@@ -2170,8 +2275,8 @@ export function renderTokensPage(
             <input type="text" name="label" placeholder="e.g. ci-pipeline" class="form-input" style="width:220px" required>
           </div>
           <div>
-            <label style="display:block;font-size:12px;color:#6b7280;margin-bottom:4px">Agent ID (optional — blank for admin token)</label>
-            <input type="text" name="agentId" placeholder="agent-id" class="form-input" style="width:220px">
+            <label style="display:block;font-size:12px;color:#6b7280;margin-bottom:4px">Agent (optional — blank for admin token)</label>
+            <select name="agentId" class="form-input" style="width:220px">${agentOptions}</select>
           </div>
           <button type="submit" class="btn btn-primary">Create</button>
         </form>

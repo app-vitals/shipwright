@@ -25,12 +25,14 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { sign, verify } from "hono/jwt";
 import {
+  type AgentDetail,
   type PrListItem,
   type PullRequestItem,
   type TaskItem,
   renderAgentDetailPage,
   renderAgentsPage,
   renderLoginPage,
+  renderNewLocalAgentPage,
   renderProvisionCompletePage,
   renderProvisionStartPage,
   renderProvisionXappTokenPage,
@@ -103,12 +105,13 @@ interface PrismaAgentLike {
     id: string;
     name: string;
     slackId: string | null;
+    selfHosted: boolean;
     createdAt: Date;
     updatedAt: Date;
     repos: string[];
   } | null>;
   create(args: {
-    data: { name: string; slackId?: string | null };
+    data: { name: string; slackId?: string | null; selfHosted?: boolean };
   }): Promise<{
     id: string;
     name: string;
@@ -276,6 +279,12 @@ export interface AdminUIDeps {
    * Revoke a token by ID via the task-store service (admin token required).
    */
   adminRevokeToken?: (id: string) => Promise<void>;
+  /**
+   * Base URL of the task-store service. When provided, the mint-success banner
+   * renders a ready-to-paste env block with SHIPWRIGHT_TASK_STORE_URL and
+   * SHIPWRIGHT_TASK_STORE_TOKEN so operators can copy-paste into their shell.
+   */
+  taskStoreBaseUrl?: string;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -380,6 +389,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     adminListTokens,
     adminCreateToken,
     adminRevokeToken,
+    taskStoreBaseUrl,
   } = deps;
 
   const app = new Hono<AdminUIEnv>();
@@ -620,12 +630,70 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       "Repo must be in org/repo format (e.g. my-org/my-repo).",
   };
 
+  // ─── New local agent form (MUST be before /:id to avoid "new" being captured as param)
+
+  app.get("/admin/agents/new", requireAuth, (c) => {
+    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+    const rawError = c.req.query("error") ?? undefined;
+    const error = rawError ? (ERROR_MESSAGES[rawError] ?? rawError) : undefined;
+    return html(renderNewLocalAgentPage(c.var.userEmail, error));
+  });
+
+  // ─── Create agent (local / self-hosted) ──────────────────────────────────
+
+  app.post("/admin/agents", requireAuth, async (c) => {
+    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+    let name: string | undefined;
+    let reposRaw: string | undefined;
+    try {
+      const formData = await c.req.formData();
+      name = formData.get("name")?.toString()?.trim();
+      reposRaw = formData.get("repos")?.toString()?.trim();
+    } catch {
+      return c.redirect("/admin/agents/new", 302);
+    }
+    if (!name) {
+      return c.redirect("/admin/agents/new?error=missing_fields", 302);
+    }
+    const agent = await prisma.agent.create({
+      data: { name, selfHosted: true },
+    });
+    // Attach repos if provided
+    if (reposRaw) {
+      const repos = reposRaw
+        .split(/\r?\n/)
+        .map((r) => r.trim())
+        .filter((r) => r.length > 0);
+      const invalid = repos.filter((r) => !isOrgRepo(r));
+      if (invalid.length > 0) {
+        await prisma.agent.delete({ where: { id: agent.id } });
+        return c.redirect("/admin/agents/new?error=invalid_repo_format", 302);
+      }
+      if (repos.length > 0) {
+        await prisma.agent.update({
+          where: { id: agent.id },
+          data: { repos },
+        });
+      }
+    }
+    return c.redirect(`/admin/agents/${agent.id}`, 302);
+  });
+
   app.get("/admin/agents/:id", requireAuth, async (c) => {
     const agentId = c.req.param("id");
     const agent = await prisma.agent.findUnique({ where: { id: agentId } });
     if (!agent) {
       return new Response("Agent not found", { status: 404 });
     }
+    const agentDetail: AgentDetail = {
+      id: agent.id,
+      name: agent.name,
+      slackId: agent.slackId ?? null,
+      selfHosted: agent.selfHosted,
+      createdAt: agent.createdAt,
+      updatedAt: agent.updatedAt,
+      repos: agent.repos,
+    };
 
     if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
       return new Response("Forbidden", { status: 403 });
@@ -657,7 +725,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
     return html(
       renderAgentDetailPage(
-        agent,
+        agentDetail,
         envVars,
         crons,
         tools,
@@ -1021,6 +1089,15 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     if (!agent) {
       return new Response("Agent not found", { status: 404 });
     }
+    const agentDetail: AgentDetail = {
+      id: agent.id,
+      name: agent.name,
+      slackId: agent.slackId ?? null,
+      selfHosted: agent.selfHosted,
+      createdAt: agent.createdAt,
+      updatedAt: agent.updatedAt,
+      repos: agent.repos,
+    };
     try {
       const { rawToken } = await agentTokenService.create(agentId, label);
       // Render the page directly (200) rather than redirecting with the token in the URL.
@@ -1038,7 +1115,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         ]);
       return html(
         renderAgentDetailPage(
-          agent,
+          agentDetail,
           envVars,
           crons,
           tools,
@@ -1823,6 +1900,12 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       for (const a of agents) agentNames[a.id] = a.name;
     }
 
+    const suggestions = fetchDistinctTaskValues
+      ? await fetchDistinctTaskValues()
+        .then((v) => ({ repos: v.repos }))
+        .catch(() => ({}))
+      : {};
+
     return html(
       renderPrsPage(
         prs,
@@ -1832,6 +1915,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         agentNames,
         { total, limit, page },
         timezone,
+        suggestions,
       ),
     );
   });
@@ -1867,6 +1951,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   app.get("/admin/tokens", requireAuth, async (c) => {
     if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
     const error = c.req.query("error") ?? undefined;
+    const selectedAgentId = c.req.query("agentId") ?? undefined;
     let tokens: TaskStoreTokenItem[] = [];
     let degraded = false;
     if (!adminListTokens) {
@@ -1878,8 +1963,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         degraded = true;
       }
     }
+    const agents = await prisma.agent.findMany();
     return html(
-      renderTokensPage(tokens, degraded, c.var.userEmail, c.req.path, undefined, timezone, error),
+      renderTokensPage(tokens, degraded, c.var.userEmail, c.req.path, undefined, timezone, error, agents, selectedAgentId),
     );
   });
 
@@ -1904,8 +1990,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     } catch {
       // best-effort refresh; show the new token even if list fails
     }
+    const agents = await prisma.agent.findMany();
     return html(
-      renderTokensPage(tokens, false, c.var.userEmail, "/admin/tokens", result.rawToken, timezone),
+      renderTokensPage(tokens, false, c.var.userEmail, "/admin/tokens", result.rawToken, timezone, undefined, agents, agentId, taskStoreBaseUrl),
     );
   });
 

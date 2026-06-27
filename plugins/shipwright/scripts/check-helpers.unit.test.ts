@@ -22,6 +22,7 @@ import {
   resolveAllRepos,
   resolveRepos,
 } from "./check-helpers.ts";
+import * as checkHelpers from "./check-helpers.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -548,5 +549,17 @@ describe("createTaskStoreClient query()", () => {
     await expect(
       client.query(new URLSearchParams({ status: "in_progress" })),
     ).rejects.toThrow("Unexpected task-store response format");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Removed exports
+// ---------------------------------------------------------------------------
+
+describe("removed exports", () => {
+  test("readReviews is not exported from check-helpers", () => {
+    expect(
+      (checkHelpers as Record<string, unknown>).readReviews,
+    ).toBeUndefined();
   });
 });
