@@ -20,6 +20,12 @@ independent of `appVersion`. CI enforces this with
   reachable. Guarded on `taskStore.enabled`; documented in
   `docs/deploy-kubernetes.md` (incl. AWS ALB rewrite caveat).
 
+## [1.6.99] - 2026-06-27
+
+### Changed
+
+- auto-bump to chart v1.6.99 triggered by release tag `task-store-v0.30.0`
+
 ## [1.6.98] - 2026-06-27
 
 ### Changed
