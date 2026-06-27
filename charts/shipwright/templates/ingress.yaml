@@ -1,13 +1,17 @@
 {{- if eq .Values.networking.type "ingress" }}
+{{- /* Expose the task-store only when the workload is also rendered — guarding on
+       taskStore.enabled avoids a path/annotation pointing at a Service that does
+       not exist. */}}
+{{- $exposeTaskStore := and .Values.taskStore.enabled .Values.taskStore.expose.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: {{ include "shipwright.fullname" . }}
   labels:
     {{- include "shipwright.labels" . | nindent 4 }}
-  {{- if or .Values.networking.ingress.annotations .Values.taskStore.expose.enabled }}
+  {{- if or .Values.networking.ingress.annotations $exposeTaskStore }}
   annotations:
-    {{- if .Values.taskStore.expose.enabled }}
+    {{- if $exposeTaskStore }}
     # Strip the task-store path prefix before traffic reaches the Service (the
     # task-store app serves /tasks, /tokens, /prs, /health at root). Only set when
     # the task-store route is exposed, so non-exposed installs are unaffected.
@@ -38,7 +42,7 @@ spec:
                 port:
                   name: http
           {{- end }}
-          {{- if .Values.taskStore.expose.enabled }}
+          {{- if $exposeTaskStore }}
           # Task-store API (opt-in). Declared BEFORE the admin "/" catch-all so the
           # more-specific task-store prefix wins. The nginx rewrite-target
           # annotation above strips the prefix (capture group $2) so the app sees

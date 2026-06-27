@@ -476,8 +476,8 @@ taskStore:
   # is ClusterIP-only unless this is enabled. When enabled, the configured
   # networking path (ingress or gateway HTTPRoute) exposes the task-store under
   # `pathPrefix`; the prefix is STRIPPED to "/" before traffic reaches the Service
-  # (the app serves /tasks, /tokens, /prs, /health at root). Requires
-  # taskStore.enabled=true.
+  # (the app serves /tasks, /tokens, /prs, /health at root). No-op unless
+  # taskStore.enabled=true (the route is only rendered alongside the workload).
   expose:
     # -- Whether to render an external route to the task-store Service.
     enabled: false

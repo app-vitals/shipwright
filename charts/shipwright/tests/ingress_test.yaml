@@ -162,6 +162,23 @@ tests:
       - notExists:
           path: metadata.annotations["nginx.ingress.kubernetes.io/rewrite-target"]
 
+  - it: omits the /task-store path and rewrite annotation when expose.enabled but taskStore.enabled=false (guarded — no dangling path to an absent Service)
+    template: templates/ingress.yaml
+    set:
+      networking.type: ingress
+      taskStore.enabled: false
+      taskStore.expose.enabled: true
+    release:
+      name: r
+    asserts:
+      # only /dashboard + / paths — the task-store workload is not rendered, so no
+      # task-store path or rewrite annotation is rendered either
+      - lengthEqual:
+          path: spec.rules[0].http.paths
+          count: 2
+      - notExists:
+          path: metadata.annotations["nginx.ingress.kubernetes.io/rewrite-target"]
+
   - it: renders NO Ingress with the default networking.type (ClusterIP)
     template: templates/ingress.yaml
     asserts:

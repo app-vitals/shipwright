@@ -58,9 +58,11 @@ spec:
           port: {{ .Values.metrics.service.port }}
 ---
 {{- end }}
-{{- if .Values.taskStore.expose.enabled }}
+{{- if and .Values.taskStore.enabled .Values.taskStore.expose.enabled }}
 # Task-store route (opt-in). Declared as its OWN HTTPRoute (rendered only when
-# taskStore.expose.enabled) so the configured pathPrefix routes to the task-store
+# taskStore.enabled AND taskStore.expose.enabled — guarding on taskStore.enabled
+# avoids a dangling route to a Service that was never rendered) so the configured
+# pathPrefix routes to the task-store
 # Service. The task-store app serves its routes at root (/tasks, /tokens, /prs,
 # /health), so a URLRewrite filter strips the prefix back to "/" before traffic
 # reaches the Service. The pathPrefix is more specific than the admin "/" route,

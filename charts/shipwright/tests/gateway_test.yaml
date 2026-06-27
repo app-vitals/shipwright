@@ -378,6 +378,28 @@ tests:
           value: r-shipwright-task-store
         documentIndex: 1
 
+  - it: renders NO task-store HTTPRoute when expose.enabled but taskStore.enabled=false (guarded — no dangling route to an absent Service)
+    template: templates/httproute.yaml
+    set:
+      networking.type: gateway
+      taskStore.enabled: false
+      taskStore.expose.enabled: true
+    release:
+      name: r
+    asserts:
+      # Only metrics + admin routes — the task-store workload is not rendered, so
+      # no task-store route is rendered either.
+      - hasDocuments:
+          count: 2
+      - notEqual:
+          path: metadata.name
+          value: r-shipwright-task-store
+        documentIndex: 0
+      - notEqual:
+          path: metadata.name
+          value: r-shipwright-task-store
+        documentIndex: 1
+
   # ---- cert-manager Certificate ----
   - it: renders a cert-manager.io/v1 Certificate wired to the host + issuerRef when enabled with gateway
     template: templates/certificate.yaml
