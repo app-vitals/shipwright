@@ -10,6 +10,17 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.6.101] - 2026-06-27
+
+### Added
+
+- `admin.taskStorePublicUrl` renders `SHIPWRIGHT_TASK_STORE_PUBLIC_URL` into the
+  admin Deployment (only when set) so the mint-token success page advertises the
+  externally-reachable task-store URL (e.g. `https://<host>/task-store` when
+  `taskStore.expose.enabled`) instead of the internal cluster URL. Admin's own
+  in-cluster task-store calls keep using the internal `SHIPWRIGHT_TASK_STORE_URL`;
+  the env block falls back to that internal URL when this value is empty.
+
 ## [1.6.100] - 2026-06-27
 
 ### Added

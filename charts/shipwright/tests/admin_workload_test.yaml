@@ -232,6 +232,27 @@ tests:
           content:
             name: SHIPWRIGHT_ADMIN_APP_BASE_URL
 
+  # ── admin.taskStorePublicUrl ──────────────────────────────────────────────
+
+  - it: injects SHIPWRIGHT_TASK_STORE_PUBLIC_URL when admin.taskStorePublicUrl is set
+    template: templates/admin-deployment.yaml
+    set:
+      admin.taskStorePublicUrl: "https://shipwright.example.com/task-store"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_TASK_STORE_PUBLIC_URL
+            value: "https://shipwright.example.com/task-store"
+
+  - it: omits SHIPWRIGHT_TASK_STORE_PUBLIC_URL when admin.taskStorePublicUrl is empty (default)
+    template: templates/admin-deployment.yaml
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_TASK_STORE_PUBLIC_URL
+
   # ── admin.extraEnv ────────────────────────────────────────────────────────
 
   - it: appends admin.extraEnv entries to the container env
