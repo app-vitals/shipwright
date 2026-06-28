@@ -419,10 +419,19 @@ export async function uploadDoc(
 ): Promise<string | null> {
   const { url, token, clock } = deps;
 
+  // Single fallback path for every failure mode. Returns the temp-file path, or
+  // null only if even the temp write fails — keeping the `string | null`
+  // contract honest so callers can dump HTML to stdout as a last resort.
+  const fallback = (): string | null => {
+    try {
+      return writeTempHtml(html, clock);
+    } catch {
+      return null;
+    }
+  };
+
   // Env vars unset → skip upload entirely, go straight to temp-file fallback.
-  if (!url || !token) {
-    return writeTempHtml(html, clock);
-  }
+  if (!url || !token) return fallback();
 
   try {
     const endpoint = `${url.replace(/\/$/, "")}/docs`;
@@ -432,14 +441,14 @@ export async function uploadDoc(
       headers: { Authorization: `Bearer ${token}` },
       body: html,
     });
-    if (!res.ok) return writeTempHtml(html, clock);
+    if (!res.ok) return fallback();
     const parsed = (await res.json()) as { url?: unknown };
     if (typeof parsed.url !== "string" || parsed.url.length === 0) {
-      return writeTempHtml(html, clock);
+      return fallback();
     }
     return parsed.url;
   } catch {
-    return writeTempHtml(html, clock);
+    return fallback();
   }
 }
 
