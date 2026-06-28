@@ -1,7 +1,8 @@
 /**
  * metrics/src/api.ts
  * Metrics Hono sub-app factory.
- * Four endpoints: /metrics/summary, /metrics/trends, /metrics/features, /metrics/queue.
+ * Five endpoints: /metrics/summary, /metrics/trends, /metrics/features,
+ * /metrics/queue, /metrics/tokens.
  */
 
 import { join } from "node:path";
@@ -16,7 +17,6 @@ import {
   wrapResponse,
 } from "./formatters.ts";
 import type { AccountsClient } from "./lib/accounts-client.ts";
-import { authMiddleware } from "./lib/api-auth.ts";
 import type { AppHandler, AuthEnv, Caller } from "./lib/api-auth.ts";
 import { ErrorSchema } from "./lib/api-schemas.ts";
 import { registerWithAuthz } from "./lib/api-utils.ts";
@@ -24,29 +24,7 @@ import {
   SESSION_COOKIE,
   createSessionMiddleware,
 } from "./lib/session-middleware.ts";
-import type { LocalEventStore } from "./local-store.ts";
-import type { MetricsProvider } from "./metrics-provider.ts";
-import { PostHogClientError, createPostHogClient } from "./posthog-client.ts";
-import { PostHogProvider } from "./providers/posthog-provider.ts";
-import {
-  buildFeaturesCiQuery,
-  buildFeaturesReviewsQuery,
-  buildFeaturesTasksQuery,
-  buildQueueCycleMergedQuery,
-  buildQueueCycleStartedQuery,
-  buildQueueFunnelQuery,
-  buildSummaryCycleTimeQuery,
-  buildSummaryQuery,
-  buildTokensByAgentByCronQuery,
-  buildTokensByAgentByModelQuery,
-  buildTokensByAgentBySessionTypeQuery,
-  buildTokensByAgentQuery,
-  buildTokensBySessionTypeQuery,
-  buildTokensTotalsQuery,
-  buildTokensTrendsQuery,
-  buildTrendsQuery,
-} from "./queries.ts";
-import type { QueryDateRange, TrendsGroupBy } from "./queries.ts";
+import type { MetricsProvider, QueryDateRange, TrendsGroupBy } from "./metrics-provider.ts";
 import {
   DateRangeQuerySchema,
   FeaturesResultSchema,
@@ -60,38 +38,11 @@ import type { DateRange, HogQLResult } from "./types.ts";
 
 // ─── DI interface ─────────────────────────────────────────────────────────────
 
-export type PostHogClientLike = {
-  query: (
-    hogql: string,
-    options?: { dateFrom?: string; dateTo?: string },
-  ) => Promise<HogQLResult>;
-};
-
 export interface MetricsDeps {
   /**
-   * Backend-agnostic read seam. When provided, all handler reads route through
-   * it. When absent, a PostHogProvider is auto-constructed from the resolved
-   * postHogClient + (optionally overridden) builder functions — so existing
-   * `postHogClient` + `buildXQueryFn` DI tests behave identically.
+   * Backend-agnostic read seam. Required for all metric queries.
    */
   provider?: MetricsProvider;
-  postHogClient?: PostHogClientLike;
-  buildSummaryQueryFn?: typeof buildSummaryQuery;
-  buildSummaryCycleTimeQueryFn?: typeof buildSummaryCycleTimeQuery;
-  buildTrendsQueryFn?: typeof buildTrendsQuery;
-  buildFeaturesTasksQueryFn?: typeof buildFeaturesTasksQuery;
-  buildFeaturesCiQueryFn?: typeof buildFeaturesCiQuery;
-  buildFeaturesReviewsQueryFn?: typeof buildFeaturesReviewsQuery;
-  buildQueueFunnelQueryFn?: typeof buildQueueFunnelQuery;
-  buildQueueCycleStartedQueryFn?: typeof buildQueueCycleStartedQuery;
-  buildQueueCycleMergedQueryFn?: typeof buildQueueCycleMergedQuery;
-  buildTokensTotalsQueryFn?: typeof buildTokensTotalsQuery;
-  buildTokensBySessionTypeQueryFn?: typeof buildTokensBySessionTypeQuery;
-  buildTokensByAgentQueryFn?: typeof buildTokensByAgentQuery;
-  buildTokensTrendsQueryFn?: typeof buildTokensTrendsQuery;
-  buildTokensByAgentBySessionTypeQueryFn?: typeof buildTokensByAgentBySessionTypeQuery;
-  buildTokensByAgentByCronQueryFn?: typeof buildTokensByAgentByCronQuery;
-  buildTokensByAgentByModelQueryFn?: typeof buildTokensByAgentByModelQuery;
   dashboardDir?: string;
   sessionSecret?: string;
   /** Owner-gate: require OWNER role for session-cookie auth. Default false. */
@@ -117,13 +68,6 @@ export interface MetricsDeps {
    * then "" (same-origin relative links — the default for single-host ingress).
    */
   adminBaseUrl?: string;
-  /**
-   * Local event store. When provided, the PostHog-shaped ingest route
-   * `POST /batch/` is registered and writes batches to this store. When
-   * absent, the route is NOT registered (404) — the default-mode flip is
-   * deferred to a later task.
-   */
-  localStore?: LocalEventStore;
 }
 
 // ─── Route definitions (inlined) ─────────────────────────────────────────────
@@ -149,7 +93,7 @@ const summaryRoute = createRoute({
       content: { "application/json": { schema: ErrorSchema } },
     },
     500: {
-      description: "PostHog query error",
+      description: "Query error",
       content: { "application/json": { schema: ErrorSchema } },
     },
   },
@@ -175,7 +119,7 @@ const trendsRoute = createRoute({
       content: { "application/json": { schema: ErrorSchema } },
     },
     500: {
-      description: "PostHog query error",
+      description: "Query error",
       content: { "application/json": { schema: ErrorSchema } },
     },
   },
@@ -202,7 +146,7 @@ const featuresRoute = createRoute({
       content: { "application/json": { schema: ErrorSchema } },
     },
     500: {
-      description: "PostHog query error",
+      description: "Query error",
       content: { "application/json": { schema: ErrorSchema } },
     },
   },
@@ -229,7 +173,7 @@ const queueRoute = createRoute({
       content: { "application/json": { schema: ErrorSchema } },
     },
     500: {
-      description: "PostHog query error",
+      description: "Query error",
       content: { "application/json": { schema: ErrorSchema } },
     },
   },
@@ -256,7 +200,7 @@ const tokensRoute = createRoute({
       content: { "application/json": { schema: ErrorSchema } },
     },
     500: {
-      description: "PostHog query error",
+      description: "Query error",
       content: { "application/json": { schema: ErrorSchema } },
     },
   },
@@ -314,61 +258,87 @@ function handleQueryError(
   err: unknown,
 ): Response {
   const msg = err instanceof Error ? err.message : String(err);
-  if (err instanceof PostHogClientError) {
-    if (err.statusCode === 401) return c.json({ error: msg }, 401);
-    return c.json({ error: msg }, 500);
-  }
   return c.json({ error: msg }, 500);
 }
 
 // ─── Handler factory ─────────────────────────────────────────────────────────
 
-/**
- * Resolve the active read provider. If `deps.provider` is set it wins;
- * otherwise a PostHogProvider is constructed over the resolved client +
- * builder overrides — reproducing the previous client.query(builder(...))
- * behavior exactly, so existing DI tests route through it unchanged.
- */
-function resolveProvider(
-  client: PostHogClientLike,
-  deps?: MetricsDeps,
-): MetricsProvider {
-  if (deps?.provider) return deps.provider;
-  return new PostHogProvider(client, {
-    summary: deps?.buildSummaryQueryFn ?? buildSummaryQuery,
-    summaryCycleTime:
-      deps?.buildSummaryCycleTimeQueryFn ?? buildSummaryCycleTimeQuery,
-    trends: deps?.buildTrendsQueryFn ?? buildTrendsQuery,
-    featuresTasks: deps?.buildFeaturesTasksQueryFn ?? buildFeaturesTasksQuery,
-    featuresCi: deps?.buildFeaturesCiQueryFn ?? buildFeaturesCiQuery,
-    featuresReviews:
-      deps?.buildFeaturesReviewsQueryFn ?? buildFeaturesReviewsQuery,
-    queueFunnel: deps?.buildQueueFunnelQueryFn ?? buildQueueFunnelQuery,
-    queueCycleStarted:
-      deps?.buildQueueCycleStartedQueryFn ?? buildQueueCycleStartedQuery,
-    queueCycleMerged:
-      deps?.buildQueueCycleMergedQueryFn ?? buildQueueCycleMergedQuery,
-    tokensTotals: deps?.buildTokensTotalsQueryFn ?? buildTokensTotalsQuery,
-    tokensBySessionType:
-      deps?.buildTokensBySessionTypeQueryFn ?? buildTokensBySessionTypeQuery,
-    tokensByAgent: deps?.buildTokensByAgentQueryFn ?? buildTokensByAgentQuery,
-    tokensTrends: deps?.buildTokensTrendsQueryFn ?? buildTokensTrendsQuery,
-    tokensByAgentBySessionType:
-      deps?.buildTokensByAgentBySessionTypeQueryFn ??
-      buildTokensByAgentBySessionTypeQuery,
-    tokensByAgentByCron:
-      deps?.buildTokensByAgentByCronQueryFn ?? buildTokensByAgentByCronQuery,
-    tokensByAgentByModel:
-      deps?.buildTokensByAgentByModelQueryFn ?? buildTokensByAgentByModelQuery,
-  });
-}
-
-export function createMetricsHandlers(
-  client: PostHogClientLike,
+export function createMetricsApp(
+  apiKeys: Map<string, Caller>,
   accountsClient: AccountsClient,
   deps?: MetricsDeps,
-) {
-  const provider = resolveProvider(client, deps);
+): OpenAPIHono<AuthEnv> {
+  const provider = deps?.provider;
+  if (!provider) {
+    throw new Error(
+      "[metrics-api] MetricsDeps.provider is required — no fallback provider is configured",
+    );
+  }
+
+  const sessionSecret =
+    deps?.sessionSecret ?? process.env.SHIPWRIGHT_SESSION_SECRET ?? "";
+  const requireOwnerRole = deps?.requireOwnerRole ?? false;
+  if (requireOwnerRole) {
+    console.warn(
+      "[metrics] METRICS_REQUIRE_OWNER_ROLE is enabled — ensure your accountsClient URL serves /accounts/users/{id}. The Shipwright admin service does not expose this endpoint.",
+    );
+  }
+  const dashboardToken = deps?.dashboardToken;
+  const offlineMode = deps?.offlineMode ?? false;
+  const dashboardDevAuth = deps?.dashboardDevAuth ?? false;
+  const basePath = deps?.basePath ?? process.env.METRICS_BASE_PATH ?? "";
+  const adminBaseUrl =
+    deps?.adminBaseUrl ?? process.env.METRICS_ADMIN_APP_URL ?? "";
+
+  const app = new OpenAPIHono<AuthEnv>({
+    defaultHook: (result, c) => {
+      if (!result.success) {
+        const issues = result.error.issues;
+        const message = issues
+          .map((i) => `${i.path.join(".")}: ${i.message}`)
+          .join(", ");
+        return c.json({ error: message }, 400);
+      }
+    },
+  });
+
+  app.onError((err, c) => {
+    console.error("unhandled error:", err);
+    return c.json({ error: err.message }, 500);
+  });
+
+  // Health check — no auth required
+  app.get("/health", (c) => c.json({ status: "ok" }, 200));
+
+  // /metrics/* — accepts bearer token OR session cookie; returns 401 JSON on failure.
+  app.use(
+    "/metrics/*",
+    dashboardDevAuth
+      ? createMiddleware<AuthEnv>(async (c, next) => {
+          c.set("caller", { name: "dev-auth", scope: "*" });
+          return next();
+        })
+      : createCombinedAuthMiddleware(
+          apiKeys,
+          sessionSecret,
+          accountsClient,
+          requireOwnerRole,
+          dashboardToken,
+        ),
+  );
+
+  // Metrics combined-auth middleware accepts either an admin bearer token
+  // (scope === "*", scoped tokens already 403'd above) or an OWNER session
+  // cookie. The kind="custom" policy documents that this dual gate is
+  // applied at middleware-time, not in the route handler.
+  const metricsPolicy = {
+    kind: "custom" as const,
+    check: () => {},
+    justification:
+      "Mixed auth: admin bearer token OR OWNER session cookie (enforced by createCombinedAuthMiddleware on /metrics/*)",
+  };
+
+  // ─── /metrics/summary ─────────────────────────────────────────────────────
 
   const handleSummary: AppHandler<typeof summaryRoute> = async (c) => {
     const { preset, from, to } = c.req.valid("query");
@@ -383,7 +353,7 @@ export function createMetricsHandlers(
 
     const dateRange = resolveDateRange(preset, from, to);
     const dateRangeMeta = resolveDateRangeForMeta(preset, from, to);
-    const startMs = Date.now(); // infra: request timing telemetry
+    const startMs = Date.now();
 
     try {
       const [result, cycleTimeResult] = await Promise.all([
@@ -420,12 +390,10 @@ export function createMetricsHandlers(
           : null;
 
       const avgFixCascadeDepthRaw = toNumOrNull(row.avg_fix_cascade_depth);
-      // avgIf returns 0 when no rows match — treat 0 as null (no data)
       const avgFixCascadeDepth =
         avgFixCascadeDepthRaw === 0 ? null : avgFixCascadeDepthRaw;
 
       const avgCycleTimeRaw = toNumOrNull(cycleTimeRow.avg_cycle_time_hours);
-      // avg returns 0 when no rows match — treat 0 as null (no data)
       const avgCycleTimeHours = avgCycleTimeRaw === 0 ? null : avgCycleTimeRaw;
 
       return c.json(
@@ -465,8 +433,8 @@ export function createMetricsHandlers(
           },
           {
             dateRange: dateRangeMeta,
-            generatedAt: new Date().toISOString(), // infra: response envelope timestamp
-            queryTimeMs: Date.now() - startMs, // infra: request timing telemetry
+            generatedAt: new Date().toISOString(),
+            queryTimeMs: Date.now() - startMs,
           },
         ),
         200,
@@ -475,6 +443,8 @@ export function createMetricsHandlers(
       return handleQueryError(c, err);
     }
   };
+
+  // ─── /metrics/trends ──────────────────────────────────────────────────────
 
   const handleTrends: AppHandler<typeof trendsRoute> = async (c) => {
     const { preset, from, to, groupBy } = c.req.valid("query");
@@ -490,7 +460,7 @@ export function createMetricsHandlers(
     const dateRange = resolveDateRange(preset, from, to);
     const dateRangeMeta = resolveDateRangeForMeta(preset, from, to);
     const grouping = (groupBy ?? "day") as TrendsGroupBy;
-    const startMs = Date.now(); // infra: request timing telemetry
+    const startMs = Date.now();
 
     try {
       const result = await provider.query({
@@ -536,8 +506,8 @@ export function createMetricsHandlers(
           { rows },
           {
             dateRange: dateRangeMeta,
-            generatedAt: new Date().toISOString(), // infra: response envelope timestamp
-            queryTimeMs: Date.now() - startMs, // infra: request timing telemetry
+            generatedAt: new Date().toISOString(),
+            queryTimeMs: Date.now() - startMs,
           },
         ),
         200,
@@ -546,6 +516,8 @@ export function createMetricsHandlers(
       return handleQueryError(c, err);
     }
   };
+
+  // ─── /metrics/features ────────────────────────────────────────────────────
 
   const handleFeatures: AppHandler<typeof featuresRoute> = async (c) => {
     const { preset, from, to } = c.req.valid("query");
@@ -560,7 +532,7 @@ export function createMetricsHandlers(
 
     const dateRange = resolveDateRange(preset, from, to);
     const dateRangeMeta = resolveDateRangeForMeta(preset, from, to);
-    const startMs = Date.now(); // infra: request timing telemetry
+    const startMs = Date.now();
 
     try {
       const [tasksResult, ciResult, reviewsResult] = await Promise.all([
@@ -569,7 +541,6 @@ export function createMetricsHandlers(
         provider.query({ kind: "featuresReviews", range: dateRange }),
       ]);
 
-      // Build lookup maps from CI and reviews results
       const ciByPrefix = new Map<
         string,
         { total: number; firstPass: number }
@@ -639,8 +610,8 @@ export function createMetricsHandlers(
           { features },
           {
             dateRange: dateRangeMeta,
-            generatedAt: new Date().toISOString(), // infra: response envelope timestamp
-            queryTimeMs: Date.now() - startMs, // infra: request timing telemetry
+            generatedAt: new Date().toISOString(),
+            queryTimeMs: Date.now() - startMs,
           },
         ),
         200,
@@ -649,6 +620,8 @@ export function createMetricsHandlers(
       return handleQueryError(c, err);
     }
   };
+
+  // ─── /metrics/queue ───────────────────────────────────────────────────────
 
   const handleQueue: AppHandler<typeof queueRoute> = async (c) => {
     const { preset, from, to } = c.req.valid("query");
@@ -663,7 +636,7 @@ export function createMetricsHandlers(
 
     const dateRange = resolveDateRange(preset, from, to);
     const dateRangeMeta = resolveDateRangeForMeta(preset, from, to);
-    const startMs = Date.now(); // infra: request timing telemetry
+    const startMs = Date.now();
 
     try {
       const [funnelResult, cycleStartedResult, cycleMergedResult] =
@@ -680,18 +653,15 @@ export function createMetricsHandlers(
       const tasksMerged = toNum(funnelRow.tasks_merged);
       const tasksBlocked = toNum(funnelRow.tasks_blocked);
 
-      // blockRate = (tasksBlocked / tasksStarted) * 100, null when tasksStarted = 0
       const blockRate =
         tasksStarted > 0
           ? Math.round((tasksBlocked / tasksStarted) * 10000) / 100
           : null;
 
-      // avgReviewFindings — avg returns 0 when no matching rows, treat as null
       const avgReviewFindingsRaw = toNumOrNull(funnelRow.avg_review_findings);
       const avgReviewFindings =
         avgReviewFindingsRaw === 0 ? null : avgReviewFindingsRaw;
 
-      // avgCycleTimeDays: TypeScript join of started + merged by task_id
       const startedMap = new Map<string, number>();
       for (const raw of cycleStartedResult.results) {
         const row = Object.fromEntries(
@@ -740,8 +710,8 @@ export function createMetricsHandlers(
           },
           {
             dateRange: dateRangeMeta,
-            generatedAt: new Date().toISOString(), // infra: response envelope timestamp
-            queryTimeMs: Date.now() - startMs, // infra: request timing telemetry
+            generatedAt: new Date().toISOString(),
+            queryTimeMs: Date.now() - startMs,
           },
         ),
         200,
@@ -750,6 +720,8 @@ export function createMetricsHandlers(
       return handleQueryError(c, err);
     }
   };
+
+  // ─── /metrics/tokens ──────────────────────────────────────────────────────
 
   const handleTokens: AppHandler<typeof tokensRoute> = async (c) => {
     const { preset, from, to } = c.req.valid("query");
@@ -937,228 +909,11 @@ export function createMetricsHandlers(
     }
   };
 
-  return {
-    handleSummary,
-    handleTrends,
-    handleFeatures,
-    handleQueue,
-    handleTokens,
-  };
-}
-
-// ─── Sub-app factory ──────────────────────────────────────────────────────────
-
-/**
- * Combined auth middleware for /metrics/* routes.
- * Accepts either a valid Bearer token (service-to-service) OR a valid
- * admin_session cookie (browser dashboard). Returns 401 JSON on failure
- * so API clients get a machine-readable error rather than a redirect.
- *
- * Owner gate:
- * - Bearer token path: scoped tokens (scope !== "*") are rejected with 403.
- * - Session cookie path: if accountsClient is provided, the user's role is
- *   checked; non-OWNER roles are rejected with 401.
- */
-function createCombinedAuthMiddleware(
-  apiKeys: Map<string, Caller>,
-  sessionSecret: string,
-  accountsClient?: AccountsClient,
-  requireOwnerRole = false,
-  dashboardToken?: string,
-) {
-  return createMiddleware<AuthEnv>(async (c, next) => {
-    // 1. Try bearer token first
-    const header = c.req.header("Authorization")?.trim();
-    const token = header?.startsWith("Bearer ") ? header.slice(7) : undefined;
-    if (token) {
-      // dashboardToken is a single admin bearer token (takes priority over apiKeys)
-      if (dashboardToken && token === dashboardToken) {
-        c.set("caller", { name: "dashboard-token", scope: "*" });
-        return next();
-      }
-      const caller = apiKeys.get(token);
-      if (caller) {
-        // Scoped tokens (clientId scope) are forbidden from the metrics API
-        if (caller.scope !== "*") {
-          return c.json({ error: "Forbidden" }, 403);
-        }
-        c.set("caller", caller);
-        return next();
-      }
-    }
-
-    // 2. Try session cookie — the admin's `admin_session` (name claim optional)
-    if (sessionSecret) {
-      const sessionToken = getCookie(c, SESSION_COOKIE);
-      if (sessionToken) {
-        try {
-          const payload = (await verify(
-            sessionToken,
-            sessionSecret,
-            "HS256",
-          )) as Record<string, unknown>;
-          const { userId, email } = payload;
-          if (
-            typeof userId === "string" &&
-            userId &&
-            typeof email === "string" &&
-            email
-          ) {
-            // Owner role gate — only when requireOwnerRole is true AND accountsClient is wired
-            if (requireOwnerRole && accountsClient) {
-              const user = await accountsClient.getUser(userId);
-              if (user.role !== "OWNER") {
-                return c.json({ error: "Forbidden" }, 401);
-              }
-            }
-            // Session valid — set a synthetic caller for metrics handlers
-            c.set("caller", { name: email, scope: "*" });
-            return next();
-          }
-        } catch {
-          // Invalid JWT — fall through to 401
-        }
-      }
-    }
-
-    return c.json({ error: "Unauthorized" }, 401);
-  });
-}
-
-export function createMetricsApp(
-  apiKeys: Map<string, Caller>,
-  accountsClient: AccountsClient,
-  deps?: MetricsDeps,
-): OpenAPIHono<AuthEnv> {
-  const client: PostHogClientLike =
-    deps?.postHogClient ??
-    createPostHogClient({
-      personalApiKey: process.env.POSTHOG_PERSONAL_API_KEY ?? "",
-      projectId: process.env.POSTHOG_PROJECT_ID ?? "",
-    });
-
-  const sessionSecret =
-    deps?.sessionSecret ?? process.env.SHIPWRIGHT_SESSION_SECRET ?? "";
-  const requireOwnerRole = deps?.requireOwnerRole ?? false;
-  if (requireOwnerRole) {
-    console.warn(
-      "[metrics] METRICS_REQUIRE_OWNER_ROLE is enabled — ensure your accountsClient URL serves /accounts/users/{id}. The Shipwright admin service does not expose this endpoint.",
-    );
-  }
-  const dashboardToken = deps?.dashboardToken;
-  const offlineMode = deps?.offlineMode ?? false;
-  // Local-dev auth bypass for both /dashboard and /metrics/* (no login flow in
-  // `task stack`). Keeps the real provider — only relaxes auth.
-  const dashboardDevAuth = deps?.dashboardDevAuth ?? false;
-  const basePath = deps?.basePath ?? process.env.METRICS_BASE_PATH ?? "";
-  // Cross-origin admin console URL for the dashboard toolbar's Agents/Tasks/PRs
-  // links. Only set in the local `task stack` (different origin per service); empty
-  // by default so single-host ingress deployments keep relative links unchanged.
-  const adminBaseUrl =
-    deps?.adminBaseUrl ?? process.env.METRICS_ADMIN_APP_URL ?? "";
-
-  const app = new OpenAPIHono<AuthEnv>({
-    defaultHook: (result, c) => {
-      if (!result.success) {
-        const issues = result.error.issues;
-        const message = issues
-          .map((i) => `${i.path.join(".")}: ${i.message}`)
-          .join(", ");
-        return c.json({ error: message }, 400);
-      }
-    },
-  });
-
-  app.onError((err, c) => {
-    console.error("unhandled error:", err);
-    return c.json({ error: err.message }, 500);
-  });
-
-  // Health check — no auth required
-  app.get("/health", (c) => c.json({ status: "ok" }, 200));
-
-  // /metrics/* — accepts bearer token OR session cookie; returns 401 JSON on failure.
-  // In local-dev mode (dashboardDevAuth), bypass auth entirely with a synthetic
-  // caller so the browser dashboard can fetch data without a cookie or token.
-  app.use(
-    "/metrics/*",
-    dashboardDevAuth
-      ? createMiddleware<AuthEnv>(async (c, next) => {
-          c.set("caller", { name: "dev-auth", scope: "*" });
-          return next();
-        })
-      : createCombinedAuthMiddleware(
-          apiKeys,
-          sessionSecret,
-          accountsClient,
-          requireOwnerRole,
-          dashboardToken,
-        ),
-  );
-
-  const handlers = createMetricsHandlers(client, accountsClient, deps);
-  // Metrics combined-auth middleware accepts either an admin bearer token
-  // (scope === "*", scoped tokens already 403'd above) or an OWNER session
-  // cookie. The kind="custom" policy documents that this dual gate is
-  // applied at middleware-time, not in the route handler.
-  const metricsPolicy = {
-    kind: "custom" as const,
-    check: () => {},
-    justification:
-      "Mixed auth: admin bearer token OR OWNER session cookie (enforced by createCombinedAuthMiddleware on /metrics/*)",
-  };
-  registerWithAuthz(app, summaryRoute, metricsPolicy, handlers.handleSummary);
-  registerWithAuthz(app, trendsRoute, metricsPolicy, handlers.handleTrends);
-  registerWithAuthz(app, featuresRoute, metricsPolicy, handlers.handleFeatures);
-  registerWithAuthz(app, queueRoute, metricsPolicy, handlers.handleQueue);
-  registerWithAuthz(app, tokensRoute, metricsPolicy, handlers.handleTokens);
-
-  // ─── Ingest: POST /batch/ (local-store mode only) ─────────────────────────
-  //
-  // PostHog-shaped batch ingest. Mounted as a plain route (NOT behind the
-  // /metrics/* combined-auth middleware) to mirror PostHog's unauthenticated
-  // transport — the api_key travels in the body. Registered ONLY when a local
-  // store is injected; otherwise the route is absent (404).
-  const localStore = deps?.localStore;
-  if (localStore) {
-    app.post("/batch/", async (c) => {
-      let body: unknown;
-      try {
-        body = await c.req.json();
-      } catch {
-        return c.json({ error: "invalid JSON body" }, 400);
-      }
-      if (
-        !body ||
-        typeof body !== "object" ||
-        !Array.isArray((body as { batch?: unknown }).batch)
-      ) {
-        return c.json({ error: "body must include a 'batch' array" }, 400);
-      }
-
-      const batch = (body as { batch: unknown[] }).batch;
-      for (const raw of batch) {
-        if (!raw || typeof raw !== "object") continue;
-        const ev = raw as Record<string, unknown>;
-        if (typeof ev.event !== "string" || !ev.event) continue;
-        const properties =
-          ev.properties && typeof ev.properties === "object"
-            ? (ev.properties as Record<string, unknown>)
-            : {};
-        const insertId = properties.$insert_id;
-        await localStore.insertEvent({
-          insertId: typeof insertId === "string" ? insertId : null,
-          event: ev.event,
-          distinctId:
-            typeof ev.distinct_id === "string" ? ev.distinct_id : null,
-          timestamp: typeof ev.timestamp === "string" ? ev.timestamp : "",
-          properties,
-        });
-      }
-
-      return c.json({ status: 1 }, 200);
-    });
-  }
+  registerWithAuthz(app, summaryRoute, metricsPolicy, handleSummary);
+  registerWithAuthz(app, trendsRoute, metricsPolicy, handleTrends);
+  registerWithAuthz(app, featuresRoute, metricsPolicy, handleFeatures);
+  registerWithAuthz(app, queueRoute, metricsPolicy, handleQueue);
+  registerWithAuthz(app, tokensRoute, metricsPolicy, handleTokens);
 
   // ─── Dashboard static files ───────────────────────────────────────────────
 
@@ -1179,16 +934,12 @@ export function createMetricsApp(
     },
   };
 
-  // Dashboard routes are protected by session cookie — redirect to /auth/login on failure
-  // In offline / local-dev mode: skip session auth entirely and inject a default local user
   if (!offlineMode && !dashboardDevAuth) {
     app.use("/dashboard", createSessionMiddleware(sessionSecret));
     app.use("/dashboard/*", createSessionMiddleware(sessionSecret));
   }
 
-  // /dashboard — server-rendered with shared toolbar and user name from session
   app.get("/dashboard", async (c) => {
-    // Offline / local-dev mode: inject a default local user, skip all session/owner checks
     if (offlineMode || dashboardDevAuth) {
       const body = renderDashboardPage({
         userName: offlineMode ? "Offline User" : "Dev User",
@@ -1224,7 +975,6 @@ export function createMetricsApp(
       }
     }
 
-    // Owner gate: only check if requireOwnerRole is explicitly enabled
     if (requireOwnerRole && accountsClient && userId) {
       const user = await accountsClient.getUser(userId);
       if (user.role !== "OWNER") {
@@ -1272,4 +1022,72 @@ export function createMetricsApp(
   }
 
   return app;
+}
+
+// ─── Combined auth middleware ─────────────────────────────────────────────────
+
+/**
+ * Combined auth middleware for /metrics/* routes.
+ * Accepts either a valid Bearer token (service-to-service) OR a valid
+ * admin_session cookie (browser dashboard). Returns 401 JSON on failure
+ * so API clients get a machine-readable error rather than a redirect.
+ */
+function createCombinedAuthMiddleware(
+  apiKeys: Map<string, Caller>,
+  sessionSecret: string,
+  accountsClient?: AccountsClient,
+  requireOwnerRole = false,
+  dashboardToken?: string,
+) {
+  return createMiddleware<AuthEnv>(async (c, next) => {
+    const header = c.req.header("Authorization")?.trim();
+    const token = header?.startsWith("Bearer ") ? header.slice(7) : undefined;
+    if (token) {
+      if (dashboardToken && token === dashboardToken) {
+        c.set("caller", { name: "dashboard-token", scope: "*" });
+        return next();
+      }
+      const caller = apiKeys.get(token);
+      if (caller) {
+        if (caller.scope !== "*") {
+          return c.json({ error: "Forbidden" }, 403);
+        }
+        c.set("caller", caller);
+        return next();
+      }
+    }
+
+    if (sessionSecret) {
+      const sessionToken = getCookie(c, SESSION_COOKIE);
+      if (sessionToken) {
+        try {
+          const payload = (await verify(
+            sessionToken,
+            sessionSecret,
+            "HS256",
+          )) as Record<string, unknown>;
+          const { userId, email } = payload;
+          if (
+            typeof userId === "string" &&
+            userId &&
+            typeof email === "string" &&
+            email
+          ) {
+            if (requireOwnerRole && accountsClient) {
+              const user = await accountsClient.getUser(userId);
+              if (user.role !== "OWNER") {
+                return c.json({ error: "Forbidden" }, 401);
+              }
+            }
+            c.set("caller", { name: email, scope: "*" });
+            return next();
+          }
+        } catch {
+          // Invalid JWT — fall through to 401
+        }
+      }
+    }
+
+    return c.json({ error: "Unauthorized" }, 401);
+  });
 }

@@ -7,8 +7,8 @@
  */
 
 import { type Clock, SystemClock } from "./lib/clock.ts";
-import { DASHBOARD_TZ } from "./queries.ts";
-import type { QueryDateRange } from "./queries.ts";
+import { DASHBOARD_TZ } from "./metrics-provider.ts";
+import type { QueryDateRange } from "./metrics-provider.ts";
 import type { ResponseMeta } from "./schemas.ts";
 import type { DatePreset, ResolvedDateRange } from "./types.ts";
 

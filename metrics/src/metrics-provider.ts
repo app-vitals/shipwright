@@ -3,19 +3,26 @@
  * Backend-agnostic read seam for the metrics dashboard.
  *
  * A `MetricsProvider` answers typed `MetricQuery` requests and returns a
- * `MetricTable` (an alias of the existing PostHog result shape) so the
- * handlers in api.ts are identical regardless of which backend served the
- * data. PostHog and SQLite both implement this; no HogQL string ever crosses
- * the handler↔provider boundary.
+ * `MetricTable` (an alias of the shared result shape) so the handlers in
+ * api.ts are identical regardless of which backend served the data.
+ * No HogQL string ever crosses the handler↔provider boundary.
  */
 
-import type { QueryDateRange, TrendsGroupBy } from "./queries.ts";
-import type { HogQLResult } from "./types.ts";
+import type { DatePreset, DateRange, HogQLResult } from "./types.ts";
+
+/** Preset or custom date range accepted by all metric queries. */
+export type QueryDateRange = DatePreset | DateRange;
+
+/** Grouping granularity for the trends endpoint. */
+export type TrendsGroupBy = "day" | "week" | "hour";
+
+/** Dashboard timezone — all date windows are anchored to LA wall clock. */
+export const DASHBOARD_TZ = "America/Los_Angeles";
 
 /** Result shape every backend returns — an alias, NOT a narrowing. */
 export type MetricTable = HogQLResult;
 
-/** The 13 typed read queries the dashboard issues. */
+/** The typed read queries the dashboard issues. */
 export type MetricQuery =
   | { kind: "summary"; range: QueryDateRange }
   | { kind: "summaryCycleTime"; range: QueryDateRange }

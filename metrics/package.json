@@ -13,12 +13,10 @@
     "@shipwright/lib": "*",
     "hono": "^4",
     "openapi-fetch": "^0.13",
-    "pg": "^8.21.0",
     "zod": "^3"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",
-    "@types/pg": "^8.20.0",
     "bun-types": "^1.3.14",
     "typescript": "*"
   }
