@@ -38,7 +38,7 @@ If no arguments provided, analyze all `planning/*/metrics.jsonl` files.
 4. Filter by date range if `--from` and/or `--to` specified (compare against `ts` field)
 5. Categorize records:
    - **Enriched**: has at least one of `simplify`, `ci` (nested object), or `coverage` fields. Note: the `review` field may be absent on enriched records if `/review` hasn't run yet — this does NOT make them legacy.
-   - **Review-enriched**: enriched records that also have the `review` field (added by `/review` Step 10b)
+   - **Review-enriched**: enriched records that also have the `review` field (added by `/review` in the legacy JSONL enrichment pass)
    - **Legacy**: core fields only (v1.2.0 format)
 
 6. Print:
@@ -88,7 +88,7 @@ For enriched records with `simplify` data:
 
 ### 3c. Review Phase
 
-For review-enriched records (records that have the `review` field — added by `/review` Step 10b):
+For review-enriched records (records that have the `review` field — added by `/review` in the legacy JSONL enrichment pass):
 - Verdict distribution: count and percentage of SHIP IT / NEEDS FIXES / NEEDS WORK
 - **Finding count** — handle both old integer and new array formats:
   - Old integer format: `findings_count = review.findings` (where `review.findings` is an integer)

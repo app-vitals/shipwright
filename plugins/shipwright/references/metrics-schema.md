@@ -1,6 +1,13 @@
 # Metrics Schema Reference
 
-Single source of truth for `planning/{folder-name}/metrics.jsonl`. Referenced by `dev-task.md` (writer), `dev-loop.md` (retrospective consumer), `plan-session.md` (historical consumer), and `metrics.md` (query command).
+> **Retired pipeline — historical reference only.** The `planning/{folder-name}/metrics.jsonl`
+> append-only pipeline this document describes has been removed. `dev-task.md` no longer
+> appends JSONL lines and `review.md` no longer enriches them — execution metrics are now
+> PATCHed to the task store as task columns (see `dev-task.md` Step 10b). This schema is
+> retained to document the shape of legacy `metrics.jsonl` files in older planning folders
+> and the field semantics still consumed by `metrics.md` where such files exist.
+
+Documents the historical `planning/{folder-name}/metrics.jsonl` format, formerly written by `dev-task.md` and enriched by `review.md`, and read by `dev-loop.md` (retrospective), `plan-session.md` (historical estimation), and `metrics.md` (query command).
 
 ---
 
@@ -9,26 +16,31 @@ Single source of truth for `planning/{folder-name}/metrics.jsonl`. Referenced by
 - **Location:** `planning/{folder-name}/metrics.jsonl`
 - **Format:** JSONL — one JSON object per line, newline-terminated
 - **Mode:** Append-only for new tasks. Existing lines may be updated in-place by `/review` to add review data (see Write Lifecycle below).
-- **Created by:** `dev-task.md` Step 12a-standalone or Step 12e.2. File is created if it doesn't exist.
+- **Created by:** historically by `dev-task.md` at task completion (file created if absent). No longer written — `dev-task.md` now PATCHes execution metrics to the task store instead.
 
 ---
 
 ## Write Lifecycle
 
-Metrics are written in two phases to support the standalone `/dev-task` → `/review` workflow:
+> The two-phase JSONL write described below is **retired**. It is documented here only to
+> explain the structure of legacy `metrics.jsonl` files. No current command writes these
+> files — `dev-task.md` PATCHes execution metrics to the task store and `review.md` no
+> longer enriches a JSONL line.
 
-### Phase 1: dev-task (always runs)
+Legacy `metrics.jsonl` records were written in two phases to support the standalone `/dev-task` → `/review` workflow:
 
-`dev-task.md` writes a metrics line at the end of every run, in both standalone and merge-mode:
+### Phase 1: dev-task (always ran)
 
-- **Standalone (Step 12a-standalone):** Writes all fields EXCEPT `review` (which hasn't run yet). Fields populated: core fields, `simplify`, `requirements`, `ci`, `coverage`, `model`.
-- **Merge-mode (Step 12e.2):** Writes all fields INCLUDING `review` (inline review ran in Steps 12b-d).
+`dev-task.md` historically wrote a metrics line at the end of every run, in both standalone and merge-mode:
+
+- **Standalone:** Wrote all fields EXCEPT `review` (which hadn't run yet). Fields populated: core fields, `simplify`, `requirements`, `ci`, `coverage`, `model`.
+- **Merge-mode:** Wrote all fields INCLUDING `review` (inline review ran during the merge flow).
 
 ### Phase 2: /review (optional enrichment)
 
-`review.md` Step 10b updates the existing metrics line for the task with `review` data after the verdict is determined. This is a targeted in-place update (find-and-replace the JSON line), not a new append.
+`review.md` historically updated the existing metrics line for the task with `review` data after the verdict was determined — a targeted in-place update (find-and-replace the JSON line), not a new append.
 
-### Implications for consumers
+### Implications for consumers (of legacy files)
 
 - A record **without** a `review` field means `/review` hasn't run yet — NOT that the review passed clean. Exclude from review aggregates and FTQ calculation.
 - A record **with** a `review` field is fully enriched and can be used for all aggregates including FTQ.
@@ -168,7 +180,7 @@ Tracks which test layers were added or removed during a task, what the AC planne
 
 **Every `test_layers` sub-key must be present on every emitted record.** When a task has no test changes, emit `test_layers` with `measured` as an all-zero counts object, `planned` as `[]`, `drift` as `[]`, `coverage_per_layer` as `null`, and `coverage_per_layer_reason` as the reason string. Never omit the `test_layers` block or any of its sub-keys. (The `conformance` field has its own emit rules — see the `conformance` section below.) When test-system.md is absent, `test_layers` is `{"configured":false}` — no other sub-keys are emitted.
 
-Computed by `dev-task.md` Step 10b.1 using `parseDiff` and `parsePlanned` from `shipwright/classify_test_layer.ts`.
+In legacy records, computed at task completion using `parseDiff` and `parsePlanned` from `shipwright/classify_test_layer.ts`.
 
 Records written before v4.6.0 will be missing the `test_layers` object entirely. Consumers should treat absent `test_layers` as `{measured: {}, planned: [], drift: [], coverage_per_layer: null, coverage_per_layer_reason: null}` — legacy records had no test layer tracking.
 
@@ -183,13 +195,13 @@ Advisory check of whether diff additions follow the conventions defined in `docs
 
 **The `conformance` field must be present on every emitted record.** When test-system.md is absent (source `'defaults'`), emit `"conformance": {"checked": false, "deviations": []}`. When test-system.md is present but no test-file additions were found in the diff, emit `"conformance": {"checked": true, "deviations": []}`.
 
-Computed by `dev-task.md` Step 10b.1 using `checkConformance` and `parseDiffAdditions` from `shipwright/classify_test_layer.ts`.
+In legacy records, computed at task completion using `checkConformance` and `parseDiffAdditions` from `shipwright/classify_test_layer.ts`.
 
 Records written before v4.15.0 will be missing the `conformance` object entirely. Consumers should treat absent `conformance` as `{checked: false, deviations: []}`.
 
-#### `tokens` — Step 10b.2 token usage
+#### `tokens` — token usage
 
-Token counts and estimated cost for the Claude Code session that executed this task.
+Token counts and estimated cost for the Claude Code session that executed this task. In the current pipeline these values are PATCHed to the task store columns (`inputTokens`, `outputTokens`, `cacheReadTokens`, `cacheCreationTokens`, `costUsd`) by `dev-task.md` Step 10b rather than written as a `tokens` object in JSONL; the field shape below describes legacy `metrics.jsonl` records.
 
 | Field | Type | Default if Absent | Description |
 |-------|------|-------------------|-------------|
@@ -197,7 +209,7 @@ Token counts and estimated cost for the Claude Code session that executed this t
 | `tokens.output` | integer \| null | `null` | Total output tokens generated during this task |
 | `tokens.cost_usd` | number \| null | `null` | Estimated cost in USD based on model pricing. `null` when the model is unknown or token counts could not be read |
 
-Computed by the Python token calculator in `dev-task.md` Step 10b.2 by diffing the Claude Code session JSONL from the snapshot taken in Step 1. `cost_usd` is `null` when the model rate is unknown; `input` and `output` counts are still emitted. All three fields are `null` only when the JSONL path is missing or unreadable. The entire `tokens` block is present on every record written by v4.16.0+; omitting a field within it is not permitted — emit `null` explicitly.
+Computed by the Python token calculator in `dev-task.md` Step 10b by diffing the Claude Code session JSONL from the snapshot taken in Step 1. `cost_usd` is `null` when the model rate is unknown; `input` and `output` counts are still emitted. All three fields are `null` only when the JSONL path is missing or unreadable. The entire `tokens` block is present on every record written by v4.16.0+; omitting a field within it is not permitted — emit `null` explicitly.
 
 Records written before v4.16.0 will be missing the `tokens` object entirely. Consumers should treat absent `tokens` as `{input: null, output: null, cost_usd: null}`.
 
@@ -290,12 +302,12 @@ Example with unreadable JSONL (all token fields `null`) and no effort level set:
 
 ---
 
-## Writers
-
-| Writer | File | What It Writes | When |
-|--------|------|----------------|------|
-| **Dev-task** | `dev-task.md` Step 10b | All JSONL fields except `review` | After PR creation |
-| **Review** | `review.md` Step 13 | `review.*` fields (updates existing JSONL line) | After review verdict |
+> **Historical reference only.** The `planning/{folder-name}/metrics.jsonl` pipeline
+> described in this document has been retired. Execution metrics are now PATCHed to the
+> task store as task columns by `dev-task.md` Step 10b (token/cost/coverage/effort), not
+> appended as JSONL lines, and `review.md` no longer writes a separate metrics record. The
+> schema below is preserved to document the shape of legacy `metrics.jsonl` files that may
+> still exist in older planning folders.
 
 ## Consumers
 
