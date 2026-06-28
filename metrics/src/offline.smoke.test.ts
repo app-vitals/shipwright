@@ -1,7 +1,7 @@
 /**
  * metrics/src/offline.smoke.test.ts
  * Smoke tests for offline/fixture mode — drives the Hono app via app.request()
- * with no real PostHog, no SESSION_SECRET, and no accounts service.
+ * with no live upstreams, no SESSION_SECRET, and no accounts service.
  *
  * METRICS_OFFLINE=true mode:
  * - /health returns 200 { status: "ok" }
@@ -173,7 +173,7 @@ describe("offline mode — /dashboard", () => {
 });
 
 describe("offline mode — no live credentials required", () => {
-  test("boots with empty session secret and no PostHog keys", async () => {
+  test("boots with empty session secret and no live credentials", async () => {
     // This test verifies that no env vars are read — everything is injected via deps
     const deps: MetricsDeps = {
       provider: createFixtureTaskStoreProvider(),

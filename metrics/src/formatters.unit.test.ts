@@ -3,7 +3,7 @@
  * Tests for date range resolution, custom range validation, and response envelope.
  *
  * All presets and the validation "future" check anchor on America/Los_Angeles
- * so the response meta agrees with the timezone-aware HogQL queries.
+ * so the response meta agrees with the timezone-aware provider date filters.
  */
 
 import { describe, expect, test } from "bun:test";

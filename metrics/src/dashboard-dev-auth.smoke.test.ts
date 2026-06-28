@@ -18,17 +18,17 @@
 
 import { describe, expect, test } from "bun:test";
 import { type MetricsDeps, createMetricsApp } from "./api.ts";
-import { createFixturePostHogClient } from "./fixtures/posthog-fixtures.ts";
+import { createFixtureTaskStoreProvider } from "./fixtures/task-store-fixtures.ts";
 import { parseApiKeys } from "./lib/api-auth.ts";
 import { makeAccountsClientMock } from "./lib/test-helpers.ts";
 
 const noopAccountsClient = makeAccountsClientMock(async () => []);
 
-// dashboardDevAuth keeps a real injected provider (fixture client stands in for
-// the sqlite/posthog provider here — the point under test is auth, not source).
+// dashboardDevAuth keeps a real injected provider (the recorded fixture
+// provider stands in here — the point under test is auth, not the data source).
 function makeDevAuthDeps(): MetricsDeps {
   return {
-    postHogClient: createFixturePostHogClient(),
+    provider: createFixtureTaskStoreProvider(),
     sessionSecret: "",
     dashboardDevAuth: true,
   };
@@ -103,7 +103,7 @@ describe("dashboardDevAuth — /metrics/* without credentials", () => {
 describe("dashboardDevAuth — disabled by default", () => {
   test("without the flag, /metrics/summary still requires auth (401)", async () => {
     const deps: MetricsDeps = {
-      postHogClient: createFixturePostHogClient(),
+      provider: createFixtureTaskStoreProvider(),
       sessionSecret: "",
     };
     const app = createMetricsApp(new Map(), noopAccountsClient, deps);

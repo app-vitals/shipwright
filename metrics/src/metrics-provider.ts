@@ -3,14 +3,13 @@
  * Backend-agnostic read seam for the metrics dashboard.
  *
  * A `MetricsProvider` answers typed `MetricQuery` requests and returns a
- * `MetricTable` (an alias of the existing PostHog result shape) so the
- * handlers in api.ts are identical regardless of which backend served the
- * data. PostHog and SQLite both implement this; no HogQL string ever crosses
- * the handler↔provider boundary.
+ * `MetricTable` (the shared tabular result shape) so the handlers in api.ts
+ * are identical regardless of which backend served the data. The
+ * TaskStoreProvider implements this; no query string ever crosses the
+ * handler↔provider boundary.
  */
 
-import type { QueryDateRange, TrendsGroupBy } from "./queries.ts";
-import type { HogQLResult } from "./types.ts";
+import type { HogQLResult, QueryDateRange, TrendsGroupBy } from "./types.ts";
 
 /** Result shape every backend returns — an alias, NOT a narrowing. */
 export type MetricTable = HogQLResult;

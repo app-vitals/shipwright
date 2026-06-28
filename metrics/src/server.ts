@@ -16,12 +16,11 @@
  *   2. METRICS_TASK_STORE_URL + METRICS_ADMIN_URL
  *      both http(s)                          → taskstore (live HttpTaskStoreClient +
  *                                                         HttpAdminMetricsClient)
- *   3. METRICS_DATABASE_URL / DATABASE_URL_METRICS
- *      starts with "postgres"               → postgres  (PostgresProvider; POST /batch/ ingest)
- *   4. otherwise (DEFAULT)                   → sqlite   (SqliteProvider; POST /batch/ ingest)
  *
- * Postgres mode wraps the shared SqlEventStoreProvider over a pg.Pool,
- * giving identical query semantics to SQLite mode.
+ * The legacy event-store backends (sqlite / postgres) have been removed; the
+ * metrics service is now read-only over the task-store + admin APIs. If the
+ * selector resolves to anything other than fixtures/taskstore, the process
+ * exits with a configuration error.
  */
 
 import { Hono } from "hono";
@@ -30,9 +29,7 @@ import type { MetricsDeps } from "./api.ts";
 import { HttpAccountsClient } from "./lib/accounts-client.ts";
 import { parseApiKeys } from "./lib/api-auth.ts";
 import { loadEnv } from "./lib/env.ts";
-import { createLocalEventStore } from "./local-store.ts";
-import { SqliteProvider } from "./providers/sqlite-provider.ts";
-import { resolvePostgresUrl, selectProviderMode } from "./select-provider.ts";
+import { selectProviderMode } from "./select-provider.ts";
 
 loadEnv();
 
@@ -109,59 +106,11 @@ if (mode === "fixtures") {
   // which are not implemented server-side until MME-4.2 — those kinds will throw
   // `AdminMetricsClientError` (404) in taskstore mode until then. The task/PR
   // -derived kinds (summary, trends, features, queue) are fully live.
-} else if (mode === "postgres") {
-  const pgUrl = resolvePostgresUrl(process.env);
-  if (!pgUrl) {
-    console.error(
-      "[metrics-api] FATAL: postgres mode selected but no URL found in METRICS_DATABASE_URL / DATABASE_URL_METRICS",
-    );
-    process.exit(1);
-  }
-  const { createPostgresEventStore } = await import(
-    "./providers/postgres-provider.ts"
-  );
-  const pgStore = await createPostgresEventStore(pgUrl);
-  // Adapt PostgresEventStore.insertEvent (async) to the LocalEventStore interface
-  // expected by MetricsDeps.localStore. LocalEventStore.insertEvent now returns
-  // void | Promise<void>, so we can return the Promise directly — the POST /batch/
-  // handler awaits it, giving callers exactly-once write semantics.
-  const localStoreShim = {
-    insertEvent: (
-      e: Parameters<typeof pgStore.insertEvent>[0],
-    ): Promise<void> => {
-      return pgStore.insertEvent(e);
-    },
-    queryByEvent: () => [],
-    close: () => {},
-  };
-  deps = {
-    provider: pgStore.provider,
-    localStore: localStoreShim,
-    sessionSecret: process.env.SHIPWRIGHT_SESSION_SECRET ?? "",
-    requireOwnerRole: process.env.METRICS_REQUIRE_OWNER_ROLE === "true",
-    dashboardToken: process.env.METRICS_DASHBOARD_TOKEN,
-    dashboardDevAuth,
-    basePath,
-  };
-  console.log(
-    "[metrics-api] Running in POSTGRES mode — PostgresProvider + /batch/ ingest",
-  );
 } else {
-  const store = createLocalEventStore({
-    path: process.env.METRICS_DB_PATH ?? "state/metrics.db",
-  });
-  deps = {
-    provider: new SqliteProvider(store),
-    localStore: store,
-    sessionSecret: process.env.SHIPWRIGHT_SESSION_SECRET ?? "",
-    requireOwnerRole: process.env.METRICS_REQUIRE_OWNER_ROLE === "true",
-    dashboardToken: process.env.METRICS_DASHBOARD_TOKEN,
-    dashboardDevAuth,
-    basePath,
-  };
-  console.log(
-    "[metrics-api] Running in LOCAL mode — SQLite provider + /batch/ ingest",
+  console.error(
+    `[metrics-api] FATAL: provider mode "${mode}" is no longer supported — the sqlite/postgres event-store backends were removed. Set METRICS_OFFLINE=true for offline fixtures, or configure both METRICS_TASK_STORE_URL and METRICS_ADMIN_URL for taskstore mode.`,
   );
+  process.exit(1);
 }
 
 const metricsApp = createMetricsApp(

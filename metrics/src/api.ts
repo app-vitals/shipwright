@@ -24,29 +24,7 @@ import {
   SESSION_COOKIE,
   createSessionMiddleware,
 } from "./lib/session-middleware.ts";
-import type { LocalEventStore } from "./local-store.ts";
 import type { MetricsProvider } from "./metrics-provider.ts";
-import { PostHogClientError, createPostHogClient } from "./posthog-client.ts";
-import { PostHogProvider } from "./providers/posthog-provider.ts";
-import {
-  buildFeaturesCiQuery,
-  buildFeaturesReviewsQuery,
-  buildFeaturesTasksQuery,
-  buildQueueCycleMergedQuery,
-  buildQueueCycleStartedQuery,
-  buildQueueFunnelQuery,
-  buildSummaryCycleTimeQuery,
-  buildSummaryQuery,
-  buildTokensByAgentByCronQuery,
-  buildTokensByAgentByModelQuery,
-  buildTokensByAgentBySessionTypeQuery,
-  buildTokensByAgentQuery,
-  buildTokensBySessionTypeQuery,
-  buildTokensTotalsQuery,
-  buildTokensTrendsQuery,
-  buildTrendsQuery,
-} from "./queries.ts";
-import type { QueryDateRange, TrendsGroupBy } from "./queries.ts";
 import {
   DateRangeQuerySchema,
   FeaturesResultSchema,
@@ -56,42 +34,22 @@ import {
   TrendsQuerySchema,
   TrendsResultSchema,
 } from "./schemas.ts";
-import type { DateRange, HogQLResult } from "./types.ts";
+import type {
+  DateRange,
+  HogQLResult,
+  QueryDateRange,
+  TrendsGroupBy,
+} from "./types.ts";
 
 // ─── DI interface ─────────────────────────────────────────────────────────────
 
-export type PostHogClientLike = {
-  query: (
-    hogql: string,
-    options?: { dateFrom?: string; dateTo?: string },
-  ) => Promise<HogQLResult>;
-};
-
 export interface MetricsDeps {
   /**
-   * Backend-agnostic read seam. When provided, all handler reads route through
-   * it. When absent, a PostHogProvider is auto-constructed from the resolved
-   * postHogClient + (optionally overridden) builder functions — so existing
-   * `postHogClient` + `buildXQueryFn` DI tests behave identically.
+   * Backend-agnostic read seam. Every handler read routes through this
+   * provider — the metrics service is provider-only (TaskStoreProvider in
+   * live/taskstore mode, the recorded fixture provider offline).
    */
-  provider?: MetricsProvider;
-  postHogClient?: PostHogClientLike;
-  buildSummaryQueryFn?: typeof buildSummaryQuery;
-  buildSummaryCycleTimeQueryFn?: typeof buildSummaryCycleTimeQuery;
-  buildTrendsQueryFn?: typeof buildTrendsQuery;
-  buildFeaturesTasksQueryFn?: typeof buildFeaturesTasksQuery;
-  buildFeaturesCiQueryFn?: typeof buildFeaturesCiQuery;
-  buildFeaturesReviewsQueryFn?: typeof buildFeaturesReviewsQuery;
-  buildQueueFunnelQueryFn?: typeof buildQueueFunnelQuery;
-  buildQueueCycleStartedQueryFn?: typeof buildQueueCycleStartedQuery;
-  buildQueueCycleMergedQueryFn?: typeof buildQueueCycleMergedQuery;
-  buildTokensTotalsQueryFn?: typeof buildTokensTotalsQuery;
-  buildTokensBySessionTypeQueryFn?: typeof buildTokensBySessionTypeQuery;
-  buildTokensByAgentQueryFn?: typeof buildTokensByAgentQuery;
-  buildTokensTrendsQueryFn?: typeof buildTokensTrendsQuery;
-  buildTokensByAgentBySessionTypeQueryFn?: typeof buildTokensByAgentBySessionTypeQuery;
-  buildTokensByAgentByCronQueryFn?: typeof buildTokensByAgentByCronQuery;
-  buildTokensByAgentByModelQueryFn?: typeof buildTokensByAgentByModelQuery;
+  provider: MetricsProvider;
   dashboardDir?: string;
   sessionSecret?: string;
   /** Owner-gate: require OWNER role for session-cookie auth. Default false. */
@@ -117,13 +75,6 @@ export interface MetricsDeps {
    * then "" (same-origin relative links — the default for single-host ingress).
    */
   adminBaseUrl?: string;
-  /**
-   * Local event store. When provided, the PostHog-shaped ingest route
-   * `POST /batch/` is registered and writes batches to this store. When
-   * absent, the route is NOT registered (404) — the default-mode flip is
-   * deferred to a later task.
-   */
-  localStore?: LocalEventStore;
 }
 
 // ─── Route definitions (inlined) ─────────────────────────────────────────────
@@ -149,7 +100,7 @@ const summaryRoute = createRoute({
       content: { "application/json": { schema: ErrorSchema } },
     },
     500: {
-      description: "PostHog query error",
+      description: "Query error",
       content: { "application/json": { schema: ErrorSchema } },
     },
   },
@@ -175,7 +126,7 @@ const trendsRoute = createRoute({
       content: { "application/json": { schema: ErrorSchema } },
     },
     500: {
-      description: "PostHog query error",
+      description: "Query error",
       content: { "application/json": { schema: ErrorSchema } },
     },
   },
@@ -202,7 +153,7 @@ const featuresRoute = createRoute({
       content: { "application/json": { schema: ErrorSchema } },
     },
     500: {
-      description: "PostHog query error",
+      description: "Query error",
       content: { "application/json": { schema: ErrorSchema } },
     },
   },
@@ -229,7 +180,7 @@ const queueRoute = createRoute({
       content: { "application/json": { schema: ErrorSchema } },
     },
     500: {
-      description: "PostHog query error",
+      description: "Query error",
       content: { "application/json": { schema: ErrorSchema } },
     },
   },
@@ -256,7 +207,7 @@ const tokensRoute = createRoute({
       content: { "application/json": { schema: ErrorSchema } },
     },
     500: {
-      description: "PostHog query error",
+      description: "Query error",
       content: { "application/json": { schema: ErrorSchema } },
     },
   },
@@ -314,61 +265,18 @@ function handleQueryError(
   err: unknown,
 ): Response {
   const msg = err instanceof Error ? err.message : String(err);
-  if (err instanceof PostHogClientError) {
-    if (err.statusCode === 401) return c.json({ error: msg }, 401);
-    return c.json({ error: msg }, 500);
-  }
+  const statusCode = (err as { statusCode?: unknown })?.statusCode;
+  if (statusCode === 401) return c.json({ error: msg }, 401);
   return c.json({ error: msg }, 500);
 }
 
 // ─── Handler factory ─────────────────────────────────────────────────────────
 
-/**
- * Resolve the active read provider. If `deps.provider` is set it wins;
- * otherwise a PostHogProvider is constructed over the resolved client +
- * builder overrides — reproducing the previous client.query(builder(...))
- * behavior exactly, so existing DI tests route through it unchanged.
- */
-function resolveProvider(
-  client: PostHogClientLike,
-  deps?: MetricsDeps,
-): MetricsProvider {
-  if (deps?.provider) return deps.provider;
-  return new PostHogProvider(client, {
-    summary: deps?.buildSummaryQueryFn ?? buildSummaryQuery,
-    summaryCycleTime:
-      deps?.buildSummaryCycleTimeQueryFn ?? buildSummaryCycleTimeQuery,
-    trends: deps?.buildTrendsQueryFn ?? buildTrendsQuery,
-    featuresTasks: deps?.buildFeaturesTasksQueryFn ?? buildFeaturesTasksQuery,
-    featuresCi: deps?.buildFeaturesCiQueryFn ?? buildFeaturesCiQuery,
-    featuresReviews:
-      deps?.buildFeaturesReviewsQueryFn ?? buildFeaturesReviewsQuery,
-    queueFunnel: deps?.buildQueueFunnelQueryFn ?? buildQueueFunnelQuery,
-    queueCycleStarted:
-      deps?.buildQueueCycleStartedQueryFn ?? buildQueueCycleStartedQuery,
-    queueCycleMerged:
-      deps?.buildQueueCycleMergedQueryFn ?? buildQueueCycleMergedQuery,
-    tokensTotals: deps?.buildTokensTotalsQueryFn ?? buildTokensTotalsQuery,
-    tokensBySessionType:
-      deps?.buildTokensBySessionTypeQueryFn ?? buildTokensBySessionTypeQuery,
-    tokensByAgent: deps?.buildTokensByAgentQueryFn ?? buildTokensByAgentQuery,
-    tokensTrends: deps?.buildTokensTrendsQueryFn ?? buildTokensTrendsQuery,
-    tokensByAgentBySessionType:
-      deps?.buildTokensByAgentBySessionTypeQueryFn ??
-      buildTokensByAgentBySessionTypeQuery,
-    tokensByAgentByCron:
-      deps?.buildTokensByAgentByCronQueryFn ?? buildTokensByAgentByCronQuery,
-    tokensByAgentByModel:
-      deps?.buildTokensByAgentByModelQueryFn ?? buildTokensByAgentByModelQuery,
-  });
-}
-
 export function createMetricsHandlers(
-  client: PostHogClientLike,
   accountsClient: AccountsClient,
-  deps?: MetricsDeps,
+  deps: MetricsDeps,
 ) {
-  const provider = resolveProvider(client, deps);
+  const provider = deps.provider;
 
   const handleSummary: AppHandler<typeof summaryRoute> = async (c) => {
     const { preset, from, to } = c.req.valid("query");
@@ -1028,34 +936,27 @@ function createCombinedAuthMiddleware(
 export function createMetricsApp(
   apiKeys: Map<string, Caller>,
   accountsClient: AccountsClient,
-  deps?: MetricsDeps,
+  deps: MetricsDeps,
 ): OpenAPIHono<AuthEnv> {
-  const client: PostHogClientLike =
-    deps?.postHogClient ??
-    createPostHogClient({
-      personalApiKey: process.env.POSTHOG_PERSONAL_API_KEY ?? "",
-      projectId: process.env.POSTHOG_PROJECT_ID ?? "",
-    });
-
   const sessionSecret =
-    deps?.sessionSecret ?? process.env.SHIPWRIGHT_SESSION_SECRET ?? "";
-  const requireOwnerRole = deps?.requireOwnerRole ?? false;
+    deps.sessionSecret ?? process.env.SHIPWRIGHT_SESSION_SECRET ?? "";
+  const requireOwnerRole = deps.requireOwnerRole ?? false;
   if (requireOwnerRole) {
     console.warn(
       "[metrics] METRICS_REQUIRE_OWNER_ROLE is enabled — ensure your accountsClient URL serves /accounts/users/{id}. The Shipwright admin service does not expose this endpoint.",
     );
   }
-  const dashboardToken = deps?.dashboardToken;
-  const offlineMode = deps?.offlineMode ?? false;
+  const dashboardToken = deps.dashboardToken;
+  const offlineMode = deps.offlineMode ?? false;
   // Local-dev auth bypass for both /dashboard and /metrics/* (no login flow in
   // `task stack`). Keeps the real provider — only relaxes auth.
-  const dashboardDevAuth = deps?.dashboardDevAuth ?? false;
-  const basePath = deps?.basePath ?? process.env.METRICS_BASE_PATH ?? "";
+  const dashboardDevAuth = deps.dashboardDevAuth ?? false;
+  const basePath = deps.basePath ?? process.env.METRICS_BASE_PATH ?? "";
   // Cross-origin admin console URL for the dashboard toolbar's Agents/Tasks/PRs
   // links. Only set in the local `task stack` (different origin per service); empty
   // by default so single-host ingress deployments keep relative links unchanged.
   const adminBaseUrl =
-    deps?.adminBaseUrl ?? process.env.METRICS_ADMIN_APP_URL ?? "";
+    deps.adminBaseUrl ?? process.env.METRICS_ADMIN_APP_URL ?? "";
 
   const app = new OpenAPIHono<AuthEnv>({
     defaultHook: (result, c) => {
@@ -1096,7 +997,7 @@ export function createMetricsApp(
         ),
   );
 
-  const handlers = createMetricsHandlers(client, accountsClient, deps);
+  const handlers = createMetricsHandlers(accountsClient, deps);
   // Metrics combined-auth middleware accepts either an admin bearer token
   // (scope === "*", scoped tokens already 403'd above) or an OWNER session
   // cookie. The kind="custom" policy documents that this dual gate is
@@ -1113,56 +1014,9 @@ export function createMetricsApp(
   registerWithAuthz(app, queueRoute, metricsPolicy, handlers.handleQueue);
   registerWithAuthz(app, tokensRoute, metricsPolicy, handlers.handleTokens);
 
-  // ─── Ingest: POST /batch/ (local-store mode only) ─────────────────────────
-  //
-  // PostHog-shaped batch ingest. Mounted as a plain route (NOT behind the
-  // /metrics/* combined-auth middleware) to mirror PostHog's unauthenticated
-  // transport — the api_key travels in the body. Registered ONLY when a local
-  // store is injected; otherwise the route is absent (404).
-  const localStore = deps?.localStore;
-  if (localStore) {
-    app.post("/batch/", async (c) => {
-      let body: unknown;
-      try {
-        body = await c.req.json();
-      } catch {
-        return c.json({ error: "invalid JSON body" }, 400);
-      }
-      if (
-        !body ||
-        typeof body !== "object" ||
-        !Array.isArray((body as { batch?: unknown }).batch)
-      ) {
-        return c.json({ error: "body must include a 'batch' array" }, 400);
-      }
-
-      const batch = (body as { batch: unknown[] }).batch;
-      for (const raw of batch) {
-        if (!raw || typeof raw !== "object") continue;
-        const ev = raw as Record<string, unknown>;
-        if (typeof ev.event !== "string" || !ev.event) continue;
-        const properties =
-          ev.properties && typeof ev.properties === "object"
-            ? (ev.properties as Record<string, unknown>)
-            : {};
-        const insertId = properties.$insert_id;
-        await localStore.insertEvent({
-          insertId: typeof insertId === "string" ? insertId : null,
-          event: ev.event,
-          distinctId:
-            typeof ev.distinct_id === "string" ? ev.distinct_id : null,
-          timestamp: typeof ev.timestamp === "string" ? ev.timestamp : "",
-          properties,
-        });
-      }
-
-      return c.json({ status: 1 }, 200);
-    });
-  }
-
   // ─── Dashboard static files ───────────────────────────────────────────────
 
-  const dashboardDir = deps?.dashboardDir ?? join(import.meta.dir, "dashboard");
+  const dashboardDir = deps.dashboardDir ?? join(import.meta.dir, "dashboard");
 
   const STATIC_FILES: Record<
     string,
