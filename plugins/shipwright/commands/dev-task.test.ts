@@ -69,3 +69,63 @@ describe("Step 4 — stale bundle branch detection", () => {
     expect(content).toContain("remote get-url origin");
   });
 });
+
+describe("execution metrics — PATCH task columns (replaces metrics.jsonl)", () => {
+  it("does not write a metrics.jsonl file during execution", () => {
+    // MME-5.1 removed the JSONL pipeline; MME-5.2 must not reintroduce it.
+    expect(content).not.toContain("metrics.jsonl");
+  });
+
+  it("Step 6 PATCHes the simplify columns after the simplify pass", () => {
+    const idx = content.indexOf("Persist simplify metrics");
+    expect(idx).toBeGreaterThan(-1);
+    const block = content.slice(idx, idx + 1500);
+    for (const field of [
+      "simplifyTotal",
+      "simplifyDry",
+      "simplifyDeadCode",
+      "simplifyNaming",
+      "simplifyComplexity",
+      "simplifyConsistency",
+    ]) {
+      expect(block).toContain(field);
+    }
+    expect(block).toContain("/tasks/{id}");
+  });
+
+  it("Step 10a PATCHes the CI outcome columns after CI resolves", () => {
+    const idx = content.indexOf("Persist CI Outcome");
+    expect(idx).toBeGreaterThan(-1);
+    const block = content.slice(idx, idx + 800);
+    expect(block).toContain("ciFixAttempts");
+    expect(block).toContain("metadata");
+  });
+
+  it("Step 10b PATCHes the completion columns (coverage, effort, tokens, cost)", () => {
+    const idx = content.indexOf("Persist Execution Metrics");
+    expect(idx).toBeGreaterThan(-1);
+    const block = content.slice(idx);
+    for (const field of [
+      "coverageDelta",
+      "effortLevel",
+      "inputTokens",
+      "outputTokens",
+      "cacheReadTokens",
+      "cacheCreationTokens",
+      "costUsd",
+    ]) {
+      expect(block).toContain(field);
+    }
+  });
+
+  it("every execution-metric PATCH is fire-and-forget (warns, never aborts)", () => {
+    // Each PATCH must swallow failures and continue rather than abort the task.
+    const warnings = content.match(/\|\| echo "⚠ PATCH [^"]*— continuing"/g) ?? [];
+    // simplify + CI outcome + execution metrics = at least three guarded PATCH calls.
+    expect(warnings.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("declares the fire-and-forget convention for execution-metric writes", () => {
+    expect(content).toContain("Fire-and-forget convention");
+  });
+});

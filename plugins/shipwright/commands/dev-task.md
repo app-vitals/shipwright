@@ -80,6 +80,19 @@ Deps:    {dependencies or "none"}
 
 Record `task_started_at` (current ISO timestamp) for metrics.
 
+**Snapshot the Claude Code session JSONL for token tracking** (best-effort — consumed in Step 10b):
+
+```bash
+JSONL_SNAPSHOT_PATH=$(ls -t ~/.claude/projects/*/*.jsonl 2>/dev/null | head -1)
+JSONL_SNAPSHOT_LINES=$(wc -l < "$JSONL_SNAPSHOT_PATH" 2>/dev/null || echo 0)
+EFFORT_LEVEL="$ANTHROPIC_EFFORT_LEVEL"
+```
+
+Store `JSONL_SNAPSHOT_PATH`, `JSONL_SNAPSHOT_LINES`, and `EFFORT_LEVEL` for Step 10b. Claude
+Code sets `$CLAUDE_MODEL` to the active model ID; if it is unset or absent from the pricing
+table, `costUsd` PATCHes as `null`. Token capture is entirely best-effort — an empty or
+unreadable JSONL path PATCHes every token column as `null`.
+
 Now detect the project toolchain for `{repo}` (used throughout):
 
 ### 0b. Detect Project Toolchain
@@ -346,6 +359,22 @@ After implementation completes, run a simplification pass:
    - `simplify_total`: sum of above
    Store these counts for the Step 10d handoff summary. If no fixes were needed, all counts are 0.
 5. Run the detected typecheck command (if applicable) to verify types still pass after cleanup
+6. **Persist simplify metrics to the task store.** PATCH the simplify counts onto the task
+   record.
+
+   > **Fire-and-forget convention.** This PATCH — and every execution-metric PATCH in Steps
+   > 9b/10 below — is **fire-and-forget**: it writes whatever data is available at that phase
+   > and never aborts the task. A non-2xx response or network failure logs a `⚠` warning and
+   > execution continues. Execution columns are best-effort; a field unavailable at a phase is
+   > simply not sent (it stays `null`). These writes replace the retired JSONL metrics append.
+
+   ```bash
+   curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+     -H "Content-Type: application/json" \
+     "$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}" \
+     -d "{\"simplifyTotal\": {simplify_total}, \"simplifyDry\": {simplify_dry}, \"simplifyDeadCode\": {simplify_dead_code}, \"simplifyNaming\": {simplify_naming}, \"simplifyComplexity\": {simplify_complexity}, \"simplifyConsistency\": {simplify_consistency}}" \
+     > /dev/null 2>&1 || echo "⚠ PATCH simplify metrics failed — continuing"
+   ```
 
 ---
 
@@ -807,7 +836,114 @@ curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
 
 ## Step 10: Update Queue & Handoff
 
-### 10a. Update Queue
+CI has resolved by this point, so the CI-outcome and completion-phase execution columns are
+now known. Persist them (fire-and-forget, per the convention in Step 6) before flipping the
+queue status.
+
+### 10a. Persist CI Outcome
+
+PATCH the CI fix-attempt count and any CI failure detail. `{ci_attempt}` is the fix-attempt
+counter from Step 9b (`0` if CI passed first try or no CI was configured).
+
+```bash
+curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}" \
+  -d "{\"ciFixAttempts\": {ci_attempt}, \"metadata\": {ci_metadata_json}}" \
+  > /dev/null 2>&1 || echo "⚠ PATCH CI outcome failed — continuing"
+```
+
+- `{ci_metadata_json}` — a JSON object capturing CI failure detail when fixes were needed,
+  e.g. `{"ciFailures":["jest: 2 suites failed"],"ciChecks":[{"name":"test/unit","conclusion":"failure"}]}`.
+  Emit `null` (literal, unquoted) when CI passed first try — there is nothing to record.
+
+### 10b. Persist Execution Metrics
+
+Compute token usage from the session JSONL snapshotted in Step 1, then PATCH the
+completion-phase execution columns. Token capture is **best-effort** — a missing or
+unreadable JSONL path PATCHes every token field as `null`.
+
+Write the token calculator to `/tmp/shipwright-token-calc.py` (once), then run it:
+
+```python
+#!/usr/bin/env python3
+"""Sum token usage from new Claude Code JSONL lines since a snapshot line position.
+Prints shell assignments: INPUT_TOKENS / OUTPUT_TOKENS / CACHE_READ_TOKENS /
+CACHE_CREATION_TOKENS / COST_USD. Never exits non-zero — any error yields nulls."""
+import json, sys, os
+
+RATES = {
+    "claude-fable-5":    {"input": 10.0, "output": 50.0},
+    "claude-opus-4-8":   {"input": 5.0,  "output": 25.0},
+    "claude-opus-4-7":   {"input": 5.0,  "output": 25.0},
+    "claude-opus-4-6":   {"input": 5.0,  "output": 25.0},
+    "claude-sonnet-4-6": {"input": 3.0,  "output": 15.0},
+    "claude-haiku-4-5":  {"input": 1.0,  "output":  5.0},
+    "claude-haiku-4-6":  {"input": 1.0,  "output":  5.0},
+}
+
+def main():
+    try:
+        path = sys.argv[1] if len(sys.argv) > 1 else ""
+        start = int(sys.argv[2]) if len(sys.argv) > 2 else 0
+        model = sys.argv[3] if len(sys.argv) > 3 else ""
+        if not path or not os.path.isfile(path):
+            print("INPUT_TOKENS=null OUTPUT_TOKENS=null CACHE_READ_TOKENS=null CACHE_CREATION_TOKENS=null COST_USD=null")
+            return
+        i_tok = o_tok = c_create = c_read = 0
+        with open(path, errors="replace") as f:
+            for i, line in enumerate(f):
+                if i < start:
+                    continue
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except Exception:
+                    continue
+                u = obj.get("usage") if isinstance(obj.get("usage"), dict) else None
+                if u is None and isinstance(obj.get("message"), dict):
+                    u = obj["message"].get("usage")
+                if isinstance(u, dict):
+                    i_tok    += int(u.get("input_tokens", 0) or 0)
+                    o_tok    += int(u.get("output_tokens", 0) or 0)
+                    c_create += int(u.get("cache_creation_input_tokens", 0) or 0)
+                    c_read   += int(u.get("cache_read_input_tokens", 0) or 0)
+        rates = RATES.get(model)
+        if rates and (i_tok or o_tok):
+            cost = (i_tok*rates["input"] + o_tok*rates["output"] +
+                    c_create*rates["input"]*1.25 + c_read*rates["input"]*0.1) / 1_000_000
+            cost_s = f"{cost:.6f}"
+        else:
+            cost_s = "null"
+        print(f"INPUT_TOKENS={i_tok} OUTPUT_TOKENS={o_tok} CACHE_READ_TOKENS={c_read} CACHE_CREATION_TOKENS={c_create} COST_USD={cost_s}")
+    except Exception:
+        print("INPUT_TOKENS=null OUTPUT_TOKENS=null CACHE_READ_TOKENS=null CACHE_CREATION_TOKENS=null COST_USD=null")
+
+main()
+```
+
+```bash
+eval $(python3 /tmp/shipwright-token-calc.py "$JSONL_SNAPSHOT_PATH" "$JSONL_SNAPSHOT_LINES" "$CLAUDE_MODEL")
+# INPUT_TOKENS, OUTPUT_TOKENS, CACHE_READ_TOKENS, CACHE_CREATION_TOKENS, COST_USD now set (numbers or "null")
+```
+
+Then PATCH the completion-phase columns. `null`-valued numbers are emitted unquoted so the
+JSON column receives JSON `null`:
+
+```bash
+curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}" \
+  -d "{\"coverageDelta\": {coverage_delta}, \"effortLevel\": {effort_level_json}, \"inputTokens\": $INPUT_TOKENS, \"outputTokens\": $OUTPUT_TOKENS, \"cacheReadTokens\": $CACHE_READ_TOKENS, \"cacheCreationTokens\": $CACHE_CREATION_TOKENS, \"costUsd\": $COST_USD}" \
+  > /dev/null 2>&1 || echo "⚠ PATCH execution metrics failed — continuing"
+```
+
+- `{coverage_delta}` — the `coverage_delta` from Step 8, or `null` (literal, unquoted) when unavailable.
+- `{effort_level_json}` — `"$EFFORT_LEVEL"` as a quoted JSON string, or `null` when `EFFORT_LEVEL` is empty/unset.
+
+### 10c. Update Queue
 
 ```bash
 PR_CREATED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
