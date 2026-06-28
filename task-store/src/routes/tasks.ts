@@ -64,7 +64,7 @@ function validateRepo(repo: unknown, repos: string[] | null): void {
  *   1. agentId is null (admin token — unrestricted)
  *   2. task.assignee === agentId (explicitly assigned)
  *   3. task.claimedBy === agentId (claimed pool task)
- *   4. task.assignee === null AND task.repo is in repos (repo-scoped pool task)
+ *   4. task.repo is in repos (repo-scoped token with matching repo)
  */
 async function requireOwnership(
   taskService: TaskServiceLike,
@@ -77,8 +77,7 @@ async function requireOwnership(
   if (agentId !== null) {
     const ownedByAssignee = task.assignee === agentId;
     const ownedByClaim = task.claimedBy === agentId;
-    const inRepoScope =
-      task.assignee === null && task.repo !== null && repos.includes(task.repo);
+    const inRepoScope = task.repo !== null && repos.includes(task.repo);
     if (!ownedByAssignee && !ownedByClaim && !inRepoScope) {
       throw new ForbiddenError("task belongs to a different agent");
     }

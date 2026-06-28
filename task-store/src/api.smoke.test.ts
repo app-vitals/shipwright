@@ -889,6 +889,34 @@ describe("task-store API (smoke)", () => {
     expect(res.status).toBe(200);
   });
 
+  it("PATCH /tasks/:id on assigned task with repo-scoped token returns 200 when task repo is in scope", async () => {
+    // Task is assigned to agent-2, not agent-1
+    const assignedTask = makeTask({
+      id: "assigned-1",
+      assignee: "agent-2",
+      repo: "acme-inc/backend-api",
+    });
+
+    const app = makeApp({
+      tokenService: fakeRepoAgentTokenService(["acme-inc/backend-api"]),
+      taskService: fakeTaskService({ getResult: assignedTask }),
+      scopeResolver: makeScopeResolver(["acme-inc/backend-api"]),
+    });
+
+    const res = await app.request("/tasks/assigned-1", {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${AGENT_TOKEN}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ status: "in_progress" }),
+    });
+
+    // Should return 200 because the task's repo is in the token's scope,
+    // even though the task is assigned to a different agent.
+    expect(res.status).toBe(200);
+  });
+
   it("GET /tasks with repo-scoped agent token passes agentScope (not assignee) to list()", async () => {
     const capturedFilters: TaskListFilters[] = [];
 
