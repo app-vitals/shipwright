@@ -8,10 +8,12 @@
 
 import { describe, expect, test } from "bun:test";
 import {
+  openCommand,
   parseMarkdownTable,
   parsePlan,
   parseSections,
   parseSpec,
+  shouldOpenLocally,
 } from "./render-plan.ts";
 
 // ---------------------------------------------------------------------------
@@ -199,5 +201,66 @@ describe("parseSpec — degraded inputs", () => {
   test("specs always have empty tasks", () => {
     const spec = parseSpec("# T\n## 2. Goals\n- x", {});
     expect(spec.tasks).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// shouldOpenLocally — context detection
+// ---------------------------------------------------------------------------
+
+describe("shouldOpenLocally — context detection", () => {
+  test("no TTY → false (cloud / Slack context)", () => {
+    expect(
+      shouldOpenLocally({ platform: "darwin", isTTY: false, display: "" }),
+    ).toBe(false);
+    expect(
+      shouldOpenLocally({ platform: "linux", isTTY: false, display: ":0" }),
+    ).toBe(false);
+  });
+
+  test("TTY + darwin → true (no display var needed on macOS)", () => {
+    expect(
+      shouldOpenLocally({ platform: "darwin", isTTY: true, display: "" }),
+    ).toBe(true);
+  });
+
+  test("TTY + linux + DISPLAY → true", () => {
+    expect(
+      shouldOpenLocally({ platform: "linux", isTTY: true, display: ":0" }),
+    ).toBe(true);
+  });
+
+  test("TTY + linux + no DISPLAY → false", () => {
+    expect(
+      shouldOpenLocally({ platform: "linux", isTTY: true, display: "" }),
+    ).toBe(false);
+  });
+
+  test("non-tty cloud → false regardless of platform", () => {
+    expect(
+      shouldOpenLocally({ platform: "win32", isTTY: false, display: "" }),
+    ).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// openCommand — open-command selection
+// ---------------------------------------------------------------------------
+
+describe("openCommand — command selection", () => {
+  test("darwin → open", () => {
+    expect(openCommand("darwin")).toBe("open");
+  });
+
+  test("linux → xdg-open", () => {
+    expect(openCommand("linux")).toBe("xdg-open");
+  });
+
+  test("win32 → null", () => {
+    expect(openCommand("win32")).toBeNull();
+  });
+
+  test("other platforms → null", () => {
+    expect(openCommand("freebsd")).toBeNull();
   });
 });
