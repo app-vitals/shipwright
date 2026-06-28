@@ -11,8 +11,8 @@ describe("selectProviderMode", () => {
     expect(
       selectProviderMode({
         METRICS_OFFLINE: "true",
-        POSTHOG_PERSONAL_API_KEY: "phk",
-        POSTHOG_PROJECT_ID: "123",
+        METRICS_TASK_STORE_URL: "http://task-store:3002",
+        METRICS_ADMIN_URL: "http://admin:3001",
       }),
     ).toBe("fixtures");
   });
@@ -26,23 +26,58 @@ describe("selectProviderMode", () => {
     ).toBe("fixtures");
   });
 
-  test("PostHog read-keys present → posthog", () => {
+  test("both taskstore urls (http) present → taskstore", () => {
     expect(
       selectProviderMode({
-        POSTHOG_PERSONAL_API_KEY: "phk",
-        POSTHOG_PROJECT_ID: "123",
+        METRICS_TASK_STORE_URL: "http://task-store:3002",
+        METRICS_ADMIN_URL: "http://admin:3001",
       }),
-    ).toBe("posthog");
+    ).toBe("taskstore");
   });
 
-  test("PostHog keys + postgres URL → posthog (posthog wins)", () => {
+  test("METRICS_OFFLINE=true + taskstore env present → fixtures (offline wins)", () => {
     expect(
       selectProviderMode({
-        POSTHOG_PERSONAL_API_KEY: "phk",
-        POSTHOG_PROJECT_ID: "123",
+        METRICS_OFFLINE: "true",
+        METRICS_TASK_STORE_URL: "http://task-store:3002",
+        METRICS_ADMIN_URL: "http://admin:3001",
+      }),
+    ).toBe("fixtures");
+  });
+
+  test("only METRICS_TASK_STORE_URL set (no admin url) → sqlite", () => {
+    expect(
+      selectProviderMode({
+        METRICS_TASK_STORE_URL: "http://task-store:3002",
+      }),
+    ).toBe("sqlite");
+  });
+
+  test("only METRICS_ADMIN_URL set (no task store url) → sqlite", () => {
+    expect(
+      selectProviderMode({
+        METRICS_ADMIN_URL: "http://admin:3001",
+      }),
+    ).toBe("sqlite");
+  });
+
+  test("taskstore urls + postgres url → taskstore (taskstore wins)", () => {
+    expect(
+      selectProviderMode({
+        METRICS_TASK_STORE_URL: "http://task-store:3002",
+        METRICS_ADMIN_URL: "http://admin:3001",
         METRICS_DATABASE_URL: "postgres://localhost/metrics",
       }),
-    ).toBe("posthog");
+    ).toBe("taskstore");
+  });
+
+  test("non-http METRICS_TASK_STORE_URL + http admin url → sqlite", () => {
+    expect(
+      selectProviderMode({
+        METRICS_TASK_STORE_URL: "localhost:3000",
+        METRICS_ADMIN_URL: "http://admin:3001",
+      }),
+    ).toBe("sqlite");
   });
 
   test("METRICS_DATABASE_URL starting with postgres → postgres", () => {
@@ -96,22 +131,6 @@ describe("selectProviderMode", () => {
 
   test("no env → sqlite (default)", () => {
     expect(selectProviderMode({})).toBe("sqlite");
-  });
-
-  test("only one PostHog key present → sqlite (both required)", () => {
-    expect(selectProviderMode({ POSTHOG_PERSONAL_API_KEY: "phk" })).toBe(
-      "sqlite",
-    );
-    expect(selectProviderMode({ POSTHOG_PROJECT_ID: "123" })).toBe("sqlite");
-  });
-
-  test("empty-string PostHog keys are treated as absent → sqlite", () => {
-    expect(
-      selectProviderMode({
-        POSTHOG_PERSONAL_API_KEY: "",
-        POSTHOG_PROJECT_ID: "",
-      }),
-    ).toBe("sqlite");
   });
 
   test("METRICS_OFFLINE other than 'true' is ignored", () => {
