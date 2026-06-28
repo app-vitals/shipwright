@@ -241,8 +241,12 @@ export function createTasksRoutes(
     const body = await readJson(c);
     validateRepo(body.repo, agentId !== null ? repos : null);
     // Prevent agent tokens from reassigning tasks outside their ownership scope.
-    // Only force-assign for explicitly assigned tasks; leave pool task assignee null.
-    if (agentId !== null && task.assignee !== null) {
+    // Only force-assign when the acting agent is the explicit assignee or claimedBy.
+    // Skip force-assign when access is purely via repo scope — the task may belong
+    // to a different agent and we should not silently steal it.
+    const ownedByAssignee = task.assignee === agentId;
+    const ownedByClaim = task.claimedBy === agentId;
+    if (agentId !== null && task.assignee !== null && (ownedByAssignee || ownedByClaim)) {
       body.assignee = agentId;
     }
     const updated = await taskService.update(
