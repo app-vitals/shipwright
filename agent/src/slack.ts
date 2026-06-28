@@ -20,7 +20,6 @@ import { ClaudeRunError, ClaudeTimeoutError } from "./claude.ts";
 import type { TokenUsage } from "./claude.ts";
 import { formatPlanLink, markdownToBlocks, markdownToSlack } from "./format.ts";
 import { type Marker, parseMarkers } from "./markers.ts";
-import { forwardTokenUsage } from "./posthog.ts";
 import { threadKey as defaultThreadKey } from "./sessions.ts";
 import type { VoiceConfig } from "./voice.ts";
 import { synthesizeSpeech, transcribeAudio } from "./voice.ts";
@@ -423,7 +422,6 @@ export function createSlackApp(
     try {
       const { result, usage } = await runner(prompt, sessionKey);
       const endedAt = new Date();
-      await forwardTokenUsage(usage, isDM ? "slack_dm" : "slack_mention");
       await chatTokenReporter.recordSession(usage);
       const { cleaned, markers } = parseMarkers(result);
 
@@ -576,7 +574,6 @@ export function createSlackApp(
     try {
       const { result, usage } = await runner(prompt, sessionKey);
       const endedAt = new Date();
-      await forwardTokenUsage(usage, "slack_mention");
       await chatTokenReporter.recordSession(usage);
       const { cleaned, markers } = parseMarkers(result);
 
@@ -663,7 +660,6 @@ export function createSlackApp(
 
     try {
       const { result, usage } = await runner(prompt, sessionKey);
-      await forwardTokenUsage(usage, "slack_dm");
       await chatTokenReporter.recordSession(usage);
       const { cleaned, markers } = parseMarkers(result);
 

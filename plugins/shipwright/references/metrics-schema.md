@@ -290,47 +290,12 @@ Example with unreadable JSONL (all token fields `null`) and no effort level set:
 
 ---
 
-## Incremental PostHog Events (v1.9.0+)
-
-In addition to the batch export at task end, Shipwright fires individual PostHog events at each pipeline checkpoint. These events share the same `distinct_id` as the batch events (`shipwright/{project}/{task_id}`), so they can be joined in PostHog to reconstruct the full task lifecycle.
-
-This catalogue lists what `dev-task.md` and `review.md` **actually fire** today (step numbers are the current headings, not legacy numbering).
-
-| Event Name | Fired At | Key Properties |
-|------------|----------|----------------|
-| `shipwright_task_started` | dev-task Step 2 — task marked in-progress | `task_id`, `project`, `title`, `layer`, `estimated_h`, `session` |
-| `shipwright_simplify_complete` | dev-task Step 6 — after simplify pass | `task_id`, `project`, `total`, `dry`, `dead_code`, `naming`, `complexity_fixes`, `consistency` |
-| `shipwright_task_blocked` | dev-task Step 7 / 9 / 9b — requirements not met, PR creation failed, or CI retries exhausted | `task_id`, `project`, `reason` |
-| `shipwright_auto_docs` | dev-task Step 8.5 — after docs-refresher agent | `task_id`, `project`, `updated`, `files_changed`, `lines_changed`, `skipped_reason` |
-| `shipwright_pr_created` | dev-task Step 9 — after PR creation | `task_id`, `project`, `pr`, `files_changed` |
-| `shipwright_ci_result` | dev-task Step 9b — after CI pass / no-CI skip | `task_id`, `project`, `passed_first_try`, `fix_attempts`, `failures`, `no_ci` (only when no CI configured) |
-| `shipwright_task_complete` | dev-task Step 10c — at task end (after PR + metrics) | `task_id`, `project`, `title`, `session`, `layer`, `estimated_h`, `actual_h`, `retries`, `pr`, `files_changed`, `started_at`; `complexity` when the task carries it; `tokens_in`, `tokens_out`, `cost_usd`, `effort_level`, `model` (the EFFECTIVE_MODEL — `task.model ?? 'sonnet'` at dispatch, upgraded on BLOCKED escalation; all cost/token/effort/model fields `null` when unreadable or pre-model-routing) |
-| `shipwright_task_reviewed` | review Step 13 — after review verdict | `task_id`, `project`, `pr`, `verdict`, `findings`, `fixes_applied`, `agents` |
-| `shipwright_task_deployed` | deploy command — after promote success | `task_id`, `project`, `canary_result`, `pipeline_minutes`, `reverted` |
-
-**Historical event-name aliases.** Two events were renamed; the plugin emits only the current name, but PostHog still holds events under the old names and dashboards alias both:
-
-| Current (emitted) | Historical (still in PostHog) |
-|-------------------|-------------------------------|
-| `shipwright_task_complete` | `shipwright_task_completed` |
-| `shipwright_task_reviewed` | `shipwright_review_complete` |
-
-CI-retry exhaustion does **not** fire a `shipwright_ci_result` with an `exhausted` flag — it fires `shipwright_task_blocked` with `reason="ci_max_retries_exhausted"`.
-
-All events include a `$insert_id` property set to `{event_name}/{project}/{task_id}` for PostHog deduplication — re-exporting is safe. `posthog_send.py` derives `properties.task_id` from `--task` automatically, so every event carries `task_id` even when not passed explicitly.
-
-These events are fired by `scripts/posthog_send.py`, which is a no-op when `POSTHOG_PROJECT_API_KEY` is not set.
-
----
-
 ## Writers
 
 | Writer | File | What It Writes | When |
 |--------|------|----------------|------|
-| **Dev-task** | `dev-task.md` Step 2 | `started_at` via the `shipwright_task_started` PostHog event (not in JSONL) | At task start |
 | **Dev-task** | `dev-task.md` Step 10b | All JSONL fields except `review` | After PR creation |
-| **Dev-task** | `dev-task.md` Step 10c | Full task summary incl. `actual_h`, `retries`, `started_at` via the `shipwright_task_complete` PostHog event | At task end |
-| **Review** | `review.md` Step 13 | `review.*` fields (updates existing JSONL line) + `shipwright_task_reviewed` PostHog event | After review verdict |
+| **Review** | `review.md` Step 13 | `review.*` fields (updates existing JSONL line) | After review verdict |
 
 ## Consumers
 
@@ -339,7 +304,6 @@ These events are fired by `scripts/posthog_send.py`, which is a no-op when `POST
 | **Dev-loop retrospective** | `dev-loop.md` | All fields | LOOP END — aggregates, trends, learnings |
 | **Plan-session estimation** | `plan-session.md` | `estimated_h`, `actual_h`, fix cascade summary | Phase 4 — calibrate estimates for new tasks |
 | **Metrics command** | `metrics.md` | All fields | On demand — full analysis and recommendations |
-| **PostHog export** | `metrics.md` (--export) | All fields | On demand — batch event export |
 
 ---
 
