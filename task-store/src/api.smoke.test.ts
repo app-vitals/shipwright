@@ -889,6 +889,72 @@ describe("task-store API (smoke)", () => {
     expect(res.status).toBe(200);
   });
 
+  it("PATCH /tasks/:id on assigned task with repo-scoped token returns 200 when task repo is in scope", async () => {
+    // Task is assigned to agent-2, not agent-1
+    const assignedTask = makeTask({
+      id: "assigned-1",
+      assignee: "agent-2",
+      repo: "acme-inc/backend-api",
+    });
+
+    // Use a spy that merges the patch body onto the original task so the response
+    // accurately reflects what a real DB update would return.
+    const spyTaskService: TaskServiceLike = {
+      ...fakeTaskService({ getResult: assignedTask }),
+      async update(id, data) {
+        return makeTask({ ...assignedTask, ...(data as Partial<Task>), id });
+      },
+    };
+
+    const app = makeApp({
+      tokenService: fakeRepoAgentTokenService(["acme-inc/backend-api"]),
+      taskService: spyTaskService,
+      scopeResolver: makeScopeResolver(["acme-inc/backend-api"]),
+    });
+
+    const res = await app.request("/tasks/assigned-1", {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${AGENT_TOKEN}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ status: "in_progress" }),
+    });
+
+    // Should return 200 because the task's repo is in the token's scope,
+    // even though the task is assigned to a different agent.
+    expect(res.status).toBe(200);
+    // Acting agent (agent-1) must NOT steal the task — assignee stays agent-2.
+    expect((await res.json() as Task).assignee).toBe("agent-2");
+  });
+
+  it("PATCH /tasks/:id with repo-scoped token for wrong repo returns 403", async () => {
+    // Task belongs to acme-inc/backend-api but token only scopes other-org/other-repo
+    const assignedTask = makeTask({
+      id: "assigned-2",
+      assignee: "agent-2",
+      repo: "acme-inc/backend-api",
+    });
+
+    const app = makeApp({
+      tokenService: fakeRepoAgentTokenService(["other-org/other-repo"]),
+      taskService: fakeTaskService({ getResult: assignedTask }),
+      scopeResolver: makeScopeResolver(["other-org/other-repo"]),
+    });
+
+    const res = await app.request("/tasks/assigned-2", {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${AGENT_TOKEN}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ status: "in_progress" }),
+    });
+
+    // Repo-scoped token for a different repo must not grant write access.
+    expect(res.status).toBe(403);
+  });
+
   it("GET /tasks with repo-scoped agent token passes agentScope (not assignee) to list()", async () => {
     const capturedFilters: TaskListFilters[] = [];
 

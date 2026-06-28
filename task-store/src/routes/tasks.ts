@@ -64,7 +64,7 @@ function validateRepo(repo: unknown, repos: string[] | null): void {
  *   1. agentId is null (admin token — unrestricted)
  *   2. task.assignee === agentId (explicitly assigned)
  *   3. task.claimedBy === agentId (claimed pool task)
- *   4. task.assignee === null AND task.repo is in repos (repo-scoped pool task)
+ *   4. task.repo is in repos (repo-scoped token with matching repo)
  */
 async function requireOwnership(
   taskService: TaskServiceLike,
@@ -77,8 +77,7 @@ async function requireOwnership(
   if (agentId !== null) {
     const ownedByAssignee = task.assignee === agentId;
     const ownedByClaim = task.claimedBy === agentId;
-    const inRepoScope =
-      task.assignee === null && task.repo !== null && repos.includes(task.repo);
+    const inRepoScope = task.repo !== null && repos.includes(task.repo);
     if (!ownedByAssignee && !ownedByClaim && !inRepoScope) {
       throw new ForbiddenError("task belongs to a different agent");
     }
@@ -242,8 +241,12 @@ export function createTasksRoutes(
     const body = await readJson(c);
     validateRepo(body.repo, agentId !== null ? repos : null);
     // Prevent agent tokens from reassigning tasks outside their ownership scope.
-    // Only force-assign for explicitly assigned tasks; leave pool task assignee null.
-    if (agentId !== null && task.assignee !== null) {
+    // Only force-assign when the acting agent is the explicit assignee or claimedBy.
+    // Skip force-assign when access is purely via repo scope — the task may belong
+    // to a different agent and we should not silently steal it.
+    const ownedByAssignee = task.assignee === agentId;
+    const ownedByClaim = task.claimedBy === agentId;
+    if (agentId !== null && task.assignee !== null && (ownedByAssignee || ownedByClaim)) {
       body.assignee = agentId;
     }
     const updated = await taskService.update(
