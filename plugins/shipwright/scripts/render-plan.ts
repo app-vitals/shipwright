@@ -23,7 +23,11 @@
  *   --out <path>       write HTML to a file instead of stdout
  */
 
+import { spawn } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { type Clock, SystemClock } from "./clock.ts";
 import {
   type PlanData,
   type PlanTask,
@@ -300,6 +304,146 @@ export function parseSpec(md: string, opts: ParseOptions = {}): PlanData {
 }
 
 // ---------------------------------------------------------------------------
+// Upload + local-open — injectable dependencies (mirrors the Clock pattern)
+// ---------------------------------------------------------------------------
+
+/**
+ * Minimal `fetch`-shaped HTTP client. We only use what we need: the production
+ * default delegates to the real global `fetch`, and tests inject a recorder so
+ * we never touch the network or override `global.fetch`.
+ */
+export type HttpClient = (
+  url: string,
+  init?: {
+    method?: string;
+    headers?: Record<string, string>;
+    body?: string;
+  },
+) => Promise<{
+  ok: boolean;
+  status: number;
+  json: () => Promise<unknown>;
+}>;
+
+/** Production HTTP client — the real `fetch`, narrowed to our shape. */
+const systemHttpClient: HttpClient = (url, init) =>
+  fetch(url, init as RequestInit);
+
+/** Environment descriptor used for local-open context detection. */
+export interface OpenEnv {
+  platform: NodeJS.Platform | string;
+  isTTY: boolean;
+  /** Value of `$DISPLAY` (only meaningful on linux). */
+  display: string;
+}
+
+/**
+ * Decide whether to attempt a local browser open. True only in an interactive
+ * desktop context: a TTY must be present AND a display must be available.
+ *  - darwin: a TTY is sufficient (no X display concept).
+ *  - linux:  a TTY plus a non-empty $DISPLAY.
+ *  - otherwise (cloud / Slack / CI): false — just print the URL.
+ */
+export function shouldOpenLocally(env: OpenEnv): boolean {
+  if (!env.isTTY) return false;
+  if (env.platform === "darwin") return true;
+  if (env.platform === "linux") return env.display.trim().length > 0;
+  return false;
+}
+
+/** The OS-native open command, or null when none is known. */
+export function openCommand(platform: NodeJS.Platform | string): string | null {
+  if (platform === "darwin") return "open";
+  if (platform === "linux") return "xdg-open";
+  return null;
+}
+
+/** Spawn function shape — production delegates to detached child_process spawn. */
+export type SpawnFn = (command: string, args: string[]) => void;
+
+/** Production spawn: detached + unref so opening never blocks the CLI. */
+const systemSpawn: SpawnFn = (command, args) => {
+  const child = spawn(command, args, {
+    detached: true,
+    stdio: "ignore",
+  });
+  child.unref();
+};
+
+/**
+ * Best-effort local browser open. Never throws and never blocks — gated on
+ * {@link shouldOpenLocally} and a known {@link openCommand}.
+ */
+export function maybeOpenLocally(
+  target: string,
+  env: OpenEnv,
+  spawnFn: SpawnFn = systemSpawn,
+): void {
+  if (!shouldOpenLocally(env)) return;
+  const cmd = openCommand(env.platform);
+  if (!cmd) return;
+  try {
+    spawnFn(cmd, [target]);
+  } catch {
+    // Opening is a convenience; swallow any failure.
+  }
+}
+
+/** Dependencies for {@link uploadDoc} — all injectable for tests. */
+export interface UploadDeps {
+  fetch: HttpClient;
+  /** `$SHIPWRIGHT_TASK_STORE_URL` (undefined when unset). */
+  url: string | undefined;
+  /** `$SHIPWRIGHT_TASK_STORE_TOKEN` (undefined when unset). */
+  token: string | undefined;
+  clock: Clock;
+}
+
+/** Write the HTML to a temp file and return its absolute path. */
+function writeTempHtml(html: string, clock: Clock): string {
+  const stamp = clock.now().toISOString().replace(/[:.]/g, "-");
+  const path = join(tmpdir(), `shipwright-plan-${stamp}.html`);
+  writeFileSync(path, html, "utf-8");
+  return path;
+}
+
+/**
+ * Upload the rendered HTML to the task store `/docs` endpoint and return the
+ * absolute shareable URL. On ANY failure — env vars unset, network error,
+ * non-2xx status, unparseable body, or a missing `url` field — fall back to
+ * writing a local temp file and return THAT path instead. Never throws.
+ */
+export async function uploadDoc(
+  html: string,
+  deps: UploadDeps,
+): Promise<string | null> {
+  const { url, token, clock } = deps;
+
+  // Env vars unset → skip upload entirely, go straight to temp-file fallback.
+  if (!url || !token) {
+    return writeTempHtml(html, clock);
+  }
+
+  try {
+    const endpoint = `${url.replace(/\/$/, "")}/docs`;
+    const res = await deps.fetch(endpoint, {
+      method: "POST",
+      // Raw HTML string — the server reads it via `c.req.text()`.
+      headers: { Authorization: `Bearer ${token}` },
+      body: html,
+    });
+    if (!res.ok) return writeTempHtml(html, clock);
+    const parsed = (await res.json()) as { url?: unknown };
+    if (typeof parsed.url !== "string" || parsed.url.length === 0) {
+      return writeTempHtml(html, clock);
+    }
+    return parsed.url;
+  } catch {
+    return writeTempHtml(html, clock);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // CLI
 // ---------------------------------------------------------------------------
 
@@ -342,7 +486,7 @@ function parseArgs(argv: string[]): CliArgs {
   return args;
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
 
   if (!args.file) {
@@ -361,18 +505,58 @@ function main(): void {
   const html = renderPlanHtml(plan);
 
   if (args.out) {
+    // Preserve the original --out behavior unchanged: write the file, notice
+    // on stderr, no upload.
     writeFileSync(args.out, html, "utf-8");
     process.stderr.write(`render-plan: wrote ${args.out}\n`);
-  } else {
-    process.stdout.write(html);
+    return;
   }
+
+  // No --out: upload the HTML and surface a shareable URL. Output convention —
+  // human-facing notices go to stderr; the final shareable URL (or temp-file
+  // path on fallback) goes to stdout so callers can capture it cleanly. The
+  // upload/open path is fully defensive and never throws, so it cannot change
+  // the parse/render exit-code behavior above.
+  const url = process.env.SHIPWRIGHT_TASK_STORE_URL;
+  const token = process.env.SHIPWRIGHT_TASK_STORE_TOKEN;
+  if (!url || !token) {
+    process.stderr.write(
+      "render-plan: SHIPWRIGHT_TASK_STORE_URL/TOKEN unset — writing local file\n",
+    );
+  }
+
+  const result = await uploadDoc(html, {
+    fetch: systemHttpClient,
+    url,
+    token,
+    clock: SystemClock(),
+  });
+
+  if (result === null) {
+    // Defensive: uploadDoc only returns null on a temp-write failure we cannot
+    // recover from. Fall back to stdout so the HTML is never lost.
+    process.stdout.write(html);
+    return;
+  }
+
+  const isHostedUrl = /^https?:\/\//.test(result);
+  if (isHostedUrl) {
+    maybeOpenLocally(result, {
+      platform: process.platform,
+      isTTY: Boolean(process.stdout.isTTY),
+      display: process.env.DISPLAY ?? "",
+    });
+  } else {
+    process.stderr.write(`render-plan: wrote local file ${result}\n`);
+  }
+  process.stdout.write(`${result}\n`);
 }
 
 if (import.meta.main) {
-  try {
-    main();
-  } catch (e: unknown) {
-    process.stderr.write(`error: ${e instanceof Error ? e.message : String(e)}\n`);
+  main().catch((e: unknown) => {
+    process.stderr.write(
+      `error: ${e instanceof Error ? e.message : String(e)}\n`,
+    );
     process.exit(1);
-  }
+  });
 }
