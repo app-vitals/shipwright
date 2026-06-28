@@ -347,4 +347,25 @@ describe("registerWithAuthz + enumerateRoutes", () => {
     expect(res.status).toBe(403);
     expect(handler).not.toHaveBeenCalled();
   });
+
+  test("public route → returns 200 with no Authorization header", async () => {
+    const app = new OpenAPIHono<AuthEnv>();
+    app.onError((err, c) => {
+      if (err instanceof ForbiddenError) {
+        return c.json({ error: err.message }, 403);
+      }
+      return c.json({ error: err.message }, 500);
+    });
+    registerWithAuthz(
+      app,
+      pingRoute,
+      { kind: "public" },
+      // biome-ignore lint/suspicious/noExplicitAny: handler shape
+      async (c) => c.json({}, 200) as any,
+    );
+
+    // No Authorization header, no caller → public policy allows it.
+    const res = await app.request("/ping");
+    expect(res.status).toBe(200);
+  });
 });
