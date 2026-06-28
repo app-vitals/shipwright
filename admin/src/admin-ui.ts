@@ -31,6 +31,7 @@ import {
   type TaskItem,
   renderAgentDetailPage,
   renderAgentsPage,
+  renderCronRunsPage,
   renderLoginPage,
   renderNewLocalAgentPage,
   renderProvisionCompletePage,
@@ -44,6 +45,7 @@ import {
   type TaskStoreTokenItem,
 } from "./admin-ui-pages.ts";
 import type { AgentCronJobService } from "./agent-cron-jobs.ts";
+import type { AgentCronRunService } from "./agent-cron-runs.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
 import type { AgentPluginService } from "./agent-plugins.ts";
 import type { AgentProvisioner } from "./agent-provisioner.ts";
@@ -190,6 +192,7 @@ export interface AdminUIDeps {
     | "get"
     | "reconcileSystemCrons"
   >;
+  agentCronRunService: Pick<AgentCronRunService, "list">;
   agentToolService: Pick<
     AgentToolService,
     "list" | "add" | "toggle" | "remove"
@@ -366,6 +369,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     prisma,
     agentEnvService,
     agentCronJobService,
+    agentCronRunService,
     agentToolService,
     agentTokenService,
     agentPluginService,
@@ -603,7 +607,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       const agentIds = memberships.map((m) => m.agentId);
       agents = await prisma.agent.findMany({ where: { id: { in: agentIds } } });
     }
-    return html(renderAgentsPage(agents, c.var.userEmail, c.var.isAdmin, timezone));
+    return html(
+      renderAgentsPage(agents, c.var.userEmail, c.var.isAdmin, timezone),
+    );
   });
 
   // ─── Agent detail ─────────────────────────────────────────────────────────
@@ -736,6 +742,39 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         c.var.isAdmin,
         { error, newToken, successMsg, timezone },
       ),
+    );
+  });
+
+  app.get("/admin/agents/:id/crons/:cronId/runs", requireAuth, async (c) => {
+    const agentId = c.req.param("id");
+    const cronId = c.req.param("cronId");
+    const agent = await prisma.agent.findUnique({ where: { id: agentId } });
+    if (!agent) {
+      return new Response("Agent not found", { status: 404 });
+    }
+    if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
+      return new Response("Forbidden", { status: 403 });
+    }
+
+    let cron: Awaited<ReturnType<typeof agentCronJobService.get>>;
+    try {
+      cron = await agentCronJobService.get(agentId, cronId);
+    } catch {
+      return new Response("Cron not found", { status: 404 });
+    }
+
+    const runs = await agentCronRunService.list(cronId, agentId, {
+      limit: 50,
+    });
+
+    return html(
+      renderCronRunsPage({
+        agent: { id: agent.id, name: agent.name },
+        cron: { id: cron.id, name: cron.name, schedule: cron.schedule },
+        runs: runs.items,
+        userName: c.var.userEmail,
+        timezone,
+      }),
     );
   });
 
@@ -1829,7 +1868,15 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       }
     }
 
-    return html(renderTaskDetailPage(task, c.var.userEmail, agentNames, timezone, pullRequest));
+    return html(
+      renderTaskDetailPage(
+        task,
+        c.var.userEmail,
+        agentNames,
+        timezone,
+        pullRequest,
+      ),
+    );
   });
 
   app.post("/admin/tasks/:id/release", requireAuth, async (c) => {
@@ -1902,8 +1949,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
     const suggestions = fetchDistinctTaskValues
       ? await fetchDistinctTaskValues()
-        .then((v) => ({ repos: v.repos }))
-        .catch(() => ({}))
+          .then((v) => ({ repos: v.repos }))
+          .catch(() => ({}))
       : {};
 
     return html(
@@ -1965,13 +2012,24 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }
     const agents = await prisma.agent.findMany();
     return html(
-      renderTokensPage(tokens, degraded, c.var.userEmail, c.req.path, undefined, timezone, error, agents, selectedAgentId),
+      renderTokensPage(
+        tokens,
+        degraded,
+        c.var.userEmail,
+        c.req.path,
+        undefined,
+        timezone,
+        error,
+        agents,
+        selectedAgentId,
+      ),
     );
   });
 
   app.post("/admin/tokens", requireAuth, async (c) => {
     if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
-    if (!adminCreateToken) return new Response("Token store not configured", { status: 503 });
+    if (!adminCreateToken)
+      return new Response("Token store not configured", { status: 503 });
     const form = await c.req.formData();
     const label = form.get("label")?.toString()?.trim() || undefined;
     if (!label) return c.redirect("/admin/tokens?error=Label+is+required", 302);
@@ -1980,7 +2038,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     try {
       result = await adminCreateToken(label, agentId);
     } catch (err) {
-      const msg = err instanceof Error ? encodeURIComponent(err.message) : "create_failed";
+      const msg =
+        err instanceof Error
+          ? encodeURIComponent(err.message)
+          : "create_failed";
       return c.redirect(`/admin/tokens?error=${msg}`, 302);
     }
     // Render inline — never redirect with the raw token in the URL.
@@ -1992,18 +2053,33 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }
     const agents = await prisma.agent.findMany();
     return html(
-      renderTokensPage(tokens, false, c.var.userEmail, "/admin/tokens", result.rawToken, timezone, undefined, agents, agentId, taskStoreBaseUrl),
+      renderTokensPage(
+        tokens,
+        false,
+        c.var.userEmail,
+        "/admin/tokens",
+        result.rawToken,
+        timezone,
+        undefined,
+        agents,
+        agentId,
+        taskStoreBaseUrl,
+      ),
     );
   });
 
   app.post("/admin/tokens/:id/revoke", requireAuth, async (c) => {
     if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
-    if (!adminRevokeToken) return new Response("Token store not configured", { status: 503 });
+    if (!adminRevokeToken)
+      return new Response("Token store not configured", { status: 503 });
     const tokenId = c.req.param("id");
     try {
       await adminRevokeToken(tokenId);
     } catch (err) {
-      const msg = err instanceof Error ? encodeURIComponent(err.message) : "revoke_failed";
+      const msg =
+        err instanceof Error
+          ? encodeURIComponent(err.message)
+          : "revoke_failed";
       return c.redirect(`/admin/tokens?error=${msg}`, 302);
     }
     return c.redirect("/admin/tokens", 302);

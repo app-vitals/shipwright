@@ -325,8 +325,10 @@ async function startServer(): Promise<void> {
             );
             if (res.status === 404) return null;
             if (!res.ok)
-              throw new Error(`task-store GET /prs?taskId=${taskId} → ${res.status}`);
-            const data = await res.json() as { prs?: unknown[] };
+              throw new Error(
+                `task-store GET /prs?taskId=${taskId} → ${res.status}`,
+              );
+            const data = (await res.json()) as { prs?: unknown[] };
             const prs = data.prs ?? [];
             return prs.length > 0 ? (prs[0] as PullRequestItem) : null;
           },
@@ -335,8 +337,7 @@ async function startServer(): Promise<void> {
             const res = await fetch(url, {
               headers: { Authorization: `Bearer ${taskStoreAdminToken}` },
             });
-            if (!res.ok)
-              throw new Error(`task-store GET /prs → ${res.status}`);
+            if (!res.ok) throw new Error(`task-store GET /prs → ${res.status}`);
             return res.json();
           },
           fetchTaskStorePrById: async (id: string) => {
@@ -375,7 +376,9 @@ async function startServer(): Promise<void> {
               headers: { Authorization: `Bearer ${taskStoreAdminToken}` },
             });
             if (!res.ok)
-              throw new Error(`task-store DELETE /tokens/${id} → ${res.status}`);
+              throw new Error(
+                `task-store DELETE /tokens/${id} → ${res.status}`,
+              );
           },
           // Advertise the PUBLIC task-store URL in the mint-token env block so a
           // local/laptop agent can resolve it; the in-cluster fetchers above keep
@@ -401,6 +404,7 @@ async function startServer(): Promise<void> {
     prisma: prisma as never,
     agentEnvService,
     agentCronJobService,
+    agentCronRunService,
     agentToolService,
     agentTokenService,
     agentPluginService,
