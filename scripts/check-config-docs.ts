@@ -36,6 +36,7 @@ const ALLOWLIST: Set<string> = new Set([
   "PWD",
   "HOSTNAME",
   "XDG_DATA_HOME",
+  "DISPLAY",
   // Standard Node / Bun runtime
   "NODE_ENV",
   // Test-only vars set in test-env.ts / integration test setups
