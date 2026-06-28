@@ -55,6 +55,8 @@ Manual test scenarios for each command across different project types.
 | 38 | `/metrics` | Any (multi-task session) | Auto-docs aggregation across session | New "Auto-docs maintenance" section appears with update rate, mean lines/task, and skip breakdown; recommendation #12 fires when rate is low |
 | 39 | `/dev-task` Step 8.5 | Any (with docs/, failing pre-commit hook) | Commit failure does not produce false success | No `✓ Docs refreshed`; `skipped_reason:"commit_failed"`, `commit_sha:null`, `updated:false`; no fabricated metrics; pipeline still continues to Step 9 |
 | 40 | `/dev-task` Step 8.5 | Any | Unparseable agent result is recorded, not silent | Agent returns no/garbled `AUTO_DOCS_METRICS` block; `⚠ ... agent_error` printed; metrics record has `skipped_reason:"agent_error"`, `updated:false`; pipeline continues |
+| 41 | `/plan-session` Step 6a / `/prd` Phase 4 | Any (hosted store configured) | Plan viz render after markdown write | `PLAN.md`/`PRODUCT-SPEC.md` written unchanged, then `render-plan.ts` runs and a `Plan viz: {url}` line is surfaced in the confirmation block |
+| 42 | `/plan-session` Step 6a / `/prd` Phase 4 | Any (hosted store unset) | Plan viz graceful skip | `⏭ Plan viz skipped — SHIPWRIGHT_TASK_STORE_URL/TOKEN unset.` printed; markdown still written; no `Plan viz:` line; command never blocks |
 
 ---
 
@@ -1081,6 +1083,56 @@ Run these across ALL scenarios to verify genericization:
 - [ ] metrics.jsonl record has `"auto_docs":{"updated":false,"files_changed":0,"lines_changed":0,"skipped_reason":"agent_error"}`
 - [ ] `/metrics` later buckets this as `agent_error` (a failure), NOT `legacy_record`
 - [ ] Pipeline continues to Step 9 without stalling
+
+---
+
+## Scenario 41: Plan Viz Render — Hosted Store Configured
+
+Covers the additive render step in `/plan-session` Step 6a and `/prd` Phase 4.
+The underlying parse/render/upload logic is already unit- and integration-tested
+(`render-plan*.test.ts`); this scenario verifies the command-body wiring only.
+
+### Setup
+1. Install the plugin so `render-plan.ts` resolves under `~/.claude/plugins/cache/*/shipwright/`
+2. Export a reachable hosted task store: `SHIPWRIGHT_TASK_STORE_URL` and `SHIPWRIGHT_TASK_STORE_TOKEN`
+3. Have a session ready to plan (any repo)
+
+### Run
+```
+/plan-session {repo} {session}
+```
+(and/or `/prd {session}` to exercise the spec path)
+
+### Verify
+- [ ] `planning/{session}/PLAN.md` (or `PRODUCT-SPEC.md`) is written exactly as before — the markdown step is unchanged
+- [ ] After the write, the render block runs `render-plan.ts` resolved via the `find … | sort -V | tail -1` idiom
+- [ ] `--type plan` is used for `PLAN.md`, `--type spec` for `PRODUCT-SPEC.md`
+- [ ] The shareable URL printed to stdout is surfaced as a `Plan viz: {url}` line in the `QUEUED` / `PRD COMPLETE` confirmation block
+- [ ] No error from the render step changes the command's exit behavior — the plan/spec is committed regardless
+
+---
+
+## Scenario 42: Plan Viz Render — Hosted Store Unset (Graceful Skip)
+
+The required negative path: the viz must degrade to a one-line notice and never
+block the plan when the hosted env is absent.
+
+### Setup
+1. `unset SHIPWRIGHT_TASK_STORE_URL SHIPWRIGHT_TASK_STORE_TOKEN` (or run where they were never set)
+2. Have a session ready to plan (any repo)
+
+### Run
+```
+/plan-session {repo} {session}
+```
+(and/or `/prd {session}`)
+
+### Verify
+- [ ] `planning/{session}/PLAN.md` (or `PRODUCT-SPEC.md`) is still written normally
+- [ ] The render block prints `⏭ Plan viz skipped — SHIPWRIGHT_TASK_STORE_URL/TOKEN unset.` and runs nothing else
+- [ ] No `Plan viz:` line appears in the confirmation block
+- [ ] The command completes successfully — the plan is never blocked on visualization
+- [ ] (Optional, same skip notice) If the env is set but `render-plan.ts` is not found in the plugin cache, the block prints `⏭ Plan viz skipped — render-plan.ts not found in plugin cache.` and proceeds
 
 ---
 

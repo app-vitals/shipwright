@@ -212,6 +212,29 @@ Present the complete draft to the user section by section. After presenting each
    ```
 3. Iterate on feedback until the user approves
 4. Write the approved spec to `planning/$ARGUMENTS/PRODUCT-SPEC.md`
+5. **Render the plan visualization (additive — never blocks the spec).** The
+   `PRODUCT-SPEC.md` write above is complete and unchanged; this step only
+   surfaces a shareable visual of what was just written. Skip cleanly when the
+   hosted task store is not configured.
+
+   ```bash
+   if [ -z "$SHIPWRIGHT_TASK_STORE_URL" ] || [ -z "$SHIPWRIGHT_TASK_STORE_TOKEN" ]; then
+     echo "⏭ Plan viz skipped — SHIPWRIGHT_TASK_STORE_URL/TOKEN unset."
+   else
+     RENDER=$(find ~/.claude/plugins/cache -maxdepth 5 -name "render-plan.ts" -path "*/shipwright/*" 2>/dev/null | awk -F/ '{print $(NF-2), $0}' | sort -V | tail -1 | cut -d' ' -f2-)
+     if [ -z "$RENDER" ]; then
+       echo "⏭ Plan viz skipped — render-plan.ts not found in plugin cache."
+     else
+       bun "$RENDER" --file "planning/$ARGUMENTS/PRODUCT-SPEC.md" --type spec --session "$ARGUMENTS"
+     fi
+   fi
+   ```
+
+   `render-plan.ts` prints the shareable hosted URL (or a local file path when
+   it falls back) to stdout; human-facing notices go to stderr. Capture the
+   stdout URL and surface it in the Phase 5 summary as `Plan viz: {url}`. If the
+   step printed a skip notice instead, omit that line and proceed — the spec is
+   already written and the command must never block on visualization.
 
 ## Phase 5: Summary and Next Steps
 
@@ -223,6 +246,7 @@ PRD COMPLETE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 PRD: planning/$ARGUMENTS/PRODUCT-SPEC.md
+Plan viz: {url}   ← omit this line if the render step was skipped
 
 Features: {N}
 {  Feature name} — {N} requirements, {N} acceptance criteria
