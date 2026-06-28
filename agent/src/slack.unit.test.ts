@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { hasSlackCredentials } from "./slack.ts";
+import { dispatchMarkers, hasSlackCredentials } from "./slack.ts";
 
 describe("hasSlackCredentials", () => {
   test("true when both bot and app tokens are non-empty", () => {
@@ -35,5 +35,38 @@ describe("hasSlackCredentials", () => {
 
   test("treats whitespace-only tokens as absent", () => {
     expect(hasSlackCredentials({ botToken: "  ", appToken: "  " })).toBe(false);
+  });
+});
+
+// ─── dispatchMarkers — plan marker ──────────────────────────────────────────
+// Injects a plain-object Slack client double (no mock.module, no global
+// override) and asserts the [plan:url] marker posts a "View plan" message to
+// the bound channel/thread.
+
+describe("dispatchMarkers — plan marker", () => {
+  test("posts a View plan message to the bound channel/thread", async () => {
+    // biome-ignore lint/suspicious/noExplicitAny: test double captures calls
+    const calls: any[] = [];
+    const client = {
+      chat: {
+        // biome-ignore lint/suspicious/noExplicitAny: test double
+        postMessage: async (a: any) => {
+          calls.push(a);
+          return { ok: true };
+        },
+      },
+    };
+
+    await dispatchMarkers(
+      [{ type: "plan", url: "https://example.com/p/abc" }],
+      { client, channel: "C123", threadTs: "1700.1" },
+    );
+
+    expect(calls).toHaveLength(1);
+    const call = calls[0];
+    expect(call.channel).toBe("C123");
+    expect(call.thread_ts).toBe("1700.1");
+    expect(JSON.stringify(call.blocks)).toContain("https://example.com/p/abc");
+    expect(call.text).toContain("https://example.com/p/abc");
   });
 });

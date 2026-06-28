@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { markdownToBlocks, markdownToSlack } from "./format.ts";
+import { formatPlanLink, markdownToBlocks, markdownToSlack } from "./format.ts";
 
 describe("markdownToSlack", () => {
   // ─── Headings (become *bold* in Slack) ────────────────────────────────────
@@ -174,5 +174,31 @@ describe("markdownToBlocks", () => {
     expect(allCells.every((c) => c.text.length > 0)).toBe(true);
     // The blank corner cell specifically became the placeholder.
     expect(table?.rows[0][0]).toEqual({ type: "raw_text", text: " " });
+  });
+});
+
+describe("formatPlanLink", () => {
+  const url = "https://example.com/p/abc";
+
+  test("returns exactly one section block", () => {
+    const { blocks } = formatPlanLink(url);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].type).toBe("section");
+  });
+
+  test("section mrkdwn contains the url and 'View plan'", () => {
+    const { blocks } = formatPlanLink(url);
+    const block = blocks[0] as {
+      type: "section";
+      text: { type: "mrkdwn"; text: string };
+    };
+    expect(block.text.type).toBe("mrkdwn");
+    expect(block.text.text).toContain(url);
+    expect(block.text.text).toContain("View plan");
+  });
+
+  test("fallback text contains the url", () => {
+    const { text } = formatPlanLink(url);
+    expect(text).toContain(url);
   });
 });
