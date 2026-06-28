@@ -12,6 +12,10 @@ import { join } from "node:path";
 import type { App } from "@slack/bolt";
 import type { WebAPIPlatformError } from "@slack/web-api";
 import type { AnalyticsEvent } from "./analytics.ts";
+import {
+  type ChatTokenReporter,
+  NoopChatTokenReporter,
+} from "./chat-token-reporter.ts";
 import { ClaudeRunError, ClaudeTimeoutError } from "./claude.ts";
 import type { TokenUsage } from "./claude.ts";
 import { markdownToBlocks, markdownToSlack } from "./format.ts";
@@ -344,6 +348,7 @@ export function createSlackApp(
   conversationsRepliesFn: ConversationsRepliesFn = defaultConversationsRepliesFn,
   getSessionFn: GetSessionFn = () => undefined,
   blocksConverter: typeof markdownToBlocks = markdownToBlocks,
+  chatTokenReporter: ChatTokenReporter = new NoopChatTokenReporter(),
 ): App {
   const app = appFactory({
     token: slackConfig.botToken,
@@ -412,6 +417,7 @@ export function createSlackApp(
       const { result, usage } = await runner(prompt, sessionKey);
       const endedAt = new Date();
       await forwardTokenUsage(usage, isDM ? "slack_dm" : "slack_mention");
+      await chatTokenReporter.recordSession(usage);
       const { cleaned, markers } = parseMarkers(result);
 
       const isSilent = markers.some((m) => m.type === "silent");
@@ -564,6 +570,7 @@ export function createSlackApp(
       const { result, usage } = await runner(prompt, sessionKey);
       const endedAt = new Date();
       await forwardTokenUsage(usage, "slack_mention");
+      await chatTokenReporter.recordSession(usage);
       const { cleaned, markers } = parseMarkers(result);
 
       const isSilent = markers.some((m) => m.type === "silent");
@@ -650,6 +657,7 @@ export function createSlackApp(
     try {
       const { result, usage } = await runner(prompt, sessionKey);
       await forwardTokenUsage(usage, "slack_dm");
+      await chatTokenReporter.recordSession(usage);
       const { cleaned, markers } = parseMarkers(result);
 
       const isSilent = markers.some((m) => m.type === "silent");
