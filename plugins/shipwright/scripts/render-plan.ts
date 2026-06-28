@@ -528,11 +528,7 @@ async function main(): Promise<void> {
   // the parse/render exit-code behavior above.
   const url = process.env.SHIPWRIGHT_TASK_STORE_URL;
   const token = process.env.SHIPWRIGHT_TASK_STORE_TOKEN;
-  if (!url || !token) {
-    process.stderr.write(
-      "render-plan: SHIPWRIGHT_TASK_STORE_URL/TOKEN unset — writing local file\n",
-    );
-  }
+  const envUnset = !url || !token;
 
   const result = await uploadDoc(html, {
     fetch: systemHttpClient,
@@ -556,7 +552,13 @@ async function main(): Promise<void> {
       display: process.env.DISPLAY ?? "",
     });
   } else {
-    process.stderr.write(`render-plan: wrote local file ${result}\n`);
+    // Single notice for the local-file outcome. When the env vars are unset we
+    // surface the reason here rather than emitting a separate upfront line, so
+    // one event produces exactly one stderr notice.
+    const reason = envUnset
+      ? " (SHIPWRIGHT_TASK_STORE_URL/TOKEN unset)"
+      : "";
+    process.stderr.write(`render-plan: wrote local file ${result}${reason}\n`);
   }
   process.stdout.write(`${result}\n`);
 }
