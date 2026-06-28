@@ -22,7 +22,7 @@ test("hero heading renders the brand tagline", async ({ page }) => {
   await page.goto("/");
   const heading = page.locator("h1");
   await expect(heading).toBeVisible();
-  await expect(heading).toContainText(/autonomous delivery agent/i);
+  await expect(heading).toContainText(/own environment/i);
 });
 
 test("dark-premium navy base background is applied", async ({ page }) => {
@@ -56,6 +56,30 @@ test("home document ships NO runtime JS (zero <script> tags)", async ({
 test("eyebrow features 'Built on Claude Code'", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByText(/Built on Claude Code/i).first()).toBeVisible();
+});
+
+test("hero CTA section includes both paths: install snippet and discovery call link", async ({
+  page,
+}) => {
+  await page.goto("/");
+  // Install path: the plugin install command should be visible in the hero area.
+  await expect(
+    page.getByText("/plugin install shipwright@app-vitals/shipwright", {
+      exact: false,
+    }).first(),
+  ).toBeVisible();
+  // Discovery call path: link to cal.com/app-vitals/discovery should be visible in hero.
+  await expect(
+    page.getByRole("link", { name: /discovery call/i }).first(),
+  ).toBeVisible();
+});
+
+test("page does NOT contain the string 'Autonomous programming, installed'", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const text = (await page.locator("body").textContent()) ?? "";
+  expect(text).not.toContain("Autonomous programming, installed");
 });
 
 test("'Inside a task' tab details the dev-task steps in order", async ({
