@@ -114,7 +114,7 @@ This keeps every existing test that relies on `METRICS_OFFLINE=true` working, ma
 
 ## 7. Write path
 
-Ingest stays the PostHog-shaped `POST /batch/` from LDS-1.1. SQLite and Postgres both insert into the same `events` table (dedup on `insert_id`); the active backend owns the write. PostHog's own ingest is unchanged (the agent forwarder / `posthog_send.py` already POST to `{POSTHOG_HOST}/batch/`). Prometheus's push/scrape model is not relevant here — another reason it is not a provider.
+Ingest stays the PostHog-shaped `POST /batch/` from LDS-1.1. SQLite and Postgres both insert into the same `events` table (dedup on `insert_id`); the active backend owns the write. PostHog's own ingest is unchanged (the agent forwarder already POSTs to `{POSTHOG_HOST}/batch/`). Prometheus's push/scrape model is not relevant here — another reason it is not a provider.
 
 ---
 

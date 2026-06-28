@@ -357,13 +357,6 @@ curl -sf -X PATCH \
   "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
   -d "{\"status\": \"deployed\", \"deployedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" | jq .
 ```
-Fire `shipwright_task_deployed` — skip if deploy-only mode:
-```bash
-POSTHOG_SCRIPT=$(find ~/.claude/plugins/cache -name "posthog_send.py" -path "*/shipwright/*" 2>/dev/null | head -1)
-[ -n "$POSTHOG_SCRIPT" ] && [ -n "$TASK_ID" ] && python3 "$POSTHOG_SCRIPT" shipwright_task_deployed \
-  --project {repo} --task "$TASK_ID" \
-  canary_result=no_pipeline pipeline_minutes={pipeline_minutes}
-```
 Print the handoff block (Step 9) with `Pipeline: post-merge CI ({pipeline_minutes}m)`. Stop.
 
 **Any run fails** (`conclusion == "failure"` on any run):
@@ -393,13 +386,6 @@ curl -sf -X PATCH \
   -H "Content-Type: application/json" \
   "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
   -d "{\"status\": \"deployed\", \"deployedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" | jq .
-```
-Fire `shipwright_task_deployed` — skip if deploy-only mode:
-```bash
-POSTHOG_SCRIPT=$(find ~/.claude/plugins/cache -name "posthog_send.py" -path "*/shipwright/*" 2>/dev/null | head -1)
-[ -n "$POSTHOG_SCRIPT" ] && [ -n "$TASK_ID" ] && python3 "$POSTHOG_SCRIPT" shipwright_task_deployed \
-  --project {repo} --task "$TASK_ID" \
-  canary_result=no_pipeline pipeline_minutes=10
 ```
 Print the handoff block (Step 9) with `Pipeline: post-merge CI (pending at timeout)`. Stop.
 
@@ -576,13 +562,6 @@ curl -sf -X PATCH \
   -d "{\"status\": \"blocked\", \"blockedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\", \"note\": \"Canary failed after deploy. Revert PR opened: {revert_pr_url}\"}" | jq .
 ```
 
-Fire `shipwright_task_blocked` — only if a task was found (skip in deploy-only mode):
-```bash
-POSTHOG_SCRIPT=$(find ~/.claude/plugins/cache -name "posthog_send.py" -path "*/shipwright/*" 2>/dev/null | head -1)
-[ -n "$POSTHOG_SCRIPT" ] && [ -n "{task_id}" ] && python3 "$POSTHOG_SCRIPT" shipwright_task_blocked \
-  --project {repo} --task {task_id} reason="canary_failure"
-```
-
 Stop.
 
 ---
@@ -617,7 +596,7 @@ Continue regardless of health check result — it is informational, not a gate.
 
 ---
 
-## Step 8: Update Todos + Metrics + Fire PostHog
+## Step 8: Update Task Store
 
 ### 8a. Compute Pipeline Duration
 
@@ -635,33 +614,6 @@ curl -sf -X PATCH \
   -H "Content-Type: application/json" \
   "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
   -d "{\"status\": \"deployed\", \"deployedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" | jq .
-```
-
-### 8c. Enrich Metrics JSONL
-
-Find the metrics file at `planning/{session}/metrics.jsonl`. Locate the line where
-`task.id == {task_id}`. Add or update the `deploy` object on that line:
-
-```json
-"deploy": {
-  "canary_result": "success",
-  "pipeline_minutes": {pipeline_minutes},
-  "reverted": false
-}
-```
-
-Write the updated line back.
-
-Skip if no session or metrics file exists.
-
-### 8d. Fire shipwright_task_deployed
-
-Skip if no task was found (deploy-only mode). Re-resolve the script path inline:
-```bash
-POSTHOG_SCRIPT=$(find ~/.claude/plugins/cache -name "posthog_send.py" -path "*/shipwright/*" 2>/dev/null | head -1)
-[ -n "$POSTHOG_SCRIPT" ] && [ -n "{task_id}" ] && python3 "$POSTHOG_SCRIPT" shipwright_task_deployed \
-  --project {repo} --task {task_id} \
-  canary_result=success pipeline_minutes={pipeline_minutes} reverted=false
 ```
 
 ---

@@ -192,40 +192,14 @@ Every command in the pipeline shares a single `planning/{folder}/` directory:
 ```
 planning/april-2026-workspace-switcher/
 ├── PRODUCT-SPEC.md                       # Input: requirements doc
-├── WorkspaceSwitcher_Task_Breakdown.md   # Written by /plan-session
-└── metrics.jsonl                         # Appended by /dev-task after each task
+└── WorkspaceSwitcher_Task_Breakdown.md   # Written by /plan-session
 ```
 
 ```mermaid
 flowchart LR
     PS["/plan-session"] -->|writes| TB["Task_Breakdown.md"]
     DT["/dev-task\n/dev-loop"] -->|reads| TB
-    DT -->|appends| MJ["metrics.jsonl"]
-    MJ -->|read by| MC["/metrics"]
-    MJ -->|calibrates estimates| PS
-    DT -->|"6 events via\nposthog_send.py"| PH[("PostHog")]
 ```
-
----
-
-## PostHog — Automatic Pipeline Telemetry
-
-Set `POSTHOG_PROJECT_API_KEY` as an environment variable. If absent, all PostHog calls are silently skipped — no errors, just no events.
-
-Events fired across the full task lifecycle:
-
-| Event | Fired by | Trigger |
-|-------|----------|---------|
-| `shipwright_task_started` | `dev-task` | Task marked `in_progress` |
-| `shipwright_simplify_complete` | `dev-task` | Simplify pass done |
-| `shipwright_pr_created` | `dev-task` | PR created |
-| `shipwright_ci_result` | `dev-task` | CI passes or exhausts retries |
-| `shipwright_auto_docs` | `dev-task` | Auto-docs refresh complete (Step 8.5) |
-| `shipwright_task_blocked` | `dev-task` | Task blocked (requirements, PR failure, CI exhausted) |
-| `shipwright_task_approved` | `review` | Review verdict: SHIP IT |
-| `shipwright_task_merged` | `review` | PR merged |
-
-Build a funnel from `task_started → pr_created → task_approved → task_merged` to measure cycle time and identify where tasks drop off.
 
 ---
 
@@ -253,7 +227,7 @@ Shipwright is self-contained. It uses Claude Code's built-in `general-purpose` a
 | Plugin | Source | Used By | What It Enables |
 |--------|--------|---------|-----------------|
 | `frontend-design` | [Claude Code plugins](https://github.com/anthropics/claude-code/tree/main/plugins/frontend-design) | `/dev-task` | When a task is tagged with `Design Skill: frontend-design` in the planning doc, produces distinctive, high-quality UI instead of generic AI-generated interfaces |
-| `posthog` (optional) | [PostHog plugin](https://github.com/PostHog/posthog-mcp) | `/metrics` | Enables querying PostHog pipeline data via MCP. Only needs `POSTHOG_PROJECT_API_KEY` env var for event sending — the MCP server is optional for querying |
+| `posthog` (optional) | [PostHog plugin](https://github.com/PostHog/posthog-mcp) | `/metrics` | Enables querying PostHog pipeline data via MCP. Optional — the MCP server is only needed for ad-hoc querying |
 
 ### What Happens Without Them
 
@@ -332,7 +306,7 @@ shipwright/
 │   ├── product-spec-template.md # PRODUCT-SPEC.md template for /prd
 │   └── toolchain-patterns.md    # Config file → command mapping
 ├── scripts/
-│   └── posthog_send.py          # PostHog event sender (stdlib Python, no deps)
+│   └── check-*.ts               # Cron precheck guards (dev-task, review, deploy, patch)
 ├── README.md
 └── TESTING.md
 ```
