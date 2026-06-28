@@ -12,13 +12,10 @@
   <em>Plan → build → review → ship — one task through the pipeline. (Illustrative.)</em>
 </p>
 
-> 🚧 **Early development.** You can already run the **metrics dashboard locally today** — see [Quickstart](#quickstart) for the one-prompt setup (offline by default, no accounts or secrets). The hosted **Shipwright agent** (Phase C) and parts of the plugin (Phase A) are still being built and aren't ready for general installation yet. Follow progress in the [issues](https://github.com/app-vitals/shipwright/issues).
 
 > **Brand vs. package:** the project is **Shipwright Harness**; the plugin/package you install is **`shipwright`**.
 
 ## Install
-
-> 🚧 **Not yet ready for general installation.** The plugin (Phase A) is still being built. The command below will work once Phase A ships — follow the [`shipwright-oss` milestone](https://github.com/app-vitals/shipwright/milestones) for progress.
 
 ```text
 /plugin install shipwright@app-vitals/shipwright
@@ -87,7 +84,7 @@ Prerequisites: tmux, Docker, PostgreSQL running on localhost:5432, Bun, go-task.
 4. Open the dashboard in your browser:
      http://localhost:3460/dashboard
 
-5. (Coming soon — Phase A not yet ready for general use) Inside a Claude Code session:
+5. Inside a Claude Code session:
      /plugin install shipwright@app-vitals/shipwright
 
 To stop: tmux kill-session -t shipwright
@@ -124,9 +121,9 @@ Shipwright turns a feature idea into shipped, reviewed code through a sequence o
 
 | Component | What it does | Status |
 |---|---|---|
-| **Plugin (the system)** | The `shipwright` toolchain you `/plugin install` — planning, queue-based execution, review, a test-readiness pipeline, and deploy commands. | 🔨 Building (Phase A) |
-| **Metrics dashboard** | A stateless service that reads pipeline analytics (task throughput, CI first-pass rate, review verdicts, estimation accuracy) and renders a dashboard. Run locally with `task api` or `task ui` (offline mode, no secrets needed). | 🔨 Building (Phase B) |
-| **Shipwright agent** | A thin autonomous runner that drives the system on a schedule — pick the next ready task → build → ship a PR → forward metrics — deployable to GitHub Actions or self-hosted. | 📋 Planned (Phase C) |
+| **Plugin (the system)** | The `shipwright` toolchain you `/plugin install` — planning, queue-based execution, review, a test-readiness pipeline, and deploy commands. | ✅ Available |
+| **Metrics dashboard** | A stateless service that reads pipeline analytics (task throughput, CI first-pass rate, review verdicts, estimation accuracy) and renders a dashboard. Run locally with `task api` or `task ui` (offline mode, no secrets needed). | ✅ Available |
+| **Shipwright agent** | A thin autonomous runner that drives the system on a schedule — pick the next ready task → build → ship a PR → forward metrics — deployable to GitHub Actions or self-hosted. | ✅ Available |
 
 ## The workflow
 
@@ -143,7 +140,7 @@ Tasks are tracked as GitHub Issues, so the queue lives where your team already w
 
 ## Project status
 
-Shipwright Harness is being assembled here in three phases — plugin, then metrics dashboard, then Shipwright agent — with merge-blocking CI gates and a single local task runner from the start. See the [`shipwright-oss` milestone](https://github.com/app-vitals/shipwright/milestones) and the [issues](https://github.com/app-vitals/shipwright/issues) for the live roadmap.
+Shipwright Harness is live — plugin, metrics dashboard, and the Shipwright agent all ship with v0.1.0. See the [issues](https://github.com/app-vitals/shipwright/issues) for the live roadmap and upcoming improvements.
 
 The metrics dashboard is runnable locally today — the [Quickstart](#quickstart) wraps this in one copy-paste prompt (`./scripts/quickstart.sh`). The underlying tasks:
 
