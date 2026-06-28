@@ -16,11 +16,6 @@ import { type Clock, SystemClock } from "./clock.ts";
 import type { CronRunReporter } from "./cron-run-reporter.ts";
 import { markdownToSlack } from "./format.ts";
 import { parseMarkers } from "./markers.ts";
-import {
-  forwardNewMetrics,
-  forwardTokenUsage,
-  snapshotMetrics,
-} from "./posthog.ts";
 import { calculateCost } from "./pricing.ts";
 import { type SynthesizeSpeechFn, dispatchMarkers } from "./slack.ts";
 import type { VoiceConfig } from "./voice.ts";
@@ -67,7 +62,7 @@ export interface CronHandlerDeps {
   /** Optional speech synthesis — if absent, [speak:] markers are skipped. */
   synthesizeSpeechFn?: SynthesizeSpeechFn;
   voiceConfig?: VoiceConfig;
-  /** Workspace root — used to forward metrics.jsonl entries to PostHog. */
+  /** Workspace root — used to resolve relative preCheck scripts and root the run. */
   workspace?: string;
   /** Plugin cache dir — overridable for testing. */
   pluginCacheDir?: string;
@@ -267,8 +262,6 @@ export async function handleCronRequest(
 
   console.log(`[agent:cron] running job "${jobId}"`);
 
-  const metricsSnapshot = workspace ? snapshotMetrics(workspace) : undefined;
-
   // ── Runner scope ─────────────────────────────────────────────────────────
   // Errors here record a genuine failure and re-throw so the caller sees them.
   let usage: TokenUsage | undefined;
@@ -291,11 +284,6 @@ export async function handleCronRequest(
   // when Claude completed successfully — they are logged and re-thrown, but the
   // run is already recorded as 'completed' (with full token/cost data) before
   // any Slack call is attempted.
-  if (workspace && metricsSnapshot) {
-    await forwardNewMetrics(workspace, metricsSnapshot);
-  }
-  await forwardTokenUsage(usage, "cron", undefined, jobId);
-
   const { cleaned, markers } = parseMarkers(result);
   const isSilentMarker = markers.some((m) => m.type === "silent");
 
