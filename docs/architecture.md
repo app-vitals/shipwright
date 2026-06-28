@@ -9,7 +9,7 @@ Shipwright Harness is the open-source autonomous delivery agent for [Claude Code
 | Phase | Artifact | Directory | What it is |
 |---|---|---|---|
 | **A** | **Plugin** (the system) | `plugins/shipwright/` | The Claude Code plugin users `/plugin install` — commands, skills, agents, scripts for the full delivery loop. Repo-agnostic. |
-| **B** | **Metrics dashboard** | `metrics/` | Hono service: backend-agnostic `MetricsProvider` JSON endpoints + a server-rendered dashboard. Four modes: fixtures (offline), posthog (live), postgres (Postgres event store), sqlite (default — local SQLite store + `POST /batch/` ingest). |
+| **B** | **Metrics dashboard** | `metrics/` | Hono service: backend-agnostic `MetricsProvider` JSON endpoints + a server-rendered dashboard. Two modes: fixtures (offline), taskstore (live task-store + admin APIs). |
 | **C** | **Shipwright agent** | `agent/` + `admin/` | Hono service + Prisma store (in `@shipwright/admin`); a thin autonomous runner: pick next ready task → build → ship PR → forward metrics. |
 | **D** | **Task store service** | `task-store/` | Postgres-backed task queue, PR tracking, and scoped tokens. Prisma schema defines `Task`, `PullRequest`, and `TaskToken` models; re-exported as `@shipwright/task-store` for use by plugin scripts and agent services. Replaces the JSON file fallback. |
 
@@ -30,7 +30,7 @@ The plugin is pure TypeScript with **no server, no database, and no external HTT
 
 ## B — Metrics dashboard
 
-A Hono service that turns pipeline events into analytics. Five read-only JSON endpoints (`/metrics/summary|trends|features|queue|tokens`) plus a session-gated `/dashboard`, all served by a backend-agnostic `MetricsProvider` interface. The active backend is selected from env at startup: **fixtures** (offline), **posthog** (live PostHog queries), **postgres** (Postgres event store via `METRICS_DATABASE_URL`), or **sqlite** (local SQLite store — the default when no PostHog keys are configured). In sqlite and postgres modes, `POST /batch/` ingest is active. See **[metrics.md](./metrics.md)**.
+A Hono service that turns pipeline events into analytics. Five read-only JSON endpoints (`/metrics/summary|trends|features|queue|tokens`) plus a session-gated `/dashboard`, all served by a backend-agnostic `MetricsProvider` interface. The active backend is selected from env at startup: **fixtures** (offline) or **taskstore** (live task-store + admin APIs). See **[metrics.md](./metrics.md)**.
 
 ## C — Shipwright agent
 
@@ -77,7 +77,7 @@ The repo is a Bun-workspaces monorepo with **go-task** (`Taskfile.yml`) as the s
 ```
 shipwright/
 ├── plugins/shipwright/   A — the plugin (commands, skills, agents, scripts)
-├── metrics/              B — provider-agnostic Hono service (sqlite default / posthog / postgres / fixtures)
+├── metrics/              B — provider-agnostic Hono service (fixtures / taskstore)
 ├── agent/                C — Shipwright agent runtime (entrypoint, cron, Slack, GitHub auth)
 ├── admin/                C — Admin service: CRUD API, admin UI, Prisma store (@shipwright/admin)
 ├── task-store/           D — Task queue service: Postgres + Prisma, exports @shipwright/task-store

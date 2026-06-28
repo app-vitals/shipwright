@@ -1,6 +1,6 @@
 # Metrics Dashboard
 
-> Hono service (artifact **B**) that turns Shipwright's pipeline events into analytics. Five read-only JSON endpoints served by a backend-agnostic `MetricsProvider`, plus a session-gated server-rendered dashboard. Four modes: **fixtures** (offline), **taskstore** (live task-store + admin APIs), **postgres** (Postgres event store), and **sqlite** (local SQLite store — the default).
+> Hono service (artifact **B**) that turns Shipwright's pipeline events into analytics. Five read-only JSON endpoints served by a backend-agnostic `MetricsProvider`, plus a session-gated server-rendered dashboard. Two modes: **fixtures** (offline) and **taskstore** (live task-store + admin APIs).
 
 ## Overview
 
@@ -8,12 +8,7 @@ The metrics service exposes pipeline telemetry two ways: machine-readable JSON u
 
 1. `METRICS_OFFLINE=true` → **fixtures** mode: an offline `TaskStoreProvider` over recorded cassettes (`createFixtureTaskStoreProvider()`, `metrics/src/fixtures/task-store-fixtures.ts`); auth bypassed.
 2. `METRICS_TASK_STORE_URL` + `METRICS_ADMIN_URL` both `http(s)` → **taskstore** mode: live `TaskStoreProvider` (`metrics/src/providers/task-store-provider.ts`) over an `HttpTaskStoreClient` (`metrics/src/lib/task-store-client.ts`) and an `HttpAdminMetricsClient` (`metrics/src/lib/admin-metrics-client.ts`).
-3. `METRICS_DATABASE_URL` (or `DATABASE_URL_METRICS`) starts with `postgres` → **postgres** mode: `PostgresProvider` (`metrics/src/providers/postgres-provider.ts`) over a Postgres event store; `POST /batch/` ingest is registered.
-4. Otherwise (default) → **sqlite** mode: `SqliteProvider` (`metrics/src/providers/sqlite-provider.ts`) over a local SQLite event store; `POST /batch/` ingest is always registered in this mode.
-
-In sqlite mode (the default), the server creates a `LocalEventStore` (`metrics/src/local-store.ts`) at `METRICS_DB_PATH` (`state/metrics.db` by default) and wires it into both the provider and the `POST /batch/` ingest route.
-
-In postgres mode, the server connects to Postgres using `METRICS_DATABASE_URL` (or `DATABASE_URL_METRICS`), provisions the `events` table idempotently (with `insert_id UNIQUE` for dedup), and wires `POST /batch/` ingest to the Postgres store. All aggregation logic is shared with the SQLite provider via `SqlEventStoreProvider` (`metrics/src/providers/sql-provider.ts`) — query results are identical regardless of backend.
+3. Otherwise (default) → **taskstore** mode (server will error if URLs are missing).
 
 Entrypoint: `metrics/src/server.ts` (standalone Bun server, default port **3460**). The app factory `createMetricsApp()` in `metrics/src/api.ts` is what tests drive via `app.request()`.
 
@@ -25,7 +20,7 @@ Entrypoint: `metrics/src/server.ts` (standalone Bun server, default port **3460*
 task api        # or: task ui (same process)
 ```
 
-Both targets start the metrics server with `METRICS_OFFLINE=true` and serve the dashboard at http://localhost:3460/dashboard. No PostHog keys required — fixture data is injected automatically.
+Both targets start the metrics server with `METRICS_OFFLINE=true` and serve the dashboard at http://localhost:3460/dashboard. No external credentials required — fixture data is injected automatically.
 
 For a full dev environment with Ctrl-C cleanup:
 
@@ -66,7 +61,6 @@ All metric endpoints are `GET`, return JSON, and accept the same date-window que
 | GET | `/metrics/features` | Per-feature task / CI / review breakdown. |
 | GET | `/metrics/queue` | Shipwright v3 queue metrics: funnel counts, block rate, avg cycle time (days), avg review findings. |
 | GET | `/metrics/tokens` | Token usage — totals, by agent, by session type, by agent + session type, by agent + cron, by agent + model, and trends; each group includes a `cost` field (USD). |
-| POST | `/batch/` | PostHog-shaped batch ingest — writes events to the local SQLite store. Only registered when `localStore` is injected via `MetricsDeps`; returns 404 otherwise. |
 | GET | `/dashboard` | Server-rendered dashboard HTML (session-gated). |
 | GET | `/dashboard/*` | Static dashboard assets (`styles.css`, `app.js`). |
 | GET | `/health` | Liveness check — `{ status: "ok" }`, **no auth**. |
@@ -88,8 +82,6 @@ The **dashboard** is protected by the session cookie middleware; an invalid/abse
 | `METRICS_TASK_STORE_URL` | ✅ (taskstore mode) | — | Shipwright task-store base URL (`http(s)://…`). With `METRICS_ADMIN_URL` also set to http(s), selects taskstore mode. |
 | `METRICS_TASK_STORE_TOKEN` | | — | Bearer token for the task-store service (taskstore mode). |
 | `METRICS_OFFLINE` | | `false` | When `true`, injects fixture (cassette-backed) data and bypasses dashboard session auth. |
-| `METRICS_DATABASE_URL` | ✅ (postgres mode) | — | Postgres connection URL (`postgres://...`). Selects postgres mode. Takes precedence over `DATABASE_URL_METRICS`. |
-| `DATABASE_URL_METRICS` | | — | Alias for `METRICS_DATABASE_URL`. Accepted when `METRICS_DATABASE_URL` is absent. |
 | `METRICS_BASE_PATH` | | — | URL path prefix the app is mounted at (e.g. `/sw`). All routes including `/dashboard` and `/metrics/*` are served under this prefix. |
 | `METRICS_API_PORT` | | `3460` | Listen port. |
 | `METRICS_API_KEYS` | | — | Comma-parsed Bearer API keys for `/metrics/*`. |
@@ -99,7 +91,6 @@ The **dashboard** is protected by the session cookie middleware; an invalid/abse
 | `METRICS_INTERNAL_API_KEY` | | — | Internal key for the accounts client. |
 | `METRICS_DASHBOARD_TOKEN` | | — | Optional dashboard access token. |
 | `METRICS_DASHBOARD_DEV_AUTH` | | `false` | Bypasses `/dashboard` and `/metrics/*` auth for local dev (no login flow in `task stack`). Must not be enabled in production. |
-| `METRICS_DB_PATH` | | `state/metrics.db` | Path for the local SQLite event store (sqlite mode only). Pass `:memory:` for ephemeral use. |
 | `GCP_PROJECT_ID` | | — | Optional — enables GCP Secret Manager as an env-absent fallback for secrets. |
 | `SHIPWRIGHT_ENV_FILE` | | `~/.shipwright/.env` | Dotenv file loaded at startup (existing vars win). |
 
@@ -116,15 +107,6 @@ The **dashboard** is protected by the session cookie middleware; an invalid/abse
 | `metrics/src/lib/admin-metrics-client.ts` | `AdminMetricsClient` interface + `HttpAdminMetricsClient` impl (and `AdminMetricsClientError`) — reads token-aggregation stats from the admin service. |
 | `metrics/src/providers/task-store-recorded.ts` | `RecordedTaskStoreClient` + `RecordedAdminMetricsClient` — replay cassette data offline; back the fixtures provider and integration tests. |
 | `metrics/src/fixtures/task-store-fixtures.ts` | `createFixtureTaskStoreProvider()` — offline `TaskStoreProvider` over recorded cassettes with a fixed clock; used in offline mode and integration tests. |
-| `metrics/src/providers/sql-provider.ts` | `SqlEventStoreProvider` — shared aggregation engine; all 16 query kinds in TypeScript over any `SqlEventStore`. |
-| `metrics/src/providers/sqlite-provider.ts` | `SqliteProvider` — thin wrapper adapting `LocalEventStore` to `SqlEventStoreProvider`. |
-| `metrics/src/providers/postgres-provider.ts` | `PostgresProvider` / `createPostgresEventStore()` — Postgres backend using `pg.Pool`; provisions DDL; wraps `SqlEventStoreProvider`. |
-| `metrics/src/queries.ts` | HogQL query builders (summary, trends, features, queue, tokens); used by `PostHogProvider`. |
-| `metrics/src/posthog-client.ts` | PostHog client (interface + `Http` impl). |
-| `metrics/src/fixtures/posthog-fixtures.ts` | Fixture PostHog client (`createFixturePostHogClient()`) — pre-recorded sample data for every query type; used by the legacy PostHog provider's integration tests. |
-| `metrics/src/local-store.ts` | Local SQLite event store (`LocalEventStore` interface + `createLocalEventStore()`). Deduplicates on `insert_id`; used by `POST /batch/` and `SqliteProvider`. |
-| `metrics/src/validate-hogql.ts` | Pre-deploy HogQL validation runner (`validate:hogql`). |
-| `metrics/src/cache.ts` | In-process query-result cache. |
 | `metrics/src/secrets.ts` | Secrets resolution: env-first, optional GCP Secret Manager fallback. |
 | `metrics/src/dashboard/` | Server-rendered dashboard (`dashboard-page.ts`, `app.js`, `styles.css`, `index.html`). |
 | `metrics/src/lib/` | Shared closure: accounts client, api-auth, session middleware, env, errors, clock. |
@@ -133,7 +115,7 @@ The **dashboard** is protected by the session cookie middleware; an invalid/abse
 
 Unit + integration + smoke layers (`bun test --filter metrics`). Integration tests for the task-store backend inject `RecordedTaskStoreClient` + `RecordedAdminMetricsClient` doubles (from `metrics/src/providers/task-store-recorded.ts`) over canned cassettes and a fixed clock — pre-recorded sample results, no network calls; smoke tests drive the Hono app via `app.request()`. The suite stays fully offline with no external service URLs configured.
 
-E2E layer (`task e2e` → `cd metrics && bunx playwright test`): Playwright Chromium headless tests against a real running Bun server (`metrics/e2e/test-server.ts`). PostHog API calls are intercepted via Playwright route mocking — no real PostHog key needed. Session cookies are signed with a pinned test secret (`e2e-test-session-secret-32b`). Test file: `metrics/e2e/dashboard.e2e.ts`. Config: `metrics/playwright.config.ts`.
+E2E layer (`task e2e` → `cd metrics && bunx playwright test`): Playwright Chromium headless tests against a real running Bun server (`metrics/e2e/test-server.ts`). Session cookies are signed with a pinned test secret (`e2e-test-session-secret-32b`). Test file: `metrics/e2e/dashboard.e2e.ts`. Config: `metrics/playwright.config.ts`.
 
 See [testing.md](./testing.md).
 

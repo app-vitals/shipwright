@@ -1,9 +1,9 @@
 # Metrics Backend Interface — Pluggable Event-Store Providers
 
 **Date:** 2026-06-08
-**Status:** Implemented — the interface + PostHog & SQLite providers and the default-local mode landed in LDS-1.3 (PR #148). Postgres provider landed in LDS-1.4.
+**Status:** Superseded — the multi-provider interface was implemented but later simplified (June 2026, feat/mme-5-3). The metrics service now supports only two modes: fixtures (offline) and taskstore (live), eliminating PostHog, Postgres, and SQLite event-store backends. This spec is retained as design history.
+**Prior:** the interface + PostHog & SQLite providers landed in LDS-1.3 (PR #148); Postgres provider in LDS-1.4.
 **Supersedes:** the read-side approach of LDS-1.2 (`LocalSqlitePostHogClient` implementing the HogQL-string seam) — now cancelled.
-**Tracked by:** LDS-1.3 (interface + PostHog & SQLite providers + default-local mode), LDS-1.4 (Postgres provider).
 
 ---
 
