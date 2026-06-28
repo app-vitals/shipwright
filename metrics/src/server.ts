@@ -104,6 +104,11 @@ if (mode === "fixtures") {
   console.log(
     "[metrics-api] Running in TASKSTORE mode — TaskStoreProvider over task-store + admin APIs",
   );
+  // NOTE: the `tokens*` metric kinds call the admin token-aggregation stats
+  // endpoints (`/agents/:id/cron-runs/stats`, `/agents/chat-tokens/daily/stats`),
+  // which are not implemented server-side until MME-4.2 — those kinds will throw
+  // `AdminMetricsClientError` (404) in taskstore mode until then. The task/PR
+  // -derived kinds (summary, trends, features, queue) are fully live.
 } else if (mode === "postgres") {
   const pgUrl = resolvePostgresUrl(process.env);
   if (!pgUrl) {

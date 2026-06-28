@@ -14,32 +14,21 @@ import type {
   ChatTokenStats,
   CronRunTokenStats,
 } from "../lib/admin-metrics-client.ts";
-import type {
-  PrRecord,
-  TaskRecord,
-  TaskStoreClient,
+import {
+  inWindow,
+  type PrRecord,
+  prAnchor,
+  type TaskRecord,
+  taskAnchor,
+  type TaskStoreClient,
 } from "../lib/task-store-client.ts";
 
 // ─── Task store double ────────────────────────────────────────────────────────
-
-/** Pick the timestamp a task is "anchored" to for window filtering. */
-function taskAnchor(t: TaskRecord): string | null {
-  return t.completedAt ?? t.mergedAt ?? t.startedAt ?? t.addedAt ?? null;
-}
-
-function inWindow(
-  iso: string | null | undefined,
-  params: { from?: string; to?: string },
-): boolean {
-  if (!iso) return params.from === undefined && params.to === undefined;
-  const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return false;
-  if (params.from !== undefined && t < new Date(params.from).getTime())
-    return false;
-  if (params.to !== undefined && t > new Date(params.to).getTime())
-    return false;
-  return true;
-}
+//
+// Window-filtering helpers (`taskAnchor`, `prAnchor`, `inWindow`) live in
+// task-store-client.ts so the cassette double and the live HTTP client apply
+// byte-identical date-range filtering — the double must mirror production, not
+// reimplement it.
 
 export class RecordedTaskStoreClient implements TaskStoreClient {
   constructor(
@@ -66,7 +55,7 @@ export class RecordedTaskStoreClient implements TaskStoreClient {
     return this.prs.filter((p) => {
       if (params.reviewState && p.reviewState !== params.reviewState)
         return false;
-      return inWindow(p.mergedAt ?? p.createdAt, params);
+      return inWindow(prAnchor(p), params);
     });
   }
 }
