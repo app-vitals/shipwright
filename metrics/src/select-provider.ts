@@ -5,7 +5,7 @@
  */
 
 /** The four read-backend modes the server can run in. */
-export type ProviderMode = "fixtures" | "posthog" | "postgres" | "sqlite";
+export type ProviderMode = "fixtures" | "taskstore" | "postgres" | "sqlite";
 
 /**
  * Minimal env shape the selector reads (subset of process.env). The index
@@ -14,8 +14,10 @@ export type ProviderMode = "fixtures" | "posthog" | "postgres" | "sqlite";
  */
 export interface ProviderEnv {
   METRICS_OFFLINE?: string;
-  POSTHOG_PERSONAL_API_KEY?: string;
-  POSTHOG_PROJECT_ID?: string;
+  /** Base URL of the Shipwright task-store service (read-only tasks + PRs). */
+  METRICS_TASK_STORE_URL?: string;
+  /** Base URL of the admin service (token-aggregation stats endpoints). */
+  METRICS_ADMIN_URL?: string;
   /** Postgres connection URL for the metrics event store. */
   METRICS_DATABASE_URL?: string;
   /** Alias for METRICS_DATABASE_URL (accepted for symmetry with other services). */
@@ -26,25 +28,25 @@ export interface ProviderEnv {
 /**
  * Select the provider mode from env, in priority order:
  *   1. METRICS_OFFLINE === "true"                         → fixtures
- *   2. both PostHog read keys non-empty                   → posthog
+ *   2. METRICS_TASK_STORE_URL + METRICS_ADMIN_URL both
+ *      http(s)                                            → taskstore
  *   3. METRICS_DATABASE_URL (or DATABASE_URL_METRICS)
  *      starts with "postgres"                             → postgres
  *   4. otherwise                                          → sqlite (default-local)
  *
  * Precedence rationale: offline/fixtures wins for local dev (no credentials
- * needed); PostHog wins when live data is configured (cloud prod); Postgres
- * wins when a database URL is supplied (self-hosted); SQLite is the safe
- * default that works with zero configuration.
+ * needed); taskstore wins when both upstream service URLs are configured (the
+ * live task-store + admin pipeline); Postgres wins when a database URL is
+ * supplied (self-hosted event store); SQLite is the safe default that works
+ * with zero configuration.
  */
 export function selectProviderMode(env: ProviderEnv): ProviderMode {
   if (env.METRICS_OFFLINE === "true") return "fixtures";
 
-  const hasPostHog =
-    typeof env.POSTHOG_PERSONAL_API_KEY === "string" &&
-    env.POSTHOG_PERSONAL_API_KEY.length > 0 &&
-    typeof env.POSTHOG_PROJECT_ID === "string" &&
-    env.POSTHOG_PROJECT_ID.length > 0;
-  if (hasPostHog) return "posthog";
+  const hasTaskStore =
+    env.METRICS_TASK_STORE_URL?.startsWith("http") === true &&
+    env.METRICS_ADMIN_URL?.startsWith("http") === true;
+  if (hasTaskStore) return "taskstore";
 
   const dbUrl =
     env.METRICS_DATABASE_URL?.trim() || env.DATABASE_URL_METRICS?.trim() || "";

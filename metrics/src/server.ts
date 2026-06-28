@@ -10,8 +10,12 @@
  * Backend mode (pure selector — see select-provider.ts):
  *
  *   Priority order (highest first):
- *   1. METRICS_OFFLINE=true                  → fixtures (fixture client; auth bypassed)
- *   2. PostHog read keys present             → posthog  (live PostHogProvider)
+ *   1. METRICS_OFFLINE=true                  → fixtures  (offline TaskStoreProvider
+ *                                                         over recorded cassettes;
+ *                                                         auth bypassed)
+ *   2. METRICS_TASK_STORE_URL + METRICS_ADMIN_URL
+ *      both http(s)                          → taskstore (live HttpTaskStoreClient +
+ *                                                         HttpAdminMetricsClient)
  *   3. METRICS_DATABASE_URL / DATABASE_URL_METRICS
  *      starts with "postgres"               → postgres  (PostgresProvider; POST /batch/ ingest)
  *   4. otherwise (DEFAULT)                   → sqlite   (SqliteProvider; POST /batch/ ingest)
@@ -62,17 +66,44 @@ const accountsClient = new HttpAccountsClient(
 let deps: MetricsDeps;
 
 if (mode === "fixtures") {
-  const { createFixturePostHogClient } = await import(
-    "./fixtures/posthog-fixtures.ts"
+  const { createFixtureTaskStoreProvider } = await import(
+    "./fixtures/task-store-fixtures.ts"
   );
   deps = {
-    postHogClient: createFixturePostHogClient(),
+    provider: createFixtureTaskStoreProvider(),
     sessionSecret: "",
     requireOwnerRole: false,
     offlineMode: true,
     basePath,
   };
   console.log("[metrics-api] Running in OFFLINE mode — fixture data injected");
+} else if (mode === "taskstore") {
+  const { HttpTaskStoreClient } = await import("./lib/task-store-client.ts");
+  const { HttpAdminMetricsClient } = await import(
+    "./lib/admin-metrics-client.ts"
+  );
+  const { TaskStoreProvider } = await import(
+    "./providers/task-store-provider.ts"
+  );
+  const taskStoreClient = new HttpTaskStoreClient(
+    process.env.METRICS_TASK_STORE_URL ?? "",
+    process.env.METRICS_TASK_STORE_TOKEN ?? "",
+  );
+  const adminMetricsClient = new HttpAdminMetricsClient(
+    process.env.METRICS_ADMIN_URL ?? "",
+    process.env.METRICS_INTERNAL_API_KEY ?? "",
+  );
+  deps = {
+    provider: new TaskStoreProvider(taskStoreClient, adminMetricsClient),
+    sessionSecret: process.env.SHIPWRIGHT_SESSION_SECRET ?? "",
+    requireOwnerRole: process.env.METRICS_REQUIRE_OWNER_ROLE === "true",
+    dashboardToken: process.env.METRICS_DASHBOARD_TOKEN,
+    dashboardDevAuth,
+    basePath,
+  };
+  console.log(
+    "[metrics-api] Running in TASKSTORE mode — TaskStoreProvider over task-store + admin APIs",
+  );
 } else if (mode === "postgres") {
   const pgUrl = resolvePostgresUrl(process.env);
   if (!pgUrl) {
@@ -110,7 +141,7 @@ if (mode === "fixtures") {
   console.log(
     "[metrics-api] Running in POSTGRES mode — PostgresProvider + /batch/ ingest",
   );
-} else if (mode === "sqlite") {
+} else {
   const store = createLocalEventStore({
     path: process.env.METRICS_DB_PATH ?? "state/metrics.db",
   });
@@ -126,14 +157,6 @@ if (mode === "fixtures") {
   console.log(
     "[metrics-api] Running in LOCAL mode — SQLite provider + /batch/ ingest",
   );
-} else {
-  deps = {
-    sessionSecret: process.env.SHIPWRIGHT_SESSION_SECRET ?? "",
-    requireOwnerRole: process.env.METRICS_REQUIRE_OWNER_ROLE === "true",
-    dashboardToken: process.env.METRICS_DASHBOARD_TOKEN,
-    dashboardDevAuth,
-    basePath,
-  };
 }
 
 const metricsApp = createMetricsApp(
@@ -152,7 +175,8 @@ metricsApp.doc("/openapi.json", {
   info: {
     title: "Vitals Metrics API",
     version: "1.0.0",
-    description: "Metrics service — PostHog pipeline analytics and dashboard.",
+    description:
+      "Metrics service — task-store & pipeline analytics and dashboard.",
   },
   security: [{ bearerAuth: [] }],
 });
