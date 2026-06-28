@@ -25,6 +25,7 @@ const repoUrl = "https://github.com/app-vitals/shipwright";
 const licenseUrl = "https://github.com/app-vitals/shipwright/blob/main/LICENSE";
 const claudeCodeUrl = "https://claude.com/claude-code";
 const discussionsUrl = "https://github.com/app-vitals/shipwright/discussions";
+const compareUrl = "/compare";
 const configUrl = "/docs/configuration";
 const year = new Date().getFullYear();
 ---
@@ -115,7 +116,10 @@ const year = new Date().getFullYear();
           >
         </span>
       </a>
-      <a href={repoUrl} class="sw-label">GitHub ↗</a>
+      <nav class="flex items-center gap-6" aria-label="Primary">
+        <a href={compareUrl} class="sw-label">Compare</a>
+        <a href={repoUrl} class="sw-label">GitHub ↗</a>
+      </nav>
     </header>
 
     <!-- .sw-container already caps width at --sw-layout-max-width (72rem). -->
@@ -148,6 +152,7 @@ const year = new Date().getFullYear();
           <a href={licenseUrl}>MIT License</a>
           <a href={claudeCodeUrl}>Claude Code</a>
           <a href={discussionsUrl}>GitHub Discussions</a>
+          <a href={compareUrl}>Compare</a>
           <a href={configUrl}>Configuration</a>
         </nav>
       </div>
