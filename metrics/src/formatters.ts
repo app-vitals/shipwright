@@ -3,7 +3,7 @@
  * Date range resolution and response envelope formatting.
  *
  * All presets and the "future" validation check anchor to America/Los_Angeles
- * so the response meta agrees with the timezone-aware HogQL queries.
+ * so the response meta agrees with the timezone-aware dashboard queries.
  */
 
 import { type Clock, SystemClock } from "./lib/clock.ts";
@@ -150,10 +150,8 @@ export function resolveDateRangeForMeta(
 
 /**
  * Resolve a typed QueryDateRange (preset or custom from/to) to concrete UTC
- * instants on LA day boundaries. This is the single window-semantics source
- * the SqliteProvider uses for `WHERE timestamp BETWEEN`, so local SQL and the
- * PostHog HogQL date filters agree on what "today" / "7d" / a custom range
- * mean.
+ * instants on LA day boundaries. This is the single source of truth for
+ * date semantics — providers use this output directly for their queries.
  */
 export function resolveQueryRange(
   range: QueryDateRange,
