@@ -22,6 +22,10 @@ import { SystemClock } from "./clock.ts";
 import { createConfig } from "./config.ts";
 import { handleCronRequest } from "./cron-handler.ts";
 import type { CronHandlerDeps } from "./cron-handler.ts";
+import {
+  HttpChatTokenReporter,
+  NoopChatTokenReporter,
+} from "./chat-token-reporter.ts";
 import { HttpCronRunReporter } from "./cron-run-reporter.ts";
 import { markdownToSlack } from "./format.ts";
 import {
@@ -87,6 +91,17 @@ const cronRunReporter =
         apiKey: config.shipwright.apiKey,
       })
     : undefined;
+
+const chatTokenReporter =
+  config.shipwright.apiUrl &&
+  config.shipwright.apiKey &&
+  config.shipwright.agentId
+    ? new HttpChatTokenReporter({
+        apiUrl: config.shipwright.apiUrl,
+        agentId: config.shipwright.agentId,
+        apiKey: config.shipwright.apiKey,
+      })
+    : new NoopChatTokenReporter();
 
 const cronDeps: CronHandlerDeps = {
   slack,
@@ -306,6 +321,8 @@ if (hasSlackCredentials(slackAppConfig)) {
     undefined, // botUserId — resolved by Bolt
     undefined, // conversationsRepliesFn — default
     (key) => sessions.get(key),
+    undefined, // blocksConverter — default
+    chatTokenReporter,
   );
 
   await app.start();

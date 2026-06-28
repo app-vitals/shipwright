@@ -15,7 +15,12 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  type ChatTokenReporter,
+  NoopChatTokenReporter,
+} from "./chat-token-reporter.ts";
 import { ClaudeRunError, ClaudeTimeoutError } from "./claude.ts";
+import type { TokenUsage } from "./claude.ts";
 import type { markdownToBlocks } from "./format.ts";
 import { threadKey } from "./sessions.ts";
 import {
@@ -37,13 +42,25 @@ const mockResolveUserFn = mock(
 
 // ─── Mock runner + formatter ──────────────────────────────────────────────────
 
+const mockUsage: TokenUsage = {
+  input_tokens: 100,
+  output_tokens: 50,
+  cache_read_input_tokens: 20,
+  cache_creation_input_tokens: 10,
+};
+
 const mockRunClaude = mock(
   async (
     _msg: string,
     _key?: string,
-  ): Promise<{ result: string; sessionId?: string }> => ({
+  ): Promise<{
+    result: string;
+    sessionId?: string;
+    usage?: TokenUsage;
+  }> => ({
     result: "Claude response text",
     sessionId: "sess-xyz",
+    usage: mockUsage,
   }),
 );
 
@@ -109,6 +126,7 @@ function createSlackApp(
     }>;
     getSessionFn?: (key: string) => string | undefined;
     blocksConverter?: typeof markdownToBlocks;
+    chatTokenReporter?: ChatTokenReporter;
   } = {},
 ) {
   mockTracker.mockClear();
@@ -129,6 +147,7 @@ function createSlackApp(
     overrides.conversationsRepliesFn ?? (async () => ({ messages: [] })),
     overrides.getSessionFn ?? (() => undefined),
     overrides.blocksConverter,
+    overrides.chatTokenReporter ?? new NoopChatTokenReporter(),
   );
 }
 
@@ -242,6 +261,16 @@ describe("message handler — DM routing", () => {
     await capturedMessageHandler?.({ message, say, client });
     return { client, say };
   }
+
+  test("fires chatTokenReporter.recordSession with the session usage on a DM", async () => {
+    const recordSession = mock(async (_usage?: TokenUsage) => {});
+    createSlackApp({ chatTokenReporter: { recordSession } });
+
+    await invokeDM({ text: "hello" });
+
+    expect(recordSession).toHaveBeenCalledTimes(1);
+    expect(recordSession).toHaveBeenCalledWith(mockUsage);
+  });
 
   test("returns early when message has a non-file subtype", async () => {
     const { client, say } = await invokeDM({ subtype: "bot_message" });
