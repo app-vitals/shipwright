@@ -357,6 +357,11 @@ and surface it in the Step 6 `QUEUED` confirmation as `Plan viz: {url}`. If the
 step printed a skip notice instead, omit that line and proceed — the plan and
 its tasks are already written and the command must never block on visualization.
 
+When (and only when) a hosted URL was produced, also emit `[plan:{url}]` on its
+own line — the agent strips this marker and posts a "View plan" link to the
+bound Slack channel/thread. Omit it if the render step was skipped or produced a
+local file path.
+
 **Step 6b — Write tasks to the store:**
 
 Write the tasks to `/tmp/new-tasks-{session}.json`. Set `source` to `"planning/{session}/PLAN.md"` on every task — this links each task back to the plan on disk:

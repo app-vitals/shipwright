@@ -98,6 +98,45 @@ describe("[upload:...] marker", () => {
   });
 });
 
+// ─── [plan:url] ───────────────────────────────────────────────────────────────
+
+describe("[plan:url] marker", () => {
+  test("detects [plan:url] and returns plan marker with url", () => {
+    const { markers } = parseMarkers(
+      "Plan ready [plan:https://example.com/p/abc]",
+    );
+    const planMarker = markers.find((m) => m.type === "plan");
+    expect(planMarker).toBeDefined();
+    if (planMarker?.type === "plan") {
+      expect(planMarker.url).toBe("https://example.com/p/abc");
+    }
+  });
+
+  test("strips [plan:url] from cleaned text", () => {
+    const { cleaned } = parseMarkers("Done [plan:https://example.com/p/abc]");
+    expect(cleaned).toBe("Done");
+    expect(cleaned).not.toContain("[plan:");
+  });
+
+  test("malformed [plan:] with empty url is left in text and yields no marker", () => {
+    const { cleaned, markers } = parseMarkers("[plan:]");
+    expect(markers.some((m) => m.type === "plan")).toBe(false);
+    expect(cleaned).toContain("[plan:]");
+  });
+
+  test("[plan:url] mid-text is still parsed (markers can appear anywhere)", () => {
+    const { cleaned, markers } = parseMarkers(
+      "before [plan:https://example.com/p/xyz] after",
+    );
+    const planMarker = markers.find((m) => m.type === "plan");
+    expect(planMarker).toBeDefined();
+    if (planMarker?.type === "plan") {
+      expect(planMarker.url).toBe("https://example.com/p/xyz");
+    }
+    expect(cleaned).toBe("before  after");
+  });
+});
+
 // ─── Multiple markers ─────────────────────────────────────────────────────────
 
 describe("multiple markers in one response", () => {

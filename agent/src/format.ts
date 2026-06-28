@@ -39,7 +39,7 @@ type TableBlock = {
   rows: RawTextCell[][];
 };
 type SectionBlock = { type: "section"; text: { type: "mrkdwn"; text: string } };
-type SlackBlock = TableBlock | SectionBlock;
+export type SlackBlock = TableBlock | SectionBlock;
 
 function pushSectionBlocks(blocks: SlackBlock[], mrkdwn: string): void {
   if (!mrkdwn) return;
@@ -111,4 +111,24 @@ export function markdownToBlocks(
   }
 
   return { text: markdownToSlack(text), blocks };
+}
+
+/**
+ * Builds a Slack message for a shareable plan/spec link: a single mrkdwn
+ * section block (`<url|View plan>`, the Slack link form `markdownToSlack`
+ * emits) plus a plain-text fallback. Used by the [plan:url] response marker.
+ */
+export function formatPlanLink(url: string): {
+  text: string;
+  blocks: SlackBlock[];
+} {
+  return {
+    text: `View plan: ${url}`,
+    blocks: [
+      {
+        type: "section",
+        text: { type: "mrkdwn", text: `<${url}|View plan>` },
+      },
+    ],
+  };
 }
