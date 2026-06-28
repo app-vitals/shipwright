@@ -670,6 +670,39 @@ describe("buildStackCommands — docker build + seed preflights", () => {
     expect(cmdStr).toContain("agent/Dockerfile");
   });
 
+  test("removes any leftover agent container BEFORE the docker build preflight", () => {
+    const cmds = buildStackCommands(STACK_PANES, {
+      repoPath: "/fake/repo",
+    });
+    const rmIdx = cmds.findIndex((c) =>
+      c.argv.join(" ").includes("docker rm -f shipwright-agent-dev"),
+    );
+    const dockerBuildIdx = cmds.findIndex((c) =>
+      c.argv.join(" ").includes("docker build"),
+    );
+    const agentSendKeysIdx = cmds.findIndex(
+      (c) =>
+        c.kind === "send-keys" &&
+        c.argv.some((a) => a.includes(`${SESSION_NAME}:0.3`)),
+    );
+    expect(rmIdx).toBeGreaterThanOrEqual(0);
+    expect(cmds[rmIdx]?.kind).toBe("preflight");
+    // The cleanup must run before both the image build and the run.
+    expect(rmIdx).toBeLessThan(dockerBuildIdx);
+    expect(rmIdx).toBeLessThan(agentSendKeysIdx);
+  });
+
+  test("the container cleanup preflight is a no-op when nothing is there", () => {
+    const cmds = buildStackCommands(STACK_PANES, {
+      repoPath: "/fake/repo",
+    });
+    const rm = cmds.find((c) =>
+      c.argv.join(" ").includes("docker rm -f shipwright-agent-dev"),
+    );
+    // `|| true` keeps a missing container from aborting the stack launch.
+    expect(rm?.argv.join(" ")).toContain("|| true");
+  });
+
   test("buildStackCommands includes seed preflight after migrate and before agent pane", () => {
     const cmds = buildStackCommands(STACK_PANES, {
       repoPath: "/fake/repo",

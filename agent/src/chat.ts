@@ -15,6 +15,7 @@
  */
 
 import { Hono } from "hono";
+import { ClaudeRunError, ClaudeTimeoutError } from "./claude.ts";
 import type { TokenUsage } from "./claude.ts";
 
 /**
@@ -78,7 +79,31 @@ export function createChatApp(deps: ChatAppDeps): Hono {
       sessions.set(session, sessionKey);
     }
 
-    const output = await runner(message, sessionKey);
+    // The runner spawns the Claude CLI, which can fail for reasons the caller
+    // needs to see (usage limit, auth, timeout). Without this catch any throw
+    // becomes a bare Hono 500 with an empty body — the REPL then shows only
+    // "non-2xx response: 500" and the real cause is buried in container logs.
+    let output: Awaited<ReturnType<typeof runner>>;
+    try {
+      output = await runner(message, sessionKey);
+    } catch (err) {
+      if (err instanceof ClaudeRunError) {
+        // Surface the upstream message (e.g. "You've hit your Sonnet limit").
+        // Pass a 429 through verbatim; map other CLI failures to 502 (the
+        // agent's upstream dependency failed, not the request itself).
+        return c.json(
+          { error: err.resultMessage },
+          err.apiErrorStatus === 429 ? 429 : 502,
+        );
+      }
+      if (err instanceof ClaudeTimeoutError) {
+        return c.json({ error: err.message }, 504);
+      }
+      return c.json(
+        { error: err instanceof Error ? err.message : String(err) },
+        500,
+      );
+    }
 
     return c.json({ result: output.result, sessionId: output.sessionId });
   });

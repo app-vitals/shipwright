@@ -12,6 +12,7 @@ import {
   buildChatRequest,
   formatAgentResponse,
   formatFetchError,
+  formatHttpError,
 } from "./chat.ts";
 
 // ---------------------------------------------------------------------------
@@ -110,5 +111,52 @@ describe("formatFetchError", () => {
     const err = new TypeError("fetch failed");
     const msg = formatFetchError(err, "http://example.com:9000");
     expect(msg).toContain("http://example.com:9000");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// formatHttpError
+// ---------------------------------------------------------------------------
+
+describe("formatHttpError", () => {
+  test("prefers the JSON body's `error` field over the status line", () => {
+    const msg = formatHttpError(
+      429,
+      "Too Many Requests",
+      JSON.stringify({
+        error: "You've hit your Sonnet limit · resets 8pm (UTC)",
+      }),
+    );
+    expect(msg).toBe(
+      "agent error (429): You've hit your Sonnet limit · resets 8pm (UTC)",
+    );
+  });
+
+  test("falls back to raw body text when the body is not JSON", () => {
+    const msg = formatHttpError(
+      500,
+      "Internal Server Error",
+      "plain text boom",
+    );
+    expect(msg).toBe("agent error (500): plain text boom");
+  });
+
+  test("falls back to statusText when the body is empty", () => {
+    const msg = formatHttpError(502, "Bad Gateway", "");
+    expect(msg).toBe("agent error (502): Bad Gateway");
+  });
+
+  test("falls back to raw body when JSON lacks a usable `error` field", () => {
+    const msg = formatHttpError(
+      500,
+      "Internal Server Error",
+      JSON.stringify({}),
+    );
+    expect(msg).toBe("agent error (500): {}");
+  });
+
+  test("includes the numeric status code", () => {
+    const msg = formatHttpError(504, "Gateway Timeout", "");
+    expect(msg).toContain("504");
   });
 });
