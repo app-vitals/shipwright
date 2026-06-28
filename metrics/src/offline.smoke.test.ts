@@ -14,7 +14,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { type MetricsDeps, createMetricsApp } from "./api.ts";
-import { createFixturePostHogClient } from "./fixtures/posthog-fixtures.ts";
+import { createFixtureTaskStoreProvider } from "./fixtures/task-store-fixtures.ts";
 import { parseApiKeys } from "./lib/api-auth.ts";
 import { makeAccountsClientMock } from "./lib/test-helpers.ts";
 
@@ -24,7 +24,7 @@ const noopAccountsClient = makeAccountsClientMock(async () => []);
 
 function makeOfflineDeps(): MetricsDeps {
   return {
-    postHogClient: createFixturePostHogClient(),
+    provider: createFixtureTaskStoreProvider(),
     sessionSecret: "",
     offlineMode: true,
   };
@@ -176,7 +176,7 @@ describe("offline mode — no live credentials required", () => {
   test("boots with empty session secret and no PostHog keys", async () => {
     // This test verifies that no env vars are read — everything is injected via deps
     const deps: MetricsDeps = {
-      postHogClient: createFixturePostHogClient(),
+      provider: createFixtureTaskStoreProvider(),
       sessionSecret: "",
       offlineMode: true,
     };
