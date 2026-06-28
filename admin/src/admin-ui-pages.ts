@@ -2229,8 +2229,6 @@ export function renderCronRunsPage(opts: {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Cron Runs — ${escapeHtml(cronLabel)} — Shipwright Admin</title>
   <style>${baseStyles()}
-    .badge-green { background:#dcfce7;color:#166534;border:1px solid #bbf7d0; }
-    .badge-gray { background:#f3f4f6;color:#374151;border:1px solid #e5e7eb; }
     .runs-table { width:100%;border-collapse:collapse; }
     .runs-table th { text-align:left;padding:8px 12px;font-size:12px;color:#6b7280;font-weight:600;border-bottom:1px solid #e5e7eb;text-transform:uppercase;letter-spacing:.05em; }
     .runs-table td { padding:8px 12px;border-bottom:1px solid #f3f4f6; }
