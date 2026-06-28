@@ -80,16 +80,14 @@ const PRS: PrRecord[] = [
   {
     id: "pr-1",
     taskId: "QS-1.1",
-    reviewState: "SHIP IT",
-    findings: 1,
+    reviewState: "approved",
     createdAt: "2026-06-02T11:00:00.000Z",
     mergedAt: "2026-06-02T12:00:00.000Z",
   },
   {
     id: "pr-2",
     taskId: "QS-1.2",
-    reviewState: "COMMENT",
-    findings: 3,
+    reviewState: "posted",
     createdAt: "2026-06-03T14:00:00.000Z",
     mergedAt: "2026-06-03T15:00:00.000Z",
   },
@@ -206,9 +204,10 @@ describe("TaskStoreProvider (integration)", () => {
     const row = t.results[0];
     expect(row[colIndex(t, "tasks_merged")]).toBe(2);
     expect(row[colIndex(t, "tasks_blocked")]).toBe(1);
-    // approved derives from SHIP IT PRs
+    // approved derives from PRs whose reviewState === "approved"
     expect(row[colIndex(t, "tasks_approved")]).toBe(1);
-    expect(row[colIndex(t, "avg_review_findings")]).toBe(2); // (1+3)/2
+    // task-store PR records carry no findings count → always null
+    expect(row[colIndex(t, "avg_review_findings")]).toBeNull();
   });
 
   test("tokensTotals = cron + chat summed field-wise (no double counting)", async () => {

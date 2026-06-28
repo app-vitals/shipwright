@@ -41,6 +41,11 @@ const DASHBOARD_TZ = "America/Los_Angeles";
 const COMPLETED_STATUSES = new Set(["merged", "done", "deployed", "deploying"]);
 const BLOCKED_STATUS = "blocked";
 
+// Task-store PR review-state that denotes an approved ("ship it") review. The
+// live task store records `reviewState` as one of `approved | posted | pending`
+// (there is no "SHIP IT" value — that's a PostHog event verdict in sql-provider).
+const SHIP_IT_REVIEW_STATE = "approved";
+
 // ─── Value helpers (mirror sql-provider) ──────────────────────────────────────
 
 function num(v: unknown): number | null {
@@ -205,7 +210,9 @@ export class TaskStoreProvider implements MetricsProvider {
     const complexityCount = (n: number) =>
       completed.filter((t) => num(t.complexity) === n).length;
 
-    const shipIt = prs.filter((p) => p.reviewState === "SHIP IT").length;
+    const shipIt = prs.filter(
+      (p) => p.reviewState === SHIP_IT_REVIEW_STATE,
+    ).length;
 
     const columns = [
       "tasks_completed",
@@ -383,7 +390,7 @@ export class TaskStoreProvider implements MetricsProvider {
         blockedOn(p).length,
         dayPrs.length,
         startedOn(p).length,
-        dayPrs.filter((pr) => pr.reviewState === "SHIP IT").length,
+        dayPrs.filter((pr) => pr.reviewState === SHIP_IT_REVIEW_STATE).length,
         avg(c.map(cycleHours)), // avg_actual_hours ≈ cycle time
         avg(c.map((t) => num(t.hours))),
         null, // avg_retries — no source
@@ -398,7 +405,7 @@ export class TaskStoreProvider implements MetricsProvider {
         null, // simplify_avg_naming — no source
         null, // simplify_avg_complexity — no source
         null, // simplify_avg_consistency — no source
-        avg(dayPrs.map((pr) => num(pr.findings))),
+        null, // avg_review_findings — task-store PR records carry no findings count
       ];
     });
 
@@ -483,7 +490,7 @@ export class TaskStoreProvider implements MetricsProvider {
     const rows = [...groups.entries()].map(([prefix, group]) => [
       prefix,
       group.length,
-      group.filter((p) => p.reviewState === "SHIP IT").length,
+      group.filter((p) => p.reviewState === SHIP_IT_REVIEW_STATE).length,
     ]);
     return table(columns, rows);
   }
@@ -498,7 +505,7 @@ export class TaskStoreProvider implements MetricsProvider {
     const started = tasks.filter((t) => t.startedAt != null);
     const merged = tasks.filter(isCompleted);
     const blocked = tasks.filter((t) => t.status === BLOCKED_STATUS);
-    const approved = prs.filter((p) => p.reviewState === "SHIP IT");
+    const approved = prs.filter((p) => p.reviewState === SHIP_IT_REVIEW_STATE);
 
     const columns = [
       "tasks_started",
@@ -512,7 +519,7 @@ export class TaskStoreProvider implements MetricsProvider {
       approved.length,
       merged.length,
       blocked.length,
-      avg(prs.map((p) => num(p.findings))),
+      null, // avg_review_findings — task-store PR records carry no findings count
     ];
     return table(columns, [row]);
   }

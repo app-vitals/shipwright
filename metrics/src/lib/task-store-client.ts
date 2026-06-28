@@ -37,13 +37,16 @@ export interface TaskRecord {
   addedAt?: string | null;
 }
 
-/** Slim PR record — drives review (SHIP IT) derived metrics. */
+/**
+ * Slim PR record — drives review-derived metrics. `reviewState` takes the live
+ * task-store values `approved | posted | pending` (an `approved` review is the
+ * "ship it" equivalent). The store records no per-PR findings count, so
+ * `avg_review_findings` is emitted as null by this provider.
+ */
 export interface PrRecord {
   id?: string;
   taskId?: string | null;
   reviewState?: string | null;
-  /** Number of review findings, when recorded. */
-  findings?: number | null;
   createdAt?: string | null;
   mergedAt?: string | null;
 }
@@ -131,9 +134,9 @@ export class HttpTaskStoreClient implements TaskStoreClient {
     to?: string;
     reviewState?: string;
   }): Promise<PrRecord[]> {
-    const res = await this.fetch<{ items: PrRecord[] }>(
+    const res = await this.fetch<{ prs: PrRecord[] }>(
       `/prs${HttpTaskStoreClient.query(params)}`,
     );
-    return res.items ?? [];
+    return res.prs ?? [];
   }
 }
