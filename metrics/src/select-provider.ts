@@ -24,10 +24,11 @@ export interface ProviderEnv {
 /**
  * Select the provider mode from env, in priority order:
  *   1. METRICS_OFFLINE === "true"                         → fixtures
- *   2. METRICS_TASK_STORE_URL + METRICS_ADMIN_URL both
- *      http(s)                                            → taskstore
- *   3. otherwise                                          → taskstore (default;
- *      server.ts will error out if the URLs are missing)
+ *   2. otherwise                                          → taskstore
+ *
+ * Taskstore mode requires METRICS_TASK_STORE_URL + METRICS_ADMIN_URL to be
+ * valid http(s) URLs — server.ts validates and exits with a FATAL message when
+ * they are missing or non-http.
  *
  * Precedence rationale: offline/fixtures wins for local dev (no credentials
  * needed); taskstore is the only live backend.

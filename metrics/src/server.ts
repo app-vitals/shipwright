@@ -69,7 +69,17 @@ if (mode === "fixtures") {
     basePath,
   };
   console.log("[metrics-api] Running in OFFLINE mode — fixture data injected");
-} else if (mode === "taskstore") {
+} else {
+  // mode === "taskstore"
+  const taskStoreUrl = process.env.METRICS_TASK_STORE_URL ?? "";
+  const adminUrl =
+    process.env.METRICS_ADMIN_URL ?? process.env.METRICS_ACCOUNTS_URL ?? "";
+  if (!taskStoreUrl.startsWith("http") || !adminUrl.startsWith("http")) {
+    console.error(
+      "[metrics-api] FATAL: no provider configured. Set METRICS_TASK_STORE_URL + METRICS_ADMIN_URL for task-store mode, or METRICS_OFFLINE=true for fixture mode.",
+    );
+    process.exit(1);
+  }
   const { HttpTaskStoreClient } = await import("./lib/task-store-client.ts");
   const { HttpAdminMetricsClient } = await import(
     "./lib/admin-metrics-client.ts"
@@ -78,11 +88,11 @@ if (mode === "fixtures") {
     "./providers/task-store-provider.ts"
   );
   const taskStoreClient = new HttpTaskStoreClient(
-    process.env.METRICS_TASK_STORE_URL ?? "",
+    taskStoreUrl,
     process.env.METRICS_TASK_STORE_TOKEN ?? "",
   );
   const adminMetricsClient = new HttpAdminMetricsClient(
-    process.env.METRICS_ADMIN_URL ?? "",
+    adminUrl,
     process.env.METRICS_INTERNAL_API_KEY ?? "",
   );
   deps = {
@@ -96,11 +106,6 @@ if (mode === "fixtures") {
   console.log(
     "[metrics-api] Running in TASKSTORE mode — TaskStoreProvider over task-store + admin APIs",
   );
-} else {
-  console.error(
-    "[metrics-api] FATAL: no provider configured. Set METRICS_TASK_STORE_URL + METRICS_ADMIN_URL for task-store mode, or METRICS_OFFLINE=true for fixture mode.",
-  );
-  process.exit(1);
 }
 
 const metricsApp = createMetricsApp(
