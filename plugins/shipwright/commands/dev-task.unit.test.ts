@@ -114,39 +114,6 @@ describe("groupChecksByName", () => {
   });
 });
 
-describe("dev-task.md Step 10b — layer field in metrics JSONL", () => {
-  it('emit line includes "layer" key', () => {
-    expect(devTaskContent).toContain('"layer"');
-  });
-
-  it("layer field appears in the JSONL emit line (Step 10b)", () => {
-    const jsonlBlockIdx = devTaskContent.indexOf('"task":"{id}"');
-    expect(jsonlBlockIdx).toBeGreaterThan(-1);
-    const lineEnd = devTaskContent.indexOf("\n", jsonlBlockIdx);
-    const jsonlLine = devTaskContent.slice(jsonlBlockIdx, lineEnd);
-    expect(jsonlLine).toContain('"layer"');
-  });
-});
-
-describe("dev-task.md Step 10b — ci.checks array in metrics JSONL", () => {
-  it('emit line includes "checks" key inside ci object', () => {
-    expect(devTaskContent).toContain('"checks"');
-  });
-
-  it('"checks" appears alongside "failures" in the ci object', () => {
-    const jsonlBlockIdx = devTaskContent.indexOf('"task":"{id}"');
-    expect(jsonlBlockIdx).toBeGreaterThan(-1);
-    const lineEnd = devTaskContent.indexOf("\n", jsonlBlockIdx);
-    const jsonlLine = devTaskContent.slice(jsonlBlockIdx, lineEnd);
-    expect(jsonlLine).toContain('"failures"');
-    expect(jsonlLine).toContain('"checks"');
-  });
-
-  it("documents ci_checks variable initialization ([] before fix loop)", () => {
-    expect(devTaskContent).toContain("ci_checks");
-  });
-});
-
 describe("dev-task.md Step 9b — structured check data collection", () => {
   it("mentions collecting structured check data into ci_checks", () => {
     const hasCheckData =

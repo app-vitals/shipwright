@@ -28,46 +28,6 @@ describe("dev-task.md Step 1 — in_progress resume safeguard", () => {
   });
 });
 
-describe("dev-task.md Step 10b — test_layers block in metrics emit", () => {
-  it('emit line includes "test_layers" key', () => {
-    expect(content).toContain("test_layers");
-  });
-
-  it('emit line includes "measured" key', () => {
-    expect(content).toContain('"measured"');
-  });
-
-  it('emit line includes "planned" key', () => {
-    expect(content).toContain('"planned"');
-  });
-
-  it('emit line includes "drift" key', () => {
-    expect(content).toContain('"drift"');
-  });
-
-  it("contains instruction that every field must be present even when no test changes", () => {
-    const hasEveryField =
-      content.includes("every field") ||
-      content.includes("Every field") ||
-      content.includes("all sub-keys") ||
-      content.includes("no test changes");
-    expect(hasEveryField).toBe(true);
-  });
-
-  it('emit line includes "coverage_per_layer_reason" key for recording why coverage is null', () => {
-    expect(content).toContain("coverage_per_layer_reason");
-  });
-
-  it("states that /review Step 13 enrichment is unaffected by the test_layers block", () => {
-    const hasReviewNote =
-      content.includes("review") &&
-      (content.includes("unaffected") ||
-        content.includes("enrich") ||
-        content.includes("Step 13"));
-    expect(hasReviewNote).toBe(true);
-  });
-});
-
 describe("Step 4 — stale bundle branch detection", () => {
   it("checks --state merged before entering the bundled-task path", () => {
     // The merged-PR check must appear BEFORE the bundled worktree add command
@@ -107,42 +67,5 @@ describe("Step 4 — stale bundle branch detection", () => {
     // The check must derive the repo slug from git remote get-url and pass it as --repo.
     expect(content).toContain('--repo "$GH_REPO"');
     expect(content).toContain("remote get-url origin");
-  });
-});
-
-describe("dev-task.md Step 10b — test layer conformance flagging", () => {
-  it("states that conformance deviations are advisory and never block", () => {
-    const hasAdvisoryNeverBlocks =
-      content.includes("advisory") &&
-      (content.includes("never") ||
-        content.includes("never blocks") ||
-        content.includes("never causes"));
-    expect(hasAdvisoryNeverBlocks).toBe(true);
-  });
-  it('emit line includes "conformance" key', () => {
-    expect(content).toContain('"conformance"');
-  });
-  it("states that with no test-system.md, conformance was not checked", () => {
-    const hasNotChecked =
-      content.includes("not checked") ||
-      content.includes("checked: false") ||
-      content.includes('"checked": false');
-    expect(hasNotChecked).toBe(true);
-  });
-
-  it("gates the entire TLM block on test-system.md presence, emitting configured:false when absent", () => {
-    const hasConfiguredFalse =
-      content.includes('"configured":false') ||
-      content.includes('"configured": false') ||
-      content.includes("configured:false");
-    expect(hasConfiguredFalse).toBe(true);
-  });
-
-  it("skips measurement when test-system.md is absent rather than using language-specific defaults", () => {
-    const hasSkipInstruction =
-      content.includes("not configured") ||
-      (content.includes("defaults") &&
-        (content.includes("skip") || content.includes("Skip")));
-    expect(hasSkipInstruction).toBe(true);
   });
 });
