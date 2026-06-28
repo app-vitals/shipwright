@@ -119,6 +119,36 @@ export interface CronJobItem {
   runCountToday?: number;
 }
 
+export interface CronRunItem {
+  id?: string;
+  startedAt: Date;
+  completedAt: Date | null;
+  outcome: string | null;
+  skipped: boolean;
+  skipReason: string | null;
+  error: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  costUsd: number | null;
+  model: string | null;
+}
+
+// Inline CSS for cron-run outcome badges, keyed by outcome string.
+// Shared by the cron rows on the agent detail page and the cron runs page.
+const CRON_OUTCOME_STYLE: Record<string, string> = {
+  posted: "background:#22c55e;color:white",
+  dm: "background:#3b82f6;color:white",
+  silent: "background:#9ca3af;color:white",
+  skipped: "background:#f59e0b;color:white",
+  error: "background:#ef4444;color:white",
+};
+const CRON_OUTCOME_STYLE_DEFAULT = "background:#9ca3af;color:white";
+
+/** Resolve the badge style for a cron outcome, falling back to a neutral gray. */
+function cronOutcomeStyle(outcome: string | null | undefined): string {
+  return CRON_OUTCOME_STYLE[outcome ?? ""] ?? CRON_OUTCOME_STYLE_DEFAULT;
+}
+
 export interface ToolItem {
   id: string;
   pattern: string;
@@ -531,6 +561,7 @@ export function renderAgentDetailPage(
     const toggleLabel = c.enabled ? "Disable" : "Enable";
     const toggleTarget = c.enabled ? "false" : "true";
     const actions = `
+      <a href="/admin/agents/${escapeHtml(agent.id)}/crons/${escapeHtml(c.id)}/runs" class="btn btn-secondary" style="font-size:11px;padding:3px 8px;margin-right:4px;text-decoration:none">Logs</a>
       <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/crons/${escapeHtml(c.id)}/toggle" style="display:inline">
         <input type="hidden" name="enabled" value="${toggleTarget}" />
         <button type="submit" class="btn btn-secondary" style="font-size:11px;padding:3px 8px">${toggleLabel}</button>
@@ -559,19 +590,11 @@ export function renderAgentDetailPage(
           <button type="submit" class="btn btn-primary" style="font-size:11px;padding:3px 8px;align-self:flex-start">Save</button>
         </form>
       </details>`;
-    const outcomeStyle: Record<string, string> = {
-      posted: "background:#22c55e;color:white",
-      dm: "background:#3b82f6;color:white",
-      silent: "background:#9ca3af;color:white",
-      skipped: "background:#f59e0b;color:white",
-      error: "background:#ef4444;color:white",
-    };
-
     const lastRunHtml = c.lastRun?.startedAt
       ? `
       <div style="font-size:11px;color:#6b7280;margin-bottom:4px">${relativeTime(c.lastRun.startedAt, now)}</div>
       <div>
-        <span class="badge" style="${outcomeStyle[c.lastRun.outcome ?? ""] ?? "background:#9ca3af;color:white"}">${escapeHtml(c.lastRun.outcome || "unknown")}</span>
+        <span class="badge" style="${cronOutcomeStyle(c.lastRun.outcome)}">${escapeHtml(c.lastRun.outcome || "unknown")}</span>
       </div>
       <div style="font-size:11px;color:#6b7280;margin-top:4px">${c.runCountToday ?? 0} run${(c.runCountToday ?? 0) === 1 ? "" : "s"}</div>`
       : `<div style="color:#d1d5db">never</div>`;
@@ -726,7 +749,9 @@ export function renderAgentDetailPage(
         <h1 class="page-title" style="margin-top:4px">${escapeHtml(agent.name)}</h1>
         ${!agent.selfHosted && agent.slackId ? `<span style="font-size:13px;color:#6b7280">Slack ID: <span class="mono">${escapeHtml(agent.slackId)}</span></span>` : ""}
       </div>
-      ${!agent.selfHosted ? `<div>
+      ${
+        !agent.selfHosted
+          ? `<div>
         <details>
           <summary class="btn btn-secondary" style="cursor:pointer;font-size:12px;list-style:none">Sync Manifest</summary>
           <div style="position:absolute;right:24px;margin-top:6px;background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);z-index:10;min-width:320px">
@@ -744,13 +769,17 @@ export function renderAgentDetailPage(
             </form>
           </div>
         </details>
-      </div>` : ""}
+      </div>`
+          : ""
+      }
     </div>
     ${errorHtml}
     ${successHtml}
     ${newTokenHtml}
 
-    ${!agent.selfHosted ? `<div class="card">
+    ${
+      !agent.selfHosted
+        ? `<div class="card">
       <div class="card-title">Env Vars</div>
       <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/envs" style="margin-bottom:16px">
         <div class="form-row">
@@ -775,7 +804,9 @@ export function renderAgentDetailPage(
           ${envRows}
         </tbody>
       </table>
-    </div>` : ""}
+    </div>`
+        : ""
+    }
 
     <div class="card">
       <div class="card-title">Repos</div>
@@ -819,7 +850,9 @@ export function renderAgentDetailPage(
     <div class="card">
       <div class="card-title">Cron Jobs</div>
 
-      ${!agent.selfHosted ? `<div style="margin-bottom:20px">
+      ${
+        !agent.selfHosted
+          ? `<div style="margin-bottom:20px">
         <div style="font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">System</div>
         <table class="data-table">
           <thead>
@@ -837,7 +870,9 @@ export function renderAgentDetailPage(
             ${systemCronRows}
           </tbody>
         </table>
-      </div>` : ""}
+      </div>`
+          : ""
+      }
 
       <div>
         <div style="font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Custom</div>
@@ -878,7 +913,9 @@ export function renderAgentDetailPage(
       </div>
     </div>
 
-    ${!agent.selfHosted ? `<div class="card">
+    ${
+      !agent.selfHosted
+        ? `<div class="card">
       <div class="card-title">Tools</div>
       <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/tools" style="margin-bottom:16px">
         <div class="form-row">
@@ -900,7 +937,9 @@ export function renderAgentDetailPage(
           ${toolRows}
         </tbody>
       </table>
-    </div>` : ""}
+    </div>`
+        : ""
+    }
 
     <div class="card">
       <div class="card-title">Tokens</div>
@@ -927,7 +966,9 @@ export function renderAgentDetailPage(
       </table>
     </div>
 
-    ${agent.selfHosted ? `<div class="card">
+    ${
+      agent.selfHosted
+        ? `<div class="card">
       <div class="card-title">Local CLI Access</div>
       <p style="font-size:13px;color:#6b7280;margin-bottom:12px">
         This agent runs locally. Use an API token to authenticate the local agent process with the admin service.
@@ -935,7 +976,9 @@ export function renderAgentDetailPage(
       <a href="/admin/tokens?agentId=${escapeHtml(agent.id)}" class="btn btn-secondary" style="font-size:13px">
         Manage Tokens →
       </a>
-    </div>` : ""}
+    </div>`
+        : ""
+    }
 
     <div class="card">
       <div class="card-title">Plugins</div>
@@ -2108,6 +2151,115 @@ export function renderPrDetailPage(
     </div>`
         : ""
     }
+  </div>
+</body>
+</html>`;
+}
+
+export function renderCronRunsPage(opts: {
+  agent: { id: string; name: string };
+  cron: { id: string; name: string | null; schedule: string };
+  runs: CronRunItem[];
+  userName: string;
+  timezone?: string;
+}): string {
+  const { agent, cron, runs, userName } = opts;
+  const timezone = opts.timezone ?? "America/Los_Angeles";
+
+  function fmtDuration(ms: number): string {
+    if (ms < 1000) return `${ms}ms`;
+    const totalSec = ms / 1000;
+    if (totalSec < 60) return `${totalSec.toFixed(1)}s`;
+    const min = Math.floor(totalSec / 60);
+    const sec = Math.round(totalSec % 60);
+    return `${min}m ${sec}s`;
+  }
+
+  function row(r: CronRunItem): string {
+    const outcomeLabel = r.skipped ? "skipped" : (r.outcome ?? "unknown");
+    const badgeStyle = cronOutcomeStyle(outcomeLabel);
+    const badgeTitle = r.skipped && r.skipReason ? r.skipReason : outcomeLabel;
+    const outcomeCell = `<span class="badge" style="${badgeStyle}" title="${escapeHtml(badgeTitle)}">${escapeHtml(outcomeLabel)}</span>`;
+
+    const startedIso = new Date(r.startedAt).toISOString();
+    const startedFmt = new Date(r.startedAt).toLocaleString("en-US", {
+      dateStyle: "medium",
+      timeStyle: "short",
+      timeZone: timezone,
+    });
+    const startedCell = `<span title="${escapeHtml(startedIso)}">${escapeHtml(startedFmt)}</span>`;
+
+    const durationCell = r.completedAt
+      ? escapeHtml(
+          fmtDuration(
+            new Date(r.completedAt).getTime() - new Date(r.startedAt).getTime(),
+          ),
+        )
+      : "—";
+
+    const tokensCell =
+      r.inputTokens === null && r.outputTokens === null
+        ? "—"
+        : `${escapeHtml(String(r.inputTokens ?? 0))} in / ${escapeHtml(String(r.outputTokens ?? 0))} out`;
+
+    const costCell = r.costUsd === null ? "—" : `$${r.costUsd.toFixed(4)}`;
+    const modelCell = r.model === null ? "—" : escapeHtml(r.model);
+
+    return `<tr>
+      <td>${outcomeCell}</td>
+      <td style="font-size:12px">${startedCell}</td>
+      <td class="mono" style="font-size:12px">${durationCell}</td>
+      <td class="mono" style="font-size:12px">${tokensCell}</td>
+      <td class="mono" style="font-size:12px">${escapeHtml(costCell)}</td>
+      <td class="mono" style="font-size:12px">${modelCell}</td>
+    </tr>`;
+  }
+
+  const bodyRows =
+    runs.length === 0
+      ? `<tr><td colspan="6" class="empty-state">No runs recorded yet.</td></tr>`
+      : runs.map(row).join("\n");
+
+  const cronLabel = cron.name ?? cron.schedule;
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cron Runs — ${escapeHtml(cronLabel)} — Shipwright Admin</title>
+  <style>${baseStyles()}
+    .runs-table { width:100%;border-collapse:collapse; }
+    .runs-table th { text-align:left;padding:8px 12px;font-size:12px;color:#6b7280;font-weight:600;border-bottom:1px solid #e5e7eb;text-transform:uppercase;letter-spacing:.05em; }
+    .runs-table td { padding:8px 12px;border-bottom:1px solid #f3f4f6; }
+  </style>
+</head>
+<body>
+  ${renderAdminToolbar(userName, "/admin/agents")}
+  <div class="vos-page">
+    <div class="page-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <a href="/admin/agents/${escapeHtml(agent.id)}" style="color:#6b7280;font-size:13px;text-decoration:none">← ${escapeHtml(agent.name)}</a>
+      <h1 class="page-title" style="margin:0;flex:1">Cron Runs — ${escapeHtml(cronLabel)}</h1>
+    </div>
+    <div style="margin-top:4px;margin-bottom:16px;font-family:monospace;font-size:11px;color:#9ca3af">${escapeHtml(cron.schedule)}</div>
+
+    <div class="card">
+      <table class="runs-table">
+        <thead>
+          <tr>
+            <th>Outcome</th>
+            <th>Started</th>
+            <th>Duration</th>
+            <th>Tokens</th>
+            <th>Cost</th>
+            <th>Model</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${bodyRows}
+        </tbody>
+      </table>
+    </div>
   </div>
 </body>
 </html>`;
