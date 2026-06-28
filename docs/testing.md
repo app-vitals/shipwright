@@ -67,9 +67,9 @@ A unit test over 200 ms is a suspected hidden integration test (audit its import
 ## Test isolation contract (hard rules)
 
 - **Time:** any production code path that calls `new Date()` / `Date.now()` non-trivially must accept a `Clock` interface; tests inject `FixedClock(t)`. Raw `Date.now()` in code under test is a bug.
-- **External HTTP:** service clients (`PostHogClient`, `GithubClient`, …) are interfaces with an `Http*Client` production impl; tests inject `Recorded*Client` doubles replaying cassettes from `tests/fixtures/<service>/*.json` (versioned JSON committed to the repo).
+- **External HTTP:** service clients (`TaskStoreClient`, `GithubClient`, `AdminMetricsClient`, …) are interfaces with an `Http*Client` production impl; tests inject `Recorded*Client` doubles replaying cassettes from `tests/fixtures/<service>/*.json` (versioned JSON committed to the repo).
 - **No global state:** **no `mock.module()`**, **no `global.fetch` / `global.*` overrides.** Bun runs test files in the same process, so module-level mocks and global mutation leak across sibling suites. Each test must be independently runnable, order-independent.
-- **Offline by default:** no live external calls. `POSTHOG_PERSONAL_API_KEY` must be absent for metrics unit/integration/smoke tests; `DATABASE_URL_ADMIN_TEST` must be set to a Postgres connection string for agent DB integration tests (suites skip automatically when the var is absent).
+- **Offline by default:** no live external calls. Metrics tests run fully offline with fixture data (no external service URLs configured). Agent DB integration tests require `DATABASE_URL_ADMIN_TEST` set to a Postgres connection string (suites skip automatically when the var is absent).
 
 ## CI gates
 
