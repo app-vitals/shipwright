@@ -236,6 +236,11 @@ Present the complete draft to the user section by section. After presenting each
    step printed a skip notice instead, omit that line and proceed — the spec is
    already written and the command must never block on visualization.
 
+   When (and only when) a hosted URL was produced, also emit `[plan:{url}]` on
+   its own line — the agent strips this marker and posts a "View plan" link to
+   the bound Slack channel/thread. Omit it if the render step was skipped or
+   produced a local file path.
+
 ## Phase 5: Summary and Next Steps
 
 Print:

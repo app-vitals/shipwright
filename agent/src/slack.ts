@@ -18,7 +18,7 @@ import {
 } from "./chat-token-reporter.ts";
 import { ClaudeRunError, ClaudeTimeoutError } from "./claude.ts";
 import type { TokenUsage } from "./claude.ts";
-import { markdownToBlocks, markdownToSlack } from "./format.ts";
+import { formatPlanLink, markdownToBlocks, markdownToSlack } from "./format.ts";
 import { type Marker, parseMarkers } from "./markers.ts";
 import { threadKey as defaultThreadKey } from "./sessions.ts";
 import type { VoiceConfig } from "./voice.ts";
@@ -193,6 +193,13 @@ export async function dispatchMarkers(
       } else {
         console.warn(`[markers] upload: file not found: ${absPath}`);
       }
+    } else if (marker.type === "plan") {
+      const { text, blocks } = formatPlanLink(marker.url);
+      await client.chat
+        .postMessage({ channel, thread_ts: threadTs, text, blocks })
+        .catch((err: unknown) =>
+          console.warn("[markers] plan link post failed:", err),
+        );
     } else if (marker.type === "speak") {
       if (!synthesizeSpeechFn) {
         console.warn(

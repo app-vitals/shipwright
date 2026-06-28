@@ -9,6 +9,7 @@
  *   [upload:/path/to/file]          — upload a file
  *   [speak:text]                    — synthesize speech and upload audio file
  *   [react:emoji1,emoji2]           — add emoji reactions
+ *   [plan:url]                      — post a "View plan" link to the channel/thread
  *
  * Malformed markers are logged and left in the cleaned text (not crashed on).
  */
@@ -32,7 +33,17 @@ interface ReactMarker {
   emojis: string[];
 }
 
-export type Marker = SilentMarker | UploadMarker | SpeakMarker | ReactMarker;
+interface PlanMarker {
+  type: "plan";
+  url: string;
+}
+
+export type Marker =
+  | SilentMarker
+  | UploadMarker
+  | SpeakMarker
+  | ReactMarker
+  | PlanMarker;
 
 interface ParseMarkersResult {
   cleaned: string;
@@ -46,6 +57,7 @@ const SILENT_REGEX = /\[silent\]\s*$/i;
 const UPLOAD_REGEX = /\[upload:([^\]]+)\]/gi;
 const SPEAK_REGEX = /\[speak:([\s\S]*?)\]/gi;
 const REACT_REGEX = /\[react:([^\]]+)\]/gi;
+const PLAN_REGEX = /\[plan:([^\]]+)\]/gi;
 
 /**
  * Parse all response markers from text.
@@ -111,6 +123,22 @@ export function parseMarkers(text: string): ParseMarkersResult {
     return "";
   });
   REACT_REGEX.lastIndex = 0;
+  cleaned = cleaned.trim();
+
+  // [plan:url]
+  cleaned = cleaned.replace(PLAN_REGEX, (_match, urlRaw: string) => {
+    const url = urlRaw.trim();
+    if (!url) {
+      console.warn(
+        "[markers] malformed [plan:] marker — empty url, leaving in text:",
+        _match,
+      );
+      return _match;
+    }
+    markers.push({ type: "plan", url });
+    return "";
+  });
+  PLAN_REGEX.lastIndex = 0;
   cleaned = cleaned.trim();
 
   return { cleaned, markers };
