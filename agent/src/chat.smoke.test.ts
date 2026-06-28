@@ -7,8 +7,16 @@
 
 import { describe, expect, it } from "bun:test";
 import { createChatApp } from "./chat.ts";
+import { ClaudeRunError, ClaudeTimeoutError } from "./claude.ts";
 import { createComposedApp } from "./run-agent.ts";
 import { makeMockDeps } from "./test-helpers/mock-deps.ts";
+
+/** A runner that always rejects with the given error — for error-path tests. */
+function makeThrowingRunner(err: unknown) {
+  return async (_message: string, _sessionKey?: string): Promise<never> => {
+    throw err;
+  };
+}
 
 /**
  * Build a fake runner mirroring createRunClaude's returned seam:
@@ -95,6 +103,80 @@ describe("createChatApp — POST /chat", () => {
       body: JSON.stringify({ message: "   " }),
     });
     expect(res.status).toBe(400);
+  });
+
+  it("surfaces a ClaudeRunError 429 as 429 with the upstream message", async () => {
+    const runner = makeThrowingRunner(
+      new ClaudeRunError(
+        "claude exited 1: api_error_status=429",
+        429,
+        "You've hit your Sonnet limit · resets 8pm (UTC)",
+        undefined,
+      ),
+    );
+    const app = createChatApp({ runner });
+
+    const res = await app.request("/chat", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: "hello" }),
+    });
+
+    expect(res.status).toBe(429);
+    const body = await res.json();
+    expect(body.error).toBe("You've hit your Sonnet limit · resets 8pm (UTC)");
+  });
+
+  it("maps a non-429 ClaudeRunError to 502 with the upstream message", async () => {
+    const runner = makeThrowingRunner(
+      new ClaudeRunError(
+        "claude exited 1: api_error_status=401",
+        401,
+        "invalid api key",
+        undefined,
+      ),
+    );
+    const app = createChatApp({ runner });
+
+    const res = await app.request("/chat", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: "hello" }),
+    });
+
+    expect(res.status).toBe(502);
+    const body = await res.json();
+    expect(body.error).toBe("invalid api key");
+  });
+
+  it("maps a ClaudeTimeoutError to 504", async () => {
+    const runner = makeThrowingRunner(new ClaudeTimeoutError(30_000));
+    const app = createChatApp({ runner });
+
+    const res = await app.request("/chat", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: "hello" }),
+    });
+
+    expect(res.status).toBe(504);
+    const body = await res.json();
+    expect(body.error).toContain("timed out");
+  });
+
+  it("maps a generic runner throw to 500 with the message in the body", async () => {
+    const runner = makeThrowingRunner(new Error("boom"));
+    const app = createChatApp({ runner });
+
+    const res = await app.request("/chat", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: "hello" }),
+    });
+
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toBe("boom");
   });
 });
 

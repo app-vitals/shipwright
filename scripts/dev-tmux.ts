@@ -448,6 +448,16 @@ export function buildStackCommands(
           `bun run scripts/seed-dev-agent.ts --db-url ${DEV_DATABASE_URL}`,
         ],
       });
+      // Preflight: remove any leftover agent container from a prior session so
+      // the `docker run --name` below cannot collide. A stack torn down with
+      // `tmux kill-session` (instead of `task stack:down`) leaves the container
+      // running; without this, the next `task stack` fails its `docker run` with
+      // "name already in use" and silently keeps talking to the stale container.
+      // `-f` is a no-op when nothing is there, so this is safe on a clean machine.
+      cmds.push({
+        kind: "preflight",
+        argv: ["sh", "-c", `docker rm -f ${DEV_DOCKER_IMAGE} 2>/dev/null || true`],
+      });
       // Preflight: build the Docker image that the agent pane will run.
       cmds.push({
         kind: "preflight",

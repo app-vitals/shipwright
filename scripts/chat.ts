@@ -7,7 +7,7 @@
  *   AGENT_URL=http://localhost:3000 bun scripts/chat.ts
  *
  * Architecture:
- *   Pure functions (buildChatRequest, formatAgentResponse, fetchChatResponse,
+ *   Pure functions (buildChatRequest, formatAgentResponse, formatHttpError,
  *   formatFetchError) are exported for unit testing — no I/O, no network.
  *   The I/O loop (runRepl) reads stdin line by line, drives the HTTP calls,
  *   and prints results. It is not unit-testable but exercises the same seam
@@ -77,12 +77,49 @@ export async function fetchChatResponse(
   });
 
   if (!response.ok) {
+    const detail = await response.text().catch(() => "");
     throw new Error(
-      `non-2xx response: ${response.status} ${response.statusText}`,
+      formatHttpError(response.status, response.statusText, detail),
     );
   }
 
   return response.json() as Promise<ChatResponseBody>;
+}
+
+/**
+ * Build a human-readable error string from a non-2xx /chat response. Prefers
+ * the server's structured `{ error }` body (e.g. the real Claude failure such
+ * as "You've hit your Sonnet limit") over the bare HTTP status line, falling
+ * back to the raw body and finally the statusText. Pure — no I/O.
+ */
+export function formatHttpError(
+  status: number,
+  statusText: string,
+  body: string,
+): string {
+  const detail = extractErrorDetail(body) || statusText;
+  return `agent error (${status})${detail ? `: ${detail}` : ""}`;
+}
+
+/**
+ * Pull the most useful message out of a response body: the `error` field of a
+ * JSON envelope when present, otherwise the trimmed raw text. Returns "" when
+ * there is nothing meaningful to show.
+ */
+function extractErrorDetail(body: string): string {
+  const trimmed = body.trim();
+  if (!trimmed) {
+    return "";
+  }
+  try {
+    const parsed = JSON.parse(trimmed) as { error?: unknown };
+    if (typeof parsed.error === "string" && parsed.error.trim() !== "") {
+      return parsed.error;
+    }
+  } catch {
+    // Not JSON — fall through to the raw text.
+  }
+  return trimmed;
 }
 
 /**
