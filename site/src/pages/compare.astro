@@ -1,0 +1,272 @@
+---
+// How Shipwright compares — honest competitive page (the one place on the site
+// that names other tools; the homepage #differentiators stays competitor-free).
+// Content is grounded in verified competitive research: the open-source agent
+// field is strong and crowded, the delivery-pipeline layer is already occupied
+// (OpenHands/Continue/Kilo), MIT/own-it is table-stakes, and Shipwright's
+// difference is *how* it works — plan-first, tests-with-code, Claude-native.
+// Zero runtime JS; all static HTML inlined at build time. Brand tokens only.
+import BaseLayout from "../layouts/BaseLayout.astro";
+
+const repoUrl = "https://github.com/app-vitals/shipwright";
+const discoveryUrl = "https://cal.com/app-vitals/discovery";
+const installCmd = "/plugin install shipwright@app-vitals/shipwright";
+
+// Verified competitive snapshot. Star/install counts are mid-2026 floors — the
+// field drifts upward, so these are deliberately conservative.
+const landscape = [
+  {
+    tool: "OpenHands",
+    license: "MIT",
+    models: "Agnostic (100+)",
+    pipeline: "Yes",
+    reach: "~78K★ · category leader",
+    self: false,
+  },
+  {
+    tool: "Cline",
+    license: "Apache-2.0",
+    models: "Agnostic (30+, mid-convo switch)",
+    pipeline: "No verified pipeline",
+    reach: "~58–64K★ · 5M+ installs",
+    self: false,
+  },
+  {
+    tool: "Aider",
+    license: "Apache-2.0",
+    models: "Agnostic (multi)",
+    pipeline: "No — git-native pair programmer",
+    reach: "6.8M+ installs",
+    self: false,
+  },
+  {
+    tool: "Goose",
+    license: "Apache-2.0",
+    models: "Agnostic (15–25+)",
+    pipeline: "No — general-purpose agent",
+    reach: "~27–50K★",
+    self: false,
+  },
+  {
+    tool: "Continue",
+    license: "Apache-2.0",
+    models: "Agnostic",
+    pipeline: "Moving up — agents as GitHub checks",
+    reach: "IDE-native",
+    self: false,
+  },
+  {
+    tool: "Kilo Code",
+    license: "Open source",
+    models: "Agnostic",
+    pipeline: "Moving up — parallel agents, AI review",
+    reach: "All-in-one platform",
+    self: false,
+  },
+  {
+    tool: "Shipwright Harness",
+    license: "MIT",
+    models: "Claude Code",
+    pipeline: "Yes — plan → build → review → ship, tests-first",
+    reach: "Launching · dogfooded",
+    self: true,
+  },
+];
+
+// The three things that actually distinguish Shipwright — framed as *how* it
+// works, not as an empty-category claim.
+const pillars = [
+  {
+    title: "Plan-first, human-gated",
+    body: "Specs become a reviewable task queue before a line of code is written, and a human approves the plan. It is structured autonomy with a checkpoint — not fire-and-forget.",
+  },
+  {
+    title: "Tests land with the code",
+    body: "Every task ships its tests in the same PR, written before the implementation (red-green-refactor is enforced). CI must be green before merge. No “add tests later.”",
+  },
+  {
+    title: "Claude-native by design",
+    body: "The planning prompts, review loops, and context system are tuned for one runtime instead of averaged across many. Claude-optimized, not lowest-common-denominator.",
+  },
+];
+---
+
+<BaseLayout
+  title="How Shipwright compares — Shipwright Harness"
+  description="An honest comparison of Shipwright Harness against the open-source AI coding agent field (OpenHands, Cline, Aider, Goose, Continue, Kilo Code) — and where each one fits."
+>
+  <!-- Page header -->
+  <section class="relative z-10 pt-16 pb-12">
+    <p class="sw-label">Comparison</p>
+    <h1 class="sw-h1 mt-4 max-w-3xl">
+      How Shipwright <span class="sw-gradient-text">compares</span>.
+    </h1>
+    <p class="mt-5 max-w-2xl text-lg">
+      The open-source AI coding-agent field is good and getting crowded. We are
+      not going to pretend otherwise — and we are not going to claim a category
+      no one else occupies. Here is the honest version: who is in the space, what
+      they are great at, and where Shipwright is genuinely different.
+    </p>
+  </section>
+
+  <!-- The landscape table -->
+  <section class="relative z-10 pb-16">
+    <h2>The landscape</h2>
+    <p class="mt-3 max-w-2xl">
+      “Pipeline” means: does the tool run a structured spec-to-ship workflow, not
+      just generate or execute code? Star and install counts are mid-2026 floors
+      — treat them as conservative, not exact.
+    </p>
+    <div class="mt-6 overflow-x-auto">
+      <table style="width:100%; border-collapse:collapse;">
+        <thead>
+          <tr style="border-bottom: 1px solid var(--sw-color-border-muted);">
+            <th style="text-align:left; padding:0.6rem 1rem 0.6rem 0; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Tool</th>
+            <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">License</th>
+            <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Models</th>
+            <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Structured pipeline?</th>
+            <th style="text-align:left; padding:0.6rem 0 0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Reach</th>
+          </tr>
+        </thead>
+        <tbody>
+          {landscape.map((row) => (
+            <tr style={`border-bottom: 1px solid var(--sw-color-border-subtle);${row.self ? " background: var(--sw-color-brand-soft);" : ""}`}>
+              <td style="padding:0.7rem 1rem 0.7rem 0; vertical-align:top;">
+                <span style={`font-family:var(--sw-font-display); font-weight:600; color:${row.self ? "var(--sw-color-brand-default)" : "var(--sw-color-text-heading)"};`}>{row.tool}</span>
+              </td>
+              <td style="padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">{row.license}</td>
+              <td style="padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">{row.models}</td>
+              <td style="padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">{row.pipeline}</td>
+              <td style="padding:0.7rem 0 0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-editorial);">{row.reach}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+    <p class="mt-6 max-w-2xl sw-editorial">
+      Two things fall out of this table. First, MIT / own-it / self-hosted is
+      table-stakes — every serious tool here is open and runs on your infra, so
+      it earns parity, not separation. Second, the delivery-pipeline layer is
+      already contested: OpenHands runs it today, and Continue and Kilo Code are
+      moving into it. Shipwright does not claim an empty category. It competes on
+      <em>how</em> it occupies that layer.
+    </p>
+  </section>
+
+  <!-- What actually makes Shipwright different -->
+  <section class="relative z-10 py-20" style="border-top: 1px solid var(--sw-color-border-subtle);">
+    <h2>What actually makes Shipwright different</h2>
+    <div class="mt-8 grid gap-6 sm:grid-cols-3">
+      {pillars.map((p) => (
+        <div class="sw-card">
+          <h3>{p.title}</h3>
+          <p class="mt-2" style="color:var(--sw-color-text-body);">{p.body}</p>
+        </div>
+      ))}
+    </div>
+    <div class="sw-callout mt-8 max-w-3xl">
+      <p>
+        <strong>On “own-it”:</strong> running on your own infra is necessary, not
+        sufficient — a local agent can still read secrets and act on your behalf.
+        Shipwright’s answer is permission scoping, approval gates, and an
+        auditable review trail, not “your code never leaves your machine” alone.
+      </p>
+    </div>
+  </section>
+
+  <!-- Self-host / Kubernetes — own-it is open-source, runs on your own cluster -->
+  <section class="relative z-10 py-20" style="border-top: 1px solid var(--sw-color-border-subtle);">
+    <p class="sw-label">Run it yourself</p>
+    <h2 class="mt-4">Self-host it on <span class="sw-gradient-text">your own infrastructure</span></h2>
+    <p class="mt-3 max-w-2xl">
+      Shipwright is MIT-licensed, with no managed service in the loop. The plugin
+      runs inside Claude Code; the cloud agent — admin, metrics, and runner —
+      deploys to Docker or to your own Kubernetes cluster with the bundled Helm
+      chart. Your code and the agent that writes it both stay on infrastructure
+      you control.
+    </p>
+    <div class="mt-8 grid items-start gap-6 lg:grid-cols-2">
+      <div>
+        <pre class="sw-code text-sm leading-relaxed"><code>helm repo add shipwright https://app-vitals.github.io/shipwright
+helm install shipwright shipwright/shipwright</code></pre>
+        <p class="mt-3 text-sm" style="color: var(--sw-color-text-muted);">
+          One chart packages the admin, metrics, and agent services (plus an
+          optional PostgreSQL). Runs on Minikube, GKE, and EKS.
+        </p>
+      </div>
+      <ul class="flex flex-col gap-2" style="color:var(--sw-color-text-body); padding-left:1.1rem; list-style:disc;">
+        <li>MIT-licensed — fork it, audit every line, run it in your own cluster.</li>
+        <li>No managed service between your repository and the agent.</li>
+        <li>Bring your own Claude Code credentials — nothing routes through an App Vitals service.</li>
+      </ul>
+    </div>
+    <p class="mt-6">
+      <a href="https://github.com/app-vitals/shipwright/blob/main/docs/deploy-kubernetes.md">Kubernetes deployment guide →</a>
+    </p>
+  </section>
+
+  <!-- Focused head-to-head: OpenHands -->
+  <section class="relative z-10 py-20" style="border-top: 1px solid var(--sw-color-border-subtle);">
+    <p class="sw-label">Head to head</p>
+    <h2 class="mt-4">Shipwright vs OpenHands</h2>
+    <p class="mt-3 max-w-2xl">
+      OpenHands is the category leader — MIT, model-agnostic, deployable on your
+      infra, ~78K stars, and it already runs a delivery pipeline (scheduled
+      tasks, triggers, PR review, opening reviewable PRs). If you want maximum
+      model flexibility and a mature ecosystem today, it is an excellent choice.
+      Here is where the two genuinely differ:
+    </p>
+    <div class="mt-8 grid gap-6 sm:grid-cols-2">
+      <div class="sw-card">
+        <p class="sw-label" style="color:var(--sw-color-brand-default);">Choose Shipwright when</p>
+        <ul class="mt-3 flex flex-col gap-2" style="color:var(--sw-color-text-body); padding-left:1.1rem; list-style:disc;">
+          <li>You have already chosen Claude Code and want a pipeline tuned for it, not averaged across providers.</li>
+          <li>You want tests written first and landed with every change, gated by CI, by default.</li>
+          <li>You want a plan a human approves before the agent builds — structured autonomy with a checkpoint.</li>
+        </ul>
+      </div>
+      <div class="sw-card">
+        <p class="sw-label" style="color:var(--sw-color-support-patriot-bright);">Choose OpenHands (or the field) when</p>
+        <ul class="mt-3 flex flex-col gap-2" style="color:var(--sw-color-text-body); padding-left:1.1rem; list-style:disc;">
+          <li>You need BYOK / model-agnostic across many providers, including local models.</li>
+          <li>You want the largest community and the most mature ecosystem available right now.</li>
+          <li>You are not committed to a single runtime and want to keep that optionality.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- Honest trade-off callout -->
+  <section class="relative z-10 py-20" style="border-top: 1px solid var(--sw-color-border-subtle);">
+    <h2>The honest trade-off</h2>
+    <p class="mt-3 max-w-3xl">
+      Shipwright runs on Claude Code only. That is a deliberate bet, not an
+      oversight: we think a pipeline built for one excellent runtime beats one
+      hedged across a dozen. If model-agnosticism is a hard requirement, the
+      field above is strong — use it. If you are building on Claude Code and want
+      structure, tests, and a review gate around it, that is exactly what
+      Shipwright is for.
+    </p>
+    <div class="sw-callout sw-callout-info mt-6 max-w-3xl">
+      <p>
+        We hold ourselves to the same honesty here: Claude Code is not a closed,
+        locked-in dead end, and we do not pitch it that way. The case for
+        Shipwright is Claude Code <em>quality</em>, not Claude Code exclusivity.
+      </p>
+    </div>
+  </section>
+
+  <!-- CTA / COSS bridge -->
+  <section class="relative z-10 py-20 pb-24" style="border-top: 1px solid var(--sw-color-border-subtle);">
+    <h2>Try it</h2>
+    <p class="mt-3 max-w-2xl">
+      Install the plugin into Claude Code and run a task end to end. Free, MIT,
+      runs on your own infra.
+    </p>
+    <pre class="sw-code mt-4 w-fit"><code>{installCmd}</code></pre>
+    <div class="mt-6 flex flex-wrap items-center gap-4">
+      <a href={repoUrl} class="sw-btn">View on GitHub ↗</a>
+      <a href={discoveryUrl} class="sw-btn sw-btn-secondary">Book a discovery call</a>
+    </div>
+  </section>
+</BaseLayout>
