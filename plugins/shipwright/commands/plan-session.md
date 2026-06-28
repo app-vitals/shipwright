@@ -333,6 +333,30 @@ Write the full plan markdown (session name, technical design, and task table fro
 
 This mirrors the PRD pattern (`planning/{session}/PRODUCT-SPEC.md`) and keeps the plan co-located with the spec that produced it.
 
+**Render the plan visualization (additive — never blocks the plan).** The
+`PLAN.md` write above is complete and unchanged; this step only surfaces a
+shareable visual of what was just written. Skip cleanly when the hosted task
+store is not configured.
+
+```bash
+if [ -z "$SHIPWRIGHT_TASK_STORE_URL" ] || [ -z "$SHIPWRIGHT_TASK_STORE_TOKEN" ]; then
+  echo "⏭ Plan viz skipped — SHIPWRIGHT_TASK_STORE_URL/TOKEN unset."
+else
+  RENDER=$(find ~/.claude/plugins/cache -maxdepth 5 -name "render-plan.ts" -path "*/shipwright/*" 2>/dev/null | awk -F/ '{print $(NF-2), $0}' | sort -V | tail -1 | cut -d' ' -f2-)
+  if [ -z "$RENDER" ]; then
+    echo "⏭ Plan viz skipped — render-plan.ts not found in plugin cache."
+  else
+    bun "$RENDER" --file "planning/{session}/PLAN.md" --type plan --session "{session}"
+  fi
+fi
+```
+
+`render-plan.ts` prints the shareable hosted URL (or a local file path when it
+falls back) to stdout; human-facing notices go to stderr. Capture the stdout URL
+and surface it in the Step 6 `QUEUED` confirmation as `Plan viz: {url}`. If the
+step printed a skip notice instead, omit that line and proceed — the plan and
+its tasks are already written and the command must never block on visualization.
+
 **Step 6b — Write tasks to the store:**
 
 Write the tasks to `/tmp/new-tasks-{session}.json`. Set `source` to `"planning/{session}/PLAN.md"` on every task — this links each task back to the plan on disk:
@@ -383,6 +407,7 @@ QUEUED
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Session: {session}
 Plan: planning/{session}/PLAN.md
+Plan viz: {url}   ← omit this line if the render step was skipped
 Tasks queued: {count}
 
 READY TO START (no dependencies):
