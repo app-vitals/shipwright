@@ -118,7 +118,11 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
       agentMember: {
         findMany: async () => [],
         findUnique: async () => null,
-        create: async () => ({ id: "m1", agentId: AGENT_ID, email: "m@example.com" }),
+        create: async () => ({
+          id: "m1",
+          agentId: AGENT_ID,
+          email: "m@example.com",
+        }),
         deleteMany: async () => ({ count: 0 }),
       },
     },
@@ -128,13 +132,26 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
       deleteKey: async () => {},
       getConfigBundle: async () => null,
     },
+    agentCronRunService: {
+      list: async () => ({ items: [], total: 0, limit: 50, offset: 0 }),
+    },
     agentCronJobService: {
       list: async () => [],
       listWithRunSummary: async () => [],
       get: async () => ({
-        id: "c1", agentId: AGENT_ID, schedule: "0 * * * *", prompt: "test",
-        channel: "C1", user: null, enabled: true, name: null, system: false,
-        silent: false, preCheck: null, createdAt: new Date("2024-01-01"), updatedAt: new Date("2024-01-01"),
+        id: "c1",
+        agentId: AGENT_ID,
+        schedule: "0 * * * *",
+        prompt: "test",
+        channel: "C1",
+        user: null,
+        enabled: true,
+        name: null,
+        system: false,
+        silent: false,
+        preCheck: null,
+        createdAt: new Date("2024-01-01"),
+        updatedAt: new Date("2024-01-01"),
       }),
       create: async () => ({
         id: "c1",
@@ -152,37 +169,91 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
         updatedAt: new Date("2024-01-01"),
       }),
       setEnabled: async () => ({
-        id: "c1", agentId: AGENT_ID, schedule: "0 * * * *", prompt: "test",
-        channel: "C1", user: null, enabled: true, name: null, system: false,
-        silent: false, preCheck: null, createdAt: new Date("2024-01-01"), updatedAt: new Date("2024-01-01"),
+        id: "c1",
+        agentId: AGENT_ID,
+        schedule: "0 * * * *",
+        prompt: "test",
+        channel: "C1",
+        user: null,
+        enabled: true,
+        name: null,
+        system: false,
+        silent: false,
+        preCheck: null,
+        createdAt: new Date("2024-01-01"),
+        updatedAt: new Date("2024-01-01"),
       }),
       update: async () => ({
-        id: "c1", agentId: AGENT_ID, schedule: "0 * * * *", prompt: "test",
-        channel: "C1", user: null, enabled: true, name: null, system: false,
-        silent: false, preCheck: null, createdAt: new Date("2024-01-01"), updatedAt: new Date("2024-01-01"),
+        id: "c1",
+        agentId: AGENT_ID,
+        schedule: "0 * * * *",
+        prompt: "test",
+        channel: "C1",
+        user: null,
+        enabled: true,
+        name: null,
+        system: false,
+        silent: false,
+        preCheck: null,
+        createdAt: new Date("2024-01-01"),
+        updatedAt: new Date("2024-01-01"),
       }),
       delete: async () => {},
-      reconcileSystemCrons: async () => ({ created: 0, updated: 0, deleted: 0 }),
+      reconcileSystemCrons: async () => ({
+        created: 0,
+        updated: 0,
+        deleted: 0,
+      }),
     },
     agentToolService: {
       list: async () => [],
-      add: async () => ({ id: "t1", agentId: AGENT_ID, pattern: "*", enabled: true, createdAt: new Date("2024-01-01"), updatedAt: new Date("2024-01-01") }),
-      toggle: async () => ({ id: "t1", agentId: AGENT_ID, pattern: "*", enabled: false, createdAt: new Date("2024-01-01"), updatedAt: new Date("2024-01-01") }),
+      add: async () => ({
+        id: "t1",
+        agentId: AGENT_ID,
+        pattern: "*",
+        enabled: true,
+        createdAt: new Date("2024-01-01"),
+        updatedAt: new Date("2024-01-01"),
+      }),
+      toggle: async () => ({
+        id: "t1",
+        agentId: AGENT_ID,
+        pattern: "*",
+        enabled: false,
+        createdAt: new Date("2024-01-01"),
+        updatedAt: new Date("2024-01-01"),
+      }),
       remove: async () => {},
     },
     agentTokenService: {
       listForAgent: async () => [],
       create: async () => ({
-        token: { id: "tok1", agentId: AGENT_ID, token: "h", label: null, createdAt: new Date("2024-01-01"), revokedAt: null },
+        token: {
+          id: "tok1",
+          agentId: AGENT_ID,
+          token: "h",
+          label: null,
+          createdAt: new Date("2024-01-01"),
+          revokedAt: null,
+        },
         rawToken: "raw123",
       }),
       revoke: async () => null,
     },
     agentPluginService: { list: async () => [] },
     provisioner: {
-      provision: async () => ({ resourceName: "r", secretName: "s", deploymentName: "d" }),
+      provision: async () => ({
+        resourceName: "r",
+        secretName: "s",
+        deploymentName: "d",
+      }),
       deprovision: async () => {},
-      reconcile: async () => ({ recreated: [], updated: [], orphans: [], failed: [] }),
+      reconcile: async () => ({
+        recreated: [],
+        updated: [],
+        orphans: [],
+        failed: [],
+      }),
     },
     sessionSecret: SESSION_SECRET,
     googleClientId: "test-google-client-id",
@@ -238,7 +309,13 @@ describe("admin UI — /admin/tokens routes", () => {
 
   it("GET /admin/tokens returns 403 for non-admin user", async () => {
     const nonAdminCookie = await sign(
-      { userId: "u2", email: "user@example.com", isAdmin: false, iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 3600 },
+      {
+        userId: "u2",
+        email: "user@example.com",
+        isAdmin: false,
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      },
       SESSION_SECRET,
       "HS256",
     );
@@ -254,7 +331,10 @@ describe("admin UI — /admin/tokens routes", () => {
   it("POST /admin/tokens creates token and renders success page with rawToken", async () => {
     const app = createAdminUIApp(
       makeMockDeps({
-        adminCreateToken: async () => ({ ...MOCK_TS_TOKEN, rawToken: "sw_raw_abc123" }),
+        adminCreateToken: async () => ({
+          ...MOCK_TS_TOKEN,
+          rawToken: "sw_raw_abc123",
+        }),
       }),
     );
     const body = new URLSearchParams({ label: "ci-token" });
@@ -274,7 +354,10 @@ describe("admin UI — /admin/tokens routes", () => {
   it("POST /admin/tokens redirects with error when label is empty", async () => {
     const app = createAdminUIApp(
       makeMockDeps({
-        adminCreateToken: async () => ({ ...MOCK_TS_TOKEN, rawToken: "sw_raw_abc123" }),
+        adminCreateToken: async () => ({
+          ...MOCK_TS_TOKEN,
+          rawToken: "sw_raw_abc123",
+        }),
       }),
     );
     const body = new URLSearchParams({ label: "" });
@@ -336,7 +419,9 @@ describe("admin UI — /admin/tokens routes", () => {
   // ─── Agent pre-select ─────────────────────────────────────────────────────
 
   it("GET /admin/tokens?agentId=agent-test-123 pre-selects agent in dropdown", async () => {
-    const app = createAdminUIApp(makeMockDeps({ adminListTokens: async () => [] }));
+    const app = createAdminUIApp(
+      makeMockDeps({ adminListTokens: async () => [] }),
+    );
     const res = await app.request("/admin/tokens?agentId=agent-test-123", {
       headers: { Cookie: `admin_session=${cookie}` },
     });
@@ -350,7 +435,10 @@ describe("admin UI — /admin/tokens routes", () => {
   it("POST /admin/tokens success renders env block with taskStoreBaseUrl", async () => {
     const app = createAdminUIApp(
       makeMockDeps({
-        adminCreateToken: async () => ({ ...MOCK_TS_TOKEN, rawToken: "sw_raw_abc123" }),
+        adminCreateToken: async () => ({
+          ...MOCK_TS_TOKEN,
+          rawToken: "sw_raw_abc123",
+        }),
         taskStoreBaseUrl: "https://tasks.example.com",
       }),
     );
@@ -365,14 +453,19 @@ describe("admin UI — /admin/tokens routes", () => {
     });
     expect(res.status).toBe(200);
     const html = await res.text();
-    expect(html).toContain("SHIPWRIGHT_TASK_STORE_URL=https://tasks.example.com");
+    expect(html).toContain(
+      "SHIPWRIGHT_TASK_STORE_URL=https://tasks.example.com",
+    );
     expect(html).toContain("SHIPWRIGHT_TASK_STORE_TOKEN=sw_raw_abc123");
   });
 
   it("env block renders the public task-store URL when one is advertised", async () => {
     const app = createAdminUIApp(
       makeMockDeps({
-        adminCreateToken: async () => ({ ...MOCK_TS_TOKEN, rawToken: "sw_raw_pub" }),
+        adminCreateToken: async () => ({
+          ...MOCK_TS_TOKEN,
+          rawToken: "sw_raw_pub",
+        }),
         taskStoreBaseUrl: "https://shipwright.example.com/task-store",
       }),
     );
@@ -395,7 +488,10 @@ describe("admin UI — /admin/tokens routes", () => {
   it("env block renders the internal task-store URL when no public URL is set", async () => {
     const app = createAdminUIApp(
       makeMockDeps({
-        adminCreateToken: async () => ({ ...MOCK_TS_TOKEN, rawToken: "sw_raw_int" }),
+        adminCreateToken: async () => ({
+          ...MOCK_TS_TOKEN,
+          rawToken: "sw_raw_int",
+        }),
         taskStoreBaseUrl: "http://shipwright-task-store:3000",
       }),
     );

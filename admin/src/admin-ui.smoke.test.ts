@@ -216,6 +216,9 @@ function makeMockDeps(
         deleted: 0,
       }),
     },
+    agentCronRunService: {
+      list: async () => ({ items: [], total: 0, limit: 50, offset: 0 }),
+    },
     agentToolService: {
       list: async () => [MOCK_TOOL],
       add: async () => MOCK_TOOL,
@@ -268,6 +271,15 @@ describe("admin UI — unauthenticated redirects", () => {
   it("unauthenticated GET /admin/agents/:id redirects to /admin/login", async () => {
     const app = createAdminUIApp(makeMockDeps());
     const res = await app.request(`/admin/agents/${AGENT_ID}`);
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/admin/login");
+  });
+
+  it("unauthenticated GET /admin/agents/:id/crons/:cronId/runs redirects to /admin/login", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request(
+      `/admin/agents/${AGENT_ID}/crons/${CRON_ID}/runs`,
+    );
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe("/admin/login");
   });
@@ -501,6 +513,69 @@ describe("admin UI — authenticated pages", () => {
     expect(html).toContain("Tokens");
     expect(html).toContain("Plugins");
     expect(html).toContain("admin@example.com");
+  });
+
+  it("authenticated GET /admin/agents/:id/crons/:cronId/runs returns 200 with run history", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request(
+      `/admin/agents/${AGENT_ID}/crons/${CRON_ID}/runs`,
+      {
+        headers: { Cookie: `admin_session=${cookie}` },
+      },
+    );
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Outcome");
+    expect(html).toContain("Started");
+    expect(html).toContain("Duration");
+    // empty state by default in the base mock
+    expect(html).toContain("No runs recorded yet.");
+  });
+
+  it("authenticated GET /admin/agents/:id/crons/:cronId/runs renders populated runs", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentCronRunService: {
+          list: async () => ({
+            items: [
+              {
+                id: "run-1",
+                cronId: CRON_ID,
+                agentId: AGENT_ID,
+                startedAt: new Date("2026-06-01T10:00:00Z"),
+                completedAt: new Date("2026-06-01T10:00:03Z"),
+                skipped: false,
+                skipReason: null,
+                outcome: "posted",
+                error: null,
+                inputTokens: 999,
+                outputTokens: 111,
+                cacheReadTokens: null,
+                cacheCreationTokens: null,
+                costUsd: 0.0456,
+                model: "claude-opus-4-8",
+                createdAt: new Date("2026-06-01T10:00:00Z"),
+              },
+            ],
+            total: 1,
+            limit: 50,
+            offset: 0,
+          }),
+        },
+      }),
+    );
+    const res = await app.request(
+      `/admin/agents/${AGENT_ID}/crons/${CRON_ID}/runs`,
+      {
+        headers: { Cookie: `admin_session=${cookie}` },
+      },
+    );
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("posted");
+    expect(html).toContain("claude-opus-4-8");
+    expect(html).toContain("$0.0456");
+    expect(html).not.toContain("No runs recorded yet.");
   });
 
   it("authenticated GET /admin/provision shows the session user's email in the navbar", async () => {
@@ -824,7 +899,7 @@ describe("admin UI — authenticated pages", () => {
       expect(res.status).toBe(200);
       const html = await res.text();
       // The card title "Env Vars" should not appear
-      expect(html).not.toContain("<div class=\"card-title\">Env Vars</div>");
+      expect(html).not.toContain('<div class="card-title">Env Vars</div>');
     });
 
     it("self-hosted agent (selfHosted=true) does NOT show System crons", async () => {
@@ -975,7 +1050,11 @@ describe("admin UI — authenticated pages", () => {
           },
           agentToolService: {
             list: async () => [
-              { ...MOCK_TOOL, pattern: "Bash(git:*)", agentId: SELFHOSTED_AGENT_ID },
+              {
+                ...MOCK_TOOL,
+                pattern: "Bash(git:*)",
+                agentId: SELFHOSTED_AGENT_ID,
+              },
             ],
             add: async () => MOCK_TOOL,
             toggle: async () => MOCK_TOOL,
@@ -989,7 +1068,7 @@ describe("admin UI — authenticated pages", () => {
       expect(res.status).toBe(200);
       const html = await res.text();
       // Tools card title should not appear
-      expect(html).not.toContain("<div class=\"card-title\">Tools</div>");
+      expect(html).not.toContain('<div class="card-title">Tools</div>');
       // Tools should not be rendered
       expect(html).not.toContain("Bash(git:*)");
     });
@@ -3125,7 +3204,9 @@ describe("admin UI — tasks page", () => {
     });
     expect(res.status).toBe(200);
     expect(capturedParams).not.toBeNull();
-    expect((capturedParams as unknown as URLSearchParams).get("state")).toBeNull();
+    expect(
+      (capturedParams as unknown as URLSearchParams).get("state"),
+    ).toBeNull();
   });
 
   it("GET /admin/tasks?state=blocked returns 200 and forwards state=blocked to task-store", async () => {
@@ -3147,7 +3228,6 @@ describe("admin UI — tasks page", () => {
       "blocked",
     );
   });
-
 });
 
 describe("admin UI — repos mutation routes", () => {

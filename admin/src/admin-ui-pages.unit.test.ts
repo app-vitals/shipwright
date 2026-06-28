@@ -11,6 +11,7 @@ import {
   type AgentDetail,
   type AgentListItem,
   type CronJobItem,
+  type CronRunItem,
   type MemberItem,
   type PluginItem,
   type PrListItem,
@@ -20,6 +21,7 @@ import {
   type ToolItem,
   renderAgentDetailPage,
   renderAgentsPage,
+  renderCronRunsPage,
   renderLoginPage,
   renderPrDetailPage,
   renderPrsPage,
@@ -222,7 +224,12 @@ describe("renderAgentsPage", () => {
       id: "agent-456",
       name: "Second Agent",
     };
-    const html = renderAgentsPage([AGENT_LIST_ITEM, second], USER_NAME, true, "UTC");
+    const html = renderAgentsPage(
+      [AGENT_LIST_ITEM, second],
+      USER_NAME,
+      true,
+      "UTC",
+    );
     expect(html).toContain("Test Agent");
     expect(html).toContain("Second Agent");
   });
@@ -252,7 +259,12 @@ describe("renderAgentsPage", () => {
       createdAt: new Date("2025-01-15T05:00:00Z"), // Jan 14 Pacific, Jan 15 UTC
     };
     const htmlUTC = renderAgentsPage([agent], USER_NAME, true, "UTC");
-    const htmlPacific = renderAgentsPage([agent], USER_NAME, true, "America/Los_Angeles");
+    const htmlPacific = renderAgentsPage(
+      [agent],
+      USER_NAME,
+      true,
+      "America/Los_Angeles",
+    );
     // In UTC: 1/15/2025; in Pacific (UTC-8): 1/14/2025
     expect(htmlUTC).toContain("1/15/2025");
     expect(htmlPacific).toContain("1/14/2025");
@@ -1693,7 +1705,7 @@ describe("renderTasksPage — PR column", () => {
     };
     const html = render([taskWithPr]);
     // Should render a link to the PR
-    expect(html).toContain('https://github.com/org/repo/pull/42');
+    expect(html).toContain("https://github.com/org/repo/pull/42");
     expect(html).toContain("#42");
     expect(html).toContain('style="color:#6366f1;text-decoration:none"');
   });
@@ -1722,10 +1734,12 @@ describe("renderTasksPage — PR column", () => {
     };
     const html = render([taskWithPr]);
     // PR link should match ID link style: color:#6366f1
-    const prLinkMatch = html.match(/<a href="https:\/\/github\.com\/[^"]*"[^>]*>.*#99.*<\/a>/);
+    const prLinkMatch = html.match(
+      /<a href="https:\/\/github\.com\/[^"]*"[^>]*>.*#99.*<\/a>/,
+    );
     expect(prLinkMatch).not.toBeNull();
     if (prLinkMatch) {
-      expect(prLinkMatch[0]).toContain('color:#6366f1');
+      expect(prLinkMatch[0]).toContain("color:#6366f1");
     }
   });
 
@@ -1736,7 +1750,7 @@ describe("renderTasksPage — PR column", () => {
       repo: "my-org/my-repo",
     };
     const html = render([taskWithPr]);
-    expect(html).toContain('https://github.com/my-org/my-repo/pull/123');
+    expect(html).toContain("https://github.com/my-org/my-repo/pull/123");
   });
 
   test("XSS: repo in PR link is escaped", () => {
@@ -2176,7 +2190,13 @@ const PR_ITEM: PullRequestItem = {
 
 describe("renderTaskDetailPage — Pull Request Review section", () => {
   function render(pr?: PullRequestItem): string {
-    return renderTaskDetailPage({ ...TASK_DETAIL, id: "TS-PR-1" }, "user@example.com", {}, "America/Los_Angeles", pr);
+    return renderTaskDetailPage(
+      { ...TASK_DETAIL, id: "TS-PR-1" },
+      "user@example.com",
+      {},
+      "America/Los_Angeles",
+      pr,
+    );
   }
 
   test("renders PR section heading when pullRequest is present", () => {
@@ -2241,7 +2261,10 @@ describe("renderTaskDetailPage — Pull Request Review section", () => {
   });
 
   test("XSS: repo field in PR link is escaped", () => {
-    const xssPr: PullRequestItem = { ...PR_ITEM, repo: 'evil"><script>xss()</script>' };
+    const xssPr: PullRequestItem = {
+      ...PR_ITEM,
+      repo: 'evil"><script>xss()</script>',
+    };
     const html = render(xssPr);
     expect(html).not.toContain("<script>xss");
     expect(html).toContain("&lt;script&gt;");
@@ -2423,14 +2446,17 @@ describe("renderPrsPage", () => {
   });
 
   test("XSS: repo name in list is escaped", () => {
-    const xssPr: PrListItem = { ...PR_LIST_ITEM_1, repo: "<script>alert(1)</script>" };
+    const xssPr: PrListItem = {
+      ...PR_LIST_ITEM_1,
+      repo: "<script>alert(1)</script>",
+    };
     const html = render([xssPr]);
     expect(html).not.toContain("<script>alert(1)</script>");
     expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
   });
 
   test("XSS: filter repo value is escaped in form", () => {
-    const html = render([], { repo: '<script>xss()</script>' });
+    const html = render([], { repo: "<script>xss()</script>" });
     expect(html).not.toContain("<script>xss");
     expect(html).toContain("&lt;script&gt;");
   });
@@ -2636,7 +2662,10 @@ describe("renderPrDetailPage", () => {
   });
 
   test("XSS: repo name in detail is escaped", () => {
-    const xssPr: PrListItem = { ...PR_DETAIL, repo: "<script>alert(1)</script>" };
+    const xssPr: PrListItem = {
+      ...PR_DETAIL,
+      repo: "<script>alert(1)</script>",
+    };
     const html = render(xssPr);
     expect(html).not.toContain("<script>alert(1)</script>");
     expect(html).toContain("&lt;script&gt;");
@@ -2656,5 +2685,122 @@ describe("renderPrDetailPage", () => {
   test("uses renderAdminToolbar with /admin/prs active path", () => {
     const html = render();
     expect(html).toContain('href="/admin/prs" class="vos-nav-link active"');
+  });
+});
+
+// ─── renderCronRunsPage ──────────────────────────────────────────────────────
+
+describe("renderCronRunsPage", () => {
+  const CRON_AGENT = { id: "agent-123", name: "Test Agent" };
+  const CRON = {
+    id: "cron-456",
+    name: "status check",
+    schedule: "0 * * * *",
+  };
+
+  function makeRun(overrides?: Partial<CronRunItem>): CronRunItem {
+    return {
+      startedAt: new Date("2026-06-01T10:00:00Z"),
+      completedAt: new Date("2026-06-01T10:00:02Z"),
+      outcome: "posted",
+      skipped: false,
+      skipReason: null,
+      error: null,
+      inputTokens: 1200,
+      outputTokens: 340,
+      costUsd: 0.0123,
+      model: "claude-opus-4-8",
+      ...overrides,
+    };
+  }
+
+  function render(runs: CronRunItem[]): string {
+    return renderCronRunsPage({
+      agent: CRON_AGENT,
+      cron: CRON,
+      runs,
+      userName: "admin@example.com",
+      timezone: "America/Los_Angeles",
+    });
+  }
+
+  test("renders the column headers", () => {
+    const html = render([makeRun()]);
+    expect(html).toContain("Outcome");
+    expect(html).toContain("Started");
+    expect(html).toContain("Duration");
+    expect(html).toContain("Tokens");
+    expect(html).toContain("Cost");
+    expect(html).toContain("Model");
+  });
+
+  test("renders populated runs with outcome, model, and cost", () => {
+    const html = render([makeRun()]);
+    expect(html).toContain("posted");
+    expect(html).toContain("claude-opus-4-8");
+    expect(html).toContain("$0.0123");
+    // tokens rendered
+    expect(html).toContain("1200");
+    expect(html).toContain("340");
+  });
+
+  test("renders a back link to the agent detail page", () => {
+    const html = render([makeRun()]);
+    expect(html).toContain('href="/admin/agents/agent-123"');
+    expect(html).toContain("Test Agent");
+  });
+
+  test("renders the cron name in the header", () => {
+    const html = render([makeRun()]);
+    expect(html).toContain("status check");
+  });
+
+  test("renders empty state when no runs exist", () => {
+    const html = render([]);
+    expect(html).toContain("No runs recorded yet.");
+  });
+
+  test("renders em-dash for null cost, model, and tokens", () => {
+    const html = render([
+      makeRun({
+        costUsd: null,
+        model: null,
+        inputTokens: null,
+        outputTokens: null,
+        completedAt: null,
+      }),
+    ]);
+    expect(html).toContain("—");
+  });
+
+  test("escapes XSS in the model field", () => {
+    const html = render([makeRun({ model: "<script>alert(1)</script>" })]);
+    expect(html).not.toContain("<script>alert(1)</script>");
+    expect(html).toContain("&lt;script&gt;");
+  });
+
+  test("escapes XSS in the outcome field", () => {
+    const html = render([makeRun({ outcome: '"><script>alert(2)</script>' })]);
+    expect(html).not.toContain("<script>alert(2)</script>");
+    expect(html).toContain("&lt;script&gt;");
+  });
+
+  test("escapes XSS in the cron and agent names", () => {
+    const html = renderCronRunsPage({
+      agent: { id: "agent-123", name: "<img src=x onerror=alert(3)>" },
+      cron: { id: "cron-456", name: "<b>evil</b>", schedule: "0 * * * *" },
+      runs: [makeRun()],
+      userName: "admin@example.com",
+      timezone: "America/Los_Angeles",
+    });
+    expect(html).not.toContain("<img src=x onerror=alert(3)>");
+    expect(html).not.toContain("<b>evil</b>");
+    expect(html).toContain("&lt;img");
+    expect(html).toContain("&lt;b&gt;evil");
+  });
+
+  test("uses renderAdminToolbar with /admin/agents active path", () => {
+    const html = render([makeRun()]);
+    expect(html).toContain('href="/admin/agents" class="vos-nav-link active"');
   });
 });
