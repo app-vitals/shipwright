@@ -150,8 +150,8 @@ Exclude:
 - PRs where `author.login == "app/dependabot"` — handled exclusively by the dependabot-review plugin
 
 When a PR is checked out for review, also query the task store for a task whose `pr`
-field matches the PR number — if found, record the `id` and `session` for metrics enrichment
-in Step 13:
+field matches the PR number — if found, record the `id` (used as `taskId` to link the PR
+record to its task when updating the PR record below):
 
 ```bash
 curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
@@ -671,74 +671,6 @@ fi
 **Never update task status when posting a review.** The deploy skill looks up tasks by PR number (expecting `status: 'pr_open'`) to perform post-deployment tracking — changing task status here breaks that linkage. Task status transitions are owned by the deploy skill (`pr_open` → `deployed`). This applies to the task store *task* record only; the PR *record* updates above (`complete`, `agentId`, `reviewState`) are expected.
 
 ---
-
-## Step 13: Enrich Metrics (if shipwright task)
-
-If the PR maps to a task in the task store (via `taskId`):
-
-1. Find the task's planning folder: `planning/{session}/`
-2. Read `planning/{session}/metrics.jsonl`
-3. Find the line matching this task ID
-
-4. Compute enrichment fields:
-
-   **Structured findings** (from the subagent `findings[]` returned in Step 7):
-   - Map each finding to `{category, severity, resolved}` where:
-     - `category`: the finding category (e.g., "silent-failure", "breaking-api", "missing-test", "type-error"). Derive from the finding's type or subject.
-     - `severity`: one of `"critical"`, `"important"`, or `"suggestion"` (from Step 8 classification)
-     - `resolved`: `false` (at the time of review, findings are unresolved)
-   - `findings_count`: integer count of findings (for backward compat — consumers that read `review.findings` as an integer should use this field instead)
-
-   **Review latency** (`review_latency_h`):
-   - Read the task's `prCreatedAt` field from the task store
-   - Compute: `(Date.now() - Date.parse(prCreatedAt)) / 3600000` — float, hours from PR creation to verdict
-   - If `prCreatedAt` is missing or unparseable, omit `review_latency_h`
-
-   **Rework cycles** (`rework_cycles`):
-   - Fetch commits and reviews for the PR:
-     ```bash
-     gh pr view {pr} --repo {org}/{repo} --json commits,reviews
-     ```
-   - If the `gh` command fails, set `rework_cycles = 0` and emit a warning log: `echo "[shipwright] warning: failed to fetch PR commits/reviews — rework_cycles defaulting to 0" >&2`
-   - Find the earliest review event's `submittedAt` timestamp (from the `reviews` array, sorted ascending). If no review events exist, `rework_cycles = 0`.
-   - Count commits whose `committedDate` is strictly after that earliest `submittedAt` timestamp.
-   - `rework_cycles` = that count (integer)
-
-5. Add the `review` object:
-   ```json
-   "review": {
-     "verdict": "{verdict}",
-     "findings": [{"category": "{category}", "severity": "{severity}", "resolved": false}],
-     "findings_count": {count of findings array — integer, for backward compat},
-     "fixes_applied": 0,
-     "agents": ["single-pass"],
-     "review_latency_h": {float hours from prCreatedAt to now, or omit if unavailable},
-     "rework_cycles": {integer count of commits after first review event}
-   }
-   ```
-6. Write back
-
-Resolve PostHog script (silent):
-```bash
-POSTHOG_SCRIPT=$(find ~/.claude/plugins/cache -name "posthog_send.py" -path "*/shipwright/*" 2>/dev/null | head -1)
-```
-
-If set, fire `shipwright_task_reviewed` (the canonical review event — `shipwright_review_complete` is its historical name; dashboards alias both). Pass the same `fixes_applied`/`agents` written to the `review` object above so PostHog review aggregates match the JSONL:
-
-Build the PostHog argument list, only including optional fields when their values are available:
-```bash
-POSTHOG_ARGS="pr={pr} verdict={verdict} findings={findingsCount} findings_count={findingsCount} rework_cycles={rework_cycles} fixes_applied=0 'agents=[\"single-pass\"]'"
-# Only append review_latency_h when prCreatedAt was available and parseable
-if [ -n "{review_latency_h}" ]; then
-  POSTHOG_ARGS="$POSTHOG_ARGS review_latency_h={review_latency_h}"
-fi
-python3 "$POSTHOG_SCRIPT" shipwright_task_reviewed \
-  --project {repo} --task {taskId} \
-  $POSTHOG_ARGS
-```
-
----
-
 ## Step 14: Targeted PR (argument provided)
 
 When invoked with a specific PR (e.g. `/shipwright:review app-vitals/shipwright#123` or
