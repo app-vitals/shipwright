@@ -133,6 +133,22 @@ export interface CronRunItem {
   model: string | null;
 }
 
+// Inline CSS for cron-run outcome badges, keyed by outcome string.
+// Shared by the cron rows on the agent detail page and the cron runs page.
+const CRON_OUTCOME_STYLE: Record<string, string> = {
+  posted: "background:#22c55e;color:white",
+  dm: "background:#3b82f6;color:white",
+  silent: "background:#9ca3af;color:white",
+  skipped: "background:#f59e0b;color:white",
+  error: "background:#ef4444;color:white",
+};
+const CRON_OUTCOME_STYLE_DEFAULT = "background:#9ca3af;color:white";
+
+/** Resolve the badge style for a cron outcome, falling back to a neutral gray. */
+function cronOutcomeStyle(outcome: string | null | undefined): string {
+  return CRON_OUTCOME_STYLE[outcome ?? ""] ?? CRON_OUTCOME_STYLE_DEFAULT;
+}
+
 export interface ToolItem {
   id: string;
   pattern: string;
@@ -574,19 +590,11 @@ export function renderAgentDetailPage(
           <button type="submit" class="btn btn-primary" style="font-size:11px;padding:3px 8px;align-self:flex-start">Save</button>
         </form>
       </details>`;
-    const outcomeStyle: Record<string, string> = {
-      posted: "background:#22c55e;color:white",
-      dm: "background:#3b82f6;color:white",
-      silent: "background:#9ca3af;color:white",
-      skipped: "background:#f59e0b;color:white",
-      error: "background:#ef4444;color:white",
-    };
-
     const lastRunHtml = c.lastRun?.startedAt
       ? `
       <div style="font-size:11px;color:#6b7280;margin-bottom:4px">${relativeTime(c.lastRun.startedAt, now)}</div>
       <div>
-        <span class="badge" style="${outcomeStyle[c.lastRun.outcome ?? ""] ?? "background:#9ca3af;color:white"}">${escapeHtml(c.lastRun.outcome || "unknown")}</span>
+        <span class="badge" style="${cronOutcomeStyle(c.lastRun.outcome)}">${escapeHtml(c.lastRun.outcome || "unknown")}</span>
       </div>
       <div style="font-size:11px;color:#6b7280;margin-top:4px">${c.runCountToday ?? 0} run${(c.runCountToday ?? 0) === 1 ? "" : "s"}</div>`
       : `<div style="color:#d1d5db">never</div>`;
@@ -2158,14 +2166,6 @@ export function renderCronRunsPage(opts: {
   const { agent, cron, runs, userName } = opts;
   const timezone = opts.timezone ?? "America/Los_Angeles";
 
-  const outcomeStyle: Record<string, string> = {
-    posted: "background:#22c55e;color:white",
-    dm: "background:#3b82f6;color:white",
-    silent: "background:#9ca3af;color:white",
-    skipped: "background:#f59e0b;color:white",
-    error: "background:#ef4444;color:white",
-  };
-
   function fmtDuration(ms: number): string {
     if (ms < 1000) return `${ms}ms`;
     const totalSec = ms / 1000;
@@ -2177,8 +2177,7 @@ export function renderCronRunsPage(opts: {
 
   function row(r: CronRunItem): string {
     const outcomeLabel = r.skipped ? "skipped" : (r.outcome ?? "unknown");
-    const badgeStyle =
-      outcomeStyle[outcomeLabel] ?? "background:#9ca3af;color:white";
+    const badgeStyle = cronOutcomeStyle(outcomeLabel);
     const badgeTitle = r.skipped && r.skipReason ? r.skipReason : outcomeLabel;
     const outcomeCell = `<span class="badge" style="${badgeStyle}" title="${escapeHtml(badgeTitle)}">${escapeHtml(outcomeLabel)}</span>`;
 
