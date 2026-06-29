@@ -103,6 +103,23 @@ spec:
             - name: METRICS_ADMIN_URL
               value: {{ .Values.metrics.provider.adminUrl | quote }}
             {{- end }}
+            # Task-store mode: when taskStoreUrl is set alongside adminUrl, the
+            # metrics service selects TASKSTORE mode (TaskStoreProvider over the
+            # task-store + admin APIs). Without it the selector falls through to
+            # the local SQLite store, which has no writable path in this image and
+            # crashes on boot (SQLITE_CANTOPEN). The token authenticates the
+            # task-store HTTP client (METRICS_TASK_STORE_TOKEN).
+            {{- if .Values.metrics.provider.taskStoreUrl }}
+            - name: METRICS_TASK_STORE_URL
+              value: {{ .Values.metrics.provider.taskStoreUrl | quote }}
+            {{- end }}
+            {{- if .Values.metrics.provider.taskStoreToken.existingSecret }}
+            - name: METRICS_TASK_STORE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.metrics.provider.taskStoreToken.existingSecret }}
+                  key: {{ .Values.metrics.provider.taskStoreToken.key }}
+            {{- end }}
             {{- if .Values.metrics.provider.basePath }}
             - name: METRICS_BASE_PATH
               value: {{ .Values.metrics.provider.basePath | quote }}
