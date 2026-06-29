@@ -103,6 +103,18 @@ describe("public dashboard — read-only render", () => {
     const html = await res.text();
     expect(html).toContain('window.__METRICS_BASE__ = "/m/public";');
   });
+
+  // The proof-host root redirect lands on "/public/dashboard/" (GKE appends a
+  // slash), which Hono treats as a distinct route — serve it too so the apex
+  // entry doesn't 404.
+  test("GET /public/dashboard/ (trailing slash) → 200, same page", async () => {
+    const app = buildApp();
+    const res = await app.request("/public/dashboard/");
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Pipeline Queue");
+    expect(html).toContain('window.__METRICS_BASE__ = "/public";');
+  });
 });
 
 describe("public dashboard — static assets", () => {
