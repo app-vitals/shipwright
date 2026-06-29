@@ -62,15 +62,16 @@ test("hero CTA section includes both paths: install snippet and discovery call l
   page,
 }) => {
   await page.goto("/");
+  const hero = page.locator("section").first();
   // Install path: the plugin install command should be visible in the hero area.
   await expect(
-    page.getByText("/plugin install shipwright@app-vitals/shipwright", {
+    hero.getByText("/plugin install shipwright@app-vitals/shipwright", {
       exact: false,
-    }).first(),
+    }),
   ).toBeVisible();
   // Discovery call path: link to cal.com/app-vitals/discovery should be visible in hero.
   await expect(
-    page.getByRole("link", { name: /discovery call/i }).first(),
+    hero.getByRole("link", { name: /discovery call/i }),
   ).toBeVisible();
 });
 
