@@ -10,6 +10,18 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.6.117] - 2026-06-28
+
+### Added
+
+- metrics: wire `METRICS_TASK_STORE_URL` + `METRICS_TASK_STORE_TOKEN` into the
+  metrics Deployment via `metrics.provider.taskStoreUrl` and
+  `metrics.provider.taskStoreToken`. Set `taskStoreUrl` alongside `adminUrl` to
+  run the dashboard in TASKSTORE mode. Without this the provider selector falls
+  through to the bundled SQLite store, which has no writable path in the
+  published image and crash-loops on boot (`SQLITE_CANTOPEN`) — the regression
+  introduced when metrics v0.91.0 replaced PostHog mode with task-store mode.
+
 ## [1.6.116] - 2026-06-29
 
 ### Changed
