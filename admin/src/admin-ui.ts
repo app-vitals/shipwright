@@ -22,6 +22,7 @@
 
 import { isOrgRepo } from "@shipwright/lib/org-repo";
 import { Hono, type MiddlewareHandler } from "hono";
+import { publicNoAuthMiddleware } from "./api-auth.ts";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { sign, verify } from "hono/jwt";
 import {
@@ -288,6 +289,13 @@ export interface AdminUIDeps {
    * SHIPWRIGHT_TASK_STORE_TOKEN so operators can copy-paste into their shell.
    */
   taskStoreBaseUrl?: string;
+  /**
+   * Public repo slug (SHIPWRIGHT_ADMIN_PUBLIC_REPO) for the read-only task board.
+   * When set, GET /public/tasks renders the task list filtered to this repo
+   * without requiring authentication. When absent, /public/tasks renders in
+   * degraded mode (empty table + warning notice).
+   */
+  publicRepo?: string;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -394,6 +402,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     adminCreateToken,
     adminRevokeToken,
     taskStoreBaseUrl,
+    publicRepo,
   } = deps;
 
   const app = new Hono<AdminUIEnv>();
@@ -2101,6 +2110,50 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       return c.redirect(`/admin/agents/${agentId}?error=${msg}`, 302);
     }
     return c.redirect("/admin/agents?success=deleted", 302);
+  });
+
+  // ─── Public read-only task board ──────────────────────────────────────────
+  //
+  // Unauthenticated GET /public/tasks — no session cookie required.
+  // Scoped to publicRepo (SHIPWRIGHT_ADMIN_PUBLIC_REPO). When publicRepo is
+  // absent the page renders in degraded mode (empty table + warning notice).
+  // No create/edit/status-change controls are rendered (readOnly=true).
+  // Mutation methods (POST/PUT/DELETE) fall through to Hono's 404 default.
+
+  app.get("/public/tasks", publicNoAuthMiddleware, async (c) => {
+    let tasks: TaskItem[] = [];
+    let total = 0;
+    let degraded = false;
+
+    if (!fetchTaskStoreTasks || !publicRepo) {
+      degraded = true;
+    } else {
+      const params = new URLSearchParams();
+      params.set("repo", publicRepo);
+      params.set("limit", "50");
+      params.set("offset", "0");
+      try {
+        const result = await fetchTaskStoreTasks(params);
+        tasks = result.tasks;
+        total = result.total;
+      } catch {
+        degraded = true;
+      }
+    }
+
+    return html(
+      renderTasksPage(
+        tasks,
+        { repo: publicRepo },
+        degraded,
+        "",
+        {},
+        { total, limit: 50, page: 1 },
+        undefined,
+        undefined,
+        true, // readOnly
+      ),
+    );
   });
 
   return app;
