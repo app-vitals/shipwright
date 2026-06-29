@@ -29,12 +29,13 @@ import { createMetricsApp } from "./api.ts";
 import type { MetricsDeps } from "./api.ts";
 import { HttpAccountsClient } from "./lib/accounts-client.ts";
 import { parseApiKeys } from "./lib/api-auth.ts";
-import { loadEnv } from "./lib/env.ts";
+import { loadEnv, validatePublicModeEnv } from "./lib/env.ts";
 import { createLocalEventStore } from "./local-store.ts";
 import { SqliteProvider } from "./providers/sqlite-provider.ts";
 import { resolvePostgresUrl, selectProviderMode } from "./select-provider.ts";
 
 loadEnv();
+validatePublicModeEnv();
 
 const mode = selectProviderMode(process.env);
 const offlineMode = mode === "fixtures";

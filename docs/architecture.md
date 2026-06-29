@@ -4,7 +4,7 @@
 
 ## Overview
 
-Shipwright Harness is the open-source autonomous delivery agent for [Claude Code](https://www.anthropic.com/claude-code). It ships as four artifacts, built and sequenced **A → B → C → D**, each independently runnable and depending on **no external platform service**:
+Shipwright Harness is the open-source autonomous delivery system in your own environment. It ships as four artifacts, built and sequenced **A → B → C → D**, each independently runnable and depending on **no external platform service**:
 
 | Phase | Artifact | Directory | What it is |
 |---|---|---|---|

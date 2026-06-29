@@ -22,7 +22,7 @@ test("hero heading renders the brand tagline", async ({ page }) => {
   await page.goto("/");
   const heading = page.locator("h1");
   await expect(heading).toBeVisible();
-  await expect(heading).toContainText(/autonomous delivery agent/i);
+  await expect(heading).toContainText(/own environment/i);
 });
 
 test("dark-premium navy base background is applied", async ({ page }) => {
@@ -49,13 +49,38 @@ test("home document ships NO runtime JS (zero <script> tags)", async ({
   expect(scriptCount).toBe(0);
 });
 
-// SWW-2.1: Hero. The hero is intentionally minimal — eyebrow + tagline only.
-// (The install command + repo link live in the two-ways/social-proof/footer
-// sections; those are covered by their own tests below.)
+// SWW-2.1: Hero. The hero contains the eyebrow, brand tagline, and a two-path CTA
+// (install snippet + discovery call link). Tests below scope to page.locator("section").first()
+// to guard the hero specifically; lower sections (social-proof, footer) are covered separately.
 
 test("eyebrow features 'Built on Claude Code'", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByText(/Built on Claude Code/i).first()).toBeVisible();
+});
+
+test("hero CTA section includes both paths: install snippet and discovery call link", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const hero = page.locator("section").first();
+  // Install path: the plugin install command should be visible in the hero area.
+  await expect(
+    hero.getByText("/plugin install shipwright@app-vitals/shipwright", {
+      exact: false,
+    }),
+  ).toBeVisible();
+  // Discovery call path: link to cal.com/app-vitals/discovery should be visible in hero.
+  await expect(
+    hero.getByRole("link", { name: /discovery call/i }),
+  ).toBeVisible();
+});
+
+test("page does NOT contain the string 'Autonomous programming, installed'", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const text = (await page.locator("body").textContent()) ?? "";
+  expect(text).not.toContain("Autonomous programming, installed");
 });
 
 test("'Inside a task' tab details the dev-task steps in order", async ({
