@@ -1,0 +1,133 @@
+---
+title: Running Locally
+description: Spin up the full Shipwright dev stack — metrics dashboard, admin service, task store, and agent — with a single command.
+section: Plugin
+order: 1
+prev: "/docs/the-plugin"
+next: "/docs/the-agent"
+---
+
+# Running Locally
+
+Shipwright has two local run modes: a lightweight metrics-only mode (`task dev`) that requires no
+secrets, and a full six-pane dev stack (`task stack`) that brings up every service together. Both
+are driven by the `task` command runner.
+
+## Option A — Quickstart (recommended for first run)
+
+Ask Claude Code:
+
+```text
+Clone Shipwright, run the quickstart script, install the plugin, and open the dashboard.
+```
+
+Claude Code will run these steps in order:
+
+```bash
+git clone https://github.com/app-vitals/shipwright.git
+cd shipwright
+./scripts/quickstart.sh
+```
+
+Then inside the Claude Code session:
+
+```text
+/plugin install shipwright@app-vitals/shipwright
+```
+
+The dashboard opens at `http://localhost:3460/dashboard` in offline fixtures mode — no secrets
+required.
+
+## Option B — `task dev` (metrics only)
+
+`task dev` is the no-secrets fallback. It starts the metrics dashboard with fixture data and
+supervises child processes so Ctrl-C kills everything cleanly.
+
+Ask Claude Code:
+
+```text
+Start the Shipwright metrics dashboard in offline mode.
+```
+
+Manually:
+
+```bash
+task dev
+```
+
+The dashboard is available at `http://localhost:3460/dashboard`. The dev supervisor starts the
+metrics service with `METRICS_OFFLINE=true` — fixture data is injected automatically; no external
+credentials are required.
+
+## Option C — `task stack` (full dev environment)
+
+`task stack` launches all four Shipwright services in a six-pane tmux session. This is the
+recommended setup when you want to run the agent locally alongside the admin UI and task store.
+
+Ask Claude Code:
+
+```text
+Start the full Shipwright dev stack using task stack.
+```
+
+Manually:
+
+```bash
+task stack
+```
+
+### What `task stack` launches
+
+| Pane | Service | Port | Notes |
+|------|---------|------|-------|
+| metrics | Metrics dashboard | `:3460` | SQLite-backed; `http://localhost:3460/dashboard` |
+| admin | Admin CRUD API + UI | `:3001` | `http://localhost:3001` |
+| task-store | Task store service | `:3002` | Postgres-backed task queue |
+| agent | Shipwright agent (Docker) | `:3000` | Dev `/chat` endpoint enabled |
+| chat | TUI REPL | — | Connects to the agent's `/chat` endpoint |
+| logs | Scratch shell | — | Free pane for manual commands |
+
+Before launching, `task stack` runs `prisma migrate deploy` to ensure the admin service's Postgres
+schema is current.
+
+### Prerequisites for `task stack`
+
+- **tmux** installed (`brew install tmux` / `apt install tmux`)
+- **Docker** running locally
+- **`state/dev-agent.env`** — copy from the example and fill in credentials:
+
+```bash
+cp state/dev-agent.env.example state/dev-agent.env
+# Edit state/dev-agent.env and set one of:
+#   CLAUDE_CODE_OAUTH_TOKEN=<your token>
+#   ANTHROPIC_API_KEY=<your key>
+```
+
+The agent pane reads secrets from `state/dev-agent.env` at runtime — they are never baked into
+the Docker image or printed in the command line.
+
+> If tmux is not installed, `task stack` fails fast and points you at `task dev` as the fallback.
+
+### Stopping the stack
+
+```bash
+tmux kill-session -t shipwright
+```
+
+This stops every pane. `task stack` is additive — it does not affect `task dev` processes.
+
+## Offline mode
+
+To run the metrics service in full offline mode without the full stack:
+
+```bash
+METRICS_OFFLINE=true bun metrics/src/server.ts
+```
+
+When `METRICS_OFFLINE=true`, the service injects an offline `TaskStoreProvider` built from
+recorded fixture cassettes and bypasses session auth on `/dashboard` (serves as "Offline User").
+
+## Next steps
+
+Once the local stack is running, you can explore the agent runtime — how it picks tasks, runs
+cron jobs, and connects to Slack. See [The Agent](/docs/the-agent) for the full runtime reference.

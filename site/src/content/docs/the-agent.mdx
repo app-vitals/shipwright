@@ -1,0 +1,148 @@
+---
+title: The Agent
+description: The Shipwright agent runtime — autonomous task runner, admin CRUD API, cron jobs, and the eight-model Prisma data store.
+section: Agent
+order: 0
+prev: "/docs/running-locally"
+next: "/docs/deploying-to-cloud"
+---
+
+# The Agent
+
+The Shipwright agent (artifact **C**) is a thin autonomous runner: it picks the next ready task
+from the queue, builds it, ships a PR, and forwards metrics — all without manual intervention.
+It has a Prisma-backed PostgreSQL store and four HTTP surfaces: a machine-polled runtime API,
+a human-facing admin CRUD API, a server-rendered admin UI, and a public read-only task board.
+
+## Run modes
+
+There are three ways to run the agent depending on your context:
+
+| Mode | Entry point | Transport | When to use |
+|------|-------------|-----------|-------------|
+| Pi / bare-metal | `agent/src/index.ts` | Slack Socket Mode | Running directly on a host with a local `.env` file |
+| K8s container | `agent/src/entrypoint-main.ts` | Slack Socket Mode | Deployed via the Dockerfile (validates vars, fetches config, installs plugins, spawns runner) |
+| Local dev | `agent/scripts/run-agent.ts --agent-id <id>` | HTTP `POST /chat` | Testing Claude locally without a Slack workspace; requires `SHIPWRIGHT_DEV_CHAT=true` |
+
+The Dockerfile `ENTRYPOINT` is `bun run admin/src/main.ts`, which runs migrations, constructs all
+services, and mounts all admin and runtime routes. The agent process
+(`agent/src/entrypoint-main.ts`) starts the health server in-process on `SHIPWRIGHT_HEALTH_PORT`
+(default `3459`) before the startup sequence so Kubernetes liveness probes are reachable during init.
+
+## Running the agent locally
+
+Ask Claude Code:
+
+```text
+Start the Shipwright agent locally in dev mode so I can test it via the chat REPL.
+```
+
+Manually:
+
+```bash
+export DATABASE_URL_SHIPWRIGHT_ADMIN="postgresql://user:password@localhost:5432/shipwright_admin"
+task db:provision          # prisma migrate deploy (idempotent)
+SHIPWRIGHT_DEV_CHAT=true bun agent/src/entrypoint-main.ts
+```
+
+Then in a second terminal:
+
+```bash
+bun scripts/chat.ts        # TUI REPL connects to the dev /chat endpoint
+```
+
+## Admin CRUD API
+
+The admin CRUD API is the human-facing control plane for agents. It is mounted at `/agents/*`.
+
+Auth is checked in this order: env API keys (`SHIPWRIGHT_ADMIN_API_KEYS`), then per-agent DB
+bearer tokens, then session cookies. Admin keys bypass all per-agent checks; scoped bearer tokens
+are restricted to their own agent ID.
+
+| Resource | Endpoints |
+|----------|-----------|
+| Agents | `POST /agents`, `GET /agents`, `GET /agents/:id`, `PATCH /agents/:id`, `POST /agents/:id/provision` |
+| Envs | `POST` / `GET` / `PATCH` `/agents/:id/envs`, `DELETE /agents/:id/envs/:key` |
+| Crons | `POST` `/agents/:id/crons`, `PATCH` / `DELETE` `/agents/:id/crons/:cronId`, `POST /agents/:id/crons/reconcile` |
+| Tools | `POST` / `GET` `/agents/:id/tools`, `PATCH` / `DELETE` `/agents/:id/tools/:toolId` |
+| Tokens | `POST` / `GET` `/agents/:id/tokens`, `DELETE /agents/:id/tokens/:tokenId` |
+| Plugins | `POST` / `GET` / `PATCH` `/agents/:id/plugins`, `DELETE /agents/:id/plugins` |
+
+Token creation returns the raw token once at creation. Only its SHA-256 hash is persisted — token
+validation is an O(1) hash-index lookup with no plaintext at rest.
+
+## Data model
+
+The agent store uses eight Prisma models on a dedicated database (`DATABASE_URL_SHIPWRIGHT_ADMIN`):
+
+| Model | What it owns |
+|-------|-------------|
+| `Agent` | Runner identity — `name`, `slackId`, `selfHosted`, `repos`, encrypted `slackBotToken` / `anthropicApiKey` |
+| `AgentEnv` | Key/value env store — `key`, `value` (AES-256-GCM encrypted); unique per `[agentId, key]` |
+| `AgentCronJob` | Scheduled prompts — `schedule`, `prompt`, `channel` or `user`, `silent`, `enabled`, `preCheck` |
+| `AgentCronRun` | Cron execution history — `startedAt`, `completedAt`, `outcome`, `inputTokens`, `outputTokens`, `costUsd`, `model` |
+| `AgentTool` | Allowed tool patterns — `pattern` (e.g. `Read`, `Bash`), `enabled` |
+| `AgentToken` | Scoped API tokens — `token` (SHA-256 hash), `label`, `revokedAt` |
+| `AgentPlugin` | Installed Claude Code plugins — `name`, `version`, `enabled` |
+| `AgentMember` | Authorized human members — `email`; unique per `[agentId, email]` |
+
+All child models cascade-delete with their parent `Agent`.
+
+Secrets at rest (env values, Slack/Anthropic keys) are AES-256-GCM encrypted at the service layer.
+Set `SHIPWRIGHT_ENCRYPTION_KEY` to a 64-char hex string (32 bytes) in any real deployment — if
+unset, secrets are stored in plain text with a logged warning.
+
+## Default system crons
+
+Every new agent is seeded with ten system crons. Two are enabled by default; the rest are opt-in
+and can be toggled in the admin UI or via `PATCH /agents/:id/crons/:cronId`.
+
+| Cron | Schedule | Default | What it does |
+|------|----------|---------|--------------|
+| `shipwright-dev-task` | every 30 min | **on** | Pick next ready task, build with tests, open PR |
+| `shipwright-review-patch` | every 30 min | **on** | Review open PRs and patch those failing CI or review |
+| `shipwright-review` | every 30 min | off | Review-only pass over open PRs |
+| `shipwright-patch` | every 30 min | off | Fix failing CI and unresolved review findings |
+| `shipwright-deploy` | every 30 min | off | Merge approved PRs and deploy |
+| `shipwright-test-readiness` | daily 06:00 | off | Full test-readiness audit |
+| `shipwright-docs-freshness` | daily 07:00 | off | Refresh docs that drifted from the code |
+| `learn-dream` | daily 03:00 | off | Mine merged PRs for durable learnings |
+| `dependabot-triage` | daily 08:00 | off | Review and triage open Dependabot PRs |
+| `entropy-patrol-maintenance` | weekly Mon 04:00 | off | Scan for code entropy and fix what's PR-worthy |
+
+Crons run `silent` by default — they post to Slack only when there is a result worth surfacing or
+on error. Most carry a `preCheck` script whose stdout becomes the actual prompt, so a cron only
+spends a Claude turn when there is real work ready.
+
+## Required environment variables
+
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `DATABASE_URL_SHIPWRIGHT_ADMIN` | always | Postgres connection string for the admin service |
+| `SHIPWRIGHT_AGENT_ID` | entrypoint | The agent's ID in the platform |
+| `SHIPWRIGHT_API_URL` | entrypoint | Base URL of the admin API for config fetch at startup |
+| `SHIPWRIGHT_AGENT_API_KEY` | entrypoint | Bearer token for the config fetch |
+| `SHIPWRIGHT_ENCRYPTION_KEY` | production | 64-char hex for AES-256-GCM secrets at rest |
+| `SLACK_BOT_TOKEN` | Slack mode | Slack bot user OAuth token (`xoxb-...`) |
+| `SLACK_APP_TOKEN` | Slack mode | Slack app-level token for Socket Mode (`xapp-...`) |
+| `SLACK_SIGNING_SECRET` | Slack mode | Verifies incoming Slack request signatures |
+
+See [configuration.md](https://github.com/app-vitals/shipwright/blob/main/docs/configuration.md)
+for the full environment variable reference.
+
+## Kubernetes provisioning
+
+When `SHIPWRIGHT_K8S_PROVISIONING=enabled`, the admin service acts as a Kubernetes provisioner.
+`POST /agents/:id/provision` creates:
+
+1. A **PersistentVolumeClaim** for the agent's home directory (`AGENT_HOME`)
+2. A **Secret** carrying the scoped per-agent API token (and optional task-store token)
+3. A **Deployment** running the agent container, referencing both
+
+The PVC is retained on deletion (data safety policy) — cluster admins clean it up manually.
+Self-hosted agents (`selfHosted: true`) skip provisioning; they manage their own workload.
+
+## Next steps
+
+Ready to deploy the agent as a persistent cloud service? See
+[Deploying to Cloud](/docs/deploying-to-cloud) for the Helm chart, Minikube, GKE, and EKS guides.

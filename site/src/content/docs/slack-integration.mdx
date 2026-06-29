@@ -1,0 +1,154 @@
+---
+title: Slack Integration
+description: Connect the Shipwright agent to Slack — Socket Mode setup, DMs, mentions, cron notifications, and voice notes.
+section: Operations
+order: 1
+prev: "/docs/deploying-to-cloud"
+---
+
+# Slack Integration
+
+The Shipwright agent communicates via Slack using the Bolt SDK in Socket Mode — no public HTTP
+endpoint needed. The agent handles DMs, `@mentions`, reactions, file attachments, and voice
+transcription. Cron jobs post their results to a configured Slack channel.
+
+## How it works
+
+The agent connects to Slack via a persistent WebSocket (Socket Mode). Every incoming message
+arrives as a prompt; the agent runs Claude and posts the response back to the same thread.
+
+Messages are prefixed with `[Name]: ` where `Name` is the sender's Slack display name, so the
+agent knows who it's talking to. Cron job results are posted to a configured channel automatically.
+
+## Connecting a Slack app
+
+Ask Claude Code:
+
+```text
+Help me create a Slack app and connect it to the Shipwright agent.
+```
+
+Claude Code will walk through creating the app manifest, provisioning credentials, and setting
+the required environment variables.
+
+{/* TODO: needs human review — The Slack app creation flow (manifest builder, OAuth provisioning
+UI, and the exact steps through api.slack.com) requires hands-on Slack workspace access to verify.
+The steps below reflect the documented buildAgentManifest flow from docs/agent.md; confirm the
+exact UI steps before publishing. */}
+
+### Manual setup
+
+1. Go to [api.slack.com/apps](https://api.slack.com/apps) and create a new app **from an app
+   manifest**. The Shipwright admin UI's provisioning flow (`/admin/agents/:id/provision`) can
+   generate a manifest for you automatically.
+
+2. Enable **Socket Mode** in the app settings and generate an app-level token with
+   `connections:write` scope. This becomes `SLACK_APP_TOKEN`.
+
+3. Install the app to your workspace and copy the **Bot User OAuth Token**. This becomes
+   `SLACK_BOT_TOKEN`.
+
+4. Copy the **Signing Secret** from the app's Basic Information page. This becomes
+   `SLACK_SIGNING_SECRET`.
+
+5. Set the three required environment variables on the agent (via the admin UI or the
+   `/agents/:id/envs` API):
+
+```bash
+SLACK_BOT_TOKEN=xoxb-...        # Bot User OAuth Token
+SLACK_APP_TOKEN=xapp-...        # App-level token (Socket Mode)
+SLACK_SIGNING_SECRET=...        # Signing secret from Basic Information
+```
+
+6. Restart the agent. It connects to Slack via Socket Mode on startup.
+
+## Required Slack environment variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `SLACK_BOT_TOKEN` | yes | Slack bot user OAuth token (`xoxb-...`) |
+| `SLACK_APP_TOKEN` | yes | Slack app-level token for Socket Mode (`xapp-...`) |
+| `SLACK_SIGNING_SECRET` | yes | Verifies incoming Slack request signatures |
+| `SLACK_ADMIN_TOKEN` | no | Optional admin-level token for privileged Slack operations |
+| `SLACK_ALERT_CHANNEL` | no | Channel ID to post system alerts (e.g. startup errors) |
+| `SLACK_OWNER_USER` | no | Slack user ID of the agent owner, used for DM fallback |
+
+## Interacting with the agent
+
+### Direct messages
+
+Send the agent a DM to start a private conversation. The agent replies in the same thread. Each
+session maintains conversation continuity — successive messages in a thread resume the same Claude
+conversation.
+
+```
+@Shipwright What's the status of the current task queue?
+```
+
+### Mentions
+
+Mention the agent in any channel where it has been invited:
+
+```
+@Shipwright run /shipwright:dev-task
+```
+
+The agent picks up the mention and responds in a thread on the same message.
+
+### Reactions
+
+The agent can also respond to `reaction_added` events. This is useful for triggering workflows
+from a thumbs-up or a custom emoji without sending a message.
+
+### Voice notes
+
+Voice notes arrive pre-transcribed by Whisper STT as `[voice transcript: <text>]` in the prompt.
+The agent replies with a `[speak:text]` marker to deliver a spoken response — conversational,
+no bullet points, one to three sentences.
+
+Voice support requires `agent.voice.enabled=true` in the Helm chart (see
+[Deploying to Cloud](/docs/deploying-to-cloud)) or a `WHISPER_SERVICE_URL` / `GROQ_API_KEY` in
+the agent environment.
+
+## Response markers
+
+The agent embeds markers in its responses to trigger side effects. Markers are stripped from the
+visible message before posting:
+
+| Marker | Effect |
+|--------|--------|
+| `[silent]` | Skip posting entirely (useful for cron jobs with nothing to report) |
+| `[upload:/path/to/file]` | Attach a file to the message |
+| `[react:emoji1,emoji2]` | Add emoji reactions to the agent's reply |
+| `[speak:text]` | Synthesize speech and upload as audio |
+| `[plan:url]` | Post a plan link to the rendered planning artifact |
+
+## Cron job notifications
+
+Cron jobs are scheduled prompts that run on a recurring schedule and post results to Slack. Most
+crons are `silent` by default — they only post when there is something worth surfacing (a completed
+PR, a failing check, or an error).
+
+The `channel` field on a cron job controls where results are posted. When `user` is set instead of
+`channel`, results are posted as a DM to that user.
+
+To configure which channel receives cron results, set the `channel` on each cron job via the admin
+UI or the `/agents/:id/crons/:cronId` API, or set `SLACK_ALERT_CHANNEL` as the global fallback for
+system alerts.
+
+## Message format
+
+Incoming Slack messages always arrive with the sender's Slack display name prepended:
+
+```
+[Alice]: Please review the latest PR on the metrics service.
+```
+
+The agent uses this prefix to know who is making the request, which is especially useful in
+channels where multiple people may be interacting with the same agent.
+
+## Next steps
+
+With Slack connected, the agent is fully operational as a 24/7 autonomous delivery system.
+Enable the opt-in cron jobs from the admin UI to automate review, patching, deployment, and
+maintenance — see [The Agent](/docs/the-agent) for the full cron reference.
