@@ -84,6 +84,17 @@ describe("public dashboard — read-only render", () => {
     expect(html).not.toContain("token-agent-table");
   });
 
+  // The public toolbar must not link to authenticated /admin/* pages (they 404 on
+  // the proof host) and must not offer sign-out; it surfaces only Metrics + Tasks.
+  test("GET /public/dashboard → toolbar omits admin links + logout, links to public tasks", async () => {
+    const app = buildApp();
+    const html = await (await app.request("/public/dashboard")).text();
+    expect(html).not.toContain("/admin/");
+    expect(html).not.toContain("Sign out");
+    expect(html).toContain('href="/public/tasks"');
+    expect(html).toContain('href="/public/dashboard"');
+  });
+
   // PPL-1.4: the read-only page must point its client at the /public mount so
   // app.js fetches /public/metrics/* (repo-scoped, no auth) — not the
   // authenticated /metrics/* endpoints, which would 401 and leave it dataless.

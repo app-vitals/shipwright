@@ -307,6 +307,9 @@
 
   function updateTokens(res) {
     const $ = (id) => document.getElementById(id);
+    // Read-only/public dashboard omits the token-usage section entirely, so its
+    // elements don't exist — skip rather than crash on a null textContent set.
+    if (!$("token-input")) return;
     if (!res || res.error || !res.data) {
       $("token-input").textContent = "--";
       $("token-output").textContent = "--";
