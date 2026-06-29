@@ -297,6 +297,93 @@ describe("TaskStoreProvider (integration)", () => {
     }
   });
 
+  test("repo-scoped provider counts only the target repo's tasks", async () => {
+    // Two repos in the store, both inside the window. A repo-scoped provider
+    // must see only its repo's tasks.
+    const repoTasks: TaskRecord[] = [
+      {
+        id: "RA-1.1",
+        status: "merged",
+        startedAt: "2026-06-02T08:00:00.000Z",
+        completedAt: "2026-06-02T12:00:00.000Z",
+        mergedAt: "2026-06-02T12:00:00.000Z",
+        addedAt: "2026-06-01T08:00:00.000Z",
+        ciFixAttempts: 0,
+        repo: "org/alpha",
+      },
+      {
+        id: "RB-1.1",
+        status: "merged",
+        startedAt: "2026-06-03T08:00:00.000Z",
+        completedAt: "2026-06-03T12:00:00.000Z",
+        mergedAt: "2026-06-03T12:00:00.000Z",
+        addedAt: "2026-06-02T08:00:00.000Z",
+        ciFixAttempts: 0,
+        repo: "org/beta",
+      },
+    ];
+    const repoPrs: PrRecord[] = [
+      {
+        id: "pr-a",
+        taskId: "RA-1.1",
+        reviewState: "approved",
+        mergedAt: "2026-06-02T12:00:00.000Z",
+        repo: "org/alpha",
+      },
+      {
+        id: "pr-b",
+        taskId: "RB-1.1",
+        reviewState: "approved",
+        mergedAt: "2026-06-03T12:00:00.000Z",
+        repo: "org/beta",
+      },
+    ];
+    const taskStore = new RecordedTaskStoreClient(repoTasks, repoPrs);
+    const admin = new RecordedAdminMetricsClient(CRON_STATS, CHAT_STATS);
+    const provider = new TaskStoreProvider(
+      taskStore,
+      admin,
+      CLOCK,
+      "org/alpha",
+    );
+
+    const t = await provider.query({ kind: "summary", range: RANGE });
+    const row = t.results[0];
+    expect(row[colIndex(t, "tasks_completed")]).toBe(1);
+    // Only org/alpha's approved PR counts.
+    expect(row[colIndex(t, "reviews_total")]).toBe(1);
+    expect(row[colIndex(t, "reviews_ship_it")]).toBe(1);
+  });
+
+  test("unscoped provider counts both repos' tasks", async () => {
+    const repoTasks: TaskRecord[] = [
+      {
+        id: "RA-1.1",
+        status: "merged",
+        startedAt: "2026-06-02T08:00:00.000Z",
+        completedAt: "2026-06-02T12:00:00.000Z",
+        mergedAt: "2026-06-02T12:00:00.000Z",
+        addedAt: "2026-06-01T08:00:00.000Z",
+        repo: "org/alpha",
+      },
+      {
+        id: "RB-1.1",
+        status: "merged",
+        startedAt: "2026-06-03T08:00:00.000Z",
+        completedAt: "2026-06-03T12:00:00.000Z",
+        mergedAt: "2026-06-03T12:00:00.000Z",
+        addedAt: "2026-06-02T08:00:00.000Z",
+        repo: "org/beta",
+      },
+    ];
+    const taskStore = new RecordedTaskStoreClient(repoTasks, []);
+    const admin = new RecordedAdminMetricsClient(CRON_STATS, CHAT_STATS);
+    const provider = new TaskStoreProvider(taskStore, admin, CLOCK);
+
+    const t = await provider.query({ kind: "summary", range: RANGE });
+    expect(t.results[0][colIndex(t, "tasks_completed")]).toBe(2);
+  });
+
   test("tokensBySessionType yields a cron row and a chat row", async () => {
     const provider = buildProvider();
     const t = await provider.query({
