@@ -1352,13 +1352,17 @@ export function renderTasksPage(
     <td class="mono" style="font-size:11px">${t.session ? escapeHtml(t.session) : '<span style="color:#9ca3af">—</span>'}</td>
     <td class="mono" style="font-size:11px">${t.repo ? escapeHtml(t.repo) : '<span style="color:#9ca3af">—</span>'}</td>
     <td class="mono" style="font-size:11px">${prCell}</td>
-    ${readOnly ? "" : `<td>${
-      t.status === "in_progress"
-        ? `<form method="POST" action="/admin/tasks/${escapeHtml(t.id)}/release" style="display:inline">
+    ${
+      readOnly
+        ? ""
+        : `<td>${
+            t.status === "in_progress"
+              ? `<form method="POST" action="/admin/tasks/${escapeHtml(t.id)}/release" style="display:inline">
         <button type="submit" class="btn btn-secondary" style="font-size:11px;padding:3px 8px">Release</button>
       </form>`
-        : ""
-    }</td>`}
+              : ""
+          }</td>`
+    }
   </tr>`;
           })
           .join("\n");
@@ -1430,8 +1434,11 @@ export function renderTasksPage(
 
   const from = pagination.total === 0 ? 0 : (page - 1) * pagination.limit + 1;
   const to = Math.min(page * pagination.limit, pagination.total);
+  // Suppress pagination in read-only mode: makePageUrl always returns /admin/tasks,
+  // which is auth-walled, so unauthenticated visitors following Next/Prev links
+  // would hit a login redirect.
   const paginationHtml =
-    pagination.total === 0
+    pagination.total === 0 || readOnly
       ? ""
       : `<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0 0;font-size:12px;color:#6b7280">
       <span>${from}–${to} of ${pagination.total}</span>
@@ -1466,7 +1473,10 @@ export function renderTasksPage(
     ${errorHtml}
     ${degradedHtml}
     ${agentFilterHtml}
-    ${readOnly ? "" : `<div class="card" style="margin-bottom:16px">
+    ${
+      readOnly
+        ? ""
+        : `<div class="card" style="margin-bottom:16px">
       <form method="GET" action="/admin/tasks" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
         ${filters.state && !filters.status ? `<input type="hidden" name="state" value="${escapeHtml(filters.state)}" />` : ""}
         <div class="form-group" style="margin-bottom:0">
@@ -1491,7 +1501,8 @@ export function renderTasksPage(
         ${suggestions?.repos?.length ? `<datalist id="repos-list">${suggestions.repos.map((r) => `<option value="${escapeHtml(r)}">`).join("")}</datalist>` : ""}
         ${suggestions?.agents?.length ? `<datalist id="agents-list">${suggestions.agents.map((a) => `<option value="${escapeHtml(a)}">`).join("")}</datalist>` : ""}
       </form>
-    </div>`}
+    </div>`
+    }
     <div class="card">
       <div class="data-table-wrapper">
         <table class="data-table">
@@ -1515,7 +1526,10 @@ export function renderTasksPage(
       ${paginationHtml}
     </div>
   </div>
-  ${readOnly ? "" : `<script>
+  ${
+    readOnly
+      ? ""
+      : `<script>
     document.querySelectorAll("tr[data-href]").forEach(function(row) {
       row.addEventListener("click", function(e) {
         var target = e.target;
@@ -1526,7 +1540,8 @@ export function renderTasksPage(
         window.location.href = row.getAttribute("data-href");
       });
     });
-  </script>`}
+  </script>`
+  }
 </body>
 </html>`;
 }

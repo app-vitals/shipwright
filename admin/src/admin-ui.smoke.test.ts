@@ -8,6 +8,7 @@
 
 import { beforeAll, describe, expect, it } from "bun:test";
 import { sign } from "hono/jwt";
+import type { PrListItem, PullRequestItem } from "./admin-ui-pages.ts";
 import { createAdminUIApp } from "./admin-ui.ts";
 import type { AdminUIDeps, AdminUISlackClient } from "./admin-ui.ts";
 import type {
@@ -15,7 +16,6 @@ import type {
   GoogleTokenResponse,
   GoogleUserInfo,
 } from "./google-auth-client.ts";
-import type { PrListItem, PullRequestItem } from "./admin-ui-pages.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -3573,28 +3573,56 @@ describe("admin UI — public task board", () => {
   });
 
   it("POST /public/tasks returns 404 or 405 (mutation routes absent)", async () => {
-    const app = createAdminUIApp(
-      makeMockDeps({ publicRepo: PUBLIC_REPO }),
-    );
+    const app = createAdminUIApp(makeMockDeps({ publicRepo: PUBLIC_REPO }));
     const res = await app.request("/public/tasks", { method: "POST" });
     expect([404, 405]).toContain(res.status);
   });
 
   it("PUT /public/tasks/pub-task-1 returns 404 or 405", async () => {
-    const app = createAdminUIApp(
-      makeMockDeps({ publicRepo: PUBLIC_REPO }),
-    );
-    const res = await app.request("/public/tasks/pub-task-1", { method: "PUT" });
+    const app = createAdminUIApp(makeMockDeps({ publicRepo: PUBLIC_REPO }));
+    const res = await app.request("/public/tasks/pub-task-1", {
+      method: "PUT",
+    });
     expect([404, 405]).toContain(res.status);
   });
 
   it("DELETE /public/tasks/pub-task-1 returns 404 or 405", async () => {
-    const app = createAdminUIApp(
-      makeMockDeps({ publicRepo: PUBLIC_REPO }),
-    );
+    const app = createAdminUIApp(makeMockDeps({ publicRepo: PUBLIC_REPO }));
     const res = await app.request("/public/tasks/pub-task-1", {
       method: "DELETE",
     });
     expect([404, 405]).toContain(res.status);
+  });
+
+  it("GET /public/tasks suppresses pagination even when total > 50", async () => {
+    // When the public board has more than 50 tasks, pagination links must NOT
+    // appear — makePageUrl hardcodes /admin/tasks, which is auth-walled.
+    const manyTasks = Array.from({ length: 50 }, (_, i) => ({
+      id: `pub-task-${i}`,
+      title: `Public task ${i}`,
+      status: "pending",
+      session: "sess-pub",
+      repo: PUBLIC_REPO,
+      assignee: null,
+      claimedBy: null,
+    }));
+    const app = createAdminUIApp(
+      makeMockDeps({
+        publicRepo: PUBLIC_REPO,
+        fetchTaskStoreTasks: async () => ({
+          tasks: manyTasks,
+          total: 500, // >50 — would trigger pagination in admin mode
+          limit: 50,
+          offset: 0,
+        }),
+      }),
+    );
+    const res = await app.request("/public/tasks");
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    // No pagination links should point to the auth-walled admin route
+    expect(body).not.toContain("/admin/tasks");
+    expect(body).not.toContain("Next →");
+    expect(body).not.toContain("← Prev");
   });
 });
