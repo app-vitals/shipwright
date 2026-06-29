@@ -15,14 +15,9 @@ import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 
 describe("domain-guard: shipwright-harness.com references", () => {
-  /**
-   * Determines the project root by walking up from this script's directory.
-   * scripts/ → project root (assumes standard shipwright repo layout)
-   */
   function getProjectRoot(): string {
     const scriptDir = import.meta.dirname ?? process.cwd();
-    // scripts/ is at the project root
-    return scriptDir;
+    return join(scriptDir, "..");
   }
 
   test("shipwright-harness.com appears only in allowed files", () => {
