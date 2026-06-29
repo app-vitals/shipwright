@@ -261,6 +261,26 @@
                   }
                 }
               }
+            },
+            "public": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "repo": { "type": "string" }
+              },
+              "if": {
+                "properties": {
+                  "enabled": { "const": true }
+                },
+                "required": ["enabled"]
+              },
+              "then": {
+                "properties": {
+                  "repo": { "type": "string", "minLength": 1 }
+                },
+                "required": ["repo"]
+              }
             }
           }
         }

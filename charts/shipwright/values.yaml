@@ -264,6 +264,19 @@ metrics:
       existingSecret: ""
       # -- Key in the secret for METRICS_INTERNAL_API_KEY.
       key: METRICS_INTERNAL_API_KEY
+  # -- Public read-only proof surface. When enabled, the metrics service mounts an
+  # unauthenticated, repo-scoped /public/* surface (read-only dashboard + JSON)
+  # ALONGSIDE the authenticated routes — it does not relax auth on existing routes.
+  # Used for the public dogfooding page (e.g. proof.shipwrightharness.com). Token/
+  # cost endpoints are always excluded from the public surface.
+  public:
+    # -- Enable public mode (injects SHIPWRIGHT_METRICS_PUBLIC_MODE=true). When
+    # true, `repo` is REQUIRED — the template fails fast at render time (and the
+    # service fails fast on boot) if it is empty.
+    enabled: false
+    # -- Repo slug the public surface is hard-scoped to, never user-selectable
+    # (injects SHIPWRIGHT_METRICS_PUBLIC_REPO). e.g. "app-vitals/shipwright".
+    repo: ""
 
 # -- Agent service (@shipwright/agent) — autonomous runner + admin CRUD. Port 3000.
 agent:
