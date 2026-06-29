@@ -2,8 +2,8 @@
  * Metrics Dashboard — Playwright E2E tests.
  *
  * These tests drive the full server-rendered dashboard in a real Chromium browser.
- * The test server is started once per file via globalSetup/teardown; PostHog API
- * calls are intercepted at the network layer so no real PostHog credentials are needed.
+ * The test server is started once per file via globalSetup/teardown; metrics API
+ * calls are intercepted at the network layer — no live services needed.
  *
  * Session cookie auth: injectSessionCookie() signs a JWT with E2E_SESSION_SECRET,
  * which matches the SHIPWRIGHT_SESSION_SECRET the test server is started with (see startTestServer).
@@ -40,8 +40,6 @@ async function startTestServer(): Promise<void> {
     env: {
       ...process.env,
       METRICS_E2E_PORT: String(TEST_PORT),
-      POSTHOG_PERSONAL_API_KEY: "phx_e2e_fake",
-      POSTHOG_PROJECT_ID: "99999",
       SHIPWRIGHT_SESSION_SECRET: E2E_SESSION_SECRET, // ← pin session secret so CI envs don't break cookie auth
     },
     stdio: "pipe",
@@ -213,7 +211,7 @@ function makeQueueResponse(overrides: Record<string, unknown> = {}) {
 
 /**
  * Set up Playwright route mocking for all metrics API endpoints.
- * This intercepts PostHog-backed calls so no real API key is needed.
+ * Intercepts API calls so tests run without live data services.
  */
 async function mockMetricsAPIs(
   page: Page,

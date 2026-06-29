@@ -1,9 +1,11 @@
 /**
  * Metrics E2E test server — starts the metrics API on a test port.
- * No DB needed — PostHog requests are intercepted by Playwright route mocking.
+ * No DB needed — metrics API calls are intercepted by Playwright route mocking;
+ * the fixture provider satisfies the required provider seam without live services.
  */
 
 import { createMetricsApp } from "../src/api.ts";
+import { createFixtureTaskStoreProvider } from "../src/fixtures/task-store-fixtures.ts";
 import { parseApiKeys } from "../src/lib/api-auth.ts";
 import { makeAccountsClientMock } from "../src/lib/test-helpers.ts";
 
@@ -12,7 +14,10 @@ const apiKeys = parseApiKeys("e2e:sk_e2e_test_key:*");
 const sessionSecret =
   process.env.SHIPWRIGHT_SESSION_SECRET ?? "e2e-test-session-secret-32b";
 const noopAccountsClient = makeAccountsClientMock(async () => []);
-const app = createMetricsApp(apiKeys, noopAccountsClient, { sessionSecret });
+const app = createMetricsApp(apiKeys, noopAccountsClient, {
+  sessionSecret,
+  provider: createFixtureTaskStoreProvider(),
+});
 
 app.get("/health", (c) => c.json({ status: "ok" }, 200));
 

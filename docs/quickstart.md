@@ -128,7 +128,7 @@ This opens a tmux session (`shipwright`) with 6 panes:
 
 | Pane | What | URL |
 |---|---|---|
-| metrics | Dashboard in SQLite mode | <http://localhost:3460/dashboard> |
+| metrics | Dashboard (fixtures mode) | <http://localhost:3460/dashboard> |
 | admin | Admin CRUD API + UI | <http://localhost:3001/admin> |
 | task-store | Task queue service (Postgres-backed) | <http://localhost:3002> |
 | agent | Shipwright agent in Docker | <http://localhost:3000> |

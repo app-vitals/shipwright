@@ -4,8 +4,6 @@
  */
 
 export * from "./api.ts";
-export * from "./cache.ts";
-export * from "./posthog-client.ts";
-export * from "./queries.ts";
+export * from "./metrics-provider.ts";
 export * from "./schemas.ts";
 export * from "./types.ts";
