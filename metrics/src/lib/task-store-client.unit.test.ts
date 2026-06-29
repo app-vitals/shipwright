@@ -77,8 +77,16 @@ describe("HttpTaskStoreClient client-side window filtering", () => {
   test("listTasks drops tasks whose anchor is outside [from,to]", async () => {
     const tasks: TaskRecord[] = [
       { id: "IN-1", status: "merged", completedAt: "2026-06-05T00:00:00.000Z" },
-      { id: "OUT-EARLY", status: "merged", completedAt: "2026-05-01T00:00:00.000Z" },
-      { id: "OUT-LATE", status: "merged", completedAt: "2026-08-01T00:00:00.000Z" },
+      {
+        id: "OUT-EARLY",
+        status: "merged",
+        completedAt: "2026-05-01T00:00:00.000Z",
+      },
+      {
+        id: "OUT-LATE",
+        status: "merged",
+        completedAt: "2026-08-01T00:00:00.000Z",
+      },
     ];
     const { fetch } = pagingFetch("tasks", tasks);
     const client = new HttpTaskStoreClient("http://store", "tok", fetch);
@@ -92,9 +100,21 @@ describe("HttpTaskStoreClient client-side window filtering", () => {
 
   test("listPrs filters on mergedAt anchor, falling back to createdAt", async () => {
     const prs: PrRecord[] = [
-      { id: "merged-in", reviewState: "approved", mergedAt: "2026-06-10T00:00:00.000Z" },
-      { id: "created-in", reviewState: "posted", createdAt: "2026-06-12T00:00:00.000Z" },
-      { id: "out", reviewState: "approved", mergedAt: "2026-05-01T00:00:00.000Z" },
+      {
+        id: "merged-in",
+        reviewState: "approved",
+        mergedAt: "2026-06-10T00:00:00.000Z",
+      },
+      {
+        id: "created-in",
+        reviewState: "posted",
+        createdAt: "2026-06-12T00:00:00.000Z",
+      },
+      {
+        id: "out",
+        reviewState: "approved",
+        mergedAt: "2026-05-01T00:00:00.000Z",
+      },
     ];
     const { fetch } = pagingFetch("prs", prs);
     const client = new HttpTaskStoreClient("http://store", "tok", fetch);
@@ -105,7 +125,11 @@ describe("HttpTaskStoreClient client-side window filtering", () => {
 
   test("an open window (no from/to) keeps all rows", async () => {
     const tasks: TaskRecord[] = [
-      { id: "anchored", status: "merged", completedAt: "2020-01-01T00:00:00.000Z" },
+      {
+        id: "anchored",
+        status: "merged",
+        completedAt: "2020-01-01T00:00:00.000Z",
+      },
       { id: "no-anchor", status: "pending" },
     ];
     const { fetch } = pagingFetch("tasks", tasks);
@@ -113,5 +137,58 @@ describe("HttpTaskStoreClient client-side window filtering", () => {
 
     const got = await client.listTasks({});
     expect(got.length).toBe(2);
+  });
+});
+
+describe("HttpTaskStoreClient repo filtering", () => {
+  test("listTasks returns only tasks matching params.repo", async () => {
+    const tasks: TaskRecord[] = [
+      { id: "A-1", status: "merged", repo: "org/alpha" },
+      { id: "B-1", status: "merged", repo: "org/beta" },
+      { id: "A-2", status: "done", repo: "org/alpha" },
+    ];
+    const { fetch } = pagingFetch("tasks", tasks);
+    const client = new HttpTaskStoreClient("http://store", "tok", fetch);
+
+    const got = await client.listTasks({ repo: "org/alpha" });
+    expect(got.map((t) => t.id).sort()).toEqual(["A-1", "A-2"]);
+  });
+
+  test("listPrs returns only PRs matching params.repo", async () => {
+    const prs: PrRecord[] = [
+      { id: "pr-a", reviewState: "approved", repo: "org/alpha" },
+      { id: "pr-b", reviewState: "posted", repo: "org/beta" },
+    ];
+    const { fetch } = pagingFetch("prs", prs);
+    const client = new HttpTaskStoreClient("http://store", "tok", fetch);
+
+    const got = await client.listPrs({ repo: "org/beta" });
+    expect(got.map((p) => p.id)).toEqual(["pr-b"]);
+  });
+
+  test("no repo param keeps records from every repo", async () => {
+    const tasks: TaskRecord[] = [
+      { id: "A-1", status: "merged", repo: "org/alpha" },
+      { id: "B-1", status: "merged", repo: "org/beta" },
+      { id: "C-1", status: "merged", repo: null },
+    ];
+    const { fetch } = pagingFetch("tasks", tasks);
+    const client = new HttpTaskStoreClient("http://store", "tok", fetch);
+
+    const got = await client.listTasks({});
+    expect(got.length).toBe(3);
+  });
+
+  test("repo filter excludes records with a null/absent repo", async () => {
+    const tasks: TaskRecord[] = [
+      { id: "A-1", status: "merged", repo: "org/alpha" },
+      { id: "N-1", status: "merged", repo: null },
+      { id: "N-2", status: "merged" },
+    ];
+    const { fetch } = pagingFetch("tasks", tasks);
+    const client = new HttpTaskStoreClient("http://store", "tok", fetch);
+
+    const got = await client.listTasks({ repo: "org/alpha" });
+    expect(got.map((t) => t.id)).toEqual(["A-1"]);
   });
 });

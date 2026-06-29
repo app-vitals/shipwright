@@ -531,3 +531,37 @@ describe("renderDashboardPage — TK-1.2 token trends chart", () => {
     expect(html).toMatchSnapshot();
   });
 });
+
+describe("renderDashboardPage — PPL-1.2 readOnly variant", () => {
+  const html = renderDashboardPage({
+    userName: "Public",
+    isOwner: false,
+    readOnly: true,
+  });
+
+  test("omits the Token Usage section and by-agent table", () => {
+    expect(html).not.toContain("Token Usage");
+    expect(html).not.toContain('id="token-agent-table"');
+    expect(html).not.toContain('id="token-input"');
+  });
+
+  test("keeps the pipeline KPI cards", () => {
+    expect(html).toContain("Tasks Completed");
+    expect(html).toContain("CI First-Pass Rate");
+    expect(html).toContain("Estimation Accuracy");
+    expect(html).toContain("Review SHIP IT Rate");
+  });
+
+  test("keeps the pipeline metric panels", () => {
+    expect(html).toContain("Pipeline Queue");
+    expect(html).toContain("Pipeline Quality");
+    expect(html).toContain("Feature Breakdown");
+    expect(html).toContain("Trends");
+  });
+
+  test("default (readOnly unset) still renders the Token Usage section", () => {
+    const full = renderDashboardPage(BASE_OPTS);
+    expect(full).toContain("Token Usage");
+    expect(full).toContain('id="token-agent-table"');
+  });
+});

@@ -43,7 +43,15 @@ export type MetricQuery =
 
 export type MetricQueryKind = MetricQuery["kind"];
 
-/** Read seam: every backend serves every query kind. */
+/**
+ * Read seam: every backend serves every query kind.
+ *
+ * Repo scoping (public mode, PPL-1.2) is a constructor-level concern, not a
+ * query parameter — a repo-scoped provider is built once (see
+ * TaskStoreProvider's `repo` ctor param) and narrows every read it answers. The
+ * MetricQuery shape is therefore unchanged: handlers stay repo-agnostic and the
+ * same code serves authenticated (all repos) and public (one repo) surfaces.
+ */
 export interface MetricsProvider {
   query(q: MetricQuery): Promise<MetricTable>;
 }

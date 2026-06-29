@@ -25,6 +25,8 @@ export interface TaskRecord {
   status: string;
   session?: string | null;
   layer?: string | null;
+  /** Owning repository in `org/repo` form. Used for public-mode repo scoping. */
+  repo?: string | null;
   /** Estimated hours for the task. */
   hours?: number | null;
   complexity?: number | null;
@@ -49,6 +51,8 @@ export interface PrRecord {
   reviewState?: string | null;
   createdAt?: string | null;
   mergedAt?: string | null;
+  /** Owning repository in `org/repo` form. Used for public-mode repo scoping. */
+  repo?: string | null;
 }
 
 // ─── Error type ───────────────────────────────────────────────────────────────
@@ -70,11 +74,13 @@ export interface TaskStoreClient {
     from?: string;
     to?: string;
     status?: string;
+    repo?: string;
   }): Promise<TaskRecord[]>;
   listPrs(params: {
     from?: string;
     to?: string;
     reviewState?: string;
+    repo?: string;
   }): Promise<PrRecord[]>;
 }
 
@@ -94,6 +100,21 @@ export function taskAnchor(t: TaskRecord): string | null {
 /** Pick the timestamp a PR is "anchored" to for window filtering. */
 export function prAnchor(p: PrRecord): string | null {
   return p.mergedAt ?? p.createdAt ?? null;
+}
+
+/**
+ * True when a record belongs to `repo`. When `repo` is undefined the filter is
+ * a no-op (every record matches). Records whose own `repo` is null/absent never
+ * match a non-empty `repo` filter — public scoping must not leak un-attributed
+ * rows. Shared by the live HTTP client and the recorded test double so both
+ * paths scope identically.
+ */
+export function matchesRepo(
+  recordRepo: string | null | undefined,
+  repo: string | undefined,
+): boolean {
+  if (repo === undefined || repo === "") return true;
+  return recordRepo === repo;
 }
 
 /**
@@ -230,23 +251,30 @@ export class HttpTaskStoreClient implements TaskStoreClient {
     from?: string;
     to?: string;
     status?: string;
+    repo?: string;
   }): Promise<TaskRecord[]> {
-    // `from`/`to` are ignored by the live route — only `status` narrows server
-    // side; the date window is applied client-side below.
+    // `from`/`to`/`repo` are ignored by the live route — only `status` narrows
+    // server side; the date window and repo scope are applied client-side below.
     const tasks = await this.fetchAllPages<TaskRecord>("/tasks", "tasks", {
       status: params.status,
     });
-    return tasks.filter((t) => inWindow(taskAnchor(t), params));
+    return tasks.filter(
+      (t) =>
+        matchesRepo(t.repo, params.repo) && inWindow(taskAnchor(t), params),
+    );
   }
 
   async listPrs(params: {
     from?: string;
     to?: string;
     reviewState?: string;
+    repo?: string;
   }): Promise<PrRecord[]> {
     const prs = await this.fetchAllPages<PrRecord>("/prs", "prs", {
       reviewState: params.reviewState,
     });
-    return prs.filter((p) => inWindow(prAnchor(p), params));
+    return prs.filter(
+      (p) => matchesRepo(p.repo, params.repo) && inWindow(prAnchor(p), params),
+    );
   }
 }
