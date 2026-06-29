@@ -3,17 +3,16 @@
  *
  * MetricsProvider backed by the Shipwright task store (tasks + PRs) and the
  * admin token-aggregation endpoints. Answers all 16 MetricQuery kinds by
- * aggregating client-side in TypeScript, emitting MetricTables whose `columns`
- * and `table()` envelope are byte-identical to sql-provider.ts — api.ts parses
- * the result positionally, so the shapes must match exactly.
+ * aggregating client-side in TypeScript, emitting MetricTables. api.ts parses
+ * the result positionally, so column shapes must remain stable across providers.
  *
  * Two token sources are combined with no double-counting (AC#2): cron-run
  * tokens (the "cron" session source) and chat-daily tokens (the "chat" session
  * source) are disjoint, so summing them field-wise is the correct total.
  *
- * Where a sql-provider metric genuinely has no task-store equivalent (e.g.
- * simplify sub-scores, files-changed, retries, fix-cascade depth — those live
- * only in the PostHog event stream), the column is kept and filled with a
+ * Where a metric genuinely has no task-store equivalent (e.g. simplify
+ * sub-scores, files-changed, retries, fix-cascade depth — those lived only in
+ * the now-removed PostHog event stream), the column is kept and filled with a
  * neutral empty value (null/0) rather than dropped: every kind must return a
  * valid table (AC#1).
  */
@@ -42,11 +41,10 @@ const COMPLETED_STATUSES = new Set(["merged", "done", "deployed", "deploying"]);
 const BLOCKED_STATUS = "blocked";
 
 // Task-store PR review-state that denotes an approved ("ship it") review. The
-// live task store records `reviewState` as one of `approved | posted | pending`
-// (there is no "SHIP IT" value — that's a PostHog event verdict in sql-provider).
+// live task store records `reviewState` as one of `approved | posted | pending`.
 const SHIP_IT_REVIEW_STATE = "approved";
 
-// ─── Value helpers (mirror sql-provider) ──────────────────────────────────────
+// ─── Value helpers ────────────────────────────────────────────────────────────
 
 function num(v: unknown): number | null {
   if (v === null || v === undefined || v === "") return null;
