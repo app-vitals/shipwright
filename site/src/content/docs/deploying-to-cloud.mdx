@@ -1,0 +1,34 @@
+---
+title: Deploying to Cloud
+description: Deploy Shipwright as an autonomous agent in your cloud infrastructure.
+section: Operations
+order: 3
+---
+
+# Deploying to Cloud
+
+Run Shipwright as an autonomous agent in your cloud. The agent picks up ready work from your task store, builds it, runs review, and ships PRs — all without manual intervention.
+
+## Prerequisites
+
+Before you deploy, ensure you have:
+
+- A Kubernetes cluster (Minikube, GKE, EKS, or similar)
+- Docker installed locally (for building the agent image)
+- Access to your git repository
+
+## Deployment options
+
+Shipwright supports several cloud platforms:
+
+- **Kubernetes**: Deploy using Helm or raw manifests
+- **GKE (Google Cloud)**: Gateway API + cert-manager integration
+- **EKS (AWS)**: ALB (Application Load Balancer) integration
+
+## Getting started
+
+For detailed deployment instructions, refer to the Shipwright documentation on Kubernetes deployment.
+
+## Next steps
+
+Once deployed, configure your task store and set up cron jobs to automate your delivery pipeline.
