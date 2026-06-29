@@ -250,13 +250,12 @@ describe("buildStackCommands", () => {
 });
 
 describe("runStack — per-pane commands via injected exec", () => {
-  test("metrics pane runs the metrics server in sqlite mode with METRICS_DB_PATH", () => {
+  test("metrics pane runs the metrics server in offline fixture mode", () => {
     const { calls, exec } = makeRecorder();
     runStack(STACK_PANES, exec);
     const sk = sendKeysForPane(calls, 0);
     expect(sk?.join(" ")).toContain("metrics/src/server.ts");
-    expect(sk?.join(" ")).toContain("METRICS_DB_PATH=state/metrics.db");
-    expect(sk?.join(" ")).not.toContain("METRICS_OFFLINE=true");
+    expect(sk?.join(" ")).toContain("METRICS_OFFLINE=true");
   });
 
   test("metrics pane sets METRICS_ADMIN_APP_URL so dashboard nav cross-links to the admin console", () => {
@@ -528,16 +527,14 @@ describe("planPostgresSetup — auto vs guide ladder", () => {
 // Docker agent stack — new tests (additive)
 // ---------------------------------------------------------------------------
 
-describe("metrics pane — sqlite mode", () => {
-  test("metrics pane runs in sqlite mode with METRICS_DB_PATH (no METRICS_OFFLINE)", () => {
+describe("offline fixture mode", () => {
+  test("metrics pane uses offline fixture mode (no METRICS_DB_PATH)", () => {
     const metrics = STACK_PANES.find((p) => p.label === "metrics") as Pane;
-    expect(metrics.env?.METRICS_OFFLINE).toBeUndefined();
-    expect(metrics.env?.METRICS_DB_PATH).toBe("state/metrics.db");
+    expect(metrics.env?.METRICS_OFFLINE).toBe("true");
+    expect(metrics.env?.METRICS_DB_PATH).toBeUndefined();
   });
 
-  test("metrics pane enables the dashboard dev-auth bypass (real data, no login)", () => {
-    // task stack has no login flow; this lets the dashboard + /metrics/* be
-    // viewed in the browser while keeping the real sqlite provider (not fixtures).
+  test("metrics pane enables the dashboard dev-auth bypass (no login flow in the stack)", () => {
     const metrics = STACK_PANES.find((p) => p.label === "metrics") as Pane;
     expect(metrics.env?.METRICS_DASHBOARD_DEV_AUTH).toBe("true");
   });

@@ -3,7 +3,7 @@
  * `task stack` launcher — ties the full local dev stack together in a single
  * tmux session ("shipwright") with one window and 6 panes:
  *
- *   0. metrics    — metrics dashboard, offline SQLite mode             (:3460)
+ *   0. metrics    — metrics dashboard, offline fixture mode             (:3460)
  *   1. admin      — standalone admin service (CRUD API + UI)           (:3001)
  *   2. task-store — task-store service (Postgres-backed task queue)    (:3002)
  *   3. agent      — thin Shipwright agent with the dev /chat endpoint  (:3000)
@@ -170,13 +170,12 @@ export const STACK_PANES: Pane[] = [
   {
     label: "metrics",
     cmd: ["bun", "metrics/src/server.ts"],
-    // SQLite persistence mode: no METRICS_OFFLINE, no POSTHOG_PROJECT_API_KEY,
-    // no METRICS_DATABASE_URL → service defaults to sqlite mode.
-    // METRICS_DASHBOARD_DEV_AUTH bypasses dashboard/login auth (there is no login
-    // flow in the stack) while KEEPING the real sqlite provider — so the dashboard
-    // shows the metrics the agent actually forwards, not fixtures.
+    // Offline fixture mode: METRICS_OFFLINE=true tells the server to serve
+    // fixture data instead of live PostHog/SQLite queries. No database needed.
+    // METRICS_DASHBOARD_DEV_AUTH bypasses dashboard/login auth (there is no
+    // login flow in the stack) so the dashboard is accessible without credentials.
     env: {
-      METRICS_DB_PATH: "state/metrics.db",
+      METRICS_OFFLINE: "true",
       METRICS_DASHBOARD_DEV_AUTH: "true",
       // The admin console runs on a different origin (:3001) than the metrics
       // dashboard in the local stack, so the dashboard toolbar's Agents/Tasks/PRs
