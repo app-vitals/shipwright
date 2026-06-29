@@ -1,35 +1,283 @@
 ---
 title: Deploying to Cloud
-description: Deploy Shipwright as an autonomous agent in your cloud infrastructure.
+description: Deploy Shipwright to Kubernetes with the official Helm chart — Minikube, GKE (Gateway API), and EKS (ALB) targets covered end to end.
 section: Operations
-order: 3
-prev: "/docs/getting-started"
+order: 0
+prev: "/docs/the-agent"
+next: "/docs/slack-integration"
 ---
 
 # Deploying to Cloud
 
-Run Shipwright as an autonomous agent in your cloud. The agent picks up ready work from your task store, builds it, runs review, and ships PRs — all without manual intervention.
+Run Shipwright as a persistent autonomous agent in your cloud. The official Helm chart packages all
+four services (admin, metrics, agent, task-store) with Minikube-friendly defaults and production
+configurations for GKE and EKS.
 
 ## Prerequisites
 
-Before you deploy, ensure you have:
+Ask Claude Code:
 
-- A Kubernetes cluster (Minikube, GKE, EKS, or similar)
-- Docker installed locally (for building the agent image)
-- Access to your git repository
+```text
+Help me deploy Shipwright to Kubernetes using Helm. I'm targeting [Minikube / GKE / EKS].
+```
 
-## Deployment options
+Claude Code will walk through the right prerequisites, values, and install commands for your target.
 
-Shipwright supports several cloud platforms:
+### What you need
 
-- **Kubernetes**: Deploy using Helm or raw manifests
-- **GKE (Google Cloud)**: Gateway API + cert-manager integration
-- **EKS (AWS)**: ALB (Application Load Balancer) integration
+- **Kubernetes cluster** — Minikube (local), GKE, or EKS
+- **Helm 3** — `brew install helm` / `apt install helm`
+- **kubectl** configured to point at your cluster
 
-## Getting started
+## Networking model
 
-For detailed deployment instructions, refer to the Shipwright documentation on Kubernetes deployment.
+`networking.type` controls how services are exposed. Admin UI/API serves at `/` and the metrics
+dashboard at `/dashboard` on a single host:
+
+| `networking.type` | What renders | Typical target |
+|-------------------|--------------|----------------|
+| `ClusterIP` | Services only; reach via `kubectl port-forward` | Default; any cluster |
+| `NodePort` | NodePort Services | Bare-metal / kind |
+| `LoadBalancer` | LoadBalancer Services | Cloud L4 LB |
+| `ingress` | An `Ingress` routing `/dashboard` → metrics, `/` → admin | Minikube (nginx), EKS (ALB) |
+| `gateway` | A Gateway API `Gateway` + `HTTPRoute`s | GKE (managed L7) |
+
+`ingress` and `gateway` are mutually exclusive — only one is ever rendered.
+
+## Minikube (local)
+
+A quick local deployment over plain HTTP using the Minikube nginx ingress addon. PostgreSQL is
+bundled, so no external database is required.
+
+### Setup
+
+```bash
+minikube start
+minikube addons enable ingress      # installs the nginx ingress controller
+```
+
+### Install
+
+```bash
+helm dependency build charts/shipwright    # resolve the pinned PostgreSQL subchart
+helm install shipwright charts/shipwright \
+  --namespace shipwright --create-namespace \
+  --set networking.type=ingress \
+  --set networking.ingress.className=nginx \
+  --set networking.ingress.host=shipwright.local
+```
+
+Or from the published Helm repo:
+
+```bash
+helm repo add shipwright https://app-vitals.github.io/shipwright
+helm install shipwright shipwright/shipwright \
+  --namespace shipwright --create-namespace \
+  --set networking.type=ingress \
+  --set networking.ingress.className=nginx \
+  --set networking.ingress.host=shipwright.local
+```
+
+### Reach the services
+
+Point the Minikube IP at the local hostname:
+
+```bash
+echo "$(minikube ip) shipwright.local" | sudo tee -a /etc/hosts
+```
+
+Then:
+
+- Admin UI/API: `http://shipwright.local/`
+- Metrics dashboard: `http://shipwright.local/dashboard`
+
+Or skip the ingress and port-forward directly:
+
+```bash
+kubectl port-forward svc/shipwright-admin   3001:3001 -n shipwright
+kubectl port-forward svc/shipwright-metrics 3460:3460 -n shipwright
+```
+
+### Key values
+
+```yaml
+networking:
+  type: ingress
+  ingress:
+    className: nginx
+    host: shipwright.local
+tls:
+  certManager:
+    enabled: false        # Minikube = plain HTTP
+auth:
+  mode: open              # dev auth — no real authentication; local use only
+postgresql:
+  enabled: true           # bundled PostgreSQL (default)
+```
+
+> **Security:** `auth.mode=open` performs no authentication — anyone who can reach the admin
+> service is treated as a logged-in user. Use it only on a local cluster or behind a private
+> network you fully control.
+
+## GKE (Gateway API + cert-manager)
+
+Production deployment on GKE using the managed external L7 load balancer via the Gateway API,
+with TLS issued by cert-manager.
+
+### Prerequisites
+
+- **Gateway API CRDs** (`gateway.networking.k8s.io/v1`) installed — provided by the GKE Gateway
+  API add-on with the `gke-l7-global-external-managed` GatewayClass
+- **cert-manager** installed with a `ClusterIssuer` already created (e.g. `letsencrypt-prod`)
+
+### Install
+
+```bash
+helm install shipwright charts/shipwright \
+  --namespace shipwright --create-namespace \
+  -f charts/shipwright/examples/values-gke-gateway.yaml
+```
+
+### Key values
+
+```yaml
+networking:
+  type: gateway
+  gateway:
+    gatewayClassName: gke-l7-global-external-managed
+    host: shipwright.example.com
+tls:
+  certManager:
+    enabled: true
+    issuerRef:
+      name: letsencrypt-prod
+      kind: ClusterIssuer
+auth:
+  mode: google
+  google:
+    clientId: <your-oauth-client-id>
+    clientSecret: <your-oauth-client-secret>
+    allowedEmails: you@your-domain.example
+```
+
+The chart renders a `Gateway` plus `HTTPRoute`s: an HTTP listener on `:80`, an HTTPS listener on
+`:443` (when TLS is enabled), and an HTTP→HTTPS redirect route. Point your DNS `A`/`AAAA` record
+at the Gateway's external address once provisioned.
+
+- Admin UI/API: `https://shipwright.example.com/`
+- Metrics dashboard: `https://shipwright.example.com/dashboard`
+
+## EKS (ALB ingress + cert-manager)
+
+Production deployment on EKS using the AWS Load Balancer Controller to provision an ALB from the
+chart's `Ingress`, with cert-manager for certificate management.
+
+### Prerequisites
+
+- **AWS Load Balancer Controller** installed — watches `Ingress` objects with
+  `ingressClassName: alb` and provisions an ALB
+- **cert-manager** or AWS Certificate Manager for TLS
+
+### Install
+
+Prefer a values file for the ALB annotations:
+
+```yaml
+networking:
+  type: ingress
+  ingress:
+    className: alb
+    host: shipwright.example.com
+    annotations:
+      alb.ingress.kubernetes.io/scheme: internet-facing
+      alb.ingress.kubernetes.io/target-type: ip
+      alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+      alb.ingress.kubernetes.io/certificate-arn: <your-acm-certificate-arn>
+tls:
+  certManager:
+    enabled: false      # TLS is via ALB/ACM annotations on the ingress path
+auth:
+  mode: google
+  google:
+    clientId: <your-oauth-client-id>
+    clientSecret: <your-oauth-client-secret>
+    allowedEmails: you@your-domain.example
+```
+
+```bash
+helm install shipwright charts/shipwright \
+  --namespace shipwright --create-namespace \
+  -f my-values.yaml
+```
+
+Point your DNS record at the ALB's DNS name once provisioned.
+
+- Admin UI/API: `https://shipwright.example.com/`
+- Metrics dashboard: `https://shipwright.example.com/dashboard`
+
+## Agent runtime provisioning
+
+By default the admin service runs in **Noop** mode — creating an agent only writes a database row.
+Set `agent.provisioning.enabled=true` to switch to the **Kubernetes** provisioner:
+
+```yaml
+agent:
+  provisioning:
+    enabled: true
+    namespace: ""          # target namespace for provisioned agent resources
+    image:
+      repository: shipwright-agent
+      tag: ""              # defaults to chart appVersion
+    replicas: 1
+```
+
+When provisioning is enabled, `POST /agents/:id/provision` creates:
+1. A **PersistentVolumeClaim** (persistent agent home storage)
+2. A **Secret** (scoped agent token)
+3. A **Deployment** (agent container)
+
+The chart also renders a `ClusterRole` and `ClusterRoleBinding` granting the admin ServiceAccount
+`create`, `get`, and `delete` on PVCs, Deployments, and Secrets. The PVC is intentionally retained
+on agent deletion for data safety.
+
+Self-hosted agents (`selfHosted: true`) are skipped by the provisioner — they manage their own
+workload.
+
+## Authentication modes
+
+### `auth.mode=open` (default, dev only)
+
+Sets `ADMIN_DEV_AUTH=true`. No real authentication — local use only.
+
+### `auth.mode=google` (production)
+
+Sets `NODE_ENV=production` and enables Google OAuth. Required for any internet-reachable deployment.
+Only emails on `allowedEmails` may sign in.
+
+## Bringing your own PostgreSQL
+
+The bundled PostgreSQL is the Bitnami `postgresql` subchart. To use an external database:
+
+```yaml
+postgresql:
+  enabled: false
+externalDatabase:
+  existingSecret: my-db-secret
+  adminUrlKey: DATABASE_URL_SHIPWRIGHT_ADMIN
+```
+
+For task-store, also supply a separate secret:
+
+```yaml
+taskStore:
+  enabled: true
+  database:
+    existingSecret: my-task-store-db-secret
+```
+
+The task-store database **must be separate** from the admin database.
 
 ## Next steps
 
-Once deployed, configure your task store and set up cron jobs to automate your delivery pipeline.
+With the agent deployed and running in the cloud, connect it to Slack so it can receive tasks via
+DM and mentions. See [Slack Integration](/docs/slack-integration).
