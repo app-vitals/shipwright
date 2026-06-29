@@ -1,27 +1,69 @@
 ---
 title: Introduction
-description: Understand Shipwright Harness and how it automates your delivery pipeline.
+description: What Shipwright Harness is and how the four-artifact A→B→C→D architecture fits together.
 section: Getting Started
 order: 0
+next: "/docs/getting-started"
 ---
 
 # Introduction
 
-Shipwright Harness is the open-source autonomous delivery agent for Claude Code — a system that plans, builds, reviews, and ships code automatically.
+Shipwright Harness is the open-source autonomous delivery agent for Claude Code. It drives the full
+software delivery loop — **spec → plan → execute → review → deploy** — across any repository, without
+manual hand-offs.
 
-## How it works
+## What is Shipwright Harness?
 
-Shipwright runs on Claude Code as a plugin or deploys to your cloud as an autonomous agent. Either way, it drives the full delivery loop: **spec → plan → build → review → deploy**.
+Shipwright Harness is a Claude Code plugin you install once and use everywhere. It is repo-agnostic:
+it plans, builds, reviews, and ships code against any codebase — Node.js, Go, Rust, Python, Ruby, or
+anything else — using only standard git and a task queue.
 
-## Key concepts
+The core guarantee is that you stay in the loop only where it matters. Shipwright handles the
+mechanical work (writing failing tests, implementing code, opening PRs, watching CI) and surfaces
+decisions that require human judgment.
 
-- **Repo-agnostic**: Runs against any repository (Node, Go, Rust, Python, Ruby, etc.)
-- **Test-first**: Writes failing tests before implementation
-- **Autonomous**: Builds, reviews, and ships with you in the loop only where it counts
-- **Measured**: Tracks first-time-quality, cycle time, and accuracy
+Install the plugin into your Claude Code workspace once:
+
+```bash
+/plugin install shipwright@app-vitals/shipwright
+```
+
+It ships as four artifacts — built and activated in sequence — so you can adopt as much or as little
+as you need.
+
+## How it works — A → B → C → D
+
+Each artifact is independently useful and adds capability when combined with the next:
+
+| Phase | Artifact | What it is |
+|-------|----------|------------|
+| **A** | **Plugin** (`plugins/shipwright/`) | Claude Code plugin covering the full delivery loop. Install with `/plugin install shipwright`. Repo-agnostic. |
+| **B** | **Metrics dashboard** (`metrics/`) | Hono service with backend-agnostic JSON endpoints and a server-rendered dashboard. Two modes: fixtures (offline) or live task store. |
+| **C** | **Shipwright agent** (`agent/`) | Thin autonomous runner: pick next ready task → build → ship PR → forward metrics. Deploys to any container host. |
+| **D** | **Task store service** (`task-store/`) | Postgres-backed task queue, PR tracking, and scoped access tokens. Replaces the local JSON fallback when you go to production. |
+
+You can stop at A (the plugin alone is fully functional), add B to get local metrics, add C to run
+hands-off in the cloud, and add D when you want a durable, multi-agent task queue.
+
+## Design principles
+
+**Local-first.** Every artifact runs offline by default. The metrics dashboard serves fixtures with no
+secrets needed. The plugin works against any local git repo. No cloud account required to get started.
+
+**Repo-agnostic.** The plugin carries no opinions about your stack. It reads your test command from
+context and adapts. It never hard-codes paths, frameworks, or CI providers.
+
+**No new coupling.** Each artifact draws a clean boundary. The plugin does not import the agent. The
+metrics service has no database. The task store has no UI. Boundaries are enforced by the build — not
+by convention.
+
+**Test-first.** Shipwright writes failing tests before implementation code, every time. This is
+enforced by the plugin's execution loop, not by a linter.
 
 ## Next steps
 
-Ready to try it? Head to [Getting Started](/docs/getting-started) to install the plugin.
+Ready to try it? [Get started with the local setup](/docs/getting-started) — you can go from zero to
+a running metrics dashboard in a single Claude Code prompt.
 
-Want to run it in your cloud? See [Deploying to Cloud](/docs/deploying-to-cloud) for the full setup.
+Want to run it as a 24/7 autonomous agent? See [Deploying to Cloud](/docs/deploying-to-cloud) for the
+full container deployment guide.

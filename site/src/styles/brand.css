@@ -258,6 +258,22 @@ code,
   background: var(--sw-glow-support);
 }
 
+/* --pagefind-ui-* variable overrides — map Pagefind's theming to brand tokens.
+   All values reference sw tokens so brand-lint stays clean (no raw hex). */
+:root {
+  --pagefind-ui-scale: 1;
+  --pagefind-ui-primary: var(--sw-color-brand-default);
+  --pagefind-ui-text: var(--sw-color-text-body);
+  --pagefind-ui-background: var(--sw-color-bg-raised);
+  --pagefind-ui-border: var(--sw-color-border-muted);
+  --pagefind-ui-tag: var(--sw-color-bg-overlay);
+  --pagefind-ui-border-width: 1px;
+  --pagefind-ui-border-radius: var(--sw-radius-sm);
+  --pagefind-ui-image-border-radius: var(--sw-radius-sm);
+  --pagefind-ui-image-box-ratio: 3/2;
+  --pagefind-ui-font: var(--sw-font-body);
+}
+
 /* --astro-code-* variables for Shiki css-variables theme.
    These map syntax token colors to brand tokens — never raw hex values. */
 :root {
