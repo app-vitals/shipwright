@@ -21,7 +21,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `bunx astro build && bunx astro preview --port ${PORT}`,
+    command: `bunx astro build && bunx pagefind --site dist && bunx astro preview --port ${PORT}`,
     url: `http://localhost:${PORT}`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
