@@ -123,7 +123,8 @@ const year = new Date().getFullYear();
     </header>
 
     <!-- .sw-container already caps width at --sw-layout-max-width (72rem). -->
-    <main class="sw-container relative">
+    <!-- data-pagefind-ignore: home and compare pages are excluded from docs search -->
+    <main class="sw-container relative" data-pagefind-ignore>
       <slot />
     </main>
 
