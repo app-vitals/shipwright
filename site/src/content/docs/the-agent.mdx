@@ -24,10 +24,11 @@ There are three ways to run the agent depending on your context:
 | K8s container | `agent/src/entrypoint-main.ts` | Slack Socket Mode | Deployed via the Dockerfile (validates vars, fetches config, installs plugins, spawns runner) |
 | Local dev | `agent/scripts/run-agent.ts --agent-id <id>` | HTTP `POST /chat` | Testing Claude locally without a Slack workspace; requires `SHIPWRIGHT_DEV_CHAT=true` |
 
-The Dockerfile `ENTRYPOINT` is `bun run admin/src/main.ts`, which runs migrations, constructs all
-services, and mounts all admin and runtime routes. The agent process
-(`agent/src/entrypoint-main.ts`) starts the health server in-process on `SHIPWRIGHT_HEALTH_PORT`
-(default `3459`) before the startup sequence so Kubernetes liveness probes are reachable during init.
+The admin service Dockerfile (`admin/Dockerfile`) `ENTRYPOINT` is `bun run admin/src/main.ts`,
+which runs migrations, constructs all services, and mounts all admin and runtime routes. The agent
+container Dockerfile (`agent/Dockerfile`) `ENTRYPOINT` is `bun run agent/src/entrypoint-main.ts`,
+which starts the health server in-process on `SHIPWRIGHT_HEALTH_PORT` (default `3459`) before the
+startup sequence so Kubernetes liveness probes are reachable during init.
 
 ## Running the agent locally
 

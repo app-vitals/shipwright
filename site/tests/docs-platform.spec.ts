@@ -176,6 +176,18 @@ test("key headings visible in running-locally page", async ({ page }) => {
   await expect(stackHeading).toBeVisible();
 });
 
+test("prev/next navigation links on running-locally page", async ({ page }) => {
+  await page.goto("/docs/running-locally");
+  // prev → the-plugin
+  const prevLink = page.locator("a[data-nav='prev']");
+  await expect(prevLink).toBeVisible();
+  expect(await prevLink.getAttribute("href")).toBe("/docs/the-plugin");
+  // next → the-agent
+  const nextLink = page.locator("a[data-nav='next']");
+  await expect(nextLink).toBeVisible();
+  expect(await nextLink.getAttribute("href")).toBe("/docs/the-agent");
+});
+
 test("GET /docs/the-agent returns 200", async ({ page }) => {
   const response = await page.goto("/docs/the-agent");
   expect(response?.status()).toBe(200);
@@ -244,4 +256,15 @@ test("key headings visible in slack-integration page", async ({ page }) => {
   // Response markers heading must be present
   const markersHeading = page.locator("h2", { hasText: /response markers/i });
   await expect(markersHeading).toBeVisible();
+});
+
+test("prev/next navigation on slack-integration page (terminal page)", async ({ page }) => {
+  await page.goto("/docs/slack-integration");
+  // prev → deploying-to-cloud
+  const prevLink = page.locator("a[data-nav='prev']");
+  await expect(prevLink).toBeVisible();
+  expect(await prevLink.getAttribute("href")).toBe("/docs/deploying-to-cloud");
+  // no next link — slack-integration is the terminal page; no broken/empty href allowed
+  const nextLink = page.locator("a[data-nav='next']");
+  await expect(nextLink).toHaveCount(0);
 });
