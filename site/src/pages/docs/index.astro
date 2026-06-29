@@ -1,0 +1,63 @@
+---
+// /docs landing page — three persona paths (Evaluate, Adopt, Operate)
+// Marketing shell using BaseLayout (not DocsLayout).
+// Card styles reuse .sw-card, .sw-label, .sw-btn-secondary from brand.css.
+import BaseLayout from "../../layouts/BaseLayout.astro";
+
+const personas = [
+  {
+    title: "Evaluate",
+    description:
+      "Understand how Shipwright automates the full delivery loop and whether it fits your pipeline.",
+    link: "/docs/introduction",
+  },
+  {
+    title: "Adopt",
+    description:
+      "Get Shipwright running in your Claude Code workspace and integrate it with your repository.",
+    link: "/docs/getting-started",
+  },
+  {
+    title: "Operate",
+    description:
+      "Deploy Shipwright as a cloud agent and run it autonomously on a schedule in your infrastructure.",
+    link: "/docs/deploying-to-cloud",
+  },
+];
+---
+
+<BaseLayout
+  title="Docs — Shipwright Harness"
+  description="Explore Shipwright Harness: from evaluation to adoption to autonomous operation."
+>
+  <section class="relative z-10 py-24">
+    <p class="sw-label">Documentation</p>
+    <h1 class="sw-h1 mt-4 max-w-3xl">
+      Learn Shipwright. From evaluation to ship.
+    </h1>
+    <p class="mt-5 max-w-2xl text-lg">
+      Three paths to getting the most out of Shipwright Harness. Pick where you
+      are and move forward.
+    </p>
+
+    <div class="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+      {
+        personas.map((persona) => (
+          <div class="sw-card flex flex-col gap-4">
+            <h2 class="text-xl" style="color: var(--sw-color-text-heading);">
+              {persona.title}
+            </h2>
+            <p class="text-sm">{persona.description}</p>
+            <a
+              href={persona.link}
+              class="sw-btn sw-btn-secondary w-fit"
+              style="margin-top: auto;"
+            >
+              Get started
+            </a>
+          </div>
+        ))
+      }
+    </div>
+  </section>
+</BaseLayout>
