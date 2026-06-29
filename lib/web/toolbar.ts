@@ -13,6 +13,15 @@ export interface ShipwrightToolbarOptions {
   metricsUrl?: string;
   /** Base URL of the admin service. Defaults to empty string (same origin). */
   adminBaseUrl?: string;
+  /**
+   * Public, unauthenticated variant. When true, render only the read-only
+   * surfaces (Metrics dashboard + public task board) and no sign-out — the
+   * authenticated /admin/* links and logout are omitted, since they 404 (and
+   * aren't reachable) on the public proof host.
+   */
+  readOnly?: boolean;
+  /** Public task board URL, used only in readOnly mode. Defaults to "/public/tasks". */
+  tasksUrl?: string;
 }
 
 export function baseStyles(): string {
@@ -133,6 +142,21 @@ export function renderShipwrightToolbar(
   const adminBase = opts.adminBaseUrl ?? "";
   const active = (prefix: string) =>
     activePath.startsWith(prefix) ? " active" : "";
+
+  // Public proof surface: only the read-only Metrics + Tasks views are routed and
+  // reachable, so omit every /admin/* link and the sign-out form (they 404 on the
+  // public host). The wordmark points at the dashboard instead of /admin/agents.
+  if (opts.readOnly) {
+    const tasksUrl = opts.tasksUrl ?? "/public/tasks";
+    return `<nav class="vos-toolbar" aria-label="Site navigation">
+    <a href="${metricsUrl}" class="vos-wordmark">Shipwright</a>
+    <div class="vos-nav">
+      <a href="${metricsUrl}" class="vos-nav-link${active(metricsUrl)}">Metrics</a>
+      <a href="${tasksUrl}" class="vos-nav-link${active(tasksUrl)}">Tasks</a>
+    </div>
+  </nav>`;
+  }
+
   return `<nav class="vos-toolbar" aria-label="Site navigation">
     <a href="${adminBase}/admin/agents" class="vos-wordmark">Shipwright</a>
     <div class="vos-nav">

@@ -101,7 +101,7 @@ export function renderDashboardPage(opts: DashboardPageOptions): string {
   <link rel="stylesheet" href="${base}/dashboard/styles.css" />
 </head>
 <body>
-  ${renderShipwrightToolbar({ userName: opts.userName, activePath: `${base}/dashboard`, logoutAction: "/admin/logout", metricsUrl: `${base}/dashboard`, adminBaseUrl: opts.adminBaseUrl })}
+  ${renderShipwrightToolbar({ userName: opts.userName, activePath: `${base}/dashboard`, logoutAction: "/admin/logout", metricsUrl: `${base}/dashboard`, adminBaseUrl: opts.adminBaseUrl, readOnly, tasksUrl: `${base}/tasks` })}
   <div class="app">
 
     <!-- Page Controls -->
