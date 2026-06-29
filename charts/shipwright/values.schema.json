@@ -239,6 +239,7 @@
                 },
                 "basePath": { "type": "string" },
                 "requireOwnerRole": { "type": "boolean" },
+                "offline": { "type": "boolean" },
                 "internalKey": {
                   "type": "object",
                   "additionalProperties": false,
