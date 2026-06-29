@@ -4,8 +4,8 @@
 // No runtime JS, no hardcoded hex colors, no competitor names.
 import BaseLayout from "../layouts/BaseLayout.astro";
 
-const taglinePrefix = "The open-source autonomous delivery agent for ";
-const taglineGradient = "Claude Code";
+const taglinePrefix = "The open-source autonomous delivery system ";
+const taglineGradient = "in your own environment";
 const tagline = `${taglinePrefix}${taglineGradient}.`;
 const install = "/plugin install shipwright@app-vitals/shipwright";
 const githubUrl = "https://github.com/app-vitals/shipwright";
@@ -259,12 +259,28 @@ $ /shipwright:deploy
 ---
 
 <BaseLayout title="Shipwright Harness" description={tagline}>
-  <!-- ── Hero ── (minimal: eyebrow + tagline; flows straight into two-ways) -->
-  <section class="relative z-10 pt-12 pb-8">
+  <!-- ── Hero ── (tagline + two-path CTA) -->
+  <section class="relative z-10 pt-12 pb-12">
     <p class="sw-label">Built on Claude Code</p>
     <h1 class="sw-display mt-4 max-w-3xl">
       {taglinePrefix}<span class="sw-gradient-text">{taglineGradient}</span>.
     </h1>
+
+    <div class="mt-10 grid gap-6 sm:grid-cols-2 max-w-2xl">
+      <div class="sw-card flex flex-col gap-3">
+        <span class="sw-label">Try it now</span>
+        <p class="text-sm">Drop it into Claude Code and run it on any repository.</p>
+        <pre class="sw-code text-sm"><code>{install}</code></pre>
+      </div>
+
+      <div class="sw-card flex flex-col gap-3">
+        <span class="sw-label">Work with us</span>
+        <p class="text-sm">Get a walkthrough on your own codebase and deploy to your cloud.</p>
+        <a class="sw-btn sw-btn-secondary w-fit" href={discoveryUrl}>
+          Book a discovery call
+        </a>
+      </div>
+    </div>
   </section>
 
   <!-- Showcase: four tabbed panels (Two ways · Crons · Metrics · Demo).
