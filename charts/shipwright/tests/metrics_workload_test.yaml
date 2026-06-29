@@ -397,3 +397,43 @@ tests:
           path: spec.template.spec.containers[0].env
           content:
             name: METRICS_INTERNAL_API_KEY
+
+  - it: injects the public-mode env when metrics.public.enabled with a repo
+    template: templates/metrics-deployment.yaml
+    set:
+      metrics.public.enabled: true
+      metrics.public.repo: app-vitals/shipwright
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_METRICS_PUBLIC_MODE
+            value: "true"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_METRICS_PUBLIC_REPO
+            value: app-vitals/shipwright
+
+  - it: omits the public-mode env by default (public.enabled false)
+    template: templates/metrics-deployment.yaml
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_METRICS_PUBLIC_MODE
+            value: "true"
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_METRICS_PUBLIC_REPO
+            value: app-vitals/shipwright
+
+  - it: fails to render when public.enabled but repo is empty (schema guard)
+    template: templates/metrics-deployment.yaml
+    set:
+      metrics.public.enabled: true
+      metrics.public.repo: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: "metrics/public/repo"

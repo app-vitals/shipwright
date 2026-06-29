@@ -139,6 +139,15 @@ spec:
                   name: {{ .Values.metrics.provider.internalKey.existingSecret }}
                   key: {{ .Values.metrics.provider.internalKey.key }}
             {{- end }}
+            {{- if .Values.metrics.public.enabled }}
+            # Public read-only proof surface: mount the unauthenticated, repo-scoped
+            # /public/* routes alongside the authenticated dashboard. repo is required
+            # when enabled — fail the render (not a half-configured pod) if it is empty.
+            - name: SHIPWRIGHT_METRICS_PUBLIC_MODE
+              value: "true"
+            - name: SHIPWRIGHT_METRICS_PUBLIC_REPO
+              value: {{ required "metrics.public.repo is required when metrics.public.enabled=true" .Values.metrics.public.repo | quote }}
+            {{- end }}
           {{- with .Values.metrics.resources }}
           resources:
             {{- toYaml . | nindent 12 }}

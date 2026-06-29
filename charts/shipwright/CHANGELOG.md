@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.6.123] - 2026-06-29
+
+### Added
+
+- `metrics.public.{enabled,repo}` to enable the unauthenticated, repo-scoped `/public/*` proof surface on the metrics service (injects `SHIPWRIGHT_METRICS_PUBLIC_MODE` + `SHIPWRIGHT_METRICS_PUBLIC_REPO`). `repo` is required when `enabled=true` (template fails fast at render). Backs the public dogfooding page (e.g. `proof.shipwrightharness.com`).
+
 ## [1.6.122] - 2026-06-29
 
 ### Changed
