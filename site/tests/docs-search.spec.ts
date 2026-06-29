@@ -71,9 +71,9 @@ test("compare page (/compare) is excluded from docs search", async ({
   await searchInput.fill("compare");
   await searchInput.press("Enter");
 
-  // Wait for Pagefind to settle: either results or a no-results message appear.
+  // Wait for Pagefind to settle — results-area is always rendered once search completes.
   await expect(
-    page.locator("#search .pagefind-ui__results-area, #search [class*='results-area'], #search .pagefind-ui__message, #search [class*='message']")
+    page.locator("#search .pagefind-ui__results-area")
   ).toBeVisible({ timeout: 10_000 });
 
   // /compare should NOT appear — it has data-pagefind-ignore.
