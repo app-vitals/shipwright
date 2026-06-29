@@ -1,8 +1,8 @@
-<!DOCTYPE html><html lang="en" data-astro-cid-mw7aashj> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="Astro v5.18.2"><title>Deploying to Cloud — Shipwright Harness</title><meta name="description" content="Deploy Shipwright as an autonomous agent in your cloud infrastructure."><link rel="canonical" href="https://shipwrightharness.com/docs/deploying-to-cloud/"><link rel="icon" type="image/svg+xml" href="/shipwright-icon.svg"><link rel="icon" type="image/png" href="/shipwright-icon.png"><link rel="apple-touch-icon" href="/shipwright-icon.png"><meta property="og:type" content="website"><meta property="og:url" content="https://shipwrightharness.com/docs/deploying-to-cloud/"><meta property="og:title" content="Deploying to Cloud — Shipwright Harness"><meta property="og:description" content="Deploy Shipwright as an autonomous agent in your cloud infrastructure."><meta property="og:site_name" content="Shipwright Harness"><meta property="og:image" content="https://shipwrightharness.com/og-default-1280x640.png"><meta property="og:image:width" content="1280"><meta property="og:image:height" content="640"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="preconnect" href="https://api.fontshare.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"><link href="https://api.fontshare.com/v2/css?f[]=general-sans@400,500,600&display=swap" rel="stylesheet"><!-- Pagefind UI — the ONE permitted script on the docs layout --><link href="/pagefind/pagefind-ui.css" rel="stylesheet"><script>
+<!DOCTYPE html><html lang="en" data-astro-cid-mw7aashj> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="Astro v5.18.2"><title>Deploying to Cloud — Shipwright Harness</title><meta name="description" content="Deploy Shipwright to Kubernetes with the official Helm chart — Minikube, GKE (Gateway API), and EKS (ALB) targets covered end to end."><link rel="canonical" href="https://shipwrightharness.com/docs/deploying-to-cloud/"><link rel="icon" type="image/svg+xml" href="/shipwright-icon.svg"><link rel="icon" type="image/png" href="/shipwright-icon.png"><link rel="apple-touch-icon" href="/shipwright-icon.png"><meta property="og:type" content="website"><meta property="og:url" content="https://shipwrightharness.com/docs/deploying-to-cloud/"><meta property="og:title" content="Deploying to Cloud — Shipwright Harness"><meta property="og:description" content="Deploy Shipwright to Kubernetes with the official Helm chart — Minikube, GKE (Gateway API), and EKS (ALB) targets covered end to end."><meta property="og:site_name" content="Shipwright Harness"><meta property="og:image" content="https://shipwrightharness.com/og-default-1280x640.png"><meta property="og:image:width" content="1280"><meta property="og:image:height" content="640"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="preconnect" href="https://api.fontshare.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"><link href="https://api.fontshare.com/v2/css?f[]=general-sans@400,500,600&display=swap" rel="stylesheet"><!-- Pagefind UI — the ONE permitted script on the docs layout --><link href="/pagefind/pagefind-ui.css" rel="stylesheet"><script>
       import("/pagefind/pagefind-ui.js").then(function () {
         new window.PagefindUI({ element: "#search", showImages: false });
       });
-    </script><link rel="stylesheet" href="/_astro/compare.Cbv0vuM-.css">
+    </script><link rel="stylesheet" href="/_astro/compare.Dq151SBs.css">
 <link rel="stylesheet" href="/_astro/compare.cgpvabiO.css">
 <style>#docs-sidebar-toggle[data-astro-cid-mw7aashj],.docs-sidebar-overlay[data-astro-cid-mw7aashj]{display:none}@media(max-width:767px){.docs-sidebar[data-astro-cid-mw7aashj]{position:fixed;top:0;left:-100%;width:280px;height:100vh;z-index:50;background:var(--sw-color-bg-raised);border-right:1px solid var(--sw-color-border-muted);transition:left .25s ease;overflow-y:auto;padding:1.5rem}#docs-sidebar-toggle[data-astro-cid-mw7aashj]:checked~.sw-container[data-astro-cid-mw7aashj] .docs-layout[data-astro-cid-mw7aashj] .docs-sidebar[data-astro-cid-mw7aashj]{left:0}#docs-sidebar-toggle[data-astro-cid-mw7aashj]:checked~.docs-sidebar-overlay[data-astro-cid-mw7aashj]{display:block;position:fixed;inset:0;z-index:40;background:color-mix(in srgb,var(--sw-color-bg-base) 65%,transparent)}.docs-mobile-menu-btn[data-astro-cid-mw7aashj],.docs-mobile-close-btn[data-astro-cid-mw7aashj]{display:flex}}@media(min-width:768px){.docs-mobile-menu-btn[data-astro-cid-mw7aashj],.docs-mobile-close-btn[data-astro-cid-mw7aashj]{display:none}.docs-sidebar[data-astro-cid-mw7aashj]{position:sticky;top:1.5rem;height:-moz-fit-content;height:fit-content;max-height:calc(100vh - 3rem);overflow-y:auto}}.docs-layout[data-astro-cid-mw7aashj]{display:grid;grid-template-columns:1fr;gap:0;min-height:calc(100vh - 80px)}@media(min-width:768px){.docs-layout[data-astro-cid-mw7aashj]{grid-template-columns:260px 1fr 220px;gap:2rem;align-items:start}}.docs-sidebar-link[data-astro-cid-mw7aashj]{display:block;padding:.3rem .75rem;border-radius:var(--sw-radius-sm);font-size:var(--sw-text-small-size);color:var(--sw-color-text-editorial);text-decoration:none;transition:background .15s,color .15s}.docs-sidebar-link[data-astro-cid-mw7aashj]:hover,.docs-sidebar-link[data-astro-cid-mw7aashj][aria-current=page]{background:var(--sw-color-bg-overlay);color:var(--sw-color-text-heading)}.docs-sidebar-link[data-astro-cid-mw7aashj][aria-current=page]{color:var(--sw-color-brand-default);font-weight:500}.docs-toc-link[data-astro-cid-mw7aashj]{display:block;padding:.2rem 0;font-size:var(--sw-text-small-size);color:var(--sw-color-text-editorial);text-decoration:none;line-height:1.4}.docs-toc-link[data-astro-cid-mw7aashj]:hover{color:var(--sw-color-text-heading)}.docs-toc-link[data-astro-cid-mw7aashj].depth-3{padding-left:.75rem;font-size:var(--sw-text-label-size);color:var(--sw-color-text-muted)}.docs-prevnext[data-astro-cid-mw7aashj]{display:flex;gap:1rem;justify-content:space-between;padding-top:2rem;margin-top:2rem;border-top:1px solid var(--sw-color-border-subtle);flex-wrap:wrap}.docs-prevnext[data-astro-cid-mw7aashj] a[data-astro-cid-mw7aashj]{display:inline-flex;align-items:center;gap:.4rem;padding:.6rem 1rem;border-radius:var(--sw-radius-md);border:1px solid var(--sw-color-border-muted);background:var(--sw-color-bg-raised);color:var(--sw-color-text-body);font-size:var(--sw-text-small-size);text-decoration:none;transition:border-color .15s,color .15s}.docs-prevnext[data-astro-cid-mw7aashj] a[data-astro-cid-mw7aashj]:hover{border-color:var(--sw-color-brand-default);color:var(--sw-color-brand-default)}
 </style></head> <body class="min-h-screen overflow-x-hidden" data-astro-cid-mw7aashj> <!-- Mobile sidebar toggle (CSS-only, hidden checkbox) --> <input type="checkbox" id="docs-sidebar-toggle" aria-hidden="true" data-astro-cid-mw7aashj> <!-- Overlay (click to close — uses label trick; CSS-only) --> <label for="docs-sidebar-toggle" class="docs-sidebar-overlay" aria-hidden="true" data-astro-cid-mw7aashj></label> <!-- Glow orb (decorative) --> <div class="sw-orb sw-orb-brand" aria-hidden="true" style="top: -12rem; left: 50%; width: 42rem; height: 42rem; transform: translateX(-50%);" data-astro-cid-mw7aashj></div> <!-- Site header --> <header class="sw-container relative z-10 flex items-center justify-between py-6" data-astro-cid-mw7aashj> <a href="/" class="flex items-center gap-3" aria-label="Shipwright Harness — home" data-astro-cid-mw7aashj> <img src="/shipwright-icon.svg" alt="" width="36" height="36" class="rounded-lg" data-astro-cid-mw7aashj> <span class="text-lg" style="font-family: var(--sw-font-display); font-weight: 700; letter-spacing: -0.01em; color: var(--sw-color-text-heading);" data-astro-cid-mw7aashj>
@@ -10,28 +10,233 @@ Shipwright <span style="color: var(--sw-color-brand-default);" data-astro-cid-mw
 ☰ Menu
 </label> </div> <div class="docs-layout" data-astro-cid-mw7aashj> <!-- Sidebar --> <aside class="docs-sidebar" data-astro-cid-mw7aashj> <!-- Pagefind search widget --> <div id="search" style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj></div> <!-- Mobile close button --> <div class="docs-mobile-close-btn" style="justify-content: flex-end; margin-bottom: 1rem;" data-astro-cid-mw7aashj> <label for="docs-sidebar-toggle" style="cursor: pointer; color: var(--sw-color-text-editorial); font-size: var(--sw-text-small-size);" aria-label="Close navigation" data-astro-cid-mw7aashj>
 ✕ Close
-</label> </div> <nav aria-label="Docs navigation" data-astro-cid-mw7aashj> <div style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-mw7aashj> Getting Started </p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="/docs/introduction" class="docs-sidebar-link" data-astro-cid-mw7aashj> Introduction </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/getting-started" class="docs-sidebar-link" data-astro-cid-mw7aashj> Getting Started </a> </li> </ul> </div><div style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-mw7aashj> Operations </p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="/docs/deploying-to-cloud" class="docs-sidebar-link" aria-current="page" data-astro-cid-mw7aashj> Deploying to Cloud </a> </li> </ul> </div> </nav> </aside> <!-- Main content --> <main class="sw-prose" style="min-width: 0;" data-pagefind-body data-astro-cid-mw7aashj>  <h1 id="deploying-to-cloud">Deploying to Cloud</h1>
-<p>Run Shipwright as an autonomous agent in your cloud. The agent picks up ready work from your task store, builds it, runs review, and ships PRs — all without manual intervention.</p>
+</label> </div> <nav aria-label="Docs navigation" data-astro-cid-mw7aashj> <div style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-mw7aashj> Agent </p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="/docs/the-agent" class="docs-sidebar-link" data-astro-cid-mw7aashj> The Agent </a> </li> </ul> </div><div style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-mw7aashj> Getting Started </p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="/docs/introduction" class="docs-sidebar-link" data-astro-cid-mw7aashj> Introduction </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/getting-started" class="docs-sidebar-link" data-astro-cid-mw7aashj> Getting Started </a> </li> </ul> </div><div style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-mw7aashj> Operations </p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="/docs/deploying-to-cloud" class="docs-sidebar-link" aria-current="page" data-astro-cid-mw7aashj> Deploying to Cloud </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/slack-integration" class="docs-sidebar-link" data-astro-cid-mw7aashj> Slack Integration </a> </li> </ul> </div><div style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-mw7aashj> Plugin </p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="/docs/the-plugin" class="docs-sidebar-link" data-astro-cid-mw7aashj> The Plugin </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/running-locally" class="docs-sidebar-link" data-astro-cid-mw7aashj> Running Locally </a> </li> </ul> </div> </nav> </aside> <!-- Main content --> <main class="sw-prose" style="min-width: 0;" data-pagefind-body data-astro-cid-mw7aashj>  <h1 id="deploying-to-cloud">Deploying to Cloud</h1>
+<p>Run Shipwright as a persistent autonomous agent in your cloud. The official Helm chart packages all
+four services (admin, metrics, agent, task-store) with Minikube-friendly defaults and production
+configurations for GKE and EKS.</p>
 <h2 id="prerequisites">Prerequisites</h2>
-<p>Before you deploy, ensure you have:</p>
+<p>Ask Claude Code:</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="text"><code><span class="line"><span>Help me deploy Shipwright to Kubernetes using Helm. I&#39;m targeting [Minikube / GKE / EKS].</span></span></code></pre>
+<p>Claude Code will walk through the right prerequisites, values, and install commands for your target.</p>
+<h3 id="what-you-need">What you need</h3>
 <ul>
-<li>A Kubernetes cluster (Minikube, GKE, EKS, or similar)</li>
-<li>Docker installed locally (for building the agent image)</li>
-<li>Access to your git repository</li>
+<li><strong>Kubernetes cluster</strong> — Minikube (local), GKE, or EKS</li>
+<li><strong>Helm 3</strong> — <code>brew install helm</code> / <code>apt install helm</code></li>
+<li><strong>kubectl</strong> configured to point at your cluster</li>
 </ul>
-<h2 id="deployment-options">Deployment options</h2>
-<p>Shipwright supports several cloud platforms:</p>
+<h2 id="networking-model">Networking model</h2>
+<p><code>networking.type</code> controls how services are exposed. Admin UI/API serves at <code>/</code> and the metrics
+dashboard at <code>/dashboard</code> on a single host:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th><code>networking.type</code></th><th>What renders</th><th>Typical target</th></tr></thead><tbody><tr><td><code>ClusterIP</code></td><td>Services only; reach via <code>kubectl port-forward</code></td><td>Default; any cluster</td></tr><tr><td><code>NodePort</code></td><td>NodePort Services</td><td>Bare-metal / kind</td></tr><tr><td><code>LoadBalancer</code></td><td>LoadBalancer Services</td><td>Cloud L4 LB</td></tr><tr><td><code>ingress</code></td><td>An <code>Ingress</code> routing <code>/dashboard</code> → metrics, <code>/</code> → admin</td><td>Minikube (nginx), EKS (ALB)</td></tr><tr><td><code>gateway</code></td><td>A Gateway API <code>Gateway</code> + <code>HTTPRoute</code>s</td><td>GKE (managed L7)</td></tr></tbody></table>
+<p><code>ingress</code> and <code>gateway</code> are mutually exclusive — only one is ever rendered.</p>
+<h2 id="minikube-local">Minikube (local)</h2>
+<p>A quick local deployment over plain HTTP using the Minikube nginx ingress addon. PostgreSQL is
+bundled, so no external database is required.</p>
+<h3 id="setup">Setup</h3>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-function)">minikube</span><span style="color:var(--astro-code-token-string)"> start</span></span>
+<span class="line"><span style="color:var(--astro-code-token-function)">minikube</span><span style="color:var(--astro-code-token-string)"> addons</span><span style="color:var(--astro-code-token-string)"> enable</span><span style="color:var(--astro-code-token-string)"> ingress</span><span style="color:var(--astro-code-token-comment)">      # installs the nginx ingress controller</span></span></code></pre>
+<h3 id="install">Install</h3>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-function)">helm</span><span style="color:var(--astro-code-token-string)"> dependency</span><span style="color:var(--astro-code-token-string)"> build</span><span style="color:var(--astro-code-token-string)"> charts/shipwright</span><span style="color:var(--astro-code-token-comment)">    # resolve the pinned PostgreSQL subchart</span></span>
+<span class="line"><span style="color:var(--astro-code-token-function)">helm</span><span style="color:var(--astro-code-token-string)"> install</span><span style="color:var(--astro-code-token-string)"> shipwright</span><span style="color:var(--astro-code-token-string)"> charts/shipwright</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  --namespace</span><span style="color:var(--astro-code-token-string)"> shipwright</span><span style="color:var(--astro-code-token-string)"> --create-namespace</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  --set</span><span style="color:var(--astro-code-token-string)"> networking.type=ingress</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  --set</span><span style="color:var(--astro-code-token-string)"> networking.ingress.className=nginx</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  --set</span><span style="color:var(--astro-code-token-string)"> networking.ingress.host=shipwright.local</span></span></code></pre>
+<p>Or from the published Helm repo:</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-function)">helm</span><span style="color:var(--astro-code-token-string)"> repo</span><span style="color:var(--astro-code-token-string)"> add</span><span style="color:var(--astro-code-token-string)"> shipwright</span><span style="color:var(--astro-code-token-string)"> https://app-vitals.github.io/shipwright</span></span>
+<span class="line"><span style="color:var(--astro-code-token-function)">helm</span><span style="color:var(--astro-code-token-string)"> install</span><span style="color:var(--astro-code-token-string)"> shipwright</span><span style="color:var(--astro-code-token-string)"> shipwright/shipwright</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  --namespace</span><span style="color:var(--astro-code-token-string)"> shipwright</span><span style="color:var(--astro-code-token-string)"> --create-namespace</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  --set</span><span style="color:var(--astro-code-token-string)"> networking.type=ingress</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  --set</span><span style="color:var(--astro-code-token-string)"> networking.ingress.className=nginx</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  --set</span><span style="color:var(--astro-code-token-string)"> networking.ingress.host=shipwright.local</span></span></code></pre>
+<h3 id="reach-the-services">Reach the services</h3>
+<p>Point the Minikube IP at the local hostname:</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-function)">echo</span><span style="color:var(--astro-code-token-string-expression)"> &quot;$(</span><span style="color:var(--astro-code-token-function)">minikube</span><span style="color:var(--astro-code-token-string)"> ip</span><span style="color:var(--astro-code-token-string-expression)">) shipwright.local&quot;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> sudo</span><span style="color:var(--astro-code-token-string)"> tee</span><span style="color:var(--astro-code-token-string)"> -a</span><span style="color:var(--astro-code-token-string)"> /etc/hosts</span></span></code></pre>
+<p>Then:</p>
 <ul>
-<li><strong>Kubernetes</strong>: Deploy using Helm or raw manifests</li>
-<li><strong>GKE (Google Cloud)</strong>: Gateway API + cert-manager integration</li>
-<li><strong>EKS (AWS)</strong>: ALB (Application Load Balancer) integration</li>
+<li>Admin UI/API: <code>http://shipwright.local/</code></li>
+<li>Metrics dashboard: <code>http://shipwright.local/dashboard</code></li>
 </ul>
-<h2 id="getting-started">Getting started</h2>
-<p>For detailed deployment instructions, refer to the Shipwright documentation on Kubernetes deployment.</p>
+<p>Or skip the ingress and port-forward directly:</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-function)">kubectl</span><span style="color:var(--astro-code-token-string)"> port-forward</span><span style="color:var(--astro-code-token-string)"> svc/shipwright-admin</span><span style="color:var(--astro-code-token-string)">   3001:3001</span><span style="color:var(--astro-code-token-string)"> -n</span><span style="color:var(--astro-code-token-string)"> shipwright</span></span>
+<span class="line"><span style="color:var(--astro-code-token-function)">kubectl</span><span style="color:var(--astro-code-token-string)"> port-forward</span><span style="color:var(--astro-code-token-string)"> svc/shipwright-metrics</span><span style="color:var(--astro-code-token-string)"> 3460:3460</span><span style="color:var(--astro-code-token-string)"> -n</span><span style="color:var(--astro-code-token-string)"> shipwright</span></span></code></pre>
+<h3 id="key-values">Key values</h3>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="yaml"><code><span class="line"><span style="color:var(--astro-code-token-keyword)">networking</span><span style="color:var(--astro-code-token-keyword)">:</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">  type</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-string-expression)"> ingress</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">  ingress</span><span style="color:var(--astro-code-token-keyword)">:</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">    className</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-string-expression)"> nginx</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">    host</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-string-expression)"> shipwright.local</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">tls</span><span style="color:var(--astro-code-token-keyword)">:</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">  certManager</span><span style="color:var(--astro-code-token-keyword)">:</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">    enabled</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-constant)"> false</span><span style="color:var(--astro-code-token-comment)">        # Minikube = plain HTTP</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">auth</span><span style="color:var(--astro-code-token-keyword)">:</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">  mode</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-string-expression)"> open</span><span style="color:var(--astro-code-token-comment)">              # dev auth — no real authentication; local use only</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">postgresql</span><span style="color:var(--astro-code-token-keyword)">:</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">  enabled</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-constant)"> true</span><span style="color:var(--astro-code-token-comment)">           # bundled PostgreSQL (default)</span></span></code></pre>
+<blockquote>
+<p><strong>Security:</strong> <code>auth.mode=open</code> performs no authentication — anyone who can reach the admin
+service is treated as a logged-in user. Use it only on a local cluster or behind a private
+network you fully control.</p>
+</blockquote>
+<h2 id="gke-gateway-api--cert-manager">GKE (Gateway API + cert-manager)</h2>
+<p>Production deployment on GKE using the managed external L7 load balancer via the Gateway API,
+with TLS issued by cert-manager.</p>
+<h3 id="prerequisites-1">Prerequisites</h3>
+<ul>
+<li><strong>Gateway API CRDs</strong> (<code>gateway.networking.k8s.io/v1</code>) installed — provided by the GKE Gateway
+API add-on with the <code>gke-l7-global-external-managed</code> GatewayClass</li>
+<li><strong>cert-manager</strong> installed with a <code>ClusterIssuer</code> already created (e.g. <code>letsencrypt-prod</code>)</li>
+</ul>
+<h3 id="install-1">Install</h3>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-function)">helm</span><span style="color:var(--astro-code-token-string)"> install</span><span style="color:var(--astro-code-token-string)"> shipwright</span><span style="color:var(--astro-code-token-string)"> charts/shipwright</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  --namespace</span><span style="color:var(--astro-code-token-string)"> shipwright</span><span style="color:var(--astro-code-token-string)"> --create-namespace</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -f</span><span style="color:var(--astro-code-token-string)"> charts/shipwright/examples/values-gke-gateway.yaml</span></span></code></pre>
+<h3 id="key-values-1">Key values</h3>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="yaml"><code><span class="line"><span style="color:var(--astro-code-token-keyword)">networking</span><span style="color:var(--astro-code-token-keyword)">:</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">  type</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-string-expression)"> gateway</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">  gateway</span><span style="color:var(--astro-code-token-keyword)">:</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">    gatewayClassName</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-string-expression)"> gke-l7-global-external-managed</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">    host</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-string-expression)"> shipwright.example.com</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">tls</span><span style="color:var(--astro-code-token-keyword)">:</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">  certManager</span><span style="color:var(--astro-code-token-keyword)">:</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">    enabled</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-constant)"> true</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">    issuerRef</span><span style="color:var(--astro-code-token-keyword)">:</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">      name</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-string-expression)"> letsencrypt-prod</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">      kind</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-string-expression)"> ClusterIssuer</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">auth</span><span style="color:var(--astro-code-token-keyword)">:</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">  mode</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-string-expression)"> google</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">  google</span><span style="color:var(--astro-code-token-keyword)">:</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">    clientId</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-string-expression)"> &lt;your-oauth-client-id&gt;</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">    clientSecret</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-string-expression)"> &lt;your-oauth-client-secret&gt;</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">    allowedEmails</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-string-expression)"> you@your-domain.example</span></span></code></pre>
+<p>The chart renders a <code>Gateway</code> plus <code>HTTPRoute</code>s: an HTTP listener on <code>:80</code>, an HTTPS listener on
+<code>:443</code> (when TLS is enabled), and an HTTP→HTTPS redirect route. Point your DNS <code>A</code>/<code>AAAA</code> record
+at the Gateway’s external address once provisioned.</p>
+<ul>
+<li>Admin UI/API: <code>https://shipwright.example.com/</code></li>
+<li>Metrics dashboard: <code>https://shipwright.example.com/dashboard</code></li>
+</ul>
+<h2 id="eks-alb-ingress--cert-manager">EKS (ALB ingress + cert-manager)</h2>
+<p>Production deployment on EKS using the AWS Load Balancer Controller to provision an ALB from the
+chart’s <code>Ingress</code>, with cert-manager for certificate management.</p>
+<h3 id="prerequisites-2">Prerequisites</h3>
+<ul>
+<li><strong>AWS Load Balancer Controller</strong> installed — watches <code>Ingress</code> objects with
+<code>ingressClassName: alb</code> and provisions an ALB</li>
+<li><strong>cert-manager</strong> or AWS Certificate Manager for TLS</li>
+</ul>
+<h3 id="install-2">Install</h3>
+<p>Prefer a values file for the ALB annotations:</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="yaml"><code><span class="line"><span style="color:var(--astro-code-token-keyword)">networking</span><span style="color:var(--astro-code-token-keyword)">:</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">  type</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-string-expression)"> ingress</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">  ingress</span><span style="color:var(--astro-code-token-keyword)">:</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">    className</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-string-expression)"> alb</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">    host</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-string-expression)"> shipwright.example.com</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">    annotations</span><span style="color:var(--astro-code-token-keyword)">:</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">      alb.ingress.kubernetes.io/scheme</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-string-expression)"> internet-facing</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">      alb.ingress.kubernetes.io/target-type</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-string-expression)"> ip</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">      alb.ingress.kubernetes.io/listen-ports</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-string-expression)"> &#39;[{&quot;HTTP&quot;:80},{&quot;HTTPS&quot;:443}]&#39;</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">      alb.ingress.kubernetes.io/certificate-arn</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-string-expression)"> &lt;your-acm-certificate-arn&gt;</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">tls</span><span style="color:var(--astro-code-token-keyword)">:</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">  certManager</span><span style="color:var(--astro-code-token-keyword)">:</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">    enabled</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-constant)"> false</span><span style="color:var(--astro-code-token-comment)">      # TLS is via ALB/ACM annotations on the ingress path</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">auth</span><span style="color:var(--astro-code-token-keyword)">:</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">  mode</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-string-expression)"> google</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">  google</span><span style="color:var(--astro-code-token-keyword)">:</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">    clientId</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-string-expression)"> &lt;your-oauth-client-id&gt;</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">    clientSecret</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-string-expression)"> &lt;your-oauth-client-secret&gt;</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">    allowedEmails</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-string-expression)"> you@your-domain.example</span></span></code></pre>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-function)">helm</span><span style="color:var(--astro-code-token-string)"> install</span><span style="color:var(--astro-code-token-string)"> shipwright</span><span style="color:var(--astro-code-token-string)"> charts/shipwright</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  --namespace</span><span style="color:var(--astro-code-token-string)"> shipwright</span><span style="color:var(--astro-code-token-string)"> --create-namespace</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -f</span><span style="color:var(--astro-code-token-string)"> my-values.yaml</span></span></code></pre>
+<p>Point your DNS record at the ALB’s DNS name once provisioned.</p>
+<ul>
+<li>Admin UI/API: <code>https://shipwright.example.com/</code></li>
+<li>Metrics dashboard: <code>https://shipwright.example.com/dashboard</code></li>
+</ul>
+<h2 id="agent-runtime-provisioning">Agent runtime provisioning</h2>
+<p>By default the admin service runs in <strong>Noop</strong> mode — creating an agent only writes a database row.
+Set <code>agent.provisioning.enabled=true</code> to switch to the <strong>Kubernetes</strong> provisioner:</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="yaml"><code><span class="line"><span style="color:var(--astro-code-token-keyword)">agent</span><span style="color:var(--astro-code-token-keyword)">:</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">  provisioning</span><span style="color:var(--astro-code-token-keyword)">:</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">    enabled</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-constant)"> true</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">    namespace</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-string-expression)"> &quot;&quot;</span><span style="color:var(--astro-code-token-comment)">          # target namespace for provisioned agent resources</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">    image</span><span style="color:var(--astro-code-token-keyword)">:</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">      repository</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-string-expression)"> shipwright-agent</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">      tag</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-string-expression)"> &quot;&quot;</span><span style="color:var(--astro-code-token-comment)">              # defaults to chart appVersion</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">    replicas</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-constant)"> 1</span></span></code></pre>
+<p>When provisioning is enabled, <code>POST /agents/:id/provision</code> creates:</p>
+<ol>
+<li>A <strong>PersistentVolumeClaim</strong> (persistent agent home storage)</li>
+<li>A <strong>Secret</strong> (scoped agent token)</li>
+<li>A <strong>Deployment</strong> (agent container)</li>
+</ol>
+<p>The chart also renders a <code>ClusterRole</code> and <code>ClusterRoleBinding</code> granting the admin ServiceAccount
+<code>create</code>, <code>get</code>, and <code>delete</code> on PVCs, Deployments, and Secrets. The PVC is intentionally retained
+on agent deletion for data safety.</p>
+<p>Self-hosted agents (<code>selfHosted: true</code>) are skipped by the provisioner — they manage their own
+workload.</p>
+<h2 id="authentication-modes">Authentication modes</h2>
+<h3 id="authmodeopen-default-dev-only"><code>auth.mode=open</code> (default, dev only)</h3>
+<p>Sets <code>ADMIN_DEV_AUTH=true</code>. No real authentication — local use only.</p>
+<h3 id="authmodegoogle-production"><code>auth.mode=google</code> (production)</h3>
+<p>Sets <code>NODE_ENV=production</code> and enables Google OAuth. Required for any internet-reachable deployment.
+Only emails on <code>allowedEmails</code> may sign in.</p>
+<h2 id="bringing-your-own-postgresql">Bringing your own PostgreSQL</h2>
+<p>The bundled PostgreSQL is the Bitnami <code>postgresql</code> subchart. To use an external database:</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="yaml"><code><span class="line"><span style="color:var(--astro-code-token-keyword)">postgresql</span><span style="color:var(--astro-code-token-keyword)">:</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">  enabled</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-constant)"> false</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">externalDatabase</span><span style="color:var(--astro-code-token-keyword)">:</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">  existingSecret</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-string-expression)"> my-db-secret</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">  adminUrlKey</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-string-expression)"> DATABASE_URL_SHIPWRIGHT_ADMIN</span></span></code></pre>
+<p>For task-store, also supply a separate secret:</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="yaml"><code><span class="line"><span style="color:var(--astro-code-token-keyword)">taskStore</span><span style="color:var(--astro-code-token-keyword)">:</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">  enabled</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-constant)"> true</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">  database</span><span style="color:var(--astro-code-token-keyword)">:</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">    existingSecret</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-string-expression)"> my-task-store-db-secret</span></span></code></pre>
+<p>The task-store database <strong>must be separate</strong> from the admin database.</p>
 <h2 id="next-steps">Next steps</h2>
-<p>Once deployed, configure your task store and set up cron jobs to automate your delivery pipeline.</p>  <!-- Prev/next navigation --> <div class="docs-prevnext" data-astro-cid-mw7aashj> <a href="/docs/getting-started" data-nav="prev" data-astro-cid-mw7aashj>
+<p>With the agent deployed and running in the cloud, connect it to Slack so it can receive tasks via
+DM and mentions. See <a href="/docs/slack-integration">Slack Integration</a>.</p>  <!-- Prev/next navigation --> <div class="docs-prevnext" data-astro-cid-mw7aashj> <a href="/docs/the-agent" data-nav="prev" data-astro-cid-mw7aashj>
 ← Previous
-</a>  </div> </main> <!-- TOC (on-page, static) --> <aside style="min-width: 0;" data-astro-cid-mw7aashj> <nav aria-label="On this page" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.75rem;" data-astro-cid-mw7aashj>
+</a> <a href="/docs/slack-integration" data-nav="next" data-astro-cid-mw7aashj>
+Next →
+</a> </div> </main> <!-- TOC (on-page, static) --> <aside style="min-width: 0;" data-astro-cid-mw7aashj> <nav aria-label="On this page" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.75rem;" data-astro-cid-mw7aashj>
 On this page
-</p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="#prerequisites" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Prerequisites </a> </li><li data-astro-cid-mw7aashj> <a href="#deployment-options" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Deployment options </a> </li><li data-astro-cid-mw7aashj> <a href="#getting-started" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Getting started </a> </li><li data-astro-cid-mw7aashj> <a href="#next-steps" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Next steps </a> </li> </ul> </nav> </aside> </div> </div> <!-- Footer --> <footer class="sw-container relative z-10 py-12" data-astro-cid-mw7aashj> <div class="flex flex-col gap-6 pt-8 sm:flex-row sm:items-center sm:justify-between" style="border-top: 1px solid var(--sw-color-border-subtle);" data-astro-cid-mw7aashj> <p class="sw-label flex items-center gap-2" data-astro-cid-mw7aashj> <img src="/shipwright-icon.svg" alt="" width="20" height="20" class="rounded" data-astro-cid-mw7aashj>
+</p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="#prerequisites" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Prerequisites </a> </li><li data-astro-cid-mw7aashj> <a href="#what-you-need" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> What you need </a> </li><li data-astro-cid-mw7aashj> <a href="#networking-model" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Networking model </a> </li><li data-astro-cid-mw7aashj> <a href="#minikube-local" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Minikube (local) </a> </li><li data-astro-cid-mw7aashj> <a href="#setup" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Setup </a> </li><li data-astro-cid-mw7aashj> <a href="#install" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Install </a> </li><li data-astro-cid-mw7aashj> <a href="#reach-the-services" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Reach the services </a> </li><li data-astro-cid-mw7aashj> <a href="#key-values" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Key values </a> </li><li data-astro-cid-mw7aashj> <a href="#gke-gateway-api--cert-manager" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> GKE (Gateway API + cert-manager) </a> </li><li data-astro-cid-mw7aashj> <a href="#prerequisites-1" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Prerequisites </a> </li><li data-astro-cid-mw7aashj> <a href="#install-1" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Install </a> </li><li data-astro-cid-mw7aashj> <a href="#key-values-1" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Key values </a> </li><li data-astro-cid-mw7aashj> <a href="#eks-alb-ingress--cert-manager" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> EKS (ALB ingress + cert-manager) </a> </li><li data-astro-cid-mw7aashj> <a href="#prerequisites-2" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Prerequisites </a> </li><li data-astro-cid-mw7aashj> <a href="#install-2" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Install </a> </li><li data-astro-cid-mw7aashj> <a href="#agent-runtime-provisioning" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Agent runtime provisioning </a> </li><li data-astro-cid-mw7aashj> <a href="#authentication-modes" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Authentication modes </a> </li><li data-astro-cid-mw7aashj> <a href="#authmodeopen-default-dev-only" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> auth.mode=open (default, dev only) </a> </li><li data-astro-cid-mw7aashj> <a href="#authmodegoogle-production" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> auth.mode=google (production) </a> </li><li data-astro-cid-mw7aashj> <a href="#bringing-your-own-postgresql" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Bringing your own PostgreSQL </a> </li><li data-astro-cid-mw7aashj> <a href="#next-steps" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Next steps </a> </li> </ul> </nav> </aside> </div> </div> <!-- Footer --> <footer class="sw-container relative z-10 py-12" data-astro-cid-mw7aashj> <div class="flex flex-col gap-6 pt-8 sm:flex-row sm:items-center sm:justify-between" style="border-top: 1px solid var(--sw-color-border-subtle);" data-astro-cid-mw7aashj> <p class="sw-label flex items-center gap-2" data-astro-cid-mw7aashj> <img src="/shipwright-icon.svg" alt="" width="20" height="20" class="rounded" data-astro-cid-mw7aashj>
 Shipwright Harness · MIT-licensed · © 2026 </p> <nav class="flex flex-wrap gap-x-6 gap-y-2 text-sm" aria-label="Footer" data-astro-cid-mw7aashj> <a href="https://github.com/app-vitals/shipwright" data-astro-cid-mw7aashj>GitHub</a> <a href="https://github.com/app-vitals/shipwright/blob/main/LICENSE" data-astro-cid-mw7aashj>MIT License</a> <a href="https://claude.com/claude-code" data-astro-cid-mw7aashj>Claude Code</a> <a href="https://github.com/app-vitals/shipwright/discussions" data-astro-cid-mw7aashj>GitHub Discussions</a> </nav> </div> </footer> </body></html>

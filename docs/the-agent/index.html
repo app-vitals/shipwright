@@ -1,0 +1,308 @@
+<!DOCTYPE html><html lang="en" data-astro-cid-mw7aashj> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="Astro v5.18.2"><title>The Agent — Shipwright Harness</title><meta name="description" content="The Shipwright agent runtime — autonomous task runner, admin CRUD API, cron jobs, and the nine-model Prisma data store."><link rel="canonical" href="https://shipwrightharness.com/docs/the-agent/"><link rel="icon" type="image/svg+xml" href="/shipwright-icon.svg"><link rel="icon" type="image/png" href="/shipwright-icon.png"><link rel="apple-touch-icon" href="/shipwright-icon.png"><meta property="og:type" content="website"><meta property="og:url" content="https://shipwrightharness.com/docs/the-agent/"><meta property="og:title" content="The Agent — Shipwright Harness"><meta property="og:description" content="The Shipwright agent runtime — autonomous task runner, admin CRUD API, cron jobs, and the nine-model Prisma data store."><meta property="og:site_name" content="Shipwright Harness"><meta property="og:image" content="https://shipwrightharness.com/og-default-1280x640.png"><meta property="og:image:width" content="1280"><meta property="og:image:height" content="640"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="preconnect" href="https://api.fontshare.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"><link href="https://api.fontshare.com/v2/css?f[]=general-sans@400,500,600&display=swap" rel="stylesheet"><!-- Pagefind UI — the ONE permitted script on the docs layout --><link href="/pagefind/pagefind-ui.css" rel="stylesheet"><script>
+      import("/pagefind/pagefind-ui.js").then(function () {
+        new window.PagefindUI({ element: "#search", showImages: false });
+      });
+    </script><link rel="stylesheet" href="/_astro/compare.Dq151SBs.css">
+<link rel="stylesheet" href="/_astro/compare.cgpvabiO.css">
+<style>#docs-sidebar-toggle[data-astro-cid-mw7aashj],.docs-sidebar-overlay[data-astro-cid-mw7aashj]{display:none}@media(max-width:767px){.docs-sidebar[data-astro-cid-mw7aashj]{position:fixed;top:0;left:-100%;width:280px;height:100vh;z-index:50;background:var(--sw-color-bg-raised);border-right:1px solid var(--sw-color-border-muted);transition:left .25s ease;overflow-y:auto;padding:1.5rem}#docs-sidebar-toggle[data-astro-cid-mw7aashj]:checked~.sw-container[data-astro-cid-mw7aashj] .docs-layout[data-astro-cid-mw7aashj] .docs-sidebar[data-astro-cid-mw7aashj]{left:0}#docs-sidebar-toggle[data-astro-cid-mw7aashj]:checked~.docs-sidebar-overlay[data-astro-cid-mw7aashj]{display:block;position:fixed;inset:0;z-index:40;background:color-mix(in srgb,var(--sw-color-bg-base) 65%,transparent)}.docs-mobile-menu-btn[data-astro-cid-mw7aashj],.docs-mobile-close-btn[data-astro-cid-mw7aashj]{display:flex}}@media(min-width:768px){.docs-mobile-menu-btn[data-astro-cid-mw7aashj],.docs-mobile-close-btn[data-astro-cid-mw7aashj]{display:none}.docs-sidebar[data-astro-cid-mw7aashj]{position:sticky;top:1.5rem;height:-moz-fit-content;height:fit-content;max-height:calc(100vh - 3rem);overflow-y:auto}}.docs-layout[data-astro-cid-mw7aashj]{display:grid;grid-template-columns:1fr;gap:0;min-height:calc(100vh - 80px)}@media(min-width:768px){.docs-layout[data-astro-cid-mw7aashj]{grid-template-columns:260px 1fr 220px;gap:2rem;align-items:start}}.docs-sidebar-link[data-astro-cid-mw7aashj]{display:block;padding:.3rem .75rem;border-radius:var(--sw-radius-sm);font-size:var(--sw-text-small-size);color:var(--sw-color-text-editorial);text-decoration:none;transition:background .15s,color .15s}.docs-sidebar-link[data-astro-cid-mw7aashj]:hover,.docs-sidebar-link[data-astro-cid-mw7aashj][aria-current=page]{background:var(--sw-color-bg-overlay);color:var(--sw-color-text-heading)}.docs-sidebar-link[data-astro-cid-mw7aashj][aria-current=page]{color:var(--sw-color-brand-default);font-weight:500}.docs-toc-link[data-astro-cid-mw7aashj]{display:block;padding:.2rem 0;font-size:var(--sw-text-small-size);color:var(--sw-color-text-editorial);text-decoration:none;line-height:1.4}.docs-toc-link[data-astro-cid-mw7aashj]:hover{color:var(--sw-color-text-heading)}.docs-toc-link[data-astro-cid-mw7aashj].depth-3{padding-left:.75rem;font-size:var(--sw-text-label-size);color:var(--sw-color-text-muted)}.docs-prevnext[data-astro-cid-mw7aashj]{display:flex;gap:1rem;justify-content:space-between;padding-top:2rem;margin-top:2rem;border-top:1px solid var(--sw-color-border-subtle);flex-wrap:wrap}.docs-prevnext[data-astro-cid-mw7aashj] a[data-astro-cid-mw7aashj]{display:inline-flex;align-items:center;gap:.4rem;padding:.6rem 1rem;border-radius:var(--sw-radius-md);border:1px solid var(--sw-color-border-muted);background:var(--sw-color-bg-raised);color:var(--sw-color-text-body);font-size:var(--sw-text-small-size);text-decoration:none;transition:border-color .15s,color .15s}.docs-prevnext[data-astro-cid-mw7aashj] a[data-astro-cid-mw7aashj]:hover{border-color:var(--sw-color-brand-default);color:var(--sw-color-brand-default)}
+</style></head> <body class="min-h-screen overflow-x-hidden" data-astro-cid-mw7aashj> <!-- Mobile sidebar toggle (CSS-only, hidden checkbox) --> <input type="checkbox" id="docs-sidebar-toggle" aria-hidden="true" data-astro-cid-mw7aashj> <!-- Overlay (click to close — uses label trick; CSS-only) --> <label for="docs-sidebar-toggle" class="docs-sidebar-overlay" aria-hidden="true" data-astro-cid-mw7aashj></label> <!-- Glow orb (decorative) --> <div class="sw-orb sw-orb-brand" aria-hidden="true" style="top: -12rem; left: 50%; width: 42rem; height: 42rem; transform: translateX(-50%);" data-astro-cid-mw7aashj></div> <!-- Site header --> <header class="sw-container relative z-10 flex items-center justify-between py-6" data-astro-cid-mw7aashj> <a href="/" class="flex items-center gap-3" aria-label="Shipwright Harness — home" data-astro-cid-mw7aashj> <img src="/shipwright-icon.svg" alt="" width="36" height="36" class="rounded-lg" data-astro-cid-mw7aashj> <span class="text-lg" style="font-family: var(--sw-font-display); font-weight: 700; letter-spacing: -0.01em; color: var(--sw-color-text-heading);" data-astro-cid-mw7aashj>
+Shipwright <span style="color: var(--sw-color-brand-default);" data-astro-cid-mw7aashj>Harness</span> </span> </a> <nav class="flex items-center gap-6" aria-label="Primary" data-astro-cid-mw7aashj> <a href="/docs/getting-started" class="sw-label" data-astro-cid-mw7aashj>Docs</a> <a href="/compare" class="sw-label" data-astro-cid-mw7aashj>Compare</a> <a href="https://github.com/app-vitals/shipwright" class="sw-label" data-astro-cid-mw7aashj>GitHub ↗</a> </nav> </header> <!-- Main docs layout --> <div class="sw-container relative z-10 pb-20" data-astro-cid-mw7aashj> <!-- Mobile: hamburger button --> <div class="docs-mobile-menu-btn py-4" data-astro-cid-mw7aashj> <label for="docs-sidebar-toggle" class="sw-btn sw-btn-secondary" style="cursor: pointer; font-size: var(--sw-text-small-size); padding: 0.4rem 0.75rem;" aria-label="Open navigation" data-astro-cid-mw7aashj>
+☰ Menu
+</label> </div> <div class="docs-layout" data-astro-cid-mw7aashj> <!-- Sidebar --> <aside class="docs-sidebar" data-astro-cid-mw7aashj> <!-- Pagefind search widget --> <div id="search" style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj></div> <!-- Mobile close button --> <div class="docs-mobile-close-btn" style="justify-content: flex-end; margin-bottom: 1rem;" data-astro-cid-mw7aashj> <label for="docs-sidebar-toggle" style="cursor: pointer; color: var(--sw-color-text-editorial); font-size: var(--sw-text-small-size);" aria-label="Close navigation" data-astro-cid-mw7aashj>
+✕ Close
+</label> </div> <nav aria-label="Docs navigation" data-astro-cid-mw7aashj> <div style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-mw7aashj> Agent </p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="/docs/the-agent" class="docs-sidebar-link" aria-current="page" data-astro-cid-mw7aashj> The Agent </a> </li> </ul> </div><div style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-mw7aashj> Getting Started </p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="/docs/introduction" class="docs-sidebar-link" data-astro-cid-mw7aashj> Introduction </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/getting-started" class="docs-sidebar-link" data-astro-cid-mw7aashj> Getting Started </a> </li> </ul> </div><div style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-mw7aashj> Operations </p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="/docs/deploying-to-cloud" class="docs-sidebar-link" data-astro-cid-mw7aashj> Deploying to Cloud </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/slack-integration" class="docs-sidebar-link" data-astro-cid-mw7aashj> Slack Integration </a> </li> </ul> </div><div style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-mw7aashj> Plugin </p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="/docs/the-plugin" class="docs-sidebar-link" data-astro-cid-mw7aashj> The Plugin </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/running-locally" class="docs-sidebar-link" data-astro-cid-mw7aashj> Running Locally </a> </li> </ul> </div> </nav> </aside> <!-- Main content --> <main class="sw-prose" style="min-width: 0;" data-pagefind-body data-astro-cid-mw7aashj>  <h1 id="the-agent">The Agent</h1>
+<p>The Shipwright agent (artifact <strong>C</strong>) is a thin autonomous runner: it picks the next ready task
+from the queue, builds it, ships a PR, and forwards metrics — all without manual intervention.
+It has a Prisma-backed PostgreSQL store and four HTTP surfaces: a machine-polled runtime API,
+a human-facing admin CRUD API, a server-rendered admin UI, and a public read-only task board.</p>
+<h2 id="run-modes">Run modes</h2>
+<p>There are three ways to run the agent depending on your context:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Mode</th><th>Entry point</th><th>Transport</th><th>When to use</th></tr></thead><tbody><tr><td>Pi / bare-metal</td><td><code>agent/src/index.ts</code></td><td>Slack Socket Mode</td><td>Running directly on a host with a local <code>.env</code> file</td></tr><tr><td>K8s container</td><td><code>agent/src/entrypoint-main.ts</code></td><td>Slack Socket Mode</td><td>Deployed via the Dockerfile (validates vars, fetches config, installs plugins, spawns runner)</td></tr><tr><td>Local dev</td><td><code>agent/scripts/run-agent.ts --agent-id &lt;id&gt;</code></td><td>HTTP <code>POST /chat</code></td><td>Testing Claude locally without a Slack workspace; requires <code>SHIPWRIGHT_DEV_CHAT=true</code></td></tr></tbody></table>
+<p>The admin service Dockerfile (<code>admin/Dockerfile</code>) <code>ENTRYPOINT</code> is <code>bun run admin/src/main.ts</code>,
+which runs migrations, constructs all services, and mounts all admin and runtime routes. The agent
+container Dockerfile (<code>agent/Dockerfile</code>) <code>ENTRYPOINT</code> is <code>bun run agent/src/entrypoint-main.ts</code>,
+which starts the health server in-process on <code>SHIPWRIGHT_HEALTH_PORT</code> (default <code>3459</code>) before the
+startup sequence so Kubernetes liveness probes are reachable during init.</p>
+<h2 id="running-the-agent-locally">Running the agent locally</h2>
+<p>Ask Claude Code:</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="text"><code><span class="line"><span>Start the Shipwright agent locally in dev mode so I can test it via the chat REPL.</span></span></code></pre>
+<p>Manually:</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-keyword)">export</span><span style="color:var(--astro-code-foreground)"> DATABASE_URL_SHIPWRIGHT_ADMIN</span><span style="color:var(--astro-code-token-keyword)">=</span><span style="color:var(--astro-code-token-string-expression)">&quot;postgresql://user:password@localhost:5432/shipwright_admin&quot;</span></span>
+<span class="line"><span style="color:var(--astro-code-token-function)">task</span><span style="color:var(--astro-code-token-string)"> db:provision</span><span style="color:var(--astro-code-token-comment)">          # prisma migrate deploy (idempotent)</span></span>
+<span class="line"><span style="color:var(--astro-code-foreground)">SHIPWRIGHT_DEV_CHAT</span><span style="color:var(--astro-code-token-keyword)">=</span><span style="color:var(--astro-code-token-string)">true</span><span style="color:var(--astro-code-token-function)"> bun</span><span style="color:var(--astro-code-token-string)"> agent/src/entrypoint-main.ts</span></span></code></pre>
+<p>Then in a second terminal:</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-function)">bun</span><span style="color:var(--astro-code-token-string)"> scripts/chat.ts</span><span style="color:var(--astro-code-token-comment)">        # TUI REPL connects to the dev /chat endpoint</span></span></code></pre>
+<h2 id="admin-crud-api">Admin CRUD API</h2>
+<p>The admin CRUD API is the human-facing control plane for agents. It is mounted at <code>/agents/*</code>.</p>
+<p>Auth is checked in this order: env API keys (<code>SHIPWRIGHT_ADMIN_API_KEYS</code>), then per-agent DB
+bearer tokens, then session cookies. Admin keys bypass all per-agent checks; scoped bearer tokens
+are restricted to their own agent ID.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Resource</th><th>Endpoints</th></tr></thead><tbody><tr><td>Agents</td><td><code>POST /agents</code>, <code>GET /agents</code>, <code>GET /agents/:id</code>, <code>PATCH /agents/:id</code>, <code>POST /agents/:id/provision</code></td></tr><tr><td>Envs</td><td><code>POST</code> / <code>GET</code> / <code>PATCH</code> <code>/agents/:id/envs</code>, <code>DELETE /agents/:id/envs/:key</code></td></tr><tr><td>Crons</td><td><code>POST</code> <code>/agents/:id/crons</code>, <code>PATCH</code> / <code>DELETE</code> <code>/agents/:id/crons/:cronId</code>, <code>POST /agents/:id/crons/reconcile</code></td></tr><tr><td>Tools</td><td><code>POST</code> / <code>GET</code> <code>/agents/:id/tools</code>, <code>PATCH</code> / <code>DELETE</code> <code>/agents/:id/tools/:toolId</code></td></tr><tr><td>Tokens</td><td><code>POST</code> / <code>GET</code> <code>/agents/:id/tokens</code>, <code>DELETE /agents/:id/tokens/:tokenId</code></td></tr><tr><td>Plugins</td><td><code>POST</code> / <code>GET</code> / <code>PATCH</code> <code>/agents/:id/plugins</code>, <code>DELETE /agents/:id/plugins</code></td></tr></tbody></table>
+<p>Token creation returns the raw token once at creation. Only its SHA-256 hash is persisted — token
+validation is an O(1) hash-index lookup with no plaintext at rest.</p>
+<h2 id="data-model">Data model</h2>
+<p>The agent store uses nine Prisma models on a dedicated database (<code>DATABASE_URL_SHIPWRIGHT_ADMIN</code>):</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Model</th><th>What it owns</th></tr></thead><tbody><tr><td><code>Agent</code></td><td>Runner identity — <code>name</code>, <code>slackId</code>, <code>selfHosted</code>, <code>repos</code>, encrypted <code>slackBotToken</code> / <code>anthropicApiKey</code></td></tr><tr><td><code>AgentEnv</code></td><td>Key/value env store — <code>key</code>, <code>value</code> (AES-256-GCM encrypted); unique per <code>[agentId, key]</code></td></tr><tr><td><code>AgentCronJob</code></td><td>Scheduled prompts — <code>schedule</code>, <code>prompt</code>, <code>channel</code> or <code>user</code>, <code>silent</code>, <code>enabled</code>, <code>preCheck</code></td></tr><tr><td><code>AgentCronRun</code></td><td>Cron execution history — <code>startedAt</code>, <code>completedAt</code>, <code>outcome</code>, <code>inputTokens</code>, <code>outputTokens</code>, <code>costUsd</code>, <code>model</code></td></tr><tr><td><code>AgentTool</code></td><td>Allowed tool patterns — <code>pattern</code> (e.g. <code>Read</code>, <code>Bash</code>), <code>enabled</code></td></tr><tr><td><code>AgentToken</code></td><td>Scoped API tokens — <code>token</code> (SHA-256 hash), <code>label</code>, <code>revokedAt</code></td></tr><tr><td><code>AgentPlugin</code></td><td>Installed Claude Code plugins — <code>name</code>, <code>version</code>, <code>enabled</code></td></tr><tr><td><code>AgentMember</code></td><td>Authorized human members — <code>email</code>; unique per <code>[agentId, email]</code></td></tr><tr><td><code>AgentChatTokenUsageDaily</code></td><td>Daily chat token usage aggregates — <code>date</code>, <code>inputTokens</code>, <code>outputTokens</code>, <code>cacheReadTokens</code>, <code>cacheCreationTokens</code>, <code>costUsd</code>; unique per <code>[agentId, date]</code></td></tr></tbody></table>
+<p>All child models cascade-delete with their parent <code>Agent</code>.</p>
+<p>Secrets at rest (env values, Slack/Anthropic keys) are AES-256-GCM encrypted at the service layer.
+Set <code>SHIPWRIGHT_ENCRYPTION_KEY</code> to a 64-char hex string (32 bytes) in any real deployment — if
+unset, secrets are stored in plain text with a logged warning.</p>
+<h2 id="default-system-crons">Default system crons</h2>
+<p>Every new agent is seeded with ten system crons. Two are enabled by default; the rest are opt-in
+and can be toggled in the admin UI or via <code>PATCH /agents/:id/crons/:cronId</code>.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Cron</th><th>Schedule</th><th>Default</th><th>What it does</th></tr></thead><tbody><tr><td><code>shipwright-dev-task</code></td><td>every 30 min</td><td><strong>on</strong></td><td>Pick next ready task, build with tests, open PR</td></tr><tr><td><code>shipwright-review-patch</code></td><td>every 30 min</td><td><strong>on</strong></td><td>Review open PRs and patch those failing CI or review</td></tr><tr><td><code>shipwright-review</code></td><td>every 30 min</td><td>off</td><td>Review-only pass over open PRs</td></tr><tr><td><code>shipwright-patch</code></td><td>every 30 min</td><td>off</td><td>Fix failing CI and unresolved review findings</td></tr><tr><td><code>shipwright-deploy</code></td><td>every 30 min</td><td>off</td><td>Merge approved PRs and deploy</td></tr><tr><td><code>shipwright-test-readiness</code></td><td>daily 06:00</td><td>off</td><td>Full test-readiness audit</td></tr><tr><td><code>shipwright-docs-freshness</code></td><td>daily 07:00</td><td>off</td><td>Refresh docs that drifted from the code</td></tr><tr><td><code>learn-dream</code></td><td>daily 03:00</td><td>off</td><td>Mine merged PRs for durable learnings</td></tr><tr><td><code>dependabot-triage</code></td><td>daily 08:00</td><td>off</td><td>Review and triage open Dependabot PRs</td></tr><tr><td><code>entropy-patrol-maintenance</code></td><td>weekly Mon 04:00</td><td>off</td><td>Scan for code entropy and fix what’s PR-worthy</td></tr></tbody></table>
+<p>Crons run <code>silent</code> by default — they post to Slack only when there is a result worth surfacing or
+on error. Most carry a <code>preCheck</code> script whose stdout becomes the actual prompt, so a cron only
+spends a Claude turn when there is real work ready.</p>
+<h2 id="required-environment-variables">Required environment variables</h2>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Variable</th><th>Required</th><th>Purpose</th></tr></thead><tbody><tr><td><code>DATABASE_URL_SHIPWRIGHT_ADMIN</code></td><td>always</td><td>Postgres connection string for the admin service</td></tr><tr><td><code>SHIPWRIGHT_AGENT_ID</code></td><td>entrypoint</td><td>The agent’s ID in the platform</td></tr><tr><td><code>SHIPWRIGHT_API_URL</code></td><td>entrypoint</td><td>Base URL of the admin API for config fetch at startup</td></tr><tr><td><code>SHIPWRIGHT_AGENT_API_KEY</code></td><td>entrypoint</td><td>Bearer token for the config fetch</td></tr><tr><td><code>SHIPWRIGHT_ENCRYPTION_KEY</code></td><td>production</td><td>64-char hex for AES-256-GCM secrets at rest</td></tr><tr><td><code>SLACK_BOT_TOKEN</code></td><td>Slack mode</td><td>Slack bot user OAuth token (<code>xoxb-...</code>)</td></tr><tr><td><code>SLACK_APP_TOKEN</code></td><td>Slack mode</td><td>Slack app-level token for Socket Mode (<code>xapp-...</code>)</td></tr><tr><td><code>SLACK_SIGNING_SECRET</code></td><td>Slack mode</td><td>Verifies incoming Slack request signatures</td></tr></tbody></table>
+<p>See <a href="https://github.com/app-vitals/shipwright/blob/main/docs/configuration.md">configuration.md</a>
+for the full environment variable reference.</p>
+<h2 id="kubernetes-provisioning">Kubernetes provisioning</h2>
+<p>When <code>SHIPWRIGHT_K8S_PROVISIONING=enabled</code>, the admin service acts as a Kubernetes provisioner.
+<code>POST /agents/:id/provision</code> creates:</p>
+<ol>
+<li>A <strong>PersistentVolumeClaim</strong> for the agent’s home directory (<code>AGENT_HOME</code>)</li>
+<li>A <strong>Secret</strong> carrying the scoped per-agent API token (and optional task-store token)</li>
+<li>A <strong>Deployment</strong> running the agent container, referencing both</li>
+</ol>
+<p>The PVC is retained on deletion (data safety policy) — cluster admins clean it up manually.
+Self-hosted agents (<code>selfHosted: true</code>) skip provisioning; they manage their own workload.</p>
+<h2 id="next-steps">Next steps</h2>
+<p>Ready to deploy the agent as a persistent cloud service? See
+<a href="/docs/deploying-to-cloud">Deploying to Cloud</a> for the Helm chart, Minikube, GKE, and EKS guides.</p>  <!-- Prev/next navigation --> <div class="docs-prevnext" data-astro-cid-mw7aashj> <a href="/docs/running-locally" data-nav="prev" data-astro-cid-mw7aashj>
+← Previous
+</a> <a href="/docs/deploying-to-cloud" data-nav="next" data-astro-cid-mw7aashj>
+Next →
+</a> </div> </main> <!-- TOC (on-page, static) --> <aside style="min-width: 0;" data-astro-cid-mw7aashj> <nav aria-label="On this page" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.75rem;" data-astro-cid-mw7aashj>
+On this page
+</p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="#run-modes" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Run modes </a> </li><li data-astro-cid-mw7aashj> <a href="#running-the-agent-locally" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Running the agent locally </a> </li><li data-astro-cid-mw7aashj> <a href="#admin-crud-api" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Admin CRUD API </a> </li><li data-astro-cid-mw7aashj> <a href="#data-model" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Data model </a> </li><li data-astro-cid-mw7aashj> <a href="#default-system-crons" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Default system crons </a> </li><li data-astro-cid-mw7aashj> <a href="#required-environment-variables" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Required environment variables </a> </li><li data-astro-cid-mw7aashj> <a href="#kubernetes-provisioning" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Kubernetes provisioning </a> </li><li data-astro-cid-mw7aashj> <a href="#next-steps" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Next steps </a> </li> </ul> </nav> </aside> </div> </div> <!-- Footer --> <footer class="sw-container relative z-10 py-12" data-astro-cid-mw7aashj> <div class="flex flex-col gap-6 pt-8 sm:flex-row sm:items-center sm:justify-between" style="border-top: 1px solid var(--sw-color-border-subtle);" data-astro-cid-mw7aashj> <p class="sw-label flex items-center gap-2" data-astro-cid-mw7aashj> <img src="/shipwright-icon.svg" alt="" width="20" height="20" class="rounded" data-astro-cid-mw7aashj>
+Shipwright Harness · MIT-licensed · © 2026 </p> <nav class="flex flex-wrap gap-x-6 gap-y-2 text-sm" aria-label="Footer" data-astro-cid-mw7aashj> <a href="https://github.com/app-vitals/shipwright" data-astro-cid-mw7aashj>GitHub</a> <a href="https://github.com/app-vitals/shipwright/blob/main/LICENSE" data-astro-cid-mw7aashj>MIT License</a> <a href="https://claude.com/claude-code" data-astro-cid-mw7aashj>Claude Code</a> <a href="https://github.com/app-vitals/shipwright/discussions" data-astro-cid-mw7aashj>GitHub Discussions</a> </nav> </div> </footer> </body></html>
