@@ -26,7 +26,7 @@ Map each section to its source docs and the target MDX file:
 | `configuration` | `docs/configuration.md` | `site/src/content/docs/configuration.mdx` | All configuration options: plugin env vars, `.shipwright.json` keys, agent env vars, and policy fields |
 | `task-store` | `docs/task-store.md` | `site/src/content/docs/task-store.mdx` | Task store API, data model, ephemeral document store, and scoped tokens |
 | `testing` | `docs/testing.md`, `docs/test-readiness/test-system.md` | `site/src/content/docs/testing.mdx` | Four-layer test model (unit / integration / smoke / e2e), run commands, speed budgets, and isolation contract |
-| `deploy` | `docs/deploy-kubernetes.md`, `docs/helm-repo.md` | `site/src/content/docs/deploy.mdx` | Kubernetes deployment: Minikube, GKE (Gateway API + cert-manager), EKS (ALB), agent provisioning RBAC, and auth modes |
+| `deploy` | `docs/deploy-kubernetes.md`, `docs/helm-repo.md` | `site/src/content/docs/deploying-to-cloud.mdx` | Kubernetes deployment: Minikube, GKE (Gateway API + cert-manager), EKS (ALB), agent provisioning RBAC, and auth modes |
 | `metrics` | `docs/metrics.md` | `site/src/content/docs/metrics.mdx` | Metrics service (provider-agnostic JSON endpoints, dashboard, dual auth, environment) |
 | `agent` | `docs/agent.md` | `site/src/content/docs/agent.mdx` | Shipwright agent runtime: admin CRUD API, admin UI, Prisma store, encryption, and environment configuration |
 | `migration` | `docs/migration.md` | `site/src/content/docs/migration.mdx` | Breaking changes and migration steps across versions |
