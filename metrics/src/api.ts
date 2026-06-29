@@ -1237,7 +1237,11 @@ export function createPublicMetricsApp(
 
   // Read-only dashboard variant — pipeline panels only, no token usage.
   // Rendered with basePath=publicBase so the client fetches /public/metrics/*.
-  app.get("/public/dashboard", (c) => {
+  // Registered for both the bare and trailing-slash paths: a proof-host root
+  // redirect lands on "/public/dashboard/" (GKE's ReplacePrefixMatch on "/"
+  // appends a slash), and Hono treats the trailing slash as a distinct,
+  // otherwise-unmatched route — so without the alias the apex entry 404s.
+  const dashboardHandler = () => {
     const body = renderDashboardPage({
       userName: "Public",
       isOwner: false,
@@ -1247,7 +1251,9 @@ export function createPublicMetricsApp(
     return new Response(body, {
       headers: { "Content-Type": "text/html; charset=utf-8" },
     });
-  });
+  };
+  app.get("/public/dashboard", dashboardHandler);
+  app.get("/public/dashboard/", dashboardHandler);
 
   // Dashboard static assets under the public mount, so the read-only page can
   // load its own CSS/JS without reaching the authenticated /dashboard/* routes.
