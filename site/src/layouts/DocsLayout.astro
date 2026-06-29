@@ -17,7 +17,6 @@ interface Heading {
 interface Props {
   title: string;
   description?: string;
-  section: string;
   prev?: string;
   next?: string;
   headings: Heading[];
@@ -209,7 +208,7 @@ const discussionsUrl = "https://github.com/app-vitals/shipwright/discussions";
 
       .docs-toc-link.depth-3 {
         padding-left: 0.75rem;
-        font-size: 0.8125rem;
+        font-size: var(--sw-text-label-size);
         color: var(--sw-color-text-muted);
       }
 
