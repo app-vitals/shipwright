@@ -1,26 +1,88 @@
 ---
 title: Getting Started
-description: Get up and running with Shipwright Harness.
+description: Go from zero to a running local metrics dashboard in a single Claude Code prompt.
 section: Getting Started
 order: 1
+prev: "/docs/introduction"
+next: "/docs/deploying-to-cloud"
 ---
 
 # Getting Started
 
-Welcome to Shipwright Harness — the open-source autonomous delivery agent for Claude Code.
+This guide takes you from zero to a running Shipwright Harness setup — including the local metrics
+dashboard — in a single Claude Code prompt. No cloud account or secrets needed.
 
 ## Prerequisites
 
-Before you begin, make sure you have Claude Code installed and configured.
+Make sure you have these tools installed before you begin:
 
-## Install the plugin
+- **Claude Code** — the AI coding assistant this plugin runs inside
+- **git** — to clone the repository
+- **Bun** — the JavaScript runtime used by all Shipwright services
+- **go-task** (`task`) — the task runner used for local dev commands
 
-Install the Shipwright plugin into your Claude Code workspace:
+## The one-prompt setup
+
+Paste this into Claude Code and it will handle the rest:
+
+```text
+Set up Shipwright Harness locally and open the metrics dashboard.
+1. In a terminal, run: git clone https://github.com/app-vitals/shipwright.git && cd shipwright && ./scripts/quickstart.sh
+2. Inside this Claude Code session, install the plugin: /plugin install shipwright@app-vitals/shipwright
+3. Open the dashboard in your browser: http://localhost:3460/dashboard
+```
+
+That's it. Claude Code will run the commands, install the plugin, and let you know when the dashboard
+is ready.
+
+## What the setup does
+
+When you run the one-prompt setup, three things happen in sequence:
+
+1. **Clone and quickstart** — `scripts/quickstart.sh` checks your prerequisites, runs `task setup`
+   (installs all workspace dependencies), then starts the dev server with `task dev`. The metrics
+   dashboard launches at `http://localhost:3460/dashboard` in offline fixtures mode — no secrets
+   required.
+
+2. **Plugin install** — `/plugin install shipwright@app-vitals/shipwright` loads the Shipwright
+   plugin into your Claude Code session. The plugin provides the full delivery-loop commands:
+   `/shipwright:plan-session`, `/shipwright:dev-task`, `/shipwright:review`, and
+   `/shipwright:deploy`.
+
+3. **Dashboard** — the metrics dashboard shows cycle time, first-time-quality, and task throughput.
+   In fixtures mode it loads sample data so you can explore the UI immediately.
+
+## Manual setup
+
+If you prefer to run the steps yourself:
 
 ```bash
+git clone https://github.com/app-vitals/shipwright.git
+cd shipwright
+./scripts/quickstart.sh
+```
+
+The quickstart script runs the following commands internally:
+
+```bash
+task setup   # install all workspace dependencies
+task dev     # start the metrics dashboard at http://localhost:3460/dashboard
+```
+
+Once the dashboard is running, install the plugin inside your Claude Code session:
+
+```text
 /plugin install shipwright@app-vitals/shipwright
 ```
 
+The dashboard will be available at `http://localhost:3460/dashboard`. It starts in offline mode
+(fixtures), so you can explore without configuring any external services.
+
 ## Next steps
 
-Once installed, configure Shipwright to point at your task store. See the configuration reference for the full details.
+Once you have the local setup running, you can:
+
+- **Point at a real repository** — open any repo in Claude Code and use `/shipwright:plan-session`
+  to generate a task queue from your product spec.
+- **Deploy to cloud** — run Shipwright as an always-on autonomous agent. See
+  [Deploying to Cloud](/docs/deploying-to-cloud) for the full container setup.
