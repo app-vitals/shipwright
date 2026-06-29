@@ -4,7 +4,7 @@
 //   • Static on-page TOC (headings list, no scroll-spy)
 //   • Prev/next bar driven by frontmatter
 //   • Mobile sidebar toggle via CSS-only hidden-checkbox pattern
-//   • ZERO <script> tags
+//   • ONE <script> tag (Pagefind UI only — never reaches BaseLayout)
 import { getCollection } from "astro:content";
 import "../styles/brand.css";
 
@@ -89,6 +89,14 @@ const discussionsUrl = "https://github.com/app-vitals/shipwright/discussions";
       href="https://api.fontshare.com/v2/css?f[]=general-sans@400,500,600&display=swap"
       rel="stylesheet"
     />
+
+    <!-- Pagefind UI — the ONE permitted script on the docs layout -->
+    <link href="/pagefind/pagefind-ui.css" rel="stylesheet" />
+    <script is:inline>
+      import("/pagefind/pagefind-ui.js").then(function () {
+        new window.PagefindUI({ element: "#search", showImages: false });
+      });
+    </script>
 
     <style>
       /* Mobile sidebar toggle — CSS-only, zero JS */
@@ -311,6 +319,9 @@ const discussionsUrl = "https://github.com/app-vitals/shipwright/discussions";
       <div class="docs-layout">
         <!-- Sidebar -->
         <aside class="docs-sidebar">
+          <!-- Pagefind search widget -->
+          <div id="search" style="margin-bottom: 1.5rem;"></div>
+
           <!-- Mobile close button -->
           <div class="docs-mobile-close-btn" style="justify-content: flex-end; margin-bottom: 1rem;">
             <label
@@ -359,7 +370,7 @@ const discussionsUrl = "https://github.com/app-vitals/shipwright/discussions";
         </aside>
 
         <!-- Main content -->
-        <main class="sw-prose" style="min-width: 0;">
+        <main class="sw-prose" style="min-width: 0;" data-pagefind-body>
           <slot />
 
           <!-- Prev/next navigation -->

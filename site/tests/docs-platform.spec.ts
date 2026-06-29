@@ -34,10 +34,10 @@ test("TOC (table of contents) is present on docs page", async ({ page }) => {
 // frontmatter field (configuration.mdx does not exist yet). Re-add once a second
 // docs page exists so the nav link can actually render.
 
-test("docs page ships zero <script> tags", async ({ page }) => {
+test("docs page ships exactly ONE <script> tag (Pagefind UI)", async ({ page }) => {
   await page.goto("/docs/getting-started");
   const scriptCount = await page.locator("script").count();
-  expect(scriptCount).toBe(0);
+  expect(scriptCount).toBe(1);
 });
 
 test("sidebar lists at least one docs section", async ({ page }) => {
