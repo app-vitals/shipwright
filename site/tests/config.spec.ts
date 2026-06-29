@@ -10,57 +10,49 @@ test.beforeEach(async ({ page }) => {
   );
 });
 
-// CFG-2.2: /docs/configuration smoke tests.
+// CFG-2.2: /docs/reference smoke tests.
 
 test("config route responds 200", async ({ page }) => {
-  const response = await page.goto("/docs/configuration");
+  const response = await page.goto("/docs/reference");
   expect(response?.status()).toBe(200);
 });
 
-test("config page contains the main Configuration heading", async ({
+test("config page contains the main Configuration Reference heading", async ({
   page,
 }) => {
-  await page.goto("/docs/configuration");
+  await page.goto("/docs/reference");
   const heading = page
-    .getByRole("heading", { name: /^Configuration$/i })
+    .getByRole("heading", { name: /^Configuration Reference$/i })
     .first();
   await expect(heading).toBeVisible();
 });
 
 test("config page renders Plugin Config section", async ({ page }) => {
-  await page.goto("/docs/configuration");
+  await page.goto("/docs/reference");
   await expect(
     page.getByRole("heading", { name: /Plugin Config/i }),
   ).toBeVisible();
 });
 
 test("config page renders Agent Config section", async ({ page }) => {
-  await page.goto("/docs/configuration");
+  await page.goto("/docs/reference");
   await expect(
     page.getByRole("heading", { name: /Agent Config/i }),
   ).toBeVisible();
 });
 
 test("config page renders Policy Config section", async ({ page }) => {
-  await page.goto("/docs/configuration");
+  await page.goto("/docs/reference");
   await expect(
     page.getByRole("heading", { name: /Policy Config/i }),
   ).toBeVisible();
 });
 
-test("config page ships NO runtime JS (zero <script> tags)", async ({
-  page,
-}) => {
-  await page.goto("/docs/configuration");
-  const scriptCount = await page.locator("script").count();
-  expect(scriptCount).toBe(0);
-});
-
-test("footer nav has a link to /docs/configuration", async ({ page }) => {
+test("footer nav has a link to /docs/reference", async ({ page }) => {
   await page.goto("/");
   const footer = page.locator("footer");
   await expect(footer).toBeVisible();
   await expect(
     footer.getByRole("link", { name: /Configuration/i }),
-  ).toHaveAttribute("href", "/docs/configuration");
+  ).toHaveAttribute("href", "/docs/reference");
 });

@@ -1,0 +1,33 @@
+---
+import type { ConfigVar } from "../data/config-vars";
+
+interface Props {
+  vars: ConfigVar[];
+  nameLabel?: string;
+}
+
+const { vars, nameLabel = "Name" } = Astro.props;
+---
+
+<div class="mt-4 overflow-x-auto">
+  <table style="width:100%; border-collapse:collapse;">
+    <thead>
+      <tr style="border-bottom: 1px solid var(--sw-color-border-muted);">
+        <th style="text-align:left; padding:0.6rem 1rem 0.6rem 0; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">{nameLabel}</th>
+        <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Type</th>
+        <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Default</th>
+        <th style="text-align:left; padding:0.6rem 0 0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Description</th>
+      </tr>
+    </thead>
+    <tbody>
+      {vars.map((row) => (
+        <tr style="border-bottom: 1px solid var(--sw-color-border-subtle);">
+          <td style="padding:0.7rem 1rem 0.7rem 0; vertical-align:top;"><code class="sw-mono" style="color:var(--sw-color-support-cyan); font-size:0.875rem;">{row.name}</code></td>
+          <td style="padding:0.7rem 1rem; vertical-align:top;"><code class="sw-mono" style="color:var(--sw-color-text-editorial); font-size:0.875rem;">{row.type}</code></td>
+          <td style="padding:0.7rem 1rem; vertical-align:top; white-space:nowrap;"><code class="sw-mono" style="color:var(--sw-color-text-muted); font-size:0.875rem;">{row.def}</code></td>
+          <td style="padding:0.7rem 0 0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">{row.desc}</td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+</div>
