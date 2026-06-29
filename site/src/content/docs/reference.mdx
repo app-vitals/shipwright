@@ -1,0 +1,154 @@
+---
+title: Configuration Reference
+description: "Single authoritative reference for all Shipwright configuration options: Plugin Config, Agent Config, and Policy Config."
+section: Reference
+order: 8
+---
+
+import ConfigTable from '../../components/ConfigTable.astro'
+import {
+  pluginEnvVars,
+  pluginJsonKeys,
+  agentClaudeVars,
+  agentSlackVars,
+  agentGithubVars,
+  agentPlatformVars,
+  agentServerVars,
+  agentMetricsVars,
+  agentWorkspaceVars,
+  agentAnalyticsVars,
+  agentVoiceVars,
+  agentDevVars,
+  policyFields,
+} from '../../data/config-vars'
+
+# Configuration Reference
+
+Single authoritative reference for all Shipwright configuration options, organized by scope: [Plugin Config](#plugin-config), [Agent Config](#agent-config), and [Policy Config](#policy-config).
+
+## Precedence
+
+When the same option can be set multiple ways, resolution order is:
+
+```
+env var  >  .shipwright.json  >  built-in default
+```
+
+<div class="sw-callout mt-6 max-w-3xl">
+  <p><strong>Env vars are the primary configuration path.</strong> Managed Shipwright agents must use env vars — they are injected by the admin service and are the only supported config mechanism for deployed agents. <code>.shipwright.json</code> is a local fallback for use when you install and run the Shipwright plugin directly in Claude Code without a managed agent. Do not commit or rely on <code>.shipwright.json</code> in a managed agent deployment.</p>
+</div>
+
+## Plugin Config
+
+Configuration for the Shipwright Claude Code plugin (`plugins/shipwright/`). These options control workspace discovery, task-store backend, and GitHub CLI integration.
+
+### Env vars
+
+<ConfigTable vars={pluginEnvVars} />
+
+### .shipwright.json
+
+`.shipwright.json` is for use when you install and run the Shipwright plugin in Claude Code directly — without a managed Shipwright agent. Managed agents receive all configuration via env vars from the admin service; they do not read `.shipwright.json`.
+
+Config-file resolution order: (1) check `SHIPWRIGHT_TASK_STORE` env var; (2) walk up from cwd looking for `.shipwright.json`; (3) fall back to `SHIPWRIGHT_CONFIG` env var; (4) fall back to local JSON state.
+
+#### Task store keys
+
+<ConfigTable vars={pluginJsonKeys} nameLabel="Key" />
+
+#### Minimal example
+
+```json
+{
+  "taskStore": "github",
+  "github": {
+    "owner": "your-org",
+    "repo": "your-repo"
+  }
+}
+```
+
+## Agent Config
+
+Configuration for the Shipwright agent runtime (`agent/` and `admin/`). All options are env vars — there is no file-based fallback for agent config. Secrets must be supplied as env vars and are never stored in config files.
+
+### Claude / Anthropic
+
+<ConfigTable vars={agentClaudeVars} />
+
+### Slack
+
+All Slack vars are env-var-only (secrets). The agent does not function as a Slack bot without them.
+
+<ConfigTable vars={agentSlackVars} />
+
+### GitHub
+
+Provide either the GitHub App vars (recommended) or `GH_TOKEN` (PAT). App auth is used when the App env vars are present; `GH_TOKEN` is the fallback.
+
+<ConfigTable vars={agentGithubVars} />
+
+### Shipwright platform
+
+<ConfigTable vars={agentPlatformVars} />
+
+### Server
+
+<ConfigTable vars={agentServerVars} />
+
+### Metrics & Admin service
+
+<ConfigTable vars={agentMetricsVars} />
+
+### Workspace and tooling
+
+<ConfigTable vars={agentWorkspaceVars} />
+
+### Analytics
+
+All analytics vars are env-var-only (secrets/infra identifiers).
+
+<ConfigTable vars={agentAnalyticsVars} />
+
+### Voice
+
+Optional. When unset, voice transcription and synthesis are disabled.
+
+<ConfigTable vars={agentVoiceVars} />
+
+### Dev-only
+
+<div class="sw-callout sw-callout-warn mt-3 max-w-2xl">
+  <p><strong>Do not set these in production.</strong></p>
+</div>
+
+<ConfigTable vars={agentDevVars} />
+
+## Policy Config
+
+Agent behavior is controlled by `state/agent-policy.md`. This is a Markdown file with a YAML front-matter block. Edit it directly to change review posting, merge permissions, and autonomy levels without reconfiguring crons or restarting the agent.
+
+### Fields
+
+<ConfigTable vars={policyFields} nameLabel="Field" />
+
+### Example
+
+```yaml
+---
+auto_post_reviews: false
+allowed_events: [COMMENT, APPROVE]
+review_external_prs: true
+allow_self_review: true
+min_confidence: 75
+max_findings: 5
+cleanup_merged_worktrees: true
+cleanup_after_days: 14
+---
+```
+
+## See also
+
+- [architecture.md](https://github.com/app-vitals/shipwright/blob/main/docs/architecture.md) — the three-artifact A→B→C design.
+- [agent.md](https://github.com/app-vitals/shipwright/blob/main/docs/agent.md) — Shipwright agent runtime, admin CRUD APIs, and data model.
+- [quickstart.md](https://github.com/app-vitals/shipwright/blob/main/docs/quickstart.md) — how to get the full dev stack running locally.
