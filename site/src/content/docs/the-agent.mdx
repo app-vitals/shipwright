@@ -1,6 +1,6 @@
 ---
 title: The Agent
-description: The Shipwright agent runtime — autonomous task runner, admin CRUD API, cron jobs, and the eight-model Prisma data store.
+description: The Shipwright agent runtime — autonomous task runner, admin CRUD API, cron jobs, and the nine-model Prisma data store.
 section: Agent
 order: 0
 prev: "/docs/running-locally"
@@ -74,7 +74,7 @@ validation is an O(1) hash-index lookup with no plaintext at rest.
 
 ## Data model
 
-The agent store uses eight Prisma models on a dedicated database (`DATABASE_URL_SHIPWRIGHT_ADMIN`):
+The agent store uses nine Prisma models on a dedicated database (`DATABASE_URL_SHIPWRIGHT_ADMIN`):
 
 | Model | What it owns |
 |-------|-------------|
@@ -86,6 +86,7 @@ The agent store uses eight Prisma models on a dedicated database (`DATABASE_URL_
 | `AgentToken` | Scoped API tokens — `token` (SHA-256 hash), `label`, `revokedAt` |
 | `AgentPlugin` | Installed Claude Code plugins — `name`, `version`, `enabled` |
 | `AgentMember` | Authorized human members — `email`; unique per `[agentId, email]` |
+| `AgentChatTokenUsageDaily` | Daily chat token usage aggregates — `date`, `inputTokens`, `outputTokens`, `cacheReadTokens`, `cacheCreationTokens`, `costUsd`; unique per `[agentId, date]` |
 
 All child models cascade-delete with their parent `Agent`.
 
