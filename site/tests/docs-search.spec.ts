@@ -10,8 +10,8 @@ test.beforeEach(async ({ page }) => {
   );
 });
 
-// Pagefind search integration e2e tests (SD-2.1).
-// These tests verify that the search widget is present and functional on docs pages,
+// Pagefind search integration e2e tests.
+// Verifies the search widget is present and functional on docs pages,
 // and that non-docs pages are excluded from the index.
 
 test("search input is present on /docs/getting-started", async ({ page }) => {
