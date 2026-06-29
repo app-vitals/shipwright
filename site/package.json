@@ -10,7 +10,7 @@
     "preview": "astro preview",
     "astro": "astro",
     "test": "playwright test",
-    "brand-lint": "bun ../brand/brand-lint.ts $(find dist -type f \\( -name '*.html' -o -name '*.css' \\))",
+    "brand-lint": "bun ../brand/brand-lint.ts $(find dist -type f \\( -name '*.html' -o -name '*.css' \\) -not -path 'dist/pagefind/*')",
     "build:check": "astro build && npm run brand-lint"
   },
   "dependencies": {
@@ -21,6 +21,7 @@
     "tailwindcss": "^3.4.0"
   },
   "devDependencies": {
-    "@playwright/test": "^1.61.1"
+    "@playwright/test": "^1.61.1",
+    "pagefind": "^1.5.2"
   }
 }

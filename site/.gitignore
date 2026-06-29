@@ -10,3 +10,5 @@ playwright-report/
 playwright/.cache/
 # os cruft
 .DS_Store
+# spurious npm lockfile (this is a bun project)
+package-lock.json
