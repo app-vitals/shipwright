@@ -10,6 +10,7 @@ const tagline = `${taglinePrefix}${taglineGradient}.`;
 const install = "/plugin install shipwright@app-vitals/shipwright";
 const githubUrl = "https://github.com/app-vitals/shipwright";
 const discoveryUrl = "https://cal.com/app-vitals/discovery";
+const proofUrl = "https://proof.shipwrightharness.com/public/dashboard";
 
 // Two ways to run it: the plugin (in Claude Code) and the cloud agent (in your cloud).
 // Both run the same autonomous coding system; only the surface differs.
@@ -576,8 +577,9 @@ $ /shipwright:deploy
     </div>
 
     <p class="mt-4 text-sm" style="color: var(--sw-color-text-muted);">
-      Illustrative figures. Run <code class="sw-mono">task api</code> to see the
-      live dashboard on your own data.
+      Illustrative figures. Shipwright builds itself —{" "}
+      <a href={proofUrl}>see the live dashboard for this repo</a>, or run{" "}
+      <code class="sw-mono">task api</code> to run it on your own data.
     </p>
       </div>
 
@@ -1035,6 +1037,12 @@ $ /shipwright:deploy
     <p class="mt-8 max-w-2xl">
       Want a walkthrough on your own codebase?{" "}
       <a href={discoveryUrl}>Book a discovery call</a>.
+    </p>
+
+    <p class="mt-4 max-w-2xl">
+      Shipwright builds itself —{" "}
+      <a href={proofUrl}>proof.shipwrightharness.com/public/dashboard</a> shows
+      the live pipeline metrics for this repo.
     </p>
   </section>
 
