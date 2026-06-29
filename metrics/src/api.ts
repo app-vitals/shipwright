@@ -1265,6 +1265,7 @@ export function createPublicMetricsApp(
     "/public/dashboard/app.js": {
       contentType: "application/javascript; charset=utf-8",
       file: "app.js",
+      cache: "public, max-age=3600",
     },
   };
   for (const [path, { contentType, file, cache }] of Object.entries(
