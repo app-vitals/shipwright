@@ -115,7 +115,7 @@ const discussionsUrl = "https://github.com/app-vitals/shipwright/discussions";
           padding: 1.5rem;
         }
 
-        #docs-sidebar-toggle:checked ~ .docs-layout .docs-sidebar {
+        #docs-sidebar-toggle:checked ~ .sw-container .docs-layout .docs-sidebar {
           left: 0;
         }
 
@@ -124,7 +124,7 @@ const discussionsUrl = "https://github.com/app-vitals/shipwright/discussions";
           position: fixed;
           inset: 0;
           z-index: 40;
-          background: rgba(0, 0, 0, 0.5);
+          background: color-mix(in srgb, var(--sw-color-bg-base) 65%, transparent);
         }
 
         .docs-mobile-menu-btn {
