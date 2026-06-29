@@ -29,7 +29,7 @@ annotations:
   # entry in CHANGELOG.md (keep the two in sync on every bump).
   artifacthub.io/changes: |
     - kind: changed
-      description: "correct stray-hyphen domain references in chart metadata (shipwright-harness.com → shipwrightharness.com)"
+      description: "fix canonical domain URL in chart home/maintainer fields (removed stray hyphens)"
 dependencies:
   # Bitnami PostgreSQL subchart. Pinned to a chart version whose default image tag
   # is concrete (NOT `latest`), because Bitnami's 2025 catalog change moved newer

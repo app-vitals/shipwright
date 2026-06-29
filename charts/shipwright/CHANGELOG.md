@@ -14,7 +14,7 @@ independent of `appVersion`. CI enforces this with
 
 ### Changed
 
-- correct stray-hyphen domain references: `shipwright-harness.com` → `shipwrightharness.com` in chart metadata
+- fix canonical domain URL in `home` and `maintainer.url` fields (removed stray hyphens from domain)
 
 ## [1.6.115] - 2026-06-29
 
