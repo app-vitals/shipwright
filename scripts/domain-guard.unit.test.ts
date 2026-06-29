@@ -80,7 +80,7 @@ describe("domain-guard: shipwright-harness.com references", () => {
       "charts/shipwright/Chart.yaml",
     ];
 
-    const grepCmd = `grep -r "shipwrightharness\\.com" --exclude-dir=".git" --exclude-dir="node_modules" --exclude-dir="worktrees" "${projectRoot}"`;
+    const grepCmd = `grep -r "shipwrightharness\\.com" --exclude-dir=".git" --exclude-dir="node_modules" --exclude-dir="worktrees" --exclude="domain-guard.unit.test.ts" "${projectRoot}"`;
 
     let output = "";
     try {
@@ -105,9 +105,9 @@ describe("domain-guard: shipwright-harness.com references", () => {
       lines.some((line) => line.includes(file)),
     );
 
-    expect(foundInRequired.some((found) => found)).toBe(
+    expect(foundInRequired.every((found) => found)).toBe(
       true,
-      `Expected canonical domain to appear in at least one of: ${REQUIRED_CANONICAL_FILES.join(", ")}`,
+      `Expected canonical domain to appear in all of: ${REQUIRED_CANONICAL_FILES.join(", ")}`,
     );
   });
 });
