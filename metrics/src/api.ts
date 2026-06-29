@@ -1153,14 +1153,28 @@ const PUBLIC_POLICY = { kind: "public" as const };
 /**
  * Build the public, unauthenticated, repo-scoped metrics sub-app.
  *
+ * The public surface lives under a `/public` mount: JSON at /public/metrics/*,
+ * the read-only dashboard at /public/dashboard, and its client assets at
+ * /public/dashboard/{styles.css,app.js}. The dashboard is rendered with its base
+ * set to that `/public` mount so the shared client (`app.js`) fetches
+ * /public/metrics/* (repo-scoped, no auth) instead of the authenticated
+ * /metrics/* endpoints — otherwise the page renders but loads no data.
+ *
  * @param provider - a repo-scoped MetricsProvider (built in server.ts with the
  *   configured public repo). All reads are already narrowed to that repo.
- * @param basePath - optional path prefix for dashboard asset/API URLs.
+ * @param basePath - optional path prefix the whole public mount sits under.
+ * @param dashboardDir - directory holding the dashboard static assets
+ *   (styles.css, app.js); defaults to the bundled ./dashboard dir.
  */
 export function createPublicMetricsApp(
   provider: MetricsProvider,
   basePath = "",
+  dashboardDir: string = join(import.meta.dir, "dashboard"),
 ): OpenAPIHono<AuthEnv> {
+  // Base for the public dashboard's assets + client API calls. The public routes
+  // are registered literally under "/public/*", so the rendered base must resolve
+  // there (e.g. app.js → `${publicBase}/metrics/summary` = /public/metrics/summary).
+  const publicBase = `${basePath}/public`;
   const app = new OpenAPIHono<AuthEnv>({
     defaultHook: (result, c) => {
       if (!result.success) {
@@ -1222,17 +1236,55 @@ export function createPublicMetricsApp(
   app.get("/public/metrics/tokens", (c) => c.json({ error: "Not found" }, 404));
 
   // Read-only dashboard variant — pipeline panels only, no token usage.
+  // Rendered with basePath=publicBase so the client fetches /public/metrics/*.
   app.get("/public/dashboard", (c) => {
     const body = renderDashboardPage({
       userName: "Public",
       isOwner: false,
       readOnly: true,
-      basePath,
+      basePath: publicBase,
     });
     return new Response(body, {
       headers: { "Content-Type": "text/html; charset=utf-8" },
     });
   });
+
+  // Dashboard static assets under the public mount, so the read-only page can
+  // load its own CSS/JS without reaching the authenticated /dashboard/* routes.
+  // Registered at the literal /public/* paths (basePath is the external,
+  // proxy-stripped prefix — present only in the rendered URLs, not the routes).
+  const PUBLIC_STATIC_FILES: Record<
+    string,
+    { contentType: string; file: string; cache?: string }
+  > = {
+    "/public/dashboard/styles.css": {
+      contentType: "text/css; charset=utf-8",
+      file: "styles.css",
+      cache: "public, max-age=3600",
+    },
+    "/public/dashboard/app.js": {
+      contentType: "application/javascript; charset=utf-8",
+      file: "app.js",
+    },
+  };
+  for (const [path, { contentType, file, cache }] of Object.entries(
+    PUBLIC_STATIC_FILES,
+  )) {
+    app.get(path, async (c) => {
+      try {
+        const body = await Bun.file(join(dashboardDir, file)).text();
+        const headers: Record<string, string> = { "Content-Type": contentType };
+        if (cache) headers["Cache-Control"] = cache;
+        return new Response(body, { headers });
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+          return c.json({ error: "Not found" }, 404);
+        }
+        console.error(`Static file error [${file}]:`, err);
+        return c.json({ error: "Internal server error" }, 500);
+      }
+    });
+  }
 
   return app;
 }

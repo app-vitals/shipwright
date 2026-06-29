@@ -83,4 +83,39 @@ describe("public dashboard — read-only render", () => {
     expect(html).not.toContain("Token Usage");
     expect(html).not.toContain("token-agent-table");
   });
+
+  // PPL-1.4: the read-only page must point its client at the /public mount so
+  // app.js fetches /public/metrics/* (repo-scoped, no auth) — not the
+  // authenticated /metrics/* endpoints, which would 401 and leave it dataless.
+  test("GET /public/dashboard → client base + assets resolve to the /public mount", async () => {
+    const app = buildApp();
+    const res = await app.request("/public/dashboard");
+    const html = await res.text();
+    expect(html).toContain('window.__METRICS_BASE__ = "/public";');
+    expect(html).toContain('href="/public/dashboard/styles.css"');
+    expect(html).toContain('src="/public/dashboard/app.js"');
+  });
+
+  test("GET /public/dashboard prefixes the rendered base with a non-empty basePath", async () => {
+    const app = createPublicMetricsApp(makeEmptyProvider(), "/m");
+    const res = await app.request("/public/dashboard");
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('window.__METRICS_BASE__ = "/m/public";');
+  });
+});
+
+describe("public dashboard — static assets", () => {
+  for (const [path, type] of [
+    ["/public/dashboard/styles.css", "text/css"],
+    ["/public/dashboard/app.js", "application/javascript"],
+  ]) {
+    test(`GET ${path} → 200 ${type}`, async () => {
+      const app = buildApp();
+      const res = await app.request(path);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Content-Type")).toContain(type);
+      expect((await res.text()).length).toBeGreaterThan(0);
+    });
+  }
 });
