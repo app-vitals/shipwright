@@ -188,6 +188,18 @@ export function resolveTaskStoreBaseUrl(
   return env.SHIPWRIGHT_TASK_STORE_PUBLIC_URL ?? env.SHIPWRIGHT_TASK_STORE_URL;
 }
 
+/**
+ * Resolve the public read-only task board repo from the environment.
+ * Reads SHIPWRIGHT_ADMIN_PUBLIC_REPO; trims whitespace so a blank/whitespace
+ * value behaves like unset (returns undefined → board stays in degraded mode)
+ * rather than producing an empty repo filter.
+ */
+export function resolvePublicRepo(
+  env: Record<string, string | undefined>,
+): string | undefined {
+  return env.SHIPWRIGHT_ADMIN_PUBLIC_REPO?.trim() || undefined;
+}
+
 async function startServer(): Promise<void> {
   const port = Number(process.env.PORT ?? DEFAULT_PORT);
 
@@ -225,6 +237,10 @@ async function startServer(): Promise<void> {
   const appBaseUrl =
     process.env.SHIPWRIGHT_ADMIN_APP_BASE_URL ?? `http://localhost:${port}`;
   const adminApiKeys = parseAdminApiKeys(process.env.SHIPWRIGHT_ADMIN_API_KEYS);
+  // Repo slug for the public read-only task board (GET /public/tasks). When set,
+  // the board renders unauthenticated, scoped to this repo; when absent the route
+  // stays in degraded mode (no tasks).
+  const publicRepo = resolvePublicRepo(process.env);
 
   const googleClient = new HttpGoogleAuthClient();
   const slackClient = new HttpSlackProvisioningClient();
@@ -416,6 +432,7 @@ async function startServer(): Promise<void> {
     googleClient,
     slackClient,
     appBaseUrl,
+    publicRepo,
     devAuthEnabled: isDevAuthAllowed(process.env),
     timezone: adminTz,
     ...taskStoreFetchers,
