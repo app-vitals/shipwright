@@ -1294,6 +1294,7 @@ export function renderTasksPage(
   },
   opts?: { error?: string; agentFilterActive?: boolean },
   suggestions?: { sessions?: string[]; repos?: string[]; agents?: string[] },
+  readOnly = false,
 ): string {
   const errorHtml = opts?.error
     ? `<div class="alert alert-error">${escapeHtml(opts.error)}</div>`
@@ -1343,21 +1344,21 @@ export function renderTasksPage(
             const prCell = t.pr
               ? `<a href="https://github.com/${escapeHtml(t.repo ?? "")}/pull/${t.pr}" style="color:#6366f1;text-decoration:none" title="View PR">#${t.pr}</a>`
               : '<span style="color:#9ca3af">—</span>';
-            return `<tr data-href="/admin/tasks/${escapeHtml(t.id)}" style="cursor:pointer">
-    <td class="mono" style="font-size:11px"><a href="/admin/tasks/${escapeHtml(t.id)}" style="color:#6366f1;text-decoration:none" title="View details">${escapeHtml(t.id)}</a></td>
-    <td><a href="/admin/tasks/${escapeHtml(t.id)}" style="color:inherit;text-decoration:none">${escapeHtml(t.title)}</a>${blockerBadges}</td>
+            return `<tr${readOnly ? "" : ` data-href="/admin/tasks/${escapeHtml(t.id)}" style="cursor:pointer"`}>
+    <td class="mono" style="font-size:11px">${readOnly ? escapeHtml(t.id) : `<a href="/admin/tasks/${escapeHtml(t.id)}" style="color:#6366f1;text-decoration:none" title="View details">${escapeHtml(t.id)}</a>`}</td>
+    <td>${readOnly ? escapeHtml(t.title) : `<a href="/admin/tasks/${escapeHtml(t.id)}" style="color:inherit;text-decoration:none">${escapeHtml(t.title)}</a>`}${blockerBadges}</td>
     <td><span class="badge ${statusBadgeClass(t.status)}">${escapeHtml(t.status)}</span></td>
     <td style="font-size:12px">${agentCell}</td>
     <td class="mono" style="font-size:11px">${t.session ? escapeHtml(t.session) : '<span style="color:#9ca3af">—</span>'}</td>
     <td class="mono" style="font-size:11px">${t.repo ? escapeHtml(t.repo) : '<span style="color:#9ca3af">—</span>'}</td>
     <td class="mono" style="font-size:11px">${prCell}</td>
-    <td>${
+    ${readOnly ? "" : `<td>${
       t.status === "in_progress"
         ? `<form method="POST" action="/admin/tasks/${escapeHtml(t.id)}/release" style="display:inline">
         <button type="submit" class="btn btn-secondary" style="font-size:11px;padding:3px 8px">Release</button>
       </form>`
         : ""
-    }</td>
+    }</td>`}
   </tr>`;
           })
           .join("\n");
@@ -1445,7 +1446,7 @@ export function renderTasksPage(
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Tasks — Shipwright Admin</title>
+  <title>Tasks — Shipwright</title>
   <style>${baseStyles()}
     .badge-blue { background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe; }
     .badge-green { background:#dcfce7;color:#166534;border:1px solid #bbf7d0; }
@@ -1456,16 +1457,16 @@ export function renderTasksPage(
   </style>
 </head>
 <body>
-  ${renderAdminToolbar(userName, "/admin/tasks")}
+  ${readOnly ? "" : renderAdminToolbar(userName, "/admin/tasks")}
   <div class="vos-page">
     <div class="page-header" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
       <h1 class="page-title" style="margin:0">Tasks</h1>
-      ${stateToggle}
+      ${readOnly ? "" : stateToggle}
     </div>
     ${errorHtml}
     ${degradedHtml}
     ${agentFilterHtml}
-    <div class="card" style="margin-bottom:16px">
+    ${readOnly ? "" : `<div class="card" style="margin-bottom:16px">
       <form method="GET" action="/admin/tasks" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
         ${filters.state && !filters.status ? `<input type="hidden" name="state" value="${escapeHtml(filters.state)}" />` : ""}
         <div class="form-group" style="margin-bottom:0">
@@ -1490,7 +1491,7 @@ export function renderTasksPage(
         ${suggestions?.repos?.length ? `<datalist id="repos-list">${suggestions.repos.map((r) => `<option value="${escapeHtml(r)}">`).join("")}</datalist>` : ""}
         ${suggestions?.agents?.length ? `<datalist id="agents-list">${suggestions.agents.map((a) => `<option value="${escapeHtml(a)}">`).join("")}</datalist>` : ""}
       </form>
-    </div>
+    </div>`}
     <div class="card">
       <div class="data-table-wrapper">
         <table class="data-table">
@@ -1514,7 +1515,7 @@ export function renderTasksPage(
       ${paginationHtml}
     </div>
   </div>
-  <script>
+  ${readOnly ? "" : `<script>
     document.querySelectorAll("tr[data-href]").forEach(function(row) {
       row.addEventListener("click", function(e) {
         var target = e.target;
@@ -1525,7 +1526,7 @@ export function renderTasksPage(
         window.location.href = row.getAttribute("data-href");
       });
     });
-  </script>
+  </script>`}
 </body>
 </html>`;
 }
