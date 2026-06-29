@@ -1,6 +1,6 @@
 # Shipwright Harness — Documentation
 
-Shipwright Harness is the open-source autonomous delivery agent for [Claude Code](https://www.anthropic.com/claude-code): a deployable cloud agent and the autonomous coding system that powers it, built on the `shipwright` plugin.
+Shipwright Harness is the open-source autonomous delivery system in your own environment: a deployable cloud agent and the autonomous coding system that powers it, built on the `shipwright` plugin.
 
 > 🚧 **Early development.** These docs grow as the toolchain becomes runnable. Start with the [README](../README.md) for the overview and install command.
 
