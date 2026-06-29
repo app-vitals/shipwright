@@ -12,6 +12,7 @@ import { type MetricsDeps, createMetricsApp } from "./api.ts";
 import type { AccountsClient, UserRecord } from "./lib/accounts-client.ts";
 import { parseApiKeys } from "./lib/api-auth.ts";
 import { makeAccountsClientMock } from "./lib/test-helpers.ts";
+import type { MetricsProvider } from "./metrics-provider.ts";
 import type { HogQLResult } from "./types.ts";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -71,6 +72,19 @@ const mockSummaryResult = makeResult(summaryColumns, [
     2, 3, 4, 1, 0, 1.5,
   ],
 ]);
+
+const emptyResult: HogQLResult = { columns: [], results: [], types: [] };
+
+/** Minimal MetricsProvider that returns mockSummaryResult for summary/summaryCycleTime and empty for the rest. */
+function makeMockProvider(): MetricsProvider {
+  return {
+    query: async (q) => {
+      if (q.kind === "summary" || q.kind === "summaryCycleTime")
+        return mockSummaryResult;
+      return emptyResult;
+    },
+  };
+}
 
 function authHeader(key: string): { Authorization: string } {
   return { Authorization: `Bearer ${key}` };
@@ -149,9 +163,8 @@ describe("owner gate — off by default", () => {
   test("MEMBER session → 200 on /metrics/summary when requireOwnerRole unset (default off)", async () => {
     const cookie = await makeSessionCookie();
     const deps: MetricsDeps = {
-      postHogClient: { query: async () => mockSummaryResult },
+      provider: makeMockProvider(),
       sessionSecret: TEST_SESSION_SECRET,
-      // requireOwnerRole not set — defaults to off
     };
     const app = createMetricsApp(
       apiKeys,
@@ -169,7 +182,7 @@ describe("owner gate — off by default", () => {
   test("AGENT session → 200 on /metrics/summary when requireOwnerRole unset (default off)", async () => {
     const cookie = await makeSessionCookie();
     const deps: MetricsDeps = {
-      postHogClient: { query: async () => mockSummaryResult },
+      provider: makeMockProvider(),
       sessionSecret: TEST_SESSION_SECRET,
     };
     const app = createMetricsApp(
@@ -188,7 +201,7 @@ describe("owner gate — off by default", () => {
   test("OWNER session → 200 on /metrics/summary when requireOwnerRole unset (default off)", async () => {
     const cookie = await makeSessionCookie();
     const deps: MetricsDeps = {
-      postHogClient: { query: async () => mockSummaryResult },
+      provider: makeMockProvider(),
       sessionSecret: TEST_SESSION_SECRET,
     };
     const app = createMetricsApp(
@@ -207,6 +220,7 @@ describe("owner gate — off by default", () => {
   test("dashboard serves with noopAccountsClient when requireOwnerRole unset", async () => {
     const cookie = await makeSessionCookie();
     const deps: MetricsDeps = {
+      provider: makeMockProvider(),
       sessionSecret: TEST_SESSION_SECRET,
     };
     const app = createMetricsApp(apiKeys, noopAccountsClient, deps);
@@ -225,7 +239,7 @@ describe("owner gate — on when requireOwnerRole: true", () => {
   test("MEMBER session → 401 on /metrics/summary when requireOwnerRole: true", async () => {
     const cookie = await makeSessionCookie();
     const deps: MetricsDeps = {
-      postHogClient: { query: async () => mockSummaryResult },
+      provider: makeMockProvider(),
       sessionSecret: TEST_SESSION_SECRET,
       requireOwnerRole: true,
     };
@@ -247,7 +261,7 @@ describe("owner gate — on when requireOwnerRole: true", () => {
   test("OWNER session → 200 on /metrics/summary when requireOwnerRole: true", async () => {
     const cookie = await makeSessionCookie();
     const deps: MetricsDeps = {
-      postHogClient: { query: async () => mockSummaryResult },
+      provider: makeMockProvider(),
       sessionSecret: TEST_SESSION_SECRET,
       requireOwnerRole: true,
     };
@@ -270,9 +284,8 @@ describe("owner gate — on when requireOwnerRole: true", () => {
 describe("METRICS_DASHBOARD_TOKEN gate", () => {
   test("with dashboardToken unset → existing admin bearer token → 200", async () => {
     const deps: MetricsDeps = {
-      postHogClient: { query: async () => mockSummaryResult },
+      provider: makeMockProvider(),
       sessionSecret: TEST_SESSION_SECRET,
-      // dashboardToken not set
     };
     const app = createMetricsApp(apiKeys, noopAccountsClient, deps);
 
@@ -285,7 +298,7 @@ describe("METRICS_DASHBOARD_TOKEN gate", () => {
 
   test("with dashboardToken set → correct token → 200 on /metrics/summary", async () => {
     const deps: MetricsDeps = {
-      postHogClient: { query: async () => mockSummaryResult },
+      provider: makeMockProvider(),
       sessionSecret: TEST_SESSION_SECRET,
       dashboardToken: DASHBOARD_TOKEN,
     };
@@ -300,7 +313,7 @@ describe("METRICS_DASHBOARD_TOKEN gate", () => {
 
   test("with dashboardToken set → no auth → 401 on /metrics/summary", async () => {
     const deps: MetricsDeps = {
-      postHogClient: { query: async () => mockSummaryResult },
+      provider: makeMockProvider(),
       sessionSecret: TEST_SESSION_SECRET,
       dashboardToken: DASHBOARD_TOKEN,
     };
@@ -313,7 +326,7 @@ describe("METRICS_DASHBOARD_TOKEN gate", () => {
 
   test("with dashboardToken set → wrong token → 401 on /metrics/summary", async () => {
     const deps: MetricsDeps = {
-      postHogClient: { query: async () => mockSummaryResult },
+      provider: makeMockProvider(),
       sessionSecret: TEST_SESSION_SECRET,
       dashboardToken: DASHBOARD_TOKEN,
     };
@@ -333,6 +346,7 @@ describe("dashboard HTML — no dead nav links", () => {
   test("rendered HTML has no Cal/Time/Billing links", async () => {
     const cookie = await makeSessionCookie();
     const deps: MetricsDeps = {
+      provider: makeMockProvider(),
       sessionSecret: TEST_SESSION_SECRET,
     };
     const app = createMetricsApp(apiKeys, noopAccountsClient, deps);
@@ -343,7 +357,6 @@ describe("dashboard HTML — no dead nav links", () => {
 
     expect(res.status).toBe(200);
     const html = await res.text();
-    // Must not contain links to dead Cal/Time/Billing pages
     expect(html.toLowerCase()).not.toContain("calendar");
     expect(html.toLowerCase()).not.toContain("/cal");
     expect(html.toLowerCase()).not.toContain("/billing");
@@ -353,6 +366,7 @@ describe("dashboard HTML — no dead nav links", () => {
   test("rendered HTML has no platform-specific links (/cal, /time, /billing)", async () => {
     const cookie = await makeSessionCookie();
     const deps: MetricsDeps = {
+      provider: makeMockProvider(),
       sessionSecret: TEST_SESSION_SECRET,
     };
     const app = createMetricsApp(apiKeys, noopAccountsClient, deps);
@@ -363,7 +377,6 @@ describe("dashboard HTML — no dead nav links", () => {
 
     expect(res.status).toBe(200);
     const html = await res.text();
-    // Check for platform-specific dead links
     expect(html).not.toMatch(/href=["'][^"']*\/cal["']/);
     expect(html).not.toMatch(/href=["'][^"']*\/time["']/);
     expect(html).not.toMatch(/href=["'][^"']*\/billing["']/);

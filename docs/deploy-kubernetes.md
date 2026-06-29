@@ -147,9 +147,7 @@ kubectl port-forward svc/shipwright-metrics 3460:3460 -n shipwright   # → http
 None — Minikube runs plain HTTP (`tls.certManager.enabled=false`, the default).
 
 The bundled PostgreSQL ships **no** default password: the Bitnami subchart
-auto-generates a random one on install. Retrieve it (and the bundled metrics
-event-store database is created automatically in a separate
-`shipwright_metrics` database) per the NOTES printed after `helm install`. A
+auto-generates a random one on install. Retrieve it per the NOTES printed after `helm install`. A
 generated password is **not** stable across `helm upgrade` — fine for a
 throwaway Minikube, but for anything persistent set
 `postgresql.auth.existingSecret`. See
@@ -487,7 +485,6 @@ changing the chart, or bring your own database:
   `externalDatabase.existingSecret` at a pre-created Kubernetes Secret holding
   `DATABASE_URL_SHIPWRIGHT_ADMIN`. The chart injects the value into the admin
   pod from that Secret — you create and rotate the Secret outside the chart.
-  Pre-create the separate `shipwright_metrics` event-store database as well.
   If you enable task-store (`taskStore.enabled=true`), also pre-create a Secret
   holding `DATABASE_URL_SHIPWRIGHT_TASK_STORE` and point `taskStore.database.existingSecret`
   at it — the task-store database **must be separate** from the admin database.

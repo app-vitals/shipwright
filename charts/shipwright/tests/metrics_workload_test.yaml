@@ -292,6 +292,48 @@ tests:
           content:
             name: METRICS_ADMIN_URL
 
+  - it: injects METRICS_TASK_STORE_URL as a literal env when taskStoreUrl is set (selects TASKSTORE mode)
+    template: templates/metrics-deployment.yaml
+    set:
+      metrics.provider.taskStoreUrl: "http://shipwright-task-store:3000"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICS_TASK_STORE_URL
+            value: "http://shipwright-task-store:3000"
+
+  - it: omits METRICS_TASK_STORE_URL when taskStoreUrl is empty (default)
+    template: templates/metrics-deployment.yaml
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICS_TASK_STORE_URL
+
+  - it: injects METRICS_TASK_STORE_TOKEN via secretKeyRef when taskStoreToken.existingSecret is set
+    template: templates/metrics-deployment.yaml
+    set:
+      metrics.provider.taskStoreToken.existingSecret: my-task-store-secret
+      metrics.provider.taskStoreToken.key: METRICS_TASK_STORE_TOKEN
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICS_TASK_STORE_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: my-task-store-secret
+                key: METRICS_TASK_STORE_TOKEN
+
+  - it: omits METRICS_TASK_STORE_TOKEN when taskStoreToken.existingSecret is empty (default)
+    template: templates/metrics-deployment.yaml
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICS_TASK_STORE_TOKEN
+
   - it: injects METRICS_BASE_PATH as a literal env when basePath is set
     template: templates/metrics-deployment.yaml
     set:

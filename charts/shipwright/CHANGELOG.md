@@ -10,11 +10,29 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
-## [1.6.117] - 2026-06-29
+## [1.6.119] - 2026-06-29
 
 ### Changed
 
-- fix canonical domain URL in `home` and `maintainer.url` fields (removed stray hyphens from domain)
+- auto-bump to chart v1.6.119 triggered by release tag `task-store-v0.33.0`
+
+## [1.6.118] - 2026-06-29
+
+### Changed
+
+- auto-bump to chart v1.6.118 triggered by release tag `agent-v0.95.0`
+
+## [1.6.117] - 2026-06-28
+
+### Added
+
+- metrics: wire `METRICS_TASK_STORE_URL` + `METRICS_TASK_STORE_TOKEN` into the
+  metrics Deployment via `metrics.provider.taskStoreUrl` and
+  `metrics.provider.taskStoreToken`. Set `taskStoreUrl` alongside `adminUrl` to
+  run the dashboard in TASKSTORE mode. Without this the provider selector falls
+  through to the bundled SQLite store, which has no writable path in the
+  published image and crash-loops on boot (`SQLITE_CANTOPEN`) — the regression
+  introduced when metrics v0.91.0 replaced PostHog mode with task-store mode.
 
 ## [1.6.116] - 2026-06-29
 

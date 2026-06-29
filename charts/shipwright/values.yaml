@@ -231,6 +231,21 @@ metrics:
     # Required when not using the bundled admin service (e.g., external admin).
     # Leave empty to omit the METRICS_ADMIN_URL env var.
     adminUrl: ""
+    # -- URL of the Shipwright task-store service as seen by the metrics dashboard.
+    # When set ALONGSIDE adminUrl, the metrics service runs in TASKSTORE mode
+    # (TaskStoreProvider over the task-store + admin APIs). Leave empty and the
+    # provider selector falls through to the bundled SQLite store — which has no
+    # writable path in the published image and crashes on boot (SQLITE_CANTOPEN),
+    # so set this whenever the service should read live task/PR data.
+    taskStoreUrl: ""
+    # -- Bearer token for the task-store service (METRICS_TASK_STORE_TOKEN).
+    # Set existingSecret to inject it via secretKeyRef.
+    taskStoreToken:
+      # -- Name of an existing Secret holding the task-store bearer token.
+      # Leave empty to omit the METRICS_TASK_STORE_TOKEN env var.
+      existingSecret: ""
+      # -- Key in the secret for METRICS_TASK_STORE_TOKEN.
+      key: METRICS_TASK_STORE_TOKEN
     # -- Base path for the metrics dashboard (e.g., /dashboard). Leave empty
     # to omit the METRICS_BASE_PATH env var (defaults to root inside the app).
     basePath: ""
