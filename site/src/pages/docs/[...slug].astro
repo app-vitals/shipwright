@@ -1,0 +1,29 @@
+---
+// Docs catch-all route. Renders any .mdx file in src/content/docs/.
+// Uses getStaticPaths for full static generation.
+import { getCollection, render } from "astro:content";
+import DocsLayout from "../../layouts/DocsLayout.astro";
+
+export async function getStaticPaths() {
+  const docs = await getCollection("docs");
+  return docs.map((entry) => ({
+    // Strip the file extension (.mdx) from the entry id to get the URL slug.
+    params: { slug: entry.id.replace(/\.(mdx?|md)$/, "") },
+    props: { entry },
+  }));
+}
+
+const { entry } = Astro.props;
+const { Content, headings } = await render(entry);
+---
+
+<DocsLayout
+  title={entry.data.title}
+  description={entry.data.description}
+  section={entry.data.section}
+  prev={entry.data.prev}
+  next={entry.data.next}
+  headings={headings}
+>
+  <Content />
+</DocsLayout>
