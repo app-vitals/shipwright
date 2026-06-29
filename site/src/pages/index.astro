@@ -11,6 +11,7 @@ const install = "/plugin install shipwright@app-vitals/shipwright";
 const githubUrl = "https://github.com/app-vitals/shipwright";
 const discoveryUrl = "https://cal.com/app-vitals/discovery";
 const proofUrl = "https://proof.shipwrightharness.com/public/dashboard";
+const proofTasksUrl = "https://proof.shipwrightharness.com/public/tasks";
 
 // Two ways to run it: the plugin (in Claude Code) and the cloud agent (in your cloud).
 // Both run the same autonomous coding system; only the surface differs.
@@ -108,16 +109,100 @@ const crons = [
   },
 ];
 
-// Metrics section — illustrative figures for the simulated dashboard screenshot.
-// Not live data; representative of /metrics/* (see docs/metrics.md).
-const metricStats = [
-  { value: "87%", label: "First-time quality", note: "merged without rework" },
-  { value: "1.4d", label: "Avg cycle time", note: "task → shipped" },
-  { value: "92%", label: "Estimation accuracy", note: "planned vs. actual" },
-  { value: "48", label: "Tasks shipped", note: "last 30 days" },
+// Metrics section — REAL figures, pulled at build time from the public proof
+// dashboard for this repo (https://proof.shipwrightharness.com). The fallback
+// snapshot below is the last-known real data, so a build never breaks if the
+// dashboard is briefly unavailable. Window = last 7 days (where this repo's
+// activity lives); see docs/metrics.md for the endpoint contract.
+const PROOF_METRICS_BASE = "https://proof.shipwrightharness.com/public/metrics";
+const PROOF_PRESET = "7d";
+const METRICS_WINDOW_LABEL = "last 7 days";
+
+type ProofSummary = {
+  tasksCompleted: number;
+  avgCycleTimeHours: number | null;
+  reviewShipItRate: number | null;
+  estimationAccuracy: number | null;
+};
+type ProofTrendPoint = { period: string; tasksCompleted: number };
+
+// Last-known real snapshot (build-time fallback only).
+const summaryFallback: ProofSummary = {
+  tasksCompleted: 86,
+  avgCycleTimeHours: 2.617,
+  reviewShipItRate: 65.31,
+  estimationAccuracy: -3.48,
+};
+const trendsFallback: ProofTrendPoint[] = [
+  { period: "2026-06-24", tasksCompleted: 22 },
+  { period: "2026-06-25", tasksCompleted: 27 },
+  { period: "2026-06-26", tasksCompleted: 8 },
+  { period: "2026-06-27", tasksCompleted: 12 },
+  { period: "2026-06-28", tasksCompleted: 10 },
+  { period: "2026-06-29", tasksCompleted: 6 },
 ];
-// Illustrative weekly throughput bars (relative heights, %).
-const metricBars = [42, 58, 36, 70, 54, 88, 76];
+
+async function fetchProof<T>(path: string, fallback: T): Promise<T> {
+  try {
+    const res = await fetch(`${PROOF_METRICS_BASE}${path}`, {
+      signal: AbortSignal.timeout(8000),
+      headers: { accept: "application/json" },
+    });
+    if (!res.ok) return fallback;
+    const json = (await res.json()) as { data?: unknown };
+    return (json.data as T) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+const summary = await fetchProof<ProofSummary>(
+  `/summary?preset=${PROOF_PRESET}`,
+  summaryFallback,
+);
+const trendsData = await fetchProof<{ rows?: ProofTrendPoint[] }>(
+  `/trends?preset=${PROOF_PRESET}&groupBy=day`,
+  { rows: trendsFallback },
+);
+const trendRows =
+  trendsData.rows && trendsData.rows.length > 0
+    ? trendsData.rows
+    : trendsFallback;
+
+// Format the real summary into the four headline cards.
+const fmtCycle = (h: number | null) =>
+  h == null ? "—" : h >= 24 ? `${(h / 24).toFixed(1)}d` : `${h.toFixed(1)}h`;
+const fmtPct = (n: number | null) => (n == null ? "—" : `${Math.round(n)}%`);
+const fmtSignedPct = (n: number | null) =>
+  n == null ? "—" : `${n > 0 ? "+" : n < 0 ? "−" : ""}${Math.abs(n).toFixed(1)}%`;
+
+const metricStats = [
+  {
+    value: String(summary.tasksCompleted),
+    label: "Tasks shipped",
+    note: "merged PRs",
+  },
+  {
+    value: fmtCycle(summary.avgCycleTimeHours),
+    label: "Avg cycle time",
+    note: "task → shipped",
+  },
+  {
+    value: fmtPct(summary.reviewShipItRate),
+    label: "Review ship-it rate",
+    note: "approved on first review",
+  },
+  {
+    value: fmtSignedPct(summary.estimationAccuracy),
+    label: "Estimation accuracy",
+    note: "actual vs. planned (0% = perfect)",
+  },
+];
+// Real per-day throughput → relative bar heights (%).
+const trendMax = Math.max(...trendRows.map((r) => r.tasksCompleted), 1);
+const metricBars = trendRows.map((r) =>
+  Math.round((r.tasksCompleted / trendMax) * 100),
+);
 
 // "Inside a task" tab — the ordered steps /shipwright:dev-task runs.
 // Faithful to plugins/shipwright/commands/dev-task.md (its phase headings).
@@ -238,49 +323,33 @@ const differentiators = [
   },
 ];
 
-// Static, illustrative pipeline transcript for the demo (no real player, no JS).
-const demoTranscript = `$ /plugin install shipwright@app-vitals/shipwright
-✓ shipwright installed
-
-$ /shipwright:dev-task
-→ picking next ready task … SWW-2.2 (frontend)
-  branch feat/sww-2-2-body-sections
-  writing tests → 7 specs (e2e)
-  implementing … 5 sections
-  ✓ playwright   15 passed
-  ✓ PR #102 opened
-
-$ /shipwright:review
-  deep single-pass review … 0 blocking findings
-  verdict: APPROVE
-
-$ /shipwright:deploy
-  merge --squash … ✓ merged
-  deploy … ✓ live   metrics → forwarded`;
 ---
 
 <BaseLayout title="Shipwright Harness" description={tagline} pagefindIgnore={true}>
-  <!-- ── Hero ── (tagline + two-path CTA) -->
-  <section class="relative z-10 pt-12 pb-12">
+  <!-- ── Hero ── (tagline + intro video) -->
+  <section class="relative z-10 pt-12 pb-12 text-center">
     <p class="sw-label">Built on Claude Code</p>
-    <h1 class="sw-display mt-4 max-w-3xl">
+    <h1 class="sw-display mt-4 max-w-3xl mx-auto">
       {taglinePrefix}<span class="sw-gradient-text">{taglineGradient}</span>.
     </h1>
 
-    <div class="mt-10 grid gap-6 sm:grid-cols-2 max-w-2xl">
-      <div class="sw-card flex flex-col gap-3">
-        <span class="sw-label">Try it now</span>
-        <p class="text-sm">Drop it into Claude Code and run it on any repository.</p>
-        <pre class="sw-code text-sm"><code>{install}</code></pre>
-      </div>
-
-      <div class="sw-card flex flex-col gap-3">
-        <span class="sw-label">Work with us</span>
-        <p class="text-sm">Get a walkthrough on your own codebase and deploy to your cloud.</p>
-        <a class="sw-btn sw-btn-secondary w-fit" href={discoveryUrl}>
-          Book a discovery call
-        </a>
-      </div>
+    <!-- Intro video — hero centerpiece. -->
+    <div class="mt-10 w-full max-w-5xl mx-auto">
+      <video
+        src="/shipwright-intro.mp4"
+        poster="/shipwright-intro-poster.jpg"
+        controls
+        autoplay
+        muted
+        loop
+        playsinline
+        preload="metadata"
+        width="1920"
+        height="1080"
+        class="w-full rounded-2xl"
+        style="border: 1px solid var(--sw-color-border-muted);"
+        aria-label="Shipwright Harness intro: the open-source autonomous delivery agent for Claude Code."
+      ></video>
     </div>
   </section>
 
@@ -291,6 +360,7 @@ $ /shipwright:deploy
     <input class="sw-tab-input" type="radio" name="sw-showcase" id="sw-tab-devtask" />
     <input class="sw-tab-input" type="radio" name="sw-showcase" id="sw-tab-crons" />
     <input class="sw-tab-input" type="radio" name="sw-showcase" id="sw-tab-metrics" />
+    <input class="sw-tab-input" type="radio" name="sw-showcase" id="sw-tab-proof" />
     <input class="sw-tab-input" type="radio" name="sw-showcase" id="sw-tab-demo" />
 
     <div class="sw-tablist" role="tablist" aria-label="Product showcase">
@@ -298,7 +368,8 @@ $ /shipwright:deploy
       <label class="sw-tab" for="sw-tab-devtask">Inside a task</label>
       <label class="sw-tab" for="sw-tab-crons">Ships on a schedule</label>
       <label class="sw-tab" for="sw-tab-metrics">Metrics</label>
-      <label class="sw-tab" for="sw-tab-demo">Demo</label>
+      <label class="sw-tab" for="sw-tab-proof">Proof</label>
+      <label class="sw-tab" for="sw-tab-demo">Run the full stack</label>
     </div>
 
     <div class="sw-panels">
@@ -506,7 +577,7 @@ $ /shipwright:deploy
       class="mt-10 overflow-hidden rounded-xl"
       style="background: var(--sw-color-bg-raised); border: 1px solid var(--sw-color-border-muted);"
       role="img"
-      aria-label="Simulated Shipwright metrics dashboard showing first-time quality, cycle time, estimation accuracy, tasks shipped, and a weekly throughput chart."
+      aria-label="Live Shipwright metrics for this repo: tasks shipped, cycle time, review ship-it rate, estimation accuracy, and a per-day throughput chart."
     >
       <!-- Window chrome -->
       <div
@@ -524,7 +595,7 @@ $ /shipwright:deploy
             class="h-3 w-3 rounded-full"
             style="background: var(--sw-color-border-strong);"></span>
         </span>
-        <span class="sw-label">shipwright metrics · last 30 days</span>
+        <span class="sw-label">shipwright metrics · {METRICS_WINDOW_LABEL}</span>
       </div>
 
       <!-- Dashboard body -->
@@ -557,9 +628,9 @@ $ /shipwright:deploy
           style="background: var(--sw-color-bg-overlay);"
         >
           <div class="flex items-center justify-between">
-            <p class="sw-label">Weekly throughput</p>
+            <p class="sw-label">Tasks shipped per day</p>
             <p class="sw-label" style="color: var(--sw-color-brand-default);">
-              ▲ trending up
+              {METRICS_WINDOW_LABEL}
             </p>
           </div>
           <div class="mt-4 flex h-24 items-end gap-2" aria-hidden="true">
@@ -577,164 +648,63 @@ $ /shipwright:deploy
     </div>
 
     <p class="mt-4 text-sm" style="color: var(--sw-color-text-muted);">
-      Illustrative figures. Shipwright builds itself —{" "}
-      <a href={proofUrl}>see the live dashboard for this repo</a>, or run{" "}
+      Real figures for this repo, pulled from the public proof dashboard —{" "}
+      <a href={proofUrl}>see the live dashboard</a>, or run{" "}
       <code class="sw-mono">task api</code> to run it on your own data.
+    </p>
+      </div>
+
+      <!-- Panel: Proof — dogfooding + public dashboard -->
+      <div id="proof" class="sw-panel sw-panel--proof">
+    <p class="sw-label">True dogfooding</p>
+    <h2 class="sw-h1 mt-4 max-w-2xl">
+      Shipwright builds Shipwright.
+    </h2>
+    <p class="mt-5 max-w-2xl text-lg">
+      This repository is delivered by the Shipwright agent itself — the same
+      autonomous loop you install. Every task, PR, review verdict, and metric on
+      this page comes from that loop building its own codebase. None of it is
+      staged: the queue and the numbers are public, live, and updated as the
+      agent ships.
+    </p>
+
+    <div class="mt-8 flex flex-wrap gap-4">
+      <a class="sw-btn" href={proofUrl}>View the live dashboard</a>
+      <a class="sw-btn sw-btn-secondary" href={proofTasksUrl}>
+        Browse the task queue
+      </a>
+    </div>
+
+    <p class="mt-6 max-w-2xl text-sm" style="color: var(--sw-color-text-muted);">
+      <a href={proofUrl}>proof.shipwrightharness.com</a> — tasks shipped, cycle
+      time, review verdicts, and estimation accuracy for this repo, in the open.
     </p>
       </div>
 
       <!-- Panel: Demo -->
       <div id="demo" class="sw-panel sw-panel--demo">
-    <p class="sw-label">A run, end to end</p>
+    <p class="sw-label">The whole stack, locally</p>
     <h2 class="sw-h1 mt-4 max-w-2xl">
-      Watch it ship — from your terminal or from Slack.
+      The entire stack, up with one command.
     </h2>
     <p class="mt-5 max-w-2xl text-lg">
-      The plugin runs the loop from the command line. The cloud agent does the
-      same from a Slack thread — you ask, it builds, reviews, and ships.
+      <code class="sw-mono">task stack:up</code> boots every Shipwright service
+      on your machine in a single tmux session — metrics, admin, task-store, the
+      agent, and the chat REPL — so you can run the full delivery loop locally.
     </p>
 
-    <div class="mt-10 grid items-start gap-6 lg:grid-cols-2">
-      <!-- Plugin demo: terminal (animated GIF + text-fallback transcript). -->
-      <div class="flex flex-col gap-3">
-        <p class="sw-label" style="color: var(--sw-color-brand-default);">
-          From the command line
-        </p>
-        <img
-          src="/demo.gif"
-          alt="Shipwright Harness in a Claude Code terminal: install, then plan, build, review, and ship a task end to end."
-          width="900"
-          class="w-full rounded-xl"
-          style="border: 1px solid var(--sw-color-border-muted);"
-        />
-        <pre class="sw-code text-sm leading-relaxed"><code>{demoTranscript}</code></pre>
-      </div>
-
-      <!-- Cloud-agent demo: animated Slack thread (pure CSS, no runtime JS). -->
-      <div class="flex flex-col gap-3">
-        <p
-          class="sw-label"
-          style="color: var(--sw-color-support-patriot-bright);"
-        >
-          From Slack
-        </p>
-        <div
-          class="overflow-hidden rounded-xl"
-          style="background: var(--sw-color-bg-raised); border: 1px solid var(--sw-color-border-muted);"
-          role="img"
-          aria-label="Simulated Slack thread: a user asks the Shipwright agent to take the next task; the agent builds it, passes review, and ships PR #128, which a teammate reacts to."
-        >
-          <!-- Channel header -->
-          <div
-            class="flex items-center gap-2 px-4 py-3"
-            style="border-bottom: 1px solid var(--sw-color-border-subtle);"
-          >
-            <img
-              src="/shipwright-icon.svg"
-              alt=""
-              width="20"
-              height="20"
-              class="rounded"
-            />
-            <strong
-              class="text-sm"
-              style="color: var(--sw-color-text-heading);">shipwright</strong>
-            <span class="sw-pill">APP</span>
-            <span class="sw-label" style="margin-left: auto;">#engineering</span>
-          </div>
-
-          <!-- Messages -->
-          <div class="flex flex-col gap-3 p-4">
-            <div class="sw-slack-msg sw-slack-msg--1 flex gap-2">
-              <span
-                class="sw-slack-av"
-                style="background: var(--sw-color-border-strong); color: var(--sw-color-text-body);"
-                >you</span>
-              <div>
-                <p class="text-sm">
-                  <strong style="color: var(--sw-color-text-heading);">you</strong>
-                  <span style="color: var(--sw-color-text-muted);"> 9:14</span>
-                </p>
-                <p class="text-sm">@shipwright take the next ready task</p>
-              </div>
-            </div>
-
-            <div class="sw-slack-typing flex items-center gap-2">
-              <img
-                src="/shipwright-icon.svg"
-                alt=""
-                width="24"
-                height="24"
-                class="rounded"
-              />
-              <span class="sw-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-            </div>
-
-            <div class="sw-slack-msg sw-slack-msg--2 flex gap-2">
-              <img
-                src="/shipwright-icon.svg"
-                alt=""
-                width="24"
-                height="24"
-                class="shrink-0 rounded"
-              />
-              <div>
-                <p class="text-sm">
-                  <strong style="color: var(--sw-color-text-heading);">Shipwright</strong>
-                  <span style="color: var(--sw-color-text-muted);"> 9:14</span>
-                </p>
-                <p class="text-sm">
-                  On it — picking up SWW-2.4. Branching, writing tests…
-                </p>
-              </div>
-            </div>
-
-            <div class="sw-slack-msg sw-slack-msg--3 flex gap-2">
-              <img
-                src="/shipwright-icon.svg"
-                alt=""
-                width="24"
-                height="24"
-                class="shrink-0 rounded"
-              />
-              <div>
-                <p class="text-sm">
-                  <strong style="color: var(--sw-color-text-heading);">Shipwright</strong>
-                  <span style="color: var(--sw-color-text-muted);"> 9:16</span>
-                </p>
-                <p class="text-sm">
-                  Tests green · review approved · 0 blocking findings
-                </p>
-              </div>
-            </div>
-
-            <div class="sw-slack-msg sw-slack-msg--4 flex gap-2">
-              <img
-                src="/shipwright-icon.svg"
-                alt=""
-                width="24"
-                height="24"
-                class="shrink-0 rounded"
-              />
-              <div>
-                <p class="text-sm">
-                  <strong style="color: var(--sw-color-text-heading);">Shipwright</strong>
-                  <span style="color: var(--sw-color-text-muted);"> 9:17</span>
-                </p>
-                <p class="text-sm">
-                  <span style="color: var(--sw-color-brand-default);">✓</span>
-                  Shipped <strong>PR #128</strong> — merged &amp; deployed.
-                  Metrics forwarded.
-                </p>
-                <span
-                  class="sw-slack-react mt-2 inline-flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-xs"
-                  style="background: var(--sw-color-bg-overlay); border: 1px solid var(--sw-color-border-muted);"
-                  >👍 1</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+    <div class="mt-10 max-w-4xl">
+      <video
+        src="/task-stack-up-walkthrough.mp4"
+        controls
+        playsinline
+        preload="metadata"
+        width="1920"
+        height="1080"
+        class="w-full rounded-xl"
+        style="border: 1px solid var(--sw-color-border-muted);"
+        aria-label="Walkthrough: running task stack:up to boot the entire Shipwright stack locally."
+      ></video>
     </div>
       </div>
 
@@ -827,6 +797,7 @@ $ /shipwright:deploy
     #sw-tab-devtask:checked ~ .sw-tablist label[for="sw-tab-devtask"],
     #sw-tab-crons:checked ~ .sw-tablist label[for="sw-tab-crons"],
     #sw-tab-metrics:checked ~ .sw-tablist label[for="sw-tab-metrics"],
+    #sw-tab-proof:checked ~ .sw-tablist label[for="sw-tab-proof"],
     #sw-tab-demo:checked ~ .sw-tablist label[for="sw-tab-demo"] {
       background: var(--sw-color-brand-default);
       border-color: var(--sw-color-brand-default);
@@ -837,6 +808,7 @@ $ /shipwright:deploy
     #sw-tab-devtask:focus-visible ~ .sw-tablist label[for="sw-tab-devtask"],
     #sw-tab-crons:focus-visible ~ .sw-tablist label[for="sw-tab-crons"],
     #sw-tab-metrics:focus-visible ~ .sw-tablist label[for="sw-tab-metrics"],
+    #sw-tab-proof:focus-visible ~ .sw-tablist label[for="sw-tab-proof"],
     #sw-tab-demo:focus-visible ~ .sw-tablist label[for="sw-tab-demo"] {
       outline: 2px solid var(--sw-color-support-patriot-bright);
       outline-offset: 2px;
@@ -846,6 +818,7 @@ $ /shipwright:deploy
     #sw-tab-devtask:checked ~ .sw-panels .sw-panel--devtask,
     #sw-tab-crons:checked ~ .sw-panels .sw-panel--crons,
     #sw-tab-metrics:checked ~ .sw-panels .sw-panel--metrics,
+    #sw-tab-proof:checked ~ .sw-panels .sw-panel--proof,
     #sw-tab-demo:checked ~ .sw-panels .sw-panel--demo {
       display: block;
     }
