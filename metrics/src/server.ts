@@ -22,14 +22,23 @@
  */
 
 import { Hono } from "hono";
-import { createMetricsApp } from "./api.ts";
+import { createMetricsApp, createPublicMetricsApp } from "./api.ts";
 import type { MetricsDeps } from "./api.ts";
 import { HttpAccountsClient } from "./lib/accounts-client.ts";
 import { parseApiKeys } from "./lib/api-auth.ts";
-import { loadEnv } from "./lib/env.ts";
+import {
+  getPublicMode,
+  getPublicRepo,
+  loadEnv,
+  validatePublicModeEnv,
+} from "./lib/env.ts";
+import type { MetricsProvider } from "./metrics-provider.ts";
 import { selectProviderMode } from "./select-provider.ts";
 
 loadEnv();
+
+// Fail fast if PUBLIC_MODE=true but PUBLIC_REPO is unset.
+validatePublicModeEnv();
 
 const mode = selectProviderMode(process.env);
 
@@ -57,6 +66,11 @@ const accountsClient = new HttpAccountsClient(
 
 let deps: MetricsDeps;
 
+// In public mode this holds a repo-scoped provider that backs the unauthenticated
+// /public/* surface. Built alongside the authenticated provider so it reuses the
+// same upstream clients (task-store + admin) with the configured repo injected.
+let publicProvider: MetricsProvider | undefined;
+
 if (mode === "fixtures") {
   const { createFixtureTaskStoreProvider } = await import(
     "./fixtures/task-store-fixtures.ts"
@@ -68,6 +82,11 @@ if (mode === "fixtures") {
     offlineMode: true,
     basePath,
   };
+  // Fixtures carry no repo attribution, so a repo filter would empty the table.
+  // Offline public mode reuses the unscoped fixture provider for a live preview.
+  if (getPublicMode()) {
+    publicProvider = createFixtureTaskStoreProvider();
+  }
   console.log("[metrics-api] Running in OFFLINE mode — fixture data injected");
 } else {
   // mode === "taskstore"
@@ -103,6 +122,15 @@ if (mode === "fixtures") {
     dashboardDevAuth,
     basePath,
   };
+  // Repo-scoped provider for the public surface (same clients, repo injected).
+  if (getPublicMode()) {
+    publicProvider = new TaskStoreProvider(
+      taskStoreClient,
+      adminMetricsClient,
+      undefined,
+      getPublicRepo(),
+    );
+  }
   console.log(
     "[metrics-api] Running in TASKSTORE mode — TaskStoreProvider over task-store + admin APIs",
   );
@@ -113,6 +141,17 @@ const metricsApp = createMetricsApp(
   accountsClient,
   deps,
 );
+
+// Public mode: mount the unauthenticated, repo-scoped /public/* surface at the
+// same root. Routes are pathed under /public/* so they never collide with the
+// authenticated /metrics/* + /dashboard routes.
+if (getPublicMode() && publicProvider) {
+  const publicApp = createPublicMetricsApp(publicProvider, basePath);
+  metricsApp.route("/", publicApp);
+  console.log(
+    `[metrics-api] PUBLIC mode enabled — /public/* scoped to repo "${getPublicRepo()}"`,
+  );
+}
 
 // OpenAPI doc for standalone mode
 metricsApp.openAPIRegistry.registerComponent("securitySchemes", "bearerAuth", {

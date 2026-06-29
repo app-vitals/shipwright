@@ -54,6 +54,10 @@ When `METRICS_OFFLINE=true`, `server.ts` injects an offline `TaskStoreProvider` 
 
 All metric endpoints are `GET`, return JSON, and accept the same date-window query params: `preset` (`today` | `7d` | `30d` | `90d`) or an explicit `from`/`to` range. `/metrics/trends` additionally accepts `groupBy`.
 
+### Authenticated routes (`/metrics/*`)
+
+Require a bearer token (scope `"*"`) or session cookie (with `OWNER` role if required).
+
 | Method | Path | Description |
 |---|---|---|
 | GET | `/metrics/summary` | Headline totals + average cycle time over the window. |
@@ -63,17 +67,45 @@ All metric endpoints are `GET`, return JSON, and accept the same date-window que
 | GET | `/metrics/tokens` | Token usage — totals, by agent, by session type, by agent + session type, by agent + cron, by agent + model, and trends; each group includes a `cost` field (USD). |
 | GET | `/dashboard` | Server-rendered dashboard HTML (session-gated). |
 | GET | `/dashboard/*` | Static dashboard assets (`styles.css`, `app.js`). |
+
+### Public routes (`/public/*`)
+
+**No authentication required.** Read-only; narrowed to a configured repository scope. Omits token usage.
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/public/metrics/summary` | Headline totals + average cycle time over the window. |
+| GET | `/public/metrics/trends` | Time-series trends; supports `groupBy`. |
+| GET | `/public/metrics/features` | Per-feature task / CI / review breakdown. |
+| GET | `/public/metrics/queue` | Shipwright v3 queue metrics: funnel counts, block rate, avg cycle time (days), avg review findings. |
+| GET | `/public/dashboard` | Server-rendered dashboard HTML (no session required). |
+| GET | `/public/metrics/tokens` | Not available on public routes — returns `404`. |
+
+### Utility routes
+
+| Method | Path | Description |
+|---|---|---|
 | GET | `/health` | Liveness check — `{ status: "ok" }`, **no auth**. |
 | GET | `/openapi.json` | OpenAPI 3.1 document for the service. |
 
 ## Auth
+
+### Authenticated routes (`/metrics/*`)
 
 The `/metrics/*` endpoints accept **either** credential:
 
 - **Bearer API key** — tokens parsed from `METRICS_API_KEYS`. Scoped tokens (scope `!== "*"`) are rejected with `403` on metrics routes.
 - **Session cookie** (`admin_session`) — when `METRICS_REQUIRE_OWNER_ROLE=true` and an accounts client is configured, the caller's role is checked and non-`OWNER` users get `403`.
 
-The **dashboard** is protected by the session cookie middleware; an invalid/absent session redirects to `/admin/login`. In offline mode (`METRICS_OFFLINE=true`), session auth is skipped entirely and `/dashboard` is served as "Offline User". `/health` is always open.
+The **dashboard** is protected by the session cookie middleware; an invalid/absent session redirects to `/admin/login`. In offline mode (`METRICS_OFFLINE=true`), session auth is skipped entirely and `/dashboard` is served as "Offline User".
+
+### Public routes (`/public/*`)
+
+The `/public/*` endpoints require **no authentication**. Access is controlled by mounting the public app at a separate HTTP listener or reverse-proxy path. All public endpoints return data scoped to a pre-configured repository (set at app creation time). The `/public/metrics/tokens` endpoint is omitted entirely and returns `404`.
+
+### Utility routes
+
+`/health` and `/openapi.json` are always open (no auth required).
 
 ## Environment
 
