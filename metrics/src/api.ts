@@ -24,7 +24,11 @@ import {
   SESSION_COOKIE,
   createSessionMiddleware,
 } from "./lib/session-middleware.ts";
-import type { MetricsProvider, QueryDateRange, TrendsGroupBy } from "./metrics-provider.ts";
+import type {
+  MetricsProvider,
+  QueryDateRange,
+  TrendsGroupBy,
+} from "./metrics-provider.ts";
 import {
   DateRangeQuerySchema,
   FeaturesResultSchema,
@@ -261,86 +265,18 @@ function handleQueryError(
   return c.json({ error: msg }, 500);
 }
 
-// ─── Handler factory ─────────────────────────────────────────────────────────
+// ─── Provider-bound handler factories ────────────────────────────────────────
+//
+// The summary/trends/features/queue handlers depend only on a MetricsProvider,
+// so they are extracted into factories that close over the provider. Both the
+// authenticated app (createMetricsApp) and the public app
+// (createPublicMetricsApp) register the same handler logic against their own
+// route definitions — no duplicated aggregation code.
 
-export function createMetricsApp(
-  apiKeys: Map<string, Caller>,
-  accountsClient: AccountsClient,
-  deps?: MetricsDeps,
-): OpenAPIHono<AuthEnv> {
-  const provider = deps?.provider;
-  if (!provider) {
-    throw new Error(
-      "[metrics-api] MetricsDeps.provider is required — no fallback provider is configured",
-    );
-  }
-
-  const sessionSecret =
-    deps?.sessionSecret ?? process.env.SHIPWRIGHT_SESSION_SECRET ?? "";
-  const requireOwnerRole = deps?.requireOwnerRole ?? false;
-  if (requireOwnerRole) {
-    console.warn(
-      "[metrics] METRICS_REQUIRE_OWNER_ROLE is enabled — ensure your accountsClient URL serves /accounts/users/{id}. The Shipwright admin service does not expose this endpoint.",
-    );
-  }
-  const dashboardToken = deps?.dashboardToken;
-  const offlineMode = deps?.offlineMode ?? false;
-  const dashboardDevAuth = deps?.dashboardDevAuth ?? false;
-  const basePath = deps?.basePath ?? process.env.METRICS_BASE_PATH ?? "";
-  const adminBaseUrl =
-    deps?.adminBaseUrl ?? process.env.METRICS_ADMIN_APP_URL ?? "";
-
-  const app = new OpenAPIHono<AuthEnv>({
-    defaultHook: (result, c) => {
-      if (!result.success) {
-        const issues = result.error.issues;
-        const message = issues
-          .map((i) => `${i.path.join(".")}: ${i.message}`)
-          .join(", ");
-        return c.json({ error: message }, 400);
-      }
-    },
-  });
-
-  app.onError((err, c) => {
-    console.error("unhandled error:", err);
-    return c.json({ error: err.message }, 500);
-  });
-
-  // Health check — no auth required
-  app.get("/health", (c) => c.json({ status: "ok" }, 200));
-
-  // /metrics/* — accepts bearer token OR session cookie; returns 401 JSON on failure.
-  app.use(
-    "/metrics/*",
-    dashboardDevAuth
-      ? createMiddleware<AuthEnv>(async (c, next) => {
-          c.set("caller", { name: "dev-auth", scope: "*" });
-          return next();
-        })
-      : createCombinedAuthMiddleware(
-          apiKeys,
-          sessionSecret,
-          accountsClient,
-          requireOwnerRole,
-          dashboardToken,
-        ),
-  );
-
-  // Metrics combined-auth middleware accepts either an admin bearer token
-  // (scope === "*", scoped tokens already 403'd above) or an OWNER session
-  // cookie. The kind="custom" policy documents that this dual gate is
-  // applied at middleware-time, not in the route handler.
-  const metricsPolicy = {
-    kind: "custom" as const,
-    check: () => {},
-    justification:
-      "Mixed auth: admin bearer token OR OWNER session cookie (enforced by createCombinedAuthMiddleware on /metrics/*)",
-  };
-
-  // ─── /metrics/summary ─────────────────────────────────────────────────────
-
-  const handleSummary: AppHandler<typeof summaryRoute> = async (c) => {
+function makeSummaryHandler(
+  provider: MetricsProvider,
+): AppHandler<typeof summaryRoute> {
+  return async (c) => {
     const { preset, from, to } = c.req.valid("query");
 
     if ((from && !to) || (!from && to)) {
@@ -443,10 +379,12 @@ export function createMetricsApp(
       return handleQueryError(c, err);
     }
   };
+}
 
-  // ─── /metrics/trends ──────────────────────────────────────────────────────
-
-  const handleTrends: AppHandler<typeof trendsRoute> = async (c) => {
+function makeTrendsHandler(
+  provider: MetricsProvider,
+): AppHandler<typeof trendsRoute> {
+  return async (c) => {
     const { preset, from, to, groupBy } = c.req.valid("query");
 
     if ((from && !to) || (!from && to)) {
@@ -516,10 +454,12 @@ export function createMetricsApp(
       return handleQueryError(c, err);
     }
   };
+}
 
-  // ─── /metrics/features ────────────────────────────────────────────────────
-
-  const handleFeatures: AppHandler<typeof featuresRoute> = async (c) => {
+function makeFeaturesHandler(
+  provider: MetricsProvider,
+): AppHandler<typeof featuresRoute> {
+  return async (c) => {
     const { preset, from, to } = c.req.valid("query");
 
     if ((from && !to) || (!from && to)) {
@@ -620,10 +560,12 @@ export function createMetricsApp(
       return handleQueryError(c, err);
     }
   };
+}
 
-  // ─── /metrics/queue ───────────────────────────────────────────────────────
-
-  const handleQueue: AppHandler<typeof queueRoute> = async (c) => {
+function makeQueueHandler(
+  provider: MetricsProvider,
+): AppHandler<typeof queueRoute> {
+  return async (c) => {
     const { preset, from, to } = c.req.valid("query");
 
     if ((from && !to) || (!from && to)) {
@@ -720,6 +662,92 @@ export function createMetricsApp(
       return handleQueryError(c, err);
     }
   };
+}
+
+// ─── Handler factory ─────────────────────────────────────────────────────────
+
+export function createMetricsApp(
+  apiKeys: Map<string, Caller>,
+  accountsClient: AccountsClient,
+  deps?: MetricsDeps,
+): OpenAPIHono<AuthEnv> {
+  const provider = deps?.provider;
+  if (!provider) {
+    throw new Error(
+      "[metrics-api] MetricsDeps.provider is required — no fallback provider is configured",
+    );
+  }
+
+  const sessionSecret =
+    deps?.sessionSecret ?? process.env.SHIPWRIGHT_SESSION_SECRET ?? "";
+  const requireOwnerRole = deps?.requireOwnerRole ?? false;
+  if (requireOwnerRole) {
+    console.warn(
+      "[metrics] METRICS_REQUIRE_OWNER_ROLE is enabled — ensure your accountsClient URL serves /accounts/users/{id}. The Shipwright admin service does not expose this endpoint.",
+    );
+  }
+  const dashboardToken = deps?.dashboardToken;
+  const offlineMode = deps?.offlineMode ?? false;
+  const dashboardDevAuth = deps?.dashboardDevAuth ?? false;
+  const basePath = deps?.basePath ?? process.env.METRICS_BASE_PATH ?? "";
+  const adminBaseUrl =
+    deps?.adminBaseUrl ?? process.env.METRICS_ADMIN_APP_URL ?? "";
+
+  const app = new OpenAPIHono<AuthEnv>({
+    defaultHook: (result, c) => {
+      if (!result.success) {
+        const issues = result.error.issues;
+        const message = issues
+          .map((i) => `${i.path.join(".")}: ${i.message}`)
+          .join(", ");
+        return c.json({ error: message }, 400);
+      }
+    },
+  });
+
+  app.onError((err, c) => {
+    console.error("unhandled error:", err);
+    return c.json({ error: err.message }, 500);
+  });
+
+  // Health check — no auth required
+  app.get("/health", (c) => c.json({ status: "ok" }, 200));
+
+  // /metrics/* — accepts bearer token OR session cookie; returns 401 JSON on failure.
+  app.use(
+    "/metrics/*",
+    dashboardDevAuth
+      ? createMiddleware<AuthEnv>(async (c, next) => {
+          c.set("caller", { name: "dev-auth", scope: "*" });
+          return next();
+        })
+      : createCombinedAuthMiddleware(
+          apiKeys,
+          sessionSecret,
+          accountsClient,
+          requireOwnerRole,
+          dashboardToken,
+        ),
+  );
+
+  // Metrics combined-auth middleware accepts either an admin bearer token
+  // (scope === "*", scoped tokens already 403'd above) or an OWNER session
+  // cookie. The kind="custom" policy documents that this dual gate is
+  // applied at middleware-time, not in the route handler.
+  const metricsPolicy = {
+    kind: "custom" as const,
+    check: () => {},
+    justification:
+      "Mixed auth: admin bearer token OR OWNER session cookie (enforced by createCombinedAuthMiddleware on /metrics/*)",
+  };
+
+  // ─── /metrics/summary, /trends, /features, /queue ─────────────────────────
+  // Provider-bound handlers (shared with the public app via the make* factories).
+
+  const handleSummary = makeSummaryHandler(provider);
+  const handleTrends = makeTrendsHandler(provider);
+  const handleFeatures = makeFeaturesHandler(provider);
+  const handleQueue = makeQueueHandler(provider);
 
   // ─── /metrics/tokens ──────────────────────────────────────────────────────
 
@@ -1090,4 +1118,121 @@ function createCombinedAuthMiddleware(
 
     return c.json({ error: "Unauthorized" }, 401);
   });
+}
+
+// ─── Public (unauthenticated, repo-scoped) metrics surface ───────────────────
+//
+// PPL-1.2: a parallel read-only surface mounted under /public/*. It reuses the
+// same provider-bound handler logic as the authenticated app but:
+//   - requires NO auth (every route uses the {kind:"public"} AuthzPolicy)
+//   - serves data scoped to a single repo (the injected provider is repo-scoped
+//     at construction time — see TaskStoreProvider's `repo` param)
+//   - omits token-usage entirely: GET /public/metrics/tokens → 404
+//   - is read-only: no POST/PUT/DELETE routes exist (mutations → 404/405)
+//   - serves a read-only dashboard at /public/dashboard
+
+const publicSummaryRoute = createRoute({
+  ...summaryRoute,
+  path: "/public/metrics/summary",
+});
+const publicTrendsRoute = createRoute({
+  ...trendsRoute,
+  path: "/public/metrics/trends",
+});
+const publicFeaturesRoute = createRoute({
+  ...featuresRoute,
+  path: "/public/metrics/features",
+});
+const publicQueueRoute = createRoute({
+  ...queueRoute,
+  path: "/public/metrics/queue",
+});
+
+const PUBLIC_POLICY = { kind: "public" as const };
+
+/**
+ * Build the public, unauthenticated, repo-scoped metrics sub-app.
+ *
+ * @param provider - a repo-scoped MetricsProvider (built in server.ts with the
+ *   configured public repo). All reads are already narrowed to that repo.
+ * @param basePath - optional path prefix for dashboard asset/API URLs.
+ */
+export function createPublicMetricsApp(
+  provider: MetricsProvider,
+  basePath = "",
+): OpenAPIHono<AuthEnv> {
+  const app = new OpenAPIHono<AuthEnv>({
+    defaultHook: (result, c) => {
+      if (!result.success) {
+        const message = result.error.issues
+          .map((i) => `${i.path.join(".")}: ${i.message}`)
+          .join(", ");
+        return c.json({ error: message }, 400);
+      }
+    },
+  });
+
+  app.onError((err, c) => {
+    console.error("unhandled error:", err);
+    return c.json({ error: err.message }, 500);
+  });
+
+  // Read-only metric endpoints — no auth, repo-scoped via the injected provider.
+  //
+  // The handler factories are typed against the authenticated route configs
+  // (path "/metrics/*"). The public routes share byte-identical request/response
+  // schemas — only the `path` literal differs — so the handler logic is fully
+  // compatible. `AppHandler<R>` carries the path only as a phantom type, so each
+  // handler is cast to its public route's type. This is the single place the two
+  // route families are bridged; the schemas guarantee runtime correctness.
+  registerWithAuthz(
+    app,
+    publicSummaryRoute,
+    PUBLIC_POLICY,
+    makeSummaryHandler(provider) as unknown as AppHandler<
+      typeof publicSummaryRoute
+    >,
+  );
+  registerWithAuthz(
+    app,
+    publicTrendsRoute,
+    PUBLIC_POLICY,
+    makeTrendsHandler(provider) as unknown as AppHandler<
+      typeof publicTrendsRoute
+    >,
+  );
+  registerWithAuthz(
+    app,
+    publicFeaturesRoute,
+    PUBLIC_POLICY,
+    makeFeaturesHandler(provider) as unknown as AppHandler<
+      typeof publicFeaturesRoute
+    >,
+  );
+  registerWithAuthz(
+    app,
+    publicQueueRoute,
+    PUBLIC_POLICY,
+    makeQueueHandler(provider) as unknown as AppHandler<
+      typeof publicQueueRoute
+    >,
+  );
+
+  // Token usage is owner-only telemetry — not exposed publicly.
+  app.get("/public/metrics/tokens", (c) => c.json({ error: "Not found" }, 404));
+
+  // Read-only dashboard variant — pipeline panels only, no token usage.
+  app.get("/public/dashboard", (c) => {
+    const body = renderDashboardPage({
+      userName: "Public",
+      isOwner: false,
+      readOnly: true,
+      basePath,
+    });
+    return new Response(body, {
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+    });
+  });
+
+  return app;
 }

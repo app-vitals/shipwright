@@ -257,3 +257,131 @@ code,
 .sw-orb-support {
   background: var(--sw-glow-support);
 }
+
+/* --astro-code-* variables for Shiki css-variables theme.
+   These map syntax token colors to brand tokens — never raw hex values. */
+:root {
+  --astro-code-color-text: var(--sw-color-text-body);
+  --astro-code-color-background: var(--sw-color-bg-overlay);
+  --astro-code-token-constant: var(--sw-color-support-cyan);
+  --astro-code-token-string: var(--sw-color-brand-default);
+  --astro-code-token-comment: var(--sw-color-text-editorial);
+  --astro-code-token-keyword: var(--sw-color-support-cyan);
+  --astro-code-token-parameter: var(--sw-color-text-body);
+  --astro-code-token-function: var(--sw-color-support-patriot-bright);
+  --astro-code-token-string-expression: var(--sw-color-brand-default);
+  --astro-code-token-punctuation: var(--sw-color-text-editorial);
+  --astro-code-token-link: var(--sw-color-support-patriot-bright);
+}
+
+/* Long-form prose utility — wrap MDX/markdown content with .sw-prose */
+.sw-prose {
+  color: var(--sw-color-text-body);
+  font-size: var(--sw-text-body-size);
+  line-height: var(--sw-text-body-line);
+  max-width: 72ch;
+}
+.sw-prose h1 {
+  font-family: var(--sw-font-display);
+  font-size: var(--sw-text-h1-size);
+  line-height: var(--sw-text-h1-line);
+  font-weight: var(--sw-text-h1-weight);
+  letter-spacing: var(--sw-text-h1-tracking);
+  color: var(--sw-color-text-heading);
+  margin: 0 0 1rem;
+}
+.sw-prose h2 {
+  font-family: var(--sw-font-display);
+  font-size: var(--sw-text-h2-size);
+  line-height: var(--sw-text-h2-line);
+  font-weight: var(--sw-text-h2-weight);
+  letter-spacing: var(--sw-text-h2-tracking);
+  color: var(--sw-color-text-heading);
+  margin: 2rem 0 0.75rem;
+}
+.sw-prose h3 {
+  font-family: var(--sw-font-display);
+  font-size: var(--sw-text-h3-size);
+  line-height: var(--sw-text-h3-line);
+  font-weight: var(--sw-text-h3-weight);
+  color: var(--sw-color-text-heading);
+  margin: 1.5rem 0 0.5rem;
+}
+.sw-prose p {
+  margin: 0 0 1rem;
+}
+.sw-prose pre {
+  background: var(--sw-color-bg-overlay);
+  border: 1px solid var(--sw-color-border-subtle);
+  border-radius: var(--sw-radius-md);
+  padding: 1rem 1.25rem;
+  overflow-x: auto;
+  margin: 1.25rem 0;
+  font-family: var(--sw-font-mono);
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+.sw-prose code {
+  font-family: var(--sw-font-mono);
+  font-size: 0.875em;
+  color: var(--sw-color-support-cyan);
+  background: var(--sw-color-bg-overlay);
+  border-radius: var(--sw-radius-sm);
+  padding: 0.15em 0.35em;
+}
+.sw-prose pre code {
+  color: var(--sw-color-text-body);
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+}
+.sw-prose a {
+  color: var(--sw-color-support-patriot-bright);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.sw-prose a:hover {
+  color: var(--sw-color-support-cyan);
+}
+.sw-prose ul,
+.sw-prose ol {
+  padding-left: 1.5rem;
+  margin: 0 0 1rem;
+}
+.sw-prose li {
+  margin-bottom: 0.25rem;
+}
+.sw-prose blockquote {
+  border-left: 3px solid var(--sw-color-brand-default);
+  background: var(--sw-color-brand-soft);
+  border-radius: var(--sw-radius-md);
+  padding: 0.75rem 1rem;
+  margin: 1.25rem 0;
+  color: var(--sw-color-text-body);
+}
+.sw-prose hr {
+  border: none;
+  border-top: 1px solid var(--sw-color-border-subtle);
+  margin: 2rem 0;
+}
+.sw-prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.25rem 0;
+}
+.sw-prose th {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  font-family: var(--sw-font-mono);
+  font-size: var(--sw-text-label-size);
+  text-transform: uppercase;
+  letter-spacing: var(--sw-text-label-tracking);
+  color: var(--sw-color-text-muted);
+  border-bottom: 1px solid var(--sw-color-border-muted);
+}
+.sw-prose td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--sw-color-border-subtle);
+  vertical-align: top;
+}

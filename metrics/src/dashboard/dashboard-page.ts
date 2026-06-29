@@ -21,6 +21,12 @@ export interface DashboardPageOptions {
    * or undefined = same-origin relative links (the default for single-host ingress).
    */
   adminBaseUrl?: string;
+  /**
+   * Read-only public variant. When true, the dashboard hides the token-usage
+   * section (KPI cards + by-agent table + trends) and any auth-gated admin
+   * controls. All pipeline metric panels remain visible. Default false.
+   */
+  readOnly?: boolean;
 }
 
 function infoIcon(tip: string): string {
@@ -29,6 +35,62 @@ function infoIcon(tip: string): string {
 
 export function renderDashboardPage(opts: DashboardPageOptions): string {
   const base = opts.basePath ?? "";
+  const readOnly = opts.readOnly ?? false;
+
+  // Token usage is owner-only telemetry — omitted entirely in the read-only
+  // public variant. Pipeline panels above/below are unaffected.
+  const tokenSection = readOnly
+    ? ""
+    : `      <!-- Token Usage -->
+      <section class="section" aria-label="Token usage">
+        <div class="section-header">
+          <h2 class="section-title">Token Usage</h2>
+        </div>
+        <div class="token-kpi-row">
+          <div class="kpi-card" data-metric="token-input">
+            <div class="kpi-label">Input Tokens</div>
+            <div class="kpi-value" id="token-input"><span class="skeleton">&nbsp;</span></div>
+            <div class="kpi-meta">total input tokens</div>
+          </div>
+          <div class="kpi-card" data-metric="token-output">
+            <div class="kpi-label">Output Tokens</div>
+            <div class="kpi-value" id="token-output"><span class="skeleton">&nbsp;</span></div>
+            <div class="kpi-meta">total output tokens</div>
+          </div>
+          <div class="kpi-card" data-metric="token-cache">
+            <div class="kpi-label">Cache Tokens</div>
+            <div class="kpi-value" id="token-cache"><span class="skeleton">&nbsp;</span></div>
+            <div class="kpi-meta">cache read + creation</div>
+          </div>
+          <div class="kpi-card" data-metric="token-cost">
+            <div class="kpi-label">Total Cost</div>
+            <div class="kpi-value" id="token-cost"><span class="skeleton">&nbsp;</span></div>
+            <div class="kpi-meta">total cost (USD)</div>
+          </div>
+        </div>
+        <div class="quality-panel">
+          <h3 class="panel-title">By Agent</h3>
+          <table class="token-table" id="token-agent-table">
+            <thead>
+              <tr><th>Agent</th><th>Cron</th><th>DM/Mention</th><th>Total</th><th>Cost ($)</th></tr>
+            </thead>
+            <tbody id="token-agent-tbody"></tbody>
+          </table>
+          <p id="token-agent-empty" class="empty-state" style="display:none">No data</p>
+        </div>
+        <div class="token-trends-section">
+          <div class="token-trends-toggles" role="group" aria-label="Token series">
+            <button class="token-series-btn active" data-token-series="input" type="button">Input</button>
+            <button class="token-series-btn" data-token-series="output" type="button">Output</button>
+            <button class="token-series-btn" data-token-series="total" type="button">Total</button>
+            <button class="token-series-btn" data-token-series="all" type="button">All</button>
+          </div>
+          <div class="chart-container token-trends-chart-container">
+            <canvas id="token-trends-chart" aria-label="Token usage trends chart"></canvas>
+          </div>
+        </div>
+      </section>`;
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -216,55 +278,7 @@ export function renderDashboardPage(opts: DashboardPageOptions): string {
         </div>
       </section>
 
-      <!-- Token Usage -->
-      <section class="section" aria-label="Token usage">
-        <div class="section-header">
-          <h2 class="section-title">Token Usage</h2>
-        </div>
-        <div class="token-kpi-row">
-          <div class="kpi-card" data-metric="token-input">
-            <div class="kpi-label">Input Tokens</div>
-            <div class="kpi-value" id="token-input"><span class="skeleton">&nbsp;</span></div>
-            <div class="kpi-meta">total input tokens</div>
-          </div>
-          <div class="kpi-card" data-metric="token-output">
-            <div class="kpi-label">Output Tokens</div>
-            <div class="kpi-value" id="token-output"><span class="skeleton">&nbsp;</span></div>
-            <div class="kpi-meta">total output tokens</div>
-          </div>
-          <div class="kpi-card" data-metric="token-cache">
-            <div class="kpi-label">Cache Tokens</div>
-            <div class="kpi-value" id="token-cache"><span class="skeleton">&nbsp;</span></div>
-            <div class="kpi-meta">cache read + creation</div>
-          </div>
-          <div class="kpi-card" data-metric="token-cost">
-            <div class="kpi-label">Total Cost</div>
-            <div class="kpi-value" id="token-cost"><span class="skeleton">&nbsp;</span></div>
-            <div class="kpi-meta">total cost (USD)</div>
-          </div>
-        </div>
-        <div class="quality-panel">
-          <h3 class="panel-title">By Agent</h3>
-          <table class="token-table" id="token-agent-table">
-            <thead>
-              <tr><th>Agent</th><th>Cron</th><th>DM/Mention</th><th>Total</th><th>Cost ($)</th></tr>
-            </thead>
-            <tbody id="token-agent-tbody"></tbody>
-          </table>
-          <p id="token-agent-empty" class="empty-state" style="display:none">No data</p>
-        </div>
-        <div class="token-trends-section">
-          <div class="token-trends-toggles" role="group" aria-label="Token series">
-            <button class="token-series-btn active" data-token-series="input" type="button">Input</button>
-            <button class="token-series-btn" data-token-series="output" type="button">Output</button>
-            <button class="token-series-btn" data-token-series="total" type="button">Total</button>
-            <button class="token-series-btn" data-token-series="all" type="button">All</button>
-          </div>
-          <div class="chart-container token-trends-chart-container">
-            <canvas id="token-trends-chart" aria-label="Token usage trends chart"></canvas>
-          </div>
-        </div>
-      </section>
+${tokenSection}
 
       <!-- Feature Breakdown -->
       <section class="section features-section" aria-label="Feature breakdown">

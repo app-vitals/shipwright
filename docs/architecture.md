@@ -30,7 +30,7 @@ The plugin is pure TypeScript with **no server, no database, and no external HTT
 
 ## B — Metrics dashboard
 
-A Hono service that turns pipeline events into analytics. Five read-only JSON endpoints (`/metrics/summary|trends|features|queue|tokens`) plus a session-gated `/dashboard`, all served by a backend-agnostic `MetricsProvider` interface. The active backend is selected from env at startup: **fixtures** (offline) or **taskstore** (live task-store + admin APIs). See **[metrics.md](./metrics.md)**.
+A Hono service that turns pipeline events into analytics. Two sets of read-only JSON endpoints: authenticated `/metrics/*` (summary, trends, features, queue, tokens) and unauthenticated `/public/*` (summary, trends, features, queue), plus session-gated `/dashboard` and public `/public/dashboard`. All served by a backend-agnostic `MetricsProvider` interface. The active backend is selected from env at startup: **fixtures** (offline) or **taskstore** (live task-store + admin APIs). See **[metrics.md](./metrics.md)**.
 
 ## C — Shipwright agent
 

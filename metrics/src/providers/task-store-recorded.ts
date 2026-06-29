@@ -15,12 +15,13 @@ import type {
   CronRunTokenStats,
 } from "../lib/admin-metrics-client.ts";
 import {
-  inWindow,
   type PrRecord,
-  prAnchor,
   type TaskRecord,
-  taskAnchor,
   type TaskStoreClient,
+  inWindow,
+  matchesRepo,
+  prAnchor,
+  taskAnchor,
 } from "../lib/task-store-client.ts";
 
 // ─── Task store double ────────────────────────────────────────────────────────
@@ -40,9 +41,11 @@ export class RecordedTaskStoreClient implements TaskStoreClient {
     from?: string;
     to?: string;
     status?: string;
+    repo?: string;
   }): Promise<TaskRecord[]> {
     return this.tasks.filter((t) => {
       if (params.status && t.status !== params.status) return false;
+      if (!matchesRepo(t.repo, params.repo)) return false;
       return inWindow(taskAnchor(t), params);
     });
   }
@@ -51,10 +54,12 @@ export class RecordedTaskStoreClient implements TaskStoreClient {
     from?: string;
     to?: string;
     reviewState?: string;
+    repo?: string;
   }): Promise<PrRecord[]> {
     return this.prs.filter((p) => {
       if (params.reviewState && p.reviewState !== params.reviewState)
         return false;
+      if (!matchesRepo(p.repo, params.repo)) return false;
       return inWindow(prAnchor(p), params);
     });
   }

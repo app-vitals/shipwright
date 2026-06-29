@@ -137,10 +137,16 @@ function addAggregates(a: TokenAggregate, b: TokenAggregate): TokenAggregate {
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
 export class TaskStoreProvider implements MetricsProvider {
+  /**
+   * @param repo - optional `org/repo` scope. When set (public mode), every
+   *   task/PR read is filtered to this repo. When omitted, all repos are
+   *   included (the authenticated default).
+   */
   constructor(
     private readonly taskStore: TaskStoreClient,
     private readonly admin: AdminMetricsClient,
     private readonly clock: Clock = SystemClock(),
+    private readonly repo?: string,
   ) {}
 
   async query(q: MetricQuery): Promise<MetricTable> {
@@ -184,11 +190,13 @@ export class TaskStoreProvider implements MetricsProvider {
   // ─ Task reads ─
 
   private tasks(win: { from: string; to: string }): Promise<TaskRecord[]> {
-    return Promise.resolve(this.taskStore.listTasks(win));
+    return Promise.resolve(
+      this.taskStore.listTasks({ ...win, repo: this.repo }),
+    );
   }
 
   private prs(win: { from: string; to: string }): Promise<PrRecord[]> {
-    return Promise.resolve(this.taskStore.listPrs(win));
+    return Promise.resolve(this.taskStore.listPrs({ ...win, repo: this.repo }));
   }
 
   // ─ Summary ─
