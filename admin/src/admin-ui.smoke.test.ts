@@ -8,6 +8,7 @@
 
 import { beforeAll, describe, expect, it } from "bun:test";
 import { sign } from "hono/jwt";
+import type { PrListItem, PullRequestItem } from "./admin-ui-pages.ts";
 import { createAdminUIApp } from "./admin-ui.ts";
 import type { AdminUIDeps, AdminUISlackClient } from "./admin-ui.ts";
 import type {
@@ -15,7 +16,6 @@ import type {
   GoogleTokenResponse,
   GoogleUserInfo,
 } from "./google-auth-client.ts";
-import type { PrListItem, PullRequestItem } from "./admin-ui-pages.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -3472,5 +3472,157 @@ describe("admin UI — PRs page", () => {
       headers: { Cookie: `admin_session=${nonAdminCookie}` },
     });
     expect(res.status).toBe(403);
+  });
+});
+
+// ─── Public task board ────────────────────────────────────────────────────────
+
+describe("admin UI — public task board", () => {
+  const PUBLIC_REPO = "app-vitals/shipwright";
+
+  const MOCK_PUBLIC_TASKS = [
+    {
+      id: "pub-task-1",
+      title: "Public task alpha",
+      status: "pending",
+      session: "sess-pub",
+      repo: PUBLIC_REPO,
+      assignee: null,
+      claimedBy: null,
+    },
+    {
+      id: "pub-task-2",
+      title: "Public task beta",
+      status: "in_progress",
+      session: "sess-pub",
+      repo: PUBLIC_REPO,
+      assignee: null,
+      claimedBy: "agent-pub",
+    },
+  ];
+
+  it("GET /public/tasks returns 200 without any auth header or cookie", async () => {
+    const capturedParams: URLSearchParams[] = [];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        publicRepo: PUBLIC_REPO,
+        fetchTaskStoreTasks: async (params) => {
+          capturedParams.push(params);
+          return {
+            tasks: MOCK_PUBLIC_TASKS,
+            total: MOCK_PUBLIC_TASKS.length,
+            limit: 50,
+            offset: 0,
+          };
+        },
+      }),
+    );
+    // No Cookie, no Authorization header — must still return 200
+    const res = await app.request("/public/tasks");
+    expect(res.status).toBe(200);
+  });
+
+  it("GET /public/tasks passes SHIPWRIGHT_ADMIN_PUBLIC_REPO as repo filter param", async () => {
+    const capturedParams: URLSearchParams[] = [];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        publicRepo: PUBLIC_REPO,
+        fetchTaskStoreTasks: async (params) => {
+          capturedParams.push(params);
+          return { tasks: [], total: 0, limit: 50, offset: 0 };
+        },
+      }),
+    );
+    await app.request("/public/tasks");
+    expect(capturedParams.length).toBe(1);
+    expect(capturedParams[0].get("repo")).toBe(PUBLIC_REPO);
+  });
+
+  it("GET /public/tasks renders task rows but NO create/edit/release controls", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        publicRepo: PUBLIC_REPO,
+        fetchTaskStoreTasks: async () => ({
+          tasks: MOCK_PUBLIC_TASKS,
+          total: MOCK_PUBLIC_TASKS.length,
+          limit: 50,
+          offset: 0,
+        }),
+      }),
+    );
+    const res = await app.request("/public/tasks");
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    // Task rows are present
+    expect(html).toContain("Public task alpha");
+    expect(html).toContain("Public task beta");
+    // No create/edit/status-change controls
+    expect(html).not.toContain("Release");
+    expect(html).not.toContain("/admin/");
+    expect(html).not.toContain("admin_session");
+  });
+
+  it("GET /public/tasks renders 200 even when no publicRepo configured (degraded mode)", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        // publicRepo absent — degraded mode, no task store call
+      }),
+    );
+    const res = await app.request("/public/tasks");
+    expect(res.status).toBe(200);
+  });
+
+  it("POST /public/tasks returns 404 or 405 (mutation routes absent)", async () => {
+    const app = createAdminUIApp(makeMockDeps({ publicRepo: PUBLIC_REPO }));
+    const res = await app.request("/public/tasks", { method: "POST" });
+    expect([404, 405]).toContain(res.status);
+  });
+
+  it("PUT /public/tasks/pub-task-1 returns 404 or 405", async () => {
+    const app = createAdminUIApp(makeMockDeps({ publicRepo: PUBLIC_REPO }));
+    const res = await app.request("/public/tasks/pub-task-1", {
+      method: "PUT",
+    });
+    expect([404, 405]).toContain(res.status);
+  });
+
+  it("DELETE /public/tasks/pub-task-1 returns 404 or 405", async () => {
+    const app = createAdminUIApp(makeMockDeps({ publicRepo: PUBLIC_REPO }));
+    const res = await app.request("/public/tasks/pub-task-1", {
+      method: "DELETE",
+    });
+    expect([404, 405]).toContain(res.status);
+  });
+
+  it("GET /public/tasks suppresses pagination even when total > 50", async () => {
+    // When the public board has more than 50 tasks, pagination links must NOT
+    // appear — makePageUrl hardcodes /admin/tasks, which is auth-walled.
+    const manyTasks = Array.from({ length: 50 }, (_, i) => ({
+      id: `pub-task-${i}`,
+      title: `Public task ${i}`,
+      status: "pending",
+      session: "sess-pub",
+      repo: PUBLIC_REPO,
+      assignee: null,
+      claimedBy: null,
+    }));
+    const app = createAdminUIApp(
+      makeMockDeps({
+        publicRepo: PUBLIC_REPO,
+        fetchTaskStoreTasks: async () => ({
+          tasks: manyTasks,
+          total: 500, // >50 — would trigger pagination in admin mode
+          limit: 50,
+          offset: 0,
+        }),
+      }),
+    );
+    const res = await app.request("/public/tasks");
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    // No pagination links should point to the auth-walled admin route
+    expect(body).not.toContain("/admin/tasks");
+    expect(body).not.toContain("Next →");
+    expect(body).not.toContain("← Prev");
   });
 });
