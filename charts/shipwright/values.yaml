@@ -252,6 +252,10 @@ metrics:
     # -- When true, require OWNER role for dashboard access.
     # Injects METRICS_REQUIRE_OWNER_ROLE=true when enabled.
     requireOwnerRole: false
+    # -- When true, run the metrics service in OFFLINE mode (METRICS_OFFLINE=true).
+    # Injects fixture data instead of connecting to the task-store + admin APIs.
+    # Use in CI or local development when no live services are available.
+    offline: false
     # -- Internal API key shared between metrics and admin services.
     # Set existingSecret to inject METRICS_INTERNAL_API_KEY via secretKeyRef.
     internalKey:
