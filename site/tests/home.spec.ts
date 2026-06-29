@@ -49,9 +49,9 @@ test("home document ships NO runtime JS (zero <script> tags)", async ({
   expect(scriptCount).toBe(0);
 });
 
-// SWW-2.1: Hero. The hero is intentionally minimal — eyebrow + tagline only.
-// (The install command + repo link live in the two-ways/social-proof/footer
-// sections; those are covered by their own tests below.)
+// SWW-2.1: Hero. The hero contains the eyebrow, brand tagline, and a two-path CTA
+// (install snippet + discovery call link). Tests below scope to page.locator("section").first()
+// to guard the hero specifically; lower sections (social-proof, footer) are covered separately.
 
 test("eyebrow features 'Built on Claude Code'", async ({ page }) => {
   await page.goto("/");
