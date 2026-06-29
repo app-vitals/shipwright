@@ -10,6 +10,14 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.6.121] - 2026-06-29
+
+### Fixed
+
+- correct stray-hyphen domain references to canonical `shipwrightharness.com` in CLAUDE.md, docs/architecture.md, and Chart.yaml
+- add `metrics.provider.offline` to `values.schema.json` to satisfy `additionalProperties: false` constraint and unblock `helm lint`
+- strengthen domain-guard regression test: `some()` → `every()` for required-files assertion; exclude test file itself from canonical-domain grep
+
 ## [1.6.120] - 2026-06-29
 
 ### Changed

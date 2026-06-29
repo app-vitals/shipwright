@@ -128,6 +128,10 @@ spec:
             - name: METRICS_REQUIRE_OWNER_ROLE
               value: "true"
             {{- end }}
+            {{- if .Values.metrics.provider.offline }}
+            - name: METRICS_OFFLINE
+              value: "true"
+            {{- end }}
             {{- if .Values.metrics.provider.internalKey.existingSecret }}
             - name: METRICS_INTERNAL_API_KEY
               valueFrom:

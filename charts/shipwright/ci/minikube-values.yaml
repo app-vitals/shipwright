@@ -17,6 +17,9 @@ metrics:
   # never reaches a registry. Postgres mode is exercised via the bundled subchart.
   image:
     pullPolicy: Never
+  provider:
+    # Run in offline (fixture) mode — no task-store or admin service available in CI.
+    offline: true
 
 agent:
   provisioning:

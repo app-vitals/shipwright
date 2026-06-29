@@ -8,10 +8,10 @@ type: application
 # Chart version (SemVer). Bump on every chart change, independent of appVersion.
 # See CHANGELOG.md and the README "Versioning" section — CI enforces this bump
 # via `ct lint --check-version-increment`.
-version: 1.6.120
+version: 1.6.121
 # Version of the Shipwright application this chart deploys by default.
 appVersion: "0.1.0"
-home: https://shipwright-harness.com
+home: https://shipwrightharness.com
 sources:
   - https://github.com/app-vitals/shipwright
 keywords:
@@ -21,15 +21,15 @@ keywords:
   - ci-cd
 maintainers:
   - name: Shipwright Harness
-    url: https://shipwright-harness.com
+    url: https://shipwrightharness.com
 # License: MIT (chart + application).
 annotations:
   licenses: MIT
   # Artifact Hub change log for this release. Must mirror the matching version
   # entry in CHANGELOG.md (keep the two in sync on every bump).
   artifacthub.io/changes: |
-    - kind: changed
-      description: "auto-bump to chart v1.6.120 triggered by release tag metrics-v0.93.0"
+    - kind: fixed
+      description: "correct stray-hyphen domain references to canonical domain; add metrics.provider.offline to schema; strengthen domain-guard test"
 dependencies:
   # Bitnami PostgreSQL subchart. Pinned to a chart version whose default image tag
   # is concrete (NOT `latest`), because Bitnami's 2025 catalog change moved newer
