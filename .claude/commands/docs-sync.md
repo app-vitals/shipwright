@@ -174,7 +174,7 @@ Before committing any generated MDX, apply these scrub rules. If found, the sect
 1. Parse `--section getting-started` flag.
 2. Read `docs/quickstart.md`.
 3. Derive human-friendly content from the quickstart: prerequisites, step-by-step setup, and the copy-paste session prompt.
-4. Generate `site/src/content/docs/getting-started.mdx` with frontmatter (title: "Getting Started", section: "Getting Started", order: 1, prev: "Introduction", next: "Configuration").
+4. Generate `site/src/content/docs/getting-started.mdx` with frontmatter (title: "Getting Started", section: "Getting Started", order: 1, prev: "Getting Started", next: "Configuration").
 5. Validate the frontmatter and content.
 6. Run `npm run build:check` from `site/` to confirm the MDX is valid.
 7. Report: "✓ getting-started regenerated; site build passes."
