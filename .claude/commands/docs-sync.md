@@ -19,17 +19,17 @@ If neither flag is given, `/docs-sync --rebuild` is assumed.
 
 Map each section to its source docs and the target MDX file:
 
-| Section | Source Docs | Target MDX | Description |
-|---------|-------------|-----------|-------------|
-| `getting-started` | `docs/quickstart.md` | `site/src/content/docs/getting-started.mdx` | One-prompt onboarding, prerequisites, and copy-paste quickstart |
-| `introduction` | `docs/architecture.md`, `docs/README.md` | `site/src/content/docs/introduction.mdx` | Four-artifact design (plugin → metrics → agent → task-store), workspace layout, and architectural overview |
-| `configuration` | `docs/configuration.md` | `site/src/content/docs/configuration.mdx` | All configuration options: plugin env vars, `.shipwright.json` keys, agent env vars, and policy fields |
-| `task-store` | `docs/task-store.md` | `site/src/content/docs/task-store.mdx` | Task store API, data model, ephemeral document store, and scoped tokens |
-| `testing` | `docs/testing.md`, `docs/test-readiness/test-system.md` | `site/src/content/docs/testing.mdx` | Four-layer test model (unit / integration / smoke / e2e), run commands, speed budgets, and isolation contract |
-| `deploy` | `docs/deploy-kubernetes.md`, `docs/helm-repo.md` | `site/src/content/docs/deploying-to-cloud.mdx` | Kubernetes deployment: Minikube, GKE (Gateway API + cert-manager), EKS (ALB), agent provisioning RBAC, and auth modes |
-| `metrics` | `docs/metrics.md` | `site/src/content/docs/metrics.mdx` | Metrics service (provider-agnostic JSON endpoints, dashboard, dual auth, environment) |
-| `agent` | `docs/agent.md` | `site/src/content/docs/agent.mdx` | Shipwright agent runtime: admin CRUD API, admin UI, Prisma store, encryption, and environment configuration |
-| `migration` | `docs/migration.md` | `site/src/content/docs/migration.mdx` | Breaking changes and migration steps across versions |
+| Section | Source Docs | Target MDX | Section Name | Description |
+|---------|-------------|-----------|--------------|-------------|
+| `getting-started` | `docs/quickstart.md` | `site/src/content/docs/getting-started.mdx` | `Getting Started` | One-prompt onboarding, prerequisites, and copy-paste quickstart |
+| `introduction` | `docs/architecture.md`, `docs/README.md` | `site/src/content/docs/introduction.mdx` | `Getting Started` | Four-artifact design (plugin → metrics → agent → task-store), workspace layout, and architectural overview |
+| `configuration` | `docs/configuration.md` | `site/src/content/docs/configuration.mdx` | `Configuration` | All configuration options: plugin env vars, `.shipwright.json` keys, agent env vars, and policy fields |
+| `task-store` | `docs/task-store.md` | `site/src/content/docs/task-store.mdx` | `Task Store` | Task store API, data model, ephemeral document store, and scoped tokens |
+| `testing` | `docs/testing.md`, `docs/test-readiness/test-system.md` | `site/src/content/docs/testing.mdx` | `Testing` | Four-layer test model (unit / integration / smoke / e2e), run commands, speed budgets, and isolation contract |
+| `deploy` | `docs/deploy-kubernetes.md`, `docs/helm-repo.md` | `site/src/content/docs/deploying-to-cloud.mdx` | `Operations` | Kubernetes deployment: Minikube, GKE (Gateway API + cert-manager), EKS (ALB), agent provisioning RBAC, and auth modes |
+| `metrics` | `docs/metrics.md` | `site/src/content/docs/metrics.mdx` | `Metrics` | Metrics service (provider-agnostic JSON endpoints, dashboard, dual auth, environment) |
+| `agent` | `docs/agent.md` | `site/src/content/docs/agent.mdx` | `Agent` | Shipwright agent runtime: admin CRUD API, admin UI, Prisma store, encryption, and environment configuration |
+| `migration` | `docs/migration.md` | `site/src/content/docs/migration.mdx` | `Migration` | Breaking changes and migration steps across versions |
 
 ## Procedure
 
@@ -89,15 +89,15 @@ next: <optional next section name>
 **Frontmatter field rules:**
 - `title` (required): Human-readable section title (capitalize each major word). E.g., "Getting Started", "Task Store API", "Deployment Guide".
 - `description` (optional): A single sentence describing the section's purpose, written for someone new to Shipwright. E.g., "Clone the repo, install dependencies, and run the metrics dashboard locally in one prompt."
-- `section` (required): The section name from the registry. E.g., "Getting Started" (not "getting-started").
+- `section` (required): The exact value from the "Section Name" column in the registry table above — use it verbatim. Do not derive this from the section key or title. E.g., "Getting Started" (not "getting-started" or "Introduction").
 - `order` (required): A number indicating the section's position in the navigation chain. Use increments of 1 (1, 2, 3, ...) or 10 (10, 20, 30, ...) for flexibility. Earlier sections should have lower order numbers.
 - `prev` (optional): The name of the previous section in the navigation chain (use the `section` value, not the filename). E.g., `prev: Getting Started`.
 - `next` (optional): The name of the next section in the navigation chain (use the `section` value, not the filename). E.g., `next: Configuration`.
 
-**Navigation chain**: Using the section registry order, set `prev` and `next` to create a continuous chain through the docs. For example:
-- getting-started (order 1): `next: Introduction`
-- introduction (order 2): `prev: Getting Started`, `next: Configuration`
-- configuration (order 3): `prev: Introduction`, `next: Task Store`
+**Navigation chain**: Using the section registry order, set `prev` and `next` to create a continuous chain through the docs. Use the `section` value (from the Section Name column) for prev/next references. For example:
+- introduction (order 0): `next: Getting Started`
+- getting-started (order 1): `prev: Getting Started`, `next: Configuration`
+- configuration (order 3): `prev: Getting Started`, `next: Task Store`
 
 If a section has no predecessor or successor, omit the `prev` or `next` field.
 
