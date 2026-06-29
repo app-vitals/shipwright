@@ -71,8 +71,10 @@ test("compare page (/compare) is excluded from docs search", async ({
   await searchInput.fill("compare");
   await searchInput.press("Enter");
 
-  // Wait for any results.
-  await page.waitForTimeout(2_000);
+  // Wait for Pagefind to settle: either results or a no-results message appear.
+  await expect(
+    page.locator("#search .pagefind-ui__results-area, #search [class*='results-area'], #search .pagefind-ui__message, #search [class*='message']")
+  ).toBeVisible({ timeout: 10_000 });
 
   // /compare should NOT appear — it has data-pagefind-ignore.
   const compareLinks = page.locator("#search a[href='/compare'], #search a[href='http://localhost:4321/compare']");

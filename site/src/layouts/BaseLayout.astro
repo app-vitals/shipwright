@@ -7,11 +7,13 @@ import "../styles/brand.css";
 interface Props {
   title?: string;
   description?: string;
+  pagefindIgnore?: boolean;
 }
 
 const {
   title = "Shipwright Harness",
   description = "The open-source autonomous delivery agent for Claude Code.",
+  pagefindIgnore = false,
 } = Astro.props;
 
 const canonicalURL = new URL(Astro.url.pathname, Astro.site);
@@ -123,8 +125,7 @@ const year = new Date().getFullYear();
     </header>
 
     <!-- .sw-container already caps width at --sw-layout-max-width (72rem). -->
-    <!-- data-pagefind-ignore: home and compare pages are excluded from docs search -->
-    <main class="sw-container relative" data-pagefind-ignore>
+    <main class="sw-container relative" {...(pagefindIgnore ? { "data-pagefind-ignore": true } : {})}>
       <slot />
     </main>
 

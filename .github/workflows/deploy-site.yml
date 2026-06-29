@@ -47,7 +47,7 @@ jobs:
         run: cd site && bunx astro build
 
       - name: Index site with Pagefind
-        run: cd site && npx pagefind --site dist
+        run: cd site && bunx pagefind --site dist
 
       - name: Deploy to gh-pages
         uses: JamesIves/github-pages-deploy-action@v4
