@@ -80,3 +80,55 @@ test("fenced code block is present in getting-started page", async ({
   const codeBlock = page.locator("pre code");
   await expect(codeBlock.first()).toBeVisible();
 });
+
+// Introduction page tests (SD-4.1)
+
+test("GET /docs/introduction returns 200", async ({ page }) => {
+  const response = await page.goto("/docs/introduction");
+  expect(response?.status()).toBe(200);
+});
+
+test("fenced code block is present in introduction page", async ({ page }) => {
+  await page.goto("/docs/introduction");
+  const codeBlock = page.locator("pre code");
+  await expect(codeBlock.first()).toBeVisible();
+});
+
+test("key headings visible in introduction page", async ({ page }) => {
+  await page.goto("/docs/introduction");
+  // At least one h2 heading must be present
+  const h2 = page.locator("h2");
+  await expect(h2.first()).toBeVisible();
+});
+
+test("key headings visible in getting-started page", async ({ page }) => {
+  await page.goto("/docs/getting-started");
+  // Prerequisites or Getting Started h2 must be present
+  const h2 = page.locator("h2");
+  await expect(h2.first()).toBeVisible();
+  // Specifically check for Prerequisites heading
+  const prerequisites = page.locator("h2", { hasText: /prerequisites/i });
+  await expect(prerequisites).toBeVisible();
+});
+
+test("prev/next navigation links are present on getting-started page", async ({
+  page,
+}) => {
+  await page.goto("/docs/getting-started");
+  // Should have a prev link back to introduction
+  const prevLink = page.locator("a[data-nav='prev']");
+  await expect(prevLink).toBeVisible();
+  const href = await prevLink.getAttribute("href");
+  expect(href).toBe("/docs/introduction");
+});
+
+test("prev/next navigation links are present on introduction page", async ({
+  page,
+}) => {
+  await page.goto("/docs/introduction");
+  // Should have a next link to getting-started
+  const nextLink = page.locator("a[data-nav='next']");
+  await expect(nextLink).toBeVisible();
+  const href = await nextLink.getAttribute("href");
+  expect(href).toBe("/docs/getting-started");
+});
