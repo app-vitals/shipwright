@@ -11,7 +11,7 @@ type: application
 version: 1.6.114
 # Version of the Shipwright application this chart deploys by default.
 appVersion: "0.1.0"
-home: https://shipwright-harness.com
+home: https://shipwrightharness.com
 sources:
   - https://github.com/app-vitals/shipwright
 keywords:
@@ -21,7 +21,7 @@ keywords:
   - ci-cd
 maintainers:
   - name: Shipwright Harness
-    url: https://shipwright-harness.com
+    url: https://shipwrightharness.com
 # License: MIT (chart + application).
 annotations:
   licenses: MIT
