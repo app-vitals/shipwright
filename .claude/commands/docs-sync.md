@@ -23,7 +23,7 @@ Map each section to its source docs and the target MDX file:
 |---------|-------------|-----------|--------------|-------------|
 | `getting-started` | `docs/quickstart.md` | `site/src/content/docs/getting-started.mdx` | `Getting Started` | One-prompt onboarding, prerequisites, and copy-paste quickstart |
 | `introduction` | `docs/architecture.md`, `docs/README.md` | `site/src/content/docs/introduction.mdx` | `Getting Started` | Four-artifact design (plugin → metrics → agent → task-store), workspace layout, and architectural overview |
-| `configuration` | `docs/configuration.md` | `site/src/content/docs/configuration.mdx` | `Configuration` | All configuration options: plugin env vars, `.shipwright.json` keys, agent env vars, and policy fields |
+| `reference` | `docs/configuration.md` | `site/src/content/docs/reference.mdx` | `Reference` | All configuration options: plugin env vars, `.shipwright.json` keys, agent env vars, and policy fields |
 | `task-store` | `docs/task-store.md` | `site/src/content/docs/task-store.mdx` | `Task Store` | Task store API, data model, ephemeral document store, and scoped tokens |
 | `testing` | `docs/testing.md`, `docs/test-readiness/test-system.md` | `site/src/content/docs/testing.mdx` | `Testing` | Four-layer test model (unit / integration / smoke / e2e), run commands, speed budgets, and isolation contract |
 | `deploy` | `docs/deploy-kubernetes.md`, `docs/helm-repo.md` | `site/src/content/docs/deploying-to-cloud.mdx` | `Operations` | Kubernetes deployment: Minikube, GKE (Gateway API + cert-manager), EKS (ALB), agent provisioning RBAC, and auth modes |
@@ -92,12 +92,12 @@ next: <optional next section name>
 - `section` (required): The exact value from the "Section Name" column in the registry table above — use it verbatim. Do not derive this from the section key or title. E.g., "Getting Started" (not "getting-started" or "Introduction").
 - `order` (required): A number indicating the section's position in the navigation chain. Use increments of 1 (1, 2, 3, ...) or 10 (10, 20, 30, ...) for flexibility. Earlier sections should have lower order numbers.
 - `prev` (optional): The name of the previous section in the navigation chain (use the `section` value, not the filename). E.g., `prev: Getting Started`.
-- `next` (optional): The name of the next section in the navigation chain (use the `section` value, not the filename). E.g., `next: Configuration`.
+- `next` (optional): The name of the next section in the navigation chain (use the `section` value, not the filename). E.g., `next: Reference`.
 
 **Navigation chain**: Using the section registry order, set `prev` and `next` to create a continuous chain through the docs. Use the `section` value (from the Section Name column) for prev/next references. For example:
 - introduction (order 0): `next: Getting Started`
-- getting-started (order 1): `prev: Getting Started`, `next: Configuration`
-- configuration (order 3): `prev: Getting Started`, `next: Task Store`
+- getting-started (order 1): `prev: Getting Started`, `next: Reference`
+- reference (order 3): `prev: Getting Started`, `next: Task Store`
 
 If a section has no predecessor or successor, omit the `prev` or `next` field.
 
@@ -174,7 +174,7 @@ Before committing any generated MDX, apply these scrub rules. If found, the sect
 1. Parse `--section getting-started` flag.
 2. Read `docs/quickstart.md`.
 3. Derive human-friendly content from the quickstart: prerequisites, step-by-step setup, and the copy-paste session prompt.
-4. Generate `site/src/content/docs/getting-started.mdx` with frontmatter (title: "Getting Started", section: "Getting Started", order: 1, prev: "Introduction", next: "Configuration").
+4. Generate `site/src/content/docs/getting-started.mdx` with frontmatter (title: "Getting Started", section: "Getting Started", order: 1, prev: "Introduction", next: "Reference").
 5. Validate the frontmatter and content.
 6. Run `npm run build:check` from `site/` to confirm the MDX is valid.
 7. Report: "✓ getting-started regenerated; site build passes."
