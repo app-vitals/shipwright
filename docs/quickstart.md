@@ -6,7 +6,7 @@
 
 ### What you can run today
 
-The **metrics dashboard** runs locally right now in **offline mode**: it serves from fixtures with **no PostHog key, no accounts, and no database**. That is the core promise of this quickstart — a running dashboard at `http://localhost:3460/dashboard` from a single copy-paste prompt.
+The **metrics dashboard** runs locally right now in **offline mode**: it serves from fixtures with **no external services needed**. That is the core promise of this quickstart — a running dashboard at `http://localhost:3460/dashboard` from a single copy-paste prompt.
 
 The plugin (Phase A) and the Shipwright agent (Phase C) are still being built; see the [README](../README.md) and the [`shipwright-oss` milestone](https://github.com/app-vitals/shipwright/milestones) for live status.
 
@@ -58,7 +58,7 @@ Run it from **inside** the cloned repo (the prompt's step 1 clones and `cd`s for
 
 ### Offline by default
 
-`task dev` (and `task api` / `task ui`) bake in `METRICS_OFFLINE=true`. In offline mode the dashboard serves from fixtures, so you need **no PostHog project, no accounts service, and no database** to run it. Live external calls only happen when you explicitly set the relevant env vars — local-first is the default.
+`task dev` (and `task api` / `task ui`) bake in `METRICS_OFFLINE=true`. In offline mode the dashboard serves from fixtures, so you need **no external services** to run it. Live external calls only happen when you explicitly set the relevant env vars — local-first is the default.
 
 ### CI / testing: `QUICKSTART_SKIP_SERVE`
 
