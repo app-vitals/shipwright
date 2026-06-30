@@ -16,6 +16,10 @@ independent of `appVersion`. CI enforces this with
 
 - auto-bump to chart v1.6.132 triggered by release tag `metrics-v0.96.0`
 
+### Removed
+
+- remove PostHog provider section from metrics deployment
+
 ## [1.6.131] - 2026-06-30
 
 ### Changed
