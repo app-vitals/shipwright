@@ -62,9 +62,9 @@ export const agentMetricsVars: ConfigVar[] = [
 
 export const agentWorkspaceVars: ConfigVar[] = [
   { name: "AGENT_HOME", type: "string", def: "/data/agent-home", desc: "Persistent storage root. Mount a PVC here in Kubernetes so mise caches, workspace files, and ~/.claude survive pod restarts." },
-  { name: "MISE_DATA_DIR", type: "string", def: "<AGENT_HOME>/mise", desc: "Override the mise data directory. Auto-derived from AGENT_HOME." },
-  { name: "MISE_CACHE_DIR", type: "string", def: "<AGENT_HOME>/mise/cache", desc: "Override the mise cache directory." },
-  { name: "XDG_CACHE_HOME", type: "string", def: "<AGENT_HOME>/cache", desc: "Override the XDG cache directory." },
+  { name: "MISE_DATA_DIR", type: "string", def: "<AGENT_HOME>/.mise", desc: "Override the mise data directory. Auto-derived from AGENT_HOME." },
+  { name: "MISE_CACHE_DIR", type: "string", def: "<AGENT_HOME>/.mise/cache", desc: "Override the mise cache directory." },
+  { name: "XDG_CACHE_HOME", type: "string", def: "<AGENT_HOME>/.cache", desc: "Override the XDG cache directory." },
   { name: "XDG_DATA_HOME", type: "string", def: "$HOME/.local/share", desc: "Override the XDG data directory. Used to locate the mise data dir ($XDG_DATA_HOME/mise) when seeding a fresh PVC." },
   { name: "SHIPWRIGHT_STARTUP_TIMEOUT_MS", type: "number", def: "180000", desc: "Maximum milliseconds the entrypoint startup sequence may take before the agent exits. Override to a lower value (e.g. 10000) in dev for faster fail-fast feedback." },
   { name: "AGENT_ALLOWED_TOOLS", type: "string (JSON array)", def: "—", desc: "JSON array of allowed Claude tool patterns. Set by the admin service config sync; do not set manually in production." },
