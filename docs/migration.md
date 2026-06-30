@@ -4,6 +4,23 @@ Durable notes for breaking changes and the steps needed to migrate across versio
 
 ---
 
+## Upgrading to chart 1.6.132
+
+Remove `metrics.provider.posthog.*` from your `values.yaml` before running `helm upgrade`. The `posthog` key is no longer accepted by the values schema — with `additionalProperties: false` still in place, Helm will reject the upgrade with a schema validation error if any `metrics.provider.posthog.*` keys remain.
+
+```yaml
+# Before (remove these lines)
+metrics:
+  provider:
+    posthog:
+      apiKey: "..."
+      host: "..."
+```
+
+No replacement value is needed — the metrics service now auto-detects the provider.
+
+---
+
 ## New: `GET /tasks/distinct` endpoint for filter autocomplete
 
 **Version**: next (feat/afa-task-filter-autocomplete)

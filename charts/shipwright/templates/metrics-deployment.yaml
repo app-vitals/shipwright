@@ -87,18 +87,6 @@ spec:
                   name: {{ include "shipwright.metrics.secretName" . }}
                   key: METRICS_DATABASE_URL
             {{- end }}
-            {{- if .Values.metrics.provider.posthog.existingSecret }}
-            - name: POSTHOG_PERSONAL_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.metrics.provider.posthog.existingSecret }}
-                  key: {{ .Values.metrics.provider.posthog.personalApiKeyRef }}
-            - name: POSTHOG_PROJECT_ID
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.metrics.provider.posthog.existingSecret }}
-                  key: {{ .Values.metrics.provider.posthog.projectIdRef }}
-            {{- end }}
             {{- if .Values.metrics.provider.adminUrl }}
             - name: METRICS_ADMIN_URL
               value: {{ .Values.metrics.provider.adminUrl | quote }}

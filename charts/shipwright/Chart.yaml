@@ -28,8 +28,8 @@ annotations:
   # Artifact Hub change log for this release. Must mirror the matching version
   # entry in CHANGELOG.md (keep the two in sync on every bump).
   artifacthub.io/changes: |
-    - kind: changed
-      description: "auto-bump to chart v1.6.132 triggered by release tag metrics-v0.96.0"
+    - kind: removed
+      description: "remove PostHog provider section from metrics deployment (chart v1.6.132)"
 dependencies:
   # Bitnami PostgreSQL subchart. Pinned to a chart version whose default image tag
   # is concrete (NOT `latest`), because Bitnami's 2025 catalog change moved newer
