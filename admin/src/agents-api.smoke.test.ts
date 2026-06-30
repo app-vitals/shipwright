@@ -396,6 +396,15 @@ function makeMockDeps(): AdminDeps {
         createdAt: new Date("2024-01-01T09:00:00.000Z"),
       }),
     },
+    agentCronRunStatsService: {
+      query: async () => ({
+        totals: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, total: 0 },
+        byAgent: [],
+        byCron: [],
+        byModel: [],
+        daily: [],
+      }),
+    },
     provisioner: new RecordingProvisioner(),
     sessionSecret: SESSION_SECRET,
   };

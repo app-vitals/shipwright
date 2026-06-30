@@ -8,9 +8,9 @@
 
 import { beforeAll, describe, expect, it } from "bun:test";
 import { sign } from "hono/jwt";
+import type { AgentProvisioner, ProvisionResult } from "./agent-provisioner.ts";
 import { createAdminApp } from "./agents-api.ts";
 import type { AdminDeps } from "./agents-api.ts";
-import type { AgentProvisioner, ProvisionResult } from "./agent-provisioner.ts";
 import { NotFoundError } from "./errors.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -68,7 +68,9 @@ const MOCK_DAILY_ROW = {
 
 // ─── Mock deps factory ────────────────────────────────────────────────────────
 
-function makeMockDeps(opts?: { agentChatTokenServiceThrows?: boolean }): AdminDeps {
+function makeMockDeps(opts?: {
+  agentChatTokenServiceThrows?: boolean;
+}): AdminDeps {
   return {
     agentEnvService: {
       upsert: async () => {},
@@ -95,7 +97,11 @@ function makeMockDeps(opts?: { agentChatTokenServiceThrows?: boolean }): AdminDe
       updatePreCheck: async () => {
         throw new Error("not implemented");
       },
-      reconcileSystemCrons: async () => ({ created: 0, updated: 0, deleted: 0 }),
+      reconcileSystemCrons: async () => ({
+        created: 0,
+        updated: 0,
+        deleted: 0,
+      }),
     },
     agentCronRunService: {
       create: async () => {
@@ -138,6 +144,21 @@ function makeMockDeps(opts?: { agentChatTokenServiceThrows?: boolean }): AdminDe
             throw new NotFoundError(`agent ${_agentId} not found`);
           }
         : async () => MOCK_DAILY_ROW,
+    },
+    agentCronRunStatsService: {
+      query: async () => ({
+        totals: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheCreation: 0,
+          total: 0,
+        },
+        byAgent: [],
+        byCron: [],
+        byModel: [],
+        daily: [],
+      }),
     },
     prisma: {
       agent: {

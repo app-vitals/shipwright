@@ -253,10 +253,30 @@ export const PatchAgentCronRunBodySchema = z
       .nullable()
       .optional()
       .openapi({ example: "pre-check returned false" }),
-    inputTokens: z.number().int().nullable().optional().openapi({ example: 1234 }),
-    outputTokens: z.number().int().nullable().optional().openapi({ example: 567 }),
-    cacheReadTokens: z.number().int().nullable().optional().openapi({ example: 89 }),
-    cacheCreationTokens: z.number().int().nullable().optional().openapi({ example: 10 }),
+    inputTokens: z
+      .number()
+      .int()
+      .nullable()
+      .optional()
+      .openapi({ example: 1234 }),
+    outputTokens: z
+      .number()
+      .int()
+      .nullable()
+      .optional()
+      .openapi({ example: 567 }),
+    cacheReadTokens: z
+      .number()
+      .int()
+      .nullable()
+      .optional()
+      .openapi({ example: 89 }),
+    cacheCreationTokens: z
+      .number()
+      .int()
+      .nullable()
+      .optional()
+      .openapi({ example: 10 }),
     costUsd: z.number().nullable().optional().openapi({ example: 0.0042 }),
     model: z
       .string()
@@ -518,6 +538,54 @@ export const AgentChatTokenUsageDailySchema = z
 export type AgentChatTokenUsageDailyType = z.infer<
   typeof AgentChatTokenUsageDailySchema
 >;
+
+// ─── CronRunTokenStats ────────────────────────────────────────────────────────
+
+/**
+ * A single rolled-up token aggregate (totals row or per-dimension bucket).
+ */
+const TokenAggregateSchema = z
+  .object({
+    input: z.number().int().openapi({ example: 600 }),
+    output: z.number().int().openapi({ example: 300 }),
+    cacheRead: z.number().int().openapi({ example: 60 }),
+    cacheCreation: z.number().int().openapi({ example: 30 }),
+    total: z.number().int().openapi({ example: 990 }),
+    costUsd: z.number().optional().openapi({ example: 0.006 }),
+  })
+  .openapi("TokenAggregate");
+
+/** A token aggregate keyed by a single grouping value (e.g. agentId). */
+const KeyedTokenAggregateSchema = TokenAggregateSchema.extend({
+  key: z.string().openapi({ example: "agent-id-123" }),
+}).openapi("KeyedTokenAggregate");
+
+/** A token aggregate keyed by two grouping values (e.g. agentId + cronName). */
+const DoubleKeyedTokenAggregateSchema = TokenAggregateSchema.extend({
+  key1: z.string().openapi({ example: "agent-id-123" }),
+  key2: z.string().openapi({ example: "morning-brief" }),
+}).openapi("DoubleKeyedTokenAggregate");
+
+/** A token aggregate bucketed by day (YYYY-MM-DD). */
+const DailyTokenAggregateSchema = TokenAggregateSchema.extend({
+  period: z.string().openapi({ example: "2026-01-10" }),
+}).openapi("DailyTokenAggregate");
+
+/**
+ * Response shape for GET /agents/all/cron-runs/stats.
+ * Matches the CronRunTokenStats interface in admin-metrics-client.ts exactly.
+ */
+export const CronRunTokenStatsSchema = z
+  .object({
+    totals: TokenAggregateSchema,
+    byAgent: z.array(KeyedTokenAggregateSchema),
+    byCron: z.array(DoubleKeyedTokenAggregateSchema),
+    byModel: z.array(DoubleKeyedTokenAggregateSchema),
+    daily: z.array(DailyTokenAggregateSchema),
+  })
+  .openapi("CronRunTokenStats");
+
+export type CronRunTokenStatsType = z.infer<typeof CronRunTokenStatsSchema>;
 
 // ─── AgentConfig (runtime GET /agents/:id/config response) ───────────────────
 

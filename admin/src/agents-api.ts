@@ -26,6 +26,7 @@ import type {
   AgentCronJobService,
   AgentCronJobWithRunSummary,
 } from "./agent-cron-jobs.ts";
+import type { AgentCronRunStatsService } from "./agent-cron-run-stats.ts";
 import type { AgentCronRunService } from "./agent-cron-runs.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
 import type { AgentPluginService } from "./agent-plugins.ts";
@@ -61,6 +62,7 @@ import {
   CreateAgentToolBodySchema,
   CronIdParamSchema,
   CronRunIdParamSchema,
+  CronRunTokenStatsSchema,
   CronRunsListSchema,
   CronsWithSummaryWrapperSchema,
   EnvKeyParamSchema,
@@ -98,6 +100,7 @@ export interface AdminDeps {
     | "updatePreCheck"
   >;
   agentCronRunService: Pick<AgentCronRunService, "create" | "list" | "patch">;
+  agentCronRunStatsService: Pick<AgentCronRunStatsService, "query">;
   agentToolService: Pick<
     AgentToolService,
     "list" | "add" | "remove" | "toggle"
@@ -690,10 +693,35 @@ const upsertChatTokenDailyRoute = createRoute({
   responses: {
     200: {
       description: "Updated daily chat token usage row",
-      content: { "application/json": { schema: AgentChatTokenUsageDailySchema } },
+      content: {
+        "application/json": { schema: AgentChatTokenUsageDailySchema },
+      },
     },
     400: { description: "Bad request", ...jsonError },
     404: { description: "Agent not found", ...jsonError },
+  },
+});
+
+const cronRunStatsQuerySchema = z
+  .object({
+    from: z.string().optional().openapi({ example: "2026-01-01T00:00:00Z" }),
+    to: z.string().optional().openapi({ example: "2026-02-01T00:00:00Z" }),
+  })
+  .openapi("CronRunStatsQuery");
+
+const cronRunTokenStatsRoute = createRoute({
+  method: "get",
+  path: "/agents/all/cron-runs/stats",
+  request: {
+    query: cronRunStatsQuerySchema,
+  },
+  responses: {
+    200: {
+      description: "Aggregated cron-run token stats across all agents",
+      content: { "application/json": { schema: CronRunTokenStatsSchema } },
+    },
+    401: { description: "Unauthorized", ...jsonError },
+    403: { description: "Forbidden — requires admin scope", ...jsonError },
   },
 });
 
@@ -704,6 +732,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     agentEnvService,
     agentCronJobService,
     agentCronRunService,
+    agentCronRunStatsService,
     agentToolService,
     agentTokenService,
     agentPluginService,
@@ -1264,6 +1293,22 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     const { name } = c.req.valid("query");
     await agentPluginService.removeByName(agentId, name);
     return c.body(null, 204);
+  });
+
+  // ─── Cron-run token stats ──────────────────────────────────────────────────
+
+  // GET /agents/all/cron-runs/stats — aggregated token stats across all agents
+  // Static path "all" must be registered before any /:id routes to prevent
+  // the literal "all" being matched as an agentId.
+  app.openapi(cronRunTokenStatsRoute, async (c) => {
+    if (c.get("isAdmin") !== true) {
+      throw new ForbiddenError(
+        "Only admin bearers and session users can access cross-agent stats",
+      );
+    }
+    const { from, to } = c.req.valid("query");
+    const stats = await agentCronRunStatsService.query(from, to);
+    return c.json(stats, 200);
   });
 
   // ─── Chat token usage ──────────────────────────────────────────────────────

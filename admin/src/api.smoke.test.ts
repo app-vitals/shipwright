@@ -582,6 +582,21 @@ function buildCombinedApp() {
         updatedAt: new Date(),
       }),
     },
+    agentCronRunStatsService: {
+      query: async () => ({
+        totals: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheCreation: 0,
+          total: 0,
+        },
+        byAgent: [],
+        byCron: [],
+        byModel: [],
+        daily: [],
+      }),
+    },
     prisma: {
       agent: {
         create: async () => ({
