@@ -705,8 +705,8 @@ const upsertChatTokenDailyRoute = createRoute({
 
 const cronRunStatsQuerySchema = z
   .object({
-    from: z.string().optional().openapi({ example: "2026-01-01T00:00:00Z" }),
-    to: z.string().optional().openapi({ example: "2026-02-01T00:00:00Z" }),
+    from: z.string().datetime().optional().openapi({ example: "2026-01-01T00:00:00Z" }),
+    to: z.string().datetime().optional().openapi({ example: "2026-02-01T00:00:00Z" }),
   })
   .openapi("CronRunStatsQuery");
 
@@ -728,8 +728,17 @@ const cronRunTokenStatsRoute = createRoute({
 
 const chatTokenDailyStatsQuerySchema = z
   .object({
-    from: z.string().optional().openapi({ example: "2026-01-01" }),
-    to: z.string().optional().openapi({ example: "2026-02-01" }),
+    // date-only params (YYYY-MM-DD); no z.string().date() pattern in this codebase
+    from: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional()
+      .openapi({ example: "2026-01-01" }),
+    to: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional()
+      .openapi({ example: "2026-02-01" }),
   })
   .openapi("ChatTokenDailyStatsQuery");
 
