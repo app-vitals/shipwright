@@ -60,7 +60,7 @@ The metrics service is a stateless Hono app backed by task-store/fixture provide
 | smoke | `bun test --filter metrics` | <2 s | <10 s | <30 s |
 
 **Notes:**
-- Integration tests inject `RecordedTaskStoreClient` (cassette-backed) for task and PR queries. Cassettes live in `metrics/tests/fixtures/task-store/`.
+- Integration tests inject `RecordedTaskStoreClient` (cassette-backed) for task and PR queries. Cassette data lives in `metrics/src/fixtures/task-store-fixtures.ts`.
 - Smoke tests drive the Hono app via `app.request()` — no real socket, no `fetch()` to localhost. Import the app factory and call `app.request(new Request(...))` directly.
 - No e2e layer until Phase B ships a browser-rendered dashboard. E2e layer added then via Playwright.
 - Tests run offline by default with no external service URLs configured.
