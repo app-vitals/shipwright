@@ -850,9 +850,7 @@ export function renderAgentDetailPage(
     <div class="card">
       <div class="card-title">Cron Jobs</div>
 
-      ${
-        !agent.selfHosted
-          ? `<div style="margin-bottom:20px">
+      <div style="margin-bottom:20px">
         <div style="font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">System</div>
         <table class="data-table">
           <thead>
@@ -870,9 +868,7 @@ export function renderAgentDetailPage(
             ${systemCronRows}
           </tbody>
         </table>
-      </div>`
-          : ""
-      }
+      </div>
 
       <div>
         <div style="font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Custom</div>
