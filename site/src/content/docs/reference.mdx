@@ -14,6 +14,9 @@ import {
   agentPlatformVars,
   agentServerVars,
   agentMetricsVars,
+  agentTaskStoreVars,
+  agentServicesVars,
+  agentProvisioningVars,
   agentWorkspaceVars,
   agentVoiceVars,
   agentDevVars,
@@ -76,6 +79,22 @@ Provide either the GitHub App vars (recommended) or `GH_TOKEN` (PAT). App auth i
 
 <ConfigTable vars={agentMetricsVars} />
 
+### Task store service
+
+<ConfigTable vars={agentTaskStoreVars} />
+
+### Admin and metrics services
+
+Cross-service vars read by the admin service and metrics service (not the task-store).
+
+<ConfigTable vars={agentServicesVars} />
+
+### Agent provisioning (Kubernetes)
+
+Controls how the admin service provisions the Kubernetes workload backing each agent on `POST /agents`. When provisioning is disabled (the default), create/delete only write the database row — no cluster is required.
+
+<ConfigTable vars={agentProvisioningVars} />
+
 ### Workspace and tooling
 
 <ConfigTable vars={agentWorkspaceVars} />
@@ -119,6 +138,6 @@ cleanup_after_days: 14
 
 ## See also
 
-- [architecture.md](https://github.com/app-vitals/shipwright/blob/main/docs/architecture.md) — the three-artifact A→B→C design.
+- [architecture.md](https://github.com/app-vitals/shipwright/blob/main/docs/architecture.md) — the four-artifact A→B→C→D design.
 - [agent.md](https://github.com/app-vitals/shipwright/blob/main/docs/agent.md) — Shipwright agent runtime, admin CRUD APIs, and data model.
 - [quickstart.md](https://github.com/app-vitals/shipwright/blob/main/docs/quickstart.md) — how to get the full dev stack running locally.
