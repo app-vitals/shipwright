@@ -728,17 +728,8 @@ const cronRunTokenStatsRoute = createRoute({
 
 const chatTokenDailyStatsQuerySchema = z
   .object({
-    // date-only params (YYYY-MM-DD); no z.string().date() pattern in this codebase
-    from: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/)
-      .optional()
-      .openapi({ example: "2026-01-01" }),
-    to: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/)
-      .optional()
-      .openapi({ example: "2026-02-01" }),
+    from: z.string().date().optional().openapi({ example: "2026-01-01" }),
+    to: z.string().date().optional().openapi({ example: "2026-02-01" }),
   })
   .openapi("ChatTokenDailyStatsQuery");
 
