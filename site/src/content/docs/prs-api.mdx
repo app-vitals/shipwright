@@ -108,8 +108,8 @@ Atomically claim a PR for review. Returns **201** when a new record is created, 
 |---|---|---|---|
 | `repo` | string | yes | `org/repo` format |
 | `prNumber` | int | yes | GitHub PR number |
-| `commitSha` | string | no | Current HEAD commit SHA of the PR branch |
-| `agentId` | string | no | Claiming agent ID |
+| `commitSha` | string | yes | Current HEAD commit SHA of the PR branch |
+| `claimedBy` | string | admin tokens only | Agent ID to claim as; agent tokens use the token's own agent ID |
 | `taskId` | string | no | Associated task ID |
 
 **Claim semantics:**
