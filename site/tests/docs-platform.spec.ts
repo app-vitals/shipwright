@@ -1,10 +1,11 @@
 import { expect, test } from "@playwright/test";
+import { expectNoRuntimeJsBeyondAnalytics } from "./helpers";
 
 // Fulfill external font CDN requests immediately so the page's 'load' event
 // fires even when CI can't reach external networks.
 test.beforeEach(async ({ page }) => {
   await page.route(
-    /fonts\.googleapis\.com|fonts\.gstatic\.com|api\.fontshare\.com/,
+    /fonts\.googleapis\.com|fonts\.gstatic\.com|api\.fontshare\.com|googletagmanager\.com/,
     (route) =>
       route.fulfill({ status: 200, contentType: "text/css", body: "" }),
   );
@@ -34,10 +35,11 @@ test("TOC (table of contents) is present on docs page", async ({ page }) => {
 // frontmatter field (configuration.mdx does not exist yet). Re-add once a second
 // docs page exists so the nav link can actually render.
 
-test("docs page ships exactly ONE <script> tag (Pagefind UI)", async ({ page }) => {
+test("docs page ships no runtime JS beyond Pagefind + the analytics tag", async ({
+  page,
+}) => {
   await page.goto("/docs/getting-started");
-  const scriptCount = await page.locator("script").count();
-  expect(scriptCount).toBe(1);
+  await expectNoRuntimeJsBeyondAnalytics(page, { allowPagefind: true });
 });
 
 test("sidebar lists at least one docs section", async ({ page }) => {
