@@ -84,6 +84,13 @@ test("'Inside a task' tab details the dev-task steps in order", async ({
   await expect(panel).toBeVisible();
   // The enforced ordering is called out.
   await expect(panel.getByText(/tests before code/i)).toBeVisible();
+  // The walkthrough video sits above the step list.
+  const video = panel.locator('video[src="/inside-a-task.mp4"]');
+  await expect(video).toBeVisible();
+  // Video's wrapper precedes the ordered step list in the DOM.
+  await expect(
+    panel.locator('div:has(> video[src="/inside-a-task.mp4"]) ~ ol'),
+  ).toHaveCount(1);
   // First and last steps render, numbered.
   await expect(panel.getByText(/Pick the next task/i)).toBeVisible();
   await expect(panel.getByText(/Push & open the PR/i)).toBeVisible();
