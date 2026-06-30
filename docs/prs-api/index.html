@@ -1,0 +1,581 @@
+<!DOCTYPE html><html lang="en" data-astro-cid-mw7aashj> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="Astro v5.18.2"><title>PRs API — Shipwright Harness</title><meta name="description" content="HTTP API reference for PR review tracking: endpoints, PR schema, reviewState lifecycle, staged flag, heartbeat TTL, and curl examples."><link rel="canonical" href="https://shipwrightharness.com/docs/prs-api/"><link rel="icon" type="image/svg+xml" href="/shipwright-icon.svg"><link rel="icon" type="image/png" href="/shipwright-icon.png"><link rel="apple-touch-icon" href="/shipwright-icon.png"><meta property="og:type" content="website"><meta property="og:url" content="https://shipwrightharness.com/docs/prs-api/"><meta property="og:title" content="PRs API — Shipwright Harness"><meta property="og:description" content="HTTP API reference for PR review tracking: endpoints, PR schema, reviewState lifecycle, staged flag, heartbeat TTL, and curl examples."><meta property="og:site_name" content="Shipwright Harness"><meta property="og:image" content="https://shipwrightharness.com/og-default-1280x640.png"><meta property="og:image:width" content="1280"><meta property="og:image:height" content="640"><!-- Google Analytics 4 --><!-- Google tag (gtag.js) — GA4 --><script async src="https://www.googletagmanager.com/gtag/js?id=G-WS5TVR713J"></script> <script>(function(){const GA_MEASUREMENT_ID = "G-WS5TVR713J";
+
+  window.dataLayer = window.dataLayer || [];
+  function gtag() {
+    dataLayer.push(arguments);
+  }
+  gtag("js", new Date());
+  gtag("config", GA_MEASUREMENT_ID);
+})();</script><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="preconnect" href="https://api.fontshare.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"><link href="https://api.fontshare.com/v2/css?f[]=general-sans@400,500,600&display=swap" rel="stylesheet"><!-- Pagefind UI — the ONE permitted script on the docs layout --><link href="/pagefind/pagefind-ui.css" rel="stylesheet"><script>
+      import("/pagefind/pagefind-ui.js").then(function () {
+        new window.PagefindUI({ element: "#search", showImages: false });
+      });
+    </script><link rel="stylesheet" href="/_astro/compare.hJK5RwON.css">
+<link rel="stylesheet" href="/_astro/compare.cgpvabiO.css">
+<style>#docs-sidebar-toggle[data-astro-cid-mw7aashj],.docs-sidebar-overlay[data-astro-cid-mw7aashj]{display:none}@media(max-width:767px){.docs-sidebar[data-astro-cid-mw7aashj]{position:fixed;top:0;left:-100%;width:280px;height:100vh;z-index:50;background:var(--sw-color-bg-raised);border-right:1px solid var(--sw-color-border-muted);transition:left .25s ease;overflow-y:auto;padding:1.5rem}#docs-sidebar-toggle[data-astro-cid-mw7aashj]:checked~.sw-container[data-astro-cid-mw7aashj] .docs-layout[data-astro-cid-mw7aashj] .docs-sidebar[data-astro-cid-mw7aashj]{left:0}#docs-sidebar-toggle[data-astro-cid-mw7aashj]:checked~.docs-sidebar-overlay[data-astro-cid-mw7aashj]{display:block;position:fixed;inset:0;z-index:40;background:color-mix(in srgb,var(--sw-color-bg-base) 65%,transparent)}.docs-mobile-menu-btn[data-astro-cid-mw7aashj],.docs-mobile-close-btn[data-astro-cid-mw7aashj]{display:flex}}@media(min-width:768px){.docs-mobile-menu-btn[data-astro-cid-mw7aashj],.docs-mobile-close-btn[data-astro-cid-mw7aashj]{display:none}.docs-sidebar[data-astro-cid-mw7aashj]{position:sticky;top:1.5rem;height:-moz-fit-content;height:fit-content;max-height:calc(100vh - 3rem);overflow-y:auto}}.docs-layout[data-astro-cid-mw7aashj]{display:grid;grid-template-columns:1fr;gap:0;min-height:calc(100vh - 80px)}@media(min-width:768px){.docs-layout[data-astro-cid-mw7aashj]{grid-template-columns:260px 1fr 220px;gap:2rem;align-items:start}}.docs-sidebar-link[data-astro-cid-mw7aashj]{display:block;padding:.3rem .75rem;border-radius:var(--sw-radius-sm);font-size:var(--sw-text-small-size);color:var(--sw-color-text-editorial);text-decoration:none;transition:background .15s,color .15s}.docs-sidebar-link[data-astro-cid-mw7aashj]:hover,.docs-sidebar-link[data-astro-cid-mw7aashj][aria-current=page]{background:var(--sw-color-bg-overlay);color:var(--sw-color-text-heading)}.docs-sidebar-link[data-astro-cid-mw7aashj][aria-current=page]{color:var(--sw-color-brand-default);font-weight:500}.docs-toc-link[data-astro-cid-mw7aashj]{display:block;padding:.2rem 0;font-size:var(--sw-text-small-size);color:var(--sw-color-text-editorial);text-decoration:none;line-height:1.4}.docs-toc-link[data-astro-cid-mw7aashj]:hover{color:var(--sw-color-text-heading)}.docs-toc-link[data-astro-cid-mw7aashj].depth-3{padding-left:.75rem;font-size:var(--sw-text-label-size);color:var(--sw-color-text-muted)}.docs-prevnext[data-astro-cid-mw7aashj]{display:flex;gap:1rem;justify-content:space-between;padding-top:2rem;margin-top:2rem;border-top:1px solid var(--sw-color-border-subtle);flex-wrap:wrap}.docs-prevnext[data-astro-cid-mw7aashj] a[data-astro-cid-mw7aashj]{display:inline-flex;align-items:center;gap:.4rem;padding:.6rem 1rem;border-radius:var(--sw-radius-md);border:1px solid var(--sw-color-border-muted);background:var(--sw-color-bg-raised);color:var(--sw-color-text-body);font-size:var(--sw-text-small-size);text-decoration:none;transition:border-color .15s,color .15s}.docs-prevnext[data-astro-cid-mw7aashj] a[data-astro-cid-mw7aashj]:hover{border-color:var(--sw-color-brand-default);color:var(--sw-color-brand-default)}
+</style></head> <body class="min-h-screen overflow-x-hidden" data-astro-cid-mw7aashj> <!-- Mobile sidebar toggle (CSS-only, hidden checkbox) --> <input type="checkbox" id="docs-sidebar-toggle" aria-hidden="true" data-astro-cid-mw7aashj> <!-- Overlay (click to close — uses label trick; CSS-only) --> <label for="docs-sidebar-toggle" class="docs-sidebar-overlay" aria-hidden="true" data-astro-cid-mw7aashj></label> <!-- Glow orb (decorative) --> <div class="sw-orb sw-orb-brand" aria-hidden="true" style="top: -12rem; left: 50%; width: 42rem; height: 42rem; transform: translateX(-50%);" data-astro-cid-mw7aashj></div> <!-- Site header --> <header class="sw-container relative z-10 flex items-center justify-between py-6" data-astro-cid-mw7aashj> <a href="/" class="flex items-center gap-3" aria-label="Shipwright Harness — home" data-astro-cid-mw7aashj> <img src="/shipwright-icon.svg" alt="" width="36" height="36" class="rounded-lg" data-astro-cid-mw7aashj> <span class="text-lg" style="font-family: var(--sw-font-display); font-weight: 700; letter-spacing: -0.01em; color: var(--sw-color-text-heading);" data-astro-cid-mw7aashj>
+Shipwright <span style="color: var(--sw-color-brand-default);" data-astro-cid-mw7aashj>Harness</span> </span> </a> <nav class="flex items-center gap-6" aria-label="Primary" data-astro-cid-mw7aashj> <a href="/docs/getting-started" class="sw-label" data-astro-cid-mw7aashj>Docs</a> <a href="/compare" class="sw-label" data-astro-cid-mw7aashj>Compare</a> <a href="https://github.com/app-vitals/shipwright" class="sw-label" data-astro-cid-mw7aashj>GitHub ↗</a> </nav> </header> <!-- Main docs layout --> <div class="sw-container relative z-10 pb-20" data-astro-cid-mw7aashj> <!-- Mobile: hamburger button --> <div class="docs-mobile-menu-btn py-4" data-astro-cid-mw7aashj> <label for="docs-sidebar-toggle" class="sw-btn sw-btn-secondary" style="cursor: pointer; font-size: var(--sw-text-small-size); padding: 0.4rem 0.75rem;" aria-label="Open navigation" data-astro-cid-mw7aashj>
+☰ Menu
+</label> </div> <div class="docs-layout" data-astro-cid-mw7aashj> <!-- Sidebar --> <aside class="docs-sidebar" data-astro-cid-mw7aashj> <!-- Pagefind search widget --> <div id="search" style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj></div> <!-- Mobile close button --> <div class="docs-mobile-close-btn" style="justify-content: flex-end; margin-bottom: 1rem;" data-astro-cid-mw7aashj> <label for="docs-sidebar-toggle" style="cursor: pointer; color: var(--sw-color-text-editorial); font-size: var(--sw-text-small-size);" aria-label="Close navigation" data-astro-cid-mw7aashj>
+✕ Close
+</label> </div> <nav aria-label="Docs navigation" data-astro-cid-mw7aashj> <div style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-mw7aashj> Agent </p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="/docs/the-agent" class="docs-sidebar-link" data-astro-cid-mw7aashj> The Agent </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/configuring-autonomy" class="docs-sidebar-link" data-astro-cid-mw7aashj> Configuring Autonomy </a> </li> </ul> </div><div style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-mw7aashj> Getting Started </p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="/docs/introduction" class="docs-sidebar-link" data-astro-cid-mw7aashj> Introduction </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/getting-started" class="docs-sidebar-link" data-astro-cid-mw7aashj> Getting Started </a> </li> </ul> </div><div style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-mw7aashj> Operations </p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="/docs/deploying-to-cloud" class="docs-sidebar-link" data-astro-cid-mw7aashj> Deploying to Cloud </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/slack-integration" class="docs-sidebar-link" data-astro-cid-mw7aashj> Slack Integration </a> </li> </ul> </div><div style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-mw7aashj> Plugin </p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="/docs/the-plugin" class="docs-sidebar-link" data-astro-cid-mw7aashj> The Plugin </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/running-locally" class="docs-sidebar-link" data-astro-cid-mw7aashj> Running Locally </a> </li> </ul> </div><div style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-mw7aashj> Reference </p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="/docs/reference" class="docs-sidebar-link" data-astro-cid-mw7aashj> Configuration Reference </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/task-store-api" class="docs-sidebar-link" data-astro-cid-mw7aashj> Task Store API </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/prs-api" class="docs-sidebar-link" aria-current="page" data-astro-cid-mw7aashj> PRs API </a> </li> </ul> </div> </nav> </aside> <!-- Main content --> <main class="sw-prose" style="min-width: 0;" data-pagefind-body data-astro-cid-mw7aashj>  <h1 id="prs-api">PRs API</h1>
+<p>The PRs API tracks review cycles for open pull requests. Where a task record drives the <strong>build cycle</strong> (pending → in_progress → pr_open → deployed), a PR record drives the <strong>review cycle</strong> — claim, review, patch, re-review, approve.</p>
+<blockquote>
+<p><strong>See also:</strong> <a href="/docs/task-store-api">Task Store API</a> — the companion surface for task queuing and execution tracking.</p>
+</blockquote>
+<h2 id="how-pr-records-relate-to-tasks">How PR Records Relate to Tasks</h2>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Concept</th><th>Answers</th><th>Lifecycle</th></tr></thead><tbody><tr><td><strong>Task</strong></td><td>”What code work is being done?”</td><td><code>pending → in_progress → pr_open → approved → deployed</code></td></tr><tr><td><strong>PR record</strong></td><td>”Is this PR reviewed and ready?”</td><td><code>pending → in_progress → posted → approved</code></td></tr></tbody></table>
+<p>A task typically has one associated PR record once it reaches <code>pr_open</code>. The link is optional — either resource can exist without the other — but the <code>taskId</code> field on the PR record makes the association explicit.</p>
+<p>Multiple review rounds on the same PR are represented by <code>reviewCycles</code> (how many times a review was posted) and <code>patchCycles</code> (how many times the PR was patched and re-queued).</p>
+<h2 id="authentication">Authentication</h2>
+<p>All requests require a Bearer token in the <code>Authorization</code> header:</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-function)">Authorization:</span><span style="color:var(--astro-code-token-string)"> Bearer</span><span style="color:var(--astro-code-foreground)"> $SHIPWRIGHT_TASK_STORE_TOKEN</span></span></code></pre>
+<p>The PRs API shares its auth layer with the task store — the same token and env vars apply:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Env var</th><th>Description</th></tr></thead><tbody><tr><td><code>SHIPWRIGHT_TASK_STORE_URL</code></td><td>Base URL of the task store service</td></tr><tr><td><code>SHIPWRIGHT_TASK_STORE_TOKEN</code></td><td>Bearer token for this agent or admin</td></tr></tbody></table>
+<h2 id="reviewstate-lifecycle">reviewState Lifecycle</h2>
+<p>PR records move through a defined set of review states:</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="plaintext"><code><span class="line"><span>pending → in_progress → posted → approved</span></span></code></pre>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>State</th><th>Meaning</th></tr></thead><tbody><tr><td><code>pending</code></td><td>Not yet claimed for review; eligible for pickup</td></tr><tr><td><code>in_progress</code></td><td>Claimed by a review agent; review is being written</td></tr><tr><td><code>posted</code></td><td>Review has been posted to GitHub; counter incremented</td></tr><tr><td><code>approved</code></td><td>PR passed review and is approved for merge</td></tr></tbody></table>
+<h3 id="state-transitions">State transitions</h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Action</th><th>From</th><th>To</th><th>Side effects</th></tr></thead><tbody><tr><td><code>POST /prs/claim</code></td><td><code>pending</code></td><td><code>in_progress</code></td><td>Sets <code>claimedBy</code>, <code>claimedAt</code>, <code>heartbeatAt</code></td></tr><tr><td><code>POST /prs/:id/complete</code></td><td><code>in_progress</code></td><td><code>posted</code></td><td><code>reviewCycles++</code>, sets <code>reviewedAt</code></td></tr><tr><td><code>POST /prs/:id/patch</code></td><td>any</td><td><code>pending</code></td><td><code>patchCycles++</code>, sets <code>patchedAt</code>, clears claim fields</td></tr><tr><td><code>POST /prs/:id/release</code></td><td>any</td><td><code>pending</code></td><td>Clears claim fields (<code>claimedBy</code>, <code>claimedAt</code>, <code>heartbeatAt</code>)</td></tr><tr><td><code>PATCH /prs/:id</code></td><td>any</td><td>any</td><td>Direct field update — set <code>reviewState: &quot;approved&quot;</code> explicitly</td></tr></tbody></table>
+<h2 id="staged-flag">staged Flag</h2>
+<p>The <code>staged</code> boolean marks a review that has been written but not yet posted to GitHub:</p>
+<ul>
+<li><strong><code>staged: false</code></strong> (default) — normal state; no review is written or the review has been posted.</li>
+<li><strong><code>staged: true</code></strong> — review text is ready locally but posting is deferred (e.g. awaiting human approval, rate-limit backoff, or policy check). The record stays in <code>in_progress</code> while staged.</li>
+</ul>
+<p>Set <code>staged</code> via <code>PATCH /prs/:id</code>. Once the review is posted, call <code>POST /prs/:id/complete</code> (which implicitly clears staged) or set <code>staged: false</code> in the same PATCH.</p>
+<h2 id="endpoints">Endpoints</h2>
+<h3 id="get-prs">GET /prs</h3>
+<p>List PR records. Returns <code>{ prs, total, limit, offset }</code>.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Query param</th><th>Type</th><th>Description</th></tr></thead><tbody><tr><td><code>repo</code></td><td>string</td><td>Filter by <code>org/repo</code> format</td></tr><tr><td><code>prNumber</code></td><td>int</td><td>Filter by PR number (use with <code>repo</code> to get a specific record)</td></tr><tr><td><code>taskId</code></td><td>string</td><td>Filter by linked task ID</td></tr><tr><td><code>state</code></td><td>string</td><td>Filter by PR state: <code>open</code>, <code>merged</code>, <code>closed</code></td></tr><tr><td><code>reviewState</code></td><td>string</td><td>Filter by review state: <code>pending</code>, <code>in_progress</code>, <code>posted</code>, <code>approved</code></td></tr><tr><td><code>staged</code></td><td>boolean</td><td><code>true</code> to return only staged reviews</td></tr><tr><td><code>limit</code></td><td>int</td><td>Max results (pagination)</td></tr><tr><td><code>offset</code></td><td>int</td><td>Start offset (pagination)</td></tr></tbody></table>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-comment)"># All pending PR records in a repo</span></span>
+<span class="line"><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">  &quot;$SHIPWRIGHT_TASK_STORE_URL/prs?repo=org/repo&amp;reviewState=pending&quot;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string-expression)"> &#39;.prs&#39;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:var(--astro-code-token-comment)"># Specific PR by repo + number</span></span>
+<span class="line"><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">  &quot;$SHIPWRIGHT_TASK_STORE_URL/prs?repo=org/repo&amp;prNumber=42&quot;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string-expression)"> &#39;.prs[0]&#39;</span></span></code></pre>
+<h3 id="post-prsclaim">POST /prs/claim</h3>
+<p>Atomically claim a PR for review. Returns <strong>201</strong> when a new record is created, <strong>200</strong> when an existing record is updated (re-claimed), and <strong>409</strong> when the PR is already claimed at the same commit by another agent.</p>
+<p><strong>Request body:</strong></p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr></thead><tbody><tr><td><code>repo</code></td><td>string</td><td>yes</td><td><code>org/repo</code> format</td></tr><tr><td><code>prNumber</code></td><td>int</td><td>yes</td><td>GitHub PR number</td></tr><tr><td><code>commitSha</code></td><td>string</td><td>yes</td><td>Current HEAD commit SHA of the PR branch</td></tr><tr><td><code>claimedBy</code></td><td>string</td><td>admin tokens only</td><td>Agent ID to claim as; agent tokens use the token’s own agent ID</td></tr><tr><td><code>taskId</code></td><td>string</td><td>no</td><td>Associated task ID</td></tr></tbody></table>
+<p><strong>Claim semantics:</strong></p>
+<ul>
+<li>Same <code>commitSha</code> + <code>reviewState !== pending</code> → <strong>409 Conflict</strong> (PR already under review at this commit)</li>
+<li>Different <code>commitSha</code> OR <code>reviewState === pending</code> → update existing record, return <strong>200</strong></li>
+<li>No existing record → create new record, return <strong>201</strong></li>
+</ul>
+<p>On success the record’s <code>reviewState</code> is set to <code>in_progress</code>, and <code>claimedBy</code>, <code>claimedAt</code>, and <code>heartbeatAt</code> are populated.</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -X</span><span style="color:var(--astro-code-token-string)"> POST</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Content-Type: application/json&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">  &quot;$SHIPWRIGHT_TASK_STORE_URL/prs/claim&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -d</span><span style="color:var(--astro-code-token-string-expression)"> &#39;{</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">    &quot;repo&quot;: &quot;org/repo&quot;,</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">    &quot;prNumber&quot;: 42,</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">    &quot;commitSha&quot;: &quot;abc1234&quot;,</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">    &quot;claimedBy&quot;: &quot;&lt;agent-id&gt;&quot;</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">  }&#39;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string)"> .</span></span></code></pre>
+<h3 id="get-prsid">GET /prs/:id</h3>
+<p>Fetch a single PR record by its CUID. Returns <strong>404</strong> when not found.</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">  &quot;$SHIPWRIGHT_TASK_STORE_URL/prs/clx1234abc&quot;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string)"> .</span></span></code></pre>
+<h3 id="patch-prsid">PATCH /prs/:id</h3>
+<p>Partial update — only the provided fields are changed. Returns the updated record.</p>
+<p><strong>Updatable fields:</strong> <code>staged</code>, <code>commitSha</code>, <code>taskId</code>, <code>agentId</code>, <code>state</code>, <code>mergedAt</code>, <code>reviewState</code></p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-comment)"># Mark review as staged (written but not yet posted)</span></span>
+<span class="line"><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -X</span><span style="color:var(--astro-code-token-string)"> PATCH</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Content-Type: application/json&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">  &quot;$SHIPWRIGHT_TASK_STORE_URL/prs/clx1234abc&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -d</span><span style="color:var(--astro-code-token-string-expression)"> &#39;{&quot;staged&quot;: true}&#39;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string)"> .</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:var(--astro-code-token-comment)"># Set reviewState to approved directly</span></span>
+<span class="line"><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -X</span><span style="color:var(--astro-code-token-string)"> PATCH</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Content-Type: application/json&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">  &quot;$SHIPWRIGHT_TASK_STORE_URL/prs/clx1234abc&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -d</span><span style="color:var(--astro-code-token-string-expression)"> &#39;{&quot;reviewState&quot;: &quot;approved&quot;}&#39;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string)"> .</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:var(--astro-code-token-comment)"># Record that the PR merged</span></span>
+<span class="line"><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -X</span><span style="color:var(--astro-code-token-string)"> PATCH</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Content-Type: application/json&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">  &quot;$SHIPWRIGHT_TASK_STORE_URL/prs/clx1234abc&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -d</span><span style="color:var(--astro-code-token-string-expression)"> &#39;{&quot;state&quot;: &quot;merged&quot;, &quot;mergedAt&quot;: &quot;2024-01-15T12:00:00Z&quot;}&#39;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string)"> .</span></span></code></pre>
+<h3 id="post-prsidheartbeat">POST /prs/:id/heartbeat</h3>
+<p>Touch <code>heartbeatAt</code> to signal that the review agent is still alive. Call this periodically during long-running review work to prevent the <a href="#heartbeat-and-stale-claim-reaper">StaleClaimReaper</a> from releasing the claim.</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -X</span><span style="color:var(--astro-code-token-string)"> POST</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">  &quot;$SHIPWRIGHT_TASK_STORE_URL/prs/clx1234abc/heartbeat&quot;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string)"> .</span></span></code></pre>
+<h3 id="post-prsidcomplete">POST /prs/:id/complete</h3>
+<p>Mark the review as posted. Increments <code>reviewCycles</code>, sets <code>reviewState</code> to <code>posted</code>, and records <code>reviewedAt</code>. Call this after the GitHub review comment or approval has been successfully posted.</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -X</span><span style="color:var(--astro-code-token-string)"> POST</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">  &quot;$SHIPWRIGHT_TASK_STORE_URL/prs/clx1234abc/complete&quot;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string)"> .</span></span></code></pre>
+<h3 id="post-prsidpatch">POST /prs/:id/patch</h3>
+<p>Record that the PR author pushed a patch in response to review feedback. Increments <code>patchCycles</code>, resets <code>reviewState</code> to <code>pending</code>, and records <code>patchedAt</code>. The claim fields (<code>claimedBy</code>, <code>claimedAt</code>, <code>heartbeatAt</code>) are cleared so the PR becomes eligible for re-review.</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -X</span><span style="color:var(--astro-code-token-string)"> POST</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">  &quot;$SHIPWRIGHT_TASK_STORE_URL/prs/clx1234abc/patch&quot;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string)"> .</span></span></code></pre>
+<h3 id="post-prsidrelease">POST /prs/:id/release</h3>
+<p>Release a claim without completing or patching. Resets <code>reviewState</code> to <code>pending</code> and clears <code>claimedBy</code>, <code>claimedAt</code>, and <code>heartbeatAt</code>. Use when a review agent is shutting down or voluntarily relinquishing the PR.</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -X</span><span style="color:var(--astro-code-token-string)"> POST</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">  &quot;$SHIPWRIGHT_TASK_STORE_URL/prs/clx1234abc/release&quot;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string)"> .</span></span></code></pre>
+<h2 id="heartbeat-and-stale-claim-reaper">Heartbeat and Stale Claim Reaper</h2>
+<p>The <strong>StaleClaimReaper</strong> runs every 60 seconds and releases stale claims automatically. A claim is considered stale when:</p>
+<ul>
+<li><code>heartbeatAt</code> is set and older than the TTL, <strong>or</strong></li>
+<li><code>heartbeatAt</code> is null and <code>claimedAt</code> is older than the TTL</li>
+</ul>
+<p><strong>Default TTL:</strong> 300,000 ms (5 minutes). Override with the <code>SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS</code> env var.</p>
+<p>When a claim is reaped, the reaper:</p>
+<ol>
+<li>Sets <code>reviewState</code> back to <code>pending</code></li>
+<li>Clears <code>claimedBy</code>, <code>claimedAt</code>, and <code>heartbeatAt</code></li>
+</ol>
+<p>The PR becomes immediately eligible for re-claim by another agent (or the same agent on restart).</p>
+<h3 id="heartbeat-recommendations">Heartbeat recommendations</h3>
+<ul>
+<li>Call <code>POST /prs/:id/heartbeat</code> at least once every 2–3 minutes during active review work.</li>
+<li>Call it after any significant step (e.g. after reading the diff, after generating review text).</li>
+<li>If your agent crashes and restarts, check for <code>in_progress</code> records matching your <code>agentId</code> before claiming new work — the reaper may not have fired yet.</li>
+</ul>
+<h2 id="pr-schema">PR Schema</h2>
+<p>All fields from the <code>PullRequest</code> model:</p>
+<h3 id="identity-and-linking">Identity and linking</h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead><tbody><tr><td><code>id</code></td><td>string</td><td>CUID assigned at creation; use for all subsequent API calls</td></tr><tr><td><code>repo</code></td><td>string</td><td><code>org/repo</code> format; required on claim</td></tr><tr><td><code>prNumber</code></td><td>int</td><td>GitHub PR number; unique together with <code>repo</code></td></tr><tr><td><code>taskId</code></td><td>string?</td><td>Optional link to a task store task</td></tr><tr><td><code>agentId</code></td><td>string?</td><td>ID of the agent that owns this record</td></tr></tbody></table>
+<h3 id="review-tracking">Review tracking</h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead><tbody><tr><td><code>reviewState</code></td><td>PrReviewState</td><td><code>pending</code> | <code>in_progress</code> | <code>posted</code> | <code>approved</code></td></tr><tr><td><code>staged</code></td><td>boolean</td><td><code>true</code> when a review is written but not yet posted to GitHub</td></tr><tr><td><code>reviewCycles</code></td><td>int</td><td>Number of times a review has been posted (starts at 0)</td></tr><tr><td><code>patchCycles</code></td><td>int</td><td>Number of times the PR was patched after a review (starts at 0)</td></tr><tr><td><code>commitSha</code></td><td>string?</td><td>HEAD commit SHA at the time of the last claim</td></tr><tr><td><code>reviewedAt</code></td><td>string?</td><td>ISO timestamp of the last completed review</td></tr><tr><td><code>patchedAt</code></td><td>string?</td><td>ISO timestamp of the last recorded patch</td></tr></tbody></table>
+<h3 id="pr-state">PR state</h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead><tbody><tr><td><code>state</code></td><td>PrState</td><td><code>open</code> | <code>merged</code> | <code>closed</code></td></tr><tr><td><code>mergedAt</code></td><td>string?</td><td>ISO timestamp when the PR was merged</td></tr></tbody></table>
+<h3 id="claim-and-liveness">Claim and liveness</h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead><tbody><tr><td><code>claimedBy</code></td><td>string?</td><td>Agent ID that currently holds the claim</td></tr><tr><td><code>claimedAt</code></td><td>string?</td><td>ISO timestamp when the claim was taken</td></tr><tr><td><code>heartbeatAt</code></td><td>string?</td><td>ISO timestamp of the last heartbeat; used by the StaleClaimReaper</td></tr></tbody></table>
+<h3 id="system-fields">System fields</h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead><tbody><tr><td><code>createdAt</code></td><td>DateTime</td><td>Set by the database on creation</td></tr><tr><td><code>updatedAt</code></td><td>DateTime</td><td>Updated by the database on every write</td></tr></tbody></table>
+<h2 id="http-status-codes">HTTP Status Codes</h2>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Code</th><th>Meaning</th></tr></thead><tbody><tr><td>200</td><td>Success — existing record updated (claim, PATCH, action endpoints)</td></tr><tr><td>201</td><td>Created — new PR record created by claim</td></tr><tr><td>400</td><td>Bad request — missing required field or invalid format</td></tr><tr><td>404</td><td>Not found — no PR record with the given ID</td></tr><tr><td>409</td><td>Conflict — PR already claimed at the same commit SHA with a non-pending reviewState</td></tr></tbody></table>
+<h2 id="curl-examples-full-happy-path-lifecycle">Curl Examples: Full Happy-Path Lifecycle</h2>
+<p>The following sequence demonstrates the complete review cycle: claim → heartbeat → complete, and then a patch round that resets for re-review.</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-foreground)">BASE</span><span style="color:var(--astro-code-token-keyword)">=</span><span style="color:var(--astro-code-token-string-expression)">&quot;$SHIPWRIGHT_TASK_STORE_URL&quot;</span></span>
+<span class="line"><span style="color:var(--astro-code-foreground)">TOKEN</span><span style="color:var(--astro-code-token-keyword)">=</span><span style="color:var(--astro-code-token-string-expression)">&quot;$SHIPWRIGHT_TASK_STORE_TOKEN&quot;</span></span>
+<span class="line"><span style="color:var(--astro-code-foreground)">AUTH</span><span style="color:var(--astro-code-token-keyword)">=</span><span style="color:var(--astro-code-token-string-expression)">&quot;Authorization: Bearer $TOKEN&quot;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:var(--astro-code-token-comment)"># 1. Claim the PR for review (201 = new record, 200 = re-claim, 409 = already active)</span></span>
+<span class="line"><span style="color:var(--astro-code-foreground)">CLAIM</span><span style="color:var(--astro-code-token-keyword)">=</span><span style="color:var(--astro-code-foreground)">$(</span><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -X</span><span style="color:var(--astro-code-token-string)"> POST</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;$AUTH&quot;</span><span style="color:var(--astro-code-token-string)"> -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Content-Type: application/json&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">  &quot;$BASE/prs/claim&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -d</span><span style="color:var(--astro-code-token-string-expression)"> &#39;{&quot;repo&quot;: &quot;org/repo&quot;, &quot;prNumber&quot;: 42, &quot;commitSha&quot;: &quot;abc1234&quot;}&#39;</span><span style="color:var(--astro-code-foreground)">)</span></span>
+<span class="line"><span style="color:var(--astro-code-token-function)">echo</span><span style="color:var(--astro-code-token-string-expression)"> &quot;$CLAIM&quot;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string)"> .</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:var(--astro-code-foreground)">PR_ID</span><span style="color:var(--astro-code-token-keyword)">=</span><span style="color:var(--astro-code-foreground)">$(</span><span style="color:var(--astro-code-token-function)">echo</span><span style="color:var(--astro-code-token-string-expression)"> &quot;$CLAIM&quot;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string)"> -r</span><span style="color:var(--astro-code-token-string-expression)"> &#39;.id&#39;</span><span style="color:var(--astro-code-foreground)">)</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:var(--astro-code-token-comment)"># 2. Send heartbeats while performing the review (every 2-3 minutes)</span></span>
+<span class="line"><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -X</span><span style="color:var(--astro-code-token-string)"> POST</span><span style="color:var(--astro-code-token-string)"> -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;$AUTH&quot;</span><span style="color:var(--astro-code-token-string-expression)"> &quot;$BASE/prs/$PR_ID/heartbeat&quot;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string)"> .</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:var(--astro-code-token-comment)"># 3. (Optional) Mark as staged while awaiting human approval to post</span></span>
+<span class="line"><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -X</span><span style="color:var(--astro-code-token-string)"> PATCH</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;$AUTH&quot;</span><span style="color:var(--astro-code-token-string)"> -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Content-Type: application/json&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">  &quot;$BASE/prs/$PR_ID&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -d</span><span style="color:var(--astro-code-token-string-expression)"> &#39;{&quot;staged&quot;: true}&#39;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string)"> .</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:var(--astro-code-token-comment)"># 4. After posting review to GitHub, mark complete</span></span>
+<span class="line"><span style="color:var(--astro-code-token-comment)">#    (reviewCycles incremented, reviewState → posted, reviewedAt set)</span></span>
+<span class="line"><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -X</span><span style="color:var(--astro-code-token-string)"> POST</span><span style="color:var(--astro-code-token-string)"> -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;$AUTH&quot;</span><span style="color:var(--astro-code-token-string-expression)"> &quot;$BASE/prs/$PR_ID/complete&quot;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string)"> .</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:var(--astro-code-token-comment)"># --- If the author pushes a patch in response to the review ---</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:var(--astro-code-token-comment)"># 5. Record the patch cycle (patchCycles incremented, reviewState → pending)</span></span>
+<span class="line"><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -X</span><span style="color:var(--astro-code-token-string)"> POST</span><span style="color:var(--astro-code-token-string)"> -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;$AUTH&quot;</span><span style="color:var(--astro-code-token-string-expression)"> &quot;$BASE/prs/$PR_ID/patch&quot;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string)"> .</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:var(--astro-code-token-comment)"># 6. The PR is now pending again — claim it for the next review round</span></span>
+<span class="line"><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -X</span><span style="color:var(--astro-code-token-string)"> POST</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;$AUTH&quot;</span><span style="color:var(--astro-code-token-string)"> -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Content-Type: application/json&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">  &quot;$BASE/prs/claim&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -d</span><span style="color:var(--astro-code-token-string-expression)"> &#39;{&quot;repo&quot;: &quot;org/repo&quot;, &quot;prNumber&quot;: 42, &quot;commitSha&quot;: &quot;def5678&quot;}&#39;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string)"> .</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:var(--astro-code-token-comment)"># --- When the PR is approved ---</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:var(--astro-code-token-comment)"># 7. Set reviewState to approved directly</span></span>
+<span class="line"><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -X</span><span style="color:var(--astro-code-token-string)"> PATCH</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;$AUTH&quot;</span><span style="color:var(--astro-code-token-string)"> -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Content-Type: application/json&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">  &quot;$BASE/prs/$PR_ID&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -d</span><span style="color:var(--astro-code-token-string-expression)"> &#39;{&quot;reviewState&quot;: &quot;approved&quot;}&#39;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string)"> .</span></span></code></pre>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="/docs/task-store-api">Task Store API</a> — task queuing, execution tracking, and the build lifecycle</li>
+<li><a href="/docs/reference">Configuration Reference</a> — <code>SHIPWRIGHT_TASK_STORE_URL</code>, <code>SHIPWRIGHT_TASK_STORE_TOKEN</code>, and all other env vars</li>
+</ul>  <!-- Prev/next navigation -->  </main> <!-- TOC (on-page, static) --> <aside style="min-width: 0;" data-astro-cid-mw7aashj> <nav aria-label="On this page" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.75rem;" data-astro-cid-mw7aashj>
+On this page
+</p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="#how-pr-records-relate-to-tasks" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> How PR Records Relate to Tasks </a> </li><li data-astro-cid-mw7aashj> <a href="#authentication" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Authentication </a> </li><li data-astro-cid-mw7aashj> <a href="#reviewstate-lifecycle" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> reviewState Lifecycle </a> </li><li data-astro-cid-mw7aashj> <a href="#state-transitions" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> State transitions </a> </li><li data-astro-cid-mw7aashj> <a href="#staged-flag" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> staged Flag </a> </li><li data-astro-cid-mw7aashj> <a href="#endpoints" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Endpoints </a> </li><li data-astro-cid-mw7aashj> <a href="#get-prs" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> GET /prs </a> </li><li data-astro-cid-mw7aashj> <a href="#post-prsclaim" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> POST /prs/claim </a> </li><li data-astro-cid-mw7aashj> <a href="#get-prsid" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> GET /prs/:id </a> </li><li data-astro-cid-mw7aashj> <a href="#patch-prsid" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> PATCH /prs/:id </a> </li><li data-astro-cid-mw7aashj> <a href="#post-prsidheartbeat" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> POST /prs/:id/heartbeat </a> </li><li data-astro-cid-mw7aashj> <a href="#post-prsidcomplete" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> POST /prs/:id/complete </a> </li><li data-astro-cid-mw7aashj> <a href="#post-prsidpatch" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> POST /prs/:id/patch </a> </li><li data-astro-cid-mw7aashj> <a href="#post-prsidrelease" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> POST /prs/:id/release </a> </li><li data-astro-cid-mw7aashj> <a href="#heartbeat-and-stale-claim-reaper" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Heartbeat and Stale Claim Reaper </a> </li><li data-astro-cid-mw7aashj> <a href="#heartbeat-recommendations" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Heartbeat recommendations </a> </li><li data-astro-cid-mw7aashj> <a href="#pr-schema" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> PR Schema </a> </li><li data-astro-cid-mw7aashj> <a href="#identity-and-linking" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Identity and linking </a> </li><li data-astro-cid-mw7aashj> <a href="#review-tracking" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Review tracking </a> </li><li data-astro-cid-mw7aashj> <a href="#pr-state" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> PR state </a> </li><li data-astro-cid-mw7aashj> <a href="#claim-and-liveness" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Claim and liveness </a> </li><li data-astro-cid-mw7aashj> <a href="#system-fields" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> System fields </a> </li><li data-astro-cid-mw7aashj> <a href="#http-status-codes" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> HTTP Status Codes </a> </li><li data-astro-cid-mw7aashj> <a href="#curl-examples-full-happy-path-lifecycle" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Curl Examples: Full Happy-Path Lifecycle </a> </li><li data-astro-cid-mw7aashj> <a href="#see-also" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> See also </a> </li> </ul> </nav> </aside> </div> </div> <!-- Footer --> <footer class="sw-container relative z-10 py-12" data-astro-cid-mw7aashj> <div class="flex flex-col gap-6 pt-8 sm:flex-row sm:items-center sm:justify-between" style="border-top: 1px solid var(--sw-color-border-subtle);" data-astro-cid-mw7aashj> <p class="sw-label flex items-center gap-2" data-astro-cid-mw7aashj> <img src="/shipwright-icon.svg" alt="" width="20" height="20" class="rounded" data-astro-cid-mw7aashj>
+Shipwright Harness · MIT-licensed · © 2026 </p> <nav class="flex flex-wrap gap-x-6 gap-y-2 text-sm" aria-label="Footer" data-astro-cid-mw7aashj> <a href="https://github.com/app-vitals/shipwright" data-astro-cid-mw7aashj>GitHub</a> <a href="https://github.com/app-vitals/shipwright/blob/main/LICENSE" data-astro-cid-mw7aashj>MIT License</a> <a href="https://claude.com/claude-code" data-astro-cid-mw7aashj>Claude Code</a> <a href="https://github.com/app-vitals/shipwright/discussions" data-astro-cid-mw7aashj>GitHub Discussions</a> </nav> </div> </footer> </body></html>

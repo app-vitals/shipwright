@@ -1,0 +1,858 @@
+<!DOCTYPE html><html lang="en" data-astro-cid-mw7aashj> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="Astro v5.18.2"><title>Task Store API — Shipwright Harness</title><meta name="description" content="Complete HTTP API reference for the Shipwright task store: endpoints, task schema, status lifecycle, and curl examples."><link rel="canonical" href="https://shipwrightharness.com/docs/task-store-api/"><link rel="icon" type="image/svg+xml" href="/shipwright-icon.svg"><link rel="icon" type="image/png" href="/shipwright-icon.png"><link rel="apple-touch-icon" href="/shipwright-icon.png"><meta property="og:type" content="website"><meta property="og:url" content="https://shipwrightharness.com/docs/task-store-api/"><meta property="og:title" content="Task Store API — Shipwright Harness"><meta property="og:description" content="Complete HTTP API reference for the Shipwright task store: endpoints, task schema, status lifecycle, and curl examples."><meta property="og:site_name" content="Shipwright Harness"><meta property="og:image" content="https://shipwrightharness.com/og-default-1280x640.png"><meta property="og:image:width" content="1280"><meta property="og:image:height" content="640"><!-- Google Analytics 4 --><!-- Google tag (gtag.js) — GA4 --><script async src="https://www.googletagmanager.com/gtag/js?id=G-WS5TVR713J"></script> <script>(function(){const GA_MEASUREMENT_ID = "G-WS5TVR713J";
+
+  window.dataLayer = window.dataLayer || [];
+  function gtag() {
+    dataLayer.push(arguments);
+  }
+  gtag("js", new Date());
+  gtag("config", GA_MEASUREMENT_ID);
+})();</script><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="preconnect" href="https://api.fontshare.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"><link href="https://api.fontshare.com/v2/css?f[]=general-sans@400,500,600&display=swap" rel="stylesheet"><!-- Pagefind UI — the ONE permitted script on the docs layout --><link href="/pagefind/pagefind-ui.css" rel="stylesheet"><script>
+      import("/pagefind/pagefind-ui.js").then(function () {
+        new window.PagefindUI({ element: "#search", showImages: false });
+      });
+    </script><link rel="stylesheet" href="/_astro/compare.hJK5RwON.css">
+<link rel="stylesheet" href="/_astro/compare.cgpvabiO.css">
+<style>#docs-sidebar-toggle[data-astro-cid-mw7aashj],.docs-sidebar-overlay[data-astro-cid-mw7aashj]{display:none}@media(max-width:767px){.docs-sidebar[data-astro-cid-mw7aashj]{position:fixed;top:0;left:-100%;width:280px;height:100vh;z-index:50;background:var(--sw-color-bg-raised);border-right:1px solid var(--sw-color-border-muted);transition:left .25s ease;overflow-y:auto;padding:1.5rem}#docs-sidebar-toggle[data-astro-cid-mw7aashj]:checked~.sw-container[data-astro-cid-mw7aashj] .docs-layout[data-astro-cid-mw7aashj] .docs-sidebar[data-astro-cid-mw7aashj]{left:0}#docs-sidebar-toggle[data-astro-cid-mw7aashj]:checked~.docs-sidebar-overlay[data-astro-cid-mw7aashj]{display:block;position:fixed;inset:0;z-index:40;background:color-mix(in srgb,var(--sw-color-bg-base) 65%,transparent)}.docs-mobile-menu-btn[data-astro-cid-mw7aashj],.docs-mobile-close-btn[data-astro-cid-mw7aashj]{display:flex}}@media(min-width:768px){.docs-mobile-menu-btn[data-astro-cid-mw7aashj],.docs-mobile-close-btn[data-astro-cid-mw7aashj]{display:none}.docs-sidebar[data-astro-cid-mw7aashj]{position:sticky;top:1.5rem;height:-moz-fit-content;height:fit-content;max-height:calc(100vh - 3rem);overflow-y:auto}}.docs-layout[data-astro-cid-mw7aashj]{display:grid;grid-template-columns:1fr;gap:0;min-height:calc(100vh - 80px)}@media(min-width:768px){.docs-layout[data-astro-cid-mw7aashj]{grid-template-columns:260px 1fr 220px;gap:2rem;align-items:start}}.docs-sidebar-link[data-astro-cid-mw7aashj]{display:block;padding:.3rem .75rem;border-radius:var(--sw-radius-sm);font-size:var(--sw-text-small-size);color:var(--sw-color-text-editorial);text-decoration:none;transition:background .15s,color .15s}.docs-sidebar-link[data-astro-cid-mw7aashj]:hover,.docs-sidebar-link[data-astro-cid-mw7aashj][aria-current=page]{background:var(--sw-color-bg-overlay);color:var(--sw-color-text-heading)}.docs-sidebar-link[data-astro-cid-mw7aashj][aria-current=page]{color:var(--sw-color-brand-default);font-weight:500}.docs-toc-link[data-astro-cid-mw7aashj]{display:block;padding:.2rem 0;font-size:var(--sw-text-small-size);color:var(--sw-color-text-editorial);text-decoration:none;line-height:1.4}.docs-toc-link[data-astro-cid-mw7aashj]:hover{color:var(--sw-color-text-heading)}.docs-toc-link[data-astro-cid-mw7aashj].depth-3{padding-left:.75rem;font-size:var(--sw-text-label-size);color:var(--sw-color-text-muted)}.docs-prevnext[data-astro-cid-mw7aashj]{display:flex;gap:1rem;justify-content:space-between;padding-top:2rem;margin-top:2rem;border-top:1px solid var(--sw-color-border-subtle);flex-wrap:wrap}.docs-prevnext[data-astro-cid-mw7aashj] a[data-astro-cid-mw7aashj]{display:inline-flex;align-items:center;gap:.4rem;padding:.6rem 1rem;border-radius:var(--sw-radius-md);border:1px solid var(--sw-color-border-muted);background:var(--sw-color-bg-raised);color:var(--sw-color-text-body);font-size:var(--sw-text-small-size);text-decoration:none;transition:border-color .15s,color .15s}.docs-prevnext[data-astro-cid-mw7aashj] a[data-astro-cid-mw7aashj]:hover{border-color:var(--sw-color-brand-default);color:var(--sw-color-brand-default)}
+</style></head> <body class="min-h-screen overflow-x-hidden" data-astro-cid-mw7aashj> <!-- Mobile sidebar toggle (CSS-only, hidden checkbox) --> <input type="checkbox" id="docs-sidebar-toggle" aria-hidden="true" data-astro-cid-mw7aashj> <!-- Overlay (click to close — uses label trick; CSS-only) --> <label for="docs-sidebar-toggle" class="docs-sidebar-overlay" aria-hidden="true" data-astro-cid-mw7aashj></label> <!-- Glow orb (decorative) --> <div class="sw-orb sw-orb-brand" aria-hidden="true" style="top: -12rem; left: 50%; width: 42rem; height: 42rem; transform: translateX(-50%);" data-astro-cid-mw7aashj></div> <!-- Site header --> <header class="sw-container relative z-10 flex items-center justify-between py-6" data-astro-cid-mw7aashj> <a href="/" class="flex items-center gap-3" aria-label="Shipwright Harness — home" data-astro-cid-mw7aashj> <img src="/shipwright-icon.svg" alt="" width="36" height="36" class="rounded-lg" data-astro-cid-mw7aashj> <span class="text-lg" style="font-family: var(--sw-font-display); font-weight: 700; letter-spacing: -0.01em; color: var(--sw-color-text-heading);" data-astro-cid-mw7aashj>
+Shipwright <span style="color: var(--sw-color-brand-default);" data-astro-cid-mw7aashj>Harness</span> </span> </a> <nav class="flex items-center gap-6" aria-label="Primary" data-astro-cid-mw7aashj> <a href="/docs/getting-started" class="sw-label" data-astro-cid-mw7aashj>Docs</a> <a href="/compare" class="sw-label" data-astro-cid-mw7aashj>Compare</a> <a href="https://github.com/app-vitals/shipwright" class="sw-label" data-astro-cid-mw7aashj>GitHub ↗</a> </nav> </header> <!-- Main docs layout --> <div class="sw-container relative z-10 pb-20" data-astro-cid-mw7aashj> <!-- Mobile: hamburger button --> <div class="docs-mobile-menu-btn py-4" data-astro-cid-mw7aashj> <label for="docs-sidebar-toggle" class="sw-btn sw-btn-secondary" style="cursor: pointer; font-size: var(--sw-text-small-size); padding: 0.4rem 0.75rem;" aria-label="Open navigation" data-astro-cid-mw7aashj>
+☰ Menu
+</label> </div> <div class="docs-layout" data-astro-cid-mw7aashj> <!-- Sidebar --> <aside class="docs-sidebar" data-astro-cid-mw7aashj> <!-- Pagefind search widget --> <div id="search" style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj></div> <!-- Mobile close button --> <div class="docs-mobile-close-btn" style="justify-content: flex-end; margin-bottom: 1rem;" data-astro-cid-mw7aashj> <label for="docs-sidebar-toggle" style="cursor: pointer; color: var(--sw-color-text-editorial); font-size: var(--sw-text-small-size);" aria-label="Close navigation" data-astro-cid-mw7aashj>
+✕ Close
+</label> </div> <nav aria-label="Docs navigation" data-astro-cid-mw7aashj> <div style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-mw7aashj> Agent </p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="/docs/the-agent" class="docs-sidebar-link" data-astro-cid-mw7aashj> The Agent </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/configuring-autonomy" class="docs-sidebar-link" data-astro-cid-mw7aashj> Configuring Autonomy </a> </li> </ul> </div><div style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-mw7aashj> Getting Started </p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="/docs/introduction" class="docs-sidebar-link" data-astro-cid-mw7aashj> Introduction </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/getting-started" class="docs-sidebar-link" data-astro-cid-mw7aashj> Getting Started </a> </li> </ul> </div><div style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-mw7aashj> Operations </p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="/docs/deploying-to-cloud" class="docs-sidebar-link" data-astro-cid-mw7aashj> Deploying to Cloud </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/slack-integration" class="docs-sidebar-link" data-astro-cid-mw7aashj> Slack Integration </a> </li> </ul> </div><div style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-mw7aashj> Plugin </p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="/docs/the-plugin" class="docs-sidebar-link" data-astro-cid-mw7aashj> The Plugin </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/running-locally" class="docs-sidebar-link" data-astro-cid-mw7aashj> Running Locally </a> </li> </ul> </div><div style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-mw7aashj> Reference </p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="/docs/reference" class="docs-sidebar-link" data-astro-cid-mw7aashj> Configuration Reference </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/task-store-api" class="docs-sidebar-link" aria-current="page" data-astro-cid-mw7aashj> Task Store API </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/prs-api" class="docs-sidebar-link" data-astro-cid-mw7aashj> PRs API </a> </li> </ul> </div> </nav> </aside> <!-- Main content --> <main class="sw-prose" style="min-width: 0;" data-pagefind-body data-astro-cid-mw7aashj>  <h1 id="task-store-api">Task Store API</h1>
+<p>The task store is the central queue that drives autonomous task execution. Agents query it to pick
+up work, track progress, and record outcomes. This page is the primary reference for operators and
+agents interacting with <code>/tasks</code> directly.</p>
+<blockquote>
+<p><strong>See also:</strong> <a href="/docs/prs-api">PRs API</a> — the companion surface for PR review and patch tracking.</p>
+</blockquote>
+<h2 id="authentication">Authentication</h2>
+<p>All requests require a Bearer token in the <code>Authorization</code> header:</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-function)">Authorization:</span><span style="color:var(--astro-code-token-string)"> Bearer</span><span style="color:var(--astro-code-foreground)"> $SHIPWRIGHT_TASK_STORE_TOKEN</span></span></code></pre>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Env var</th><th>Description</th></tr></thead><tbody><tr><td><code>SHIPWRIGHT_TASK_STORE_URL</code></td><td>Base URL of the task store service (provisioned at deploy time)</td></tr><tr><td><code>SHIPWRIGHT_TASK_STORE_TOKEN</code></td><td>Bearer token for this agent or admin</td></tr></tbody></table>
+<h3 id="token-scoping">Token scoping</h3>
+<p>Tokens come in two varieties:</p>
+<ul>
+<li><strong>Agent tokens</strong> (<code>agentId</code> set) — all reads are automatically scoped to tasks assigned to that
+agent. Writes are blocked on tasks belonging to other agents (403). Task creation forces
+<code>assignee</code> to the token’s agent ID.</li>
+<li><strong>Admin tokens</strong> (<code>agentId</code> null) — no restrictions. Can read and write any task. Required for
+HITL execution and cross-agent inspection.</li>
+</ul>
+<p>Repo-scoped agent tokens additionally include unassigned pool tasks whose <code>repo</code> is in the token’s
+repos list — allowing agents to pick up shared work without requiring an explicit <code>assignee</code>.</p>
+<p>Verify connectivity before starting work:</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">  &quot;$SHIPWRIGHT_TASK_STORE_URL/tasks?ready=true&quot;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string-expression)"> &#39;.total&#39;</span></span></code></pre>
+<h2 id="task-status-lifecycle">Task Status Lifecycle</h2>
+<p>Tasks move through a defined set of statuses from creation to completion:</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="plaintext"><code><span class="line"><span>pending → in_progress → pr_open → approved → merged → deploying → deployed</span></span></code></pre>
+<p>Branch statuses that can occur at any point:</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="plaintext"><code><span class="line"><span>blocked    — dependency not met, or manually paused (HITL)</span></span>
+<span class="line"><span>cancelled  — permanently abandoned</span></span>
+<span class="line"><span>done       — completed without a PR (direct task, no deploy path)</span></span></code></pre>
+<p>Terminal statuses (dependency resolution treats these as satisfied):
+<code>merged</code>, <code>done</code>, <code>deploying</code>, <code>deployed</code>, <code>cancelled</code></p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Status</th><th>Meaning</th></tr></thead><tbody><tr><td><code>pending</code></td><td>Not yet started; eligible for <code>?ready=true</code> pickup if dependencies are met</td></tr><tr><td><code>in_progress</code></td><td>Claimed by an agent; work is underway</td></tr><tr><td><code>pr_open</code></td><td>PR has been opened on GitHub; <code>pr</code> and <code>prCreatedAt</code> must be set</td></tr><tr><td><code>approved</code></td><td>PR passed review; <code>ciFixAttempts</code> must be set</td></tr><tr><td><code>merged</code></td><td>PR merged to main; <code>mergedAt</code> should be set</td></tr><tr><td><code>deploying</code></td><td>Deploy pipeline is running; <code>deployingAt</code> should be set</td></tr><tr><td><code>deployed</code></td><td>Successfully deployed to production; <code>deployedAt</code> should be set</td></tr><tr><td><code>blocked</code></td><td>Explicitly paused — waiting on human action or unresolvable dependency</td></tr><tr><td><code>done</code></td><td>Task complete without a PR (e.g. research or HITL tasks)</td></tr><tr><td><code>cancelled</code></td><td>Permanently abandoned</td></tr></tbody></table>
+<h2 id="endpoints">Endpoints</h2>
+<h3 id="get-tasks">GET /tasks</h3>
+<p>List tasks. Returns <code>{ tasks, total }</code> for ready/blocked queries; <code>{ tasks, total, limit, offset }</code>
+for all other queries.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Query param</th><th>Description</th></tr></thead><tbody><tr><td><code>ready=true</code></td><td>Return only tasks that are ready to pick up (see <a href="#readytrue-semantics">?ready=true semantics</a>)</td></tr><tr><td><code>state=ready</code></td><td>Alias for <code>?ready=true</code></td></tr><tr><td><code>state=blocked</code></td><td>Return pending tasks with unmet dependencies, HITL-gated tasks, and explicitly blocked tasks</td></tr><tr><td><code>state=open</code></td><td>Filter to open tasks (pending, in_progress, pr_open, approved)</td></tr><tr><td><code>state=closed</code></td><td>Filter to closed tasks (merged, done, deploying, deployed, cancelled)</td></tr><tr><td><code>state=in_progress</code></td><td>Filter to actively running tasks</td></tr><tr><td><code>status</code></td><td>Filter by exact status value (e.g. <code>?status=pr_open</code>)</td></tr><tr><td><code>session</code></td><td>Filter by planning session slug</td></tr><tr><td><code>assignee</code></td><td>Filter by assignee (admin tokens only — agent tokens are auto-scoped)</td></tr><tr><td><code>repo</code></td><td>Filter by repo in <code>org/repo</code> format</td></tr><tr><td><code>branch</code></td><td>Filter by branch name</td></tr><tr><td><code>pr</code></td><td>Filter by PR number</td></tr><tr><td><code>claimedBy</code></td><td>Filter by the agent that claimed the task</td></tr><tr><td><code>limit</code></td><td>Max results (pagination)</td></tr><tr><td><code>offset</code></td><td>Start offset (pagination)</td></tr></tbody></table>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-comment)"># All pending tasks assigned to this agent</span></span>
+<span class="line"><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">  &quot;$SHIPWRIGHT_TASK_STORE_URL/tasks?status=pending&quot;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string-expression)"> &#39;.tasks&#39;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:var(--astro-code-token-comment)"># All ready tasks (dependencies met, pending, not HITL-gated)</span></span>
+<span class="line"><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">  &quot;$SHIPWRIGHT_TASK_STORE_URL/tasks?ready=true&quot;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string-expression)"> &#39;.tasks&#39;</span></span></code></pre>
+<h3 id="post-tasks">POST /tasks</h3>
+<p>Create a task. Returns 201 on success, 409 if a task with the same <code>id</code> already exists.</p>
+<p><strong>Required fields:</strong> <code>title</code>, <code>status</code></p>
+<p><strong>Recommended fields for agent pickup:</strong> <code>id</code>, <code>repo</code> (org/repo format), <code>branch</code>, <code>assignee</code></p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -X</span><span style="color:var(--astro-code-token-string)"> POST</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Content-Type: application/json&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">  &quot;$SHIPWRIGHT_TASK_STORE_URL/tasks&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -d</span><span style="color:var(--astro-code-token-string-expression)"> &#39;{</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">    &quot;id&quot;: &quot;SHE-1.1&quot;,</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">    &quot;title&quot;: &quot;Add feature X&quot;,</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">    &quot;status&quot;: &quot;pending&quot;,</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">    &quot;repo&quot;: &quot;org/repo&quot;,</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">    &quot;branch&quot;: &quot;feat/she-1-1-add-feature-x&quot;,</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">    &quot;assignee&quot;: &quot;&lt;agent-id&gt;&quot;</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">  }&#39;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string)"> .</span></span></code></pre>
+<h3 id="post-tasksbulk">POST /tasks/bulk</h3>
+<p>Insert an array of tasks. Skips 409 conflicts silently. Returns <code>{ inserted, updated }</code>.</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -X</span><span style="color:var(--astro-code-token-string)"> POST</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Content-Type: application/json&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">  &quot;$SHIPWRIGHT_TASK_STORE_URL/tasks/bulk&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -d</span><span style="color:var(--astro-code-token-string-expression)"> &#39;[{&quot;id&quot;: &quot;SHE-2.1&quot;, &quot;title&quot;: &quot;...&quot;, &quot;status&quot;: &quot;pending&quot;, &quot;repo&quot;: &quot;org/repo&quot;, &quot;branch&quot;: &quot;feat/she-2-1-...&quot;}]&#39;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">  |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string)"> .</span></span></code></pre>
+<h3 id="get-tasksdistinct">GET /tasks/distinct</h3>
+<p>Return the distinct <code>sessions</code> and <code>repos</code> visible to the caller. Useful for filtering UI dropdowns.</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">  &quot;$SHIPWRIGHT_TASK_STORE_URL/tasks/distinct&quot;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string)"> .</span></span></code></pre>
+<h3 id="get-tasksid">GET /tasks/:id</h3>
+<p>Fetch a single task by ID. Returns 404 if not found. Agent tokens get 403 if the task belongs to
+another agent.</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">  &quot;$SHIPWRIGHT_TASK_STORE_URL/tasks/SHE-1.1&quot;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string)"> .</span></span></code></pre>
+<h3 id="patch-tasksid">PATCH /tasks/:id</h3>
+<p>Partial update — only provided fields are changed. Returns the updated task.</p>
+<p>Agent tokens are restricted to their own tasks. The <code>repo</code> field must remain in <code>org/repo</code> format.</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-comment)"># Transition to in_progress</span></span>
+<span class="line"><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -X</span><span style="color:var(--astro-code-token-string)"> PATCH</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Content-Type: application/json&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">  &quot;$SHIPWRIGHT_TASK_STORE_URL/tasks/SHE-1.1&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -d</span><span style="color:var(--astro-code-token-string-expression)"> &#39;{&quot;status&quot;: &quot;in_progress&quot;, &quot;startedAt&quot;: &quot;2024-01-15T10:00:00Z&quot;}&#39;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string)"> .</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:var(--astro-code-token-comment)"># Transition to pr_open (requires pr + prCreatedAt)</span></span>
+<span class="line"><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -X</span><span style="color:var(--astro-code-token-string)"> PATCH</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Content-Type: application/json&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">  &quot;$SHIPWRIGHT_TASK_STORE_URL/tasks/SHE-1.1&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -d</span><span style="color:var(--astro-code-token-string-expression)"> &#39;{&quot;status&quot;: &quot;pr_open&quot;, &quot;pr&quot;: 42, &quot;prCreatedAt&quot;: &quot;2024-01-15T11:00:00Z&quot;}&#39;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string)"> .</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:var(--astro-code-token-comment)"># Transition to approved (requires ciFixAttempts)</span></span>
+<span class="line"><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -X</span><span style="color:var(--astro-code-token-string)"> PATCH</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Content-Type: application/json&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">  &quot;$SHIPWRIGHT_TASK_STORE_URL/tasks/SHE-1.1&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -d</span><span style="color:var(--astro-code-token-string-expression)"> &#39;{&quot;status&quot;: &quot;approved&quot;, &quot;ciFixAttempts&quot;: 0}&#39;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string)"> .</span></span></code></pre>
+<h3 id="delete-tasksid">DELETE /tasks/:id</h3>
+<p>Delete a task permanently. Returns 204 on success.</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -X</span><span style="color:var(--astro-code-token-string)"> DELETE</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">  &quot;$SHIPWRIGHT_TASK_STORE_URL/tasks/SHE-1.1&quot;</span></span></code></pre>
+<h3 id="post-tasksidclaim">POST /tasks/:id/claim</h3>
+<p>Atomically claim a task. Returns 409 if already claimed by another agent.</p>
+<p>Agent tokens: <code>claimedBy</code> is set to the token’s agent ID automatically.
+Admin tokens: <code>claimedBy</code> must be provided in the request body.</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -X</span><span style="color:var(--astro-code-token-string)"> POST</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Content-Type: application/json&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">  &quot;$SHIPWRIGHT_TASK_STORE_URL/tasks/SHE-1.1/claim&quot;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string)"> .</span></span></code></pre>
+<h3 id="post-tasksidheartbeat">POST /tasks/:id/heartbeat</h3>
+<p>Touch the <code>heartbeatAt</code> timestamp to signal liveness. Call this periodically during long-running
+tasks to prevent the stale-claim reaper from releasing the task.</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -X</span><span style="color:var(--astro-code-token-string)"> POST</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">  &quot;$SHIPWRIGHT_TASK_STORE_URL/tasks/SHE-1.1/heartbeat&quot;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string)"> .</span></span></code></pre>
+<h3 id="post-tasksidcomplete">POST /tasks/:id/complete</h3>
+<p>Mark a task <code>done</code>. Use for tasks that complete without opening a PR.</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -X</span><span style="color:var(--astro-code-token-string)"> POST</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">  &quot;$SHIPWRIGHT_TASK_STORE_URL/tasks/SHE-1.1/complete&quot;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string)"> .</span></span></code></pre>
+<h3 id="post-tasksidfail">POST /tasks/:id/fail</h3>
+<p>Mark a task <code>blocked</code>. Optionally include a <code>reason</code> in the request body.</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -X</span><span style="color:var(--astro-code-token-string)"> POST</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Content-Type: application/json&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">  &quot;$SHIPWRIGHT_TASK_STORE_URL/tasks/SHE-1.1/fail&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -d</span><span style="color:var(--astro-code-token-string-expression)"> &#39;{&quot;reason&quot;: &quot;CI environment unavailable&quot;}&#39;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string)"> .</span></span></code></pre>
+<h3 id="post-tasksidrelease">POST /tasks/:id/release</h3>
+<p>Unclaim a task — resets <code>claimedBy</code> and <code>claimedAt</code>, returns status to <code>pending</code>.
+Use when an agent is shutting down or voluntarily giving up a task.</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -X</span><span style="color:var(--astro-code-token-string)"> POST</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">  &quot;$SHIPWRIGHT_TASK_STORE_URL/tasks/SHE-1.1/release&quot;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string)"> .</span></span></code></pre>
+<h2 id="readytrue-semantics">?ready=true Semantics</h2>
+<p>When <code>?ready=true</code> (or <code>?state=ready</code>) is set, <code>?status</code> and <code>?id</code> filters are ignored. Only
+<code>?session</code> applies as a post-filter.</p>
+<p>A task is <strong>ready</strong> when <strong>all</strong> of the following are true:</p>
+<ol>
+<li><code>status === &quot;pending&quot;</code></li>
+<li><code>hitl</code> is not <code>true</code> (HITL tasks are excluded until manually cleared)</li>
+<li>Every dependency in <code>dependencies[]</code> is satisfied</li>
+</ol>
+<p><strong>Dependency-satisfied rules</strong> (first match wins):</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Rule</th><th>Condition</th><th>Result</th></tr></thead><tbody><tr><td>1</td><td>Dependency status is <code>merged</code>, <code>done</code>, <code>deploying</code>, <code>deployed</code>, or <code>cancelled</code></td><td>Satisfied</td></tr><tr><td>2</td><td>Dependency is on the same branch and has status <code>pr_open</code> or <code>approved</code></td><td>Satisfied (bundled PR)</td></tr><tr><td>3</td><td>Dependency has status <code>pr_open</code> with a PR number, and GitHub reports the PR as merged</td><td>Satisfied</td></tr><tr><td>4</td><td>None of the above match</td><td><strong>Not satisfied</strong> — task excluded</td></tr></tbody></table>
+<div class="sw-callout mt-6 max-w-3xl"><p><strong>Note:</strong> The task store has no direct GitHub access. Rule 3 (GitHub-merged check)
+resolves to <code>false</code> in the task store itself — this rule is applied by the agent harness
+when it calls <code>?ready=true</code>.</p></div>
+<h3 id="diagnosing-empty-readytrue-results">Diagnosing empty ?ready=true results</h3>
+<p>When <code>{ tasks: [], total: 0 }</code> is returned:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Likely cause</th><th>How to check</th></tr></thead><tbody><tr><td>No tasks assigned to this agent</td><td>Use an admin token to see all ready tasks</td></tr><tr><td>HITL flag set</td><td>Query <code>?status=pending</code> — check for <code>&quot;hitl&quot;: true</code>. Clear the flag once the human action is complete</td></tr><tr><td>Dependencies not satisfied</td><td>Query <code>?status=pending</code> — check each task’s <code>dependencies[]</code> and verify each dep’s status against the four rules</td></tr><tr><td>Queue is empty</td><td>No pending tasks exist at all</td></tr></tbody></table>
+<h2 id="task-schema">Task Schema</h2>
+<p>All fields from the <code>Task</code> model. Fields marked as required are enforced on creation or the
+relevant status transition.</p>
+<h3 id="core-fields">Core fields</h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Notes</th></tr></thead><tbody><tr><td><code>id</code></td><td>string</td><td>on create</td><td>Stable key — used by dependency resolution and all updates. Convention: <code>SHE-X.Y</code></td></tr><tr><td><code>title</code></td><td>string</td><td>always</td><td>Short description of the task</td></tr><tr><td><code>status</code></td><td>TaskStatus</td><td>always</td><td>See <a href="#task-status-lifecycle">Status Lifecycle</a></td></tr><tr><td><code>repo</code></td><td>string?</td><td>recommended</td><td><code>org/repo</code> format; required for <code>dev-task</code> worktree creation</td></tr><tr><td><code>branch</code></td><td>string?</td><td>recommended</td><td>Branch name; absent → task is skipped by <code>dev-task</code></td></tr><tr><td><code>assignee</code></td><td>string?</td><td>recommended</td><td>Agent ID; unset = pool task (any agent with repo scope can pick it up)</td></tr><tr><td><code>dependencies</code></td><td>string[]</td><td>—</td><td>Array of task IDs that must be satisfied before this task is ready</td></tr><tr><td><code>description</code></td><td>string?</td><td>—</td><td>Full task description (Markdown)</td></tr><tr><td><code>acceptanceCriteria</code></td><td>string[]</td><td>—</td><td>Checklist items for task completion</td></tr><tr><td><code>layer</code></td><td>string?</td><td>—</td><td>Architectural layer (e.g. <code>Shared</code>, <code>API</code>, <code>UI</code>)</td></tr><tr><td><code>session</code></td><td>string?</td><td>—</td><td>Planning session slug for grouping related tasks</td></tr><tr><td><code>source</code></td><td>string?</td><td>—</td><td>Origin label (e.g. plan session name)</td></tr><tr><td><code>type</code></td><td>string?</td><td>—</td><td>Task category (e.g. <code>feature</code>, <code>fix</code>, <code>test</code>)</td></tr><tr><td><code>priority</code></td><td>string?</td><td>—</td><td>Priority hint for ordering</td></tr><tr><td><code>hours</code></td><td>float?</td><td>—</td><td>Estimated effort in hours</td></tr><tr><td><code>issue</code></td><td>string?</td><td>—</td><td>Linked GitHub issue URL or ID</td></tr><tr><td><code>model</code></td><td>string?</td><td>—</td><td>Preferred Claude model: <code>haiku</code>, <code>sonnet</code>, or <code>opus</code></td></tr><tr><td><code>complexity</code></td><td>int?</td><td>—</td><td>Complexity score (1–5)</td></tr><tr><td><code>hitl</code></td><td>boolean?</td><td>—</td><td>When <code>true</code>, excluded from <code>?ready=true</code> until manually cleared</td></tr><tr><td><code>note</code></td><td>string?</td><td>—</td><td>Free-form notes</td></tr><tr><td><code>metadata</code></td><td>JSON?</td><td>—</td><td>Escape hatch for structured data without dedicated columns</td></tr></tbody></table>
+<h3 id="status-transition-fields">Status transition fields</h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Field</th><th>Type</th><th>Set when</th></tr></thead><tbody><tr><td><code>startedAt</code></td><td>string?</td><td>→ <code>in_progress</code></td></tr><tr><td><code>pr</code></td><td>int?</td><td>→ <code>pr_open</code> (required)</td></tr><tr><td><code>prUrl</code></td><td>string?</td><td>→ <code>pr_open</code> (the GitHub PR URL)</td></tr><tr><td><code>prCreatedAt</code></td><td>string?</td><td>→ <code>pr_open</code> (required)</td></tr><tr><td><code>ciFixAttempts</code></td><td>int?</td><td>→ <code>approved</code> or <code>merged</code> (required)</td></tr><tr><td><code>mergeCommit</code></td><td>string?</td><td>→ <code>merged</code></td></tr><tr><td><code>mergedAt</code></td><td>string?</td><td>→ <code>merged</code></td></tr><tr><td><code>deployingAt</code></td><td>string?</td><td>→ <code>deploying</code></td></tr><tr><td><code>deployedAt</code></td><td>string?</td><td>→ <code>deployed</code></td></tr><tr><td><code>completedAt</code></td><td>string?</td><td>→ <code>done</code></td></tr><tr><td><code>cancelledAt</code></td><td>string?</td><td>→ <code>cancelled</code></td></tr><tr><td><code>blockedAt</code></td><td>string?</td><td>→ <code>blocked</code></td></tr><tr><td><code>blockedReason</code></td><td>string?</td><td>→ <code>blocked</code> (human-readable reason)</td></tr></tbody></table>
+<h3 id="claim-and-liveness-fields">Claim and liveness fields</h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Field</th><th>Type</th><th>Set when</th></tr></thead><tbody><tr><td><code>claimedBy</code></td><td>string?</td><td>→ claimed (agent ID)</td></tr><tr><td><code>claimedAt</code></td><td>string?</td><td>→ claimed (ISO timestamp)</td></tr><tr><td><code>agentHint</code></td><td>string?</td><td>Creation — suggested agent to pick up this task</td></tr><tr><td><code>heartbeatAt</code></td><td>string?</td><td>→ heartbeat (ISO timestamp of last liveness ping)</td></tr></tbody></table>
+<h3 id="hitl-fields">HITL fields</h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Field</th><th>Type</th><th>Set when</th></tr></thead><tbody><tr><td><code>hitl</code></td><td>boolean?</td><td>Set to <code>true</code> when human action is required before proceeding</td></tr><tr><td><code>hitlNotifiedAt</code></td><td>string?</td><td>ISO timestamp when the HITL notification was sent</td></tr></tbody></table>
+<h3 id="execution-metrics-set-by-agent-on-completion">Execution metrics (set by agent on completion)</h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead><tbody><tr><td><code>inputTokens</code></td><td>int?</td><td>Total Claude input tokens used</td></tr><tr><td><code>outputTokens</code></td><td>int?</td><td>Total Claude output tokens used</td></tr><tr><td><code>cacheReadTokens</code></td><td>int?</td><td>Prompt cache read tokens</td></tr><tr><td><code>cacheCreationTokens</code></td><td>int?</td><td>Prompt cache creation tokens</td></tr><tr><td><code>costUsd</code></td><td>float?</td><td>Estimated USD cost</td></tr><tr><td><code>effortLevel</code></td><td>string?</td><td><code>low</code>, <code>medium</code>, or <code>high</code></td></tr><tr><td><code>coverageDelta</code></td><td>float?</td><td>Test coverage change (positive = improved)</td></tr><tr><td><code>simplifyTotal</code></td><td>int?</td><td>Total simplification findings</td></tr><tr><td><code>simplifyDry</code></td><td>int?</td><td>DRY violations found</td></tr><tr><td><code>simplifyDeadCode</code></td><td>int?</td><td>Dead code findings</td></tr><tr><td><code>simplifyNaming</code></td><td>int?</td><td>Naming issue findings</td></tr><tr><td><code>simplifyComplexity</code></td><td>int?</td><td>Complexity findings</td></tr><tr><td><code>simplifyConsistency</code></td><td>int?</td><td>Consistency findings</td></tr></tbody></table>
+<h3 id="system-fields">System fields</h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead><tbody><tr><td><code>createdAt</code></td><td>DateTime</td><td>Set by the database on creation</td></tr><tr><td><code>updatedAt</code></td><td>DateTime</td><td>Updated by the database on every write</td></tr></tbody></table>
+<h2 id="http-status-codes">HTTP Status Codes</h2>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Code</th><th>Meaning</th></tr></thead><tbody><tr><td>200</td><td>Success (GET, PATCH, POST action endpoints)</td></tr><tr><td>201</td><td>Created (POST /tasks)</td></tr><tr><td>204</td><td>No content (DELETE)</td></tr><tr><td>400</td><td>Bad request — missing required field, invalid format, or repo not in agent scope</td></tr><tr><td>403</td><td>Forbidden — agent token tried to access another agent’s task</td></tr><tr><td>404</td><td>Not found</td></tr><tr><td>409</td><td>Conflict — task ID already exists (POST) or task already claimed (claim endpoint)</td></tr></tbody></table>
+<h2 id="curl-examples-full-happy-path-lifecycle">Curl Examples: Full Happy-Path Lifecycle</h2>
+<p>The following sequence demonstrates the complete lifecycle from picking a ready task to heartbeat:</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-foreground)">BASE</span><span style="color:var(--astro-code-token-keyword)">=</span><span style="color:var(--astro-code-token-string-expression)">&quot;$SHIPWRIGHT_TASK_STORE_URL&quot;</span></span>
+<span class="line"><span style="color:var(--astro-code-foreground)">TOKEN</span><span style="color:var(--astro-code-token-keyword)">=</span><span style="color:var(--astro-code-token-string-expression)">&quot;$SHIPWRIGHT_TASK_STORE_TOKEN&quot;</span></span>
+<span class="line"><span style="color:var(--astro-code-foreground)">AUTH</span><span style="color:var(--astro-code-token-keyword)">=</span><span style="color:var(--astro-code-token-string-expression)">&quot;Authorization: Bearer $TOKEN&quot;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:var(--astro-code-token-comment)"># 1. Check for an interrupted task first (resume if found)</span></span>
+<span class="line"><span style="color:var(--astro-code-foreground)">INTERRUPTED</span><span style="color:var(--astro-code-token-keyword)">=</span><span style="color:var(--astro-code-foreground)">$(</span><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;$AUTH&quot;</span><span style="color:var(--astro-code-token-string-expression)"> &quot;$BASE/tasks?status=in_progress&quot;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string)"> -r</span><span style="color:var(--astro-code-token-string-expression)"> &#39;.tasks[0].id // empty&#39;</span><span style="color:var(--astro-code-foreground)">)</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:var(--astro-code-token-comment)"># 2. If nothing in progress, pick the next ready task</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">if</span><span style="color:var(--astro-code-foreground)"> [ </span><span style="color:var(--astro-code-token-keyword)">-z</span><span style="color:var(--astro-code-token-string-expression)"> &quot;$INTERRUPTED&quot;</span><span style="color:var(--astro-code-foreground)"> ]; </span><span style="color:var(--astro-code-token-keyword)">then</span></span>
+<span class="line"><span style="color:var(--astro-code-foreground)">  TASK</span><span style="color:var(--astro-code-token-keyword)">=</span><span style="color:var(--astro-code-foreground)">$(</span><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;$AUTH&quot;</span><span style="color:var(--astro-code-token-string-expression)"> &quot;$BASE/tasks?ready=true&quot;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string-expression)"> &#39;.tasks[0]&#39;</span><span style="color:var(--astro-code-foreground)">)</span></span>
+<span class="line"><span style="color:var(--astro-code-foreground)">  TASK_ID</span><span style="color:var(--astro-code-token-keyword)">=</span><span style="color:var(--astro-code-foreground)">$(</span><span style="color:var(--astro-code-token-function)">echo</span><span style="color:var(--astro-code-token-string-expression)"> &quot;$TASK&quot;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string)"> -r</span><span style="color:var(--astro-code-token-string-expression)"> &#39;.id&#39;</span><span style="color:var(--astro-code-foreground)">)</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">else</span></span>
+<span class="line"><span style="color:var(--astro-code-foreground)">  TASK_ID</span><span style="color:var(--astro-code-token-keyword)">=</span><span style="color:var(--astro-code-token-string-expression)">&quot;$INTERRUPTED&quot;</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">fi</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:var(--astro-code-token-function)">echo</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Working on task: $TASK_ID&quot;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:var(--astro-code-token-comment)"># 3. Claim the task (atomic — 409 if another agent beats you to it)</span></span>
+<span class="line"><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -X</span><span style="color:var(--astro-code-token-string)"> POST</span><span style="color:var(--astro-code-token-string)"> -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;$AUTH&quot;</span><span style="color:var(--astro-code-token-string)"> -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Content-Type: application/json&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">  &quot;$BASE/tasks/$TASK_ID/claim&quot;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string)"> .</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:var(--astro-code-token-comment)"># 4. Mark in_progress</span></span>
+<span class="line"><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -X</span><span style="color:var(--astro-code-token-string)"> PATCH</span><span style="color:var(--astro-code-token-string)"> -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;$AUTH&quot;</span><span style="color:var(--astro-code-token-string)"> -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Content-Type: application/json&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">  &quot;$BASE/tasks/$TASK_ID&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -d</span><span style="color:var(--astro-code-token-string-expression)"> &quot;{\&quot;status\&quot;: \&quot;in_progress\&quot;, \&quot;startedAt\&quot;: \&quot;$(</span><span style="color:var(--astro-code-token-function)">date</span><span style="color:var(--astro-code-token-string)"> -u</span><span style="color:var(--astro-code-token-string)"> +%Y-%m-%dT%H:%M:%SZ</span><span style="color:var(--astro-code-token-string-expression)">)\&quot;}&quot;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string)"> .</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:var(--astro-code-token-comment)"># 5. Heartbeat (call periodically during long work)</span></span>
+<span class="line"><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -X</span><span style="color:var(--astro-code-token-string)"> POST</span><span style="color:var(--astro-code-token-string)"> -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;$AUTH&quot;</span><span style="color:var(--astro-code-token-string-expression)"> &quot;$BASE/tasks/$TASK_ID/heartbeat&quot;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string)"> .</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:var(--astro-code-token-comment)"># 6. Open a PR (requires pr number and timestamp)</span></span>
+<span class="line"><span style="color:var(--astro-code-foreground)">PR_NUMBER</span><span style="color:var(--astro-code-token-keyword)">=</span><span style="color:var(--astro-code-token-string)">42</span></span>
+<span class="line"><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -X</span><span style="color:var(--astro-code-token-string)"> PATCH</span><span style="color:var(--astro-code-token-string)"> -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;$AUTH&quot;</span><span style="color:var(--astro-code-token-string)"> -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Content-Type: application/json&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string-expression)">  &quot;$BASE/tasks/$TASK_ID&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
+<span class="line"><span style="color:var(--astro-code-token-string)">  -d</span><span style="color:var(--astro-code-token-string-expression)"> &quot;{\&quot;status\&quot;: \&quot;pr_open\&quot;, \&quot;pr\&quot;: $PR_NUMBER, \&quot;prCreatedAt\&quot;: \&quot;$(</span><span style="color:var(--astro-code-token-function)">date</span><span style="color:var(--astro-code-token-string)"> -u</span><span style="color:var(--astro-code-token-string)"> +%Y-%m-%dT%H:%M:%SZ</span><span style="color:var(--astro-code-token-string-expression)">)\&quot;}&quot;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string)"> .</span></span></code></pre>
+<h2 id="required-fields-per-status-transition">Required Fields Per Status Transition</h2>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Transition</th><th>Fields that must be set</th></tr></thead><tbody><tr><td>→ <code>in_progress</code></td><td><code>startedAt</code> (strongly recommended)</td></tr><tr><td>→ <code>pr_open</code></td><td><code>pr</code> (PR number), <code>prCreatedAt</code> (ISO timestamp)</td></tr><tr><td>→ <code>approved</code></td><td><code>ciFixAttempts</code> (set to 0 if no CI fixes were needed)</td></tr><tr><td>→ <code>merged</code></td><td><code>ciFixAttempts</code>, <code>mergedAt</code> (strongly recommended)</td></tr><tr><td>→ <code>blocked</code></td><td><code>blockedReason</code> (strongly recommended), <code>blockedAt</code></td></tr></tbody></table>
+<div class="sw-callout mt-6 max-w-3xl"><p><strong>Enforcement:</strong> The task store does not hard-validate these fields on every
+PATCH — missing fields silently result in incomplete records that may break downstream tooling
+(e.g. the deploy scanner checks for <code>pr</code> when picking up <code>pr_open</code> tasks).
+Always set the required fields on the relevant transition.</p></div>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="/docs/prs-api">PRs API</a> — PR review state tracking: <code>GET</code>/<code>POST</code>/<code>PATCH</code> <code>/prs</code>, claim, heartbeat, patch cycles, and release</li>
+<li><a href="/docs/reference">Configuration Reference</a> — <code>SHIPWRIGHT_TASK_STORE_URL</code>, <code>SHIPWRIGHT_TASK_STORE_TOKEN</code>, and all other env vars</li>
+<li><a href="/docs/the-agent">The Agent</a> — how the agent runtime consumes this API to run the dev-task loop</li>
+</ul>  <!-- Prev/next navigation -->  </main> <!-- TOC (on-page, static) --> <aside style="min-width: 0;" data-astro-cid-mw7aashj> <nav aria-label="On this page" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.75rem;" data-astro-cid-mw7aashj>
+On this page
+</p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="#authentication" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Authentication </a> </li><li data-astro-cid-mw7aashj> <a href="#token-scoping" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Token scoping </a> </li><li data-astro-cid-mw7aashj> <a href="#task-status-lifecycle" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Task Status Lifecycle </a> </li><li data-astro-cid-mw7aashj> <a href="#endpoints" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Endpoints </a> </li><li data-astro-cid-mw7aashj> <a href="#get-tasks" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> GET /tasks </a> </li><li data-astro-cid-mw7aashj> <a href="#post-tasks" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> POST /tasks </a> </li><li data-astro-cid-mw7aashj> <a href="#post-tasksbulk" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> POST /tasks/bulk </a> </li><li data-astro-cid-mw7aashj> <a href="#get-tasksdistinct" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> GET /tasks/distinct </a> </li><li data-astro-cid-mw7aashj> <a href="#get-tasksid" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> GET /tasks/:id </a> </li><li data-astro-cid-mw7aashj> <a href="#patch-tasksid" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> PATCH /tasks/:id </a> </li><li data-astro-cid-mw7aashj> <a href="#delete-tasksid" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> DELETE /tasks/:id </a> </li><li data-astro-cid-mw7aashj> <a href="#post-tasksidclaim" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> POST /tasks/:id/claim </a> </li><li data-astro-cid-mw7aashj> <a href="#post-tasksidheartbeat" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> POST /tasks/:id/heartbeat </a> </li><li data-astro-cid-mw7aashj> <a href="#post-tasksidcomplete" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> POST /tasks/:id/complete </a> </li><li data-astro-cid-mw7aashj> <a href="#post-tasksidfail" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> POST /tasks/:id/fail </a> </li><li data-astro-cid-mw7aashj> <a href="#post-tasksidrelease" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> POST /tasks/:id/release </a> </li><li data-astro-cid-mw7aashj> <a href="#readytrue-semantics" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> ?ready=true Semantics </a> </li><li data-astro-cid-mw7aashj> <a href="#diagnosing-empty-readytrue-results" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Diagnosing empty ?ready=true results </a> </li><li data-astro-cid-mw7aashj> <a href="#task-schema" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Task Schema </a> </li><li data-astro-cid-mw7aashj> <a href="#core-fields" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Core fields </a> </li><li data-astro-cid-mw7aashj> <a href="#status-transition-fields" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Status transition fields </a> </li><li data-astro-cid-mw7aashj> <a href="#claim-and-liveness-fields" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Claim and liveness fields </a> </li><li data-astro-cid-mw7aashj> <a href="#hitl-fields" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> HITL fields </a> </li><li data-astro-cid-mw7aashj> <a href="#execution-metrics-set-by-agent-on-completion" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Execution metrics (set by agent on completion) </a> </li><li data-astro-cid-mw7aashj> <a href="#system-fields" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> System fields </a> </li><li data-astro-cid-mw7aashj> <a href="#http-status-codes" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> HTTP Status Codes </a> </li><li data-astro-cid-mw7aashj> <a href="#curl-examples-full-happy-path-lifecycle" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Curl Examples: Full Happy-Path Lifecycle </a> </li><li data-astro-cid-mw7aashj> <a href="#required-fields-per-status-transition" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Required Fields Per Status Transition </a> </li><li data-astro-cid-mw7aashj> <a href="#see-also" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> See also </a> </li> </ul> </nav> </aside> </div> </div> <!-- Footer --> <footer class="sw-container relative z-10 py-12" data-astro-cid-mw7aashj> <div class="flex flex-col gap-6 pt-8 sm:flex-row sm:items-center sm:justify-between" style="border-top: 1px solid var(--sw-color-border-subtle);" data-astro-cid-mw7aashj> <p class="sw-label flex items-center gap-2" data-astro-cid-mw7aashj> <img src="/shipwright-icon.svg" alt="" width="20" height="20" class="rounded" data-astro-cid-mw7aashj>
+Shipwright Harness · MIT-licensed · © 2026 </p> <nav class="flex flex-wrap gap-x-6 gap-y-2 text-sm" aria-label="Footer" data-astro-cid-mw7aashj> <a href="https://github.com/app-vitals/shipwright" data-astro-cid-mw7aashj>GitHub</a> <a href="https://github.com/app-vitals/shipwright/blob/main/LICENSE" data-astro-cid-mw7aashj>MIT License</a> <a href="https://claude.com/claude-code" data-astro-cid-mw7aashj>Claude Code</a> <a href="https://github.com/app-vitals/shipwright/discussions" data-astro-cid-mw7aashj>GitHub Discussions</a> </nav> </div> </footer> </body></html>
