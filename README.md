@@ -172,7 +172,7 @@ Shipwright enforces a four-layer test architecture (unit / integration / smoke /
 
 ## Configuration
 
-All configuration options — plugin env vars, `.shipwright.json` keys, agent env vars, and policy fields — are documented in [`docs/configuration.md`](./docs/configuration.md).
+All configuration options — plugin env vars, agent env vars, and policy fields — are documented in [`docs/configuration.md`](./docs/configuration.md).
 
 ## Contributing
 
