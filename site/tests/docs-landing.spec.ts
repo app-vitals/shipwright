@@ -1,10 +1,11 @@
 import { expect, test } from "@playwright/test";
+import { expectNoRuntimeJsBeyondAnalytics } from "./helpers";
 
 // Fulfill external font CDN requests immediately so the page's 'load' event
 // fires even when CI can't reach external networks.
 test.beforeEach(async ({ page }) => {
   await page.route(
-    /fonts\.googleapis\.com|fonts\.gstatic\.com|api\.fontshare\.com/,
+    /fonts\.googleapis\.com|fonts\.gstatic\.com|api\.fontshare\.com|googletagmanager\.com/,
     (route) =>
       route.fulfill({ status: 200, contentType: "text/css", body: "" }),
   );
@@ -53,8 +54,9 @@ test("each persona card has a link with href starting with /docs/", async ({
   }
 });
 
-test("/docs landing page ships zero <script> tags", async ({ page }) => {
+test("/docs landing page ships no runtime JS beyond the analytics tag", async ({
+  page,
+}) => {
   await page.goto("/docs");
-  const scriptCount = await page.locator("script").count();
-  expect(scriptCount).toBe(0);
+  await expectNoRuntimeJsBeyondAnalytics(page);
 });

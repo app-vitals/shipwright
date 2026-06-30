@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 // fires even when CI can't reach external networks.
 test.beforeEach(async ({ page }) => {
   await page.route(
-    /fonts\.googleapis\.com|fonts\.gstatic\.com|api\.fontshare\.com/,
+    /fonts\.googleapis\.com|fonts\.gstatic\.com|api\.fontshare\.com|googletagmanager\.com/,
     (route) =>
       route.fulfill({ status: 200, contentType: "text/css", body: "" }),
   );
