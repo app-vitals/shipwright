@@ -43,7 +43,6 @@ at startup):
 ```json
 {
   "env": {
-    "SHIPWRIGHT_CONFIG": "<ABSOLUTE_PATH_TO_THIS_REPO>/.shipwright.json",
     "SHIPWRIGHT_REPO_DIR": "<ABSOLUTE_PATH_TO_THE_PARENT_DIR_OF_THIS_REPO>",
     "SHIPWRIGHT_REPOS_DIR": "<ABSOLUTE_PATH_TO_A_DIR_CONTAINING_ONLY_THIS_REPO_CLONE>",
     "SHIPWRIGHT_WORKTREE_DIR": "<ABSOLUTE_PATH_TO_A_WORKTREES_DIR>",
@@ -52,13 +51,11 @@ at startup):
 }
 ```
 
-- `SHIPWRIGHT_CONFIG` selects the **GitHub Issues** task store. Unset ⇒ silent fallback to a
-  local JSON store ⇒ no issues are read. There is **no auto-discovery**.
 - `SHIPWRIGHT_REPO_DIR` is the **parent** of this repo, so `/shipwright:dev-task` resolves
   `$SHIPWRIGHT_REPO_DIR/<repo>` instead of the missing `~/src/<repo>` (its worktree step fails
   without this).
 - `SHIPWRIGHT_REPOS_DIR` is how the **PR gates** (`check-deploy` / `check-review` / `check-patch`)
-  discover which repo to query. They do **not** read `.shipwright.json` — `resolveRepos()` scans
+  discover which repo to query. `resolveRepos()` scans
   `<WORKSPACE_PATH>/repos/` then `$SHIPWRIGHT_REPOS_DIR` for git clones and parses each
   `.git/config` origin URL. **Unset ⇒ it returns `[]` and the gates silently fall back to a
   hardcoded internal default repo (not yours)** — i.e. they query the wrong repo and never see your PRs
@@ -75,8 +72,8 @@ at startup):
 
 **Verify before looping:**
 ```bash
-echo "$SHIPWRIGHT_CONFIG"; echo "$WORKSPACE_PATH"; ls -d "$SHIPWRIGHT_REPO_DIR"/* >/dev/null && echo "repo dir ok"
-# Gate repo resolution: SHIPWRIGHT_REPOS_DIR must contain a clone whose origin matches .shipwright.json.
+echo "$WORKSPACE_PATH"; ls -d "$SHIPWRIGHT_REPO_DIR"/* >/dev/null && echo "repo dir ok"
+# Gate repo resolution: SHIPWRIGHT_REPOS_DIR must contain a clone of this repo.
 # If this prints nothing, the gates will silently query a hardcoded default repo instead of yours.
 for d in "$SHIPWRIGHT_REPOS_DIR"/*/.git/config; do grep -h 'url = ' "$d" 2>/dev/null; done
 D=$(find ~/.claude/plugins/cache -maxdepth 5 -name task_store.ts -path '*/shipwright/*' | head -1 | xargs dirname)
@@ -96,7 +93,7 @@ PLUGIN=$(find ~/.claude/plugins/cache -maxdepth 5 -name task_store.ts -path '*/s
 ```
 
 **Preflight (first tick only):** `bun "$PLUGIN/task_store.ts" doctor` → must report the github
-backend, else **STOP** (`SHIPWRIGHT_CONFIG` unset — see Prerequisites).
+backend, else **STOP** (task store not configured — see Prerequisites).
 
 **1. Cheap gates** — capture only an exit code / count; no `gh` parsing or state inspection by the
 model (the scripts do that and return a signal). The two `check-*` scripts need `WORKSPACE_PATH`
@@ -170,7 +167,7 @@ start a fresh run.
   (The `/shipwright:patch` *command* uses the Actions API correctly — only the precheck gate is blind.)
 - **Gates are token-free, not API-free:** `check-deploy.ts` / `check-review-patch.ts` and the
   `task_store.ts query --ready` count make `gh`/GraphQL calls and read the task store, so they
-  need `SHIPWRIGHT_CONFIG` + `WORKSPACE_PATH` set and `gh` authenticated (all covered by
+  need `WORKSPACE_PATH` set and `gh` authenticated (all covered by
   Prerequisites). They cost no model tokens — that's the point — but they do count against GitHub
   API rate limits, so the idle
   backoff also keeps API usage sane.

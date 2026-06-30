@@ -8,20 +8,13 @@ The Shipwright task store is the backing database for the plan-execute-review lo
 | `github` | GitHub Issues in a repo | Team collaboration with GitHub as the source of truth |
 | `jira` | Jira project issues | Teams already using Jira for project tracking |
 
-Config is resolved at startup using a four-step discovery chain:
-
-0. Check `SHIPWRIGHT_TASK_STORE` env var — takes full precedence when set (see [docs/configuration.md](configuration.md))
-1. Walk up from `cwd` looking for `.shipwright.json`
-2. Fall back to the `SHIPWRIGHT_CONFIG` env var (path to a JSON config file)
-3. Default to the JSON backend (no config needed)
-
-> **Note for agent deployments:** Standard agent deployments configure the task store via env vars managed through the admin service — `.shipwright.json` is a local fallback for running the plugin outside the agent (e.g. manual CLI use or local development). You do not need a `.shipwright.json` for a production agent.
+Config is resolved at startup using env vars (see [docs/configuration.md](configuration.md)). When no backend env vars are set, Shipwright defaults to the JSON backend.
 
 ---
 
 ## JSON backend (default)
 
-The JSON backend requires no configuration. When no `.shipwright.json` is found and `SHIPWRIGHT_CONFIG` is not set, Shipwright automatically uses `state/todos.json` in the process working directory.
+The JSON backend requires no configuration. When no backend env vars are set, Shipwright automatically uses `state/todos.json` in the process working directory.
 
 ### Quick start
 
@@ -37,7 +30,6 @@ Expected `doctor` output:
 
 ```
 backend: json
-config: default (no SHIPWRIGHT_CONFIG set)
 token scope: N/A (JSON backend)
 [ok]  storage: /path/to/state/todos.json present
 [ok]  data: duplicate-ids — No duplicate IDs found
@@ -86,23 +78,12 @@ The GitHub backend stores tasks as GitHub Issues. Each issue carries a `status:*
 
 ### Configuration
 
-Create `.shipwright.json` in your repo root (or any directory in the walk-up path):
+Set the following env vars to select the GitHub backend:
 
-```json
-{
-  "taskStore": "github",
-  "github": {
-    "owner": "your-org",
-    "repo": "your-repo"
-  }
-}
-```
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `taskStore` | yes | Must be `"github"` |
-| `github.owner` | yes | GitHub organization or user name |
-| `github.repo` | yes | Repository name |
+| Env var | Required | Description |
+|---------|----------|-------------|
+| `SHIPWRIGHT_GITHUB_OWNER` | yes | GitHub organization or user name |
+| `SHIPWRIGHT_GITHUB_REPO` | yes | Repository name |
 
 ### Quick start
 
@@ -146,43 +127,12 @@ Authentication uses HTTP Basic: `base64(JIRA_EMAIL:JIRA_API_TOKEN)`.
 
 ### Configuration
 
-Create `.shipwright.json` in your repo root:
+Set the following env vars to select the Jira backend:
 
-```json
-{
-  "taskStore": "jira",
-  "jira": {
-    "baseUrl": "https://yourorg.atlassian.net",
-    "projectKey": "SHIP"
-  }
-}
-```
-
-Full example with all optional fields:
-
-```json
-{
-  "taskStore": "jira",
-  "jira": {
-    "baseUrl": "https://yourorg.atlassian.net",
-    "projectKey": "SHIP",
-    "readyJql": "project = \"SHIP\" AND labels = \"shipwright-session\" AND status = \"To Do\" ORDER BY created ASC",
-    "statusMap": {
-      "Waiting": "pending",
-      "In Development": "in_progress",
-      "Code Review": "pr_open"
-    }
-  }
-}
-```
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `taskStore` | yes | Must be `"jira"` |
-| `jira.baseUrl` | yes | Base URL of your Jira instance (no trailing slash) |
-| `jira.projectKey` | yes | Jira project key, e.g. `SHIP` |
-| `jira.readyJql` | no | Custom JQL to find tasks; overrides the default query (see below) |
-| `jira.statusMap` | no | Override or extend the default Jira→Shipwright status mapping |
+| Env var | Required | Description |
+|---------|----------|-------------|
+| `JIRA_BASE_URL` | yes | Base URL of your Jira instance (no trailing slash) |
+| `JIRA_PROJECT_KEY` | yes | Jira project key, e.g. `SHIP` |
 
 ### Default status map
 
@@ -204,17 +154,7 @@ Shipwright maps Jira status names to its internal `TaskStatus` values. Custom en
 | `Won't Do` | `cancelled` |
 | `Cancelled` | `cancelled` |
 
-If your Jira project uses non-standard status names, add them to `statusMap`. For example, if your project uses `"In Development"` instead of `"In Progress"`:
-
-```json
-{
-  "jira": {
-    "statusMap": {
-      "In Development": "in_progress"
-    }
-  }
-}
-```
+If your Jira project uses non-standard status names, configure them via `statusMap` in your task store configuration.
 
 ### Default JQL query
 
@@ -228,14 +168,10 @@ The `readyJql` field overrides this entire query. Use it to narrow scope (e.g. a
 
 > **Important:** The default JQL has no status clause — status filtering is applied client-side after the fetch. If you provide `readyJql`, include explicit status clauses (e.g. `AND status in ("To Do", "In Progress")`). Without them, the query will fetch **all** issues labelled `shipwright-session` regardless of status, which can be expensive on large Jira instances.
 
-Example — limit to the current sprint and only pending tasks:
+Example JQL — limit to the current sprint and only pending tasks:
 
-```json
-{
-  "jira": {
-    "readyJql": "project = \"SHIP\" AND labels = \"shipwright-session\" AND sprint in openSprints() AND status = \"To Do\" ORDER BY created ASC"
-  }
-}
+```
+project = "SHIP" AND labels = "shipwright-session" AND sprint in openSprints() AND status = "To Do" ORDER BY created ASC
 ```
 
 ### Human-in-the-loop (HITL) filtering
@@ -259,11 +195,11 @@ Jira's own status field is authoritative for `TaskStatus` — it overrides whate
 ### Quick start
 
 ```bash
-# Export credentials
+# Export credentials and backend config
 export JIRA_EMAIL="you@example.com"
 export JIRA_API_TOKEN="your-api-token"
-
-# Create .shipwright.json (see above)
+export JIRA_BASE_URL="https://yourorg.atlassian.net"
+export JIRA_PROJECT_KEY="SHIP"
 
 # Run setup to verify the project exists and credentials are valid
 bun plugins/shipwright/scripts/task_store.ts setup
@@ -371,8 +307,8 @@ Jira project not found: "SHIP" — verify jira.projectKey in your config
 ```
 
 Causes:
-- `jira.projectKey` in `.shipwright.json` does not match the actual project key
-- The project exists in a different Jira instance — verify `jira.baseUrl`
+- `JIRA_PROJECT_KEY` does not match the actual project key
+- The project exists in a different Jira instance — verify `JIRA_BASE_URL`
 - The project has been archived or deleted
 
 To find the correct project key: open the project in Jira and look at the URL (`/projects/KEY/...`) or go to **Project settings > Details**.
@@ -389,4 +325,4 @@ If `task_store.ts query --status pending` returns an empty array even though iss
 
 4. **Status not in map** — If your Jira project uses custom status names not in the default map (and not added to `statusMap`), tasks will default to `pending` regardless of the actual Jira status. This does not prevent tasks from appearing, but status-filtered queries may behave unexpectedly.
 
-5. **Wrong backend active** — Run `bun plugins/shipwright/scripts/task_store.ts doctor` to confirm the Jira backend is active. If it reports `backend: json`, the `.shipwright.json` file is not being discovered. Check that the file is in the current directory or a parent directory, and that the JSON is valid.
+5. **Wrong backend active** — Run `bun plugins/shipwright/scripts/task_store.ts doctor` to confirm the Jira backend is active. If it reports `backend: json`, check that `JIRA_BASE_URL`, `JIRA_PROJECT_KEY`, `JIRA_EMAIL`, and `JIRA_API_TOKEN` are all set in the environment.

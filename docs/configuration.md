@@ -7,10 +7,10 @@
 When the same option can be set multiple ways, resolution order is:
 
 ```
-env var  >  .shipwright.json  >  built-in default
+env var  >  built-in default
 ```
 
-**Env vars are the primary configuration path.** Managed Shipwright agents must use env vars — they are injected by the admin service and are the only supported config mechanism for deployed agents. `.shipwright.json` is a local fallback for use when you install and run the Shipwright plugin directly in Claude Code (or a compatible system) without a managed agent. Do not commit or rely on `.shipwright.json` in a managed agent deployment.
+**Env vars are the only configuration path.** All Shipwright configuration is supplied via env vars — injected by the admin service for managed agents, or set in the local environment for direct plugin use.
 
 ---
 
@@ -22,51 +22,18 @@ Configuration for the Shipwright Claude Code plugin (`plugins/shipwright/`). The
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `SHIPWRIGHT_TASK_STORE` | `string` | — | Selects the task store backend (`github`, `jira`, or `json`). When set, takes precedence over all file-based config — the `.shipwright.json` walk-up and `SHIPWRIGHT_CONFIG` are skipped entirely. |
-| `SHIPWRIGHT_GITHUB_OWNER` | `string` | — | GitHub organization or user name. Required when `SHIPWRIGHT_TASK_STORE=github`. |
-| `SHIPWRIGHT_GITHUB_REPO` | `string` | — | GitHub repository name. Required when `SHIPWRIGHT_TASK_STORE=github`. |
-| `JIRA_BASE_URL` | `string` | — | Base URL of the Jira instance (e.g. `https://example.atlassian.net`). Required when `SHIPWRIGHT_TASK_STORE=jira`. |
-| `JIRA_PROJECT_KEY` | `string` | — | Jira project key (e.g. `SHIP`). Required when `SHIPWRIGHT_TASK_STORE=jira`. |
+| `SHIPWRIGHT_GITHUB_OWNER` | `string` | — | GitHub organization or user name. Required when using the GitHub backend. |
+| `SHIPWRIGHT_GITHUB_REPO` | `string` | — | GitHub repository name. Required when using the GitHub backend. |
+| `JIRA_BASE_URL` | `string` | — | Base URL of the Jira instance (e.g. `https://example.atlassian.net`). Required when using the Jira backend. |
+| `JIRA_PROJECT_KEY` | `string` | — | Jira project key (e.g. `SHIP`). Required when using the Jira backend. |
 | `SHIPWRIGHT_REPOS_DIR` | `string` | `<AGENT_HOME>/workspace/repos` | Override the workspace repos directory. Used by scripts that need to know where checked-out repos live. |
 | `SHIPWRIGHT_WORKTREE_DIR` | `string` | `<AGENT_HOME>/workspace/worktrees` | Override the workspace worktrees directory. |
 | `SHIPWRIGHT_DEV_CHAT` | `bool` | `false` | Enables the unauthenticated `POST /chat` endpoint on the agent. **Must not be set in production** (`NODE_ENV=production` blocks it via `chat-guard.ts`). |
-| `SHIPWRIGHT_CONFIG` | `string` | — | Explicit path to `.shipwright.json` when auto-discovery (walk-up from cwd) is not suitable. Falls back to local JSON state if neither this nor the walk-up finds a file. |
 | `GH_CMD` | `string` | `gh` | Override the `gh` CLI executable. Useful in environments where `gh` is installed to a non-default path. |
 | `AGENT_HOME` | `string` | `~/.shipwright-agent` | Persistent storage root for workspace files, mise caches, and `~/.claude`. Set in the agent container; also used by plugin scripts for workspace discovery. |
 | `WORKSPACE_PATH` | `string` | — | Direct workspace path override. Takes precedence over `AGENT_HOME`-based discovery when set. |
 | `JIRA_API_TOKEN` | `string` | — | API token for Jira authentication. Required when `taskStore` is `"jira"`. Env-var-only (secret). |
 | `JIRA_EMAIL` | `string` | — | Email address for Jira authentication. Required when `taskStore` is `"jira"`. |
-
-### `.shipwright.json`
-
-`.shipwright.json` is for use when you **install and run the Shipwright plugin in Claude Code (or a compatible system)** directly — without a managed Shipwright agent. Managed agents receive all configuration via env vars from the admin service; they do not read `.shipwright.json`.
-
-The config file lives at `state/shipwright.config.json` (relative to the resolved workspace path). Backend resolution (`plugins/shipwright/scripts/check-helpers.ts` → `resolveTaskStoreBackend`):
-1. Explicit `taskStore` in `state/shipwright.config.json` (`"shipwright"` | `"github"`).
-2. Otherwise, when both `SHIPWRIGHT_TASK_STORE_URL` and `SHIPWRIGHT_TASK_STORE_TOKEN` are set → `"shipwright"`. This is how managed agents (the admin provisioner injects only those two env vars) **and** env-configured local installs select the HTTP store.
-3. Otherwise → `"github"`.
-
-Connection details (URL/token) always come from env, never the config file — so the file is safe to commit.
-
-#### Task store keys
-
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `taskStore` | `"shipwright" \| "github"` | inferred (see resolution above) | Backend for the task store. `"shipwright"` = the HTTP Shipwright task-store service (the only backend with a runtime task-data client). `"github"` = GitHub Issues; used today only for PR-repo discovery, not as a task-data source. |
-| `github.owner` | `string` | required if `taskStore="github"` | GitHub org or user for PR-repo discovery. |
-| `github.repo` | `string` | required if `taskStore="github"` | GitHub repo name for PR-repo discovery. |
-
-> **Not yet implemented:** `taskStore: "jira"` and `taskStore: "json"` (and the `jira.*` keys / `SHIPWRIGHT_TASK_STORE`, `JIRA_*` env vars) are reserved for planned pluggable backends. There is no Jira or JSON task-data client in the code today; only `"shipwright"` and `"github"` are recognized by `resolveTaskStoreBackend`.
-
-#### Minimal example
-
-```json
-{
-  "taskStore": "shipwright"
-}
-```
-
-with `SHIPWRIGHT_TASK_STORE_URL` and `SHIPWRIGHT_TASK_STORE_TOKEN` set in the environment.
 
 ---
 

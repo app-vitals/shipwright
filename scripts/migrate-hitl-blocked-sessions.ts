@@ -38,7 +38,6 @@
  *
  * Environment:
  *   GH_TOKEN       GitHub token for gh CLI (required if using GitHub backend)
- *   SHIPWRIGHT_CONFIG  Path to .shipwright.json (defaults to cwd)
  */
 
 import { spawn } from "node:child_process";

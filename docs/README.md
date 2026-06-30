@@ -13,7 +13,7 @@ Shipwright Harness is the open-source autonomous delivery system in your own env
 - **[Shipwright agent](./agent.md)** — the autonomous runner: runtime + admin APIs, data model, and environment.
 - **[Deploying to Kubernetes](./deploy-kubernetes.md)** — Helm chart deployment guides for Minikube, GKE (Gateway API + cert-manager), and EKS (ALB), plus the agent provisioning model and auth modes.
 - **[Test system](./test-readiness/test-system.md)** — the full authoritative test blueprint (source for [Testing](./testing.md)).
-- **[Configuration](./configuration.md)** — all configuration options: plugin env vars, `.shipwright.json` keys, agent env vars, and policy fields.
+- **[Configuration](./configuration.md)** — all configuration options: plugin env vars, agent env vars, and policy fields.
 
 ## Command reference
 
