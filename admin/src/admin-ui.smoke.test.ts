@@ -902,7 +902,7 @@ describe("admin UI — authenticated pages", () => {
       expect(html).not.toContain('<div class="card-title">Env Vars</div>');
     });
 
-    it("self-hosted agent (selfHosted=true) does NOT show System crons", async () => {
+    it("self-hosted agent (selfHosted=true) shows System crons with self-hosted notice", async () => {
       const app = createAdminUIApp(
         makeMockDeps({
           prisma: {
@@ -988,12 +988,13 @@ describe("admin UI — authenticated pages", () => {
       });
       expect(res.status).toBe(200);
       const html = await res.text();
-      // System crons section should not be present — check that there's no System label in the first table of cron jobs
-      const systemIndex = html.indexOf(">System<");
-      expect(systemIndex).toBe(-1);
+      // System crons section should be present for self-hosted agents
+      expect(html).toContain(">System<");
+      // Self-hosted notice should appear in the Crons card
+      expect(html).toContain("Crons fire only while the local agent service is running");
     });
 
-    it("self-hosted agent (selfHosted=true) does NOT show Tools card", async () => {
+    it("self-hosted agent (selfHosted=true) shows Tools card", async () => {
       const app = createAdminUIApp(
         makeMockDeps({
           prisma: {
@@ -1067,10 +1068,10 @@ describe("admin UI — authenticated pages", () => {
       });
       expect(res.status).toBe(200);
       const html = await res.text();
-      // Tools card title should not appear
-      expect(html).not.toContain('<div class="card-title">Tools</div>');
-      // Tools should not be rendered
-      expect(html).not.toContain("Bash(git:*)");
+      // Tools card should appear for self-hosted agents
+      expect(html).toContain('<div class="card-title">Tools</div>');
+      // Tools should be rendered
+      expect(html).toContain("Bash(git:*)");
     });
 
     it("self-hosted agent (selfHosted=true) shows Local CLI access card with link to tokens", async () => {
