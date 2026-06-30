@@ -125,6 +125,16 @@ describe("dev-task.md Step 9b — structured check data collection", () => {
   });
 });
 
+describe("dev-task.md Step 10a — execution metric fields in PATCH body", () => {
+  it("includes ciFixAttempts in the Step 10a PATCH body", () => {
+    expect(devTaskContent.includes("ciFixAttempts")).toBe(true);
+  });
+
+  it("includes simplifyTotal in the Step 10a PATCH body", () => {
+    expect(devTaskContent.includes("simplifyTotal")).toBe(true);
+  });
+});
+
 describe("metrics.md CI Gate section — check-name grouping", () => {
   it("includes check-name grouping instruction text", () => {
     const hasGrouping =

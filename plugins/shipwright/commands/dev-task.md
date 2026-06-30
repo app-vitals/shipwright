@@ -814,7 +814,7 @@ PR_CREATED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   -H "Content-Type: application/json" \
   "$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}" \
-  -d "{\"status\": \"pr_open\", \"pr\": {pr_number}, \"prCreatedAt\": \"$PR_CREATED_AT\"}" | jq .
+  -d "{\"status\": \"pr_open\", \"pr\": {pr_number}, \"prCreatedAt\": \"$PR_CREATED_AT\", \"ciFixAttempts\": {ci_attempt}, \"simplifyTotal\": {simplify_total}, \"simplifyDry\": {simplify_dry}, \"simplifyDeadCode\": {simplify_dead_code}, \"simplifyNaming\": {simplify_naming}, \"simplifyComplexity\": {simplify_complexity}, \"simplifyConsistency\": {simplify_consistency}}" | jq .
 ```
 
 ### 10d. Print Handoff
