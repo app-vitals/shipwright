@@ -304,6 +304,11 @@ function makeMockDeps(): AdminDeps {
         createdAt: new Date(),
         updatedAt: new Date(),
       }),
+      queryStats: async () => ({
+        totals: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, total: 0 },
+        byAgent: [],
+        daily: [],
+      }),
     },
     agentCronRunService: {
       create: async () => ({

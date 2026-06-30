@@ -53,6 +53,7 @@ import {
   AgentSummarySchema,
   AgentTokenSchema,
   AgentToolSchema,
+  ChatTokenStatsSchema,
   CreateAgentBodySchema,
   CreateAgentCronJobBodySchema,
   CreateAgentCronRunBodySchema,
@@ -113,7 +114,7 @@ export interface AdminDeps {
     AgentPluginService,
     "list" | "add" | "remove" | "removeByName"
   >;
-  agentChatTokenService: Pick<AgentChatTokenService, "upsertDaily">;
+  agentChatTokenService: Pick<AgentChatTokenService, "upsertDaily" | "queryStats">;
   prisma: Pick<PrismaClient, "agent">;
   /**
    * Provisions (and tears down) the workload backing an agent. Defaults to a
@@ -725,6 +726,30 @@ const cronRunTokenStatsRoute = createRoute({
   },
 });
 
+const chatTokenDailyStatsQuerySchema = z
+  .object({
+    from: z.string().optional().openapi({ example: "2026-01-01" }),
+    to: z.string().optional().openapi({ example: "2026-02-01" }),
+  })
+  .openapi("ChatTokenDailyStatsQuery");
+
+const chatTokenDailyStatsRoute = createRoute({
+  method: "get",
+  path: "/agents/chat-tokens/daily/stats",
+  request: {
+    query: chatTokenDailyStatsQuerySchema,
+  },
+  responses: {
+    200: {
+      description:
+        "Aggregated chat token daily stats across all agents",
+      content: { "application/json": { schema: ChatTokenStatsSchema } },
+    },
+    401: { description: "Unauthorized", ...jsonError },
+    403: { description: "Forbidden — requires admin scope", ...jsonError },
+  },
+});
+
 // ─── App factory ──────────────────────────────────────────────────────────────
 
 export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
@@ -1308,6 +1333,20 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     }
     const { from, to } = c.req.valid("query");
     const stats = await agentCronRunStatsService.query(from, to);
+    return c.json(stats, 200);
+  });
+
+  // GET /agents/chat-tokens/daily/stats — aggregated daily chat token stats
+  // Static path "chat-tokens" must be registered before any /:id routes to
+  // prevent "chat-tokens" from being matched as an agentId.
+  app.openapi(chatTokenDailyStatsRoute, async (c) => {
+    if (c.get("isAdmin") !== true) {
+      throw new ForbiddenError(
+        "Only admin bearers and session users can access cross-agent stats",
+      );
+    }
+    const { from, to } = c.req.valid("query");
+    const stats = await agentChatTokenService.queryStats(from, to);
     return c.json(stats, 200);
   });
 

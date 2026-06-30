@@ -302,6 +302,11 @@ function makeMockDeps(): AdminDeps {
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
       }),
+      queryStats: async () => ({
+        totals: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, total: 0 },
+        byAgent: [],
+        daily: [],
+      }),
     },
     prisma: {
       agent: {

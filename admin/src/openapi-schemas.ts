@@ -587,6 +587,21 @@ export const CronRunTokenStatsSchema = z
 
 export type CronRunTokenStatsType = z.infer<typeof CronRunTokenStatsSchema>;
 
+/**
+ * Response shape for GET /agents/chat-tokens/daily/stats.
+ * Matches the ChatTokenStats interface in admin-metrics-client.ts exactly.
+ * No byCron or byModel — chat tokens are not cron-scoped.
+ */
+export const ChatTokenStatsSchema = z
+  .object({
+    totals: TokenAggregateSchema,
+    byAgent: z.array(KeyedTokenAggregateSchema),
+    daily: z.array(DailyTokenAggregateSchema),
+  })
+  .openapi("ChatTokenStats");
+
+export type ChatTokenStatsType = z.infer<typeof ChatTokenStatsSchema>;
+
 // ─── AgentConfig (runtime GET /agents/:id/config response) ───────────────────
 
 export const AgentConfigPluginSchema = z
