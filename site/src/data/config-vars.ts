@@ -6,16 +6,12 @@ export interface ConfigVar {
 }
 
 export const pluginEnvVars: ConfigVar[] = [
-  { name: "JIRA_BASE_URL", type: "string", def: "—", desc: "Base URL of the Jira instance (e.g. https://example.atlassian.net). Required when using the Jira backend." },
-  { name: "JIRA_PROJECT_KEY", type: "string", def: "—", desc: "Jira project key (e.g. SHIP). Required when using the Jira backend." },
-  { name: "SHIPWRIGHT_REPOS_DIR", type: "string", def: "<AGENT_HOME>/workspace/repos", desc: "Override the workspace repos directory." },
-  { name: "SHIPWRIGHT_WORKTREE_DIR", type: "string", def: "<AGENT_HOME>/workspace/worktrees", desc: "Override the workspace worktrees directory." },
   { name: "SHIPWRIGHT_DEV_CHAT", type: "bool", def: "false", desc: "Enables the unauthenticated POST /chat endpoint. Must not be set in production." },
   { name: "GH_CMD", type: "string", def: "gh", desc: "Override the gh CLI executable. Useful in environments where gh is installed to a non-default path." },
-  { name: "AGENT_HOME", type: "string", def: "~/.shipwright-agent", desc: "Persistent storage root for workspace files, mise caches, and ~/.claude." },
+  { name: "AGENT_HOME", type: "string", def: "/data/agent-home", desc: "Persistent storage root for workspace files, mise caches, and ~/.claude." },
   { name: "WORKSPACE_PATH", type: "string", def: "—", desc: "Direct workspace path override. Takes precedence over AGENT_HOME-based discovery when set." },
-  { name: "JIRA_API_TOKEN", type: "string", def: "—", desc: "API token for Jira authentication. Required when using the Jira backend. Env-var-only (secret)." },
-  { name: "JIRA_EMAIL", type: "string", def: "—", desc: "Email address for Jira authentication. Required when using the Jira backend." },
+  { name: "SHIPWRIGHT_TASK_STORE_URL", type: "string", def: "—", desc: "Base URL of the Shipwright task-store service. Injected into the agent Deployment by the admin provisioner; agents use this to authenticate with the task-store API when claiming tasks or updating status." },
+  { name: "SHIPWRIGHT_TASK_STORE_TOKEN", type: "string", def: "—", desc: "Bearer token for task-store API access. Minted per-agent by the admin provisioner; used by agents and plugin scripts to claim tasks, update status, and query the task queue. Env-var-only (secret)." },
 ];
 
 export const agentClaudeVars: ConfigVar[] = [
