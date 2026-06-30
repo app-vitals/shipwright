@@ -4,14 +4,15 @@
  *
  * Builds a TaskStoreProvider from the Recorded test doubles
  * (RecordedTaskStoreClient + RecordedAdminMetricsClient) wrapped around canned
- * cassette data and a FIXED clock, so METRICS_OFFLINE=true works with zero live
- * services. This replaces the PostHog fixture path (posthog-fixtures.ts) for
- * offline mode — the dashboard now renders task-store-derived metrics offline.
+ * cassette data and a clock anchored to call time, so METRICS_OFFLINE=true works
+ * with zero live services. This replaces the PostHog fixture path
+ * (posthog-fixtures.ts) for offline mode — the dashboard now renders
+ * task-store-derived metrics offline.
  *
- * The cassette dates are anchored two days before FIXED_NOW so the 7d/30d
- * presets (resolved against FIXED_NOW) always yield non-empty trends/features.
- * No test-helpers are imported here — this is a production module, so the clock
- * is defined inline.
+ * All cassette dates are expressed as offsets from `now` (computed once per
+ * createFixtureTaskStoreProvider() call) so the 7d/30d presets always yield
+ * non-empty trends regardless of when the stack is launched. No manual
+ * date-rolling is required.
  *
  * Usage:
  *   import { createFixtureTaskStoreProvider } from './fixtures/task-store-fixtures.ts';
@@ -34,135 +35,144 @@ import {
   RecordedTaskStoreClient,
 } from "../providers/task-store-recorded.ts";
 
-// Fixed "now" so offline output is deterministic and independent of wall-clock.
-const FIXED_NOW = "2026-06-10T12:00:00.000Z";
-const fixedClock: Clock = { now: () => new Date(FIXED_NOW) };
-
-// ─── Task cassette ────────────────────────────────────────────────────────────
-// Dates land on 2026-06-08 / 2026-06-09 — within the 7d/30d windows resolved
-// against FIXED_NOW (2026-06-10).
-
-const TASKS: TaskRecord[] = [
-  {
-    id: "QS-1.1",
-    status: "merged",
-    session: "cron",
-    hours: 5,
-    complexity: 3,
-    startedAt: "2026-06-08T08:00:00.000Z",
-    completedAt: "2026-06-08T12:00:00.000Z",
-    mergedAt: "2026-06-08T12:00:00.000Z",
-    prCreatedAt: "2026-06-08T11:00:00.000Z",
-    ciFixAttempts: 0,
-    simplifyTotal: 2,
-    addedAt: "2026-06-07T08:00:00.000Z",
-  },
-  {
-    id: "QS-1.2",
-    status: "done",
-    session: "cron",
-    hours: 3,
-    complexity: 2,
-    startedAt: "2026-06-09T09:00:00.000Z",
-    completedAt: "2026-06-09T15:00:00.000Z",
-    mergedAt: "2026-06-09T15:00:00.000Z",
-    prCreatedAt: "2026-06-09T14:00:00.000Z",
-    ciFixAttempts: 2,
-    simplifyTotal: 1,
-    addedAt: "2026-06-08T08:00:00.000Z",
-  },
-  {
-    id: "MQ-2.1",
-    status: "merged",
-    session: "cron",
-    hours: 8,
-    complexity: 4,
-    startedAt: "2026-06-08T10:00:00.000Z",
-    completedAt: "2026-06-09T10:00:00.000Z",
-    mergedAt: "2026-06-09T10:00:00.000Z",
-    prCreatedAt: "2026-06-09T09:00:00.000Z",
-    ciFixAttempts: 1,
-    simplifyTotal: 3,
-    addedAt: "2026-06-07T10:00:00.000Z",
-  },
-  {
-    id: "MQ-2.2",
-    status: "blocked",
-    session: "chat",
-    hours: 4,
-    complexity: 5,
-    startedAt: "2026-06-09T08:00:00.000Z",
-    addedAt: "2026-06-08T07:00:00.000Z",
-  },
-];
-
-// ─── PR cassette ──────────────────────────────────────────────────────────────
-
-const PRS: PrRecord[] = [
-  {
-    id: "pr-1",
-    taskId: "QS-1.1",
-    reviewState: "approved",
-    createdAt: "2026-06-08T11:00:00.000Z",
-    mergedAt: "2026-06-08T12:00:00.000Z",
-  },
-  {
-    id: "pr-2",
-    taskId: "QS-1.2",
-    reviewState: "posted",
-    createdAt: "2026-06-09T14:00:00.000Z",
-    mergedAt: "2026-06-09T15:00:00.000Z",
-  },
-];
-
-// ─── Token cassettes ──────────────────────────────────────────────────────────
-// Mirrors the agg() helper pattern from task-store-provider.integration.test.ts.
-
-const agg = (
-  input: number,
-  output: number,
-  cacheRead: number,
-  cacheCreation: number,
-  costUsd?: number,
-) => ({
-  input,
-  output,
-  cacheRead,
-  cacheCreation,
-  total: input + output + cacheRead + cacheCreation,
-  ...(costUsd !== undefined ? { costUsd } : {}),
-});
-
-const CRON_STATS: CronRunTokenStats = {
-  totals: agg(1000, 500, 200, 100, 1.5),
-  byAgent: [{ key: "agent-a", ...agg(1000, 500, 200, 100, 1.5) }],
-  byCron: [
-    { key1: "agent-a", key2: "ship-loop", ...agg(700, 350, 140, 70, 1.0) },
-    { key1: "agent-a", key2: "patrol", ...agg(300, 150, 60, 30, 0.5) },
-  ],
-  byModel: [
-    { key1: "agent-a", key2: "opus", ...agg(1000, 500, 200, 100, 1.5) },
-  ],
-  daily: [
-    { period: "2026-06-08", ...agg(600, 300, 120, 60, 0.9) },
-    { period: "2026-06-09", ...agg(400, 200, 80, 40, 0.6) },
-  ],
-};
-
-const CHAT_STATS: ChatTokenStats = {
-  totals: agg(400, 200, 80, 40, 0.6),
-  byAgent: [{ key: "agent-a", ...agg(400, 200, 80, 40, 0.6) }],
-  daily: [{ period: "2026-06-09", ...agg(400, 200, 80, 40, 0.6) }],
-};
-
 /**
- * Build an offline TaskStoreProvider over the recorded cassettes with a fixed
- * clock. Deterministic and dependency-free.
+ * Build an offline TaskStoreProvider over the recorded cassettes with a clock
+ * anchored to call time. Always yields non-empty KPI data for the 7d/30d
+ * presets regardless of when the stack is launched — no manual date-rolling
+ * required.
  */
 export function createFixtureTaskStoreProvider(): MetricsProvider {
+  const now = new Date();
+  const clock: Clock = { now: () => now };
+
+  // ISO timestamp N whole days + H hours before now.
+  const d = (offsetDays: number, offsetHours = 0): string =>
+    new Date(
+      now.getTime() - (offsetDays * 24 + offsetHours) * 60 * 60 * 1000,
+    ).toISOString();
+
+  // YYYY-MM-DD date string N days before now (for daily period keys).
+  const ds = (offsetDays: number): string => d(offsetDays).slice(0, 10);
+
+  // ─── Task cassette ────────────────────────────────────────────────────────────
+  // Tasks land 1–2 days ago so they always fall inside the 7d/30d windows.
+
+  const TASKS: TaskRecord[] = [
+    {
+      id: "QS-1.1",
+      status: "merged",
+      session: "cron",
+      hours: 5,
+      complexity: 3,
+      startedAt: d(2, 4),
+      completedAt: d(2),
+      mergedAt: d(2),
+      prCreatedAt: d(2, 1),
+      ciFixAttempts: 0,
+      simplifyTotal: 2,
+      addedAt: d(3, 4),
+    },
+    {
+      id: "QS-1.2",
+      status: "done",
+      session: "cron",
+      hours: 3,
+      complexity: 2,
+      startedAt: d(1, 3),
+      completedAt: d(1, 1),
+      mergedAt: d(1, 1),
+      prCreatedAt: d(1, 2),
+      ciFixAttempts: 2,
+      simplifyTotal: 1,
+      addedAt: d(2, 4),
+    },
+    {
+      id: "MQ-2.1",
+      status: "merged",
+      session: "cron",
+      hours: 8,
+      complexity: 4,
+      startedAt: d(2, 2),
+      completedAt: d(1, 2),
+      mergedAt: d(1, 2),
+      prCreatedAt: d(1, 3),
+      ciFixAttempts: 1,
+      simplifyTotal: 3,
+      addedAt: d(3, 2),
+    },
+    {
+      id: "MQ-2.2",
+      status: "blocked",
+      session: "chat",
+      hours: 4,
+      complexity: 5,
+      startedAt: d(1, 4),
+      addedAt: d(2, 5),
+    },
+  ];
+
+  // ─── PR cassette ──────────────────────────────────────────────────────────────
+
+  const PRS: PrRecord[] = [
+    {
+      id: "pr-1",
+      taskId: "QS-1.1",
+      reviewState: "approved",
+      createdAt: d(2, 1),
+      mergedAt: d(2),
+    },
+    {
+      id: "pr-2",
+      taskId: "QS-1.2",
+      reviewState: "posted",
+      createdAt: d(1, 2),
+      mergedAt: d(1, 1),
+    },
+  ];
+
+  // ─── Token cassettes ──────────────────────────────────────────────────────────
+  // Mirrors the agg() helper pattern from task-store-provider.integration.test.ts.
+
+  const agg = (
+    input: number,
+    output: number,
+    cacheRead: number,
+    cacheCreation: number,
+    costUsd?: number,
+  ) => ({
+    input,
+    output,
+    cacheRead,
+    cacheCreation,
+    total: input + output + cacheRead + cacheCreation,
+    ...(costUsd !== undefined ? { costUsd } : {}),
+  });
+
+  const CRON_STATS: CronRunTokenStats = {
+    totals: agg(1000, 500, 200, 100, 1.5),
+    byAgent: [{ key: "agent-a", ...agg(1000, 500, 200, 100, 1.5) }],
+    byCron: [
+      { key1: "agent-a", key2: "ship-loop", ...agg(700, 350, 140, 70, 1.0) },
+      { key1: "agent-a", key2: "patrol", ...agg(300, 150, 60, 30, 0.5) },
+    ],
+    byModel: [
+      { key1: "agent-a", key2: "opus", ...agg(1000, 500, 200, 100, 1.5) },
+    ],
+    daily: [
+      { period: ds(2), ...agg(600, 300, 120, 60, 0.9) },
+      { period: ds(1), ...agg(400, 200, 80, 40, 0.6) },
+    ],
+  };
+
+  const CHAT_STATS: ChatTokenStats = {
+    totals: agg(400, 200, 80, 40, 0.6),
+    byAgent: [{ key: "agent-a", ...agg(400, 200, 80, 40, 0.6) }],
+    daily: [{ period: ds(1), ...agg(400, 200, 80, 40, 0.6) }],
+  };
+
   return new TaskStoreProvider(
     new RecordedTaskStoreClient(TASKS, PRS),
     new RecordedAdminMetricsClient(CRON_STATS, CHAT_STATS),
-    fixedClock,
+    clock,
   );
 }
