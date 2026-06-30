@@ -56,3 +56,17 @@ test("footer nav has a link to /docs/reference", async ({ page }) => {
     footer.getByRole("link", { name: /Configuration/i }),
   ).toHaveAttribute("href", "/docs/reference");
 });
+
+test("config page renders Task store service section", async ({ page }) => {
+  await page.goto("/docs/reference");
+  await expect(
+    page.getByRole("heading", { name: /Task store service/i }),
+  ).toBeVisible();
+});
+
+test("config page renders Agent provisioning section", async ({ page }) => {
+  await page.goto("/docs/reference");
+  await expect(
+    page.getByRole("heading", { name: /Agent provisioning/i }),
+  ).toBeVisible();
+});
