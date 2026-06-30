@@ -124,6 +124,7 @@ a slash command prefixed with <code>/shipwright:</code>.</p>
 <p>Claude Code will run each phase in order, wait for results, and publish the final report.</p>
 <h2 id="skills">Skills</h2>
 <p>Skills are autonomous behaviors that run multi-step loops without manual hand-holding.</p>
+<h3 id="delivery-loop">Delivery loop</h3>
 
 
 
@@ -141,15 +142,96 @@ a slash command prefixed with <code>/shipwright:</code>.</p>
 
 
 
-<table><thead><tr><th>Skill</th><th>What it does</th></tr></thead><tbody><tr><td><code>ship-loop</code></td><td>Drains the task queue autonomously — one pipeline step per call (pick → build → review → deploy)</td></tr><tr><td><code>shipwright-brand</code></td><td>Validates and enforces brand consistency across site artifacts</td></tr></tbody></table>
-<p>To start the ship loop:</p>
-<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="text"><code><span class="line"><span>/shipwright:ship-loop</span></span></code></pre>
-<p>The loop runs until the queue is empty or it hits a decision that requires human input.</p>
+<table><thead><tr><th>Skill</th><th>What it does</th></tr></thead><tbody><tr><td><code>pull-requests</code></td><td>Query PR records from the task store — filter by repo, PR number, state, reviewState, or staged flag</td></tr><tr><td><code>review-staged</code></td><td>Walk through staged PR reviews from the task store conversationally — APPROVEs first, then COMMENTs, smallest diff to largest</td></tr></tbody></table>
+<h3 id="code-health">Code health</h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Skill</th><th>What it does</th></tr></thead><tbody><tr><td><code>entropy-scan</code></td><td>Scan codebase for golden principle deviations — report only, no code changes</td></tr><tr><td><code>entropy-fix</code></td><td>Read the entropy report, fix pr-worthy violations, and open targeted PRs — one PR per concern</td></tr></tbody></table>
+<h3 id="agent-operations">Agent operations</h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Skill</th><th>What it does</th></tr></thead><tbody><tr><td><code>agent-admin</code></td><td>Query and manage Shipwright agents via the admin API — cron jobs, env vars, tool permissions, API tokens, and plugins</td></tr><tr><td><code>investigate-cron</code></td><td>Diagnose why a cron run behaved unexpectedly — finds the session transcript by cron name and time</td></tr><tr><td><code>learning-capture</code></td><td>Capture a durable learning by editing CLAUDE.md or LEARNINGS.md directly</td></tr><tr><td><code>task-store</code></td><td>Query and update the Shipwright task store — pick the next ready task, mark status transitions, append new tasks</td></tr></tbody></table>
+<h3 id="dependabot">Dependabot</h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Skill</th><th>What it does</th></tr></thead><tbody><tr><td><code>triage-dependabot-pr</code></td><td>Analyze a single Dependabot PR — classify risk (merge/review/hold) and stage a review comment</td></tr><tr><td><code>triage-dependabot-prs</code></td><td>Scan all repos for open Dependabot PRs, triage new ones, and stage review comments in batch</td></tr></tbody></table>
+<h3 id="test-readiness">Test-readiness</h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Skill</th><th>What it does</th></tr></thead><tbody><tr><td><code>test-readiness</code></td><td>Orchestrate the full test-readiness pipeline (phases 1–5) for the active worktree</td></tr><tr><td><code>test-debt</code></td><td>Compute a corrective-commit ratio per milestone to surface planning debt after a run</td></tr></tbody></table>
 <h2 id="plugin-anatomy">Plugin anatomy</h2>
 <p>The plugin lives at <code>plugins/shipwright/</code> in the repo and is structured around four directories:</p>
 <ul>
 <li><strong><code>commands/</code></strong> — every slash command listed above, as individual TypeScript files</li>
-<li><strong><code>skills/</code></strong> — autonomous behavior scripts (<code>ship-loop</code>, <code>shipwright-brand</code>, and more)</li>
+<li><strong><code>skills/</code></strong> — autonomous behavior scripts (<code>agent-admin</code>, <code>entropy-scan</code>, <code>test-readiness</code>, and more)</li>
 <li><strong><code>scripts/</code></strong> — task-store adapters, <code>check-dev-task.ts</code>, and supporting tooling</li>
 <li><strong><code>references/</code></strong> — schemas and recipes (<code>metrics-schema.md</code>, <code>task-store.md</code>, <code>doc-refresh-recipe.md</code>, <code>reviews-schema.md</code>)</li>
 </ul>
@@ -170,5 +252,5 @@ dev agent — using <code>task stack</code>. See <a href="/docs/running-locally"
 Next →
 </a> </div> </main> <!-- TOC (on-page, static) --> <aside style="min-width: 0;" data-astro-cid-mw7aashj> <nav aria-label="On this page" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.75rem;" data-astro-cid-mw7aashj>
 On this page
-</p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="#installing-the-plugin" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Installing the plugin </a> </li><li data-astro-cid-mw7aashj> <a href="#manual-install" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Manual install </a> </li><li data-astro-cid-mw7aashj> <a href="#commands" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Commands </a> </li><li data-astro-cid-mw7aashj> <a href="#test-readiness-pipeline" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Test-readiness pipeline </a> </li><li data-astro-cid-mw7aashj> <a href="#skills" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Skills </a> </li><li data-astro-cid-mw7aashj> <a href="#plugin-anatomy" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Plugin anatomy </a> </li><li data-astro-cid-mw7aashj> <a href="#design-constraints" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Design constraints </a> </li><li data-astro-cid-mw7aashj> <a href="#next-steps" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Next steps </a> </li> </ul> </nav> </aside> </div> </div> <!-- Footer --> <footer class="sw-container relative z-10 py-12" data-astro-cid-mw7aashj> <div class="flex flex-col gap-6 pt-8 sm:flex-row sm:items-center sm:justify-between" style="border-top: 1px solid var(--sw-color-border-subtle);" data-astro-cid-mw7aashj> <p class="sw-label flex items-center gap-2" data-astro-cid-mw7aashj> <img src="/shipwright-icon.svg" alt="" width="20" height="20" class="rounded" data-astro-cid-mw7aashj>
+</p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="#installing-the-plugin" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Installing the plugin </a> </li><li data-astro-cid-mw7aashj> <a href="#manual-install" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Manual install </a> </li><li data-astro-cid-mw7aashj> <a href="#commands" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Commands </a> </li><li data-astro-cid-mw7aashj> <a href="#test-readiness-pipeline" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Test-readiness pipeline </a> </li><li data-astro-cid-mw7aashj> <a href="#skills" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Skills </a> </li><li data-astro-cid-mw7aashj> <a href="#delivery-loop" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Delivery loop </a> </li><li data-astro-cid-mw7aashj> <a href="#code-health" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Code health </a> </li><li data-astro-cid-mw7aashj> <a href="#agent-operations" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Agent operations </a> </li><li data-astro-cid-mw7aashj> <a href="#dependabot" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Dependabot </a> </li><li data-astro-cid-mw7aashj> <a href="#test-readiness" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Test-readiness </a> </li><li data-astro-cid-mw7aashj> <a href="#plugin-anatomy" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Plugin anatomy </a> </li><li data-astro-cid-mw7aashj> <a href="#design-constraints" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Design constraints </a> </li><li data-astro-cid-mw7aashj> <a href="#next-steps" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Next steps </a> </li> </ul> </nav> </aside> </div> </div> <!-- Footer --> <footer class="sw-container relative z-10 py-12" data-astro-cid-mw7aashj> <div class="flex flex-col gap-6 pt-8 sm:flex-row sm:items-center sm:justify-between" style="border-top: 1px solid var(--sw-color-border-subtle);" data-astro-cid-mw7aashj> <p class="sw-label flex items-center gap-2" data-astro-cid-mw7aashj> <img src="/shipwright-icon.svg" alt="" width="20" height="20" class="rounded" data-astro-cid-mw7aashj>
 Shipwright Harness · MIT-licensed · © 2026 </p> <nav class="flex flex-wrap gap-x-6 gap-y-2 text-sm" aria-label="Footer" data-astro-cid-mw7aashj> <a href="https://github.com/app-vitals/shipwright" data-astro-cid-mw7aashj>GitHub</a> <a href="https://github.com/app-vitals/shipwright/blob/main/LICENSE" data-astro-cid-mw7aashj>MIT License</a> <a href="https://claude.com/claude-code" data-astro-cid-mw7aashj>Claude Code</a> <a href="https://github.com/app-vitals/shipwright/discussions" data-astro-cid-mw7aashj>GitHub Discussions</a> </nav> </div> </footer> </body></html>
