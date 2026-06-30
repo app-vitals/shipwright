@@ -1,6 +1,6 @@
 /**
  * agent/src/agent-tokens.integration.test.ts
- * Integration tests for AgentTokenService against a real SQLite DB.
+ * Integration tests for AgentTokenService against a real PostgreSQL DB.
  *
  * Requires DATABASE_URL_ADMIN_TEST to be set; skips otherwise.
  */

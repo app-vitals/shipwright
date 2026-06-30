@@ -305,10 +305,6 @@ describe("runStack — per-pane commands via injected exec", () => {
     expect(sk).toContain(`PORT=${AGENT_PORT}`);
     expect(sk).toContain("SHIPWRIGHT_DEV_CHAT=true");
     expect(sk).toContain(
-      `POSTHOG_HOST=http://host.docker.internal:${METRICS_PORT}`,
-    );
-    expect(sk).toContain("POSTHOG_PROJECT_API_KEY=");
-    expect(sk).toContain(
       `SHIPWRIGHT_API_URL=http://host.docker.internal:${ADMIN_PORT}`,
     );
     // container is isolated — no direct DB access
@@ -370,8 +366,6 @@ describe("pane env values are obviously dev dummies (public-safe)", () => {
     const agent = STACK_PANES.find((p) => p.label === "agent") as Pane;
     // All env is embedded in docker run -e flags within cmd, not in pane.env
     const cmdStr = agent.cmd.join(" ");
-    expect(cmdStr).toContain("phc_dev_dummy");
-    // 64-hex dummy encryption key not needed on thin agent — it's in admin
     // agent must have SHIPWRIGHT_API_URL pointing at host.docker.internal
     expect(cmdStr).toContain("host.docker.internal");
     // SHIPWRIGHT_INTERNAL_API_KEY must NOT appear in the agent docker run cmd (removed UNI-1.2)
@@ -611,14 +605,6 @@ describe("agent pane — docker run", () => {
     const cmdStr = agent.cmd.join(" ");
     expect(cmdStr).toContain(
       `SHIPWRIGHT_API_URL=http://host.docker.internal:${ADMIN_PORT}`,
-    );
-  });
-
-  test("agent pane docker run passes POSTHOG_HOST pointing at host.docker.internal", () => {
-    const agent = STACK_PANES.find((p) => p.label === "agent") as Pane;
-    const cmdStr = agent.cmd.join(" ");
-    expect(cmdStr).toContain(
-      `POSTHOG_HOST=http://host.docker.internal:${METRICS_PORT}`,
     );
   });
 

@@ -43,7 +43,7 @@ describe("createSecretsClient", () => {
         mockSecretManager({ type: "success", value: "ph_test_abc123" }),
       );
 
-      const value = await client.getSecret("posthog-personal-api-key");
+      const value = await client.getSecret("my-api-key");
       expect(value).toBe("ph_test_abc123");
     });
 
@@ -53,7 +53,7 @@ describe("createSecretsClient", () => {
         mockSecretManager({ type: "buffer", value: buffer }),
       );
 
-      const value = await client.getSecret("posthog-personal-api-key");
+      const value = await client.getSecret("my-api-key");
       expect(value).toBe("ph_test_buffer_value");
     });
 
@@ -65,7 +65,7 @@ describe("createSecretsClient", () => {
         },
       }));
 
-      const value = await client.getSecret("posthog-personal-api-key");
+      const value = await client.getSecret("my-api-key");
       expect(value).toBe("ph_test_uint8_value");
     });
   });
@@ -158,7 +158,7 @@ describe("createSecretsClient", () => {
       );
 
       await expect(
-        client.getSecret("posthog-personal-api-key"),
+        client.getSecret("my-api-key"),
       ).rejects.toBeInstanceOf(SecretNotFoundError);
     });
   });

@@ -49,8 +49,7 @@ export const ADMIN_DEV_LOGIN_URL = `http://localhost:${ADMIN_PORT}/admin/dev-log
 
 // Obviously-fake dev placeholders — safe for a public/MIT repo. These are NOT
 // secrets: the agent runs against a local Postgres DB and a local offline
-// metrics endpoint, so no real PostHog/encryption material is ever needed.
-const DUMMY_POSTHOG_KEY = "phc_dev_dummy";
+// metrics endpoint, so no real encryption material is ever needed.
 const DUMMY_ENCRYPTION_KEY =
   "0000000000000000000000000000000000000000000000000000000000000000";
 // SHIPWRIGHT_INTERNAL_API_KEY removed in UNI-1.2 — runtime routes now use the same
@@ -170,11 +169,11 @@ export const STACK_PANES: Pane[] = [
   {
     label: "metrics",
     cmd: ["bun", "metrics/src/server.ts"],
-    // SQLite persistence mode: no METRICS_OFFLINE, no POSTHOG_PROJECT_API_KEY,
-    // no METRICS_DATABASE_URL → service defaults to sqlite mode.
-    // METRICS_DASHBOARD_DEV_AUTH bypasses dashboard/login auth (there is no login
-    // flow in the stack) while KEEPING the real sqlite provider — so the dashboard
-    // shows the metrics the agent actually forwards, not fixtures.
+    // SQLite persistence mode: no METRICS_OFFLINE, no METRICS_DATABASE_URL →
+    // service defaults to sqlite mode. METRICS_DASHBOARD_DEV_AUTH bypasses
+    // dashboard/login auth (there is no login flow in the stack) while KEEPING the
+    // real sqlite provider — so the dashboard shows the metrics the agent actually
+    // forwards, not fixtures.
     env: {
       METRICS_DB_PATH: "state/metrics.db",
       METRICS_DASHBOARD_DEV_AUTH: "true",
@@ -253,10 +252,6 @@ export const STACK_PANES: Pane[] = [
       "SHIPWRIGHT_DEV_CHAT=true",
       "-e",
       `SHIPWRIGHT_API_URL=http://host.docker.internal:${ADMIN_PORT}`,
-      "-e",
-      `POSTHOG_HOST=http://host.docker.internal:${METRICS_PORT}`,
-      "-e",
-      `POSTHOG_PROJECT_API_KEY=${DUMMY_POSTHOG_KEY}`,
       "-e",
       "SHIPWRIGHT_AGENT_ID=dev-agent",
       "-e",
