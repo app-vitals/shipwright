@@ -28,7 +28,7 @@ Configuration for the Shipwright Claude Code plugin (`plugins/shipwright/`). The
 | `SHIPWRIGHT_WORKTREE_DIR` | `string` | `<AGENT_HOME>/workspace/worktrees` | Override the workspace worktrees directory. |
 | `SHIPWRIGHT_DEV_CHAT` | `bool` | `false` | Enables the unauthenticated `POST /chat` endpoint on the agent. **Must not be set in production** (`NODE_ENV=production` blocks it via `chat-guard.ts`). |
 | `GH_CMD` | `string` | `gh` | Override the `gh` CLI executable. Useful in environments where `gh` is installed to a non-default path. |
-| `AGENT_HOME` | `string` | `~/.shipwright-agent` | Persistent storage root for workspace files, mise caches, and `~/.claude`. Set in the agent container; also used by plugin scripts for workspace discovery. |
+| `AGENT_HOME` | `string` | `/data/agent-home` | Persistent storage root for workspace files, mise caches, and `~/.claude`. Set in the agent container; also used by plugin scripts for workspace discovery. |
 | `WORKSPACE_PATH` | `string` | — | Direct workspace path override. Takes precedence over `AGENT_HOME`-based discovery when set. |
 | `JIRA_API_TOKEN` | `string` | — | API token for Jira authentication. Required when `taskStore` is `"jira"`. Env-var-only (secret). |
 | `JIRA_EMAIL` | `string` | — | Email address for Jira authentication. Required when `taskStore` is `"jira"`. |
@@ -134,7 +134,7 @@ Controls how the admin service provisions the Kubernetes workload backing each a
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `AGENT_HOME` | `string` | `~/.shipwright-agent` | Persistent storage root. Mount a PVC here in Kubernetes so mise caches, workspace files, and `~/.claude` survive pod restarts. |
+| `AGENT_HOME` | `string` | `/data/agent-home` | Persistent storage root. Mount a PVC here in Kubernetes so mise caches, workspace files, and `~/.claude` survive pod restarts. |
 | `MISE_DATA_DIR` | `string` | `<AGENT_HOME>/mise` | Mise data directory. On first startup, seeded from the image's default mise location so baked tools survive pod restarts. Override only if needed. |
 | `MISE_CACHE_DIR` | `string` | `<AGENT_HOME>/mise/cache` | Override the mise cache directory. Auto-derived from `AGENT_HOME`. |
 | `XDG_CACHE_HOME` | `string` | `<AGENT_HOME>/cache` | Override the XDG cache directory. Auto-derived from `AGENT_HOME`. |

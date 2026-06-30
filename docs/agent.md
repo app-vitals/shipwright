@@ -134,7 +134,7 @@ Every new agent is seeded with ten system crons (the canonical definitions live 
 | `SHIPWRIGHT_AGENT_ID` | ✅ (entrypoint) | The agent's ID in the Shipwright platform. Also settable via `--agent-id` CLI flag. |
 | `SHIPWRIGHT_API_URL` | ✅ (entrypoint) | Base URL of the Shipwright API used to fetch agent config at startup. Also settable via `--api-url`. |
 | `SHIPWRIGHT_AGENT_API_KEY` | ✅ (entrypoint) | Bearer token for the config fetch at startup (`/agents/:id/config` and `/agents/:id/crons`). Also settable via `--api-key`. The value must be registered in `SHIPWRIGHT_ADMIN_API_KEYS` on the server with scope `<agentId>` (or `*` for admin bypass) — an agent key not listed there will receive a 401 at startup. |
-| `AGENT_HOME` | entrypoint | Persistent storage root (default: `~/.shipwright-agent`). Mount a PVC here in Kubernetes so mise caches, workspace files, and `~/.claude` survive pod restarts. |
+| `AGENT_HOME` | entrypoint | Persistent storage root (default: `/data/agent-home`). Mount a PVC here in Kubernetes so mise caches, workspace files, and `~/.claude` survive pod restarts. |
 | `PORT` | server | Chat server port (default: `3000`). Only used when `SHIPWRIGHT_DEV_CHAT=true`; also the port for the admin service (`admin/src/main.ts`). |
 | `SHIPWRIGHT_HEALTH_PORT` | server | Dedicated health server port for K8s liveness probes (default: `3459`). Used by both `entrypoint-main.ts` (in-process, before startup) and `run-agent.ts` (started by `startServer()`). |
 | `SHIPWRIGHT_SESSION_SECRET` | admin API | Secret for verifying the `admin_session` JWT cookie. |
