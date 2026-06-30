@@ -104,7 +104,7 @@ plus `approved`, `blocked`, `cancelled`.
 
 Driven by Shipwright's own commands: `/shipwright:dev-task` → `/shipwright:review` / `/shipwright:patch` → `/shipwright:deploy`. The `ship-loop` skill drains the queue autonomously (one pipeline step per call, wrapped by `/loop`).
 
-**Task-store backend resolution** (`plugins/shipwright/scripts/check-helpers.ts` → `resolveTaskStoreBackend`): when both `SHIPWRIGHT_TASK_STORE_URL` and `SHIPWRIGHT_TASK_STORE_TOKEN` are set → `"shipwright"` (how managed GKE agents *and* local installs select it — the provisioner injects only those two env vars); otherwise → `"github"`. The HTTP store is the only backend with a runtime task-data client today; connection details always come from env. If task operations seem to no-op, check `SHIPWRIGHT_TASK_STORE_URL` first.
+**Task-store connection** is env-var-only: both `SHIPWRIGHT_TASK_STORE_URL` and `SHIPWRIGHT_TASK_STORE_TOKEN` must be set for task operations to function. There is no GitHub fallback and no file-based config — the provisioner injects these two vars into managed GKE agents, and local installs must set them explicitly. If task operations seem to no-op, check `SHIPWRIGHT_TASK_STORE_URL` first.
 
 ## Test conventions
 

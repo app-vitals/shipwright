@@ -6,8 +6,6 @@ export interface ConfigVar {
 }
 
 export const pluginEnvVars: ConfigVar[] = [
-  { name: "SHIPWRIGHT_GITHUB_OWNER", type: "string", def: "—", desc: "GitHub organization or user name. Required when using the GitHub backend." },
-  { name: "SHIPWRIGHT_GITHUB_REPO", type: "string", def: "—", desc: "GitHub repository name. Required when using the GitHub backend." },
   { name: "JIRA_BASE_URL", type: "string", def: "—", desc: "Base URL of the Jira instance (e.g. https://example.atlassian.net). Required when using the Jira backend." },
   { name: "JIRA_PROJECT_KEY", type: "string", def: "—", desc: "Jira project key (e.g. SHIP). Required when using the Jira backend." },
   { name: "SHIPWRIGHT_REPOS_DIR", type: "string", def: "<AGENT_HOME>/workspace/repos", desc: "Override the workspace repos directory." },
