@@ -76,25 +76,49 @@ Claude Code will run each phase in order, wait for results, and publish the fina
 
 Skills are autonomous behaviors that run multi-step loops without manual hand-holding.
 
+### Delivery loop
+
 | Skill | What it does |
 |-------|--------------|
-| `ship-loop` | Drains the task queue autonomously — one pipeline step per call (pick → build → review → deploy) |
-| `shipwright-brand` | Validates and enforces brand consistency across site artifacts |
+| `pull-requests` | Query PR records from the task store — filter by repo, PR number, state, reviewState, or staged flag |
+| `review-staged` | Walk through staged PR reviews from the task store conversationally — APPROVEs first, then COMMENTs, smallest diff to largest |
 
-To start the ship loop:
+### Code health
 
-```text
-/shipwright:ship-loop
-```
+| Skill | What it does |
+|-------|--------------|
+| `entropy-scan` | Scan codebase for golden principle deviations — report only, no code changes |
+| `entropy-fix` | Read the entropy report, fix pr-worthy violations, and open targeted PRs — one PR per concern |
 
-The loop runs until the queue is empty or it hits a decision that requires human input.
+### Agent operations
+
+| Skill | What it does |
+|-------|--------------|
+| `agent-admin` | Query and manage Shipwright agents via the admin API — cron jobs, env vars, tool permissions, API tokens, and plugins |
+| `investigate-cron` | Diagnose why a cron run behaved unexpectedly — finds the session transcript by cron name and time |
+| `learning-capture` | Capture a durable learning by editing CLAUDE.md or LEARNINGS.md directly |
+| `task-store` | Query and update the Shipwright task store — pick the next ready task, mark status transitions, append new tasks |
+
+### Dependabot
+
+| Skill | What it does |
+|-------|--------------|
+| `triage-dependabot-pr` | Analyze a single Dependabot PR — classify risk (merge/review/hold) and stage a review comment |
+| `triage-dependabot-prs` | Scan all repos for open Dependabot PRs, triage new ones, and stage review comments in batch |
+
+### Test-readiness
+
+| Skill | What it does |
+|-------|--------------|
+| `test-readiness` | Orchestrate the full test-readiness pipeline (phases 1–5) for the active worktree |
+| `test-debt` | Compute a corrective-commit ratio per milestone to surface planning debt after a run |
 
 ## Plugin anatomy
 
 The plugin lives at `plugins/shipwright/` in the repo and is structured around four directories:
 
 - **`commands/`** — every slash command listed above, as individual TypeScript files
-- **`skills/`** — autonomous behavior scripts (`ship-loop`, `shipwright-brand`, and more)
+- **`skills/`** — autonomous behavior scripts (`agent-admin`, `entropy-scan`, `test-readiness`, and more)
 - **`scripts/`** — task-store adapters, `check-dev-task.ts`, and supporting tooling
 - **`references/`** — schemas and recipes (`metrics-schema.md`, `task-store.md`, `doc-refresh-recipe.md`, `reviews-schema.md`)
 
