@@ -7,6 +7,7 @@
 //   • ONE <script> tag (Pagefind UI only — never reaches BaseLayout)
 import { getCollection } from "astro:content";
 import "../styles/brand.css";
+import Analytics from "../components/Analytics.astro";
 
 interface Heading {
   depth: number;
@@ -77,6 +78,9 @@ const discussionsUrl = "https://github.com/app-vitals/shipwright/discussions";
     <meta property="og:image" content={ogImage} />
     <meta property="og:image:width" content="1280" />
     <meta property="og:image:height" content="640" />
+
+    <!-- Google Analytics 4 -->
+    <Analytics />
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

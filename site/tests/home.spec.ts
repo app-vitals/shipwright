@@ -1,10 +1,11 @@
 import { expect, test } from "@playwright/test";
+import { expectNoRuntimeJsBeyondAnalytics } from "./helpers";
 
 // Fulfill external font CDN requests immediately so the page's 'load' event
 // fires even when CI can't reach external networks (fonts.googleapis.com, fontshare.com).
 test.beforeEach(async ({ page }) => {
   await page.route(
-    /fonts\.googleapis\.com|fonts\.gstatic\.com|api\.fontshare\.com/,
+    /fonts\.googleapis\.com|fonts\.gstatic\.com|api\.fontshare\.com|googletagmanager\.com/,
     (route) =>
       route.fulfill({ status: 200, contentType: "text/css", body: "" }),
   );
@@ -41,12 +42,63 @@ test("dark-premium navy base background is applied", async ({ page }) => {
   expect(baseVar.toUpperCase()).toBe("#080E1E");
 });
 
-test("home document ships NO runtime JS (zero <script> tags)", async ({
+test("home ships no runtime JS beyond the GA4 analytics tag", async ({
   page,
 }) => {
   await page.goto("/");
-  const scriptCount = await page.locator("script").count();
-  expect(scriptCount).toBe(0);
+  await expectNoRuntimeJsBeyondAnalytics(page);
+});
+
+test("GA4 analytics tag is wired with the measurement ID", async ({ page }) => {
+  await page.goto("/");
+  // The async gtag.js loader for our GA4 stream.
+  await expect(
+    page.locator(
+      'head script[src*="googletagmanager.com/gtag/js?id=G-WS5TVR713J"]',
+    ),
+  ).toHaveCount(1);
+  // The inline config references the same measurement ID.
+  const inline = (
+    await page.locator("head script:not([src])").allTextContents()
+  ).join("\n");
+  expect(inline).toContain("G-WS5TVR713J");
+  expect(inline).toContain("gtag(");
+});
+
+test("robots.txt allows crawling and points at the sitemap", async ({
+  page,
+}) => {
+  const res = await page.request.get("/robots.txt");
+  expect(res.status()).toBe(200);
+  const body = await res.text();
+  expect(body).toMatch(/User-agent:\s*\*/i);
+  expect(body).toMatch(
+    /Sitemap:\s*https:\/\/shipwrightharness\.com\/sitemap-index\.xml/i,
+  );
+});
+
+test("home embeds JSON-LD structured data (SoftwareApplication + Organization)", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const ld = await page
+    .locator('head script[type="application/ld+json"]')
+    .textContent();
+  expect(ld).toBeTruthy();
+  const data = JSON.parse(ld ?? "{}");
+  const types = (data["@graph"] ?? []).map((n) => n["@type"]);
+  expect(types).toContain("SoftwareApplication");
+  expect(types).toContain("Organization");
+});
+
+test("head wires og:image:alt and twitter:image:alt", async ({ page }) => {
+  await page.goto("/");
+  await expect(
+    page.locator('head meta[property="og:image:alt"]'),
+  ).toHaveCount(1);
+  await expect(
+    page.locator('head meta[name="twitter:image:alt"]'),
+  ).toHaveCount(1);
 });
 
 // SWW-2.1: Hero. The hero contains the eyebrow, brand tagline, and a two-path CTA
@@ -125,8 +177,8 @@ test("showcase tabs switch panels with zero runtime JS", async ({ page }) => {
   await page.locator('label[for="sw-tab-metrics"]').click();
   await expect(page.locator("#metrics")).toBeVisible();
   await expect(page.locator("#two-ways")).toBeHidden();
-  // Tabs switch via CSS :checked — no script tags anywhere.
-  expect(await page.locator("script").count()).toBe(0);
+  // Tabs switch via CSS :checked — no app JS beyond the analytics tag.
+  await expectNoRuntimeJsBeyondAnalytics(page);
 });
 
 // Brand lockup: header mark + wordmark, and the favicon wiring.
@@ -291,8 +343,8 @@ test("'Run the full stack' tab shows the task stack:up walkthrough video", async
     demo.locator('video[src="/task-stack-up-walkthrough.mp4"]'),
   ).toBeVisible();
   await expect(demo.getByText(/task stack:up/i).first()).toBeVisible();
-  // Reconfirm zero runtime JS (native <video>, no injected player).
-  expect(await page.locator("script").count()).toBe(0);
+  // Native <video>, no injected player — no app JS beyond the analytics tag.
+  await expectNoRuntimeJsBeyondAnalytics(page);
 });
 
 test("'Proof' tab makes the dogfooding case and links to the public dashboard", async ({
