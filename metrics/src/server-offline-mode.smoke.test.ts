@@ -35,12 +35,12 @@ beforeEach(() => {
 
 afterEach(() => {
   if (savedOffline === undefined) {
-    process.env.METRICS_OFFLINE = undefined;
+    delete process.env.METRICS_OFFLINE;
   } else {
     process.env.METRICS_OFFLINE = savedOffline;
   }
   if (savedDevAuth === undefined) {
-    process.env.METRICS_DASHBOARD_DEV_AUTH = undefined;
+    delete process.env.METRICS_DASHBOARD_DEV_AUTH;
   } else {
     process.env.METRICS_DASHBOARD_DEV_AUTH = savedDevAuth;
   }
