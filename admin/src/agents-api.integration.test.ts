@@ -15,6 +15,7 @@ import { sign } from "hono/jwt";
 import { PrismaClient } from "../prisma/client/index.js";
 import { AgentChatTokenService } from "./agent-chat-tokens.ts";
 import { AgentCronJobService } from "./agent-cron-jobs.ts";
+import { AgentCronRunStatsService } from "./agent-cron-run-stats.ts";
 import { AgentCronRunService } from "./agent-cron-runs.ts";
 import { AgentEnvService } from "./agent-envs.ts";
 import { AgentPluginService } from "./agent-plugins.ts";
@@ -90,6 +91,7 @@ describeOrSkip("admin CRUD API (integration)", () => {
       agentEnvService: new AgentEnvService(prisma, crypto),
       agentCronJobService: new AgentCronJobService(prisma),
       agentCronRunService: new AgentCronRunService(prisma),
+      agentCronRunStatsService: new AgentCronRunStatsService(prisma),
       agentToolService: new AgentToolService(prisma),
       agentTokenService: new AgentTokenService(prisma),
       agentPluginService: new AgentPluginService(prisma),
