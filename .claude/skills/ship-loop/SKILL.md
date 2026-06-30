@@ -77,7 +77,7 @@ echo "$WORKSPACE_PATH"; ls -d "$SHIPWRIGHT_REPO_DIR"/* >/dev/null && echo "repo 
 # If this prints nothing, the gates will silently query a hardcoded default repo instead of yours.
 for d in "$SHIPWRIGHT_REPOS_DIR"/*/.git/config; do grep -h 'url = ' "$d" 2>/dev/null; done
 D=$(find ~/.claude/plugins/cache -maxdepth 5 -name task_store.ts -path '*/shipwright/*' | head -1 | xargs dirname)
-bun "$D/task_store.ts" doctor                          # must report the github backend
+bun "$D/task_store.ts" doctor                          # verify task store is reachable
 bun "$D/check-review-patch.ts" >/dev/null 2>&1; echo "review-patch gate exit=$?"   # 0/1 = ok; 2 = WORKSPACE_PATH unset
 ```
 
@@ -92,8 +92,7 @@ a precheck signals real work.
 PLUGIN=$(find ~/.claude/plugins/cache -maxdepth 5 -name task_store.ts -path '*/shipwright/*' | head -1 | xargs dirname)
 ```
 
-**Preflight (first tick only):** `bun "$PLUGIN/task_store.ts" doctor` → must report the github
-backend, else **STOP** (task store not configured — see Prerequisites).
+**Preflight (first tick only):** `bun "$PLUGIN/task_store.ts" doctor` → must exit 0 (task store reachable), else **STOP** (task store not configured — see Prerequisites).
 
 **1. Cheap gates** — capture only an exit code / count; no `gh` parsing or state inspection by the
 model (the scripts do that and return a signal). The two `check-*` scripts need `WORKSPACE_PATH`
