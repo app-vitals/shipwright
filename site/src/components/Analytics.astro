@@ -1,0 +1,24 @@
+---
+// Google Analytics 4 (gtag.js). Included in <head> by BaseLayout and DocsLayout
+// so every page is tracked. The Measurement ID is public by design — it ships
+// in the client-side tag — so committing it here is expected, not a secret leak.
+//
+// This is the site's ONLY first-party runtime JS; the marketing pages are
+// otherwise zero-JS. The home e2e suite asserts no <script> exists beyond this
+// analytics tag (see site/tests/home.spec.ts).
+const GA_MEASUREMENT_ID = "G-WS5TVR713J";
+---
+
+<!-- Google tag (gtag.js) — GA4 -->
+<script
+  is:inline
+  async
+  src={`https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`}></script>
+<script define:vars={{ GA_MEASUREMENT_ID }}>
+  window.dataLayer = window.dataLayer || [];
+  function gtag() {
+    dataLayer.push(arguments);
+  }
+  gtag("js", new Date());
+  gtag("config", GA_MEASUREMENT_ID);
+</script>

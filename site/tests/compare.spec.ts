@@ -1,10 +1,11 @@
 import { expect, test } from "@playwright/test";
+import { expectNoRuntimeJsBeyondAnalytics } from "./helpers";
 
 // Fulfill external font CDN requests immediately so the page's 'load' event
 // fires even when CI can't reach external networks.
 test.beforeEach(async ({ page }) => {
   await page.route(
-    /fonts\.googleapis\.com|fonts\.gstatic\.com|api\.fontshare\.com/,
+    /fonts\.googleapis\.com|fonts\.gstatic\.com|api\.fontshare\.com|googletagmanager\.com/,
     (route) =>
       route.fulfill({ status: 200, contentType: "text/css", body: "" }),
   );
@@ -25,11 +26,11 @@ test("compare page leads with the comparison heading", async ({ page }) => {
   ).toBeVisible();
 });
 
-test("compare page ships NO runtime JS (zero <script> tags)", async ({
+test("compare page ships no runtime JS beyond the analytics tag", async ({
   page,
 }) => {
   await page.goto("/compare");
-  expect(await page.locator("script").count()).toBe(0);
+  await expectNoRuntimeJsBeyondAnalytics(page);
 });
 
 test("landscape table names the open-source field", async ({ page }) => {
