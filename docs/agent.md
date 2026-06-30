@@ -55,7 +55,7 @@ Mounted at `/agents/*` (unified with the runtime API surface). Auth: **admin key
 | Reconciliation | `POST /agents/reconcile` (admin-only: reconciles K8s Deployments against all managed (non-self-hosted) agents; returns `{recreated: string[], updated: string[], orphans: string[], failed: Array<{agentId, error}>}`) |
 | Tools | `POST` / `GET` `/agents/:id/tools`, `PATCH` / `DELETE` `/agents/:id/tools/:toolId` |
 | Tokens | `POST` / `GET` `/agents/:id/tokens`, `DELETE /agents/:id/tokens/:tokenId` |
-| Chat Tokens | `POST /agents/:id/chat-tokens/daily` (daily upsert: atomically accumulates Slack chat session token usage by `(agentId, date)`; body: `{date: YYYY-MM-DD, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, costUsd}`; returns the updated daily row `{id, agentId, date, ...}`) |
+| Chat Tokens | `POST /agents/:id/chat-tokens/daily` (daily upsert: atomically accumulates Slack chat session token usage by `(agentId, date)`; body: `{date: YYYY-MM-DD, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, costUsd}`; returns the updated daily row `{id, agentId, date, ...}`), `GET /agents/chat-tokens/daily/stats` (admin-only: aggregated chat-token daily stats across all agents; query params: `from` / `to` (optional YYYY-MM-DD date strings); returns `{totals, byAgent, daily}`) |
 | Plugins | `POST` / `GET` / `PATCH` `/agents/:id/plugins`, `DELETE /agents/:id/plugins` |
 
 Token creation returns the **raw token once** at creation; only its SHA-256 hash is persisted, so validation is an O(1) hash-index lookup.
