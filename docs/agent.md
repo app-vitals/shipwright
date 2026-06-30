@@ -51,6 +51,7 @@ Mounted at `/agents/*` (unified with the runtime API surface). Auth: **admin key
 | Agents | `POST /agents` (admin-only: creates agent, returns `{id, name, slackId, selfHosted, repos, createdAt, updatedAt}` with `201`), `GET /agents/:id` (admin-only: fetches agent record), `GET /agents` (admin-only: lists agents), `PATCH /agents/:id` (admin-only: updates agent fields like `selfHosted` and `repos`; repos validation: each entry must be `org/repo` format), `POST /agents/:id/provision` (admin-only: provisions a managed agent or returns `{skipped: true, reason: "self-hosted"}` for self-hosted agents) |
 | Envs | `POST` / `GET` / `PATCH` `/agents/:id/envs`, `DELETE /agents/:id/envs/:key` |
 | Crons | `POST` `/agents/:id/crons`, `PATCH` / `DELETE` `/agents/:id/crons/:cronId`, `POST /agents/:id/crons/reconcile`, `POST` / `GET` / `PATCH` `/agents/:id/crons/:cronId/runs/{runId}` |
+| Cron Run Stats | `GET /agents/all/cron-runs/stats` (admin-only: returns aggregated token stats across all agents; query params: `from` / `to` (optional ISO datetime); returns `{totals, byAgent, byCron, byModel, daily}`) |
 | Reconciliation | `POST /agents/reconcile` (admin-only: reconciles K8s Deployments against all managed (non-self-hosted) agents; returns `{recreated: string[], updated: string[], orphans: string[], failed: Array<{agentId, error}>}`) |
 | Tools | `POST` / `GET` `/agents/:id/tools`, `PATCH` / `DELETE` `/agents/:id/tools/:toolId` |
 | Tokens | `POST` / `GET` `/agents/:id/tokens`, `DELETE /agents/:id/tokens/:tokenId` |
