@@ -747,10 +747,10 @@ export function renderAgentDetailPage(
       <div>
         <a href="/admin/agents" style="font-size:13px;color:#6b7280;text-decoration:none">← Agents</a>
         <h1 class="page-title" style="margin-top:4px">${escapeHtml(agent.name)}</h1>
-        ${!agent.selfHosted && agent.slackId ? `<span style="font-size:13px;color:#6b7280">Slack ID: <span class="mono">${escapeHtml(agent.slackId)}</span></span>` : ""}
+        ${agent.slackId ? `<span style="font-size:13px;color:#6b7280">Slack ID: <span class="mono">${escapeHtml(agent.slackId)}</span></span>` : ""}
       </div>
       ${
-        !agent.selfHosted
+        agent.slackId
           ? `<div>
         <details>
           <summary class="btn btn-secondary" style="cursor:pointer;font-size:12px;list-style:none">Sync Manifest</summary>
@@ -851,8 +851,12 @@ export function renderAgentDetailPage(
       <div class="card-title">Cron Jobs</div>
 
       ${
-        !agent.selfHosted
-          ? `<div style="margin-bottom:20px">
+        agent.selfHosted
+          ? `<p style="font-size:13px;color:#6b7280;margin:0 0 16px">Crons fire only while the local agent service is running. Make sure your service is active before enabling crons.</p>`
+          : ""
+      }
+
+      <div style="margin-bottom:20px">
         <div style="font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">System</div>
         <table class="data-table">
           <thead>
@@ -870,9 +874,7 @@ export function renderAgentDetailPage(
             ${systemCronRows}
           </tbody>
         </table>
-      </div>`
-          : ""
-      }
+      </div>
 
       <div>
         <div style="font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Custom</div>
@@ -913,9 +915,7 @@ export function renderAgentDetailPage(
       </div>
     </div>
 
-    ${
-      !agent.selfHosted
-        ? `<div class="card">
+    <div class="card">
       <div class="card-title">Tools</div>
       <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/tools" style="margin-bottom:16px">
         <div class="form-row">
@@ -937,9 +937,7 @@ export function renderAgentDetailPage(
           ${toolRows}
         </tbody>
       </table>
-    </div>`
-        : ""
-    }
+    </div>
 
     <div class="card">
       <div class="card-title">Tokens</div>
