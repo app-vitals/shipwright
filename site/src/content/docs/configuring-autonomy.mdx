@@ -112,16 +112,25 @@ anything beyond a quick fix, going through the task queue produces better outcom
 restart or cron change required.
 
 ```markdown
----
-auto_post_reviews: false
-allowed_events: [COMMENT, APPROVE]
-review_external_prs: true
-allow_self_review: true
-min_confidence: 75
-max_findings: 5
-cleanup_merged_worktrees: true
-cleanup_after_days: 14
----
+# Agent Policy
+
+## Review Settings
+
+| Setting | Value | Notes |
+|---------|-------|-------|
+| `auto_post_reviews` | false | Post reviews directly to GitHub without staging |
+| `allowed_events` | [COMMENT, APPROVE] | Never REQUEST_CHANGES |
+| `review_external_prs` | true | Review externally-opened PRs |
+| `allow_self_review` | true | Review own PRs |
+| `min_confidence` | 75 | Drop findings below this threshold |
+| `max_findings` | 5 | Trim to highest-confidence findings |
+
+## Worktree Cleanup
+
+| Setting | Value |
+|---------|-------|
+| `cleanup_merged_worktrees` | true |
+| `cleanup_after_days` | 14 |
 ```
 
 | Field | Default | What it controls |
