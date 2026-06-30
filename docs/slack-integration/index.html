@@ -28,41 +28,75 @@ arrives as a prompt; the agent runs Claude and posts the response back to the sa
 <p>Messages are prefixed with <code>[Name]: </code> where <code>Name</code> is the sender’s Slack display name, so the
 agent knows who it’s talking to. Cron job results are posted to a configured channel automatically.</p>
 <h2 id="connecting-a-slack-app">Connecting a Slack app</h2>
-<p>Ask Claude Code:</p>
-<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="text"><code><span class="line"><span>Help me create a Slack app and connect it to the Shipwright agent.</span></span></code></pre>
-<p>Claude Code will walk through creating the app manifest, provisioning credentials, and setting
-the required environment variables.</p>
-
-<h3 id="manual-setup">Manual setup</h3>
+<p>Slack provisioning is automated via the <code>/admin/provision</code> flow. Follow these four steps:</p>
+<h3 id="step-1-open-the-provisioning-form">Step 1: Open the provisioning form</h3>
+<p>Navigate to <code>/admin/provision</code> in the Shipwright admin UI. You’ll see a form with the following
+fields:</p>
+<ul>
+<li><strong>Agent</strong> — select which agent to configure</li>
+<li><strong>GitHub credentials</strong> — either a Personal Access Token (PAT) or a GitHub App installation for
+repo access</li>
+<li><strong>Anthropic API key</strong> (optional) — if you want the agent to use a custom API key</li>
+<li><strong>Claude Code OAuth token</strong> (optional) — if you want to enable Claude Code integration</li>
+<li><strong>Slack app configuration token</strong> — a <code>xoxe.xoxp-</code> token (see below)</li>
+</ul>
+<h3 id="understanding-the-slack-app-configuration-token">Understanding the Slack app configuration token</h3>
+<p>A <code>xoxe.xoxp-</code> token is a <strong>Slack app configuration token</strong> — a personal token scoped to your
+Slack workspace that allows creating and configuring Slack apps via the API. To obtain one:</p>
 <ol>
-<li>
-<p>Go to <a href="https://api.slack.com/apps">api.slack.com/apps</a> and create a new app <strong>from an app
-manifest</strong>. The Shipwright admin UI’s provisioning flow (<code>/admin/agents/:id/provision</code>) can
-generate a manifest for you automatically.</p>
-</li>
-<li>
-<p>Enable <strong>Socket Mode</strong> in the app settings and generate an app-level token with
-<code>connections:write</code> scope. This becomes <code>SLACK_APP_TOKEN</code>.</p>
-</li>
-<li>
-<p>Install the app to your workspace and copy the <strong>Bot User OAuth Token</strong>. This becomes
-<code>SLACK_BOT_TOKEN</code>.</p>
-</li>
-<li>
-<p>Copy the <strong>Signing Secret</strong> from the app’s Basic Information page. This becomes
-<code>SLACK_SIGNING_SECRET</code>.</p>
-</li>
-<li>
-<p>Set the three required environment variables on the agent (via the admin UI or the
-<code>/agents/:id/envs</code> API):</p>
+<li>Go to <a href="https://api.slack.com/apps">api.slack.com/apps</a></li>
+<li>Click <strong>Create New App</strong> and select <strong>From scratch</strong> (not from a manifest)</li>
+<li>Name your app and select your workspace</li>
+<li>Once created, go to <strong>App-Level Tokens</strong> in the left sidebar</li>
+<li>Click <strong>Generate Token and Scopes</strong></li>
+<li>Name the token (e.g., “Shipwright Provisioning”)</li>
+<li>Add the <code>admin</code> scope (or all available scopes for maximum compatibility)</li>
+<li>Click <strong>Generate</strong> and copy the token (it starts with <code>xoxe.xoxp-</code>)</li>
+</ol>
+<p>This token is <strong>used only once</strong> during provisioning — Shipwright calls the Slack API to create
+the actual bot app and does not store this token afterward. Delete the placeholder app you
+created above to retrieve the configuration token once provisioning completes.</p>
+<h3 id="step-2-shipwright-creates-the-slack-app">Step 2: Shipwright creates the Slack app</h3>
+<p>After you submit the form with valid GitHub credentials and the Slack configuration token,
+Shipwright:</p>
+<ol>
+<li>Calls <code>apps.manifest.create</code> to create a new Slack bot app with the necessary permissions</li>
+<li>Automatically stores the following credentials in the agent’s environment:
+<ul>
+<li><code>SLACK_APP_ID</code> — the app’s ID</li>
+<li><code>SLACK_SIGNING_SECRET</code> — used to verify incoming Slack requests</li>
+<li><code>SLACK_CLIENT_ID</code> — OAuth client ID</li>
+<li><code>SLACK_CLIENT_SECRET</code> — OAuth client secret</li>
+</ul>
 </li>
 </ol>
-<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-foreground)">SLACK_BOT_TOKEN</span><span style="color:var(--astro-code-token-keyword)">=</span><span style="color:var(--astro-code-token-string)">xoxb-...</span><span style="color:var(--astro-code-token-comment)">        # Bot User OAuth Token</span></span>
-<span class="line"><span style="color:var(--astro-code-foreground)">SLACK_APP_TOKEN</span><span style="color:var(--astro-code-token-keyword)">=</span><span style="color:var(--astro-code-token-string)">xapp-...</span><span style="color:var(--astro-code-token-comment)">        # App-level token (Socket Mode)</span></span>
-<span class="line"><span style="color:var(--astro-code-foreground)">SLACK_SIGNING_SECRET</span><span style="color:var(--astro-code-token-keyword)">=</span><span style="color:var(--astro-code-token-string)">...</span><span style="color:var(--astro-code-token-comment)">        # Signing secret from Basic Information</span></span></code></pre>
-<ol start="6">
-<li>Restart the agent. It connects to Slack via Socket Mode on startup.</li>
+<p>All of this happens automatically — no manual steps needed.</p>
+<h3 id="step-3-authorize-the-slack-app">Step 3: Authorize the Slack app</h3>
+<p>After Step 2 completes, the provisioning form shows an <strong>Authorize Slack App →</strong> button. Click it
+to:</p>
+<ol>
+<li>Redirect to Slack’s OAuth approval page</li>
+<li>Approve the app to post to your workspace</li>
+<li>Redirect back to <code>/admin/provision/complete</code></li>
 </ol>
+<p>Shipwright automatically stores <code>SLACK_BOT_TOKEN</code> (the bot user OAuth token) in the agent’s
+environment. You do not need to copy it manually.</p>
+<h3 id="step-4-enable-socket-mode-and-generate-the-app-token">Step 4: Enable Socket Mode and generate the app token</h3>
+<p>This is the <strong>one remaining manual step</strong>:</p>
+<ol>
+<li>Go to <a href="https://api.slack.com/apps">api.slack.com/apps</a> and select the app that was just
+created (it will have a similar name to your agent)</li>
+<li>In the left sidebar, go to <strong>Socket Mode</strong></li>
+<li>Click the toggle to <strong>Enable Socket Mode</strong></li>
+<li>A panel appears asking you to generate an <strong>app-level token</strong></li>
+<li>Click <strong>Generate Token and Scopes</strong></li>
+<li>Name the token (e.g., “Socket Mode Token”)</li>
+<li>Add the <code>connections:write</code> scope</li>
+<li>Click <strong>Generate</strong> and copy the token (it starts with <code>xapp-</code>)</li>
+<li>Return to the Shipwright admin UI and paste the <code>xapp-</code> token into the Socket Mode field</li>
+<li>Submit the form</li>
+</ol>
+<p>Once submitted, the agent will connect to Slack via Socket Mode on its next startup.</p>
 <h2 id="required-slack-environment-variables">Required Slack environment variables</h2>
 
 
@@ -179,5 +213,5 @@ maintenance — see <a href="/docs/the-agent">The Agent</a> for the full cron re
 ← Previous
 </a>  </div> </main> <!-- TOC (on-page, static) --> <aside style="min-width: 0;" data-astro-cid-mw7aashj> <nav aria-label="On this page" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.75rem;" data-astro-cid-mw7aashj>
 On this page
-</p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="#how-it-works" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> How it works </a> </li><li data-astro-cid-mw7aashj> <a href="#connecting-a-slack-app" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Connecting a Slack app </a> </li><li data-astro-cid-mw7aashj> <a href="#manual-setup" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Manual setup </a> </li><li data-astro-cid-mw7aashj> <a href="#required-slack-environment-variables" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Required Slack environment variables </a> </li><li data-astro-cid-mw7aashj> <a href="#interacting-with-the-agent" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Interacting with the agent </a> </li><li data-astro-cid-mw7aashj> <a href="#direct-messages" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Direct messages </a> </li><li data-astro-cid-mw7aashj> <a href="#mentions" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Mentions </a> </li><li data-astro-cid-mw7aashj> <a href="#reactions" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Reactions </a> </li><li data-astro-cid-mw7aashj> <a href="#voice-notes" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Voice notes </a> </li><li data-astro-cid-mw7aashj> <a href="#response-markers" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Response markers </a> </li><li data-astro-cid-mw7aashj> <a href="#cron-job-notifications" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Cron job notifications </a> </li><li data-astro-cid-mw7aashj> <a href="#message-format" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Message format </a> </li><li data-astro-cid-mw7aashj> <a href="#next-steps" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Next steps </a> </li> </ul> </nav> </aside> </div> </div> <!-- Footer --> <footer class="sw-container relative z-10 py-12" data-astro-cid-mw7aashj> <div class="flex flex-col gap-6 pt-8 sm:flex-row sm:items-center sm:justify-between" style="border-top: 1px solid var(--sw-color-border-subtle);" data-astro-cid-mw7aashj> <p class="sw-label flex items-center gap-2" data-astro-cid-mw7aashj> <img src="/shipwright-icon.svg" alt="" width="20" height="20" class="rounded" data-astro-cid-mw7aashj>
+</p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="#how-it-works" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> How it works </a> </li><li data-astro-cid-mw7aashj> <a href="#connecting-a-slack-app" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Connecting a Slack app </a> </li><li data-astro-cid-mw7aashj> <a href="#step-1-open-the-provisioning-form" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Step 1: Open the provisioning form </a> </li><li data-astro-cid-mw7aashj> <a href="#understanding-the-slack-app-configuration-token" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Understanding the Slack app configuration token </a> </li><li data-astro-cid-mw7aashj> <a href="#step-2-shipwright-creates-the-slack-app" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Step 2: Shipwright creates the Slack app </a> </li><li data-astro-cid-mw7aashj> <a href="#step-3-authorize-the-slack-app" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Step 3: Authorize the Slack app </a> </li><li data-astro-cid-mw7aashj> <a href="#step-4-enable-socket-mode-and-generate-the-app-token" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Step 4: Enable Socket Mode and generate the app token </a> </li><li data-astro-cid-mw7aashj> <a href="#required-slack-environment-variables" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Required Slack environment variables </a> </li><li data-astro-cid-mw7aashj> <a href="#interacting-with-the-agent" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Interacting with the agent </a> </li><li data-astro-cid-mw7aashj> <a href="#direct-messages" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Direct messages </a> </li><li data-astro-cid-mw7aashj> <a href="#mentions" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Mentions </a> </li><li data-astro-cid-mw7aashj> <a href="#reactions" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Reactions </a> </li><li data-astro-cid-mw7aashj> <a href="#voice-notes" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Voice notes </a> </li><li data-astro-cid-mw7aashj> <a href="#response-markers" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Response markers </a> </li><li data-astro-cid-mw7aashj> <a href="#cron-job-notifications" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Cron job notifications </a> </li><li data-astro-cid-mw7aashj> <a href="#message-format" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Message format </a> </li><li data-astro-cid-mw7aashj> <a href="#next-steps" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Next steps </a> </li> </ul> </nav> </aside> </div> </div> <!-- Footer --> <footer class="sw-container relative z-10 py-12" data-astro-cid-mw7aashj> <div class="flex flex-col gap-6 pt-8 sm:flex-row sm:items-center sm:justify-between" style="border-top: 1px solid var(--sw-color-border-subtle);" data-astro-cid-mw7aashj> <p class="sw-label flex items-center gap-2" data-astro-cid-mw7aashj> <img src="/shipwright-icon.svg" alt="" width="20" height="20" class="rounded" data-astro-cid-mw7aashj>
 Shipwright Harness · MIT-licensed · © 2026 </p> <nav class="flex flex-wrap gap-x-6 gap-y-2 text-sm" aria-label="Footer" data-astro-cid-mw7aashj> <a href="https://github.com/app-vitals/shipwright" data-astro-cid-mw7aashj>GitHub</a> <a href="https://github.com/app-vitals/shipwright/blob/main/LICENSE" data-astro-cid-mw7aashj>MIT License</a> <a href="https://claude.com/claude-code" data-astro-cid-mw7aashj>Claude Code</a> <a href="https://github.com/app-vitals/shipwright/discussions" data-astro-cid-mw7aashj>GitHub Discussions</a> </nav> </div> </footer> </body></html>
