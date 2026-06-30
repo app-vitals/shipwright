@@ -1,0 +1,347 @@
+---
+title: PRs API
+description: "HTTP API reference for PR review tracking: endpoints, PR schema, reviewState lifecycle, staged flag, heartbeat TTL, and curl examples."
+section: Reference
+order: 10
+---
+
+# PRs API
+
+The PRs API tracks review cycles for open pull requests. Where a task record drives the **build cycle** (pending → in_progress → pr_open → deployed), a PR record drives the **review cycle** — claim, review, patch, re-review, approve.
+
+> **See also:** [Task Store API](/docs/task-store-api) — the companion surface for task queuing and execution tracking.
+
+## How PR Records Relate to Tasks
+
+| Concept | Answers | Lifecycle |
+|---|---|---|
+| **Task** | "What code work is being done?" | `pending → in_progress → pr_open → approved → deployed` |
+| **PR record** | "Is this PR reviewed and ready?" | `pending → in_progress → posted → approved` |
+
+A task typically has one associated PR record once it reaches `pr_open`. The link is optional — either resource can exist without the other — but the `taskId` field on the PR record makes the association explicit.
+
+Multiple review rounds on the same PR are represented by `reviewCycles` (how many times a review was posted) and `patchCycles` (how many times the PR was patched and re-queued).
+
+## Authentication
+
+All requests require a Bearer token in the `Authorization` header:
+
+```bash
+Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN
+```
+
+The PRs API shares its auth layer with the task store — the same token and env vars apply:
+
+| Env var | Description |
+|---|---|
+| `SHIPWRIGHT_TASK_STORE_URL` | Base URL of the task store service |
+| `SHIPWRIGHT_TASK_STORE_TOKEN` | Bearer token for this agent or admin |
+
+## reviewState Lifecycle
+
+PR records move through a defined set of review states:
+
+```
+pending → in_progress → posted → approved
+```
+
+| State | Meaning |
+|---|---|
+| `pending` | Not yet claimed for review; eligible for pickup |
+| `in_progress` | Claimed by a review agent; review is being written |
+| `posted` | Review has been posted to GitHub; counter incremented |
+| `approved` | PR passed review and is approved for merge |
+
+### State transitions
+
+| Action | From | To | Side effects |
+|---|---|---|---|
+| `POST /prs/claim` | `pending` | `in_progress` | Sets `claimedBy`, `claimedAt`, `heartbeatAt` |
+| `POST /prs/:id/complete` | `in_progress` | `posted` | `reviewCycles++`, sets `reviewedAt` |
+| `POST /prs/:id/patch` | any | `pending` | `patchCycles++`, sets `patchedAt`, clears claim fields |
+| `POST /prs/:id/release` | any | `pending` | Clears claim fields (`claimedBy`, `claimedAt`, `heartbeatAt`) |
+| `PATCH /prs/:id` | any | any | Direct field update — set `reviewState: "approved"` explicitly |
+
+## staged Flag
+
+The `staged` boolean marks a review that has been written but not yet posted to GitHub:
+
+- **`staged: false`** (default) — normal state; no review is written or the review has been posted.
+- **`staged: true`** — review text is ready locally but posting is deferred (e.g. awaiting human approval, rate-limit backoff, or policy check). The record stays in `in_progress` while staged.
+
+Set `staged` via `PATCH /prs/:id`. Once the review is posted, call `POST /prs/:id/complete` (which implicitly clears staged) or set `staged: false` in the same PATCH.
+
+## Endpoints
+
+### GET /prs
+
+List PR records. Returns `{ prs, total, limit, offset }`.
+
+| Query param | Type | Description |
+|---|---|---|
+| `repo` | string | Filter by `org/repo` format |
+| `prNumber` | int | Filter by PR number (use with `repo` to get a specific record) |
+| `taskId` | string | Filter by linked task ID |
+| `state` | string | Filter by PR state: `open`, `merged`, `closed` |
+| `reviewState` | string | Filter by review state: `pending`, `in_progress`, `posted`, `approved` |
+| `staged` | boolean | `true` to return only staged reviews |
+| `limit` | int | Max results (pagination) |
+| `offset` | int | Start offset (pagination) |
+
+```bash
+# All pending PR records in a repo
+curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs?repo=org/repo&reviewState=pending" | jq '.prs'
+
+# Specific PR by repo + number
+curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs?repo=org/repo&prNumber=42" | jq '.prs[0]'
+```
+
+### POST /prs/claim
+
+Atomically claim a PR for review. Returns **201** when a new record is created, **200** when an existing record is updated (re-claimed), and **409** when the PR is already claimed at the same commit by another agent.
+
+**Request body:**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `repo` | string | yes | `org/repo` format |
+| `prNumber` | int | yes | GitHub PR number |
+| `commitSha` | string | no | Current HEAD commit SHA of the PR branch |
+| `agentId` | string | no | Claiming agent ID |
+| `taskId` | string | no | Associated task ID |
+
+**Claim semantics:**
+
+- Same `commitSha` + `reviewState !== pending` → **409 Conflict** (PR already under review at this commit)
+- Different `commitSha` OR `reviewState === pending` → update existing record, return **200**
+- No existing record → create new record, return **201**
+
+On success the record's `reviewState` is set to `in_progress`, and `claimedBy`, `claimedAt`, and `heartbeatAt` are populated.
+
+```bash
+curl -sf -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs/claim" \
+  -d '{
+    "repo": "org/repo",
+    "prNumber": 42,
+    "commitSha": "abc1234",
+    "agentId": "<agent-id>"
+  }' | jq .
+```
+
+### GET /prs/:id
+
+Fetch a single PR record by its CUID. Returns **404** when not found.
+
+```bash
+curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs/clx1234abc" | jq .
+```
+
+### PATCH /prs/:id
+
+Partial update — only the provided fields are changed. Returns the updated record.
+
+**Updatable fields:** `staged`, `commitSha`, `taskId`, `agentId`, `state`, `mergedAt`, `reviewState`
+
+```bash
+# Mark review as staged (written but not yet posted)
+curl -sf -X PATCH \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs/clx1234abc" \
+  -d '{"staged": true}' | jq .
+
+# Set reviewState to approved directly
+curl -sf -X PATCH \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs/clx1234abc" \
+  -d '{"reviewState": "approved"}' | jq .
+
+# Record that the PR merged
+curl -sf -X PATCH \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs/clx1234abc" \
+  -d '{"state": "merged", "mergedAt": "2024-01-15T12:00:00Z"}' | jq .
+```
+
+### POST /prs/:id/heartbeat
+
+Touch `heartbeatAt` to signal that the review agent is still alive. Call this periodically during long-running review work to prevent the [StaleClaimReaper](#heartbeat-and-stale-claim-reaper) from releasing the claim.
+
+```bash
+curl -sf -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs/clx1234abc/heartbeat" | jq .
+```
+
+### POST /prs/:id/complete
+
+Mark the review as posted. Increments `reviewCycles`, sets `reviewState` to `posted`, and records `reviewedAt`. Call this after the GitHub review comment or approval has been successfully posted.
+
+```bash
+curl -sf -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs/clx1234abc/complete" | jq .
+```
+
+### POST /prs/:id/patch
+
+Record that the PR author pushed a patch in response to review feedback. Increments `patchCycles`, resets `reviewState` to `pending`, and records `patchedAt`. The claim fields (`claimedBy`, `claimedAt`, `heartbeatAt`) are cleared so the PR becomes eligible for re-review.
+
+```bash
+curl -sf -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs/clx1234abc/patch" | jq .
+```
+
+### POST /prs/:id/release
+
+Release a claim without completing or patching. Resets `reviewState` to `pending` and clears `claimedBy`, `claimedAt`, and `heartbeatAt`. Use when a review agent is shutting down or voluntarily relinquishing the PR.
+
+```bash
+curl -sf -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs/clx1234abc/release" | jq .
+```
+
+## Heartbeat and Stale Claim Reaper
+
+The **StaleClaimReaper** runs every 60 seconds and releases stale claims automatically. A claim is considered stale when:
+
+- `heartbeatAt` is set and older than the TTL, **or**
+- `heartbeatAt` is null and `claimedAt` is older than the TTL
+
+**Default TTL:** 300,000 ms (5 minutes). Override with the `SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS` env var.
+
+When a claim is reaped, the reaper:
+1. Sets `reviewState` back to `pending`
+2. Clears `claimedBy`, `claimedAt`, and `heartbeatAt`
+
+The PR becomes immediately eligible for re-claim by another agent (or the same agent on restart).
+
+### Heartbeat recommendations
+
+- Call `POST /prs/:id/heartbeat` at least once every 2–3 minutes during active review work.
+- Call it after any significant step (e.g. after reading the diff, after generating review text).
+- If your agent crashes and restarts, check for `in_progress` records matching your `agentId` before claiming new work — the reaper may not have fired yet.
+
+## PR Schema
+
+All fields from the `PullRequest` model:
+
+### Identity and linking
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | string | CUID assigned at creation; use for all subsequent API calls |
+| `repo` | string | `org/repo` format; required on claim |
+| `prNumber` | int | GitHub PR number; unique together with `repo` |
+| `taskId` | string? | Optional link to a task store task |
+| `agentId` | string? | ID of the agent that owns this record |
+
+### Review tracking
+
+| Field | Type | Notes |
+|---|---|---|
+| `reviewState` | PrReviewState | `pending` \| `in_progress` \| `posted` \| `approved` |
+| `staged` | boolean | `true` when a review is written but not yet posted to GitHub |
+| `reviewCycles` | int | Number of times a review has been posted (starts at 0) |
+| `patchCycles` | int | Number of times the PR was patched after a review (starts at 0) |
+| `commitSha` | string? | HEAD commit SHA at the time of the last claim |
+| `reviewedAt` | string? | ISO timestamp of the last completed review |
+| `patchedAt` | string? | ISO timestamp of the last recorded patch |
+
+### PR state
+
+| Field | Type | Notes |
+|---|---|---|
+| `state` | PrState | `open` \| `merged` \| `closed` |
+| `mergedAt` | string? | ISO timestamp when the PR was merged |
+
+### Claim and liveness
+
+| Field | Type | Notes |
+|---|---|---|
+| `claimedBy` | string? | Agent ID that currently holds the claim |
+| `claimedAt` | string? | ISO timestamp when the claim was taken |
+| `heartbeatAt` | string? | ISO timestamp of the last heartbeat; used by the StaleClaimReaper |
+
+### System fields
+
+| Field | Type | Notes |
+|---|---|---|
+| `createdAt` | DateTime | Set by the database on creation |
+| `updatedAt` | DateTime | Updated by the database on every write |
+
+## HTTP Status Codes
+
+| Code | Meaning |
+|---|---|
+| 200 | Success — existing record updated (claim, PATCH, action endpoints) |
+| 201 | Created — new PR record created by claim |
+| 400 | Bad request — missing required field or invalid format |
+| 404 | Not found — no PR record with the given ID |
+| 409 | Conflict — PR already claimed at the same commit SHA with a non-pending reviewState |
+
+## Curl Examples: Full Happy-Path Lifecycle
+
+The following sequence demonstrates the complete review cycle: claim → heartbeat → complete, and then a patch round that resets for re-review.
+
+```bash
+BASE="$SHIPWRIGHT_TASK_STORE_URL"
+TOKEN="$SHIPWRIGHT_TASK_STORE_TOKEN"
+AUTH="Authorization: Bearer $TOKEN"
+
+# 1. Claim the PR for review (201 = new record, 200 = re-claim, 409 = already active)
+CLAIM=$(curl -sf -X POST \
+  -H "$AUTH" -H "Content-Type: application/json" \
+  "$BASE/prs/claim" \
+  -d '{"repo": "org/repo", "prNumber": 42, "commitSha": "abc1234"}')
+echo "$CLAIM" | jq .
+
+PR_ID=$(echo "$CLAIM" | jq -r '.id')
+
+# 2. Send heartbeats while performing the review (every 2-3 minutes)
+curl -sf -X POST -H "$AUTH" "$BASE/prs/$PR_ID/heartbeat" | jq .
+
+# 3. (Optional) Mark as staged while awaiting human approval to post
+curl -sf -X PATCH \
+  -H "$AUTH" -H "Content-Type: application/json" \
+  "$BASE/prs/$PR_ID" \
+  -d '{"staged": true}' | jq .
+
+# 4. After posting review to GitHub, mark complete
+#    (reviewCycles incremented, reviewState → posted, reviewedAt set)
+curl -sf -X POST -H "$AUTH" "$BASE/prs/$PR_ID/complete" | jq .
+
+# --- If the author pushes a patch in response to the review ---
+
+# 5. Record the patch cycle (patchCycles incremented, reviewState → pending)
+curl -sf -X POST -H "$AUTH" "$BASE/prs/$PR_ID/patch" | jq .
+
+# 6. The PR is now pending again — claim it for the next review round
+curl -sf -X POST \
+  -H "$AUTH" -H "Content-Type: application/json" \
+  "$BASE/prs/claim" \
+  -d '{"repo": "org/repo", "prNumber": 42, "commitSha": "def5678"}' | jq .
+
+# --- When the PR is approved ---
+
+# 7. Set reviewState to approved directly
+curl -sf -X PATCH \
+  -H "$AUTH" -H "Content-Type: application/json" \
+  "$BASE/prs/$PR_ID" \
+  -d '{"reviewState": "approved"}' | jq .
+```
+
+## See also
+
+- [Task Store API](/docs/task-store-api) — task queuing, execution tracking, and the build lifecycle
+- [Configuration Reference](/docs/reference) — `SHIPWRIGHT_TASK_STORE_URL`, `SHIPWRIGHT_TASK_STORE_TOKEN`, and all other env vars
