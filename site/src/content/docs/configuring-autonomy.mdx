@@ -30,6 +30,8 @@ it with tests, and opens a PR. You review and merge PRs yourself.
 
 This is the entry point. The agent writes code; you stay in the loop on every PR.
 
+> **Note:** New agents start with both `shipwright-dev-task` and `shipwright-review-patch` enabled (Stage 2). Disable `shipwright-review-patch` via the admin UI to begin at Stage 1.
+
 ### Stage 2 — Add review and patch
 
 Enable `shipwright-review-patch`. The agent now reviews open PRs and patches any that have
@@ -75,7 +77,7 @@ Enable `shipwright-dev-task` and `shipwright-patch`. Disable `shipwright-review-
 dev-task  ✓  patch  ✓  review-patch  ✗  deploy  ✗
 ```
 
-### Staged reviews: agent writes, you post
+### Staged reviews
 
 You want the agent to review PRs but prefer to read and approve each review before it goes to
 GitHub. Set `auto_post_reviews: false` in `state/agent-policy.md`. Enable `shipwright-review-patch`.
@@ -118,7 +120,7 @@ restart or cron change required.
 
 | Setting | Value | Notes |
 |---------|-------|-------|
-| `auto_post_reviews` | false | Post reviews directly to GitHub without staging |
+| `auto_post_reviews` | false | Stage reviews locally; do not post to GitHub automatically. |
 | `allowed_events` | [COMMENT, APPROVE] | Never REQUEST_CHANGES |
 | `review_external_prs` | true | Review externally-opened PRs |
 | `allow_self_review` | true | Review own PRs |
