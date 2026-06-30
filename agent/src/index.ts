@@ -45,9 +45,7 @@ import { synthesizeSpeech } from "./voice.ts";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-const agentHome =
-  process.env.AGENT_HOME ??
-  join(process.env.HOME ?? "/root", ".shipwright-agent");
+const agentHome = process.env.AGENT_HOME ?? "/data/agent-home";
 const { config } = createConfig(agentHome);
 
 // ─── Timestamp prefix ─────────────────────────────────────────────────────────
