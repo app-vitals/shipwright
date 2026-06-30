@@ -8,6 +8,10 @@
 **The open-source autonomous delivery agent for Claude Code.** A deployable cloud agent and the autonomous coding system that powers it — built on the Shipwright plugin, running on your own codebase.
 
 <p align="center">
+  <video src="https://github.com/app-vitals/shipwright/raw/main/brand/assets/videos/shipwright-intro.mp4" controls muted width="900"></video>
+</p>
+
+<p align="center">
   <img src="assets/demo.gif" alt="Shipwright Harness in a Claude Code terminal: install, then plan → build → review → ship a task end to end." width="900" />
   <br />
   <em>Plan → build → review → ship — one task through the pipeline. (Illustrative.)</em>
