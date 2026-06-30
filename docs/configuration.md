@@ -177,15 +177,6 @@ Controls how the admin service provisions the Kubernetes workload backing each a
 | `SHIPWRIGHT_STARTUP_TIMEOUT_MS` | `number` | `180000` | Maximum milliseconds the entrypoint startup sequence may take before the agent exits. Override to a lower value (e.g. `10000`) in dev for faster fail-fast feedback. |
 | `AGENT_ALLOWED_TOOLS` | `string` (JSON array) | — | JSON array of allowed Claude tool patterns. Set by the admin service config sync; do not set manually in production. |
 
-### Analytics
-
-All analytics vars are env-var-only (secrets/infra identifiers).
-
-| Name | Type | Default | Description |
-|---|---|---|---|
-| `POSTHOG_PROJECT_API_KEY` | `string` | — | PostHog project API key for event ingest. Env-var-only (secret). |
-| `POSTHOG_HOST` | `string` | `https://us.i.posthog.com` | PostHog ingest host. Override for self-hosted PostHog deployments. |
-
 ### Voice
 
 Optional. When unset, voice transcription and synthesis are disabled.

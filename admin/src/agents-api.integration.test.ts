@@ -1,6 +1,6 @@
 /**
  * agent/src/agents-api.integration.test.ts
- * Integration tests for the admin CRUD API against a real SQLite DB.
+ * Integration tests for the admin CRUD API against a real PostgreSQL DB.
  *
  * Requires DATABASE_URL_ADMIN_TEST to be set; skips otherwise.
  *
