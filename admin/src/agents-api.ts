@@ -728,8 +728,8 @@ const cronRunTokenStatsRoute = createRoute({
 
 const chatTokenDailyStatsQuerySchema = z
   .object({
-    from: z.string().datetime().optional().openapi({ example: "2026-01-01T00:00:00Z" }),
-    to: z.string().datetime().optional().openapi({ example: "2026-02-01T00:00:00Z" }),
+    from: z.string().date().optional().openapi({ example: "2026-01-01" }),
+    to: z.string().date().optional().openapi({ example: "2026-02-01" }),
   })
   .openapi("ChatTokenDailyStatsQuery");
 
