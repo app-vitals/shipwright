@@ -94,6 +94,9 @@ export const agentTaskStoreVars: ConfigVar[] = [
   { name: "SHIPWRIGHT_TASK_STORE_DOC_TTL_SECONDS", type: "number", def: "3600", desc: "Time-to-live, in seconds, for ephemeral HTML documents stored via POST /docs and served from GET /docs/:id. After this window the document is evicted and the GET returns 404. Storage is in-memory and process-local." },
   { name: "SHIPWRIGHT_TASK_STORE_AGENTS_URL", type: "string", def: "—", desc: "Base URL of the Shipwright agents service. When set alongside SHIPWRIGHT_TASK_STORE_AGENTS_API_KEY, the task-store service uses it to resolve agent tokens to their scoped repos. Optional — not required when agents do not need repo-scoping." },
   { name: "SHIPWRIGHT_TASK_STORE_AGENTS_API_KEY", type: "string", def: "—", desc: "Bearer token for the task-store service to call the agents service. Required alongside SHIPWRIGHT_TASK_STORE_AGENTS_URL to enable scope resolution. Env-var-only (secret)." },
+];
+
+export const agentServicesVars: ConfigVar[] = [
   { name: "SHIPWRIGHT_ADMIN_PUBLIC_REPO", type: "string", def: "—", desc: "Repository slug (format: org/repo) scoped for the public read-only task board. When set, GET /public/tasks displays tasks for this repo only, unauthenticated. Optional — omit to disable the public board." },
   { name: "SHIPWRIGHT_ADMIN_TZ", type: "string", def: "America/Los_Angeles", desc: "IANA timezone name (e.g. America/New_York) for date/time display in the admin UI. When unset, defaults to America/Los_Angeles." },
   { name: "METRICS_DASHBOARD_URL", type: "string", def: "/dashboard", desc: "URL for the Metrics toolbar link in the admin UI. Defaults to /dashboard (same-host relative path). Set to an absolute URL when the metrics service runs on a different host or port." },

@@ -15,6 +15,7 @@ import {
   agentServerVars,
   agentMetricsVars,
   agentTaskStoreVars,
+  agentServicesVars,
   agentProvisioningVars,
   agentWorkspaceVars,
   agentVoiceVars,
@@ -81,6 +82,12 @@ Provide either the GitHub App vars (recommended) or `GH_TOKEN` (PAT). App auth i
 ### Task store service
 
 <ConfigTable vars={agentTaskStoreVars} />
+
+### Metrics, admin, and task-store services
+
+Cross-service vars read by the admin service and metrics service (not the task-store).
+
+<ConfigTable vars={agentServicesVars} />
 
 ### Agent provisioning (Kubernetes)
 
