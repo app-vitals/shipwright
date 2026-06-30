@@ -213,6 +213,24 @@ test("prev/next navigation links on the-agent page", async ({ page }) => {
   const prevLink = page.locator("a[data-nav='prev']");
   await expect(prevLink).toBeVisible();
   expect(await prevLink.getAttribute("href")).toBe("/docs/running-locally");
+  // next → configuring-autonomy
+  const nextLink = page.locator("a[data-nav='next']");
+  await expect(nextLink).toBeVisible();
+  expect(await nextLink.getAttribute("href")).toBe("/docs/configuring-autonomy");
+});
+
+test("configuring-autonomy page loads and has correct nav links", async ({
+  page,
+}) => {
+  const response = await page.goto("/docs/configuring-autonomy");
+  expect(response?.status()).toBe(200);
+  // h2 heading must be present
+  const h2 = page.locator("h2");
+  await expect(h2.first()).toBeVisible();
+  // prev → the-agent
+  const prevLink = page.locator("a[data-nav='prev']");
+  await expect(prevLink).toBeVisible();
+  expect(await prevLink.getAttribute("href")).toBe("/docs/the-agent");
   // next → deploying-to-cloud
   const nextLink = page.locator("a[data-nav='next']");
   await expect(nextLink).toBeVisible();
@@ -221,10 +239,10 @@ test("prev/next navigation links on the-agent page", async ({ page }) => {
 
 test("deploying-to-cloud has updated prev/next links", async ({ page }) => {
   await page.goto("/docs/deploying-to-cloud");
-  // prev → the-agent (updated from getting-started)
+  // prev → configuring-autonomy
   const prevLink = page.locator("a[data-nav='prev']");
   await expect(prevLink).toBeVisible();
-  expect(await prevLink.getAttribute("href")).toBe("/docs/the-agent");
+  expect(await prevLink.getAttribute("href")).toBe("/docs/configuring-autonomy");
   // next → slack-integration (new)
   const nextLink = page.locator("a[data-nav='next']");
   await expect(nextLink).toBeVisible();
