@@ -125,42 +125,6 @@ tests:
     asserts:
       - notFailedTemplate: {}
 
-  - it: accepts posthog with personalApiKeyRef set and existingSecret empty (guard is existingSecret-triggered)
-    set:
-      metrics.provider.posthog.personalApiKeyRef: my-key-ref
-      metrics.provider.posthog.existingSecret: ""
-    asserts:
-      - notFailedTemplate: {}
-
-  - it: accepts posthog with projectIdRef set and existingSecret empty (guard is existingSecret-triggered)
-    set:
-      metrics.provider.posthog.projectIdRef: my-project-ref
-      metrics.provider.posthog.existingSecret: ""
-    asserts:
-      - notFailedTemplate: {}
-
-  - it: accepts posthog with both ref fields and a non-empty existingSecret
-    set:
-      metrics.provider.posthog.personalApiKeyRef: my-key-ref
-      metrics.provider.posthog.projectIdRef: my-project-ref
-      metrics.provider.posthog.existingSecret: my-secret
-    asserts:
-      - notFailedTemplate: {}
-
-  - it: accepts posthog with no ref fields and an empty existingSecret (guard never triggers)
-    set:
-      metrics.provider.posthog.existingSecret: ""
-    asserts:
-      - notFailedTemplate: {}
-
-  - it: rejects posthog with existingSecret set but personalApiKeyRef empty (conditional minLength)
-    set:
-      metrics.provider.posthog.existingSecret: my-secret
-      metrics.provider.posthog.personalApiKeyRef: ""
-    asserts:
-      - failedTemplate:
-          errorPattern: "personalApiKeyRef"
-
   - it: accepts internalKey with key set and existingSecret empty (guard is existingSecret-triggered)
     set:
       metrics.provider.internalKey.key: my-key

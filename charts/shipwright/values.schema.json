@@ -193,28 +193,6 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "posthog": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "properties": {
-                    "existingSecret": { "type": "string" },
-                    "personalApiKeyRef": { "type": "string" },
-                    "projectIdRef": { "type": "string" }
-                  },
-                  "if": {
-                    "properties": {
-                      "existingSecret": { "type": "string", "minLength": 1 }
-                    },
-                    "required": ["existingSecret"]
-                  },
-                  "then": {
-                    "properties": {
-                      "personalApiKeyRef": { "type": "string", "minLength": 1 },
-                      "projectIdRef": { "type": "string", "minLength": 1 }
-                    },
-                    "required": ["personalApiKeyRef", "projectIdRef"]
-                  }
-                },
                 "adminUrl": { "type": "string" },
                 "taskStoreUrl": { "type": "string" },
                 "taskStoreToken": {

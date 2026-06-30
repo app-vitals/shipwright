@@ -235,44 +235,6 @@ tests:
       - hasDocuments:
           count: 0
 
-  - it: injects POSTHOG_PERSONAL_API_KEY and POSTHOG_PROJECT_ID via secretKeyRef when posthog existingSecret is set
-    template: templates/metrics-deployment.yaml
-    release:
-      name: r
-    set:
-      metrics.provider.posthog.existingSecret: my-posthog-secret
-      metrics.provider.posthog.personalApiKeyRef: POSTHOG_PERSONAL_API_KEY
-      metrics.provider.posthog.projectIdRef: POSTHOG_PROJECT_ID
-    asserts:
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: POSTHOG_PERSONAL_API_KEY
-            valueFrom:
-              secretKeyRef:
-                name: my-posthog-secret
-                key: POSTHOG_PERSONAL_API_KEY
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: POSTHOG_PROJECT_ID
-            valueFrom:
-              secretKeyRef:
-                name: my-posthog-secret
-                key: POSTHOG_PROJECT_ID
-
-  - it: omits PostHog env vars in the default path (no existingSecret set)
-    template: templates/metrics-deployment.yaml
-    asserts:
-      - notContains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: POSTHOG_PERSONAL_API_KEY
-      - notContains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: POSTHOG_PROJECT_ID
-
   - it: injects METRICS_ADMIN_URL as a literal env when adminUrl is set
     template: templates/metrics-deployment.yaml
     set:
