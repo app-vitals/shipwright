@@ -68,7 +68,7 @@ A small in-memory HTML store for short-lived, regenerable artifacts (one-pagers,
 |---|---|---|
 | Marketing site | `site/` | Astro + Tailwind (**shipwrightharness.com**). **Not** a Bun workspace; Playwright smoke tests (`*.spec.ts`). |
 | Brand system | `brand/` | Locked design system (`BRAND.md`, `tokens.json`) + CSS build + lint, consumed by `site/`. |
-| Local state | `state/` | Git-ignored JSON fallback (local-only, used when neither the Postgres task-store service nor GitHub/Jira backend is available) + cached review state. |
+| Local state | `state/` | Git-ignored JSON fallback (local-only, used when the Postgres task-store service is unavailable) + cached review state. |
 
 ## Workspace layout
 

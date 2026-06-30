@@ -22,8 +22,6 @@ Configuration for the Shipwright Claude Code plugin (`plugins/shipwright/`). The
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `SHIPWRIGHT_GITHUB_OWNER` | `string` | — | GitHub organization or user name. Required when using the GitHub backend. |
-| `SHIPWRIGHT_GITHUB_REPO` | `string` | — | GitHub repository name. Required when using the GitHub backend. |
 | `JIRA_BASE_URL` | `string` | — | Base URL of the Jira instance (e.g. `https://example.atlassian.net`). Required when using the Jira backend. |
 | `JIRA_PROJECT_KEY` | `string` | — | Jira project key (e.g. `SHIP`). Required when using the Jira backend. |
 | `SHIPWRIGHT_REPOS_DIR` | `string` | `<AGENT_HOME>/workspace/repos` | Override the workspace repos directory. Used by scripts that need to know where checked-out repos live. |

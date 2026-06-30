@@ -1,11 +1,10 @@
 # Task Store
 
-The Shipwright task store is the backing database for the plan-execute-review loop. It holds all tasks, their statuses, dependencies, and metadata. Three backends are available:
+The Shipwright task store is the backing database for the plan-execute-review loop. It holds all tasks, their statuses, dependencies, and metadata. Two backends are available:
 
 | Backend | Where tasks live | Best for |
 |---------|-----------------|---------|
 | `json` | `state/todos.json` (local file) | Local development, offline use |
-| `github` | GitHub Issues in a repo | Team collaboration with GitHub as the source of truth |
 | `jira` | Jira project issues | Teams already using Jira for project tracking |
 
 Config is resolved at startup using env vars (see [docs/configuration.md](configuration.md)). When no backend env vars are set, Shipwright defaults to the JSON backend.
@@ -47,8 +46,6 @@ The `doctor` command runs two categories of checks:
 | `duplicate-ids` | `fail` | all backends | Two or more tasks share the same `id` |
 | `dangling-deps` | `fail` | all backends | A task's `dependencies` reference an `id` that doesn't exist |
 | `cross-repo-orphans` | `warn` | all backends | A task's `repo` field doesn't match the adapter's configured repo |
-| `zero-status-label` | `fail` | GitHub only | A GitHub issue has a shipwright code block but no `status:*` label |
-| `stale-pr` | `fail` | GitHub only | A task in `pr_open` or `approved` status has a PR that is already merged |
 
 Any check that returns `[fail]` causes the command to exit with status code 1. Results with `[warn]` severity are printed but do not cause a non-zero exit.
 
@@ -63,45 +60,6 @@ Any check that returns `[fail]` causes the command to exit with status code 1. R
 - `state/todos.json` is git-ignored by default — it is a local queue, not a shared artifact
 - Writes are atomic (temp-file rename)
 - The JSON backend has no GitHub access, so cross-branch `pr_open` dependency checks are conservatively treated as unsatisfied
-
----
-
-## GitHub backend
-
-The GitHub backend stores tasks as GitHub Issues. Each issue carries a `status:*` label that is the authoritative status, an optional `hitl` label to gate execution, and a fenced `shipwright` code block in the issue body containing the full task metadata JSON.
-
-### Prerequisites
-
-- The `gh` CLI installed and authenticated (`gh auth login`)
-- `GH_TOKEN` set if using a service account or CI environment (the `gh` CLI picks this up automatically)
-- Write access to the target repo (needed for label creation and issue management)
-
-### Configuration
-
-Set the following env vars to select the GitHub backend:
-
-| Env var | Required | Description |
-|---------|----------|-------------|
-| `SHIPWRIGHT_GITHUB_OWNER` | yes | GitHub organization or user name |
-| `SHIPWRIGHT_GITHUB_REPO` | yes | Repository name |
-
-### Quick start
-
-```bash
-# One-time setup: create the status:* labels in the repo
-bun plugins/shipwright/scripts/task_store.ts setup
-
-# Confirm the backend is active and the config is correct
-bun plugins/shipwright/scripts/task_store.ts doctor
-```
-
-The `setup` command creates all `status:*` labels (`status:pending`, `status:in_progress`, `status:pr_open`, etc.) and the `hitl` label (human-in-the-loop, red color) using `--force` so it is safe to re-run.
-
-### When to use
-
-- Team workflows where engineers need to see and update task status via GitHub
-- Projects where the task queue should be visible alongside PRs and issues
-- CI pipelines that already have `GH_TOKEN` available
 
 ---
 
@@ -176,11 +134,10 @@ project = "SHIP" AND labels = "shipwright-session" AND sprint in openSprints() A
 
 ### Human-in-the-loop (HITL) filtering
 
-Tasks marked with the `hitl` label or field are automatically excluded from the ready task set. Use this to temporarily gate high-risk or uncertain tasks from automated execution — they will not be picked up by `resolveReadyTasks()` even when all dependencies are satisfied and status is `pending`.
+Tasks marked with the `hitl` field are automatically excluded from the ready task set. Use this to temporarily gate high-risk or uncertain tasks from automated execution — they will not be picked up by `resolveReadyTasks()` even when all dependencies are satisfied and status is `pending`.
 
 To mark a task as HITL:
-- **GitHub backend:** apply the `hitl` label to the issue
-- **Jira backend:** add `hitl: true` to the task metadata block, or use a custom JQL filter (see `readyJql` above) to exclude them
+- Add `hitl: true` to the task metadata block, or use a custom JQL filter (see `readyJql` above) to exclude them
 
 HITL is a runtime flag — it does not affect `query()` filters or direct task lookup. Use `query(filters: { hitl: true })` to return only HITL tasks, or `query(filters: { hitl: false })` to return only non-HITL tasks.
 
@@ -220,15 +177,14 @@ The `task_store.ts` script provides several subcommands for manual interaction w
 
 | Command | Description |
 |---------|-------------|
-| `setup` | Create `state/todos.json` if missing (JSON backend) or initialize GitHub/Jira labels and validation (GitHub/Jira backends) |
+| `setup` | Create `state/todos.json` if missing (JSON backend) or initialize Jira labels and validation (Jira backend) |
 | `doctor` | Validate configuration and print diagnostics (includes `backend:` line showing the active backend) |
-| `backend` | Print the active backend name: `json`, `github`, or `jira` (useful for scripts that need to detect the backend) |
+| `backend` | Print the active backend name: `json` or `jira` (useful for scripts that need to detect the backend) |
 | `query` | Filter and return tasks as JSON array (supports `--status`, `--id`, `--pr`, `--assignee`, `--branch`, `--session`, `--hitl`, and `--ready`) |
-| `append` | Append tasks from a JSON file (insert-only on GitHub adapter; upsert on JSON adapter). GitHub backend warns to stderr when a duplicate task ID is skipped: `warn: task '{id}' already exists in GitHub — skipped` |
+| `append` | Append tasks from a JSON file. JSON backend performs upsert; Jira backend inserts only (warns when duplicate task ID is encountered) |
 | `update` | Write specific fields to a task by ID |
 | `repos` | Print all org/repo strings (one per line) |
 | `resolve-repo` | Print first org/repo (deprecated alias for `repos`) |
-| `cleanup` | Close open GitHub issues with terminal status labels (GitHub backend only) |
 
 ### `query` filter reference
 
