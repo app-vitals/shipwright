@@ -1,6 +1,6 @@
 /**
  * agent/src/agent-tools.integration.test.ts
- * Integration tests for AgentToolService against a real SQLite DB.
+ * Integration tests for AgentToolService against a real PostgreSQL DB.
  *
  * Requires DATABASE_URL_ADMIN_TEST to be set; skips otherwise.
  */

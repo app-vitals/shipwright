@@ -608,7 +608,7 @@ test.describe("Dashboard — error handling", () => {
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({
-          error: "PostHog query failed",
+          error: "upstream query failed",
           data: null,
           meta: {},
         }),
@@ -619,7 +619,7 @@ test.describe("Dashboard — error handling", () => {
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({
-          error: "PostHog query failed",
+          error: "upstream query failed",
           data: null,
           meta: {},
         }),

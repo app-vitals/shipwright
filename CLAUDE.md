@@ -13,7 +13,7 @@ Shipwright Harness is **the open-source (MIT) autonomous delivery agent for Clau
 | Phase | Artifact | Directory | What it is |
 |---|---|---|---|
 | **A** | **Plugin** (the system) | `plugins/shipwright/` | Commands, skills, agents, scripts users `/plugin install`. Repo-agnostic. |
-| **B** | **Metrics dashboard** | `metrics/` | Stateless Hono service: PostHog-backed JSON endpoints + a server-rendered dashboard. No database. |
+| **B** | **Metrics dashboard** | `metrics/` | Stateless Hono service: task-store-backed JSON endpoints + a server-rendered dashboard. No database. |
 | **C** | **Shipwright agent** | `agent/` | Hono service + Prisma store; a thin autonomous runner: pick next ready task → build → ship PR → forward metrics. |
 | **D** | **Task store service** | `task-store/` | Postgres-backed task queue, PR tracking, and scoped tokens. Prisma schema defines `Task`, `PullRequest`, and `TaskToken` models; re-exported as `@shipwright/task-store`. Replaces the JSON file fallback. |
 
@@ -71,7 +71,7 @@ This repo is **private today but destined to be a public, MIT open-source projec
 
 **The rule:** review every change before staging it. Stage specific files — **never `git add -A`/`-u` blindly**. When unsure whether something is proprietary, **ask before committing.**
 
-**Scrub for:** secrets & credentials (PostHog API key, `ANTHROPIC_API_KEY`, `GH_TOKEN`, `SESSION_SECRET`, `.env` contents, private keys) · client/customer/partner names · internal infra identifiers (cloud project names, analytics project IDs, internal hostnames) · internal PR/issue/Slack/Jira links · local filesystem paths revealing usernames (`/Users/<name>/...`) · financials, compensation, PII.
+**Scrub for:** secrets & credentials (`ANTHROPIC_API_KEY`, `GH_TOKEN`, `SESSION_SECRET`, `.env` contents, private keys) · client/customer/partner names · internal infra identifiers (cloud project names, analytics project IDs, internal hostnames) · internal PR/issue/Slack/Jira links · local filesystem paths revealing usernames (`/Users/<name>/...`) · financials, compensation, PII.
 
 `task check-strings` (banned-strings scan) is the CI backstop — not a substitute for this discipline. Internal, build-time-only notes live in the git-ignored `CLAUDE.local.md`; **read it for operational context before working in this repo.**
 
@@ -117,7 +117,7 @@ Tests land **with** the code, at the correct layer — same PR, no "add tests la
 | `*.smoke.test.ts` | smoke | Hono endpoints via in-process `app.request()` (no real socket) |
 | `*.spec.ts` (in `site/`) | e2e | the site in a real browser via Playwright |
 
-**Test isolation (hard rule):** inject time via a `Clock`; test external clients (PostHog, GitHub) with recorded fixtures. **No `mock.module()`, no `global.fetch`/`global.*` overrides** — Bun shares the test process, so leaked globals break sibling suites.
+**Test isolation (hard rule):** inject time via a `Clock`; test external clients (task store, GitHub) with recorded fixtures. **No `mock.module()`, no `global.fetch`/`global.*` overrides** — Bun shares the test process, so leaked globals break sibling suites.
 
 ## Conventions
 
