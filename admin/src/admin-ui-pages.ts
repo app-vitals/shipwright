@@ -940,7 +940,7 @@ export function renderAgentDetailPage(
     </div>
 
     <div class="card">
-      <div class="card-title">Tokens</div>
+      <div class="card-title">Task Store Tokens</div>
       <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/tokens" style="margin-bottom:16px">
         <div class="form-row">
           <div class="form-group" style="flex:1">
@@ -2454,14 +2454,14 @@ export SHIPWRIGHT_TASK_STORE_TOKEN=${escapeHtml(rawToken)}</pre>`
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Tokens — Shipwright Admin</title>
+  <title>Task Store Tokens — Shipwright Admin</title>
   <style>${baseStyles()}</style>
 </head>
 <body>
   ${renderAdminToolbar(userName, activePath)}
   <div class="vos-page">
     <div class="page-header">
-      <h1 class="page-title">Tokens</h1>
+      <h1 class="page-title">Task Store Tokens</h1>
     </div>
     ${degradedBanner}
     ${errorBanner}
