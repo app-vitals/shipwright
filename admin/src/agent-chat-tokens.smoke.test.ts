@@ -8,9 +8,9 @@
 
 import { beforeAll, describe, expect, it } from "bun:test";
 import { sign } from "hono/jwt";
+import type { AgentProvisioner, ProvisionResult } from "./agent-provisioner.ts";
 import { createAdminApp } from "./agents-api.ts";
 import type { AdminDeps } from "./agents-api.ts";
-import type { AgentProvisioner, ProvisionResult } from "./agent-provisioner.ts";
 import { NotFoundError } from "./errors.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -66,9 +66,46 @@ const MOCK_DAILY_ROW = {
   updatedAt: new Date("2026-01-15T12:00:00.000Z"),
 };
 
+// ─── Mock stats result ────────────────────────────────────────────────────────
+
+const MOCK_STATS_RESULT = {
+  totals: {
+    input: 600,
+    output: 300,
+    cacheRead: 60,
+    cacheCreation: 30,
+    total: 990,
+    costUsd: 0.006,
+  },
+  byAgent: [
+    {
+      key: AGENT_ID,
+      input: 600,
+      output: 300,
+      cacheRead: 60,
+      cacheCreation: 30,
+      total: 990,
+      costUsd: 0.006,
+    },
+  ],
+  daily: [
+    {
+      period: "2026-01-15",
+      input: 600,
+      output: 300,
+      cacheRead: 60,
+      cacheCreation: 30,
+      total: 990,
+      costUsd: 0.006,
+    },
+  ],
+};
+
 // ─── Mock deps factory ────────────────────────────────────────────────────────
 
-function makeMockDeps(opts?: { agentChatTokenServiceThrows?: boolean }): AdminDeps {
+function makeMockDeps(opts?: {
+  agentChatTokenServiceThrows?: boolean;
+}): AdminDeps {
   return {
     agentEnvService: {
       upsert: async () => {},
@@ -95,7 +132,11 @@ function makeMockDeps(opts?: { agentChatTokenServiceThrows?: boolean }): AdminDe
       updatePreCheck: async () => {
         throw new Error("not implemented");
       },
-      reconcileSystemCrons: async () => ({ created: 0, updated: 0, deleted: 0 }),
+      reconcileSystemCrons: async () => ({
+        created: 0,
+        updated: 0,
+        deleted: 0,
+      }),
     },
     agentCronRunService: {
       create: async () => {
@@ -138,6 +179,22 @@ function makeMockDeps(opts?: { agentChatTokenServiceThrows?: boolean }): AdminDe
             throw new NotFoundError(`agent ${_agentId} not found`);
           }
         : async () => MOCK_DAILY_ROW,
+      queryStats: async () => MOCK_STATS_RESULT,
+    },
+    agentCronRunStatsService: {
+      query: async () => ({
+        totals: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheCreation: 0,
+          total: 0,
+        },
+        byAgent: [],
+        byCron: [],
+        byModel: [],
+        daily: [],
+      }),
     },
     prisma: {
       agent: {
@@ -277,5 +334,116 @@ describe("admin API — POST /agents/:agentId/chat-tokens/daily", () => {
     });
 
     expect(res.status).toBe(401);
+  });
+});
+
+// ─── GET /agents/chat-tokens/daily/stats smoke tests ─────────────────────────
+
+// Agent-scoped API key for smoke tests (scope tied to a specific agentId)
+const SCOPED_API_KEY = "sk_scoped_test_key";
+const SCOPED_AGENT_ID = "agent-some-other-agent";
+
+describe("admin API — GET /agents/chat-tokens/daily/stats", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  function makeDepsWithScopedKey(opts?: {
+    agentChatTokenServiceThrows?: boolean;
+  }): AdminDeps {
+    const deps = makeMockDeps(opts);
+    // Add a scoped admin API key (not admin scope)
+    deps.adminApiKeys = new Map([
+      [
+        SCOPED_API_KEY,
+        { name: "scoped-agent", scope: SCOPED_AGENT_ID },
+      ],
+    ]);
+    return deps;
+  }
+
+  it("returns 200 with correct ChatTokenStats shape for authenticated admin", async () => {
+    const deps = makeMockDeps();
+    const app = createAdminApp(deps);
+
+    const res = await app.request("/agents/chat-tokens/daily/stats", {
+      method: "GET",
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+
+    // totals shape
+    expect(typeof body.totals.input).toBe("number");
+    expect(typeof body.totals.output).toBe("number");
+    expect(typeof body.totals.cacheRead).toBe("number");
+    expect(typeof body.totals.cacheCreation).toBe("number");
+    expect(typeof body.totals.total).toBe("number");
+
+    // byAgent is an array with at least one entry having a key
+    expect(Array.isArray(body.byAgent)).toBe(true);
+    if (body.byAgent.length > 0) {
+      expect(typeof body.byAgent[0].key).toBe("string");
+    }
+
+    // daily is an array with at least one entry having a period
+    expect(Array.isArray(body.daily)).toBe(true);
+    if (body.daily.length > 0) {
+      expect(typeof body.daily[0].period).toBe("string");
+    }
+  });
+
+  it("returns 401 when unauthenticated", async () => {
+    const deps = makeMockDeps();
+    const app = createAdminApp(deps);
+
+    const res = await app.request("/agents/chat-tokens/daily/stats", {
+      method: "GET",
+    });
+
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 403 when using an agent-scoped API key (not admin scope)", async () => {
+    // Agent-scoped keys (scope = agentId, not "*") are not admin — stats route requires admin.
+    // The scoped key matches the route path segment "chat-tokens" against its scope, which
+    // differs → 403 from auth middleware before reaching the handler.
+    const deps = makeDepsWithScopedKey();
+    const app = createAdminApp(deps);
+
+    const res = await app.request("/agents/chat-tokens/daily/stats", {
+      method: "GET",
+      headers: { Authorization: `Bearer ${SCOPED_API_KEY}` },
+    });
+
+    expect(res.status).toBe(403);
+  });
+
+  it("passes from/to query params through to the service", async () => {
+    let capturedFrom: string | undefined;
+    let capturedTo: string | undefined;
+
+    const deps = makeMockDeps();
+    deps.agentChatTokenService.queryStats = async (from, to) => {
+      capturedFrom = from;
+      capturedTo = to;
+      return MOCK_STATS_RESULT;
+    };
+    const app = createAdminApp(deps);
+
+    const res = await app.request(
+      "/agents/chat-tokens/daily/stats?from=2026-01-01&to=2026-02-01",
+      {
+        method: "GET",
+        headers: { Cookie: `admin_session=${cookie}` },
+      },
+    );
+
+    expect(res.status).toBe(200);
+    expect(capturedFrom).toBe("2026-01-01");
+    expect(capturedTo).toBe("2026-02-01");
   });
 });

@@ -302,6 +302,11 @@ function makeMockDeps(): AdminDeps {
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
       }),
+      queryStats: async () => ({
+        totals: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, total: 0 },
+        byAgent: [],
+        daily: [],
+      }),
     },
     prisma: {
       agent: {
@@ -394,6 +399,15 @@ function makeMockDeps(): AdminDeps {
         costUsd: null,
         model: null,
         createdAt: new Date("2024-01-01T09:00:00.000Z"),
+      }),
+    },
+    agentCronRunStatsService: {
+      query: async () => ({
+        totals: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, total: 0 },
+        byAgent: [],
+        byCron: [],
+        byModel: [],
+        daily: [],
       }),
     },
     provisioner: new RecordingProvisioner(),
