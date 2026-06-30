@@ -22,45 +22,81 @@ agent knows who it's talking to. Cron job results are posted to a configured cha
 
 ## Connecting a Slack app
 
-Ask Claude Code:
+Slack provisioning is automated via the `/admin/provision` flow. Follow these four steps:
 
-```text
-Help me create a Slack app and connect it to the Shipwright agent.
-```
+### Step 1: Open the provisioning form
 
-Claude Code will walk through creating the app manifest, provisioning credentials, and setting
-the required environment variables.
+Navigate to `/admin/provision` in the Shipwright admin UI. You'll see a form with the following
+fields:
 
-{/* TODO: needs human review — The Slack app creation flow (manifest builder, OAuth provisioning
-UI, and the exact steps through api.slack.com) requires hands-on Slack workspace access to verify.
-The steps below reflect the documented buildAgentManifest flow from docs/agent.md; confirm the
-exact UI steps before publishing. */}
+- **Agent** — select which agent to configure
+- **GitHub credentials** — either a Personal Access Token (PAT) or a GitHub App installation for
+  repo access
+- **Anthropic API key** (optional) — if you want the agent to use a custom API key
+- **Claude Code OAuth token** (optional) — if you want to enable Claude Code integration
+- **Slack app configuration token** — a `xoxe.xoxp-` token (see below)
 
-### Manual setup
+### Understanding the Slack app configuration token
 
-1. Go to [api.slack.com/apps](https://api.slack.com/apps) and create a new app **from an app
-   manifest**. The Shipwright admin UI's provisioning flow (`/admin/agents/:id/provision`) can
-   generate a manifest for you automatically.
+A `xoxe.xoxp-` token is a **Slack app configuration token** — a personal token scoped to your
+Slack workspace that allows creating and configuring Slack apps via the API. To obtain one:
 
-2. Enable **Socket Mode** in the app settings and generate an app-level token with
-   `connections:write` scope. This becomes `SLACK_APP_TOKEN`.
+1. Go to [api.slack.com/apps](https://api.slack.com/apps)
+2. Click **Create New App** and select **From scratch** (not from a manifest)
+3. Name your app and select your workspace
+4. Once created, go to **App-Level Tokens** in the left sidebar
+5. Click **Generate Token and Scopes**
+6. Name the token (e.g., "Shipwright Provisioning")
+7. Add the `admin` scope (or all available scopes for maximum compatibility)
+8. Click **Generate** and copy the token (it starts with `xoxe.xoxp-`)
 
-3. Install the app to your workspace and copy the **Bot User OAuth Token**. This becomes
-   `SLACK_BOT_TOKEN`.
+This token is **used only once** during provisioning — Shipwright calls the Slack API to create
+the actual bot app and does not store this token afterward. Delete the app created in step 2
+after provisioning completes.
 
-4. Copy the **Signing Secret** from the app's Basic Information page. This becomes
-   `SLACK_SIGNING_SECRET`.
+### Step 2: Shipwright creates the Slack app
 
-5. Set the three required environment variables on the agent (via the admin UI or the
-   `/agents/:id/envs` API):
+After you submit the form with valid GitHub credentials and the Slack configuration token,
+Shipwright:
 
-```bash
-SLACK_BOT_TOKEN=xoxb-...        # Bot User OAuth Token
-SLACK_APP_TOKEN=xapp-...        # App-level token (Socket Mode)
-SLACK_SIGNING_SECRET=...        # Signing secret from Basic Information
-```
+1. Calls `apps.manifest.create` to create a new Slack bot app with the necessary permissions
+2. Automatically stores the following credentials in the agent's environment:
+   - `SLACK_APP_ID` — the app's ID
+   - `SLACK_SIGNING_SECRET` — used to verify incoming Slack requests
+   - `SLACK_CLIENT_ID` — OAuth client ID
+   - `SLACK_CLIENT_SECRET` — OAuth client secret
 
-6. Restart the agent. It connects to Slack via Socket Mode on startup.
+All of this happens automatically — no manual steps needed.
+
+### Step 3: Authorize the Slack app
+
+After Step 2 completes, the provisioning form shows an **Authorize Slack App →** button. Click it
+to:
+
+1. Redirect to Slack's OAuth approval page
+2. Approve the app to post to your workspace
+3. Redirect back to `/admin/provision/complete`
+
+Shipwright automatically stores `SLACK_BOT_TOKEN` (the bot user OAuth token) in the agent's
+environment. You do not need to copy it manually.
+
+### Step 4: Enable Socket Mode and generate the app token
+
+This is the **one remaining manual step**:
+
+1. Go to [api.slack.com/apps](https://api.slack.com/apps) and select the app that was just
+   created (it will have a similar name to your agent)
+2. In the left sidebar, go to **Socket Mode**
+3. Click the toggle to **Enable Socket Mode**
+4. A panel appears asking you to generate an **app-level token**
+5. Click **Generate Token and Scopes**
+6. Name the token (e.g., "Socket Mode Token")
+7. Add the `connections:write` scope
+8. Click **Generate** and copy the token (it starts with `xapp-`)
+9. Return to the Shipwright admin UI and paste the `xapp-` token into the Socket Mode field
+10. Submit the form
+
+Once submitted, the agent will connect to Slack via Socket Mode on its next startup.
 
 ## Required Slack environment variables
 
