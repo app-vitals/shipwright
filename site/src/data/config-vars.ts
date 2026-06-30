@@ -86,11 +86,6 @@ export const agentWorkspaceVars: ConfigVar[] = [
   { name: "AGENT_ALLOWED_TOOLS", type: "string (JSON array)", def: "—", desc: "JSON array of allowed Claude tool patterns. Set by the admin service config sync; do not set manually in production." },
 ];
 
-export const agentAnalyticsVars: ConfigVar[] = [
-  { name: "POSTHOG_PROJECT_API_KEY", type: "string", def: "—", desc: "PostHog project API key for event ingest. Env-var-only (secret)." },
-  { name: "POSTHOG_HOST", type: "string", def: "https://us.i.posthog.com", desc: "PostHog ingest host. Override for self-hosted PostHog deployments." },
-];
-
 export const agentVoiceVars: ConfigVar[] = [
   { name: "GROQ_API_KEY", type: "string", def: "—", desc: "Groq API key for voice processing. Env-var-only (secret)." },
   { name: "ELEVENLABS_API_KEY", type: "string", def: "—", desc: "ElevenLabs API key for speech synthesis. Env-var-only (secret)." },

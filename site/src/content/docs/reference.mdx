@@ -16,7 +16,6 @@ import {
   agentServerVars,
   agentMetricsVars,
   agentWorkspaceVars,
-  agentAnalyticsVars,
   agentVoiceVars,
   agentDevVars,
   policyFields,
@@ -103,12 +102,6 @@ Provide either the GitHub App vars (recommended) or `GH_TOKEN` (PAT). App auth i
 ### Workspace and tooling
 
 <ConfigTable vars={agentWorkspaceVars} />
-
-### Analytics
-
-All analytics vars are env-var-only (secrets/infra identifiers).
-
-<ConfigTable vars={agentAnalyticsVars} />
 
 ### Voice
 
