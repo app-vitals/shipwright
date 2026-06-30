@@ -150,7 +150,7 @@ The agent is a thin runner with a Prisma-backed PostgreSQL database and a Hono H
 
 **Time:** Any production code path that calls `new Date()` or `Date.now()` non-trivially must accept a `Clock` interface. Tests inject `FixedClock(t)`. Raw `Date.now()` in a code path under test is a bug — it makes time-sensitive assertions flaky.
 
-**External HTTP:** External service clients (`PostHogClient`, `GithubClient`, etc.) are defined as interfaces with an `Http*Client` production implementation. Tests inject `Recorded*Client` doubles that replay cassettes from `tests/fixtures/<service>/*.json`. Cassette files are versioned JSON committed to the repository.
+**External HTTP:** External service clients (`SlackClient`, `GithubClient`, etc.) are defined as interfaces with an `Http*Client` production implementation. Tests inject `Recorded*Client` doubles that replay cassettes from `tests/fixtures/<service>/*.json`. Cassette files are versioned JSON committed to the repository.
 
 **No global state:** Tests must not mutate module-level globals, override built-in globals, or rely on test-execution order. Each test is independently runnable.
 
@@ -159,7 +159,7 @@ The agent is a thin runner with a Prisma-backed PostgreSQL database and a Hono H
 When `dev-task` Step 2 asks "which layer does this test belong in?", apply in order:
 
 1. Does the code under test perform any I/O? If no → **unit**.
-2. Does it call an external service (PostHog, GitHub, etc.)? → **integration** (inject a recorded double).
+2. Does it call an external service (Slack, GitHub, etc.)? → **integration** (inject a recorded double).
 3. Does it test an HTTP route contract? → **smoke** (use `app.request()`).
 4. Does it test a multi-step browser flow? → **e2e** (Playwright).
 

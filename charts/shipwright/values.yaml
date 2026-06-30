@@ -216,17 +216,6 @@ metrics:
   # All fields are optional and additive — defaults preserve the existing
   # SQLite / bundled-PostgreSQL fallback behavior unchanged.
   provider:
-    # -- PostHog analytics provider (optional). When configured, the metrics
-    # dashboard sends events to PostHog instead of the bundled store.
-    # Leave existingSecret empty (the default) to disable PostHog injection.
-    posthog:
-      # -- Name of an existing Secret holding PostHog API credentials.
-      # Leave empty to disable PostHog env injection.
-      existingSecret: ""
-      # -- Key in the secret for POSTHOG_PERSONAL_API_KEY.
-      personalApiKeyRef: POSTHOG_PERSONAL_API_KEY
-      # -- Key in the secret for POSTHOG_PROJECT_ID.
-      projectIdRef: POSTHOG_PROJECT_ID
     # -- URL of the admin service as seen by the metrics dashboard.
     # Required when not using the bundled admin service (e.g., external admin).
     # Leave empty to omit the METRICS_ADMIN_URL env var.
