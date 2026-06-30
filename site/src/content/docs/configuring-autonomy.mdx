@@ -1,0 +1,175 @@
+---
+title: Configuring Autonomy
+description: Configure the Shipwright delivery loop to match your workflow — from plan-and-build to fully autonomous review, patch, and deploy.
+section: Agent
+order: 1
+prev: "/docs/the-agent"
+next: "/docs/deploying-to-cloud"
+---
+
+# Configuring Autonomy
+
+Shipwright's delivery loop is configurable. You choose how much the agent does on its own by
+enabling the right system crons and tuning `state/agent-policy.md`. Start with the bare minimum
+and add autonomy as you gain confidence.
+
+## The ramp-up path
+
+Most teams start narrow and expand. Each stage adds one more phase to the autonomous loop.
+
+### Stage 1 — Plan and build
+
+Enable `shipwright-dev-task`. The agent reads your task queue, picks the next ready task, builds
+it with tests, and opens a PR. You review and merge PRs yourself.
+
+| Cron | Status |
+|------|--------|
+| `shipwright-dev-task` | **on** |
+| `shipwright-review-patch` | off |
+| `shipwright-deploy` | off |
+
+This is the entry point. The agent writes code; you stay in the loop on every PR.
+
+### Stage 2 — Add review and patch
+
+Enable `shipwright-review-patch`. The agent now reviews open PRs and patches any that have
+failing CI or unresolved findings. You still control merging.
+
+| Cron | Status |
+|------|--------|
+| `shipwright-dev-task` | **on** |
+| `shipwright-review-patch` | **on** |
+| `shipwright-deploy` | off |
+
+At this stage, `auto_post_reviews` in `state/agent-policy.md` determines whether the agent
+posts reviews to GitHub immediately or holds them for your approval. See
+[Staged reviews](#staged-reviews) below.
+
+### Stage 3 — Full autonomous loop
+
+Enable `shipwright-deploy`. The agent now merges approved PRs and monitors post-merge CI.
+The full loop runs without manual intervention: plan → build → review → patch → deploy.
+
+| Cron | Status |
+|------|--------|
+| `shipwright-dev-task` | **on** |
+| `shipwright-review-patch` | **on** |
+| `shipwright-deploy` | **on** |
+
+Only enable deploy when you have the safeguards in place — CI gates, required reviewers, and
+a working `check-deploy` pre-check — so the agent can't merge something broken.
+
+---
+
+## Common workflow patterns
+
+### Hands-off: build and patch, skip review
+
+Some projects don't need the agent to post PR reviews. You just want it to build tasks and
+fix CI failures while you review PRs yourself.
+
+Enable `shipwright-dev-task` and `shipwright-patch`. Disable `shipwright-review-patch` and
+`shipwright-review`. The agent builds, opens PRs, and patches CI — but never posts a review comment.
+
+```
+dev-task  ✓  patch  ✓  review-patch  ✗  deploy  ✗
+```
+
+### Staged reviews: agent writes, you post
+
+You want the agent to review PRs but prefer to read and approve each review before it goes to
+GitHub. Set `auto_post_reviews: false` in `state/agent-policy.md`. Enable `shipwright-review-patch`.
+
+The agent runs its review pass and writes the findings to a local review file. Nothing is posted
+to GitHub until you approve it. Once you've confirmed the review looks right, post it manually
+or set `auto_post_reviews: true` to have the agent send it.
+
+```
+dev-task  ✓  review-patch  ✓  deploy  ✗   (auto_post_reviews: false)
+```
+
+### Bring your own PR
+
+You don't have to go through the task queue at all. Open a PR yourself — a quick fix, a hotfix,
+anything — and Shipwright picks it up from there. With `review-patch` and `deploy` enabled,
+the agent will review the PR, patch any CI failures, and merge it once it's clean.
+
+```
+dev-task  ✗  review-patch  ✓  deploy  ✓
+```
+
+This works and is a reasonable way to get comfortable with the system. That said, bypassing
+`dev-task` means skipping the quality work it does before the PR exists: structured planning,
+tests-first implementation, and the pre-PR research pass. The review and deploy phases catch
+issues, but they work better when the PR was built with that discipline from the start. For
+anything beyond a quick fix, going through the task queue produces better outcomes.
+
+---
+
+## Agent policy
+
+`state/agent-policy.md` sits alongside your agent's workspace files. Edit it directly — no
+restart or cron change required.
+
+```markdown
+---
+auto_post_reviews: false
+allowed_events: [COMMENT, APPROVE]
+review_external_prs: true
+allow_self_review: true
+min_confidence: 75
+max_findings: 5
+cleanup_merged_worktrees: true
+cleanup_after_days: 14
+---
+```
+
+| Field | Default | What it controls |
+|-------|---------|-----------------|
+| `auto_post_reviews` | `false` | Post review comments to GitHub immediately. When `false`, reviews are staged locally. |
+| `allowed_events` | `[COMMENT, APPROVE]` | GitHub review event types the agent may emit. Remove `APPROVE` to prevent agent approvals. |
+| `review_external_prs` | `true` | Review PRs opened by users other than the agent. Set `false` to review only the agent's own PRs. |
+| `allow_self_review` | `true` | Allow the agent to review PRs it opened. Set `false` to require a human reviewer on agent-authored PRs. |
+| `min_confidence` | `75` | Minimum confidence score (0–100) for a finding to appear in a review. Raise it to reduce noise. |
+| `max_findings` | `5` | Maximum findings per review. |
+
+---
+
+## Toggling crons
+
+Crons are toggled via the admin UI or the API. No restart required — the agent picks up changes
+on the next config sync (every 60 seconds).
+
+### Admin UI
+
+Open the agent's cron list in the admin console, find the cron by name, and flip the toggle.
+
+### API
+
+```bash
+# Disable a cron
+curl -X PATCH "$SHIPWRIGHT_API_URL/agents/$AGENT_ID/crons/$CRON_ID" \
+  -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"enabled": false}'
+
+# Enable a cron
+curl -X PATCH "$SHIPWRIGHT_API_URL/agents/$AGENT_ID/crons/$CRON_ID" \
+  -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"enabled": true}'
+```
+
+Or via the `shipwright:agent-admin` skill from inside a Claude Code session:
+
+```text
+Enable the shipwright-deploy cron for this agent.
+```
+
+---
+
+## Next steps
+
+Once you have your workflow configured, the next step is deploying the agent as a persistent
+cloud service. See [Deploying to Cloud](/docs/deploying-to-cloud) for the Helm chart, Minikube,
+GKE, and EKS guides.
