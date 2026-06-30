@@ -61,7 +61,7 @@ export const agentMetricsVars: ConfigVar[] = [
 ];
 
 export const agentWorkspaceVars: ConfigVar[] = [
-  { name: "AGENT_HOME", type: "string", def: "~/.shipwright-agent", desc: "Persistent storage root. Mount a PVC here in Kubernetes so mise caches and workspace files survive pod restarts." },
+  { name: "AGENT_HOME", type: "string", def: "/data/agent-home", desc: "Persistent storage root. Mount a PVC here in Kubernetes so mise caches and workspace files survive pod restarts." },
   { name: "MISE_DATA_DIR", type: "string", def: "<AGENT_HOME>/.mise", desc: "Override the mise data directory. Auto-derived from AGENT_HOME." },
   { name: "MISE_CACHE_DIR", type: "string", def: "<AGENT_HOME>/.mise/cache", desc: "Override the mise cache directory." },
   { name: "XDG_CACHE_HOME", type: "string", def: "<AGENT_HOME>/.cache", desc: "Override the XDG cache directory." },
