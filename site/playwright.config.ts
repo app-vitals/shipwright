@@ -21,7 +21,13 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `bunx astro build && bunx pagefind --site dist && bunx astro preview --port ${PORT}`,
+    // SKIP_PAGEFIND=1 lets CI-equivalent local environments skip the pagefind
+    // indexing step (e.g. ARM systems where the pagefind binary fails due to
+    // jemalloc/page-size incompatibilities). CI always runs without this var,
+    // so pagefind runs normally in GitHub Actions.
+    command: process.env.SKIP_PAGEFIND
+      ? `bunx astro build && bunx astro preview --port ${PORT}`
+      : `bunx astro build && bunx pagefind --site dist && bunx astro preview --port ${PORT}`,
     url: `http://localhost:${PORT}`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

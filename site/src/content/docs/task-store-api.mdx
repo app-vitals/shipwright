@@ -1,0 +1,469 @@
+---
+title: Task Store API
+description: "Complete HTTP API reference for the Shipwright task store: endpoints, task schema, status lifecycle, and curl examples."
+section: Reference
+order: 9
+---
+
+# Task Store API
+
+The task store is the central queue that drives autonomous task execution. Agents query it to pick
+up work, track progress, and record outcomes. This page is the primary reference for operators and
+agents interacting with `/tasks` directly.
+
+> **See also:** [PRs API](/docs/prs-api) — the companion surface for PR review and patch tracking.
+
+## Authentication
+
+All requests require a Bearer token in the `Authorization` header:
+
+```bash
+Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN
+```
+
+| Env var | Description |
+|---|---|
+| `SHIPWRIGHT_TASK_STORE_URL` | Base URL of the task store service (provisioned at deploy time) |
+| `SHIPWRIGHT_TASK_STORE_TOKEN` | Bearer token for this agent or admin |
+
+### Token scoping
+
+Tokens come in two varieties:
+
+- **Agent tokens** (`agentId` set) — all reads are automatically scoped to tasks assigned to that
+  agent. Writes are blocked on tasks belonging to other agents (403). Task creation forces
+  `assignee` to the token's agent ID.
+- **Admin tokens** (`agentId` null) — no restrictions. Can read and write any task. Required for
+  HITL execution and cross-agent inspection.
+
+Repo-scoped agent tokens additionally include unassigned pool tasks whose `repo` is in the token's
+repos list — allowing agents to pick up shared work without requiring an explicit `assignee`.
+
+Verify connectivity before starting work:
+
+```bash
+curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?ready=true" | jq '.total'
+```
+
+## Task Status Lifecycle
+
+Tasks move through a defined set of statuses from creation to completion:
+
+```
+pending → in_progress → pr_open → approved → merged → deploying → deployed
+```
+
+Branch statuses that can occur at any point:
+
+```
+blocked    — dependency not met, or manually paused (HITL)
+cancelled  — permanently abandoned
+done       — completed without a PR (direct task, no deploy path)
+```
+
+Terminal statuses (dependency resolution treats these as satisfied):
+`merged`, `done`, `deploying`, `deployed`, `cancelled`
+
+| Status | Meaning |
+|---|---|
+| `pending` | Not yet started; eligible for `?ready=true` pickup if dependencies are met |
+| `in_progress` | Claimed by an agent; work is underway |
+| `pr_open` | PR has been opened on GitHub; `pr` and `prCreatedAt` must be set |
+| `approved` | PR passed review; `ciFixAttempts` must be set |
+| `merged` | PR merged to main; `mergedAt` should be set |
+| `deploying` | Deploy pipeline is running; `deployingAt` should be set |
+| `deployed` | Successfully deployed to production; `deployedAt` should be set |
+| `blocked` | Explicitly paused — waiting on human action or unresolvable dependency |
+| `done` | Task complete without a PR (e.g. research or HITL tasks) |
+| `cancelled` | Permanently abandoned |
+
+## Endpoints
+
+### GET /tasks
+
+List tasks. Returns `{ tasks, total }` for ready/blocked queries; `{ tasks, total, limit, offset }`
+for all other queries.
+
+| Query param | Description |
+|---|---|
+| `ready=true` | Return only tasks that are ready to pick up (see [?ready=true semantics](#readytrue-semantics)) |
+| `state=ready` | Alias for `?ready=true` |
+| `state=blocked` | Return pending tasks with unmet dependencies, HITL-gated tasks, and explicitly blocked tasks |
+| `state=open` | Filter to open tasks (pending, in_progress, pr_open, approved) |
+| `state=closed` | Filter to closed tasks (merged, done, deploying, deployed, cancelled) |
+| `state=in_progress` | Filter to actively running tasks |
+| `status` | Filter by exact status value (e.g. `?status=pr_open`) |
+| `session` | Filter by planning session slug |
+| `assignee` | Filter by assignee (admin tokens only — agent tokens are auto-scoped) |
+| `repo` | Filter by repo in `org/repo` format |
+| `branch` | Filter by branch name |
+| `pr` | Filter by PR number |
+| `claimedBy` | Filter by the agent that claimed the task |
+| `limit` | Max results (pagination) |
+| `offset` | Start offset (pagination) |
+
+```bash
+# All pending tasks assigned to this agent
+curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=pending" | jq '.tasks'
+
+# All ready tasks (dependencies met, pending, not HITL-gated)
+curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?ready=true" | jq '.tasks'
+```
+
+### POST /tasks
+
+Create a task. Returns 201 on success, 409 if a task with the same `id` already exists.
+
+**Required fields:** `title`, `status`
+
+**Recommended fields for agent pickup:** `id`, `repo` (org/repo format), `branch`, `assignee`
+
+```bash
+curl -sf -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks" \
+  -d '{
+    "id": "SHE-1.1",
+    "title": "Add feature X",
+    "status": "pending",
+    "repo": "org/repo",
+    "branch": "feat/she-1-1-add-feature-x",
+    "assignee": "<agent-id>"
+  }' | jq .
+```
+
+### POST /tasks/bulk
+
+Insert an array of tasks. Skips 409 conflicts silently. Returns `{ inserted, updated }`.
+
+```bash
+curl -sf -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/bulk" \
+  -d '[{"id": "SHE-2.1", "title": "...", "status": "pending", "repo": "org/repo", "branch": "feat/she-2-1-..."}]' \
+  | jq .
+```
+
+### GET /tasks/distinct
+
+Return the distinct `sessions` and `repos` visible to the caller. Useful for filtering UI dropdowns.
+
+```bash
+curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/distinct" | jq .
+```
+
+### GET /tasks/:id
+
+Fetch a single task by ID. Returns 404 if not found. Agent tokens get 403 if the task belongs to
+another agent.
+
+```bash
+curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/SHE-1.1" | jq .
+```
+
+### PATCH /tasks/:id
+
+Partial update — only provided fields are changed. Returns the updated task.
+
+Agent tokens are restricted to their own tasks. The `repo` field must remain in `org/repo` format.
+
+```bash
+# Transition to in_progress
+curl -sf -X PATCH \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/SHE-1.1" \
+  -d '{"status": "in_progress", "startedAt": "2024-01-15T10:00:00Z"}' | jq .
+
+# Transition to pr_open (requires pr + prCreatedAt)
+curl -sf -X PATCH \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/SHE-1.1" \
+  -d '{"status": "pr_open", "pr": 42, "prCreatedAt": "2024-01-15T11:00:00Z"}' | jq .
+
+# Transition to approved (requires ciFixAttempts)
+curl -sf -X PATCH \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/SHE-1.1" \
+  -d '{"status": "approved", "ciFixAttempts": 0}' | jq .
+```
+
+### DELETE /tasks/:id
+
+Delete a task permanently. Returns 204 on success.
+
+```bash
+curl -sf -X DELETE \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/SHE-1.1"
+```
+
+### POST /tasks/:id/claim
+
+Atomically claim a task. Returns 409 if already claimed by another agent.
+
+Agent tokens: `claimedBy` is set to the token's agent ID automatically.
+Admin tokens: `claimedBy` must be provided in the request body.
+
+```bash
+curl -sf -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/SHE-1.1/claim" | jq .
+```
+
+### POST /tasks/:id/heartbeat
+
+Touch the `heartbeatAt` timestamp to signal liveness. Call this periodically during long-running
+tasks to prevent the stale-claim reaper from releasing the task.
+
+```bash
+curl -sf -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/SHE-1.1/heartbeat" | jq .
+```
+
+### POST /tasks/:id/complete
+
+Mark a task `done`. Use for tasks that complete without opening a PR.
+
+```bash
+curl -sf -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/SHE-1.1/complete" | jq .
+```
+
+### POST /tasks/:id/fail
+
+Mark a task `blocked`. Optionally include a `reason` in the request body.
+
+```bash
+curl -sf -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/SHE-1.1/fail" \
+  -d '{"reason": "CI environment unavailable"}' | jq .
+```
+
+### POST /tasks/:id/release
+
+Unclaim a task — resets `claimedBy` and `claimedAt`, returns status to `pending`.
+Use when an agent is shutting down or voluntarily giving up a task.
+
+```bash
+curl -sf -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/SHE-1.1/release" | jq .
+```
+
+## ?ready=true Semantics
+
+When `?ready=true` (or `?state=ready`) is set, `?status` and `?id` filters are ignored. Only
+`?session` applies as a post-filter.
+
+A task is **ready** when **all** of the following are true:
+
+1. `status === "pending"`
+2. `hitl` is not `true` (HITL tasks are excluded until manually cleared)
+3. Every dependency in `dependencies[]` is satisfied
+
+**Dependency-satisfied rules** (first match wins):
+
+| Rule | Condition | Result |
+|---|---|---|
+| 1 | Dependency status is `merged`, `done`, `deploying`, `deployed`, or `cancelled` | Satisfied |
+| 2 | Dependency is on the same branch and has status `pr_open` or `approved` | Satisfied (bundled PR) |
+| 3 | Dependency has status `pr_open` with a PR number, and GitHub reports the PR as merged | Satisfied |
+| 4 | None of the above match | **Not satisfied** — task excluded |
+
+<div class="sw-callout mt-6 max-w-3xl">
+  <p><strong>Note:</strong> The task store has no direct GitHub access. Rule 3 (GitHub-merged check)
+  resolves to <code>false</code> in the task store itself — this rule is applied by the agent harness
+  when it calls <code>?ready=true</code>.</p>
+</div>
+
+### Diagnosing empty ?ready=true results
+
+When `{ tasks: [], total: 0 }` is returned:
+
+| Likely cause | How to check |
+|---|---|
+| No tasks assigned to this agent | Use an admin token to see all ready tasks |
+| HITL flag set | Query `?status=pending` — check for `"hitl": true`. Clear the flag once the human action is complete |
+| Dependencies not satisfied | Query `?status=pending` — check each task's `dependencies[]` and verify each dep's status against the four rules |
+| Queue is empty | No pending tasks exist at all |
+
+## Task Schema
+
+All fields from the `Task` model. Fields marked as required are enforced on creation or the
+relevant status transition.
+
+### Core fields
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | string | on create | Stable key — used by dependency resolution and all updates. Convention: `SHE-X.Y` |
+| `title` | string | always | Short description of the task |
+| `status` | TaskStatus | always | See [Status Lifecycle](#task-status-lifecycle) |
+| `repo` | string? | recommended | `org/repo` format; required for `dev-task` worktree creation |
+| `branch` | string? | recommended | Branch name; absent → task is skipped by `dev-task` |
+| `assignee` | string? | recommended | Agent ID; unset = pool task (any agent with repo scope can pick it up) |
+| `dependencies` | string[] | — | Array of task IDs that must be satisfied before this task is ready |
+| `description` | string? | — | Full task description (Markdown) |
+| `acceptanceCriteria` | string[] | — | Checklist items for task completion |
+| `layer` | string? | — | Architectural layer (e.g. `Shared`, `API`, `UI`) |
+| `session` | string? | — | Planning session slug for grouping related tasks |
+| `source` | string? | — | Origin label (e.g. plan session name) |
+| `type` | string? | — | Task category (e.g. `feature`, `fix`, `test`) |
+| `priority` | string? | — | Priority hint for ordering |
+| `hours` | float? | — | Estimated effort in hours |
+| `issue` | string? | — | Linked GitHub issue URL or ID |
+| `model` | string? | — | Preferred Claude model: `haiku`, `sonnet`, or `opus` |
+| `complexity` | int? | — | Complexity score (1–5) |
+| `hitl` | boolean? | — | When `true`, excluded from `?ready=true` until manually cleared |
+| `note` | string? | — | Free-form notes |
+| `metadata` | JSON? | — | Escape hatch for structured data without dedicated columns |
+
+### Status transition fields
+
+| Field | Type | Set when |
+|---|---|---|
+| `startedAt` | string? | → `in_progress` |
+| `pr` | int? | → `pr_open` (required) |
+| `prUrl` | string? | → `pr_open` (the GitHub PR URL) |
+| `prCreatedAt` | string? | → `pr_open` (required) |
+| `ciFixAttempts` | int? | → `approved` or `merged` (required) |
+| `mergeCommit` | string? | → `merged` |
+| `mergedAt` | string? | → `merged` |
+| `deployingAt` | string? | → `deploying` |
+| `deployedAt` | string? | → `deployed` |
+| `completedAt` | string? | → `done` |
+| `cancelledAt` | string? | → `cancelled` |
+| `blockedAt` | string? | → `blocked` |
+| `blockedReason` | string? | → `blocked` (human-readable reason) |
+
+### Claim and liveness fields
+
+| Field | Type | Set when |
+|---|---|---|
+| `claimedBy` | string? | → claimed (agent ID) |
+| `claimedAt` | string? | → claimed (ISO timestamp) |
+| `agentHint` | string? | Creation — suggested agent to pick up this task |
+| `heartbeatAt` | string? | → heartbeat (ISO timestamp of last liveness ping) |
+
+### HITL fields
+
+| Field | Type | Set when |
+|---|---|---|
+| `hitl` | boolean? | Set to `true` when human action is required before proceeding |
+| `hitlNotifiedAt` | string? | ISO timestamp when the HITL notification was sent |
+
+### Execution metrics (set by agent on completion)
+
+| Field | Type | Notes |
+|---|---|---|
+| `inputTokens` | int? | Total Claude input tokens used |
+| `outputTokens` | int? | Total Claude output tokens used |
+| `cacheReadTokens` | int? | Prompt cache read tokens |
+| `cacheCreationTokens` | int? | Prompt cache creation tokens |
+| `costUsd` | float? | Estimated USD cost |
+| `effortLevel` | string? | `low`, `medium`, or `high` |
+| `coverageDelta` | float? | Test coverage change (positive = improved) |
+| `simplifyTotal` | int? | Total simplification findings |
+| `simplifyDry` | int? | DRY violations found |
+| `simplifyDeadCode` | int? | Dead code findings |
+| `simplifyNaming` | int? | Naming issue findings |
+| `simplifyComplexity` | int? | Complexity findings |
+| `simplifyConsistency` | int? | Consistency findings |
+
+### System fields
+
+| Field | Type | Notes |
+|---|---|---|
+| `createdAt` | DateTime | Set by the database on creation |
+| `updatedAt` | DateTime | Updated by the database on every write |
+
+## HTTP Status Codes
+
+| Code | Meaning |
+|---|---|
+| 200 | Success (GET, PATCH, POST action endpoints) |
+| 201 | Created (POST /tasks) |
+| 204 | No content (DELETE) |
+| 400 | Bad request — missing required field, invalid format, or repo not in agent scope |
+| 403 | Forbidden — agent token tried to access another agent's task |
+| 404 | Not found |
+| 409 | Conflict — task ID already exists (POST) or task already claimed (claim endpoint) |
+
+## Curl Examples: Full Happy-Path Lifecycle
+
+The following sequence demonstrates the complete lifecycle from picking a ready task to heartbeat:
+
+```bash
+BASE="$SHIPWRIGHT_TASK_STORE_URL"
+TOKEN="$SHIPWRIGHT_TASK_STORE_TOKEN"
+AUTH="Authorization: Bearer $TOKEN"
+
+# 1. Check for an interrupted task first (resume if found)
+INTERRUPTED=$(curl -sf -H "$AUTH" "$BASE/tasks?status=in_progress" | jq -r '.tasks[0].id // empty')
+
+# 2. If nothing in progress, pick the next ready task
+if [ -z "$INTERRUPTED" ]; then
+  TASK=$(curl -sf -H "$AUTH" "$BASE/tasks?ready=true" | jq '.tasks[0]')
+  TASK_ID=$(echo "$TASK" | jq -r '.id')
+else
+  TASK_ID="$INTERRUPTED"
+fi
+
+echo "Working on task: $TASK_ID"
+
+# 3. Claim the task (atomic — 409 if another agent beats you to it)
+curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" \
+  "$BASE/tasks/$TASK_ID/claim" | jq .
+
+# 4. Mark in_progress
+curl -sf -X PATCH -H "$AUTH" -H "Content-Type: application/json" \
+  "$BASE/tasks/$TASK_ID" \
+  -d "{\"status\": \"in_progress\", \"startedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" | jq .
+
+# 5. Heartbeat (call periodically during long work)
+curl -sf -X POST -H "$AUTH" "$BASE/tasks/$TASK_ID/heartbeat" | jq .
+
+# 6. Open a PR (requires pr number and timestamp)
+PR_NUMBER=42
+curl -sf -X PATCH -H "$AUTH" -H "Content-Type: application/json" \
+  "$BASE/tasks/$TASK_ID" \
+  -d "{\"status\": \"pr_open\", \"pr\": $PR_NUMBER, \"prCreatedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" | jq .
+```
+
+## Required Fields Per Status Transition
+
+| Transition | Fields that must be set |
+|---|---|
+| → `in_progress` | `startedAt` (strongly recommended) |
+| → `pr_open` | `pr` (PR number), `prCreatedAt` (ISO timestamp) |
+| → `approved` | `ciFixAttempts` (set to 0 if no CI fixes were needed) |
+| → `merged` | `ciFixAttempts`, `mergedAt` (strongly recommended) |
+| → `blocked` | `blockedReason` (strongly recommended), `blockedAt` |
+
+<div class="sw-callout mt-6 max-w-3xl">
+  <p><strong>Enforcement:</strong> The task store does not hard-validate these fields on every
+  PATCH — missing fields silently result in incomplete records that may break downstream tooling
+  (e.g. the deploy scanner checks for <code>pr</code> when picking up <code>pr_open</code> tasks).
+  Always set the required fields on the relevant transition.</p>
+</div>
+
+## See also
+
+- [PRs API](/docs/prs-api) — PR review state tracking: `GET`/`POST`/`PATCH` `/prs`, claim, heartbeat, patch cycles, and release
+- [Configuration Reference](/docs/reference) — `SHIPWRIGHT_TASK_STORE_URL`, `SHIPWRIGHT_TASK_STORE_TOKEN`, and all other env vars
+- [The Agent](/docs/the-agent) — how the agent runtime consumes this API to run the dev-task loop
