@@ -142,8 +142,15 @@ export class HttpAdminMetricsClient implements AdminMetricsClient {
     from?: string;
     to?: string;
   }): Promise<ChatTokenStats> {
+    // The chat-tokens endpoint uses z.string().date() (YYYY-MM-DD) — the
+    // underlying table is date-only. Slice any ISO datetime strings to the
+    // date portion before forwarding so the schema accepts them.
+    const dateParams = {
+      from: params.from ? params.from.slice(0, 10) : undefined,
+      to: params.to ? params.to.slice(0, 10) : undefined,
+    };
     return this.fetch<ChatTokenStats>(
-      `/agents/chat-tokens/daily/stats${HttpAdminMetricsClient.query(params)}`,
+      `/agents/chat-tokens/daily/stats${HttpAdminMetricsClient.query(dateParams)}`,
     );
   }
 }
