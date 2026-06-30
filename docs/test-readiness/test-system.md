@@ -31,7 +31,7 @@ These patterns indicate a test is in the wrong layer:
 - No `mock.module()` — Bun runs test files in the same process; module-level mocks leak across suites.
 - No `global.fetch` overrides or any other `global.*` mutation in tests — same reason.
 - No raw `new Date()` / `Date.now()` in tested code paths — inject a `Clock` interface and use `FixedClock(t)` in tests for deterministic time.
-- No live external calls — everything runs offline by default. Live calls only when env explicitly enables them (e.g. `POSTHOG_API_KEY` set for a manual canary run).
+- No live external calls — everything runs offline by default. Live calls only when env explicitly enables them for manual testing.
 
 ## Per-component run commands and speed budgets
 
@@ -51,7 +51,7 @@ The plugin is pure TypeScript — no server, no database, no external HTTP in pr
 
 ### Metrics dashboard (`@shipwright/metrics`) — Phase B
 
-The metrics service is a stateless Hono app backed by PostHog queries. No database.
+The metrics service is a stateless Hono app backed by task-store/fixture providers. No database.
 
 | Layer | Local run command | Per-test 95p | Per-test hard cap | Suite target |
 |---|---|---|---|---|
@@ -60,14 +60,14 @@ The metrics service is a stateless Hono app backed by PostHog queries. No databa
 | smoke | `bun test --filter metrics` | <2 s | <10 s | <30 s |
 
 **Notes:**
-- Integration tests inject `RecordedPostHogClient` (cassette-backed) for query and capture calls. Cassettes live in `metrics/tests/fixtures/posthog/`.
+- Integration tests inject `RecordedTaskStoreClient` (cassette-backed) for task and PR queries. Cassettes live in `metrics/tests/fixtures/task-store/`.
 - Smoke tests drive the Hono app via `app.request()` — no real socket, no `fetch()` to localhost. Import the app factory and call `app.request(new Request(...))` directly.
 - No e2e layer until Phase B ships a browser-rendered dashboard. E2e layer added then via Playwright.
-- `POSTHOG_API_KEY` must be absent (or `POSTHOG_OFFLINE=true` set) for all unit/integration/smoke tests to stay offline.
+- Tests run offline by default with no external service URLs configured.
 
 ### Shipwright agent (`@shipwright/agent`) — Phase C
 
-The agent is a thin runner with a Prisma-backed SQLite/PostgreSQL database and a Hono HTTP surface for health and admin endpoints. Integration tests cover the task-pick, PR-ship, and DB seams; smoke tests cover the Hono route contracts.
+The agent is a thin runner with a Prisma-backed PostgreSQL database and a Hono HTTP surface for health and admin endpoints. Integration tests cover the task-pick, PR-ship, and DB seams; smoke tests cover the Hono route contracts.
 
 | Layer | Local run command | Per-test 95p | Per-test hard cap | Suite target |
 |---|---|---|---|---|

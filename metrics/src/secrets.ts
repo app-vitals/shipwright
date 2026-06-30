@@ -72,7 +72,7 @@ export function createSecretsClient(
    * Resolves a secret by name.
    * Order: process.env[name] → GCP Secret Manager → throw SecretNotFoundError
    *
-   * Env var wins — supports plain POSTHOG_PERSONAL_API_KEY without GCP credentials.
+   * Env var wins — supports plain API_KEY without GCP credentials.
    * GCP Secret Manager is optional: only tried when env var is absent.
    */
   async function getSecret(name: string): Promise<string> {
