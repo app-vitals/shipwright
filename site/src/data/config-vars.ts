@@ -6,30 +6,16 @@ export interface ConfigVar {
 }
 
 export const pluginEnvVars: ConfigVar[] = [
-  { name: "SHIPWRIGHT_TASK_STORE", type: "string", def: "—", desc: "Selects the task store backend (github, jira, or json). When set, takes precedence over all file-based config — the .shipwright.json walk-up and SHIPWRIGHT_CONFIG are skipped entirely." },
-  { name: "SHIPWRIGHT_GITHUB_OWNER", type: "string", def: "—", desc: "GitHub organization or user name. Required when SHIPWRIGHT_TASK_STORE=github." },
-  { name: "SHIPWRIGHT_GITHUB_REPO", type: "string", def: "—", desc: "GitHub repository name. Required when SHIPWRIGHT_TASK_STORE=github." },
-  { name: "JIRA_BASE_URL", type: "string", def: "—", desc: "Base URL of the Jira instance (e.g. https://example.atlassian.net). Required when SHIPWRIGHT_TASK_STORE=jira." },
-  { name: "JIRA_PROJECT_KEY", type: "string", def: "—", desc: "Jira project key (e.g. SHIP). Required when SHIPWRIGHT_TASK_STORE=jira." },
+  { name: "JIRA_BASE_URL", type: "string", def: "—", desc: "Base URL of the Jira instance (e.g. https://example.atlassian.net). Required when using the Jira backend." },
+  { name: "JIRA_PROJECT_KEY", type: "string", def: "—", desc: "Jira project key (e.g. SHIP). Required when using the Jira backend." },
   { name: "SHIPWRIGHT_REPOS_DIR", type: "string", def: "<AGENT_HOME>/workspace/repos", desc: "Override the workspace repos directory." },
   { name: "SHIPWRIGHT_WORKTREE_DIR", type: "string", def: "<AGENT_HOME>/workspace/worktrees", desc: "Override the workspace worktrees directory." },
   { name: "SHIPWRIGHT_DEV_CHAT", type: "bool", def: "false", desc: "Enables the unauthenticated POST /chat endpoint. Must not be set in production." },
-  { name: "SHIPWRIGHT_CONFIG", type: "string", def: "—", desc: "Explicit path to .shipwright.json when auto-discovery is not suitable." },
   { name: "GH_CMD", type: "string", def: "gh", desc: "Override the gh CLI executable. Useful in environments where gh is installed to a non-default path." },
   { name: "AGENT_HOME", type: "string", def: "~/.shipwright-agent", desc: "Persistent storage root for workspace files, mise caches, and ~/.claude." },
   { name: "WORKSPACE_PATH", type: "string", def: "—", desc: "Direct workspace path override. Takes precedence over AGENT_HOME-based discovery when set." },
-  { name: "JIRA_API_TOKEN", type: "string", def: "—", desc: "API token for Jira authentication. Required when taskStore is jira. Env-var-only (secret)." },
-  { name: "JIRA_EMAIL", type: "string", def: "—", desc: "Email address for Jira authentication. Required when taskStore is jira." },
-];
-
-export const pluginJsonKeys: ConfigVar[] = [
-  { name: "taskStore", type: '"json" | "github" | "jira"', def: "required", desc: "Backend for the task store." },
-  { name: "github.owner", type: "string", def: "required if taskStore=github", desc: "GitHub org or user that owns the issues repo." },
-  { name: "github.repo", type: "string", def: "required if taskStore=github", desc: "GitHub repo name containing issues used as tasks." },
-  { name: "jira.baseUrl", type: "string", def: "required if taskStore=jira", desc: "Base URL of the Jira instance." },
-  { name: "jira.projectKey", type: "string", def: "required if taskStore=jira", desc: "Jira project key (e.g. SHIP)." },
-  { name: "jira.readyJql", type: "string", def: "—", desc: "Custom JQL to filter ready tasks. Overrides the default status-based query." },
-  { name: "jira.statusMap", type: "Record<string, TaskStatus>", def: "—", desc: "Maps Jira status names to Shipwright task statuses." },
+  { name: "JIRA_API_TOKEN", type: "string", def: "—", desc: "API token for Jira authentication. Required when using the Jira backend. Env-var-only (secret)." },
+  { name: "JIRA_EMAIL", type: "string", def: "—", desc: "Email address for Jira authentication. Required when using the Jira backend." },
 ];
 
 export const agentClaudeVars: ConfigVar[] = [

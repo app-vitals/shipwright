@@ -23,7 +23,7 @@ Map each section to its source docs and the target MDX file:
 |---------|-------------|-----------|--------------|-------------|
 | `getting-started` | `docs/quickstart.md` | `site/src/content/docs/getting-started.mdx` | `Getting Started` | One-prompt onboarding, prerequisites, and copy-paste quickstart |
 | `introduction` | `docs/architecture.md`, `docs/README.md` | `site/src/content/docs/introduction.mdx` | `Getting Started` | Four-artifact design (plugin → metrics → agent → task-store), workspace layout, and architectural overview |
-| `configuration` | `docs/configuration.md` | `site/src/content/docs/configuration.mdx` | `Configuration` | All configuration options: plugin env vars, `.shipwright.json` keys, agent env vars, and policy fields |
+| `configuration` | `docs/configuration.md` | `site/src/content/docs/configuration.mdx` | `Configuration` | All configuration options: plugin env vars, agent env vars, and policy fields |
 | `task-store` | `docs/task-store.md` | `site/src/content/docs/task-store.mdx` | `Task Store` | Task store API, data model, ephemeral document store, and scoped tokens |
 | `testing` | `docs/testing.md`, `docs/test-readiness/test-system.md` | `site/src/content/docs/testing.mdx` | `Testing` | Four-layer test model (unit / integration / smoke / e2e), run commands, speed budgets, and isolation contract |
 | `deploy` | `docs/deploy-kubernetes.md`, `docs/helm-repo.md` | `site/src/content/docs/deploying-to-cloud.mdx` | `Operations` | Kubernetes deployment: Minikube, GKE (Gateway API + cert-manager), EKS (ALB), agent provisioning RBAC, and auth modes |

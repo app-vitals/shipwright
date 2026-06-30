@@ -5,7 +5,7 @@
  *
  * Covers:
  * - Workspace path resolution (WORKSPACE_PATH env var or cwd heuristic)
- * - Org/repo resolution from repos/ dir and shipwright.config.json
+ * - Org/repo resolution from repos/ dir
  * - gh CLI execution helper
  */
 
@@ -112,120 +112,10 @@ export function resolveWorkspacePath(): string {
   return join(agentHome, "workspace");
 }
 
-// ─── Shipwright config ────────────────────────────────────────────────────────
-
-export interface ShipwrightGitHubConfig {
-  owner: string;
-  repo: string;
-}
-
-/**
- * The task-store backends a Shipwright install can select.
- *
- * - `"shipwright"` — the HTTP Shipwright task-store service (artifact D). This is
- *   the only backend with a runtime implementation today; connection details
- *   come from `SHIPWRIGHT_TASK_STORE_URL` + `SHIPWRIGHT_TASK_STORE_TOKEN`.
- * - `"github"` — GitHub Issues. Used only for PR-repo discovery
- *   (`readShipwrightConfig`); there is no GitHub-Issues task-data client.
- */
-export type TaskStoreBackend = "shipwright" | "github";
-
-/**
- * Parse state/shipwright.config.json into a raw object, or null when the file is
- * absent, unreadable, or not a JSON object. Shared by readShipwrightConfig and
- * resolveTaskStoreBackend so both read the config the same way.
- */
-function parseShipwrightConfigFile(
-  workspacePath: string,
-): Record<string, unknown> | null {
-  const configPath = join(workspacePath, "state", "shipwright.config.json");
-  if (!existsSync(configPath)) return null;
-  try {
-    const raw = JSON.parse(readFileSync(configPath, "utf-8")) as unknown;
-    if (typeof raw !== "object" || raw === null) return null;
-    return raw as Record<string, unknown>;
-  } catch {
-    return null; // unreadable or invalid JSON
-  }
-}
-
-/**
- * Resolve the effective task-store backend for plugin commands and prechecks.
- *
- * Precedence:
- *  1. Explicit `taskStore` in state/shipwright.config.json — `"shipwright"` or
- *     `"github"`.
- *  2. No explicit config but both `SHIPWRIGHT_TASK_STORE_URL` and
- *     `SHIPWRIGHT_TASK_STORE_TOKEN` are set → `"shipwright"`. This is how managed
- *     (GKE) agents and env-configured local installs select the HTTP store —
- *     the provisioner injects only those two env vars, never a config file.
- *  3. Otherwise → `"github"`.
- *
- * Connection details (URL/token) ALWAYS come from env — never the config file —
- * so the file is safe to commit in a public repo.
- */
-export function resolveTaskStoreBackend(
-  workspacePath: string,
-  env: Record<string, string | undefined> = process.env,
-): TaskStoreBackend {
-  const declared = parseShipwrightConfigFile(workspacePath)?.taskStore;
-  if (declared === "shipwright") return "shipwright";
-  if (declared === "github") return "github";
-
-  const url = (env.SHIPWRIGHT_TASK_STORE_URL ?? "").trim();
-  const token = (env.SHIPWRIGHT_TASK_STORE_TOKEN ?? "").trim();
-  if (url && token) return "shipwright";
-
-  return "github";
-}
-
-/**
- * Read state/shipwright.config.json and return the github task store config,
- * or null if the file is absent, unreadable, or not using the github task store.
- */
-export function readShipwrightConfig(
-  workspacePath: string,
-): ShipwrightGitHubConfig | null {
-  const cfg = parseShipwrightConfigFile(workspacePath);
-  if (!cfg) return null;
-  if (cfg.taskStore !== "github") return null;
-  const gh = cfg.github;
-  if (
-    typeof gh === "object" &&
-    gh !== null &&
-    typeof (gh as Record<string, unknown>).owner === "string" &&
-    typeof (gh as Record<string, unknown>).repo === "string"
-  ) {
-    return {
-      owner: (gh as Record<string, unknown>).owner as string,
-      repo: (gh as Record<string, unknown>).repo as string,
-    };
-  }
-  return null;
-}
-
 // ─── Repos resolution ────────────────────────────────────────────────────────
 
-/**
- * Resolve the full ordered list of "owner/repo" strings for this workspace.
- *
- * Priority:
- * 1. shipwright.config.json github repo — placed first, deduped from scanned list
- * 2. Scanned repos from workspace/repos/ or SHIPWRIGHT_REPOS_DIR
- * 3. Default "app-vitals/shipwright" if nothing else is found
- */
 export function resolveAllRepos(workspacePath: string): string[] {
-  const shipwrightConfig = readShipwrightConfig(workspacePath);
-  const scannedRepos = resolveRepos(workspacePath);
-
-  if (shipwrightConfig) {
-    const primary = `${shipwrightConfig.owner}/${shipwrightConfig.repo}`;
-    return [primary, ...scannedRepos.filter((r) => r !== primary)];
-  }
-  if (scannedRepos.length > 0) {
-    return scannedRepos;
-  }
-  return ["app-vitals/shipwright"];
+  return resolveRepos(workspacePath);
 }
 
 /**

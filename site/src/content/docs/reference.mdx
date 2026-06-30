@@ -8,7 +8,6 @@ order: 8
 import ConfigTable from '../../components/ConfigTable.astro'
 import {
   pluginEnvVars,
-  pluginJsonKeys,
   agentClaudeVars,
   agentSlackVars,
   agentGithubVars,
@@ -30,11 +29,11 @@ Single authoritative reference for all Shipwright configuration options, organiz
 When the same option can be set multiple ways, resolution order is:
 
 ```
-env var  >  .shipwright.json  >  built-in default
+env var  >  built-in default
 ```
 
 <div class="sw-callout mt-6 max-w-3xl">
-  <p><strong>Env vars are the primary configuration path.</strong> Managed Shipwright agents must use env vars — they are injected by the admin service and are the only supported config mechanism for deployed agents. <code>.shipwright.json</code> is a local fallback for use when you install and run the Shipwright plugin directly in Claude Code without a managed agent. Do not commit or rely on <code>.shipwright.json</code> in a managed agent deployment.</p>
+  <p><strong>Env vars are the only configuration path.</strong> All Shipwright configuration is supplied via env vars — injected by the admin service for managed agents, or set in the local environment for direct plugin use.</p>
 </div>
 
 ## Plugin Config
@@ -44,28 +43,6 @@ Configuration for the Shipwright Claude Code plugin (`plugins/shipwright/`). The
 ### Env vars
 
 <ConfigTable vars={pluginEnvVars} />
-
-### .shipwright.json
-
-`.shipwright.json` is for use when you install and run the Shipwright plugin in Claude Code directly — without a managed Shipwright agent. Managed agents receive all configuration via env vars from the admin service; they do not read `.shipwright.json`.
-
-Config-file resolution order: (1) check `SHIPWRIGHT_TASK_STORE` env var; (2) walk up from cwd looking for `.shipwright.json`; (3) fall back to `SHIPWRIGHT_CONFIG` env var; (4) fall back to local JSON state.
-
-#### Task store keys
-
-<ConfigTable vars={pluginJsonKeys} nameLabel="Key" />
-
-#### Minimal example
-
-```json
-{
-  "taskStore": "github",
-  "github": {
-    "owner": "your-org",
-    "repo": "your-repo"
-  }
-}
-```
 
 ## Agent Config
 

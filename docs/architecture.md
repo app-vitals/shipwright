@@ -68,7 +68,7 @@ A small in-memory HTML store for short-lived, regenerable artifacts (one-pagers,
 |---|---|---|
 | Marketing site | `site/` | Astro + Tailwind (**shipwrightharness.com**). **Not** a Bun workspace; Playwright smoke tests (`*.spec.ts`). |
 | Brand system | `brand/` | Locked design system (`BRAND.md`, `tokens.json`) + CSS build + lint, consumed by `site/`. |
-| Local state | `state/` | Git-ignored JSON fallback (local-only, used when neither the Postgres task-store service nor GitHub/Jira backend is available) + cached review state. |
+| Local state | `state/` | Git-ignored JSON fallback (local-only, used when the Postgres task-store service is unavailable) + cached review state. |
 
 ## Workspace layout
 
@@ -93,5 +93,5 @@ shipwright/
 - **[testing.md](./testing.md)** — the four-layer test architecture and isolation contract.
 - **[metrics.md](./metrics.md)** — metrics service API and dashboard.
 - **[agent.md](./agent.md)** — Shipwright agent runtime + admin APIs and data model.
-- **[configuration.md](./configuration.md)** — all configuration options: plugin env vars, `.shipwright.json` keys, agent env vars, and policy fields.
+- **[configuration.md](./configuration.md)** — all configuration options: plugin env vars, agent env vars, and policy fields.
 - `CLAUDE.md` — contributor conventions and the pre-public scrub rule.
