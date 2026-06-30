@@ -109,3 +109,21 @@ describe("normalizeModelToRateKey — unknown inputs", () => {
     expect(normalizeModelToRateKey("gpt-4")).toBeNull();
   });
 });
+
+describe("calculateCost — round-trip with normalizeModelToRateKey", () => {
+  test("calculateCost non-zero for normalized sonnet key", () => {
+    expect(calculateCost(SAMPLE_USAGE, normalizeModelToRateKey("sonnet")!)).toBeGreaterThan(0);
+  });
+
+  test("calculateCost non-zero for normalized haiku key", () => {
+    expect(calculateCost(SAMPLE_USAGE, normalizeModelToRateKey("haiku")!)).toBeGreaterThan(0);
+  });
+
+  test("calculateCost non-zero for normalized opus key", () => {
+    expect(calculateCost(SAMPLE_USAGE, normalizeModelToRateKey("opus")!)).toBeGreaterThan(0);
+  });
+
+  test("calculateCost non-zero for normalized fable key", () => {
+    expect(calculateCost(SAMPLE_USAGE, normalizeModelToRateKey("fable")!)).toBeGreaterThan(0);
+  });
+});
