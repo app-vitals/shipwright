@@ -1,0 +1,165 @@
+# demo/scenes.yaml — "Inside a task" walkthrough
+#
+# A factual, step-by-step explainer of the 14 steps /shipwright:dev-task runs
+# when it picks up a ticket. Mirrors the "Inside a task" tab on the homepage
+# (site/src/pages/index.astro → devTaskSteps), which is itself faithful to
+# plugins/shipwright/commands/dev-task.md.
+#
+# Style: one branded title-card per step. Narration explains, in human terms,
+# what the step does and why a developer finds it useful. Works fully offline —
+# no running stack required.
+#
+# Workflow:
+#   1. /demo-recorder:demo-preview            — review the shot list
+#   2. /demo-recorder:demo-record             — draft video (say/Piper narration)
+#   3. approve narration, edit lines here
+#   4. /demo-recorder:demo-record --final     — swap in ElevenLabs narration
+#   5. commit demo/output/inside-a-task.mp4 + the .script.md artifact
+
+video:
+  title: "Inside a Task — The 14 Steps of /shipwright:dev-task"
+  output_name: "inside-a-task"
+  formats:
+    - "16:9"   # website embed on the homepage "Inside a task" tab
+  font: "JetBrains Mono"
+  theme: "dark"
+
+scenes:
+  # ---------------------------------------------------------------------------
+  # Intro card — frame the walkthrough.
+  # ---------------------------------------------------------------------------
+  - id: "intro"
+    type: title-card
+    duration: 11
+    text: "Inside a task\nThe 14 steps of dev-task"
+    subtext: "shipwrightharness.com"
+    background: "#080E1E"
+    narration: "When Shipwright picks up a ticket, fourteen steps run end to end — from reading your toolchain to opening a green pull request. Here is each one, and why it matters."
+
+  # --- SETUP ----------------------------------------------------------------
+  - id: "step-01"
+    type: title-card
+    duration: 12
+    text: "01\nDetect the toolchain"
+    subtext: "Setup · Step 1 of 14"
+    background: "#080E1E"
+    narration: "First it reads your build config and learns your test, lint, and typecheck commands — so every later step runs your project's real commands, not guesses."
+
+  - id: "step-02"
+    type: title-card
+    duration: 11
+    text: "02\nPick the next task"
+    subtext: "Setup · Step 2 of 14"
+    background: "#080E1E"
+    narration: "It resumes anything left in progress, or pulls the next ready item off the queue and checks it has everything it needs — so work never starts on a half-defined ticket."
+
+  - id: "step-03"
+    type: title-card
+    duration: 10
+    text: "03\nMark in-progress"
+    subtext: "Setup · Step 3 of 14"
+    background: "#080E1E"
+    narration: "It clears out any leftover branch or PR from a crashed run, then flips the task to in-progress — so the board always reflects what is actually happening."
+
+  - id: "step-04"
+    type: title-card
+    duration: 11
+    text: "04\nBuild the brief"
+    subtext: "Setup · Step 4 of 14"
+    background: "#080E1E"
+    narration: "It turns the ticket's title, description, acceptance criteria, and layer into a single implementation brief — the same context a developer would gather before writing a line."
+
+  - id: "step-05"
+    type: title-card
+    duration: 10
+    text: "05\nSet up a worktree"
+    subtext: "Setup · Step 5 of 14"
+    background: "#080E1E"
+    narration: "It creates an isolated git worktree on the task's own branch — never on main — so the work is sandboxed and your main branch stays clean."
+
+  # --- BUILD ----------------------------------------------------------------
+  - id: "step-06"
+    type: title-card
+    duration: 10
+    text: "06\nTests first, then code"
+    subtext: "Build · Step 6 of 14"
+    background: "#080E1E"
+    narration: "It writes failing tests first, makes them pass, then refactors — so behavior is pinned by tests before any production code exists."
+
+  # --- VERIFY ---------------------------------------------------------------
+  - id: "step-07"
+    type: title-card
+    duration: 11
+    text: "07\nSimplify"
+    subtext: "Verify · Step 7 of 14"
+    background: "#080E1E"
+    narration: "It re-reads its own diff for duplication, dead code, and needless complexity, and fixes them — the cleanup pass reviewers usually have to ask for."
+
+  - id: "step-08"
+    type: title-card
+    duration: 10
+    text: "08\nVerify the spec"
+    subtext: "Verify · Step 8 of 14"
+    background: "#080E1E"
+    narration: "A second, independent agent checks every acceptance criterion against the diff and patches whatever is missing — a fresh set of eyes before anyone is notified."
+
+  - id: "step-09"
+    type: title-card
+    duration: 10
+    text: "09\nGrade requirements"
+    subtext: "Verify · Step 9 of 14"
+    background: "#080E1E"
+    narration: "It scores each criterion met, partial, or not-met, and blocks the task if anything is still unmet — so a pull request never claims to be done when it is not."
+
+  # --- PRE-SHIP -------------------------------------------------------------
+  - id: "step-10"
+    type: title-card
+    duration: 11
+    text: "10\nPre-ship checks"
+    subtext: "Pre-ship · Step 10 of 14"
+    background: "#080E1E"
+    narration: "It runs validate, lint, test, and typecheck, and reports how coverage moved against your threshold — the same gate your CI will enforce, caught early."
+
+  - id: "step-11"
+    type: title-card
+    duration: 10
+    text: "11\nRefresh the docs"
+    subtext: "Pre-ship · Step 11 of 14"
+    background: "#080E1E"
+    narration: "A docs agent updates anything the change made stale and commits it separately — so documentation lands with the feature instead of drifting behind it."
+
+  # --- SHIP -----------------------------------------------------------------
+  - id: "step-12"
+    type: title-card
+    duration: 10
+    text: "12\nPush & open the PR"
+    subtext: "Ship · Step 12 of 14"
+    background: "#080E1E"
+    narration: "It pushes the branch and opens a pull request — or adds commits to the existing one — with a summary and the acceptance-criteria table already filled in."
+
+  - id: "step-13"
+    type: title-card
+    duration: 10
+    text: "13\nWatch CI, fix failures"
+    subtext: "Ship · Step 13 of 14"
+    background: "#080E1E"
+    narration: "It polls CI, reads the failure logs, and retries fixes up to six times before giving up — turning red builds green without anyone having to step in."
+
+  - id: "step-14"
+    type: title-card
+    duration: 10
+    text: "14\nRecord metrics & hand off"
+    subtext: "Ship · Step 14 of 14"
+    background: "#080E1E"
+    narration: "Finally it moves the task to pr-open, records the metrics, and prints a handoff summary — so the next task, and the next measurement, are ready to go."
+
+  # ---------------------------------------------------------------------------
+  # Close card — the payoff.
+  # ---------------------------------------------------------------------------
+  - id: "close"
+    type: title-card
+    duration: 10
+    text: "Fourteen steps. One command.\nTested, reviewed, documented, measured."
+    subtext: "shipwrightharness.com"
+    background: "#080E1E"
+    narration: "Fourteen steps, one command. Every task ships the same way — tested, reviewed, documented, and measured. That's Shipwright."
