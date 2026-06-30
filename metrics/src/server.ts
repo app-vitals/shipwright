@@ -80,6 +80,7 @@ if (mode === "fixtures") {
     sessionSecret: "",
     requireOwnerRole: false,
     offlineMode: true,
+    dashboardDevAuth,
     basePath,
   };
   // Fixtures carry no repo attribution, so a repo filter would empty the table.
