@@ -58,20 +58,12 @@ test("eyebrow features 'Built on Claude Code'", async ({ page }) => {
   await expect(page.getByText(/Built on Claude Code/i).first()).toBeVisible();
 });
 
-test("hero CTA section includes both paths: install snippet and discovery call link", async ({
-  page,
-}) => {
+test("hero features the intro video as its centerpiece", async ({ page }) => {
   await page.goto("/");
   const hero = page.locator("section").first();
-  // Install path: the plugin install command should be visible in the hero area.
+  // The hero leads with the intro video (autoplay/muted/loop), not CTA cards.
   await expect(
-    hero.getByText("/plugin install shipwright@app-vitals/shipwright", {
-      exact: false,
-    }),
-  ).toBeVisible();
-  // Discovery call path: link to cal.com/app-vitals/discovery should be visible in hero.
-  await expect(
-    hero.getByRole("link", { name: /discovery call/i }),
+    hero.locator('video[src="/shipwright-intro.mp4"]'),
   ).toBeVisible();
 });
 
@@ -106,13 +98,14 @@ test("showcase tabs switch panels with zero runtime JS", async ({ page }) => {
   await page.goto("/");
   const showcase = page.locator("#showcase");
   await expect(showcase).toBeVisible();
-  // Five tabs present.
+  // Six tabs present.
   for (const tab of [
     "Two ways to run it",
     "Inside a task",
     "Ships on a schedule",
     "Metrics",
-    "Demo",
+    "Proof",
+    "Run the full stack",
   ]) {
     await expect(
       showcase.locator("label.sw-tab", { hasText: tab }),
@@ -143,6 +136,14 @@ test("header shows the brand lockup (ship mark + wordmark) linking home", async 
   await expect(home.locator("img")).toBeVisible();
 });
 
+test("header nav surfaces the Configuration link", async ({ page }) => {
+  await page.goto("/");
+  const nav = page.locator("header nav");
+  await expect(
+    nav.getByRole("link", { name: /Configuration/i }),
+  ).toHaveAttribute("href", "/docs/reference");
+});
+
 test("favicon wires the scalable ship mark", async ({ page }) => {
   await page.goto("/");
   await expect(
@@ -170,20 +171,22 @@ test("two-ways section presents both the plugin and the cloud agent pillars", as
   await expect(section.getByText(/cron/i).first()).toBeVisible();
 });
 
-test("metrics section renders with a simulated dashboard", async ({ page }) => {
+test("metrics section renders real proof-dashboard figures", async ({ page }) => {
   await page.goto("/");
   // The metrics panel lives behind the "Metrics" tab.
   await page.locator('label[for="sw-tab-metrics"]').click();
   const section = page.locator("#metrics");
   await expect(section).toBeVisible();
   await expect(section.getByRole("heading", { level: 2 })).toBeVisible();
-  // The simulated dashboard mock is present and labelled for a11y.
+  // The dashboard mock is labelled for a11y as real (live) data for this repo.
   await expect(
-    section.getByRole("img", { name: /simulated.*dashboard/i }),
+    section.getByRole("img", { name: /metrics for this repo/i }),
   ).toBeVisible();
   // Headline metric names appear.
-  await expect(section.getByText(/first-time quality/i).first()).toBeVisible();
   await expect(section.getByText(/cycle time/i).first()).toBeVisible();
+  await expect(section.getByText(/ship-it rate/i).first()).toBeVisible();
+  // The figures are sourced from the public proof dashboard, not illustrative.
+  await expect(section.getByText(/Real figures for this repo/i)).toBeVisible();
 });
 
 test("crons section documents the ten default scheduled jobs", async ({
@@ -269,34 +272,43 @@ test("differentiators name no competitors", async ({ page }) => {
   }
 });
 
-test("demo renders a static terminal block with no runtime JS", async ({
+test("'Run the full stack' tab shows the task stack:up walkthrough video", async ({
   page,
 }) => {
   await page.goto("/");
-  // The demo panel lives behind the "Demo" tab.
+  // The walkthrough panel lives behind the "Run the full stack" tab (id #demo).
   await page.locator('label[for="sw-tab-demo"]').click();
   const demo = page.locator("#demo");
   await expect(demo).toBeVisible();
-  await expect(demo.locator("pre, code").first()).toBeVisible();
-  await expect(demo.getByText(/dev-task/i).first()).toBeVisible();
-  // Reconfirm zero runtime JS (no asciinema player injected).
+  await expect(
+    demo.locator('video[src="/task-stack-up-walkthrough.mp4"]'),
+  ).toBeVisible();
+  await expect(demo.getByText(/task stack:up/i).first()).toBeVisible();
+  // Reconfirm zero runtime JS (native <video>, no injected player).
   expect(await page.locator("script").count()).toBe(0);
 });
 
-test("demo includes a simulated Slack thread for the cloud agent", async ({
+test("'Proof' tab makes the dogfooding case and links to the public dashboard", async ({
   page,
 }) => {
   await page.goto("/");
-  // The demo panel lives behind the "Demo" tab.
-  await page.locator('label[for="sw-tab-demo"]').click();
-  const demo = page.locator("#demo");
+  await page.locator('label[for="sw-tab-proof"]').click();
+  const proof = page.locator("#proof");
+  await expect(proof).toBeVisible();
   await expect(
-    demo.getByRole("img", { name: /simulated Slack thread/i }),
+    proof.getByRole("heading", { name: /Shipwright builds Shipwright/i }),
   ).toBeVisible();
-  await expect(demo.getByText(/take the next ready task/i)).toBeVisible();
-  await expect(demo.getByText(/PR #128/i).first()).toBeVisible();
-  // The thread animates via CSS keyframes only — still zero runtime JS.
-  expect(await page.locator("script").count()).toBe(0);
+  // Primary CTA → the live public dashboard.
+  await expect(
+    proof.getByRole("link", { name: /live dashboard/i }),
+  ).toHaveAttribute(
+    "href",
+    "https://proof.shipwrightharness.com/public/dashboard",
+  );
+  // Secondary CTA → the public task queue.
+  await expect(
+    proof.getByRole("link", { name: /task queue/i }),
+  ).toHaveAttribute("href", "https://proof.shipwrightharness.com/public/tasks");
 });
 
 test("social proof links to GitHub and repeats the install command", async ({
