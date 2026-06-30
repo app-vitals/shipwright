@@ -48,7 +48,7 @@ In taskstore mode, `server.ts` wires a `TaskStoreProvider` over an `HttpTaskStor
 METRICS_OFFLINE=true bun metrics/src/server.ts
 ```
 
-When `METRICS_OFFLINE=true`, `server.ts` injects an offline `TaskStoreProvider` built from recorded cassettes (`createFixtureTaskStoreProvider()`, pre-recorded sample data for every query type) and bypasses session auth for `/dashboard` (serves as "Offline User"). Safe for local development and CI environments with no secrets configured.
+When `METRICS_OFFLINE=true`, `server.ts` injects an offline `TaskStoreProvider` built from recorded cassettes (`createFixtureTaskStoreProvider()`, pre-recorded sample data for every query type) and bypasses session auth for `/dashboard` (serves as "Offline User"). For additional auth bypass on both `/dashboard` and `/metrics/*` endpoints (useful in local development with `task stack`), combine with `METRICS_DASHBOARD_DEV_AUTH=true`. Safe for local development and CI environments with no secrets configured.
 
 ## API Endpoints
 
