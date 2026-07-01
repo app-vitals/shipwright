@@ -426,6 +426,7 @@ describe("TaskStoreProvider (integration)", () => {
       "cache_read_input_tokens",
       "cache_creation_input_tokens",
       "total_tokens",
+      "cost_usd",
     ]);
     const row = t.results[0];
     // Cron should be zero; chat should still be present
@@ -446,6 +447,7 @@ describe("TaskStoreProvider (integration)", () => {
       "cache_read_input_tokens",
       "cache_creation_input_tokens",
       "total_tokens",
+      "cost_usd",
     ]);
     const row = t.results[0];
     // Chat should be zero; cron should still be present
@@ -466,6 +468,7 @@ describe("TaskStoreProvider (integration)", () => {
       "cache_read_input_tokens",
       "cache_creation_input_tokens",
       "total_tokens",
+      "cost_usd",
     ]);
     const row = t.results[0];
     // All zeros
