@@ -31,7 +31,7 @@ export function formatDailyDate(date: Date, timeZone?: string): string {
 
 export interface ChatTokenReporter {
   /** Called at Slack session completion. No-op when usage is undefined. */
-  recordSession(usage: TokenUsage | undefined): Promise<void>;
+  recordSession(usage: TokenUsage | undefined, totalCostUsd?: number): Promise<void>;
 }
 
 export interface HttpChatTokenReporterOptions {
@@ -51,12 +51,14 @@ export class HttpChatTokenReporter implements ChatTokenReporter {
     this.timeZone = opts.timeZone;
   }
 
-  async recordSession(usage: TokenUsage | undefined): Promise<void> {
+  async recordSession(
+    usage: TokenUsage | undefined,
+    totalCostUsd?: number,
+  ): Promise<void> {
     if (usage === undefined) return;
 
     const { apiUrl, agentId, apiKey } = this.opts;
     const url = `${apiUrl}/agents/${agentId}/chat-tokens/daily`;
-    const model = liveClaudeConfig.model;
 
     const body = {
       date: formatDailyDate(this.clock.now(), this.timeZone),
@@ -64,7 +66,7 @@ export class HttpChatTokenReporter implements ChatTokenReporter {
       outputTokens: usage.output_tokens,
       cacheReadTokens: usage.cache_read_input_tokens,
       cacheCreationTokens: usage.cache_creation_input_tokens,
-      costUsd: calculateCost(usage, model),
+      costUsd: totalCostUsd ?? calculateCost(usage, liveClaudeConfig.model),
     };
 
     try {
@@ -90,7 +92,10 @@ export class HttpChatTokenReporter implements ChatTokenReporter {
 }
 
 export class NoopChatTokenReporter implements ChatTokenReporter {
-  async recordSession(_usage: TokenUsage | undefined): Promise<void> {
+  async recordSession(
+    _usage: TokenUsage | undefined,
+    _totalCostUsd?: number,
+  ): Promise<void> {
     // intentional no-op
   }
 }

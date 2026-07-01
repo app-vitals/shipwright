@@ -57,10 +57,13 @@ const mockRunClaude = mock(
     result: string;
     sessionId?: string;
     usage?: TokenUsage;
+    totalCostUsd?: number;
+    modelUsage?: Record<string, TokenUsage>;
   }> => ({
     result: "Claude response text",
     sessionId: "sess-xyz",
     usage: mockUsage,
+    totalCostUsd: undefined,
   }),
 );
 
@@ -263,13 +266,15 @@ describe("message handler — DM routing", () => {
   }
 
   test("fires chatTokenReporter.recordSession with the session usage on a DM", async () => {
-    const recordSession = mock(async (_usage?: TokenUsage) => {});
+    const recordSession = mock(
+      async (_usage?: TokenUsage, _totalCostUsd?: number) => {},
+    );
     createSlackApp({ chatTokenReporter: { recordSession } });
 
     await invokeDM({ text: "hello" });
 
     expect(recordSession).toHaveBeenCalledTimes(1);
-    expect(recordSession).toHaveBeenCalledWith(mockUsage);
+    expect(recordSession).toHaveBeenCalledWith(mockUsage, undefined);
   });
 
   test("returns early when message has a non-file subtype", async () => {
