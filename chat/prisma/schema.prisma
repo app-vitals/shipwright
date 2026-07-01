@@ -1,0 +1,69 @@
+// Shipwright — Chat Service Schema
+// Owns: ChatToken, Thread, Message.
+//
+// WARNING: This schema uses DATABASE_URL_SHIPWRIGHT_CHAT — a dedicated
+// database for the chat service. Do NOT point this at a shared database.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "./client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL_SHIPWRIGHT_CHAT")
+}
+
+// ─── Chat Token ───────────────────────────────────────────────────────────────
+// Scoped API tokens for chat service authentication. The raw token is returned
+// once at creation; only the SHA-256 hash is stored.
+
+model ChatToken {
+  id        String    @id @default(cuid())
+  token     String    @unique // SHA-256 hash of the raw token (hex)
+  label     String?
+  agentId   String?   // null = admin token; set = agent token scoped to this agent
+  createdAt DateTime  @default(now())
+  revokedAt DateTime?
+}
+
+// ─── Thread ───────────────────────────────────────────────────────────────────
+// A conversation thread between an agent and a member.
+
+model Thread {
+  id        String    @id @default(cuid())
+  agentId   String
+  memberId  String?
+  title     String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  messages  Message[]
+
+  @@index([agentId, updatedAt(sort: Desc)])
+  @@index([memberId])
+}
+
+// ─── Message ──────────────────────────────────────────────────────────────────
+// A single message within a thread.
+
+model Message {
+  id                 String    @id @default(cuid())
+  threadId           String
+  role               String    // "user" | "assistant"
+  body               String
+  tokens             Json?
+  costUsd            Float?
+  attachmentFilename String?
+  attachmentSize     Int?
+  attachmentBytes    Bytes?
+  claimed            Boolean   @default(false)
+  claimedAt          DateTime?
+  claimedBy          String?
+  repliedAt          DateTime?
+  errorKind          String?
+  createdAt          DateTime  @default(now())
+  thread             Thread    @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@index([threadId, createdAt])
+  @@index([claimed, threadId])
+}
