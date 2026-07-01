@@ -193,14 +193,21 @@ model AgentChatTokenUsageDaily {
 
 // ─── Thread ───────────────────────────────────────────────────────────────────
 // A conversation thread between a member and an agent via the web chat UI.
-// memberId matches AgentMember.email — the member's email address.
+// memberId stores the member's email address (matches AgentMember.email).
 // title is auto-named from the first message in the thread.
+//
+// Soft link — no FK from memberId → AgentMember by design:
+//   • Email is a stable natural key; the association survives member removal.
+//   • Threads persist and remain queryable if a member is removed from an agent,
+//     and can be re-associated automatically if the member is re-added.
+//   • A composite FK on (agentId, memberId) → AgentMember.(agentId, email) would
+//     block removal of any member who has existing threads, which is undesirable.
 
 model Thread {
   id        String   @id @default(cuid())
   agentId   String
   agent     Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
-  memberId  String   // member's email, matches AgentMember.email
+  memberId  String   // member's email — soft link to AgentMember.email (no FK, intentional)
   title     String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
