@@ -17,15 +17,13 @@
  * valid table (AC#1).
  */
 
-import {
-  OPUS_MODEL,
-  calculateCost,
-  normalizeModelToRateKey,
-} from "@shipwright/lib/pricing";
 import { resolveQueryRange } from "../formatters.ts";
-import type {
-  AdminMetricsClient,
-  TokenAggregate,
+import {
+  AdminMetricsClientError,
+  type AdminMetricsClient,
+  type ChatTokenStats,
+  type CronRunTokenStats,
+  type TokenAggregate,
 } from "../lib/admin-metrics-client.ts";
 import { type Clock, SystemClock } from "../lib/clock.ts";
 import type {
@@ -48,6 +46,30 @@ const BLOCKED_STATUS = "blocked";
 // Task-store PR review-state that denotes an approved ("ship it") review. The
 // live task store records `reviewState` as one of `approved | posted | pending`.
 const SHIP_IT_REVIEW_STATE = "approved";
+
+// Zero aggregates for graceful degradation when admin stats endpoints fail.
+const ZERO_AGG: TokenAggregate = {
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheCreation: 0,
+  total: 0,
+};
+
+const ZERO_CRON_STATS: CronRunTokenStats = {
+  totals: ZERO_AGG,
+  byAgent: [],
+  byCron: [],
+  byModel: [],
+  daily: [],
+};
+
+const ZERO_CHAT_STATS: ChatTokenStats = {
+  totals: ZERO_AGG,
+  byAgent: [],
+  byModel: [],
+  daily: [],
+};
 
 // ─── Value helpers ────────────────────────────────────────────────────────────
 
@@ -562,8 +584,8 @@ export class TaskStoreProvider implements MetricsProvider {
     to: string;
   }): Promise<MetricTable> {
     const [cron, chat] = await Promise.all([
-      this.admin.cronRunTokenStats(win),
-      this.admin.chatTokenStats(win),
+      this.safeCronStats(win),
+      this.safeChatStats(win),
     ]);
     // Disjoint sources — summing field-wise is correct, no double count.
     const total = addAggregates(cron.totals, chat.totals);
@@ -578,8 +600,8 @@ export class TaskStoreProvider implements MetricsProvider {
     to: string;
   }): Promise<MetricTable> {
     const [cron, chat] = await Promise.all([
-      this.admin.cronRunTokenStats(win),
-      this.admin.chatTokenStats(win),
+      this.safeCronStats(win),
+      this.safeChatStats(win),
     ]);
     const rows = [
       ["cron", ...tokenCells(cron.totals), cron.totals.costUsd ?? 0],
@@ -593,8 +615,8 @@ export class TaskStoreProvider implements MetricsProvider {
     to: string;
   }): Promise<MetricTable> {
     const [cron, chat] = await Promise.all([
-      this.admin.cronRunTokenStats(win),
-      this.admin.chatTokenStats(win),
+      this.safeCronStats(win),
+      this.safeChatStats(win),
     ]);
     const byAgent = new Map<string, TokenAggregate>();
     for (const a of [...cron.byAgent, ...chat.byAgent]) {
@@ -612,8 +634,8 @@ export class TaskStoreProvider implements MetricsProvider {
     to: string;
   }): Promise<MetricTable> {
     const [cron, chat] = await Promise.all([
-      this.admin.cronRunTokenStats(win),
-      this.admin.chatTokenStats(win),
+      this.safeCronStats(win),
+      this.safeChatStats(win),
     ]);
     const byDay = new Map<string, TokenAggregate>();
     for (const d of [...cron.daily, ...chat.daily]) {
@@ -631,8 +653,8 @@ export class TaskStoreProvider implements MetricsProvider {
     to: string;
   }): Promise<MetricTable> {
     const [cron, chat] = await Promise.all([
-      this.admin.cronRunTokenStats(win),
-      this.admin.chatTokenStats(win),
+      this.safeCronStats(win),
+      this.safeChatStats(win),
     ]);
     const rows: unknown[][] = [];
     for (const a of cron.byAgent) {
@@ -653,7 +675,7 @@ export class TaskStoreProvider implements MetricsProvider {
     to: string;
   }): Promise<MetricTable> {
     // Cron-only: chat has no cron name.
-    const cron = await this.admin.cronRunTokenStats(win);
+    const cron = await this.safeCronStats(win);
     const rows = cron.byCron
       .map((a) => [a.key1, a.key2, ...tokenCells(a), a.costUsd ?? 0])
       .sort((a, b) => Number(b[6]) - Number(a[6]));
@@ -668,8 +690,8 @@ export class TaskStoreProvider implements MetricsProvider {
     to: string;
   }): Promise<MetricTable> {
     const [cron, chat] = await Promise.all([
-      this.admin.cronRunTokenStats(win),
-      this.admin.chatTokenStats(win),
+      this.safeCronStats(win),
+      this.safeChatStats(win),
     ]);
 
     // Merge cron byModel + chat byModel into a single (agentId, model) map,
@@ -722,84 +744,57 @@ export class TaskStoreProvider implements MetricsProvider {
     return table(["agent_id", "model", ...tokenColumns(), "cost_usd"], rows);
   }
 
+  // ─── Graceful degradation helpers ─────────────────────────────────────────
+
+  private async safeCronStats(win: {
+    from: string;
+    to: string;
+  }): Promise<CronRunTokenStats> {
+    return this.admin.cronRunTokenStats(win).catch((e) => {
+      if (e instanceof AdminMetricsClientError) {
+        console.error(
+          `[metrics] cronRunTokenStats failed: ${e.message}; falling back to zero aggregates`,
+        );
+        return ZERO_CRON_STATS;
+      }
+      throw e;
+    });
+  }
+
+  private async safeChatStats(win: {
+    from: string;
+    to: string;
+  }): Promise<ChatTokenStats> {
+    return this.admin.chatTokenStats(win).catch((e) => {
+      if (e instanceof AdminMetricsClientError) {
+        console.error(
+          `[metrics] chatTokenStats failed: ${e.message}; falling back to zero aggregates`,
+        );
+        return ZERO_CHAT_STATS;
+      }
+      throw e;
+    });
+  }
+
   // ─ Cost efficiency ─
 
   /**
-   * costEfficiency() aggregates repo-scoped completed tasks by model family,
-   * computing the actual routed cost (using costUsd when present, falling back
-   * to calculateCost) and a counterfactual Opus cost for every eligible task.
+   * costEfficiency() is currently stubbed to return an empty table.
    *
-   * Eligibility: `normalizeModelToRateKey(task.model)` must be non-null AND at
-   * least one token count must be non-null.
+   * PCE-1.5 will re-implement this using run-level cost data. The legacy
+   * implementation read dead fields (inputTokens, outputTokens, cacheReadTokens,
+   * cacheCreationTokens, costUsd) that were never populated in prod (the JSONL
+   * scraper was deleted in PR #834). No live endpoints currently call this
+   * method, so it's safe to stub pending the cost model rewrite.
    *
-   * Columns: tasks_shipped, tasks_with_cost_data, model_family, task_count,
-   *          routed_usd, opus_usd
-   *
-   * `tasks_shipped` and `tasks_with_cost_data` are aggregates broadcast on every
-   * row so PCE-1.3 can read them without a second query.
+   * Columns (kept stable): tasks_shipped, tasks_with_cost_data, model_family,
+   *                        task_count, routed_usd, opus_usd
+   * Results: empty array
    */
   private async costEfficiency(win: {
     from: string;
     to: string;
   }): Promise<MetricTable> {
-    const tasks = await this.tasks(win);
-    const completed = tasks.filter(isCompleted);
-
-    // Bucket structure per model family.
-    const buckets = new Map<
-      string,
-      { taskCount: number; routedUsd: number; opusUsd: number }
-    >();
-
-    let tasksWithCostData = 0;
-
-    for (const task of completed) {
-      if (!task.model) continue;
-      const canonicalKey = normalizeModelToRateKey(task.model);
-      if (!canonicalKey) continue;
-
-      // Coerce token fields to number | null.
-      const input = num(task.inputTokens);
-      const output = num(task.outputTokens);
-      const cacheRead = num(task.cacheReadTokens);
-      const cacheCreation = num(task.cacheCreationTokens);
-
-      // Exclude if all token counts are null.
-      if (
-        input === null &&
-        output === null &&
-        cacheRead === null &&
-        cacheCreation === null
-      ) {
-        continue;
-      }
-
-      tasksWithCostData += 1;
-
-      const usage = {
-        input_tokens: input ?? 0,
-        output_tokens: output ?? 0,
-        cache_read_input_tokens: cacheRead ?? 0,
-        cache_creation_input_tokens: cacheCreation ?? 0,
-      };
-
-      const routedUsd = num(task.costUsd) ?? calculateCost(usage, canonicalKey);
-      const opusUsd = calculateCost(usage, OPUS_MODEL);
-
-      const existing = buckets.get(canonicalKey);
-      if (existing) {
-        existing.taskCount += 1;
-        existing.routedUsd += routedUsd;
-        existing.opusUsd += opusUsd;
-      } else {
-        buckets.set(canonicalKey, {
-          taskCount: 1,
-          routedUsd,
-          opusUsd,
-        });
-      }
-    }
-
     const columns = [
       "tasks_shipped",
       "tasks_with_cost_data",
@@ -808,16 +803,6 @@ export class TaskStoreProvider implements MetricsProvider {
       "routed_usd",
       "opus_usd",
     ];
-
-    const rows = [...buckets.entries()].map(([family, b]) => [
-      completed.length,
-      tasksWithCostData,
-      family,
-      b.taskCount,
-      b.routedUsd,
-      b.opusUsd,
-    ]);
-
-    return table(columns, rows);
+    return table(columns, []);
   }
 }

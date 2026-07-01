@@ -17,6 +17,9 @@ import { FixedClock } from "../lib/test-helpers.ts";
 import type { MetricQuery } from "../metrics-provider.ts";
 import { TaskStoreProvider } from "./task-store-provider.ts";
 import {
+  FaultingBothAdminMetricsClient,
+  FaultingChatAdminMetricsClient,
+  FaultingCronAdminMetricsClient,
   RecordedAdminMetricsClient,
   RecordedTaskStoreClient,
 } from "./task-store-recorded.ts";
@@ -409,5 +412,95 @@ describe("TaskStoreProvider (integration)", () => {
     expect(byType.get("chat")?.[1]).toBe(CHAT_STATS.totals.input);
     expect(byType.get("cron")?.[6]).toBe(CRON_STATS.totals.costUsd ?? 0);
     expect(byType.get("chat")?.[6]).toBe(CHAT_STATS.totals.costUsd ?? 0);
+  });
+
+  test("graceful degradation: cronRunTokenStats throws, returns 200 with zero cron + chat data", async () => {
+    const taskStore = new RecordedTaskStoreClient(TASKS, PRS);
+    const admin = new FaultingCronAdminMetricsClient(CRON_STATS, CHAT_STATS);
+    const provider = new TaskStoreProvider(taskStore, admin, CLOCK);
+
+    const t = await provider.query({ kind: "tokensTotals", range: RANGE });
+    // Should return 200 (not throw) with only chat data
+    expect(t.columns).toEqual([
+      "input_tokens",
+      "output_tokens",
+      "cache_read_input_tokens",
+      "cache_creation_input_tokens",
+      "total_tokens",
+      "cost_usd",
+    ]);
+    const row = t.results[0];
+    // Cron should be zero; chat should still be present
+    expect(row[0]).toBe(CHAT_STATS.totals.input);
+    expect(row[1]).toBe(CHAT_STATS.totals.output);
+  });
+
+  test("graceful degradation: chatTokenStats throws, returns 200 with cron data + zero chat", async () => {
+    const taskStore = new RecordedTaskStoreClient(TASKS, PRS);
+    const admin = new FaultingChatAdminMetricsClient(CRON_STATS, CHAT_STATS);
+    const provider = new TaskStoreProvider(taskStore, admin, CLOCK);
+
+    const t = await provider.query({ kind: "tokensTotals", range: RANGE });
+    // Should return 200 (not throw) with only cron data
+    expect(t.columns).toEqual([
+      "input_tokens",
+      "output_tokens",
+      "cache_read_input_tokens",
+      "cache_creation_input_tokens",
+      "total_tokens",
+      "cost_usd",
+    ]);
+    const row = t.results[0];
+    // Chat should be zero; cron should still be present
+    expect(row[0]).toBe(CRON_STATS.totals.input);
+    expect(row[1]).toBe(CRON_STATS.totals.output);
+  });
+
+  test("graceful degradation: both throw, returns 200 with all-zero aggregates", async () => {
+    const taskStore = new RecordedTaskStoreClient(TASKS, PRS);
+    const admin = new FaultingBothAdminMetricsClient();
+    const provider = new TaskStoreProvider(taskStore, admin, CLOCK);
+
+    const t = await provider.query({ kind: "tokensTotals", range: RANGE });
+    // Should return 200 (not throw) with zero aggregates
+    expect(t.columns).toEqual([
+      "input_tokens",
+      "output_tokens",
+      "cache_read_input_tokens",
+      "cache_creation_input_tokens",
+      "total_tokens",
+      "cost_usd",
+    ]);
+    const row = t.results[0];
+    // All zeros
+    expect(row[0]).toBe(0);
+    expect(row[1]).toBe(0);
+    expect(row[2]).toBe(0);
+    expect(row[3]).toBe(0);
+    expect(row[4]).toBe(0);
+  });
+
+  test("graceful degradation: all 7 token methods handle cron failure", async () => {
+    const taskStore = new RecordedTaskStoreClient(TASKS, PRS);
+    const admin = new FaultingCronAdminMetricsClient(CRON_STATS, CHAT_STATS);
+    const provider = new TaskStoreProvider(taskStore, admin, CLOCK);
+
+    const kinds: MetricQuery[] = [
+      { kind: "tokensTotals", range: RANGE },
+      { kind: "tokensBySessionType", range: RANGE },
+      { kind: "tokensByAgent", range: RANGE },
+      { kind: "tokensTrends", range: RANGE },
+      { kind: "tokensByAgentBySessionType", range: RANGE },
+      { kind: "tokensByAgentByCron", range: RANGE },
+      { kind: "tokensByAgentByModel", range: RANGE },
+    ];
+
+    for (const q of kinds) {
+      const t = await provider.query(q);
+      // Should not throw and should return valid table
+      expect(Array.isArray(t.columns)).toBe(true);
+      expect(t.columns.length).toBeGreaterThan(0);
+      expect(Array.isArray(t.results)).toBe(true);
+    }
   });
 });
