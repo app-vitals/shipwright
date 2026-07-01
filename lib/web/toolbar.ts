@@ -171,10 +171,6 @@ export function baseStyles(): string {
       }
     }
 
-    @media (min-width: 641px) {
-      /* Ensure hamburger never shows on desktop */
-      .vos-hamburger { display: none !important; }
-    }
   `;
 }
 
@@ -186,6 +182,25 @@ export function escapeHtml(str: string): string {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 }
+
+const hamburgerScript = `<script>
+    (function() {
+      var btn = document.querySelector('.vos-hamburger');
+      var nav = btn && btn.closest('nav');
+      if (btn && nav) {
+        btn.addEventListener('click', function() {
+          var open = nav.hasAttribute('data-open');
+          if (open) {
+            nav.removeAttribute('data-open');
+            btn.setAttribute('aria-expanded', 'false');
+          } else {
+            nav.setAttribute('data-open', '');
+            btn.setAttribute('aria-expanded', 'true');
+          }
+        });
+      }
+    })();
+  <\/script>`;
 
 export function renderShipwrightToolbar(
   opts: ShipwrightToolbarOptions,
@@ -209,24 +224,7 @@ export function renderShipwrightToolbar(
       <a href="${tasksUrl}" class="vos-nav-link${active(tasksUrl)}">Tasks</a>
     </div>
   </nav>
-  <script>
-    (function() {
-      var btn = document.querySelector('.vos-hamburger');
-      var nav = btn && btn.closest('nav');
-      if (btn && nav) {
-        btn.addEventListener('click', function() {
-          var open = nav.hasAttribute('data-open');
-          if (open) {
-            nav.removeAttribute('data-open');
-            btn.setAttribute('aria-expanded', 'false');
-          } else {
-            nav.setAttribute('data-open', '');
-            btn.setAttribute('aria-expanded', 'true');
-          }
-        });
-      }
-    })();
-  <\/script>`;
+  ${hamburgerScript}`;
   }
 
   return `<nav class="vos-toolbar" aria-label="Site navigation">
@@ -247,22 +245,5 @@ export function renderShipwrightToolbar(
     </div>
     <button class="vos-hamburger" aria-label="Toggle navigation" aria-expanded="false">☰</button>
   </nav>
-  <script>
-    (function() {
-      var btn = document.querySelector('.vos-hamburger');
-      var nav = btn && btn.closest('nav');
-      if (btn && nav) {
-        btn.addEventListener('click', function() {
-          var open = nav.hasAttribute('data-open');
-          if (open) {
-            nav.removeAttribute('data-open');
-            btn.setAttribute('aria-expanded', 'false');
-          } else {
-            nav.setAttribute('data-open', '');
-            btn.setAttribute('aria-expanded', 'true');
-          }
-        });
-      }
-    })();
-  <\/script>`;
+  ${hamburgerScript}`;
 }
