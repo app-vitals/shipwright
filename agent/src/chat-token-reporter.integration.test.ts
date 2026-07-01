@@ -154,13 +154,14 @@ describe("HttpChatTokenReporter", () => {
     expect(body.costUsd).toBe(0.0099);
   });
 
-  test("recordSession sends costUsd as undefined when totalCostUsd not provided", async () => {
+  test("recordSession falls back to calculateCost when totalCostUsd not provided", async () => {
     const reporter = makeReporter();
     await reporter.recordSession(USAGE);
 
     const body = state.captured[0].body as Record<string, unknown>;
-    // JSON.stringify(undefined) omits the key, so it should be null or undefined
-    expect(body.costUsd === null || body.costUsd === undefined).toBe(true);
+    // Falls back to calculateCost(usage, liveClaudeConfig.model) — non-zero computed cost
+    expect(typeof body.costUsd).toBe("number");
+    expect(body.costUsd as number).toBeGreaterThan(0);
   });
 
   test("recordSession sends Authorization: Bearer header", async () => {

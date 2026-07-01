@@ -12,6 +12,7 @@ import { join, resolve } from "node:path";
 import type { WebClient } from "@slack/web-api";
 import type { ClaudeRunResult, TokenUsage } from "./claude.ts";
 import { dominantModel, liveClaudeConfig } from "./claude.ts";
+import { calculateCost } from "./pricing.ts";
 import { type Clock, SystemClock } from "./clock.ts";
 import type { CronRunReporter } from "./cron-run-reporter.ts";
 import { markdownToSlack } from "./format.ts";
@@ -36,7 +37,7 @@ function buildTokenPayload(
     outputTokens: usage?.output_tokens,
     cacheReadTokens: usage?.cache_read_input_tokens,
     cacheCreationTokens: usage?.cache_creation_input_tokens,
-    costUsd: totalCostUsd,
+    costUsd: totalCostUsd ?? (usage ? calculateCost(usage, liveClaudeConfig.model) : undefined),
     model: dominantModel(modelUsage ?? {}) ?? liveClaudeConfig.model,
   };
 }

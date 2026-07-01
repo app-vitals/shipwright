@@ -9,8 +9,10 @@
  * NoopChatTokenReporter: testing / default when the admin API is not configured.
  */
 
+import { liveClaudeConfig } from "./claude.ts";
 import type { TokenUsage } from "./claude.ts";
 import { type Clock, SystemClock } from "./clock.ts";
+import { calculateCost } from "./pricing.ts";
 
 /**
  * Format a Date as YYYY-MM-DD in an IANA timezone.
@@ -64,7 +66,7 @@ export class HttpChatTokenReporter implements ChatTokenReporter {
       outputTokens: usage.output_tokens,
       cacheReadTokens: usage.cache_read_input_tokens,
       cacheCreationTokens: usage.cache_creation_input_tokens,
-      costUsd: totalCostUsd,
+      costUsd: totalCostUsd ?? calculateCost(usage, liveClaudeConfig.model),
     };
 
     try {
