@@ -4,7 +4,7 @@
 
 ## Overview
 
-The agent owns ten first-class Prisma models (`Agent` and its `Env` / `CronJob` / `CronRun` / `Tool` / `Token` / `Plugin` / `Member` children, plus `Thread` and `Message` for web chat conversations) on a **dedicated database** (`DATABASE_URL_SHIPWRIGHT_ADMIN`). Secrets at rest (env values, Slack/Anthropic keys) are AES-256-GCM encrypted at the service layer; agent API tokens are stored only as SHA-256 hashes.
+The agent owns nine first-class Prisma models (`Agent` and its `Env` / `CronJob` / `CronRun` / `Tool` / `Token` / `Plugin` / `Member` children, plus `AgentChatTokenUsageDailyByModel` for daily token usage rollups) on a **dedicated database** (`DATABASE_URL_SHIPWRIGHT_ADMIN`). Secrets at rest (env values, Slack/Anthropic keys) are AES-256-GCM encrypted at the service layer; agent API tokens are stored only as SHA-256 hashes.
 
 > The Dockerfile `ENTRYPOINT` is `bun run admin/src/main.ts`, which runs migrations, constructs all services, and mounts all admin + runtime routes. The implemented HTTP surfaces are the admin CRUD API (`admin/src/agents-api.ts`, auth via `api-auth.ts`), the runtime API (`admin/src/api.ts`), the server-rendered admin UI (`admin/src/admin-ui.ts`), the public read-only task board (`GET /public/tasks` — no auth, configurable repo scope), the Prisma store + service classes (all in the `@shipwright/admin` package), the Slack event handler (`slack.ts`), and the cron runtime (`cron-handler.ts`). On startup the runner calls `POST /agents/:id/crons/reconcile` to sync system crons. A dev-only `POST /chat` transport (`chat.ts`) is available when `SHIPWRIGHT_DEV_CHAT=true`; it is never registered in production (enforced by `chat-guard.ts`).
 
@@ -107,10 +107,8 @@ Each REPL session generates a single `session` UUID so successive messages resum
 | `AgentToken` | Scoped API tokens | `token` (SHA-256 hash), `label`, `revokedAt`. |
 | `AgentPlugin` | Installed Claude Code plugins | `name` (package), `version` (null = latest), `enabled`; unique per `[agentId, name]`. |
 | `AgentMember` | Authorized human members | `email`; unique per `[agentId, email]`. |
-| `Thread` | Conversation threads in web chat UI | `agentId`, `memberId` (matches `AgentMember.email`), `title` (auto-named from first message), `createdAt`, `updatedAt`. Owns `Message[]`. Index on `[agentId, memberId, updatedAt DESC]`. |
-| `Message` | Messages within a Thread | `threadId`, `role` (`"user"` or `"assistant"`), `body`, `tokens` (optional JSON-serialized TokenUsage for assistant messages), `attachmentFilename`, `attachmentSize`, `createdAt`. Index on `threadId`. |
 
-All child models cascade-delete with their `Agent` (including `AgentCronRun` via `AgentCronJob` and `Thread` via direct cascade).
+All child models cascade-delete with their `Agent` (including `AgentCronRun` via `AgentCronJob`).
 
 ## Default system crons
 
