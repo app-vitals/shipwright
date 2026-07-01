@@ -17,11 +17,6 @@
  * valid table (AC#1).
  */
 
-import {
-  OPUS_MODEL,
-  calculateCost,
-  normalizeModelToRateKey,
-} from "@shipwright/lib/pricing";
 import { resolveQueryRange } from "../formatters.ts";
 import type {
   AdminMetricsClient,
@@ -677,81 +672,22 @@ export class TaskStoreProvider implements MetricsProvider {
   // ─ Cost efficiency ─
 
   /**
-   * costEfficiency() aggregates repo-scoped completed tasks by model family,
-   * computing the actual routed cost (using costUsd when present, falling back
-   * to calculateCost) and a counterfactual Opus cost for every eligible task.
+   * costEfficiency() is currently stubbed to return an empty table.
    *
-   * Eligibility: `normalizeModelToRateKey(task.model)` must be non-null AND at
-   * least one token count must be non-null.
+   * PCE-1.5 will re-implement this using run-level cost data. The legacy
+   * implementation read dead fields (inputTokens, outputTokens, cacheReadTokens,
+   * cacheCreationTokens, costUsd) that were never populated in prod (the JSONL
+   * scraper was deleted in PR #834). No live endpoints currently call this
+   * method, so it's safe to stub pending the cost model rewrite.
    *
-   * Columns: tasks_shipped, tasks_with_cost_data, model_family, task_count,
-   *          routed_usd, opus_usd
-   *
-   * `tasks_shipped` and `tasks_with_cost_data` are aggregates broadcast on every
-   * row so PCE-1.3 can read them without a second query.
+   * Columns (kept stable): tasks_shipped, tasks_with_cost_data, model_family,
+   *                        task_count, routed_usd, opus_usd
+   * Results: empty array
    */
   private async costEfficiency(win: {
     from: string;
     to: string;
   }): Promise<MetricTable> {
-    const tasks = await this.tasks(win);
-    const completed = tasks.filter(isCompleted);
-
-    // Bucket structure per model family.
-    const buckets = new Map<
-      string,
-      { taskCount: number; routedUsd: number; opusUsd: number }
-    >();
-
-    let tasksWithCostData = 0;
-
-    for (const task of completed) {
-      if (!task.model) continue;
-      const canonicalKey = normalizeModelToRateKey(task.model);
-      if (!canonicalKey) continue;
-
-      // Coerce token fields to number | null.
-      const input = num(task.inputTokens);
-      const output = num(task.outputTokens);
-      const cacheRead = num(task.cacheReadTokens);
-      const cacheCreation = num(task.cacheCreationTokens);
-
-      // Exclude if all token counts are null.
-      if (
-        input === null &&
-        output === null &&
-        cacheRead === null &&
-        cacheCreation === null
-      ) {
-        continue;
-      }
-
-      tasksWithCostData += 1;
-
-      const usage = {
-        input_tokens: input ?? 0,
-        output_tokens: output ?? 0,
-        cache_read_input_tokens: cacheRead ?? 0,
-        cache_creation_input_tokens: cacheCreation ?? 0,
-      };
-
-      const routedUsd = num(task.costUsd) ?? calculateCost(usage, canonicalKey);
-      const opusUsd = calculateCost(usage, OPUS_MODEL);
-
-      const existing = buckets.get(canonicalKey);
-      if (existing) {
-        existing.taskCount += 1;
-        existing.routedUsd += routedUsd;
-        existing.opusUsd += opusUsd;
-      } else {
-        buckets.set(canonicalKey, {
-          taskCount: 1,
-          routedUsd,
-          opusUsd,
-        });
-      }
-    }
-
     const columns = [
       "tasks_shipped",
       "tasks_with_cost_data",
@@ -760,16 +696,6 @@ export class TaskStoreProvider implements MetricsProvider {
       "routed_usd",
       "opus_usd",
     ];
-
-    const rows = [...buckets.entries()].map(([family, b]) => [
-      completed.length,
-      tasksWithCostData,
-      family,
-      b.taskCount,
-      b.routedUsd,
-      b.opusUsd,
-    ]);
-
-    return table(columns, rows);
+    return table(columns, []);
   }
 }
