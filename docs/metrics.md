@@ -64,6 +64,7 @@ Require a bearer token (scope `"*"`) or session cookie (with `OWNER` role if req
 | GET | `/metrics/trends` | Time-series trends; supports `groupBy`. |
 | GET | `/metrics/features` | Per-feature task / CI / review breakdown. |
 | GET | `/metrics/queue` | Shipwright v3 queue metrics: funnel counts, block rate, avg cycle time (days), avg review findings. |
+| GET | `/metrics/cost-efficiency` | Model routing cost efficiency: aggregate model mix, routed cost vs. counterfactual all-Opus cost, and savings. Absolute USD values suppressed (null) when fewer than 5 costed tasks to prevent per-task spend inference. |
 | GET | `/metrics/tokens` | Token usage — totals, by agent, by session type, by agent + session type, by agent + cron, by agent + model, and trends; each group includes a `cost` field (USD). |
 | GET | `/dashboard` | Server-rendered dashboard HTML (session-gated). |
 | GET | `/dashboard/*` | Static dashboard assets (`styles.css`, `app.js`). |
@@ -78,6 +79,7 @@ Require a bearer token (scope `"*"`) or session cookie (with `OWNER` role if req
 | GET | `/public/metrics/trends` | Time-series trends; supports `groupBy`. |
 | GET | `/public/metrics/features` | Per-feature task / CI / review breakdown. |
 | GET | `/public/metrics/queue` | Shipwright v3 queue metrics: funnel counts, block rate, avg cycle time (days), avg review findings. |
+| GET | `/public/metrics/cost-efficiency` | Model routing cost efficiency: aggregate model mix, routed cost vs. counterfactual all-Opus cost, and savings. Absolute USD values suppressed (null) when fewer than 5 costed tasks to prevent per-task spend inference. |
 | GET | `/public/dashboard` | Server-rendered dashboard HTML (no session required). |
 | GET | `/public/metrics/tokens` | Not available on public routes — returns `404`. |
 
