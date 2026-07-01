@@ -23,14 +23,12 @@ import {
   normalizeModelToRateKey,
 } from "@shipwright/lib/pricing";
 import { resolveQueryRange } from "../formatters.ts";
-import type {
-  AdminMetricsClient,
-  ChatTokenStats,
-  CronRunTokenStats,
-  TokenAggregate,
-} from "../lib/admin-metrics-client.ts";
 import {
   AdminMetricsClientError,
+  type AdminMetricsClient,
+  type ChatTokenStats,
+  type CronRunTokenStats,
+  type TokenAggregate,
 } from "../lib/admin-metrics-client.ts";
 import { type Clock, SystemClock } from "../lib/clock.ts";
 import type {

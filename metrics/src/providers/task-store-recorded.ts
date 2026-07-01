@@ -9,10 +9,11 @@
  * cassette rows.
  */
 
-import type {
-  AdminMetricsClient,
-  ChatTokenStats,
-  CronRunTokenStats,
+import {
+  AdminMetricsClientError,
+  type AdminMetricsClient,
+  type ChatTokenStats,
+  type CronRunTokenStats,
 } from "../lib/admin-metrics-client.ts";
 import {
   type PrRecord,
@@ -83,8 +84,6 @@ export class RecordedAdminMetricsClient implements AdminMetricsClient {
 }
 
 // ─── Faulting doubles for graceful degradation tests ────────────────────────
-
-import { AdminMetricsClientError } from "../lib/admin-metrics-client.ts";
 
 export class FaultingCronAdminMetricsClient implements AdminMetricsClient {
   constructor(
