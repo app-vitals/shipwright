@@ -53,6 +53,7 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
 
   beforeEach(async () => {
     prisma = makePrisma();
+    await prisma.agentCronRunModelBreakdown.deleteMany();
     await prisma.agentCronRun.deleteMany();
     await prisma.agentToken.deleteMany();
     await prisma.agentCronJob.deleteMany();
@@ -546,6 +547,162 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
 
     // Only run2 is in range
     expect(stats.totals.input).toBe(100);
+  });
+
+  // ─── byModel with breakdown rows ─────────────────────────────────────────────
+
+  it("byModel uses breakdown rows when present, splitting tokens across models", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId);
+
+    // Run with breakdown rows: one run used both sonnet and haiku
+    const run = await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-10T09:00:00Z"),
+      skipped: false,
+    });
+    await runService.patch(run.id, agentId, cronId, {
+      inputTokens: 300,
+      outputTokens: 150,
+      cacheReadTokens: 10,
+      cacheCreationTokens: 5,
+      costUsd: 0.003,
+      model: "claude-sonnet-4-5", // dominant model
+    });
+    // Write breakdown rows directly (simulating what agents-api PATCH handler does)
+    await prisma.agentCronRunModelBreakdown.createMany({
+      data: [
+        {
+          cronRunId: run.id,
+          model: "claude-sonnet-4-5",
+          inputTokens: 200,
+          outputTokens: 100,
+          cacheReadTokens: 8,
+          cacheCreationTokens: 4,
+          costUsd: 0.002,
+        },
+        {
+          cronRunId: run.id,
+          model: "claude-haiku-4-5",
+          inputTokens: 100,
+          outputTokens: 50,
+          cacheReadTokens: 2,
+          cacheCreationTokens: 1,
+          costUsd: 0.001,
+        },
+      ],
+    });
+
+    const stats = await statsService.query();
+
+    // byModel should show 2 entries (from breakdown), not 1 (from dominant model)
+    expect(stats.byModel).toHaveLength(2);
+
+    const sonnet = stats.byModel.find((m) => m.key2 === "claude-sonnet-4-5");
+    const haiku = stats.byModel.find((m) => m.key2 === "claude-haiku-4-5");
+
+    expect(sonnet).toBeDefined();
+    expect(sonnet?.key1).toBe(agentId);
+    expect(sonnet?.input).toBe(200);
+    expect(sonnet?.output).toBe(100);
+
+    expect(haiku).toBeDefined();
+    expect(haiku?.key1).toBe(agentId);
+    expect(haiku?.input).toBe(100);
+    expect(haiku?.output).toBe(50);
+  });
+
+  it("byModel falls back to dominant model for runs without breakdown rows", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId);
+
+    // Old run: no breakdown rows, just dominant model on the run
+    const run = await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-10T09:00:00Z"),
+      skipped: false,
+    });
+    await runService.patch(run.id, agentId, cronId, {
+      inputTokens: 100,
+      outputTokens: 50,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      costUsd: 0.001,
+      model: "claude-opus-4-5",
+      // no breakdown rows
+    });
+
+    const stats = await statsService.query();
+
+    expect(stats.byModel).toHaveLength(1);
+    expect(stats.byModel[0].key2).toBe("claude-opus-4-5");
+    expect(stats.byModel[0].input).toBe(100);
+  });
+
+  it("byModel mixes breakdown rows and fallback correctly across multiple runs", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId);
+
+    // Run A: has breakdown rows — contributes 2 models
+    const runA = await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-10T09:00:00Z"),
+      skipped: false,
+    });
+    await runService.patch(runA.id, agentId, cronId, {
+      inputTokens: 300,
+      outputTokens: 150,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      costUsd: 0.003,
+      model: "claude-sonnet-4-5",
+    });
+    await prisma.agentCronRunModelBreakdown.createMany({
+      data: [
+        {
+          cronRunId: runA.id,
+          model: "claude-sonnet-4-5",
+          inputTokens: 200,
+          outputTokens: 100,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          costUsd: 0.002,
+        },
+        {
+          cronRunId: runA.id,
+          model: "claude-haiku-4-5",
+          inputTokens: 100,
+          outputTokens: 50,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          costUsd: 0.001,
+        },
+      ],
+    });
+
+    // Run B: old run (no breakdown) — falls back to dominant model
+    const runB = await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-11T09:00:00Z"),
+      skipped: false,
+    });
+    await runService.patch(runB.id, agentId, cronId, {
+      inputTokens: 400,
+      outputTokens: 200,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      costUsd: 0.004,
+      model: "claude-sonnet-4-5",
+      // no breakdown rows
+    });
+
+    const stats = await statsService.query();
+
+    // byModel should have sonnet (breakdown run A: 200 + fallback run B: 400 = 600)
+    //                 and haiku (breakdown run A: 100 only)
+    expect(stats.byModel).toHaveLength(2);
+
+    const sonnet = stats.byModel.find((m) => m.key2 === "claude-sonnet-4-5");
+    const haiku = stats.byModel.find((m) => m.key2 === "claude-haiku-4-5");
+
+    expect(sonnet?.input).toBe(600); // 200 (breakdown A) + 400 (fallback B)
+    expect(haiku?.input).toBe(100); // 100 (breakdown A only)
   });
 
   // ─── 3+ runs across 2 agents and 2 crons (acceptance test) ──────────────────

@@ -233,6 +233,21 @@ export const CreateAgentCronRunBodySchema = z
   })
   .openapi("CreateAgentCronRunBody");
 
+// ─── Model breakdown entry ────────────────────────────────────────────────────
+
+export const ModelBreakdownEntrySchema = z
+  .object({
+    model: z.string().openapi({ example: "claude-sonnet-4-5" }),
+    inputTokens: z.number().int().default(0).openapi({ example: 200 }),
+    outputTokens: z.number().int().default(0).openapi({ example: 100 }),
+    cacheReadTokens: z.number().int().default(0).openapi({ example: 8 }),
+    cacheCreationTokens: z.number().int().default(0).openapi({ example: 4 }),
+    costUsd: z.number().default(0).openapi({ example: 0.002 }),
+  })
+  .openapi("ModelBreakdownEntry");
+
+export type ModelBreakdownEntry = z.infer<typeof ModelBreakdownEntrySchema>;
+
 /**
  * PATCH /agents/:id/crons/:cronId/runs/:runId body.
  * All fields are optional. At least one must be provided (enforced at the handler level).
@@ -283,6 +298,10 @@ export const PatchAgentCronRunBodySchema = z
       .nullable()
       .optional()
       .openapi({ example: "claude-sonnet-4-5" }),
+    modelBreakdown: z
+      .array(ModelBreakdownEntrySchema)
+      .optional()
+      .openapi({ description: "Per-model token breakdown for this run" }),
   })
   .openapi("PatchAgentCronRunBody");
 

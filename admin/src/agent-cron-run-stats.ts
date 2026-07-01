@@ -126,16 +126,31 @@ function toAggregate(row: {
   return result;
 }
 
-/** Build a composable date-range filter fragment for $queryRaw. */
-function dateFilter(from: Date | null, to: Date | null): Prisma.Sql {
+/**
+ * Build a composable date-range filter fragment for $queryRaw.
+ *
+ * @param from  Lower bound (inclusive).
+ * @param to    Upper bound (exclusive).
+ * @param alias Optional table alias to qualify "startedAt" (e.g. "r" → r."startedAt").
+ *              Pass this whenever the query uses a JOIN so the column reference is
+ *              unambiguous even if the joined table later gains a startedAt column.
+ */
+function dateFilter(
+  from: Date | null,
+  to: Date | null,
+  alias?: string,
+): Prisma.Sql {
+  const col = alias
+    ? Prisma.sql`${Prisma.raw(`${alias}."startedAt"`)}`
+    : Prisma.sql`"startedAt"`;
   if (from !== null && to !== null) {
-    return Prisma.sql`AND "startedAt" >= ${from} AND "startedAt" < ${to}`;
+    return Prisma.sql`AND ${col} >= ${from} AND ${col} < ${to}`;
   }
   if (from !== null) {
-    return Prisma.sql`AND "startedAt" >= ${from}`;
+    return Prisma.sql`AND ${col} >= ${from}`;
   }
   if (to !== null) {
-    return Prisma.sql`AND "startedAt" < ${to}`;
+    return Prisma.sql`AND ${col} < ${to}`;
   }
   return Prisma.empty;
 }
@@ -156,12 +171,16 @@ export class AgentCronRunStatsService {
     const toDate = to ? new Date(to) : null;
     const filter = dateFilter(fromDate, toDate);
 
+    // queryByModel uses table alias "r" on AgentCronRun — build a qualified
+    // filter so "startedAt" is unambiguous if the joined table ever gains that column.
+    const filterByModel = dateFilter(fromDate, toDate, "r");
+
     const [totalsRows, byAgentRows, byCronRows, byModelRows, dailyRows] =
       await Promise.all([
         this.queryTotals(filter),
         this.queryByAgent(filter),
         this.queryByCron(filter),
-        this.queryByModel(filter),
+        this.queryByModel(filterByModel),
         this.queryDaily(filter),
       ]);
 
@@ -249,21 +268,54 @@ export class AgentCronRunStatsService {
   }
 
   private queryByModel(filter: Prisma.Sql): Promise<ByModelRow[]> {
+    // Runs with breakdown rows: use the breakdown table (accurate per-model split).
+    // Runs without breakdown rows: fall back to the run's dominant model field.
+    // The UNION combines both sources; final GROUP BY merges across the two.
     return this.prisma.$queryRaw<ByModelRow[]>`
       SELECT
-        "agentId"                  AS agent_id,
+        agent_id,
         model,
-        SUM("inputTokens")         AS input,
-        SUM("outputTokens")        AS output,
-        SUM("cacheReadTokens")     AS cache_read,
-        SUM("cacheCreationTokens") AS cache_creation,
-        SUM("costUsd")             AS cost_usd
-      FROM "AgentCronRun"
-      WHERE skipped = false
-        AND model IS NOT NULL
-      ${filter}
-      GROUP BY "agentId", model
-      ORDER BY "agentId", model
+        SUM(input)         AS input,
+        SUM(output)        AS output,
+        SUM(cache_read)    AS cache_read,
+        SUM(cache_creation) AS cache_creation,
+        SUM(cost_usd)      AS cost_usd
+      FROM (
+        -- Source 1: runs that have breakdown rows — use breakdown data
+        SELECT
+          r."agentId"                AS agent_id,
+          b.model                    AS model,
+          b."inputTokens"            AS input,
+          b."outputTokens"           AS output,
+          b."cacheReadTokens"        AS cache_read,
+          b."cacheCreationTokens"    AS cache_creation,
+          b."costUsd"                AS cost_usd
+        FROM "AgentCronRun" r
+        INNER JOIN "AgentCronRunModelBreakdown" b ON b."cronRunId" = r.id
+        WHERE r.skipped = false
+        ${filter}
+
+        UNION ALL
+
+        -- Source 2: runs without breakdown rows — fall back to dominant model
+        SELECT
+          r."agentId"                AS agent_id,
+          r.model                    AS model,
+          r."inputTokens"            AS input,
+          r."outputTokens"           AS output,
+          r."cacheReadTokens"        AS cache_read,
+          r."cacheCreationTokens"    AS cache_creation,
+          r."costUsd"                AS cost_usd
+        FROM "AgentCronRun" r
+        WHERE r.skipped = false
+          AND r.model IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM "AgentCronRunModelBreakdown" b2 WHERE b2."cronRunId" = r.id
+          )
+        ${filter}
+      ) combined
+      GROUP BY agent_id, model
+      ORDER BY agent_id, model
     `;
   }
 

@@ -259,6 +259,45 @@ describe("HttpCronRunReporter", () => {
     ).resolves.toBeUndefined();
   });
 
+  test("completeRun sends modelBreakdown when provided", async () => {
+    const reporter = makeReporter();
+    const completedAt = new Date("2026-01-01T08:00:05.000Z");
+
+    await reporter.completeRun("cron-123", "run-abc", completedAt, "completed", {
+      inputTokens: 300,
+      outputTokens: 150,
+      model: "claude-sonnet-4-5",
+      modelBreakdown: [
+        {
+          model: "claude-sonnet-4-5",
+          inputTokens: 200,
+          outputTokens: 100,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          costUsd: 0.002,
+        },
+        {
+          model: "claude-haiku-4-5",
+          inputTokens: 100,
+          outputTokens: 50,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          costUsd: 0.001,
+        },
+      ],
+    });
+
+    const body = state.captured[0].body as Record<string, unknown>;
+    expect(body.model).toBe("claude-sonnet-4-5");
+    expect(Array.isArray(body.modelBreakdown)).toBe(true);
+    const breakdown = body.modelBreakdown as Array<Record<string, unknown>>;
+    expect(breakdown).toHaveLength(2);
+    expect(breakdown[0].model).toBe("claude-sonnet-4-5");
+    expect(breakdown[0].inputTokens).toBe(200);
+    expect(breakdown[1].model).toBe("claude-haiku-4-5");
+    expect(breakdown[1].inputTokens).toBe(100);
+  });
+
   // ─── skipRun ───────────────────────────────────────────────────────────────
 
   test("skipRun PATCHes to correct URL with skipped:true and skipReason", async () => {

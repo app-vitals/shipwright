@@ -20,6 +20,15 @@ export interface CreateAgentCronRunInput {
   error?: string | null;
 }
 
+export interface ModelBreakdownEntry {
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  costUsd: number;
+}
+
 export interface PatchAgentCronRunInput {
   completedAt?: Date | null;
   outcome?: string | null;
@@ -32,6 +41,7 @@ export interface PatchAgentCronRunInput {
   cacheCreationTokens?: number | null;
   costUsd?: number | null;
   model?: string | null;
+  modelBreakdown?: ModelBreakdownEntry[];
 }
 
 export interface ListAgentCronRunsOptions {
@@ -103,31 +113,66 @@ export class AgentCronRunService {
       throw new NotFoundError(`cron run ${runId} not found`);
     }
 
+    const runData = {
+      ...(input.completedAt !== undefined && {
+        completedAt: input.completedAt,
+      }),
+      ...(input.outcome !== undefined && { outcome: input.outcome }),
+      ...(input.error !== undefined && { error: input.error }),
+      ...(input.skipped !== undefined && { skipped: input.skipped }),
+      ...(input.skipReason !== undefined && { skipReason: input.skipReason }),
+      ...(input.inputTokens !== undefined && {
+        inputTokens: input.inputTokens,
+      }),
+      ...(input.outputTokens !== undefined && {
+        outputTokens: input.outputTokens,
+      }),
+      ...(input.cacheReadTokens !== undefined && {
+        cacheReadTokens: input.cacheReadTokens,
+      }),
+      ...(input.cacheCreationTokens !== undefined && {
+        cacheCreationTokens: input.cacheCreationTokens,
+      }),
+      ...(input.costUsd !== undefined && { costUsd: input.costUsd }),
+      ...(input.model !== undefined && { model: input.model }),
+    };
+
+    if (input.modelBreakdown && input.modelBreakdown.length > 0) {
+      // Wrap the run update and all breakdown upserts in a single transaction
+      // so the two writes are atomic — partial breakdown rows are never visible.
+      const [updatedRun] = await this.prisma.$transaction([
+        this.prisma.agentCronRun.update({
+          where: { id: runId },
+          data: runData,
+        }),
+        ...input.modelBreakdown.map((entry) =>
+          this.prisma.agentCronRunModelBreakdown.upsert({
+            where: { cronRunId_model: { cronRunId: runId, model: entry.model } },
+            create: {
+              cronRunId: runId,
+              model: entry.model,
+              inputTokens: entry.inputTokens,
+              outputTokens: entry.outputTokens,
+              cacheReadTokens: entry.cacheReadTokens,
+              cacheCreationTokens: entry.cacheCreationTokens,
+              costUsd: entry.costUsd,
+            },
+            update: {
+              inputTokens: entry.inputTokens,
+              outputTokens: entry.outputTokens,
+              cacheReadTokens: entry.cacheReadTokens,
+              cacheCreationTokens: entry.cacheCreationTokens,
+              costUsd: entry.costUsd,
+            },
+          }),
+        ),
+      ]);
+      return updatedRun;
+    }
+
     return this.prisma.agentCronRun.update({
       where: { id: runId },
-      data: {
-        ...(input.completedAt !== undefined && {
-          completedAt: input.completedAt,
-        }),
-        ...(input.outcome !== undefined && { outcome: input.outcome }),
-        ...(input.error !== undefined && { error: input.error }),
-        ...(input.skipped !== undefined && { skipped: input.skipped }),
-        ...(input.skipReason !== undefined && { skipReason: input.skipReason }),
-        ...(input.inputTokens !== undefined && {
-          inputTokens: input.inputTokens,
-        }),
-        ...(input.outputTokens !== undefined && {
-          outputTokens: input.outputTokens,
-        }),
-        ...(input.cacheReadTokens !== undefined && {
-          cacheReadTokens: input.cacheReadTokens,
-        }),
-        ...(input.cacheCreationTokens !== undefined && {
-          cacheCreationTokens: input.cacheCreationTokens,
-        }),
-        ...(input.costUsd !== undefined && { costUsd: input.costUsd }),
-        ...(input.model !== undefined && { model: input.model }),
-      },
+      data: runData,
     });
   }
 
