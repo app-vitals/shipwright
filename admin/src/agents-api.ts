@@ -115,7 +115,7 @@ export interface AdminDeps {
     "list" | "add" | "remove" | "removeByName"
   >;
   agentChatTokenService: Pick<AgentChatTokenService, "upsertDaily" | "queryStats">;
-  prisma: Pick<PrismaClient, "agent" | "agentCronRunModelBreakdown">;
+  prisma: Pick<PrismaClient, "agent">;
   /**
    * Provisions (and tears down) the workload backing an agent. Defaults to a
    * no-op when Kubernetes provisioning is disabled (preserving create/delete
@@ -1196,34 +1196,10 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
       }),
       ...(body.costUsd !== undefined && { costUsd: body.costUsd }),
       ...(body.model !== undefined && { model: body.model }),
+      ...(body.modelBreakdown !== undefined && {
+        modelBreakdown: body.modelBreakdown,
+      }),
     });
-
-    // Write per-model breakdown rows if provided (upsert per model)
-    if (body.modelBreakdown && body.modelBreakdown.length > 0) {
-      await Promise.all(
-        body.modelBreakdown.map((entry) =>
-          prisma.agentCronRunModelBreakdown.upsert({
-            where: { cronRunId_model: { cronRunId: runId, model: entry.model } },
-            create: {
-              cronRunId: runId,
-              model: entry.model,
-              inputTokens: entry.inputTokens,
-              outputTokens: entry.outputTokens,
-              cacheReadTokens: entry.cacheReadTokens,
-              cacheCreationTokens: entry.cacheCreationTokens,
-              costUsd: entry.costUsd,
-            },
-            update: {
-              inputTokens: entry.inputTokens,
-              outputTokens: entry.outputTokens,
-              cacheReadTokens: entry.cacheReadTokens,
-              cacheCreationTokens: entry.cacheCreationTokens,
-              costUsd: entry.costUsd,
-            },
-          }),
-        ),
-      );
-    }
 
     return c.json({ run: serializeCronRun(run) }, 200);
   });

@@ -126,16 +126,31 @@ function toAggregate(row: {
   return result;
 }
 
-/** Build a composable date-range filter fragment for $queryRaw. */
-function dateFilter(from: Date | null, to: Date | null): Prisma.Sql {
+/**
+ * Build a composable date-range filter fragment for $queryRaw.
+ *
+ * @param from  Lower bound (inclusive).
+ * @param to    Upper bound (exclusive).
+ * @param alias Optional table alias to qualify "startedAt" (e.g. "r" → r."startedAt").
+ *              Pass this whenever the query uses a JOIN so the column reference is
+ *              unambiguous even if the joined table later gains a startedAt column.
+ */
+function dateFilter(
+  from: Date | null,
+  to: Date | null,
+  alias?: string,
+): Prisma.Sql {
+  const col = alias
+    ? Prisma.sql`${Prisma.raw(`${alias}."startedAt"`)}`
+    : Prisma.sql`"startedAt"`;
   if (from !== null && to !== null) {
-    return Prisma.sql`AND "startedAt" >= ${from} AND "startedAt" < ${to}`;
+    return Prisma.sql`AND ${col} >= ${from} AND ${col} < ${to}`;
   }
   if (from !== null) {
-    return Prisma.sql`AND "startedAt" >= ${from}`;
+    return Prisma.sql`AND ${col} >= ${from}`;
   }
   if (to !== null) {
-    return Prisma.sql`AND "startedAt" < ${to}`;
+    return Prisma.sql`AND ${col} < ${to}`;
   }
   return Prisma.empty;
 }
@@ -156,12 +171,16 @@ export class AgentCronRunStatsService {
     const toDate = to ? new Date(to) : null;
     const filter = dateFilter(fromDate, toDate);
 
+    // queryByModel uses table alias "r" on AgentCronRun — build a qualified
+    // filter so "startedAt" is unambiguous if the joined table ever gains that column.
+    const filterByModel = dateFilter(fromDate, toDate, "r");
+
     const [totalsRows, byAgentRows, byCronRows, byModelRows, dailyRows] =
       await Promise.all([
         this.queryTotals(filter),
         this.queryByAgent(filter),
         this.queryByCron(filter),
-        this.queryByModel(filter),
+        this.queryByModel(filterByModel),
         this.queryDaily(filter),
       ]);
 
