@@ -420,9 +420,9 @@ export function createSlackApp(
 
     const startedAt = new Date();
     try {
-      const { result, usage, totalCostUsd } = await runner(prompt, sessionKey);
+      const { result, usage, totalCostUsd, modelUsage } = await runner(prompt, sessionKey);
       const endedAt = new Date();
-      await chatTokenReporter.recordSession(usage, totalCostUsd);
+      await chatTokenReporter.recordSession(usage, totalCostUsd, modelUsage);
       const { cleaned, markers } = parseMarkers(result);
 
       const isSilent = markers.some((m) => m.type === "silent");
@@ -572,9 +572,9 @@ export function createSlackApp(
 
     const startedAt = new Date();
     try {
-      const { result, usage, totalCostUsd } = await runner(prompt, sessionKey);
+      const { result, usage, totalCostUsd, modelUsage } = await runner(prompt, sessionKey);
       const endedAt = new Date();
-      await chatTokenReporter.recordSession(usage, totalCostUsd);
+      await chatTokenReporter.recordSession(usage, totalCostUsd, modelUsage);
       const { cleaned, markers } = parseMarkers(result);
 
       const isSilent = markers.some((m) => m.type === "silent");
@@ -659,8 +659,8 @@ export function createSlackApp(
     const prompt = `[${name} reacted with :${ev.reaction}: to your message]`;
 
     try {
-      const { result, usage, totalCostUsd } = await runner(prompt, sessionKey);
-      await chatTokenReporter.recordSession(usage, totalCostUsd);
+      const { result, usage, totalCostUsd, modelUsage } = await runner(prompt, sessionKey);
+      await chatTokenReporter.recordSession(usage, totalCostUsd, modelUsage);
       const { cleaned, markers } = parseMarkers(result);
 
       const isSilent = markers.some((m) => m.type === "silent");

@@ -34,12 +34,15 @@ export interface TokenUsage {
   cache_creation_input_tokens: number;
 }
 
+/** Per-model token usage map: model name → TokenUsage. */
+export type ModelUsage = Record<string, TokenUsage>;
+
 export interface ClaudeRunResult {
   result: string;
   sessionId?: string;
   usage?: TokenUsage;
   totalCostUsd?: number;
-  modelUsage?: Record<string, TokenUsage>;
+  modelUsage?: ModelUsage;
 }
 
 /**

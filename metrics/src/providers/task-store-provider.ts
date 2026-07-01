@@ -667,10 +667,58 @@ export class TaskStoreProvider implements MetricsProvider {
     from: string;
     to: string;
   }): Promise<MetricTable> {
-    const cron = await this.admin.cronRunTokenStats(win);
-    const rows = cron.byModel
-      .map((a) => [a.key1, a.key2, ...tokenCells(a), a.costUsd ?? 0])
-      .sort((a, b) => Number(b[6]) - Number(a[6]));
+    const [cron, chat] = await Promise.all([
+      this.admin.cronRunTokenStats(win),
+      this.admin.chatTokenStats(win),
+    ]);
+
+    // Merge cron byModel + chat byModel into a single (agentId, model) map,
+    // summing token counts across the two disjoint session sources.
+    type Cells = {
+      input: number;
+      output: number;
+      cacheRead: number;
+      cacheCreation: number;
+      costUsd: number;
+    };
+    const merged = new Map<string, Cells>();
+    const add = (key1: string, key2: string, a: { input: number; output: number; cacheRead: number; cacheCreation: number; costUsd?: number }) => {
+      const k = `${key1}\0${key2}`;
+      const existing = merged.get(k) ?? {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheCreation: 0,
+        costUsd: 0,
+      };
+      merged.set(k, {
+        input: existing.input + a.input,
+        output: existing.output + a.output,
+        cacheRead: existing.cacheRead + a.cacheRead,
+        cacheCreation: existing.cacheCreation + a.cacheCreation,
+        costUsd: existing.costUsd + (a.costUsd ?? 0),
+      });
+    };
+
+    for (const a of cron.byModel) add(a.key1, a.key2, a);
+    for (const a of chat.byModel) add(a.key1, a.key2, a);
+
+    const rows = [...merged.entries()]
+      .map(([k, v]) => {
+        const [key1, key2] = k.split("\0") as [string, string];
+        return [
+          key1,
+          key2,
+          v.input,
+          v.output,
+          v.cacheRead,
+          v.cacheCreation,
+          v.input + v.output + v.cacheRead + v.cacheCreation,
+          v.costUsd,
+        ];
+      })
+      .sort((a, b) => Number(b[7]) - Number(a[7]));
+
     return table(["agent_id", "model", ...tokenColumns(), "cost_usd"], rows);
   }
 
