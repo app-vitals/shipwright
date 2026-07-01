@@ -2804,3 +2804,77 @@ describe("renderCronRunsPage", () => {
     expect(html).toContain('href="/admin/agents" class="vos-nav-link active"');
   });
 });
+
+// ─── renderTasksPage — mobile column hiding ───────────────────────────────────
+
+describe("renderTasksPage — mobile column hiding", () => {
+  function render(
+    tasks: TaskItem[] = [TASK_ITEM],
+    readOnly = false,
+  ): string {
+    return renderTasksPage(
+      tasks,
+      {},
+      false,
+      USER_NAME,
+      {},
+      { total: tasks.length, limit: 50, page: 1 },
+      undefined,
+      undefined,
+      readOnly,
+    );
+  }
+
+  // AC2: col-session class on the Session <th>
+  test("Session <th> has class col-session", () => {
+    const html = render();
+    expect(html).toContain('<th class="col-session">Session</th>');
+  });
+
+  // AC2: col-repo class on the Repo <th>
+  test("Repo <th> has class col-repo", () => {
+    const html = render();
+    expect(html).toContain('<th class="col-repo">Repo</th>');
+  });
+
+  // AC2: col-session class on every Session <td>
+  test("Session <td> cells have class col-session", () => {
+    const html = render([TASK_ITEM]);
+    // TASK_ITEM has session: "session-abc"
+    expect(html).toContain('class="col-session');
+    // The session td must contain the class
+    const sessionTdPattern = /<td[^>]*class="[^"]*col-session[^"]*"[^>]*>/;
+    expect(html).toMatch(sessionTdPattern);
+  });
+
+  // AC2: col-repo class on every Repo <td>
+  test("Repo <td> cells have class col-repo", () => {
+    const html = render([TASK_ITEM]);
+    // TASK_ITEM has repo: "org/repo"
+    const repoTdPattern = /<td[^>]*class="[^"]*col-repo[^"]*"[^>]*>/;
+    expect(html).toMatch(repoTdPattern);
+  });
+
+  // AC4: readOnly=true also has the correct classes
+  test("col-session and col-repo classes appear in readOnly=true output", () => {
+    const html = render([TASK_ITEM], true);
+    expect(html).toContain('<th class="col-session">Session</th>');
+    expect(html).toContain('<th class="col-repo">Repo</th>');
+    const sessionTdPattern = /<td[^>]*class="[^"]*col-session[^"]*"[^>]*>/;
+    const repoTdPattern = /<td[^>]*class="[^"]*col-repo[^"]*"[^>]*>/;
+    expect(html).toMatch(sessionTdPattern);
+    expect(html).toMatch(repoTdPattern);
+  });
+
+  // Multiple tasks → all rows get the correct classes
+  test("all task rows have col-session and col-repo on their <td> cells", () => {
+    const html = render([TASK_ITEM, TASK_ITEM_PENDING]);
+    const sessionTdMatches = html.match(/<td[^>]*class="[^"]*col-session[^"]*"[^>]*>/g);
+    const repoTdMatches = html.match(/<td[^>]*class="[^"]*col-repo[^"]*"[^>]*>/g);
+    // One col-session td per row (2 rows)
+    expect(sessionTdMatches).not.toBeNull();
+    expect((sessionTdMatches ?? []).length).toBe(2);
+    expect(repoTdMatches).not.toBeNull();
+    expect((repoTdMatches ?? []).length).toBe(2);
+  });
+});

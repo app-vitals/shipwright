@@ -268,7 +268,9 @@ export function baseStyles(): string {
       background-repeat: no-repeat;
       background-attachment: local, scroll, local, scroll;
     }
-    @media (max-width: 600px) {
+    @media (max-width: 640px) {
+      .col-session, .col-repo { display: none; }
+      .state-tab { padding: 10px 14px !important; }
       .vos-page {
         padding: 16px 12px 48px;
       }
