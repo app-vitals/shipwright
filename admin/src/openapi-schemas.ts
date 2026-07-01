@@ -233,6 +233,21 @@ export const CreateAgentCronRunBodySchema = z
   })
   .openapi("CreateAgentCronRunBody");
 
+// ─── Model breakdown entry ────────────────────────────────────────────────────
+
+export const ModelBreakdownEntrySchema = z
+  .object({
+    model: z.string().openapi({ example: "claude-sonnet-4-5" }),
+    inputTokens: z.number().int().default(0).openapi({ example: 200 }),
+    outputTokens: z.number().int().default(0).openapi({ example: 100 }),
+    cacheReadTokens: z.number().int().default(0).openapi({ example: 8 }),
+    cacheCreationTokens: z.number().int().default(0).openapi({ example: 4 }),
+    costUsd: z.number().default(0).openapi({ example: 0.002 }),
+  })
+  .openapi("ModelBreakdownEntry");
+
+export type ModelBreakdownEntry = z.infer<typeof ModelBreakdownEntrySchema>;
+
 /**
  * PATCH /agents/:id/crons/:cronId/runs/:runId body.
  * All fields are optional. At least one must be provided (enforced at the handler level).
@@ -283,6 +298,10 @@ export const PatchAgentCronRunBodySchema = z
       .nullable()
       .optional()
       .openapi({ example: "claude-sonnet-4-5" }),
+    modelBreakdown: z
+      .array(ModelBreakdownEntrySchema)
+      .optional()
+      .openapi({ description: "Per-model token breakdown for this run" }),
   })
   .openapi("PatchAgentCronRunBody");
 
@@ -489,11 +508,23 @@ export const PluginNameQuerySchema = z.object({
   name: z.string().openapi({ example: "@shipwright/plugin" }),
 });
 
-// ─── AgentChatTokenUsageDaily ─────────────────────────────────────────────────
+// ─── AgentChatTokenUsageDailyByModel ─────────────────────────────────────────
+
+/** One entry in the per-model breakdown sent to POST /agents/:id/chat-tokens/daily. */
+const ChatTokenModelEntrySchema = z
+  .object({
+    model: z.string().openapi({ example: "claude-sonnet-4-5" }),
+    inputTokens: z.number().int().min(0).openapi({ example: 100 }),
+    outputTokens: z.number().int().min(0).openapi({ example: 50 }),
+    cacheReadTokens: z.number().int().min(0).openapi({ example: 10 }),
+    cacheCreationTokens: z.number().int().min(0).openapi({ example: 5 }),
+    costUsd: z.number().min(0).openapi({ example: 0.0012 }),
+  })
+  .openapi("ChatTokenModelEntry");
 
 /**
  * POST /agents/:id/chat-tokens/daily request body.
- * date is YYYY-MM-DD; token counts and cost are additive increments.
+ * date is YYYY-MM-DD; modelBreakdown carries per-model additive increments.
  */
 export const UpsertChatTokenDailyBodySchema = z
   .object({
@@ -501,11 +532,10 @@ export const UpsertChatTokenDailyBodySchema = z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/, "date must be in YYYY-MM-DD format")
       .openapi({ example: "2026-01-15" }),
-    inputTokens: z.number().int().min(0).openapi({ example: 100 }),
-    outputTokens: z.number().int().min(0).openapi({ example: 50 }),
-    cacheReadTokens: z.number().int().min(0).openapi({ example: 10 }),
-    cacheCreationTokens: z.number().int().min(0).openapi({ example: 5 }),
-    costUsd: z.number().min(0).openapi({ example: 0.0012 }),
+    modelBreakdown: z
+      .array(ChatTokenModelEntrySchema)
+      .min(1)
+      .openapi({ description: "Per-model token usage increments" }),
   })
   .openapi("UpsertChatTokenDailyBody");
 
@@ -513,12 +543,13 @@ export type UpsertChatTokenDailyBody = z.infer<
   typeof UpsertChatTokenDailyBodySchema
 >;
 
-/** Serialized AgentChatTokenUsageDaily row returned by the upsert endpoint. */
+/** Serialized AgentChatTokenUsageDailyByModel row returned by the upsert endpoint. */
 export const AgentChatTokenUsageDailySchema = z
   .object({
     id: z.string().openapi({ example: "clx1234567890" }),
     agentId: z.string().openapi({ example: "clx1234567890" }),
     date: z.string().openapi({ example: "2026-01-15" }),
+    model: z.string().openapi({ example: "claude-sonnet-4-5" }),
     inputTokens: z.number().int().openapi({ example: 100 }),
     outputTokens: z.number().int().openapi({ example: 50 }),
     cacheReadTokens: z.number().int().openapi({ example: 10 }),
@@ -533,7 +564,7 @@ export const AgentChatTokenUsageDailySchema = z
       .datetime()
       .openapi({ example: "2026-01-15T12:00:00.000Z" }),
   })
-  .openapi("AgentChatTokenUsageDaily");
+  .openapi("AgentChatTokenUsageDailyByModel");
 
 export type AgentChatTokenUsageDailyType = z.infer<
   typeof AgentChatTokenUsageDailySchema
@@ -590,12 +621,13 @@ export type CronRunTokenStatsType = z.infer<typeof CronRunTokenStatsSchema>;
 /**
  * Response shape for GET /agents/chat-tokens/daily/stats.
  * Matches the ChatTokenStats interface in admin-metrics-client.ts exactly.
- * No byCron or byModel — chat tokens are not cron-scoped.
+ * byModel carries per-(agentId, model) groupings; no byCron dimension.
  */
 export const ChatTokenStatsSchema = z
   .object({
     totals: TokenAggregateSchema,
     byAgent: z.array(KeyedTokenAggregateSchema),
+    byModel: z.array(DoubleKeyedTokenAggregateSchema),
     daily: z.array(DailyTokenAggregateSchema),
   })
   .openapi("ChatTokenStats");

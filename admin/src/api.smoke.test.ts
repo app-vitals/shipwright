@@ -569,10 +569,11 @@ function buildCombinedApp() {
       removeByName: async () => {},
     },
     agentChatTokenService: {
-      upsertDaily: async (_agentId: string, date: string) => ({
+      upsertDailyByModel: async (_agentId: string, date: string, model: string) => ({
         id: "daily-id",
         agentId: _agentId,
         date,
+        model,
         inputTokens: 0,
         outputTokens: 0,
         cacheReadTokens: 0,
@@ -584,6 +585,7 @@ function buildCombinedApp() {
       queryStats: async () => ({
         totals: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, total: 0 },
         byAgent: [],
+        byModel: [],
         daily: [],
       }),
     },

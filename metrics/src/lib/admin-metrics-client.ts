@@ -4,19 +4,12 @@
  *
  * The metrics TaskStoreProvider sources its `tokens*` metric kinds from two
  * disjoint admin data sources:
- *   - cron-run tokens  (AgentCronRun)            → the "cron"  session source
- *   - chat daily tokens (AgentChatTokenUsageDaily) → the "chat" session source
+ *   - cron-run tokens  (AgentCronRun)                      → the "cron"  session source
+ *   - chat daily tokens (AgentChatTokenUsageDailyByModel)   → the "chat" session source
  * These two buckets never overlap, so summing them is the correct, no-double-
  * counting total. The admin server returns already-grouped aggregates; this
  * client just shuttles them. Mirrors accounts-client.ts (Bearer auth, trailing-
  * slash strip, typed error).
- *
- * Prerequisite (MME-4.2): the two stats endpoints this client targets
- *   GET /agents/:id/cron-runs/stats
- *   GET /agents/chat-tokens/daily/stats
- * are NOT implemented server-side yet. The provider's behaviour is proven via
- * the RecordedAdminMetricsClient cassettes; the live Http path is exercised only
- * once those endpoints land.
  */
 
 // ─── Token aggregate shapes ───────────────────────────────────────────────────
@@ -56,10 +49,11 @@ export interface CronRunTokenStats {
   daily: DailyTokenAggregate[];
 }
 
-/** Chat-daily-sourced stats: per-agent + daily only (no cron / model dimension). */
+/** Chat-daily-sourced stats: per-agent + per-model + daily. */
 export interface ChatTokenStats {
   totals: TokenAggregate;
   byAgent: KeyedTokenAggregate[];
+  byModel: DoubleKeyedTokenAggregate[]; // key1=agentId, key2=model
   daily: DailyTokenAggregate[];
 }
 

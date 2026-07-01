@@ -35,8 +35,7 @@ model Agent {
   tokens           AgentToken[]
   plugins          AgentPlugin[]
   members          AgentMember[]
-  chatTokenUsage   AgentChatTokenUsageDaily[]
-  threads          Thread[]
+  chatTokenUsage   AgentChatTokenUsageDailyByModel[]
 }
 
 // ─── Agent Env ────────────────────────────────────────────────────────────────
@@ -167,19 +166,42 @@ model AgentCronRun {
   model              String?
   createdAt          DateTime  @default(now())
 
+  modelBreakdown AgentCronRunModelBreakdown[]
+
   @@index([cronId])
   @@index([agentId, startedAt])
 }
 
-// ─── Agent Chat Token Usage (Daily) ──────────────────────────────────────────
-// Daily rollup table for Slack/chat session token usage per agent.
-// Accumulated atomically via INSERT ... ON CONFLICT ... DO UPDATE (no read-modify-write).
+// ─── Agent Cron Run Model Breakdown ──────────────────────────────────────────
+// Per-model token breakdown for a cron run. Populated when sub-agents use
+// different models in a single run. The unique constraint on [cronRunId, model]
+// allows upsert semantics.
 
-model AgentChatTokenUsageDaily {
+model AgentCronRunModelBreakdown {
+  id                  String       @id @default(cuid())
+  cronRunId           String
+  model               String
+  inputTokens         Int          @default(0)
+  outputTokens        Int          @default(0)
+  cacheReadTokens     Int          @default(0)
+  cacheCreationTokens Int          @default(0)
+  costUsd             Float        @default(0)
+  cronRun             AgentCronRun @relation(fields: [cronRunId], references: [id], onDelete: Cascade)
+
+  @@unique([cronRunId, model])
+}
+
+// ─── Agent Chat Token Usage (Daily, per Model) ───────────────────────────────
+// Daily rollup table for Slack/chat session token usage per agent per model.
+// Accumulated atomically via INSERT ... ON CONFLICT ... DO UPDATE (no read-modify-write).
+// Totals and byAgent aggregations are computed by summing across models.
+
+model AgentChatTokenUsageDailyByModel {
   id                  String   @id @default(cuid())
   agentId             String
   agent               Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
   date                String   // YYYY-MM-DD
+  model               String   // e.g. "claude-sonnet-4-5"
   inputTokens         Int      @default(0)
   outputTokens        Int      @default(0)
   cacheReadTokens     Int      @default(0)
@@ -188,50 +210,6 @@ model AgentChatTokenUsageDaily {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
-  @@unique([agentId, date])
+  @@unique([agentId, date, model])
 }
 
-// ─── Thread ───────────────────────────────────────────────────────────────────
-// A conversation thread between a member and an agent via the web chat UI.
-// memberId stores the member's email address (matches AgentMember.email).
-// title is auto-named from the first message in the thread.
-//
-// Soft link — no FK from memberId → AgentMember by design:
-//   • Email is a stable natural key; the association survives member removal.
-//   • Threads persist and remain queryable if a member is removed from an agent,
-//     and can be re-associated automatically if the member is re-added.
-//   • A composite FK on (agentId, memberId) → AgentMember.(agentId, email) would
-//     block removal of any member who has existing threads, which is undesirable.
-
-model Thread {
-  id        String   @id @default(cuid())
-  agentId   String
-  agent     Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
-  memberId  String   // member's email — soft link to AgentMember.email (no FK, intentional)
-  title     String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  messages  Message[]
-
-  @@index([agentId, memberId, updatedAt(sort: Desc)])
-}
-
-// ─── Message ──────────────────────────────────────────────────────────────────
-// A single message in a Thread. role is "user" or "assistant".
-// tokens is a JSON-serialized TokenUsage blob for assistant messages.
-// attachment fields hold metadata for user-uploaded files.
-
-model Message {
-  id                 String   @id @default(cuid())
-  threadId           String
-  thread             Thread   @relation(fields: [threadId], references: [id], onDelete: Cascade)
-  role               String   // "user" or "assistant"
-  body               String
-  tokens             String?  // JSON-serialized TokenUsage blob (assistant messages only)
-  attachmentFilename String?
-  attachmentSize     Int?
-  createdAt          DateTime @default(now())
-
-  @@index([threadId])
-}

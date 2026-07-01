@@ -1258,6 +1258,118 @@ export interface paths {
         };
         trace?: never;
     };
+    "/agents/all/cron-runs/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    from?: string;
+                    to?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Aggregated cron-run token stats across all agents */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CronRunTokenStats"];
+                    };
+                };
+                /** @description Unauthorized */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Forbidden — requires admin scope */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agents/chat-tokens/daily/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    from?: string;
+                    to?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Aggregated chat token daily stats across all agents */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ChatTokenStats"];
+                    };
+                };
+                /** @description Unauthorized */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Forbidden — requires admin scope */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agents/{id}/chat-tokens/daily": {
         parameters: {
             query?: never;
@@ -1282,13 +1394,13 @@ export interface paths {
                 };
             };
             responses: {
-                /** @description Updated daily chat token usage row */
+                /** @description Updated daily chat token usage rows (one per model) */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["AgentChatTokenUsageDaily"];
+                        "application/json": components["schemas"]["AgentChatTokenUsageDailyByModel"][];
                     };
                 };
                 /** @description Bad request */
@@ -1777,13 +1889,56 @@ export interface components {
             /** @example 1.3.0 */
             version?: string | null;
         };
-        AgentChatTokenUsageDaily: {
+        TokenAggregate: {
+            /** @example 600 */
+            input: number;
+            /** @example 300 */
+            output: number;
+            /** @example 60 */
+            cacheRead: number;
+            /** @example 30 */
+            cacheCreation: number;
+            /** @example 990 */
+            total: number;
+            /** @example 0.006 */
+            costUsd?: number;
+        };
+        KeyedTokenAggregate: components["schemas"]["TokenAggregate"] & {
+            /** @example agent-id-123 */
+            key: string;
+        };
+        DoubleKeyedTokenAggregate: components["schemas"]["TokenAggregate"] & {
+            /** @example agent-id-123 */
+            key1: string;
+            /** @example morning-brief */
+            key2: string;
+        };
+        DailyTokenAggregate: components["schemas"]["TokenAggregate"] & {
+            /** @example 2026-01-10 */
+            period: string;
+        };
+        CronRunTokenStats: {
+            totals: components["schemas"]["TokenAggregate"];
+            byAgent: components["schemas"]["KeyedTokenAggregate"][];
+            byCron: components["schemas"]["DoubleKeyedTokenAggregate"][];
+            byModel: components["schemas"]["DoubleKeyedTokenAggregate"][];
+            daily: components["schemas"]["DailyTokenAggregate"][];
+        };
+        ChatTokenStats: {
+            totals: components["schemas"]["TokenAggregate"];
+            byAgent: components["schemas"]["KeyedTokenAggregate"][];
+            byModel: components["schemas"]["DoubleKeyedTokenAggregate"][];
+            daily: components["schemas"]["DailyTokenAggregate"][];
+        };
+        AgentChatTokenUsageDailyByModel: {
             /** @example clx1234567890 */
             id: string;
             /** @example clx1234567890 */
             agentId: string;
             /** @example 2026-01-15 */
             date: string;
+            /** @example claude-sonnet-4-5 */
+            model: string;
             /** @example 100 */
             inputTokens: number;
             /** @example 50 */
@@ -1805,9 +1960,9 @@ export interface components {
              */
             updatedAt: string;
         };
-        UpsertChatTokenDailyBody: {
-            /** @example 2026-01-15 */
-            date: string;
+        ChatTokenModelEntry: {
+            /** @example claude-sonnet-4-5 */
+            model: string;
             /** @example 100 */
             inputTokens: number;
             /** @example 50 */
@@ -1818,6 +1973,12 @@ export interface components {
             cacheCreationTokens: number;
             /** @example 0.0012 */
             costUsd: number;
+        };
+        UpsertChatTokenDailyBody: {
+            /** @example 2026-01-15 */
+            date: string;
+            /** @description Per-model token usage increments */
+            modelBreakdown: components["schemas"]["ChatTokenModelEntry"][];
         };
         AgentConfigPlugin: {
             /** @example shipwright */
