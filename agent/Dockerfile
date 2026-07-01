@@ -100,6 +100,14 @@ COPY lib/ ./lib/
 COPY plugins/ ./plugins/
 COPY .claude-plugin/ ./.claude-plugin/
 
+# Module-resolution guard: bundle every agent source file as its own entry
+# point so an unresolvable import fails the build itself, rather than only
+# surfacing as a runtime crash after the image ships. A plain `docker build`
+# succeeding is not proof the image runs — this bundles the whole agent/src
+# tree (not just entrypoint-main.ts's reachable graph) so an import missed
+# by that one entry point, like the lib/ omission above, still gets caught.
+RUN find agent/src -name "*.ts" | xargs bun build --target=bun --outdir=/tmp/module-check
+
 # ─── Runtime stage (non-root) ─────────────────────────────────────────────────
 
 FROM base AS runtime
