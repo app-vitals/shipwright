@@ -55,6 +55,8 @@ model Message {
   costUsd            Float?
   attachmentFilename String?
   attachmentSize     Int?
+  // Application-layer limit: 10 MB enforced in POST /messages handler (see routes/messages.ts).
+  // bytea is loaded in full on every Message read — do not remove the cap.
   attachmentBytes    Bytes?
   claimed            Boolean   @default(false)
   claimedAt          DateTime?
