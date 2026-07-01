@@ -39,8 +39,8 @@ export interface TaskRecord {
   addedAt?: string | null;
   /** Model used to execute this task (e.g. "opus", "claude-opus-4-8", "sonnet"). */
   model?: string | null;
-  /** Effort level estimate (1-5). */
-  effortLevel?: number | null;
+  /** Effort level: "low" | "medium" | "high" */
+  effortLevel?: string | null;
   /** Coverage delta from code-review pass (percentage points). */
   coverageDelta?: number | null;
   /** Simplify pass: dry-run findings count. */
