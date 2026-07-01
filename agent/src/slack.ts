@@ -17,7 +17,7 @@ import {
   NoopChatTokenReporter,
 } from "./chat-token-reporter.ts";
 import { ClaudeRunError, ClaudeTimeoutError } from "./claude.ts";
-import type { TokenUsage } from "./claude.ts";
+import type { ClaudeRunResult, TokenUsage } from "./claude.ts";
 import { formatPlanLink, markdownToBlocks, markdownToSlack } from "./format.ts";
 import { type Marker, parseMarkers } from "./markers.ts";
 import { threadKey as defaultThreadKey } from "./sessions.ts";
@@ -131,13 +131,7 @@ type GetSessionFn = (key: string) => string | undefined;
 export type ClaudeRunner = (
   message: string,
   sessionKey?: string,
-) => Promise<{
-  result: string;
-  sessionId?: string;
-  usage?: TokenUsage;
-  totalCostUsd?: number;
-  modelUsage?: Record<string, TokenUsage>;
-}>;
+) => Promise<ClaudeRunResult>;
 
 export type ResolveUserFn = (
   userId: string,

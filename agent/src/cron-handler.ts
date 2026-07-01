@@ -10,7 +10,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type { WebClient } from "@slack/web-api";
-import type { TokenUsage } from "./claude.ts";
+import type { ClaudeRunResult, TokenUsage } from "./claude.ts";
 import { dominantModel, liveClaudeConfig } from "./claude.ts";
 import { type Clock, SystemClock } from "./clock.ts";
 import type { CronRunReporter } from "./cron-run-reporter.ts";
@@ -41,15 +41,7 @@ function buildTokenPayload(
   };
 }
 
-type ClaudeRunner = (
-  message: string,
-) => Promise<{
-  result: string;
-  sessionId?: string;
-  usage?: TokenUsage;
-  totalCostUsd?: number;
-  modelUsage?: Record<string, TokenUsage>;
-}>;
+type ClaudeRunner = (message: string) => Promise<ClaudeRunResult>;
 
 interface CronRequest {
   jobId: string;

@@ -34,6 +34,14 @@ export interface TokenUsage {
   cache_creation_input_tokens: number;
 }
 
+export interface ClaudeRunResult {
+  result: string;
+  sessionId?: string;
+  usage?: TokenUsage;
+  totalCostUsd?: number;
+  modelUsage?: Record<string, TokenUsage>;
+}
+
 /**
  * Returns the model name with the highest output_tokens from the CLI's
  * modelUsage map. Returns undefined when the map is empty.
@@ -104,16 +112,7 @@ export function createRunClaude(
   fallbackModel: string | undefined = undefined,
   effortLevel: string | undefined = undefined,
   timeoutMs: number = 30 * 60 * 1000,
-): (
-  message: string,
-  sessionKey?: string,
-) => Promise<{
-  result: string;
-  sessionId?: string;
-  usage?: TokenUsage;
-  totalCostUsd?: number;
-  modelUsage?: Record<string, TokenUsage>;
-}> {
+): (message: string, sessionKey?: string) => Promise<ClaudeRunResult> {
   // Per-session queue: ensures messages on the same thread run serially
   const sessionQueues = new Map<string, Promise<unknown>>();
 
@@ -185,13 +184,7 @@ export function createRunClaude(
     }
   }
 
-  async function _spawn(args: string[]): Promise<{
-    result: string;
-    sessionId?: string;
-    usage?: TokenUsage;
-    totalCostUsd?: number;
-    modelUsage?: Record<string, TokenUsage>;
-  }> {
+  async function _spawn(args: string[]): Promise<ClaudeRunResult> {
     const proc = spawner(["claude", ...args], {
       cwd: workspace,
       env: process.env,
@@ -256,13 +249,7 @@ export function createRunClaude(
   async function _runClaude(
     message: string,
     sessionKey: string | undefined,
-  ): Promise<{
-    result: string;
-    sessionId?: string;
-    usage?: TokenUsage;
-    totalCostUsd?: number;
-    modelUsage?: Record<string, TokenUsage>;
-  }> {
+  ): Promise<ClaudeRunResult> {
     const existingSessionId = sessionKey ? sessions.get(sessionKey) : undefined;
 
     if (sessionKey && !existingSessionId) {
@@ -307,13 +294,7 @@ export function createRunClaude(
   return async function runClaude(
     message: string,
     sessionKey?: string,
-  ): Promise<{
-    result: string;
-    sessionId?: string;
-    usage?: TokenUsage;
-    totalCostUsd?: number;
-    modelUsage?: Record<string, TokenUsage>;
-  }> {
+  ): Promise<ClaudeRunResult> {
     if (sessionKey)
       return _enqueue(sessionKey, () => _runClaude(message, sessionKey));
     return _runClaude(message, undefined);
