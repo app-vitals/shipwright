@@ -1,6 +1,6 @@
 /**
  * admin/src/agent-chat-tokens.integration.test.ts
- * Integration tests for AgentChatTokenService — upsertDaily.
+ * Integration tests for AgentChatTokenService — upsertDailyByModel.
  *
  * Requires DATABASE_URL_ADMIN_TEST to be set; skips otherwise.
  */
@@ -34,7 +34,7 @@ describeOrSkip("AgentChatTokenService (integration)", () => {
 
   beforeEach(async () => {
     prisma = makePrisma();
-    await prisma.agentChatTokenUsageDaily.deleteMany();
+    await prisma.agentChatTokenUsageDailyByModel.deleteMany();
     await prisma.agentCronRun.deleteMany();
     await prisma.agentToken.deleteMany();
     await prisma.agentCronJob.deleteMany();
@@ -45,13 +45,14 @@ describeOrSkip("AgentChatTokenService (integration)", () => {
     service = new AgentChatTokenService(prisma);
   });
 
-  // ─── upsertDaily: create ────────────────────────────────────────────────────
+  // ─── upsertDailyByModel: create ─────────────────────────────────────────────
 
-  it("upsertDaily() creates a new record for a fresh (agentId, date) pair", async () => {
+  it("upsertDailyByModel() creates a new record for a fresh (agentId, date, model) tuple", async () => {
     const agentId = await createAgent(prisma);
     const date = "2026-01-15";
+    const model = "claude-sonnet-4-5";
 
-    const row = await service.upsertDaily(agentId, date, {
+    const row = await service.upsertDailyByModel(agentId, date, model, {
       inputTokens: 100,
       outputTokens: 50,
       cacheReadTokens: 10,
@@ -61,6 +62,7 @@ describeOrSkip("AgentChatTokenService (integration)", () => {
 
     expect(row.agentId).toBe(agentId);
     expect(row.date).toBe(date);
+    expect(row.model).toBe(model);
     expect(row.inputTokens).toBe(100);
     expect(row.outputTokens).toBe(50);
     expect(row.cacheReadTokens).toBe(10);
@@ -71,13 +73,14 @@ describeOrSkip("AgentChatTokenService (integration)", () => {
     expect(row.updatedAt).toBeInstanceOf(Date);
   });
 
-  // ─── upsertDaily: accumulate ─────────────────────────────────────────────────
+  // ─── upsertDailyByModel: accumulate ─────────────────────────────────────────
 
-  it("upsertDaily() with same agentId+date accumulates totals (does not overwrite)", async () => {
+  it("upsertDailyByModel() with same agentId+date+model accumulates totals", async () => {
     const agentId = await createAgent(prisma);
     const date = "2026-01-15";
+    const model = "claude-sonnet-4-5";
 
-    await service.upsertDaily(agentId, date, {
+    await service.upsertDailyByModel(agentId, date, model, {
       inputTokens: 100,
       outputTokens: 50,
       cacheReadTokens: 10,
@@ -85,7 +88,7 @@ describeOrSkip("AgentChatTokenService (integration)", () => {
       costUsd: 0.001,
     });
 
-    const row = await service.upsertDaily(agentId, date, {
+    const row = await service.upsertDailyByModel(agentId, date, model, {
       inputTokens: 200,
       outputTokens: 100,
       cacheReadTokens: 20,
@@ -100,11 +103,45 @@ describeOrSkip("AgentChatTokenService (integration)", () => {
     expect(row.costUsd).toBeCloseTo(0.003);
   });
 
-  // ─── upsertDaily: concurrent ─────────────────────────────────────────────────
+  // ─── upsertDailyByModel: different models are independent ────────────────────
 
-  it("two concurrent upsertDaily() calls for same (agentId, date) accumulate atomically", async () => {
+  it("upsertDailyByModel() for different models on same (agentId, date) creates separate records", async () => {
+    const agentId = await createAgent(prisma);
+    const date = "2026-01-15";
+
+    await service.upsertDailyByModel(agentId, date, "claude-sonnet-4-5", {
+      inputTokens: 100,
+      outputTokens: 50,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      costUsd: 0.001,
+    });
+    await service.upsertDailyByModel(agentId, date, "claude-haiku-3-5", {
+      inputTokens: 200,
+      outputTokens: 100,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      costUsd: 0.002,
+    });
+
+    const records = await prisma.agentChatTokenUsageDailyByModel.findMany({
+      where: { agentId, date },
+      orderBy: { model: "asc" },
+    });
+
+    expect(records).toHaveLength(2);
+    expect(records[0].model).toBe("claude-haiku-3-5");
+    expect(records[0].inputTokens).toBe(200);
+    expect(records[1].model).toBe("claude-sonnet-4-5");
+    expect(records[1].inputTokens).toBe(100);
+  });
+
+  // ─── upsertDailyByModel: concurrent ──────────────────────────────────────────
+
+  it("two concurrent upsertDailyByModel() calls for same (agentId, date, model) accumulate atomically", async () => {
     const agentId = await createAgent(prisma);
     const date = "2026-06-25";
+    const model = "claude-sonnet-4-5";
 
     const tokens1 = {
       inputTokens: 500,
@@ -121,21 +158,17 @@ describeOrSkip("AgentChatTokenService (integration)", () => {
       costUsd: 0.0015,
     };
 
-    // Run both concurrently
     await Promise.all([
-      service.upsertDaily(agentId, date, tokens1),
-      service.upsertDaily(agentId, date, tokens2),
+      service.upsertDailyByModel(agentId, date, model, tokens1),
+      service.upsertDailyByModel(agentId, date, model, tokens2),
     ]);
 
-    // Fetch the final row from DB directly
-    const final = await prisma.agentChatTokenUsageDaily.findUnique({
-      where: { agentId_date: { agentId, date } },
+    const final = await prisma.agentChatTokenUsageDailyByModel.findUnique({
+      where: { agentId_date_model: { agentId, date, model } },
     });
 
     expect(final).not.toBeNull();
-    expect(final?.inputTokens).toBe(
-      tokens1.inputTokens + tokens2.inputTokens,
-    );
+    expect(final?.inputTokens).toBe(tokens1.inputTokens + tokens2.inputTokens);
     expect(final?.outputTokens).toBe(
       tokens1.outputTokens + tokens2.outputTokens,
     );
@@ -148,61 +181,34 @@ describeOrSkip("AgentChatTokenService (integration)", () => {
     expect(final?.costUsd).toBeCloseTo(tokens1.costUsd + tokens2.costUsd);
   });
 
-  // ─── upsertDaily: 404 when agentId doesn't exist ─────────────────────────────
+  // ─── upsertDailyByModel: 404 when agentId doesn't exist ──────────────────────
 
-  it("upsertDaily() throws NotFoundError when agentId does not exist", async () => {
+  it("upsertDailyByModel() throws NotFoundError when agentId does not exist", async () => {
     await expect(
-      service.upsertDaily("nonexistent-agent-id", "2026-01-15", {
-        inputTokens: 100,
-        outputTokens: 50,
-        cacheReadTokens: 10,
-        cacheCreationTokens: 5,
-        costUsd: 0.001,
-      }),
+      service.upsertDailyByModel(
+        "nonexistent-agent-id",
+        "2026-01-15",
+        "claude-sonnet-4-5",
+        {
+          inputTokens: 100,
+          outputTokens: 50,
+          cacheReadTokens: 10,
+          cacheCreationTokens: 5,
+          costUsd: 0.001,
+        },
+      ),
     ).rejects.toBeInstanceOf(NotFoundError);
-  });
-
-  // ─── upsertDaily: different dates for same agent are independent ──────────────
-
-  it("upsertDaily() for different dates on the same agent creates separate records", async () => {
-    const agentId = await createAgent(prisma);
-
-    await service.upsertDaily(agentId, "2026-01-15", {
-      inputTokens: 100,
-      outputTokens: 50,
-      cacheReadTokens: 0,
-      cacheCreationTokens: 0,
-      costUsd: 0.001,
-    });
-    await service.upsertDaily(agentId, "2026-01-16", {
-      inputTokens: 200,
-      outputTokens: 100,
-      cacheReadTokens: 0,
-      cacheCreationTokens: 0,
-      costUsd: 0.002,
-    });
-
-    const records = await prisma.agentChatTokenUsageDaily.findMany({
-      where: { agentId },
-      orderBy: { date: "asc" },
-    });
-
-    expect(records).toHaveLength(2);
-    expect(records[0].date).toBe("2026-01-15");
-    expect(records[0].inputTokens).toBe(100);
-    expect(records[1].date).toBe("2026-01-16");
-    expect(records[1].inputTokens).toBe(200);
   });
 
   // ─── queryStats ───────────────────────────────────────────────────────────────
 
   describe("queryStats()", () => {
-    // Seed: 2 agents × 3 dates
-    // agent1: dates 2026-01-10, 2026-01-11, 2026-01-12
-    // agent2: dates 2026-01-10, 2026-01-11, 2026-01-12
+    // Seed: 2 agents × 3 dates × 2 models each
     const DATE_A = "2026-01-10";
     const DATE_B = "2026-01-11";
     const DATE_C = "2026-01-12";
+    const MODEL_S = "claude-sonnet-4-5";
+    const MODEL_H = "claude-haiku-3-5";
 
     let agent1Id: string;
     let agent2Id: string;
@@ -211,45 +217,52 @@ describeOrSkip("AgentChatTokenService (integration)", () => {
       agent1Id = await createAgent(prisma, "Agent One");
       agent2Id = await createAgent(prisma, "Agent Two");
 
-      // agent1 rows
-      await service.upsertDaily(agent1Id, DATE_A, {
+      // agent1 rows — model Sonnet on DATE_A, model Haiku on DATE_B, both models on DATE_C
+      await service.upsertDailyByModel(agent1Id, DATE_A, MODEL_S, {
         inputTokens: 100,
         outputTokens: 50,
         cacheReadTokens: 10,
         cacheCreationTokens: 5,
         costUsd: 0.001,
       });
-      await service.upsertDaily(agent1Id, DATE_B, {
+      await service.upsertDailyByModel(agent1Id, DATE_B, MODEL_H, {
         inputTokens: 200,
         outputTokens: 100,
         cacheReadTokens: 20,
         cacheCreationTokens: 10,
         costUsd: 0.002,
       });
-      await service.upsertDaily(agent1Id, DATE_C, {
-        inputTokens: 300,
-        outputTokens: 150,
-        cacheReadTokens: 30,
-        cacheCreationTokens: 15,
-        costUsd: 0.003,
+      await service.upsertDailyByModel(agent1Id, DATE_C, MODEL_S, {
+        inputTokens: 150,
+        outputTokens: 75,
+        cacheReadTokens: 15,
+        cacheCreationTokens: 7,
+        costUsd: 0.0015,
+      });
+      await service.upsertDailyByModel(agent1Id, DATE_C, MODEL_H, {
+        inputTokens: 150,
+        outputTokens: 75,
+        cacheReadTokens: 15,
+        cacheCreationTokens: 8,
+        costUsd: 0.0015,
       });
 
-      // agent2 rows
-      await service.upsertDaily(agent2Id, DATE_A, {
+      // agent2 rows — Sonnet only on all 3 dates
+      await service.upsertDailyByModel(agent2Id, DATE_A, MODEL_S, {
         inputTokens: 400,
         outputTokens: 200,
         cacheReadTokens: 40,
         cacheCreationTokens: 20,
         costUsd: 0.004,
       });
-      await service.upsertDaily(agent2Id, DATE_B, {
+      await service.upsertDailyByModel(agent2Id, DATE_B, MODEL_S, {
         inputTokens: 500,
         outputTokens: 250,
         cacheReadTokens: 50,
         cacheCreationTokens: 25,
         costUsd: 0.005,
       });
-      await service.upsertDaily(agent2Id, DATE_C, {
+      await service.upsertDailyByModel(agent2Id, DATE_C, MODEL_S, {
         inputTokens: 600,
         outputTokens: 300,
         cacheReadTokens: 60,
@@ -258,34 +271,31 @@ describeOrSkip("AgentChatTokenService (integration)", () => {
       });
     });
 
-    it("totals sums across all 6 rows (2 agents × 3 dates)", async () => {
+    it("totals sums across all rows (both agents, all dates, all models)", async () => {
       const stats = await service.queryStats();
 
-      // Total input: 100+200+300 (agent1) + 400+500+600 (agent2) = 2100
+      // agent1 Sonnet DATE_A: 100, Haiku DATE_B: 200, Sonnet DATE_C: 150, Haiku DATE_C: 150
+      // agent2 Sonnet DATE_A: 400, Sonnet DATE_B: 500, Sonnet DATE_C: 600
+      // Total input: 100+200+150+150+400+500+600 = 2100
       expect(stats.totals.input).toBe(2100);
-      // Total output: 50+100+150 + 200+250+300 = 1050
+      // Total output: 50+100+75+75+200+250+300 = 1050
       expect(stats.totals.output).toBe(1050);
-      // Total cacheRead: 10+20+30 + 40+50+60 = 210
+      // Total cacheRead: 10+20+15+15+40+50+60 = 210
       expect(stats.totals.cacheRead).toBe(210);
-      // Total cacheCreation: 5+10+15 + 20+25+30 = 105
+      // Total cacheCreation: 5+10+7+8+20+25+30 = 105
       expect(stats.totals.cacheCreation).toBe(105);
       // total = 2100+1050+210+105 = 3465
       expect(stats.totals.total).toBe(3465);
-      // costUsd should be present and close to 0.021
+      // costUsd: 0.001+0.002+0.0015+0.0015+0.004+0.005+0.006 = 0.021
       expect(stats.totals.costUsd).toBeCloseTo(0.021);
     });
 
-    it("byAgent groups per agent with correct sums", async () => {
+    it("byAgent groups per agent with correct sums across models", async () => {
       const stats = await service.queryStats();
 
       expect(stats.byAgent).toHaveLength(2);
 
-      const sorted = [...stats.byAgent].sort((a, b) =>
-        a.key.localeCompare(b.key),
-      );
-
-      // Find each agent by key
-      const byId: Record<string, (typeof sorted)[0]> = {};
+      const byId: Record<string, (typeof stats.byAgent)[0]> = {};
       for (const entry of stats.byAgent) {
         byId[entry.key] = entry;
       }
@@ -293,55 +303,75 @@ describeOrSkip("AgentChatTokenService (integration)", () => {
       expect(byId[agent1Id]).toBeDefined();
       expect(byId[agent2Id]).toBeDefined();
 
-      // agent1: 100+200+300=600 input
+      // agent1: 100+200+150+150 = 600 input
       expect(byId[agent1Id].input).toBe(600);
       expect(byId[agent1Id].output).toBe(300);
 
-      // agent2: 400+500+600=1500 input
+      // agent2: 400+500+600 = 1500 input
       expect(byId[agent2Id].input).toBe(1500);
       expect(byId[agent2Id].output).toBe(750);
     });
 
-    it("daily buckets per date with correct sums", async () => {
+    it("byModel groups per (agentId, model) pair with correct sums", async () => {
+      const stats = await service.queryStats();
+
+      // agent1 Sonnet: 100+150=250 input
+      // agent1 Haiku: 200+150=350 input
+      // agent2 Sonnet: 400+500+600=1500 input
+      expect(stats.byModel).toBeDefined();
+      expect(stats.byModel.length).toBeGreaterThanOrEqual(3);
+
+      const byKey: Record<string, (typeof stats.byModel)[0]> = {};
+      for (const entry of stats.byModel) {
+        byKey[`${entry.key1}:${entry.key2}`] = entry;
+      }
+
+      expect(byKey[`${agent1Id}:${MODEL_S}`]).toBeDefined();
+      expect(byKey[`${agent1Id}:${MODEL_S}`].input).toBe(250);
+
+      expect(byKey[`${agent1Id}:${MODEL_H}`]).toBeDefined();
+      expect(byKey[`${agent1Id}:${MODEL_H}`].input).toBe(350);
+
+      expect(byKey[`${agent2Id}:${MODEL_S}`]).toBeDefined();
+      expect(byKey[`${agent2Id}:${MODEL_S}`].input).toBe(1500);
+    });
+
+    it("daily buckets per date with correct sums across agents and models", async () => {
       const stats = await service.queryStats();
 
       expect(stats.daily).toHaveLength(3);
 
-      // Sort by period ascending
       const sorted = [...stats.daily].sort((a, b) =>
         a.period.localeCompare(b.period),
       );
 
       expect(sorted[0].period).toBe(DATE_A);
-      // DATE_A: agent1(100+50+10+5) + agent2(400+200+40+20) = 825 total
-      expect(sorted[0].input).toBe(500); // 100+400
-      expect(sorted[0].output).toBe(250); // 50+200
+      // DATE_A: agent1 Sonnet 100 + agent2 Sonnet 400 = 500
+      expect(sorted[0].input).toBe(500);
 
       expect(sorted[1].period).toBe(DATE_B);
-      expect(sorted[1].input).toBe(700); // 200+500
+      // DATE_B: agent1 Haiku 200 + agent2 Sonnet 500 = 700
+      expect(sorted[1].input).toBe(700);
 
       expect(sorted[2].period).toBe(DATE_C);
-      expect(sorted[2].input).toBe(900); // 300+600
+      // DATE_C: agent1 Sonnet 150 + agent1 Haiku 150 + agent2 Sonnet 600 = 900
+      expect(sorted[2].input).toBe(900);
     });
 
     it("from/to filter restricts to date range (inclusive start, inclusive end)", async () => {
-      // Only DATE_B and DATE_C
       const stats = await service.queryStats(DATE_B, DATE_C);
 
-      // Should include only DATE_B and DATE_C rows
       expect(stats.daily).toHaveLength(2);
 
       const periods = stats.daily.map((d) => d.period).sort();
       expect(periods).toEqual([DATE_B, DATE_C]);
 
-      // Totals should only include DATE_B and DATE_C
-      // agent1 DATE_B: 200 input, agent1 DATE_C: 300, agent2 DATE_B: 500, agent2 DATE_C: 600 → 1600
+      // DATE_B: 200+500=700, DATE_C: 150+150+600=900 → total 1600
       expect(stats.totals.input).toBe(1600);
     });
 
     it("returns zero totals and empty arrays when no rows exist", async () => {
-      // Clear all rows
-      await prisma.agentChatTokenUsageDaily.deleteMany();
+      await prisma.agentChatTokenUsageDailyByModel.deleteMany();
 
       const stats = await service.queryStats();
 
@@ -349,6 +379,7 @@ describeOrSkip("AgentChatTokenService (integration)", () => {
       expect(stats.totals.output).toBe(0);
       expect(stats.totals.total).toBe(0);
       expect(stats.byAgent).toHaveLength(0);
+      expect(stats.byModel).toHaveLength(0);
       expect(stats.daily).toHaveLength(0);
     });
   });

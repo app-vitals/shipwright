@@ -12,7 +12,7 @@ import {
   NoopChatTokenReporter,
   formatDailyDate,
 } from "./chat-token-reporter.ts";
-import type { TokenUsage } from "./claude.ts";
+import type { ModelUsage, TokenUsage } from "./claude.ts";
 import { FixedClock } from "./clock.ts";
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
@@ -126,42 +126,79 @@ describe("HttpChatTokenReporter", () => {
     );
   });
 
-  test("recordSession sends the correct date and token fields", async () => {
+  test("recordSession sends the correct date and token fields in modelBreakdown", async () => {
     const reporter = makeReporter();
     await reporter.recordSession(USAGE);
 
     const body = state.captured[0].body as Record<string, unknown>;
     expect(body.date).toBe("2026-01-15");
-    expect(body.inputTokens).toBe(100);
-    expect(body.outputTokens).toBe(50);
-    expect(body.cacheReadTokens).toBe(20);
-    expect(body.cacheCreationTokens).toBe(10);
+    expect(Array.isArray(body.modelBreakdown)).toBe(true);
+    const breakdown = body.modelBreakdown as Array<Record<string, unknown>>;
+    expect(breakdown.length).toBe(1);
+    expect(breakdown[0].inputTokens).toBe(100);
+    expect(breakdown[0].outputTokens).toBe(50);
+    expect(breakdown[0].cacheReadTokens).toBe(20);
+    expect(breakdown[0].cacheCreationTokens).toBe(10);
   });
 
-  test("recordSession does NOT send a model field", async () => {
+  test("recordSession sends modelBreakdown when modelUsage is provided", async () => {
+    const reporter = makeReporter();
+    const modelUsage: ModelUsage = {
+      "claude-sonnet-4-5": {
+        input_tokens: 80,
+        output_tokens: 40,
+        cache_read_input_tokens: 15,
+        cache_creation_input_tokens: 8,
+      },
+      "claude-haiku-3-5": {
+        input_tokens: 20,
+        output_tokens: 10,
+        cache_read_input_tokens: 5,
+        cache_creation_input_tokens: 2,
+      },
+    };
+    await reporter.recordSession(USAGE, undefined, modelUsage);
+
+    const body = state.captured[0].body as Record<string, unknown>;
+    expect(Array.isArray(body.modelBreakdown)).toBe(true);
+    const breakdown = body.modelBreakdown as Array<Record<string, unknown>>;
+    expect(breakdown.length).toBe(2);
+    const models = breakdown.map((b) => b.model).sort();
+    expect(models).toEqual(["claude-haiku-3-5", "claude-sonnet-4-5"]);
+  });
+
+  test("recordSession uses live model as fallback when modelUsage is not provided", async () => {
     const reporter = makeReporter();
     await reporter.recordSession(USAGE);
 
     const body = state.captured[0].body as Record<string, unknown>;
-    expect(body.model).toBeUndefined();
+    // When no modelUsage provided, modelBreakdown has a single entry using liveClaudeConfig.model
+    const breakdown = body.modelBreakdown as Array<Record<string, unknown>>;
+    expect(Array.isArray(breakdown)).toBe(true);
+    expect(breakdown.length).toBe(1);
+    // model field is set (to liveClaudeConfig.model)
+    expect(typeof breakdown[0].model).toBe("string");
+    expect((breakdown[0].model as string).length).toBeGreaterThan(0);
   });
 
-  test("recordSession sends costUsd from totalCostUsd when provided", async () => {
+  test("recordSession sends costUsd in modelBreakdown from totalCostUsd when provided", async () => {
     const reporter = makeReporter();
     await reporter.recordSession(USAGE, 0.0099);
 
     const body = state.captured[0].body as Record<string, unknown>;
-    expect(body.costUsd).toBe(0.0099);
+    const breakdown = body.modelBreakdown as Array<Record<string, unknown>>;
+    expect(breakdown[0].costUsd).toBe(0.0099);
   });
 
-  test("recordSession falls back to calculateCost when totalCostUsd not provided", async () => {
+  test("recordSession falls back to calculateCost in modelBreakdown when totalCostUsd not provided", async () => {
     const reporter = makeReporter();
     await reporter.recordSession(USAGE);
 
     const body = state.captured[0].body as Record<string, unknown>;
+    const breakdown = body.modelBreakdown as Array<Record<string, unknown>>;
     // Falls back to calculateCost(usage, liveClaudeConfig.model) — non-zero computed cost
-    expect(typeof body.costUsd).toBe("number");
-    expect(body.costUsd as number).toBeGreaterThan(0);
+    expect(typeof breakdown[0].costUsd).toBe("number");
+    expect(breakdown[0].costUsd as number).toBeGreaterThan(0);
   });
 
   test("recordSession sends Authorization: Bearer header", async () => {

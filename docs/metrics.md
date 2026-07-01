@@ -134,10 +134,10 @@ The `/public/*` endpoints require **no authentication**. Access is controlled by
 | `metrics/src/api.ts` | App factory `createMetricsApp()`, route + auth middleware registration, dashboard handler. |
 | `metrics/src/metrics-provider.ts` | `MetricsProvider` interface + `MetricQuery` / `MetricTable` types — the backend-agnostic read seam. |
 | `metrics/src/select-provider.ts` | Pure env-to-mode selector (`selectProviderMode()`) — maps env vars to `"fixtures" \| "taskstore"` based on `METRICS_OFFLINE` and task-store URL configuration. |
-| `metrics/src/providers/task-store-provider.ts` | `TaskStoreProvider` — implements `MetricsProvider` over a `TaskStoreClient` (tasks + PRs) and an `AdminMetricsClient` (token stats); the live read backend for taskstore mode. |
+| `metrics/src/providers/task-store-provider.ts` | `TaskStoreProvider` — implements `MetricsProvider` over a `TaskStoreClient` (tasks + PRs) and an `AdminMetricsClient` (token stats); the live read backend for taskstore mode. Includes graceful degradation: when admin stats endpoints fail, returns zero aggregates for that stream instead of erroring, allowing partial metrics to remain available. |
 | `metrics/src/lib/task-store-client.ts` | `TaskStoreClient` interface + `HttpTaskStoreClient` impl (and `TaskStoreClientError`) — reads tasks + PRs from the task-store HTTP API. |
 | `metrics/src/lib/admin-metrics-client.ts` | `AdminMetricsClient` interface + `HttpAdminMetricsClient` impl (and `AdminMetricsClientError`) — reads token-aggregation stats from the admin service. |
-| `metrics/src/providers/task-store-recorded.ts` | `RecordedTaskStoreClient` + `RecordedAdminMetricsClient` — replay cassette data offline; back the fixtures provider and integration tests. |
+| `metrics/src/providers/task-store-recorded.ts` | `RecordedTaskStoreClient` + `RecordedAdminMetricsClient` — replay cassette data offline; back the fixtures provider and integration tests. Also includes faulting doubles (`FaultingCronAdminMetricsClient`, `FaultingChatAdminMetricsClient`, `FaultingBothAdminMetricsClient`) for testing graceful degradation when admin stats endpoints fail. |
 | `metrics/src/fixtures/task-store-fixtures.ts` | `createFixtureTaskStoreProvider()` — offline `TaskStoreProvider` over recorded cassettes with a fixed clock; used in offline mode and integration tests. |
 | `metrics/src/secrets.ts` | Secrets resolution: env-first, optional GCP Secret Manager fallback. |
 | `metrics/src/dashboard/` | Server-rendered dashboard (`dashboard-page.ts`, `app.js`, `styles.css`, `index.html`). |

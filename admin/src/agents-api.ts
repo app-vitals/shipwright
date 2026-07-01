@@ -114,7 +114,7 @@ export interface AdminDeps {
     AgentPluginService,
     "list" | "add" | "remove" | "removeByName"
   >;
-  agentChatTokenService: Pick<AgentChatTokenService, "upsertDaily" | "queryStats">;
+  agentChatTokenService: Pick<AgentChatTokenService, "upsertDailyByModel" | "queryStats">;
   prisma: Pick<PrismaClient, "agent">;
   /**
    * Provisions (and tears down) the workload backing an agent. Defaults to a
@@ -693,9 +693,9 @@ const upsertChatTokenDailyRoute = createRoute({
   },
   responses: {
     200: {
-      description: "Updated daily chat token usage row",
+      description: "Updated daily chat token usage rows (one per model)",
       content: {
-        "application/json": { schema: AgentChatTokenUsageDailySchema },
+        "application/json": { schema: z.array(AgentChatTokenUsageDailySchema) },
       },
     },
     400: { description: "Bad request", ...jsonError },
@@ -1356,18 +1356,22 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
 
   // ─── Chat token usage ──────────────────────────────────────────────────────
 
-  // POST /agents/:id/chat-tokens/daily — atomically accumulate daily chat token usage
+  // POST /agents/:id/chat-tokens/daily — atomically accumulate daily chat token usage per model
   app.openapi(upsertChatTokenDailyRoute, async (c) => {
     const { id: agentId } = c.req.valid("param");
     const body = c.req.valid("json");
-    const row = await agentChatTokenService.upsertDaily(agentId, body.date, {
-      inputTokens: body.inputTokens,
-      outputTokens: body.outputTokens,
-      cacheReadTokens: body.cacheReadTokens,
-      cacheCreationTokens: body.cacheCreationTokens,
-      costUsd: body.costUsd,
-    });
-    return c.json(serializeChatTokenDaily(row), 200);
+    const rows = await Promise.all(
+      body.modelBreakdown.map((entry) =>
+        agentChatTokenService.upsertDailyByModel(agentId, body.date, entry.model, {
+          inputTokens: entry.inputTokens,
+          outputTokens: entry.outputTokens,
+          cacheReadTokens: entry.cacheReadTokens,
+          cacheCreationTokens: entry.cacheCreationTokens,
+          costUsd: entry.costUsd,
+        }),
+      ),
+    );
+    return c.json(rows.map(serializeChatTokenDaily), 200);
   });
 
   return app;
@@ -1513,6 +1517,7 @@ function serializeChatTokenDaily(row: {
   id: string;
   agentId: string;
   date: string;
+  model: string;
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
@@ -1525,6 +1530,7 @@ function serializeChatTokenDaily(row: {
     id: row.id,
     agentId: row.agentId,
     date: row.date,
+    model: row.model,
     inputTokens: row.inputTokens,
     outputTokens: row.outputTokens,
     cacheReadTokens: row.cacheReadTokens,
