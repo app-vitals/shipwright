@@ -220,7 +220,7 @@ describe("TaskStoreProvider.costEfficiency()", () => {
       (r) => r[colIndex(t, "model_family")] === "claude-opus-4-8",
     );
     expect(opusRow).toBeDefined();
-    expect(opusRow![colIndex(t, "task_count")]).toBe(2);
+    expect(opusRow?.[colIndex(t, "task_count")]).toBe(2);
   });
 
   test("uses costUsd when present (T-1.1 routed_usd = 0.042)", async () => {
@@ -232,7 +232,7 @@ describe("TaskStoreProvider.costEfficiency()", () => {
     const opusRow = t.results.find(
       (r) => r[colIndex(t, "model_family")] === "claude-opus-4-8",
     );
-    const routedUsd = opusRow![colIndex(t, "routed_usd")] as number;
+    const routedUsd = opusRow?.[colIndex(t, "routed_usd")] as number;
     // T-1.1: 0.042, T-1.2 fallback: 0.035 → total ≈ 0.077
     expect(routedUsd).toBeCloseTo(0.077, 5);
   });
@@ -247,7 +247,7 @@ describe("TaskStoreProvider.costEfficiency()", () => {
     const opusRow = t.results.find(
       (r) => r[colIndex(t, "model_family")] === "claude-opus-4-8",
     );
-    const opusUsd = opusRow![colIndex(t, "opus_usd")] as number;
+    const opusUsd = opusRow?.[colIndex(t, "opus_usd")] as number;
     expect(opusUsd).toBeCloseTo(0.018225 + 0.035, 5);
   });
 
@@ -269,7 +269,7 @@ describe("TaskStoreProvider.costEfficiency()", () => {
     const opusRow = t.results.find(
       (r) => r[colIndex(t, "model_family")] === "claude-opus-4-8",
     );
-    expect(opusRow![colIndex(t, "task_count")]).toBe(2);
+    expect(opusRow?.[colIndex(t, "task_count")]).toBe(2);
   });
 
   test("repo-scoped provider excludes other-repo tasks", async () => {
@@ -281,8 +281,8 @@ describe("TaskStoreProvider.costEfficiency()", () => {
       (r) => r[colIndex(t, "model_family")] === "claude-opus-4-8",
     );
     // If T-6.1 were included, task_count would be 3 (not 2) and routed_usd would include 1.0
-    expect(opusRow![colIndex(t, "task_count")]).toBe(2);
-    const routedUsd = opusRow![colIndex(t, "routed_usd")] as number;
+    expect(opusRow?.[colIndex(t, "task_count")]).toBe(2);
+    const routedUsd = opusRow?.[colIndex(t, "routed_usd")] as number;
     expect(routedUsd).toBeLessThan(1.0);
   });
 
@@ -311,7 +311,7 @@ describe("TaskStoreProvider.costEfficiency()", () => {
     const opusRow = t.results.find(
       (r) => r[colIndex(t, "model_family")] === "claude-opus-4-8",
     );
-    expect(opusRow![colIndex(t, "task_count")]).toBe(3);
+    expect(opusRow?.[colIndex(t, "task_count")]).toBe(3);
   });
 
   test("haiku family uses calculateCost fallback (no costUsd)", async () => {
@@ -325,7 +325,7 @@ describe("TaskStoreProvider.costEfficiency()", () => {
       (r) => r[colIndex(t, "model_family")] === "claude-haiku-4-5",
     );
     expect(haikuRow).toBeDefined();
-    const routedUsd = haikuRow![colIndex(t, "routed_usd")] as number;
+    const routedUsd = haikuRow?.[colIndex(t, "routed_usd")] as number;
     expect(routedUsd).toBeCloseTo(0.00083625, 7);
   });
 
