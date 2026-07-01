@@ -131,7 +131,13 @@ type GetSessionFn = (key: string) => string | undefined;
 export type ClaudeRunner = (
   message: string,
   sessionKey?: string,
-) => Promise<{ result: string; sessionId?: string; usage?: TokenUsage }>;
+) => Promise<{
+  result: string;
+  sessionId?: string;
+  usage?: TokenUsage;
+  totalCostUsd?: number;
+  modelUsage?: Record<string, TokenUsage>;
+}>;
 
 export type ResolveUserFn = (
   userId: string,
@@ -420,9 +426,9 @@ export function createSlackApp(
 
     const startedAt = new Date();
     try {
-      const { result, usage } = await runner(prompt, sessionKey);
+      const { result, usage, totalCostUsd } = await runner(prompt, sessionKey);
       const endedAt = new Date();
-      await chatTokenReporter.recordSession(usage);
+      await chatTokenReporter.recordSession(usage, totalCostUsd);
       const { cleaned, markers } = parseMarkers(result);
 
       const isSilent = markers.some((m) => m.type === "silent");
@@ -572,9 +578,9 @@ export function createSlackApp(
 
     const startedAt = new Date();
     try {
-      const { result, usage } = await runner(prompt, sessionKey);
+      const { result, usage, totalCostUsd } = await runner(prompt, sessionKey);
       const endedAt = new Date();
-      await chatTokenReporter.recordSession(usage);
+      await chatTokenReporter.recordSession(usage, totalCostUsd);
       const { cleaned, markers } = parseMarkers(result);
 
       const isSilent = markers.some((m) => m.type === "silent");
@@ -659,8 +665,8 @@ export function createSlackApp(
     const prompt = `[${name} reacted with :${ev.reaction}: to your message]`;
 
     try {
-      const { result, usage } = await runner(prompt, sessionKey);
-      await chatTokenReporter.recordSession(usage);
+      const { result, usage, totalCostUsd } = await runner(prompt, sessionKey);
+      await chatTokenReporter.recordSession(usage, totalCostUsd);
       const { cleaned, markers } = parseMarkers(result);
 
       const isSilent = markers.some((m) => m.type === "silent");

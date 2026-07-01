@@ -16,7 +16,8 @@ const WORKSPACE = join(TEST_AGENT_HOME, "workspace");
 
 // ─── Import module under test ─────────────────────────────────────────────────
 
-const { createRunClaude, setLiveClaudeConfig } = await import("./claude.ts");
+const { createRunClaude, setLiveClaudeConfig, dominantModel } =
+  await import("./claude.ts");
 
 // ─── Shared test session store ────────────────────────────────────────────────
 
@@ -778,6 +779,129 @@ describe("extraAllowedTools", () => {
 
     expect(extraIdx).toBeGreaterThan(allowedIdx);
     expect(extraIdx).toBeGreaterThan(agentIdx);
+  });
+});
+
+// ─── totalCostUsd and modelUsage from JSON output ────────────────────────────
+
+describe("runClaude — totalCostUsd and modelUsage", () => {
+  // biome-ignore lint/suspicious/noExplicitAny: mock return type
+  let mockSpawn: any;
+  let runClaude: ReturnType<typeof createRunClaude>;
+
+  beforeEach(() => {
+    mockGetSession.mockClear();
+    mockSetSession.mockClear();
+    mockClearSession.mockClear();
+    mockTracker.mockClear();
+    mockSpawn = mock(
+      () =>
+        fakeProc(jsonOutput("Hello from Claude")) as ReturnType<
+          typeof Bun.spawn
+        >,
+    );
+    runClaude = createRunClaude(
+      mockSpawn as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      mockTracker,
+    );
+  });
+
+  test("returns totalCostUsd from JSON output when total_cost_usd is present", async () => {
+    const json = JSON.stringify({
+      result: "Hello",
+      session_id: "sess-cost",
+      is_error: false,
+      total_cost_usd: 0.0042,
+    });
+    mockSpawn.mockReturnValue(fakeProc(json) as ReturnType<typeof Bun.spawn>);
+    const output = await runClaude("hello");
+    expect(output.totalCostUsd).toBe(0.0042);
+  });
+
+  test("returns modelUsage from JSON output when model_usage is present", async () => {
+    const modelUsage = {
+      "claude-sonnet-4-6": {
+        input_tokens: 10,
+        output_tokens: 5,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+      },
+    };
+    const json = JSON.stringify({
+      result: "Hello",
+      session_id: "sess-usage",
+      is_error: false,
+      model_usage: modelUsage,
+    });
+    mockSpawn.mockReturnValue(fakeProc(json) as ReturnType<typeof Bun.spawn>);
+    const output = await runClaude("hello");
+    expect(output.modelUsage).toEqual(modelUsage);
+  });
+
+  test("returns undefined totalCostUsd and modelUsage when not in JSON output", async () => {
+    // Default mockSpawn produces jsonOutput("Hello from Claude") which has no extra fields
+    const output = await runClaude("hello");
+    expect(output.totalCostUsd).toBeUndefined();
+    expect(output.modelUsage).toBeUndefined();
+  });
+});
+
+// ─── dominantModel ────────────────────────────────────────────────────────────
+
+describe("dominantModel", () => {
+  test("returns the model with the highest output_tokens", () => {
+    const result = dominantModel({
+      "claude-sonnet-4-6": {
+        input_tokens: 100,
+        output_tokens: 50,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+      },
+      "claude-opus-4-8": {
+        input_tokens: 200,
+        output_tokens: 200,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+      },
+    });
+    expect(result).toBe("claude-opus-4-8");
+  });
+
+  test("returns undefined for empty modelUsage", () => {
+    expect(dominantModel({})).toBeUndefined();
+  });
+
+  test("handles single model", () => {
+    const result = dominantModel({
+      "claude-haiku-4-6": {
+        input_tokens: 10,
+        output_tokens: 5,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+      },
+    });
+    expect(result).toBe("claude-haiku-4-6");
+  });
+
+  test("breaks ties deterministically — returns one of the tied models", () => {
+    const result = dominantModel({
+      "model-a": {
+        input_tokens: 10,
+        output_tokens: 100,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+      },
+      "model-b": {
+        input_tokens: 10,
+        output_tokens: 100,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+      },
+    });
+    expect(result === "model-a" || result === "model-b").toBe(true);
   });
 });
 

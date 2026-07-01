@@ -39,8 +39,13 @@ const mockSlack = {
 } as unknown as WebClient;
 
 const mockRunner = mock(
-  (): Promise<{ result: string; sessionId?: string; usage?: TokenUsage }> =>
-    Promise.resolve({ result: "claude reply", sessionId: "sess-1" }),
+  (): Promise<{
+    result: string;
+    sessionId?: string;
+    usage?: TokenUsage;
+    totalCostUsd?: number;
+    modelUsage?: Record<string, TokenUsage>;
+  }> => Promise.resolve({ result: "claude reply", sessionId: "sess-1" }),
 );
 
 const deps = {
@@ -1071,6 +1076,15 @@ describe("handleCronRequest — CronRunReporter", () => {
         cache_read_input_tokens: 20,
         cache_creation_input_tokens: 10,
       },
+      totalCostUsd: 0.005,
+      modelUsage: {
+        "claude-sonnet-4-6": {
+          input_tokens: 100,
+          output_tokens: 50,
+          cache_read_input_tokens: 20,
+          cache_creation_input_tokens: 10,
+        },
+      },
     });
 
     const reporter = makeHttpReporter();
@@ -1092,8 +1106,47 @@ describe("handleCronRequest — CronRunReporter", () => {
     expect(patchBody.outputTokens).toBe(50);
     expect(patchBody.cacheReadTokens).toBe(20);
     expect(patchBody.cacheCreationTokens).toBe(10);
-    expect(patchBody.model).toBeDefined();
-    expect(typeof patchBody.costUsd).toBe("number");
+    expect(patchBody.costUsd).toBe(0.005);
+    expect(patchBody.model).toBe("claude-sonnet-4-6");
+  });
+
+  test("PATCH model uses dominant model from modelUsage, not liveClaudeConfig.model", async () => {
+    mockRunner.mockResolvedValueOnce({
+      result: "the reply",
+      sessionId: "s1",
+      usage: {
+        input_tokens: 300,
+        output_tokens: 250,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+      },
+      totalCostUsd: 0.012,
+      modelUsage: {
+        "claude-sonnet-4-6": {
+          input_tokens: 100,
+          output_tokens: 50,
+          cache_read_input_tokens: 0,
+          cache_creation_input_tokens: 0,
+        },
+        "claude-opus-4-8": {
+          input_tokens: 200,
+          output_tokens: 200,
+          cache_read_input_tokens: 0,
+          cache_creation_input_tokens: 0,
+        },
+      },
+    });
+
+    const reporter = makeHttpReporter();
+    await handleCronRequest(
+      { jobId: "dominant-model-test", prompt: "hello", channel: "C-REPORTS" },
+      { ...deps, cronRunReporter: reporter, clock: FixedClock(FIXED_TIME) },
+    );
+
+    const patchReq = reporterState.requests.find((r) => r.method === "PATCH");
+    expect(patchReq).toBeDefined();
+    const patchBody = patchReq?.body as Record<string, unknown>;
+    expect(patchBody.model).toBe("claude-opus-4-8");
   });
 
   test("PATCH called with outcome='failed' + error message when runner throws", async () => {

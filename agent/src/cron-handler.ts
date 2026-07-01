@@ -11,16 +11,19 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type { WebClient } from "@slack/web-api";
 import type { TokenUsage } from "./claude.ts";
-import { liveClaudeConfig } from "./claude.ts";
+import { dominantModel, liveClaudeConfig } from "./claude.ts";
 import { type Clock, SystemClock } from "./clock.ts";
 import type { CronRunReporter } from "./cron-run-reporter.ts";
 import { markdownToSlack } from "./format.ts";
 import { parseMarkers } from "./markers.ts";
-import { calculateCost } from "./pricing.ts";
 import { type SynthesizeSpeechFn, dispatchMarkers } from "./slack.ts";
 import type { VoiceConfig } from "./voice.ts";
 
-function buildTokenPayload(usage: TokenUsage | undefined): {
+function buildTokenPayload(
+  usage: TokenUsage | undefined,
+  totalCostUsd: number | undefined,
+  modelUsage: Record<string, TokenUsage> | undefined,
+): {
   inputTokens?: number;
   outputTokens?: number;
   cacheReadTokens?: number;
@@ -33,14 +36,20 @@ function buildTokenPayload(usage: TokenUsage | undefined): {
     outputTokens: usage?.output_tokens,
     cacheReadTokens: usage?.cache_read_input_tokens,
     cacheCreationTokens: usage?.cache_creation_input_tokens,
-    costUsd: usage ? calculateCost(usage, liveClaudeConfig.model) : undefined,
-    model: liveClaudeConfig.model,
+    costUsd: totalCostUsd,
+    model: dominantModel(modelUsage ?? {}) ?? liveClaudeConfig.model,
   };
 }
 
 type ClaudeRunner = (
   message: string,
-) => Promise<{ result: string; sessionId?: string; usage?: TokenUsage }>;
+) => Promise<{
+  result: string;
+  sessionId?: string;
+  usage?: TokenUsage;
+  totalCostUsd?: number;
+  modelUsage?: Record<string, TokenUsage>;
+}>;
 
 interface CronRequest {
   jobId: string;
@@ -265,11 +274,15 @@ export async function handleCronRequest(
   // ── Runner scope ─────────────────────────────────────────────────────────
   // Errors here record a genuine failure and re-throw so the caller sees them.
   let usage: TokenUsage | undefined;
+  let totalCostUsd: number | undefined;
+  let modelUsage: Record<string, TokenUsage> | undefined;
   let result: string;
   let sessionId: string | undefined;
   try {
     const runResult = await runner(message);
     usage = runResult.usage;
+    totalCostUsd = runResult.totalCostUsd;
+    modelUsage = runResult.modelUsage;
     result = runResult.result;
     sessionId = runResult.sessionId;
   } catch (err) {
@@ -294,7 +307,7 @@ export async function handleCronRequest(
       runId,
       clock.now(),
       "completed",
-      buildTokenPayload(usage),
+      buildTokenPayload(usage, totalCostUsd, modelUsage),
     );
     return;
   }
@@ -308,7 +321,7 @@ export async function handleCronRequest(
       runId,
       clock.now(),
       "completed",
-      buildTokenPayload(usage),
+      buildTokenPayload(usage, totalCostUsd, modelUsage),
     );
     return;
   }
@@ -329,7 +342,7 @@ export async function handleCronRequest(
       runId,
       clock.now(),
       "completed",
-      buildTokenPayload(usage),
+      buildTokenPayload(usage, totalCostUsd, modelUsage),
     );
 
     const postResult = await slack.chat.postMessage({
@@ -362,7 +375,7 @@ export async function handleCronRequest(
       runId,
       clock.now(),
       "completed",
-      buildTokenPayload(usage),
+      buildTokenPayload(usage, totalCostUsd, modelUsage),
     );
 
     const dmResult = await slack.conversations.open({ users: user });

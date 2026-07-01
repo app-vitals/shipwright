@@ -13,9 +13,7 @@ import {
   formatDailyDate,
 } from "./chat-token-reporter.ts";
 import type { TokenUsage } from "./claude.ts";
-import { liveClaudeConfig } from "./claude.ts";
 import { FixedClock } from "./clock.ts";
-import { calculateCost } from "./pricing.ts";
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -148,13 +146,21 @@ describe("HttpChatTokenReporter", () => {
     expect(body.model).toBeUndefined();
   });
 
-  test("recordSession sends costUsd matching calculateCost(usage, liveClaudeConfig.model)", async () => {
+  test("recordSession sends costUsd from totalCostUsd when provided", async () => {
+    const reporter = makeReporter();
+    await reporter.recordSession(USAGE, 0.0099);
+
+    const body = state.captured[0].body as Record<string, unknown>;
+    expect(body.costUsd).toBe(0.0099);
+  });
+
+  test("recordSession sends costUsd as undefined when totalCostUsd not provided", async () => {
     const reporter = makeReporter();
     await reporter.recordSession(USAGE);
 
     const body = state.captured[0].body as Record<string, unknown>;
-    const expected = calculateCost(USAGE, liveClaudeConfig.model);
-    expect(body.costUsd).toBe(expected);
+    // JSON.stringify(undefined) omits the key, so it should be null or undefined
+    expect(body.costUsd === null || body.costUsd === undefined).toBe(true);
   });
 
   test("recordSession sends Authorization: Bearer header", async () => {
