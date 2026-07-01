@@ -116,7 +116,8 @@ export function baseStyles(): string {
       padding: 32px 24px 64px;
     }
 
-    /* ─── Hamburger button ──────────────────────────────── */
+    /* ─── Hamburger toggle (CSS-only, no JS) ───────────── */
+    .vos-nav-toggle { display: none; }
     .vos-hamburger {
       display: none;
       background: none;
@@ -146,8 +147,8 @@ export function baseStyles(): string {
         padding: 8px 0;
         order: 3;
       }
-      /* Show nav links when hamburger is toggled open */
-      nav[data-open] .vos-nav {
+      /* Show nav links when hamburger checkbox is checked */
+      .vos-nav-toggle:checked + nav .vos-nav {
         display: flex;
       }
       .vos-nav-link {
@@ -183,25 +184,6 @@ export function escapeHtml(str: string): string {
     .replace(/'/g, "&#39;");
 }
 
-const hamburgerScript = `<script>
-    (function() {
-      var btn = document.querySelector('.vos-hamburger');
-      var nav = btn && btn.closest('nav');
-      if (btn && nav) {
-        btn.addEventListener('click', function() {
-          var open = nav.hasAttribute('data-open');
-          if (open) {
-            nav.removeAttribute('data-open');
-            btn.setAttribute('aria-expanded', 'false');
-          } else {
-            nav.setAttribute('data-open', '');
-            btn.setAttribute('aria-expanded', 'true');
-          }
-        });
-      }
-    })();
-  <\/script>`;
-
 export function renderShipwrightToolbar(
   opts: ShipwrightToolbarOptions,
 ): string {
@@ -216,18 +198,19 @@ export function renderShipwrightToolbar(
   // public host). The wordmark points at the dashboard instead of /admin/agents.
   if (opts.readOnly) {
     const tasksUrl = opts.tasksUrl ?? "/public/tasks";
-    return `<nav class="vos-toolbar" aria-label="Site navigation">
+    return `<input type="checkbox" id="vos-nav-toggle" class="vos-nav-toggle" aria-hidden="true">
+  <nav class="vos-toolbar" aria-label="Site navigation">
     <a href="${metricsUrl}" class="vos-wordmark">Shipwright</a>
-    <button class="vos-hamburger" aria-label="Toggle navigation" aria-expanded="false">☰</button>
+    <label for="vos-nav-toggle" class="vos-hamburger" aria-label="Toggle navigation">☰</label>
     <div class="vos-nav">
       <a href="${metricsUrl}" class="vos-nav-link${active(metricsUrl)}">Metrics</a>
       <a href="${tasksUrl}" class="vos-nav-link${active(tasksUrl)}">Tasks</a>
     </div>
-  </nav>
-  ${hamburgerScript}`;
+  </nav>`;
   }
 
-  return `<nav class="vos-toolbar" aria-label="Site navigation">
+  return `<input type="checkbox" id="vos-nav-toggle" class="vos-nav-toggle" aria-hidden="true">
+  <nav class="vos-toolbar" aria-label="Site navigation">
     <a href="${adminBase}/admin/agents" class="vos-wordmark">Shipwright</a>
     <div class="vos-nav">
       <a href="${adminBase}/admin/agents" class="vos-nav-link${active("/admin/agents")}">Agents</a>
@@ -243,7 +226,6 @@ export function renderShipwrightToolbar(
         <button type="submit" class="vos-signout-btn">Sign out</button>
       </form>
     </div>
-    <button class="vos-hamburger" aria-label="Toggle navigation" aria-expanded="false">☰</button>
-  </nav>
-  ${hamburgerScript}`;
+    <label for="vos-nav-toggle" class="vos-hamburger" aria-label="Toggle navigation">☰</label>
+  </nav>`;
 }
