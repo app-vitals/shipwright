@@ -116,11 +116,64 @@ export function baseStyles(): string {
       padding: 32px 24px 64px;
     }
 
+    /* ─── Hamburger button ──────────────────────────────── */
+    .vos-hamburger {
+      display: none;
+      background: none;
+      border: none;
+      font-size: 20px;
+      cursor: pointer;
+      color: #1a1a2e;
+      padding: 4px 8px;
+      margin-left: auto;
+      line-height: 1;
+      font-family: inherit;
+    }
+    .vos-hamburger:hover { color: #4f46e5; }
+
     @media (max-width: 640px) {
-      .vos-toolbar { padding: 0 16px; gap: 12px; }
+      .vos-toolbar { padding: 0 16px; gap: 12px; flex-wrap: wrap; height: auto; min-height: 52px; align-items: center; }
       .vos-username { display: none; }
       .vos-nav-link { padding: 5px 8px; }
       .vos-page { padding: 20px 16px 48px; }
+
+      /* Hide nav links by default on mobile */
+      .vos-nav {
+        display: none;
+        flex-direction: column;
+        width: 100%;
+        gap: 2px;
+        padding: 8px 0;
+        order: 3;
+      }
+      /* Show nav links when hamburger is toggled open */
+      nav[data-open] .vos-nav {
+        display: flex;
+      }
+      .vos-nav-link {
+        display: block;
+        padding: 10px 12px;
+        border-radius: 6px;
+        font-size: 14px;
+      }
+      .vos-nav-link.active {
+        background: #eef2ff;
+        color: #4f46e5;
+        font-weight: 600;
+      }
+      /* Show hamburger on mobile */
+      .vos-hamburger {
+        display: block;
+      }
+      /* Hide user section sign-out on mobile when nav is closed */
+      .vos-user {
+        order: 2;
+      }
+    }
+
+    @media (min-width: 641px) {
+      /* Ensure hamburger never shows on desktop */
+      .vos-hamburger { display: none !important; }
     }
   `;
 }
@@ -150,11 +203,30 @@ export function renderShipwrightToolbar(
     const tasksUrl = opts.tasksUrl ?? "/public/tasks";
     return `<nav class="vos-toolbar" aria-label="Site navigation">
     <a href="${metricsUrl}" class="vos-wordmark">Shipwright</a>
+    <button class="vos-hamburger" aria-label="Toggle navigation" aria-expanded="false">☰</button>
     <div class="vos-nav">
       <a href="${metricsUrl}" class="vos-nav-link${active(metricsUrl)}">Metrics</a>
       <a href="${tasksUrl}" class="vos-nav-link${active(tasksUrl)}">Tasks</a>
     </div>
-  </nav>`;
+  </nav>
+  <script>
+    (function() {
+      var btn = document.querySelector('.vos-hamburger');
+      var nav = btn && btn.closest('nav');
+      if (btn && nav) {
+        btn.addEventListener('click', function() {
+          var open = nav.hasAttribute('data-open');
+          if (open) {
+            nav.removeAttribute('data-open');
+            btn.setAttribute('aria-expanded', 'false');
+          } else {
+            nav.setAttribute('data-open', '');
+            btn.setAttribute('aria-expanded', 'true');
+          }
+        });
+      }
+    })();
+  <\/script>`;
   }
 
   return `<nav class="vos-toolbar" aria-label="Site navigation">
@@ -173,5 +245,24 @@ export function renderShipwrightToolbar(
         <button type="submit" class="vos-signout-btn">Sign out</button>
       </form>
     </div>
-  </nav>`;
+    <button class="vos-hamburger" aria-label="Toggle navigation" aria-expanded="false">☰</button>
+  </nav>
+  <script>
+    (function() {
+      var btn = document.querySelector('.vos-hamburger');
+      var nav = btn && btn.closest('nav');
+      if (btn && nav) {
+        btn.addEventListener('click', function() {
+          var open = nav.hasAttribute('data-open');
+          if (open) {
+            nav.removeAttribute('data-open');
+            btn.setAttribute('aria-expanded', 'false');
+          } else {
+            nav.setAttribute('data-open', '');
+            btn.setAttribute('aria-expanded', 'true');
+          }
+        });
+      }
+    })();
+  <\/script>`;
 }
