@@ -593,7 +593,10 @@ export class TaskStoreProvider implements MetricsProvider {
     ]);
     // Disjoint sources — summing field-wise is correct, no double count.
     const total = addAggregates(cron.totals, chat.totals);
-    return table(tokenColumns(), [tokenCells(total)]);
+    return table(
+      [...tokenColumns(), "cost_usd"],
+      [[...tokenCells(total), total.costUsd ?? 0]],
+    );
   }
 
   private async tokensBySessionType(win: {
@@ -605,10 +608,10 @@ export class TaskStoreProvider implements MetricsProvider {
       this.safeChatStats(win),
     ]);
     const rows = [
-      ["cron", ...tokenCells(cron.totals)],
-      ["chat", ...tokenCells(chat.totals)],
+      ["cron", ...tokenCells(cron.totals), cron.totals.costUsd ?? 0],
+      ["chat", ...tokenCells(chat.totals), chat.totals.costUsd ?? 0],
     ].sort((a, b) => Number(b[5]) - Number(a[5]));
-    return table(tokenColumns("session_type"), rows);
+    return table([...tokenColumns("session_type"), "cost_usd"], rows);
   }
 
   private async tokensByAgent(win: {
@@ -625,9 +628,9 @@ export class TaskStoreProvider implements MetricsProvider {
       byAgent.set(a.key, prev ? addAggregates(prev, a) : a);
     }
     const rows = [...byAgent.entries()]
-      .map(([key, a]) => [key, ...tokenCells(a)])
+      .map(([key, a]) => [key, ...tokenCells(a), a.costUsd ?? 0])
       .sort((x, y) => Number(y[5]) - Number(x[5]));
-    return table(tokenColumns("agent_id"), rows);
+    return table([...tokenColumns("agent_id"), "cost_usd"], rows);
   }
 
   private async tokensTrends(win: {
@@ -790,8 +793,7 @@ export class TaskStoreProvider implements MetricsProvider {
         cache_creation_input_tokens: cacheCreation ?? 0,
       };
 
-      const routedUsd =
-        num(task.costUsd) ?? calculateCost(usage, canonicalKey);
+      const routedUsd = num(task.costUsd) ?? calculateCost(usage, canonicalKey);
       const opusUsd = calculateCost(usage, OPUS_MODEL);
 
       const existing = buckets.get(canonicalKey);

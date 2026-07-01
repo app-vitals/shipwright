@@ -222,6 +222,7 @@ describe("TaskStoreProvider (integration)", () => {
       "cache_read_input_tokens",
       "cache_creation_input_tokens",
       "total_tokens",
+      "cost_usd",
     ]);
     const row = t.results[0];
     const c = CRON_STATS.totals;
@@ -231,6 +232,7 @@ describe("TaskStoreProvider (integration)", () => {
     expect(row[2]).toBe(c.cacheRead + h.cacheRead);
     expect(row[3]).toBe(c.cacheCreation + h.cacheCreation);
     expect(row[4]).toBe(c.total + h.total);
+    expect(row[5]).toBe((c.costUsd ?? 0) + (h.costUsd ?? 0));
   });
 
   test("tokensByAgentByCron is cron-only with cost_usd", async () => {
@@ -400,12 +402,15 @@ describe("TaskStoreProvider (integration)", () => {
       "cache_read_input_tokens",
       "cache_creation_input_tokens",
       "total_tokens",
+      "cost_usd",
     ]);
     const byType = new Map(t.results.map((r) => [r[0], r]));
     expect(byType.has("cron")).toBe(true);
     expect(byType.has("chat")).toBe(true);
     expect(byType.get("cron")?.[1]).toBe(CRON_STATS.totals.input);
     expect(byType.get("chat")?.[1]).toBe(CHAT_STATS.totals.input);
+    expect(byType.get("cron")?.[6]).toBe(CRON_STATS.totals.costUsd ?? 0);
+    expect(byType.get("chat")?.[6]).toBe(CHAT_STATS.totals.costUsd ?? 0);
   });
 
   test("graceful degradation: cronRunTokenStats throws, returns 200 with zero cron + chat data", async () => {
