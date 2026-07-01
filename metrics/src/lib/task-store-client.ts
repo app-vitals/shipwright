@@ -39,7 +39,7 @@ export interface TaskRecord {
   addedAt?: string | null;
   /** Model used to execute this task (e.g. "opus", "claude-opus-4-8", "sonnet"). */
   model?: string | null;
-  /** Effort level: "low" | "medium" | "high" */
+  /** Effort level passed to Claude CLI via --effort: "low" | "medium" | "high" | "xhigh" | "max" */
   effortLevel?: string | null;
   /** Coverage delta from code-review pass (percentage points). */
   coverageDelta?: number | null;
