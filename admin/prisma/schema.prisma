@@ -36,6 +36,7 @@ model Agent {
   plugins          AgentPlugin[]
   members          AgentMember[]
   chatTokenUsage   AgentChatTokenUsageDaily[]
+  threads          Thread[]
 }
 
 // ─── Agent Env ────────────────────────────────────────────────────────────────
@@ -188,4 +189,49 @@ model AgentChatTokenUsageDaily {
   updatedAt           DateTime @updatedAt
 
   @@unique([agentId, date])
+}
+
+// ─── Thread ───────────────────────────────────────────────────────────────────
+// A conversation thread between a member and an agent via the web chat UI.
+// memberId stores the member's email address (matches AgentMember.email).
+// title is auto-named from the first message in the thread.
+//
+// Soft link — no FK from memberId → AgentMember by design:
+//   • Email is a stable natural key; the association survives member removal.
+//   • Threads persist and remain queryable if a member is removed from an agent,
+//     and can be re-associated automatically if the member is re-added.
+//   • A composite FK on (agentId, memberId) → AgentMember.(agentId, email) would
+//     block removal of any member who has existing threads, which is undesirable.
+
+model Thread {
+  id        String   @id @default(cuid())
+  agentId   String
+  agent     Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  memberId  String   // member's email — soft link to AgentMember.email (no FK, intentional)
+  title     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  messages  Message[]
+
+  @@index([agentId, memberId, updatedAt(sort: Desc)])
+}
+
+// ─── Message ──────────────────────────────────────────────────────────────────
+// A single message in a Thread. role is "user" or "assistant".
+// tokens is a JSON-serialized TokenUsage blob for assistant messages.
+// attachment fields hold metadata for user-uploaded files.
+
+model Message {
+  id                 String   @id @default(cuid())
+  threadId           String
+  thread             Thread   @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  role               String   // "user" or "assistant"
+  body               String
+  tokens             String?  // JSON-serialized TokenUsage blob (assistant messages only)
+  attachmentFilename String?
+  attachmentSize     Int?
+  createdAt          DateTime @default(now())
+
+  @@index([threadId])
 }
