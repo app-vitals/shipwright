@@ -70,7 +70,7 @@ const licenseUrl = "https://github.com/app-vitals/shipwright/blob/main/LICENSE";
 const claudeCodeUrl = "https://claude.com/claude-code";
 const discussionsUrl = "https://github.com/app-vitals/shipwright/discussions";
 const compareUrl = "/compare";
-const configUrl = "/docs/reference";
+const docsUrl = "/docs";
 const year = new Date().getFullYear();
 ---
 
@@ -135,6 +135,9 @@ const year = new Date().getFullYear();
     />
   </head>
   <body class="min-h-screen overflow-x-hidden">
+    <!-- Mobile nav toggle (CSS-only, hidden checkbox) -->
+    <input type="checkbox" id="nav-mobile-toggle" aria-hidden="true" />
+
     <!-- Subtle dark-premium glow orb (pure CSS, decorative) -->
     <div
       class="sw-orb sw-orb-brand"
@@ -173,11 +176,93 @@ const year = new Date().getFullYear();
         </span>
       </a>
       <nav class="hidden md:flex items-center gap-6" aria-label="Primary">
-        <a href={configUrl} class="sw-label">Configuration</a>
+        <a href={docsUrl} class="sw-label">Docs</a>
         <a href={compareUrl} class="sw-label">Compare</a>
         <a href={repoUrl} class="sw-label">GitHub ↗</a>
       </nav>
+
+      <!-- Mobile hamburger button (CSS-only) -->
+      <label
+        for="nav-mobile-toggle"
+        class="md:hidden cursor-pointer p-2"
+        style="color: var(--sw-color-text-heading);"
+        aria-label="Open navigation menu"
+      >
+        <span class="text-2xl">☰</span>
+      </label>
     </header>
+
+    <!-- Mobile nav panel (slides in on checkbox:checked) -->
+    <nav
+      id="mobile-nav-panel"
+      class="mobile-nav-panel"
+      aria-label="Mobile navigation"
+    >
+      <ul class="flex flex-col gap-4 p-6">
+        <li>
+          <a href={docsUrl} class="sw-label">Docs</a>
+        </li>
+        <li>
+          <a href={compareUrl} class="sw-label">Compare</a>
+        </li>
+        <li>
+          <a href={repoUrl} class="sw-label">GitHub ↗</a>
+        </li>
+      </ul>
+    </nav>
+
+    <!-- Mobile nav overlay (click to close) -->
+    <label
+      for="nav-mobile-toggle"
+      id="mobile-nav-overlay"
+      aria-hidden="true"
+    ></label>
+
+    <style>
+      #nav-mobile-toggle {
+        display: none;
+      }
+
+      .mobile-nav-panel {
+        display: none;
+      }
+
+      #mobile-nav-overlay {
+        display: none;
+      }
+
+      @media (max-width: 767px) {
+        .mobile-nav-panel {
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100vh;
+          background: var(--sw-color-bg-base);
+          z-index: 40;
+          transform: translateX(-100%);
+          transition: transform 0.25s ease;
+          border-right: 1px solid var(--sw-color-border-muted);
+        }
+
+        #nav-mobile-toggle:checked ~ .sw-orb ~ header ~ .mobile-nav-panel {
+          transform: translateX(0);
+        }
+
+        #mobile-nav-overlay {
+          display: none;
+        }
+
+        #nav-mobile-toggle:checked ~ #mobile-nav-overlay {
+          display: block;
+          position: fixed;
+          inset: 0;
+          z-index: 30;
+          background: color-mix(in srgb, var(--sw-color-bg-base) 65%, transparent);
+          cursor: pointer;
+        }
+      }
+    </style>
 
     <!-- .sw-container already caps width at --sw-layout-max-width (72rem). -->
     <main class="sw-container relative" {...(pagefindIgnore ? { "data-pagefind-ignore": true } : {})}>
@@ -210,7 +295,7 @@ const year = new Date().getFullYear();
           <a href={claudeCodeUrl}>Claude Code</a>
           <a href={discussionsUrl}>GitHub Discussions</a>
           <a href={compareUrl}>Compare</a>
-          <a href={configUrl}>Configuration</a>
+          <a href={docsUrl}>Docs</a>
         </nav>
       </div>
     </footer>
