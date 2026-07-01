@@ -1196,7 +1196,11 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
       }),
       ...(body.costUsd !== undefined && { costUsd: body.costUsd }),
       ...(body.model !== undefined && { model: body.model }),
+      ...(body.modelBreakdown !== undefined && {
+        modelBreakdown: body.modelBreakdown,
+      }),
     });
+
     return c.json({ run: serializeCronRun(run) }, 200);
   });
 

@@ -9,6 +9,15 @@
  * NoopCronRunReporter: testing / default when not configured.
  */
 
+export interface ModelBreakdownEntry {
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  costUsd: number;
+}
+
 export interface CronRunReporter {
   /** Called at run start — returns the runId to use for completion (null for no-op). */
   createRun(cronId: string, startedAt: Date): Promise<string | null>;
@@ -26,6 +35,7 @@ export interface CronRunReporter {
       cacheCreationTokens?: number;
       costUsd?: number;
       model?: string;
+      modelBreakdown?: ModelBreakdownEntry[];
     },
   ): Promise<void>;
   /** Called when precheck causes a skip. No token data. */
@@ -115,6 +125,7 @@ export class HttpCronRunReporter implements CronRunReporter {
       cacheCreationTokens?: number;
       costUsd?: number;
       model?: string;
+      modelBreakdown?: ModelBreakdownEntry[];
     },
   ): Promise<void> {
     if (runId === null) return;
@@ -135,6 +146,8 @@ export class HttpCronRunReporter implements CronRunReporter {
       body.cacheCreationTokens = opts.cacheCreationTokens;
     if (opts?.costUsd !== undefined) body.costUsd = opts.costUsd;
     if (opts?.model !== undefined) body.model = opts.model;
+    if (opts?.modelBreakdown !== undefined)
+      body.modelBreakdown = opts.modelBreakdown;
 
     await this.patchRun(url, body);
   }
@@ -180,6 +193,7 @@ export class NoopCronRunReporter implements CronRunReporter {
       cacheCreationTokens?: number;
       costUsd?: number;
       model?: string;
+      modelBreakdown?: ModelBreakdownEntry[];
     },
   ): Promise<void> {
     // intentional no-op
