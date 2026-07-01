@@ -133,6 +133,14 @@ describe("dev-task.md Step 10a — execution metric fields in PATCH body", () =>
   it("includes simplifyTotal in the Step 10a PATCH body", () => {
     expect(devTaskContent.includes("simplifyTotal")).toBe(true);
   });
+
+  it("includes coverageDelta in the Step 10a PATCH body", () => {
+    expect(devTaskContent.includes("coverageDelta")).toBe(true);
+  });
+
+  it("includes effortLevel in the Step 10a PATCH body", () => {
+    expect(devTaskContent.includes("effortLevel")).toBe(true);
+  });
 });
 
 describe("metrics.md CI Gate section — check-name grouping", () => {
