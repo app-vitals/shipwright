@@ -709,8 +709,8 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
     expect(stats.totals.cacheRead).toBe(60);
     expect(stats.totals.cacheCreation).toBe(30);
     expect(stats.totals.total).toBe(600 + 300 + 60 + 30);
-    // costUsd is no longer tracked at the run level; it lives in breakdown rows only
-    expect(stats.totals.costUsd).toBeUndefined();
+    // costUsd is aggregated from breakdown rows via LEFT JOIN
+    expect(stats.totals.costUsd).toBeCloseTo(0.001 + 0.002 + 0.003);
 
     // byAgent: 2 entries
     expect(stats.byAgent).toHaveLength(2);

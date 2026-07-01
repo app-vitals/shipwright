@@ -53,6 +53,7 @@ interface TotalsRow {
   output: bigint | null;
   cache_read: bigint | null;
   cache_creation: bigint | null;
+  cost_usd: number | null;
 }
 
 interface ByAgentRow {
@@ -61,6 +62,7 @@ interface ByAgentRow {
   output: bigint | null;
   cache_read: bigint | null;
   cache_creation: bigint | null;
+  cost_usd: number | null;
 }
 
 interface ByCronRow {
@@ -71,6 +73,7 @@ interface ByCronRow {
   output: bigint | null;
   cache_read: bigint | null;
   cache_creation: bigint | null;
+  cost_usd: number | null;
 }
 
 interface ByModelRow {
@@ -89,6 +92,7 @@ interface DailyRow {
   output: bigint | null;
   cache_read: bigint | null;
   cache_creation: bigint | null;
+  cost_usd: number | null;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -167,16 +171,16 @@ export class AgentCronRunStatsService {
     const toDate = to ? new Date(to) : null;
     const filter = dateFilter(fromDate, toDate);
 
-    // queryByModel uses table alias "r" on AgentCronRun — build a qualified
-    // filter so "startedAt" is unambiguous if the joined table ever gains that column.
-    const filterByModel = dateFilter(fromDate, toDate, "r");
+    // Queries that use a table alias "r" on AgentCronRun need a qualified filter
+    // so "startedAt" is unambiguous if the joined table ever gains that column.
+    const filterR = dateFilter(fromDate, toDate, "r");
 
     const [totalsRows, byAgentRows, byCronRows, byModelRows, dailyRows] =
       await Promise.all([
         this.queryTotals(filter),
-        this.queryByAgent(filter),
-        this.queryByCron(filter),
-        this.queryByModel(filterByModel),
+        this.queryByAgent(filterR),
+        this.queryByCron(filterR),
+        this.queryByModel(filterR),
         this.queryDaily(filter),
       ]);
 
@@ -215,11 +219,13 @@ export class AgentCronRunStatsService {
   private queryTotals(filter: Prisma.Sql): Promise<TotalsRow[]> {
     return this.prisma.$queryRaw<TotalsRow[]>`
       SELECT
-        SUM("inputTokens")         AS input,
-        SUM("outputTokens")        AS output,
-        SUM("cacheReadTokens")     AS cache_read,
-        SUM("cacheCreationTokens") AS cache_creation
+        SUM("AgentCronRun"."inputTokens")         AS input,
+        SUM("AgentCronRun"."outputTokens")        AS output,
+        SUM("AgentCronRun"."cacheReadTokens")     AS cache_read,
+        SUM("AgentCronRun"."cacheCreationTokens") AS cache_creation,
+        SUM(b."costUsd")                          AS cost_usd
       FROM "AgentCronRun"
+      LEFT JOIN "AgentCronRunModelBreakdown" b ON b."cronRunId" = "AgentCronRun".id
       WHERE skipped = false
       ${filter}
     `;
@@ -228,16 +234,18 @@ export class AgentCronRunStatsService {
   private queryByAgent(filter: Prisma.Sql): Promise<ByAgentRow[]> {
     return this.prisma.$queryRaw<ByAgentRow[]>`
       SELECT
-        "agentId"                  AS agent_id,
-        SUM("inputTokens")         AS input,
-        SUM("outputTokens")        AS output,
-        SUM("cacheReadTokens")     AS cache_read,
-        SUM("cacheCreationTokens") AS cache_creation
-      FROM "AgentCronRun"
-      WHERE skipped = false
+        r."agentId"                  AS agent_id,
+        SUM(r."inputTokens")         AS input,
+        SUM(r."outputTokens")        AS output,
+        SUM(r."cacheReadTokens")     AS cache_read,
+        SUM(r."cacheCreationTokens") AS cache_creation,
+        SUM(b."costUsd")             AS cost_usd
+      FROM "AgentCronRun" r
+      LEFT JOIN "AgentCronRunModelBreakdown" b ON b."cronRunId" = r.id
+      WHERE r.skipped = false
       ${filter}
-      GROUP BY "agentId"
-      ORDER BY "agentId"
+      GROUP BY r."agentId"
+      ORDER BY r."agentId"
     `;
   }
 
@@ -250,9 +258,11 @@ export class AgentCronRunStatsService {
         SUM(r."inputTokens")         AS input,
         SUM(r."outputTokens")        AS output,
         SUM(r."cacheReadTokens")     AS cache_read,
-        SUM(r."cacheCreationTokens") AS cache_creation
+        SUM(r."cacheCreationTokens") AS cache_creation,
+        SUM(b."costUsd")             AS cost_usd
       FROM "AgentCronRun" r
       LEFT JOIN "AgentCronJob" j ON j.id = r."cronId"
+      LEFT JOIN "AgentCronRunModelBreakdown" b ON b."cronRunId" = r.id
       WHERE r.skipped = false
       ${filter}
       GROUP BY r."agentId", r."cronId", j.name
@@ -284,16 +294,18 @@ export class AgentCronRunStatsService {
   private queryDaily(filter: Prisma.Sql): Promise<DailyRow[]> {
     return this.prisma.$queryRaw<DailyRow[]>`
       SELECT
-        TO_CHAR(DATE("startedAt"), 'YYYY-MM-DD') AS period,
-        SUM("inputTokens")         AS input,
-        SUM("outputTokens")        AS output,
-        SUM("cacheReadTokens")     AS cache_read,
-        SUM("cacheCreationTokens") AS cache_creation
+        TO_CHAR(DATE("AgentCronRun"."startedAt"), 'YYYY-MM-DD') AS period,
+        SUM("AgentCronRun"."inputTokens")         AS input,
+        SUM("AgentCronRun"."outputTokens")        AS output,
+        SUM("AgentCronRun"."cacheReadTokens")     AS cache_read,
+        SUM("AgentCronRun"."cacheCreationTokens") AS cache_creation,
+        SUM(b."costUsd")                          AS cost_usd
       FROM "AgentCronRun"
+      LEFT JOIN "AgentCronRunModelBreakdown" b ON b."cronRunId" = "AgentCronRun".id
       WHERE skipped = false
       ${filter}
-      GROUP BY DATE("startedAt")
-      ORDER BY DATE("startedAt")
+      GROUP BY DATE("AgentCronRun"."startedAt")
+      ORDER BY DATE("AgentCronRun"."startedAt")
     `;
   }
 }
