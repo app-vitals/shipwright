@@ -1,13 +1,313 @@
 # Task Store
 
-The Shipwright task store is the backing database for the plan-execute-review loop. It holds all tasks, their statuses, dependencies, and metadata. Two backends are available:
+The Shipwright task store is the backing database for the plan-execute-review loop. It holds all tasks, their statuses, dependencies, and PR tracking records.
+
+Two deployment modes are available:
+
+| Mode | Transport | Best for |
+|------|-----------|---------|
+| **HTTP service** | `SHIPWRIGHT_TASK_STORE_URL` | Production — shared queue across multiple agents |
+| **Plugin backends** | env vars (`JIRA_*`) or local file | Single-agent or offline use |
+
+The HTTP service (artifact **D**) is the recommended production setup. Plugin backends (JSON file and Jira) are available for local development and single-agent workflows. See [configuration.md](configuration.md) for env vars.
+
+---
+
+## HTTP service
+
+The task store ships as a standalone Hono service backed by PostgreSQL. Agents connect to it via `SHIPWRIGHT_TASK_STORE_URL` + `SHIPWRIGHT_TASK_STORE_TOKEN`. The admin service provisions per-agent tokens automatically during agent setup.
+
+### Authentication
+
+All endpoints except `GET /health` and `GET /docs/:id` require a `Bearer` token:
+
+```
+Authorization: Bearer <token>
+```
+
+Two token types:
+
+| Type | `agentId` | Access |
+|------|-----------|--------|
+| **Admin** | `null` | Unrestricted — all endpoints, all agents |
+| **Agent** | set | Scoped — own tasks and repos only |
+
+Tokens are created via `POST /tokens` (admin only). The raw token is returned once at creation; only its SHA-256 hash is stored. Agent tokens are automatically repo-scoped when the admin service is configured — writes to tasks outside the agent's repo scope return `400`.
+
+### Tasks
+
+#### List tasks
+
+```
+GET /tasks
+```
+
+Query params:
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `status` | string | Filter by exact status (e.g. `pending`, `in_progress`, `pr_open`) |
+| `state` | string | `open` (all non-terminal), `closed` (terminal), `in_progress`, `ready`, `blocked` |
+| `ready` | `true` | Alias for `state=ready` — returns only tasks with `status=pending`, no `hitl`, and all dependencies satisfied |
+| `session` | string | Filter by planning session slug |
+| `repo` | string | Filter by repo (`org/repo` format) |
+| `assignee` | string | Filter by assignee (admin tokens only; agent tokens see only their own tasks) |
+| `claimedBy` | string | Filter by claiming agent |
+| `pr` | number | Filter by PR number |
+| `branch` | string | Filter by branch name |
+| `limit` | number | Page size |
+| `offset` | number | Page offset |
+
+Returns `{ tasks: Task[], total: number }`.
+
+Agent tokens with a repo scope return tasks where `assignee === agentId` OR `repo` is in the agent's scope (pool tasks). Agent tokens without a repo scope see only tasks where `assignee === agentId`.
+
+#### Create task
+
+```
+POST /tasks
+```
+
+Body (JSON): task fields. `title` and `status` are required. Agent tokens force `assignee` to their own ID. Returns `201` with the created task.
+
+#### Bulk insert
+
+```
+POST /tasks/bulk
+```
+
+Body: JSON array of task objects. Skips conflicts (existing ID) rather than failing. Returns `{ inserted: number, updated: number }`.
+
+#### Distinct values
+
+```
+GET /tasks/distinct
+```
+
+Returns distinct values of key fields across the visible task set. Useful for populating filter dropdowns.
+
+#### Get task
+
+```
+GET /tasks/:id
+```
+
+Returns `404` if the task doesn't exist or is outside the agent's scope.
+
+#### Update task
+
+```
+PATCH /tasks/:id
+```
+
+Body: partial task fields. Agent tokens can only update their own tasks (by `assignee` or `claimedBy`). Returns the updated task.
+
+#### Delete task
+
+```
+DELETE /tasks/:id
+```
+
+Returns `204`. Agent tokens can only delete their own tasks.
+
+#### Claim task (atomic)
+
+```
+POST /tasks/:id/claim
+```
+
+Atomically sets `claimedBy` and `claimedAt` if the task is currently unclaimed. Returns `409` if already claimed. Agent tokens pin `claimedBy` to their own ID. Admin tokens must supply `{ claimedBy: string }` in the body.
+
+#### Heartbeat
+
+```
+POST /tasks/:id/heartbeat
+```
+
+Updates `heartbeatAt` to now. Used by agents to signal they are still working.
+
+#### Complete task
+
+```
+POST /tasks/:id/complete
+```
+
+Sets `status=done` and `completedAt`.
+
+#### Fail task
+
+```
+POST /tasks/:id/fail
+```
+
+Sets `status=blocked`. Optional body: `{ reason: string }`.
+
+#### Release task
+
+```
+POST /tasks/:id/release
+```
+
+Clears `claimedBy` and `claimedAt`, resets `status=pending`. Use when the agent stops work without completing or failing.
+
+### Task status lifecycle
+
+```
+pending → in_progress → pr_open → approved → merged → deploying → deployed
+                                                    ↘ done
+```
+
+Terminal statuses (closed): `merged`, `done`, `deploying`, `deployed`, `cancelled`.
+Paused status: `blocked` (returned to `pending` on retry).
+
+### PR tracking
+
+The `/prs` surface tracks GitHub PRs through the review → patch → deploy pipeline. One record per `(repo, prNumber)`.
+
+#### List PRs
+
+```
+GET /prs
+```
+
+Query params: `repo`, `prNumber`, `taskId`, `state`, `reviewState`, `staged`, `limit`, `offset`.
+
+Returns `{ prs: PullRequest[], total: number, limit: number, offset: number }`.
+
+#### Claim PR (atomic)
+
+```
+POST /prs/claim
+```
+
+Body:
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `repo` | yes | `org/repo` format |
+| `prNumber` | yes | GitHub PR number (integer) |
+| `commitSha` | yes | Current head commit SHA |
+| `claimedBy` | admin only | Agent ID (agent tokens pin to their own ID) |
+| `taskId` | no | Associated task ID |
+
+Claim semantics:
+- No existing record → creates and returns `201`
+- Same `commitSha` and `reviewState !== pending` → returns `409` (already reviewed at this commit)
+- Different `commitSha` or `reviewState === pending` → updates and returns `200` (new review cycle)
+
+#### Get PR
+
+```
+GET /prs/:id
+```
+
+Returns `404` if not found.
+
+#### Update PR
+
+```
+PATCH /prs/:id
+```
+
+Writable fields: `staged`, `commitSha`, `taskId`, `agentId`, `state`, `mergedAt`, `reviewState`. All other fields are managed by lifecycle endpoints. Returns `400` if no writable fields are provided.
+
+#### PR lifecycle endpoints
+
+| Endpoint | Effect |
+|----------|--------|
+| `POST /prs/:id/heartbeat` | Touch `heartbeatAt` |
+| `POST /prs/:id/complete` | `reviewState=posted`, increment `reviewCycles`, set `reviewedAt` |
+| `POST /prs/:id/patch` | `reviewState=pending`, increment `patchCycles`, set `patchedAt` |
+| `POST /prs/:id/release` | Clear `claimedBy`/`claimedAt`, `reviewState=pending` |
+
+#### PR state enums
+
+`state`: `open` | `merged` | `closed`
+
+`reviewState`: `pending` → `in_progress` → `posted` | `approved`
+
+### Token management (admin only)
+
+All `/tokens` endpoints require an admin token.
+
+#### List tokens
+
+```
+GET /tokens
+```
+
+Returns token metadata (hash + label + agentId). Never returns raw token values.
+
+#### Create token
+
+```
+POST /tokens
+```
+
+Body (optional): `{ label?: string, agentId?: string }`. Admin tokens have `agentId=null`. Agent tokens are scoped to the provided `agentId`. Returns the token record plus `rawToken` — the raw value is returned **once** and not stored.
+
+#### Update token
+
+```
+PATCH /tokens/:id
+```
+
+Body: `{ label?: string, agentId?: string }`. Returns the updated token record.
+
+#### Revoke token
+
+```
+DELETE /tokens/:id
+```
+
+Soft-deletes the token (sets `revokedAt`). Returns the revoked token record.
+
+### Ephemeral document store
+
+The task store can host short-lived HTML documents — used by the plan skill to publish planning docs for agent reference.
+
+#### Store document
+
+```
+POST /docs
+```
+
+Body: raw HTML string (not JSON). Requires bearer auth. Returns:
+
+```json
+{ "id": "<uuid>", "url": "https://…/docs/<uuid>", "expiresIn": 3600 }
+```
+
+The `url` uses `SHIPWRIGHT_TASK_STORE_DOC_TTL_SECONDS` for TTL (default 3600 seconds). Storage is in-memory — a single replica or sticky routing is required.
+
+#### Fetch document
+
+```
+GET /docs/:id
+```
+
+**No authentication required** — the unguessable `id` is the credential. Returns the HTML with `Content-Type: text/html`. Returns `404` on miss or after expiry.
+
+### Health
+
+```
+GET /health
+```
+
+No authentication required. Returns `{ "status": "ok", "service": "task-store" }`.
+
+---
+
+## Plugin backends
+
+Plugin backends are used by the `task_store.ts` CLI script — they run in-process with the agent rather than as a separate service. Two backends are available:
 
 | Backend | Where tasks live | Best for |
 |---------|-----------------|---------|
 | `json` | `state/todos.json` (local file) | Local development, offline use |
 | `jira` | Jira project issues | Teams already using Jira for project tracking |
 
-Config is resolved at startup using env vars (see [docs/configuration.md](configuration.md)). When no backend env vars are set, Shipwright defaults to the JSON backend.
+Config is resolved at startup using env vars (see [configuration.md](configuration.md)). When no backend env vars are set, Shipwright defaults to the JSON backend.
 
 ---
 

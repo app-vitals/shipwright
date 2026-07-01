@@ -29,6 +29,7 @@ Map each section to its source docs and the target MDX file:
 | `deploy` | `docs/deploy-kubernetes.md`, `docs/helm-repo.md` | `site/src/content/docs/deploying-to-cloud.mdx` | `Operations` | Kubernetes deployment: Minikube, GKE (Gateway API + cert-manager), EKS (ALB), agent provisioning RBAC, and auth modes |
 | `metrics` | `docs/metrics.md` | `site/src/content/docs/metrics.mdx` | `Metrics` | Metrics service (provider-agnostic JSON endpoints, dashboard, dual auth, environment) |
 | `agent` | `docs/agent.md` | `site/src/content/docs/agent.mdx` | `Agent` | Shipwright agent runtime: admin CRUD API, admin UI, Prisma store, encryption, and environment configuration |
+| `agent-api` | `docs/agent-api.md` | `site/src/content/docs/agent-api.mdx` | `Reference` | Agent admin API: agents, envs, crons, cron runs, tools, tokens, plugins, chat token stats, and runtime config |
 | `migration` | `docs/migration.md` | `site/src/content/docs/migration.mdx` | `Migration` | Breaking changes and migration steps across versions |
 
 ## Procedure
