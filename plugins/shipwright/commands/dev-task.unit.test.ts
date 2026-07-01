@@ -138,8 +138,8 @@ describe("dev-task.md Step 10a — execution metric fields in PATCH body", () =>
     expect(devTaskContent.includes("coverageDelta")).toBe(true);
   });
 
-  it("includes effortLevel in the Step 10a PATCH body", () => {
-    expect(devTaskContent.includes("effortLevel")).toBe(true);
+  it("includes model (EFFECTIVE_MODEL) in the Step 10a PATCH body", () => {
+    expect(devTaskContent.includes('\\"model\\": \\"{EFFECTIVE_MODEL}\\"')).toBe(true);
   });
 });
 
