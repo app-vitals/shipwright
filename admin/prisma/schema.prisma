@@ -166,8 +166,29 @@ model AgentCronRun {
   model              String?
   createdAt          DateTime  @default(now())
 
+  modelBreakdown AgentCronRunModelBreakdown[]
+
   @@index([cronId])
   @@index([agentId, startedAt])
+}
+
+// ─── Agent Cron Run Model Breakdown ──────────────────────────────────────────
+// Per-model token breakdown for a cron run. Populated when sub-agents use
+// different models in a single run. The unique constraint on [cronRunId, model]
+// allows upsert semantics.
+
+model AgentCronRunModelBreakdown {
+  id                  String       @id @default(cuid())
+  cronRunId           String
+  model               String
+  inputTokens         Int          @default(0)
+  outputTokens        Int          @default(0)
+  cacheReadTokens     Int          @default(0)
+  cacheCreationTokens Int          @default(0)
+  costUsd             Float        @default(0)
+  cronRun             AgentCronRun @relation(fields: [cronRunId], references: [id], onDelete: Cascade)
+
+  @@unique([cronRunId, model])
 }
 
 // ─── Agent Chat Token Usage (Daily) ──────────────────────────────────────────

@@ -13,6 +13,7 @@ import type { WebClient } from "@slack/web-api";
 import type { ClaudeRunResult, TokenUsage } from "./claude.ts";
 import { dominantModel, liveClaudeConfig } from "./claude.ts";
 import { calculateCost } from "./pricing.ts";
+import type { ModelBreakdownEntry } from "./cron-run-reporter.ts";
 import { type Clock, SystemClock } from "./clock.ts";
 import type { CronRunReporter } from "./cron-run-reporter.ts";
 import { markdownToSlack } from "./format.ts";
@@ -31,7 +32,21 @@ function buildTokenPayload(
   cacheCreationTokens?: number;
   costUsd?: number;
   model?: string;
+  modelBreakdown?: ModelBreakdownEntry[];
 } {
+  // Build per-model breakdown when modelUsage has entries
+  let modelBreakdown: ModelBreakdownEntry[] | undefined;
+  if (modelUsage && Object.keys(modelUsage).length > 0) {
+    modelBreakdown = Object.entries(modelUsage).map(([model, mu]) => ({
+      model,
+      inputTokens: mu.input_tokens,
+      outputTokens: mu.output_tokens,
+      cacheReadTokens: mu.cache_read_input_tokens,
+      cacheCreationTokens: mu.cache_creation_input_tokens,
+      costUsd: calculateCost(mu, model),
+    }));
+  }
+
   return {
     inputTokens: usage?.input_tokens,
     outputTokens: usage?.output_tokens,
@@ -39,6 +54,7 @@ function buildTokenPayload(
     cacheCreationTokens: usage?.cache_creation_input_tokens,
     costUsd: totalCostUsd ?? (usage ? calculateCost(usage, liveClaudeConfig.model) : undefined),
     model: dominantModel(modelUsage ?? {}) ?? liveClaudeConfig.model,
+    ...(modelBreakdown !== undefined && { modelBreakdown }),
   };
 }
 
