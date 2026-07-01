@@ -45,12 +45,6 @@ test("landscape table names the commercial tier", async ({ page }) => {
   ]) {
     await expect(page.getByText(tool, { exact: false }).first()).toBeVisible();
   }
-  // Old open-source-only list must NOT appear in the table
-  const text = (await page.locator("main").textContent()) ?? "";
-  // These were removed from the landscape table (they may still exist in prose)
-  // We check by looking for them as table row entries — not just any text match.
-  // The landscape array no longer contains Cline, Aider, Goose, Continue, Kilo Code.
-  // We verify this by checking the table doesn't have them as tool names.
   const tableText =
     (await page.locator("table").first().textContent()) ?? "";
   expect(tableText).not.toContain("Cline");

@@ -128,7 +128,7 @@ const pillars = [
 
 // Table columns: the team-relevant capability dimensions
 const tableColumns = [
-  { key: "tool", label: "Tool", wide: true },
+  { key: "tool", label: "Tool" },
   { key: "license", label: "License" },
   { key: "models", label: "Models" },
   { key: "taskQueue", label: "Task Queue" },
@@ -210,9 +210,9 @@ const tableColumns = [
       <table style="width:100%; border-collapse:collapse;">
         <thead>
           <tr style="border-bottom: 1px solid var(--sw-color-border-muted);">
-            {tableColumns.map((col) => (
+            {tableColumns.map((col, i) => (
               <th
-                style={`text-align:left; padding:0.6rem 1rem 0.6rem ${col === tableColumns[0] ? "0" : ""}; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted); white-space:nowrap;`}
+                style={`text-align:left; padding:0.6rem 1rem 0.6rem ${i === 0 ? "0" : ""}; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted); white-space:nowrap;`}
               >
                 {col.label}
               </th>
