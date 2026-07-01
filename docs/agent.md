@@ -4,7 +4,7 @@
 
 ## Overview
 
-The agent owns eight first-class Prisma models (`Agent` and its `Env` / `CronJob` / `CronRun` / `Tool` / `Token` / `Plugin` / `Member` children) on a **dedicated database** (`DATABASE_URL_SHIPWRIGHT_ADMIN`). Secrets at rest (env values, Slack/Anthropic keys) are AES-256-GCM encrypted at the service layer; agent API tokens are stored only as SHA-256 hashes.
+The agent owns ten first-class Prisma models (`Agent` and its `Env` / `CronJob` / `CronRun` / `Tool` / `Token` / `Plugin` / `Member` children, plus `Thread` and `Message` for web chat conversations) on a **dedicated database** (`DATABASE_URL_SHIPWRIGHT_ADMIN`). Secrets at rest (env values, Slack/Anthropic keys) are AES-256-GCM encrypted at the service layer; agent API tokens are stored only as SHA-256 hashes.
 
 > The Dockerfile `ENTRYPOINT` is `bun run admin/src/main.ts`, which runs migrations, constructs all services, and mounts all admin + runtime routes. The implemented HTTP surfaces are the admin CRUD API (`admin/src/agents-api.ts`, auth via `api-auth.ts`), the runtime API (`admin/src/api.ts`), the server-rendered admin UI (`admin/src/admin-ui.ts`), the public read-only task board (`GET /public/tasks` — no auth, configurable repo scope), the Prisma store + service classes (all in the `@shipwright/admin` package), the Slack event handler (`slack.ts`), and the cron runtime (`cron-handler.ts`). On startup the runner calls `POST /agents/:id/crons/reconcile` to sync system crons. A dev-only `POST /chat` transport (`chat.ts`) is available when `SHIPWRIGHT_DEV_CHAT=true`; it is never registered in production (enforced by `chat-guard.ts`).
 
@@ -106,8 +106,10 @@ Each REPL session generates a single `session` UUID so successive messages resum
 | `AgentToken` | Scoped API tokens | `token` (SHA-256 hash), `label`, `revokedAt`. |
 | `AgentPlugin` | Installed Claude Code plugins | `name` (package), `version` (null = latest), `enabled`; unique per `[agentId, name]`. |
 | `AgentMember` | Authorized human members | `email`; unique per `[agentId, email]`. |
+| `Thread` | Conversation threads in web chat UI | `agentId`, `memberId` (matches `AgentMember.email`), `title` (auto-named from first message), `createdAt`, `updatedAt`. Owns `Message[]`. Index on `[agentId, memberId, updatedAt DESC]`. |
+| `Message` | Messages within a Thread | `threadId`, `role` (`"user"` or `"assistant"`), `body`, `tokens` (optional JSON-serialized TokenUsage for assistant messages), `attachmentFilename`, `attachmentSize`, `createdAt`. Index on `threadId`. |
 
-All child models cascade-delete with their `Agent` (including `AgentCronRun` via `AgentCronJob`).
+All child models cascade-delete with their `Agent` (including `AgentCronRun` via `AgentCronJob` and `Thread` via direct cascade).
 
 ## Default system crons
 
@@ -220,7 +222,7 @@ The constant `BAKED_MARKETPLACES_ROOT` and function `discoverBakedMarketplaces()
 | `agent/src/chat-token-reporter.ts` | Chat token reporter: `ChatTokenReporter` interface (async `recordSession(usage?)` method) + `HttpChatTokenReporter` (POSTs per-session Slack chat token usage to `POST /agents/:id/chat-tokens/daily`) and `NoopChatTokenReporter` (test/default no-op). Injected into Slack event handler; called at each Slack session completion (DM, mention, reaction) to report accumulated input/output/cache token counts and computed cost. Helper `formatDailyDate(date, timeZone?)` formats dates as YYYY-MM-DD in a given IANA timezone (agent timezone when unspecified). Fire-and-forget design: swallows POST errors as warnings to `console`. |
 | `agent/src/slack.ts` | Slack event handler: `createSlackApp()` — Bolt-based Socket Mode app handling DMs, `app_mention`, `reaction_added`, file attachments, and voice transcription. Processes response markers (`[silent]`, `[upload:path]`, `[speak:text]`, `[react:emoji]`, `[plan:url]`) via `dispatchMarkers()` — strips them from the posted message and executes side effects (uploads, emoji reactions, speech synthesis, plan links). Accepts injected `ChatTokenReporter` (default `NoopChatTokenReporter`) and calls it at session completion. |
 | `agent/src/health.ts` | Health server: `startHealthServer(port, summarize?, cronDeps?, clock?, graceMs?)` — K8s liveness probe server. `GET /health` returns `{ ok: true, slack: "connected"\|"disconnected" }` (200) or `{ ok: false, slack: "disconnected" }` (500) when the Slack socket has been continuously down longer than `graceMs` (default 90 s). `GET /stats` returns an `AnalyticsSummary` when a `summarize` function is injected (404 otherwise). `POST /cron` dispatches cron prompts via `cron-handler.ts`. Exports `slackState`, `markSlackConnected()`, and `markSlackDisconnected(clock)` for Slack socket lifecycle wiring. |
-| `admin/prisma/schema.prisma` | The eight-model schema (`DATABASE_URL_SHIPWRIGHT_ADMIN`). |
+| `admin/prisma/schema.prisma` | The ten-model schema (`DATABASE_URL_SHIPWRIGHT_ADMIN`). |
 
 ## Testing
 
