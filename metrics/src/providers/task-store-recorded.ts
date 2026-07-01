@@ -81,3 +81,47 @@ export class RecordedAdminMetricsClient implements AdminMetricsClient {
     return this.chat;
   }
 }
+
+// ─── Faulting doubles for graceful degradation tests ────────────────────────
+
+import { AdminMetricsClientError } from "../lib/admin-metrics-client.ts";
+
+export class FaultingCronAdminMetricsClient implements AdminMetricsClient {
+  constructor(
+    private readonly cron: CronRunTokenStats,
+    private readonly chat: ChatTokenStats,
+  ) {}
+
+  async cronRunTokenStats(): Promise<CronRunTokenStats> {
+    throw new AdminMetricsClientError(500, "cron stats endpoint failed");
+  }
+
+  async chatTokenStats(): Promise<ChatTokenStats> {
+    return this.chat;
+  }
+}
+
+export class FaultingChatAdminMetricsClient implements AdminMetricsClient {
+  constructor(
+    private readonly cron: CronRunTokenStats,
+    private readonly chat: ChatTokenStats,
+  ) {}
+
+  async cronRunTokenStats(): Promise<CronRunTokenStats> {
+    return this.cron;
+  }
+
+  async chatTokenStats(): Promise<ChatTokenStats> {
+    throw new AdminMetricsClientError(500, "chat stats endpoint failed");
+  }
+}
+
+export class FaultingBothAdminMetricsClient implements AdminMetricsClient {
+  async cronRunTokenStats(): Promise<CronRunTokenStats> {
+    throw new AdminMetricsClientError(500, "cron stats endpoint failed");
+  }
+
+  async chatTokenStats(): Promise<ChatTokenStats> {
+    throw new AdminMetricsClientError(500, "chat stats endpoint failed");
+  }
+}
