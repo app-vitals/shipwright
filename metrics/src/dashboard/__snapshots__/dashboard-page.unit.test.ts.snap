@@ -108,7 +108,6 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
       cursor: pointer;
       color: #1a1a2e;
       padding: 4px 8px;
-      margin-left: auto;
       line-height: 1;
       font-family: inherit;
     }
@@ -151,6 +150,7 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
       /* Hide user section sign-out on mobile when nav is closed */
       .vos-user {
         order: 2;
+        margin-left: 0;
       }
     }
 
@@ -593,7 +593,6 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
       cursor: pointer;
       color: #1a1a2e;
       padding: 4px 8px;
-      margin-left: auto;
       line-height: 1;
       font-family: inherit;
     }
@@ -636,6 +635,7 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
       /* Hide user section sign-out on mobile when nav is closed */
       .vos-user {
         order: 2;
+        margin-left: 0;
       }
     }
 
@@ -1078,7 +1078,6 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
       cursor: pointer;
       color: #1a1a2e;
       padding: 4px 8px;
-      margin-left: auto;
       line-height: 1;
       font-family: inherit;
     }
@@ -1121,6 +1120,7 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
       /* Hide user section sign-out on mobile when nav is closed */
       .vos-user {
         order: 2;
+        margin-left: 0;
       }
     }
 
@@ -1563,7 +1563,6 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
       cursor: pointer;
       color: #1a1a2e;
       padding: 4px 8px;
-      margin-left: auto;
       line-height: 1;
       font-family: inherit;
     }
@@ -1606,6 +1605,7 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
       /* Hide user section sign-out on mobile when nav is closed */
       .vos-user {
         order: 2;
+        margin-left: 0;
       }
     }
 

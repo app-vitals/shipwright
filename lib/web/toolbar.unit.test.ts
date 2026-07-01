@@ -33,6 +33,10 @@ describe("renderShipwrightToolbar", () => {
     test("active link has active class", () => {
       expect(html).toContain('class="vos-nav-link active"');
     });
+
+    test("checkbox input appears before nav element in DOM", () => {
+      expect(html.indexOf("<input")).toBeLessThan(html.indexOf("<nav"));
+    });
   });
 
   describe("read-only mode (readOnly=true)", () => {
@@ -59,6 +63,10 @@ describe("renderShipwrightToolbar", () => {
     test("does not contain authenticated-only links", () => {
       expect(html).not.toContain("Agents");
       expect(html).not.toContain("Sign out");
+    });
+
+    test("checkbox input appears before nav element in DOM", () => {
+      expect(html.indexOf("<input")).toBeLessThan(html.indexOf("<nav"));
     });
   });
 });

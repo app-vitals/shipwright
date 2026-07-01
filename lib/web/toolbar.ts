@@ -126,7 +126,6 @@ export function baseStyles(): string {
       cursor: pointer;
       color: #1a1a2e;
       padding: 4px 8px;
-      margin-left: auto;
       line-height: 1;
       font-family: inherit;
     }
@@ -169,6 +168,7 @@ export function baseStyles(): string {
       /* Hide user section sign-out on mobile when nav is closed */
       .vos-user {
         order: 2;
+        margin-left: 0;
       }
     }
 
@@ -201,11 +201,11 @@ export function renderShipwrightToolbar(
     return `<input type="checkbox" id="vos-nav-toggle" class="vos-nav-toggle" aria-hidden="true">
   <nav class="vos-toolbar" aria-label="Site navigation">
     <a href="${metricsUrl}" class="vos-wordmark">Shipwright</a>
-    <label for="vos-nav-toggle" class="vos-hamburger" aria-label="Toggle navigation">☰</label>
     <div class="vos-nav">
       <a href="${metricsUrl}" class="vos-nav-link${active(metricsUrl)}">Metrics</a>
       <a href="${tasksUrl}" class="vos-nav-link${active(tasksUrl)}">Tasks</a>
     </div>
+    <label for="vos-nav-toggle" class="vos-hamburger" aria-label="Toggle navigation">☰</label>
   </nav>`;
   }
 
