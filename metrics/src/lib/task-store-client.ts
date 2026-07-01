@@ -39,13 +39,20 @@ export interface TaskRecord {
   addedAt?: string | null;
   /** Model used to execute this task (e.g. "opus", "claude-opus-4-8", "sonnet"). */
   model?: string | null;
-  /** Token counts recorded on the task. All carried as string|number to match HTTP payload flexibility. */
-  inputTokens?: string | number | null;
-  outputTokens?: string | number | null;
-  cacheReadTokens?: string | number | null;
-  cacheCreationTokens?: string | number | null;
-  /** Actual cost in USD as recorded by the task runner. */
-  costUsd?: string | number | null;
+  /** Effort level estimate (1-5). */
+  effortLevel?: number | null;
+  /** Coverage delta from code-review pass (percentage points). */
+  coverageDelta?: number | null;
+  /** Simplify pass: dry-run findings count. */
+  simplifyDry?: number | null;
+  /** Simplify pass: dead code findings count. */
+  simplifyDeadCode?: number | null;
+  /** Simplify pass: naming findings count. */
+  simplifyNaming?: number | null;
+  /** Simplify pass: complexity findings count. */
+  simplifyComplexity?: number | null;
+  /** Simplify pass: consistency findings count. */
+  simplifyConsistency?: number | null;
 }
 
 /**
