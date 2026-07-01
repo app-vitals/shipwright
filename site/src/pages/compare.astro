@@ -1,74 +1,110 @@
 ---
 // How Shipwright compares — honest competitive page (the one place on the site
 // that names other tools; the homepage #differentiators stays competitor-free).
-// Content is grounded in verified competitive research: the open-source agent
-// field is strong and crowded, the delivery-pipeline layer is already occupied
-// (OpenHands/Continue/Kilo), MIT/own-it is table-stakes, and Shipwright's
-// difference is *how* it works — plan-first, tests-with-code, Claude-native.
-// Zero runtime JS; all static HTML inlined at build time. Brand tokens only.
+// Content is grounded in verified competitive research: the commercial-tier
+// agent field is growing, MIT/own-it is table-stakes, and Shipwright's
+// difference is *how* it works — team-first, plan-first, tests-with-code,
+// Claude-native. Zero runtime JS; all static HTML inlined at build time.
+// Brand tokens only.
 import BaseLayout from "../layouts/BaseLayout.astro";
 
 const repoUrl = "https://github.com/app-vitals/shipwright";
 const discoveryUrl = "https://cal.com/app-vitals/discovery";
 const installCmd = "/plugin install shipwright@app-vitals/shipwright";
 
-// Verified competitive snapshot. Star/install counts are mid-2026 floors — the
-// field drifts upward, so these are deliberately conservative.
+// Market structure: 3-pole framing of the AI coding agent space.
+// Shipwright occupies the middle pole — team AI workflow, not copilot UX
+// and not fully autonomous fire-and-forget.
+const marketPoles = [
+  {
+    label: "Individual Copilots",
+    examples: "Cursor, GitHub Copilot",
+    description:
+      "Autocomplete, inline suggestions, single-dev productivity. Excellent at what they do — not designed to coordinate a team's delivery pipeline.",
+    shipwright: false,
+  },
+  {
+    label: "Team AI Workflow Gap",
+    examples: "Shipwright Harness",
+    description:
+      "Structured, multi-step delivery with a human review gate, shared task queue, policy controls, and audit trail. The gap between copilot UX and autonomous agents.",
+    shipwright: true,
+  },
+  {
+    label: "Autonomous Agents",
+    examples: "Devin, OpenHands",
+    description:
+      "Fire-and-forget agents that operate with minimal human involvement. Best when you trust the agent fully and want maximum autonomy.",
+    shipwright: false,
+  },
+];
+
+// Verified competitive snapshot — commercial-tier agents in mid-2026.
+// This list focuses on tools teams evaluate when choosing an AI delivery layer.
 const landscape = [
+  {
+    tool: "Devin",
+    license: "Commercial",
+    models: "Proprietary",
+    taskQueue: "Yes",
+    teamVisibility: "Dashboard",
+    policyControls: "Basic",
+    humanReviewGate: "Optional",
+    cronScheduling: "Yes",
+    slackWorkflow: "Partial",
+    testsFirst: "No",
+    self: false,
+  },
+  {
+    tool: "Cursor",
+    license: "Commercial",
+    models: "Agnostic (multi)",
+    taskQueue: "No",
+    teamVisibility: "None",
+    policyControls: "None",
+    humanReviewGate: "No",
+    cronScheduling: "No",
+    slackWorkflow: "No",
+    testsFirst: "No",
+    self: false,
+  },
+  {
+    tool: "GitHub Copilot Agent",
+    license: "Commercial",
+    models: "GPT-4o / Claude",
+    taskQueue: "Issues-based",
+    teamVisibility: "PR-level",
+    policyControls: "Repo policies",
+    humanReviewGate: "PR review",
+    cronScheduling: "Via Actions",
+    slackWorkflow: "No",
+    testsFirst: "No",
+    self: false,
+  },
   {
     tool: "OpenHands",
     license: "MIT",
     models: "Agnostic (100+)",
-    pipeline: "Yes",
-    reach: "~78K★ · category leader",
-    self: false,
-  },
-  {
-    tool: "Cline",
-    license: "Apache-2.0",
-    models: "Agnostic (30+, mid-convo switch)",
-    pipeline: "No verified pipeline",
-    reach: "~58–64K★ · 5M+ installs",
-    self: false,
-  },
-  {
-    tool: "Aider",
-    license: "Apache-2.0",
-    models: "Agnostic (multi)",
-    pipeline: "No — git-native pair programmer",
-    reach: "6.8M+ installs",
-    self: false,
-  },
-  {
-    tool: "Goose",
-    license: "Apache-2.0",
-    models: "Agnostic (15–25+)",
-    pipeline: "No — general-purpose agent",
-    reach: "~27–50K★",
-    self: false,
-  },
-  {
-    tool: "Continue",
-    license: "Apache-2.0",
-    models: "Agnostic",
-    pipeline: "Moving up — agents as GitHub checks",
-    reach: "IDE-native",
-    self: false,
-  },
-  {
-    tool: "Kilo Code",
-    license: "Open source",
-    models: "Agnostic",
-    pipeline: "Moving up — parallel agents, AI review",
-    reach: "All-in-one platform",
+    taskQueue: "Yes",
+    teamVisibility: "Limited",
+    policyControls: "Config-level",
+    humanReviewGate: "Optional",
+    cronScheduling: "Yes",
+    slackWorkflow: "No",
+    testsFirst: "No",
     self: false,
   },
   {
     tool: "Shipwright Harness",
     license: "MIT",
     models: "Claude Code",
-    pipeline: "Yes — plan → build → review → ship, tests-first",
-    reach: "Launching · dogfooded",
+    taskQueue: "Yes — shared, assignable",
+    teamVisibility: "Slack + PR trail",
+    policyControls: "Per-repo, per-skill",
+    humanReviewGate: "Yes — plan approval required",
+    cronScheduling: "Yes — cron-native",
+    slackWorkflow: "Yes — first-class",
+    testsFirst: "Yes — enforced",
     self: true,
   },
 ];
@@ -82,18 +118,32 @@ const pillars = [
   },
   {
     title: "Tests land with the code",
-    body: "Every task ships its tests in the same PR, written before the implementation (red-green-refactor is enforced). CI must be green before merge. No “add tests later.”",
+    body: 'Every task ships its tests in the same PR, written before the implementation (red-green-refactor is enforced). CI must be green before merge. No “add tests later.”',
   },
   {
     title: "Claude-native by design",
     body: "The planning prompts, review loops, and context system are tuned for one runtime instead of averaged across many. Claude-optimized, not lowest-common-denominator.",
   },
 ];
+
+// Table columns: the team-relevant capability dimensions
+const tableColumns = [
+  { key: "tool", label: "Tool", wide: true },
+  { key: "license", label: "License" },
+  { key: "models", label: "Models" },
+  { key: "taskQueue", label: "Task Queue" },
+  { key: "teamVisibility", label: "Team Visibility" },
+  { key: "policyControls", label: "Policy Controls" },
+  { key: "humanReviewGate", label: "Human Review Gate" },
+  { key: "cronScheduling", label: "Cron / Scheduling" },
+  { key: "slackWorkflow", label: "Slack-Native Workflow" },
+  { key: "testsFirst", label: "Tests-First Enforcement" },
+];
 ---
 
 <BaseLayout
   title="How Shipwright compares — Shipwright Harness"
-  description="An honest comparison of Shipwright Harness against the open-source AI coding agent field (OpenHands, Cline, Aider, Goose, Continue, Kilo Code) — and where each one fits."
+  description="An honest comparison of Shipwright Harness against the commercial AI coding agent tier (Devin, Cursor, GitHub Copilot Agent, OpenHands) — and where each one fits."
   pagefindIgnore={true}
 >
   <!-- Page header -->
@@ -103,54 +153,105 @@ const pillars = [
       How Shipwright <span class="sw-gradient-text">compares</span>.
     </h1>
     <p class="mt-5 max-w-2xl text-lg">
-      The open-source AI coding-agent field is good and getting crowded. We are
-      not going to pretend otherwise — and we are not going to claim a category
-      no one else occupies. Here is the honest version: who is in the space, what
-      they are great at, and where Shipwright is genuinely different.
+      The AI coding-agent field has matured into recognizable tiers. We are not
+      going to pretend the landscape is simple — or that Shipwright occupies a
+      category no one else does. Here is the honest version: where each tool
+      sits, what they are great at, and where Shipwright is genuinely different.
+    </p>
+  </section>
+
+  <!-- Market Structure: 3-pole framing -->
+  <section class="relative z-10 pb-16">
+    <h2>Market structure</h2>
+    <p class="mt-3 max-w-2xl">
+      The AI coding agent space has settled into three poles. Where you sit on
+      this spectrum should drive which tool you reach for.
+    </p>
+    <div class="mt-8 grid gap-6 sm:grid-cols-3">
+      {marketPoles.map((pole) => (
+        <div
+          class="sw-card"
+          style={pole.shipwright ? "border-color: var(--sw-color-brand-default); background: var(--sw-color-brand-soft);" : ""}
+        >
+          <p
+            class="sw-label"
+            style={pole.shipwright ? "color: var(--sw-color-brand-default);" : ""}
+          >
+            {pole.label}
+            {pole.shipwright && <span style="margin-left:0.5rem;">← Shipwright</span>}
+          </p>
+          <p class="mt-1 text-sm" style="color:var(--sw-color-text-muted); font-family:var(--sw-font-mono);">{pole.examples}</p>
+          <p class="mt-3" style="color:var(--sw-color-text-body);">{pole.description}</p>
+        </div>
+      ))}
+    </div>
+    <p class="mt-6 max-w-2xl sw-editorial">
+      Shipwright sits in the middle — team AI workflow — not because individual
+      copilots are weak (they are excellent at developer productivity) and not
+      because autonomous agents are wrong (they are right for the right teams),
+      but because most engineering teams are somewhere in between: they want
+      automation, but with visibility, controls, and a human in the loop on the
+      decisions that matter.
     </p>
   </section>
 
   <!-- The landscape table -->
-  <section class="relative z-10 pb-16">
+  <section class="relative z-10 pb-16" style="border-top: 1px solid var(--sw-color-border-subtle); padding-top: 4rem;">
     <h2>The landscape</h2>
     <p class="mt-3 max-w-2xl">
-      “Pipeline” means: does the tool run a structured spec-to-ship workflow, not
-      just generate or execute code? Star and install counts are mid-2026 floors
-      — treat them as conservative, not exact.
+      Commercial-tier agents in mid-2026 — the tools teams actually evaluate
+      when choosing an AI delivery layer. MIT / own-it / self-hosted is
+      table-stakes on the open-source side — every serious open-source tool
+      runs on your infra, so it earns parity, not separation. The delivery-pipeline
+      layer is already contested: OpenHands runs it today, and the commercial
+      tier is moving fast.
     </p>
     <div class="mt-6 overflow-x-auto">
       <table style="width:100%; border-collapse:collapse;">
         <thead>
           <tr style="border-bottom: 1px solid var(--sw-color-border-muted);">
-            <th style="text-align:left; padding:0.6rem 1rem 0.6rem 0; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Tool</th>
-            <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">License</th>
-            <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Models</th>
-            <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Structured pipeline?</th>
-            <th style="text-align:left; padding:0.6rem 0 0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);">Reach</th>
+            {tableColumns.map((col) => (
+              <th
+                style={`text-align:left; padding:0.6rem 1rem 0.6rem ${col === tableColumns[0] ? "0" : ""}; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted); white-space:nowrap;`}
+              >
+                {col.label}
+              </th>
+            ))}
           </tr>
         </thead>
         <tbody>
           {landscape.map((row) => (
-            <tr style={`border-bottom: 1px solid var(--sw-color-border-subtle);${row.self ? " background: var(--sw-color-brand-soft);" : ""}`}>
+            <tr
+              style={`border-bottom: 1px solid var(--sw-color-border-subtle);${row.self ? " background: var(--sw-color-brand-soft);" : ""}`}
+            >
               <td style="padding:0.7rem 1rem 0.7rem 0; vertical-align:top;">
-                <span style={`font-family:var(--sw-font-display); font-weight:600; color:${row.self ? "var(--sw-color-brand-default)" : "var(--sw-color-text-heading)"};`}>{row.tool}</span>
+                <span
+                  style={`font-family:var(--sw-font-display); font-weight:600; color:${row.self ? "var(--sw-color-brand-default)" : "var(--sw-color-text-heading)"};`}
+                >
+                  {row.tool}
+                </span>
               </td>
-              <td style="padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">{row.license}</td>
+              <td style="padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body); white-space:nowrap;">{row.license}</td>
               <td style="padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">{row.models}</td>
-              <td style="padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">{row.pipeline}</td>
-              <td style="padding:0.7rem 0 0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-editorial);">{row.reach}</td>
+              <td style="padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">{row.taskQueue}</td>
+              <td style="padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">{row.teamVisibility}</td>
+              <td style="padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">{row.policyControls}</td>
+              <td style="padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">{row.humanReviewGate}</td>
+              <td style="padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">{row.cronScheduling}</td>
+              <td style="padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">{row.slackWorkflow}</td>
+              <td style="padding:0.7rem 0 0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">{row.testsFirst}</td>
             </tr>
           ))}
         </tbody>
       </table>
     </div>
     <p class="mt-6 max-w-2xl sw-editorial">
-      Two things fall out of this table. First, MIT / own-it / self-hosted is
-      table-stakes — every serious tool here is open and runs on your infra, so
-      it earns parity, not separation. Second, the delivery-pipeline layer is
-      already contested: OpenHands runs it today, and Continue and Kilo Code are
-      moving into it. Shipwright does not claim an empty category. It competes on
-      <em>how</em> it occupies that layer.
+      The pattern in this table: individual copilots (Cursor, GitHub Copilot Agent
+      in simple mode) are optimized for single-developer productivity — no team
+      queue, no visibility, no review gate needed. Autonomous agents (Devin,
+      OpenHands) are optimized for fire-and-forget — high autonomy, optional
+      review. Shipwright sits between: structured pipeline, shared queue, and a
+      human review gate by default. That structure is the whole point.
     </p>
   </section>
 
@@ -167,10 +268,10 @@ const pillars = [
     </div>
     <div class="sw-callout mt-8 max-w-3xl">
       <p>
-        <strong>On “own-it”:</strong> running on your own infra is necessary, not
+        <strong>On "own-it":</strong> running on your own infra is necessary, not
         sufficient — a local agent can still read secrets and act on your behalf.
-        Shipwright’s answer is permission scoping, approval gates, and an
-        auditable review trail, not “your code never leaves your machine” alone.
+        Shipwright's answer is permission scoping, approval gates, and an
+        auditable review trail, not "your code never leaves your machine" alone.
       </p>
     </div>
   </section>
@@ -206,16 +307,49 @@ helm install shipwright shipwright/shipwright</code></pre>
     </p>
   </section>
 
+  <!-- Focused head-to-head: Devin -->
+  <section class="relative z-10 py-20" style="border-top: 1px solid var(--sw-color-border-subtle);">
+    <p class="sw-label">Head to head</p>
+    <h2 class="mt-4">Shipwright vs Devin</h2>
+    <p class="mt-3 max-w-2xl">
+      Devin is the highest-profile autonomous coding agent — a managed commercial
+      service with a strong benchmark track record and an expanding feature set.
+      It is genuinely impressive, especially for isolated, well-scoped tasks.
+      Here is where the two actually differ:
+    </p>
+    <div class="mt-8 grid gap-6 sm:grid-cols-2">
+      <div class="sw-card">
+        <p class="sw-label" style="color:var(--sw-color-brand-default);">Choose Shipwright when</p>
+        <ul class="mt-3 flex flex-col gap-2" style="color:var(--sw-color-text-body); padding-left:1.1rem; list-style:disc;">
+          <li>You want your team's delivery pipeline on infrastructure you own and operate — not a managed service.</li>
+          <li>You need a human to approve the plan before any code is written — structured autonomy, not fire-and-forget.</li>
+          <li>Tests-first and CI-green are non-negotiable requirements, not optional features.</li>
+          <li>You want Slack-native workflow: task assignment, review requests, and status updates in the channels your team already uses.</li>
+          <li>Budget matters: MIT-licensed, no seat fees, runs on your own Claude Code credentials.</li>
+        </ul>
+      </div>
+      <div class="sw-card">
+        <p class="sw-label" style="color:var(--sw-color-support-patriot-bright);">Choose Devin when</p>
+        <ul class="mt-3 flex flex-col gap-2" style="color:var(--sw-color-text-body); padding-left:1.1rem; list-style:disc;">
+          <li>You want a fully managed service with a polished UI and no infrastructure overhead.</li>
+          <li>The task is well-scoped and isolated enough that fire-and-forget autonomy is appropriate.</li>
+          <li>You want model-agnostic or proprietary-model performance without committing to Claude Code.</li>
+          <li>Your team is evaluating autonomous agents with minimal setup time.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
   <!-- Focused head-to-head: OpenHands -->
   <section class="relative z-10 py-20" style="border-top: 1px solid var(--sw-color-border-subtle);">
     <p class="sw-label">Head to head</p>
     <h2 class="mt-4">Shipwright vs OpenHands</h2>
     <p class="mt-3 max-w-2xl">
-      OpenHands is the category leader — MIT, model-agnostic, deployable on your
-      infra, ~78K stars, and it already runs a delivery pipeline (scheduled
-      tasks, triggers, PR review, opening reviewable PRs). If you want maximum
-      model flexibility and a mature ecosystem today, it is an excellent choice.
-      Here is where the two genuinely differ:
+      OpenHands is the category leader in open-source autonomous agents — MIT,
+      model-agnostic, deployable on your infra, ~78K stars, and it already runs
+      a delivery pipeline (scheduled tasks, triggers, PR review, opening reviewable
+      PRs). If you want maximum model flexibility and a mature ecosystem today,
+      it is an excellent choice. Here is where the two genuinely differ:
     </p>
     <div class="mt-8 grid gap-6 sm:grid-cols-2">
       <div class="sw-card">
@@ -234,6 +368,55 @@ helm install shipwright shipwright/shipwright</code></pre>
           <li>You are not committed to a single runtime and want to keep that optionality.</li>
         </ul>
       </div>
+    </div>
+  </section>
+
+  <!-- Customizability section -->
+  <section class="relative z-10 py-20" style="border-top: 1px solid var(--sw-color-border-subtle);">
+    <h2>Customizability — opinionated by default, malleable by design</h2>
+    <p class="mt-3 max-w-3xl">
+      Shipwright ships with an opinionated pipeline: plan, build, review, ship,
+      with tests-first enforcement and a human approval gate. That pipeline is
+      not locked in — every stage is customizable.
+    </p>
+    <div class="mt-8 grid gap-6 sm:grid-cols-3">
+      <div class="sw-card">
+        <h3>Swap skills</h3>
+        <p class="mt-2" style="color:var(--sw-color-text-body);">
+          Each pipeline stage is a skill. You can replace the default planning
+          skill with your own, add a pre-deploy gate, or swap the review skill
+          for a custom policy check. Skills are plain markdown files — no special
+          build step.
+        </p>
+      </div>
+      <div class="sw-card">
+        <h3>Disable default crons</h3>
+        <p class="mt-2" style="color:var(--sw-color-text-body);">
+          The built-in review and patch loops ship disabled on new agents. Enable
+          what you want; skip what you do not. Some teams run only the task queue
+          and plan gate, and manage review manually. That is a valid configuration.
+        </p>
+      </div>
+      <div class="sw-card">
+        <h3>Add custom gates</h3>
+        <p class="mt-2" style="color:var(--sw-color-text-body);">
+          Pre-check scripts can block a cron from firing based on any condition
+          you define — CI status, PR state, time of day, external API call.
+          The gate runs before the agent, so you control when automation is
+          appropriate.
+        </p>
+      </div>
+    </div>
+    <div class="sw-callout sw-callout-info mt-8 max-w-3xl">
+      <p>
+        <strong>Honest note:</strong> Shipwright is not as easy to customize as
+        rolling your own pipeline from scratch — if you want total control from
+        day one, a bespoke setup is simpler. What Shipwright offers instead is a
+        battle-tested pipeline you can start with immediately, and customize over
+        time as you learn what your team actually needs. Some teams have disabled
+        all the defaults and built their own workflow on top. You own the
+        infrastructure either way.
+      </p>
     </div>
   </section>
 

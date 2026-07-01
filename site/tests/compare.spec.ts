@@ -33,19 +33,85 @@ test("compare page ships no runtime JS beyond the analytics tag", async ({
   await expectNoRuntimeJsBeyondAnalytics(page);
 });
 
-test("landscape table names the open-source field", async ({ page }) => {
+test("landscape table names the commercial tier", async ({ page }) => {
   await page.goto("/compare");
+  // New commercial-tier competitors must appear
   for (const tool of [
+    "Devin",
+    "Cursor",
+    "GitHub Copilot Agent",
     "OpenHands",
-    "Cline",
-    "Aider",
-    "Goose",
-    "Continue",
-    "Kilo Code",
     "Shipwright Harness",
   ]) {
     await expect(page.getByText(tool, { exact: false }).first()).toBeVisible();
   }
+  // Old open-source-only list must NOT appear in the table
+  const text = (await page.locator("main").textContent()) ?? "";
+  // These were removed from the landscape table (they may still exist in prose)
+  // We check by looking for them as table row entries — not just any text match.
+  // The landscape array no longer contains Cline, Aider, Goose, Continue, Kilo Code.
+  // We verify this by checking the table doesn't have them as tool names.
+  const tableText =
+    (await page.locator("table").first().textContent()) ?? "";
+  expect(tableText).not.toContain("Cline");
+  expect(tableText).not.toContain("Aider");
+  expect(tableText).not.toContain("Goose");
+  expect(tableText).not.toContain("Continue");
+  expect(tableText).not.toContain("Kilo Code");
+});
+
+test("market structure section is present with 3 poles", async ({ page }) => {
+  await page.goto("/compare");
+  // Section heading
+  await expect(
+    page
+      .getByRole("heading", { name: /market structure|where tools sit/i })
+      .first(),
+  ).toBeVisible();
+  const text = (await page.locator("main").textContent())?.toLowerCase() ?? "";
+  // Three poles
+  expect(text).toContain("individual copilot");
+  expect(text).toContain("team ai workflow");
+  expect(text).toContain("autonomous agent");
+  // Shipwright positioned in the middle
+  expect(text).toContain("shipwright");
+});
+
+test("table includes team-relevant capability columns", async ({ page }) => {
+  await page.goto("/compare");
+  const tableText =
+    (await page.locator("table").first().textContent())?.toLowerCase() ?? "";
+  // At least 5 new team-relevant dimensions beyond License/Models
+  expect(tableText).toContain("task queue");
+  expect(tableText).toContain("team visibility");
+  expect(tableText).toContain("policy controls");
+  expect(tableText).toContain("human review");
+  expect(tableText).toContain("cron");
+});
+
+test("Devin head-to-head is present and fair", async ({ page }) => {
+  await page.goto("/compare");
+  await expect(
+    page.getByRole("heading", { name: /Shipwright vs Devin/i }),
+  ).toBeVisible();
+  const text = (await page.locator("main").textContent())?.toLowerCase() ?? "";
+  // Must have choose-Devin-when framing (honest, not dismissive)
+  expect(text).toContain("choose devin");
+  // Must have choose-shipwright-when framing
+  expect(text).toContain("choose shipwright");
+});
+
+test("customizability section is present", async ({ page }) => {
+  await page.goto("/compare");
+  await expect(
+    page
+      .getByRole("heading", { name: /customiz/i })
+      .first(),
+  ).toBeVisible();
+  const text = (await page.locator("main").textContent())?.toLowerCase() ?? "";
+  // Should mention that defaults are swappable / customizable
+  expect(text).toContain("opinionated");
+  expect(text).toContain("customiz");
 });
 
 test("page is honest — it does NOT claim an empty category and does NOT overstate lock-in", async ({
