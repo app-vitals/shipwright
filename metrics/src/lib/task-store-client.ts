@@ -37,6 +37,15 @@ export interface TaskRecord {
   ciFixAttempts?: number | null;
   simplifyTotal?: number | null;
   addedAt?: string | null;
+  /** Model used to execute this task (e.g. "opus", "claude-opus-4-8", "sonnet"). */
+  model?: string | null;
+  /** Token counts recorded on the task. All carried as string|number to match HTTP payload flexibility. */
+  inputTokens?: string | number | null;
+  outputTokens?: string | number | null;
+  cacheReadTokens?: string | number | null;
+  cacheCreationTokens?: string | number | null;
+  /** Actual cost in USD as recorded by the task runner. */
+  costUsd?: string | number | null;
 }
 
 /**
