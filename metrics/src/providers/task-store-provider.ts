@@ -18,9 +18,12 @@
  */
 
 import { resolveQueryRange } from "../formatters.ts";
-import type {
-  AdminMetricsClient,
-  TokenAggregate,
+import {
+  AdminMetricsClientError,
+  type AdminMetricsClient,
+  type ChatTokenStats,
+  type CronRunTokenStats,
+  type TokenAggregate,
 } from "../lib/admin-metrics-client.ts";
 import { type Clock, SystemClock } from "../lib/clock.ts";
 import type {
@@ -43,6 +46,29 @@ const BLOCKED_STATUS = "blocked";
 // Task-store PR review-state that denotes an approved ("ship it") review. The
 // live task store records `reviewState` as one of `approved | posted | pending`.
 const SHIP_IT_REVIEW_STATE = "approved";
+
+// Zero aggregates for graceful degradation when admin stats endpoints fail.
+const ZERO_AGG: TokenAggregate = {
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheCreation: 0,
+  total: 0,
+};
+
+const ZERO_CRON_STATS: CronRunTokenStats = {
+  totals: ZERO_AGG,
+  byAgent: [],
+  byCron: [],
+  byModel: [],
+  daily: [],
+};
+
+const ZERO_CHAT_STATS: ChatTokenStats = {
+  totals: ZERO_AGG,
+  byAgent: [],
+  daily: [],
+};
 
 // ─── Value helpers ────────────────────────────────────────────────────────────
 
@@ -557,8 +583,8 @@ export class TaskStoreProvider implements MetricsProvider {
     to: string;
   }): Promise<MetricTable> {
     const [cron, chat] = await Promise.all([
-      this.admin.cronRunTokenStats(win),
-      this.admin.chatTokenStats(win),
+      this.safeCronStats(win),
+      this.safeChatStats(win),
     ]);
     // Disjoint sources — summing field-wise is correct, no double count.
     const total = addAggregates(cron.totals, chat.totals);
@@ -573,8 +599,8 @@ export class TaskStoreProvider implements MetricsProvider {
     to: string;
   }): Promise<MetricTable> {
     const [cron, chat] = await Promise.all([
-      this.admin.cronRunTokenStats(win),
-      this.admin.chatTokenStats(win),
+      this.safeCronStats(win),
+      this.safeChatStats(win),
     ]);
     const rows = [
       ["cron", ...tokenCells(cron.totals), cron.totals.costUsd ?? 0],
@@ -588,8 +614,8 @@ export class TaskStoreProvider implements MetricsProvider {
     to: string;
   }): Promise<MetricTable> {
     const [cron, chat] = await Promise.all([
-      this.admin.cronRunTokenStats(win),
-      this.admin.chatTokenStats(win),
+      this.safeCronStats(win),
+      this.safeChatStats(win),
     ]);
     const byAgent = new Map<string, TokenAggregate>();
     for (const a of [...cron.byAgent, ...chat.byAgent]) {
@@ -607,8 +633,8 @@ export class TaskStoreProvider implements MetricsProvider {
     to: string;
   }): Promise<MetricTable> {
     const [cron, chat] = await Promise.all([
-      this.admin.cronRunTokenStats(win),
-      this.admin.chatTokenStats(win),
+      this.safeCronStats(win),
+      this.safeChatStats(win),
     ]);
     const byDay = new Map<string, TokenAggregate>();
     for (const d of [...cron.daily, ...chat.daily]) {
@@ -626,8 +652,8 @@ export class TaskStoreProvider implements MetricsProvider {
     to: string;
   }): Promise<MetricTable> {
     const [cron, chat] = await Promise.all([
-      this.admin.cronRunTokenStats(win),
-      this.admin.chatTokenStats(win),
+      this.safeCronStats(win),
+      this.safeChatStats(win),
     ]);
     const rows: unknown[][] = [];
     for (const a of cron.byAgent) {
@@ -648,7 +674,7 @@ export class TaskStoreProvider implements MetricsProvider {
     to: string;
   }): Promise<MetricTable> {
     // Cron-only: chat has no cron name.
-    const cron = await this.admin.cronRunTokenStats(win);
+    const cron = await this.safeCronStats(win);
     const rows = cron.byCron
       .map((a) => [a.key1, a.key2, ...tokenCells(a), a.costUsd ?? 0])
       .sort((a, b) => Number(b[6]) - Number(a[6]));
@@ -662,11 +688,43 @@ export class TaskStoreProvider implements MetricsProvider {
     from: string;
     to: string;
   }): Promise<MetricTable> {
-    const cron = await this.admin.cronRunTokenStats(win);
+    const cron = await this.safeCronStats(win);
     const rows = cron.byModel
       .map((a) => [a.key1, a.key2, ...tokenCells(a), a.costUsd ?? 0])
       .sort((a, b) => Number(b[6]) - Number(a[6]));
     return table(["agent_id", "model", ...tokenColumns(), "cost_usd"], rows);
+  }
+
+  // ─── Graceful degradation helpers ─────────────────────────────────────────
+
+  private async safeCronStats(win: {
+    from: string;
+    to: string;
+  }): Promise<CronRunTokenStats> {
+    return this.admin.cronRunTokenStats(win).catch((e) => {
+      if (e instanceof AdminMetricsClientError) {
+        console.error(
+          `[metrics] cronRunTokenStats failed: ${e.message}; falling back to zero aggregates`,
+        );
+        return ZERO_CRON_STATS;
+      }
+      throw e;
+    });
+  }
+
+  private async safeChatStats(win: {
+    from: string;
+    to: string;
+  }): Promise<ChatTokenStats> {
+    return this.admin.chatTokenStats(win).catch((e) => {
+      if (e instanceof AdminMetricsClientError) {
+        console.error(
+          `[metrics] chatTokenStats failed: ${e.message}; falling back to zero aggregates`,
+        );
+        return ZERO_CHAT_STATS;
+      }
+      throw e;
+    });
   }
 
   // ─ Cost efficiency ─

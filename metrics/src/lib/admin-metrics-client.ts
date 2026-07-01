@@ -10,13 +10,6 @@
  * counting total. The admin server returns already-grouped aggregates; this
  * client just shuttles them. Mirrors accounts-client.ts (Bearer auth, trailing-
  * slash strip, typed error).
- *
- * Prerequisite (MME-4.2): the two stats endpoints this client targets
- *   GET /agents/:id/cron-runs/stats
- *   GET /agents/chat-tokens/daily/stats
- * are NOT implemented server-side yet. The provider's behaviour is proven via
- * the RecordedAdminMetricsClient cassettes; the live Http path is exercised only
- * once those endpoints land.
  */
 
 // ─── Token aggregate shapes ───────────────────────────────────────────────────
