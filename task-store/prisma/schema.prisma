@@ -92,7 +92,7 @@ model Task {
   simplifyComplexity  Int?
   simplifyConsistency Int?
   coverageDelta       Float?
-  effortLevel         String? // "low" | "medium" | "high"
+  effortLevel         String? // "low" | "medium" | "high" | "xhigh" | "max"
   inputTokens         Int?
   outputTokens        Int?
   cacheReadTokens     Int?
