@@ -35,7 +35,7 @@ model Agent {
   tokens           AgentToken[]
   plugins          AgentPlugin[]
   members          AgentMember[]
-  chatTokenUsage   AgentChatTokenUsageDaily[]
+  chatTokenUsage   AgentChatTokenUsageDailyByModel[]
 }
 
 // ─── Agent Env ────────────────────────────────────────────────────────────────
@@ -170,15 +170,17 @@ model AgentCronRun {
   @@index([agentId, startedAt])
 }
 
-// ─── Agent Chat Token Usage (Daily) ──────────────────────────────────────────
-// Daily rollup table for Slack/chat session token usage per agent.
+// ─── Agent Chat Token Usage (Daily, per Model) ───────────────────────────────
+// Daily rollup table for Slack/chat session token usage per agent per model.
 // Accumulated atomically via INSERT ... ON CONFLICT ... DO UPDATE (no read-modify-write).
+// Totals and byAgent aggregations are computed by summing across models.
 
-model AgentChatTokenUsageDaily {
+model AgentChatTokenUsageDailyByModel {
   id                  String   @id @default(cuid())
   agentId             String
   agent               Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
   date                String   // YYYY-MM-DD
+  model               String   // e.g. "claude-sonnet-4-5"
   inputTokens         Int      @default(0)
   outputTokens        Int      @default(0)
   cacheReadTokens     Int      @default(0)
@@ -187,6 +189,6 @@ model AgentChatTokenUsageDaily {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
-  @@unique([agentId, date])
+  @@unique([agentId, date, model])
 }
 

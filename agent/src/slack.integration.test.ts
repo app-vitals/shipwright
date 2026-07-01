@@ -267,14 +267,18 @@ describe("message handler — DM routing", () => {
 
   test("fires chatTokenReporter.recordSession with the session usage on a DM", async () => {
     const recordSession = mock(
-      async (_usage?: TokenUsage, _totalCostUsd?: number) => {},
+      async (
+        _usage?: TokenUsage,
+        _totalCostUsd?: number,
+        _modelUsage?: Record<string, TokenUsage>,
+      ) => {},
     );
     createSlackApp({ chatTokenReporter: { recordSession } });
 
     await invokeDM({ text: "hello" });
 
     expect(recordSession).toHaveBeenCalledTimes(1);
-    expect(recordSession).toHaveBeenCalledWith(mockUsage, undefined);
+    expect(recordSession).toHaveBeenCalledWith(mockUsage, undefined, undefined);
   });
 
   test("returns early when message has a non-file subtype", async () => {

@@ -46,6 +46,7 @@ const EMPTY_CRON: CronRunTokenStats = {
 const EMPTY_CHAT: ChatTokenStats = {
   totals: agg(0, 0, 0, 0),
   byAgent: [],
+  byModel: [],
   daily: [],
 };
 

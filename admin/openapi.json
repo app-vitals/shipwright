@@ -1137,7 +1137,176 @@
           }
         }
       },
-      "AgentChatTokenUsageDaily": {
+      "TokenAggregate": {
+        "type": "object",
+        "properties": {
+          "input": {
+            "type": "integer",
+            "example": 600
+          },
+          "output": {
+            "type": "integer",
+            "example": 300
+          },
+          "cacheRead": {
+            "type": "integer",
+            "example": 60
+          },
+          "cacheCreation": {
+            "type": "integer",
+            "example": 30
+          },
+          "total": {
+            "type": "integer",
+            "example": 990
+          },
+          "costUsd": {
+            "type": "number",
+            "example": 0.006
+          }
+        },
+        "required": [
+          "input",
+          "output",
+          "cacheRead",
+          "cacheCreation",
+          "total"
+        ]
+      },
+      "KeyedTokenAggregate": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/TokenAggregate"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string",
+                "example": "agent-id-123"
+              }
+            },
+            "required": [
+              "key"
+            ]
+          }
+        ]
+      },
+      "DoubleKeyedTokenAggregate": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/TokenAggregate"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "key1": {
+                "type": "string",
+                "example": "agent-id-123"
+              },
+              "key2": {
+                "type": "string",
+                "example": "morning-brief"
+              }
+            },
+            "required": [
+              "key1",
+              "key2"
+            ]
+          }
+        ]
+      },
+      "DailyTokenAggregate": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/TokenAggregate"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "period": {
+                "type": "string",
+                "example": "2026-01-10"
+              }
+            },
+            "required": [
+              "period"
+            ]
+          }
+        ]
+      },
+      "CronRunTokenStats": {
+        "type": "object",
+        "properties": {
+          "totals": {
+            "$ref": "#/components/schemas/TokenAggregate"
+          },
+          "byAgent": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KeyedTokenAggregate"
+            }
+          },
+          "byCron": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DoubleKeyedTokenAggregate"
+            }
+          },
+          "byModel": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DoubleKeyedTokenAggregate"
+            }
+          },
+          "daily": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DailyTokenAggregate"
+            }
+          }
+        },
+        "required": [
+          "totals",
+          "byAgent",
+          "byCron",
+          "byModel",
+          "daily"
+        ]
+      },
+      "ChatTokenStats": {
+        "type": "object",
+        "properties": {
+          "totals": {
+            "$ref": "#/components/schemas/TokenAggregate"
+          },
+          "byAgent": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KeyedTokenAggregate"
+            }
+          },
+          "byModel": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DoubleKeyedTokenAggregate"
+            }
+          },
+          "daily": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DailyTokenAggregate"
+            }
+          }
+        },
+        "required": [
+          "totals",
+          "byAgent",
+          "byModel",
+          "daily"
+        ]
+      },
+      "AgentChatTokenUsageDailyByModel": {
         "type": "object",
         "properties": {
           "id": {
@@ -1151,6 +1320,10 @@
           "date": {
             "type": "string",
             "example": "2026-01-15"
+          },
+          "model": {
+            "type": "string",
+            "example": "claude-sonnet-4-5"
           },
           "inputTokens": {
             "type": "integer",
@@ -1187,6 +1360,7 @@
           "id",
           "agentId",
           "date",
+          "model",
           "inputTokens",
           "outputTokens",
           "cacheReadTokens",
@@ -1196,13 +1370,12 @@
           "updatedAt"
         ]
       },
-      "UpsertChatTokenDailyBody": {
+      "ChatTokenModelEntry": {
         "type": "object",
         "properties": {
-          "date": {
+          "model": {
             "type": "string",
-            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-            "example": "2026-01-15"
+            "example": "claude-sonnet-4-5"
           },
           "inputTokens": {
             "type": "integer",
@@ -1231,12 +1404,33 @@
           }
         },
         "required": [
-          "date",
+          "model",
           "inputTokens",
           "outputTokens",
           "cacheReadTokens",
           "cacheCreationTokens",
           "costUsd"
+        ]
+      },
+      "UpsertChatTokenDailyBody": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "example": "2026-01-15"
+          },
+          "modelBreakdown": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatTokenModelEntry"
+            },
+            "description": "Per-model token usage increments"
+          }
+        },
+        "required": [
+          "date",
+          "modelBreakdown"
         ]
       },
       "AgentConfigPlugin": {
@@ -2617,6 +2811,122 @@
         }
       }
     },
+    "/agents/all/cron-runs/stats": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "example": "2026-01-01T00:00:00Z"
+            },
+            "required": false,
+            "name": "from",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "example": "2026-02-01T00:00:00Z"
+            },
+            "required": false,
+            "name": "to",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Aggregated cron-run token stats across all agents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CronRunTokenStats"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — requires admin scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/chat-tokens/daily/stats": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "example": "2026-01-01"
+            },
+            "required": false,
+            "name": "from",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "example": "2026-02-01"
+            },
+            "required": false,
+            "name": "to",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Aggregated chat token daily stats across all agents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatTokenStats"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — requires admin scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agents/{id}/chat-tokens/daily": {
       "post": {
         "parameters": [
@@ -2641,11 +2951,14 @@
         },
         "responses": {
           "200": {
-            "description": "Updated daily chat token usage row",
+            "description": "Updated daily chat token usage rows (one per model)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AgentChatTokenUsageDaily"
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentChatTokenUsageDailyByModel"
+                  }
                 }
               }
             }

@@ -191,6 +191,7 @@ export function createFixtureTaskStoreProvider(): MetricsProvider {
   const CHAT_STATS: ChatTokenStats = {
     totals: agg(400, 200, 80, 40, 0.6),
     byAgent: [{ key: "agent-a", ...agg(400, 200, 80, 40, 0.6) }],
+    byModel: [{ key1: "agent-a", key2: "claude-sonnet-4-5", ...agg(400, 200, 80, 40, 0.6) }],
     daily: [{ period: ds(1), ...agg(400, 200, 80, 40, 0.6) }],
   };
 

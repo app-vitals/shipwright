@@ -51,12 +51,13 @@ const noopProvisioner: AgentProvisioner = {
   },
 };
 
-// ─── Mock row returned by upsertDaily ─────────────────────────────────────────
+// ─── Mock row returned by upsertDailyByModel ──────────────────────────────────
 
 const MOCK_DAILY_ROW = {
   id: "cld_test_001",
   agentId: AGENT_ID,
   date: "2026-01-15",
+  model: "claude-sonnet-4-5",
   inputTokens: 100,
   outputTokens: 50,
   cacheReadTokens: 10,
@@ -80,6 +81,18 @@ const MOCK_STATS_RESULT = {
   byAgent: [
     {
       key: AGENT_ID,
+      input: 600,
+      output: 300,
+      cacheRead: 60,
+      cacheCreation: 30,
+      total: 990,
+      costUsd: 0.006,
+    },
+  ],
+  byModel: [
+    {
+      key1: AGENT_ID,
+      key2: "claude-sonnet-4-5",
       input: 600,
       output: 300,
       cacheRead: 60,
@@ -174,7 +187,7 @@ function makeMockDeps(opts?: {
       removeByName: async () => {},
     },
     agentChatTokenService: {
-      upsertDaily: opts?.agentChatTokenServiceThrows
+      upsertDailyByModel: opts?.agentChatTokenServiceThrows
         ? async (_agentId: string) => {
             throw new NotFoundError(`agent ${_agentId} not found`);
           }
@@ -246,11 +259,16 @@ describe("admin API — POST /agents/:agentId/chat-tokens/daily", () => {
         method: "POST",
         body: JSON.stringify({
           date: "2026-01-15",
-          inputTokens: 100,
-          outputTokens: 50,
-          cacheReadTokens: 10,
-          cacheCreationTokens: 5,
-          costUsd: 0.001,
+          modelBreakdown: [
+            {
+              model: "claude-sonnet-4-5",
+              inputTokens: 100,
+              outputTokens: 50,
+              cacheReadTokens: 10,
+              cacheCreationTokens: 5,
+              costUsd: 0.001,
+            },
+          ],
         }),
         headers: {
           "Content-Type": "application/json",
@@ -264,7 +282,7 @@ describe("admin API — POST /agents/:agentId/chat-tokens/daily", () => {
     expect(body.error).toMatch(/not found/i);
   });
 
-  it("returns 200 with the updated row for a valid request", async () => {
+  it("returns 200 with the updated rows for a valid request", async () => {
     const deps = makeMockDeps();
     const app = createAdminApp(deps);
 
@@ -272,11 +290,16 @@ describe("admin API — POST /agents/:agentId/chat-tokens/daily", () => {
       method: "POST",
       body: JSON.stringify({
         date: "2026-01-15",
-        inputTokens: 100,
-        outputTokens: 50,
-        cacheReadTokens: 10,
-        cacheCreationTokens: 5,
-        costUsd: 0.0012,
+        modelBreakdown: [
+          {
+            model: "claude-sonnet-4-5",
+            inputTokens: 100,
+            outputTokens: 50,
+            cacheReadTokens: 10,
+            cacheCreationTokens: 5,
+            costUsd: 0.0012,
+          },
+        ],
       }),
       headers: {
         "Content-Type": "application/json",
@@ -286,14 +309,18 @@ describe("admin API — POST /agents/:agentId/chat-tokens/daily", () => {
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.id).toBe(MOCK_DAILY_ROW.id);
-    expect(body.agentId).toBe(AGENT_ID);
-    expect(body.date).toBe("2026-01-15");
-    expect(body.inputTokens).toBe(100);
-    expect(body.outputTokens).toBe(50);
-    expect(body.cacheReadTokens).toBe(10);
-    expect(body.cacheCreationTokens).toBe(5);
-    expect(typeof body.costUsd).toBe("number");
+    // Response is an array of upserted rows
+    expect(Array.isArray(body)).toBe(true);
+    expect(body.length).toBe(1);
+    expect(body[0].id).toBe(MOCK_DAILY_ROW.id);
+    expect(body[0].agentId).toBe(AGENT_ID);
+    expect(body[0].date).toBe("2026-01-15");
+    expect(body[0].model).toBe("claude-sonnet-4-5");
+    expect(body[0].inputTokens).toBe(100);
+    expect(body[0].outputTokens).toBe(50);
+    expect(body[0].cacheReadTokens).toBe(10);
+    expect(body[0].cacheCreationTokens).toBe(5);
+    expect(typeof body[0].costUsd).toBe("number");
   });
 
   it("returns 400 when body is missing required fields", async () => {
@@ -304,8 +331,7 @@ describe("admin API — POST /agents/:agentId/chat-tokens/daily", () => {
       method: "POST",
       body: JSON.stringify({
         // missing date
-        inputTokens: 100,
-        outputTokens: 50,
+        modelBreakdown: [],
       }),
       headers: {
         "Content-Type": "application/json",
@@ -324,11 +350,16 @@ describe("admin API — POST /agents/:agentId/chat-tokens/daily", () => {
       method: "POST",
       body: JSON.stringify({
         date: "2026-01-15",
-        inputTokens: 100,
-        outputTokens: 50,
-        cacheReadTokens: 10,
-        cacheCreationTokens: 5,
-        costUsd: 0.001,
+        modelBreakdown: [
+          {
+            model: "claude-sonnet-4-5",
+            inputTokens: 100,
+            outputTokens: 50,
+            cacheReadTokens: 10,
+            cacheCreationTokens: 5,
+            costUsd: 0.001,
+          },
+        ],
       }),
       headers: { "Content-Type": "application/json" },
     });
@@ -387,6 +418,13 @@ describe("admin API — GET /agents/chat-tokens/daily/stats", () => {
     expect(Array.isArray(body.byAgent)).toBe(true);
     if (body.byAgent.length > 0) {
       expect(typeof body.byAgent[0].key).toBe("string");
+    }
+
+    // byModel is an array with entries having key1 (agentId) and key2 (model)
+    expect(Array.isArray(body.byModel)).toBe(true);
+    if (body.byModel.length > 0) {
+      expect(typeof body.byModel[0].key1).toBe("string");
+      expect(typeof body.byModel[0].key2).toBe("string");
     }
 
     // daily is an array with at least one entry having a period
