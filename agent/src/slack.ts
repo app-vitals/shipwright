@@ -17,7 +17,7 @@ import {
   NoopChatTokenReporter,
 } from "./chat-token-reporter.ts";
 import { ClaudeRunError, ClaudeTimeoutError } from "./claude.ts";
-import type { TokenUsage } from "./claude.ts";
+import type { ClaudeRunResult, TokenUsage } from "./claude.ts";
 import { formatPlanLink, markdownToBlocks, markdownToSlack } from "./format.ts";
 import { type Marker, parseMarkers } from "./markers.ts";
 import { threadKey as defaultThreadKey } from "./sessions.ts";
@@ -131,7 +131,7 @@ type GetSessionFn = (key: string) => string | undefined;
 export type ClaudeRunner = (
   message: string,
   sessionKey?: string,
-) => Promise<{ result: string; sessionId?: string; usage?: TokenUsage }>;
+) => Promise<ClaudeRunResult>;
 
 export type ResolveUserFn = (
   userId: string,
@@ -420,9 +420,9 @@ export function createSlackApp(
 
     const startedAt = new Date();
     try {
-      const { result, usage } = await runner(prompt, sessionKey);
+      const { result, usage, totalCostUsd } = await runner(prompt, sessionKey);
       const endedAt = new Date();
-      await chatTokenReporter.recordSession(usage);
+      await chatTokenReporter.recordSession(usage, totalCostUsd);
       const { cleaned, markers } = parseMarkers(result);
 
       const isSilent = markers.some((m) => m.type === "silent");
@@ -572,9 +572,9 @@ export function createSlackApp(
 
     const startedAt = new Date();
     try {
-      const { result, usage } = await runner(prompt, sessionKey);
+      const { result, usage, totalCostUsd } = await runner(prompt, sessionKey);
       const endedAt = new Date();
-      await chatTokenReporter.recordSession(usage);
+      await chatTokenReporter.recordSession(usage, totalCostUsd);
       const { cleaned, markers } = parseMarkers(result);
 
       const isSilent = markers.some((m) => m.type === "silent");
@@ -659,8 +659,8 @@ export function createSlackApp(
     const prompt = `[${name} reacted with :${ev.reaction}: to your message]`;
 
     try {
-      const { result, usage } = await runner(prompt, sessionKey);
-      await chatTokenReporter.recordSession(usage);
+      const { result, usage, totalCostUsd } = await runner(prompt, sessionKey);
+      await chatTokenReporter.recordSession(usage, totalCostUsd);
       const { cleaned, markers } = parseMarkers(result);
 
       const isSilent = markers.some((m) => m.type === "silent");
