@@ -515,6 +515,7 @@ export const UpsertChatTokenDailyBodySchema = z
       .openapi({ example: "2026-01-15" }),
     modelBreakdown: z
       .array(ChatTokenModelEntrySchema)
+      .min(1)
       .openapi({ description: "Per-model token usage increments" }),
   })
   .openapi("UpsertChatTokenDailyBody");
