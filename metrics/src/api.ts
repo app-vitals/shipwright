@@ -30,6 +30,7 @@ import type {
   TrendsGroupBy,
 } from "./metrics-provider.ts";
 import {
+  CostEfficiencyResultSchema,
   DateRangeQuerySchema,
   FeaturesResultSchema,
   QueueResultSchema,
@@ -201,6 +202,29 @@ const tokensRoute = createRoute({
     },
     401: {
       description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Query error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
+const costEfficiencyRoute = createRoute({
+  method: "get",
+  path: "/metrics/cost-efficiency",
+  summary: "Model routing cost efficiency",
+  description:
+    "Returns aggregate cost efficiency metrics: model mix across shipped tasks, routed cost vs. counterfactual all-Opus cost, and savings. Absolute USD values are suppressed (null) when fewer than 5 costed tasks are in the window to prevent per-task spend inference.",
+  request: { query: DateRangeQuerySchema },
+  responses: {
+    200: {
+      description: "Cost efficiency metrics",
+      content: { "application/json": { schema: CostEfficiencyResultSchema } },
+    },
+    400: {
+      description: "Invalid parameters",
       content: { "application/json": { schema: ErrorSchema } },
     },
     500: {
@@ -649,6 +673,81 @@ function makeQueueHandler(
             blockRate,
             avgCycleTimeDays,
             avgReviewFindings,
+          },
+          {
+            dateRange: dateRangeMeta,
+            generatedAt: new Date().toISOString(),
+            queryTimeMs: Date.now() - startMs,
+          },
+        ),
+        200,
+      );
+    } catch (err) {
+      return handleQueryError(c, err);
+    }
+  };
+}
+
+function makeCostEfficiencyHandler(
+  provider: MetricsProvider,
+): AppHandler<typeof costEfficiencyRoute> {
+  return async (c) => {
+    const { preset, from, to } = c.req.valid("query");
+
+    if ((from && !to) || (!from && to)) {
+      return c.json({ error: "custom range requires both from and to" }, 400);
+    }
+    if (from && to) {
+      const rangeError = validateCustomRange(from, to);
+      if (rangeError) return c.json({ error: rangeError }, 400);
+    }
+
+    const dateRange = resolveDateRange(preset, from, to);
+    const dateRangeMeta = resolveDateRangeForMeta(preset, from, to);
+    const startMs = Date.now();
+
+    try {
+      const result = await provider.query({ kind: "costEfficiency", range: dateRange });
+      const rows = resultToRows(result);
+
+      const tasksShippedTotal = rows.length > 0 ? toNum(rows[0].tasks_shipped) : 0;
+      const tasksWithCostData = rows.length > 0 ? toNum(rows[0].tasks_with_cost_data) : 0;
+
+      const modelMix = rows.map((row) => ({
+        model: String(row.model_family ?? ""),
+        taskCount: toNum(row.task_count),
+        tokenShare: null,
+        totalTokens: null,
+      }));
+
+      let totalRoutedUsd = 0;
+      let totalOpusUsd = 0;
+      for (const row of rows) {
+        totalRoutedUsd += toNum(row.routed_usd);
+        totalOpusUsd += toNum(row.opus_usd);
+      }
+
+      const suppressed = tasksWithCostData < 5;
+      const savingsUsd = suppressed ? null : totalOpusUsd - totalRoutedUsd;
+      const savingsPct =
+        totalOpusUsd > 0
+          ? Math.round(((totalOpusUsd - totalRoutedUsd) / totalOpusUsd) * 10000) / 100
+          : null;
+
+      return c.json(
+        wrapResponse(
+          {
+            modelMix,
+            cost: {
+              routedUsd: suppressed ? null : totalRoutedUsd,
+              counterfactualOpusUsd: suppressed ? null : totalOpusUsd,
+              savingsUsd,
+              savingsPct,
+            },
+            tasksWithCostData,
+            tasksShippedTotal,
+            caveat:
+              "Cost data covers tasks where token counts were recorded. Results with fewer than 5 costed tasks suppress absolute USD values.",
           },
           {
             dateRange: dateRangeMeta,
@@ -1147,6 +1246,10 @@ const publicQueueRoute = createRoute({
   ...queueRoute,
   path: "/public/metrics/queue",
 });
+const publicCostEfficiencyRoute = createRoute({
+  ...costEfficiencyRoute,
+  path: "/public/metrics/cost-efficiency",
+});
 
 const PUBLIC_POLICY = { kind: "public" as const };
 
@@ -1229,6 +1332,15 @@ export function createPublicMetricsApp(
     PUBLIC_POLICY,
     makeQueueHandler(provider) as unknown as AppHandler<
       typeof publicQueueRoute
+    >,
+  );
+
+  registerWithAuthz(
+    app,
+    publicCostEfficiencyRoute,
+    PUBLIC_POLICY,
+    makeCostEfficiencyHandler(provider) as unknown as AppHandler<
+      typeof publicCostEfficiencyRoute
     >,
   );
 

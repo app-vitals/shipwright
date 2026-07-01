@@ -245,6 +245,35 @@ export const TokensResultSchema = z
   })
   .openapi("TokensResult");
 
+// ─── Cost efficiency schemas ──────────────────────────────────────────────────
+
+const ModelMixItemSchema = z
+  .object({
+    model: z.string().openapi({ example: "claude-sonnet-4-6" }),
+    taskCount: z.number().int().openapi({ example: 12 }),
+    tokenShare: z.number().nullable().openapi({ example: 45.2 }),
+    totalTokens: z.number().nullable().openapi({ example: 1800000 }),
+  })
+  .openapi("ModelMixItem");
+
+export const CostEfficiencyResultSchema = z
+  .object({
+    modelMix: z.array(ModelMixItemSchema),
+    cost: z.object({
+      routedUsd: z.number().nullable().openapi({ example: 1.25 }),
+      counterfactualOpusUsd: z.number().nullable().openapi({ example: 5.6 }),
+      savingsUsd: z.number().nullable().openapi({ example: 4.35 }),
+      savingsPct: z.number().nullable().openapi({ example: 77.7 }),
+    }),
+    tasksWithCostData: z.number().int().openapi({ example: 8 }),
+    tasksShippedTotal: z.number().int().openapi({ example: 10 }),
+    caveat: z.string().openapi({
+      example:
+        "Cost data covers tasks where token counts were recorded. Results with fewer than 5 costed tasks suppress absolute USD values.",
+    }),
+  })
+  .openapi("CostEfficiencyResult");
+
 // ─── Response envelope schema ─────────────────────────────────────────────────
 
 export const MetaSchema = z

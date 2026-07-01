@@ -142,3 +142,54 @@ describe("public dashboard — static assets", () => {
     });
   }
 });
+
+describe("public metrics surface — cost efficiency", () => {
+  test("GET /public/metrics/cost-efficiency → 200 with correct shape", async () => {
+    const app = buildApp();
+    const res = await app.request("/public/metrics/cost-efficiency");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toHaveProperty("data");
+    expect(body.data).toHaveProperty("modelMix");
+    expect(body.data).toHaveProperty("cost");
+    expect(body.data).toHaveProperty("tasksWithCostData");
+    expect(body.data).toHaveProperty("tasksShippedTotal");
+    expect(body.data).toHaveProperty("caveat");
+    expect(Array.isArray(body.data.modelMix)).toBe(true);
+    expect(body.data.cost).toHaveProperty("routedUsd");
+    expect(body.data.cost).toHaveProperty("counterfactualOpusUsd");
+    expect(body.data.cost).toHaveProperty("savingsUsd");
+    expect(body.data.cost).toHaveProperty("savingsPct");
+  });
+
+  test("GET /public/metrics/cost-efficiency → no agentId, taskId, or per-task array", async () => {
+    const app = buildApp();
+    const res = await app.request("/public/metrics/cost-efficiency");
+    const body = await res.json();
+    const bodyStr = JSON.stringify(body);
+    expect(bodyStr).not.toContain("agentId");
+    expect(bodyStr).not.toContain("taskId");
+    // No per-task array — modelMix is aggregated
+    expect(body.data.modelMix.every((item: unknown) => typeof item === "object" && item !== null && !Array.isArray(item))).toBe(true);
+  });
+
+  test("GET /public/metrics/cost-efficiency → small-N suppresses USD fields when tasksWithCostData < 5", async () => {
+    // makeEmptyProvider returns empty results → tasksWithCostData = 0 < 5
+    const app = buildApp();
+    const res = await app.request("/public/metrics/cost-efficiency");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // With zero costed tasks, absolute USD fields must be null
+    expect(body.data.cost.routedUsd).toBeNull();
+    expect(body.data.cost.counterfactualOpusUsd).toBeNull();
+    expect(body.data.cost.savingsUsd).toBeNull();
+  });
+
+  for (const method of ["POST", "PUT", "DELETE"]) {
+    test(`${method} /public/metrics/cost-efficiency → 404 or 405`, async () => {
+      const app = buildApp();
+      const res = await app.request("/public/metrics/cost-efficiency", { method });
+      expect([404, 405]).toContain(res.status);
+    });
+  }
+});
