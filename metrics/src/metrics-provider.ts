@@ -39,7 +39,8 @@ export type MetricQuery =
   | { kind: "tokensTrends"; range: QueryDateRange }
   | { kind: "tokensByAgentBySessionType"; range: QueryDateRange }
   | { kind: "tokensByAgentByCron"; range: QueryDateRange }
-  | { kind: "tokensByAgentByModel"; range: QueryDateRange };
+  | { kind: "tokensByAgentByModel"; range: QueryDateRange }
+  | { kind: "costEfficiency"; range: QueryDateRange };
 
 export type MetricQueryKind = MetricQuery["kind"];
 

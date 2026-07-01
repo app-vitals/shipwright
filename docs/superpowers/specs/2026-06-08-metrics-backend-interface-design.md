@@ -55,7 +55,8 @@ export type MetricQuery =
   | { kind: "tokensByAgentBySessionType"; range: DateRange }
   | { kind: "tokensByAgentByCron";        range: DateRange }
   | { kind: "tokensByAgentByModel";       range: DateRange }
-  | { kind: "tokensTrends";               range: DateRange };
+  | { kind: "tokensTrends";               range: DateRange }
+  | { kind: "costEfficiency";             range: DateRange };
 
 // The normalized result — today's HogQLResult shape, renamed to drop the vendor name.
 export type MetricTable = { columns: string[]; results: unknown[][]; types: string[] };
