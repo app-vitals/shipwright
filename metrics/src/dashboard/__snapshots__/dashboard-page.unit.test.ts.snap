@@ -98,16 +98,67 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
       padding: 32px 24px 64px;
     }
 
+    /* ─── Hamburger toggle (CSS-only, no JS) ───────────── */
+    .vos-nav-toggle { display: none; }
+    .vos-hamburger {
+      display: none;
+      background: none;
+      border: none;
+      font-size: 20px;
+      cursor: pointer;
+      color: #1a1a2e;
+      padding: 4px 8px;
+      margin-left: auto;
+      line-height: 1;
+      font-family: inherit;
+    }
+    .vos-hamburger:hover { color: #4f46e5; }
+
     @media (max-width: 640px) {
-      .vos-toolbar { padding: 0 16px; gap: 12px; }
+      .vos-toolbar { padding: 0 16px; gap: 12px; flex-wrap: wrap; height: auto; min-height: 52px; align-items: center; }
       .vos-username { display: none; }
       .vos-nav-link { padding: 5px 8px; }
       .vos-page { padding: 20px 16px 48px; }
+
+      /* Hide nav links by default on mobile */
+      .vos-nav {
+        display: none;
+        flex-direction: column;
+        width: 100%;
+        gap: 2px;
+        padding: 8px 0;
+        order: 3;
+      }
+      /* Show nav links when hamburger checkbox is checked */
+      .vos-nav-toggle:checked + nav .vos-nav {
+        display: flex;
+      }
+      .vos-nav-link {
+        display: block;
+        padding: 10px 12px;
+        border-radius: 6px;
+        font-size: 14px;
+      }
+      .vos-nav-link.active {
+        background: #eef2ff;
+        color: #4f46e5;
+        font-weight: 600;
+      }
+      /* Show hamburger on mobile */
+      .vos-hamburger {
+        display: block;
+      }
+      /* Hide user section sign-out on mobile when nav is closed */
+      .vos-user {
+        order: 2;
+      }
     }
+
   </style>
   <link rel="stylesheet" href="/dashboard/styles.css" />
 </head>
 <body>
+  <input type="checkbox" id="vos-nav-toggle" class="vos-nav-toggle" aria-hidden="true">
   <nav class="vos-toolbar" aria-label="Site navigation">
     <a href="/admin/agents" class="vos-wordmark">Shipwright</a>
     <div class="vos-nav">
@@ -124,6 +175,7 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
         <button type="submit" class="vos-signout-btn">Sign out</button>
       </form>
     </div>
+    <label for="vos-nav-toggle" class="vos-hamburger" aria-label="Toggle navigation">☰</label>
   </nav>
   <div class="app">
 
@@ -531,16 +583,67 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
       padding: 32px 24px 64px;
     }
 
+    /* ─── Hamburger toggle (CSS-only, no JS) ───────────── */
+    .vos-nav-toggle { display: none; }
+    .vos-hamburger {
+      display: none;
+      background: none;
+      border: none;
+      font-size: 20px;
+      cursor: pointer;
+      color: #1a1a2e;
+      padding: 4px 8px;
+      margin-left: auto;
+      line-height: 1;
+      font-family: inherit;
+    }
+    .vos-hamburger:hover { color: #4f46e5; }
+
     @media (max-width: 640px) {
-      .vos-toolbar { padding: 0 16px; gap: 12px; }
+      .vos-toolbar { padding: 0 16px; gap: 12px; flex-wrap: wrap; height: auto; min-height: 52px; align-items: center; }
       .vos-username { display: none; }
       .vos-nav-link { padding: 5px 8px; }
       .vos-page { padding: 20px 16px 48px; }
+
+      /* Hide nav links by default on mobile */
+      .vos-nav {
+        display: none;
+        flex-direction: column;
+        width: 100%;
+        gap: 2px;
+        padding: 8px 0;
+        order: 3;
+      }
+      /* Show nav links when hamburger checkbox is checked */
+      .vos-nav-toggle:checked + nav .vos-nav {
+        display: flex;
+      }
+      .vos-nav-link {
+        display: block;
+        padding: 10px 12px;
+        border-radius: 6px;
+        font-size: 14px;
+      }
+      .vos-nav-link.active {
+        background: #eef2ff;
+        color: #4f46e5;
+        font-weight: 600;
+      }
+      /* Show hamburger on mobile */
+      .vos-hamburger {
+        display: block;
+      }
+      /* Hide user section sign-out on mobile when nav is closed */
+      .vos-user {
+        order: 2;
+      }
     }
+
   </style>
   <link rel="stylesheet" href="/dashboard/styles.css" />
 </head>
 <body>
+  <input type="checkbox" id="vos-nav-toggle" class="vos-nav-toggle" aria-hidden="true">
   <nav class="vos-toolbar" aria-label="Site navigation">
     <a href="/admin/agents" class="vos-wordmark">Shipwright</a>
     <div class="vos-nav">
@@ -557,6 +660,7 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
         <button type="submit" class="vos-signout-btn">Sign out</button>
       </form>
     </div>
+    <label for="vos-nav-toggle" class="vos-hamburger" aria-label="Toggle navigation">☰</label>
   </nav>
   <div class="app">
 
@@ -964,16 +1068,67 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
       padding: 32px 24px 64px;
     }
 
+    /* ─── Hamburger toggle (CSS-only, no JS) ───────────── */
+    .vos-nav-toggle { display: none; }
+    .vos-hamburger {
+      display: none;
+      background: none;
+      border: none;
+      font-size: 20px;
+      cursor: pointer;
+      color: #1a1a2e;
+      padding: 4px 8px;
+      margin-left: auto;
+      line-height: 1;
+      font-family: inherit;
+    }
+    .vos-hamburger:hover { color: #4f46e5; }
+
     @media (max-width: 640px) {
-      .vos-toolbar { padding: 0 16px; gap: 12px; }
+      .vos-toolbar { padding: 0 16px; gap: 12px; flex-wrap: wrap; height: auto; min-height: 52px; align-items: center; }
       .vos-username { display: none; }
       .vos-nav-link { padding: 5px 8px; }
       .vos-page { padding: 20px 16px 48px; }
+
+      /* Hide nav links by default on mobile */
+      .vos-nav {
+        display: none;
+        flex-direction: column;
+        width: 100%;
+        gap: 2px;
+        padding: 8px 0;
+        order: 3;
+      }
+      /* Show nav links when hamburger checkbox is checked */
+      .vos-nav-toggle:checked + nav .vos-nav {
+        display: flex;
+      }
+      .vos-nav-link {
+        display: block;
+        padding: 10px 12px;
+        border-radius: 6px;
+        font-size: 14px;
+      }
+      .vos-nav-link.active {
+        background: #eef2ff;
+        color: #4f46e5;
+        font-weight: 600;
+      }
+      /* Show hamburger on mobile */
+      .vos-hamburger {
+        display: block;
+      }
+      /* Hide user section sign-out on mobile when nav is closed */
+      .vos-user {
+        order: 2;
+      }
     }
+
   </style>
   <link rel="stylesheet" href="/dashboard/styles.css" />
 </head>
 <body>
+  <input type="checkbox" id="vos-nav-toggle" class="vos-nav-toggle" aria-hidden="true">
   <nav class="vos-toolbar" aria-label="Site navigation">
     <a href="/admin/agents" class="vos-wordmark">Shipwright</a>
     <div class="vos-nav">
@@ -990,6 +1145,7 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
         <button type="submit" class="vos-signout-btn">Sign out</button>
       </form>
     </div>
+    <label for="vos-nav-toggle" class="vos-hamburger" aria-label="Toggle navigation">☰</label>
   </nav>
   <div class="app">
 
@@ -1397,16 +1553,67 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
       padding: 32px 24px 64px;
     }
 
+    /* ─── Hamburger toggle (CSS-only, no JS) ───────────── */
+    .vos-nav-toggle { display: none; }
+    .vos-hamburger {
+      display: none;
+      background: none;
+      border: none;
+      font-size: 20px;
+      cursor: pointer;
+      color: #1a1a2e;
+      padding: 4px 8px;
+      margin-left: auto;
+      line-height: 1;
+      font-family: inherit;
+    }
+    .vos-hamburger:hover { color: #4f46e5; }
+
     @media (max-width: 640px) {
-      .vos-toolbar { padding: 0 16px; gap: 12px; }
+      .vos-toolbar { padding: 0 16px; gap: 12px; flex-wrap: wrap; height: auto; min-height: 52px; align-items: center; }
       .vos-username { display: none; }
       .vos-nav-link { padding: 5px 8px; }
       .vos-page { padding: 20px 16px 48px; }
+
+      /* Hide nav links by default on mobile */
+      .vos-nav {
+        display: none;
+        flex-direction: column;
+        width: 100%;
+        gap: 2px;
+        padding: 8px 0;
+        order: 3;
+      }
+      /* Show nav links when hamburger checkbox is checked */
+      .vos-nav-toggle:checked + nav .vos-nav {
+        display: flex;
+      }
+      .vos-nav-link {
+        display: block;
+        padding: 10px 12px;
+        border-radius: 6px;
+        font-size: 14px;
+      }
+      .vos-nav-link.active {
+        background: #eef2ff;
+        color: #4f46e5;
+        font-weight: 600;
+      }
+      /* Show hamburger on mobile */
+      .vos-hamburger {
+        display: block;
+      }
+      /* Hide user section sign-out on mobile when nav is closed */
+      .vos-user {
+        order: 2;
+      }
     }
+
   </style>
   <link rel="stylesheet" href="/dashboard/styles.css" />
 </head>
 <body>
+  <input type="checkbox" id="vos-nav-toggle" class="vos-nav-toggle" aria-hidden="true">
   <nav class="vos-toolbar" aria-label="Site navigation">
     <a href="/admin/agents" class="vos-wordmark">Shipwright</a>
     <div class="vos-nav">
@@ -1423,6 +1630,7 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
         <button type="submit" class="vos-signout-btn">Sign out</button>
       </form>
     </div>
+    <label for="vos-nav-toggle" class="vos-hamburger" aria-label="Toggle navigation">☰</label>
   </nav>
   <div class="app">
 
