@@ -1,6 +1,6 @@
 ---
 name: entropy-scan
-description: Scan codebase for golden principle violations. Report only — no code changes. Flags: --init (create starter config), --summary (print summary only, skip report file), --trend (print trend from quality log, skip scan).
+description: "Scan codebase for golden principle violations. Report only — no code changes. Flags: --init (create starter config), --summary (print summary only, skip report file), --trend (print trend from quality log, skip scan)."
 ---
 
 # /entropy-scan
