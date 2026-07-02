@@ -123,7 +123,7 @@ function makeMockDeps(opts?: {
     agentEnvService: {
       upsert: async () => {},
       patch: async () => {},
-      getByAgentId: async () => ({}),
+      getByAgentId: async () => ({ env: {}, secretKeys: [] }),
       deleteKey: async () => {},
     },
     agentCronJobService: {
@@ -387,10 +387,7 @@ describe("admin API — GET /agents/chat-tokens/daily/stats", () => {
     const deps = makeMockDeps(opts);
     // Add a scoped admin API key (not admin scope)
     deps.adminApiKeys = new Map([
-      [
-        SCOPED_API_KEY,
-        { name: "scoped-agent", scope: SCOPED_AGENT_ID },
-      ],
+      [SCOPED_API_KEY, { name: "scoped-agent", scope: SCOPED_AGENT_ID }],
     ]);
     return deps;
   }

@@ -24,10 +24,10 @@ import {
   renderCronRunsPage,
   renderLoginPage,
   renderPrDetailPage,
-  renderPrsPage,
   renderProvisionCompletePage,
   renderProvisionPasteForm,
   renderProvisionStartPage,
+  renderPrsPage,
   renderTaskDetailPage,
   renderTasksPage,
 } from "./admin-ui-pages.ts";

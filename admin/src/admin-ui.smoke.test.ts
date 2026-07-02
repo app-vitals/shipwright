@@ -195,8 +195,9 @@ function makeMockDeps(
       },
     },
     agentEnvService: {
-      getByAgentId: async () => ({ FOO: "bar" }),
+      getByAgentId: async () => ({ env: { FOO: "bar" }, secretKeys: [] }),
       upsert: async () => {},
+      patch: async () => {},
       deleteKey: async () => {},
       getConfigBundle: async () => null,
     },
@@ -624,6 +625,48 @@ describe("admin UI — authenticated pages", () => {
     expect(html).toContain("raw-token-abc123");
   });
 
+  it("POST /admin/agents/:id/envs with secret=true shows lock icon in rendered page", async () => {
+    let capturedArgs: unknown[] = [];
+    const deps = makeMockDeps({
+      agentEnvService: {
+        getByAgentId: async () => ({
+          env: { MY_SECRET: "***" },
+          secretKeys: ["MY_SECRET"],
+        }),
+        upsert: async (...args: unknown[]) => {
+          capturedArgs = args;
+        },
+        patch: async (...args: unknown[]) => {
+          capturedArgs = args;
+        },
+        deleteKey: async () => {},
+        getConfigBundle: async () => null,
+      },
+    });
+    const app = createAdminUIApp(deps);
+    // POST the env var form with secret checked
+    const form = new FormData();
+    form.append("key", "MY_SECRET");
+    form.append("value", "topsecret");
+    form.append("secret", "true");
+    const postRes = await app.request(`/admin/agents/${AGENT_ID}/envs`, {
+      method: "POST",
+      body: form,
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    // Should redirect to agent detail
+    expect(postRes.status).toBe(302);
+
+    // Fetch the agent detail page — the mock getByAgentId returns the secret key
+    const getRes = await app.request(`/admin/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(getRes.status).toBe(200);
+    const html = await getRes.text();
+    // Lock icon should appear for secret keys
+    expect(html).toContain("🔒");
+  });
+
   describe("self-hosted agent (selfHosted=true) detail page", () => {
     const SELFHOSTED_AGENT_ID = "agent-selfhosted-123";
 
@@ -882,8 +925,12 @@ describe("admin UI — authenticated pages", () => {
             },
           },
           agentEnvService: {
-            getByAgentId: async () => ({ TEST_VAR: "should-not-show" }),
+            getByAgentId: async () => ({
+              env: { TEST_VAR: "should-not-show" },
+              secretKeys: [],
+            }),
             upsert: async () => {},
+            patch: async () => {},
             deleteKey: async () => {},
             getConfigBundle: async () => null,
           },
@@ -987,7 +1034,9 @@ describe("admin UI — authenticated pages", () => {
       // System crons section should be present for self-hosted agents
       expect(html).toContain(">System<");
       // Self-hosted notice should appear in the Crons card
-      expect(html).toContain("Crons fire only while the local agent service is running");
+      expect(html).toContain(
+        "Crons fire only while the local agent service is running",
+      );
     });
 
     it("self-hosted agent (selfHosted=true) shows Tools card", async () => {
@@ -1700,8 +1749,8 @@ describe("admin UI — provision start form", () => {
     expect(html).toContain("alert-error");
   });
 
-  it("POST /admin/provision/start Slack error renders form error with NO env upsert", async () => {
-    let upsertCalled = false;
+  it("POST /admin/provision/start Slack error renders form error with NO env patch", async () => {
+    let patchCalled = false;
     const deps = makeMockDeps({
       slackClient: {
         createAppManifest: async () => {
@@ -1709,9 +1758,10 @@ describe("admin UI — provision start form", () => {
         },
       },
       agentEnvService: {
-        getByAgentId: async () => ({}),
-        upsert: async () => {
-          upsertCalled = true;
+        getByAgentId: async () => ({ env: {}, secretKeys: [] }),
+        upsert: async () => {},
+        patch: async () => {
+          patchCalled = true;
         },
         deleteKey: async () => {},
         getConfigBundle: async () => null,
@@ -1732,13 +1782,13 @@ describe("admin UI — provision start form", () => {
         Cookie: `admin_session=${cookie}`,
       },
     });
-    expect(upsertCalled).toBe(false);
+    expect(patchCalled).toBe(false);
     const html = await res.text();
     expect(html).toContain("alert-error");
   });
 
-  it("POST /admin/provision/start happy path (PAT): 200 with oauthUrl, cookie set, env upsert with SLACK_APP_ID, SLACK_SIGNING_SECRET, GH_TOKEN", async () => {
-    let upsertArgs: [string, Record<string, string>] | null = null;
+  it("POST /admin/provision/start happy path (PAT): 200 with oauthUrl, cookie set, env patch with SLACK_APP_ID, SLACK_SIGNING_SECRET, GH_TOKEN", async () => {
+    let patchArgs: [string, Record<string, string>] | null = null;
     const deps = makeMockDeps({
       slackClient: {
         createAppManifest: async () => ({
@@ -1750,9 +1800,10 @@ describe("admin UI — provision start form", () => {
         }),
       },
       agentEnvService: {
-        getByAgentId: async () => ({}),
-        upsert: async (agentId, envVars) => {
-          upsertArgs = [agentId, envVars];
+        getByAgentId: async () => ({ env: {}, secretKeys: [] }),
+        upsert: async () => {},
+        patch: async (agentId: string, envVars: Record<string, string>) => {
+          patchArgs = [agentId, envVars];
         },
         deleteKey: async () => {},
         getConfigBundle: async () => null,
@@ -1796,11 +1847,11 @@ describe("admin UI — provision start form", () => {
     expect(payload.agentId).toBe(AGENT_ID);
     expect(payload.appId).toBe("A_HAPPY");
 
-    // Verify upsert was called with correct env vars
-    expect(upsertArgs).not.toBeNull();
-    // biome-ignore lint/style/noNonNullAssertion: guarded by expect(upsertArgs).not.toBeNull() above
-    const [upsertedAgentId, envVars] = upsertArgs!;
-    expect(upsertedAgentId).toBe(AGENT_ID);
+    // Verify patch was called with correct env vars
+    expect(patchArgs).not.toBeNull();
+    // biome-ignore lint/style/noNonNullAssertion: guarded by expect(patchArgs).not.toBeNull() above
+    const [patchedAgentId, envVars] = patchArgs!;
+    expect(patchedAgentId).toBe(AGENT_ID);
     expect(envVars.SLACK_APP_ID).toBe("A_HAPPY");
     expect(envVars.SLACK_SIGNING_SECRET).toBe("ssec_happy");
     expect(envVars.SLACK_CLIENT_ID).toBe("cid_happy");
@@ -1808,8 +1859,8 @@ describe("admin UI — provision start form", () => {
     expect(envVars.GH_TOKEN).toBe("ghp_my_token");
   });
 
-  it("POST /admin/provision/start with App auth: upsert includes GH_APP_ID, GH_APP_INSTALLATION_ID, GH_APP_PRIVATE_KEY", async () => {
-    let upsertArgs: [string, Record<string, string>] | null = null;
+  it("POST /admin/provision/start with App auth: patch includes GH_APP_ID, GH_APP_INSTALLATION_ID, GH_APP_PRIVATE_KEY", async () => {
+    let patchArgs: [string, Record<string, string>] | null = null;
     const deps = makeMockDeps({
       slackClient: {
         createAppManifest: async () => ({
@@ -1821,9 +1872,10 @@ describe("admin UI — provision start form", () => {
         }),
       },
       agentEnvService: {
-        getByAgentId: async () => ({}),
-        upsert: async (agentId, envVars) => {
-          upsertArgs = [agentId, envVars];
+        getByAgentId: async () => ({ env: {}, secretKeys: [] }),
+        upsert: async () => {},
+        patch: async (agentId: string, envVars: Record<string, string>) => {
+          patchArgs = [agentId, envVars];
         },
         deleteKey: async () => {},
         getConfigBundle: async () => null,
@@ -1848,17 +1900,17 @@ describe("admin UI — provision start form", () => {
       },
     });
     expect(res.status).toBe(200);
-    expect(upsertArgs).not.toBeNull();
-    // biome-ignore lint/style/noNonNullAssertion: guarded by expect(upsertArgs).not.toBeNull() above
-    const [, envVars] = upsertArgs!;
+    expect(patchArgs).not.toBeNull();
+    // biome-ignore lint/style/noNonNullAssertion: guarded by expect(patchArgs).not.toBeNull() above
+    const [, envVars] = patchArgs!;
     expect(envVars.GH_APP_ID).toBe("12345");
     expect(envVars.GH_APP_INSTALLATION_ID).toBe("67890");
     expect(envVars.GH_APP_PRIVATE_KEY).toContain("BEGIN RSA PRIVATE KEY");
     expect(envVars).not.toHaveProperty("GH_TOKEN");
   });
 
-  it("POST /admin/provision/start with AI creds: upsert includes ANTHROPIC_API_KEY and CLAUDE_CODE_OAUTH_TOKEN", async () => {
-    let upsertArgs: [string, Record<string, string>] | null = null;
+  it("POST /admin/provision/start with AI creds: patch includes ANTHROPIC_API_KEY and CLAUDE_CODE_OAUTH_TOKEN", async () => {
+    let patchArgs: [string, Record<string, string>] | null = null;
     const deps = makeMockDeps({
       slackClient: {
         createAppManifest: async () => ({
@@ -1870,9 +1922,10 @@ describe("admin UI — provision start form", () => {
         }),
       },
       agentEnvService: {
-        getByAgentId: async () => ({}),
-        upsert: async (agentId, envVars) => {
-          upsertArgs = [agentId, envVars];
+        getByAgentId: async () => ({ env: {}, secretKeys: [] }),
+        upsert: async () => {},
+        patch: async (agentId: string, envVars: Record<string, string>) => {
+          patchArgs = [agentId, envVars];
         },
         deleteKey: async () => {},
         getConfigBundle: async () => null,
@@ -1896,9 +1949,9 @@ describe("admin UI — provision start form", () => {
       },
     });
     expect(res.status).toBe(200);
-    expect(upsertArgs).not.toBeNull();
-    // biome-ignore lint/style/noNonNullAssertion: guarded by expect(upsertArgs).not.toBeNull() above
-    const [, envVars] = upsertArgs!;
+    expect(patchArgs).not.toBeNull();
+    // biome-ignore lint/style/noNonNullAssertion: guarded by expect(patchArgs).not.toBeNull() above
+    const [, envVars] = patchArgs!;
     expect(envVars.ANTHROPIC_API_KEY).toBe("sk-ant-key");
     expect(envVars.CLAUDE_CODE_OAUTH_TOKEN).toBe("oauth-token-xyz");
   });
@@ -2506,10 +2559,15 @@ describe("admin UI — manifest sync route", () => {
     const app = createAdminUIApp(
       makeMockDeps({
         agentEnvService: {
-          getByAgentId: async () => ({ SLACK_APP_ID: "A123456" }),
+          getByAgentId: async () => ({ env: {}, secretKeys: [] }),
           upsert: async () => {},
+          patch: async () => {},
           deleteKey: async () => {},
-          getConfigBundle: async () => null,
+          getConfigBundle: async () => ({
+            env: { SLACK_APP_ID: "A123456" },
+            agentId: AGENT_ID,
+            allowedTools: [],
+          }),
         },
         slackClient: {
           updateAppManifest: async () => {
@@ -2573,8 +2631,9 @@ describe("admin UI — manifest sync route", () => {
     const app = createAdminUIApp(
       makeMockDeps({
         agentEnvService: {
-          getByAgentId: async () => ({}),
+          getByAgentId: async () => ({ env: {}, secretKeys: [] }),
           upsert: async () => {},
+          patch: async () => {},
           deleteKey: async () => {},
           getConfigBundle: async () => null,
         },
@@ -2599,10 +2658,15 @@ describe("admin UI — manifest sync route", () => {
     const app = createAdminUIApp(
       makeMockDeps({
         agentEnvService: {
-          getByAgentId: async () => ({ SLACK_APP_ID: "A123456" }),
+          getByAgentId: async () => ({ env: {}, secretKeys: [] }),
           upsert: async () => {},
+          patch: async () => {},
           deleteKey: async () => {},
-          getConfigBundle: async () => null,
+          getConfigBundle: async () => ({
+            env: { SLACK_APP_ID: "A123456" },
+            agentId: AGENT_ID,
+            allowedTools: [],
+          }),
         },
         slackClient: {
           updateAppManifest: async () => {
@@ -2650,15 +2714,20 @@ describe("admin UI — manifest sync route", () => {
     const app = createAdminUIApp(
       makeMockDeps({
         agentEnvService: {
-          getByAgentId: async () => ({
-            SLACK_APP_ID: "A123456",
-            SLACK_CLIENT_ID: "my-client-id",
-            SLACK_CLIENT_SECRET: "my-client-secret",
-            SLACK_SIGNING_SECRET: "my-signing-secret",
-          }),
+          getByAgentId: async () => ({ env: {}, secretKeys: [] }),
           upsert: async () => {},
+          patch: async () => {},
           deleteKey: async () => {},
-          getConfigBundle: async () => null,
+          getConfigBundle: async () => ({
+            env: {
+              SLACK_APP_ID: "A123456",
+              SLACK_CLIENT_ID: "my-client-id",
+              SLACK_CLIENT_SECRET: "my-client-secret",
+              SLACK_SIGNING_SECRET: "my-signing-secret",
+            },
+            agentId: AGENT_ID,
+            allowedTools: [],
+          }),
         },
         slackClient: {
           updateAppManifest: async () => {},
@@ -2696,13 +2765,18 @@ describe("admin UI — manifest sync route", () => {
     const app = createAdminUIApp(
       makeMockDeps({
         agentEnvService: {
-          getByAgentId: async () => ({
-            SLACK_APP_ID: "A123456",
-            // No SLACK_CLIENT_ID — legacy agent
-          }),
+          getByAgentId: async () => ({ env: {}, secretKeys: [] }),
           upsert: async () => {},
+          patch: async () => {},
           deleteKey: async () => {},
-          getConfigBundle: async () => null,
+          getConfigBundle: async () => ({
+            env: {
+              SLACK_APP_ID: "A123456",
+              // No SLACK_CLIENT_ID — legacy agent
+            },
+            agentId: AGENT_ID,
+            allowedTools: [],
+          }),
         },
         slackClient: {
           updateAppManifest: async () => {},
