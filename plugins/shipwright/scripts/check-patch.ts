@@ -4,8 +4,9 @@
  *
  * Pre-check for the patch cron.
  *
- * Scans own open PRs for unaddressed review findings, failing CI, or branches
- * behind/dirty main.
+ * Scans own open PRs for unaddressed review findings, failing CI, or merge
+ * conflicts with main. Branches merely behind main (no conflict) are not
+ * patch-worthy — main is only merged into a branch to resolve a conflict.
  *
  * Does NOT read state/reviews.json — all data comes from GitHub directly.
  *
@@ -21,7 +22,6 @@ import {
   getCurrentUser,
   ghGraphql,
   ghJson,
-  ghRun,
   isMergeOnlyUpdate,
   resolveAllRepos,
   resolveWorkspacePath,
@@ -61,7 +61,6 @@ interface CiCheckStatus {
 }
 
 interface MergeStatusInfo {
-  isBehind: boolean;
   isDirty: boolean;
 }
 
@@ -83,7 +82,6 @@ export interface Deps {
     repo: string,
     pr: number,
   ) => Promise<MergeStatusInfo>;
-  updateBranch: (org: string, repo: string, pr: number) => Promise<void>;
   listPrCommits: (prNumber: number, repo?: string) => Promise<CommitInfo[]>;
 }
 
@@ -171,26 +169,14 @@ export async function run(deps: Deps): Promise<RunResult> {
       ? pr.repo.split("/", 2)
       : ["app-vitals", pr.repo];
 
-    // Update stale branches before checking other conditions. BEHIND-only PRs
-    // get synced here and exit 1 — no Claude session needed.
+    // Only a real merge conflict (DIRTY) needs patch attention. A branch
+    // that's merely behind main is not patch-worthy — main is only merged
+    // into a branch to resolve a conflict.
     const mergeStatus = await deps.fetchMergeStatus(org, repo, pr.number);
-    let updateFailed = false;
-    if (mergeStatus.isBehind) {
-      try {
-        await deps.updateBranch(org, repo, pr.number);
-      } catch (err) {
-        process.stderr.write(
-          `check-patch: update-branch failed for PR ${pr.number}: ${String(err)}\n`,
-        );
-        updateFailed = true;
-      }
-    }
-
-    if (mergeStatus.isDirty || updateFailed) {
+    if (mergeStatus.isDirty) {
       return {
         exit: 0,
-        output:
-          "Fix BEHIND/conflict state on own open PRs via /shipwright:patch",
+        output: "Fix merge conflicts on own open PRs via /shipwright:patch",
       };
     }
 
@@ -344,18 +330,14 @@ export async function buildProductionDeps(): Promise<Deps> {
           "mergeStateStatus",
         ]);
         return {
-          isBehind: data.mergeStateStatus === "BEHIND",
           isDirty: data.mergeStateStatus === "DIRTY",
         };
       } catch (err) {
         process.stderr.write(
           `check-patch: gh merge status query failed for PR ${pr}: ${String(err)}\n`,
         );
-        return { isBehind: false, isDirty: false };
+        return { isDirty: false };
       }
-    },
-    updateBranch: async (org: string, repo: string, pr: number) => {
-      ghRun(["pr", "update-branch", String(pr), "--repo", `${org}/${repo}`]);
     },
     listPrCommits: async (prNumber: number, repo?: string) => {
       const targetRepo = repo ?? allRepos[0];
