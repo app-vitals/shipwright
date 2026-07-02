@@ -10,7 +10,7 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
-## [1.6.172] - 2026-07-02
+## [1.6.173] - 2026-07-02
 
 ### Added
 
@@ -20,6 +20,12 @@ independent of `appVersion`. CI enforces this with
 ### Fixed
 
 - `docs/deploy-kubernetes.md`: correct chat env vars to `chat.extraEnv` (not `admin.env`)
+
+## [1.6.172] - 2026-07-02
+
+### Changed
+
+- auto-bump to chart v1.6.172 triggered by release tag `agent-v0.108.0`
 
 ## [1.6.171] - 2026-07-02
 

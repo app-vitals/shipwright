@@ -68,7 +68,7 @@ absent — set them in the **same `update`** that changes status:
 | transition | must set |
 |---|---|
 | → `in_progress` | `model` (soft — recommended) |
-| → `pr_open` | `pr` (or `prUrl`) **and** `prCreatedAt` |
+| → `pr_open` | `pr` (or `prUrl`), `prCreatedAt`, **and** `repo` |
 | `pr_open` → `approved` / `merged` | `ciFixAttempts` |
 
 The exact `PATCH` invocations for each transition are in `SKILL.md` (Standard lifecycle).
