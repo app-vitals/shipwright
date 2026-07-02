@@ -143,6 +143,7 @@ function fakePrService(
     claimResult?: { status: 200 | 201; record: PullRequest } | Error;
     getResult?: PullRequest | null;
     listResult?: PullRequest[];
+    claimNextResult?: { pr: PullRequest; phase: "review" | "patch" | "deploy" } | null;
   } = {},
 ): PullRequestServiceLike {
   const store = opts.store ?? new Map<string, PullRequest>();
@@ -263,6 +264,14 @@ function fakePrService(
       } as PullRequest;
       store.set(id, updated);
       return updated;
+    },
+
+    async claimNext(
+      _agentId: string,
+      _maxConcurrent: number,
+    ): Promise<{ pr: PullRequest; phase: "review" | "patch" | "deploy" } | null> {
+      if ("claimNextResult" in opts) return opts.claimNextResult ?? null;
+      return null;
     },
   };
 }
@@ -815,5 +824,105 @@ describe("/prs routes (smoke)", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as PullRequest;
     expect(body.reviewCycles).toBe(2);
+  });
+
+  // ─── POST /prs/claim-next ─────────────────────────────────────────────────
+
+  it("POST /prs/claim-next returns 200 + {pr, phase} when work found", async () => {
+    const pr = makePr({ id: "pr-5", reviewState: "pending" });
+    const app = makeApp({
+      prService: fakePrService({
+        claimNextResult: { pr, phase: "review" },
+      }),
+    });
+
+    const res = await app.request("/prs/claim-next", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({ agentId: "agent-1", maxConcurrent: 3 }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { pr: PullRequest; phase: string };
+    expect(body.pr.id).toBe("pr-5");
+    expect(body.phase).toBe("review");
+  });
+
+  it("POST /prs/claim-next returns 204 when no work available", async () => {
+    const app = makeApp({
+      prService: fakePrService({ claimNextResult: null }),
+    });
+
+    const res = await app.request("/prs/claim-next", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({ agentId: "agent-1", maxConcurrent: 3 }),
+    });
+    expect(res.status).toBe(204);
+  });
+
+  it("POST /prs/claim-next returns 204 at concurrency limit (null result)", async () => {
+    const app = makeApp({
+      prService: fakePrService({ claimNextResult: null }),
+    });
+
+    const res = await app.request("/prs/claim-next", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({ agentId: "agent-1", maxConcurrent: 1 }),
+    });
+    expect(res.status).toBe(204);
+  });
+
+  it("POST /prs/claim-next pins agentId from agent token", async () => {
+    let capturedAgentId: string | undefined;
+    const pr = makePr({ id: "pr-6", reviewState: "pending" });
+
+    const prServiceWithCapture: PullRequestServiceLike = {
+      ...fakePrService({ claimNextResult: { pr, phase: "review" } }),
+      async claimNext(agentId, maxConcurrent) {
+        capturedAgentId = agentId;
+        return { pr, phase: "review" as const };
+      },
+    } as PullRequestServiceLike;
+
+    const app = makeApp({
+      tokenService: fakeAgentTokenService(),
+      scopeResolver: makeScopeResolver([SCOPED_REPO]),
+      prService: prServiceWithCapture,
+    });
+
+    const res = await app.request("/prs/claim-next", {
+      method: "POST",
+      headers: { ...agentAuth(), "content-type": "application/json" },
+      body: JSON.stringify({ maxConcurrent: 3 }),
+    });
+    expect(res.status).toBe(200);
+    // Agent token must pin agentId to the token's agentId
+    expect(capturedAgentId).toBe("agent-1");
+  });
+
+  it("POST /prs/claim-next with admin token uses agentId from body", async () => {
+    let capturedAgentId: string | undefined;
+    const pr = makePr({ id: "pr-7", reviewState: "pending" });
+
+    const prServiceWithCapture: PullRequestServiceLike = {
+      ...fakePrService({ claimNextResult: { pr, phase: "review" } }),
+      async claimNext(agentId, _maxConcurrent) {
+        capturedAgentId = agentId;
+        return { pr, phase: "review" as const };
+      },
+    } as PullRequestServiceLike;
+
+    const app = makeApp({
+      prService: prServiceWithCapture,
+    });
+
+    const res = await app.request("/prs/claim-next", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({ agentId: "my-agent", maxConcurrent: 3 }),
+    });
+    expect(res.status).toBe(200);
+    expect(capturedAgentId).toBe("my-agent");
   });
 });

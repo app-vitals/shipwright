@@ -9,6 +9,7 @@
 
 import { beforeEach, describe, expect, it } from "bun:test";
 import { PrismaClient } from "../prisma/client/index.js";
+import { FixedClock } from "./clock.ts";
 import { ConflictError } from "./errors.ts";
 import { PullRequestService } from "./pull-request-service.ts";
 
@@ -252,5 +253,320 @@ describeOrSkip("PullRequestService.claim() atomicity (integration)", () => {
     expect(result.status).toBe(200);
     expect(result.record.reviewState).toBe("in_progress");
     expect(result.record.claimedBy).toBe("agent-a");
+  });
+});
+
+// ─── Phase-aware claim() integration tests ────────────────────────────────────
+
+describeOrSkip("PullRequestService.claim() phase support (integration)", () => {
+  let prisma: PrismaClient;
+  let service: PullRequestService;
+
+  beforeEach(async () => {
+    prisma = makePrisma();
+    service = new PullRequestService(prisma);
+    await prisma.pullRequest.deleteMany();
+  });
+
+  it("claim(phase=patch) does not reset reviewState — stays posted", async () => {
+    const repo = "app-vitals/shipwright";
+    const prNumber = 700;
+    const commitSha = "sha-patch";
+
+    // Create a record that has reviewState=posted (review complete, waiting for patch)
+    await prisma.pullRequest.create({
+      data: {
+        repo,
+        prNumber,
+        commitSha,
+        reviewState: "posted",
+        phase: "review",
+        claimedBy: null,
+      },
+    });
+
+    // Claim with phase=patch — should NOT reset reviewState to pending/in_progress
+    const result = await service.claim(repo, prNumber, commitSha, "agent-b", undefined, "patch");
+    expect(result.record.reviewState).toBe("posted");
+    expect(result.record.phase).toBe("patch");
+    expect(result.record.claimedBy).toBe("agent-b");
+  });
+
+  it("claim(phase=deploy) sets phase=deploy, readyForDeployAt if null, does not clear reviewState", async () => {
+    const repo = "app-vitals/shipwright";
+    const prNumber = 701;
+    const commitSha = "sha-deploy";
+
+    await prisma.pullRequest.create({
+      data: {
+        repo,
+        prNumber,
+        commitSha,
+        reviewState: "approved",
+        phase: "patch",
+        claimedBy: null,
+        readyForDeployAt: null,
+      },
+    });
+
+    const result = await service.claim(repo, prNumber, commitSha, "agent-c", undefined, "deploy");
+    expect(result.record.phase).toBe("deploy");
+    expect(result.record.reviewState).toBe("approved");
+    expect(result.record.readyForDeployAt).not.toBeNull();
+  });
+
+  it("claim(phase=review) sets phase=review and reviewState=in_progress", async () => {
+    const repo = "app-vitals/shipwright";
+    const prNumber = 702;
+    const commitSha = "sha-review";
+
+    const result = await service.claim(repo, prNumber, commitSha, "agent-a", undefined, "review");
+    expect(result.status).toBe(201);
+    expect(result.record.phase).toBe("review");
+    expect(result.record.reviewState).toBe("in_progress");
+  });
+
+  it("claim(phase=patch) conflict: 409 if same commitSha and phase=patch and already claimed", async () => {
+    const repo = "app-vitals/shipwright";
+    const prNumber = 703;
+    const commitSha = "sha-conflict-patch";
+    const now = new Date().toISOString();
+
+    // Create record already claimed for patch with fresh heartbeat
+    await prisma.pullRequest.create({
+      data: {
+        repo,
+        prNumber,
+        commitSha,
+        reviewState: "posted",
+        phase: "patch",
+        claimedBy: "agent-x",
+        claimedAt: now,
+        heartbeatAt: now,
+      },
+    });
+
+    let threw = false;
+    try {
+      await service.claim(repo, prNumber, commitSha, "agent-y", undefined, "patch");
+    } catch (err) {
+      threw = true;
+      expect(err).toBeInstanceOf(ConflictError);
+    }
+    expect(threw).toBe(true);
+  });
+});
+
+// ─── complete() sets readyForPatchAt ──────────────────────────────────────────
+
+describeOrSkip("PullRequestService.complete() readyForPatchAt (integration)", () => {
+  let prisma: PrismaClient;
+  let service: PullRequestService;
+
+  beforeEach(async () => {
+    prisma = makePrisma();
+    service = new PullRequestService(prisma);
+    await prisma.pullRequest.deleteMany();
+  });
+
+  it("complete() sets readyForPatchAt=now alongside reviewState=posted", async () => {
+    const now = new Date("2026-07-01T10:00:00.000Z");
+    const clock = FixedClock(now);
+    const svc = new PullRequestService(prisma, clock);
+
+    const { record: created } = await svc.claim(
+      "app-vitals/shipwright",
+      800,
+      "sha-complete",
+      "agent-a",
+    );
+
+    const completed = await svc.complete(created.id);
+    expect(completed.reviewState).toBe("posted");
+    expect(completed.reviewedAt).toBe(now.toISOString());
+    expect(completed.readyForPatchAt).toBe(now.toISOString());
+  });
+});
+
+// ─── claimNext() integration tests ───────────────────────────────────────────
+
+describeOrSkip("PullRequestService.claimNext() (integration)", () => {
+  let prisma: PrismaClient;
+  let service: PullRequestService;
+
+  beforeEach(async () => {
+    prisma = makePrisma();
+    service = new PullRequestService(prisma);
+    await prisma.pullRequest.deleteMany();
+  });
+
+  it("claimNext() returns null when active claim count >= maxConcurrent", async () => {
+    const now = new Date();
+    const freshHb = now.toISOString();
+
+    // Create maxConcurrent=2 PRs already claimed by agent-a with fresh heartbeat
+    await prisma.pullRequest.createMany({
+      data: [
+        {
+          repo: "app-vitals/shipwright",
+          prNumber: 901,
+          commitSha: "sha-a",
+          reviewState: "in_progress",
+          state: "open",
+          claimedBy: "agent-a",
+          claimedAt: freshHb,
+          heartbeatAt: freshHb,
+        },
+        {
+          repo: "app-vitals/shipwright",
+          prNumber: 902,
+          commitSha: "sha-b",
+          reviewState: "in_progress",
+          state: "open",
+          claimedBy: "agent-a",
+          claimedAt: freshHb,
+          heartbeatAt: freshHb,
+        },
+      ],
+    });
+
+    // Also create an unclaimed PR that would normally be picked up
+    await prisma.pullRequest.create({
+      data: {
+        repo: "app-vitals/shipwright",
+        prNumber: 903,
+        reviewState: "pending",
+        state: "open",
+      },
+    });
+
+    const result = await service.claimNext("agent-a", 2);
+    expect(result).toBeNull();
+  });
+
+  it("claimNext() returns oldest eligible PR by COALESCE timestamp ordering across phases", async () => {
+    // PR 1: posted (ready for patch), readyForPatchAt=T+2
+    await prisma.pullRequest.create({
+      data: {
+        repo: "app-vitals/shipwright",
+        prNumber: 910,
+        commitSha: "sha-patch",
+        reviewState: "posted",
+        state: "open",
+        claimedBy: null,
+        readyForPatchAt: "2026-07-01T02:00:00.000Z",
+      },
+    });
+
+    // PR 2: pending (ready for review), readyForReviewAt=T+1 (oldest)
+    await prisma.pullRequest.create({
+      data: {
+        repo: "app-vitals/shipwright",
+        prNumber: 911,
+        commitSha: "sha-review",
+        reviewState: "pending",
+        state: "open",
+        claimedBy: null,
+        readyForReviewAt: "2026-07-01T01:00:00.000Z",
+      },
+    });
+
+    // PR 3: approved (ready for deploy), readyForDeployAt=T+3
+    await prisma.pullRequest.create({
+      data: {
+        repo: "app-vitals/shipwright",
+        prNumber: 912,
+        commitSha: "sha-deploy",
+        reviewState: "approved",
+        state: "open",
+        claimedBy: null,
+        readyForDeployAt: "2026-07-01T03:00:00.000Z",
+      },
+    });
+
+    // Should pick PR 911 (oldest COALESCE timestamp = readyForReviewAt T+1)
+    const result = await service.claimNext("agent-z", 5);
+    expect(result).not.toBeNull();
+    expect(result?.pr.prNumber).toBe(911);
+    expect(result?.phase).toBe("review");
+  });
+
+  it("claimNext() determines phase from reviewState: pending→review, posted→patch, approved→deploy", async () => {
+    // Only one PR, posted
+    await prisma.pullRequest.create({
+      data: {
+        repo: "app-vitals/shipwright",
+        prNumber: 920,
+        commitSha: "sha-phase",
+        reviewState: "posted",
+        state: "open",
+        claimedBy: null,
+        readyForPatchAt: "2026-07-01T01:00:00.000Z",
+      },
+    });
+
+    const result = await service.claimNext("agent-z", 5);
+    expect(result).not.toBeNull();
+    expect(result?.phase).toBe("patch");
+    expect(result?.pr.phase).toBe("patch");
+  });
+
+  it("claimNext() sets readyForReviewAt=now on first claim (when null)", async () => {
+    const now = new Date("2026-07-01T10:00:00.000Z");
+    const clock = FixedClock(now);
+    const svc = new PullRequestService(prisma, clock);
+
+    await prisma.pullRequest.create({
+      data: {
+        repo: "app-vitals/shipwright",
+        prNumber: 930,
+        reviewState: "pending",
+        state: "open",
+        claimedBy: null,
+        readyForReviewAt: null,
+      },
+    });
+
+    const result = await svc.claimNext("agent-z", 5);
+    expect(result).not.toBeNull();
+    expect(result?.pr.readyForReviewAt).toBe(now.toISOString());
+  });
+
+  it("claimNext() returns null when no eligible PRs exist", async () => {
+    // Only a closed PR — should not be picked up
+    await prisma.pullRequest.create({
+      data: {
+        repo: "app-vitals/shipwright",
+        prNumber: 940,
+        reviewState: "pending",
+        state: "closed",
+        claimedBy: null,
+      },
+    });
+
+    const result = await service.claimNext("agent-z", 5);
+    expect(result).toBeNull();
+  });
+
+  it("claimNext() skips PRs already claimed by others with fresh heartbeat", async () => {
+    const now = new Date().toISOString();
+
+    // PR claimed by someone else with fresh heartbeat
+    await prisma.pullRequest.create({
+      data: {
+        repo: "app-vitals/shipwright",
+        prNumber: 950,
+        commitSha: "sha-claimed",
+        reviewState: "pending",
+        state: "open",
+        claimedBy: "agent-other",
+        claimedAt: now,
+        heartbeatAt: now,
+        readyForReviewAt: "2026-07-01T01:00:00.000Z",
+      },
+    });
+
+    const result = await service.claimNext("agent-a", 5);
+    expect(result).toBeNull();
   });
 });
