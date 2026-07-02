@@ -1,6 +1,101 @@
 import { describe, expect, test } from "bun:test";
 import { SYSTEM_CRONS } from "./system-crons.ts";
 
+/**
+ * Expands the minute field of a 5-field cron schedule into the set of
+ * minutes-past-the-hour it fires on. Supports plain numbers, comma lists
+ * (e.g. "0,30"), and step expressions (star followed by slash and a step,
+ * e.g. every-N-minutes). Sufficient for the schedules used in SYSTEM_CRONS —
+ * not a general-purpose cron parser.
+ */
+function expandMinuteField(schedule: string): number[] {
+  const minuteField = schedule.trim().split(/\s+/)[0];
+  if (minuteField === undefined) {
+    throw new Error(`schedule has no minute field: ${schedule}`);
+  }
+  const stepMatch = minuteField.match(/^\*\/(\d+)$/);
+  if (stepMatch) {
+    const step = Number(stepMatch[1]);
+    const minutes: number[] = [];
+    for (let m = 0; m < 60; m += step) minutes.push(m);
+    return minutes;
+  }
+  if (minuteField === "*") {
+    return Array.from({ length: 60 }, (_, m) => m);
+  }
+  return minuteField.split(",").map((n) => Number(n));
+}
+
+const PIPELINE_CRON_NAMES = [
+  "shipwright-dev-task",
+  "shipwright-patch",
+  "shipwright-review-patch",
+  "shipwright-review",
+  "shipwright-deploy",
+] as const;
+
+function pipelineCrons() {
+  return PIPELINE_CRON_NAMES.map((name) => {
+    const cron = SYSTEM_CRONS.find((c) => c.name === name);
+    if (!cron) throw new Error(`missing system cron: ${name}`);
+    return cron;
+  });
+}
+
+describe("SYSTEM_CRONS pipeline schedule staggering", () => {
+  test("each pipeline cron fires on exactly 2 minutes, 30 minutes apart", () => {
+    for (const cron of pipelineCrons()) {
+      const minutes = expandMinuteField(cron.schedule);
+      expect(minutes).toHaveLength(2);
+      const [first, second] = minutes;
+      expect(second === undefined || first === undefined).toBe(false);
+      expect((second ?? 0) - (first ?? 0)).toBe(30);
+    }
+  });
+
+  test("no two pipeline SYSTEM_CRONS entries fire in the same minute", () => {
+    const minuteSets = pipelineCrons().map((cron) => ({
+      name: cron.name,
+      minutes: expandMinuteField(cron.schedule),
+    }));
+    for (const [i, a] of minuteSets.entries()) {
+      for (const b of minuteSets.slice(i + 1)) {
+        const overlap = a.minutes.filter((m) => b.minutes.includes(m));
+        expect(overlap).toEqual([]);
+      }
+    }
+  });
+
+  test("pipeline crons keep the current expected staggered schedules", () => {
+    const expected: Record<(typeof PIPELINE_CRON_NAMES)[number], string> = {
+      "shipwright-dev-task": "0,30 * * * *",
+      "shipwright-patch": "5,35 * * * *",
+      "shipwright-review-patch": "10,40 * * * *",
+      "shipwright-review": "15,45 * * * *",
+      "shipwright-deploy": "20,50 * * * *",
+    };
+    for (const cron of pipelineCrons()) {
+      expect(cron.schedule).toBe(
+        expected[cron.name as (typeof PIPELINE_CRON_NAMES)[number]],
+      );
+    }
+  });
+
+  test("daily/weekly SYSTEM_CRONS schedules are unchanged", () => {
+    const expected: Record<string, string> = {
+      "shipwright-test-readiness": "0 6 * * *",
+      "shipwright-docs-freshness": "0 7 * * *",
+      "learn-dream": "0 3 * * *",
+      "dependabot-triage": "0 8 * * *",
+      "entropy-patrol-maintenance": "0 4 * * 1",
+    };
+    for (const [name, schedule] of Object.entries(expected)) {
+      const cron = SYSTEM_CRONS.find((c) => c.name === name);
+      expect(cron?.schedule).toBe(schedule);
+    }
+  });
+});
+
 describe("SYSTEM_CRONS", () => {
   test("exports exactly ten crons", () => {
     expect(SYSTEM_CRONS).toHaveLength(10);
@@ -161,7 +256,9 @@ describe("SYSTEM_CRONS", () => {
     expect(cron?.prompt).toContain("/shipwright:research-docs");
   });
 
-  test("polling crons have schedule */30 * * * *", () => {
+  test("polling crons keep a 30-minute cadence, staggered to distinct minutes", () => {
+    // See the "SYSTEM_CRONS pipeline schedule staggering" describe block above
+    // for the collision-detection assertions. This test only pins the cadence.
     const pollingCrons = SYSTEM_CRONS.filter(
       (c) =>
         c.name !== "shipwright-test-readiness" &&
@@ -171,7 +268,7 @@ describe("SYSTEM_CRONS", () => {
         c.name !== "entropy-patrol-maintenance",
     );
     for (const cron of pollingCrons) {
-      expect(cron.schedule).toBe("*/30 * * * *");
+      expect(cron.schedule).toMatch(/^\d+,\d+ \* \* \* \*$/);
     }
   });
 

@@ -501,6 +501,7 @@ function makeSummaryHandler(
             reviewsTotal,
             reviewsShipIt,
             reviewShipItRate,
+            avgReviewIterations: toNumOrNull(row.avg_review_iterations),
             estimationAccuracy,
             complexityDist: {
               c1: toNum(row.complexity_1),

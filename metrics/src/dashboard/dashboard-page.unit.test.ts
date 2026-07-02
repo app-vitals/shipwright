@@ -204,6 +204,16 @@ describe("renderDashboardPage — MG-1.2 clickable metrics: data-metric attribut
     expect(html).toContain('data-metric="reviews-ship-it"');
   });
 
+  test("review-iterations stat-row is labeled honestly as an iteration proxy", () => {
+    const html = renderDashboardPage(BASE_OPTS);
+    expect(html).toContain('data-metric="review-iterations"');
+    expect(html).toContain("Review Iterations");
+    const iterationsRow = html
+      .split('data-metric="review-iterations"')[1]
+      ?.split("</div>")[0];
+    expect(iterationsRow).not.toContain("Findings");
+  });
+
   test("efficiency stat-blocks have data-metric attributes", () => {
     const html = renderDashboardPage(BASE_OPTS);
     expect(html).toContain('data-metric="avg-estimated-hours"');

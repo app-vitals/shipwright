@@ -213,6 +213,7 @@
     // Reviews
     $("review-total").textContent = fmtInt(data.reviewsTotal);
     $("review-ship-it").textContent = fmtInt(data.reviewsShipIt);
+    $("review-iterations").textContent = fmtNum(data.avgReviewIterations);
 
     // Coverage
     $("coverage-reports").textContent = fmtInt(data.coverageReports);
