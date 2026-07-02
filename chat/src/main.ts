@@ -15,6 +15,8 @@ import { join } from "node:path";
 import { createChatServiceApp } from "./app.ts";
 import { createScopeResolver } from "./auth.ts";
 import { PrismaClient } from "./index.ts";
+import { MessageService } from "./message-service.ts";
+import { ThreadService } from "./thread-service.ts";
 import { ChatTokenService } from "./token-service.ts";
 
 const DEFAULT_PORT = 3000;
@@ -75,6 +77,8 @@ async function startServer(): Promise<void> {
 
   const prisma = new PrismaClient();
   const tokenService = new ChatTokenService(prisma);
+  const threadService = new ThreadService(prisma);
+  const messageService = new MessageService(prisma);
 
   const seedToken = process.env.CHAT_SEED_ADMIN_TOKEN;
   if (seedToken) {
@@ -100,6 +104,8 @@ async function startServer(): Promise<void> {
 
   const app = createChatServiceApp({
     tokenService,
+    threadService,
+    messageService,
     scopeResolver,
   });
 
