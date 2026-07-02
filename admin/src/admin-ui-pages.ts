@@ -2304,7 +2304,7 @@ export function renderProvisionCompletePage(
     alreadyConfigured?: boolean;
   },
 ): string {
-  const rawTokenHtml = opts.rawToken
+  const tokenStatusHtml = opts.rawToken
     ? `<div class="alert alert-success" style="margin-top:16px">
         <strong>Internal API Key — copy it now, it will not be shown again.</strong><br />
         <code
@@ -2332,7 +2332,7 @@ export function renderProvisionCompletePage(
     ? `<div class="alert alert-success">
         <strong>Provisioning complete!</strong> — Slack app credentials and tokens stored.
       </div>
-      ${rawTokenHtml}
+      ${tokenStatusHtml}
       <p style="font-size:14px;margin-bottom:16px;margin-top:16px">
         All credentials have been saved to the agent's env vars and system crons have been seeded.
       </p>
