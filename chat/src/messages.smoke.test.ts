@@ -381,7 +381,7 @@ describe("POST /threads/:id/messages/:msgId/reply", () => {
       {
         method: "POST",
         headers: H.post,
-        body: JSON.stringify({ body: "another reply" }),
+        body: JSON.stringify({ body: "trying to reply to assistant" }),
       },
     );
     expect(res.status).toBe(400);

@@ -131,4 +131,3 @@ function enforceAgentScope(
     throw new ForbiddenError("agent token may not access this thread");
   }
 }
-

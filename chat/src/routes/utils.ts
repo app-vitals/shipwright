@@ -1,11 +1,11 @@
 /**
  * chat/src/routes/utils.ts
- * Shared utilities for chat route handlers.
+ * Shared helpers for route handlers.
  */
 
 /**
- * Parse a query-string integer parameter with a default fallback.
- * Returns defaultValue when the parameter is absent, non-numeric, or negative.
+ * Parse a query parameter as a non-negative integer.
+ * Returns defaultValue when the param is absent, non-numeric, or negative.
  */
 export function parseIntParam(
   value: string | undefined,

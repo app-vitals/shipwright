@@ -294,6 +294,19 @@ export const PatchAgentCronRunBodySchema = z
       .array(ModelBreakdownEntrySchema)
       .optional()
       .openapi({ description: "Per-model token breakdown for this run" }),
+    // Passthrough-only: accepted for forward-compatibility with older agent
+    // builds that still send model/costUsd on the PATCH body. The DB columns
+    // were dropped in feat/drop-cron-run-legacy-columns; these fields are
+    // silently ignored server-side so live agents don't lose per-model breakdown
+    // rows while both services deploy separately.
+    model: z
+      .string()
+      .optional()
+      .openapi({ example: "claude-sonnet-4-5" }),
+    costUsd: z
+      .number()
+      .optional()
+      .openapi({ example: 0.0042 }),
   })
   .openapi("PatchAgentCronRunBody");
 
