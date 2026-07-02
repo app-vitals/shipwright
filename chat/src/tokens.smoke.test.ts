@@ -13,6 +13,11 @@
 
 import { describe, expect, it } from "bun:test";
 import { createChatServiceApp } from "./app.ts";
+import {
+  fakeAgentTokenService,
+  fakeMessageService,
+  fakeThreadService,
+} from "./test-fakes.ts";
 import type { ChatToken, ChatTokenServiceLike } from "./token-service.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -20,7 +25,7 @@ import type { ChatToken, ChatTokenServiceLike } from "./token-service.ts";
 const ADMIN_TOKEN = "admin-token";
 const AGENT_TOKEN = "agent-token";
 
-// ─── Fakes ────────────────────────────────────────────────────────────────────
+// ─── Token fakes (kept local — need richer list/update behaviour) ─────────────
 
 function fakeAdminTokenService(): ChatTokenServiceLike {
   return {
@@ -51,7 +56,7 @@ function fakeAdminTokenService(): ChatTokenServiceLike {
         revokedAt: new Date(),
       };
     },
-    async list() {
+    async list(): Promise<ChatToken[]> {
       return [
         {
           id: "tok-1",
@@ -86,37 +91,12 @@ function fakeAdminTokenService(): ChatTokenServiceLike {
   };
 }
 
-function fakeAgentTokenService(): ChatTokenServiceLike {
-  return {
-    async create(label?: string, agentId?: string) {
-      return {
-        token: {
-          id: "tok-agent",
-          token: "hash-agent",
-          label: label ?? null,
-          agentId: agentId ?? "agent-1",
-          createdAt: new Date(),
-          revokedAt: null,
-        },
-        rawToken: "raw-agent",
-      };
-    },
-    async validate(raw: string) {
-      return raw === AGENT_TOKEN
-        ? { id: "tok-agent", agentId: "agent-1" }
-        : null;
-    },
-    async revoke() {
-      return null;
-    },
-    async list() {
-      return [];
-    },
-    async update() {
-      return null;
-    },
-    async seed() {},
-  };
+function makeApp(tokenService: ChatTokenServiceLike) {
+  return createChatServiceApp({
+    tokenService,
+    threadService: fakeThreadService(),
+    messageService: fakeMessageService(),
+  });
 }
 
 function auth(token: string = ADMIN_TOKEN) {
@@ -127,9 +107,7 @@ function auth(token: string = ADMIN_TOKEN) {
 
 describe("POST /tokens", () => {
   it("returns 201 with rawToken (admin only)", async () => {
-    const app = createChatServiceApp({
-      tokenService: fakeAdminTokenService(),
-    });
+    const app = makeApp(fakeAdminTokenService());
     const res = await app.request("/tokens", {
       method: "POST",
       headers: { ...auth(), "content-type": "application/json" },
@@ -145,12 +123,8 @@ describe("POST /tokens", () => {
 
 describe("GET /tokens", () => {
   it("returns 200 with token array (admin only)", async () => {
-    const app = createChatServiceApp({
-      tokenService: fakeAdminTokenService(),
-    });
-    const res = await app.request("/tokens", {
-      headers: auth(),
-    });
+    const app = makeApp(fakeAdminTokenService());
+    const res = await app.request("/tokens", { headers: auth() });
     expect(res.status).toBe(200);
     const body = (await res.json()) as ChatToken[];
     expect(Array.isArray(body)).toBe(true);
@@ -160,9 +134,7 @@ describe("GET /tokens", () => {
 
 describe("DELETE /tokens/:id", () => {
   it("returns 200 on successful revocation", async () => {
-    const app = createChatServiceApp({
-      tokenService: fakeAdminTokenService(),
-    });
+    const app = makeApp(fakeAdminTokenService());
     const res = await app.request("/tokens/tok-1", {
       method: "DELETE",
       headers: auth(),
@@ -174,9 +146,7 @@ describe("DELETE /tokens/:id", () => {
   });
 
   it("returns 404 when token does not exist", async () => {
-    const app = createChatServiceApp({
-      tokenService: fakeAdminTokenService(),
-    });
+    const app = makeApp(fakeAdminTokenService());
     const res = await app.request("/tokens/nonexistent", {
       method: "DELETE",
       headers: auth(),
@@ -187,9 +157,7 @@ describe("DELETE /tokens/:id", () => {
 
 describe("agent token attempting token management", () => {
   it("returns 403 on POST /tokens with agent token", async () => {
-    const app = createChatServiceApp({
-      tokenService: fakeAgentTokenService(),
-    });
+    const app = makeApp(fakeAgentTokenService(AGENT_TOKEN));
     const res = await app.request("/tokens", {
       method: "POST",
       headers: {
@@ -202,9 +170,7 @@ describe("agent token attempting token management", () => {
   });
 
   it("returns 403 on GET /tokens with agent token", async () => {
-    const app = createChatServiceApp({
-      tokenService: fakeAgentTokenService(),
-    });
+    const app = makeApp(fakeAgentTokenService(AGENT_TOKEN));
     const res = await app.request("/tokens", {
       headers: { Authorization: `Bearer ${AGENT_TOKEN}` },
     });

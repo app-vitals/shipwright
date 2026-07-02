@@ -4,14 +4,14 @@
  *
  * The factory accepts service interfaces (not concrete classes) so tests can
  * inject in-memory fakes without a real database. Production wiring in main.ts
- * passes the real ChatTokenService backed by PrismaClient.
+ * passes the real implementations backed by PrismaClient.
  *
  * Mount order:
- *   GET /health        — unauthenticated liveness probe
- *   * /*               — bearer auth middleware (everything else)
- *   * /tokens/*        — token create/list/revoke/update (admin only)
- *   * /threads/*       — thread CRUD (501 stub)
- *   * /threads/:id/messages/* — message CRUD (501 stub)
+ *   GET /health                     — unauthenticated liveness probe
+ *   * /*                            — bearer auth middleware (everything else)
+ *   * /tokens/*                     — token create/list/revoke/update (admin only)
+ *   * /threads/*                    — thread CRUD
+ *   * /threads/:threadId/messages/* — message CRUD + queue API
  *
  * Thrown ApiError subclasses are mapped to HTTP responses by the onError hook.
  */
@@ -19,13 +19,17 @@
 import { Hono } from "hono";
 import { type ChatAuthEnv, createBearerAuthMiddleware } from "./auth.ts";
 import { ApiError } from "./errors.ts";
+import type { MessageServiceLike } from "./message-service.ts";
 import { createMessagesRoutes } from "./routes/messages.ts";
 import { createThreadsRoutes } from "./routes/threads.ts";
 import { createTokensRoutes } from "./routes/tokens.ts";
+import type { ThreadServiceLike } from "./thread-service.ts";
 import type { ChatTokenServiceLike } from "./token-service.ts";
 
 export interface ChatServiceDeps {
   tokenService: ChatTokenServiceLike;
+  threadService: ThreadServiceLike;
+  messageService: MessageServiceLike;
   /** Optional scope resolver for agent tokens — returns repos from agents service. */
   scopeResolver?: (agentId: string) => Promise<string[]>;
 }
@@ -60,8 +64,11 @@ export function createChatServiceApp(
   );
 
   app.route("/tokens", createTokensRoutes(deps.tokenService));
-  app.route("/threads", createThreadsRoutes());
-  app.route("/threads/:threadId/messages", createMessagesRoutes());
+  app.route("/threads", createThreadsRoutes(deps.threadService));
+  app.route(
+    "/threads/:threadId/messages",
+    createMessagesRoutes(deps.threadService, deps.messageService),
+  );
 
   return app;
 }
