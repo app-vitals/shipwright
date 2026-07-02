@@ -363,7 +363,11 @@ describe("task-store API (smoke)", () => {
     const res = await app.request("/tasks", {
       method: "POST",
       headers: { ...auth(), "content-type": "application/json" },
-      body: JSON.stringify({ title: "New", status: "pending" }),
+      body: JSON.stringify({
+        title: "New",
+        status: "pending",
+        repo: "example-org/repo",
+      }),
     });
     expect(res.status).toBe(201);
   });
@@ -393,14 +397,21 @@ describe("task-store API (smoke)", () => {
   // ─── Agent token scoping ──────────────────────────────────────────────────
 
   it("POST /tasks with agent token forces assignee to the agent's ID", async () => {
-    const app = makeApp({ tokenService: fakeAgentTokenService() });
+    const app = makeApp({
+      tokenService: fakeAgentTokenService(),
+      scopeResolver: makeScopeResolver(["example-org/repo"]),
+    });
     const res = await app.request("/tasks", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${AGENT_TOKEN}`,
         "content-type": "application/json",
       },
-      body: JSON.stringify({ title: "New task", status: "pending" }),
+      body: JSON.stringify({
+        title: "New task",
+        status: "pending",
+        repo: "example-org/repo",
+      }),
     });
     expect(res.status).toBe(201);
     const body = (await res.json()) as Task;

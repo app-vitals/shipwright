@@ -205,6 +205,7 @@ describe("Execution data columns — PATCH and GET round-trip", () => {
       body: JSON.stringify({
         title: "Test execution fields",
         status: "pending",
+        repo: "example-org/repo",
       }),
     });
     expect(createRes.status).toBe(201);
@@ -297,6 +298,7 @@ describe("Execution data columns — PATCH and GET round-trip", () => {
       body: JSON.stringify({
         title: "Existing task",
         status: "pending",
+        repo: "example-org/repo",
       }),
     });
     expect(createRes.status).toBe(201);
