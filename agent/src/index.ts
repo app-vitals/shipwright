@@ -17,11 +17,13 @@ import { join } from "node:path";
 import { WebClient } from "@slack/web-api";
 import nodeCron from "node-cron";
 import { createAnalyticsStore } from "./analytics.ts";
+import { createChatPoller } from "./chat-poller.ts";
 import { createRunClaude, setLiveClaudeConfig } from "./claude.ts";
 import { SystemClock } from "./clock.ts";
 import { createConfig } from "./config.ts";
 import { handleCronRequest } from "./cron-handler.ts";
 import type { CronHandlerDeps } from "./cron-handler.ts";
+import { HttpChatServiceClient } from "./http-chat-service-client.ts";
 import {
   HttpChatTokenReporter,
   NoopChatTokenReporter,
@@ -288,6 +290,29 @@ if (runtimeClient && agentId) {
   void syncCrons();
   setInterval(() => void syncCrons(), 60_000);
   console.log("[agent] cron sync started (60s interval)");
+}
+
+// ─── Step 6b: Chat poll loop ──────────────────────────────────────────────────
+// Start when both SHIPWRIGHT_CHAT_SERVICE_URL and SHIPWRIGHT_CHAT_SERVICE_TOKEN
+// are set. Uses a separate session store (chat-sessions.json) for per-thread
+// Claude session continuity across restarts.
+
+if (config.chat.serviceUrl && config.chat.serviceToken) {
+  const chatSessions = createFileSessionStore(config.paths.chatSessions);
+  const chatClient = new HttpChatServiceClient({
+    baseUrl: config.chat.serviceUrl,
+    token: config.chat.serviceToken,
+  });
+  const chatPoller = createChatPoller({
+    client: chatClient,
+    runner,
+    sessions: chatSessions,
+    intervalMs: config.chat.pollIntervalMs ?? 5_000,
+  });
+  chatPoller.start();
+  console.log(
+    `[agent] chat poll loop started (${config.chat.pollIntervalMs ?? 5_000}ms interval)`,
+  );
 }
 
 // ─── Step 7: Slack Bolt Socket Mode (only when credentials present) ───────────
