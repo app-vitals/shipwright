@@ -250,6 +250,7 @@ describe("message handler — DM routing", () => {
       ts: string;
       thread_ts: string;
       files: SlackFile[];
+      blocks: Array<{ type: string; elements?: unknown[] }>;
     }> = {},
   ) {
     const client = makeMockClient();
@@ -309,6 +310,71 @@ describe("message handler — DM routing", () => {
     const { client, say } = await invokeDM({ text: undefined });
     expect(mockRunClaude).not.toHaveBeenCalled();
     expect(say).not.toHaveBeenCalled();
+  });
+
+  test("does not return early when message has empty text but rich_text blocks", async () => {
+    const { say } = await invokeDM({
+      text: "",
+      blocks: [
+        {
+          type: "rich_text",
+          elements: [
+            {
+              type: "rich_text_section",
+              elements: [{ type: "text", text: "Hello from rich text" }],
+            },
+          ],
+        },
+      ],
+    });
+    expect(mockRunClaude).toHaveBeenCalled();
+    expect(say).toHaveBeenCalled();
+  });
+
+  test("converts rich_text blocks to markdown and passes to runClaude when text is absent", async () => {
+    await invokeDM({
+      text: "",
+      channel: "D123",
+      ts: "111.222",
+      blocks: [
+        {
+          type: "rich_text",
+          elements: [
+            {
+              type: "rich_text_section",
+              elements: [{ type: "text", text: "Hello from rich text" }],
+            },
+          ],
+        },
+      ],
+    });
+    expect(mockRunClaude).toHaveBeenCalledWith(
+      "Hello from rich text",
+      "D123:111.222",
+    );
+  });
+
+  test("uses msg.text over rich_text blocks when both are present", async () => {
+    await invokeDM({
+      text: "Plain text wins",
+      channel: "D123",
+      ts: "111.222",
+      blocks: [
+        {
+          type: "rich_text",
+          elements: [
+            {
+              type: "rich_text_section",
+              elements: [{ type: "text", text: "Rich text should be ignored" }],
+            },
+          ],
+        },
+      ],
+    });
+    expect(mockRunClaude).toHaveBeenCalledWith(
+      "Plain text wins",
+      "D123:111.222",
+    );
   });
 
   test("sets thinking status on receipt", async () => {

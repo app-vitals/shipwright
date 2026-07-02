@@ -55,7 +55,7 @@ Both env vars are provisioned automatically by the agent harness:
 | `SHIPWRIGHT_TASK_STORE_URL` | Base URL of the task store service |
 | `SHIPWRIGHT_TASK_STORE_TOKEN` | Bearer token for this agent |
 
-The bearer token scopes all API operations to the calling agent's own tasks automatically — the same token that authenticates you also filters results. No `?assignee=` parameter is needed on any endpoint.
+Tasks are scoped by **repo access** — any agent with access to a repo can see all tasks for that repo. Use `?assignee=$SHIPWRIGHT_AGENT_ID` to filter results to the calling agent's own tasks.
 
 Verify the service is reachable before doing anything:
 
@@ -70,12 +70,12 @@ curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
 
 ### Pick next task
 
-The API scopes results to the calling agent automatically via the bearer token — no assignee parameter needed. Check for an interrupted task first, then fall back to the next ready one:
+Tasks are scoped by repo access — use `?assignee=$SHIPWRIGHT_AGENT_ID` to filter to your own tasks. Check for an interrupted task first, then fall back to the next ready one:
 
 ```bash
 # 1. Resume interrupted task (in_progress assigned to you)
 curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=in_progress" | jq .
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=in_progress&assignee=$SHIPWRIGHT_AGENT_ID" | jq .
 
 # 2. If empty, pick next ready task
 curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
@@ -159,8 +159,8 @@ Convention: `branch` = `feat/{id-lowercase}` (e.g. `feat/tss-x-1-my-task`).
 When `?ready=true` is set, `?status` and `?id` filters are ignored. Only
 `?session` applies as a post-filter.
 
-- Agent tokens: results are automatically scoped to the calling agent's tasks.
-- Admin tokens: results include all agents' tasks.
+- Results are scoped by repo access — all agents with access to a repo see its tasks.
+- Use `?assignee=$SHIPWRIGHT_AGENT_ID` to filter to your own tasks.
 - `?session` — filter by planning session slug. Omit to return ready tasks across all sessions.
 
 A task is ready when **all** of the following are true:
@@ -224,7 +224,7 @@ Branch statuses: `blocked`, `cancelled`, `deploying`, `deployed`
 | `POST` | `/prs/:id/patch` | Record a patch cycle on this PR |
 | `POST` | `/prs/:id/release` | Release claim → `pending` |
 
-> **Scoping:** All endpoints automatically scope to the calling agent's tasks via the bearer token. Admin tokens see all agents' tasks.
+> **Scoping:** Tasks are scoped by repo access — all agents with access to a repo can see its tasks. Always filter with `?assignee=$SHIPWRIGHT_AGENT_ID` when you only want your own tasks.
 
 ---
 
