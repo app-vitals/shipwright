@@ -539,7 +539,20 @@ describe("admin API — env vars", () => {
     const app = createAdminApp(makeMockDeps());
     const res = await app.request(`/agents/${AGENT_ID}/envs`, {
       method: "PATCH",
-      body: JSON.stringify({ FOO: "updated" }),
+      body: JSON.stringify({ env: { FOO: "updated" } }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("PATCH /agents/:id/envs with secretKeys designates key as secret (200)", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}/envs`, {
+      method: "PATCH",
+      body: JSON.stringify({ env: { MY_SECRET: "s3cr3t" }, secretKeys: ["MY_SECRET"] }),
       headers: {
         "Content-Type": "application/json",
         Cookie: `admin_session=${cookie}`,

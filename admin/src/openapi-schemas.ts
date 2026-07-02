@@ -470,9 +470,26 @@ export const AgentEnvResponseSchema = z
   .openapi("AgentEnvResponse");
 
 /**
- * POST or PATCH /agents/:id/envs body — a plain key/value map.
+ * POST /agents/:id/envs body — a plain key/value map (full replace).
  */
 export const AgentEnvBodySchema = z.record(z.string()).openapi("AgentEnvBody");
+
+/**
+ * PATCH /agents/:id/envs body — partial update with optional secret designation.
+ * `env` is a map of key/value pairs to upsert.
+ * `secretKeys` lists which keys should be flagged as secret (masked in GET responses).
+ */
+export const AgentEnvPatchBodySchema = z
+  .object({
+    env: z
+      .record(z.string())
+      .openapi({ example: { MY_VAR: "value" } }),
+    secretKeys: z
+      .array(z.string())
+      .optional()
+      .openapi({ example: ["MY_SECRET"] }),
+  })
+  .openapi("AgentEnvPatchBody");
 
 // ─── Path param schemas ───────────────────────────────────────────────────────
 

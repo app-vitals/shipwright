@@ -46,6 +46,7 @@ import {
   AgentCronJobSchema,
   AgentCronRunSchema,
   AgentEnvBodySchema,
+  AgentEnvPatchBodySchema,
   AgentEnvResponseSchema,
   AgentIdParamSchema,
   AgentPluginSchema,
@@ -352,7 +353,9 @@ const patchEnvsRoute = createRoute({
   path: "/agents/{id}/envs",
   request: {
     params: AgentIdParamSchema,
-    body: { content: { "application/json": { schema: AgentEnvBodySchema } } },
+    body: {
+      content: { "application/json": { schema: AgentEnvPatchBodySchema } },
+    },
   },
   responses: {
     200: {
@@ -1026,8 +1029,12 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
   // PATCH /agents/:id/envs — update specific keys (without replacing all)
   app.openapi(patchEnvsRoute, async (c) => {
     const { id: agentId } = c.req.valid("param");
-    const body = c.req.valid("json");
-    await agentEnvService.patch(agentId, body);
+    const { env, secretKeys } = c.req.valid("json");
+    await agentEnvService.patch(
+      agentId,
+      env,
+      secretKeys ? new Set(secretKeys) : undefined,
+    );
     return c.json({ ok: true } as const, 200);
   });
 
