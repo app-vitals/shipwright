@@ -11,7 +11,6 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type { WebClient } from "@slack/web-api";
 import type { ClaudeRunResult, TokenUsage } from "./claude.ts";
-import { dominantModel, liveClaudeConfig } from "./claude.ts";
 import { calculateCost } from "./pricing.ts";
 import type { ModelBreakdownEntry } from "./cron-run-reporter.ts";
 import { type Clock, SystemClock } from "./clock.ts";
@@ -23,7 +22,6 @@ import type { VoiceConfig } from "./voice.ts";
 
 function buildTokenPayload(
   usage: TokenUsage | undefined,
-  totalCostUsd: number | undefined,
   modelUsage: Record<string, TokenUsage> | undefined,
 ): {
   inputTokens?: number;
@@ -279,14 +277,12 @@ export async function handleCronRequest(
   // ── Runner scope ─────────────────────────────────────────────────────────
   // Errors here record a genuine failure and re-throw so the caller sees them.
   let usage: TokenUsage | undefined;
-  let totalCostUsd: number | undefined;
   let modelUsage: Record<string, TokenUsage> | undefined;
   let result: string;
   let sessionId: string | undefined;
   try {
     const runResult = await runner(message);
     usage = runResult.usage;
-    totalCostUsd = runResult.totalCostUsd;
     modelUsage = runResult.modelUsage;
     result = runResult.result;
     sessionId = runResult.sessionId;
@@ -312,7 +308,7 @@ export async function handleCronRequest(
       runId,
       clock.now(),
       "completed",
-      buildTokenPayload(usage, totalCostUsd, modelUsage),
+      buildTokenPayload(usage, modelUsage),
     );
     return;
   }
@@ -326,7 +322,7 @@ export async function handleCronRequest(
       runId,
       clock.now(),
       "completed",
-      buildTokenPayload(usage, totalCostUsd, modelUsage),
+      buildTokenPayload(usage, modelUsage),
     );
     return;
   }
@@ -347,7 +343,7 @@ export async function handleCronRequest(
       runId,
       clock.now(),
       "completed",
-      buildTokenPayload(usage, totalCostUsd, modelUsage),
+      buildTokenPayload(usage, modelUsage),
     );
 
     const postResult = await slack.chat.postMessage({
@@ -380,7 +376,7 @@ export async function handleCronRequest(
       runId,
       clock.now(),
       "completed",
-      buildTokenPayload(usage, totalCostUsd, modelUsage),
+      buildTokenPayload(usage, modelUsage),
     );
 
     const dmResult = await slack.conversations.open({ users: user });
