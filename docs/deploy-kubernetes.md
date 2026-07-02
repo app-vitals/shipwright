@@ -417,6 +417,28 @@ These map to the admin service's provisioning env vars
 `SHIPWRIGHT_ADMIN_DEPLOYMENT_UID`) — documented in full in
 [`configuration.md`](./configuration.md#agent-provisioning-admin-service).
 
+### Chat service provisioning (opt-in)
+
+By default the admin service **does not** mint chat-service tokens — provisioned agents carry no chat-service credentials. To enable per-agent chat-service token provisioning on `POST /agents`, set both `SHIPWRIGHT_CHAT_SERVICE_URL` and `SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN` on the admin Deployment:
+
+- `SHIPWRIGHT_CHAT_SERVICE_URL` — in-cluster base URL of the chat service (e.g. `http://chat:3000`). Injected into the agent Deployment as `SHIPWRIGHT_CHAT_SERVICE_URL` (plain env value).
+- `SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN` — bearer token for the admin service to mint/revoke chat-service tokens via the chat-service REST API. Env-var-only (secret).
+
+When both are set, the provisioner mints a scoped per-agent token during `POST /agents`, stores it in the agent Secret (key `chat-service-token`), and injects it into the Deployment as `SHIPWRIGHT_CHAT_SERVICE_TOKEN` (via `secretKeyRef`). On agent deletion the token is revoked via `DELETE /tokens/:id`. When either var is unset, chat-service token provisioning is disabled and agents carry no chat-service credentials.
+
+**Chart values:**
+
+```yaml
+agent:
+  provisioning:
+    enabled: true
+    # ... other values
+  chatService:
+    enabled: false                   # set to true to enable chat-service token provisioning
+    url: http://chat:3000            # in-cluster chat service URL; required when enabled=true
+    adminToken: ""                   # secret bearer token; required when enabled=true
+```
+
 ---
 
 ## Agent voice (STT/TTS)

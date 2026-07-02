@@ -19,6 +19,7 @@ import {
   type KubernetesClient,
   RecordedKubernetesClient,
 } from "./kubernetes-client.ts";
+import type { ChatServiceProvisioningClient } from "./chat-service-provisioning-client.ts";
 import type { TaskStoreProvisioningClient } from "./task-store-provisioning-client.ts";
 
 const NAMESPACE = "shipwright";
@@ -539,6 +540,159 @@ describe("KubernetesAgentProvisioner — task-store token minting", () => {
     expect(minted).toHaveLength(1);
     // But because it was a conflict (deployment already existed), we rolled back
     // the Secret — the task-store token should also be revoked.
+    expect(revoked).toEqual([minted[0].id]);
+  });
+});
+
+// ─── Chat-service token minting ───────────────────────────────────────────────
+
+/**
+ * Build a spy ChatServiceProvisioningClient. Records all mintToken and
+ * revokeToken calls for assertion in tests.
+ */
+function stubChatService(opts?: { throwOnMint?: boolean }): {
+  client: ChatServiceProvisioningClient;
+  minted: Array<{ label: string; agentId: string | undefined; id: string }>;
+  revoked: string[];
+} {
+  const minted: Array<{
+    label: string;
+    agentId: string | undefined;
+    id: string;
+  }> = [];
+  const revoked: string[] = [];
+  let seq = 0;
+
+  const client: ChatServiceProvisioningClient = {
+    async mintToken(label: string, agentId?: string) {
+      if (opts?.throwOnMint) throw new Error("mint failed");
+      seq++;
+      const id = `cs-tok-${seq}`;
+      minted.push({ label, agentId, id });
+      return { id, rawToken: `raw-cs-token-${seq}` };
+    },
+    async revokeToken(id: string) {
+      revoked.push(id);
+    },
+  };
+
+  return { client, minted, revoked };
+}
+
+describe("KubernetesAgentProvisioner — chat-service token minting", () => {
+  const AGENT_ID = "test-agent-001";
+
+  it("provision() mints a chat-service token when chatService client is configured", async () => {
+    const { client, minted } = stubChatService();
+    const config: KubernetesAgentProvisionerConfig = {
+      ...BASE_CONFIG,
+      chatService: client,
+    };
+    const k8s = emptyClient();
+    const provisioner = new KubernetesAgentProvisioner(
+      k8s,
+      stubTokens() as AgentTokenService,
+      config,
+    );
+
+    await provisioner.provision(AGENT_ID);
+
+    expect(minted).toHaveLength(1);
+    expect(minted[0].label).toBe(`agent:${AGENT_ID}`);
+    expect(minted[0].agentId).toBe(AGENT_ID);
+
+    // Verify the Secret contains the chat-service-token key (stored as base64 data).
+    const resourceName = sanitizeAgentName(AGENT_ID);
+    const secretName = `${resourceName}-token`;
+    const secret = await k8s.getSecret(NAMESPACE, secretName);
+    expect(secret.data["chat-service-token"]).toBeDefined();
+  });
+
+  it("provision() does NOT mint a chat-service token when chatService is not configured", async () => {
+    // BASE_CONFIG has no chatService
+    const { client, minted } = stubChatService();
+    const k8s = emptyClient();
+    const provisioner = new KubernetesAgentProvisioner(
+      k8s,
+      stubTokens() as AgentTokenService,
+      BASE_CONFIG,
+    );
+
+    await provisioner.provision(AGENT_ID);
+
+    // client is not injected so mintToken is never called
+    expect(minted).toHaveLength(0);
+    // Suppress "client is unused" lint warning by referencing it
+    void client;
+  });
+
+  it("provision() revokes the chat-service token when Deployment creation fails", async () => {
+    const { client, minted, revoked } = stubChatService();
+    const config: KubernetesAgentProvisionerConfig = {
+      ...BASE_CONFIG,
+      chatService: client,
+    };
+
+    const recorded = emptyClient();
+    const failingK8s = new RecordedKubernetesClient({
+      deployments: {},
+      secrets: {},
+      pvcs: {},
+    });
+    // Wrap to throw on createDeploymentManifest
+    const failingClient = Object.assign(
+      Object.create(Object.getPrototypeOf(recorded)),
+      recorded,
+      {
+        createDeploymentManifest: async () => {
+          throw new Error("simulated deploy failure");
+        },
+      },
+    );
+
+    const provisioner = new KubernetesAgentProvisioner(
+      failingClient,
+      stubTokens() as AgentTokenService,
+      config,
+    );
+
+    await expect(provisioner.provision(AGENT_ID)).rejects.toThrow(
+      "simulated deploy failure",
+    );
+
+    expect(minted).toHaveLength(1);
+    expect(revoked).toEqual([minted[0].id]);
+  });
+
+  it("provision() revokes the chat-service token when Deployment already exists (409 conflict)", async () => {
+    const { client, minted, revoked } = stubChatService();
+    const config: KubernetesAgentProvisionerConfig = {
+      ...BASE_CONFIG,
+      chatService: client,
+    };
+
+    // Pre-seed the Deployment so the createDeploymentManifest call hits a 409.
+    // Do NOT pre-seed the Secret, so the provisioner mints a fresh token and
+    // creates a new Secret — then hits a conflict on the Deployment.
+    const recorded = emptyClient();
+    const agentResourceName = sanitizeAgentName(AGENT_ID);
+    await recorded.createDeployment(NAMESPACE, {
+      name: agentResourceName,
+      image: `${BASE_CONFIG.image}:${BASE_CONFIG.imageTag}`,
+    });
+
+    const provisioner = new KubernetesAgentProvisioner(
+      recorded,
+      stubTokens() as AgentTokenService,
+      config,
+    );
+
+    // Should NOT throw — ConflictError on Deployment is idempotent success.
+    await expect(provisioner.provision(AGENT_ID)).resolves.toBeDefined();
+
+    // Token WAS minted (Secret was new in this call).
+    expect(minted).toHaveLength(1);
+    // Deployment conflict rolled back the Secret — chat-service token must also be revoked.
     expect(revoked).toEqual([minted[0].id]);
   });
 });
