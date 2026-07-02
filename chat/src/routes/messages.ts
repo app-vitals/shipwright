@@ -22,6 +22,7 @@ import { Hono } from "hono";
 import type { ChatAuthEnv } from "../auth.ts";
 import {
   BadRequestError,
+  ConflictError,
   ForbiddenError,
   NotFoundError,
   PayloadTooLargeError,
@@ -201,6 +202,8 @@ export function createMessagesRoutes(
       throw new NotFoundError("message not found");
     if (existing.role !== "user")
       throw new BadRequestError("can only reply to user messages");
+    if (existing.repliedAt !== null)
+      throw new ConflictError("message already has a reply");
 
     let body: Record<string, unknown> = {};
     try {

@@ -21,11 +21,14 @@ import { createChatServiceApp } from "./app.ts";
 import type { Message } from "./message-service.ts";
 import {
   fakeAdminTokenService,
+  fakeAgentTokenService,
   fakeMessageService,
   fakeThreadService,
 } from "./test-fakes.ts";
 
 const ADMIN_TOKEN = "admin-token";
+const AGENT_TOKEN = "agent-token";
+const AGENT_ID = "agent-1";
 
 function buildApp(
   threadService: ReturnType<typeof fakeThreadService>,
@@ -33,6 +36,17 @@ function buildApp(
 ) {
   return createChatServiceApp({
     tokenService: fakeAdminTokenService(ADMIN_TOKEN),
+    threadService,
+    messageService,
+  });
+}
+
+function agentApp(
+  threadService: ReturnType<typeof fakeThreadService>,
+  messageService: ReturnType<typeof fakeMessageService>,
+) {
+  return createChatServiceApp({
+    tokenService: fakeAgentTokenService(AGENT_TOKEN, AGENT_ID),
     threadService,
     messageService,
   });
@@ -385,5 +399,116 @@ describe("POST /threads/:id/messages/:msgId/reply", () => {
       },
     );
     expect(res.status).toBe(400);
+  });
+
+  it("returns 409 when message already has a reply", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({ agentId: "a1" });
+    const userMsg = await ms.create(thread.id, { role: "user", body: "Hello" });
+    const app = buildApp(ts, ms);
+
+    // First reply — should succeed
+    const res1 = await app.request(
+      `/threads/${thread.id}/messages/${userMsg.id}/reply`,
+      {
+        method: "POST",
+        headers: H.post,
+        body: JSON.stringify({ body: "First reply" }),
+      },
+    );
+    expect(res1.status).toBe(201);
+
+    // Second reply — should 409
+    const res2 = await app.request(
+      `/threads/${thread.id}/messages/${userMsg.id}/reply`,
+      {
+        method: "POST",
+        headers: H.post,
+        body: JSON.stringify({ body: "Duplicate reply" }),
+      },
+    );
+    expect(res2.status).toBe(409);
+  });
+});
+
+// ─── Agent scoping: queue API ─────────────────────────────────────────────────
+
+const AGENT_H = {
+  get: { Authorization: `Bearer ${AGENT_TOKEN}` },
+  post: {
+    Authorization: `Bearer ${AGENT_TOKEN}`,
+    "content-type": "application/json",
+  },
+} as const;
+
+describe("agent scoping — queue API", () => {
+  it("POST /claim — agent can claim from own thread (200)", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({ agentId: AGENT_ID });
+    await ms.create(thread.id, { role: "user", body: "Claim me" });
+    const app = agentApp(ts, ms);
+
+    const res = await app.request(`/threads/${thread.id}/messages/claim`, {
+      method: "POST",
+      headers: AGENT_H.get,
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Message;
+    expect(body.claimed).toBe(true);
+  });
+
+  it("POST /claim — agent gets 403 when claiming from another agent's thread", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({ agentId: "other-agent" });
+    await ms.create(thread.id, { role: "user", body: "Not yours" });
+    const app = agentApp(ts, ms);
+
+    const res = await app.request(`/threads/${thread.id}/messages/claim`, {
+      method: "POST",
+      headers: AGENT_H.get,
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("POST /:id/reply — agent can reply in own thread (201)", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({ agentId: AGENT_ID });
+    const userMsg = await ms.create(thread.id, { role: "user", body: "Help!" });
+    const app = agentApp(ts, ms);
+
+    const res = await app.request(
+      `/threads/${thread.id}/messages/${userMsg.id}/reply`,
+      {
+        method: "POST",
+        headers: AGENT_H.post,
+        body: JSON.stringify({ body: "Here you go" }),
+      },
+    );
+    expect(res.status).toBe(201);
+  });
+
+  it("POST /:id/reply — agent gets 403 when replying in another agent's thread", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({ agentId: "other-agent" });
+    const userMsg = await ms.create(thread.id, {
+      role: "user",
+      body: "Not yours",
+    });
+    const app = agentApp(ts, ms);
+
+    const res = await app.request(
+      `/threads/${thread.id}/messages/${userMsg.id}/reply`,
+      {
+        method: "POST",
+        headers: AGENT_H.post,
+        body: JSON.stringify({ body: "Intruding reply" }),
+      },
+    );
+    expect(res.status).toBe(403);
   });
 });

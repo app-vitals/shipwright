@@ -228,7 +228,7 @@ export function fakeMessageService(
     },
     async reply(messageId, data) {
       const userMsg = store.find((m) => m.id === messageId);
-      if (!userMsg) return null;
+      if (!userMsg || userMsg.repliedAt !== null) return null;
       userMsg.repliedAt = new Date();
       const assistant: Message = {
         id: `msg-${counter++}`,

@@ -198,6 +198,7 @@ export class MessageService implements MessageServiceLike {
       where: { id: messageId },
     });
     if (!userMessage) return null;
+    if (userMessage.repliedAt !== null) return null;
 
     const now = this.clock.now();
     const [updatedUser, assistant] = await Promise.all([
