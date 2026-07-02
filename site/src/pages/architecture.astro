@@ -1,0 +1,648 @@
+---
+// Architecture page — Shipwright Agent Model diagram and component reference.
+// Static Astro page: no client-side JS, brand tokens only (no raw hex).
+import BaseLayout from "../layouts/BaseLayout.astro";
+
+const components = [
+  {
+    type: "Human Input",
+    typeClass: "human",
+    name: "plan-session",
+    desc: "Decomposes a feature or initiative into a task queue. Human-triggered — no cron. The human reviews the plan before tasks are queued into the task store. Human in the loop.",
+  },
+  {
+    type: "Maintenance",
+    typeClass: "maint",
+    name: "entropy-patrol",
+    desc: "Scans for deviations from golden principles. Opens targeted refactoring PRs — one per principle. Most merge in under a minute. Human taste encoded once, enforced continuously.",
+  },
+  {
+    type: "Maintenance",
+    typeClass: "maint",
+    name: "docs-refresh",
+    desc: "Reads the diff, identifies stale sections, rewrites them in place. Commits as a separate docs commit. Prevents documentation debt from degrading agent performance over time.",
+  },
+  {
+    type: "Maintenance",
+    typeClass: "maint",
+    name: "test-audit",
+    desc: "Inventories the test system, identifies coverage gaps, flags slow or redundant tests. Queues tasks: add coverage at the right layer, remove tests superseded by better ones.",
+  },
+  {
+    type: "Maintenance",
+    typeClass: "maint",
+    name: "dependabot-triage",
+    desc: "Reviews open Dependabot PRs. Approves safe patches, flags breaking changes, adds release-notes context. Reduces the review queue without requiring human attention on routine updates.",
+  },
+  {
+    type: "Maintenance",
+    typeClass: "maint",
+    name: "migrations",
+    desc: "Large migrations broken into daily increments. Deprecate an endpoint, write a skill for the pattern, then let the loop chip away — one usage at a time until the codebase is clean. Each change is small, easy to review, and easy to roll back.",
+  },
+  {
+    type: "Coordination",
+    typeClass: "coord",
+    name: "task-store",
+    desc: "The coordination layer between task sources and executing agents. Owns task state, prevents duplicate work, tracks which agent owns what. Receives from planning and maintenance crons; feeds the core loop.",
+  },
+  {
+    type: "Core Loop",
+    typeClass: "core",
+    name: "dev-task",
+    desc: "Picks up the next ready task from the task store. Explores the codebase, implements, opens a PR. Runs on a per-agent cron. The workhorse.",
+  },
+  {
+    type: "Core Loop",
+    typeClass: "core",
+    name: "review",
+    desc: "Reviews open PRs from any agent. Stages findings or posts inline comments. Enforces policy: blocking vs. advisory thresholds, auto-approve criteria. Agent-to-agent review — human override always available.",
+  },
+  {
+    type: "Core Loop",
+    typeClass: "core",
+    name: "patch",
+    desc: "Addresses unresolved review findings on open PRs. Fixes blocking issues, pushes to the branch, and triggers re-review. The PR loops through review and patch until all findings are resolved.",
+  },
+  {
+    type: "Core Loop",
+    typeClass: "core",
+    name: "deploy",
+    desc: "Merges PRs that are approved and CI-green. Human override always available.",
+  },
+  {
+    type: "Feedback Layer",
+    typeClass: "memory",
+    name: "memory",
+    desc: "Captures corrections and cross-session patterns from the core loop. Routes improvements to CLAUDE.md and skills so the agent gets smarter with every cycle. Powered by learning loop (inline capture) and dreaming (async transcript mining).",
+  },
+];
+---
+
+<BaseLayout title="Architecture — Shipwright Harness" description="How autonomous engineering work gets planned, executed, reviewed, and shipped. Two input sources feed a coordination layer that drives a per-agent execution loop.">
+  <section class="arch-page">
+
+    <!-- Page header -->
+    <div class="arch-header">
+      <p class="arch-meta">Shipwright · Agent Architecture</p>
+      <h1>Shipwright — Agent Model</h1>
+      <p class="arch-subtitle">
+        How autonomous engineering work gets planned, executed, reviewed, and shipped.
+        Two input sources feed a coordination layer that drives a per-agent execution loop.
+      </p>
+    </div>
+
+    <!-- ── Architecture Diagram ── -->
+    <div class="arch-section-label">Architecture</div>
+
+    <!-- Row 1: Two input sources side by side -->
+    <div class="inputs-row">
+
+      <!-- Human Input -->
+      <div class="input-box input-human">
+        <div class="input-tag tag-human">Human Input</div>
+        <div class="input-title">Planning</div>
+        <p class="input-sub">Ad hoc, human-triggered.<br />No cron — runs when you ask.</p>
+      </div>
+
+      <!-- Maintenance Crons -->
+      <div class="input-box input-maint">
+        <div class="input-tag tag-maint">Maintenance Crons</div>
+        <div class="input-title">Background hygiene</div>
+        <p class="input-sub">Per-repo, scheduled. Each cron feeds tasks to the task store.</p>
+        <div class="maint-chips">
+          <div class="chip">
+            <div class="chip-name">Entropy Patrol</div>
+            <div class="chip-sub">golden principles</div>
+          </div>
+          <div class="chip">
+            <div class="chip-name">Docs Refresh</div>
+            <div class="chip-sub">stale doc repair</div>
+          </div>
+          <div class="chip">
+            <div class="chip-name">Test Audit</div>
+            <div class="chip-sub">coverage + debt</div>
+          </div>
+          <div class="chip">
+            <div class="chip-name">Dependabot</div>
+            <div class="chip-sub">dep triage</div>
+          </div>
+          <div class="chip">
+            <div class="chip-name">Migrations</div>
+            <div class="chip-sub">incremental</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Arrow connector -->
+    <div class="arrow-row">
+      <div class="arrow">↓</div>
+      <div class="arrow">↓</div>
+    </div>
+
+    <!-- Task Store -->
+    <div class="task-store-box">
+      <div class="ts-left">
+        <div class="ts-tag">Coordination Layer</div>
+        <div class="ts-title">Task Store</div>
+      </div>
+      <div class="ts-pills">
+        <span class="pill">task ownership</span>
+        <span class="pill">deduplication</span>
+        <span class="pill">priority ordering</span>
+        <span class="pill">cross-agent state</span>
+      </div>
+    </div>
+
+    <!-- Arrow down to Core Loop -->
+    <div class="arrow-center">↓</div>
+
+    <!-- Core Loop -->
+    <div class="core-loop-box">
+      <div class="core-tag">Core Loop — per-agent, cron-driven</div>
+      <div class="pipeline">
+
+        <div class="pipe-step">
+          <div class="pipe-name">dev-task</div>
+          <div class="pipe-lines">Picks up the next<br />ready task. Opens a PR.</div>
+        </div>
+
+        <div class="pipe-arrow">→</div>
+
+        <div class="pipe-step">
+          <div class="pipe-name">review</div>
+          <div class="pipe-lines">Reviews open PRs.<br />Stages or posts findings.</div>
+        </div>
+
+        <div class="pipe-arrow pipe-loop">⇄</div>
+
+        <div class="pipe-step">
+          <div class="pipe-name">patch</div>
+          <div class="pipe-lines">Addresses review findings.<br />Loops back until approved.</div>
+        </div>
+
+        <div class="pipe-arrow">→</div>
+
+        <div class="pipe-step">
+          <div class="pipe-name">deploy</div>
+          <div class="pipe-lines">Merges approved +<br />CI-green PRs.</div>
+        </div>
+
+        <div class="loop-note">↺ repeats until approved</div>
+
+      </div>
+    </div>
+
+    <!-- Arrow down to Memory -->
+    <div class="arrow-center">↓</div>
+
+    <!-- Memory -->
+    <div class="memory-box">
+      <div class="mem-left">
+        <div class="mem-tag">Feedback Layer</div>
+        <div class="mem-title">Memory</div>
+      </div>
+      <div class="ts-pills">
+        <span class="pill">corrections</span>
+        <span class="pill">cross-session patterns</span>
+        <span class="pill">→ CLAUDE.md + skills</span>
+      </div>
+    </div>
+
+    <!-- Divider -->
+    <hr class="arch-divider" />
+
+    <!-- ── Component Reference ── -->
+    <div class="arch-section-label">Component Reference</div>
+
+    <div class="components">
+      {components.map((c) => (
+        <div class={`component component-${c.typeClass}`}>
+          <div class="comp-left">
+            <div class={`comp-tag comp-tag-${c.typeClass}`}>{c.type}</div>
+            <div class="comp-name">{c.name}</div>
+          </div>
+          <p class="comp-desc">{c.desc}</p>
+        </div>
+      ))}
+    </div>
+
+  </section>
+</BaseLayout>
+
+<style>
+  .arch-page {
+    padding: 3rem 0 5rem;
+    max-width: 56rem;
+  }
+
+  /* ── Header ── */
+  .arch-header {
+    margin-bottom: 2.5rem;
+  }
+
+  .arch-meta {
+    font-size: 0.6875rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--sw-color-text-muted);
+    margin-bottom: 1rem;
+  }
+
+  .arch-page h1 {
+    font-family: var(--sw-font-display);
+    font-size: 2.25rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--sw-color-text-heading);
+    line-height: 1.1;
+    margin-bottom: 0.75rem;
+  }
+
+  .arch-subtitle {
+    font-size: 0.9375rem;
+    color: var(--sw-color-text-muted);
+    line-height: 1.65;
+    max-width: 42rem;
+  }
+
+  /* ── Section label ── */
+  .arch-section-label {
+    font-size: 0.6875rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--sw-color-text-muted);
+    margin-bottom: 1rem;
+  }
+
+  /* ── Input row ── */
+  .inputs-row {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 0.75rem;
+    align-items: start;
+  }
+
+  .input-box {
+    padding: 1.125rem 1.25rem;
+    border-radius: 6px;
+    border-width: 1.5px;
+    border-style: solid;
+  }
+
+  .input-human {
+    background: color-mix(in srgb, var(--sw-color-support-violet) 12%, transparent);
+    border-color: var(--sw-color-support-violet);
+  }
+
+  .input-maint {
+    background: color-mix(in srgb, var(--sw-color-support-patriot) 45%, transparent);
+    border-color: var(--sw-color-support-patriot-bright);
+  }
+
+  .input-tag {
+    font-size: 0.5625rem;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    font-weight: 700;
+    margin-bottom: 0.375rem;
+  }
+
+  .tag-human { color: var(--sw-color-support-violet); }
+  .tag-maint { color: var(--sw-color-support-patriot-bright); }
+
+  .input-title {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--sw-color-text-heading);
+    margin-bottom: 0.1875rem;
+  }
+
+  .input-sub {
+    font-size: 0.75rem;
+    color: var(--sw-color-text-muted);
+    line-height: 1.5;
+  }
+
+  /* Maintenance chips */
+  .maint-chips {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 0.4375rem;
+    margin-top: 0.75rem;
+  }
+
+  .chip {
+    padding: 0.5rem 0.625rem;
+    background: var(--sw-color-bg-raised);
+    border: 1px solid var(--sw-color-support-patriot-bright);
+    border-radius: 4px;
+    text-align: center;
+  }
+
+  .chip-name {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: var(--sw-color-support-patriot-bright);
+    line-height: 1.3;
+  }
+
+  .chip-sub {
+    font-size: 0.625rem;
+    color: var(--sw-color-text-muted);
+    margin-top: 0.125rem;
+  }
+
+  /* ── Arrows ── */
+  .arrow-row {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 0.75rem;
+    height: 2rem;
+    align-items: center;
+  }
+
+  .arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--sw-color-border-muted);
+    font-size: 1.375rem;
+    line-height: 1;
+  }
+
+  .arrow-center {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--sw-color-border-muted);
+    font-size: 1.375rem;
+    height: 1.75rem;
+    margin: 0.25rem 0;
+  }
+
+  /* ── Task Store ── */
+  .task-store-box {
+    background: var(--sw-color-bg-raised);
+    border: 1.5px solid var(--sw-color-border-muted);
+    border-radius: 6px;
+    padding: 1.125rem 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+  }
+
+  .ts-left {
+    flex: 0 0 auto;
+  }
+
+  .ts-tag {
+    font-size: 0.5625rem;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: var(--sw-color-text-muted);
+    margin-bottom: 0.25rem;
+  }
+
+  .ts-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--sw-color-text-heading);
+  }
+
+  .ts-pills {
+    display: flex;
+    gap: 0.4375rem;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .pill {
+    font-size: 0.6875rem;
+    color: var(--sw-color-text-body);
+    background: var(--sw-color-bg-base);
+    border: 1px solid var(--sw-color-border-muted);
+    border-radius: 100px;
+    padding: 0.25rem 0.75rem;
+  }
+
+  /* ── Core Loop ── */
+  .core-loop-box {
+    background: var(--sw-color-brand-soft);
+    border: 1.5px solid var(--sw-color-brand-default);
+    border-radius: 6px;
+    padding: 1.25rem 1.5rem;
+  }
+
+  .core-tag {
+    font-size: 0.5625rem;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: var(--sw-color-brand-default);
+    margin-bottom: 1rem;
+  }
+
+  .pipeline {
+    display: grid;
+    grid-template-columns: 1fr 1.75rem 1fr 1.75rem 1fr 1.75rem 1fr;
+    align-items: stretch;
+  }
+
+  .pipe-step {
+    background: var(--sw-color-bg-base);
+    border: 1.5px solid var(--sw-color-brand-default);
+    border-radius: 5px;
+    padding: 0.875rem 1rem;
+  }
+
+  .pipe-name {
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: var(--sw-color-text-heading);
+    margin-bottom: 0.375rem;
+  }
+
+  .pipe-lines {
+    font-size: 0.6875rem;
+    color: var(--sw-color-text-muted);
+    line-height: 1.6;
+  }
+
+  .pipe-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+    color: var(--sw-color-brand-default);
+  }
+
+  .pipe-loop {
+    color: var(--sw-color-state-warning);
+    font-size: 1.125rem;
+  }
+
+  .loop-note {
+    grid-column: 3 / 6;
+    text-align: center;
+    font-size: 0.625rem;
+    letter-spacing: 0.08em;
+    color: var(--sw-color-state-warning);
+    padding-top: 0.375rem;
+    font-weight: 500;
+  }
+
+  /* ── Memory ── */
+  .memory-box {
+    background: color-mix(in srgb, var(--sw-color-state-warning) 12%, transparent);
+    border: 1.5px solid var(--sw-color-state-warning);
+    border-radius: 6px;
+    padding: 1.125rem 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+  }
+
+  .mem-left {
+    flex: 0 0 auto;
+  }
+
+  .mem-tag {
+    font-size: 0.5625rem;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: var(--sw-color-state-warning);
+    margin-bottom: 0.25rem;
+  }
+
+  .mem-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--sw-color-text-heading);
+  }
+
+  /* ── Divider ── */
+  .arch-divider {
+    border: none;
+    border-top: 1px solid var(--sw-color-border-subtle);
+    margin: 2.5rem 0;
+  }
+
+  /* ── Component Reference ── */
+  .components {
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+    margin-bottom: 2.5rem;
+  }
+
+  .component {
+    display: grid;
+    grid-template-columns: 10rem 1fr;
+    gap: 1.25rem;
+    padding: 0.875rem 1.125rem;
+    border: 1px solid var(--sw-color-border-muted);
+    border-radius: 4px;
+    font-size: 0.8125rem;
+    align-items: start;
+  }
+
+  /* Color-coded left border per layer */
+  .component-human {
+    border-left: 3px solid var(--sw-color-support-violet);
+  }
+
+  .component-maint {
+    border-left: 3px solid var(--sw-color-support-patriot-bright);
+  }
+
+  .component-coord {
+    border-left: 3px solid var(--sw-color-border-muted);
+    background: var(--sw-color-bg-raised);
+  }
+
+  .component-core {
+    border-left: 3px solid var(--sw-color-brand-default);
+    background: color-mix(in srgb, var(--sw-color-brand-soft) 40%, transparent);
+  }
+
+  .component-memory {
+    border-left: 3px solid var(--sw-color-state-warning);
+    background: color-mix(in srgb, var(--sw-color-state-warning) 6%, transparent);
+  }
+
+  .comp-left {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1875rem;
+  }
+
+  .comp-tag {
+    font-size: 0.5625rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+
+  .comp-tag-human { color: var(--sw-color-support-violet); }
+  .comp-tag-maint { color: var(--sw-color-support-patriot-bright); }
+  .comp-tag-coord { color: var(--sw-color-text-muted); }
+  .comp-tag-core  { color: var(--sw-color-brand-default); }
+  .comp-tag-memory { color: var(--sw-color-state-warning); }
+
+  .comp-name {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sw-color-text-heading);
+    font-family: var(--sw-font-mono);
+  }
+
+  .comp-desc {
+    color: var(--sw-color-text-muted);
+    line-height: 1.65;
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 640px) {
+    .inputs-row {
+      grid-template-columns: 1fr;
+    }
+
+    .arrow-row {
+      grid-template-columns: 1fr;
+    }
+
+    .maint-chips {
+      grid-template-columns: repeat(3, 1fr);
+    }
+
+    .pipeline {
+      grid-template-columns: 1fr;
+      gap: 0.5rem;
+    }
+
+    .pipe-arrow {
+      transform: rotate(90deg);
+      height: 1.5rem;
+    }
+
+    .loop-note {
+      grid-column: 1;
+    }
+
+    .component {
+      grid-template-columns: 1fr;
+      gap: 0.5rem;
+    }
+
+    .task-store-box,
+    .memory-box {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+  }
+</style>
