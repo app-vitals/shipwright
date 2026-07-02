@@ -478,8 +478,6 @@ test("the og:image asset is actually served (1280x640 PNG)", async ({
   expect(res.headers()["content-type"]).toContain("image/png");
 });
 
-// DIS-1.1: SEO-targeted default title for 'claude code' query space.
-
 test("default page title is the SEO-targeted claude code string", async ({
   page,
 }) => {
