@@ -1,6 +1,6 @@
 ---
 description: Phase 5 — publish the approved roadmap to GitHub as a dashboard of issues. Creates one issue per task with full context inline, plus milestones, labels, and a parent tracking issue.
-argument-hint: [--dry-run] [--yes] [--repo owner/name]
+argument-hint: "[--dry-run] [--yes] [--repo owner/name]"
 allowed-tools: [Read, Glob, Grep, Bash, Write, Skill]
 ---
 
