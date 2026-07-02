@@ -386,20 +386,16 @@ Daily aggregate of Slack chat session token usage.
 POST /agents/:id/chat-tokens/daily
 ```
 
-Atomic upsert — accumulates usage into the existing row for `(agentId, date)` if one exists.
+Atomic upsert — accumulates usage into the existing rows for `(agentId, date, model)` tuples if they exist. When a single day spans multiple models (e.g., agent tools using different Claude versions), supply a `modelBreakdown` array to split usage by model.
 
 Body:
 
 | Field | Required | Description |
 |-------|----------|-------------|
 | `date` | yes | `YYYY-MM-DD` |
-| `inputTokens` | yes | Input tokens for the session |
-| `outputTokens` | yes | Output tokens for the session |
-| `cacheReadTokens` | yes | Cache read tokens |
-| `cacheCreationTokens` | yes | Cache creation tokens |
-| `costUsd` | yes | Cost in USD |
+| `modelBreakdown` | yes | Array of per-model usage entries. Each entry: `{ model: string, inputTokens: number, outputTokens: number, cacheReadTokens: number, cacheCreationTokens: number, costUsd?: number }` |
 
-Returns the updated daily row.
+Returns an array of updated daily rows (one per model in the breakdown).
 
 ### Chat token stats
 
@@ -407,9 +403,9 @@ Returns the updated daily row.
 GET /agents/chat-tokens/daily/stats
 ```
 
-Admin-only. Aggregated chat-token daily stats across all agents. Query params: `from` and `to` (optional `YYYY-MM-DD` date strings).
+Admin-only. Aggregated chat-token daily stats across all agents broken down by model. Query params: `from` and `to` (optional `YYYY-MM-DD` date strings).
 
-Returns `{ totals, byAgent, daily }`.
+Returns `{ totals, byAgent, byModel, daily }` where each aggregate includes `inputTokens`, `outputTokens`, `cacheReadTokens`, `cacheCreationTokens`, and `costUsd`.
 
 ---
 
