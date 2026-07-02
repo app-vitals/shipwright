@@ -162,6 +162,17 @@ export interface AgentDeploymentOpts {
    * Defaults to "task-store-token".
    */
   taskStoreTokenSecretKey?: string;
+  /**
+   * When set, inject SHIPWRIGHT_CHAT_SERVICE_TOKEN (via secretKeyRef from the
+   * agent Secret) and SHIPWRIGHT_CHAT_SERVICE_URL (as a plain value) into the
+   * agent Deployment. Placed after task-store env vars and before voice env vars.
+   */
+  chatServiceUrl?: string;
+  /**
+   * Key within the agent Secret under which the chat-service token is stored.
+   * Defaults to "chat-service-token".
+   */
+  chatServiceTokenSecretKey?: string;
 }
 
 /**
@@ -227,6 +238,29 @@ function taskStoreEnvEntries(opts: AgentDeploymentOpts): KubernetesEnvVar[] {
     {
       name: "SHIPWRIGHT_TASK_STORE_URL",
       value: opts.taskStoreUrl,
+    },
+  ];
+}
+
+/**
+ * Build chat-service env entries when chatServiceUrl is configured. Returns two
+ * entries: SHIPWRIGHT_CHAT_SERVICE_TOKEN (secretKeyRef from the agent Secret)
+ * and SHIPWRIGHT_CHAT_SERVICE_URL (plain value). Returns an empty array when
+ * chatServiceUrl is absent (chat-service wiring disabled).
+ */
+function chatServiceEnvEntries(opts: AgentDeploymentOpts): KubernetesEnvVar[] {
+  if (!opts.chatServiceUrl) return [];
+  const csKey = opts.chatServiceTokenSecretKey ?? "chat-service-token";
+  return [
+    {
+      name: "SHIPWRIGHT_CHAT_SERVICE_TOKEN",
+      valueFrom: {
+        secretKeyRef: { name: opts.secretName, key: csKey },
+      },
+    },
+    {
+      name: "SHIPWRIGHT_CHAT_SERVICE_URL",
+      value: opts.chatServiceUrl,
     },
   ];
 }
@@ -303,6 +337,9 @@ export function buildAgentDeploymentManifest(
                 // Task-store env — injected after AGENT_HOME when task-store is
                 // configured; omitted entirely when taskStoreUrl is absent.
                 ...taskStoreEnvEntries(opts),
+                // Chat-service env — injected after task-store vars when chat
+                // service is configured; omitted entirely when chatServiceUrl is absent.
+                ...chatServiceEnvEntries(opts),
                 // Voice (STT/TTS) env — appended only for the keys that are set
                 // (none when voice is disabled, preserving the 4 base vars).
                 ...voiceEnvEntries(opts.voice),

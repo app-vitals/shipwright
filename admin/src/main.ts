@@ -40,6 +40,7 @@ import { createAgentRuntimeApp } from "./api.ts";
 import { isDevAuthAllowed } from "./dev-auth-guard.ts";
 import { HttpGoogleAuthClient } from "./google-auth-client.ts";
 import { HttpKubernetesClient } from "./kubernetes-client.ts";
+import { HttpChatServiceProvisioningClient } from "./chat-service-provisioning-client.ts";
 import { HttpSlackProvisioningClient } from "./slack-provisioning-client.ts";
 import { HttpTaskStoreProvisioningClient } from "./task-store-provisioning-client.ts";
 import { makeTokenCrypto } from "./token-crypto.ts";
@@ -142,6 +143,16 @@ function buildProvisioner(
       ? new HttpTaskStoreProvisioningClient(taskStoreUrl, taskStoreAdminToken)
       : undefined;
 
+  const chatServiceUrl = env.SHIPWRIGHT_CHAT_SERVICE_URL;
+  const chatServiceAdminToken = env.SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN;
+  const chatService =
+    chatServiceUrl && chatServiceAdminToken
+      ? new HttpChatServiceProvisioningClient(
+          chatServiceUrl,
+          chatServiceAdminToken,
+        )
+      : undefined;
+
   const k8s = new HttpKubernetesClient();
 
   return new KubernetesAgentProvisioner(k8s, agentTokenService, {
@@ -169,6 +180,10 @@ function buildProvisioner(
     // SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN are set, mint a per-agent token on
     // provision and inject it into the agent Secret + Deployment.
     ...(taskStore ? { taskStore, taskStoreUrl } : {}),
+    // Chat-service token minting: when both SHIPWRIGHT_CHAT_SERVICE_URL and
+    // SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN are set, mint a per-agent token on
+    // provision and inject it into the agent Secret + Deployment.
+    ...(chatService ? { chatService, chatServiceUrl } : {}),
   });
 }
 
