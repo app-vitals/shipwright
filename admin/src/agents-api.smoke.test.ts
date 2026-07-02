@@ -1963,6 +1963,46 @@ describe("admin API — cron runs", () => {
     expect(typeof body.offset).toBe("number");
   });
 
+  it("GET /agents/:id/crons/:cronId/runs includes modelBreakdown in each item", async () => {
+    const deps = makeMockDepsWithRunService({
+      modelBreakdown: [
+        {
+          model: "claude-sonnet-4-5",
+          inputTokens: 200,
+          outputTokens: 100,
+          cacheReadTokens: 8,
+          cacheCreationTokens: 4,
+          costUsd: 0.002,
+        },
+        {
+          model: "claude-haiku-4-5",
+          inputTokens: 50,
+          outputTokens: 20,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          costUsd: 0.0005,
+        },
+      ],
+    });
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}/crons/${CRON_ID}/runs`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.items).toHaveLength(1);
+    expect(Array.isArray(body.items[0].modelBreakdown)).toBe(true);
+    expect(body.items[0].modelBreakdown).toHaveLength(2);
+    expect(body.items[0].modelBreakdown[0]).toEqual({
+      model: "claude-sonnet-4-5",
+      inputTokens: 200,
+      outputTokens: 100,
+      cacheReadTokens: 8,
+      cacheCreationTokens: 4,
+      costUsd: 0.002,
+    });
+  });
+
   it("PATCH /agents/:id/crons/:cronId/runs/:runId returns 200 with updated run including token fields", async () => {
     const deps = makeMockDepsWithRunService();
     const app = createAdminApp(deps);
@@ -2070,6 +2110,15 @@ function makeMockDepsWithRunService(opts?: {
   notFound?: boolean;
   /** If set, patch() throws NotFoundError when called with this cronId (simulates cross-cron access). */
   wrongCronId?: string;
+  /** If set, list() returns this modelBreakdown array on the mock run. */
+  modelBreakdown?: Array<{
+    model: string;
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheCreationTokens: number;
+    costUsd: number;
+  }>;
 }): AdminDeps {
   const mockRun = {
     id: RUN_ID,
@@ -2088,6 +2137,15 @@ function makeMockDepsWithRunService(opts?: {
     createdAt: new Date("2026-01-01T08:00:00.000Z"),
   };
 
+  const mockRunWithBreakdown = {
+    ...mockRun,
+    modelBreakdown: (opts?.modelBreakdown ?? []).map((entry, i) => ({
+      id: `breakdown-${i}`,
+      cronRunId: RUN_ID,
+      ...entry,
+    })),
+  };
+
   const base = makeMockDeps();
   return {
     ...base,
@@ -2100,7 +2158,7 @@ function makeMockDepsWithRunService(opts?: {
           }
         : async () => mockRun,
       list: async () => ({
-        items: [mockRun],
+        items: [mockRunWithBreakdown],
         total: 1,
         limit: 20,
         offset: 0,

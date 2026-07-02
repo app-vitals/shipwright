@@ -554,6 +554,7 @@ describe("admin UI — authenticated pages", () => {
                 cacheReadTokens: null,
                 cacheCreationTokens: null,
                 createdAt: new Date("2026-06-01T10:00:00Z"),
+                modelBreakdown: [],
               },
             ],
             total: 1,
