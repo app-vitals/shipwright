@@ -110,6 +110,7 @@ function makePatchDepsTriggering() {
       _pr: number,
     ): Promise<void> => {},
     listPrCommits: async (): Promise<CommitInfo[]> => [],
+    getCurrentUser: () => "the-agent",
   };
 }
 
@@ -142,6 +143,7 @@ function makePatchDepsIdle() {
       _pr: number,
     ): Promise<void> => {},
     listPrCommits: async (): Promise<CommitInfo[]> => [],
+    getCurrentUser: () => "the-agent",
   };
 }
 

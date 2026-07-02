@@ -85,6 +85,7 @@ export interface Deps {
   ) => Promise<MergeStatusInfo>;
   updateBranch: (org: string, repo: string, pr: number) => Promise<void>;
   listPrCommits: (prNumber: number, repo?: string) => Promise<CommitInfo[]>;
+  getCurrentUser: () => string;
 }
 
 // ─── Staleness check (mirrors patch.md Step 3b) ───────────────────────────────
@@ -93,15 +94,25 @@ export interface Deps {
  * Returns true if the PR has unaddressed findings:
  * - At least one COMMENTED or CHANGES_REQUESTED review posted at the current HEAD
  * - AND (has a non-empty review body OR has at least one unresolved inline thread)
+ *
+ * Self-authored reviews (author.login === currentUser) are excluded: GitHub
+ * blocks self-APPROVE via the API, so the agent's own reviews are always
+ * posted as COMMENTED even when the body is a clean approval — treating them
+ * as findings would create a permanent false positive.
  */
-function hasUnaddressedFindings(data: PrReviewData): boolean {
+function hasUnaddressedFindings(
+  data: PrReviewData,
+  currentUser: string,
+): boolean {
   const { headRefOid, reviews, reviewThreads } = data;
 
-  // Find qualifying reviews: state COMMENTED or CHANGES_REQUESTED at current HEAD
+  // Find qualifying reviews: state COMMENTED or CHANGES_REQUESTED at current HEAD,
+  // excluding self-authored reviews.
   const qualifyingReviews = reviews.nodes.filter(
     (r) =>
       (r.state === "COMMENTED" || r.state === "CHANGES_REQUESTED") &&
-      r.commit.oid === headRefOid,
+      r.commit.oid === headRefOid &&
+      r.author.login !== currentUser,
   );
 
   if (qualifyingReviews.length === 0) return false;
@@ -122,19 +133,23 @@ function hasUnaddressedFindings(data: PrReviewData): boolean {
  * all commits since that review are merge commits. Mirrors check-review's
  * merge-only skip: a branch updated only via merge-from-main hasn't had real
  * author activity, so findings from the pre-merge review are still valid.
+ *
+ * Self-authored reviews are excluded — see hasUnaddressedFindings for why.
  */
 async function hasMergeOnlyStaleFindings(
   prNumber: number,
   data: PrReviewData,
   deps: Pick<Deps, "listPrCommits">,
-  repo?: string,
+  repo: string | undefined,
+  currentUser: string,
 ): Promise<boolean> {
   const { headRefOid, reviews, reviewThreads } = data;
 
   const staleReviews = reviews.nodes.filter(
     (r) =>
       (r.state === "COMMENTED" || r.state === "CHANGES_REQUESTED") &&
-      r.commit.oid !== headRefOid,
+      r.commit.oid !== headRefOid &&
+      r.author.login !== currentUser,
   );
 
   if (staleReviews.length === 0) return false;
@@ -163,6 +178,8 @@ interface RunResult {
 }
 
 export async function run(deps: Deps): Promise<RunResult> {
+  const currentUser = await deps.getCurrentUser();
+
   const prs = await deps.listOwnOpenPrs("default");
   if (prs.length === 0) return { exit: 1, output: "" };
 
@@ -195,7 +212,7 @@ export async function run(deps: Deps): Promise<RunResult> {
     }
 
     const reviewData = await deps.fetchPrReviews(org, repo, pr.number);
-    if (hasUnaddressedFindings(reviewData)) {
+    if (hasUnaddressedFindings(reviewData, currentUser)) {
       return {
         exit: 0,
         output:
@@ -205,7 +222,15 @@ export async function run(deps: Deps): Promise<RunResult> {
 
     // If findings exist at a stale commit but all new commits are merges, the
     // findings are still valid — only a merge-from-main landed, not real author work.
-    if (await hasMergeOnlyStaleFindings(pr.number, reviewData, deps, pr.repo)) {
+    if (
+      await hasMergeOnlyStaleFindings(
+        pr.number,
+        reviewData,
+        deps,
+        pr.repo,
+        currentUser,
+      )
+    ) {
       return {
         exit: 0,
         output:
@@ -365,6 +390,7 @@ export async function buildProductionDeps(): Promise<Deps> {
         "--paginate",
       ]);
     },
+    getCurrentUser,
   };
 }
 
