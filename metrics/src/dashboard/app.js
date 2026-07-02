@@ -121,7 +121,15 @@
             return null;
           }),
       ]);
-    return { summary, trends, featuresRes, queueRes, tokensRes };
+    // Cost efficiency is only fetched on the public (read-only) dashboard,
+    // guarded by element presence so the authenticated page never fetches it.
+    const costEffEl = document.getElementById('cost-efficiency-section');
+    const costEffRes = costEffEl
+      ? await fetch(`${API_BASE}/cost-efficiency?${q}`)
+          .then((r) => r.json())
+          .catch((err) => { console.error("Cost efficiency fetch failed:", err); return null; })
+      : null;
+    return { summary, trends, featuresRes, queueRes, tokensRes, costEffRes };
   }
 
   // ─── Formatters ───────────────────────────────────────────────────────────
@@ -417,6 +425,70 @@
         }
       }
     }
+  }
+
+  // ─── Update Cost Efficiency ──────────────────────────────────────────────
+
+  function updateCostEfficiency(res) {
+    const $ = (id) => document.getElementById(id);
+    // Read-only/public dashboard renders this section; authenticated page does not.
+    if (!$('cost-efficiency-section')) return;
+
+    const data = res && !res.error ? res.data : null;
+    const emptyEl = $('ce-empty');
+    const limitedEl = $('ce-limited');
+
+    if (!data || data.runsWithCostData === 0) {
+      if (emptyEl) emptyEl.style.display = '';
+      if ($('ce-routed')) $('ce-routed').textContent = '--';
+      if ($('ce-opus')) $('ce-opus').textContent = '--';
+      if ($('ce-savings-text')) $('ce-savings-text').textContent = '--';
+      return;
+    }
+
+    if (emptyEl) emptyEl.style.display = 'none';
+
+    const fleet = data.fleet;
+    const smallN = data.runsWithCostData > 0 && data.runsWithCostData < 3;
+
+    // Routed/Opus KPIs
+    if ($('ce-routed')) $('ce-routed').textContent = smallN ? '--' : fmtCost(fleet.routedUsd);
+    if ($('ce-opus')) $('ce-opus').textContent = smallN ? '--' : fmtCost(fleet.counterfactualOpusUsd);
+
+    // Savings line
+    if ($('ce-savings-text')) {
+      if (smallN && fleet.savingsPct !== null && fleet.savingsPct !== undefined) {
+        $('ce-savings-text').textContent = `${Math.round(fleet.savingsPct)}% saved`;
+        if (limitedEl) limitedEl.style.display = '';
+      } else if (!smallN && fleet.savingsUsd !== null && fleet.savingsPct !== null) {
+        $('ce-savings-text').textContent = `${fmtCost(fleet.savingsUsd)} saved · ${Math.round(fleet.savingsPct)}%`;
+        if (limitedEl) limitedEl.style.display = 'none';
+      } else {
+        $('ce-savings-text').textContent = '--';
+      }
+    }
+
+    // Model-mix bar: classify by modelFamily
+    const byModel = fleet.byModel || [];
+    let haikuUsd = 0;
+    let sonnetUsd = 0;
+    let opusUsd = 0;
+    for (const m of byModel) {
+      const mf = m.modelFamily || '';
+      if (mf.includes('haiku')) haikuUsd += m.routedUsd;
+      else if (mf.includes('opus')) opusUsd += m.routedUsd;
+      else sonnetUsd += m.routedUsd;
+    }
+    const total = haikuUsd + sonnetUsd + opusUsd || 1;
+    const pct = (v) => `${Math.round((v / total) * 100)}%`;
+
+    if ($('ce-bar-haiku')) $('ce-bar-haiku').style.flexBasis = pct(haikuUsd);
+    if ($('ce-bar-sonnet')) $('ce-bar-sonnet').style.flexBasis = pct(sonnetUsd);
+    if ($('ce-bar-opus')) $('ce-bar-opus').style.flexBasis = pct(opusUsd);
+
+    if ($('ce-legend-haiku')) $('ce-legend-haiku').textContent = `Haiku ${pct(haikuUsd)}`;
+    if ($('ce-legend-sonnet')) $('ce-legend-sonnet').textContent = `Sonnet ${pct(sonnetUsd)}`;
+    if ($('ce-legend-opus')) $('ce-legend-opus').textContent = `Opus ${pct(opusUsd)}`;
   }
 
   // ─── Chart.js Trends Chart ───────────────────────────────────────────────
@@ -870,7 +942,7 @@
   async function refresh() {
     setLoading(true);
     try {
-      const { summary, trends, featuresRes, queueRes, tokensRes } =
+      const { summary, trends, featuresRes, queueRes, tokensRes, costEffRes } =
         await fetchAll(currentRange);
       const firstError = summary.error || trends.error;
       if (firstError) {
@@ -901,6 +973,7 @@
       }
       updateTokens(tokensRes);
       renderTokenTrendsChart(lastTokensTrends, activeTokenSeries);
+      updateCostEfficiency(costEffRes);
     } catch (err) {
       showError(`Failed to load metrics: ${err.message}`);
     } finally {

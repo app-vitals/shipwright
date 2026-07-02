@@ -91,6 +91,47 @@ export function renderDashboardPage(opts: DashboardPageOptions): string {
         </div>
       </section>`;
 
+  // Cost Efficiency is public-only telemetry — rendered only in the read-only
+  // public variant. The authenticated dashboard omits it entirely.
+  const costEfficiencySection = readOnly
+    ? `      <!-- Cost Efficiency -->
+      <section class="section" id="cost-efficiency-section" aria-label="Cost efficiency">
+        <div class="section-header">
+          <h2 class="section-title">Cost Efficiency</h2>
+        </div>
+        <div id="ce-content">
+          <div class="model-mix-bar" id="ce-model-bar" aria-label="Model mix by cost share">
+            <div class="model-bar-segment model-bar-haiku" id="ce-bar-haiku" style="flex-basis:0%"></div>
+            <div class="model-bar-segment model-bar-sonnet" id="ce-bar-sonnet" style="flex-basis:100%"></div>
+            <div class="model-bar-segment model-bar-opus" id="ce-bar-opus" style="flex-basis:0%"></div>
+          </div>
+          <div class="model-mix-legend" id="ce-legend">
+            <span class="legend-item haiku"><span class="legend-swatch model-bar-haiku"></span><span id="ce-legend-haiku">Haiku --</span></span>
+            <span class="legend-item sonnet"><span class="legend-swatch model-bar-sonnet"></span><span id="ce-legend-sonnet">Sonnet --</span></span>
+            <span class="legend-item opus"><span class="legend-swatch model-bar-opus"></span><span id="ce-legend-opus">Opus --</span></span>
+          </div>
+          <div class="ce-kpi-row">
+            <div class="kpi-card">
+              <div class="kpi-label">Routed Cost</div>
+              <div class="kpi-value" id="ce-routed"><span class="skeleton">&nbsp;</span></div>
+              <div class="kpi-meta">actual spend</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label">All-Opus Cost</div>
+              <div class="kpi-value" id="ce-opus"><span class="skeleton">&nbsp;</span></div>
+              <div class="kpi-meta">hypothetical all-opus</div>
+            </div>
+          </div>
+          <div class="ce-savings-highlight" id="ce-savings-line">
+            <span id="ce-savings-text"><span class="skeleton">&nbsp;</span></span>
+          </div>
+          <p class="ce-empty" id="ce-empty" style="display:none">No cost data for this period</p>
+          <p class="ce-limited" id="ce-limited" style="display:none">Limited sample — savings % only</p>
+          <p class="ce-caveat">all-Opus assumes identical token counts re-priced at Opus rates</p>
+        </div>
+      </section>`
+    : "";
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -279,6 +320,8 @@ export function renderDashboardPage(opts: DashboardPageOptions): string {
       </section>
 
 ${tokenSection}
+
+${costEfficiencySection}
 
       <!-- Feature Breakdown -->
       <section class="section features-section" aria-label="Feature breakdown">
