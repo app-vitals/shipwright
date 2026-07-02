@@ -621,6 +621,113 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
   });
 
 
+  // ─── byCronModel ─────────────────────────────────────────────────────────────
+
+  it("query() includes byCronModel breakdown by agentId:cronName and model", async () => {
+    const agentId1 = await createAgent(prisma, "Agent One");
+    const agentId2 = await createAgent(prisma, "Agent Two");
+    const cronId1 = await createCron(cronJobService, agentId1, "morning-brief");
+    const cronId2 = await createCron(cronJobService, agentId2, "review-cron");
+
+    // Run A: agent1/cron1 with sonnet breakdown
+    const runA = await runService.create(cronId1, agentId1, {
+      startedAt: new Date("2026-01-10T09:00:00Z"),
+      skipped: false,
+    });
+    await runService.patch(runA.id, agentId1, cronId1, {
+      inputTokens: 100,
+      outputTokens: 50,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+    });
+    await prisma.agentCronRunModelBreakdown.create({
+      data: {
+        cronRunId: runA.id,
+        model: "claude-sonnet-4-5",
+        inputTokens: 100,
+        outputTokens: 50,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        costUsd: 0.001,
+      },
+    });
+
+    // Run B: agent1/cron1 again with haiku breakdown (same cron, different model)
+    const runB = await runService.create(cronId1, agentId1, {
+      startedAt: new Date("2026-01-11T09:00:00Z"),
+      skipped: false,
+    });
+    await runService.patch(runB.id, agentId1, cronId1, {
+      inputTokens: 200,
+      outputTokens: 100,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+    });
+    await prisma.agentCronRunModelBreakdown.create({
+      data: {
+        cronRunId: runB.id,
+        model: "claude-haiku-4-5",
+        inputTokens: 200,
+        outputTokens: 100,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        costUsd: 0.0005,
+      },
+    });
+
+    // Run C: agent2/cron2 with opus breakdown
+    const runC = await runService.create(cronId2, agentId2, {
+      startedAt: new Date("2026-01-10T10:00:00Z"),
+      skipped: false,
+    });
+    await runService.patch(runC.id, agentId2, cronId2, {
+      inputTokens: 300,
+      outputTokens: 150,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+    });
+    await prisma.agentCronRunModelBreakdown.create({
+      data: {
+        cronRunId: runC.id,
+        model: "claude-opus-4-5",
+        inputTokens: 300,
+        outputTokens: 150,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        costUsd: 0.003,
+      },
+    });
+
+    const stats = await statsService.query();
+
+    // byCronModel keys: key1 = "agentId:cronName", key2 = model
+    expect(stats.byCronModel).toHaveLength(3);
+
+    const key1A = `${agentId1}:morning-brief`;
+    const key1C = `${agentId2}:review-cron`;
+
+    const sonnetRow = stats.byCronModel.find(
+      (r) => r.key1 === key1A && r.key2 === "claude-sonnet-4-5",
+    );
+    expect(sonnetRow).toBeDefined();
+    expect(sonnetRow?.input).toBe(100);
+    expect(sonnetRow?.output).toBe(50);
+
+    const haikuRow = stats.byCronModel.find(
+      (r) => r.key1 === key1A && r.key2 === "claude-haiku-4-5",
+    );
+    expect(haikuRow).toBeDefined();
+    expect(haikuRow?.input).toBe(200);
+    expect(haikuRow?.output).toBe(100);
+
+    const opusRow = stats.byCronModel.find(
+      (r) => r.key1 === key1C && r.key2 === "claude-opus-4-5",
+    );
+    expect(opusRow).toBeDefined();
+    expect(opusRow?.input).toBe(300);
+    expect(opusRow?.output).toBe(150);
+  });
+
   // ─── 3+ runs across 2 agents and 2 crons (acceptance test) ──────────────────
 
   it("seed 3+ runs across 2 agents and 2 crons; each dimension aggregates correctly; skipped excluded", async () => {
@@ -746,5 +853,21 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
     expect(stats.daily.find((d) => d.period === "2026-01-10")?.input).toBe(100);
     expect(stats.daily.find((d) => d.period === "2026-01-11")?.input).toBe(200);
     expect(stats.daily.find((d) => d.period === "2026-01-12")?.input).toBe(300); // only runC; skipped run excluded
+
+    // byCronModel: 2 entries — agentId1:cron-alpha × sonnet, agentId2:cron-beta × opus
+    // key1 = agentId:cronName, key2 = model
+    expect(stats.byCronModel).toHaveLength(2);
+    const byCMSonnet = stats.byCronModel.find(
+      (m) => m.key1 === `${agentId1}:cron-alpha` && m.key2 === "claude-sonnet-4-5",
+    );
+    const byCMOpus = stats.byCronModel.find(
+      (m) => m.key1 === `${agentId2}:cron-beta` && m.key2 === "claude-opus-4-5",
+    );
+    expect(byCMSonnet).toBeDefined();
+    expect(byCMSonnet?.input).toBe(400); // runA(100) + runC(300)
+    expect(byCMSonnet?.costUsd).toBeCloseTo(0.001 + 0.003);
+    expect(byCMOpus).toBeDefined();
+    expect(byCMOpus?.input).toBe(200); // runB only
+    expect(byCMOpus?.costUsd).toBeCloseTo(0.002);
   });
 });
