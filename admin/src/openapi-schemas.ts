@@ -460,10 +460,12 @@ export const PatchAgentPluginBodySchema = z
 
 /**
  * GET /agents/:id/envs response. Values are decrypted at the service layer.
+ * Secret keys are masked as "***" in env and listed in secretKeys.
  */
 export const AgentEnvResponseSchema = z
   .object({
     env: z.record(z.string()).openapi({ example: { MY_VAR: "value" } }),
+    secretKeys: z.array(z.string()).openapi({ example: ["MY_SECRET"] }),
   })
   .openapi("AgentEnvResponse");
 

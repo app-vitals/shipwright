@@ -49,7 +49,9 @@ describeOrSkip("AgentEnvService (integration)", () => {
     const agentId = await createAgent(prisma);
     await service.upsert(agentId, { FOO: "bar", BAZ: "qux" });
     const result = await service.getByAgentId(agentId);
-    expect(result).toEqual({ FOO: "bar", BAZ: "qux" });
+    expect(result).not.toBeNull();
+    expect(result?.env).toEqual({ FOO: "bar", BAZ: "qux" });
+    expect(result?.secretKeys).toEqual([]);
   });
 
   it("upsert() replaces all existing vars (delete + insert)", async () => {
@@ -57,8 +59,9 @@ describeOrSkip("AgentEnvService (integration)", () => {
     await service.upsert(agentId, { FOO: "bar", OLD: "value" });
     await service.upsert(agentId, { FOO: "new", FRESH: "yes" });
     const result = await service.getByAgentId(agentId);
-    expect(result).toEqual({ FOO: "new", FRESH: "yes" });
-    expect(result).not.toHaveProperty("OLD");
+    expect(result).not.toBeNull();
+    expect(result?.env).toEqual({ FOO: "new", FRESH: "yes" });
+    expect(result?.env).not.toHaveProperty("OLD");
   });
 
   it("upsert() encrypts values (round-trip with real crypto)", async () => {
@@ -82,9 +85,9 @@ describeOrSkip("AgentEnvService (integration)", () => {
       expect(raw?.value).not.toBe("my-api-key");
       expect(raw?.value).toContain(":"); // iv:ciphertext:authTag format
 
-      // But getByAgentId should return decrypted
+      // But getByAgentId should return decrypted (not secret-flagged, so not masked)
       const result = await encService.getByAgentId(agentId);
-      expect(result?.SECRET).toBe("my-api-key");
+      expect(result?.env.SECRET).toBe("my-api-key");
     } finally {
       process.env.SHIPWRIGHT_ENCRYPTION_KEY =
         origKey === undefined ? undefined : origKey;
@@ -102,7 +105,8 @@ describeOrSkip("AgentEnvService (integration)", () => {
     await service.upsert(agentId, { A: "1", B: "2" });
     await service.patch(agentId, { B: "updated", C: "new" });
     const result = await service.getByAgentId(agentId);
-    expect(result).toEqual({ A: "1", B: "updated", C: "new" });
+    expect(result).not.toBeNull();
+    expect(result?.env).toEqual({ A: "1", B: "updated", C: "new" });
   });
 
   it("patch() throws UnprocessableEntityError for unknown agent", async () => {
@@ -154,7 +158,8 @@ describeOrSkip("AgentEnvService (integration)", () => {
     await service.upsert(agentId, { A: "1", B: "2" });
     await service.deleteKey(agentId, "A");
     const result = await service.getByAgentId(agentId);
-    expect(result).toEqual({ B: "2" });
+    expect(result).not.toBeNull();
+    expect(result?.env).toEqual({ B: "2" });
   });
 
   it("deleteKey() no-ops for a key that doesn't exist", async () => {
@@ -177,5 +182,58 @@ describeOrSkip("AgentEnvService (integration)", () => {
     const entry2 = all.find((e) => e.agentId === id2);
     expect(entry1?.env.KEY).toBe("val1");
     expect(entry2?.env.KEY).toBe("val2");
+  });
+
+  // ─── Secret flag tests ────────────────────────────────────────────────────
+
+  it("upsert() with secret=true masks value in getByAgentId() response", async () => {
+    const agentId = await createAgent(prisma);
+    await service.upsert(
+      agentId,
+      { MY_SECRET: "supersecret", PLAIN: "visible" },
+      new Set(["MY_SECRET"]),
+    );
+    const result = await service.getByAgentId(agentId);
+    expect(result).not.toBeNull();
+    expect(result?.env.MY_SECRET).toBe("***");
+    expect(result?.env.PLAIN).toBe("visible");
+    expect(result?.secretKeys).toContain("MY_SECRET");
+    expect(result?.secretKeys).not.toContain("PLAIN");
+  });
+
+  it("upsert() with secret=false returns real value in getByAgentId() response", async () => {
+    const agentId = await createAgent(prisma);
+    await service.upsert(agentId, { MY_KEY: "realvalue" });
+    const result = await service.getByAgentId(agentId);
+    expect(result).not.toBeNull();
+    expect(result?.env.MY_KEY).toBe("realvalue");
+    expect(result?.secretKeys).toEqual([]);
+  });
+
+  it("getConfigBundle() always decrypts regardless of secret flag", async () => {
+    const agentId = await createAgent(prisma);
+    await service.upsert(
+      agentId,
+      { MY_SECRET: "supersecret", PLAIN: "visible" },
+      new Set(["MY_SECRET"]),
+    );
+    const bundle = await service.getConfigBundle(agentId);
+    expect(bundle).not.toBeNull();
+    // Config bundle always returns real values — no masking
+    expect(bundle?.env.MY_SECRET).toBe("supersecret");
+    expect(bundle?.env.PLAIN).toBe("visible");
+  });
+
+  it("patch() with secretKeys updates secret flag", async () => {
+    const agentId = await createAgent(prisma);
+    await service.upsert(agentId, { A: "1", B: "2" });
+    // Patch B as secret
+    await service.patch(agentId, { B: "newsecret" }, new Set(["B"]));
+    const result = await service.getByAgentId(agentId);
+    expect(result).not.toBeNull();
+    expect(result?.env.A).toBe("1");
+    expect(result?.env.B).toBe("***");
+    expect(result?.secretKeys).toContain("B");
+    expect(result?.secretKeys).not.toContain("A");
   });
 });

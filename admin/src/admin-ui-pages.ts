@@ -516,7 +516,9 @@ export function renderNewLocalAgentPage(
 
 export function renderAgentDetailPage(
   agent: AgentDetail,
-  envVars: Record<string, string>,
+  envResult:
+    | { env: Record<string, string>; secretKeys: string[] }
+    | Record<string, string>,
   crons: CronJobItem[],
   tools: ToolItem[],
   tokens: TokenItem[],
@@ -536,13 +538,28 @@ export function renderAgentDetailPage(
   // defaults to wall clock in production.
   const now = opts?.now ?? new Date();
   const timezone = opts?.timezone ?? "America/Los_Angeles";
+
+  // Normalise envResult — accept both the new {env, secretKeys} shape and the
+  // legacy Record<string,string> shape for backward compatibility.
+  const envVars =
+    envResult &&
+    "env" in envResult &&
+    typeof (envResult as { env: unknown }).env === "object"
+      ? (envResult as { env: Record<string, string>; secretKeys: string[] }).env
+      : (envResult as Record<string, string>);
+  const secretKeySet = new Set<string>(
+    envResult && "secretKeys" in envResult
+      ? (envResult as { secretKeys: string[] }).secretKeys
+      : [],
+  );
+
   const envRows =
     Object.keys(envVars).length === 0
       ? `<tr><td colspan="3" class="empty-state">No env vars set.</td></tr>`
       : Object.entries(envVars)
           .map(
             ([k]) => `<tr>
-      <td class="mono">${escapeHtml(k)}</td>
+      <td class="mono">${escapeHtml(k)}${secretKeySet.has(k) ? ' <span title="Secret">🔒</span>' : ""}</td>
       <td class="mono" style="color:#6b7280">••••••••</td>
       <td>
         <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/envs/delete" style="display:inline">
@@ -782,12 +799,16 @@ export function renderAgentDetailPage(
         ? `<div class="card">
       <div class="card-title">Env Vars</div>
       <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/envs" style="margin-bottom:16px">
-        <div class="form-row">
+        <div class="form-row" style="flex-wrap:wrap;gap:8px">
           <div class="form-group">
             <input name="key" type="text" class="form-input" placeholder="KEY" required />
           </div>
           <div class="form-group">
-            <input name="value" type="text" class="form-input" placeholder="value" required />
+            <input name="value" type="password" class="form-input" placeholder="value" required />
+          </div>
+          <div class="form-group" style="display:flex;align-items:center;gap:6px;padding-bottom:2px">
+            <input name="secret" type="checkbox" id="env-secret" value="true" checked />
+            <label for="env-secret" class="form-label" style="margin-bottom:0">Mark as secret</label>
           </div>
           <button type="submit" class="btn btn-primary">Add</button>
         </div>

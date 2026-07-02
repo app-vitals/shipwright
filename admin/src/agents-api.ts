@@ -114,7 +114,10 @@ export interface AdminDeps {
     AgentPluginService,
     "list" | "add" | "remove" | "removeByName"
   >;
-  agentChatTokenService: Pick<AgentChatTokenService, "upsertDailyByModel" | "queryStats">;
+  agentChatTokenService: Pick<
+    AgentChatTokenService,
+    "upsertDailyByModel" | "queryStats"
+  >;
   prisma: Pick<PrismaClient, "agent">;
   /**
    * Provisions (and tears down) the workload backing an agent. Defaults to a
@@ -705,8 +708,16 @@ const upsertChatTokenDailyRoute = createRoute({
 
 const cronRunStatsQuerySchema = z
   .object({
-    from: z.string().datetime().optional().openapi({ example: "2026-01-01T00:00:00Z" }),
-    to: z.string().datetime().optional().openapi({ example: "2026-02-01T00:00:00Z" }),
+    from: z
+      .string()
+      .datetime()
+      .optional()
+      .openapi({ example: "2026-01-01T00:00:00Z" }),
+    to: z
+      .string()
+      .datetime()
+      .optional()
+      .openapi({ example: "2026-02-01T00:00:00Z" }),
   })
   .openapi("CronRunStatsQuery");
 
@@ -741,8 +752,7 @@ const chatTokenDailyStatsRoute = createRoute({
   },
   responses: {
     200: {
-      description:
-        "Aggregated chat token daily stats across all agents",
+      description: "Aggregated chat token daily stats across all agents",
       content: { "application/json": { schema: ChatTokenStatsSchema } },
     },
     401: { description: "Unauthorized", ...jsonError },
@@ -1003,11 +1013,14 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     return c.json({ ok: true } as const, 201);
   });
 
-  // GET /agents/:id/envs — get all env vars (decrypted)
+  // GET /agents/:id/envs — get all env vars (decrypted, secret values masked)
   app.openapi(getEnvsRoute, async (c) => {
     const { id: agentId } = c.req.valid("param");
-    const env = await agentEnvService.getByAgentId(agentId);
-    return c.json({ env: env ?? {} }, 200);
+    const result = await agentEnvService.getByAgentId(agentId);
+    return c.json(
+      { env: result?.env ?? {}, secretKeys: result?.secretKeys ?? [] },
+      200,
+    );
   });
 
   // PATCH /agents/:id/envs — update specific keys (without replacing all)
@@ -1362,13 +1375,18 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     const body = c.req.valid("json");
     const rows = await Promise.all(
       body.modelBreakdown.map((entry) =>
-        agentChatTokenService.upsertDailyByModel(agentId, body.date, entry.model, {
-          inputTokens: entry.inputTokens,
-          outputTokens: entry.outputTokens,
-          cacheReadTokens: entry.cacheReadTokens,
-          cacheCreationTokens: entry.cacheCreationTokens,
-          costUsd: entry.costUsd,
-        }),
+        agentChatTokenService.upsertDailyByModel(
+          agentId,
+          body.date,
+          entry.model,
+          {
+            inputTokens: entry.inputTokens,
+            outputTokens: entry.outputTokens,
+            cacheReadTokens: entry.cacheReadTokens,
+            cacheCreationTokens: entry.cacheCreationTokens,
+            costUsd: entry.costUsd,
+          },
+        ),
       ),
     );
     return c.json(rows.map(serializeChatTokenDaily), 200);
