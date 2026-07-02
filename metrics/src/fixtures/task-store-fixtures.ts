@@ -186,6 +186,18 @@ export function createFixtureTaskStoreProvider(): MetricsProvider {
       { period: ds(2), ...agg(600, 300, 120, 60, 0.9) },
       { period: ds(1), ...agg(400, 200, 80, 40, 0.6) },
     ],
+    byCronModel: [
+      {
+        key1: "agent-a:ship-loop",
+        key2: "opus",
+        ...agg(700, 350, 140, 70, 1.0),
+      },
+      {
+        key1: "agent-a:patrol",
+        key2: "opus",
+        ...agg(300, 150, 60, 30, 0.5),
+      },
+    ],
   };
 
   const CHAT_STATS: ChatTokenStats = {

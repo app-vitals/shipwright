@@ -425,6 +425,7 @@ function makeMockDeps(): AdminDeps {
         byCron: [],
         byModel: [],
         daily: [],
+        byCronModel: [],
       }),
     },
     provisioner: new RecordingProvisioner(),
