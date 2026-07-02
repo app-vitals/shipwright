@@ -263,6 +263,18 @@ const year = new Date().getFullYear();
       }
     </style>
 
+    <!-- aria-expanded state for the hamburger label (screen reader feedback). -->
+    <script>
+      const toggle = document.getElementById('nav-mobile-toggle') as HTMLInputElement | null;
+      const label = document.querySelector('label[for="nav-mobile-toggle"].md\\:hidden') as HTMLElement | null;
+      if (toggle && label) {
+        label.setAttribute('aria-expanded', 'false');
+        toggle.addEventListener('change', () => {
+          label.setAttribute('aria-expanded', toggle.checked ? 'true' : 'false');
+        });
+      }
+    </script>
+
     <!-- .sw-container already caps width at --sw-layout-max-width (72rem). -->
     <main class="sw-container relative" {...(pagefindIgnore ? { "data-pagefind-ignore": true } : {})}>
       <slot />
