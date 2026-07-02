@@ -116,12 +116,62 @@ export function baseStyles(): string {
       padding: 32px 24px 64px;
     }
 
+    /* ─── Hamburger toggle (CSS-only, no JS) ───────────── */
+    .vos-nav-toggle { display: none; }
+    .vos-hamburger {
+      display: none;
+      background: none;
+      border: none;
+      font-size: 20px;
+      cursor: pointer;
+      color: #1a1a2e;
+      padding: 4px 8px;
+      line-height: 1;
+      font-family: inherit;
+    }
+    .vos-hamburger:hover { color: #4f46e5; }
+
     @media (max-width: 640px) {
-      .vos-toolbar { padding: 0 16px; gap: 12px; }
+      .vos-toolbar { padding: 0 16px; gap: 12px; flex-wrap: wrap; height: auto; min-height: 52px; align-items: center; }
       .vos-username { display: none; }
       .vos-nav-link { padding: 5px 8px; }
       .vos-page { padding: 20px 16px 48px; }
+
+      /* Hide nav links by default on mobile */
+      .vos-nav {
+        display: none;
+        flex-direction: column;
+        width: 100%;
+        gap: 2px;
+        padding: 8px 0;
+        order: 3;
+      }
+      /* Show nav links when hamburger checkbox is checked */
+      .vos-nav-toggle:checked + nav .vos-nav {
+        display: flex;
+      }
+      .vos-nav-link {
+        display: block;
+        padding: 10px 12px;
+        border-radius: 6px;
+        font-size: 14px;
+      }
+      .vos-nav-link.active {
+        background: #eef2ff;
+        color: #4f46e5;
+        font-weight: 600;
+      }
+      /* Show hamburger on mobile */
+      .vos-hamburger {
+        display: block;
+      }
+      /* Hide user section sign-out on mobile when nav is closed */
+      .vos-user {
+        order: 2;
+        margin-left: 0;
+      }
     }
+
   `;
 }
 
@@ -148,18 +198,22 @@ export function renderShipwrightToolbar(
   // public host). The wordmark points at the dashboard instead of /admin/agents.
   if (opts.readOnly) {
     const tasksUrl = opts.tasksUrl ?? "/public/tasks";
-    return `<nav class="vos-toolbar" aria-label="Site navigation">
+    return `<input type="checkbox" id="vos-nav-toggle" class="vos-nav-toggle" aria-hidden="true">
+  <nav class="vos-toolbar" aria-label="Site navigation">
     <a href="${metricsUrl}" class="vos-wordmark">Shipwright</a>
-    <div class="vos-nav">
+    <div id="vos-nav-content" class="vos-nav">
       <a href="${metricsUrl}" class="vos-nav-link${active(metricsUrl)}">Metrics</a>
       <a href="${tasksUrl}" class="vos-nav-link${active(tasksUrl)}">Tasks</a>
     </div>
-  </nav>`;
+    <label for="vos-nav-toggle" class="vos-hamburger" aria-label="Toggle navigation" aria-expanded="false" aria-controls="vos-nav-content">☰</label>
+  </nav>
+  <script>(function(){var t=document.getElementById('vos-nav-toggle');if(t)t.addEventListener('change',function(){var l=document.querySelector('label[for="vos-nav-toggle"]');if(l)l.setAttribute('aria-expanded',t.checked?'true':'false');});})();</script>`;
   }
 
-  return `<nav class="vos-toolbar" aria-label="Site navigation">
+  return `<input type="checkbox" id="vos-nav-toggle" class="vos-nav-toggle" aria-hidden="true">
+  <nav class="vos-toolbar" aria-label="Site navigation">
     <a href="${adminBase}/admin/agents" class="vos-wordmark">Shipwright</a>
-    <div class="vos-nav">
+    <div id="vos-nav-content" class="vos-nav">
       <a href="${adminBase}/admin/agents" class="vos-nav-link${active("/admin/agents")}">Agents</a>
       <a href="${adminBase}/admin/provision" class="vos-nav-link${active("/admin/provision")}">Provision</a>
       <a href="${adminBase}/admin/tasks" class="vos-nav-link${active("/admin/tasks")}">Tasks</a>
@@ -173,5 +227,7 @@ export function renderShipwrightToolbar(
         <button type="submit" class="vos-signout-btn">Sign out</button>
       </form>
     </div>
-  </nav>`;
+    <label for="vos-nav-toggle" class="vos-hamburger" aria-label="Toggle navigation" aria-expanded="false" aria-controls="vos-nav-content">☰</label>
+  </nav>
+  <script>(function(){var t=document.getElementById('vos-nav-toggle');if(t)t.addEventListener('change',function(){var l=document.querySelector('label[for="vos-nav-toggle"]');if(l)l.setAttribute('aria-expanded',t.checked?'true':'false');});})();</script>`;
 }
