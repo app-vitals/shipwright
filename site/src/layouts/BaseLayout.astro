@@ -71,6 +71,7 @@ const claudeCodeUrl = "https://claude.com/claude-code";
 const discussionsUrl = "https://github.com/app-vitals/shipwright/discussions";
 const compareUrl = "/compare";
 const docsUrl = "/docs";
+const architectureUrl = "/architecture";
 const year = new Date().getFullYear();
 ---
 
@@ -178,6 +179,7 @@ const year = new Date().getFullYear();
       <nav class="hidden md:flex items-center gap-6" aria-label="Primary">
         <a href={docsUrl} class="sw-label">Docs</a>
         <a href={compareUrl} class="sw-label">Compare</a>
+        <a href={architectureUrl} class="sw-label">Architecture</a>
         <a href={repoUrl} class="sw-label">GitHub ↗</a>
       </nav>
 
@@ -204,6 +206,9 @@ const year = new Date().getFullYear();
         </li>
         <li>
           <a href={compareUrl} class="sw-label">Compare</a>
+        </li>
+        <li>
+          <a href={architectureUrl} class="sw-label">Architecture</a>
         </li>
         <li>
           <a href={repoUrl} class="sw-label">GitHub ↗</a>
