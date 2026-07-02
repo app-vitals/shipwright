@@ -294,7 +294,9 @@ describe("org/repo format validation — POST /tasks", () => {
     });
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.error).toBe("repo is required");
+    expect(body.error).toBe(
+      "repo key is required (null is valid for unscoped tasks)",
+    );
   });
 });
 
@@ -418,7 +420,9 @@ describe("org/repo validation — POST /tasks/bulk", () => {
     });
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.error).toBe("repo is required");
+    expect(body.error).toBe(
+      "repo key is required (null is valid for unscoped tasks)",
+    );
   });
 });
 
