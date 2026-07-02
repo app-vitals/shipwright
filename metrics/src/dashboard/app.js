@@ -405,7 +405,11 @@
             }
             agentTbody.appendChild(tr);
 
-            // Model sub-rows nested under this cron sub-row.
+            // Model sub-rows nested under this cron sub-row. Both
+            // byAgentCronModel and byAgentCron are mapped through
+            // cronDisplayNameMap in api.ts before reaching the client, so
+            // comparing cronName here is safe — keep both sides mapped
+            // consistently if this logic changes.
             const cronModelRows = (byAgentCronModel || []).filter(
               (r) =>
                 r.agentId === agent.agentId &&
