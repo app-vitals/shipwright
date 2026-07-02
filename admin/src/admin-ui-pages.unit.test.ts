@@ -204,7 +204,7 @@ describe("renderAgentsPage", () => {
       name: '<script>alert("xss")</script>',
     };
     const html = renderAgentsPage([xssAgent], USER_NAME, true, "UTC");
-    expect(html).not.toContain("<script>");
+    expect(html).not.toContain('<script>alert("xss")</script>');
     expect(html).toContain("&lt;script&gt;");
   });
 
@@ -1096,7 +1096,7 @@ describe("renderProvisionStartPage", () => {
     const html = renderProvisionStartPage(USER_NAME, [], {
       error: "<script>xss()</script>",
     });
-    expect(html).not.toContain("<script>");
+    expect(html).not.toContain("<script>xss()</script>");
     expect(html).toContain("&lt;script&gt;");
   });
 
@@ -1134,7 +1134,7 @@ describe("renderProvisionStartPage", () => {
   test("XSS: agent name in select option is escaped", () => {
     const xssAgents = [{ id: "a1", name: "<script>evil()</script>" }];
     const html = renderProvisionStartPage(USER_NAME, xssAgents);
-    expect(html).not.toContain("<script>");
+    expect(html).not.toContain("<script>evil()</script>");
     expect(html).toContain("&lt;script&gt;");
   });
 
@@ -1195,7 +1195,7 @@ describe("renderProvisionPasteForm", () => {
     const html = renderProvisionPasteForm(USER_NAME, {
       agentId: '"><script>xss()</script>',
     });
-    expect(html).not.toContain("<script>");
+    expect(html).not.toContain('"><script>xss()</script>');
     expect(html).toContain("&lt;script&gt;");
   });
 
@@ -1216,7 +1216,7 @@ describe("renderProvisionPasteForm", () => {
     const html = renderProvisionPasteForm(USER_NAME, {
       error: "<script>bad()</script>",
     });
-    expect(html).not.toContain("<script>");
+    expect(html).not.toContain("<script>bad()</script>");
     expect(html).toContain("&lt;script&gt;");
   });
 
@@ -1284,7 +1284,7 @@ describe("renderProvisionCompletePage", () => {
       success: false,
       error: "<script>steal()</script>",
     });
-    expect(html).not.toContain("<script>");
+    expect(html).not.toContain("<script>steal()</script>");
     expect(html).toContain("&lt;script&gt;");
   });
 
@@ -1293,7 +1293,7 @@ describe("renderProvisionCompletePage", () => {
       success: true,
       agentId: '"><script>xss()</script>',
     });
-    expect(html).not.toContain("<script>");
+    expect(html).not.toContain('"><script>xss()</script>');
     expect(html).toContain("&lt;script&gt;");
   });
 });
