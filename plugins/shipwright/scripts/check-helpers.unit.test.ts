@@ -126,12 +126,12 @@ describe("resolveRepos", () => {
     );
     makeGitClone(
       reposDir,
-      "patrol",
-      "https://github.com/app-vitals/patrol.git",
+      "other-repo",
+      "https://github.com/acme/other-repo.git",
     );
     const result = resolveRepos(tmpDir);
     expect(result).toContain("acme/example-repo");
-    expect(result).toContain("app-vitals/patrol");
+    expect(result).toContain("acme/other-repo");
     expect(result).toHaveLength(2);
   });
 
@@ -195,15 +195,15 @@ describe("resolveRepos", () => {
     mkdirSync(envReposDir, { recursive: true });
     makeGitClone(
       envReposDir,
-      "patrol",
-      "https://github.com/app-vitals/patrol.git",
+      "other-repo",
+      "https://github.com/acme/other-repo.git",
     );
 
     process.env.SHIPWRIGHT_REPOS_DIR = envReposDir;
     const result = resolveRepos(tmpDir);
     // repos/ is non-empty, so env var is ignored
     expect(result).toContain("acme/example-repo");
-    expect(result).not.toContain("app-vitals/patrol");
+    expect(result).not.toContain("acme/other-repo");
   });
 
   test("returns empty array when SHIPWRIGHT_REPOS_DIR points to nonexistent path", () => {
@@ -258,10 +258,10 @@ describe("resolveAllRepos", () => {
     mkdirSync(reposDir, { recursive: true });
     makeGitClone(
       reposDir,
-      "patrol",
-      "https://github.com/app-vitals/patrol.git",
+      "other-repo",
+      "https://github.com/acme/other-repo.git",
     );
-    expect(resolveAllRepos(tmpDir)).toEqual(["app-vitals/patrol"]);
+    expect(resolveAllRepos(tmpDir)).toEqual(["acme/other-repo"]);
   });
 });
 

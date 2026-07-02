@@ -624,6 +624,7 @@ export const CronRunTokenStatsSchema = z
     byCron: z.array(DoubleKeyedTokenAggregateSchema),
     byModel: z.array(DoubleKeyedTokenAggregateSchema),
     daily: z.array(DailyTokenAggregateSchema),
+    byCronModel: z.array(DoubleKeyedTokenAggregateSchema),
   })
   .openapi("CronRunTokenStats");
 
