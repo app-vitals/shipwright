@@ -385,7 +385,7 @@ function makeCostEfficiencyHandler(
           : null;
 
       const runsTotal = new Set(byCronModel.map((r) => r.cronKey)).size;
-      const runsWithCostData = byCronModel.filter((r) => r.routedUsd > 0).length;
+      const runsWithCostData = new Set(byCronModel.filter((r) => r.routedUsd > 0).map((r) => r.cronKey)).size;
 
       return c.json(
         wrapResponse(
