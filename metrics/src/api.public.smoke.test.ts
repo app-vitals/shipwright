@@ -128,6 +128,65 @@ describe("public dashboard — read-only render", () => {
   });
 });
 
+describe("public metrics surface — cost-efficiency", () => {
+  test("GET /public/metrics/cost-efficiency → 200 with no auth header", async () => {
+    const app = buildApp();
+    const res = await app.request("/public/metrics/cost-efficiency");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toBeTruthy();
+  });
+
+  test("GET /public/metrics/cost-efficiency → run/cron shape with per-agent breakdown, no task fields", async () => {
+    const app = buildApp();
+    const res = await app.request("/public/metrics/cost-efficiency");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data).toHaveProperty("fleet");
+    expect(body.data).toHaveProperty("byAgentModel");
+    expect(body.data).toHaveProperty("byCronModel");
+    expect(body.data).toHaveProperty("runsWithCostData");
+    expect(body.data).toHaveProperty("runsTotal");
+    // Must not use task-centric terminology
+    expect(body.data).not.toHaveProperty("tasksWithCostData");
+    expect(body.data).not.toHaveProperty("tasksShippedTotal");
+  });
+
+  test("GET /public/metrics/cost-efficiency → counterfactual clearly labeled", async () => {
+    const app = buildApp();
+    const res = await app.request("/public/metrics/cost-efficiency");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // The counterfactual must be clearly labeled as hypothetical
+    expect(body.data.fleet).toHaveProperty("counterfactualOpusUsd");
+    expect(body.data).toHaveProperty("note");
+    expect(typeof body.data.note).toBe("string");
+  });
+
+  test("GET /public/metrics/cost-efficiency → runsWithCostData counts distinct cron runs, not model pairs", async () => {
+    // A cron with 2 models contributing cost → runsWithCostData should be 1, not 2
+    const provider: MetricsProvider = {
+      query: async () => ({
+        columns: ["scope", "model_family", "routed_usd", "opus_usd", "savings_usd"],
+        results: [
+          // cron-a uses 2 models with cost → counts as 1 run with cost data
+          ["cron:cron-a", "claude-sonnet", 1.5, 2.0, 0.5],
+          ["cron:cron-a", "claude-haiku", 0.3, 0.4, 0.1],
+          // cron-b has no cost data → not counted in runsWithCostData
+          ["cron:cron-b", "claude-sonnet", 0.0, 0.5, 0.5],
+        ],
+        types: [],
+      }),
+    };
+    const app = createPublicMetricsApp(provider);
+    const res = await app.request("/public/metrics/cost-efficiency");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.runsTotal).toBe(2); // cron-a and cron-b
+    expect(body.data.runsWithCostData).toBe(1); // only cron-a has routedUsd > 0
+  });
+});
+
 describe("public dashboard — static assets", () => {
   for (const [path, type] of [
     ["/public/dashboard/styles.css", "text/css"],

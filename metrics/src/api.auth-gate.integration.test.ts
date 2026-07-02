@@ -340,6 +340,53 @@ describe("METRICS_DASHBOARD_TOKEN gate", () => {
   });
 });
 
+// ─── /metrics/cost-efficiency — private app registration ─────────────────────
+
+describe("/metrics/cost-efficiency — private app registration", () => {
+  test("valid session cookie → 200 on /metrics/cost-efficiency", async () => {
+    const cookie = await makeSessionCookie();
+    const deps: MetricsDeps = {
+      provider: makeMockProvider(),
+      sessionSecret: TEST_SESSION_SECRET,
+    };
+    const app = createMetricsApp(apiKeys, noopAccountsClient, deps);
+
+    const res = await app.request("/metrics/cost-efficiency", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+
+    expect(res.status).toBe(200);
+  });
+
+  test("no auth → 401 on /metrics/cost-efficiency", async () => {
+    const deps: MetricsDeps = {
+      provider: makeMockProvider(),
+      sessionSecret: TEST_SESSION_SECRET,
+    };
+    const app = createMetricsApp(apiKeys, noopAccountsClient, deps);
+
+    const res = await app.request("/metrics/cost-efficiency");
+
+    expect(res.status).toBe(401);
+  });
+
+  test("valid bearer token → 200 on /metrics/cost-efficiency", async () => {
+    const deps: MetricsDeps = {
+      provider: makeMockProvider(),
+      sessionSecret: TEST_SESSION_SECRET,
+    };
+    const app = createMetricsApp(apiKeys, noopAccountsClient, deps);
+
+    const res = await app.request("/metrics/cost-efficiency", {
+      headers: authHeader(ADMIN_KEY),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toBeTruthy();
+  });
+});
+
 // ─── dashboard HTML — no dead nav links ──────────────────────────────────────
 
 describe("dashboard HTML — no dead nav links", () => {
