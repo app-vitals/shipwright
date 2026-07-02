@@ -36,13 +36,19 @@ tasks:
     cmds:
       - bun scripts/check-config-docs.ts
 
+  check-version-sync:
+    desc: Assert version.txt matches plugin.json and all package.json files
+    cmds:
+      - bun run scripts/sync-version.ts --check
+
   ci:
-    desc: Run all CI checks (lint → check-strings → typecheck → check-config-docs → test → secret-scan)
+    desc: Run all CI checks (lint → check-strings → typecheck → check-config-docs → check-version-sync → test → secret-scan)
     cmds:
       - task: lint
       - task: check-strings
       - task: typecheck
       - task: check-config-docs
+      - task: check-version-sync
       - task: test
       - task: secret-scan
 
