@@ -470,7 +470,9 @@
 
     // Model-mix bar: classify by modelFamily
     const byModel = fleet.byModel || [];
-    let haikuUsd = 0, sonnetUsd = 0, opusUsd = 0;
+    let haikuUsd = 0;
+    let sonnetUsd = 0;
+    let opusUsd = 0;
     for (const m of byModel) {
       const mf = m.modelFamily || '';
       if (mf.includes('haiku')) haikuUsd += m.routedUsd;
