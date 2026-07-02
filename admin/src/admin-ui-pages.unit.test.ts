@@ -30,7 +30,9 @@ import {
   renderPrsPage,
   renderTaskDetailPage,
   renderTasksPage,
+  renderChatThreadPage,
 } from "./admin-ui-pages.ts";
+import type { ChatMessage, ChatThread } from "./http-chat-client.ts";
 import { renderAdminToolbar } from "./admin-ui-styles.ts";
 
 // ─── Shared fixtures ──────────────────────────────────────────────────────────
@@ -3050,5 +3052,141 @@ describe("renderPrsPage — mobile column hiding", () => {
     expect((patchCyclesTdMatches ?? []).length).toBe(2);
     expect(claimedByTdMatches).not.toBeNull();
     expect((claimedByTdMatches ?? []).length).toBe(2);
+  });
+});
+
+// ─── renderChatThreadPage ─────────────────────────────────────────────────────
+
+describe("renderChatThreadPage", () => {
+  const THREAD: ChatThread = {
+    id: "thread-abc",
+    agentId: "agent-xyz",
+    title: "My Test Thread",
+    memberId: null,
+    createdAt: "2024-01-01T00:00:00.000Z",
+    updatedAt: "2024-01-01T00:00:00.000Z",
+  };
+
+  const USER_MSG: ChatMessage = {
+    id: "msg-1",
+    threadId: "thread-abc",
+    role: "user",
+    body: "Hello, agent!",
+    createdAt: "2024-01-01T00:00:00.000Z",
+    claimedBy: null,
+    repliedAt: null,
+    tokens: null,
+    costUsd: null,
+    errorKind: null,
+  };
+
+  const ASSISTANT_MSG: ChatMessage = {
+    id: "msg-2",
+    threadId: "thread-abc",
+    role: "assistant",
+    body: "Here is **bold text** and `inline code`.",
+    createdAt: "2024-01-01T00:01:00.000Z",
+    claimedBy: null,
+    repliedAt: "2024-01-01T00:01:05.000Z",
+    tokens: 100,
+    costUsd: 0.001,
+    errorKind: null,
+  };
+
+  const ERROR_MSG: ChatMessage = {
+    id: "msg-3",
+    threadId: "thread-abc",
+    role: "assistant",
+    body: "",
+    createdAt: "2024-01-01T00:02:00.000Z",
+    claimedBy: null,
+    repliedAt: null,
+    tokens: null,
+    costUsd: null,
+    errorKind: "rate-limited",
+  };
+
+  test("degraded mode: renders not-configured notice when thread is null", () => {
+    const html = renderChatThreadPage("agent-xyz", null, null, "alice");
+    expect(html.toLowerCase()).toMatch(/not configured|unavailable|degraded/);
+  });
+
+  test("renders thread title in page", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
+    expect(html).toContain("My Test Thread");
+  });
+
+  test("renders user message body", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
+    expect(html).toContain("Hello, agent!");
+  });
+
+  test("user messages are right-aligned with indigo/blue background", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
+    // right-aligned and indigo/blue background (#eef2ff)
+    expect(html).toContain("#eef2ff");
+    expect(html).toContain("flex-end");
+  });
+
+  test("assistant messages are left-aligned with green background", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [ASSISTANT_MSG], "alice");
+    expect(html).toContain("#f0fdf4");
+    expect(html).toContain("flex-start");
+  });
+
+  test("assistant messages render markdown: bold text becomes <strong>", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [ASSISTANT_MSG], "alice");
+    expect(html).toContain("<strong>bold text</strong>");
+  });
+
+  test("assistant messages render markdown: inline code becomes <code>", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [ASSISTANT_MSG], "alice");
+    expect(html).toContain("<code>inline code</code>");
+  });
+
+  test("errorKind rate-limited shows human-readable error state", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [ERROR_MSG], "alice");
+    expect(html).toContain("Rate limited");
+  });
+
+  test("errorKind message renders a red/error badge or indicator", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [ERROR_MSG], "alice");
+    // should have some red / error styling
+    expect(html.toLowerCase()).toMatch(/error|#ef4444|#fee2e2|#b91c1c|#dc2626/);
+  });
+
+  test("empty thread shows empty state message", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [], "alice");
+    expect(html).toContain("No messages");
+  });
+
+  test("page includes messages-container element for JS polling", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
+    expect(html).toContain("messages-container");
+  });
+
+  test("page includes thinking-indicator id in the inline JS", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
+    expect(html).toContain("thinking-indicator");
+  });
+
+  test("page includes send-btn id for send button", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
+    expect(html).toContain("send-btn");
+  });
+
+  test("page includes messages.json polling endpoint reference in JS", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
+    expect(html).toContain("messages.json");
+  });
+
+  test("XSS: user message body is escaped", () => {
+    const xssMsg: ChatMessage = {
+      ...USER_MSG,
+      body: '<script>alert("xss")</script>',
+    };
+    const html = renderChatThreadPage("agent-xyz", THREAD, [xssMsg], "alice");
+    expect(html).not.toContain('<script>alert("xss")</script>');
+    expect(html).toContain("&lt;script&gt;");
   });
 });

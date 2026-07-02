@@ -301,6 +301,10 @@ export function renderDashboardPage(opts: DashboardPageOptions): string {
               <span class="stat-label">SHIP IT${infoIcon("Reviews where no blocking issues were found")}</span>
               <span class="stat-value good" id="review-ship-it">--</span>
             </div>
+            <div class="stat-row" data-metric="review-iterations">
+              <span class="stat-label">Review Iterations${infoIcon("Avg review + patch cycles per PR — an iteration-count proxy, not a findings count")}</span>
+              <span class="stat-value" id="review-iterations">--</span>
+            </div>
           </div>
 
           <!-- Coverage -->

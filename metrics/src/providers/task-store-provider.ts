@@ -255,6 +255,13 @@ export class TaskStoreProvider implements MetricsProvider {
       (p) => p.reviewState === SHIP_IT_REVIEW_STATE,
     ).length;
 
+    // Interim proxy for true review-findings tracking (deferred — needs a
+    // schema decision): reviewCycles + patchCycles per PR, averaged. This is
+    // an iteration count, not a findings count.
+    const avgReviewIterations = avg(
+      prs.map((p) => (num(p.reviewCycles) ?? 0) + (num(p.patchCycles) ?? 0)),
+    );
+
     const columns = [
       "tasks_completed",
       "tasks_blocked",
@@ -274,6 +281,7 @@ export class TaskStoreProvider implements MetricsProvider {
       "simplify_avg_consistency",
       "reviews_total",
       "reviews_ship_it",
+      "avg_review_iterations",
       "complexity_1",
       "complexity_2",
       "complexity_3",
@@ -301,6 +309,7 @@ export class TaskStoreProvider implements MetricsProvider {
       null, // simplify_avg_consistency — no task-store source
       prs.length,
       shipIt,
+      avgReviewIterations,
       complexityCount(1),
       complexityCount(2),
       complexityCount(3),
