@@ -16,6 +16,7 @@
 import { type Clock, SystemClock } from "./clock.ts";
 import { ConflictError, NotFoundError } from "./errors.ts";
 import { Prisma, type PrismaClient, type PrPhase, type PullRequest } from "./index.ts";
+import type { TaskServiceLike } from "./task-service.ts";
 
 /** Filters accepted by PullRequestService.list. */
 export interface PullRequestListFilters {
@@ -65,6 +66,7 @@ export class PullRequestService implements PullRequestServiceLike {
   constructor(
     private prisma: PrismaClient,
     private clock: Clock = SystemClock(),
+    private taskService?: TaskServiceLike,
   ) {}
 
   // ─── Reads ─────────────────────────────────────────────────────────────────
@@ -138,7 +140,7 @@ export class PullRequestService implements PullRequestServiceLike {
   ): Promise<{ status: 200 | 201; record: PullRequest }> {
     const now = this.clock.now().toISOString();
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const existing = await tx.pullRequest.findUnique({
         where: { repo_prNumber: { repo, prNumber } },
       });
@@ -231,6 +233,20 @@ export class PullRequestService implements PullRequestServiceLike {
         throw err;
       }
     });
+
+    // After the transaction commits, sync Task.pr and Task.repo if a taskId was
+    // provided and a TaskService is wired in. This is intentionally outside the
+    // $transaction boundary — Task and PullRequest are separate models and mixing
+    // them inside a single Prisma $transaction would create implicit boundary issues.
+    if (taskId !== undefined && this.taskService) {
+      try {
+        await this.taskService.update(taskId, { pr: prNumber, repo });
+      } catch (err) {
+        console.warn('[PullRequestService.claim] task sync failed:', err);
+      }
+    }
+
+    return result;
   }
 
   /** Touch heartbeatAt for liveness. Errors if the PR is missing. */
