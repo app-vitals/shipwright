@@ -1765,6 +1765,74 @@ describe("renderTasksPage — PR column", () => {
   });
 });
 
+// ─── renderTasksPage — PR column: renderer guard + prUrl fallback ─────────────
+
+describe("renderTasksPage — PR column: renderer guard + prUrl fallback", () => {
+  function render(tasks: TaskItem[]): string {
+    return renderTasksPage(
+      tasks,
+      {},
+      false,
+      USER_NAME,
+      {},
+      { total: tasks.length, limit: 50, page: 1 },
+      undefined,
+      undefined,
+    );
+  }
+
+  // (1) pr set + repo null → '--' (never github.com//pull/)
+  test("pr set + repo null renders '--' (never github.com//pull/)", () => {
+    const task: TaskItem = {
+      ...TASK_ITEM,
+      pr: 7,
+      repo: null,
+    };
+    const html = render([task]);
+    expect(html).not.toContain("github.com//pull/");
+    expect(html).toContain("—");
+    expect(html).not.toContain("github.com/null/pull/");
+  });
+
+  // (2) pr set + repo set → valid github link
+  test("pr set + repo set renders valid github link", () => {
+    const task: TaskItem = {
+      ...TASK_ITEM,
+      pr: 42,
+      repo: "my-org/my-repo",
+    };
+    const html = render([task]);
+    expect(html).toContain("https://github.com/my-org/my-repo/pull/42");
+    expect(html).toContain("#42");
+  });
+
+  // (3) only prUrl set → link to prUrl
+  test("only prUrl set renders a link to prUrl", () => {
+    const task: TaskItem = {
+      ...TASK_ITEM,
+      pr: null,
+      repo: null,
+      prUrl: "https://github.com/org/repo/pull/99",
+    };
+    const html = render([task]);
+    expect(html).toContain("https://github.com/org/repo/pull/99");
+  });
+
+  // (4) neither pr nor prUrl → '--'
+  test("neither pr nor prUrl renders '--'", () => {
+    const task: TaskItem = {
+      ...TASK_ITEM,
+      pr: null,
+      repo: null,
+      prUrl: null,
+    };
+    const html = render([task]);
+    // em-dash for no PR
+    expect(html).toContain("—");
+    expect(html).not.toContain("github.com");
+  });
+});
+
 // ─── renderTasksPage — 4-state toggle ────────────────────────────────────────
 
 const EMPTY_PAGINATION = { total: 0, limit: 50, page: 1 };
