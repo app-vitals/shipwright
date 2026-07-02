@@ -587,6 +587,7 @@ describe("KubernetesAgentProvisioner — chat-service token minting", () => {
     const config: KubernetesAgentProvisionerConfig = {
       ...BASE_CONFIG,
       chatService: client,
+      chatServiceUrl: "http://chat.shipwright.svc:3000",
     };
     const k8s = emptyClient();
     const provisioner = new KubernetesAgentProvisioner(
@@ -606,6 +607,23 @@ describe("KubernetesAgentProvisioner — chat-service token minting", () => {
     const secretName = `${resourceName}-token`;
     const secret = await k8s.getSecret(NAMESPACE, secretName);
     expect(secret.data["chat-service-token"]).toBeDefined();
+
+    // Verify the Deployment has SHIPWRIGHT_CHAT_SERVICE_TOKEN (secretKeyRef) and
+    // SHIPWRIGHT_CHAT_SERVICE_URL (plain value) injected — the full happy path.
+    const dep = await k8s.getDeployment(NAMESPACE, resourceName);
+    const env = dep.spec.template.spec.containers[0].env ?? [];
+    const byName = new Map(env.map((e) => [e.name, e]));
+
+    const csTokenEnv = byName.get("SHIPWRIGHT_CHAT_SERVICE_TOKEN");
+    expect(csTokenEnv).toBeDefined();
+    expect(csTokenEnv?.valueFrom?.secretKeyRef).toEqual({
+      name: secretName,
+      key: "chat-service-token",
+    });
+
+    const csUrlEnv = byName.get("SHIPWRIGHT_CHAT_SERVICE_URL");
+    expect(csUrlEnv).toBeDefined();
+    expect(csUrlEnv?.value).toBe("http://chat.shipwright.svc:3000");
   });
 
   it("provision() does NOT mint a chat-service token when chatService is not configured", async () => {
