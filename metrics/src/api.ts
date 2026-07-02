@@ -510,6 +510,8 @@ function makeSummaryHandler(
               c5: toNum(row.complexity_5),
             },
             avgFixCascadeDepth,
+            coverageReports: toNum(row.coverage_reports),
+            avgCoverageDelta: toNumOrNull(row.avg_coverage_delta),
           },
           {
             dateRange: dateRangeMeta,

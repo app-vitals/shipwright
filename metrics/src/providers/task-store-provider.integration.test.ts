@@ -40,6 +40,7 @@ const TASKS: TaskRecord[] = [
     ciFixAttempts: 0,
     simplifyTotal: 2,
     addedAt: "2026-06-01T08:00:00.000Z",
+    coverageDelta: 2.5,
   },
   {
     id: "QS-1.2",
@@ -54,6 +55,7 @@ const TASKS: TaskRecord[] = [
     ciFixAttempts: 2,
     simplifyTotal: 1,
     addedAt: "2026-06-02T08:00:00.000Z",
+    coverageDelta: null,
   },
   {
     id: "MQ-2.1",
@@ -180,6 +182,8 @@ describe("TaskStoreProvider (integration)", () => {
       "complexity_4",
       "complexity_5",
       "avg_fix_cascade_depth",
+      "coverage_reports",
+      "avg_coverage_delta",
     ]);
     const row = t.results[0];
     // QS-1.1 + QS-1.2 completed; PV-9.9 out of window.
@@ -194,6 +198,83 @@ describe("TaskStoreProvider (integration)", () => {
     // reviews from PR records
     expect(row[colIndex(t, "reviews_total")]).toBe(2);
     expect(row[colIndex(t, "reviews_ship_it")]).toBe(1);
+    // coverage: QS-1.1 has coverageDelta=2.5, QS-1.2 has null → excluded, not
+    // treated as zero.
+    expect(row[colIndex(t, "coverage_reports")]).toBe(1);
+    expect(row[colIndex(t, "avg_coverage_delta")]).toBe(2.5);
+  });
+
+  test("summary coverage aggregation excludes null coverageDelta tasks from the average", async () => {
+    const tasks: TaskRecord[] = [
+      {
+        id: "CV-1.1",
+        status: "merged",
+        startedAt: "2026-06-02T08:00:00.000Z",
+        completedAt: "2026-06-02T12:00:00.000Z",
+        mergedAt: "2026-06-02T12:00:00.000Z",
+        addedAt: "2026-06-01T08:00:00.000Z",
+        coverageDelta: 4,
+      },
+      {
+        id: "CV-1.2",
+        status: "merged",
+        startedAt: "2026-06-03T08:00:00.000Z",
+        completedAt: "2026-06-03T12:00:00.000Z",
+        mergedAt: "2026-06-03T12:00:00.000Z",
+        addedAt: "2026-06-02T08:00:00.000Z",
+        coverageDelta: -2,
+      },
+      {
+        id: "CV-1.3",
+        status: "merged",
+        startedAt: "2026-06-04T08:00:00.000Z",
+        completedAt: "2026-06-04T12:00:00.000Z",
+        mergedAt: "2026-06-04T12:00:00.000Z",
+        addedAt: "2026-06-03T08:00:00.000Z",
+        coverageDelta: null,
+      },
+      {
+        id: "CV-1.4",
+        status: "merged",
+        startedAt: "2026-06-05T08:00:00.000Z",
+        completedAt: "2026-06-05T12:00:00.000Z",
+        mergedAt: "2026-06-05T12:00:00.000Z",
+        addedAt: "2026-06-04T08:00:00.000Z",
+        // coverageDelta intentionally omitted (undefined)
+      },
+    ];
+    const taskStore = new RecordedTaskStoreClient(tasks, []);
+    const admin = new RecordedAdminMetricsClient(CRON_STATS, CHAT_STATS);
+    const provider = new TaskStoreProvider(taskStore, admin, CLOCK);
+
+    const t = await provider.query({ kind: "summary", range: RANGE });
+    const row = t.results[0];
+    expect(row[colIndex(t, "tasks_completed")]).toBe(4);
+    // Only CV-1.1 and CV-1.2 have a non-null coverageDelta.
+    expect(row[colIndex(t, "coverage_reports")]).toBe(2);
+    // Average of 4 and -2 = 1, not diluted by the two null/undefined tasks.
+    expect(row[colIndex(t, "avg_coverage_delta")]).toBe(1);
+  });
+
+  test("summary coverage aggregation returns 0/null when no tasks have coverageDelta", async () => {
+    const tasks: TaskRecord[] = [
+      {
+        id: "CV-2.1",
+        status: "merged",
+        startedAt: "2026-06-02T08:00:00.000Z",
+        completedAt: "2026-06-02T12:00:00.000Z",
+        mergedAt: "2026-06-02T12:00:00.000Z",
+        addedAt: "2026-06-01T08:00:00.000Z",
+      },
+    ];
+    const taskStore = new RecordedTaskStoreClient(tasks, []);
+    const admin = new RecordedAdminMetricsClient(CRON_STATS, CHAT_STATS);
+    const provider = new TaskStoreProvider(taskStore, admin, CLOCK);
+
+    const t = await provider.query({ kind: "summary", range: RANGE });
+    const row = t.results[0];
+    expect(row[colIndex(t, "coverage_reports")]).toBe(0);
+    expect(row[colIndex(t, "avg_coverage_delta")]).toBeNull();
   });
 
   test("queueFunnel counts started/approved/merged/blocked", async () => {

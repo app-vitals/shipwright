@@ -280,6 +280,8 @@ export class TaskStoreProvider implements MetricsProvider {
       "complexity_4",
       "complexity_5",
       "avg_fix_cascade_depth",
+      "coverage_reports",
+      "avg_coverage_delta",
     ];
 
     const row = [
@@ -307,6 +309,8 @@ export class TaskStoreProvider implements MetricsProvider {
       complexityCount(4),
       complexityCount(5),
       null, // avg_fix_cascade_depth — no task-store source
+      completed.filter((t) => num(t.coverageDelta) !== null).length, // coverage_reports
+      avg(completed.map((t) => num(t.coverageDelta))), // avg_coverage_delta
     ];
 
     return table(columns, [row]);
