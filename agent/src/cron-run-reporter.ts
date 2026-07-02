@@ -33,8 +33,6 @@ export interface CronRunReporter {
       outputTokens?: number;
       cacheReadTokens?: number;
       cacheCreationTokens?: number;
-      costUsd?: number;
-      model?: string;
       modelBreakdown?: ModelBreakdownEntry[];
     },
   ): Promise<void>;
@@ -123,8 +121,6 @@ export class HttpCronRunReporter implements CronRunReporter {
       outputTokens?: number;
       cacheReadTokens?: number;
       cacheCreationTokens?: number;
-      costUsd?: number;
-      model?: string;
       modelBreakdown?: ModelBreakdownEntry[];
     },
   ): Promise<void> {
@@ -144,8 +140,6 @@ export class HttpCronRunReporter implements CronRunReporter {
       body.cacheReadTokens = opts.cacheReadTokens;
     if (opts?.cacheCreationTokens !== undefined)
       body.cacheCreationTokens = opts.cacheCreationTokens;
-    if (opts?.costUsd !== undefined) body.costUsd = opts.costUsd;
-    if (opts?.model !== undefined) body.model = opts.model;
     if (opts?.modelBreakdown !== undefined)
       body.modelBreakdown = opts.modelBreakdown;
 
@@ -191,8 +185,6 @@ export class NoopCronRunReporter implements CronRunReporter {
       outputTokens?: number;
       cacheReadTokens?: number;
       cacheCreationTokens?: number;
-      costUsd?: number;
-      model?: string;
       modelBreakdown?: ModelBreakdownEntry[];
     },
   ): Promise<void> {
