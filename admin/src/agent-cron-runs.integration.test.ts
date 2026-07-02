@@ -200,6 +200,57 @@ describeOrSkip("AgentCronRunService (integration)", () => {
     );
   });
 
+  it("list() returns modelBreakdown rows for a run with multiple models", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId);
+
+    const run = await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-15T10:00:00Z"),
+      skipped: false,
+    });
+
+    await runService.patch(run.id, agentId, cronId, {
+      modelBreakdown: [
+        {
+          model: "claude-sonnet-4-5",
+          inputTokens: 200,
+          outputTokens: 100,
+          cacheReadTokens: 8,
+          cacheCreationTokens: 4,
+          costUsd: 0.002,
+        },
+        {
+          model: "claude-haiku-4-5",
+          inputTokens: 50,
+          outputTokens: 20,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          costUsd: 0.0001,
+        },
+      ],
+    });
+
+    const { items } = await runService.list(cronId, agentId);
+
+    expect(items).toHaveLength(1);
+    const breakdown = items[0].modelBreakdown;
+    expect(breakdown).toHaveLength(2);
+
+    const sonnet = breakdown.find((b) => b.model === "claude-sonnet-4-5");
+    expect(sonnet).toBeDefined();
+    expect(sonnet?.inputTokens).toBe(200);
+    expect(sonnet?.outputTokens).toBe(100);
+    expect(sonnet?.cacheReadTokens).toBe(8);
+    expect(sonnet?.cacheCreationTokens).toBe(4);
+    expect(sonnet?.costUsd).toBe(0.002);
+
+    const haiku = breakdown.find((b) => b.model === "claude-haiku-4-5");
+    expect(haiku).toBeDefined();
+    expect(haiku?.inputTokens).toBe(50);
+    expect(haiku?.outputTokens).toBe(20);
+    expect(haiku?.costUsd).toBe(0.0001);
+  });
+
   // ─── patch ──────────────────────────────────────────────────────────────────
 
   it("patch() updates token fields and completion fields on a run", async () => {

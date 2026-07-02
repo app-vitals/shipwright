@@ -284,6 +284,42 @@
             "example": {
               "MY_VAR": "value"
             }
+          },
+          "secretKeys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "MY_SECRET"
+            ]
+          }
+        },
+        "required": [
+          "env",
+          "secretKeys"
+        ]
+      },
+      "AgentEnvPatchBody": {
+        "type": "object",
+        "properties": {
+          "env": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "example": {
+              "MY_VAR": "value"
+            }
+          },
+          "secretKeys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "MY_SECRET"
+            ]
           }
         },
         "required": [
@@ -577,6 +613,43 @@
           "crons"
         ]
       },
+      "ModelBreakdownEntry": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "example": "claude-sonnet-4-5"
+          },
+          "inputTokens": {
+            "type": "integer",
+            "default": 0,
+            "example": 200
+          },
+          "outputTokens": {
+            "type": "integer",
+            "default": 0,
+            "example": 100
+          },
+          "cacheReadTokens": {
+            "type": "integer",
+            "default": 0,
+            "example": 8
+          },
+          "cacheCreationTokens": {
+            "type": "integer",
+            "default": 0,
+            "example": 4
+          },
+          "costUsd": {
+            "type": "number",
+            "default": 0,
+            "example": 0.002
+          }
+        },
+        "required": [
+          "model"
+        ]
+      },
       "AgentCronRun": {
         "type": "object",
         "properties": {
@@ -662,6 +735,14 @@
             "type": "string",
             "format": "date-time",
             "example": "2026-01-01T08:00:00.000Z"
+          },
+          "modelBreakdown": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelBreakdownEntry"
+            },
+            "default": [],
+            "description": "Per-model token/cost breakdown for this run"
           }
         },
         "required": [
@@ -776,43 +857,6 @@
         },
         "required": [
           "run"
-        ]
-      },
-      "ModelBreakdownEntry": {
-        "type": "object",
-        "properties": {
-          "model": {
-            "type": "string",
-            "example": "claude-sonnet-4-5"
-          },
-          "inputTokens": {
-            "type": "integer",
-            "default": 0,
-            "example": 200
-          },
-          "outputTokens": {
-            "type": "integer",
-            "default": 0,
-            "example": 100
-          },
-          "cacheReadTokens": {
-            "type": "integer",
-            "default": 0,
-            "example": 8
-          },
-          "cacheCreationTokens": {
-            "type": "integer",
-            "default": 0,
-            "example": 4
-          },
-          "costUsd": {
-            "type": "number",
-            "default": 0,
-            "example": 0.002
-          }
-        },
-        "required": [
-          "model"
         ]
       },
       "PatchAgentCronRunBody": {
@@ -1278,6 +1322,12 @@
             "items": {
               "$ref": "#/components/schemas/DailyTokenAggregate"
             }
+          },
+          "byCronModel": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DoubleKeyedTokenAggregate"
+            }
           }
         },
         "required": [
@@ -1285,7 +1335,8 @@
           "byAgent",
           "byCron",
           "byModel",
-          "daily"
+          "daily",
+          "byCronModel"
         ]
       },
       "ChatTokenStats": {
@@ -1903,7 +1954,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AgentEnvBody"
+                "$ref": "#/components/schemas/AgentEnvPatchBody"
               }
             }
           }

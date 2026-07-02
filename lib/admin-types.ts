@@ -411,7 +411,7 @@ export interface paths {
             };
             requestBody?: {
                 content: {
-                    "application/json": components["schemas"]["AgentEnvBody"];
+                    "application/json": components["schemas"]["AgentEnvPatchBody"];
                 };
             };
             responses: {
@@ -1585,6 +1585,28 @@ export interface components {
             env: {
                 [key: string]: string;
             };
+            /**
+             * @example [
+             *       "MY_SECRET"
+             *     ]
+             */
+            secretKeys: string[];
+        };
+        AgentEnvPatchBody: {
+            /**
+             * @example {
+             *       "MY_VAR": "value"
+             *     }
+             */
+            env: {
+                [key: string]: string;
+            };
+            /**
+             * @example [
+             *       "MY_SECRET"
+             *     ]
+             */
+            secretKeys?: string[];
         };
         AgentCronJob: {
             /** @example clx1234567890 */
@@ -1687,6 +1709,35 @@ export interface components {
         CronsWithSummaryWrapper: {
             crons: components["schemas"]["AgentCronJobWithRunSummary"][];
         };
+        ModelBreakdownEntry: {
+            /** @example claude-sonnet-4-5 */
+            model: string;
+            /**
+             * @default 0
+             * @example 200
+             */
+            inputTokens: number;
+            /**
+             * @default 0
+             * @example 100
+             */
+            outputTokens: number;
+            /**
+             * @default 0
+             * @example 8
+             */
+            cacheReadTokens: number;
+            /**
+             * @default 0
+             * @example 4
+             */
+            cacheCreationTokens: number;
+            /**
+             * @default 0
+             * @example 0.002
+             */
+            costUsd: number;
+        };
         AgentCronRun: {
             /** @example clx1234567890 */
             id: string;
@@ -1725,6 +1776,11 @@ export interface components {
              * @example 2026-01-01T08:00:00.000Z
              */
             createdAt: string;
+            /**
+             * @description Per-model token/cost breakdown for this run
+             * @default []
+             */
+            modelBreakdown: components["schemas"]["ModelBreakdownEntry"][];
         };
         CronRunWrapper: {
             run: components["schemas"]["AgentCronRun"];
@@ -1760,35 +1816,6 @@ export interface components {
         };
         PatchCronRunWrapper: {
             run: components["schemas"]["AgentCronRun"];
-        };
-        ModelBreakdownEntry: {
-            /** @example claude-sonnet-4-5 */
-            model: string;
-            /**
-             * @default 0
-             * @example 200
-             */
-            inputTokens: number;
-            /**
-             * @default 0
-             * @example 100
-             */
-            outputTokens: number;
-            /**
-             * @default 0
-             * @example 8
-             */
-            cacheReadTokens: number;
-            /**
-             * @default 0
-             * @example 4
-             */
-            cacheCreationTokens: number;
-            /**
-             * @default 0
-             * @example 0.002
-             */
-            costUsd: number;
         };
         PatchAgentCronRunBody: {
             /**
@@ -1946,6 +1973,7 @@ export interface components {
             byCron: components["schemas"]["DoubleKeyedTokenAggregate"][];
             byModel: components["schemas"]["DoubleKeyedTokenAggregate"][];
             daily: components["schemas"]["DailyTokenAggregate"][];
+            byCronModel: components["schemas"]["DoubleKeyedTokenAggregate"][];
         };
         ChatTokenStats: {
             totals: components["schemas"]["TokenAggregate"];

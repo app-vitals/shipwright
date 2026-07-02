@@ -1471,6 +1471,16 @@ function serializeCronRun(run: {
   cacheReadTokens?: number | null;
   cacheCreationTokens?: number | null;
   createdAt: Date;
+  // Absent on create()/patch() results (no breakdown rows in the same call);
+  // present on list() results, which include the relation. Defaults to [].
+  modelBreakdown?: Array<{
+    model: string;
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheCreationTokens: number;
+    costUsd: number;
+  }>;
 }): z.infer<typeof AgentCronRunSchema> {
   return {
     id: run.id,
@@ -1487,6 +1497,14 @@ function serializeCronRun(run: {
     cacheReadTokens: run.cacheReadTokens ?? null,
     cacheCreationTokens: run.cacheCreationTokens ?? null,
     createdAt: run.createdAt.toISOString(),
+    modelBreakdown: (run.modelBreakdown ?? []).map((entry) => ({
+      model: entry.model,
+      inputTokens: entry.inputTokens,
+      outputTokens: entry.outputTokens,
+      cacheReadTokens: entry.cacheReadTokens,
+      cacheCreationTokens: entry.cacheCreationTokens,
+      costUsd: entry.costUsd,
+    })),
   };
 }
 

@@ -554,6 +554,18 @@ describe("admin UI — authenticated pages", () => {
                 cacheReadTokens: null,
                 cacheCreationTokens: null,
                 createdAt: new Date("2026-06-01T10:00:00Z"),
+                modelBreakdown: [
+                  {
+                    id: "breakdown-1",
+                    cronRunId: "run-1",
+                    model: "claude-sonnet-4-5",
+                    inputTokens: 999,
+                    outputTokens: 111,
+                    cacheReadTokens: 0,
+                    cacheCreationTokens: 0,
+                    costUsd: 0.002,
+                  },
+                ],
               },
             ],
             total: 1,
@@ -573,6 +585,8 @@ describe("admin UI — authenticated pages", () => {
     const html = await res.text();
     expect(html).toContain("posted");
     expect(html).not.toContain("No runs recorded yet.");
+    expect(html).toContain("claude-sonnet-4-5");
+    expect(html).toContain("$0.002");
   });
 
   it("authenticated GET /admin/provision shows the session user's email in the navbar", async () => {

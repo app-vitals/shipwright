@@ -161,6 +161,21 @@ export const PatchAgentCronJobBodySchema = z
   })
   .openapi("PatchAgentCronJobBody");
 
+// ─── Model breakdown entry ────────────────────────────────────────────────────
+
+export const ModelBreakdownEntrySchema = z
+  .object({
+    model: z.string().openapi({ example: "claude-sonnet-4-5" }),
+    inputTokens: z.number().int().default(0).openapi({ example: 200 }),
+    outputTokens: z.number().int().default(0).openapi({ example: 100 }),
+    cacheReadTokens: z.number().int().default(0).openapi({ example: 8 }),
+    cacheCreationTokens: z.number().int().default(0).openapi({ example: 4 }),
+    costUsd: z.number().default(0).openapi({ example: 0.002 }),
+  })
+  .openapi("ModelBreakdownEntry");
+
+export type ModelBreakdownEntry = z.infer<typeof ModelBreakdownEntrySchema>;
+
 // ─── AgentCronRun ─────────────────────────────────────────────────────────────
 
 export const AgentCronRunSchema = z
@@ -192,6 +207,10 @@ export const AgentCronRunSchema = z
       .string()
       .datetime()
       .openapi({ example: "2026-01-01T08:00:00.000Z" }),
+    modelBreakdown: z
+      .array(ModelBreakdownEntrySchema)
+      .default([])
+      .openapi({ description: "Per-model token/cost breakdown for this run" }),
   })
   .openapi("AgentCronRun");
 
@@ -230,21 +249,6 @@ export const CreateAgentCronRunBodySchema = z
     error: z.string().nullable().optional().openapi({ example: null }),
   })
   .openapi("CreateAgentCronRunBody");
-
-// ─── Model breakdown entry ────────────────────────────────────────────────────
-
-export const ModelBreakdownEntrySchema = z
-  .object({
-    model: z.string().openapi({ example: "claude-sonnet-4-5" }),
-    inputTokens: z.number().int().default(0).openapi({ example: 200 }),
-    outputTokens: z.number().int().default(0).openapi({ example: 100 }),
-    cacheReadTokens: z.number().int().default(0).openapi({ example: 8 }),
-    cacheCreationTokens: z.number().int().default(0).openapi({ example: 4 }),
-    costUsd: z.number().default(0).openapi({ example: 0.002 }),
-  })
-  .openapi("ModelBreakdownEntry");
-
-export type ModelBreakdownEntry = z.infer<typeof ModelBreakdownEntrySchema>;
 
 /**
  * PATCH /agents/:id/crons/:cronId/runs/:runId body.

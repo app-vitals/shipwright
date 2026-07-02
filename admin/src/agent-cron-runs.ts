@@ -6,10 +6,24 @@
  * returned false), the outcome, and any error.
  */
 
-import type { AgentCronRun, PrismaClient } from "../prisma/client/index.js";
+import type {
+  AgentCronRun,
+  Prisma,
+  PrismaClient,
+} from "../prisma/client/index.js";
 import { NotFoundError } from "./errors.ts";
 
 export type { AgentCronRun };
+
+/**
+ * AgentCronRun with its per-model token/cost breakdown included.
+ * Only list() attaches this relation — create()/patch() return the plain
+ * AgentCronRun shape, since a freshly created/patched run has no breakdown
+ * rows attached in the same query.
+ */
+export type AgentCronRunWithBreakdown = Prisma.AgentCronRunGetPayload<{
+  include: { modelBreakdown: true };
+}>;
 
 export interface CreateAgentCronRunInput {
   startedAt: Date;
@@ -48,7 +62,7 @@ export interface ListAgentCronRunsOptions {
 }
 
 export interface AgentCronRunList {
-  items: AgentCronRun[];
+  items: AgentCronRunWithBreakdown[];
   total: number;
   limit: number;
   offset: number;
@@ -202,6 +216,7 @@ export class AgentCronRunService {
         orderBy: { startedAt: "desc" },
         take: limit,
         skip: offset,
+        include: { modelBreakdown: true },
       }),
       this.prisma.agentCronRun.count({
         where: { cronId, agentId },

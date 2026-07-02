@@ -1963,6 +1963,27 @@ describe("admin API — cron runs", () => {
     expect(typeof body.offset).toBe("number");
   });
 
+  it("GET /agents/:id/crons/:cronId/runs includes modelBreakdown on each run", async () => {
+    const deps = makeMockDepsWithRunService();
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}/crons/${CRON_ID}/runs`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.items).toHaveLength(1);
+    expect(Array.isArray(body.items[0].modelBreakdown)).toBe(true);
+    expect(body.items[0].modelBreakdown).toHaveLength(1);
+    expect(body.items[0].modelBreakdown[0]).toMatchObject({
+      model: "claude-sonnet-4-5",
+      inputTokens: 200,
+      outputTokens: 100,
+      cacheReadTokens: 8,
+      cacheCreationTokens: 4,
+      costUsd: 0.002,
+    });
+  });
+
   it("PATCH /agents/:id/crons/:cronId/runs/:runId returns 200 with updated run including token fields", async () => {
     const deps = makeMockDepsWithRunService();
     const app = createAdminApp(deps);
@@ -2086,6 +2107,18 @@ function makeMockDepsWithRunService(opts?: {
     cacheReadTokens: null,
     cacheCreationTokens: null,
     createdAt: new Date("2026-01-01T08:00:00.000Z"),
+    modelBreakdown: [
+      {
+        id: "breakdown-test-1",
+        cronRunId: RUN_ID,
+        model: "claude-sonnet-4-5",
+        inputTokens: 200,
+        outputTokens: 100,
+        cacheReadTokens: 8,
+        cacheCreationTokens: 4,
+        costUsd: 0.002,
+      },
+    ],
   };
 
   const base = makeMockDeps();
