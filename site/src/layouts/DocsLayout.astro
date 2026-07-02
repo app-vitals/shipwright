@@ -25,10 +25,25 @@ interface Props {
 
 const { title, description, prev, next, headings } = Astro.props;
 
+// Section order constant — determines sidebar ordering.
+const SECTION_ORDER: Record<string, number> = {
+  "Getting Started": 0,
+  "Plugin": 1,
+  "Agent": 2,
+  "Operations": 3,
+  "Reference": 4,
+};
+
 // Load all docs entries for the sidebar, sorted by section then order.
 const allDocs = await getCollection("docs");
 allDocs.sort((a, b) => {
   if (a.data.section !== b.data.section) {
+    const orderA = SECTION_ORDER[a.data.section] ?? Infinity;
+    const orderB = SECTION_ORDER[b.data.section] ?? Infinity;
+    if (orderA !== orderB) {
+      return orderA - orderB;
+    }
+    // Unknown sections with same Infinity order sort alphabetically
     return a.data.section.localeCompare(b.data.section);
   }
   return a.data.order - b.data.order;

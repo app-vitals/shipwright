@@ -311,3 +311,20 @@ test("mobile sidebar contains Docs, Compare, GitHub nav links", async ({ page })
   await expect(sidebar.locator("a[href='/compare']")).toBeVisible();
   await expect(sidebar.locator("a[href='https://github.com/app-vitals/shipwright']")).toBeVisible();
 });
+
+test("sidebar section order: Getting Started appears before Agent", async ({
+  page,
+}) => {
+  await page.goto("/docs/getting-started");
+  const sidebar = page.locator("nav[aria-label='Docs navigation']");
+  // Get all section labels (the <p class="sw-label"> elements)
+  const sectionLabels = sidebar.locator("p.sw-label");
+  const allLabels = await sectionLabels.allTextContents();
+  // Find indices of "Getting Started" and "Agent" sections
+  const gettingStartedIndex = allLabels.indexOf("Getting Started");
+  const agentIndex = allLabels.indexOf("Agent");
+  // Both should exist and Getting Started should come before Agent
+  expect(gettingStartedIndex).toBeGreaterThanOrEqual(0);
+  expect(agentIndex).toBeGreaterThanOrEqual(0);
+  expect(gettingStartedIndex).toBeLessThan(agentIndex);
+});
