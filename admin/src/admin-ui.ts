@@ -26,12 +26,15 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { sign, verify } from "hono/jwt";
 import {
   type AgentDetail,
+  type AgentOption,
   type PrListItem,
   type PullRequestItem,
   type TaskItem,
   type TaskStoreTokenItem,
   renderAgentDetailPage,
   renderAgentsPage,
+  renderChatPage,
+  renderChatThreadPage,
   renderCronRunsPage,
   renderLoginPage,
   renderNewLocalAgentPage,
@@ -44,6 +47,7 @@ import {
   renderTasksPage,
   renderTokensPage,
 } from "./admin-ui-pages.ts";
+import type { ChatClient, ChatThread } from "./http-chat-client.ts";
 import type { AgentCronJobService } from "./agent-cron-jobs.ts";
 import type { AgentCronRunService } from "./agent-cron-runs.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
@@ -296,6 +300,11 @@ export interface AdminUIDeps {
    * degraded mode (empty table + warning notice).
    */
   publicRepo?: string;
+  /**
+   * Chat service client for the /admin/chat routes.
+   * When absent, all chat routes render in degraded mode (notice, no table/messages).
+   */
+  chatClient?: ChatClient;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -403,6 +412,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     adminRevokeToken,
     taskStoreBaseUrl,
     publicRepo,
+    chatClient,
   } = deps;
 
   const app = new Hono<AdminUIEnv>();
@@ -2010,6 +2020,136 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
     return html(renderPrDetailPage(pr, c.var.userEmail, agentNames, timezone));
   });
+
+  // ─── Chat routes ─────────────────────────────────────────────────────────
+
+  app.get("/admin/chat", requireAuth, async (c) => {
+    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+
+    const selectedAgentId = c.req.query("agentId") || undefined;
+    const agents: AgentOption[] = (await prisma.agent.findMany()).map((a) => ({
+      id: a.id,
+      name: a.name,
+    }));
+
+    if (!chatClient) {
+      return html(renderChatPage(agents, selectedAgentId, null, c.var.userEmail));
+    }
+
+    let threads: ChatThread[] = [];
+    if (selectedAgentId) {
+      try {
+        const result = await chatClient.listThreads(selectedAgentId);
+        threads = result.threads;
+      } catch {
+        threads = [];
+      }
+    }
+
+    return html(
+      renderChatPage(agents, selectedAgentId, threads, c.var.userEmail),
+    );
+  });
+
+  app.get("/admin/chat/:agentId/threads/:threadId", requireAuth, async (c) => {
+    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+
+    const agentId = c.req.param("agentId");
+    const threadId = c.req.param("threadId");
+
+    if (!chatClient) {
+      return html(
+        renderChatThreadPage(agentId, null, null, c.var.userEmail),
+      );
+    }
+
+    try {
+      const [thread, messagesResult] = await Promise.all([
+        chatClient.getThread(threadId),
+        chatClient.listMessages(threadId),
+      ]);
+      return html(
+        renderChatThreadPage(agentId, thread, messagesResult.messages, c.var.userEmail),
+      );
+    } catch {
+      return html(
+        renderChatThreadPage(agentId, null, null, c.var.userEmail),
+      );
+    }
+  });
+
+  app.post("/admin/chat/:agentId/threads", requireAuth, async (c) => {
+    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+
+    const agentId = c.req.param("agentId");
+
+    if (!chatClient) {
+      return c.redirect(`/admin/chat?agentId=${encodeURIComponent(agentId)}`, 302);
+    }
+
+    let title: string | undefined;
+    try {
+      const formData = await c.req.formData();
+      title = formData.get("title")?.toString()?.trim() || undefined;
+    } catch {
+      return c.redirect(`/admin/chat?agentId=${encodeURIComponent(agentId)}`, 302);
+    }
+
+    try {
+      const thread = await chatClient.createThread(agentId, { title });
+      return c.redirect(
+        `/admin/chat/${encodeURIComponent(agentId)}/threads/${encodeURIComponent(thread.id)}`,
+        302,
+      );
+    } catch {
+      return c.redirect(`/admin/chat?agentId=${encodeURIComponent(agentId)}`, 302);
+    }
+  });
+
+  app.post(
+    "/admin/chat/:agentId/threads/:threadId/messages",
+    requireAuth,
+    async (c) => {
+      if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+
+      const agentId = c.req.param("agentId");
+      const threadId = c.req.param("threadId");
+
+      const backUrl = `/admin/chat/${encodeURIComponent(agentId)}/threads/${encodeURIComponent(threadId)}`;
+
+      if (!chatClient) {
+        return c.redirect(backUrl, 302);
+      }
+
+      const ALLOWED_ROLES = ["user", "assistant"] as const;
+      type MessageRole = (typeof ALLOWED_ROLES)[number];
+
+      let body: string | undefined;
+      let role: MessageRole = "user";
+      try {
+        const formData = await c.req.formData();
+        body = formData.get("body")?.toString()?.trim();
+        const rawRole = formData.get("role")?.toString() || "user";
+        role = (ALLOWED_ROLES as readonly string[]).includes(rawRole)
+          ? (rawRole as MessageRole)
+          : "user";
+      } catch {
+        return c.redirect(backUrl, 302);
+      }
+
+      if (!body) {
+        return c.redirect(backUrl, 302);
+      }
+
+      try {
+        await chatClient.createMessage(threadId, role, body);
+      } catch {
+        // swallow — redirect back regardless
+      }
+
+      return c.redirect(backUrl, 302);
+    },
+  );
 
   // ─── Task-store token proxy routes ────────────────────────────────────────
 

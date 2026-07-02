@@ -41,6 +41,7 @@ import { isDevAuthAllowed } from "./dev-auth-guard.ts";
 import { HttpGoogleAuthClient } from "./google-auth-client.ts";
 import { HttpKubernetesClient } from "./kubernetes-client.ts";
 import { HttpChatServiceProvisioningClient } from "./chat-service-provisioning-client.ts";
+import { HttpChatClient } from "./http-chat-client.ts";
 import { HttpSlackProvisioningClient } from "./slack-provisioning-client.ts";
 import { HttpTaskStoreProvisioningClient } from "./task-store-provisioning-client.ts";
 import { makeTokenCrypto } from "./token-crypto.ts";
@@ -434,6 +435,16 @@ async function startServer(): Promise<void> {
     }
   }
 
+  // Build chat client when both SHIPWRIGHT_CHAT_SERVICE_URL and
+  // SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN are set. When absent the /admin/chat
+  // routes render in degraded mode (notice, no table/messages).
+  const chatServiceUrl = process.env.SHIPWRIGHT_CHAT_SERVICE_URL;
+  const chatServiceAdminToken = process.env.SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN;
+  const chatClient =
+    chatServiceUrl && chatServiceAdminToken
+      ? new HttpChatClient(chatServiceUrl, chatServiceAdminToken)
+      : undefined;
+
   const adminUIApp = createAdminUIApp({
     prisma: prisma as never,
     agentEnvService,
@@ -453,6 +464,7 @@ async function startServer(): Promise<void> {
     publicRepo,
     devAuthEnabled: isDevAuthAllowed(process.env),
     timezone: adminTz,
+    ...(chatClient ? { chatClient } : {}),
     ...taskStoreFetchers,
   });
   root.route("/", adminUIApp);
