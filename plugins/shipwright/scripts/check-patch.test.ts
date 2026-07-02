@@ -772,4 +772,74 @@ describe("check-patch", () => {
     expect(result.exit).toBe(0);
     expect(result.output).toContain("patch");
   });
+
+  // ─── Self-review with real findings still counts (CPF-1.2) ────────────────
+
+  test("exits 0 when self-authored COMMENTED review at current HEAD has a non-APPROVE body with a real finding", async () => {
+    const pr = makeOwnPr();
+    const reviewData = makePrReviewData({
+      headRefOid: "current-head-sha",
+      reviews: {
+        nodes: [
+          {
+            author: { login: "the-agent" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-26T10:00:00Z",
+            commit: { oid: "current-head-sha" },
+            body: "Verdict: COMMENT — found a race condition in the retry logic, needs a fix before merge.",
+          },
+        ],
+      },
+      reviewThreads: { nodes: [] },
+    });
+    const result = await run(
+      makeDeps(
+        [pr],
+        { 10: reviewData },
+        {},
+        {},
+        async () => {},
+        async () => [],
+        () => "the-agent",
+      ),
+    );
+    expect(result.exit).toBe(0);
+    expect(result.output).toContain("patch");
+  });
+
+  test("exits 0 when self-authored review at a stale commit has a non-APPROVE body with merge-only commits since", async () => {
+    const pr = makeOwnPr({ headRefOid: "merge-sha" });
+    const reviewData = makePrReviewData({
+      headRefOid: "merge-sha",
+      reviews: {
+        nodes: [
+          {
+            author: { login: "the-agent" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-26T10:00:00Z",
+            commit: { oid: "review-sha" }, // posted before the merge commit
+            body: "Verdict: COMMENT — found a race condition in the retry logic, needs a fix before merge.",
+          },
+        ],
+      },
+      reviewThreads: { nodes: [] },
+    });
+    const commits: CommitInfo[] = [
+      { sha: "review-sha", parents: [{ sha: "p0" }] },
+      { sha: "merge-sha", parents: [{ sha: "a" }, { sha: "b" }] }, // merge commit
+    ];
+    const result = await run(
+      makeDeps(
+        [pr],
+        { 10: reviewData },
+        {},
+        {},
+        async () => {},
+        async () => commits,
+        () => "the-agent",
+      ),
+    );
+    expect(result.exit).toBe(0);
+    expect(result.output).toContain("patch");
+  });
 });
