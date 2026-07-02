@@ -233,4 +233,46 @@ describe("StaleClaimReaper", () => {
     expect(prSql).toContain('"heartbeatAt" IS NULL');
     expect(prSql).toContain('"claimedAt"');
   });
+
+  // ─── Phase-aware reaper tests ─────────────────────────────────────────────────
+
+  test("PR reap uses claimedBy IS NOT NULL (phase-agnostic) not reviewState='in_progress'", async () => {
+    const prisma = makePrismaDouble([0, 0]);
+    const reaper = new StaleClaimReaper(prisma as never, clock);
+
+    await reaper.reap();
+
+    const prSql = prisma._calls[1].strings.join("?");
+    // Should filter by claimedBy IS NOT NULL, not reviewState = 'in_progress'
+    expect(prSql).toContain('"claimedBy" IS NOT NULL');
+    // Should NOT use reviewState = 'in_progress' as the primary filter anymore
+    expect(prSql).not.toContain("'in_progress'");
+  });
+
+  test("PR reap resets phase=null and clears claim fields", async () => {
+    const prisma = makePrismaDouble([0, 1]);
+    const reaper = new StaleClaimReaper(prisma as never, clock);
+
+    await reaper.reap();
+
+    const prSql = prisma._calls[1].strings.join("?");
+    expect(prSql).toContain('"claimedBy" = NULL');
+    expect(prSql).toContain('"claimedAt" = NULL');
+    expect(prSql).toContain('"heartbeatAt" = NULL');
+    expect(prSql).toContain('"phase" = NULL');
+  });
+
+  test("PR reap does not blindly reset reviewState to pending — uses CASE based on phase", async () => {
+    const prisma = makePrismaDouble([0, 1]);
+    const reaper = new StaleClaimReaper(prisma as never, clock);
+
+    await reaper.reap();
+
+    const prSql = prisma._calls[1].strings.join("?");
+    // Should use a CASE expression that only resets to pending when phase was 'review'
+    // and preserves 'posted'/'approved' for patch/deploy items
+    expect(prSql).toContain("CASE");
+    expect(prSql).toContain("'review'");
+    expect(prSql).toContain("'pending'");
+  });
 });

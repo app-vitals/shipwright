@@ -22,7 +22,7 @@ Auto-detect the project toolchain (run once, reuse throughout). Skip this step u
 
 ```bash
 curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=in_progress" | jq '.tasks'
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=in_progress&assignee=$SHIPWRIGHT_AGENT_ID" | jq '.tasks'
 ```
 
 If `result.tasks` is non-empty, use the first task (`result.tasks[0]`). The Step 2 orphan check will clean up any stale branch/PR from the prior session before restarting. Print:

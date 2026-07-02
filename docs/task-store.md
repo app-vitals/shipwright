@@ -197,6 +197,25 @@ Claim semantics:
 
 When a `taskId` is provided, the claim operation also syncs `pr` and `repo` to the associated Task record. This keeps the PR reference and repo scope current on the task side without requiring a separate update call. If no `taskId` is provided, the Task table is not modified.
 
+#### Claim next PR (atomic)
+
+```
+POST /prs/claim-next
+```
+
+Atomically finds the oldest eligible PR (not yet claimed by the agent) and claims it in one round-trip. Useful for agents implementing a pull-based task queue instead of manual claim.
+
+Body:
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `maxConcurrent` | no | Max concurrent PRs the agent can claim (default `1`). Returns 204 if the agent already has >= `maxConcurrent` claimed PRs. |
+| `agentId` | admin only | Agent ID (agent tokens pin to their own ID) |
+
+Returns `200` with `{ pr: PullRequest, phase: string }` (the claimed PR and its current phase) or `204` if no eligible PRs exist.
+
+Agent tokens see only PRs in their configured repo scope; admin tokens see all PRs.
+
 #### Get PR
 
 ```
@@ -211,7 +230,7 @@ Returns `404` if not found.
 PATCH /prs/:id
 ```
 
-Writable fields: `staged`, `commitSha`, `taskId`, `agentId`, `state`, `mergedAt`, `reviewState`. All other fields are managed by lifecycle endpoints. Returns `400` if no writable fields are provided.
+Writable fields: `staged`, `commitSha`, `taskId`, `agentId`, `state`, `mergedAt`, `reviewState`, `phase`, `readyForReviewAt`, `readyForPatchAt`, `readyForDeployAt`. All other fields are managed by lifecycle endpoints. Returns `400` if no writable fields are provided.
 
 #### PR lifecycle endpoints
 
@@ -227,6 +246,8 @@ Writable fields: `staged`, `commitSha`, `taskId`, `agentId`, `state`, `mergedAt`
 `state`: `open` | `merged` | `closed`
 
 `reviewState`: `pending` → `in_progress` → `posted` | `approved`
+
+`phase`: `review` | `patch` | `deploy` — tracks which pipeline phase the PR is currently in. Set via `PATCH /prs/:id`. The `readyForReviewAt`, `readyForPatchAt`, and `readyForDeployAt` timestamps record when the PR became ready for each phase; COALESCE across them gives a unified queue-entry time.
 
 ### Token management (admin only)
 

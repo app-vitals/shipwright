@@ -36,10 +36,18 @@ function buildConfig(agentHome: string) {
       voiceId: optional("ELEVENLABS_VOICE_ID"),
       whisperServiceUrl: optional("WHISPER_SERVICE_URL"),
     },
+    chat: {
+      serviceUrl: optional("SHIPWRIGHT_CHAT_SERVICE_URL"),
+      serviceToken: optional("SHIPWRIGHT_CHAT_SERVICE_TOKEN"),
+      pollIntervalMs: optional("SHIPWRIGHT_CHAT_POLL_INTERVAL_MS")
+        ? Number(optional("SHIPWRIGHT_CHAT_POLL_INTERVAL_MS"))
+        : undefined,
+    },
     paths: {
       home: agentHome,
       workspace: join(agentHome, "workspace"),
       sessions: join(agentHome, "sessions.json"),
+      chatSessions: join(agentHome, "chat-sessions.json"),
     },
   } as const;
 }
