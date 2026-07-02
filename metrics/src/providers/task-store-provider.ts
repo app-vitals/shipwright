@@ -807,12 +807,7 @@ export class TaskStoreProvider implements MetricsProvider {
       "savings_usd",
     ];
 
-    let cronStats: CronRunTokenStats;
-    try {
-      cronStats = await this.admin.cronRunTokenStats(win);
-    } catch {
-      cronStats = ZERO_CRON_STATS;
-    }
+    const cronStats = await this.safeCronStats(win);
 
     const rows: unknown[][] = [];
 

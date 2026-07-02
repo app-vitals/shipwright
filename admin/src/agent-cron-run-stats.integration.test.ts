@@ -746,5 +746,21 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
     expect(stats.daily.find((d) => d.period === "2026-01-10")?.input).toBe(100);
     expect(stats.daily.find((d) => d.period === "2026-01-11")?.input).toBe(200);
     expect(stats.daily.find((d) => d.period === "2026-01-12")?.input).toBe(300); // only runC; skipped run excluded
+
+    // byCronModel: 2 entries — agentId1:cron-alpha × sonnet, agentId2:cron-beta × opus
+    // key1 = agentId:cronName, key2 = model
+    expect(stats.byCronModel).toHaveLength(2);
+    const byCMSonnet = stats.byCronModel.find(
+      (m) => m.key1 === `${agentId1}:cron-alpha` && m.key2 === "claude-sonnet-4-5",
+    );
+    const byCMOpus = stats.byCronModel.find(
+      (m) => m.key1 === `${agentId2}:cron-beta` && m.key2 === "claude-opus-4-5",
+    );
+    expect(byCMSonnet).toBeDefined();
+    expect(byCMSonnet?.input).toBe(400); // runA(100) + runC(300)
+    expect(byCMSonnet?.costUsd).toBeCloseTo(0.001 + 0.003);
+    expect(byCMOpus).toBeDefined();
+    expect(byCMOpus?.input).toBe(200); // runB only
+    expect(byCMOpus?.costUsd).toBeCloseTo(0.002);
   });
 });
