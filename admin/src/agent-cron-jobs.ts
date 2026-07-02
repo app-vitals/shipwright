@@ -41,9 +41,10 @@ export interface CreateAgentCronJobInput {
 /**
  * Validates a cron expression.
  * Accepts standard 5-field cron: minute hour day-of-month month day-of-week.
- * Each field may contain digits, *, /, -, and comma.
+ * Each field may contain digits, *, /, -, and comma (e.g. a minute field of
+ * "0,30" for a twice-hourly, staggered schedule is valid).
  */
-function isValidCron(schedule: string): boolean {
+export function isValidCron(schedule: string): boolean {
   const fields = schedule.trim().split(/\s+/);
   if (fields.length !== 5) return false;
   const fieldPattern = /^(\*|[0-9]+([-,][0-9]+)*)(\/[0-9]+)?$|^\*\/[0-9]+$/;
