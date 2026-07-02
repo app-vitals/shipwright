@@ -288,3 +288,26 @@ test("prev/next navigation on slack-integration page (terminal page)", async ({ 
   const nextLink = page.locator("a[data-nav='next']");
   await expect(nextLink).toHaveCount(0);
 });
+
+test("mobile sidebar slides in when toggle is tapped", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/docs/getting-started");
+  // Sidebar should be off-screen initially
+  const sidebar = page.locator("aside.docs-sidebar");
+  // Tap the ☰ Menu button
+  await page.locator("label[for='docs-sidebar-toggle']").first().click();
+  // Sidebar should now be visible (transform: translateX(0))
+  await expect(sidebar).toBeVisible();
+});
+
+test("mobile sidebar contains Docs, Compare, GitHub nav links", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/docs/getting-started");
+  // Open the sidebar
+  await page.locator("label[for='docs-sidebar-toggle']").first().click();
+  const sidebar = page.locator("aside.docs-sidebar");
+  // Nav links should be present in the sidebar
+  await expect(sidebar.locator("a[href='/docs']")).toBeVisible();
+  await expect(sidebar.locator("a[href='/compare']")).toBeVisible();
+  await expect(sidebar.locator("a[href='https://github.com/app-vitals/shipwright']")).toBeVisible();
+});
