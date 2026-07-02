@@ -565,6 +565,32 @@ describe("POST /admin/chat/:agentId/threads/:threadId/delete — delete thread",
     );
     expect(res.status).toBe(302);
   });
+
+  it("swallows deleteThread errors and still redirects to the agent thread list", async () => {
+    const chatClient = makeMockChatClient({
+      deleteThread: async () => {
+        throw new Error("chat service unavailable");
+      },
+    });
+    const app = createAdminUIApp(makeBaseDeps({ chatClient }));
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}/delete`,
+      {
+        method: "POST",
+        headers: {
+          Cookie: `admin_session=${sessionCookie}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: "",
+      },
+    );
+    expect(res.status).toBe(302);
+    const location = res.headers.get("location") ?? "";
+    expect(location).toContain("/admin/chat");
+    expect(location).toContain(AGENT_ID);
+    // Must NOT redirect to the thread detail page
+    expect(location).not.toContain(THREAD_ID);
+  });
 });
 
 describe("GET /admin/chat?agentId=X&q=foo — search/filter threads", () => {
