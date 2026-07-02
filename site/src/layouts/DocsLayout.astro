@@ -38,12 +38,12 @@ const SECTION_ORDER: Record<string, number> = {
 const allDocs = await getCollection("docs");
 allDocs.sort((a, b) => {
   if (a.data.section !== b.data.section) {
-    const orderA = SECTION_ORDER[a.data.section] ?? Infinity;
-    const orderB = SECTION_ORDER[b.data.section] ?? Infinity;
+    const orderA = SECTION_ORDER[a.data.section] ?? Number.POSITIVE_INFINITY;
+    const orderB = SECTION_ORDER[b.data.section] ?? Number.POSITIVE_INFINITY;
     if (orderA !== orderB) {
       return orderA - orderB;
     }
-    // Unknown sections with same Infinity order sort alphabetically
+    // Unknown sections with same order sort alphabetically
     return a.data.section.localeCompare(b.data.section);
   }
   return a.data.order - b.data.order;
