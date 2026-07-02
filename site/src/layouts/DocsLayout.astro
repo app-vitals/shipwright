@@ -25,10 +25,25 @@ interface Props {
 
 const { title, description, prev, next, headings } = Astro.props;
 
+// Section order constant — determines sidebar ordering.
+const SECTION_ORDER: Record<string, number> = {
+  "Getting Started": 0,
+  "Plugin": 1,
+  "Agent": 2,
+  "Operations": 3,
+  "Reference": 4,
+};
+
 // Load all docs entries for the sidebar, sorted by section then order.
 const allDocs = await getCollection("docs");
 allDocs.sort((a, b) => {
   if (a.data.section !== b.data.section) {
+    const orderA = SECTION_ORDER[a.data.section] ?? Number.POSITIVE_INFINITY;
+    const orderB = SECTION_ORDER[b.data.section] ?? Number.POSITIVE_INFINITY;
+    if (orderA !== orderB) {
+      return orderA - orderB;
+    }
+    // Unknown sections with same order sort alphabetically
     return a.data.section.localeCompare(b.data.section);
   }
   return a.data.order - b.data.order;
@@ -128,7 +143,7 @@ const discussionsUrl = "https://github.com/app-vitals/shipwright/discussions";
           padding: 1.5rem;
         }
 
-        #docs-sidebar-toggle:checked ~ .sw-container .docs-layout .docs-sidebar {
+        #docs-sidebar-toggle:checked ~ .docs-layout .docs-sidebar {
           transform: translateX(0);
         }
 
@@ -257,16 +272,6 @@ const discussionsUrl = "https://github.com/app-vitals/shipwright/discussions";
     </style>
   </head>
   <body class="min-h-screen">
-    <!-- Mobile sidebar toggle (CSS-only, hidden checkbox) -->
-    <input type="checkbox" id="docs-sidebar-toggle" aria-hidden="true" />
-
-    <!-- Overlay (click to close — uses label trick; CSS-only) -->
-    <label
-      for="docs-sidebar-toggle"
-      class="docs-sidebar-overlay"
-      aria-hidden="true"
-    ></label>
-
     <!-- Glow orb (decorative) -->
     <div
       class="sw-orb sw-orb-brand"
@@ -301,7 +306,7 @@ const discussionsUrl = "https://github.com/app-vitals/shipwright/discussions";
         </span>
       </a>
       <nav class="hidden md:flex items-center gap-6" aria-label="Primary">
-        <a href="/docs/getting-started" class="sw-label">Docs</a>
+        <a href="/docs" class="sw-label">Docs</a>
         <a href="/compare" class="sw-label">Compare</a>
         <a href={repoUrl} class="sw-label">GitHub ↗</a>
       </nav>
@@ -321,9 +326,23 @@ const discussionsUrl = "https://github.com/app-vitals/shipwright/discussions";
         </label>
       </div>
 
+      <!-- CSS-only mobile sidebar toggle (placed before docs-layout for correct sibling selector) -->
+      <input type="checkbox" id="docs-sidebar-toggle" aria-hidden="true" />
+      <!-- Overlay (click to close) -->
+      <label for="docs-sidebar-toggle" class="docs-sidebar-overlay" aria-hidden="true"></label>
+
       <div class="docs-layout">
         <!-- Sidebar -->
         <aside class="docs-sidebar">
+          <!-- Mobile-only nav links (hidden on desktop) -->
+          <nav class="md:hidden" aria-label="Mobile top navigation" style="margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid var(--sw-color-border-subtle);">
+            <ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem;">
+              <li><a href="/docs" class="docs-sidebar-link">Docs</a></li>
+              <li><a href="/compare" class="docs-sidebar-link">Compare</a></li>
+              <li><a href={repoUrl} class="docs-sidebar-link">GitHub ↗</a></li>
+            </ul>
+          </nav>
+
           <!-- Pagefind search widget -->
           <div id="search" style="margin-bottom: 1.5rem;"></div>
 

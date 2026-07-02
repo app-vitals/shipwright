@@ -31,6 +31,8 @@ COPY admin/package.json ./admin/
 COPY admin/prisma ./admin/prisma/
 COPY task-store/package.json ./task-store/
 COPY task-store/prisma ./task-store/prisma/
+COPY chat/package.json ./chat/
+COPY chat/prisma ./chat/prisma/
 COPY agent/package.json ./agent/
 COPY plugins/shipwright/package.json ./plugins/shipwright/
 COPY lib/package.json ./lib/
