@@ -60,8 +60,66 @@ describeOrSkip("PullRequest model (integration)", () => {
     expect(read.claimedBy).toBeNull();
     expect(read.claimedAt).toBeNull();
     expect(read.heartbeatAt).toBeNull();
+    expect(read.phase).toBeNull();
+    expect(read.readyForReviewAt).toBeNull();
+    expect(read.readyForPatchAt).toBeNull();
+    expect(read.readyForDeployAt).toBeNull();
     expect(read.createdAt).toBeInstanceOf(Date);
     expect(read.updatedAt).toBeInstanceOf(Date);
+  });
+
+  it("readyFor*At timestamps default to null on creation", async () => {
+    const created = await prisma.pullRequest.create({
+      data: {
+        repo: "app-vitals/shipwright",
+        prNumber: 500,
+      },
+    });
+    expect(created.readyForReviewAt).toBeNull();
+    expect(created.readyForPatchAt).toBeNull();
+    expect(created.readyForDeployAt).toBeNull();
+    expect(created.phase).toBeNull();
+  });
+
+  it("COALESCE(readyForReviewAt, readyForPatchAt, readyForDeployAt) ordering returns oldest item first across mixed phases", async () => {
+    // Insert PRs with different phase timestamps — oldest ready timestamp wins
+    await prisma.pullRequest.create({
+      data: {
+        repo: "app-vitals/shipwright",
+        prNumber: 601,
+        phase: "patch",
+        readyForPatchAt: "2026-07-01T02:00:00.000Z",
+      },
+    });
+    await prisma.pullRequest.create({
+      data: {
+        repo: "app-vitals/shipwright",
+        prNumber: 602,
+        phase: "review",
+        readyForReviewAt: "2026-07-01T01:00:00.000Z",
+      },
+    });
+    await prisma.pullRequest.create({
+      data: {
+        repo: "app-vitals/shipwright",
+        prNumber: 603,
+        phase: "deploy",
+        readyForDeployAt: "2026-07-01T03:00:00.000Z",
+      },
+    });
+
+    const rows = await prisma.$queryRaw<{ prNumber: number; ready: string }[]>`
+      SELECT "prNumber",
+             COALESCE("readyForReviewAt", "readyForPatchAt", "readyForDeployAt") AS ready
+        FROM "PullRequest"
+       WHERE "prNumber" IN (601, 602, 603)
+       ORDER BY COALESCE("readyForReviewAt", "readyForPatchAt", "readyForDeployAt") ASC
+    `;
+
+    expect(rows).toHaveLength(3);
+    expect(rows[0].prNumber).toBe(602); // earliest: readyForReviewAt 01:00
+    expect(rows[1].prNumber).toBe(601); // middle:   readyForPatchAt  02:00
+    expect(rows[2].prNumber).toBe(603); // latest:   readyForDeployAt 03:00
   });
 
   it("rejects duplicate (repo, prNumber)", async () => {
