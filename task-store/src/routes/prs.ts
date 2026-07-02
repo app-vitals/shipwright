@@ -195,6 +195,10 @@ export function createPrsRoutes(
   //
   // Extensions for deploy.md upsert flow:
   //   state, mergedAt, reviewState — set when marking a PR as merged
+  //
+  // Pipeline phase tracking:
+  //   phase, readyForReviewAt, readyForPatchAt, readyForDeployAt — set by
+  //   the review/patch/deploy skills to record when a PR enters each phase
   const PATCH_ALLOWED_FIELDS: Array<keyof PullRequest> = [
     "staged",
     "commitSha",
@@ -203,6 +207,10 @@ export function createPrsRoutes(
     "state",
     "mergedAt",
     "reviewState",
+    "phase",
+    "readyForReviewAt",
+    "readyForPatchAt",
+    "readyForDeployAt",
   ];
 
   app.patch("/:id", async (c) => {

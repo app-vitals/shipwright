@@ -772,6 +772,30 @@ describe("/prs routes (smoke)", () => {
     expect(body.reviewState).toBe("approved");
   });
 
+  it("PATCH /prs/:id updates phase and readyFor*At fields", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1", phase: null }));
+    const app = makeApp({ prService: fakePrService({ store }) });
+
+    const readyAt = "2026-07-01T00:00:00.000Z";
+    const res = await app.request("/prs/pr-1", {
+      method: "PATCH",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        phase: "review",
+        readyForReviewAt: readyAt,
+        readyForPatchAt: readyAt,
+        readyForDeployAt: readyAt,
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PullRequest;
+    expect(body.phase).toBe("review");
+    expect(body.readyForReviewAt).toBe(readyAt);
+    expect(body.readyForPatchAt).toBe(readyAt);
+    expect(body.readyForDeployAt).toBe(readyAt);
+  });
+
   it("PATCH /prs/:id returns 400 for agent token with out-of-scope repo", async () => {
     const store = new Map<string, PullRequest>();
     store.set("pr-1", makePr({ id: "pr-1", repo: "other-org/other-repo" }));
