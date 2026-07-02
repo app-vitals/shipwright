@@ -2036,6 +2036,15 @@ describe("renderTaskDetailPage — blockers", () => {
     expect(html).not.toContain("<script>xss");
     expect(html).toContain("&lt;script&gt;");
   });
+
+  test("blockers card appears before description card when blockedBy is set", () => {
+    const html = render();
+    const blockersIdx = html.indexOf("Blockers");
+    const descriptionIdx = html.indexOf("Description");
+    expect(blockersIdx).toBeGreaterThan(-1);
+    expect(descriptionIdx).toBeGreaterThan(-1);
+    expect(blockersIdx).toBeLessThan(descriptionIdx);
+  });
 });
 
 describe("renderTaskDetailPage — markdown", () => {

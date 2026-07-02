@@ -1808,9 +1808,10 @@ export function renderTaskDetailPage(
     </div>
     <div style="margin-top:4px;margin-bottom:16px;font-family:monospace;font-size:11px;color:#9ca3af">${escapeHtml(task.id)}</div>
 
+    ${blockersSection}
+    ${prSection}
     ${descriptionSection}
     ${acSection}
-    ${blockersSection}
 
     <div class="card" style="margin-bottom:16px">
       <table class="detail-table">
@@ -1829,7 +1830,6 @@ export function renderTaskDetailPage(
     </div>`
         : ""
     }
-    ${prSection}
   </div>
 </body>
 </html>`;

@@ -293,6 +293,16 @@ export function baseStyles(): string {
         margin: 0 -12px;
         padding: 0 12px;
       }
+      .detail-table td:first-child {
+        display: block;
+        width: auto;
+        white-space: normal;
+      }
+      .detail-table td:last-child {
+        display: block;
+        width: auto;
+        padding-top: 0;
+      }
     }
   `;
 }
