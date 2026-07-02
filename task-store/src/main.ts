@@ -81,7 +81,7 @@ async function startServer(): Promise<void> {
   const prisma = new PrismaClient();
   const taskService = new TaskService(prisma);
   const tokenService = new TaskTokenService(prisma);
-  const pullRequestService = new PullRequestService(prisma);
+  const pullRequestService = new PullRequestService(prisma, undefined, taskService);
 
   const seedToken = process.env.TASK_STORE_SEED_ADMIN_TOKEN;
   if (seedToken) {
