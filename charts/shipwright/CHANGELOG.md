@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.6.161] - 2026-07-02
+
+### Added
+
+- chat service Deployment, Service, ServiceAccount, and CI workflow (CHT-2.1)
+
 ## [1.6.160] - 2026-07-02
 
 ### Changed
