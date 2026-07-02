@@ -2121,12 +2121,18 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         return c.redirect(backUrl, 302);
       }
 
+      const ALLOWED_ROLES = ["user", "assistant"] as const;
+      type MessageRole = (typeof ALLOWED_ROLES)[number];
+
       let body: string | undefined;
-      let role = "user";
+      let role: MessageRole = "user";
       try {
         const formData = await c.req.formData();
         body = formData.get("body")?.toString()?.trim();
-        role = formData.get("role")?.toString() || "user";
+        const rawRole = formData.get("role")?.toString() || "user";
+        role = (ALLOWED_ROLES as readonly string[]).includes(rawRole)
+          ? (rawRole as MessageRole)
+          : "user";
       } catch {
         return c.redirect(backUrl, 302);
       }
