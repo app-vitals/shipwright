@@ -2521,6 +2521,13 @@ export interface AgentOption {
  * @param threads      - thread list (null = chatClient absent → degraded mode)
  * @param userName     - logged-in user's email for the toolbar
  */
+
+const threadPaneStyles = `
+    .thread-pane-list { display:flex;flex-direction:column;gap:4px;margin-top:8px }
+    .thread-pane-link { display:block;padding:8px 12px;border-radius:6px;font-size:13px;color:#374151;text-decoration:none;background:#f9fafb;border:1px solid #e5e7eb }
+    .thread-pane-link:hover { background:#eef2ff;color:#4f46e5 }
+    .thread-pane-link.active { background:#eef2ff;color:#4f46e5;font-weight:600 }`;
+
 export function renderChatPage(
   agents: AgentOption[],
   selectedAgentId: string | undefined,
@@ -2618,11 +2625,7 @@ export function renderChatPage(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Chat — Shipwright Admin</title>
-  <style>${baseStyles()}
-    .thread-pane-list { display:flex;flex-direction:column;gap:4px;margin-top:8px }
-    .thread-pane-link { display:block;padding:8px 12px;border-radius:6px;font-size:13px;color:#374151;text-decoration:none;background:#f9fafb;border:1px solid #e5e7eb }
-    .thread-pane-link:hover { background:#eef2ff;color:#4f46e5 }
-    .thread-pane-link.active { background:#eef2ff;color:#4f46e5;font-weight:600 }
+  <style>${baseStyles()}${threadPaneStyles}
   </style>
 </head>
 <body>
@@ -2768,13 +2771,7 @@ export function renderChatThreadPage(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>${title} - Shipwright Admin</title>
-  <style>${baseStyles()}
-    .thread-pane-list { display:flex;flex-direction:column;gap:4px;margin-top:8px }
-    .thread-pane-link { display:block;padding:8px 12px;border-radius:6px;font-size:13px;color:#374151;text-decoration:none;background:#f9fafb;border:1px solid #e5e7eb }
-    .thread-pane-link:hover { background:#eef2ff;color:#4f46e5 }
-    .thread-pane-link.active { background:#eef2ff;color:#4f46e5;font-weight:600 }
-    .btn-danger { background:#fee2e2;color:#991b1b;border:1px solid #fca5a5 }
-    .btn-danger:hover { background:#fca5a5 }
+  <style>${baseStyles()}${threadPaneStyles}
   </style>
 </head>
 <body>
