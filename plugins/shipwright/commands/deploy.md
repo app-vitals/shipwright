@@ -517,7 +517,7 @@ Write the PR body to a temp file:
 Reverts {SQUASH_SHA[0..7]} after canary failure.
 
 ## Context
-PR #{pr} was merged to main and deployed to GKE. The canary suite failed
+PR #{pr} was merged to main and deployed. The canary suite failed
 after deployment. This revert restores the previous state.
 
 **Canary run:** {canary_run_url}
