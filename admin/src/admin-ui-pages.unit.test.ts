@@ -1765,6 +1765,74 @@ describe("renderTasksPage — PR column", () => {
   });
 });
 
+// ─── renderTasksPage — PR column: renderer guard + prUrl fallback ─────────────
+
+describe("renderTasksPage — PR column: renderer guard + prUrl fallback", () => {
+  function render(tasks: TaskItem[]): string {
+    return renderTasksPage(
+      tasks,
+      {},
+      false,
+      USER_NAME,
+      {},
+      { total: tasks.length, limit: 50, page: 1 },
+      undefined,
+      undefined,
+    );
+  }
+
+  // (1) pr set + repo null → '--' (never github.com//pull/)
+  test("pr set + repo null renders '--' (never github.com//pull/)", () => {
+    const task: TaskItem = {
+      ...TASK_ITEM,
+      pr: 7,
+      repo: null,
+    };
+    const html = render([task]);
+    expect(html).not.toContain("github.com//pull/");
+    expect(html).toContain("—");
+    expect(html).not.toContain("github.com/null/pull/");
+  });
+
+  // (2) pr set + repo set → valid github link
+  test("pr set + repo set renders valid github link", () => {
+    const task: TaskItem = {
+      ...TASK_ITEM,
+      pr: 42,
+      repo: "my-org/my-repo",
+    };
+    const html = render([task]);
+    expect(html).toContain("https://github.com/my-org/my-repo/pull/42");
+    expect(html).toContain("#42");
+  });
+
+  // (3) only prUrl set → link to prUrl
+  test("only prUrl set renders a link to prUrl", () => {
+    const task: TaskItem = {
+      ...TASK_ITEM,
+      pr: null,
+      repo: null,
+      prUrl: "https://github.com/org/repo/pull/99",
+    };
+    const html = render([task]);
+    expect(html).toContain("https://github.com/org/repo/pull/99");
+  });
+
+  // (4) neither pr nor prUrl → '--'
+  test("neither pr nor prUrl renders '--'", () => {
+    const task: TaskItem = {
+      ...TASK_ITEM,
+      pr: null,
+      repo: null,
+      prUrl: null,
+    };
+    const html = render([task]);
+    // em-dash for no PR
+    expect(html).toContain("—");
+    expect(html).not.toContain("github.com");
+  });
+});
+
 // ─── renderTasksPage — 4-state toggle ────────────────────────────────────────
 
 const EMPTY_PAGINATION = { total: 0, limit: 50, page: 1 };
@@ -2035,6 +2103,15 @@ describe("renderTaskDetailPage — blockers", () => {
     });
     expect(html).not.toContain("<script>xss");
     expect(html).toContain("&lt;script&gt;");
+  });
+
+  test("blockers card appears before description card when blockedBy is set", () => {
+    const html = render();
+    const blockersIdx = html.indexOf("Blockers");
+    const descriptionIdx = html.indexOf("Description");
+    expect(blockersIdx).toBeGreaterThan(-1);
+    expect(descriptionIdx).toBeGreaterThan(-1);
+    expect(blockersIdx).toBeLessThan(descriptionIdx);
   });
 });
 
@@ -2790,5 +2867,151 @@ describe("renderCronRunsPage", () => {
   test("uses renderAdminToolbar with /admin/agents active path", () => {
     const html = render([makeRun()]);
     expect(html).toContain('href="/admin/agents" class="vos-nav-link active"');
+  });
+});
+
+// ─── renderTasksPage — mobile column hiding ───────────────────────────────────
+
+describe("renderTasksPage — mobile column hiding", () => {
+  function render(
+    tasks: TaskItem[] = [TASK_ITEM],
+    readOnly = false,
+  ): string {
+    return renderTasksPage(
+      tasks,
+      {},
+      false,
+      USER_NAME,
+      {},
+      { total: tasks.length, limit: 50, page: 1 },
+      undefined,
+      undefined,
+      readOnly,
+    );
+  }
+
+  // AC2: col-session class on the Session <th>
+  test("Session <th> has class col-session", () => {
+    const html = render();
+    expect(html).toContain('<th class="col-session">Session</th>');
+  });
+
+  // AC2: col-repo class on the Repo <th>
+  test("Repo <th> has class col-repo", () => {
+    const html = render();
+    expect(html).toContain('<th class="col-repo">Repo</th>');
+  });
+
+  // AC2: col-session class on every Session <td>
+  test("Session <td> cells have class col-session", () => {
+    const html = render([TASK_ITEM]);
+    // TASK_ITEM has session: "session-abc"
+    expect(html).toContain('class="col-session');
+    // The session td must contain the class
+    const sessionTdPattern = /<td[^>]*class="[^"]*col-session[^"]*"[^>]*>/;
+    expect(html).toMatch(sessionTdPattern);
+  });
+
+  // AC2: col-repo class on every Repo <td>
+  test("Repo <td> cells have class col-repo", () => {
+    const html = render([TASK_ITEM]);
+    // TASK_ITEM has repo: "org/repo"
+    const repoTdPattern = /<td[^>]*class="[^"]*col-repo[^"]*"[^>]*>/;
+    expect(html).toMatch(repoTdPattern);
+  });
+
+  // AC4: readOnly=true also has the correct classes
+  test("col-session and col-repo classes appear in readOnly=true output", () => {
+    const html = render([TASK_ITEM], true);
+    expect(html).toContain('<th class="col-session">Session</th>');
+    expect(html).toContain('<th class="col-repo">Repo</th>');
+    const sessionTdPattern = /<td[^>]*class="[^"]*col-session[^"]*"[^>]*>/;
+    const repoTdPattern = /<td[^>]*class="[^"]*col-repo[^"]*"[^>]*>/;
+    expect(html).toMatch(sessionTdPattern);
+    expect(html).toMatch(repoTdPattern);
+  });
+
+  // Multiple tasks → all rows get the correct classes
+  test("all task rows have col-session and col-repo on their <td> cells", () => {
+    const html = render([TASK_ITEM, TASK_ITEM_PENDING]);
+    const sessionTdMatches = html.match(/<td[^>]*class="[^"]*col-session[^"]*"[^>]*>/g);
+    const repoTdMatches = html.match(/<td[^>]*class="[^"]*col-repo[^"]*"[^>]*>/g);
+    // One col-session td per row (2 rows)
+    expect(sessionTdMatches).not.toBeNull();
+    expect((sessionTdMatches ?? []).length).toBe(2);
+    expect(repoTdMatches).not.toBeNull();
+    expect((repoTdMatches ?? []).length).toBe(2);
+  });
+});
+
+// ─── renderPrsPage — mobile column hiding (AMB-1.4) ──────────────────────────
+
+describe("renderPrsPage — mobile column hiding", () => {
+  function render(prs: PrListItem[] = [PR_LIST_ITEM_1, PR_LIST_ITEM_2]): string {
+    return renderPrsPage(
+      prs,
+      {},
+      false,
+      USER_NAME,
+      { "agent-001": "Alpha Agent" },
+      { total: prs.length, limit: 50, page: 1 },
+    );
+  }
+
+  // AC2: col-review-cycles class on the Review Cycles <th>
+  test("Review Cycles <th> has class col-review-cycles", () => {
+    const html = render();
+    expect(html).toContain('class="col-review-cycles"');
+    expect(html).toMatch(/<th[^>]*class="[^"]*col-review-cycles[^"]*"[^>]*>Review Cycles<\/th>/);
+  });
+
+  // AC2: col-patch-cycles class on the Patch Cycles <th>
+  test("Patch Cycles <th> has class col-patch-cycles", () => {
+    const html = render();
+    expect(html).toContain('class="col-patch-cycles"');
+    expect(html).toMatch(/<th[^>]*class="[^"]*col-patch-cycles[^"]*"[^>]*>Patch Cycles<\/th>/);
+  });
+
+  // AC2: col-claimed-by class on the Claimed By <th>
+  test("Claimed By <th> has class col-claimed-by", () => {
+    const html = render();
+    expect(html).toContain('class="col-claimed-by"');
+    expect(html).toMatch(/<th[^>]*class="[^"]*col-claimed-by[^"]*"[^>]*>Claimed By<\/th>/);
+  });
+
+  // AC2: col-review-cycles class on every Review Cycles <td>
+  test("Review Cycles <td> cells have class col-review-cycles", () => {
+    const html = render([PR_LIST_ITEM_1]);
+    const pattern = /<td[^>]*class="[^"]*col-review-cycles[^"]*"[^>]*>/;
+    expect(html).toMatch(pattern);
+  });
+
+  // AC2: col-patch-cycles class on every Patch Cycles <td>
+  test("Patch Cycles <td> cells have class col-patch-cycles", () => {
+    const html = render([PR_LIST_ITEM_1]);
+    const pattern = /<td[^>]*class="[^"]*col-patch-cycles[^"]*"[^>]*>/;
+    expect(html).toMatch(pattern);
+  });
+
+  // AC2: col-claimed-by class on every Claimed By <td>
+  test("Claimed By <td> cells have class col-claimed-by", () => {
+    const html = render([PR_LIST_ITEM_1]);
+    const pattern = /<td[^>]*class="[^"]*col-claimed-by[^"]*"[^>]*>/;
+    expect(html).toMatch(pattern);
+  });
+
+  // Multiple rows → all rows get the correct classes
+  test("all PR rows have col-review-cycles, col-patch-cycles, and col-claimed-by on their <td> cells", () => {
+    const html = render([PR_LIST_ITEM_1, PR_LIST_ITEM_2]);
+    const reviewCyclesTdMatches = html.match(/<td[^>]*class="[^"]*col-review-cycles[^"]*"[^>]*>/g);
+    const patchCyclesTdMatches = html.match(/<td[^>]*class="[^"]*col-patch-cycles[^"]*"[^>]*>/g);
+    const claimedByTdMatches = html.match(/<td[^>]*class="[^"]*col-claimed-by[^"]*"[^>]*>/g);
+    // One of each per row (2 rows)
+    expect(reviewCyclesTdMatches).not.toBeNull();
+    expect((reviewCyclesTdMatches ?? []).length).toBe(2);
+    expect(patchCyclesTdMatches).not.toBeNull();
+    expect((patchCyclesTdMatches ?? []).length).toBe(2);
+    expect(claimedByTdMatches).not.toBeNull();
+    expect((claimedByTdMatches ?? []).length).toBe(2);
   });
 });
