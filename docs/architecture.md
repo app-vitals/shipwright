@@ -1,6 +1,6 @@
 # Architecture
 
-> How Shipwright Harness is structured: four sequenced artifacts (plugin → metrics → agent → task-store) plus supporting surfaces, all MIT, all local-first.
+> How Shipwright Harness is structured: four sequenced artifacts (plugin → metrics → agent → task-store) plus supporting services and surfaces, all MIT, all local-first.
 
 ## Overview
 
@@ -62,6 +62,10 @@ A small in-memory HTML store for short-lived, regenerable artifacts (one-pagers,
 
 > ⚠️ **Single-replica caveat.** Storage is process-local (a plain `Map` in `task-store/src/doc-store.ts`) — a document POSTed to one replica is **not** visible from another, and all documents are lost on restart. Acceptable for the ephemeral MVP; it requires a single replica or sticky routing, and is flagged for a future durable backend (object storage / DB-backed blob).
 
+## Chat Service
+
+Postgres-backed service for web chat conversations (`chat/`). Owns three Prisma models (`ChatToken`, `Thread`, `Message`) on a **dedicated database** (`DATABASE_URL_SHIPWRIGHT_CHAT`). The Hono app is composed from injected services by `createChatServiceApp` (`chat/src/app.ts`); `/health` is unauthenticated, all other routes require a valid bearer token (scoped to agents via `agentId`). Provides `/tokens/*` (admin token create/list/revoke/update), `/threads/*` (thread CRUD), and `/threads/:threadId/messages/*` (message CRUD) endpoints.
+
 ## Supporting surfaces
 
 | Surface | Directory | Notes |
@@ -72,7 +76,7 @@ A small in-memory HTML store for short-lived, regenerable artifacts (one-pagers,
 
 ## Workspace layout
 
-The repo is a Bun-workspaces monorepo with **go-task** (`Taskfile.yml`) as the single local entrypoint. Five workspaces — `plugins/shipwright`, `metrics`, `agent`, `admin`, `task-store` — are wired into the root `package.json`. The `site/` is intentionally excluded from the root `bun test` scan (its Playwright `*.spec.ts` files would crash Bun's runner).
+The repo is a Bun-workspaces monorepo with **go-task** (`Taskfile.yml`) as the single local entrypoint. Six workspaces — `plugins/shipwright`, `metrics`, `agent`, `admin`, `task-store`, `chat` — are wired into the root `package.json`. The `site/` is intentionally excluded from the root `bun test` scan (its Playwright `*.spec.ts` files would crash Bun's runner).
 
 ```
 shipwright/
@@ -81,6 +85,7 @@ shipwright/
 ├── agent/                C — Shipwright agent runtime (entrypoint, cron, Slack, GitHub auth)
 ├── admin/                C — Admin service: CRUD API, admin UI, Prisma store (@shipwright/admin)
 ├── task-store/           D — Task queue service: Postgres + Prisma, exports @shipwright/task-store
+├── chat/                 Chat service: web conversation threads, Postgres + Prisma
 ├── site/                 marketing site (Astro, separate toolchain)
 ├── brand/                locked design system
 ├── state/                local task-store / review-cache fallback
