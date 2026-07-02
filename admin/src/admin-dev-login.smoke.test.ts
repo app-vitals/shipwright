@@ -99,8 +99,9 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
       },
     },
     agentEnvService: {
-      getByAgentId: async () => ({ FOO: "bar" }),
+      getByAgentId: async () => ({ env: { FOO: "bar" }, secretKeys: [] }),
       upsert: async () => {},
+      patch: async () => {},
       deleteKey: async () => {},
       getConfigBundle: async () => null,
     },

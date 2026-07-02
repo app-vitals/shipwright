@@ -26,6 +26,15 @@ export interface AgentEnvEntry {
   env: Record<string, string>;
 }
 
+/**
+ * Return type for getByAgentId().
+ * Secret values are masked as "***" in env; their keys are listed in secretKeys.
+ */
+export interface AgentEnvResult {
+  env: Record<string, string>;
+  secretKeys: string[];
+}
+
 // ─── Service ──────────────────────────────────────────────────────────────────
 
 export class AgentEnvService {
@@ -38,8 +47,14 @@ export class AgentEnvService {
   /**
    * Replace all env vars for the given agent (delete existing + insert new).
    * Validates that agentId references an existing Agent.
+   *
+   * @param secretKeys - optional set of key names to mark as secret
    */
-  async upsert(agentId: string, env: Record<string, string>): Promise<void> {
+  async upsert(
+    agentId: string,
+    env: Record<string, string>,
+    secretKeys?: Set<string>,
+  ): Promise<void> {
     const agent = await this.prisma.agent.findUnique({
       where: { id: agentId },
     });
@@ -52,6 +67,7 @@ export class AgentEnvService {
       agentId,
       key,
       value: this.crypto.encrypt(value),
+      secret: secretKeys?.has(key) ?? false,
       updatedAt: now,
     }));
 
@@ -63,6 +79,7 @@ export class AgentEnvService {
             agentId: row.agentId,
             key: row.key,
             value: row.value,
+            secret: row.secret,
             updatedAt: row.updatedAt,
           },
         }),
@@ -73,8 +90,14 @@ export class AgentEnvService {
   /**
    * Upsert specific keys for the given agent without touching other keys.
    * Validates that agentId references an existing Agent.
+   *
+   * @param secretKeys - optional set of key names to mark as secret
    */
-  async patch(agentId: string, env: Record<string, string>): Promise<void> {
+  async patch(
+    agentId: string,
+    env: Record<string, string>,
+    secretKeys?: Set<string>,
+  ): Promise<void> {
     const agent = await this.prisma.agent.findUnique({
       where: { id: agentId },
     });
@@ -91,27 +114,46 @@ export class AgentEnvService {
             agentId,
             key,
             value: this.crypto.encrypt(value),
+            secret: secretKeys?.has(key) ?? false,
             updatedAt: now,
           },
-          update: { value: this.crypto.encrypt(value), updatedAt: now },
+          update: {
+            value: this.crypto.encrypt(value),
+            secret: secretKeys?.has(key) ?? false,
+            updatedAt: now,
+          },
         }),
       ),
     );
   }
 
   /**
-   * Get all env vars for an agent (decrypted).
+   * Get all env vars for an agent.
+   * Secret values are masked as "***"; their keys are listed in secretKeys.
    * Returns null if the agent has no env vars set.
    */
-  async getByAgentId(agentId: string): Promise<Record<string, string> | null> {
+  async getByAgentId(agentId: string): Promise<AgentEnvResult | null> {
     const rows = await this.prisma.agentEnv.findMany({ where: { agentId } });
     if (rows.length === 0) return null;
-    return this.decryptRows(rows);
+
+    const env: Record<string, string> = {};
+    const secretKeys: string[] = [];
+
+    for (const row of rows) {
+      if (row.secret) {
+        env[row.key] = "***";
+        secretKeys.push(row.key);
+      } else {
+        env[row.key] = this.crypto.decrypt(row.value);
+      }
+    }
+
+    return { env, secretKeys };
   }
 
   /**
    * Returns the full env bundle for an agent — stored env vars (decrypted) plus
-   * allowed tools.
+   * allowed tools. Always decrypts regardless of the secret flag.
    *
    * Returns null if the agent has no env vars set.
    * Throws 500 if decryption fails.
@@ -122,6 +164,7 @@ export class AgentEnvService {
 
     let env: Record<string, string>;
     try {
+      // Always decrypt — secret flag only affects the admin API response
       env = this.decryptRows(rows);
     } catch (err) {
       console.error("[shipwright agent] failed to decrypt agent env vars", err);

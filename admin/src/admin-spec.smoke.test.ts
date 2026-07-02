@@ -53,7 +53,7 @@ function buildSpecApp() {
     agentEnvService: {
       upsert: async () => {},
       patch: async () => {},
-      getByAgentId: async () => ({}),
+      getByAgentId: async () => ({ env: {}, secretKeys: [] }),
       deleteKey: async () => {},
     },
     agentCronJobService: {
@@ -236,7 +236,11 @@ function buildSpecApp() {
       removeByName: async () => {},
     },
     agentChatTokenService: {
-      upsertDailyByModel: async (_agentId: string, date: string, model: string) => ({
+      upsertDailyByModel: async (
+        _agentId: string,
+        date: string,
+        model: string,
+      ) => ({
         id: "daily-id",
         agentId: _agentId,
         date,
@@ -250,7 +254,13 @@ function buildSpecApp() {
         updatedAt: new Date(),
       }),
       queryStats: async () => ({
-        totals: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, total: 0 },
+        totals: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheCreation: 0,
+          total: 0,
+        },
         byAgent: [],
         byModel: [],
         daily: [],

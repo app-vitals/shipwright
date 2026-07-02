@@ -22,7 +22,6 @@
 
 import { isOrgRepo } from "@shipwright/lib/org-repo";
 import { Hono, type MiddlewareHandler } from "hono";
-import { publicNoAuthMiddleware } from "./api-auth.ts";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { sign, verify } from "hono/jwt";
 import {
@@ -30,20 +29,20 @@ import {
   type PrListItem,
   type PullRequestItem,
   type TaskItem,
+  type TaskStoreTokenItem,
   renderAgentDetailPage,
   renderAgentsPage,
   renderCronRunsPage,
   renderLoginPage,
   renderNewLocalAgentPage,
+  renderPrDetailPage,
   renderProvisionCompletePage,
   renderProvisionStartPage,
   renderProvisionXappTokenPage,
-  renderPrDetailPage,
   renderPrsPage,
   renderTaskDetailPage,
   renderTasksPage,
   renderTokensPage,
-  type TaskStoreTokenItem,
 } from "./admin-ui-pages.ts";
 import type { AgentCronJobService } from "./agent-cron-jobs.ts";
 import type { AgentCronRunService } from "./agent-cron-runs.ts";
@@ -52,6 +51,7 @@ import type { AgentPluginService } from "./agent-plugins.ts";
 import type { AgentProvisioner } from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 import type { AgentToolService } from "./agent-tools.ts";
+import { publicNoAuthMiddleware } from "./api-auth.ts";
 import { ForbiddenError, UnprocessableEntityError } from "./errors.ts";
 import type { GoogleAuthClient } from "./google-auth-client.ts";
 import type { AppManifest } from "./slack-provisioning-client.ts";
@@ -180,7 +180,7 @@ export interface AdminUIDeps {
   prisma: PrismaLike;
   agentEnvService: Pick<
     AgentEnvService,
-    "getByAgentId" | "upsert" | "deleteKey" | "getConfigBundle"
+    "getByAgentId" | "upsert" | "patch" | "deleteKey" | "getConfigBundle"
   >;
   agentCronJobService: Pick<
     AgentCronJobService,
@@ -725,9 +725,11 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
           ? "Slack app reinstalled successfully."
           : undefined;
 
-    const [envVars, crons, tools, tokens, plugins, members] = await Promise.all(
-      [
-        agentEnvService.getByAgentId(agentId).then((e) => e ?? {}),
+    const [envResult, crons, tools, tokens, plugins, members] =
+      await Promise.all([
+        agentEnvService
+          .getByAgentId(agentId)
+          .then((e) => e ?? { env: {}, secretKeys: [] }),
         agentCronJobService.listWithRunSummary(agentId),
         agentToolService.list(agentId),
         agentTokenService.listForAgent(agentId),
@@ -735,13 +737,12 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         c.var.isAdmin
           ? prisma.agentMember.findMany({ where: { agentId } })
           : Promise.resolve([]),
-      ],
-    );
+      ]);
 
     return html(
       renderAgentDetailPage(
         agentDetail,
-        envVars,
+        envResult,
         crons,
         tools,
         tokens,
@@ -796,16 +797,22 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }
     let key: string | undefined;
     let value: string | undefined;
+    let secretStr: string | undefined;
     try {
       const formData = await c.req.formData();
       key = formData.get("key")?.toString();
       value = formData.get("value")?.toString();
+      secretStr = formData.get("secret")?.toString();
     } catch {
       return c.redirect(`/admin/agents/${agentId}`, 302);
     }
     if (key && value !== undefined) {
-      const existing = (await agentEnvService.getByAgentId(agentId)) ?? {};
-      await agentEnvService.upsert(agentId, { ...existing, [key]: value });
+      const isSecret = secretStr === "true";
+      await agentEnvService.patch(
+        agentId,
+        { [key]: value },
+        isSecret ? new Set([key]) : new Set(),
+      );
     }
     return c.redirect(`/admin/agents/${agentId}`, 302);
   });
@@ -1150,9 +1157,11 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       const { rawToken } = await agentTokenService.create(agentId, label);
       // Render the page directly (200) rather than redirecting with the token in the URL.
       // A redirect would expose the raw token in server access logs and browser history.
-      const [envVars, crons, tools, tokens, plugins, members] =
+      const [envResult, crons, tools, tokens, plugins, members] =
         await Promise.all([
-          agentEnvService.getByAgentId(agentId).then((e) => e ?? {}),
+          agentEnvService
+            .getByAgentId(agentId)
+            .then((e) => e ?? { env: {}, secretKeys: [] }),
           agentCronJobService.listWithRunSummary(agentId),
           agentToolService.list(agentId),
           agentTokenService.listForAgent(agentId),
@@ -1164,7 +1173,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       return html(
         renderAgentDetailPage(
           agentDetail,
-          envVars,
+          envResult,
           crons,
           tools,
           tokens,
@@ -1228,8 +1237,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       );
     }
 
-    const envVars = (await agentEnvService.getByAgentId(agentId)) ?? {};
-    const appId = envVars.SLACK_APP_ID;
+    const envBundle = await agentEnvService.getConfigBundle(agentId);
+    const appId = envBundle?.env.SLACK_APP_ID;
     if (!appId) {
       return c.redirect(
         `/admin/agents/${agentId}?error=${encodeURIComponent("SLACK_APP_ID is not set — provision the agent first.")}`,
@@ -1251,9 +1260,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }
 
     // If the agent has OAuth credentials stored, trigger a reinstall via Slack OAuth
-    const clientId = envVars.SLACK_CLIENT_ID;
-    const clientSecret = envVars.SLACK_CLIENT_SECRET;
-    const signingSecret = envVars.SLACK_SIGNING_SECRET;
+    const clientId = envBundle?.env.SLACK_CLIENT_ID;
+    const clientSecret = envBundle?.env.SLACK_CLIENT_SECRET;
+    const signingSecret = envBundle?.env.SLACK_SIGNING_SECRET;
 
     if (clientId && clientSecret && signingSecret) {
       // Sign a provision-state cookie so /provision/complete can exchange the code
@@ -1443,9 +1452,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
     // ── Write agent env ───────────────────────────────────────────────────
 
-    const existing = (await agentEnvService.getByAgentId(agentId)) ?? {};
+    // Use patch() to merge new keys without overwriting existing unrelated keys
     const newEnv: Record<string, string> = {
-      ...existing,
       SLACK_APP_ID: appId,
       SLACK_SIGNING_SECRET: signingSecret,
       SLACK_CLIENT_ID: clientId,
@@ -1467,7 +1475,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       newEnv.CLAUDE_CODE_OAUTH_TOKEN = claudeCodeOauthToken;
     }
 
-    await agentEnvService.upsert(agentId, newEnv);
+    await agentEnvService.patch(agentId, newEnv);
 
     // Use c.html() so the Set-Cookie header from setCookie() is included
     return c.html(
@@ -1574,16 +1582,18 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }
 
     // Store SLACK_BOT_TOKEN in agent env
-    const existing =
-      (await agentEnvService.getByAgentId(provisionState.agentId)) ?? {};
-    await agentEnvService.upsert(provisionState.agentId, {
-      ...existing,
+    // Fetch config bundle to get real (unmasked) values for merge check
+    const existingBundle = await agentEnvService.getConfigBundle(
+      provisionState.agentId,
+    );
+    // Use patch() to merge SLACK_BOT_TOKEN without overwriting other keys
+    await agentEnvService.patch(provisionState.agentId, {
       SLACK_BOT_TOKEN: botToken,
     });
 
     // If SLACK_APP_TOKEN is already set this is a reinstall (not fresh provisioning).
     // Skip the xapp-token page and redirect directly to the agent detail page.
-    if (existing.SLACK_APP_TOKEN) {
+    if (existingBundle?.env.SLACK_APP_TOKEN) {
       return c.redirect(
         `/admin/agents/${provisionState.agentId}?success=reinstalled`,
         302,
@@ -1645,9 +1655,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       // Create scoped token first so both secrets land in one upsert
       const { rawToken } = await agentTokenService.create(agentId, "provision");
 
-      const existing = (await agentEnvService.getByAgentId(agentId)) ?? {};
-      await agentEnvService.upsert(agentId, {
-        ...existing,
+      // Use patch() to merge new keys without overwriting existing env vars
+      await agentEnvService.patch(agentId, {
         SLACK_APP_TOKEN: xappToken,
         SHIPWRIGHT_AGENT_API_KEY: rawToken,
       });
