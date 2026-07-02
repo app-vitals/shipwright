@@ -2526,6 +2526,7 @@ export function renderChatPage(
   selectedAgentId: string | undefined,
   threads: ChatThread[] | null,
   userName: string,
+  q?: string,
 ): string {
   const activePath = "/admin/chat";
 
@@ -2563,28 +2564,19 @@ export function renderChatPage(
         Select an agent above to view its threads.
       </div>`;
   } else {
-    // Render thread table
-    const rows =
-      threads.length === 0
-        ? `<tr><td colspan="4" class="empty-state">No threads found for this agent.</td></tr>`
-        : threads
-            .map((t) => {
-              const title = escapeHtml(t.title ?? "Untitled");
-              const createdAt = new Date(t.createdAt).toLocaleString();
-              const shortId = escapeHtml(t.id.slice(0, 8));
-              return `<tr>
-                <td class="mono" title="${escapeHtml(t.id)}">${shortId}…</td>
-                <td>${title}</td>
-                <td>${escapeHtml(createdAt)}</td>
-                <td>
-                  <a href="/admin/chat/${escapeHtml(selectedAgentId)}/threads/${escapeHtml(t.id)}" class="btn btn-secondary" style="padding:4px 10px;font-size:12px">View</a>
-                </td>
-              </tr>`;
-            })
-            .join("\n");
+    // Search box
+    const searchForm = `
+      <form method="GET" action="/admin/chat" class="form-row" style="margin-bottom:16px">
+        <input type="hidden" name="agentId" value="${escapeHtml(selectedAgentId)}">
+        <div class="form-group" style="max-width:320px">
+          <input type="text" name="q" class="form-input" placeholder="Search threads…" value="${escapeHtml(q ?? "")}">
+        </div>
+        <button type="submit" class="btn btn-secondary">Search</button>
+      </form>`;
 
+    // New thread form (above the thread list)
     const newThreadForm = `
-      <form method="POST" action="/admin/chat/${escapeHtml(selectedAgentId)}/threads" style="margin-top:16px">
+      <form method="POST" action="/admin/chat/${escapeHtml(selectedAgentId)}/threads" style="margin-bottom:16px">
         <div class="form-row">
           <div class="form-group">
             <input type="text" name="title" class="form-input" placeholder="Thread title (optional)">
@@ -2593,23 +2585,30 @@ export function renderChatPage(
         </div>
       </form>`;
 
+    // Thread list pane
+    const threadLinks =
+      threads.length === 0
+        ? `<div class="empty-state" style="padding:12px">No threads found.</div>`
+        : threads
+            .map((t) => {
+              const title = escapeHtml(t.title ?? "Untitled");
+              return `<a href="/admin/chat/${escapeHtml(selectedAgentId)}/threads/${escapeHtml(t.id)}" class="thread-pane-link">${title}</a>`;
+            })
+            .join("\n");
+
     content = `
-      <div class="card">
-        <div class="card-title">Threads</div>
-        <div class="data-table-wrapper">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Thread ID</th>
-                <th>Title</th>
-                <th>Created</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>${rows}</tbody>
-          </table>
+      ${searchForm}
+      <div style="display:flex;gap:24px;align-items:flex-start">
+        <div class="card" style="min-width:240px;max-width:300px;flex-shrink:0">
+          <div class="card-title">Threads</div>
+          ${newThreadForm}
+          <div class="thread-pane-list">
+            ${threadLinks}
+          </div>
         </div>
-        ${newThreadForm}
+        <div style="flex:1">
+          <div class="empty-state">Select a thread from the list to view messages.</div>
+        </div>
       </div>`;
   }
 
@@ -2619,7 +2618,12 @@ export function renderChatPage(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Chat — Shipwright Admin</title>
-  <style>${baseStyles()}</style>
+  <style>${baseStyles()}
+    .thread-pane-list { display:flex;flex-direction:column;gap:4px;margin-top:8px }
+    .thread-pane-link { display:block;padding:8px 12px;border-radius:6px;font-size:13px;color:#374151;text-decoration:none;background:#f9fafb;border:1px solid #e5e7eb }
+    .thread-pane-link:hover { background:#eef2ff;color:#4f46e5 }
+    .thread-pane-link.active { background:#eef2ff;color:#4f46e5;font-weight:600 }
+  </style>
 </head>
 <body>
   ${renderAdminToolbar(userName, activePath)}
@@ -2640,12 +2644,14 @@ export function renderChatPage(
  * @param agentId  - agent ID
  * @param thread   - thread object (null = chatClient absent -> degraded mode)
  * @param messages - messages for the thread (null = degraded mode)
+ * @param threads  - list of all threads for the sidebar pane (null = not available)
  * @param userName - logged-in user's email for the toolbar
  */
 export function renderChatThreadPage(
   agentId: string,
   thread: ChatThread | null,
   messages: ChatMessage[] | null,
+  threads: ChatThread[] | null,
   userName: string,
 ): string {
   const activePath = "/admin/chat";
@@ -2709,7 +2715,52 @@ export function renderChatThreadPage(
       <button type="submit" class="btn btn-primary">Send</button>
     </form>`;
 
+  const renameForm = `
+    <form method="POST" action="/admin/chat/${escapeHtml(agentId)}/threads/${escapeHtml(threadId)}/rename" style="margin-top:12px">
+      <div class="form-row" style="align-items:center;gap:8px">
+        <input type="text" name="title" class="form-input" placeholder="New title…" style="max-width:240px">
+        <button type="submit" class="btn btn-secondary" style="white-space:nowrap">Rename</button>
+      </div>
+    </form>`;
+
+  const deleteForm = `
+    <form method="POST" action="/admin/chat/${escapeHtml(agentId)}/threads/${escapeHtml(threadId)}/delete" style="margin-top:8px" onsubmit="return confirm('Delete this thread?')">
+      <button type="submit" class="btn btn-danger">Delete Thread</button>
+    </form>`;
+
   const title = thread.title ? escapeHtml(thread.title) : "Untitled Thread";
+
+  // Thread list sidebar pane
+  const newThreadForm = `
+    <form method="POST" action="/admin/chat/${escapeHtml(agentId)}/threads" style="margin-bottom:12px">
+      <div class="form-row" style="gap:6px">
+        <input type="text" name="title" class="form-input" placeholder="New thread title…" style="font-size:12px">
+        <button type="submit" class="btn btn-primary" style="white-space:nowrap;font-size:12px;padding:6px 10px">New Thread</button>
+      </div>
+    </form>`;
+
+  const threadLinks = threads
+    ? threads.length === 0
+      ? `<div class="empty-state" style="padding:12px">No threads.</div>`
+      : threads
+          .map((t) => {
+            const tTitle = escapeHtml(t.title ?? "Untitled");
+            const isActive = t.id === threadId;
+            return `<a href="/admin/chat/${escapeHtml(agentId)}/threads/${escapeHtml(t.id)}" class="thread-pane-link${isActive ? " active" : ""}">${tTitle}</a>`;
+          })
+          .join("\n")
+    : "";
+
+  const sidebar =
+    threads !== null
+      ? `<div class="card" style="min-width:220px;max-width:280px;flex-shrink:0">
+          <div class="card-title">Threads</div>
+          ${newThreadForm}
+          <div class="thread-pane-list">
+            ${threadLinks}
+          </div>
+        </div>`
+      : "";
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -2717,7 +2768,14 @@ export function renderChatThreadPage(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>${title} - Shipwright Admin</title>
-  <style>${baseStyles()}</style>
+  <style>${baseStyles()}
+    .thread-pane-list { display:flex;flex-direction:column;gap:4px;margin-top:8px }
+    .thread-pane-link { display:block;padding:8px 12px;border-radius:6px;font-size:13px;color:#374151;text-decoration:none;background:#f9fafb;border:1px solid #e5e7eb }
+    .thread-pane-link:hover { background:#eef2ff;color:#4f46e5 }
+    .thread-pane-link.active { background:#eef2ff;color:#4f46e5;font-weight:600 }
+    .btn-danger { background:#fee2e2;color:#991b1b;border:1px solid #fca5a5 }
+    .btn-danger:hover { background:#fca5a5 }
+  </style>
 </head>
 <body>
   ${renderAdminToolbar(userName, activePath)}
@@ -2727,11 +2785,18 @@ export function renderChatThreadPage(
         <a href="/admin/chat?agentId=${escapeHtml(agentId)}" class="btn btn-secondary" style="margin-bottom:8px">&larr; Back to threads</a>
         <h1 class="page-title">${title}</h1>
         <div style="font-size:12px;color:#9ca3af;margin-top:4px">Thread <span class="mono">${escapeHtml(threadId)}</span></div>
+        ${renameForm}
+        ${deleteForm}
       </div>
     </div>
-    ${messagecards}
-    ${emptyState}
-    ${replyForm}
+    <div style="display:flex;gap:24px;align-items:flex-start;margin-top:16px">
+      ${sidebar}
+      <div style="flex:1;min-width:0">
+        ${messagecards}
+        ${emptyState}
+        ${replyForm}
+      </div>
+    </div>
   </div>
 </body>
 </html>`;

@@ -82,6 +82,11 @@ function makeMockChatClient(overrides?: Partial<ChatClient>): ChatClient {
     }),
     getThread: async () => MOCK_THREAD,
     createThread: async () => MOCK_THREAD,
+    updateThread: async (_id: string, data: { title?: string }) => ({
+      ...MOCK_THREAD,
+      title: data.title ?? MOCK_THREAD.title,
+    }),
+    deleteThread: async () => {},
     listMessages: async () => ({
       messages: [MOCK_MESSAGE],
       total: 1,
@@ -460,5 +465,253 @@ describe("Toolbar", () => {
     const html = await res.text();
     expect(html).toContain("/admin/chat");
     expect(html).toContain(">Chat<");
+  });
+});
+
+describe("POST /admin/chat/:agentId/threads/:threadId/rename — rename thread", () => {
+  let sessionCookie: string;
+
+  beforeAll(async () => {
+    sessionCookie = await makeSessionCookie();
+  });
+
+  it("returns 302 redirect back to the thread page on success", async () => {
+    let updatedTitle: string | undefined;
+    const chatClient = makeMockChatClient({
+      updateThread: async (_id: string, data: { title?: string }) => {
+        updatedTitle = data.title;
+        return { ...MOCK_THREAD, title: data.title ?? MOCK_THREAD.title };
+      },
+    });
+    const app = createAdminUIApp(makeBaseDeps({ chatClient }));
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}/rename`,
+      {
+        method: "POST",
+        headers: {
+          Cookie: `admin_session=${sessionCookie}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: "title=Renamed+Thread",
+      },
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toContain(THREAD_ID);
+    expect(updatedTitle).toBe("Renamed Thread");
+  });
+
+  it("returns 302 to chat list when chatClient absent", async () => {
+    const app = createAdminUIApp(makeBaseDeps()); // no chatClient
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}/rename`,
+      {
+        method: "POST",
+        headers: {
+          Cookie: `admin_session=${sessionCookie}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: "title=Whatever",
+      },
+    );
+    expect(res.status).toBe(302);
+  });
+});
+
+describe("POST /admin/chat/:agentId/threads/:threadId/delete — delete thread", () => {
+  let sessionCookie: string;
+
+  beforeAll(async () => {
+    sessionCookie = await makeSessionCookie();
+  });
+
+  it("returns 302 redirect to /admin/chat?agentId=X on success", async () => {
+    let deletedId: string | undefined;
+    const chatClient = makeMockChatClient({
+      deleteThread: async (id: string) => {
+        deletedId = id;
+      },
+    });
+    const app = createAdminUIApp(makeBaseDeps({ chatClient }));
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}/delete`,
+      {
+        method: "POST",
+        headers: {
+          Cookie: `admin_session=${sessionCookie}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: "",
+      },
+    );
+    expect(res.status).toBe(302);
+    const location = res.headers.get("location") ?? "";
+    expect(location).toContain("/admin/chat");
+    expect(location).toContain(AGENT_ID);
+    expect(deletedId).toBe(THREAD_ID);
+  });
+
+  it("returns 302 when chatClient absent", async () => {
+    const app = createAdminUIApp(makeBaseDeps()); // no chatClient
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}/delete`,
+      {
+        method: "POST",
+        headers: {
+          Cookie: `admin_session=${sessionCookie}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: "",
+      },
+    );
+    expect(res.status).toBe(302);
+  });
+});
+
+describe("GET /admin/chat?agentId=X&q=foo — search/filter threads", () => {
+  let sessionCookie: string;
+
+  beforeAll(async () => {
+    sessionCookie = await makeSessionCookie();
+  });
+
+  it("returns only threads matching the search query", async () => {
+    const SECOND_THREAD: ChatThread = {
+      id: "thread-other-999",
+      agentId: AGENT_ID,
+      title: "Unrelated topic",
+      memberId: null,
+      createdAt: "2024-01-02T00:00:00.000Z",
+      updatedAt: "2024-01-02T00:00:00.000Z",
+    };
+    const chatClient = makeMockChatClient({
+      listThreads: async () => ({
+        threads: [MOCK_THREAD, SECOND_THREAD],
+        total: 2,
+        limit: 50,
+        offset: 0,
+      }),
+    });
+    const app = createAdminUIApp(makeBaseDeps({ chatClient }));
+    const res = await app.request(
+      `/admin/chat?agentId=${AGENT_ID}&q=Test`,
+      {
+        headers: { Cookie: `admin_session=${sessionCookie}` },
+      },
+    );
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    // Should show matching thread
+    expect(html).toContain("Test Thread");
+    // Should not show non-matching thread
+    expect(html).not.toContain("Unrelated topic");
+  });
+
+  it("shows search input on the chat page", async () => {
+    const chatClient = makeMockChatClient();
+    const app = createAdminUIApp(makeBaseDeps({ chatClient }));
+    const res = await app.request(`/admin/chat?agentId=${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${sessionCookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    // Should have a search input with name "q"
+    expect(html).toContain('name="q"');
+  });
+
+  it("returns all threads when q is empty", async () => {
+    const SECOND_THREAD: ChatThread = {
+      id: "thread-other-999",
+      agentId: AGENT_ID,
+      title: "Unrelated topic",
+      memberId: null,
+      createdAt: "2024-01-02T00:00:00.000Z",
+      updatedAt: "2024-01-02T00:00:00.000Z",
+    };
+    const chatClient = makeMockChatClient({
+      listThreads: async () => ({
+        threads: [MOCK_THREAD, SECOND_THREAD],
+        total: 2,
+        limit: 50,
+        offset: 0,
+      }),
+    });
+    const app = createAdminUIApp(makeBaseDeps({ chatClient }));
+    const res = await app.request(`/admin/chat?agentId=${AGENT_ID}&q=`, {
+      headers: { Cookie: `admin_session=${sessionCookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Test Thread");
+    expect(html).toContain("Unrelated topic");
+  });
+});
+
+describe("GET /admin/chat/:agentId/threads/:threadId — thread list pane on detail page", () => {
+  let sessionCookie: string;
+
+  beforeAll(async () => {
+    sessionCookie = await makeSessionCookie();
+  });
+
+  it("renders thread list links in the sidebar pane", async () => {
+    const SECOND_THREAD: ChatThread = {
+      id: "thread-other-999",
+      agentId: AGENT_ID,
+      title: "Second Thread",
+      memberId: null,
+      createdAt: "2024-01-02T00:00:00.000Z",
+      updatedAt: "2024-01-02T00:00:00.000Z",
+    };
+    const chatClient = makeMockChatClient({
+      listThreads: async () => ({
+        threads: [MOCK_THREAD, SECOND_THREAD],
+        total: 2,
+        limit: 50,
+        offset: 0,
+      }),
+    });
+    const app = createAdminUIApp(makeBaseDeps({ chatClient }));
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}`,
+      { headers: { Cookie: `admin_session=${sessionCookie}` } },
+    );
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    // The thread detail page should include links to other threads (sidebar pane)
+    expect(html).toContain("thread-other-999");
+    expect(html).toContain("Second Thread");
+  });
+
+  it("renders rename form on the thread detail page", async () => {
+    const chatClient = makeMockChatClient({
+      updateThread: async (_id: string, data: { title?: string }) => ({
+        ...MOCK_THREAD,
+        title: data.title ?? null,
+      }),
+    });
+    const app = createAdminUIApp(makeBaseDeps({ chatClient }));
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}`,
+      { headers: { Cookie: `admin_session=${sessionCookie}` } },
+    );
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    // Should have a rename form pointing to the rename endpoint
+    expect(html).toContain("/rename");
+  });
+
+  it("renders delete button on the thread detail page", async () => {
+    const chatClient = makeMockChatClient({
+      deleteThread: async () => {},
+    });
+    const app = createAdminUIApp(makeBaseDeps({ chatClient }));
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}`,
+      { headers: { Cookie: `admin_session=${sessionCookie}` } },
+    );
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    // Should have a delete form pointing to the delete endpoint
+    expect(html).toContain("/delete");
   });
 });
