@@ -569,4 +569,39 @@ describeOrSkip("PullRequestService.claimNext() (integration)", () => {
     const result = await service.claimNext("agent-a", 5);
     expect(result).toBeNull();
   });
+
+  it("claimNext() with repos scope skips out-of-scope PRs and claims in-scope ones", async () => {
+    // Out-of-scope PR is globally older (would win without SQL filter)
+    await prisma.pullRequest.create({
+      data: {
+        repo: "app-vitals/other-repo",
+        prNumber: 1,
+        commitSha: "sha-out",
+        reviewState: "pending",
+        state: "open",
+        readyForReviewAt: "2026-07-01T00:00:00.000Z",
+      },
+    });
+
+    // In-scope PR is newer
+    const inScopePr = await prisma.pullRequest.create({
+      data: {
+        repo: "app-vitals/shipwright",
+        prNumber: 2,
+        commitSha: "sha-in",
+        reviewState: "pending",
+        state: "open",
+        readyForReviewAt: "2026-07-01T01:00:00.000Z",
+      },
+    });
+
+    const result = await service.claimNext("agent-scoped", 5, [
+      "app-vitals/shipwright",
+    ]);
+
+    expect(result).not.toBeNull();
+    expect(result?.pr.id).toBe(inScopePr.id);
+    expect(result?.pr.repo).toBe("app-vitals/shipwright");
+    expect(result?.phase).toBe("review");
+  });
 });

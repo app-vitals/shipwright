@@ -15,7 +15,7 @@
 
 import { type Clock, SystemClock } from "./clock.ts";
 import { ConflictError, NotFoundError } from "./errors.ts";
-import type { Prisma, PrismaClient, PrPhase, PullRequest } from "./index.ts";
+import { Prisma, type PrismaClient, type PrPhase, type PullRequest } from "./index.ts";
 
 /** Filters accepted by PullRequestService.list. */
 export interface PullRequestListFilters {
@@ -323,13 +323,22 @@ export class PullRequestService implements PullRequestServiceLike {
         return null;
       }
 
-      // Step 2: Find oldest unclaimed eligible PR via raw SQL for COALESCE ordering
+      // Step 2: Find oldest unclaimed eligible PR via raw SQL for COALESCE ordering.
+      // When repos is provided, filter in SQL so out-of-scope PRs don't block
+      // in-scope work (application-layer filtering would return null on first
+      // out-of-scope hit without examining remaining rows).
+      const repoFilter =
+        repos && repos.length > 0
+          ? Prisma.sql`AND "repo" = ANY(${repos})`
+          : Prisma.sql``;
+
       const rows = await tx.$queryRaw<{ id: string }[]>`
         SELECT id
           FROM "PullRequest"
          WHERE "claimedBy" IS NULL
            AND "state" = 'open'
            AND "reviewState" IN ('pending', 'posted', 'approved')
+           ${repoFilter}
          ORDER BY COALESCE("readyForReviewAt", "readyForPatchAt", "readyForDeployAt") ASC NULLS LAST,
                   "createdAt" ASC
          LIMIT 1
@@ -344,11 +353,6 @@ export class PullRequestService implements PullRequestServiceLike {
       // Step 3: Fetch full record to determine phase
       const target = await tx.pullRequest.findUnique({ where: { id: targetId } });
       if (!target) return null; // concurrent claim took it
-
-      // Enforce repo scope: if repos filter provided, only claim from allowed repos
-      if (repos && repos.length > 0 && !repos.includes(target.repo)) {
-        return null;
-      }
 
       // Determine phase from reviewState
       let phase: PrPhase;
