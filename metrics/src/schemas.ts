@@ -245,33 +245,31 @@ export const TokensResultSchema = z
   })
   .openapi("TokensResult");
 
-// ─── Cost efficiency schemas ──────────────────────────────────────────────────
+// ─── Cost-efficiency schemas ──────────────────────────────────────────────────
 
-export const CostEfficiencyFleetRowSchema = z
+const CostEfficiencyModelRowSchema = z
   .object({
-    modelFamily: z.string().openapi({ example: "claude-sonnet" }),
-    routedUsd: z.number().openapi({ example: 10.5 }),
-    counterfactualOpusUsd: z.number().openapi({ example: 25.0 }),
-    savingsUsd: z.number().openapi({ example: 14.5 }),
-    savingsPct: z.number().nullable().openapi({ example: 58.0 }),
+    modelFamily: z.string().openapi({ example: "claude-sonnet-4-6" }),
+    routedUsd: z.number().openapi({ example: 0.5 }),
+    counterfactualOpusUsd: z.number().openapi({ example: 1.2 }),
+    savingsUsd: z.number().openapi({ example: 0.7 }),
   })
-  .openapi("CostEfficiencyFleetRow");
+  .openapi("CostEfficiencyModelRow");
 
-export const CostEfficiencyCronModelRowSchema = z
+const CostEfficiencyFleetSchema = z
   .object({
-    scope: z.string().openapi({ example: "cron:agent1:daily-review" }),
-    modelFamily: z.string().openapi({ example: "claude-sonnet" }),
-    routedUsd: z.number().openapi({ example: 5.25 }),
-    counterfactualOpusUsd: z.number().openapi({ example: 12.5 }),
-    savingsUsd: z.number().openapi({ example: 7.25 }),
-    savingsPct: z.number().nullable().openapi({ example: 58.0 }),
+    routedUsd: z.number().openapi({ example: 1.5 }),
+    counterfactualOpusUsd: z.number().openapi({ example: 2.3 }),
+    savingsUsd: z.number().openapi({ example: 0.8 }),
+    savingsPct: z.number().nullable().openapi({ example: 34.8 }),
+    byModel: z.array(CostEfficiencyModelRowSchema),
   })
-  .openapi("CostEfficiencyCronModelRow");
+  .openapi("CostEfficiencyFleet");
 
-export const CostEfficiencyAgentModelRowSchema = z
+const CostEfficiencyAgentModelRowSchema = z
   .object({
     agentId: z.string().openapi({ example: "agent-abc123" }),
-    modelFamily: z.string().openapi({ example: "claude-sonnet" }),
+    modelFamily: z.string().openapi({ example: "claude-sonnet-4-6" }),
     routedUsd: z.number().openapi({ example: 5.25 }),
     counterfactualOpusUsd: z.number().openapi({ example: 12.5 }),
     savingsUsd: z.number().openapi({ example: 7.25 }),
@@ -279,11 +277,27 @@ export const CostEfficiencyAgentModelRowSchema = z
   })
   .openapi("CostEfficiencyAgentModelRow");
 
+const CostEfficiencyCronRowSchema = z
+  .object({
+    cronKey: z.string().openapi({ example: "agent-a:morning-brief" }),
+    modelFamily: z.string().openapi({ example: "claude-sonnet-4-6" }),
+    routedUsd: z.number().openapi({ example: 0.3 }),
+    counterfactualOpusUsd: z.number().openapi({ example: 0.7 }),
+    savingsUsd: z.number().openapi({ example: 0.4 }),
+  })
+  .openapi("CostEfficiencyCronRow");
+
 export const CostEfficiencyResultSchema = z
   .object({
-    fleet: z.array(CostEfficiencyFleetRowSchema),
+    fleet: CostEfficiencyFleetSchema,
     byAgentModel: z.array(CostEfficiencyAgentModelRowSchema),
-    byCronModel: z.array(CostEfficiencyCronModelRowSchema),
+    byCronModel: z.array(CostEfficiencyCronRowSchema),
+    runsWithCostData: z.number().int().openapi({ example: 10 }),
+    runsTotal: z.number().int().openapi({ example: 12 }),
+    note: z.string().openapi({
+      example:
+        "counterfactualOpusUsd is a hypothetical: what these runs would have cost if all models were claude-opus-4-8.",
+    }),
   })
   .openapi("CostEfficiencyResult");
 
