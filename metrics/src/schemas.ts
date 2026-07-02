@@ -245,6 +245,36 @@ export const TokensResultSchema = z
   })
   .openapi("TokensResult");
 
+// ─── Cost efficiency schemas ──────────────────────────────────────────────────
+
+export const CostEfficiencyFleetRowSchema = z
+  .object({
+    modelFamily: z.string().openapi({ example: "claude-sonnet" }),
+    routedUsd: z.number().openapi({ example: 10.5 }),
+    counterfactualOpusUsd: z.number().openapi({ example: 25.0 }),
+    savingsUsd: z.number().openapi({ example: 14.5 }),
+    savingsPct: z.number().nullable().openapi({ example: 58.0 }),
+  })
+  .openapi("CostEfficiencyFleetRow");
+
+export const CostEfficiencyCronModelRowSchema = z
+  .object({
+    scope: z.string().openapi({ example: "cron:agent1:daily-review" }),
+    modelFamily: z.string().openapi({ example: "claude-sonnet" }),
+    routedUsd: z.number().openapi({ example: 5.25 }),
+    counterfactualOpusUsd: z.number().openapi({ example: 12.5 }),
+    savingsUsd: z.number().openapi({ example: 7.25 }),
+    savingsPct: z.number().nullable().openapi({ example: 58.0 }),
+  })
+  .openapi("CostEfficiencyCronModelRow");
+
+export const CostEfficiencyResultSchema = z
+  .object({
+    fleet: z.array(CostEfficiencyFleetRowSchema),
+    byCronModel: z.array(CostEfficiencyCronModelRowSchema),
+  })
+  .openapi("CostEfficiencyResult");
+
 // ─── Response envelope schema ─────────────────────────────────────────────────
 
 export const MetaSchema = z

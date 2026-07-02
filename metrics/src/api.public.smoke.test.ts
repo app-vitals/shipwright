@@ -128,6 +128,108 @@ describe("public dashboard — read-only render", () => {
   });
 });
 
+describe("public metrics surface — cost-efficiency endpoint", () => {
+  test("GET /public/metrics/cost-efficiency → 200 with no auth", async () => {
+    const app = buildApp();
+    const res = await app.request("/public/metrics/cost-efficiency");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toBeTruthy();
+    // Run/cron-centric shape: fleet array + byCronModel array
+    expect(Array.isArray(body.data.fleet)).toBe(true);
+    expect(Array.isArray(body.data.byCronModel)).toBe(true);
+  });
+
+  test("GET /public/metrics/cost-efficiency → response uses run/cron field names", async () => {
+    // Provide a provider that returns fleet + byCronModel rows
+    const provider: MetricsProvider = {
+      query: async () => ({
+        columns: ["scope", "model_family", "routed_usd", "opus_usd", "savings_usd"],
+        results: [
+          ["fleet", "claude-sonnet", 10.0, 20.0, 10.0],
+          ["cron:agent1:daily-review", "claude-sonnet", 5.0, 10.0, 5.0],
+        ],
+        types: [],
+        hasMore: false,
+        limit: 100,
+        offset: 0,
+      }),
+    };
+    const app = createPublicMetricsApp(provider);
+    const res = await app.request("/public/metrics/cost-efficiency");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+
+    // Fleet row has correct camelCase field names
+    expect(body.data.fleet).toHaveLength(1);
+    const fleetRow = body.data.fleet[0];
+    expect(fleetRow).toHaveProperty("modelFamily", "claude-sonnet");
+    expect(fleetRow).toHaveProperty("routedUsd", 10.0);
+    expect(fleetRow).toHaveProperty("counterfactualOpusUsd", 20.0);
+    expect(fleetRow).toHaveProperty("savingsUsd", 10.0);
+    expect(typeof fleetRow.savingsPct).toBe("number");
+
+    // byCronModel row
+    expect(body.data.byCronModel).toHaveLength(1);
+    const cronRow = body.data.byCronModel[0];
+    expect(cronRow).toHaveProperty("scope", "cron:agent1:daily-review");
+    expect(cronRow).toHaveProperty("modelFamily", "claude-sonnet");
+    expect(cronRow).toHaveProperty("routedUsd", 5.0);
+    expect(cronRow).toHaveProperty("counterfactualOpusUsd", 10.0);
+    expect(cronRow).toHaveProperty("savingsUsd", 5.0);
+  });
+
+  test("GET /public/metrics/cost-efficiency → NO task-centric fields in response", async () => {
+    const app = buildApp();
+    const res = await app.request("/public/metrics/cost-efficiency");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    const bodyStr = JSON.stringify(body);
+    // No task-centric field names
+    expect(bodyStr).not.toContain("tasksWithCostData");
+    expect(bodyStr).not.toContain("tasksShippedTotal");
+  });
+
+  test("GET /public/metrics/cost-efficiency → savingsPct computed correctly", async () => {
+    const provider: MetricsProvider = {
+      query: async () => ({
+        columns: ["scope", "model_family", "routed_usd", "opus_usd", "savings_usd"],
+        results: [
+          // savingsPct = (10 / 20) * 100 = 50
+          ["fleet", "claude-sonnet", 10.0, 20.0, 10.0],
+        ],
+        types: [],
+        hasMore: false,
+        limit: 100,
+        offset: 0,
+      }),
+    };
+    const app = createPublicMetricsApp(provider);
+    const res = await app.request("/public/metrics/cost-efficiency");
+    const body = await res.json();
+    expect(body.data.fleet[0].savingsPct).toBe(50);
+  });
+
+  test("GET /public/metrics/cost-efficiency → savingsPct is null when counterfactualOpusUsd is 0", async () => {
+    const provider: MetricsProvider = {
+      query: async () => ({
+        columns: ["scope", "model_family", "routed_usd", "opus_usd", "savings_usd"],
+        results: [
+          ["fleet", "claude-sonnet", 0.0, 0.0, 0.0],
+        ],
+        types: [],
+        hasMore: false,
+        limit: 100,
+        offset: 0,
+      }),
+    };
+    const app = createPublicMetricsApp(provider);
+    const res = await app.request("/public/metrics/cost-efficiency");
+    const body = await res.json();
+    expect(body.data.fleet[0].savingsPct).toBeNull();
+  });
+});
+
 describe("public dashboard — static assets", () => {
   for (const [path, type] of [
     ["/public/dashboard/styles.css", "text/css"],

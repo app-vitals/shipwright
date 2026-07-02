@@ -30,6 +30,7 @@ import type {
   TrendsGroupBy,
 } from "./metrics-provider.ts";
 import {
+  CostEfficiencyResultSchema,
   DateRangeQuerySchema,
   FeaturesResultSchema,
   QueueResultSchema,
@@ -194,6 +195,33 @@ const tokensRoute = createRoute({
     200: {
       description: "Token usage metrics",
       content: { "application/json": { schema: TokensResultSchema } },
+    },
+    400: {
+      description: "Invalid parameters",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Query error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
+const costEfficiencyRoute = createRoute({
+  method: "get",
+  path: "/metrics/cost-efficiency",
+  summary: "Run/cron cost efficiency metrics",
+  description:
+    "Returns fleet-wide and per-cron×model cost efficiency: routed cost vs all-Opus counterfactual savings. Uses run-level data from cronRunTokenStats.",
+  request: { query: DateRangeQuerySchema },
+  responses: {
+    200: {
+      description: "Cost efficiency metrics",
+      content: { "application/json": { schema: CostEfficiencyResultSchema } },
     },
     400: {
       description: "Invalid parameters",
@@ -650,6 +678,82 @@ function makeQueueHandler(
             avgCycleTimeDays,
             avgReviewFindings,
           },
+          {
+            dateRange: dateRangeMeta,
+            generatedAt: new Date().toISOString(),
+            queryTimeMs: Date.now() - startMs,
+          },
+        ),
+        200,
+      );
+    } catch (err) {
+      return handleQueryError(c, err);
+    }
+  };
+}
+
+function makeCostEfficiencyHandler(
+  provider: MetricsProvider,
+): AppHandler<typeof costEfficiencyRoute> {
+  return async (c) => {
+    const { preset, from, to } = c.req.valid("query");
+
+    if ((from && !to) || (!from && to)) {
+      return c.json({ error: "custom range requires both from and to" }, 400);
+    }
+    if (from && to) {
+      const rangeError = validateCustomRange(from, to);
+      if (rangeError) return c.json({ error: rangeError }, 400);
+    }
+
+    const dateRange = resolveDateRange(preset, from, to);
+    const dateRangeMeta = resolveDateRangeForMeta(preset, from, to);
+    const startMs = Date.now();
+
+    try {
+      const result = await provider.query({ kind: "costEfficiency", range: dateRange });
+      const rows = resultToRows(result);
+
+      const fleet = rows
+        .filter((row) => row.scope === "fleet")
+        .map((row) => {
+          const counterfactualOpusUsd = toNum(row.opus_usd);
+          const savingsUsd = toNum(row.savings_usd);
+          const savingsPct =
+            counterfactualOpusUsd > 0
+              ? Math.round((savingsUsd / counterfactualOpusUsd) * 100 * 100) / 100
+              : null;
+          return {
+            modelFamily: String(row.model_family ?? ""),
+            routedUsd: toNum(row.routed_usd),
+            counterfactualOpusUsd,
+            savingsUsd,
+            savingsPct,
+          };
+        });
+
+      const byCronModel = rows
+        .filter((row) => typeof row.scope === "string" && String(row.scope).startsWith("cron:"))
+        .map((row) => {
+          const counterfactualOpusUsd = toNum(row.opus_usd);
+          const savingsUsd = toNum(row.savings_usd);
+          const savingsPct =
+            counterfactualOpusUsd > 0
+              ? Math.round((savingsUsd / counterfactualOpusUsd) * 100 * 100) / 100
+              : null;
+          return {
+            scope: String(row.scope ?? ""),
+            modelFamily: String(row.model_family ?? ""),
+            routedUsd: toNum(row.routed_usd),
+            counterfactualOpusUsd,
+            savingsUsd,
+            savingsPct,
+          };
+        });
+
+      return c.json(
+        wrapResponse(
+          { fleet, byCronModel },
           {
             dateRange: dateRangeMeta,
             generatedAt: new Date().toISOString(),
@@ -1147,6 +1251,10 @@ const publicQueueRoute = createRoute({
   ...queueRoute,
   path: "/public/metrics/queue",
 });
+const publicCostEfficiencyRoute = createRoute({
+  ...costEfficiencyRoute,
+  path: "/public/metrics/cost-efficiency",
+});
 
 const PUBLIC_POLICY = { kind: "public" as const };
 
@@ -1229,6 +1337,14 @@ export function createPublicMetricsApp(
     PUBLIC_POLICY,
     makeQueueHandler(provider) as unknown as AppHandler<
       typeof publicQueueRoute
+    >,
+  );
+  registerWithAuthz(
+    app,
+    publicCostEfficiencyRoute,
+    PUBLIC_POLICY,
+    makeCostEfficiencyHandler(provider) as unknown as AppHandler<
+      typeof publicCostEfficiencyRoute
     >,
   );
 
