@@ -14,6 +14,7 @@
  * threads continue processing.
  */
 
+import type { ClaudeRunResult } from "./claude.ts";
 import type { ChatServiceClient } from "./http-chat-service-client.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -21,17 +22,7 @@ import type { ChatServiceClient } from "./http-chat-service-client.ts";
 export type ChatRunner = (
   message: string,
   sessionKey?: string,
-) => Promise<{
-  result: string;
-  sessionId?: string;
-  usage?: {
-    input_tokens: number;
-    output_tokens: number;
-    cache_read_input_tokens: number;
-    cache_creation_input_tokens: number;
-  };
-  totalCostUsd?: number;
-}>
+) => Promise<ClaudeRunResult>;
 
 export interface SessionStore {
   get: (key: string) => string | undefined;
