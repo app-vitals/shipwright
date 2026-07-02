@@ -17,6 +17,11 @@
  * valid table (AC#1).
  */
 
+import {
+  OPUS_MODEL,
+  calculateCost,
+  normalizeModelToRateKey,
+} from "@shipwright/lib/pricing";
 import { resolveQueryRange } from "../formatters.ts";
 import {
   AdminMetricsClientError,
@@ -62,6 +67,7 @@ const ZERO_CRON_STATS: CronRunTokenStats = {
   byCron: [],
   byModel: [],
   daily: [],
+  byCronModel: [],
 };
 
 const ZERO_CHAT_STATS: ChatTokenStats = {
@@ -779,30 +785,91 @@ export class TaskStoreProvider implements MetricsProvider {
   // ─ Cost efficiency ─
 
   /**
-   * costEfficiency() is currently stubbed to return an empty table.
+   * costEfficiency() — reads run-level cost data from admin cronRunTokenStats.
    *
-   * PCE-1.5 will re-implement this using run-level cost data. The legacy
-   * implementation read dead fields (inputTokens, outputTokens, cacheReadTokens,
-   * cacheCreationTokens, costUsd) that were never populated in prod (the JSONL
-   * scraper was deleted in PR #834). No live endpoints currently call this
-   * method, so it's safe to stub pending the cost model rewrite.
+   * Computes routedUsd (actual cost from admin aggregate) and opusUsd (all-Opus
+   * counterfactual via calculateCost) for each model family fleet-wide and per
+   * cron×model (byCronModel). No Task or TaskRecord dependency.
    *
-   * Columns (kept stable): tasks_shipped, tasks_with_cost_data, model_family,
-   *                        task_count, routed_usd, opus_usd
-   * Results: empty array
+   * Columns: scope, model_family, routed_usd, opus_usd, savings_usd
+   *   - scope="fleet"       → fleet-wide totals from byModel (summed across agents)
+   *   - scope="cron:<key1>" → per-cron×model from byCronModel
    */
   private async costEfficiency(win: {
     from: string;
     to: string;
   }): Promise<MetricTable> {
     const columns = [
-      "tasks_shipped",
-      "tasks_with_cost_data",
+      "scope",
       "model_family",
-      "task_count",
       "routed_usd",
       "opus_usd",
+      "savings_usd",
     ];
-    return table(columns, []);
+
+    const cronStats = await this.safeCronStats(win);
+
+    const rows: unknown[][] = [];
+
+    // ── Fleet-wide rows (byModel aggregated across all agents) ────────────────
+    // Collapse multiple agents' byModel rows into a single per-model-family total.
+    const fleetByModel = new Map<
+      string,
+      { input: number; output: number; cacheRead: number; cacheCreation: number; costUsd: number }
+    >();
+
+    for (const entry of cronStats.byModel) {
+      const modelFamily = normalizeModelToRateKey(entry.key2) ?? entry.key2;
+      const existing = fleetByModel.get(modelFamily);
+      if (existing) {
+        existing.input += entry.input;
+        existing.output += entry.output;
+        existing.cacheRead += entry.cacheRead;
+        existing.cacheCreation += entry.cacheCreation;
+        existing.costUsd += entry.costUsd ?? 0;
+      } else {
+        fleetByModel.set(modelFamily, {
+          input: entry.input,
+          output: entry.output,
+          cacheRead: entry.cacheRead,
+          cacheCreation: entry.cacheCreation,
+          costUsd: entry.costUsd ?? 0,
+        });
+      }
+    }
+
+    for (const [modelFamily, agg] of fleetByModel) {
+      const routedUsd = agg.costUsd;
+      const opusUsd = calculateCost(
+        {
+          input_tokens: agg.input,
+          output_tokens: agg.output,
+          cache_read_input_tokens: agg.cacheRead,
+          cache_creation_input_tokens: agg.cacheCreation,
+        },
+        OPUS_MODEL,
+      );
+      const savingsUsd = opusUsd - routedUsd;
+      rows.push(["fleet", modelFamily, routedUsd, opusUsd, savingsUsd]);
+    }
+
+    // ── Per-cron×model rows (byCronModel) ────────────────────────────────────
+    for (const entry of cronStats.byCronModel) {
+      const modelFamily = normalizeModelToRateKey(entry.key2) ?? entry.key2;
+      const routedUsd = entry.costUsd ?? 0;
+      const opusUsd = calculateCost(
+        {
+          input_tokens: entry.input,
+          output_tokens: entry.output,
+          cache_read_input_tokens: entry.cacheRead,
+          cache_creation_input_tokens: entry.cacheCreation,
+        },
+        OPUS_MODEL,
+      );
+      const savingsUsd = opusUsd - routedUsd;
+      rows.push([`cron:${entry.key1}`, modelFamily, routedUsd, opusUsd, savingsUsd]);
+    }
+
+    return table(columns, rows);
   }
 }

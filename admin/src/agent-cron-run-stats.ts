@@ -44,6 +44,7 @@ export interface CronRunTokenStats {
   byCron: DoubleKeyedTokenAggregate[];
   byModel: DoubleKeyedTokenAggregate[];
   daily: DailyTokenAggregate[];
+  byCronModel: DoubleKeyedTokenAggregate[]; // key1=agentId:cronName, key2=model
 }
 
 // ─── Raw row types from $queryRaw ────────────────────────────────────────────
@@ -88,6 +89,18 @@ interface ByModelRow {
 
 interface DailyRow {
   period: string;
+  input: bigint | null;
+  output: bigint | null;
+  cache_read: bigint | null;
+  cache_creation: bigint | null;
+  cost_usd: number | null;
+}
+
+interface ByCronModelRow {
+  agent_id: string;
+  cron_id: string;
+  cron_name: string | null;
+  model: string;
   input: bigint | null;
   output: bigint | null;
   cache_read: bigint | null;
@@ -175,13 +188,14 @@ export class AgentCronRunStatsService {
     // so "startedAt" is unambiguous if the joined table ever gains that column.
     const filterR = dateFilter(fromDate, toDate, "r");
 
-    const [totalsRows, byAgentRows, byCronRows, byModelRows, dailyRows] =
+    const [totalsRows, byAgentRows, byCronRows, byModelRows, dailyRows, byCronModelRows] =
       await Promise.all([
         this.queryTotals(filter),
         this.queryByAgent(filterR),
         this.queryByCron(filterR),
         this.queryByModel(filterR),
         this.queryDaily(filter),
+        this.queryByCronModel(filterR),
       ]);
 
     const totalsRow = totalsRows[0];
@@ -211,7 +225,13 @@ export class AgentCronRunStatsService {
       period: row.period,
     }));
 
-    return { totals, byAgent, byCron, byModel, daily };
+    const byCronModel: DoubleKeyedTokenAggregate[] = byCronModelRows.map((row) => ({
+      ...toAggregate(row),
+      key1: `${row.agent_id}:${row.cron_name ?? row.cron_id}`,
+      key2: row.model,
+    }));
+
+    return { totals, byAgent, byCron, byModel, daily, byCronModel };
   }
 
   // ─── Private query methods ──────────────────────────────────────────────────
@@ -322,6 +342,28 @@ export class AgentCronRunStatsService {
       ${filter}
       GROUP BY DATE("AgentCronRun"."startedAt")
       ORDER BY DATE("AgentCronRun"."startedAt")
+    `;
+  }
+
+  private queryByCronModel(filter: Prisma.Sql): Promise<ByCronModelRow[]> {
+    return this.prisma.$queryRaw<ByCronModelRow[]>`
+      SELECT
+        r."agentId"                    AS agent_id,
+        r."cronId"                     AS cron_id,
+        j.name                         AS cron_name,
+        b.model                        AS model,
+        SUM(b."inputTokens")           AS input,
+        SUM(b."outputTokens")          AS output,
+        SUM(b."cacheReadTokens")       AS cache_read,
+        SUM(b."cacheCreationTokens")   AS cache_creation,
+        SUM(b."costUsd")               AS cost_usd
+      FROM "AgentCronRun" r
+      LEFT JOIN "AgentCronJob" j ON j.id = r."cronId"
+      INNER JOIN "AgentCronRunModelBreakdown" b ON b."cronRunId" = r.id
+      WHERE r.skipped = false
+      ${filter}
+      GROUP BY r."agentId", r."cronId", j.name, b.model
+      ORDER BY r."agentId", r."cronId", b.model
     `;
   }
 }
