@@ -183,13 +183,15 @@ describe("createChatPoller poll: claim then reply", () => {
 
     // Reply posted with runner output
     expect(replyToMessage).toHaveBeenCalledTimes(1);
-    const [calledThreadId, calledMessageId, calledOpts] =
-      replyToMessage.mock.calls[0];
-    expect(calledThreadId).toBe(threadId);
-    expect(calledMessageId).toBe(messageId);
-    expect(calledOpts.body).toBe(runnerResult.result);
-    expect(calledOpts.tokens).toEqual(runnerResult.usage);
-    expect(calledOpts.costUsd).toBe(runnerResult.totalCostUsd);
+    expect(replyToMessage).toHaveBeenCalledWith(
+      threadId,
+      messageId,
+      expect.objectContaining({
+        body: runnerResult.result,
+        tokens: runnerResult.usage,
+        costUsd: runnerResult.totalCostUsd,
+      }),
+    );
   });
 
   it("stores sessionId in sessions after successful run", async () => {
