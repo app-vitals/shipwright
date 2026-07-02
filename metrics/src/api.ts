@@ -30,6 +30,7 @@ import type {
   TrendsGroupBy,
 } from "./metrics-provider.ts";
 import {
+  CostEfficiencyResultSchema,
   DateRangeQuerySchema,
   FeaturesResultSchema,
   QueueResultSchema,
@@ -210,6 +211,33 @@ const tokensRoute = createRoute({
   },
 });
 
+const costEfficiencyRoute = createRoute({
+  method: "get",
+  path: "/metrics/cost-efficiency",
+  summary: "Cost efficiency metrics",
+  description:
+    "Returns fleet-wide and per-cron×model cost efficiency: routed cost vs all-Opus counterfactual. Run/cron-centric — no task dependency.",
+  request: { query: DateRangeQuerySchema },
+  responses: {
+    200: {
+      description: "Cost efficiency metrics",
+      content: { "application/json": { schema: CostEfficiencyResultSchema } },
+    },
+    400: {
+      description: "Invalid parameters",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Query error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function resolveDateRange(
@@ -272,6 +300,106 @@ function handleQueryError(
 // authenticated app (createMetricsApp) and the public app
 // (createPublicMetricsApp) register the same handler logic against their own
 // route definitions — no duplicated aggregation code.
+
+function makeCostEfficiencyHandler(
+  provider: MetricsProvider,
+): AppHandler<typeof costEfficiencyRoute> {
+  return async (c) => {
+    const { preset, from, to } = c.req.valid("query");
+
+    if ((from && !to) || (!from && to)) {
+      return c.json({ error: "custom range requires both from and to" }, 400);
+    }
+    if (from && to) {
+      const rangeError = validateCustomRange(from, to);
+      if (rangeError) return c.json({ error: rangeError }, 400);
+    }
+
+    const dateRange = resolveDateRange(preset, from, to);
+    const dateRangeMeta = resolveDateRangeForMeta(preset, from, to);
+    const startMs = Date.now();
+
+    try {
+      const result = await provider.query({ kind: "costEfficiency", range: dateRange });
+
+      const scopeIdx = result.columns.indexOf("scope");
+      const modelIdx = result.columns.indexOf("model_family");
+      const routedIdx = result.columns.indexOf("routed_usd");
+      const opusIdx = result.columns.indexOf("opus_usd");
+      const savingsIdx = result.columns.indexOf("savings_usd");
+
+      const fleetByModel: Array<{
+        modelFamily: string;
+        routedUsd: number;
+        counterfactualOpusUsd: number;
+        savingsUsd: number;
+      }> = [];
+
+      const byCronModel: Array<{
+        cronKey: string;
+        modelFamily: string;
+        routedUsd: number;
+        counterfactualOpusUsd: number;
+        savingsUsd: number;
+      }> = [];
+
+      let fleetRoutedUsd = 0;
+      let fleetOpusUsd = 0;
+
+      for (const row of result.results) {
+        const scope = row[scopeIdx] as string;
+        const modelFamily = row[modelIdx] as string;
+        const routedUsd = toNum(row[routedIdx]);
+        const opusUsd = toNum(row[opusIdx]);
+        const savingsUsd = toNum(row[savingsIdx]);
+
+        if (scope === "fleet") {
+          fleetByModel.push({ modelFamily, routedUsd, counterfactualOpusUsd: opusUsd, savingsUsd });
+          fleetRoutedUsd += routedUsd;
+          fleetOpusUsd += opusUsd;
+        } else if (scope.startsWith("cron:")) {
+          const cronKey = scope.slice("cron:".length);
+          byCronModel.push({ cronKey, modelFamily, routedUsd, counterfactualOpusUsd: opusUsd, savingsUsd });
+        }
+      }
+
+      const fleetSavingsUsd = fleetOpusUsd - fleetRoutedUsd;
+      const fleetSavingsPct =
+        fleetOpusUsd > 0
+          ? Math.round((fleetSavingsUsd / fleetOpusUsd) * 10000) / 100
+          : null;
+
+      const runsTotal = byCronModel.length;
+      const runsWithCostData = byCronModel.filter((r) => r.routedUsd > 0).length;
+
+      return c.json(
+        wrapResponse(
+          {
+            fleet: {
+              routedUsd: fleetRoutedUsd,
+              counterfactualOpusUsd: fleetOpusUsd,
+              savingsUsd: fleetSavingsUsd,
+              savingsPct: fleetSavingsPct,
+              byModel: fleetByModel,
+            },
+            byCronModel,
+            runsWithCostData,
+            runsTotal,
+            note: "counterfactualOpusUsd is a hypothetical: what these runs would have cost if all models were claude-opus-4-8.",
+          },
+          {
+            dateRange: dateRangeMeta,
+            generatedAt: new Date().toISOString(),
+            queryTimeMs: Date.now() - startMs,
+          },
+        ),
+        200,
+      );
+    } catch (err) {
+      return handleQueryError(c, err);
+    }
+  };
+}
 
 function makeSummaryHandler(
   provider: MetricsProvider,
@@ -1147,6 +1275,10 @@ const publicQueueRoute = createRoute({
   ...queueRoute,
   path: "/public/metrics/queue",
 });
+const publicCostEfficiencyRoute = createRoute({
+  ...costEfficiencyRoute,
+  path: "/public/metrics/cost-efficiency",
+});
 
 const PUBLIC_POLICY = { kind: "public" as const };
 
@@ -1230,6 +1362,13 @@ export function createPublicMetricsApp(
     makeQueueHandler(provider) as unknown as AppHandler<
       typeof publicQueueRoute
     >,
+  );
+
+  registerWithAuthz(
+    app,
+    publicCostEfficiencyRoute,
+    PUBLIC_POLICY,
+    makeCostEfficiencyHandler(provider) as unknown as AppHandler<typeof publicCostEfficiencyRoute>,
   );
 
   // Token usage is owner-only telemetry — not exposed publicly.

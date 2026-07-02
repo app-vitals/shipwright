@@ -128,6 +128,41 @@ describe("public dashboard — read-only render", () => {
   });
 });
 
+describe("public metrics surface — cost-efficiency", () => {
+  test("GET /public/metrics/cost-efficiency → 200 with no auth header", async () => {
+    const app = buildApp();
+    const res = await app.request("/public/metrics/cost-efficiency");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toBeTruthy();
+  });
+
+  test("GET /public/metrics/cost-efficiency → run/cron shape, no task fields", async () => {
+    const app = buildApp();
+    const res = await app.request("/public/metrics/cost-efficiency");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data).toHaveProperty("fleet");
+    expect(body.data).toHaveProperty("byCronModel");
+    expect(body.data).toHaveProperty("runsWithCostData");
+    expect(body.data).toHaveProperty("runsTotal");
+    // Must not use task-centric terminology
+    expect(body.data).not.toHaveProperty("tasksWithCostData");
+    expect(body.data).not.toHaveProperty("tasksShippedTotal");
+  });
+
+  test("GET /public/metrics/cost-efficiency → counterfactual clearly labeled", async () => {
+    const app = buildApp();
+    const res = await app.request("/public/metrics/cost-efficiency");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // The counterfactual must be clearly labeled as hypothetical
+    expect(body.data.fleet).toHaveProperty("counterfactualOpusUsd");
+    expect(body.data).toHaveProperty("note");
+    expect(typeof body.data.note).toBe("string");
+  });
+});
+
 describe("public dashboard — static assets", () => {
   for (const [path, type] of [
     ["/public/dashboard/styles.css", "text/css"],
