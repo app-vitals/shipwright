@@ -1,26 +1,50 @@
 name: Build and Push Task-Store Image
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "task-store/**"
-      - "lib/**"
-      - "package.json"
-      - "bun.lock"
-      - ".github/workflows/build-task-store.yml"
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
 
 permissions:
   contents: write
   id-token: write
 
 jobs:
+  filter:
+    name: filter changed paths
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.filter.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: Filter paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          base: ${{ github.event.workflow_run.head_sha }}~1
+          ref: ${{ github.event.workflow_run.head_sha }}
+          filters: |
+            changed:
+              - "task-store/**"
+              - "lib/**"
+              - "package.json"
+              - "bun.lock"
+              - ".github/workflows/build-task-store.yml"
+
   build-and-push:
     name: build / tag / push
+    needs: filter
+    if: needs.filter.outputs.changed == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
 
       - name: Bump version and push tag
