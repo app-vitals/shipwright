@@ -1809,7 +1809,6 @@ export function renderTaskDetailPage(
     <div style="margin-top:4px;margin-bottom:16px;font-family:monospace;font-size:11px;color:#9ca3af">${escapeHtml(task.id)}</div>
 
     ${blockersSection}
-    ${prSection}
     ${descriptionSection}
     ${acSection}
 
@@ -1830,6 +1829,7 @@ export function renderTaskDetailPage(
     </div>`
         : ""
     }
+    ${prSection}
   </div>
 </body>
 </html>`;
