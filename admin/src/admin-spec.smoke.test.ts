@@ -269,6 +269,7 @@ function buildSpecApp() {
         byCron: [],
         byModel: [],
         daily: [],
+        byCronModel: [],
       }),
     },
     prisma: {

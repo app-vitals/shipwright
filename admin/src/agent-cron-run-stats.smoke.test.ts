@@ -134,6 +134,7 @@ const MOCK_STATS = {
       costUsd: 0.003,
     },
   ],
+  byCronModel: [],
 };
 
 function makeMockStatsService(): Pick<AgentCronRunStatsService, "query"> {

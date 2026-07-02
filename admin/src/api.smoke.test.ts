@@ -602,6 +602,7 @@ function buildCombinedApp() {
         byCron: [],
         byModel: [],
         daily: [],
+        byCronModel: [],
       }),
     },
     prisma: {
