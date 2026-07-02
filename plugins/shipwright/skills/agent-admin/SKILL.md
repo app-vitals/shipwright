@@ -366,7 +366,8 @@ The metrics service exposes task-store-backed pipeline data. Endpoints require B
 | `GET /metrics/tokens` | Token usage by agent and session type |
 
 For structured analysis, use `/shipwright:metrics` instead — it reads local JSONL files
-from `planning/*/metrics.jsonl`, computes trends, and produces a formatted report.
+from `planning/*/metrics.jsonl`, computes fix cascade rates, FTQ rate, CI gate, and other
+quality metrics, and produces a formatted report with actionable recommendations.
 
 ---
 
