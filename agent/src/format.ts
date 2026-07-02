@@ -162,8 +162,32 @@ type RichTextBlock = {
   elements: RichTextBlockElement[];
 };
 
+function isTextElement(
+  el: RichTextElement,
+): el is Extract<RichTextElement, { type: "text" }> {
+  return el.type === "text";
+}
+
+function isLinkElement(
+  el: RichTextElement,
+): el is Extract<RichTextElement, { type: "link" }> {
+  return el.type === "link";
+}
+
+function isEmojiElement(
+  el: RichTextElement,
+): el is Extract<RichTextElement, { type: "emoji" }> {
+  return el.type === "emoji";
+}
+
+function isUserElement(
+  el: RichTextElement,
+): el is Extract<RichTextElement, { type: "user" }> {
+  return el.type === "user";
+}
+
 function convertInlineElement(el: RichTextElement): string {
-  if (el.type === "text") {
+  if (isTextElement(el)) {
     const style = el.style ?? {};
     let text = el.text;
     if (style.code) text = `\`${text}\``;
@@ -172,13 +196,13 @@ function convertInlineElement(el: RichTextElement): string {
     if (style.strike) text = `~~${text}~~`;
     return text;
   }
-  if (el.type === "link") {
+  if (isLinkElement(el)) {
     return el.text ? `[${el.text}](${el.url})` : el.url;
   }
-  if (el.type === "emoji") {
+  if (isEmojiElement(el)) {
     return `:${el.name}:`;
   }
-  if (el.type === "user") {
+  if (isUserElement(el)) {
     return `<@${el.user_id}>`;
   }
   return "";
