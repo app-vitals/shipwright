@@ -2708,8 +2708,6 @@ describe("renderCronRunsPage", () => {
       error: null,
       inputTokens: 1200,
       outputTokens: 340,
-      costUsd: 0.0123,
-      model: "claude-opus-4-8",
       ...overrides,
     };
   }
@@ -2730,15 +2728,13 @@ describe("renderCronRunsPage", () => {
     expect(html).toContain("Started");
     expect(html).toContain("Duration");
     expect(html).toContain("Tokens");
-    expect(html).toContain("Cost");
-    expect(html).toContain("Model");
+    expect(html).not.toContain("<th>Cost</th>");
+    expect(html).not.toContain("<th>Model</th>");
   });
 
-  test("renders populated runs with outcome, model, and cost", () => {
+  test("renders populated runs with outcome and tokens", () => {
     const html = render([makeRun()]);
     expect(html).toContain("posted");
-    expect(html).toContain("claude-opus-4-8");
-    expect(html).toContain("$0.0123");
     // tokens rendered
     expect(html).toContain("1200");
     expect(html).toContain("340");
@@ -2760,23 +2756,15 @@ describe("renderCronRunsPage", () => {
     expect(html).toContain("No runs recorded yet.");
   });
 
-  test("renders em-dash for null cost, model, and tokens", () => {
+  test("renders em-dash for null tokens and no duration", () => {
     const html = render([
       makeRun({
-        costUsd: null,
-        model: null,
         inputTokens: null,
         outputTokens: null,
         completedAt: null,
       }),
     ]);
     expect(html).toContain("—");
-  });
-
-  test("escapes XSS in the model field", () => {
-    const html = render([makeRun({ model: "<script>alert(1)</script>" })]);
-    expect(html).not.toContain("<script>alert(1)</script>");
-    expect(html).toContain("&lt;script&gt;");
   });
 
   test("escapes XSS in the outcome field", () => {

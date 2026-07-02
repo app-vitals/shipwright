@@ -220,8 +220,6 @@ describeOrSkip("AgentCronRunService (integration)", () => {
       outputTokens: 567,
       cacheReadTokens: 89,
       cacheCreationTokens: 10,
-      costUsd: 0.0042,
-      model: "claude-sonnet-4-5",
     });
 
     expect(updated.id).toBe(run.id);
@@ -231,8 +229,6 @@ describeOrSkip("AgentCronRunService (integration)", () => {
     expect(updated.outputTokens).toBe(567);
     expect(updated.cacheReadTokens).toBe(89);
     expect(updated.cacheCreationTokens).toBe(10);
-    expect(updated.costUsd).toBeCloseTo(0.0042);
-    expect(updated.model).toBe("claude-sonnet-4-5");
   });
 
   it("patch() updates error and skipped fields", async () => {
