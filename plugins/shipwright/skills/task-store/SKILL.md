@@ -159,8 +159,7 @@ Convention: `branch` = `feat/{id-lowercase}` (e.g. `feat/tss-x-1-my-task`).
 When `?ready=true` is set, `?status` and `?id` filters are ignored. Only
 `?session` applies as a post-filter.
 
-- Agent tokens: results are automatically scoped to the calling agent's tasks.
-- Admin tokens: results include all agents' tasks.
+- Unlike the general repo-pool visibility described above, `?ready=true` is already scoped: it returns your own tasks plus *unassigned* pool tasks in your repo scope — never another agent's already-assigned pending task. No `?assignee=` needed here.
 - `?session` — filter by planning session slug. Omit to return ready tasks across all sessions.
 
 A task is ready when **all** of the following are true:
@@ -224,7 +223,7 @@ Branch statuses: `blocked`, `cancelled`, `deploying`, `deployed`
 | `POST` | `/prs/:id/patch` | Record a patch cycle on this PR |
 | `POST` | `/prs/:id/release` | Release claim → `pending` |
 
-> **Scoping:** All endpoints automatically scope to the calling agent's tasks via the bearer token. Admin tokens see all agents' tasks.
+> **Scoping:** Tasks are scoped by repo access — all agents with access to a repo can see its tasks. Always filter with `?assignee=$SHIPWRIGHT_AGENT_ID` when you only want your own tasks.
 
 ---
 

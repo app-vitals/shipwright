@@ -36,6 +36,7 @@ import type {
   PvcSpec,
   SecretSpec,
 } from "./kubernetes-client.ts";
+import type { ChatServiceProvisioningClient } from "./chat-service-provisioning-client.ts";
 import type { TaskStoreProvisioningClient } from "./task-store-provisioning-client.ts";
 
 // ─── Interface ──────────────────────────────────────────────────────────────
@@ -141,6 +142,22 @@ export interface KubernetesAgentProvisionerConfig {
    * Deployment as SHIPWRIGHT_TASK_STORE_URL. Required when taskStore is set.
    */
   taskStoreUrl?: string;
+  /**
+   * When set, the provisioner will mint a per-agent chat-service token on
+   * provision() and store it in the agent Secret under "chat-service-token".
+   * The Deployment manifest will include SHIPWRIGHT_CHAT_SERVICE_TOKEN (from the
+   * Secret) and SHIPWRIGHT_CHAT_SERVICE_URL (from chatServiceUrl). On rollback,
+   * the minted token is revoked via revokeToken().
+   *
+   * Omit to skip chat-service wiring (for agents that don't need it or when
+   * SHIPWRIGHT_CHAT_SERVICE_URL / SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN are not set).
+   */
+  chatService?: ChatServiceProvisioningClient;
+  /**
+   * In-cluster base URL of the chat service. Injected into the agent
+   * Deployment as SHIPWRIGHT_CHAT_SERVICE_URL. Required when chatService is set.
+   */
+  chatServiceUrl?: string;
 }
 
 function isConflict(err: unknown): boolean {
@@ -216,9 +233,11 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
       if (!isNotFound(err)) throw err;
     }
 
-    // Track the task-store token minted in THIS call so we can revoke it on
-    // rollback. Only set when config.taskStore is provided and we actually minted.
+    // Track the task-store and chat-service tokens minted in THIS call so we
+    // can revoke them on rollback. Only set when the respective config is provided
+    // and we actually minted.
     let tsTokenId: string | undefined;
+    let csTokenId: string | undefined;
 
     if (!secretAlreadyExists) {
       // Optionally mint a task-store token to co-locate in the same Secret write.
@@ -232,6 +251,17 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
         tsRawToken = rawToken;
       }
 
+      // Optionally mint a chat-service token to co-locate in the same Secret write.
+      let csRawToken: string | undefined;
+      if (this.config.chatService) {
+        const { id, rawToken } = await this.config.chatService.mintToken(
+          `agent:${agentId}`,
+          agentId,
+        );
+        csTokenId = id;
+        csRawToken = rawToken;
+      }
+
       const { rawToken } = await this.tokens.create(agentId, "k8s-provision");
       result.rawToken = rawToken;
 
@@ -241,7 +271,7 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
       try {
         await this.k8s.createSecret(
           this.config.namespace,
-          this.secretSpec(secretName, rawToken, tsRawToken),
+          this.secretSpec(secretName, rawToken, tsRawToken, csRawToken),
         );
         secretCreated = true;
       } catch (err) {
@@ -252,7 +282,7 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
     // 4. Deployment. If creation fails AFTER we created the Secret in THIS call,
     //    roll the Secret back (best-effort) so a retry starts clean and never
     //    leaks a half-provisioned state. The PVC is NOT rolled back (data safety).
-    //    Also revoke any task-store token minted in THIS call on the same path.
+    //    Also revoke any task-store and chat-service tokens minted in THIS call.
     try {
       await this.k8s.createDeploymentManifest(
         this.config.namespace,
@@ -268,23 +298,26 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
           replicas: this.config.replicas,
           voice: this.config.voice,
           taskStoreUrl: this.config.taskStoreUrl,
+          chatServiceUrl: this.config.chatServiceUrl,
         }),
       );
     } catch (err) {
       if (isConflict(err)) {
         // Deployment already exists — idempotent success. But if we minted and
         // created a NEW Secret in THIS call, the pre-existing Deployment isn't
-        // using it; roll the orphaned Secret (and its fresh token) back so we
+        // using it; roll the orphaned Secret (and its fresh tokens) back so we
         // never leak it. Only ever delete a Secret THIS call created.
         if (secretCreated) {
           await this.deleteSecretBestEffort(secretName);
           await this.revokeTaskStoreTokenBestEffort(tsTokenId);
+          await this.revokeChatServiceTokenBestEffort(csTokenId);
         }
         return result;
       }
       if (secretCreated) {
         await this.deleteSecretBestEffort(secretName);
         await this.revokeTaskStoreTokenBestEffort(tsTokenId);
+        await this.revokeChatServiceTokenBestEffort(csTokenId);
       }
       throw err;
     }
@@ -413,6 +446,7 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
     secretName: string,
     rawToken: string,
     taskStoreToken?: string,
+    chatServiceToken?: string,
   ): SecretSpec {
     // The pure builder is the single source of truth for the Secret body (name,
     // token key, base64 encoding). Derive the KubernetesClient SecretSpec from
@@ -433,6 +467,11 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
     if (taskStoreToken !== undefined) {
       stringData["task-store-token"] = taskStoreToken;
     }
+    // When a chat-service token was minted for this agent, include it alongside
+    // the other per-agent credentials in the same Secret.
+    if (chatServiceToken !== undefined) {
+      stringData["chat-service-token"] = chatServiceToken;
+    }
     return { name: manifest.metadata.name, stringData };
   }
 
@@ -446,6 +485,20 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
       // Best-effort — log but don't propagate so the original error surfaces.
       console.warn(
         `[provisioner] failed to revoke task-store token ${tsTokenId} during rollback`,
+      );
+    }
+  }
+
+  private async revokeChatServiceTokenBestEffort(
+    csTokenId: string | undefined,
+  ): Promise<void> {
+    if (!csTokenId || !this.config.chatService) return;
+    try {
+      await this.config.chatService.revokeToken(csTokenId);
+    } catch {
+      // Best-effort — log but don't propagate so the original error surfaces.
+      console.warn(
+        `[provisioner] failed to revoke chat-service token ${csTokenId} during rollback`,
       );
     }
   }

@@ -1,15 +1,15 @@
 # Deploying to Kubernetes
 
-> How to deploy the four Shipwright services (admin, metrics, agent, task-store) to
+> How to deploy the five Shipwright services (admin, metrics, agent, task-store, chat) to
 > Kubernetes with the `shipwright` Helm chart — local on Minikube, and in
 > production on GKE (Gateway API + cert-manager) or EKS (ALB + cert-manager).
 
 The chart lives at [`charts/shipwright`](../charts/shipwright) and is also
 published to a Helm repo on every chart version bump (see
 [`helm-repo.md`](./helm-repo.md)). It packages the admin (port **3001**), metrics
-(port **3460**), agent (port **3000**), and optional task-store (port **3000**)
-services plus an optional bundled PostgreSQL dependency, with Minikube-friendly
-defaults throughout. Task-store is disabled by default.
+(port **3460**), agent (port **3000**), task-store (port **3000**), and optional chat
+(port **3000**) services plus an optional bundled PostgreSQL dependency,
+with Minikube-friendly defaults throughout. Task-store and chat are disabled by default.
 
 This guide covers three deployment targets end-to-end, then the cross-cutting
 concerns shared by all of them:
@@ -74,6 +74,45 @@ configurable via `taskStore.expose.pathPrefix`.
 > `nginx.ingress.kubernetes.io/rewrite-target` annotation. On EKS/ALB, configure
 > path rewriting via ALB actions (`alb.ingress.kubernetes.io/actions.*`) or
 > expose the task-store on a dedicated host instead.
+
+### Chat service (opt-in)
+
+The optional chat service (`@shipwright/chat`) manages web chat threads, messages, and
+scoped agent tokens. By default it is **disabled** (`chat.enabled=false`) — purely
+additive and safe to deploy without. To enable it:
+
+```bash
+--set chat.enabled=true
+```
+
+The chat service requires:
+
+- **A dedicated Postgres database** via `DATABASE_URL_SHIPWRIGHT_CHAT` (read from
+  a Kubernetes Secret, not bundled in the chart). The chart's `chat-deployment.yaml`
+  injects it via `secretKeyRef` pointing at the Secret named by
+  `chat.database.existingSecret` (default: `shipwright-secrets`). **Must be
+  separate** from the admin and task-store databases — the schema forbids sharing
+  a database connection.
+- **Optional agent scope resolution:** when agents create chat tokens, the chat
+  service can query which repos a token may access. Pass these via `chat.extraEnv`
+  so they land in the chat container (not admin):
+
+```bash
+--set chat.enabled=true \
+  --set-string 'chat.extraEnv[0].name=SHIPWRIGHT_CHAT_AGENTS_URL' \
+  --set-string 'chat.extraEnv[0].value=http://admin:3001' \
+  --set-string 'chat.extraEnv[1].name=SHIPWRIGHT_CHAT_AGENTS_API_KEY' \
+  --set-string 'chat.extraEnv[1].value=<api-key>'
+```
+
+The chat service runs as a standalone `Deployment` (one pod by default) listening
+on port **3000**. By default the Service is `ClusterIP`-only and has no external
+route — reachable only from within the cluster (e.g. by agents over the internal
+network). No ingress path or external exposure is provided — chat is typically
+accessed via the agent's internal network, not the public host.
+
+See [configuration.md](./configuration.md#metrics--admin--chat--task-store-services)
+for the full list of chat service env vars and their defaults.
 
 ---
 
@@ -378,6 +417,28 @@ These map to the admin service's provisioning env vars
 `SHIPWRIGHT_ADMIN_DEPLOYMENT_UID`) — documented in full in
 [`configuration.md`](./configuration.md#agent-provisioning-admin-service).
 
+### Chat service provisioning (opt-in)
+
+By default the admin service **does not** mint chat-service tokens — provisioned agents carry no chat-service credentials. To enable per-agent chat-service token provisioning on `POST /agents`, set both `SHIPWRIGHT_CHAT_SERVICE_URL` and `SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN` on the admin Deployment:
+
+- `SHIPWRIGHT_CHAT_SERVICE_URL` — in-cluster base URL of the chat service (e.g. `http://chat:3000`). Injected into the agent Deployment as `SHIPWRIGHT_CHAT_SERVICE_URL` (plain env value).
+- `SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN` — bearer token for the admin service to mint/revoke chat-service tokens via the chat-service REST API. Env-var-only (secret).
+
+When both are set, the provisioner mints a scoped per-agent token during `POST /agents`, stores it in the agent Secret (key `chat-service-token`), and injects it into the Deployment as `SHIPWRIGHT_CHAT_SERVICE_TOKEN` (via `secretKeyRef`). On agent deletion the token is revoked via `DELETE /tokens/:id`. When either var is unset, chat-service token provisioning is disabled and agents carry no chat-service credentials.
+
+**Chart values:**
+
+```yaml
+agent:
+  provisioning:
+    enabled: true
+    # ... other values
+  chatService:
+    enabled: false                   # set to true to enable chat-service token provisioning
+    url: http://chat:3000            # in-cluster chat service URL; required when enabled=true
+    adminToken: ""                   # secret bearer token; required when enabled=true
+```
+
 ---
 
 ## Agent voice (STT/TTS)
@@ -488,6 +549,9 @@ changing the chart, or bring your own database:
   If you enable task-store (`taskStore.enabled=true`), also pre-create a Secret
   holding `DATABASE_URL_SHIPWRIGHT_TASK_STORE` and point `taskStore.database.existingSecret`
   at it — the task-store database **must be separate** from the admin database.
+  Similarly, if you enable chat (`chat.enabled=true`), pre-create a Secret
+  holding `DATABASE_URL_SHIPWRIGHT_CHAT` — the chat database **must also be separate**
+  from both the admin and task-store databases.
 
   ```yaml
   postgresql:
