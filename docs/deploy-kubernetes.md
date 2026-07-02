@@ -87,17 +87,22 @@ additive and safe to deploy without. To enable it:
 
 The chat service requires:
 
-- **A dedicated Postgres database** via `DATABASE_URL_SHIPWRIGHT_CHAT` (env var,
-  not bundled in the chart). **Must be separate** from the admin and task-store
-  databases — the schema forbids sharing a database connection.
+- **A dedicated Postgres database** via `DATABASE_URL_SHIPWRIGHT_CHAT` (read from
+  a Kubernetes Secret, not bundled in the chart). The chart's `chat-deployment.yaml`
+  injects it via `secretKeyRef` pointing at the Secret named by
+  `chat.database.existingSecret` (default: `shipwright-secrets`). **Must be
+  separate** from the admin and task-store databases — the schema forbids sharing
+  a database connection.
 - **Optional agent scope resolution:** when agents create chat tokens, the chat
-  service can query which repos a token may access. Set alongside the database:
+  service can query which repos a token may access. Pass these via `chat.extraEnv`
+  so they land in the chat container (not admin):
 
 ```bash
 --set chat.enabled=true \
-  --set-string 'admin.env.DATABASE_URL_SHIPWRIGHT_CHAT=postgresql://...' \
-  --set-string 'admin.env.SHIPWRIGHT_CHAT_AGENTS_URL=http://admin:3001' \
-  --set-string 'admin.env.SHIPWRIGHT_CHAT_AGENTS_API_KEY=<api-key>'
+  --set-string 'chat.extraEnv[0].name=SHIPWRIGHT_CHAT_AGENTS_URL' \
+  --set-string 'chat.extraEnv[0].value=http://admin:3001' \
+  --set-string 'chat.extraEnv[1].name=SHIPWRIGHT_CHAT_AGENTS_API_KEY' \
+  --set-string 'chat.extraEnv[1].value=<api-key>'
 ```
 
 The chat service runs as a standalone `Deployment` (one pod by default) listening
