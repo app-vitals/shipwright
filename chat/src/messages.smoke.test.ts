@@ -365,4 +365,25 @@ describe("POST /threads/:id/messages/:msgId/reply", () => {
     );
     expect(res.status).toBe(404);
   });
+
+  it("returns 400 when target message is an assistant message", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({ agentId: "a1" });
+    const assistantMsg = await ms.create(thread.id, {
+      role: "assistant",
+      body: "I already replied.",
+    });
+    const app = buildApp(ts, ms);
+
+    const res = await app.request(
+      `/threads/${thread.id}/messages/${assistantMsg.id}/reply`,
+      {
+        method: "POST",
+        headers: H.post,
+        body: JSON.stringify({ body: "another reply" }),
+      },
+    );
+    expect(res.status).toBe(400);
+  });
 });

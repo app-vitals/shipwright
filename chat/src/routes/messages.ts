@@ -28,6 +28,7 @@ import {
 } from "../errors.ts";
 import type { JsonValue, MessageServiceLike } from "../message-service.ts";
 import type { ThreadServiceLike } from "../thread-service.ts";
+import { parseIntParam } from "./utils.ts";
 
 /** Maximum allowed size for message attachment bytes (10 MB). */
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
@@ -198,6 +199,8 @@ export function createMessagesRoutes(
     const existing = await messageService.findById(c.req.param("id") as string);
     if (!existing || existing.threadId !== threadId)
       throw new NotFoundError("message not found");
+    if (existing.role !== "user")
+      throw new BadRequestError("can only reply to user messages");
 
     let body: Record<string, unknown> = {};
     try {
@@ -235,11 +238,3 @@ async function requireThread(
   }
 }
 
-function parseIntParam(
-  value: string | undefined,
-  defaultValue: number,
-): number {
-  if (value === undefined) return defaultValue;
-  const n = Number.parseInt(value, 10);
-  return Number.isNaN(n) || n < 0 ? defaultValue : n;
-}

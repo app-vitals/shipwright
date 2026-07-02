@@ -17,6 +17,7 @@ import { Hono } from "hono";
 import type { ChatAuthEnv } from "../auth.ts";
 import { BadRequestError, ForbiddenError, NotFoundError } from "../errors.ts";
 import type { ThreadServiceLike } from "../thread-service.ts";
+import { parseIntParam } from "./utils.ts";
 
 export function createThreadsRoutes(
   threadService: ThreadServiceLike,
@@ -131,11 +132,3 @@ function enforceAgentScope(
   }
 }
 
-function parseIntParam(
-  value: string | undefined,
-  defaultValue: number,
-): number {
-  if (value === undefined) return defaultValue;
-  const n = Number.parseInt(value, 10);
-  return Number.isNaN(n) || n < 0 ? defaultValue : n;
-}
