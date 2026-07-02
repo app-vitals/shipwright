@@ -2887,3 +2887,75 @@ describe("renderTasksPage — mobile column hiding", () => {
     expect((repoTdMatches ?? []).length).toBe(2);
   });
 });
+
+// ─── renderPrsPage — mobile column hiding (AMB-1.4) ──────────────────────────
+
+describe("renderPrsPage — mobile column hiding", () => {
+  function render(prs: PrListItem[] = [PR_LIST_ITEM_1, PR_LIST_ITEM_2]): string {
+    return renderPrsPage(
+      prs,
+      {},
+      false,
+      USER_NAME,
+      { "agent-001": "Alpha Agent" },
+      { total: prs.length, limit: 50, page: 1 },
+    );
+  }
+
+  // AC2: col-review-cycles class on the Review Cycles <th>
+  test("Review Cycles <th> has class col-review-cycles", () => {
+    const html = render();
+    expect(html).toContain('class="col-review-cycles"');
+    expect(html).toMatch(/<th[^>]*class="[^"]*col-review-cycles[^"]*"[^>]*>Review Cycles<\/th>/);
+  });
+
+  // AC2: col-patch-cycles class on the Patch Cycles <th>
+  test("Patch Cycles <th> has class col-patch-cycles", () => {
+    const html = render();
+    expect(html).toContain('class="col-patch-cycles"');
+    expect(html).toMatch(/<th[^>]*class="[^"]*col-patch-cycles[^"]*"[^>]*>Patch Cycles<\/th>/);
+  });
+
+  // AC2: col-claimed-by class on the Claimed By <th>
+  test("Claimed By <th> has class col-claimed-by", () => {
+    const html = render();
+    expect(html).toContain('class="col-claimed-by"');
+    expect(html).toMatch(/<th[^>]*class="[^"]*col-claimed-by[^"]*"[^>]*>Claimed By<\/th>/);
+  });
+
+  // AC2: col-review-cycles class on every Review Cycles <td>
+  test("Review Cycles <td> cells have class col-review-cycles", () => {
+    const html = render([PR_LIST_ITEM_1]);
+    const pattern = /<td[^>]*class="[^"]*col-review-cycles[^"]*"[^>]*>/;
+    expect(html).toMatch(pattern);
+  });
+
+  // AC2: col-patch-cycles class on every Patch Cycles <td>
+  test("Patch Cycles <td> cells have class col-patch-cycles", () => {
+    const html = render([PR_LIST_ITEM_1]);
+    const pattern = /<td[^>]*class="[^"]*col-patch-cycles[^"]*"[^>]*>/;
+    expect(html).toMatch(pattern);
+  });
+
+  // AC2: col-claimed-by class on every Claimed By <td>
+  test("Claimed By <td> cells have class col-claimed-by", () => {
+    const html = render([PR_LIST_ITEM_1]);
+    const pattern = /<td[^>]*class="[^"]*col-claimed-by[^"]*"[^>]*>/;
+    expect(html).toMatch(pattern);
+  });
+
+  // Multiple rows → all rows get the correct classes
+  test("all PR rows have col-review-cycles, col-patch-cycles, and col-claimed-by on their <td> cells", () => {
+    const html = render([PR_LIST_ITEM_1, PR_LIST_ITEM_2]);
+    const reviewCyclesTdMatches = html.match(/<td[^>]*class="[^"]*col-review-cycles[^"]*"[^>]*>/g);
+    const patchCyclesTdMatches = html.match(/<td[^>]*class="[^"]*col-patch-cycles[^"]*"[^>]*>/g);
+    const claimedByTdMatches = html.match(/<td[^>]*class="[^"]*col-claimed-by[^"]*"[^>]*>/g);
+    // One of each per row (2 rows)
+    expect(reviewCyclesTdMatches).not.toBeNull();
+    expect((reviewCyclesTdMatches ?? []).length).toBe(2);
+    expect(patchCyclesTdMatches).not.toBeNull();
+    expect((patchCyclesTdMatches ?? []).length).toBe(2);
+    expect(claimedByTdMatches).not.toBeNull();
+    expect((claimedByTdMatches ?? []).length).toBe(2);
+  });
+});
