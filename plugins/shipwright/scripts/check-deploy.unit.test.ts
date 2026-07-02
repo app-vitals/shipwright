@@ -58,6 +58,10 @@ interface MakeDepsOptions {
   reviews?: Record<number, GhReview[]>;
   ciRuns?: Record<string, CiRun[]>;
   activeDeployRuns?: WorkflowRun[];
+  // Per-repo override, keyed by "org/repo" — takes precedence over
+  // activeDeployRuns when set, so multi-repo scenarios can give each repo
+  // its own active-run state.
+  activeDeployRunsByRepo?: Record<string, WorkflowRun[]>;
   currentUser?: string;
   isSelfReviewAllowed?: boolean;
   clock?: () => string;
@@ -70,6 +74,7 @@ function makeDeps({
   reviews = {},
   ciRuns = {},
   activeDeployRuns = [],
+  activeDeployRunsByRepo,
   currentUser = "bodhi-agent",
   isSelfReviewAllowed = true,
   clock,
@@ -92,9 +97,14 @@ function makeDeps({
       pr: number,
     ): Promise<GhReview[]> => reviews[pr] ?? [],
     fetchActiveDeployRuns: async (
-      _org: string,
-      _repo: string,
-    ): Promise<WorkflowRun[]> => activeDeployRuns,
+      org: string,
+      repo: string,
+    ): Promise<WorkflowRun[]> => {
+      if (activeDeployRunsByRepo) {
+        return activeDeployRunsByRepo[`${org}/${repo}`] ?? [];
+      }
+      return activeDeployRuns;
+    },
     ...(isBundleComplete !== undefined ? { isBundleComplete } : {}),
   };
 }
@@ -185,6 +195,58 @@ describe("check-deploy (new behaviors)", () => {
       }),
     );
     expect(result.exit).toBe(0);
+  });
+
+  test("deploying guard: scoped per repo — an active Deploy in one repo does not block a ready PR in another", async () => {
+    const busyRepoPr = makeGhPr({
+      number: 10,
+      headRefOid: "sha-busy",
+      reviewDecision: "APPROVED",
+    });
+    const readyRepoPr = makeGhPr({
+      number: 20,
+      headRefOid: "sha-ready",
+      reviewDecision: "APPROVED",
+    });
+    const result = await run(
+      makeDeps({
+        repos: ["acme/busy-repo", "acme/ready-repo"],
+        prs: {
+          "acme/busy-repo": [busyRepoPr],
+          "acme/ready-repo": [readyRepoPr],
+        },
+        ciRuns: {
+          "sha-busy": [{ status: "completed", conclusion: "success" }],
+          "sha-ready": [{ status: "completed", conclusion: "success" }],
+        },
+        activeDeployRunsByRepo: {
+          "acme/busy-repo": [{ name: "Deploy", status: "in_progress" }],
+          "acme/ready-repo": [],
+        },
+      }),
+    );
+    expect(result.exit).toBe(0);
+    expect(result.candidate).toEqual({
+      pr: 20,
+      org: "acme",
+      repo: "ready-repo",
+    });
+  });
+
+  test("deploying guard: scoped per repo — exits 1 when the only configured repo is busy, even though the guard no longer short-circuits globally", async () => {
+    const pr = makeGhPr({ reviewDecision: "APPROVED" });
+    const result = await run(
+      makeDeps({
+        repos: ["acme/busy-repo"],
+        prs: { "acme/busy-repo": [pr] },
+        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
+        activeDeployRunsByRepo: {
+          "acme/busy-repo": [{ name: "Deploy", status: "in_progress" }],
+        },
+      }),
+    );
+    expect(result.exit).toBe(1);
+    expect(result.candidate).toBeNull();
   });
 
   // ── Authorship filter ─────────────────────────────────────────────────────────

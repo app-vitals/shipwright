@@ -337,6 +337,10 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
               <span class="stat-label">SHIP IT<span class="info-icon" data-tooltip="Reviews where no blocking issues were found" tabindex="0" aria-label="Reviews where no blocking issues were found">i</span></span>
               <span class="stat-value good" id="review-ship-it">--</span>
             </div>
+            <div class="stat-row" data-metric="review-iterations">
+              <span class="stat-label">Review Iterations<span class="info-icon" data-tooltip="Avg review + patch cycles per PR — an iteration-count proxy, not a findings count" tabindex="0" aria-label="Avg review + patch cycles per PR — an iteration-count proxy, not a findings count">i</span></span>
+              <span class="stat-value" id="review-iterations">--</span>
+            </div>
           </div>
 
           <!-- Coverage -->
@@ -825,6 +829,10 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
             <div class="stat-row" data-metric="reviews-ship-it">
               <span class="stat-label">SHIP IT<span class="info-icon" data-tooltip="Reviews where no blocking issues were found" tabindex="0" aria-label="Reviews where no blocking issues were found">i</span></span>
               <span class="stat-value good" id="review-ship-it">--</span>
+            </div>
+            <div class="stat-row" data-metric="review-iterations">
+              <span class="stat-label">Review Iterations<span class="info-icon" data-tooltip="Avg review + patch cycles per PR — an iteration-count proxy, not a findings count" tabindex="0" aria-label="Avg review + patch cycles per PR — an iteration-count proxy, not a findings count">i</span></span>
+              <span class="stat-value" id="review-iterations">--</span>
             </div>
           </div>
 
@@ -1315,6 +1323,10 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
               <span class="stat-label">SHIP IT<span class="info-icon" data-tooltip="Reviews where no blocking issues were found" tabindex="0" aria-label="Reviews where no blocking issues were found">i</span></span>
               <span class="stat-value good" id="review-ship-it">--</span>
             </div>
+            <div class="stat-row" data-metric="review-iterations">
+              <span class="stat-label">Review Iterations<span class="info-icon" data-tooltip="Avg review + patch cycles per PR — an iteration-count proxy, not a findings count" tabindex="0" aria-label="Avg review + patch cycles per PR — an iteration-count proxy, not a findings count">i</span></span>
+              <span class="stat-value" id="review-iterations">--</span>
+            </div>
           </div>
 
           <!-- Coverage -->
@@ -1804,6 +1816,10 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
               <span class="stat-label">SHIP IT<span class="info-icon" data-tooltip="Reviews where no blocking issues were found" tabindex="0" aria-label="Reviews where no blocking issues were found">i</span></span>
               <span class="stat-value good" id="review-ship-it">--</span>
             </div>
+            <div class="stat-row" data-metric="review-iterations">
+              <span class="stat-label">Review Iterations<span class="info-icon" data-tooltip="Avg review + patch cycles per PR — an iteration-count proxy, not a findings count" tabindex="0" aria-label="Avg review + patch cycles per PR — an iteration-count proxy, not a findings count">i</span></span>
+              <span class="stat-value" id="review-iterations">--</span>
+            </div>
           </div>
 
           <!-- Coverage -->
@@ -2281,6 +2297,10 @@ exports[`renderDashboardPage — PCE-1.4 Cost Efficiency card readOnly page snap
             <div class="stat-row" data-metric="reviews-ship-it">
               <span class="stat-label">SHIP IT<span class="info-icon" data-tooltip="Reviews where no blocking issues were found" tabindex="0" aria-label="Reviews where no blocking issues were found">i</span></span>
               <span class="stat-value good" id="review-ship-it">--</span>
+            </div>
+            <div class="stat-row" data-metric="review-iterations">
+              <span class="stat-label">Review Iterations<span class="info-icon" data-tooltip="Avg review + patch cycles per PR — an iteration-count proxy, not a findings count" tabindex="0" aria-label="Avg review + patch cycles per PR — an iteration-count proxy, not a findings count">i</span></span>
+              <span class="stat-value" id="review-iterations">--</span>
             </div>
           </div>
 

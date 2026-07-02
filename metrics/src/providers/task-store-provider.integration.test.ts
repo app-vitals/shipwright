@@ -86,6 +86,8 @@ const PRS: PrRecord[] = [
     reviewState: "approved",
     createdAt: "2026-06-02T11:00:00.000Z",
     mergedAt: "2026-06-02T12:00:00.000Z",
+    reviewCycles: 1,
+    patchCycles: 1,
   },
   {
     id: "pr-2",
@@ -93,6 +95,8 @@ const PRS: PrRecord[] = [
     reviewState: "posted",
     createdAt: "2026-06-03T14:00:00.000Z",
     mergedAt: "2026-06-03T15:00:00.000Z",
+    reviewCycles: 2,
+    patchCycles: 1,
   },
 ];
 
@@ -174,6 +178,7 @@ describe("TaskStoreProvider (integration)", () => {
       "simplify_avg_consistency",
       "reviews_total",
       "reviews_ship_it",
+      "avg_review_iterations",
       "complexity_1",
       "complexity_2",
       "complexity_3",
@@ -194,6 +199,8 @@ describe("TaskStoreProvider (integration)", () => {
     // reviews from PR records
     expect(row[colIndex(t, "reviews_total")]).toBe(2);
     expect(row[colIndex(t, "reviews_ship_it")]).toBe(1);
+    // avg_review_iterations = avg(reviewCycles + patchCycles) = avg(2, 3) = 2.5
+    expect(row[colIndex(t, "avg_review_iterations")]).toBe(2.5);
   });
 
   test("queueFunnel counts started/approved/merged/blocked", async () => {

@@ -47,6 +47,33 @@ const MOCK_MESSAGE: ChatMessage = {
   repliedAt: null,
   tokens: null,
   costUsd: null,
+  errorKind: null,
+};
+
+const MOCK_ASSISTANT_MESSAGE: ChatMessage = {
+  id: "msg-test-asst-101",
+  threadId: THREAD_ID,
+  role: "assistant",
+  body: "Here is **bold text** and `inline code`.",
+  createdAt: "2024-01-01T00:01:00.000Z",
+  claimedBy: null,
+  repliedAt: "2024-01-01T00:01:05.000Z",
+  tokens: 50,
+  costUsd: 0.0005,
+  errorKind: null,
+};
+
+const MOCK_ERROR_MESSAGE: ChatMessage = {
+  id: "msg-test-err-202",
+  threadId: THREAD_ID,
+  role: "assistant",
+  body: "",
+  createdAt: "2024-01-01T00:02:00.000Z",
+  claimedBy: null,
+  repliedAt: null,
+  tokens: null,
+  costUsd: null,
+  errorKind: "rate-limited",
 };
 
 // ─── JWT helper ───────────────────────────────────────────────────────────────
@@ -766,5 +793,221 @@ describe("GET /admin/chat/:agentId/threads/:threadId — thread list pane on det
     const html = await res.text();
     // Should have a delete form pointing to the delete endpoint
     expect(html).toContain("/delete");
+  });
+});
+
+// ─── JSON API: GET messages.json ──────────────────────────────────────────────
+
+describe("GET /admin/chat/:agentId/threads/:threadId/messages.json", () => {
+  let sessionCookie: string;
+
+  beforeAll(async () => {
+    sessionCookie = await makeSessionCookie();
+  });
+
+  it("returns 302 to login without session cookie", async () => {
+    const chatClient = makeMockChatClient();
+    const app = createAdminUIApp(makeBaseDeps({ chatClient }));
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}/messages.json`,
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toContain("/admin/login");
+  });
+
+  it("returns 200 JSON with messages array when chatClient present", async () => {
+    const chatClient = makeMockChatClient();
+    const app = createAdminUIApp(makeBaseDeps({ chatClient }));
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}/messages.json`,
+      { headers: { Cookie: `admin_session=${sessionCookie}` } },
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("application/json");
+    const body = await res.json() as { messages: ChatMessage[] };
+    expect(Array.isArray(body.messages)).toBe(true);
+    expect(body.messages[0].id).toBe(MOCK_MESSAGE.id);
+  });
+
+  it("returns 200 with empty messages array when chatClient absent", async () => {
+    const app = createAdminUIApp(makeBaseDeps()); // no chatClient
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}/messages.json`,
+      { headers: { Cookie: `admin_session=${sessionCookie}` } },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json() as { messages: ChatMessage[] };
+    expect(body.messages).toEqual([]);
+  });
+});
+
+// ─── JSON API: POST messages.json ─────────────────────────────────────────────
+
+describe("POST /admin/chat/:agentId/threads/:threadId/messages.json", () => {
+  let sessionCookie: string;
+
+  beforeAll(async () => {
+    sessionCookie = await makeSessionCookie();
+  });
+
+  it("returns 302 to login without session cookie", async () => {
+    const chatClient = makeMockChatClient();
+    const app = createAdminUIApp(makeBaseDeps({ chatClient }));
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}/messages.json`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: "test message" }),
+      },
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toContain("/admin/login");
+  });
+
+  it("returns 200 JSON with message when chatClient present", async () => {
+    const chatClient = makeMockChatClient();
+    const app = createAdminUIApp(makeBaseDeps({ chatClient }));
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}/messages.json`,
+      {
+        method: "POST",
+        headers: {
+          Cookie: `admin_session=${sessionCookie}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ body: "Hello, agent!" }),
+      },
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("application/json");
+    const body = await res.json() as { message: ChatMessage };
+    expect(body.message).not.toBeNull();
+    expect(body.message.id).toBe(MOCK_MESSAGE.id);
+  });
+
+  it("returns 200 with null message when chatClient absent", async () => {
+    const app = createAdminUIApp(makeBaseDeps()); // no chatClient
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}/messages.json`,
+      {
+        method: "POST",
+        headers: {
+          Cookie: `admin_session=${sessionCookie}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ body: "Hello!" }),
+      },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json() as { message: null };
+    expect(body.message).toBeNull();
+  });
+});
+
+// ─── Thread detail page: conversation window ──────────────────────────────────
+
+describe("GET /admin/chat/:agentId/threads/:threadId — conversation window", () => {
+  let sessionCookie: string;
+
+  beforeAll(async () => {
+    sessionCookie = await makeSessionCookie();
+  });
+
+  it("renders message bubbles (role labels) when messages present", async () => {
+    const chatClient = makeMockChatClient({
+      listMessages: async () => ({
+        messages: [MOCK_MESSAGE, MOCK_ASSISTANT_MESSAGE],
+        total: 2,
+        limit: 50,
+        offset: 0,
+      }),
+    });
+    const app = createAdminUIApp(makeBaseDeps({ chatClient }));
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}`,
+      { headers: { Cookie: `admin_session=${sessionCookie}` } },
+    );
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Hello, agent!");
+    expect(html).toContain("Here is");
+  });
+
+  it("renders markdown for assistant messages (bold → <strong>)", async () => {
+    const chatClient = makeMockChatClient({
+      listMessages: async () => ({
+        messages: [MOCK_ASSISTANT_MESSAGE],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      }),
+    });
+    const app = createAdminUIApp(makeBaseDeps({ chatClient }));
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}`,
+      { headers: { Cookie: `admin_session=${sessionCookie}` } },
+    );
+    const html = await res.text();
+    expect(html).toContain("<strong>bold text</strong>");
+  });
+
+  it("renders markdown for assistant messages (inline code → <code>)", async () => {
+    const chatClient = makeMockChatClient({
+      listMessages: async () => ({
+        messages: [MOCK_ASSISTANT_MESSAGE],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      }),
+    });
+    const app = createAdminUIApp(makeBaseDeps({ chatClient }));
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}`,
+      { headers: { Cookie: `admin_session=${sessionCookie}` } },
+    );
+    const html = await res.text();
+    expect(html).toContain("<code>inline code</code>");
+  });
+
+  it("shows error state for messages with errorKind", async () => {
+    const chatClient = makeMockChatClient({
+      listMessages: async () => ({
+        messages: [MOCK_ERROR_MESSAGE],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      }),
+    });
+    const app = createAdminUIApp(makeBaseDeps({ chatClient }));
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}`,
+      { headers: { Cookie: `admin_session=${sessionCookie}` } },
+    );
+    const html = await res.text();
+    expect(html).toContain("Rate limited");
+  });
+
+  it("includes thinking-indicator id in inline JS", async () => {
+    const chatClient = makeMockChatClient();
+    const app = createAdminUIApp(makeBaseDeps({ chatClient }));
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}`,
+      { headers: { Cookie: `admin_session=${sessionCookie}` } },
+    );
+    const html = await res.text();
+    expect(html).toContain("thinking-indicator");
+  });
+
+  it("includes messages-container and send-btn in the page", async () => {
+    const chatClient = makeMockChatClient();
+    const app = createAdminUIApp(makeBaseDeps({ chatClient }));
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}`,
+      { headers: { Cookie: `admin_session=${sessionCookie}` } },
+    );
+    const html = await res.text();
+    expect(html).toContain("messages-container");
+    expect(html).toContain("send-btn");
   });
 });

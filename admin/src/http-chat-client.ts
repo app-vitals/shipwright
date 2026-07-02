@@ -27,6 +27,7 @@ export interface ChatMessage {
   repliedAt: string | null;
   tokens: number | null;
   costUsd: number | null;
+  errorKind?: string | null;
 }
 
 export interface ListThreadsResult {
@@ -297,6 +298,7 @@ export class NoopChatClient implements ChatClient {
       repliedAt: null,
       tokens: null,
       costUsd: null,
+      errorKind: null,
     };
   }
 }
