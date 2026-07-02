@@ -269,6 +269,7 @@ function fakePrService(
     async claimNext(
       _agentId: string,
       _maxConcurrent: number,
+      _repos?: string[],
     ): Promise<{ pr: PullRequest; phase: "review" | "patch" | "deploy" } | null> {
       if ("claimNextResult" in opts) return opts.claimNextResult ?? null;
       return null;
@@ -924,5 +925,57 @@ describe("/prs routes (smoke)", () => {
     });
     expect(res.status).toBe(200);
     expect(capturedAgentId).toBe("my-agent");
+  });
+
+  it("POST /prs/claim-next passes repos scope to service for agent tokens", async () => {
+    let capturedRepos: string[] | undefined;
+    const pr = makePr({ id: "pr-8", reviewState: "pending", repo: SCOPED_REPO });
+
+    const prServiceWithCapture: PullRequestServiceLike = {
+      ...fakePrService({ claimNextResult: { pr, phase: "review" } }),
+      async claimNext(_agentId, _maxConcurrent, repos) {
+        capturedRepos = repos;
+        return { pr, phase: "review" as const };
+      },
+    } as PullRequestServiceLike;
+
+    const app = makeApp({
+      tokenService: fakeAgentTokenService(),
+      scopeResolver: makeScopeResolver([SCOPED_REPO]),
+      prService: prServiceWithCapture,
+    });
+
+    const res = await app.request("/prs/claim-next", {
+      method: "POST",
+      headers: { ...agentAuth(), "content-type": "application/json" },
+      body: JSON.stringify({ maxConcurrent: 3 }),
+    });
+    expect(res.status).toBe(200);
+    // Agent token must pass repos scope to the service
+    expect(capturedRepos).toEqual([SCOPED_REPO]);
+  });
+
+  it("POST /prs/claim-next with admin token does not pass repos scope", async () => {
+    let capturedRepos: string[] | undefined;
+    const pr = makePr({ id: "pr-9", reviewState: "pending" });
+
+    const prServiceWithCapture: PullRequestServiceLike = {
+      ...fakePrService({ claimNextResult: { pr, phase: "review" } }),
+      async claimNext(_agentId, _maxConcurrent, repos) {
+        capturedRepos = repos;
+        return { pr, phase: "review" as const };
+      },
+    } as PullRequestServiceLike;
+
+    const app = makeApp({ prService: prServiceWithCapture });
+
+    const res = await app.request("/prs/claim-next", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({ agentId: "admin-agent", maxConcurrent: 3 }),
+    });
+    expect(res.status).toBe(200);
+    // Admin tokens bypass scope — repos must be undefined
+    expect(capturedRepos).toBeUndefined();
   });
 });

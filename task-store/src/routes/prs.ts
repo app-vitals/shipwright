@@ -145,6 +145,7 @@ export function createPrsRoutes(
   // Must be before /:id to avoid param capture.
   app.post("/claim-next", async (c) => {
     const agentId = c.get("agentId");
+    const repos = c.get("repos");
     const body = await readJson(c);
 
     const { maxConcurrent } = body;
@@ -166,7 +167,12 @@ export function createPrsRoutes(
         ? maxConcurrent
         : 1;
 
-    const result = await prService.claimNext(resolvedAgentId, resolvedMaxConcurrent);
+    // Pass repo scope for agent tokens so claimNext only returns in-scope PRs
+    const result = await prService.claimNext(
+      resolvedAgentId,
+      resolvedMaxConcurrent,
+      agentId !== null ? repos ?? undefined : undefined,
+    );
 
     if (result === null) {
       return c.body(null, 204);

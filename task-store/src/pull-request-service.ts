@@ -57,6 +57,7 @@ export interface PullRequestServiceLike {
   claimNext(
     agentId: string,
     maxConcurrent: number,
+    repos?: string[],
   ): Promise<{ pr: PullRequest; phase: PrPhase } | null>;
 }
 
@@ -299,6 +300,7 @@ export class PullRequestService implements PullRequestServiceLike {
   async claimNext(
     agentId: string,
     maxConcurrent: number,
+    repos?: string[],
   ): Promise<{ pr: PullRequest; phase: PrPhase } | null> {
     const now = this.clock.now();
     const nowIso = now.toISOString();
@@ -342,6 +344,11 @@ export class PullRequestService implements PullRequestServiceLike {
       // Step 3: Fetch full record to determine phase
       const target = await tx.pullRequest.findUnique({ where: { id: targetId } });
       if (!target) return null; // concurrent claim took it
+
+      // Enforce repo scope: if repos filter provided, only claim from allowed repos
+      if (repos && repos.length > 0 && !repos.includes(target.repo)) {
+        return null;
+      }
 
       // Determine phase from reviewState
       let phase: PrPhase;
