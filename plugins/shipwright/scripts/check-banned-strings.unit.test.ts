@@ -17,6 +17,19 @@ import { scanForBannedStrings } from "./check-banned-strings.ts";
 // Helpers
 // ---------------------------------------------------------------------------
 
+// Banned-string fixtures, assembled via concatenation (mirroring the checker
+// itself) so this test file never contains a banned string verbatim on disk.
+// Fragments are chosen so no single fragment contains another banned pattern.
+const BANNED = {
+  marketplace: "app-vitals/" + "marketplace",
+  orgRepo: "app-vitals/" + "vitals-" + "os",
+  prod: "vitals-" + "os-prod",
+  staging: "vitals-" + "os-staging",
+  dev: "vitals-" + "os-dev",
+  bare: "vitals-" + "os",
+  envVar: "VITALS_" + "OS",
+} as const;
+
 function writeFile(dir: string, relativePath: string, content: string): void {
   const fullPath = join(dir, relativePath);
   mkdirSync(join(dir, relativePath, ".."), { recursive: true });
@@ -49,54 +62,50 @@ describe("scanForBannedStrings", () => {
     expect(hits).toEqual([]);
   });
 
-  test("detects app-vitals/marketplace in a file", () => {
+  test("detects the banned marketplace repo slug in a file", () => {
     writeFile(
       tmpDir,
       "bad.ts",
-      "// install from app-vitals/marketplace\nexport {};\n",
+      `// install from ${BANNED.marketplace}\nexport {};\n`,
     );
     const hits = scanForBannedStrings(tmpDir);
     expect(hits).toHaveLength(1);
-    expect(hits[0].pattern).toBe("app-vitals/marketplace");
+    expect(hits[0].pattern).toBe(BANNED.marketplace);
     expect(hits[0].lineNum).toBe(1);
-    expect(hits[0].line).toContain("app-vitals/marketplace");
+    expect(hits[0].line).toContain(BANNED.marketplace);
   });
 
-  test("detects app-vitals/vitals-os in a file", () => {
-    writeFile(
-      tmpDir,
-      "bad.ts",
-      "export const repo = 'app-vitals/vitals-os';\n",
-    );
+  test("detects the banned org/repo slug in a file", () => {
+    writeFile(tmpDir, "bad.ts", `export const repo = '${BANNED.orgRepo}';\n`);
     const hits = scanForBannedStrings(tmpDir);
     expect(hits).toHaveLength(1);
-    expect(hits[0].pattern).toBe("app-vitals/vitals-os");
+    expect(hits[0].pattern).toBe(BANNED.orgRepo);
   });
 
-  test("detects vitals-os-prod in a file", () => {
-    writeFile(tmpDir, "config.ts", "const env = 'vitals-os-prod';\n");
+  test("detects the banned -prod identifier in a file", () => {
+    writeFile(tmpDir, "config.ts", `const env = '${BANNED.prod}';\n`);
     const hits = scanForBannedStrings(tmpDir);
     expect(hits).toHaveLength(1);
-    expect(hits[0].pattern).toBe("vitals-os-prod");
+    expect(hits[0].pattern).toBe(BANNED.prod);
   });
 
-  test("detects vitals-os-staging in a file", () => {
-    writeFile(tmpDir, "config.ts", "const env = 'vitals-os-staging';\n");
+  test("detects the banned -staging identifier in a file", () => {
+    writeFile(tmpDir, "config.ts", `const env = '${BANNED.staging}';\n`);
     const hits = scanForBannedStrings(tmpDir);
     expect(hits).toHaveLength(1);
-    expect(hits[0].pattern).toBe("vitals-os-staging");
+    expect(hits[0].pattern).toBe(BANNED.staging);
   });
 
-  test("detects vitals-os-dev in a file", () => {
-    writeFile(tmpDir, "config.ts", "const env = 'vitals-os-dev';\n");
+  test("detects the banned -dev identifier in a file", () => {
+    writeFile(tmpDir, "config.ts", `const env = '${BANNED.dev}';\n`);
     const hits = scanForBannedStrings(tmpDir);
     expect(hits).toHaveLength(1);
-    expect(hits[0].pattern).toBe("vitals-os-dev");
+    expect(hits[0].pattern).toBe(BANNED.dev);
   });
 
   test("detects multiple banned strings across multiple files", () => {
-    writeFile(tmpDir, "a.ts", "const a = 'app-vitals/marketplace';\n");
-    writeFile(tmpDir, "b.ts", "const b = 'vitals-os-prod';\n");
+    writeFile(tmpDir, "a.ts", `const a = '${BANNED.marketplace}';\n`);
+    writeFile(tmpDir, "b.ts", `const b = '${BANNED.prod}';\n`);
     const hits = scanForBannedStrings(tmpDir);
     expect(hits).toHaveLength(2);
   });
@@ -105,7 +114,7 @@ describe("scanForBannedStrings", () => {
     writeFile(
       tmpDir,
       "multi.ts",
-      "const a = 'app-vitals/marketplace';\nconst b = 'vitals-os-staging';\n",
+      `const a = '${BANNED.marketplace}';\nconst b = '${BANNED.staging}';\n`,
     );
     const hits = scanForBannedStrings(tmpDir);
     expect(hits).toHaveLength(2);
@@ -118,7 +127,7 @@ describe("scanForBannedStrings", () => {
     writeFile(
       tmpDir,
       ".git/COMMIT_EDITMSG",
-      "refactor: move off app-vitals/marketplace\n",
+      `refactor: move off ${BANNED.marketplace}\n`,
     );
     const hits = scanForBannedStrings(tmpDir);
     expect(hits).toEqual([]);
@@ -129,7 +138,7 @@ describe("scanForBannedStrings", () => {
     writeFile(
       tmpDir,
       "node_modules/bad-pkg/index.ts",
-      "const repo = 'app-vitals/vitals-os';\n",
+      `const repo = '${BANNED.orgRepo}';\n`,
     );
     const hits = scanForBannedStrings(tmpDir);
     expect(hits).toEqual([]);
@@ -140,7 +149,7 @@ describe("scanForBannedStrings", () => {
     writeFile(
       tmpDir,
       "worktrees/my-branch/src/foo.ts",
-      "const repo = 'app-vitals/vitals-os';\n",
+      `const repo = '${BANNED.orgRepo}';\n`,
     );
     const hits = scanForBannedStrings(tmpDir);
     expect(hits).toEqual([]);
@@ -151,7 +160,7 @@ describe("scanForBannedStrings", () => {
     writeFile(
       tmpDir,
       "dist/index.js",
-      "const repo = 'app-vitals/marketplace';\n",
+      `const repo = '${BANNED.marketplace}';\n`,
     );
     const hits = scanForBannedStrings(tmpDir);
     expect(hits).toEqual([]);
@@ -161,12 +170,12 @@ describe("scanForBannedStrings", () => {
     writeFile(
       tmpDir,
       "check-banned-strings.ts",
-      "const p = 'app-vitals/vitals-os';\n",
+      `const p = '${BANNED.orgRepo}';\n`,
     );
     writeFile(
       tmpDir,
       "check-banned-strings.unit.test.ts",
-      "const q = 'app-vitals/marketplace';\n",
+      `const q = '${BANNED.marketplace}';\n`,
     );
     const hits = scanForBannedStrings(tmpDir);
     expect(hits).toEqual([]);
@@ -176,7 +185,7 @@ describe("scanForBannedStrings", () => {
     writeFile(
       tmpDir,
       "nested/deep/file.ts",
-      "const x = 'app-vitals/vitals-os';\n",
+      `const x = '${BANNED.orgRepo}';\n`,
     );
     const hits = scanForBannedStrings(tmpDir);
     expect(hits).toHaveLength(1);
@@ -184,7 +193,7 @@ describe("scanForBannedStrings", () => {
   });
 
   test("includes file, lineNum, line, and pattern fields in each hit", () => {
-    writeFile(tmpDir, "check.ts", "const x = 'app-vitals/marketplace';\n");
+    writeFile(tmpDir, "check.ts", `const x = '${BANNED.marketplace}';\n`);
     const hits = scanForBannedStrings(tmpDir);
     expect(hits).toHaveLength(1);
     const hit = hits[0];
@@ -203,7 +212,7 @@ describe("scanForBannedStrings", () => {
   });
 
   test("returns the relative path of the matched file", () => {
-    writeFile(tmpDir, "src/config.ts", "const x = 'app-vitals/marketplace';\n");
+    writeFile(tmpDir, "src/config.ts", `const x = '${BANNED.marketplace}';\n`);
     const hits = scanForBannedStrings(tmpDir);
     expect(hits).toHaveLength(1);
     // file should be relative to the scanned dir, not absolute
@@ -218,11 +227,11 @@ describe("scanForBannedStrings", () => {
     writeFile(
       tmpDir,
       "agent/src/posthog.unit.test.ts",
-      'const SAMPLE = JSON.stringify({ repo: "app-vitals/vitals-os" });\n',
+      `const SAMPLE = JSON.stringify({ repo: "${BANNED.orgRepo}" });\n`,
     );
     const hits = scanForBannedStrings(tmpDir);
     expect(hits).toHaveLength(1);
-    expect(hits[0].pattern).toBe("app-vitals/vitals-os");
+    expect(hits[0].pattern).toBe(BANNED.orgRepo);
     expect(hits[0].file).toBe("agent/src/posthog.unit.test.ts");
   });
 
@@ -230,11 +239,11 @@ describe("scanForBannedStrings", () => {
     writeFile(
       tmpDir,
       "metrics/src/secrets.ts",
-      "const env = 'vitals-os-prod';\n",
+      `const env = '${BANNED.prod}';\n`,
     );
     const hits = scanForBannedStrings(tmpDir);
     expect(hits).toHaveLength(1);
-    expect(hits[0].pattern).toBe("vitals-os-prod");
+    expect(hits[0].pattern).toBe(BANNED.prod);
     expect(hits[0].file).toBe("metrics/src/secrets.ts");
   });
 
@@ -242,44 +251,38 @@ describe("scanForBannedStrings", () => {
     writeFile(
       tmpDir,
       "plugins/shipwright/config.ts",
-      "const a = 'app-vitals/marketplace';\n",
+      `const a = '${BANNED.marketplace}';\n`,
     );
-    writeFile(
-      tmpDir,
-      "agent/src/crons.ts",
-      "const b = 'app-vitals/vitals-os';\n",
-    );
+    writeFile(tmpDir, "agent/src/crons.ts", `const b = '${BANNED.orgRepo}';\n`);
     writeFile(
       tmpDir,
       "metrics/src/secrets.ts",
-      "const c = 'vitals-os-prod';\n",
+      `const c = '${BANNED.prod}';\n`,
     );
     const hits = scanForBannedStrings(tmpDir);
     expect(hits).toHaveLength(3);
     const patterns = hits.map((h) => h.pattern).sort();
-    expect(patterns).toEqual([
-      "app-vitals/marketplace",
-      "app-vitals/vitals-os",
-      "vitals-os-prod",
-    ]);
+    expect(patterns).toEqual(
+      [BANNED.marketplace, BANNED.orgRepo, BANNED.prod].sort(),
+    );
   });
 
-  test("detects bare 'vitals-os' in a file", () => {
-    writeFile(tmpDir, "config.ts", "const platform = 'vitals-os';\n");
+  test("detects the bare banned identifier in a file", () => {
+    writeFile(tmpDir, "config.ts", `const platform = '${BANNED.bare}';\n`);
     const hits = scanForBannedStrings(tmpDir);
     expect(hits).toHaveLength(1);
-    expect(hits[0].pattern).toBe("vitals-os");
+    expect(hits[0].pattern).toBe(BANNED.bare);
     expect(hits[0].lineNum).toBe(1);
-    expect(hits[0].line).toContain("vitals-os");
+    expect(hits[0].line).toContain(BANNED.bare);
   });
 
-  test("detects 'VITALS_OS' in a file", () => {
-    writeFile(tmpDir, "env.ts", "const env = process.env.VITALS_OS;\n");
+  test("detects the banned env-var identifier in a file", () => {
+    writeFile(tmpDir, "env.ts", `const env = process.env.${BANNED.envVar};\n`);
     const hits = scanForBannedStrings(tmpDir);
     expect(hits).toHaveLength(1);
-    expect(hits[0].pattern).toBe("VITALS_OS");
+    expect(hits[0].pattern).toBe(BANNED.envVar);
     expect(hits[0].lineNum).toBe(1);
-    expect(hits[0].line).toContain("VITALS_OS");
+    expect(hits[0].line).toContain(BANNED.envVar);
   });
 
   test("skips planning/ directory", () => {
@@ -287,17 +290,16 @@ describe("scanForBannedStrings", () => {
     writeFile(
       tmpDir,
       "planning/notes.md",
-      "We need to migrate off vitals-os completely.\n",
+      `We need to migrate off ${BANNED.bare} completely.\n`,
     );
     const hits = scanForBannedStrings(tmpDir);
     expect(hits).toEqual([]);
   });
 
-  test("dedup invariant: a line matching both 'vitals-os' and 'vitals-os-prod' reports exactly 1 hit with the longer pattern", () => {
-    // Use string concat so this test file is not itself flagged by the scanner.
-    writeFile(tmpDir, "config.ts", "const env = 'vitals-os-" + "prod';\n");
+  test("dedup invariant: a line matching both the bare identifier and its -prod variant reports exactly 1 hit with the longer pattern", () => {
+    writeFile(tmpDir, "config.ts", `const env = '${BANNED.prod}';\n`);
     const hits = scanForBannedStrings(tmpDir);
     expect(hits).toHaveLength(1);
-    expect(hits[0].pattern).toBe("vitals-os-" + "prod");
+    expect(hits[0].pattern).toBe(BANNED.prod);
   });
 });
