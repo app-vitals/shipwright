@@ -1,0 +1,83 @@
+{{- if .Values.chat.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "shipwright.chat.fullname" . }}
+  labels:
+    {{- include "shipwright.chat.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.chat.replicas | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "shipwright.chat.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "shipwright.chat.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "shipwright.chat.serviceAccountName" . }}
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- range . }}
+        - name: {{ . }}
+        {{- end }}
+      {{- end }}
+      containers:
+        - name: chat
+          image: "{{ with .Values.global.imageRegistry }}{{ . }}/{{ end }}{{ .Values.chat.image.repository }}:{{ .Values.chat.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.chat.image.pullPolicy | default .Values.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          env:
+            # DATABASE_URL_SHIPWRIGHT_CHAT sourced from an existing Secret.
+            # Defaults to "shipwright-secrets" (the canonical cluster secret name)
+            # but can be overridden via chat.database.existingSecret.
+            - name: DATABASE_URL_SHIPWRIGHT_CHAT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.chat.database.existingSecret | default "shipwright-secrets" }}
+                  key: DATABASE_URL_SHIPWRIGHT_CHAT
+            {{- with .Values.chat.extraEnv }}
+            # chat.extraEnv: caller-supplied env vars appended last so they can
+            # override anything above if needed.
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.chat.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+        {{- if .Values.cloudSqlProxy.enabled }}
+        - name: cloud-sql-proxy
+          image: {{ .Values.cloudSqlProxy.image }}
+          args:
+            - --private-ip
+            - {{ required "cloudSqlProxy.connectionName is required when cloudSqlProxy.enabled=true" .Values.cloudSqlProxy.connectionName | quote }}
+            {{- range .Values.cloudSqlProxy.args }}
+            - {{ . | quote }}
+            {{- end }}
+          securityContext:
+            runAsNonRoot: true
+          {{- with .Values.cloudSqlProxy.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+        {{- end }}
+{{- end }}
