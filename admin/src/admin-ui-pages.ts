@@ -2674,42 +2674,239 @@ export function renderChatThreadPage(
 </html>`;
   }
 
-  const roleColor: Record<string, string> = {
-    user: "background:#eef2ff;color:#4f46e5",
-    assistant: "background:#f0fdf4;color:#166534",
-    system: "background:#fef9c3;color:#854d0e",
-  };
+  const threadId = thread.id;
+  const title = thread.title ? escapeHtml(thread.title) : "Untitled Thread";
 
-  const messagecards = messages
-    .map((m) => {
-      const style = roleColor[m.role] ?? "background:#f3f4f6;color:#374151";
-      return `<div class="card" style="margin-bottom:12px">
-        <div style="margin-bottom:8px">
-          <span class="badge" style="${style}">${escapeHtml(m.role)}</span>
-          <span style="font-size:12px;color:#9ca3af;margin-left:8px">${escapeHtml(new Date(m.createdAt).toLocaleString())}</span>
-        </div>
-        <div style="font-size:14px;white-space:pre-wrap;color:#374151">${escapeHtml(m.body)}</div>
-      </div>`;
-    })
-    .join("\n");
+  /**
+   * Render a single message bubble for the server-side initial page load.
+   * User messages: right-aligned, indigo/blue.
+   * Assistant messages: left-aligned, green, with markdown rendered.
+   * System messages: centered, yellow.
+   * errorKind: red error badge.
+   */
+  function renderMessageBubble(m: ChatMessage): string {
+    const isUser = m.role === "user";
+    const isAssistant = m.role === "assistant";
+    const isSystem = m.role === "system";
+
+    const align = isUser ? "flex-end" : isSystem ? "center" : "flex-start";
+    const bubbleBg = isUser
+      ? "#eef2ff"
+      : isAssistant
+        ? "#f0fdf4"
+        : isSystem
+          ? "#fef9c3"
+          : "#f3f4f6";
+    const bubbleColor = isUser
+      ? "#4f46e5"
+      : isAssistant
+        ? "#166534"
+        : isSystem
+          ? "#854d0e"
+          : "#374151";
+    const maxWidth = isSystem ? "80%" : "70%";
+
+    // Render error badge if errorKind is set
+    let errorBadge = "";
+    if (m.errorKind) {
+      const errorLabel =
+        m.errorKind === "rate-limited"
+          ? "Rate limited"
+          : m.errorKind === "upstream"
+            ? "Request failed"
+            : m.errorKind === "timeout"
+              ? "Timed out"
+              : "Error";
+      errorBadge = `<div style="margin-top:6px;padding:4px 8px;background:#fee2e2;color:#b91c1c;border-radius:4px;font-size:12px;font-weight:600">${errorLabel}</div>`;
+    }
+
+    // Render body: assistant messages get markdown, others get escaped text
+    const bodyHtml = isAssistant
+      ? `<div style="font-size:14px;line-height:1.6;color:${bubbleColor}">${renderMarkdown(m.body)}</div>`
+      : `<div style="font-size:14px;white-space:pre-wrap;color:${bubbleColor}">${escapeHtml(m.body)}</div>`;
+
+    return `<div style="display:flex;justify-content:${align};margin-bottom:12px">
+      <div style="max-width:${maxWidth};background:${bubbleBg};border-radius:12px;padding:12px 16px;box-shadow:0 1px 2px rgba(0,0,0,0.06)">
+        <div style="font-size:11px;font-weight:600;color:${bubbleColor};margin-bottom:4px;text-transform:uppercase;letter-spacing:0.05em">${escapeHtml(m.role)}</div>
+        ${bodyHtml}
+        ${errorBadge}
+        <div style="font-size:11px;color:#9ca3af;margin-top:6px">${escapeHtml(new Date(m.createdAt).toLocaleString())}</div>
+      </div>
+    </div>`;
+  }
+
+  const messageBubbles = messages.map(renderMessageBubble).join("\n");
 
   const emptyState =
     messages.length === 0
-      ? `<div class="empty-state">No messages in this thread yet.</div>`
+      ? `<div class="empty-state" style="text-align:center;padding:48px 24px;color:#9ca3af">No messages in this thread yet. Send a message to get started.</div>`
       : "";
 
-  const threadId = thread.id;
-  const replyForm = `
-    <form method="POST" action="/admin/chat/${escapeHtml(agentId)}/threads/${escapeHtml(threadId)}/messages" style="margin-top:24px">
-      <div class="form-group">
-        <label class="form-label" for="body">New message</label>
-        <textarea name="body" id="body" class="form-input" rows="4" placeholder="Type a message..." style="resize:vertical"></textarea>
-      </div>
-      <input type="hidden" name="role" value="user">
-      <button type="submit" class="btn btn-primary">Send</button>
-    </form>`;
+  const safeAgentId = escapeHtml(agentId);
+  const safeThreadId = escapeHtml(threadId);
 
-  const title = thread.title ? escapeHtml(thread.title) : "Untitled Thread";
+  // Inline JS for the send/poll flow
+  const inlineScript = `
+<script>
+(function() {
+  var form = document.getElementById('send-form');
+  var input = document.getElementById('message-input');
+  var sendBtn = document.getElementById('send-btn');
+  var container = document.getElementById('messages-container');
+  var agentId = ${JSON.stringify(agentId)};
+  var threadId = ${JSON.stringify(thread.id)};
+  var messagesJsonUrl = '/admin/chat/' + encodeURIComponent(agentId) + '/threads/' + encodeURIComponent(threadId) + '/messages.json';
+
+  var pollTimer = null;
+  var pollCount = 0;
+  var MAX_POLLS = 30; // 90 seconds at 3s intervals
+  var lastUserMessageTime = null;
+
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function simpleMarkdown(text) {
+    var escaped = escHtml(text);
+    // Bold: **text**
+    escaped = escaped.replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>');
+    // Inline code: \`code\`
+    escaped = escaped.replace(/\`([^\`]+)\`/g, '<code>$1</code>');
+    return escaped;
+  }
+
+  function addBubble(role, body, isError) {
+    var isUser = role === 'user';
+    var align = isUser ? 'flex-end' : 'flex-start';
+    var bg = isUser ? '#eef2ff' : '#f0fdf4';
+    var color = isUser ? '#4f46e5' : '#166534';
+    var bodyHtml = isUser
+      ? '<div style="font-size:14px;white-space:pre-wrap;color:' + color + '">' + escHtml(body) + '</div>'
+      : '<div style="font-size:14px;line-height:1.6;color:' + color + '">' + simpleMarkdown(body) + '</div>';
+    var errorHtml = isError
+      ? '<div style="margin-top:6px;padding:4px 8px;background:#fee2e2;color:#b91c1c;border-radius:4px;font-size:12px;font-weight:600">' + escHtml(body) + '</div>'
+      : '';
+    var bubble = document.createElement('div');
+    bubble.style.cssText = 'display:flex;justify-content:' + align + ';margin-bottom:12px';
+    bubble.innerHTML = '<div style="max-width:70%;background:' + bg + ';border-radius:12px;padding:12px 16px;box-shadow:0 1px 2px rgba(0,0,0,0.06)">'
+      + '<div style="font-size:11px;font-weight:600;color:' + color + ';margin-bottom:4px;text-transform:uppercase;letter-spacing:0.05em">' + escHtml(role) + '</div>'
+      + (isError ? errorHtml : bodyHtml)
+      + '</div>';
+    container.appendChild(bubble);
+    container.scrollTop = container.scrollHeight;
+    return bubble;
+  }
+
+  function addThinkingIndicator() {
+    var div = document.createElement('div');
+    div.id = 'thinking-indicator';
+    div.style.cssText = 'display:flex;justify-content:flex-start;margin-bottom:12px';
+    div.innerHTML = '<div style="max-width:70%;background:#f0fdf4;border-radius:12px;padding:12px 16px;box-shadow:0  1px 2px rgba(0,0,0,0.06)">'
+      + '<div style="font-size:14px;color:#166534;font-style:italic">thinking…</div>'
+      + '</div>';
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+  }
+
+  function removeThinkingIndicator() {
+    var el = document.getElementById('thinking-indicator');
+    if (el) el.parentNode.removeChild(el);
+  }
+
+  function stopPolling() {
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+    pollCount = 0;
+  }
+
+  function enableSend() {
+    sendBtn.disabled = false;
+    sendBtn.textContent = 'Send';
+  }
+
+  function poll() {
+    pollCount++;
+    if (pollCount > MAX_POLLS) {
+      stopPolling();
+      removeThinkingIndicator();
+      addBubble('assistant', 'Request timed out. Please try again.', true);
+      enableSend();
+      return;
+    }
+    fetch(messagesJsonUrl)
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var msgs = data.messages || [];
+        var cutoff = lastUserMessageTime;
+        var replies = msgs.filter(function(m) {
+          return m.role === 'assistant' && new Date(m.createdAt) > cutoff;
+        });
+        if (replies.length > 0) {
+          stopPolling();
+          removeThinkingIndicator();
+          var reply = replies[replies.length - 1];
+          if (reply.errorKind) {
+            var label = reply.errorKind === 'rate-limited' ? 'Rate limited'
+              : reply.errorKind === 'upstream' ? 'Request failed'
+              : reply.errorKind === 'timeout' ? 'Timed out'
+              : 'Error';
+            addBubble('assistant', label, true);
+          } else {
+            addBubble('assistant', reply.body, false);
+          }
+          enableSend();
+        }
+      })
+      .catch(function() {
+        // network error — keep polling
+      });
+  }
+
+  form.addEventListener('submit', function(e) {
+    e.preventDefault();
+    var text = input.value.trim();
+    if (!text) return;
+
+    // Disable send button
+    sendBtn.disabled = true;
+    sendBtn.textContent = 'Sending…';
+
+    // Record the time before sending so we can filter replies
+    lastUserMessageTime = new Date();
+
+    // Clear input
+    input.value = '';
+
+    // Add user bubble optimistically
+    addBubble('user', text, false);
+
+    // Show thinking indicator
+    addThinkingIndicator();
+
+    // POST to messages.json
+    fetch(messagesJsonUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body: text })
+    }).catch(function() {
+      // POST failed — still start polling
+    });
+
+    // Start polling every 3 seconds
+    pollCount = 0;
+    pollTimer = setInterval(poll, 3000);
+  });
+
+  // Scroll to bottom on load
+  container.scrollTop = container.scrollHeight;
+})();
+</script>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -2721,18 +2918,40 @@ export function renderChatThreadPage(
 </head>
 <body>
   ${renderAdminToolbar(userName, activePath)}
-  <div class="vos-page">
-    <div class="page-header">
+  <div class="vos-page" style="display:flex;flex-direction:column;height:calc(100vh - 52px);max-width:900px;margin:0 auto;padding:0 24px">
+    <div class="page-header" style="padding-top:20px;padding-bottom:16px;flex-shrink:0">
       <div>
-        <a href="/admin/chat?agentId=${escapeHtml(agentId)}" class="btn btn-secondary" style="margin-bottom:8px">&larr; Back to threads</a>
+        <a href="/admin/chat?agentId=${safeAgentId}" class="btn btn-secondary" style="margin-bottom:8px">&larr; Back to threads</a>
         <h1 class="page-title">${title}</h1>
-        <div style="font-size:12px;color:#9ca3af;margin-top:4px">Thread <span class="mono">${escapeHtml(threadId)}</span></div>
+        <div style="font-size:12px;color:#9ca3af;margin-top:4px">Thread <span class="mono">${safeThreadId}</span></div>
       </div>
     </div>
-    ${messagecards}
-    ${emptyState}
-    ${replyForm}
+
+    <!-- Messages area (scrollable) -->
+    <div id="messages-container" style="flex:1;overflow-y:auto;padding:8px 0;min-height:0">
+      ${messageBubbles}
+      ${emptyState}
+    </div>
+
+    <!-- Send form -->
+    <form id="send-form" style="flex-shrink:0;padding:16px 0;border-top:1px solid #e5e7eb;margin-top:8px">
+      <div style="display:flex;gap:8px;align-items:flex-end">
+        <textarea
+          id="message-input"
+          rows="3"
+          placeholder="Type a message..."
+          style="flex:1;resize:vertical;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;font-family:inherit;line-height:1.5;outline:none"
+        ></textarea>
+        <button
+          type="submit"
+          id="send-btn"
+          class="btn btn-primary"
+          style="flex-shrink:0;height:44px;padding:0 20px"
+        >Send</button>
+      </div>
+    </form>
   </div>
+  ${inlineScript}
 </body>
 </html>`;
 }

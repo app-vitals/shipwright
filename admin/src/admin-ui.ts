@@ -2151,6 +2151,62 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     },
   );
 
+  // ─── Chat JSON API routes ─────────────────────────────────────────────────
+
+  app.get(
+    "/admin/chat/:agentId/threads/:threadId/messages.json",
+    requireAuth,
+    async (c) => {
+      if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+
+      const threadId = c.req.param("threadId");
+
+      if (!chatClient) {
+        return c.json({ messages: [] });
+      }
+
+      try {
+        const result = await chatClient.listMessages(threadId);
+        return c.json({ messages: result.messages });
+      } catch {
+        return c.json({ messages: [] });
+      }
+    },
+  );
+
+  app.post(
+    "/admin/chat/:agentId/threads/:threadId/messages.json",
+    requireAuth,
+    async (c) => {
+      if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+
+      const threadId = c.req.param("threadId");
+
+      if (!chatClient) {
+        return c.json({ message: null });
+      }
+
+      let body: string | undefined;
+      try {
+        const jsonBody = await c.req.json<{ body?: string }>();
+        body = jsonBody.body?.trim();
+      } catch {
+        return c.json({ message: null }, 400);
+      }
+
+      if (!body) {
+        return c.json({ message: null }, 400);
+      }
+
+      try {
+        const message = await chatClient.createMessage(threadId, "user", body);
+        return c.json({ message });
+      } catch {
+        return c.json({ message: null }, 500);
+      }
+    },
+  );
+
   // ─── Task-store token proxy routes ────────────────────────────────────────
 
   app.get("/admin/tokens", requireAuth, async (c) => {
