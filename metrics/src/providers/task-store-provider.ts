@@ -788,12 +788,13 @@ export class TaskStoreProvider implements MetricsProvider {
    * costEfficiency() — reads run-level cost data from admin cronRunTokenStats.
    *
    * Computes routedUsd (actual cost from admin aggregate) and opusUsd (all-Opus
-   * counterfactual via calculateCost) for each model family fleet-wide and per
-   * cron×model (byCronModel). No Task or TaskRecord dependency.
+   * counterfactual via calculateCost) for each model family at three scopes.
+   * No Task or TaskRecord dependency.
    *
    * Columns: scope, model_family, routed_usd, opus_usd, savings_usd
-   *   - scope="fleet"       → fleet-wide totals from byModel (summed across agents)
-   *   - scope="cron:<key1>" → per-cron×model from byCronModel
+   *   - scope="fleet"          → fleet-wide totals from byModel (summed across agents)
+   *   - scope="agent:<agentId>"→ per-agent/per-model from byModel (individual agent rows)
+   *   - scope="cron:<key1>"   → per-cron×model from byCronModel
    */
   private async costEfficiency(win: {
     from: string;
@@ -851,6 +852,23 @@ export class TaskStoreProvider implements MetricsProvider {
       );
       const savingsUsd = opusUsd - routedUsd;
       rows.push(["fleet", modelFamily, routedUsd, opusUsd, savingsUsd]);
+    }
+
+    // ── Per-agent/per-model rows (byModel, individual agent entries) ─────────
+    for (const entry of cronStats.byModel) {
+      const modelFamily = normalizeModelToRateKey(entry.key2) ?? entry.key2;
+      const routedUsd = entry.costUsd ?? 0;
+      const opusUsd = calculateCost(
+        {
+          input_tokens: entry.input,
+          output_tokens: entry.output,
+          cache_read_input_tokens: entry.cacheRead,
+          cache_creation_input_tokens: entry.cacheCreation,
+        },
+        OPUS_MODEL,
+      );
+      const savingsUsd = opusUsd - routedUsd;
+      rows.push([`agent:${entry.key1}`, modelFamily, routedUsd, opusUsd, savingsUsd]);
     }
 
     // ── Per-cron×model rows (byCronModel) ────────────────────────────────────

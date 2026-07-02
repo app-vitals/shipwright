@@ -15,7 +15,7 @@
 
 import { type Clock, SystemClock } from "./clock.ts";
 import { ConflictError, NotFoundError } from "./errors.ts";
-import type { Prisma, PrismaClient, PullRequest } from "./index.ts";
+import { Prisma, type PrismaClient, type PrPhase, type PullRequest } from "./index.ts";
 import type { TaskServiceLike } from "./task-service.ts";
 
 /** Filters accepted by PullRequestService.list. */
@@ -49,11 +49,17 @@ export interface PullRequestServiceLike {
     commitSha: string,
     claimedBy: string,
     taskId?: string,
+    phase?: PrPhase,
   ): Promise<{ status: 200 | 201; record: PullRequest }>;
   heartbeat(id: string): Promise<PullRequest>;
   complete(id: string): Promise<PullRequest>;
   patch(id: string): Promise<PullRequest>;
   release(id: string): Promise<PullRequest>;
+  claimNext(
+    agentId: string,
+    maxConcurrent: number,
+    repos?: string[],
+  ): Promise<{ pr: PullRequest; phase: PrPhase } | null>;
 }
 
 export class PullRequestService implements PullRequestServiceLike {
@@ -101,9 +107,27 @@ export class PullRequestService implements PullRequestServiceLike {
 
   async update(id: string, data: Partial<PullRequest>): Promise<PullRequest> {
     try {
+      const updateData: Prisma.PullRequestUpdateInput = { ...data };
+
+      // When a caller transitions reviewState to 'approved' and hasn't already
+      // supplied readyForDeployAt, stamp it now rather than leaving it to be
+      // set lazily on the next claim/claimNext. claimNext's
+      // COALESCE(...) NULLS LAST ordering tolerates an unset value, but setting
+      // it at the actual approval moment keeps the deploy-readiness ordering
+      // accurate for PRs that sit approved-but-unclaimed for a while.
+      if (data.reviewState === "approved" && data.readyForDeployAt === undefined) {
+        const existing = await this.prisma.pullRequest.findUnique({
+          where: { id },
+          select: { readyForDeployAt: true },
+        });
+        if (existing && existing.readyForDeployAt === null) {
+          updateData.readyForDeployAt = this.clock.now().toISOString();
+        }
+      }
+
       return await this.prisma.pullRequest.update({
         where: { id },
-        data: data as Prisma.PullRequestUpdateInput,
+        data: updateData,
       });
     } catch (err: unknown) {
       throw this.translateNotFound(err, "pr not found");
@@ -113,12 +137,16 @@ export class PullRequestService implements PullRequestServiceLike {
   // ─── Claim / liveness ─────────────────────────────────────────────────────
 
   /**
-   * Atomically claim a PR for review using a Prisma transaction:
+   * Atomically claim a PR using a Prisma transaction.
    *
-   *   1. Find existing record by @@unique([repo, prNumber])
-   *   2. If found with same commitSha AND reviewState !== 'pending' → ConflictError(409)
-   *   3. If found with different commitSha OR reviewState === 'pending' → update → return {status:200, record}
-   *   4. If no record → create → return {status:201, record}
+   * phase defaults to 'review'. Phase-specific behaviour:
+   *   - review (default): sets reviewState='in_progress', phase='review'
+   *   - patch: sets phase='patch', claim fields; does NOT touch reviewState
+   *   - deploy: sets phase='deploy', claim fields, sets readyForDeployAt=now if null
+   *
+   * Conflict detection:
+   *   - Same commitSha AND claimedBy IS NOT NULL with fresh heartbeat for same phase → 409
+   *   - Legacy review path: same commitSha AND reviewState !== 'pending' → 409
    */
   async claim(
     repo: string,
@@ -126,6 +154,7 @@ export class PullRequestService implements PullRequestServiceLike {
     commitSha: string,
     claimedBy: string,
     taskId?: string,
+    phase: PrPhase = "review",
   ): Promise<{ status: 200 | 201; record: PullRequest }> {
     const now = this.clock.now().toISOString();
 
@@ -135,8 +164,22 @@ export class PullRequestService implements PullRequestServiceLike {
       });
 
       if (existing) {
-        // Same commitSha and already in active review → conflict
+        // Conflict: same commitSha AND already claimed by someone with fresh heartbeat
+        // for the same phase
         if (
+          existing.commitSha === commitSha &&
+          existing.claimedBy !== null &&
+          existing.phase === phase
+        ) {
+          throw new ConflictError(
+            `pr ${repo}#${prNumber} is already claimed with the same commit`,
+          );
+        }
+
+        // Legacy review conflict: same commitSha and reviewState is not pending
+        // (covers the case where phase was not set yet)
+        if (
+          phase === "review" &&
           existing.commitSha === commitSha &&
           existing.reviewState !== "pending"
         ) {
@@ -145,17 +188,29 @@ export class PullRequestService implements PullRequestServiceLike {
           );
         }
 
-        // Different commitSha or reviewState is pending → start new review cycle
+        // Build update payload based on phase
+        const updateData: Prisma.PullRequestUpdateInput = {
+          commitSha,
+          claimedBy,
+          claimedAt: now,
+          heartbeatAt: now,
+          phase,
+          ...(taskId !== undefined ? { taskId } : {}),
+        };
+
+        if (phase === "review") {
+          updateData.reviewState = "in_progress";
+        } else if (phase === "deploy") {
+          // Set readyForDeployAt only if not already set
+          if (existing.readyForDeployAt === null) {
+            updateData.readyForDeployAt = now;
+          }
+        }
+        // phase === 'patch': do NOT touch reviewState (preserve 'posted')
+
         const record = await tx.pullRequest.update({
           where: { id: existing.id },
-          data: {
-            commitSha,
-            reviewState: "in_progress",
-            claimedBy,
-            claimedAt: now,
-            heartbeatAt: now,
-            ...(taskId !== undefined ? { taskId } : {}),
-          },
+          data: updateData,
         });
         return { status: 200 as const, record };
       }
@@ -165,18 +220,24 @@ export class PullRequestService implements PullRequestServiceLike {
       // @@unique([repo, prNumber]) and the losing writer gets a P2002. Map that
       // to ConflictError(409) so callers see a clean error instead of a raw 500.
       try {
-        const record = await tx.pullRequest.create({
-          data: {
-            repo,
-            prNumber,
-            commitSha,
-            reviewState: "in_progress",
-            claimedBy,
-            claimedAt: now,
-            heartbeatAt: now,
-            ...(taskId !== undefined ? { taskId } : {}),
-          },
-        });
+        const createData: Prisma.PullRequestCreateInput = {
+          repo,
+          prNumber,
+          commitSha,
+          claimedBy,
+          claimedAt: now,
+          heartbeatAt: now,
+          phase,
+          ...(taskId !== undefined ? { taskId } : {}),
+        };
+
+        if (phase === "review") {
+          createData.reviewState = "in_progress";
+        } else if (phase === "deploy") {
+          createData.readyForDeployAt = now;
+        }
+
+        const record = await tx.pullRequest.create({ data: createData });
         return { status: 201 as const, record };
       } catch (err: unknown) {
         if (
@@ -219,7 +280,7 @@ export class PullRequestService implements PullRequestServiceLike {
     }
   }
 
-  /** Mark a PR review as posted. Increments reviewCycles, sets reviewState=posted and reviewedAt. */
+  /** Mark a PR review as posted. Increments reviewCycles, sets reviewState=posted, reviewedAt, and readyForPatchAt. */
   async complete(id: string): Promise<PullRequest> {
     const now = this.clock.now().toISOString();
     try {
@@ -229,6 +290,7 @@ export class PullRequestService implements PullRequestServiceLike {
           reviewCycles: { increment: 1 },
           reviewState: "posted",
           reviewedAt: now,
+          readyForPatchAt: now,
         },
       });
     } catch (err: unknown) {
@@ -254,6 +316,119 @@ export class PullRequestService implements PullRequestServiceLike {
     } catch (err: unknown) {
       throw this.translateNotFound(err, "pr not found");
     }
+  }
+
+  /**
+   * Atomically find the oldest unclaimed eligible PR and claim it.
+   *
+   * Steps (all in one transaction):
+   *   1. Count active claims by agentId — if >= maxConcurrent, return null
+   *   2. Find oldest unclaimed eligible PR ordered by
+   *      COALESCE(readyForReviewAt, readyForPatchAt, readyForDeployAt) ASC
+   *      WHERE claimedBy IS NULL AND state='open' AND reviewState IN ('pending','posted','approved')
+   *   3. Determine phase from reviewState: pending→review, posted→patch, approved→deploy
+   *   4. Set readyForReviewAt=now if null (first claim)
+   *   5. Claim with the appropriate phase
+   *   6. Return {pr, phase}
+   */
+  async claimNext(
+    agentId: string,
+    maxConcurrent: number,
+    repos?: string[],
+  ): Promise<{ pr: PullRequest; phase: PrPhase } | null> {
+    const now = this.clock.now();
+    const nowIso = now.toISOString();
+    // Cutoff for "fresh" heartbeat — same as reaper default (5 min)
+    const cutoffMs = Number(
+      process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS ?? 300_000,
+    );
+    const cutoff = new Date(now.getTime() - cutoffMs).toISOString();
+
+    return this.prisma.$transaction(async (tx) => {
+      // Step 1: Count active claims by this agent
+      const activeCount = await tx.pullRequest.count({
+        where: {
+          claimedBy: agentId,
+          heartbeatAt: { gt: cutoff },
+        },
+      });
+
+      if (activeCount >= maxConcurrent) {
+        return null;
+      }
+
+      // Step 2: Find oldest unclaimed eligible PR via raw SQL for COALESCE ordering.
+      // When repos is provided, filter in SQL so out-of-scope PRs don't block
+      // in-scope work (application-layer filtering would return null on first
+      // out-of-scope hit without examining remaining rows).
+      const repoFilter =
+        repos && repos.length > 0
+          ? Prisma.sql`AND "repo" = ANY(${repos})`
+          : Prisma.sql``;
+
+      const rows = await tx.$queryRaw<{ id: string }[]>`
+        SELECT id
+          FROM "PullRequest"
+         WHERE "claimedBy" IS NULL
+           AND "state" = 'open'
+           AND "reviewState" IN ('pending', 'posted', 'approved')
+           ${repoFilter}
+         ORDER BY COALESCE("readyForReviewAt", "readyForPatchAt", "readyForDeployAt") ASC NULLS LAST,
+                  "createdAt" ASC
+         LIMIT 1
+      `;
+
+      if (rows.length === 0) {
+        return null;
+      }
+
+      const targetId = rows[0].id;
+
+      // Step 3: Fetch full record to determine phase
+      const target = await tx.pullRequest.findUnique({ where: { id: targetId } });
+      if (!target) return null; // concurrent claim took it
+
+      // Determine phase from reviewState
+      let phase: PrPhase;
+      if (target.reviewState === "pending") {
+        phase = "review";
+      } else if (target.reviewState === "posted") {
+        phase = "patch";
+      } else {
+        phase = "deploy"; // approved
+      }
+
+      // Step 4 & 5: Build claim update
+      const updateData: Prisma.PullRequestUpdateInput = {
+        claimedBy: agentId,
+        claimedAt: nowIso,
+        heartbeatAt: nowIso,
+        phase,
+      };
+
+      if (phase === "review") {
+        updateData.reviewState = "in_progress";
+        // Set readyForReviewAt=now if this is the first time
+        if (target.readyForReviewAt === null) {
+          updateData.readyForReviewAt = nowIso;
+        }
+      } else if (phase === "deploy") {
+        if (target.readyForDeployAt === null) {
+          updateData.readyForDeployAt = nowIso;
+        }
+      }
+      // patch: preserve reviewState='posted', no readyForPatchAt change here
+
+      const pr = await tx.pullRequest.update({
+        where: {
+          id: targetId,
+          claimedBy: null, // optimistic lock — ensures we win the race
+        },
+        data: updateData,
+      });
+
+      return { pr, phase };
+    });
   }
 
   /** Unclaim a PR — reset claim fields and return reviewState to pending. */
