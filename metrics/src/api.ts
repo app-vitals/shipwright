@@ -384,7 +384,7 @@ function makeCostEfficiencyHandler(
           ? Math.round((fleetSavingsUsd / fleetOpusUsd) * 10000) / 100
           : null;
 
-      const runsTotal = byCronModel.length;
+      const runsTotal = new Set(byCronModel.map((r) => r.cronKey)).size;
       const runsWithCostData = byCronModel.filter((r) => r.routedUsd > 0).length;
 
       return c.json(
@@ -1086,6 +1086,7 @@ export function createMetricsApp(
   registerWithAuthz(app, featuresRoute, metricsPolicy, handleFeatures);
   registerWithAuthz(app, queueRoute, metricsPolicy, handleQueue);
   registerWithAuthz(app, tokensRoute, metricsPolicy, handleTokens);
+  registerWithAuthz(app, costEfficiencyRoute, metricsPolicy, makeCostEfficiencyHandler(provider));
 
   // ─── Dashboard static files ───────────────────────────────────────────────
 
