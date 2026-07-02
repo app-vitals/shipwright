@@ -1765,9 +1765,9 @@ describe("renderTasksPage — PR column", () => {
   });
 });
 
-// ─── renderTasksPage -- PR column (renderer guard + prUrl fallback) ───────────
+// ─── renderTasksPage — PR column: renderer guard + prUrl fallback ─────────────
 
-describe("renderTasksPage -- PR column", () => {
+describe("renderTasksPage — PR column: renderer guard + prUrl fallback", () => {
   function render(tasks: TaskItem[]): string {
     return renderTasksPage(
       tasks,
