@@ -319,7 +319,7 @@ test("sidebar section order: Getting Started appears before Agent", async ({
   const sidebar = page.locator("nav[aria-label='Docs navigation']");
   // Get all section labels (the <p class="sw-label"> elements)
   const sectionLabels = sidebar.locator("p.sw-label");
-  const allLabels = await sectionLabels.allTextContents();
+  const allLabels = (await sectionLabels.allTextContents()).map((l) => l.trim());
   // Find indices of "Getting Started" and "Agent" sections
   const gettingStartedIndex = allLabels.indexOf("Getting Started");
   const agentIndex = allLabels.indexOf("Agent");
