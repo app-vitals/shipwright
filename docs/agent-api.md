@@ -238,7 +238,7 @@ GET /agents/:id/crons/:cronId/runs
 
 Query params: `limit` (default 20), `offset` (default 0). Returns `{ items: AgentCronRun[], total: number }`.
 
-Each run record includes: `id`, `cronId`, `agentId`, `startedAt`, `completedAt`, `skipped`, `skipReason`, `outcome`, `error`, `inputTokens`, `outputTokens`, `cacheReadTokens`, `cacheCreationTokens`, `costUsd`, `model`.
+Each run record includes: `id`, `cronId`, `agentId`, `startedAt`, `completedAt`, `skipped`, `skipReason`, `outcome`, `error`, `inputTokens`, `outputTokens`, `cacheReadTokens`, `cacheCreationTokens`, `costUsd`, `model`, `modelBreakdown` (optional per-model token and cost breakdown array, each entry: `{ model, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, costUsd }`).
 
 ### Update cron run
 
