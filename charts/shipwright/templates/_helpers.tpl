@@ -297,6 +297,7 @@ Chat labels — common labels plus the component label.
 {{ include "shipwright.labels" . }}
 app.kubernetes.io/component: chat
 {{- end }}
+
 {{/*
 Chat ServiceAccount name.
 */}}
