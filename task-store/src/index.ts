@@ -12,6 +12,7 @@ export {
   TaskStatus,
   PrState,
   PrReviewState,
+  PrPhase,
 } from "../prisma/client/index.js";
 export type { Task, TaskToken, PullRequest } from "../prisma/client/index.js";
 export type {
