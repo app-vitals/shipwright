@@ -195,12 +195,19 @@ test("header shows the brand lockup (ship mark + wordmark) linking home", async 
   await expect(home.locator("img")).toBeVisible();
 });
 
-test("header nav surfaces the Configuration link", async ({ page }) => {
+test("header nav surfaces the Docs link", async ({ page }) => {
   await page.goto("/");
   const nav = page.locator("header nav");
   await expect(
-    nav.getByRole("link", { name: /Configuration/i }),
-  ).toHaveAttribute("href", "/docs/reference");
+    nav.getByRole("link", { name: /Docs/i }),
+  ).toHaveAttribute("href", "/docs");
+});
+
+test("mobile hamburger toggle is present", async ({ page }) => {
+  await page.goto("/");
+  // CSS-only mobile nav uses a hidden checkbox toggle.
+  const toggle = page.locator('input[type="checkbox"][id="nav-mobile-toggle"]');
+  await expect(toggle).toHaveCount(1);
 });
 
 test("favicon wires the scalable ship mark", async ({ page }) => {
