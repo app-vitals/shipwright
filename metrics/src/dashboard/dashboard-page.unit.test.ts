@@ -532,6 +532,44 @@ describe("renderDashboardPage — TK-1.2 token trends chart", () => {
   });
 });
 
+describe("renderDashboardPage — PCE-1.4 Cost Efficiency card", () => {
+  test("renders Cost Efficiency section when readOnly: true", () => {
+    const html = renderDashboardPage({ userName: "Public", readOnly: true });
+    expect(html).toContain('id="cost-efficiency-section"');
+    expect(html).toContain("Cost Efficiency");
+  });
+
+  test("does NOT render Cost Efficiency section when readOnly: false (default)", () => {
+    const html = renderDashboardPage({ userName: "Alice" });
+    expect(html).not.toContain('id="cost-efficiency-section"');
+  });
+
+  test("does NOT render Cost Efficiency section when readOnly is explicitly false", () => {
+    const html = renderDashboardPage({ userName: "Alice", readOnly: false });
+    expect(html).not.toContain('id="cost-efficiency-section"');
+  });
+
+  test("Cost Efficiency section contains model-mix bar", () => {
+    const html = renderDashboardPage({ userName: "Public", readOnly: true });
+    expect(html).toContain('class="model-mix-bar"');
+  });
+
+  test("Cost Efficiency section contains savings line elements", () => {
+    const html = renderDashboardPage({ userName: "Public", readOnly: true });
+    expect(html).toContain('id="ce-savings-line"');
+  });
+
+  test("Cost Efficiency section contains the static caveat", () => {
+    const html = renderDashboardPage({ userName: "Public", readOnly: true });
+    expect(html).toContain("all-Opus assumes identical token counts");
+  });
+
+  test("readOnly page snapshot matches", () => {
+    const html = renderDashboardPage({ userName: "Public", readOnly: true });
+    expect(html).toMatchSnapshot();
+  });
+});
+
 describe("renderDashboardPage — PPL-1.2 readOnly variant", () => {
   const html = renderDashboardPage({
     userName: "Public",
