@@ -286,7 +286,7 @@ Example with unreadable JSONL (all token fields `null`) and no effort level set:
 5. **Absent `test_layers` = legacy record (pre-v4.6.0).** Treat as `{measured: {}, planned: [], drift: [], coverage_per_layer: null, coverage_per_layer_reason: null}`. Do not exclude legacy records from aggregates that don't require test layer data.
 6. **`test_layers.configured: false` = test-system.md absent (v4.15.0+).** When `configured` is `false`, no other `test_layers` sub-keys are present. Pre-v4.15.0 records with a full `test_layers` object cannot be assumed to have had test-system.md present — the old code used PLAN_SESSION_DEFAULTS as a fallback, producing identical output. Treat absent `configured` on pre-v4.15.0 records as unknown (not as true).
 7. **Absent `tokens` = legacy record (pre-v4.16.0).** Consumers should treat absent `tokens` as `{input: null, output: null, cost_usd: null}`. Within a present `tokens` object, any sub-field that is `null` means the value could not be read (unreadable JSONL or unknown model) — not that tokens were zero. Never substitute `0` for `null`.
-8. **Absent `effort_level` = legacy record (pre-v4.16.0).** Consumers should treat absent `effort_level` as `null`. An explicit `null` value means `ANTHROPIC_EFFORT_LEVEL` was not set when the task ran; an empty string `""` from the PostHog event (the CLI arg fallback) is equivalent to `null` for aggregation purposes.
+8. **Absent `effort_level` = legacy record (pre-v4.16.0).** Consumers should treat absent `effort_level` as `null`. An explicit `null` value means `ANTHROPIC_EFFORT_LEVEL` was not set when the task ran; an empty string `""` in legacy records (CLI arg fallback, pre-task-store migration) is equivalent to `null` for aggregation purposes.
 
 ---
 
