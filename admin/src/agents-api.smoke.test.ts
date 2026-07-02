@@ -112,7 +112,10 @@ function makeMockDeps(): AdminDeps {
     agentEnvService: {
       upsert: async () => {},
       patch: async () => {},
-      getByAgentId: async () => ({ FOO: "bar", SECRET: "decrypted-value" }),
+      getByAgentId: async () => ({
+        env: { FOO: "bar", SECRET: "decrypted-value" },
+        secretKeys: [],
+      }),
       deleteKey: async () => {},
     },
     agentCronJobService: {
@@ -290,7 +293,11 @@ function makeMockDeps(): AdminDeps {
       removeByName: async () => {},
     },
     agentChatTokenService: {
-      upsertDailyByModel: async (_agentId: string, date: string, model: string) => ({
+      upsertDailyByModel: async (
+        _agentId: string,
+        date: string,
+        model: string,
+      ) => ({
         id: "daily-test-id",
         agentId: _agentId,
         date,
@@ -304,7 +311,13 @@ function makeMockDeps(): AdminDeps {
         updatedAt: new Date("2024-01-01"),
       }),
       queryStats: async () => ({
-        totals: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, total: 0 },
+        totals: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheCreation: 0,
+          total: 0,
+        },
         byAgent: [],
         byModel: [],
         daily: [],
@@ -401,7 +414,13 @@ function makeMockDeps(): AdminDeps {
     },
     agentCronRunStatsService: {
       query: async () => ({
-        totals: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, total: 0 },
+        totals: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheCreation: 0,
+          total: 0,
+        },
         byAgent: [],
         byCron: [],
         byModel: [],
@@ -517,7 +536,20 @@ describe("admin API — env vars", () => {
     const app = createAdminApp(makeMockDeps());
     const res = await app.request(`/agents/${AGENT_ID}/envs`, {
       method: "PATCH",
-      body: JSON.stringify({ FOO: "updated" }),
+      body: JSON.stringify({ env: { FOO: "updated" } }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("PATCH /agents/:id/envs with secretKeys designates key as secret (200)", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}/envs`, {
+      method: "PATCH",
+      body: JSON.stringify({ env: { MY_SECRET: "s3cr3t" }, secretKeys: ["MY_SECRET"] }),
       headers: {
         "Content-Type": "application/json",
         Cookie: `admin_session=${cookie}`,
@@ -533,6 +565,29 @@ describe("admin API — env vars", () => {
       headers: { Cookie: `admin_session=${cookie}` },
     });
     expect(res.status).toBe(204);
+  });
+
+  it("GET /agents/:id/envs returns secretKeys array", async () => {
+    const deps = makeMockDeps();
+    // Override getByAgentId to return a secret key
+    deps.agentEnvService = {
+      ...deps.agentEnvService,
+      getByAgentId: async () => ({
+        env: { FOO: "bar", MY_SECRET: "***" },
+        secretKeys: ["MY_SECRET"],
+      }),
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}/envs`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.env).toBeDefined();
+    expect(body.secretKeys).toBeDefined();
+    expect(body.secretKeys).toContain("MY_SECRET");
+    expect(body.env.MY_SECRET).toBe("***");
+    expect(body.env.FOO).toBe("bar");
   });
 });
 

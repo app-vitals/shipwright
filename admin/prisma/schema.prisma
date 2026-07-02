@@ -48,6 +48,7 @@ model AgentEnv {
   agent     Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
   key       String   // env var name
   value     String   // AES-256-GCM encrypted
+  secret    Boolean  @default(false) // when true, GET /agents/:id/envs masks the value as ***
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

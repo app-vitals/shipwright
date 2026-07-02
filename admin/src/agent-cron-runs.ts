@@ -143,7 +143,9 @@ export class AgentCronRunService {
         }),
         ...input.modelBreakdown.map((entry) =>
           this.prisma.agentCronRunModelBreakdown.upsert({
-            where: { cronRunId_model: { cronRunId: runId, model: entry.model } },
+            where: {
+              cronRunId_model: { cronRunId: runId, model: entry.model },
+            },
             create: {
               cronRunId: runId,
               model: entry.model,

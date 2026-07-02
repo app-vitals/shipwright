@@ -69,6 +69,7 @@ async function makeProvisionStateCookie(
 
 interface MockState {
   upsertCalls: Array<{ agentId: string; env: Record<string, string> }>;
+  patchCalls: Array<{ agentId: string; env: Record<string, string> }>;
   reconcileCalls: string[];
   createTokenCalls: Array<{ agentId: string; label?: string }>;
 }
@@ -160,9 +161,12 @@ function makeMockDeps(
       },
     },
     agentEnvService: {
-      getByAgentId: async () => ({}),
+      getByAgentId: async () => ({ env: {}, secretKeys: [] }),
       upsert: async (agentId: string, env: Record<string, string>) => {
         state.upsertCalls.push({ agentId, env });
+      },
+      patch: async (agentId: string, env: Record<string, string>) => {
+        state.patchCalls.push({ agentId, env });
       },
       deleteKey: async () => {},
       getConfigBundle: async () => null,
@@ -269,6 +273,7 @@ describe("GET /admin/provision/complete — OAuth callback", () => {
   it("valid state cookie + code param → stores SLACK_BOT_TOKEN and renders xapp-token page", async () => {
     const state: MockState = {
       upsertCalls: [],
+      patchCalls: [],
       reconcileCalls: [],
       createTokenCalls: [],
     };
@@ -290,15 +295,16 @@ describe("GET /admin/provision/complete — OAuth callback", () => {
     // Should render xapp-token page, not the old paste form
     expect(html.toLowerCase()).toContain("xapp");
 
-    // SLACK_BOT_TOKEN should have been stored
-    expect(state.upsertCalls.length).toBeGreaterThan(0);
-    const storedEnv = state.upsertCalls[state.upsertCalls.length - 1].env;
+    // SLACK_BOT_TOKEN should have been stored via patch()
+    expect(state.patchCalls.length).toBeGreaterThan(0);
+    const storedEnv = state.patchCalls[state.patchCalls.length - 1].env;
     expect(storedEnv).toHaveProperty("SLACK_BOT_TOKEN", "xoxb-mock-bot-token");
   });
 
   it("absent cookie → renders error page (not blank form)", async () => {
     const state: MockState = {
       upsertCalls: [],
+      patchCalls: [],
       reconcileCalls: [],
       createTokenCalls: [],
     };
@@ -324,6 +330,7 @@ describe("GET /admin/provision/complete — OAuth callback", () => {
   it("expired cookie → renders error page", async () => {
     const state: MockState = {
       upsertCalls: [],
+      patchCalls: [],
       reconcileCalls: [],
       createTokenCalls: [],
     };
@@ -348,6 +355,7 @@ describe("GET /admin/provision/complete — OAuth callback", () => {
   it("valid state cookie but no code param (e.g. user denied OAuth) → renders error page without consuming session", async () => {
     const state: MockState = {
       upsertCalls: [],
+      patchCalls: [],
       reconcileCalls: [],
       createTokenCalls: [],
     };
@@ -382,21 +390,29 @@ describe("GET /admin/provision/complete — reinstall path (SLACK_APP_TOKEN alre
   it("valid state cookie + code param + SLACK_APP_TOKEN already in env → 302 to ?success=reinstalled", async () => {
     const state: MockState = {
       upsertCalls: [],
+      patchCalls: [],
       reconcileCalls: [],
       createTokenCalls: [],
     };
     const deps = makeMockDeps(state, {
       agentEnvService: {
         // Existing env already has SLACK_APP_TOKEN — reinstall path
-        getByAgentId: async () => ({
-          SLACK_BOT_TOKEN: "xoxb-old-bot-token",
-          SLACK_APP_TOKEN: "xapp-existing-app-token",
-        }),
+        getByAgentId: async () => ({ env: {}, secretKeys: [] }),
         upsert: async (agentId: string, env: Record<string, string>) => {
           state.upsertCalls.push({ agentId, env });
         },
+        patch: async (agentId: string, env: Record<string, string>) => {
+          state.patchCalls.push({ agentId, env });
+        },
         deleteKey: async () => {},
-        getConfigBundle: async () => null,
+        getConfigBundle: async () => ({
+          env: {
+            SLACK_BOT_TOKEN: "xoxb-old-bot-token",
+            SLACK_APP_TOKEN: "xapp-existing-app-token",
+          },
+          agentId: AGENT_ID,
+          allowedTools: [],
+        }),
       },
     });
     const app = createAdminUIApp(deps);
@@ -417,8 +433,8 @@ describe("GET /admin/provision/complete — reinstall path (SLACK_APP_TOKEN alre
     expect(location).toContain("success=reinstalled");
     expect(location).toContain(`/admin/agents/${AGENT_ID}`);
 
-    // SLACK_BOT_TOKEN should still have been stored (new token)
-    const storedEnv = state.upsertCalls[state.upsertCalls.length - 1]?.env;
+    // SLACK_BOT_TOKEN should still have been stored via patch() (new token)
+    const storedEnv = state.patchCalls[state.patchCalls.length - 1]?.env;
     expect(storedEnv).toHaveProperty("SLACK_BOT_TOKEN", "xoxb-mock-bot-token");
   });
 });
@@ -433,6 +449,7 @@ describe("POST /admin/provision/complete — removed route", () => {
   it("returns 404", async () => {
     const state: MockState = {
       upsertCalls: [],
+      patchCalls: [],
       reconcileCalls: [],
       createTokenCalls: [],
     };
@@ -467,6 +484,7 @@ describe("POST /admin/provision/xapp-token", () => {
   it("valid data → 200, SLACK_APP_TOKEN stored, SHIPWRIGHT_AGENT_API_KEY stored, crons reconciled, raw token shown", async () => {
     const state: MockState = {
       upsertCalls: [],
+      patchCalls: [],
       reconcileCalls: [],
       createTokenCalls: [],
     };
@@ -489,21 +507,21 @@ describe("POST /admin/provision/xapp-token", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
 
-    // SLACK_APP_TOKEN should be stored
-    const appTokenUpsert = state.upsertCalls.find(
+    // SLACK_APP_TOKEN should be stored via patch()
+    const appTokenPatch = state.patchCalls.find(
       (c) => "SLACK_APP_TOKEN" in c.env,
     );
-    expect(appTokenUpsert).toBeDefined();
-    expect(appTokenUpsert?.env.SLACK_APP_TOKEN).toBe(
+    expect(appTokenPatch).toBeDefined();
+    expect(appTokenPatch?.env.SLACK_APP_TOKEN).toBe(
       "xapp-1-TEST-fake-socket-token",
     );
 
-    // SHIPWRIGHT_AGENT_API_KEY should be stored
-    const apiKeyUpsert = state.upsertCalls.find(
+    // SHIPWRIGHT_AGENT_API_KEY should be stored via patch()
+    const apiKeyPatch = state.patchCalls.find(
       (c) => "SHIPWRIGHT_AGENT_API_KEY" in c.env,
     );
-    expect(apiKeyUpsert).toBeDefined();
-    expect(apiKeyUpsert?.env.SHIPWRIGHT_AGENT_API_KEY).toBe(
+    expect(apiKeyPatch).toBeDefined();
+    expect(apiKeyPatch?.env.SHIPWRIGHT_AGENT_API_KEY).toBe(
       "raw_test_token_abc123def456",
     );
 
@@ -521,6 +539,7 @@ describe("POST /admin/provision/xapp-token", () => {
   it("missing agentId → shows error in xapp-token page", async () => {
     const state: MockState = {
       upsertCalls: [],
+      patchCalls: [],
       reconcileCalls: [],
       createTokenCalls: [],
     };
@@ -550,6 +569,7 @@ describe("POST /admin/provision/xapp-token", () => {
   it("invalid xappToken (missing xapp- prefix) → shows error in xapp-token page", async () => {
     const state: MockState = {
       upsertCalls: [],
+      patchCalls: [],
       reconcileCalls: [],
       createTokenCalls: [],
     };
