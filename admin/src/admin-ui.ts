@@ -1422,16 +1422,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       }
 
       const newAgent = await prisma.agent.create({
-        data: { name, selfHosted: false },
+        data: { name, selfHosted: false, ...(repos.length > 0 && { repos }) },
       });
       agentId = newAgent.id;
-
-      if (repos.length > 0) {
-        await prisma.agent.update({
-          where: { id: newAgent.id },
-          data: { repos },
-        });
-      }
 
       try {
         await provisioner.provision(newAgent.id, { slug: newAgent.name });

@@ -2076,8 +2076,11 @@ describe("admin UI — provision start form", () => {
 
   it("POST /admin/provision/start agentMode=new happy path: creates agent, provisions it (non-self-hosted), and reaches oauthUrl success state", async () => {
     const NEW_AGENT_ID = "agent-new-999";
-    let createArgs: { name: string; selfHosted?: boolean } | null = null;
-    let updateArgs: { id: string; repos: string[] } | null = null;
+    let createArgs: {
+      name: string;
+      selfHosted?: boolean;
+      repos?: string[];
+    } | null = null;
     let provisionArgs: { id: string; opts: { slug: string } } | null = null;
 
     const deps = makeMockDeps({
@@ -2101,7 +2104,7 @@ describe("admin UI — provision start form", () => {
             repos: ["my-org/repo-one"],
           }),
           create: async (args: {
-            data: { name: string; selfHosted?: boolean };
+            data: { name: string; selfHosted?: boolean; repos?: string[] };
           }) => {
             createArgs = args.data;
             return {
@@ -2111,24 +2114,18 @@ describe("admin UI — provision start form", () => {
               selfHosted: args.data.selfHosted ?? false,
               createdAt: new Date("2024-01-01"),
               updatedAt: new Date("2024-01-01"),
-              repos: [],
+              repos: args.data.repos ?? [],
             };
           },
-          update: async (args: {
-            where: { id: string };
-            data: { repos: string[] };
-          }) => {
-            updateArgs = { id: args.where.id, repos: args.data.repos };
-            return {
-              id: args.where.id,
-              name: "brand-new-agent",
-              slackId: null,
-              selfHosted: false,
-              createdAt: new Date("2024-01-01"),
-              updatedAt: new Date("2024-01-01"),
-              repos: args.data.repos,
-            };
-          },
+          update: async () => ({
+            id: NEW_AGENT_ID,
+            name: "brand-new-agent",
+            slackId: null,
+            selfHosted: false,
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+            repos: [],
+          }),
           delete: async () => ({
             id: NEW_AGENT_ID,
             name: "brand-new-agent",
@@ -2202,12 +2199,7 @@ describe("admin UI — provision start form", () => {
     const created = createArgs!;
     expect(created.name).toBe("brand-new-agent");
     expect(created.selfHosted).toBe(false);
-
-    expect(updateArgs).not.toBeNull();
-    // biome-ignore lint/style/noNonNullAssertion: guarded above
-    const updated = updateArgs!;
-    expect(updated.id).toBe(NEW_AGENT_ID);
-    expect(updated.repos).toEqual(["my-org/repo-one"]);
+    expect(created.repos).toEqual(["my-org/repo-one"]);
 
     expect(provisionArgs).not.toBeNull();
     // biome-ignore lint/style/noNonNullAssertion: guarded above
