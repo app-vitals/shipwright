@@ -12,6 +12,10 @@ import {
   escapeHtml,
   renderAdminToolbar,
 } from "./admin-ui-styles.ts";
+import type {
+  ChatMessage,
+  ChatThread,
+} from "./http-chat-client.ts";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -2497,6 +2501,237 @@ export SHIPWRIGHT_TASK_STORE_TOKEN=${escapeHtml(rawToken)}</pre>`
       </table>
     </div>
     ${createForm}
+  </div>
+</body>
+</html>`;
+}
+
+// ─── Chat page ─────────────────────────────────────────────────────────────────
+
+export interface AgentOption {
+  id: string;
+  name: string;
+}
+
+/**
+ * Renders the top-level /admin/chat page.
+ *
+ * @param agents       - list of agents for the dropdown
+ * @param selectedAgentId - the currently selected agent (from ?agentId=X)
+ * @param threads      - thread list (null = chatClient absent → degraded mode)
+ * @param userName     - logged-in user's email for the toolbar
+ */
+export function renderChatPage(
+  agents: AgentOption[],
+  selectedAgentId: string | undefined,
+  threads: ChatThread[] | null,
+  userName: string,
+): string {
+  const activePath = "/admin/chat";
+
+  const agentOptions = agents
+    .map(
+      (a) =>
+        `<option value="${escapeHtml(a.id)}"${a.id === selectedAgentId ? " selected" : ""}>${escapeHtml(a.name)}</option>`,
+    )
+    .join("\n");
+
+  const agentSelector = `
+    <form method="GET" action="/admin/chat" class="form-row" style="margin-bottom:24px">
+      <div class="form-group" style="max-width:320px">
+        <label class="form-label" for="agentId">Agent</label>
+        <select name="agentId" id="agentId" class="form-input" onchange="this.form.submit()">
+          <option value="">— select an agent —</option>
+          ${agentOptions}
+        </select>
+      </div>
+    </form>`;
+
+  let content: string;
+
+  if (threads === null) {
+    // Degraded mode — chat service not configured
+    content = `
+      <div class="alert alert-error">
+        Chat service not configured. Set <code>SHIPWRIGHT_CHAT_SERVICE_URL</code> and
+        <code>SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN</code> to enable this feature.
+      </div>`;
+  } else if (!selectedAgentId) {
+    // No agent selected yet
+    content = `
+      <div class="empty-state">
+        Select an agent above to view its threads.
+      </div>`;
+  } else {
+    // Render thread table
+    const rows =
+      threads.length === 0
+        ? `<tr><td colspan="4" class="empty-state">No threads found for this agent.</td></tr>`
+        : threads
+            .map((t) => {
+              const title = escapeHtml(t.title ?? "Untitled");
+              const createdAt = new Date(t.createdAt).toLocaleString();
+              const shortId = escapeHtml(t.id.slice(0, 8));
+              return `<tr>
+                <td class="mono" title="${escapeHtml(t.id)}">${shortId}…</td>
+                <td>${title}</td>
+                <td>${escapeHtml(createdAt)}</td>
+                <td>
+                  <a href="/admin/chat/${escapeHtml(selectedAgentId)}/threads/${escapeHtml(t.id)}" class="btn btn-secondary" style="padding:4px 10px;font-size:12px">View</a>
+                </td>
+              </tr>`;
+            })
+            .join("\n");
+
+    const newThreadForm = `
+      <form method="POST" action="/admin/chat/${escapeHtml(selectedAgentId)}/threads" style="margin-top:16px">
+        <div class="form-row">
+          <div class="form-group">
+            <input type="text" name="title" class="form-input" placeholder="Thread title (optional)">
+          </div>
+          <button type="submit" class="btn btn-primary">New Thread</button>
+        </div>
+      </form>`;
+
+    content = `
+      <div class="card">
+        <div class="card-title">Threads</div>
+        <div class="data-table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Thread ID</th>
+                <th>Title</th>
+                <th>Created</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+        ${newThreadForm}
+      </div>`;
+  }
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Chat — Shipwright Admin</title>
+  <style>${baseStyles()}</style>
+</head>
+<body>
+  ${renderAdminToolbar(userName, activePath)}
+  <div class="vos-page">
+    <div class="page-header">
+      <h1 class="page-title">Chat</h1>
+    </div>
+    ${agentSelector}
+    ${content}
+  </div>
+</body>
+</html>`;
+}
+
+/**
+ * Renders a thread detail page at /admin/chat/:agentId/threads/:threadId.
+ *
+ * @param agentId  - agent ID
+ * @param thread   - thread object (null = chatClient absent -> degraded mode)
+ * @param messages - messages for the thread (null = degraded mode)
+ * @param userName - logged-in user's email for the toolbar
+ */
+export function renderChatThreadPage(
+  agentId: string,
+  thread: ChatThread | null,
+  messages: ChatMessage[] | null,
+  userName: string,
+): string {
+  const activePath = "/admin/chat";
+
+  if (thread === null || messages === null) {
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Thread - Shipwright Admin</title>
+  <style>${baseStyles()}</style>
+</head>
+<body>
+  ${renderAdminToolbar(userName, activePath)}
+  <div class="vos-page">
+    <div class="page-header">
+      <h1 class="page-title">Thread</h1>
+    </div>
+    <div class="alert alert-error">
+      Chat service not configured. Set <code>SHIPWRIGHT_CHAT_SERVICE_URL</code> and
+      <code>SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN</code> to enable this feature.
+    </div>
+  </div>
+</body>
+</html>`;
+  }
+
+  const roleColor: Record<string, string> = {
+    user: "background:#eef2ff;color:#4f46e5",
+    assistant: "background:#f0fdf4;color:#166534",
+    system: "background:#fef9c3;color:#854d0e",
+  };
+
+  const messagecards = messages
+    .map((m) => {
+      const style = roleColor[m.role] ?? "background:#f3f4f6;color:#374151";
+      return `<div class="card" style="margin-bottom:12px">
+        <div style="margin-bottom:8px">
+          <span class="badge" style="${style}">${escapeHtml(m.role)}</span>
+          <span style="font-size:12px;color:#9ca3af;margin-left:8px">${escapeHtml(new Date(m.createdAt).toLocaleString())}</span>
+        </div>
+        <div style="font-size:14px;white-space:pre-wrap;color:#374151">${escapeHtml(m.body)}</div>
+      </div>`;
+    })
+    .join("\n");
+
+  const emptyState =
+    messages.length === 0
+      ? `<div class="empty-state">No messages in this thread yet.</div>`
+      : "";
+
+  const threadId = thread.id;
+  const replyForm = `
+    <form method="POST" action="/admin/chat/${escapeHtml(agentId)}/threads/${escapeHtml(threadId)}/messages" style="margin-top:24px">
+      <div class="form-group">
+        <label class="form-label" for="body">New message</label>
+        <textarea name="body" id="body" class="form-input" rows="4" placeholder="Type a message..." style="resize:vertical"></textarea>
+      </div>
+      <input type="hidden" name="role" value="user">
+      <button type="submit" class="btn btn-primary">Send</button>
+    </form>`;
+
+  const title = thread.title ? escapeHtml(thread.title) : "Untitled Thread";
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>${title} - Shipwright Admin</title>
+  <style>${baseStyles()}</style>
+</head>
+<body>
+  ${renderAdminToolbar(userName, activePath)}
+  <div class="vos-page">
+    <div class="page-header">
+      <div>
+        <a href="/admin/chat?agentId=${escapeHtml(agentId)}" class="btn btn-secondary" style="margin-bottom:8px">&larr; Back to threads</a>
+        <h1 class="page-title">${title}</h1>
+        <div style="font-size:12px;color:#9ca3af;margin-top:4px">Thread <span class="mono">${escapeHtml(threadId)}</span></div>
+      </div>
+    </div>
+    ${messagecards}
+    ${emptyState}
+    ${replyForm}
   </div>
 </body>
 </html>`;
