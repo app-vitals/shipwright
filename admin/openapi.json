@@ -658,20 +658,6 @@
             ],
             "example": 10
           },
-          "costUsd": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "example": 0.0042
-          },
-          "model": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": "claude-sonnet-4-5"
-          },
           "createdAt": {
             "type": "string",
             "format": "date-time",
@@ -692,8 +678,6 @@
           "outputTokens",
           "cacheReadTokens",
           "cacheCreationTokens",
-          "costUsd",
-          "model",
           "createdAt"
         ]
       },
@@ -794,6 +778,43 @@
           "run"
         ]
       },
+      "ModelBreakdownEntry": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "example": "claude-sonnet-4-5"
+          },
+          "inputTokens": {
+            "type": "integer",
+            "default": 0,
+            "example": 200
+          },
+          "outputTokens": {
+            "type": "integer",
+            "default": 0,
+            "example": 100
+          },
+          "cacheReadTokens": {
+            "type": "integer",
+            "default": 0,
+            "example": 8
+          },
+          "cacheCreationTokens": {
+            "type": "integer",
+            "default": 0,
+            "example": 4
+          },
+          "costUsd": {
+            "type": "number",
+            "default": 0,
+            "example": 0.002
+          }
+        },
+        "required": [
+          "model"
+        ]
+      },
       "PatchAgentCronRunBody": {
         "type": "object",
         "properties": {
@@ -858,19 +879,12 @@
             ],
             "example": 10
           },
-          "costUsd": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "example": 0.0042
-          },
-          "model": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": "claude-sonnet-4-5"
+          "modelBreakdown": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelBreakdownEntry"
+            },
+            "description": "Per-model token breakdown for this run"
           }
         }
       },
@@ -1425,6 +1439,7 @@
             "items": {
               "$ref": "#/components/schemas/ChatTokenModelEntry"
             },
+            "minItems": 1,
             "description": "Per-model token usage increments"
           }
         },
