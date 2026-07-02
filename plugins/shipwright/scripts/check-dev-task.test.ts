@@ -29,9 +29,13 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     title: "Test task",
     status: "pending",
     repo: "acme/example-repo",
+    assignee: MY_AGENT_ID,
     ...overrides,
   };
 }
+
+const MY_AGENT_ID = "agent-mine";
+const OTHER_AGENT_ID = "agent-other";
 
 interface MakeDepsOptions {
   readyTasks?: Task[];
@@ -40,6 +44,7 @@ interface MakeDepsOptions {
   resetCalls?: string[];
   stampCalls?: string[];
   clock?: Clock;
+  agentId?: string;
 }
 
 // Deps stub: injects dependencies returning the given tasks
@@ -54,6 +59,7 @@ function makeDeps(options: MakeDepsOptions | Task[] = {}) {
   const hitlPendingTasks = opts.hitlPendingTasks ?? [];
   const resetCalls = opts.resetCalls ?? [];
   const clock = opts.clock ?? FixedClock("2026-05-31T16:00:00Z");
+  const agentId = opts.agentId ?? MY_AGENT_ID;
 
   return {
     getReadyTasks: async (): Promise<Task[]> => readyTasks,
@@ -68,6 +74,7 @@ function makeDeps(options: MakeDepsOptions | Task[] = {}) {
       return makeTask({ id, startedAt });
     },
     clock,
+    agentId,
   };
 }
 
@@ -222,6 +229,141 @@ describe("check-dev-task", () => {
 
     expect(resetCalls).toContain("SWC-2.6");
     expect(result.exit).toBe(1);
+  });
+
+  // ─── Cross-agent assignee scoping ─────────────────────────────────────────
+  //
+  // The task-store list endpoint does not reliably filter by assignee for
+  // agent tokens with repo-level access — a bare `status=` query can return
+  // tasks belonging to other agents sharing the same repo. Acting on those
+  // (staleness reset, or dev-task.md resuming them) silently interferes with
+  // another agent's in-flight work. These tests guard the client-side filter
+  // that scopes getInProgressTasks()/getHitlPendingTasks() results to
+  // deps.agentId before anything touches them.
+
+  test("does not reset a stale in_progress task assigned to a different agent", async () => {
+    const resetCalls: string[] = [];
+    const clock = FixedClock("2026-05-31T16:00:00Z");
+    const foreignStaleTask = makeTask({
+      id: "OTH-1.1",
+      status: "in_progress",
+      startedAt: "2026-05-31T15:14:59Z", // 45m1s ago — stale
+      assignee: OTHER_AGENT_ID,
+    });
+
+    const result = await run(
+      makeDeps({
+        inProgressTasks: [foreignStaleTask],
+        readyTasks: [],
+        resetCalls,
+        clock,
+        agentId: MY_AGENT_ID,
+      }),
+    );
+
+    expect(resetCalls).not.toContain("OTH-1.1");
+    expect(result.exit).toBe(1);
+  });
+
+  test("does not stamp startedAt on an in_progress task assigned to a different agent", async () => {
+    const stampCalls: string[] = [];
+    const clock = FixedClock("2026-05-31T16:00:00Z");
+    const foreignTask = makeTask({
+      id: "OTH-1.2",
+      status: "in_progress",
+      // no startedAt
+      assignee: OTHER_AGENT_ID,
+    });
+
+    await run(
+      makeDeps({
+        inProgressTasks: [foreignTask],
+        stampCalls,
+        clock,
+        agentId: MY_AGENT_ID,
+      }),
+    );
+
+    expect(stampCalls).not.toContain("OTH-1.2");
+  });
+
+  test("still resets a stale in_progress task assigned to this agent alongside a foreign one", async () => {
+    const resetCalls: string[] = [];
+    const clock = FixedClock("2026-05-31T16:00:00Z");
+    const mineStale = makeTask({
+      id: "SWC-3.1",
+      status: "in_progress",
+      startedAt: "2026-05-31T15:14:59Z",
+      assignee: MY_AGENT_ID,
+    });
+    const foreignStale = makeTask({
+      id: "OTH-1.3",
+      status: "in_progress",
+      startedAt: "2026-05-31T15:14:59Z",
+      assignee: OTHER_AGENT_ID,
+    });
+
+    await run(
+      makeDeps({
+        inProgressTasks: [mineStale, foreignStale],
+        resetCalls,
+        clock,
+        agentId: MY_AGENT_ID,
+      }),
+    );
+
+    expect(resetCalls).toContain("SWC-3.1");
+    expect(resetCalls).not.toContain("OTH-1.3");
+  });
+
+  test("excludes HITL tasks assigned to a different agent from notification", async () => {
+    const foreignHitlTask = makeTask({
+      id: "OTH-2.1",
+      title: "Someone else's HITL task",
+      status: "pending",
+      hitl: true,
+      assignee: OTHER_AGENT_ID,
+    });
+
+    const result = await run(
+      makeDeps({
+        readyTasks: [],
+        hitlPendingTasks: [foreignHitlTask],
+        agentId: MY_AGENT_ID,
+      }),
+    );
+
+    expect(result.exit).toBe(1);
+    expect(result.output).toBe("");
+  });
+
+  test("still notifies for this agent's HITL task alongside a foreign one", async () => {
+    const mineHitlTask = makeTask({
+      id: "HIT-6.1",
+      title: "My HITL task",
+      status: "pending",
+      hitl: true,
+      assignee: MY_AGENT_ID,
+    });
+    const foreignHitlTask = makeTask({
+      id: "OTH-2.2",
+      title: "Someone else's HITL task",
+      status: "pending",
+      hitl: true,
+      assignee: OTHER_AGENT_ID,
+    });
+
+    const result = await run(
+      makeDeps({
+        readyTasks: [],
+        hitlPendingTasks: [mineHitlTask, foreignHitlTask],
+        agentId: MY_AGENT_ID,
+      }),
+    );
+
+    expect(result.exit).toBe(0);
+    expect(result.output).toContain("HIT-6.1");
+    expect(result.output).not.toContain("OTH-2.2");
   });
 
   // ─── HITL pending notification ────────────────────────────────────────────

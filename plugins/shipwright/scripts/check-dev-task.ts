@@ -11,6 +11,12 @@
  *     out naturally on the next run (conservative — avoids disrupting tasks
  *     legitimately set to in_progress outside of dev-task).
  *
+ * In_progress and HITL-pending results are filtered to this agent's own
+ * `assignee` (SHIPWRIGHT_AGENT_ID) before any of the above runs — the
+ * task-store list endpoint does not reliably scope bare `status=` queries
+ * by assignee for agent tokens with repo-level access, so unfiltered results
+ * can include other agents' tasks.
+ *
  * Exit 0 + one-line prompt → work exists
  * Exit 1 + no output       → nothing to do
  *
@@ -35,6 +41,8 @@ interface Deps {
   resetTask: (id: string) => Promise<Task>;
   stampTask: (id: string, startedAt: string) => Promise<Task>;
   clock: Clock;
+  /** This agent's own task-store id — used to filter out other agents' tasks. */
+  agentId: string;
 }
 
 // ─── Core logic ───────────────────────────────────────────────────────────────
@@ -45,8 +53,15 @@ interface RunResult {
 }
 
 export async function run(deps: Deps): Promise<RunResult> {
-  // Reset stale in_progress tasks before checking for ready tasks
-  const inProgressTasks = await deps.getInProgressTasks();
+  // The task-store list endpoint does not reliably filter by assignee for
+  // agent tokens with repo-level access — a bare `status=` query can return
+  // tasks belonging to other agents sharing the same repo. Filter to this
+  // agent's own tasks before resetting/stamping staleness or surfacing HITL
+  // notifications, so this agent never touches another agent's in-flight work.
+  const allInProgressTasks = await deps.getInProgressTasks();
+  const inProgressTasks = allInProgressTasks.filter(
+    (t) => t.assignee === deps.agentId,
+  );
   const now = deps.clock.now().getTime();
 
   for (const task of inProgressTasks) {
@@ -69,7 +84,7 @@ export async function run(deps: Deps): Promise<RunResult> {
 
   const hitlPendingTasks = await deps.getHitlPendingTasks();
   const unnotifiedHitlTasks = hitlPendingTasks.filter(
-    (t) => t.hitlNotifiedAt === undefined,
+    (t) => t.assignee === deps.agentId && t.hitlNotifiedAt === undefined,
   );
 
   if (unnotifiedHitlTasks.length > 0) {
@@ -89,6 +104,11 @@ export async function run(deps: Deps): Promise<RunResult> {
 
 function buildProductionDeps(): Deps {
   const client = createTaskStoreClient();
+  const agentId = (process.env.SHIPWRIGHT_AGENT_ID ?? "").trim();
+  if (!agentId) {
+    process.stderr.write("error: SHIPWRIGHT_AGENT_ID is required\n");
+    process.exit(1);
+  }
 
   return {
     getReadyTasks: () => client.query(new URLSearchParams({ ready: "true" })),
@@ -100,6 +120,7 @@ function buildProductionDeps(): Deps {
       client.update(id, { status: "pending", startedAt: null }),
     stampTask: (id, startedAt) => client.update(id, { startedAt }),
     clock: SystemClock(),
+    agentId,
   };
 }
 

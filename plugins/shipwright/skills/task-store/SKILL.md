@@ -55,7 +55,7 @@ Both env vars are provisioned automatically by the agent harness:
 | `SHIPWRIGHT_TASK_STORE_URL` | Base URL of the task store service |
 | `SHIPWRIGHT_TASK_STORE_TOKEN` | Bearer token for this agent |
 
-Tasks are scoped by **repo access** — any agent with access to a repo can see all tasks for that repo. Use `?assignee=$SHIPWRIGHT_AGENT_ID` to filter results to the calling agent's own tasks.
+Visibility, not filtering, is what the bearer token controls: an agent token with repo access can see every task in that repo's pool — assigned to you, unassigned, or assigned to a different agent sharing the repo (useful for spotting unclaimed pool work). It does **not** narrow results to just your own tasks. Pass `?assignee=$SHIPWRIGHT_AGENT_ID` explicitly whenever you only want your own tasks — e.g. before resuming an `in_progress` task, so you don't pick up (and start committing to) another agent's active work.
 
 Verify the service is reachable before doing anything:
 
@@ -70,7 +70,7 @@ curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
 
 ### Pick next task
 
-Tasks are scoped by repo access — use `?assignee=$SHIPWRIGHT_AGENT_ID` to filter to your own tasks. Check for an interrupted task first, then fall back to the next ready one:
+Repo-pool visibility means an unfiltered query can return another agent's tasks — always pass `?assignee=$SHIPWRIGHT_AGENT_ID` to scope to your own. Check for an interrupted task first, then fall back to the next ready one:
 
 ```bash
 # 1. Resume interrupted task (in_progress assigned to you)
@@ -159,8 +159,7 @@ Convention: `branch` = `feat/{id-lowercase}` (e.g. `feat/tss-x-1-my-task`).
 When `?ready=true` is set, `?status` and `?id` filters are ignored. Only
 `?session` applies as a post-filter.
 
-- Results are scoped by repo access — all agents with access to a repo see its tasks.
-- Use `?assignee=$SHIPWRIGHT_AGENT_ID` to filter to your own tasks.
+- Unlike the general repo-pool visibility described above, `?ready=true` is already scoped: it returns your own tasks plus *unassigned* pool tasks in your repo scope — never another agent's already-assigned pending task. No `?assignee=` needed here.
 - `?session` — filter by planning session slug. Omit to return ready tasks across all sessions.
 
 A task is ready when **all** of the following are true:

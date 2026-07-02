@@ -788,10 +788,45 @@ describe("task-store API (smoke)", () => {
       agentId: "agent-1",
       repos: ["acme-inc/backend-api"],
     });
-    // assignee should NOT be set when agentScope is used
+    // No ?assignee= was supplied, so it should NOT be set alongside agentScope
     expect(capturedFilters[0]?.assignee).toBeUndefined();
     expect(capturedFilters[0]?.repo).toBe("acme-inc/backend-api");
     expect(capturedFilters[0]?.pr).toBe(42);
+  });
+
+  it("GET /tasks?status=in_progress with repo-scoped agent token honors an explicit ?assignee= as an additional narrowing filter", async () => {
+    const capturedFilters: TaskListFilters[] = [];
+
+    const spyTaskService: TaskServiceLike = {
+      ...fakeTaskService(),
+      async list(filters?) {
+        capturedFilters.push(filters ?? {});
+        return { tasks: [], total: 0, limit: 50, offset: 0 };
+      },
+    };
+
+    const app = makeApp({
+      tokenService: fakeRepoAgentTokenService(["acme-inc/backend-api"]),
+      taskService: spyTaskService,
+      scopeResolver: makeScopeResolver(["acme-inc/backend-api"]),
+    });
+
+    // Visibility (agentScope) is broader than this filter — the caller is
+    // narrowing an already-visible pool down to just their own tasks, not
+    // requesting to see something new. This must be honored, unlike the
+    // non-repo-scoped case (see "ignores caller-supplied ?assignee" above)
+    // where there is no broader visible set to narrow from.
+    const res = await app.request(
+      "/tasks?status=in_progress&assignee=agent-1",
+      { headers: { Authorization: `Bearer ${AGENT_TOKEN}` } },
+    );
+
+    expect(res.status).toBe(200);
+    expect(capturedFilters[0]?.agentScope).toEqual({
+      agentId: "agent-1",
+      repos: ["acme-inc/backend-api"],
+    });
+    expect(capturedFilters[0]?.assignee).toBe("agent-1");
   });
 
   it("POST /tasks/:id/claim with agent token pins claimedBy to the token's agentId", async () => {

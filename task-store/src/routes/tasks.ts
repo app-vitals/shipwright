@@ -146,8 +146,19 @@ export function createTasksRoutes(
           ? Number.parseInt(offsetRaw, 10) || undefined
           : undefined,
       // Use agentScope for repo-scoped agent tokens; otherwise use assignee filter.
+      // Under agentScope, an explicit caller-supplied ?assignee= further narrows
+      // the already-visible OR set (assigned-to-me OR in-my-repo-pool) — safe,
+      // since it can only ever return a subset of what agentScope already
+      // permits seeing. This differs from the non-scoped case below, where the
+      // agent has no broader visible set to narrow from, so the token's own
+      // agentId always wins over any caller-supplied ?assignee=.
       ...(useAgentScope
-        ? { agentScope: { agentId: agentId as string, repos } }
+        ? {
+            agentScope: { agentId: agentId as string, repos },
+            ...(c.req.query("assignee")
+              ? { assignee: c.req.query("assignee") }
+              : {}),
+          }
         : { assignee: agentId ?? c.req.query("assignee") }),
     });
     return c.json(result, 200);

@@ -113,12 +113,13 @@ export class TaskService implements TaskServiceLike {
         { assignee: filters.agentScope.agentId },
         { repo: { in: filters.agentScope.repos } },
       ];
-      // A ?repo=X filter still applies as an additional AND condition.
-      if (filters.repo) where.repo = filters.repo;
-    } else {
-      if (filters.repo) where.repo = filters.repo;
-      if (filters.assignee) where.assignee = filters.assignee;
     }
+    // A ?repo=X or ?assignee=X filter still applies as an additional AND
+    // condition on top of agentScope's OR — narrowing an already-visible set
+    // is always safe, even though widening it (peeking at an unscoped
+    // assignee) is not.
+    if (filters.repo) where.repo = filters.repo;
+    if (filters.assignee) where.assignee = filters.assignee;
 
     const limit = filters.limit ?? 50;
     const offset = filters.offset ?? 0;
