@@ -1337,9 +1337,12 @@ export function renderTasksPage(
               ? escapeHtml(agentNames[agentId] ?? agentId)
               : '<span style="color:#9ca3af">—</span>';
             const blockerBadges = renderBlockerBadges(t.blockedBy);
-            const prCell = t.pr
-              ? `<a href="https://github.com/${escapeHtml(t.repo ?? "")}/pull/${t.pr}" style="color:#6366f1;text-decoration:none" title="View PR">#${t.pr}</a>`
-              : '<span style="color:#9ca3af">—</span>';
+            const prCell =
+              t.pr && t.repo
+                ? `<a href="https://github.com/${escapeHtml(t.repo)}/pull/${t.pr}" style="color:#6366f1;text-decoration:none" title="View PR">#${t.pr}</a>`
+                : t.prUrl
+                  ? `<a href="${escapeHtml(t.prUrl)}" style="color:#6366f1;text-decoration:none" title="View PR">#${t.pr ?? "PR"}</a>`
+                  : '<span style="color:#9ca3af">—</span>';
             return `<tr${readOnly ? "" : ` data-href="/admin/tasks/${escapeHtml(t.id)}" style="cursor:pointer"`}>
     <td class="mono" style="font-size:11px">${readOnly ? escapeHtml(t.id) : `<a href="/admin/tasks/${escapeHtml(t.id)}" style="color:#6366f1;text-decoration:none" title="View details">${escapeHtml(t.id)}</a>`}</td>
     <td>${readOnly ? escapeHtml(t.title) : `<a href="/admin/tasks/${escapeHtml(t.id)}" style="color:inherit;text-decoration:none">${escapeHtml(t.title)}</a>`}${blockerBadges}</td>

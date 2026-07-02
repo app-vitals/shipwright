@@ -3622,4 +3622,34 @@ describe("admin UI — public task board", () => {
     expect(body).not.toContain("Next →");
     expect(body).not.toContain("← Prev");
   });
+
+  it("GET /public/tasks with pr set and repo null never renders github.com//pull/ in body", async () => {
+    // Regression guard: a task with pr set but repo null must not produce a
+    // broken href containing github.com//pull/ in the public task board.
+    const dirtyTask = {
+      id: "pub-dirty-1",
+      title: "Dirty PR task",
+      status: "pending",
+      session: null,
+      repo: null, // repo is null — the bug would produce github.com//pull/5
+      pr: 5,
+      assignee: null,
+      claimedBy: null,
+    };
+    const app = createAdminUIApp(
+      makeMockDeps({
+        publicRepo: PUBLIC_REPO,
+        fetchTaskStoreTasks: async () => ({
+          tasks: [dirtyTask],
+          total: 1,
+          limit: 50,
+          offset: 0,
+        }),
+      }),
+    );
+    const res = await app.request("/public/tasks");
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    expect(body).not.toContain("github.com//pull/");
+  });
 });
