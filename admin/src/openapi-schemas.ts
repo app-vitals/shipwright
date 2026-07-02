@@ -188,8 +188,6 @@ export const AgentCronRunSchema = z
     outputTokens: z.number().int().nullable().openapi({ example: 567 }),
     cacheReadTokens: z.number().int().nullable().openapi({ example: 89 }),
     cacheCreationTokens: z.number().int().nullable().openapi({ example: 10 }),
-    costUsd: z.number().nullable().openapi({ example: 0.0042 }),
-    model: z.string().nullable().openapi({ example: "claude-sonnet-4-5" }),
     createdAt: z
       .string()
       .datetime()
@@ -292,12 +290,6 @@ export const PatchAgentCronRunBodySchema = z
       .nullable()
       .optional()
       .openapi({ example: 10 }),
-    costUsd: z.number().nullable().optional().openapi({ example: 0.0042 }),
-    model: z
-      .string()
-      .nullable()
-      .optional()
-      .openapi({ example: "claude-sonnet-4-5" }),
     modelBreakdown: z
       .array(ModelBreakdownEntrySchema)
       .optional()
