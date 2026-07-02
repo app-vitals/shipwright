@@ -84,13 +84,66 @@ export function syncVersion(version: string, cwd?: string): void {
   writeMarketplaceJson(resolve(root, MARKETPLACE_JSON_PATH), version);
 }
 
+/**
+ * Reads version.txt and asserts that all managed files agree with it.
+ * Throws a human-readable error listing each drift (file → expected vs actual)
+ * if any mismatch is found.
+ *
+ * @param cwd - Monorepo root directory. Defaults to process.cwd().
+ */
+export function checkVersionSync(cwd?: string): void {
+  const root = cwd ?? process.cwd();
+  const expected = readFileSync(resolve(root, VERSION_TXT_PATH), "utf8").trim();
+
+  const mismatches: string[] = [];
+
+  for (const rel of PACKAGE_JSON_PATHS) {
+    const raw = readFileSync(resolve(root, rel), "utf8");
+    const pkg = JSON.parse(raw) as Record<string, unknown>;
+    const actual = pkg.version as string;
+    if (actual !== expected) {
+      mismatches.push(`  ${rel}: expected ${expected}, got ${actual}`);
+    }
+  }
+
+  const marketplaceRaw = readFileSync(resolve(root, MARKETPLACE_JSON_PATH), "utf8");
+  const marketplace = JSON.parse(marketplaceRaw) as Record<string, unknown>;
+  const marketplaceActual = marketplace.version as string;
+  if (marketplaceActual !== expected) {
+    mismatches.push(
+      `  ${MARKETPLACE_JSON_PATH}: expected ${expected}, got ${marketplaceActual}`,
+    );
+  }
+
+  if (mismatches.length > 0) {
+    throw new Error(
+      `Version drift detected (canonical: ${expected} from ${VERSION_TXT_PATH}):\n${mismatches.join("\n")}`,
+    );
+  }
+}
+
 // CLI entry point
 if (import.meta.main) {
-  const version = process.argv[2];
-  if (!version) {
-    console.error("Usage: bun run scripts/sync-version.ts <version>");
+  const arg = process.argv[2];
+
+  if (arg === "--check") {
+    try {
+      checkVersionSync();
+      console.log("Version sync check passed.");
+      process.exit(0);
+    } catch (e) {
+      console.error((e as Error).message);
+      process.exit(1);
+    }
+  }
+
+  if (!arg) {
+    console.error(
+      "Usage: bun run scripts/sync-version.ts <version>\n       bun run scripts/sync-version.ts --check",
+    );
     process.exit(1);
   }
-  syncVersion(version);
-  console.log(`Version synced to ${version}`);
+
+  syncVersion(arg);
+  console.log(`Version synced to ${arg}`);
 }

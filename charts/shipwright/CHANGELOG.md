@@ -21,6 +21,24 @@ independent of `appVersion`. CI enforces this with
 
 - `docs/deploy-kubernetes.md`: correct chat env vars to `chat.extraEnv` (not `admin.env`)
 
+## [1.6.171] - 2026-07-02
+
+### Changed
+
+- auto-bump to chart v1.6.171 triggered by release tag `agent-v0.107.1`
+
+## [1.6.170] - 2026-07-02
+
+### Changed
+
+- auto-bump to chart v1.6.170 triggered by release tag `agent-v0.107.0`
+
+## [1.6.169] - 2026-07-02
+
+### Changed
+
+- auto-bump to chart v1.6.169 triggered by release tag `metrics-v0.107.0`
+
 ## [1.6.168] - 2026-07-02
 
 ### Changed

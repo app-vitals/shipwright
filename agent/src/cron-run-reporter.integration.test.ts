@@ -200,8 +200,6 @@ describe("HttpCronRunReporter", () => {
       outputTokens: 50,
       cacheReadTokens: 20,
       cacheCreationTokens: 10,
-      costUsd: 0.00123,
-      model: "claude-sonnet-4-6",
     });
 
     const body = state.captured[0].body as Record<string, unknown>;
@@ -209,8 +207,6 @@ describe("HttpCronRunReporter", () => {
     expect(body.outputTokens).toBe(50);
     expect(body.cacheReadTokens).toBe(20);
     expect(body.cacheCreationTokens).toBe(10);
-    expect(body.costUsd).toBe(0.00123);
-    expect(body.model).toBe("claude-sonnet-4-6");
   });
 
   test("completeRun sends error when provided (failed outcome)", async () => {
@@ -266,7 +262,6 @@ describe("HttpCronRunReporter", () => {
     await reporter.completeRun("cron-123", "run-abc", completedAt, "completed", {
       inputTokens: 300,
       outputTokens: 150,
-      model: "claude-sonnet-4-5",
       modelBreakdown: [
         {
           model: "claude-sonnet-4-5",
@@ -288,7 +283,6 @@ describe("HttpCronRunReporter", () => {
     });
 
     const body = state.captured[0].body as Record<string, unknown>;
-    expect(body.model).toBe("claude-sonnet-4-5");
     expect(Array.isArray(body.modelBreakdown)).toBe(true);
     const breakdown = body.modelBreakdown as Array<Record<string, unknown>>;
     expect(breakdown).toHaveLength(2);
