@@ -135,11 +135,11 @@ Every new agent is seeded with ten system crons (the canonical definitions live 
 
 | Cron | Schedule (cron expr) | Default | What it does |
 |---|---|---|---|
-| `shipwright-dev-task` | `*/30 * * * *` (every 30 min) | **on** | Picks the next ready task, builds it with tests, opens a PR. |
-| `shipwright-review-patch` | `*/30 * * * *` (every 30 min) | **on** | Reviews open PRs and patches the ones failing CI or review. |
-| `shipwright-review` | `*/30 * * * *` (every 30 min) | off | Review-only pass over open PRs. |
-| `shipwright-patch` | `*/30 * * * *` (every 30 min) | off | Fixes failing CI and unresolved review findings. |
-| `shipwright-deploy` | `*/30 * * * *` (every 30 min) | off | Merges approved PRs and deploys them. |
+| `shipwright-dev-task` | `0,30 * * * *` (min 0, 30) | **on** | Picks the next ready task, builds it with tests, opens a PR. |
+| `shipwright-review-patch` | `10,40 * * * *` (min 10, 40) | **on** | Reviews open PRs and patches the ones failing CI or review. |
+| `shipwright-review` | `15,45 * * * *` (min 15, 45) | off | Review-only pass over open PRs. |
+| `shipwright-patch` | `5,35 * * * *` (min 5, 35) | off | Fixes failing CI and unresolved review findings. |
+| `shipwright-deploy` | `20,50 * * * *` (min 20, 50) | off | Merges approved PRs and deploys them. |
 | `shipwright-test-readiness` | `0 6 * * *` (daily, 06:00) | off | Runs the full test-readiness audit (`--full --publish`). |
 | `shipwright-docs-freshness` | `0 7 * * *` (daily, 07:00) | off | Refreshes docs that drifted from the code (`research-docs --auto`). |
 | `learn-dream` | `0 3 * * *` (daily, 03:00) | off | Mines the last day of merged PRs for durable learnings. |
