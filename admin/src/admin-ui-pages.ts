@@ -2677,13 +2677,6 @@ export function renderChatThreadPage(
   const threadId = thread.id;
   const title = thread.title ? escapeHtml(thread.title) : "Untitled Thread";
 
-  /**
-   * Render a single message bubble for the server-side initial page load.
-   * User messages: right-aligned, indigo/blue.
-   * Assistant messages: left-aligned, green, with markdown rendered.
-   * System messages: centered, yellow.
-   * errorKind: red error badge.
-   */
   function renderMessageBubble(m: ChatMessage): string {
     const isUser = m.role === "user";
     const isAssistant = m.role === "assistant";
@@ -2805,7 +2798,7 @@ export function renderChatThreadPage(
     var div = document.createElement('div');
     div.id = 'thinking-indicator';
     div.style.cssText = 'display:flex;justify-content:flex-start;margin-bottom:12px';
-    div.innerHTML = '<div style="max-width:70%;background:#f0fdf4;border-radius:12px;padding:12px 16px;box-shadow:0  1px 2px rgba(0,0,0,0.06)">'
+    div.innerHTML = '<div style="max-width:70%;background:#f0fdf4;border-radius:12px;padding:12px 16px;box-shadow:0 1px 2px rgba(0,0,0,0.06)">'
       + '<div style="font-size:14px;color:#166534;font-style:italic">thinking…</div>'
       + '</div>';
     container.appendChild(div);
