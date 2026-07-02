@@ -53,6 +53,7 @@ describe("renderShipwrightToolbar", () => {
     test("includes JS shim to toggle aria-expanded on checkbox change", () => {
       expect(html).toContain("aria-expanded");
       expect(html).toContain("<script>");
+      expect(html).toContain("change");
     });
   });
 
@@ -101,6 +102,7 @@ describe("renderShipwrightToolbar", () => {
     test("includes JS shim to toggle aria-expanded on checkbox change", () => {
       expect(html).toContain("aria-expanded");
       expect(html).toContain("<script>");
+      expect(html).toContain("change");
     });
   });
 });
