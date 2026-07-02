@@ -274,10 +274,10 @@ describe("check-deploy", () => {
     });
     const result = await run(
       makeDeps({
-        repos: ["acme/example-repo", "app-vitals/patrol"],
+        repos: ["acme/example-repo", "acme/other-repo"],
         prs: {
           "acme/example-repo": [pr1],
-          "app-vitals/patrol": [pr2],
+          "acme/other-repo": [pr2],
         },
         ciRuns: { sha20: [{ status: "completed", conclusion: "success" }] },
       }),
@@ -304,10 +304,10 @@ describe("check-deploy", () => {
     const deps = {
       getCurrentUser: () => "bodhi-agent",
       isSelfReviewAllowed: true,
-      repos: ["app-vitals/failing-repo", "acme/example-repo"],
+      repos: ["acme/failing-repo", "acme/example-repo"],
       fetchActiveDeployRuns: async () => [],
       listOpenPrs: async (repo: string): Promise<GhPr[]> => {
-        if (repo === "app-vitals/failing-repo") throw new Error("rate limited");
+        if (repo === "acme/failing-repo") throw new Error("rate limited");
         return [pr];
       },
       fetchCiRuns: async (
@@ -326,7 +326,7 @@ describe("check-deploy", () => {
     process.stderr.write = origStderr;
 
     expect(result.exit).toBe(0);
-    expect(stderrLines.some((l) => l.includes("app-vitals/failing-repo"))).toBe(
+    expect(stderrLines.some((l) => l.includes("acme/failing-repo"))).toBe(
       true,
     );
   });
