@@ -299,14 +299,19 @@ if (runtimeClient && agentId) {
 
 if (config.chat.serviceUrl && config.chat.serviceToken) {
   const chatSessions = createFileSessionStore(config.paths.chatSessions);
+  const chatRunner = createRunClaude(
+    Bun.spawn,
+    chatSessions,
+    undefined,
+    config.paths.workspace,
+  );
   const chatClient = new HttpChatServiceClient({
     baseUrl: config.chat.serviceUrl,
     token: config.chat.serviceToken,
   });
   const chatPoller = createChatPoller({
     client: chatClient,
-    runner,
-    sessions: chatSessions,
+    runner: chatRunner,
     intervalMs: config.chat.pollIntervalMs ?? 5_000,
   });
   chatPoller.start();

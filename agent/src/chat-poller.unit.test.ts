@@ -67,30 +67,13 @@ function makeFakeClient(
   };
 }
 
-/** Create a fake session store. */
-function makeFakeSessionStore() {
-  const map = new Map<string, string>();
-  return {
-    get: (key: string) => map.get(key),
-    set: (key: string, id: string) => {
-      map.set(key, id);
-    },
-    clear: (key: string) => {
-      map.delete(key);
-    },
-    prune: () => 0,
-    size: () => map.size,
-  };
-}
-
 // ─── createChatPoller: basic structure ────────────────────────────────────────
 
 describe("createChatPoller", () => {
   it("returns an object with start and stop methods", () => {
     const client = makeFakeClient();
     const runner = async () => ({ result: "ok" });
-    const sessions = makeFakeSessionStore();
-    const poller = createChatPoller({ client, runner, sessions });
+    const poller = createChatPoller({ client, runner });
 
     expect(typeof poller.start).toBe("function");
     expect(typeof poller.stop).toBe("function");
@@ -104,9 +87,8 @@ describe("createChatPoller poll: no threads", () => {
     const claimMessage = mock(async () => null);
     const client = makeFakeClient({ claimMessage });
     const runner = mock(async () => ({ result: "ok" }));
-    const sessions = makeFakeSessionStore();
 
-    const poller = createChatPoller({ client, runner, sessions });
+    const poller = createChatPoller({ client, runner });
     await poller.pollOnce();
 
     expect(claimMessage).not.toHaveBeenCalled();
@@ -129,9 +111,8 @@ describe("createChatPoller poll: thread with no unclaimed message", () => {
       claimMessage: async () => null,
     });
     const runner = mock(async () => ({ result: "ok" }));
-    const sessions = makeFakeSessionStore();
 
-    const poller = createChatPoller({ client, runner, sessions });
+    const poller = createChatPoller({ client, runner });
     await poller.pollOnce();
 
     expect(runner).not.toHaveBeenCalled();
@@ -172,9 +153,8 @@ describe("createChatPoller poll: claim then reply", () => {
       totalCostUsd: 0.002,
     };
     const runner = mock(async () => runnerResult);
-    const sessions = makeFakeSessionStore();
 
-    const poller = createChatPoller({ client, runner, sessions });
+    const poller = createChatPoller({ client, runner });
     await poller.pollOnce();
 
     // Runner called with the message body and correct session key
@@ -194,7 +174,11 @@ describe("createChatPoller poll: claim then reply", () => {
     );
   });
 
-  it("stores sessionId in sessions after successful run", async () => {
+  it("passes chat:threadId session key to runner for per-thread continuity", async () => {
+    // The poller passes a stable `chat:<threadId>` session key to the runner on
+    // every call. The runner (createRunClaude) uses this key to look up and
+    // persist session IDs in its own injected session store — the poller does
+    // not manage session persistence directly.
     const threadId = "thread-session-test";
     const thread = makeThread(threadId);
     const message = makeMessage(threadId);
@@ -215,45 +199,11 @@ describe("createChatPoller poll: claim then reply", () => {
       result: "reply",
       sessionId: "session-stored-123",
     }));
-    const sessions = makeFakeSessionStore();
 
-    const poller = createChatPoller({ client, runner, sessions });
+    const poller = createChatPoller({ client, runner });
     await poller.pollOnce();
 
-    // Session should be stored under chat:threadId
-    expect(sessions.get(`chat:${threadId}`)).toBe("session-stored-123");
-  });
-
-  it("passes existing sessionId from store to runner as resume session", async () => {
-    const threadId = "thread-resume";
-    const thread = makeThread(threadId);
-    const message = makeMessage(threadId);
-    const replyResult = makeReplyResult(message);
-
-    const client = makeFakeClient({
-      listThreads: async () => ({
-        threads: [thread],
-        total: 1,
-        limit: 50,
-        offset: 0,
-      }),
-      claimMessage: async () => message,
-      replyToMessage: async () => replyResult,
-    });
-
-    const runner = mock(async () => ({
-      result: "reply resumed",
-      sessionId: "session-new",
-    }));
-
-    // Pre-seed sessions with an existing session
-    const sessions = makeFakeSessionStore();
-    sessions.set(`chat:${threadId}`, "existing-session-id");
-
-    const poller = createChatPoller({ client, runner, sessions });
-    await poller.pollOnce();
-
-    // Runner must be called with the same session key so it can resume
+    // Runner must receive the stable session key so it can resume the session
     expect(runner).toHaveBeenCalledWith(message.body, `chat:${threadId}`);
   });
 });
@@ -288,9 +238,8 @@ describe("createChatPoller poll: per-thread error isolation", () => {
       result: "ok reply",
       sessionId: "s1",
     }));
-    const sessions = makeFakeSessionStore();
 
-    const poller = createChatPoller({ client, runner, sessions });
+    const poller = createChatPoller({ client, runner });
 
     // Should not throw even though thread-fail errors
     await expect(poller.pollOnce()).resolves.toBeUndefined();
@@ -318,9 +267,8 @@ describe("createChatPoller poll: per-thread error isolation", () => {
     const runner = mock(async () => {
       throw new Error("runner crashed");
     });
-    const sessions = makeFakeSessionStore();
 
-    const poller = createChatPoller({ client, runner, sessions });
+    const poller = createChatPoller({ client, runner });
 
     // Must not throw — errors are caught per-thread
     await expect(poller.pollOnce()).resolves.toBeUndefined();
@@ -344,9 +292,8 @@ describe("createChatPoller poll: per-thread error isolation", () => {
     });
 
     const runner = mock(async () => ({ result: "ok" }));
-    const sessions = makeFakeSessionStore();
 
-    const poller = createChatPoller({ client, runner, sessions });
+    const poller = createChatPoller({ client, runner });
 
     await expect(poller.pollOnce()).resolves.toBeUndefined();
   });
@@ -383,9 +330,8 @@ describe("createChatPoller poll: multiple threads", () => {
     });
 
     const runner = mock(async () => ({ result: "ok" }));
-    const sessions = makeFakeSessionStore();
 
-    const poller = createChatPoller({ client, runner, sessions });
+    const poller = createChatPoller({ client, runner });
     await poller.pollOnce();
 
     expect(claimedThreadIds.sort()).toEqual(["t1", "t2", "t3"]);

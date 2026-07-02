@@ -24,15 +24,9 @@ export type ChatRunner = (
   sessionKey?: string,
 ) => Promise<ClaudeRunResult>;
 
-export interface SessionStore {
-  get: (key: string) => string | undefined;
-  set: (key: string, id: string) => void;
-}
-
 export interface ChatPollerOptions {
   client: ChatServiceClient;
   runner: ChatRunner;
-  sessions: SessionStore;
   /** Poll interval in ms. Default: 5000 */
   intervalMs?: number;
 }
@@ -49,7 +43,7 @@ export interface ChatPoller {
 // ─── createChatPoller ─────────────────────────────────────────────────────────
 
 export function createChatPoller(opts: ChatPollerOptions): ChatPoller {
-  const { client, runner, sessions, intervalMs = 5_000 } = opts;
+  const { client, runner, intervalMs = 5_000 } = opts;
 
   let timer: ReturnType<typeof setInterval> | undefined;
 
@@ -68,11 +62,6 @@ export function createChatPoller(opts: ChatPollerOptions): ChatPoller {
         err instanceof Error ? err.message : String(err),
       );
       return;
-    }
-
-    // Persist updated session ID so the next message in this thread resumes
-    if (runResult.sessionId) {
-      sessions.set(sessionKey, runResult.sessionId);
     }
 
     try {
