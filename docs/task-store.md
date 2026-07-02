@@ -195,6 +195,25 @@ Claim semantics:
 - Same `commitSha` and `reviewState !== pending` → returns `409` (already reviewed at this commit)
 - Different `commitSha` or `reviewState === pending` → updates and returns `200` (new review cycle)
 
+#### Claim next PR (atomic)
+
+```
+POST /prs/claim-next
+```
+
+Atomically finds the oldest eligible PR (not yet claimed by the agent) and claims it in one round-trip. Useful for agents implementing a pull-based task queue instead of manual claim.
+
+Body:
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `maxConcurrent` | no | Max concurrent PRs the agent can claim (default `1`). Returns 204 if the agent already has >= `maxConcurrent` claimed PRs. |
+| `agentId` | admin only | Agent ID (agent tokens pin to their own ID) |
+
+Returns `200` with `{ pr: PullRequest, phase: string }` (the claimed PR and its current phase) or `204` if no eligible PRs exist.
+
+Agent tokens see only PRs in their configured repo scope; admin tokens see all PRs.
+
 #### Get PR
 
 ```
