@@ -12,6 +12,7 @@
  * Routes:
  *   GET    /prs               list (?repo, ?prNumber, ?taskId, ?state, ?reviewState, ?staged)
  *   POST   /prs/claim         atomic claim (201 new, 200 update, 409 conflict)
+ *   POST   /prs/claim-next    atomic find-and-claim oldest eligible PR (200+{pr,phase} or 204)
  *   GET    /prs/:id           fetch one (404 when missing)
  *   PATCH  /prs/:id           update fields
  *   POST   /prs/:id/heartbeat touch heartbeatAt
@@ -140,6 +141,46 @@ export function createPrsRoutes(
     return c.json(record, status);
   });
 
+  // ─── Claim-next (atomic find-and-claim) ───────────────────────────────────
+  // Must be before /:id to avoid param capture.
+  app.post("/claim-next", async (c) => {
+    const agentId = c.get("agentId");
+    const repos = c.get("repos");
+    const body = await readJson(c);
+
+    const { maxConcurrent } = body;
+
+    // Agent tokens: pin agentId from the token.
+    // Admin tokens: read agentId from the request body.
+    let resolvedAgentId: string;
+    if (agentId !== null) {
+      resolvedAgentId = agentId;
+    } else {
+      if (typeof body.agentId !== "string" || !body.agentId) {
+        throw new BadRequestError("agentId is required");
+      }
+      resolvedAgentId = body.agentId as string;
+    }
+
+    const resolvedMaxConcurrent =
+      typeof maxConcurrent === "number" && maxConcurrent > 0
+        ? maxConcurrent
+        : 1;
+
+    // Pass repo scope for agent tokens so claimNext only returns in-scope PRs
+    const result = await prService.claimNext(
+      resolvedAgentId,
+      resolvedMaxConcurrent,
+      agentId !== null ? repos ?? undefined : undefined,
+    );
+
+    if (result === null) {
+      return c.body(null, 204);
+    }
+
+    return c.json(result, 200);
+  });
+
   // ─── Get one ───────────────────────────────────────────────────────────────
   app.get("/:id", async (c) => {
     const pr = await prService.get(c.req.param("id"));
@@ -154,6 +195,10 @@ export function createPrsRoutes(
   //
   // Extensions for deploy.md upsert flow:
   //   state, mergedAt, reviewState — set when marking a PR as merged
+  //
+  // Pipeline phase tracking:
+  //   phase, readyForReviewAt, readyForPatchAt, readyForDeployAt — set by
+  //   the review/patch/deploy skills to record when a PR enters each phase
   const PATCH_ALLOWED_FIELDS: Array<keyof PullRequest> = [
     "staged",
     "commitSha",
@@ -162,6 +207,10 @@ export function createPrsRoutes(
     "state",
     "mergedAt",
     "reviewState",
+    "phase",
+    "readyForReviewAt",
+    "readyForPatchAt",
+    "readyForDeployAt",
   ];
 
   app.patch("/:id", async (c) => {
