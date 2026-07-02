@@ -107,9 +107,27 @@ export class PullRequestService implements PullRequestServiceLike {
 
   async update(id: string, data: Partial<PullRequest>): Promise<PullRequest> {
     try {
+      const updateData: Prisma.PullRequestUpdateInput = { ...data };
+
+      // When a caller transitions reviewState to 'approved' and hasn't already
+      // supplied readyForDeployAt, stamp it now rather than leaving it to be
+      // set lazily on the next claim/claimNext. claimNext's
+      // COALESCE(...) NULLS LAST ordering tolerates an unset value, but setting
+      // it at the actual approval moment keeps the deploy-readiness ordering
+      // accurate for PRs that sit approved-but-unclaimed for a while.
+      if (data.reviewState === "approved" && data.readyForDeployAt === undefined) {
+        const existing = await this.prisma.pullRequest.findUnique({
+          where: { id },
+          select: { readyForDeployAt: true },
+        });
+        if (existing && existing.readyForDeployAt === null) {
+          updateData.readyForDeployAt = this.clock.now().toISOString();
+        }
+      }
+
       return await this.prisma.pullRequest.update({
         where: { id },
-        data: data as Prisma.PullRequestUpdateInput,
+        data: updateData,
       });
     } catch (err: unknown) {
       throw this.translateNotFound(err, "pr not found");

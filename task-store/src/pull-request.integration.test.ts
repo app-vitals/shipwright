@@ -387,6 +387,69 @@ describeOrSkip("PullRequestService.complete() readyForPatchAt (integration)", ()
     expect(completed.reviewedAt).toBe(now.toISOString());
     expect(completed.readyForPatchAt).toBe(now.toISOString());
   });
+
+  it("update() sets readyForDeployAt=now when reviewState transitions to approved and it is unset", async () => {
+    const now = new Date("2026-07-01T11:00:00.000Z");
+    const clock = FixedClock(now);
+    const svc = new PullRequestService(prisma, clock);
+
+    const { record: created } = await svc.claim(
+      "app-vitals/shipwright",
+      801,
+      "sha-approve",
+      "agent-a",
+    );
+    expect(created.readyForDeployAt).toBeNull();
+
+    const updated = await svc.update(created.id, { reviewState: "approved" });
+    expect(updated.reviewState).toBe("approved");
+    expect(updated.readyForDeployAt).toBe(now.toISOString());
+  });
+
+  it("update() does not overwrite readyForDeployAt if already set when approving", async () => {
+    const now = new Date("2026-07-01T12:00:00.000Z");
+    const clock = FixedClock(now);
+    const svc = new PullRequestService(prisma, clock);
+
+    const { record: created } = await svc.claim(
+      "app-vitals/shipwright",
+      802,
+      "sha-approve-2",
+      "agent-a",
+      undefined,
+      "deploy",
+    );
+    expect(created.readyForDeployAt).toBe(now.toISOString());
+
+    const later = new Date("2026-07-01T13:00:00.000Z");
+    const laterClock = FixedClock(later);
+    const svcLater = new PullRequestService(prisma, laterClock);
+    const updated = await svcLater.update(created.id, {
+      reviewState: "approved",
+    });
+    expect(updated.readyForDeployAt).toBe(now.toISOString());
+  });
+
+  it("update() respects an explicitly provided readyForDeployAt when approving", async () => {
+    const now = new Date("2026-07-01T14:00:00.000Z");
+    const clock = FixedClock(now);
+    const svc = new PullRequestService(prisma, clock);
+
+    const { record: created } = await svc.claim(
+      "app-vitals/shipwright",
+      803,
+      "sha-approve-3",
+      "agent-a",
+    );
+    expect(created.readyForDeployAt).toBeNull();
+
+    const explicit = "2026-06-30T00:00:00.000Z";
+    const updated = await svc.update(created.id, {
+      reviewState: "approved",
+      readyForDeployAt: explicit,
+    });
+    expect(updated.readyForDeployAt).toBe(explicit);
+  });
 });
 
 // ─── claimNext() integration tests ───────────────────────────────────────────
