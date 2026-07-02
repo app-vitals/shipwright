@@ -197,7 +197,7 @@ Returns `204`. System crons (flagged `isSystem=true`) cannot be deleted — retu
 POST /agents/:id/crons/reconcile
 ```
 
-Reconciles the agent's system crons against the `DEFAULT_CRONS` list in the harness. Called automatically on agent startup. Returns `204`.
+Reconciles the agent's system crons against the `SYSTEM_CRONS` list in the harness. Called automatically on agent startup. Returns `204`.
 
 ### Cron summary
 
