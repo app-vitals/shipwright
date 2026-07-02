@@ -31,10 +31,10 @@ echo "Token: ${SHIPWRIGHT_TASK_STORE_TOKEN:+(set)}"
 
 1. Open your Shipwright admin UI at `<admin-url>/admin/tokens`
 2. Click **Create token** and enter a descriptive label (e.g. `my-local-agent`)
-3. **Agent ID field** — leave blank for local or HITL use; enter your agent's ID for Vitals OS shipwright agents
+3. **Agent ID field** — leave blank for local or HITL use; enter your agent's ID for managed Shipwright agents
 4. Copy the generated token and wire it up:
    - **Local plugin / shell:** `export SHIPWRIGHT_TASK_STORE_TOKEN=<token>`
-   - **Vitals OS shipwright agent:** add `SHIPWRIGHT_TASK_STORE_TOKEN=<token>` as an agent env var in the Vitals OS admin UI — it takes effect within 60 seconds, no restart needed
+   - **Managed Shipwright agent:** add `SHIPWRIGHT_TASK_STORE_TOKEN=<token>` as an agent env var via the Shipwright admin UI — it takes effect within 60 seconds, no restart needed
 
 **HITL note:** For local HITL execution (`/shipwright:hitl`), create an admin token with **Agent ID left blank** — this keeps the token unscoped so it can read any agent's tasks. Pass the task ID explicitly when invoking the skill.
 
