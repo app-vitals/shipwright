@@ -340,7 +340,7 @@ describe("METRICS_DASHBOARD_TOKEN gate", () => {
   });
 });
 
-// ─── /metrics/cost-efficiency private-app registration ───────────────────────
+// ─── /metrics/cost-efficiency — private app registration ─────────────────────
 
 describe("/metrics/cost-efficiency — private app registration", () => {
   test("valid session cookie → 200 on /metrics/cost-efficiency", async () => {
@@ -382,6 +382,8 @@ describe("/metrics/cost-efficiency — private app registration", () => {
     });
 
     expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toBeTruthy();
   });
 });
 
