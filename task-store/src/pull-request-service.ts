@@ -196,7 +196,11 @@ export class PullRequestService implements PullRequestServiceLike {
     // $transaction boundary — Task and PullRequest are separate models and mixing
     // them inside a single Prisma $transaction would create implicit boundary issues.
     if (taskId !== undefined && this.taskService) {
-      await this.taskService.update(taskId, { pr: prNumber, repo });
+      try {
+        await this.taskService.update(taskId, { pr: prNumber, repo });
+      } catch (err) {
+        console.warn('[PullRequestService.claim] task sync failed:', err);
+      }
     }
 
     return result;
