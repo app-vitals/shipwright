@@ -234,6 +234,7 @@ const year = new Date().getFullYear();
       @media (max-width: 767px) {
         .mobile-nav-panel {
           display: block;
+          visibility: hidden;
           position: fixed;
           top: 0;
           left: 0;
@@ -246,8 +247,9 @@ const year = new Date().getFullYear();
           border-right: 1px solid var(--sw-color-border-muted);
         }
 
-        #nav-mobile-toggle:checked ~ .sw-orb ~ header ~ .mobile-nav-panel {
+        #nav-mobile-toggle:checked ~ .mobile-nav-panel {
           transform: translateX(0);
+          visibility: visible;
         }
 
         #nav-mobile-toggle:checked ~ #mobile-nav-overlay {
