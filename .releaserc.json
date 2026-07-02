@@ -79,6 +79,7 @@
           "package.json",
           "plugins/shipwright/package.json",
           "plugins/shipwright/.claude-plugin/plugin.json",
+          ".claude-plugin/marketplace.json",
           "metrics/package.json",
           "agent/package.json"
         ],
