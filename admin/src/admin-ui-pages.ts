@@ -1403,13 +1403,13 @@ export function renderTasksPage(
   const stateToggle = `
     <div style="display:flex;gap:0;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;width:fit-content">
       <a href="/admin/tasks${makeStateParams("ready")}"
-         class="state-tab" style="padding:5px 14px;font-size:12px;text-decoration:none;${tabStyle("ready")}">Ready</a>
+         class="state-tab" style="font-size:12px;text-decoration:none;${tabStyle("ready")}">Ready</a>
       <a href="/admin/tasks${makeStateParams("in_progress")}"
-         class="state-tab" style="padding:5px 14px;font-size:12px;text-decoration:none;border-left:1px solid #e5e7eb;${tabStyle("in_progress")}">In Progress</a>
+         class="state-tab" style="font-size:12px;text-decoration:none;border-left:1px solid #e5e7eb;${tabStyle("in_progress")}">In Progress</a>
       <a href="/admin/tasks${makeStateParams("blocked")}"
-         class="state-tab" style="padding:5px 14px;font-size:12px;text-decoration:none;border-left:1px solid #e5e7eb;${tabStyle("blocked")}">Blocked</a>
+         class="state-tab" style="font-size:12px;text-decoration:none;border-left:1px solid #e5e7eb;${tabStyle("blocked")}">Blocked</a>
       <a href="/admin/tasks${makeStateParams("closed")}"
-         class="state-tab" style="padding:5px 14px;font-size:12px;text-decoration:none;border-left:1px solid #e5e7eb;${tabStyle("closed")}">Closed</a>
+         class="state-tab" style="font-size:12px;text-decoration:none;border-left:1px solid #e5e7eb;${tabStyle("closed")}">Closed</a>
     </div>`;
 
   const statusOptions = [

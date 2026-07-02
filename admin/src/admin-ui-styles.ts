@@ -268,10 +268,11 @@ export function baseStyles(): string {
       background-repeat: no-repeat;
       background-attachment: local, scroll, local, scroll;
     }
+    .state-tab { padding: 5px 14px; }
     @media (max-width: 640px) {
       .col-session, .col-repo { display: none; }
       .col-review-cycles, .col-patch-cycles, .col-claimed-by { display: none; }
-      .state-tab { padding: 13px 14px !important; }
+      .state-tab { padding: 13px 14px; }
       .vos-page {
         padding: 16px 12px 48px;
       }
