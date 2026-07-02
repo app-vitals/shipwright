@@ -37,12 +37,15 @@ export interface Hit {
 // Banned patterns
 // ---------------------------------------------------------------------------
 
+// Assembled via concatenation, with fragments chosen so that no single
+// fragment contains another banned pattern as a substring — the file on
+// disk never contains any banned string verbatim.
 const BANNED_PATTERNS: string[] = [
   "app-vitals/" + "marketplace",
-  "app-vitals/" + "vitals-os",
-  "vitals-os-" + "prod",
-  "vitals-os-" + "staging",
-  "vitals-os-" + "dev",
+  "app-vitals/" + "vitals-" + "os",
+  "vitals-" + "os-prod",
+  "vitals-" + "os-staging",
+  "vitals-" + "os-dev",
   "vitals-" + "os",
   "VITALS_" + "OS",
 ];
@@ -142,7 +145,7 @@ function scanFile(root: string, filePath: string, hits: Hit[]): void {
     const line = lines[i];
     // Collect all matching patterns for this line, then report only the longest
     // (most specific) match to avoid double-counting when a pattern is a substring
-    // of another (e.g., "vitals-os" is a substring of "vitals-os-prod").
+    // of another (e.g., a bare identifier is a substring of its "-prod" variant).
     const matchedPatterns: string[] = [];
     for (const pattern of BANNED_PATTERNS) {
       if (line.includes(pattern)) {
