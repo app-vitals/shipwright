@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, it } from "bun:test";
 import { PrismaClient } from "../prisma/client/index.js";
 import { ConflictError } from "./errors.ts";
 import { PullRequestService } from "./pull-request-service.ts";
+import { TaskService } from "./task-service.ts";
 
 const TEST_DB = process.env.DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST;
 
@@ -194,5 +195,61 @@ describeOrSkip("PullRequestService.claim() atomicity (integration)", () => {
     expect(result.status).toBe(200);
     expect(result.record.reviewState).toBe("in_progress");
     expect(result.record.claimedBy).toBe("agent-a");
+  });
+});
+
+describeOrSkip("PullRequestService.claim() → Task sync (integration)", () => {
+  let prisma: PrismaClient;
+  let taskService: TaskService;
+  let service: PullRequestService;
+
+  beforeEach(async () => {
+    prisma = makePrisma();
+    taskService = new TaskService(prisma);
+    service = new PullRequestService(prisma, undefined, taskService);
+    await prisma.pullRequest.deleteMany();
+    await prisma.task.deleteMany();
+  });
+
+  it("claim() with taskId syncs pr and repo back to the Task record", async () => {
+    const repo = "app-vitals/shipwright";
+    const prNumber = 501;
+    const commitSha = "sync-sha-1";
+
+    // Create a task to link to
+    const task = await prisma.task.create({
+      data: { title: "sync test task", status: "in_progress" },
+    });
+
+    // Claim the PR with the task's id
+    const result = await service.claim(repo, prNumber, commitSha, "agent-sync", task.id);
+    expect(result.status).toBe(201);
+
+    // Fetch the task and assert pr/repo are synced
+    const updated = await prisma.task.findUnique({ where: { id: task.id } });
+    expect(updated).not.toBeNull();
+    expect(updated?.pr).toBe(prNumber);
+    expect(updated?.repo).toBe(repo);
+  });
+
+  it("claim() without taskId does not attempt Task update", async () => {
+    const repo = "app-vitals/shipwright";
+    const prNumber = 502;
+    const commitSha = "sync-sha-2";
+
+    // Create a task we can check is untouched
+    const task = await prisma.task.create({
+      data: { title: "untouched task", status: "pending", pr: 999, repo: "original/repo" },
+    });
+
+    // Claim without taskId
+    const result = await service.claim(repo, prNumber, commitSha, "agent-notask");
+    expect(result.status).toBe(201);
+
+    // Task table should be untouched
+    const unchanged = await prisma.task.findUnique({ where: { id: task.id } });
+    expect(unchanged).not.toBeNull();
+    expect(unchanged?.pr).toBe(999);
+    expect(unchanged?.repo).toBe("original/repo");
   });
 });
