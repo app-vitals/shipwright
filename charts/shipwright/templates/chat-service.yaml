@@ -1,0 +1,17 @@
+{{- if .Values.chat.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "shipwright.chat.fullname" . }}
+  labels:
+    {{- include "shipwright.chat.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.chat.service.type | default "ClusterIP" }}
+  ports:
+    - name: http
+      port: {{ .Values.chat.service.port }}
+      targetPort: 3000
+      protocol: TCP
+  selector:
+    {{- include "shipwright.chat.selectorLabels" . | nindent 4 }}
+{{- end }}
