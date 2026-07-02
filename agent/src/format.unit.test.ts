@@ -193,6 +193,25 @@ describe("richTextToMarkdown", () => {
     expect(richTextToMarkdown([{ type: "section", text: "hello" }])).toBe("");
   });
 
+  test("null and non-object entries in blocks array are ignored, not thrown", () => {
+    expect(
+      richTextToMarkdown([
+        null,
+        "not an object",
+        42,
+        {
+          type: "rich_text",
+          elements: [
+            {
+              type: "rich_text_section",
+              elements: [{ type: "text", text: "hello" }],
+            },
+          ],
+        },
+      ]),
+    ).toBe("hello");
+  });
+
   // ─── Plain text section ───────────────────────────────────────────────────
 
   test("plain text section returns the text", () => {
@@ -461,6 +480,22 @@ describe("richTextToMarkdown", () => {
         },
       ]),
     ).toBe("> quoted text");
+  });
+
+  test("rich_text_quote with embedded newlines prefixes every line with >", () => {
+    expect(
+      richTextToMarkdown([
+        {
+          type: "rich_text",
+          elements: [
+            {
+              type: "rich_text_quote",
+              elements: [{ type: "text", text: "line one\nline two" }],
+            },
+          ],
+        },
+      ]),
+    ).toBe("> line one\n> line two");
   });
 
   // ─── Combined block ───────────────────────────────────────────────────────

@@ -232,7 +232,11 @@ function convertRichTextBlock(block: RichTextBlock): string {
     } else if (el.type === "rich_text_quote") {
       const quote = el as RichTextQuote;
       const inner = quote.elements.map(convertInlineElement).join("");
-      parts.push(`> ${inner}`);
+      const quoted = inner
+        .split("\n")
+        .map((line) => `> ${line}`)
+        .join("\n");
+      parts.push(quoted);
     }
   }
 
@@ -245,9 +249,10 @@ function convertRichTextBlock(block: RichTextBlock): string {
  * its elements to markdown. Returns empty string if no rich_text block found.
  */
 export function richTextToMarkdown(blocks: unknown[]): string {
-  const richBlocks = (blocks as Array<{ type: string }>).filter(
-    (b) => b.type === "rich_text",
-  ) as RichTextBlock[];
+  const richBlocks = blocks.filter(
+    (b): b is RichTextBlock =>
+      b != null && typeof b === "object" && "type" in b && b.type === "rich_text",
+  );
 
   if (richBlocks.length === 0) return "";
 
