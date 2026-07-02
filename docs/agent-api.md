@@ -264,6 +264,7 @@ Returns:
   "byAgent": { "<agentId>": { ... } },
   "byCron": { "<cronId>": { ... } },
   "byModel": { "<modelId>": { ... } },
+  "byCronModel": [{ "key1": "<agentId>:<cronName>", "key2": "<model>", ... }],
   "daily": [{ "date": "YYYY-MM-DD", ... }]
 }
 ```
