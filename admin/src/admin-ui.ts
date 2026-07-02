@@ -807,16 +807,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       return c.redirect(`/admin/agents/${agentId}`, 302);
     }
     if (key && value !== undefined) {
-      // Fetch existing env to merge — getByAgentId now returns {env, secretKeys}|null
-      // The env object contains masked values ("***") for secret keys. We need the
-      // real decrypted values — but for the add-key use case we're doing a full
-      // upsert that replaces all keys, so we use getConfigBundle to get real values.
-      // For the admin form we instead use patch() to only touch the new key.
       const isSecret = secretStr === "true";
-      const existing = await agentEnvService.getByAgentId(agentId);
-      const existingSecretKeys = new Set(existing?.secretKeys ?? []);
-      if (isSecret) existingSecretKeys.add(key);
-      // Use patch() to only upsert the new key without overwriting others
       await agentEnvService.patch(
         agentId,
         { [key]: value },
