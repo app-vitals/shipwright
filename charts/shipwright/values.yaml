@@ -542,6 +542,48 @@ taskStore:
     # -- Name of the task-store ServiceAccount. Generated if empty and create=true.
     name: ""
 
+# -- Chat service (@shipwright/chat) — Thread/Message store + scoped tokens. Port 3000.
+# Disabled by default — purely additive, safe to deploy without this.
+chat:
+  # -- Whether to render the chat Deployment and Service.
+  enabled: false
+  image:
+    repository: shipwright-chat
+    tag: ""           # defaults to .Chart.AppVersion when empty
+    pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
+  service:
+    # -- Service type for the chat service. ClusterIP is Minikube-friendly.
+    type: ClusterIP
+    port: 3000
+  replicas: 1
+  # -- Compute resources for the chat container. Minikube-friendly defaults.
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+  # -- Database wiring for the chat service.
+  database:
+    # -- Name of a pre-existing Secret holding DATABASE_URL_SHIPWRIGHT_CHAT.
+    # Defaults to "shipwright-secrets" (the canonical cluster secret name).
+    # The chart does NOT manage this Secret — create it before deploying.
+    existingSecret: "shipwright-secrets"
+  # -- Extra env vars to inject into the chat container. Use for optional service
+  # wiring (e.g. CHAT_SEED_ADMIN_TOKEN, SHIPWRIGHT_CHAT_AGENTS_URL,
+  # SHIPWRIGHT_CHAT_AGENTS_API_KEY) without baking those into the chart template.
+  extraEnv: []
+  # -- ServiceAccount for the chat pod. Set create: false and name: <sa>
+  # to reuse an existing SA (e.g. the umbrella chart's Workload Identity SA).
+  serviceAccount:
+    # -- Whether a ServiceAccount is created for the chat workload.
+    create: true
+    # -- Annotations for the chat ServiceAccount.
+    annotations: {}
+    # -- Name of the chat ServiceAccount. Generated if empty and create=true.
+    name: ""
+
 # -- Cloud SQL Auth Proxy sidecar for the admin pod (GCP Cloud SQL).
 # When enabled, a cloud-sql-proxy sidecar is added to the admin Deployment so
 # a GCP Cloud SQL instance is reachable at 127.0.0.1:5432 from the admin pod.
