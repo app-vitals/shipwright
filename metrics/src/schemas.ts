@@ -245,6 +245,62 @@ export const TokensResultSchema = z
   })
   .openapi("TokensResult");
 
+// ─── Cost-efficiency schemas ──────────────────────────────────────────────────
+
+const CostEfficiencyModelRowSchema = z
+  .object({
+    modelFamily: z.string().openapi({ example: "claude-sonnet-4-6" }),
+    routedUsd: z.number().openapi({ example: 0.5 }),
+    counterfactualOpusUsd: z.number().openapi({ example: 1.2 }),
+    savingsUsd: z.number().openapi({ example: 0.7 }),
+  })
+  .openapi("CostEfficiencyModelRow");
+
+const CostEfficiencyFleetSchema = z
+  .object({
+    routedUsd: z.number().openapi({ example: 1.5 }),
+    counterfactualOpusUsd: z.number().openapi({ example: 2.3 }),
+    savingsUsd: z.number().openapi({ example: 0.8 }),
+    savingsPct: z.number().nullable().openapi({ example: 34.8 }),
+    byModel: z.array(CostEfficiencyModelRowSchema),
+  })
+  .openapi("CostEfficiencyFleet");
+
+const CostEfficiencyAgentModelRowSchema = z
+  .object({
+    agentId: z.string().openapi({ example: "agent-abc123" }),
+    modelFamily: z.string().openapi({ example: "claude-sonnet-4-6" }),
+    routedUsd: z.number().openapi({ example: 5.25 }),
+    counterfactualOpusUsd: z.number().openapi({ example: 12.5 }),
+    savingsUsd: z.number().openapi({ example: 7.25 }),
+    savingsPct: z.number().nullable().openapi({ example: 58.0 }),
+  })
+  .openapi("CostEfficiencyAgentModelRow");
+
+const CostEfficiencyCronRowSchema = z
+  .object({
+    cronKey: z.string().openapi({ example: "agent-a:morning-brief" }),
+    modelFamily: z.string().openapi({ example: "claude-sonnet-4-6" }),
+    routedUsd: z.number().openapi({ example: 0.3 }),
+    counterfactualOpusUsd: z.number().openapi({ example: 0.7 }),
+    savingsUsd: z.number().openapi({ example: 0.4 }),
+  })
+  .openapi("CostEfficiencyCronRow");
+
+export const CostEfficiencyResultSchema = z
+  .object({
+    fleet: CostEfficiencyFleetSchema,
+    byAgentModel: z.array(CostEfficiencyAgentModelRowSchema),
+    byCronModel: z.array(CostEfficiencyCronRowSchema),
+    runsWithCostData: z.number().int().openapi({ example: 10 }),
+    runsTotal: z.number().int().openapi({ example: 12 }),
+    note: z.string().openapi({
+      example:
+        "counterfactualOpusUsd is a hypothetical: what these runs would have cost if all models were claude-opus-4-8.",
+    }),
+  })
+  .openapi("CostEfficiencyResult");
+
 // ─── Response envelope schema ─────────────────────────────────────────────────
 
 export const MetaSchema = z
