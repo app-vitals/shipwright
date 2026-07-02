@@ -1,7 +1,7 @@
 {
   "name": "shipwright",
   "version": "0.1.0",
-  "description": "Shipwright — conversational planning, queue-driven execution, policy-controlled code review, a five-phase test-readiness pipeline, and autonomous deploy (merge → canary → promote) for any software project",
+  "description": "The autonomous delivery agent for Claude Code — conversational planning, queue-driven execution, policy-controlled code review, a five-phase test-readiness pipeline, and autonomous deploy (merge → canary → promote) for any software project.",
   "author": {
     "name": "App Vitals",
     "url": "https://github.com/app-vitals"
