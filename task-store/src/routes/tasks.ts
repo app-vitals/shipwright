@@ -164,6 +164,9 @@ export function createTasksRoutes(
     if (typeof body.status !== "string" || !body.status) {
       throw new BadRequestError("status is required");
     }
+    if (body.repo === undefined || body.repo === null) {
+      throw new BadRequestError("repo is required");
+    }
     validateRepo(body.repo, agentId !== null ? repos : null);
     // Agent tokens force assignee to their own ID.
     if (agentId !== null) {
@@ -186,8 +189,11 @@ export function createTasksRoutes(
     if (!Array.isArray(body)) {
       throw new BadRequestError("body must be a JSON array of tasks");
     }
-    // Validate repo field on each task that has one.
+    // Every task in the bulk payload must include a repo.
     for (const task of body as Record<string, unknown>[]) {
+      if (task.repo === undefined || task.repo === null) {
+        throw new BadRequestError("repo is required");
+      }
       validateRepo(task.repo, agentId !== null ? repos : null);
     }
     const tasks =

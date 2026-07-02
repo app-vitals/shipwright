@@ -285,14 +285,14 @@ describe("org/repo format validation — POST /tasks", () => {
     expect(res.status).toBe(201);
   });
 
-  it("accepts POST /tasks without a repo field → 201 (no validation triggered)", async () => {
+  it("rejects POST /tasks without a repo field → 400 (repo is required)", async () => {
     const app = makeAgentApp(["example-org/my-service"]);
     const res = await app.request("/tasks", {
       method: "POST",
       headers: { ...agentAuth(), "content-type": "application/json" },
       body: JSON.stringify({ title: "T", status: "pending" }),
     });
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(400);
   });
 });
 
@@ -379,7 +379,7 @@ describe("org/repo validation — POST /tasks/bulk", () => {
     expect(res.status).toBe(200);
   });
 
-  it("skips validation for tasks with null repo in bulk", async () => {
+  it("rejects bulk payload with a task missing repo → 400", async () => {
     const app = makeAdminApp();
     const res = await app.request("/tasks/bulk", {
       method: "POST",
@@ -389,7 +389,7 @@ describe("org/repo validation — POST /tasks/bulk", () => {
         { title: "T2", status: "pending" },
       ]),
     });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(400);
   });
 
   it("agent token rejects bulk task with repo outside scope → 400", async () => {
