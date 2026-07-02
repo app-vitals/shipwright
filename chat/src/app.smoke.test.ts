@@ -13,56 +13,25 @@
 
 import { describe, expect, it } from "bun:test";
 import { createChatServiceApp } from "./app.ts";
-import type { ChatTokenServiceLike } from "./token-service.ts";
+import {
+  fakeAdminTokenService,
+  fakeMessageService,
+  fakeThreadService,
+} from "./test-fakes.ts";
 
-// ─── Fakes ────────────────────────────────────────────────────────────────────
-
-const ADMIN_TOKEN = "admin-token";
-
-function fakeAdminTokenService(): ChatTokenServiceLike {
-  return {
-    async create(label?: string, agentId?: string) {
-      return {
-        token: {
-          id: "tok-new",
-          token: "hash-new",
-          label: label ?? null,
-          agentId: agentId ?? null,
-          createdAt: new Date(),
-          revokedAt: null,
-        },
-        rawToken: "raw-token-value",
-      };
-    },
-    async validate(raw: string) {
-      return raw === ADMIN_TOKEN ? { id: "tok-admin", agentId: null } : null;
-    },
-    async revoke(tokenId: string) {
-      if (tokenId === "nonexistent") return null;
-      return {
-        id: tokenId,
-        token: "hash",
-        label: null,
-        agentId: null,
-        createdAt: new Date(),
-        revokedAt: new Date(),
-      };
-    },
-    async list() {
-      return [];
-    },
-    async update() {
-      return null;
-    },
-    async seed() {},
-  };
+function makeApp() {
+  return createChatServiceApp({
+    tokenService: fakeAdminTokenService(),
+    threadService: fakeThreadService(),
+    messageService: fakeMessageService(),
+  });
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe("GET /health", () => {
   it("returns 200 with service: chat (unauthenticated)", async () => {
-    const app = createChatServiceApp({ tokenService: fakeAdminTokenService() });
+    const app = makeApp();
     const res = await app.request("/health");
     expect(res.status).toBe(200);
     const body = (await res.json()) as { status: string; service: string };
@@ -71,7 +40,7 @@ describe("GET /health", () => {
   });
 
   it("returns 200 even with invalid/missing token (health is unauthenticated)", async () => {
-    const app = createChatServiceApp({ tokenService: fakeAdminTokenService() });
+    const app = makeApp();
     const res = await app.request("/health", {
       headers: { Authorization: "Bearer invalid-token" },
     });
@@ -81,13 +50,13 @@ describe("GET /health", () => {
 
 describe("auth — missing/invalid token", () => {
   it("returns 401 when Authorization header is absent", async () => {
-    const app = createChatServiceApp({ tokenService: fakeAdminTokenService() });
+    const app = makeApp();
     const res = await app.request("/tokens");
     expect(res.status).toBe(401);
   });
 
   it("returns 401 when token is invalid", async () => {
-    const app = createChatServiceApp({ tokenService: fakeAdminTokenService() });
+    const app = makeApp();
     const res = await app.request("/tokens", {
       headers: { Authorization: "Bearer invalid-token" },
     });
@@ -95,7 +64,7 @@ describe("auth — missing/invalid token", () => {
   });
 
   it("returns 401 with WWW-Authenticate header when no token", async () => {
-    const app = createChatServiceApp({ tokenService: fakeAdminTokenService() });
+    const app = makeApp();
     const res = await app.request("/tokens");
     expect(res.status).toBe(401);
     expect(res.headers.get("WWW-Authenticate")).toBeTruthy();
