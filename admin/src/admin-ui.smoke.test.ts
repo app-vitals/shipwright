@@ -2800,6 +2800,105 @@ describe("admin UI — manifest sync route", () => {
   });
 });
 
+describe("admin UI — xapp-token route", () => {
+  let adminCookie: string;
+
+  beforeAll(async () => {
+    adminCookie = await makeSessionCookie();
+  });
+
+  it("fresh-mint path: no existing SHIPWRIGHT_AGENT_API_KEY → mints a token and shows it", async () => {
+    let createCalled = false;
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentEnvService: {
+          getByAgentId: async () => ({ env: {}, secretKeys: [] }),
+          upsert: async () => {},
+          patch: async () => {},
+          deleteKey: async () => {},
+          getConfigBundle: async () => ({
+            env: { SLACK_BOT_TOKEN: "xoxb-existing" },
+            agentId: AGENT_ID,
+            allowedTools: [],
+          }),
+        },
+        agentTokenService: {
+          listForAgent: async () => [MOCK_TOKEN],
+          create: async () => {
+            createCalled = true;
+            return { token: MOCK_TOKEN, rawToken: "sw_raw123456" };
+          },
+          revoke: async () => MOCK_TOKEN,
+        },
+      }),
+    );
+    const body = new URLSearchParams({
+      agentId: AGENT_ID,
+      xappToken: "xapp-1-valid-token",
+    });
+    const res = await app.request("/admin/provision/xapp-token", {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${adminCookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+    expect(createCalled).toBe(true);
+    const text = await res.text();
+    expect(text).toContain("copy it now");
+    expect(text).toContain("sw_raw123456");
+  });
+
+  it("already-set/skip-mint path: SHIPWRIGHT_AGENT_API_KEY already set → does not mint, shows already-configured message", async () => {
+    let createCalled = false;
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentEnvService: {
+          getByAgentId: async () => ({ env: {}, secretKeys: [] }),
+          upsert: async () => {},
+          patch: async () => {},
+          deleteKey: async () => {},
+          getConfigBundle: async () => ({
+            env: {
+              SLACK_BOT_TOKEN: "xoxb-existing",
+              SHIPWRIGHT_AGENT_API_KEY: "sw_already_set_abc123",
+            },
+            agentId: AGENT_ID,
+            allowedTools: [],
+          }),
+        },
+        agentTokenService: {
+          listForAgent: async () => [MOCK_TOKEN],
+          create: async () => {
+            createCalled = true;
+            return { token: MOCK_TOKEN, rawToken: "sw_raw123456" };
+          },
+          revoke: async () => MOCK_TOKEN,
+        },
+      }),
+    );
+    const body = new URLSearchParams({
+      agentId: AGENT_ID,
+      xappToken: "xapp-1-valid-token",
+    });
+    const res = await app.request("/admin/provision/xapp-token", {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${adminCookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+    expect(createCalled).toBe(false);
+    const text = await res.text();
+    expect(text).toContain("already configured");
+    expect(text).not.toContain("sw_raw123456");
+  });
+});
+
 // ─── Tasks page ───────────────────────────────────────────────────────────────
 
 describe("admin UI — tasks page", () => {

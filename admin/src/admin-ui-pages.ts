@@ -2301,6 +2301,7 @@ export function renderProvisionCompletePage(
     agentId?: string;
     error?: string;
     rawToken?: string;
+    alreadyConfigured?: boolean;
   },
 ): string {
   const rawTokenHtml = opts.rawToken
@@ -2321,7 +2322,11 @@ export function renderProvisionCompletePage(
           Store this as <code class="mono">SHIPWRIGHT_AGENT_API_KEY</code> in your agent configuration.
         </p>
       </div>`
-    : "";
+    : opts.alreadyConfigured
+      ? `<div class="alert alert-success" style="margin-top:16px">
+        An API key is already configured for this agent — no new key was minted.
+      </div>`
+      : "";
 
   const bodyHtml = opts.success
     ? `<div class="alert alert-success">

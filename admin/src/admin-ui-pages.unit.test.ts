@@ -1296,6 +1296,37 @@ describe("renderProvisionCompletePage", () => {
     expect(html).not.toContain('"><script>xss()</script>');
     expect(html).toContain("&lt;script&gt;");
   });
+
+  test("success + alreadyConfigured + no rawToken: shows 'already configured' message", () => {
+    const html = renderProvisionCompletePage(USER_NAME, {
+      success: true,
+      agentId: "agent-new",
+      alreadyConfigured: true,
+    });
+    expect(html).toContain("already configured");
+  });
+
+  test("success + alreadyConfigured + no rawToken: does not show copy-this-now block", () => {
+    const html = renderProvisionCompletePage(USER_NAME, {
+      success: true,
+      agentId: "agent-new",
+      alreadyConfigured: true,
+    });
+    expect(html).not.toContain("copy it now");
+    expect(html).not.toContain('id="raw-token"');
+  });
+
+  test("success + rawToken present: shows copy-this-now block even if alreadyConfigured is also passed", () => {
+    const html = renderProvisionCompletePage(USER_NAME, {
+      success: true,
+      agentId: "agent-new",
+      rawToken: "sw_raw123456",
+      alreadyConfigured: false,
+    });
+    expect(html).toContain("copy it now");
+    expect(html).toContain("sw_raw123456");
+    expect(html).not.toContain("already configured");
+  });
 });
 
 // ─── renderTasksPage — row click navigation ──────────────────────────────────

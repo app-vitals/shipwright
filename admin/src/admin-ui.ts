@@ -1652,13 +1652,25 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }
 
     try {
-      // Create scoped token first so both secrets land in one upsert
-      const { rawToken } = await agentTokenService.create(agentId, "provision");
+      // If SHIPWRIGHT_AGENT_API_KEY is already set, skip minting a new one — the
+      // form has no CSRF/idempotency guard, so a resubmit must not mint (and
+      // silently orphan) a second key while the configured one stays valid.
+      const existingBundle = await agentEnvService.getConfigBundle(agentId);
+      const alreadyConfigured = Boolean(
+        existingBundle?.env.SHIPWRIGHT_AGENT_API_KEY,
+      );
+
+      let rawToken: string | undefined;
+      if (!alreadyConfigured) {
+        // Create scoped token first so both secrets land in one upsert
+        const created = await agentTokenService.create(agentId, "provision");
+        rawToken = created.rawToken;
+      }
 
       // Use patch() to merge new keys without overwriting existing env vars
       await agentEnvService.patch(agentId, {
         SLACK_APP_TOKEN: xappToken,
-        SHIPWRIGHT_AGENT_API_KEY: rawToken,
+        ...(rawToken ? { SHIPWRIGHT_AGENT_API_KEY: rawToken } : {}),
       });
 
       // Seed system crons
@@ -1669,6 +1681,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
           success: true,
           agentId,
           rawToken,
+          alreadyConfigured,
         }),
       );
     } catch (err) {
