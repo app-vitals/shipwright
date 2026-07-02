@@ -122,6 +122,7 @@ const CRON_STATS: CronRunTokenStats = {
     { key1: "agent-a", key2: "opus", ...agg(1000, 500, 200, 100, 1.5) },
   ],
   daily: [{ period: "2026-06-02", ...agg(1000, 500, 200, 100, 1.5) }],
+  byCronModel: [],
 };
 
 const CHAT_STATS: ChatTokenStats = {

@@ -1,4 +1,4 @@
-# Shipwright Harness
+# Shipwright Harness -- autonomous delivery agent for Claude Code
 
 [![release](https://img.shields.io/github/v/release/app-vitals/shipwright?sort=semver&label=release&color=34C77B)](https://github.com/app-vitals/shipwright/releases)
 [![license: MIT](https://img.shields.io/badge/license-MIT-34C77B)](./LICENSE)
