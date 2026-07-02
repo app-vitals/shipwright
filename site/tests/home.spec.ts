@@ -478,6 +478,27 @@ test("the og:image asset is actually served (1280x640 PNG)", async ({
   expect(res.headers()["content-type"]).toContain("image/png");
 });
 
+// DIS-1.1: SEO-targeted default title for 'claude code' query space.
+
+test("default page title is the SEO-targeted claude code string", async ({
+  page,
+}) => {
+  await page.goto("/");
+  expect(await page.title()).toBe(
+    "Shipwright -- autonomous delivery agent for Claude Code",
+  );
+});
+
+test("og:title meta content matches the default title", async ({ page }) => {
+  await page.goto("/");
+  await expect(
+    page.locator('head meta[property="og:title"]'),
+  ).toHaveAttribute(
+    "content",
+    "Shipwright -- autonomous delivery agent for Claude Code",
+  );
+});
+
 test("page markets no pricing anywhere", async ({ page }) => {
   await page.goto("/");
   const text = (await page.locator("body").textContent()) ?? "";
