@@ -15,7 +15,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { syncVersion } from "./sync-version";
+import { checkVersionSync, syncVersion } from "./sync-version";
 
 // Minimal package.json content with 2-space indent + trailing newline
 const INITIAL_PKG = `{
@@ -179,5 +179,87 @@ describe("syncVersion", () => {
     );
     expect(content.endsWith("\n")).toBe(true);
     expect(content).toContain('  "version": "1.5.0"');
+  });
+});
+
+describe("checkVersionSync", () => {
+  it("passes without throwing when all files agree on version.txt's version", () => {
+    // setupTempDir initialises all files at 0.1.0 and version.txt at 0.1.0
+    expect(() => checkVersionSync(tmpDir)).not.toThrow();
+  });
+
+  it("throws when plugin.json version mismatches version.txt", () => {
+    // Write a different version into plugin.json
+    const pluginJsonPath = resolve(tmpDir, "plugins/shipwright/.claude-plugin/plugin.json");
+    const raw = readFileSync(pluginJsonPath, "utf8");
+    const pkg = JSON.parse(raw) as Record<string, unknown>;
+    pkg.version = "4.29.5";
+    writeFileSync(pluginJsonPath, `${JSON.stringify(pkg, null, 2)}\n`, "utf8");
+
+    expect(() => checkVersionSync(tmpDir)).toThrow(/plugins\/shipwright\/.claude-plugin\/plugin\.json/);
+  });
+
+  it("throws with message containing expected and actual versions on plugin.json drift", () => {
+    const pluginJsonPath = resolve(tmpDir, "plugins/shipwright/.claude-plugin/plugin.json");
+    const raw = readFileSync(pluginJsonPath, "utf8");
+    const pkg = JSON.parse(raw) as Record<string, unknown>;
+    pkg.version = "9.9.9";
+    writeFileSync(pluginJsonPath, `${JSON.stringify(pkg, null, 2)}\n`, "utf8");
+
+    let error: Error | undefined;
+    try {
+      checkVersionSync(tmpDir);
+    } catch (e) {
+      error = e as Error;
+    }
+    expect(error).toBeDefined();
+    expect(error?.message).toContain("0.1.0");
+    expect(error?.message).toContain("9.9.9");
+  });
+
+  it("throws when a package.json version mismatches version.txt", () => {
+    // Drift one of the package.json files
+    const pkgPath = resolve(tmpDir, "metrics/package.json");
+    const raw = readFileSync(pkgPath, "utf8");
+    const pkg = JSON.parse(raw) as Record<string, unknown>;
+    pkg.version = "0.1.1";
+    writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`, "utf8");
+
+    expect(() => checkVersionSync(tmpDir)).toThrow(/metrics\/package\.json/);
+  });
+
+  it("throws when marketplace.json version mismatches version.txt", () => {
+    const marketplacePath = resolve(tmpDir, MARKETPLACE_JSON_PATH);
+    const raw = readFileSync(marketplacePath, "utf8");
+    const manifest = JSON.parse(raw) as Record<string, unknown>;
+    manifest.version = "5.0.0";
+    writeFileSync(marketplacePath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+
+    expect(() => checkVersionSync(tmpDir)).toThrow(/.claude-plugin\/marketplace\.json/);
+  });
+
+  it("lists all drifted files in the error message when multiple files mismatch", () => {
+    // Drift two files
+    const pluginJsonPath = resolve(tmpDir, "plugins/shipwright/.claude-plugin/plugin.json");
+    const pkgRaw = readFileSync(pluginJsonPath, "utf8");
+    const pkgObj = JSON.parse(pkgRaw) as Record<string, unknown>;
+    pkgObj.version = "3.0.0";
+    writeFileSync(pluginJsonPath, `${JSON.stringify(pkgObj, null, 2)}\n`, "utf8");
+
+    const agentPkgPath = resolve(tmpDir, "agent/package.json");
+    const agentRaw = readFileSync(agentPkgPath, "utf8");
+    const agentObj = JSON.parse(agentRaw) as Record<string, unknown>;
+    agentObj.version = "2.0.0";
+    writeFileSync(agentPkgPath, `${JSON.stringify(agentObj, null, 2)}\n`, "utf8");
+
+    let error: Error | undefined;
+    try {
+      checkVersionSync(tmpDir);
+    } catch (e) {
+      error = e as Error;
+    }
+    expect(error).toBeDefined();
+    expect(error?.message).toContain("plugins/shipwright/.claude-plugin/plugin.json");
+    expect(error?.message).toContain("agent/package.json");
   });
 });
