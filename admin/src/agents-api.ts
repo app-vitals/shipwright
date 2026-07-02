@@ -1214,8 +1214,6 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
       ...(body.cacheCreationTokens !== undefined && {
         cacheCreationTokens: body.cacheCreationTokens,
       }),
-      ...(body.costUsd !== undefined && { costUsd: body.costUsd }),
-      ...(body.model !== undefined && { model: body.model }),
       ...(body.modelBreakdown !== undefined && {
         modelBreakdown: body.modelBreakdown,
       }),
@@ -1472,8 +1470,6 @@ function serializeCronRun(run: {
   outputTokens?: number | null;
   cacheReadTokens?: number | null;
   cacheCreationTokens?: number | null;
-  costUsd?: number | null;
-  model?: string | null;
   createdAt: Date;
 }): z.infer<typeof AgentCronRunSchema> {
   return {
@@ -1490,8 +1486,6 @@ function serializeCronRun(run: {
     outputTokens: run.outputTokens ?? null,
     cacheReadTokens: run.cacheReadTokens ?? null,
     cacheCreationTokens: run.cacheCreationTokens ?? null,
-    costUsd: run.costUsd ?? null,
-    model: run.model ?? null,
     createdAt: run.createdAt.toISOString(),
   };
 }

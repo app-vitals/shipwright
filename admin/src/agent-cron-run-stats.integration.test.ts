@@ -85,16 +85,12 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
       outputTokens: 50,
       cacheReadTokens: 10,
       cacheCreationTokens: 5,
-      costUsd: 0.001,
-      model: "claude-sonnet-4-5",
     });
     await runService.patch(run2.id, agentId, cronId, {
       inputTokens: 200,
       outputTokens: 100,
       cacheReadTokens: 20,
       cacheCreationTokens: 10,
-      costUsd: 0.002,
-      model: "claude-sonnet-4-5",
     });
 
     const stats = await statsService.query();
@@ -104,7 +100,7 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
     expect(stats.totals.cacheRead).toBe(30);
     expect(stats.totals.cacheCreation).toBe(15);
     expect(stats.totals.total).toBe(300 + 150 + 30 + 15);
-    expect(stats.totals.costUsd).toBeCloseTo(0.003, 6);
+    expect(stats.totals.costUsd).toBeUndefined();
   });
 
   it("query() excludes skipped runs from totals", async () => {
@@ -120,8 +116,6 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
       outputTokens: 50,
       cacheReadTokens: 0,
       cacheCreationTokens: 0,
-      costUsd: 0.001,
-      model: "claude-sonnet-4-5",
     });
 
     // Skipped run with tokens — must be excluded
@@ -170,16 +164,12 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
       outputTokens: 50,
       cacheReadTokens: 0,
       cacheCreationTokens: 0,
-      costUsd: 0.001,
-      model: "claude-sonnet-4-5",
     });
     await runService.patch(run2.id, agentId2, cronId2, {
       inputTokens: 300,
       outputTokens: 150,
       cacheReadTokens: 0,
       cacheCreationTokens: 0,
-      costUsd: 0.003,
-      model: "claude-sonnet-4-5",
     });
 
     const stats = await statsService.query();
@@ -314,19 +304,27 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
       skipped: false,
     });
 
-    await runService.patch(run1.id, agentId, cronId, {
-      inputTokens: 100,
-      outputTokens: 50,
-      cacheReadTokens: 0,
-      cacheCreationTokens: 0,
-      model: "claude-sonnet-4-5",
+    await prisma.agentCronRunModelBreakdown.create({
+      data: {
+        cronRunId: run1.id,
+        model: "claude-sonnet-4-5",
+        inputTokens: 100,
+        outputTokens: 50,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        costUsd: 0,
+      },
     });
-    await runService.patch(run2.id, agentId, cronId, {
-      inputTokens: 200,
-      outputTokens: 100,
-      cacheReadTokens: 0,
-      cacheCreationTokens: 0,
-      model: "claude-opus-4-5",
+    await prisma.agentCronRunModelBreakdown.create({
+      data: {
+        cronRunId: run2.id,
+        model: "claude-opus-4-5",
+        inputTokens: 200,
+        outputTokens: 100,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        costUsd: 0,
+      },
     });
 
     const stats = await statsService.query();
@@ -345,11 +343,11 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
     expect(opus?.input).toBe(200);
   });
 
-  it("query() byModel excludes runs with null model", async () => {
+  it("query() byModel excludes runs without breakdown rows", async () => {
     const agentId = await createAgent(prisma);
     const cronId = await createCron(cronJobService, agentId);
 
-    // Run with no model — should not appear in byModel
+    // Run without breakdown rows — should not appear in byModel
     const run1 = await runService.create(cronId, agentId, {
       startedAt: new Date("2026-01-10T09:00:00Z"),
       skipped: false,
@@ -359,10 +357,9 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
       outputTokens: 50,
       cacheReadTokens: 0,
       cacheCreationTokens: 0,
-      // no model
     });
 
-    // Run with model — appears in byModel
+    // Run with breakdown rows — appears in byModel
     const run2 = await runService.create(cronId, agentId, {
       startedAt: new Date("2026-01-11T09:00:00Z"),
       skipped: false,
@@ -372,14 +369,24 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
       outputTokens: 100,
       cacheReadTokens: 0,
       cacheCreationTokens: 0,
-      model: "claude-sonnet-4-5",
+    });
+    await prisma.agentCronRunModelBreakdown.create({
+      data: {
+        cronRunId: run2.id,
+        model: "claude-sonnet-4-5",
+        inputTokens: 200,
+        outputTokens: 100,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        costUsd: 0,
+      },
     });
 
     const stats = await statsService.query();
 
     // Totals include both runs
     expect(stats.totals.input).toBe(300);
-    // byModel only includes the run with a model
+    // byModel only includes the run with breakdown rows
     expect(stats.byModel).toHaveLength(1);
     expect(stats.byModel[0].key2).toBe("claude-sonnet-4-5");
     expect(stats.byModel[0].input).toBe(200);
@@ -565,8 +572,6 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
       outputTokens: 150,
       cacheReadTokens: 10,
       cacheCreationTokens: 5,
-      costUsd: 0.003,
-      model: "claude-sonnet-4-5", // dominant model
     });
     // Write breakdown rows directly (simulating what agents-api PATCH handler does)
     await prisma.agentCronRunModelBreakdown.createMany({
@@ -594,6 +599,10 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
 
     const stats = await statsService.query();
 
+    // totals must not double-count tokens from the multi-model run
+    expect(stats.totals.input).toBe(300);
+    expect(stats.totals.output).toBe(150);
+
     // byModel should show 2 entries (from breakdown), not 1 (from dominant model)
     expect(stats.byModel).toHaveLength(2);
 
@@ -611,99 +620,6 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
     expect(haiku?.output).toBe(50);
   });
 
-  it("byModel falls back to dominant model for runs without breakdown rows", async () => {
-    const agentId = await createAgent(prisma);
-    const cronId = await createCron(cronJobService, agentId);
-
-    // Old run: no breakdown rows, just dominant model on the run
-    const run = await runService.create(cronId, agentId, {
-      startedAt: new Date("2026-01-10T09:00:00Z"),
-      skipped: false,
-    });
-    await runService.patch(run.id, agentId, cronId, {
-      inputTokens: 100,
-      outputTokens: 50,
-      cacheReadTokens: 0,
-      cacheCreationTokens: 0,
-      costUsd: 0.001,
-      model: "claude-opus-4-5",
-      // no breakdown rows
-    });
-
-    const stats = await statsService.query();
-
-    expect(stats.byModel).toHaveLength(1);
-    expect(stats.byModel[0].key2).toBe("claude-opus-4-5");
-    expect(stats.byModel[0].input).toBe(100);
-  });
-
-  it("byModel mixes breakdown rows and fallback correctly across multiple runs", async () => {
-    const agentId = await createAgent(prisma);
-    const cronId = await createCron(cronJobService, agentId);
-
-    // Run A: has breakdown rows — contributes 2 models
-    const runA = await runService.create(cronId, agentId, {
-      startedAt: new Date("2026-01-10T09:00:00Z"),
-      skipped: false,
-    });
-    await runService.patch(runA.id, agentId, cronId, {
-      inputTokens: 300,
-      outputTokens: 150,
-      cacheReadTokens: 0,
-      cacheCreationTokens: 0,
-      costUsd: 0.003,
-      model: "claude-sonnet-4-5",
-    });
-    await prisma.agentCronRunModelBreakdown.createMany({
-      data: [
-        {
-          cronRunId: runA.id,
-          model: "claude-sonnet-4-5",
-          inputTokens: 200,
-          outputTokens: 100,
-          cacheReadTokens: 0,
-          cacheCreationTokens: 0,
-          costUsd: 0.002,
-        },
-        {
-          cronRunId: runA.id,
-          model: "claude-haiku-4-5",
-          inputTokens: 100,
-          outputTokens: 50,
-          cacheReadTokens: 0,
-          cacheCreationTokens: 0,
-          costUsd: 0.001,
-        },
-      ],
-    });
-
-    // Run B: old run (no breakdown) — falls back to dominant model
-    const runB = await runService.create(cronId, agentId, {
-      startedAt: new Date("2026-01-11T09:00:00Z"),
-      skipped: false,
-    });
-    await runService.patch(runB.id, agentId, cronId, {
-      inputTokens: 400,
-      outputTokens: 200,
-      cacheReadTokens: 0,
-      cacheCreationTokens: 0,
-      costUsd: 0.004,
-      model: "claude-sonnet-4-5",
-      // no breakdown rows
-    });
-
-    const stats = await statsService.query();
-
-    // byModel should have sonnet (breakdown run A: 200 + fallback run B: 400 = 600)
-    //                 and haiku (breakdown run A: 100 only)
-    expect(stats.byModel).toHaveLength(2);
-
-    const sonnet = stats.byModel.find((m) => m.key2 === "claude-sonnet-4-5");
-    const haiku = stats.byModel.find((m) => m.key2 === "claude-haiku-4-5");
-
-    expect(sonnet?.input).toBe(600); // 200 (breakdown A) + 400 (fallback B)
-    expect(haiku?.input).toBe(100); // 100 (breakdown A only)
-  });
 
   // ─── 3+ runs across 2 agents and 2 crons (acceptance test) ──────────────────
 
@@ -723,8 +639,17 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
       outputTokens: 50,
       cacheReadTokens: 10,
       cacheCreationTokens: 5,
-      costUsd: 0.001,
-      model: "claude-sonnet-4-5",
+    });
+    await prisma.agentCronRunModelBreakdown.create({
+      data: {
+        cronRunId: runA.id,
+        model: "claude-sonnet-4-5",
+        inputTokens: 100,
+        outputTokens: 50,
+        cacheReadTokens: 10,
+        cacheCreationTokens: 5,
+        costUsd: 0.001,
+      },
     });
 
     // Run B: agent2, cron2, opus model
@@ -737,8 +662,17 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
       outputTokens: 100,
       cacheReadTokens: 20,
       cacheCreationTokens: 10,
-      costUsd: 0.002,
-      model: "claude-opus-4-5",
+    });
+    await prisma.agentCronRunModelBreakdown.create({
+      data: {
+        cronRunId: runB.id,
+        model: "claude-opus-4-5",
+        inputTokens: 200,
+        outputTokens: 100,
+        cacheReadTokens: 20,
+        cacheCreationTokens: 10,
+        costUsd: 0.002,
+      },
     });
 
     // Run C: agent1, cron1, sonnet model (second run same cron)
@@ -751,8 +685,17 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
       outputTokens: 150,
       cacheReadTokens: 30,
       cacheCreationTokens: 15,
-      costUsd: 0.003,
-      model: "claude-sonnet-4-5",
+    });
+    await prisma.agentCronRunModelBreakdown.create({
+      data: {
+        cronRunId: runC.id,
+        model: "claude-sonnet-4-5",
+        inputTokens: 300,
+        outputTokens: 150,
+        cacheReadTokens: 30,
+        cacheCreationTokens: 15,
+        costUsd: 0.003,
+      },
     });
 
     // Skipped run (should be excluded from everything)
@@ -770,7 +713,8 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
     expect(stats.totals.cacheRead).toBe(60);
     expect(stats.totals.cacheCreation).toBe(30);
     expect(stats.totals.total).toBe(600 + 300 + 60 + 30);
-    expect(stats.totals.costUsd).toBeCloseTo(0.006, 6);
+    // costUsd is aggregated from breakdown rows via LEFT JOIN
+    expect(stats.totals.costUsd).toBeCloseTo(0.001 + 0.002 + 0.003);
 
     // byAgent: 2 entries
     expect(stats.byAgent).toHaveLength(2);

@@ -387,8 +387,6 @@ function makeMockDeps(): AdminDeps {
         outputTokens: null,
         cacheReadTokens: null,
         cacheCreationTokens: null,
-        costUsd: null,
-        model: null,
         createdAt: new Date("2024-01-01T09:00:00.000Z"),
       }),
       list: async () => ({
@@ -411,8 +409,6 @@ function makeMockDeps(): AdminDeps {
         outputTokens: null,
         cacheReadTokens: null,
         cacheCreationTokens: null,
-        costUsd: null,
-        model: null,
         createdAt: new Date("2024-01-01T09:00:00.000Z"),
       }),
     },
@@ -1980,8 +1976,6 @@ describe("admin API — cron runs", () => {
           outputTokens: 500,
           cacheReadTokens: 100,
           cacheCreationTokens: 50,
-          costUsd: 0.003,
-          model: "claude-sonnet-4-5",
         }),
         headers: {
           "Content-Type": "application/json",
@@ -1995,7 +1989,6 @@ describe("admin API — cron runs", () => {
     expect(body.run.id).toBe(RUN_ID);
     expect(body.run.inputTokens).toBe(1000);
     expect(body.run.outputTokens).toBe(500);
-    expect(body.run.model).toBe("claude-sonnet-4-5");
   });
 
   it("PATCH /agents/:id/crons/:cronId/runs/:runId returns 404 when ownership check fails", async () => {
@@ -2091,8 +2084,6 @@ function makeMockDepsWithRunService(opts?: {
     outputTokens: null,
     cacheReadTokens: null,
     cacheCreationTokens: null,
-    costUsd: null,
-    model: null,
     createdAt: new Date("2026-01-01T08:00:00.000Z"),
   };
 
@@ -2137,8 +2128,6 @@ function makeMockDepsWithRunService(opts?: {
               outputTokens: 500,
               cacheReadTokens: 100,
               cacheCreationTokens: 50,
-              costUsd: 0.003,
-              model: "claude-sonnet-4-5",
             }),
     },
   };

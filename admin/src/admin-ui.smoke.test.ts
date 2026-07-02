@@ -553,8 +553,6 @@ describe("admin UI — authenticated pages", () => {
                 outputTokens: 111,
                 cacheReadTokens: null,
                 cacheCreationTokens: null,
-                costUsd: 0.0456,
-                model: "claude-opus-4-8",
                 createdAt: new Date("2026-06-01T10:00:00Z"),
               },
             ],
@@ -574,8 +572,6 @@ describe("admin UI — authenticated pages", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain("posted");
-    expect(html).toContain("claude-opus-4-8");
-    expect(html).toContain("$0.0456");
     expect(html).not.toContain("No runs recorded yet.");
   });
 

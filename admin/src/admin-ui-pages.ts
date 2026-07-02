@@ -129,8 +129,6 @@ export interface CronRunItem {
   error: string | null;
   inputTokens: number | null;
   outputTokens: number | null;
-  costUsd: number | null;
-  model: string | null;
 }
 
 // Inline CSS for cron-run outcome badges, keyed by outcome string.
@@ -2237,22 +2235,17 @@ export function renderCronRunsPage(opts: {
         ? "—"
         : `${escapeHtml(String(r.inputTokens ?? 0))} in / ${escapeHtml(String(r.outputTokens ?? 0))} out`;
 
-    const costCell = r.costUsd === null ? "—" : `$${r.costUsd.toFixed(4)}`;
-    const modelCell = r.model === null ? "—" : escapeHtml(r.model);
-
     return `<tr>
       <td>${outcomeCell}</td>
       <td style="font-size:12px">${startedCell}</td>
       <td class="mono" style="font-size:12px">${durationCell}</td>
       <td class="mono" style="font-size:12px">${tokensCell}</td>
-      <td class="mono" style="font-size:12px">${escapeHtml(costCell)}</td>
-      <td class="mono" style="font-size:12px">${modelCell}</td>
     </tr>`;
   }
 
   const bodyRows =
     runs.length === 0
-      ? `<tr><td colspan="6" class="empty-state">No runs recorded yet.</td></tr>`
+      ? `<tr><td colspan="4" class="empty-state">No runs recorded yet.</td></tr>`
       : runs.map(row).join("\n");
 
   const cronLabel = cron.name ?? cron.schedule;
@@ -2286,8 +2279,6 @@ export function renderCronRunsPage(opts: {
             <th>Started</th>
             <th>Duration</th>
             <th>Tokens</th>
-            <th>Cost</th>
-            <th>Model</th>
           </tr>
         </thead>
         <tbody>

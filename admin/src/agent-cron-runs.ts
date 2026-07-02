@@ -39,8 +39,6 @@ export interface PatchAgentCronRunInput {
   outputTokens?: number | null;
   cacheReadTokens?: number | null;
   cacheCreationTokens?: number | null;
-  costUsd?: number | null;
-  model?: string | null;
   modelBreakdown?: ModelBreakdownEntry[];
 }
 
@@ -133,8 +131,6 @@ export class AgentCronRunService {
       ...(input.cacheCreationTokens !== undefined && {
         cacheCreationTokens: input.cacheCreationTokens,
       }),
-      ...(input.costUsd !== undefined && { costUsd: input.costUsd }),
-      ...(input.model !== undefined && { model: input.model }),
     };
 
     if (input.modelBreakdown && input.modelBreakdown.length > 0) {
