@@ -84,6 +84,7 @@ function makeDeps(
     pr: number,
   ) => Promise<void> = async () => {},
   listPrCommits: (_prNumber: number) => Promise<CommitInfo[]> = async () => [],
+  getCurrentUser: () => string = () => "the-agent",
 ) {
   return {
     listOwnOpenPrs: async (_repo: string) => ownPrs,
@@ -113,6 +114,7 @@ function makeDeps(
     },
     updateBranch,
     listPrCommits,
+    getCurrentUser,
   };
 }
 
@@ -660,5 +662,114 @@ describe("check-patch", () => {
       ),
     );
     expect(result.exit).toBe(1);
+  });
+
+  // ─── Self-authored review exclusion (CPF-1.1) ─────────────────────────────
+
+  test("exits 1 when only review is self-authored COMMENTED at current HEAD with non-empty body", async () => {
+    const pr = makeOwnPr();
+    const reviewData = makePrReviewData({
+      headRefOid: "current-head-sha",
+      reviews: {
+        nodes: [
+          {
+            author: { login: "the-agent" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-26T10:00:00Z",
+            commit: { oid: "current-head-sha" },
+            body: "APPROVE — looks good, no changes needed.",
+          },
+        ],
+      },
+      reviewThreads: { nodes: [] },
+    });
+    const result = await run(
+      makeDeps(
+        [pr],
+        { 10: reviewData },
+        {},
+        {},
+        async () => {},
+        async () => [],
+        () => "the-agent",
+      ),
+    );
+    expect(result.exit).toBe(1);
+    expect(result.output).toBe("");
+  });
+
+  test("exits 1 when only review is self-authored COMMENTED at a stale commit with merge-only commits since", async () => {
+    const pr = makeOwnPr({ headRefOid: "merge-sha" });
+    const reviewData = makePrReviewData({
+      headRefOid: "merge-sha",
+      reviews: {
+        nodes: [
+          {
+            author: { login: "the-agent" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-26T10:00:00Z",
+            commit: { oid: "review-sha" }, // posted before the merge commit
+            body: "APPROVE — looks good, no changes needed.",
+          },
+        ],
+      },
+      reviewThreads: { nodes: [] },
+    });
+    const commits: CommitInfo[] = [
+      { sha: "review-sha", parents: [{ sha: "p0" }] },
+      { sha: "merge-sha", parents: [{ sha: "a" }, { sha: "b" }] }, // merge commit
+    ];
+    const result = await run(
+      makeDeps(
+        [pr],
+        { 10: reviewData },
+        {},
+        {},
+        async () => {},
+        async () => commits,
+        () => "the-agent",
+      ),
+    );
+    expect(result.exit).toBe(1);
+    expect(result.output).toBe("");
+  });
+
+  test("exits 0 when self-authored review coexists with a different reviewer's CHANGES_REQUESTED finding", async () => {
+    const pr = makeOwnPr();
+    const reviewData = makePrReviewData({
+      headRefOid: "current-head-sha",
+      reviews: {
+        nodes: [
+          {
+            author: { login: "the-agent" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-26T10:00:00Z",
+            commit: { oid: "current-head-sha" },
+            body: "APPROVE — looks good, no changes needed.",
+          },
+          {
+            author: { login: "reviewer1" },
+            state: "CHANGES_REQUESTED",
+            submittedAt: "2026-05-26T11:00:00Z",
+            commit: { oid: "current-head-sha" },
+            body: "Please address these issues before merging.",
+          },
+        ],
+      },
+      reviewThreads: { nodes: [] },
+    });
+    const result = await run(
+      makeDeps(
+        [pr],
+        { 10: reviewData },
+        {},
+        {},
+        async () => {},
+        async () => [],
+        () => "the-agent",
+      ),
+    );
+    expect(result.exit).toBe(0);
+    expect(result.output).toContain("patch");
   });
 });
