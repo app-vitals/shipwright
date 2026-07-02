@@ -9,6 +9,9 @@
  *    allow_self_review is true in agent-policy.md, and author has a review
  *    with "APPROVE" in the body.
  * 2. CI: at least one CI run with conclusion == "success" for the PR's HEAD SHA
+ * 3. Deploying guard: a repo with an active Deploy workflow run is skipped
+ *    for this pass — scoped per repo, so a busy repo does not block PRs in
+ *    other configured repos.
  *
  * Exit 0 + one-line prompt → at least one PR is ready to deploy
  * Exit 1 + no output       → nothing to do
@@ -136,9 +139,11 @@ export async function run(deps: Deps): Promise<RunResult> {
     );
   }
 
-  // Deploying guard: bail out if any configured repo has an active Deploy workflow run.
-  // Queued runs older than 1 hour are treated as stuck/ghost and skipped.
+  // Deploying guard: a repo with an active Deploy workflow run is skipped, but
+  // that must not block PRs in other, independent repos. Queued runs older
+  // than 1 hour are treated as stuck/ghost and ignored.
   const now = deps.clock ? deps.clock() : new Date().toISOString();
+  const busyRepos = new Set<string>();
   for (const repo of deps.repos) {
     const [org, repoName] = repo.includes("/")
       ? (repo.split("/", 2) as [string, string])
@@ -146,7 +151,7 @@ export async function run(deps: Deps): Promise<RunResult> {
     try {
       const activeRuns = await deps.fetchActiveDeployRuns(org, repoName);
       if (activeRuns.some((r) => isActiveRun(r, now))) {
-        return { exit: 1, output: "", candidate: null };
+        busyRepos.add(repo);
       }
     } catch (err) {
       process.stderr.write(
@@ -159,6 +164,8 @@ export async function run(deps: Deps): Promise<RunResult> {
   const currentUser = await deps.getCurrentUser();
 
   for (const repo of deps.repos) {
+    if (busyRepos.has(repo)) continue;
+
     const [org, repoName] = repo.includes("/")
       ? (repo.split("/", 2) as [string, string])
       : (["app-vitals", repo] as [string, string]);
