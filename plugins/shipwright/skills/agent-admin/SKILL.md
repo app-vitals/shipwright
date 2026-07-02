@@ -355,7 +355,7 @@ See `docs/agent-onboarding.md` for the full provisioning runbook.
 
 ## Metrics API
 
-The metrics service exposes PostHog-backed pipeline data. Endpoints require Bearer auth.
+The metrics service exposes task-store-backed pipeline data. Endpoints require Bearer auth.
 
 | Endpoint | What it returns |
 |---|---|
@@ -365,8 +365,8 @@ The metrics service exposes PostHog-backed pipeline data. Endpoints require Bear
 | `GET /metrics/queue` | Queue funnel and cycle breakdown |
 | `GET /metrics/tokens` | Token usage by agent and session type |
 
-For structured analysis, use `/shipwright:metrics` instead — it handles PostHog queries,
-local JSONL fallback, trends, and produces a formatted report.
+For structured analysis, use `/shipwright:metrics` instead — it reads task-store data,
+falls back to local JSONL, computes trends, and produces a formatted report.
 
 ---
 
