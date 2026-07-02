@@ -543,4 +543,44 @@ describeOrSkip("Task store schema (integration)", () => {
     expect(titles).not.toContain("Assigned in other repo");
     expect(result.total).toBe(2);
   });
+
+  it("list() with agentScope AND assignee filter narrows the pool to just that assignee", async () => {
+    const taskService = new TaskService(prisma);
+
+    await prisma.task.create({
+      data: {
+        title: "Own task",
+        status: "in_progress",
+        assignee: "agent-1",
+        repo: "acme-inc/backend-api",
+      },
+    });
+    await prisma.task.create({
+      data: {
+        title: "Warchild task in scope",
+        status: "in_progress",
+        assignee: "agent-2",
+        repo: "acme-inc/backend-api",
+      },
+    });
+    await prisma.task.create({
+      data: {
+        title: "Unassigned pool task in scope",
+        status: "in_progress",
+        assignee: null,
+        repo: "acme-inc/backend-api",
+      },
+    });
+
+    // agentScope alone would surface all three (visibility); an explicit
+    // assignee filter narrows that visible set down to just agent-1's own
+    // tasks — narrowing what's already visible is safe, unlike widening it.
+    const result = await taskService.list({
+      agentScope: { agentId: "agent-1", repos: ["acme-inc/backend-api"] },
+      assignee: "agent-1",
+    });
+
+    expect(result.tasks.map((t) => t.title)).toEqual(["Own task"]);
+    expect(result.total).toBe(1);
+  });
 });

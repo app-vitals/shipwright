@@ -1136,6 +1136,38 @@ block the plan when the hosted env is absent.
 
 ---
 
+## Scenario 43: Dev Task Step 1 — Does Not Resume Another Agent's In-Progress Task
+
+Covers a real incident: on a repo-scoped agent token, the task store's `GET
+/tasks?status=in_progress` visibility (`agentScope`) is a repo-wide pool — it
+returns tasks assigned to *any* agent sharing that repo, not just the caller's
+own. Step 1's "resume interrupted task" check blindly took `result.tasks[0]`
+from that unfiltered list, so one agent could resume (and start committing to)
+a task actively owned by a completely different agent.
+
+### Setup
+1. Two agent tokens scoped to the same repo (`agent-A`, `agent-B`)
+2. A task assigned to `agent-B`, `status: in_progress`, with no branch/PR yet
+3. No task assigned to `agent-A` is `in_progress`
+
+### Run
+As `agent-A`, invoke `/shipwright:dev-task`
+
+### Verify
+- [ ] Step 1's curl now filters `.tasks` by `select(.assignee == $SHIPWRIGHT_AGENT_ID)` before checking for an interrupted task
+- [ ] `agent-B`'s in_progress task is NOT printed as `↩ Resuming interrupted task`
+- [ ] `agent-A` instead falls through to the `ready=true` pick (or exits `[silent]` if none)
+- [ ] `agent-B`'s task record is untouched — no `startedAt` re-stamp, no worktree created for it
+
+### Related — check-dev-task precheck
+- [ ] `check-dev-task.ts`'s stale-in_progress reset loop does not reset or stamp `agent-B`'s task (verify via `bun test plugins/shipwright/scripts/check-dev-task.test.ts`, cross-agent scoping tests)
+- [ ] HITL-pending notifications only surface tasks where `assignee === SHIPWRIGHT_AGENT_ID`
+
+### Related — task-store API
+- [ ] `GET /tasks?status=in_progress&assignee={own-agent-id}` on a repo-scoped token now actually narrows results to that assignee (previously silently ignored the query param) — see `task-store/src/api.smoke.test.ts` and `tasks.integration.test.ts`
+
+---
+
 ## Test Readiness Pipeline scenarios
 
 Imported from the former `test-readiness` plugin. These exercise the six `/test-*` commands and the three cross-cutting contracts (canary-execution, speed-budgets, repo-config). Numbered `TR-N` to stay clear of the shipwright scenario numbering above. Phases 1–4 are read-only on source; Phase 5 writes to GitHub.

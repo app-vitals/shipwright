@@ -18,14 +18,15 @@ Auto-detect the project toolchain (run once, reuse throughout). Skip this step u
 
 ## Step 1: Pick Task
 
-**First, check for an interrupted task** — if a prior session left a task `in_progress`, resume it:
+**First, check for an interrupted task** — if a prior session left a task `in_progress`, resume it. The task-store list endpoint does not reliably scope bare `status=` queries by assignee for agent tokens with repo-level access, so filter to this agent's own tasks client-side — otherwise this can pick up (and start committing to) a task assigned to a completely different agent:
 
 ```bash
 curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=in_progress" | jq '.tasks'
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=in_progress" \
+  | jq --arg me "$SHIPWRIGHT_AGENT_ID" '.tasks | map(select(.assignee == $me))'
 ```
 
-If `result.tasks` is non-empty, use the first task (`result.tasks[0]`). The Step 2 orphan check will clean up any stale branch/PR from the prior session before restarting. Print:
+If the filtered result is non-empty, use the first task (`result[0]`). The Step 2 orphan check will clean up any stale branch/PR from the prior session before restarting. Print:
 
 ```
 ↩ Resuming interrupted task: {id} — {title}
