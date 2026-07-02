@@ -1720,10 +1720,6 @@ export interface components {
             cacheReadTokens: number | null;
             /** @example 10 */
             cacheCreationTokens: number | null;
-            /** @example 0.0042 */
-            costUsd: number | null;
-            /** @example claude-sonnet-4-5 */
-            model: string | null;
             /**
              * Format: date-time
              * @example 2026-01-01T08:00:00.000Z
@@ -1765,6 +1761,35 @@ export interface components {
         PatchCronRunWrapper: {
             run: components["schemas"]["AgentCronRun"];
         };
+        ModelBreakdownEntry: {
+            /** @example claude-sonnet-4-5 */
+            model: string;
+            /**
+             * @default 0
+             * @example 200
+             */
+            inputTokens: number;
+            /**
+             * @default 0
+             * @example 100
+             */
+            outputTokens: number;
+            /**
+             * @default 0
+             * @example 8
+             */
+            cacheReadTokens: number;
+            /**
+             * @default 0
+             * @example 4
+             */
+            cacheCreationTokens: number;
+            /**
+             * @default 0
+             * @example 0.002
+             */
+            costUsd: number;
+        };
         PatchAgentCronRunBody: {
             /**
              * Format: date-time
@@ -1787,10 +1812,8 @@ export interface components {
             cacheReadTokens?: number | null;
             /** @example 10 */
             cacheCreationTokens?: number | null;
-            /** @example 0.0042 */
-            costUsd?: number | null;
-            /** @example claude-sonnet-4-5 */
-            model?: string | null;
+            /** @description Per-model token breakdown for this run */
+            modelBreakdown?: components["schemas"]["ModelBreakdownEntry"][];
         };
         AgentTool: {
             /** @example clx1234567890 */

@@ -162,8 +162,6 @@ model AgentCronRun {
   outputTokens       Int?
   cacheReadTokens    Int?
   cacheCreationTokens Int?
-  costUsd            Float?
-  model              String?
   createdAt          DateTime  @default(now())
 
   modelBreakdown AgentCronRunModelBreakdown[]
