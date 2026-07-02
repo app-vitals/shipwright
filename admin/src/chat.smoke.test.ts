@@ -515,6 +515,30 @@ describe("POST /admin/chat/:agentId/threads/:threadId/rename — rename thread",
     );
     expect(res.status).toBe(302);
   });
+
+  it("skips updateThread and redirects back when title is empty", async () => {
+    let updateCalled = false;
+    const chatClient = makeMockChatClient({
+      updateThread: async (_id: string, data: { title?: string }) => {
+        updateCalled = true;
+        return { ...MOCK_THREAD, title: data.title ?? MOCK_THREAD.title };
+      },
+    });
+    const app = createAdminUIApp(makeBaseDeps({ chatClient }));
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}/rename`,
+      {
+        method: "POST",
+        headers: {
+          Cookie: `admin_session=${sessionCookie}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: "title=",
+      },
+    );
+    expect(res.status).toBe(302);
+    expect(updateCalled).toBe(false);
+  });
 });
 
 describe("POST /admin/chat/:agentId/threads/:threadId/delete — delete thread", () => {
@@ -724,6 +748,9 @@ describe("GET /admin/chat/:agentId/threads/:threadId — thread list pane on det
     const html = await res.text();
     // Should have a rename form pointing to the rename endpoint
     expect(html).toContain("/rename");
+    // rename input must have required so empty submissions are blocked client-side
+    expect(html).toContain('name="title"');
+    expect(html).toMatch(/name="title"[^>]*required|required[^>]*name="title"/);
   });
 
   it("renders delete button on the thread detail page", async () => {

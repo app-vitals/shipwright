@@ -2721,7 +2721,7 @@ export function renderChatThreadPage(
   const renameForm = `
     <form method="POST" action="/admin/chat/${escapeHtml(agentId)}/threads/${escapeHtml(threadId)}/rename" style="margin-top:12px">
       <div class="form-row" style="align-items:center;gap:8px">
-        <input type="text" name="title" class="form-input" placeholder="New title…" style="max-width:240px">
+        <input type="text" name="title" class="form-input" placeholder="New title…" style="max-width:240px" required>
         <button type="submit" class="btn btn-secondary" style="white-space:nowrap">Rename</button>
       </div>
     </form>`;

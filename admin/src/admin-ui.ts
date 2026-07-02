@@ -2183,6 +2183,11 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         return c.redirect(backUrl, 302);
       }
 
+      // Guard: skip the API call when title is blank to avoid a silent no-op PATCH
+      if (!title) {
+        return c.redirect(backUrl, 302);
+      }
+
       try {
         await chatClient.updateThread(threadId, { title });
       } catch {
