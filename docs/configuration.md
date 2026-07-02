@@ -89,12 +89,15 @@ Provide either the GitHub App vars (recommended) or `GH_TOKEN` (PAT). App auth i
 | `SHIPWRIGHT_HEALTH_PORT` | `number` | `3459` | Dedicated health server port for K8s liveness probes. Used by `entrypoint-main.ts` (started in-process before the startup sequence) and by `run-agent.ts` `startServer()`. Set separately so the probe is always reachable regardless of whether the chat server is running. |
 | `NODE_ENV` | `string` | — | Runtime environment. Set to `production` to enforce production-safety guards (blocks `SHIPWRIGHT_DEV_CHAT`, `ADMIN_DEV_AUTH`). |
 
-### Metrics & Admin & Task-Store services
+### Metrics & Admin & Chat & Task-Store services
 
 | Name | Type | Default | Description |
 |---|---|---|---|
 | `DATABASE_URL_SHIPWRIGHT_ADMIN` | `string` | required | Postgres connection string for the admin service schema (e.g. `postgresql://user:pass@host:5432/db`). |
-| `DATABASE_URL_SHIPWRIGHT_TASK_STORE` | `string` | required | Postgres connection string for the task-store service. **Must be a separate database** from the admin service — the schema forbids sharing. Read by `@shipwright/task-store` and `@shipwright/agent`. |
+| `DATABASE_URL_SHIPWRIGHT_CHAT` | `string` | required | Postgres connection string for the chat service schema. **Must be a separate database** from the admin and task-store services — the schema forbids sharing. |
+| `SHIPWRIGHT_CHAT_AGENTS_URL` | `string` | — | Base URL of the Shipwright agents service, used by the chat service to resolve agent token scopes. When set alongside `SHIPWRIGHT_CHAT_AGENTS_API_KEY`, the chat service calls this URL to fetch the repos an agent token may access. Optional — when unset, agent tokens default to empty repo lists and scope resolution is disabled. |
+| `SHIPWRIGHT_CHAT_AGENTS_API_KEY` | `string` | — | Bearer token for the chat service to call the agents service. Required alongside `SHIPWRIGHT_CHAT_AGENTS_URL` to enable scope resolution. Env-var-only (secret). |
+| `DATABASE_URL_SHIPWRIGHT_TASK_STORE` | `string` | required | Postgres connection string for the task-store service. **Must be a separate database** from the admin and chat services — the schema forbids sharing. Read by `@shipwright/task-store` and `@shipwright/agent`. |
 | `SHIPWRIGHT_TASK_STORE_URL` | `string` | — | Base URL of the Shipwright task-store service (e.g. `http://task-store:3000` or `https://tasks.example.com`). When set alongside `SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN`, the admin service wires per-agent tokens during provisioning and injects the URL + token into agent Deployment env vars (`SHIPWRIGHT_TASK_STORE_URL`, `SHIPWRIGHT_TASK_STORE_TOKEN`). Agents use these to authenticate with the task-store API when claiming tasks or updating status. |
 | `SHIPWRIGHT_TASK_STORE_PUBLIC_URL` | `string` | — | Externally-reachable base URL of the task-store advertised in the admin mint-token success page's copy-paste env block (printed as `SHIPWRIGHT_TASK_STORE_URL`). Set this to the public route a local/laptop agent can resolve — e.g. `https://<host>/task-store` when the chart's `taskStore.expose.enabled` is on. The admin service's own in-cluster task-store calls (token minting + task CRUD) always use the internal `SHIPWRIGHT_TASK_STORE_URL`; only the displayed value changes. When unset, the env block falls back to `SHIPWRIGHT_TASK_STORE_URL` (current behavior). Set via the chart value `admin.taskStorePublicUrl`. |
 | `SHIPWRIGHT_TASK_STORE_TOKEN` | `string` | — | Bearer token for task-store API access. Minted per-agent by the admin provisioner and stored in the agent Secret (key `task-store-token`); injected into the agent Deployment via `SHIPWRIGHT_TASK_STORE_TOKEN` env var. Used by agents to claim tasks, update status, and query the task queue, and by plugin scripts (e.g. `render-plan.ts`) to upload documents. Env-var-only (secret). *(planned — agent-side client wiring not yet implemented; tokens are minted and stored but not yet used by agents)* |
@@ -165,6 +168,7 @@ On Kubernetes these env vars are a deploy-time option of the Helm chart rather t
 | `ADMIN_DEV_AUTH` | `bool` | `false` | Enables `GET /admin/dev-login` (bypasses Google OAuth, mints a dev session). Blocked when `NODE_ENV=production`. |
 | `METRICS_DASHBOARD_DEV_AUTH` | `bool` | `false` | Bypasses `/dashboard` session auth and `/metrics/*` API auth for local dev. Must not be enabled in production — exits with an error if `NODE_ENV=production`. |
 | `TASK_STORE_SEED_ADMIN_TOKEN` | `string` | — | Bootstrap admin token seeded into the task-store on startup. Used only in local dev (`task stack`) to provision a bootstrapped admin token without manual token creation. Not a real secret — used only against the local dev Postgres instance. Ignored if empty. |
+| `CHAT_SEED_ADMIN_TOKEN` | `string` | — | Bootstrap admin token seeded into the chat service on startup. Used only in local dev to provision a bootstrapped admin token without manual token creation. Not a real secret — used only against the local dev Postgres instance. Ignored if empty. |
 
 ---
 
