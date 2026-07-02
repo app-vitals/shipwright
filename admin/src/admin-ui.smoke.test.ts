@@ -1956,6 +1956,124 @@ describe("admin UI — provision start form", () => {
     expect(envVars.CLAUDE_CODE_OAUTH_TOKEN).toBe("oauth-token-xyz");
   });
 
+  it("POST /admin/provision/start agentMode=new with missing name returns form error before Slack call", async () => {
+    let slackCalled = false;
+    let createCalled = false;
+    const deps = makeMockDeps({
+      prisma: {
+        agent: {
+          findMany: async () => [],
+          findUnique: async () => null,
+          create: async () => {
+            createCalled = true;
+            throw new Error("should not be called");
+          },
+          update: async () => {
+            throw new Error("should not be called");
+          },
+          delete: async () => {
+            throw new Error("should not be called");
+          },
+        },
+        agentPlugin: { findMany: async () => [] },
+        agentMember: {
+          findMany: async () => [],
+          findUnique: async () => null,
+          create: async () => ({
+            id: "m1",
+            agentId: AGENT_ID,
+            email: "member@example.com",
+          }),
+          deleteMany: async () => ({ count: 0 }),
+        },
+      },
+      slackClient: {
+        createAppManifest: async () => {
+          slackCalled = true;
+          return {
+            appId: "A123",
+            oauthRedirectUrl: "https://slack.com/authorize",
+            clientId: "cid",
+            clientSecret: "csec",
+            signingSecret: "ssec",
+          };
+        },
+      },
+    });
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({
+      agentMode: "new",
+      xoxpToken: "xoxe.xoxp-valid",
+      ghAuthMode: "pat",
+      ghPat: "ghp_token123",
+    });
+    const res = await app.request("/admin/provision/start", {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(createCalled).toBe(false);
+    expect(slackCalled).toBe(false);
+    const html = await res.text();
+    expect(html).toContain("alert-error");
+  });
+
+  it("POST /admin/provision/start agentMode=new with invalid repo format returns form error and does not create the agent", async () => {
+    let createCalled = false;
+    const deps = makeMockDeps({
+      prisma: {
+        agent: {
+          findMany: async () => [],
+          findUnique: async () => null,
+          create: async () => {
+            createCalled = true;
+            throw new Error("should not be called");
+          },
+          update: async () => {
+            throw new Error("should not be called");
+          },
+          delete: async () => {
+            throw new Error("should not be called");
+          },
+        },
+        agentPlugin: { findMany: async () => [] },
+        agentMember: {
+          findMany: async () => [],
+          findUnique: async () => null,
+          create: async () => ({
+            id: "m1",
+            agentId: AGENT_ID,
+            email: "member@example.com",
+          }),
+          deleteMany: async () => ({ count: 0 }),
+        },
+      },
+    });
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({
+      agentMode: "new",
+      newAgentName: "brand-new-agent",
+      newAgentRepos: "not-a-valid-repo",
+      xoxpToken: "xoxe.xoxp-valid",
+      ghAuthMode: "pat",
+      ghPat: "ghp_token123",
+    });
+    const res = await app.request("/admin/provision/start", {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(createCalled).toBe(false);
+    const html = await res.text();
+    expect(html).toContain("alert-error");
+  });
+
   it("POST /admin/provision/start agentMode=new happy path: creates agent, provisions it (non-self-hosted), and reaches oauthUrl success state", async () => {
     const NEW_AGENT_ID = "agent-new-999";
     let createArgs: { name: string; selfHosted?: boolean } | null = null;
