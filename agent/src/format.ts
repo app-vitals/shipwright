@@ -240,7 +240,7 @@ function convertRichTextBlock(block: RichTextBlock): string {
     }
   }
 
-  return parts.join("\n");
+  return parts.join("\n\n");
 }
 
 /**

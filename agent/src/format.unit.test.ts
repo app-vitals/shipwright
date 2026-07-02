@@ -444,7 +444,7 @@ describe("richTextToMarkdown", () => {
 
   // ─── Multiple sections joined by newlines ─────────────────────────────────
 
-  test("multiple rich_text_sections joined by newlines", () => {
+  test("multiple rich_text_sections joined by blank line (paragraph break)", () => {
     expect(
       richTextToMarkdown([
         {
@@ -461,7 +461,7 @@ describe("richTextToMarkdown", () => {
           ],
         },
       ]),
-    ).toBe("line one\nline two");
+    ).toBe("line one\n\nline two");
   });
 
   // ─── Quote ────────────────────────────────────────────────────────────────
@@ -527,7 +527,7 @@ describe("richTextToMarkdown", () => {
           ],
         },
       ]),
-    ).toBe("intro\n```\ncode block\n```\n- item");
+    ).toBe("intro\n\n```\ncode block\n```\n\n- item");
   });
 });
 
