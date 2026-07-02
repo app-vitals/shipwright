@@ -30,8 +30,6 @@ function buildTokenPayload(
   outputTokens?: number;
   cacheReadTokens?: number;
   cacheCreationTokens?: number;
-  costUsd?: number;
-  model?: string;
   modelBreakdown?: ModelBreakdownEntry[];
 } {
   // Build per-model breakdown when modelUsage has entries
@@ -52,8 +50,6 @@ function buildTokenPayload(
     outputTokens: usage?.output_tokens,
     cacheReadTokens: usage?.cache_read_input_tokens,
     cacheCreationTokens: usage?.cache_creation_input_tokens,
-    costUsd: totalCostUsd ?? (usage ? calculateCost(usage, liveClaudeConfig.model) : undefined),
-    model: dominantModel(modelUsage ?? {}) ?? liveClaudeConfig.model,
     ...(modelBreakdown !== undefined && { modelBreakdown }),
   };
 }

@@ -1106,11 +1106,9 @@ describe("handleCronRequest — CronRunReporter", () => {
     expect(patchBody.outputTokens).toBe(50);
     expect(patchBody.cacheReadTokens).toBe(20);
     expect(patchBody.cacheCreationTokens).toBe(10);
-    expect(patchBody.costUsd).toBe(0.005);
-    expect(patchBody.model).toBe("claude-sonnet-4-6");
   });
 
-  test("PATCH model uses dominant model from modelUsage, not liveClaudeConfig.model", async () => {
+  test("token data sent correctly when multiple models used (modelBreakdown preserved)", async () => {
     mockRunner.mockResolvedValueOnce({
       result: "the reply",
       sessionId: "s1",
@@ -1146,7 +1144,9 @@ describe("handleCronRequest — CronRunReporter", () => {
     const patchReq = reporterState.requests.find((r) => r.method === "PATCH");
     expect(patchReq).toBeDefined();
     const patchBody = patchReq?.body as Record<string, unknown>;
-    expect(patchBody.model).toBe("claude-opus-4-8");
+    // Token data present, no costUsd or model scalars
+    expect(patchBody.inputTokens).toBe(300);
+    expect(patchBody.outputTokens).toBe(250);
   });
 
   test("PATCH called with outcome='failed' + error message when runner throws", async () => {
