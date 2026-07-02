@@ -1162,6 +1162,40 @@ describe("renderProvisionStartPage", () => {
     expect(html).toContain('name="anthropicApiKey"');
     expect(html).toContain('name="claudeCodeOauthToken"');
   });
+
+  // ── new tests for agentMode toggle (existing vs. create-new agent) ───────
+
+  test("renders agentMode radio buttons (existing and new)", () => {
+    const html = renderProvisionStartPage(USER_NAME, AGENTS_FIXTURE);
+    expect(html).toContain('name="agentMode"');
+    expect(html).toContain('value="existing"');
+    expect(html).toContain('value="new"');
+  });
+
+  test("renders new-agent name input", () => {
+    const html = renderProvisionStartPage(USER_NAME, AGENTS_FIXTURE);
+    expect(html).toContain('name="newAgentName"');
+  });
+
+  test("renders new-agent repos textarea", () => {
+    const html = renderProvisionStartPage(USER_NAME, AGENTS_FIXTURE);
+    expect(html).toContain('name="newAgentRepos"');
+  });
+
+  test("existing agentId select still renders alongside the new-agent fields", () => {
+    const html = renderProvisionStartPage(USER_NAME, AGENTS_FIXTURE);
+    expect(html).toContain('name="agentId"');
+    expect(html).toContain("<select");
+    expect(html).toContain("agent-001");
+    expect(html).toContain("Alpha Agent");
+  });
+
+  test("agentId select is not marked required (conditionally hidden field)", () => {
+    const html = renderProvisionStartPage(USER_NAME, AGENTS_FIXTURE);
+    const selectMatch = html.match(/<select id="agentId"[^>]*>/);
+    expect(selectMatch).toBeTruthy();
+    expect(selectMatch?.[0]).not.toContain("required");
+  });
 });
 
 // ─── renderProvisionPasteForm ─────────────────────────────────────────────────

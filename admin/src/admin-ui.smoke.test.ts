@@ -1955,6 +1955,248 @@ describe("admin UI — provision start form", () => {
     expect(envVars.ANTHROPIC_API_KEY).toBe("sk-ant-key");
     expect(envVars.CLAUDE_CODE_OAUTH_TOKEN).toBe("oauth-token-xyz");
   });
+
+  it("POST /admin/provision/start agentMode=new happy path: creates agent, provisions it (non-self-hosted), and reaches oauthUrl success state", async () => {
+    const NEW_AGENT_ID = "agent-new-999";
+    let createArgs: { name: string; selfHosted?: boolean } | null = null;
+    let updateArgs: { id: string; repos: string[] } | null = null;
+    let provisionArgs: { id: string; opts: { slug: string } } | null = null;
+
+    const deps = makeMockDeps({
+      prisma: {
+        agent: {
+          findMany: async () => [
+            {
+              id: AGENT_ID,
+              name: "Test Agent",
+              slackId: "U123456",
+              createdAt: new Date("2024-01-01"),
+            },
+          ],
+          findUnique: async () => ({
+            id: NEW_AGENT_ID,
+            name: "brand-new-agent",
+            slackId: null,
+            selfHosted: false,
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+            repos: ["my-org/repo-one"],
+          }),
+          create: async (args: {
+            data: { name: string; selfHosted?: boolean };
+          }) => {
+            createArgs = args.data;
+            return {
+              id: NEW_AGENT_ID,
+              name: args.data.name,
+              slackId: null,
+              selfHosted: args.data.selfHosted ?? false,
+              createdAt: new Date("2024-01-01"),
+              updatedAt: new Date("2024-01-01"),
+              repos: [],
+            };
+          },
+          update: async (args: {
+            where: { id: string };
+            data: { repos: string[] };
+          }) => {
+            updateArgs = { id: args.where.id, repos: args.data.repos };
+            return {
+              id: args.where.id,
+              name: "brand-new-agent",
+              slackId: null,
+              selfHosted: false,
+              createdAt: new Date("2024-01-01"),
+              updatedAt: new Date("2024-01-01"),
+              repos: args.data.repos,
+            };
+          },
+          delete: async () => ({
+            id: NEW_AGENT_ID,
+            name: "brand-new-agent",
+            slackId: null,
+            selfHosted: false,
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+            repos: [],
+          }),
+        },
+        agentPlugin: { findMany: async () => [] },
+        agentMember: {
+          findMany: async () => [],
+          findUnique: async () => null,
+          create: async () => ({
+            id: "m1",
+            agentId: NEW_AGENT_ID,
+            email: "member@example.com",
+          }),
+          deleteMany: async () => ({ count: 0 }),
+        },
+      },
+      slackClient: {
+        createAppManifest: async () => ({
+          appId: "A_NEW",
+          oauthRedirectUrl: "https://slack.com/oauth/authorize?client_id=new",
+          clientId: "cid_new",
+          clientSecret: "csec_new",
+          signingSecret: "ssec_new",
+        }),
+      },
+      provisioner: {
+        provision: async (id: string, opts: { slug: string }) => {
+          provisionArgs = { id, opts };
+          return { resourceName: "r", secretName: "s", deploymentName: "d" };
+        },
+        deprovision: async () => {},
+        reconcile: async () => ({
+          recreated: [],
+          updated: [],
+          orphans: [],
+          failed: [],
+        }),
+      },
+    });
+
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({
+      agentMode: "new",
+      newAgentName: "brand-new-agent",
+      newAgentRepos: "my-org/repo-one",
+      xoxpToken: "xoxe.xoxp-valid",
+      ghAuthMode: "pat",
+      ghPat: "ghp_token123",
+    });
+    const res = await app.request("/admin/provision/start", {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("https://slack.com/oauth/authorize?client_id=new");
+
+    expect(createArgs).not.toBeNull();
+    // biome-ignore lint/style/noNonNullAssertion: guarded above
+    const created = createArgs!;
+    expect(created.name).toBe("brand-new-agent");
+    expect(created.selfHosted).toBe(false);
+
+    expect(updateArgs).not.toBeNull();
+    // biome-ignore lint/style/noNonNullAssertion: guarded above
+    const updated = updateArgs!;
+    expect(updated.id).toBe(NEW_AGENT_ID);
+    expect(updated.repos).toEqual(["my-org/repo-one"]);
+
+    expect(provisionArgs).not.toBeNull();
+    // biome-ignore lint/style/noNonNullAssertion: guarded above
+    const provisioned = provisionArgs!;
+    expect(provisioned.id).toBe(NEW_AGENT_ID);
+    expect(provisioned.opts.slug).toBe("brand-new-agent");
+  });
+
+  it("POST /admin/provision/start agentMode=new rolls back the agent row when provisioning fails", async () => {
+    const NEW_AGENT_ID = "agent-new-fail-999";
+    let deleteCalledWith: string | null | undefined;
+
+    const deps = makeMockDeps({
+      prisma: {
+        agent: {
+          findMany: async () => [],
+          findUnique: async () => ({
+            id: NEW_AGENT_ID,
+            name: "doomed-agent",
+            slackId: null,
+            selfHosted: false,
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+            repos: [],
+          }),
+          create: async () => ({
+            id: NEW_AGENT_ID,
+            name: "doomed-agent",
+            slackId: null,
+            selfHosted: false,
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+            repos: [],
+          }),
+          update: async (args: {
+            where: { id: string };
+            data: { repos: string[] };
+          }) => ({
+            id: args.where.id,
+            name: "doomed-agent",
+            slackId: null,
+            selfHosted: false,
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+            repos: args.data.repos,
+          }),
+          delete: async (args: { where: { id: string } }) => {
+            deleteCalledWith = args.where.id;
+            return {
+              id: args.where.id,
+              name: "doomed-agent",
+              slackId: null,
+              selfHosted: false,
+              createdAt: new Date("2024-01-01"),
+              updatedAt: new Date("2024-01-01"),
+              repos: [],
+            };
+          },
+        },
+        agentPlugin: { findMany: async () => [] },
+        agentMember: {
+          findMany: async () => [],
+          findUnique: async () => null,
+          create: async () => ({
+            id: "m1",
+            agentId: NEW_AGENT_ID,
+            email: "member@example.com",
+          }),
+          deleteMany: async () => ({ count: 0 }),
+        },
+      },
+      provisioner: {
+        provision: async () => {
+          throw new Error("provisioning exploded");
+        },
+        deprovision: async () => {},
+        reconcile: async () => ({
+          recreated: [],
+          updated: [],
+          orphans: [],
+          failed: [],
+        }),
+      },
+    });
+
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({
+      agentMode: "new",
+      newAgentName: "doomed-agent",
+      xoxpToken: "xoxe.xoxp-valid",
+      ghAuthMode: "pat",
+      ghPat: "ghp_token123",
+    });
+    const res = await app.request("/admin/provision/start", {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+
+    expect(deleteCalledWith).toBe(NEW_AGENT_ID);
+    const html = await res.text();
+    expect(html).toContain("alert-error");
+    expect(html).not.toContain('href="https://slack.com');
+  });
 });
 
 // ─── Member access control ────────────────────────────────────────────────────
