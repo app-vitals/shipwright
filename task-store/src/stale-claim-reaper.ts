@@ -60,12 +60,16 @@ export class StaleClaimReaper {
 
     const prsAffected = await this.prisma.$executeRaw`
       UPDATE "PullRequest"
-      SET "reviewState" = 'pending',
+      SET "reviewState" = CASE
+            WHEN "phase" = 'review' THEN 'pending'::"PrReviewState"
+            ELSE "reviewState"
+          END,
           "claimedBy" = NULL,
           "claimedAt" = NULL,
           "heartbeatAt" = NULL,
+          "phase" = NULL,
           "updatedAt" = now()
-      WHERE "reviewState" = 'in_progress'
+      WHERE "claimedBy" IS NOT NULL
         AND (
           ("heartbeatAt" IS NOT NULL AND "heartbeatAt" < ${cutoff})
           OR

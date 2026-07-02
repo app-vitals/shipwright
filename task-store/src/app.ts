@@ -58,6 +58,9 @@ const noopPrService: PullRequestServiceLike = {
   async release(_id) {
     return {} as never;
   },
+  async claimNext(_agentId, _maxConcurrent, _repos?) {
+    return null;
+  },
 };
 
 export interface TaskStoreDeps {
