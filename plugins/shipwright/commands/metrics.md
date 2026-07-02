@@ -307,17 +307,16 @@ Auto-docs:
 
 ---
 
-## PostHog Data
+## Structured Pipeline Data
 
-PostHog events are emitted automatically by `/dev-task` at each pipeline checkpoint — no manual export step needed. See `references/metrics-schema.md` for the full event catalogue.
+For structured analysis beyond local JSONL, the metrics service exposes task-store-backed
+HTTP endpoints. Use `/shipwright:agent-admin` to query them, or call directly with a Bearer
+token:
 
-To query pipeline data in PostHog, use the PostHog MCP (`mcp__plugin_posthog_posthog__query-run`) or build dashboards directly:
-
-> Event names: the plugin emits `shipwright_task_complete` and `shipwright_task_reviewed`. Historical events also exist in PostHog as `shipwright_task_completed` and `shipwright_review_complete` — match **both** the current and historical name in every query (see the alias table in `references/metrics-schema.md`).
-
-1. **First-time quality rate over time** — filter `shipwright_task_complete` / `shipwright_task_completed` where `simplify_total=0`, `review_verdict="SHIP IT"`, `ci_fix_attempts=0`
-2. **Simplify fix breakdown** — stacked bar of `shipwright_simplify_complete` by category
-3. **Review verdict distribution** — pie chart of `shipwright_task_reviewed` / `shipwright_review_complete` by `verdict`
-4. **CI pass rate** — trend of `shipwright_ci_result` by `passed_first_try`
-5. **Pipeline funnel** — funnel from `shipwright_task_started` → `shipwright_pr_created` → `shipwright_task_complete` / `shipwright_task_completed`
-6. **Auto-docs maintenance** — trend `shipwright_auto_docs` filtered to `updated=true` and sum `lines_changed` over time; pie chart of `skipped_reason` for `updated=false`
+| Endpoint | What it returns |
+|---|---|
+| `GET /metrics/summary` | Cycle time, task counts, FTQ rate |
+| `GET /metrics/trends` | Metrics over time, groupable by day/week/month |
+| `GET /metrics/features` | Per-feature task and CI data |
+| `GET /metrics/queue` | Queue funnel and cycle breakdown |
+| `GET /metrics/tokens` | Token usage by agent and session type |
