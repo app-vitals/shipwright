@@ -135,18 +135,19 @@ describe("public metrics surface — cost-efficiency endpoint", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toBeTruthy();
-    // Run/cron-centric shape: fleet array + byCronModel array
+    // Run/cron-centric shape: fleet + byAgentModel + byCronModel arrays
     expect(Array.isArray(body.data.fleet)).toBe(true);
+    expect(Array.isArray(body.data.byAgentModel)).toBe(true);
     expect(Array.isArray(body.data.byCronModel)).toBe(true);
   });
 
   test("GET /public/metrics/cost-efficiency → response uses run/cron field names", async () => {
-    // Provide a provider that returns fleet + byCronModel rows
     const provider: MetricsProvider = {
       query: async () => ({
         columns: ["scope", "model_family", "routed_usd", "opus_usd", "savings_usd"],
         results: [
           ["fleet", "claude-sonnet", 10.0, 20.0, 10.0],
+          ["agent:agent-abc", "claude-sonnet", 10.0, 20.0, 10.0],
           ["cron:agent1:daily-review", "claude-sonnet", 5.0, 10.0, 5.0],
         ],
         types: [],
@@ -168,6 +169,14 @@ describe("public metrics surface — cost-efficiency endpoint", () => {
     expect(fleetRow).toHaveProperty("counterfactualOpusUsd", 20.0);
     expect(fleetRow).toHaveProperty("savingsUsd", 10.0);
     expect(typeof fleetRow.savingsPct).toBe("number");
+
+    // byAgentModel row
+    expect(body.data.byAgentModel).toHaveLength(1);
+    const agentRow = body.data.byAgentModel[0];
+    expect(agentRow).toHaveProperty("agentId", "agent-abc");
+    expect(agentRow).toHaveProperty("modelFamily", "claude-sonnet");
+    expect(agentRow).toHaveProperty("routedUsd", 10.0);
+    expect(agentRow).toHaveProperty("counterfactualOpusUsd", 20.0);
 
     // byCronModel row
     expect(body.data.byCronModel).toHaveLength(1);

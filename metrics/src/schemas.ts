@@ -268,9 +268,21 @@ export const CostEfficiencyCronModelRowSchema = z
   })
   .openapi("CostEfficiencyCronModelRow");
 
+export const CostEfficiencyAgentModelRowSchema = z
+  .object({
+    agentId: z.string().openapi({ example: "agent-abc123" }),
+    modelFamily: z.string().openapi({ example: "claude-sonnet" }),
+    routedUsd: z.number().openapi({ example: 5.25 }),
+    counterfactualOpusUsd: z.number().openapi({ example: 12.5 }),
+    savingsUsd: z.number().openapi({ example: 7.25 }),
+    savingsPct: z.number().nullable().openapi({ example: 58.0 }),
+  })
+  .openapi("CostEfficiencyAgentModelRow");
+
 export const CostEfficiencyResultSchema = z
   .object({
     fleet: z.array(CostEfficiencyFleetRowSchema),
+    byAgentModel: z.array(CostEfficiencyAgentModelRowSchema),
     byCronModel: z.array(CostEfficiencyCronModelRowSchema),
   })
   .openapi("CostEfficiencyResult");

@@ -714,46 +714,59 @@ function makeCostEfficiencyHandler(
       const result = await provider.query({ kind: "costEfficiency", range: dateRange });
       const rows = resultToRows(result);
 
+      const savingsPct = (counterfactualOpusUsd: number, savingsUsd: number) =>
+        counterfactualOpusUsd > 0
+          ? Math.round((savingsUsd / counterfactualOpusUsd) * 100 * 100) / 100
+          : null;
+
       const fleet = rows
         .filter((row) => row.scope === "fleet")
         .map((row) => {
           const counterfactualOpusUsd = toNum(row.opus_usd);
           const savingsUsd = toNum(row.savings_usd);
-          const savingsPct =
-            counterfactualOpusUsd > 0
-              ? Math.round((savingsUsd / counterfactualOpusUsd) * 100 * 100) / 100
-              : null;
           return {
             modelFamily: String(row.model_family ?? ""),
             routedUsd: toNum(row.routed_usd),
             counterfactualOpusUsd,
             savingsUsd,
-            savingsPct,
+            savingsPct: savingsPct(counterfactualOpusUsd, savingsUsd),
+          };
+        });
+
+      const byAgentModel = rows
+        .filter((row) => String(row.scope ?? "").startsWith("agent:"))
+        .map((row) => {
+          const counterfactualOpusUsd = toNum(row.opus_usd);
+          const savingsUsd = toNum(row.savings_usd);
+          const scope = String(row.scope ?? "");
+          return {
+            agentId: scope.startsWith("agent:") ? scope.slice("agent:".length) : scope,
+            modelFamily: String(row.model_family ?? ""),
+            routedUsd: toNum(row.routed_usd),
+            counterfactualOpusUsd,
+            savingsUsd,
+            savingsPct: savingsPct(counterfactualOpusUsd, savingsUsd),
           };
         });
 
       const byCronModel = rows
-        .filter((row) => typeof row.scope === "string" && String(row.scope).startsWith("cron:"))
+        .filter((row) => String(row.scope ?? "").startsWith("cron:"))
         .map((row) => {
           const counterfactualOpusUsd = toNum(row.opus_usd);
           const savingsUsd = toNum(row.savings_usd);
-          const savingsPct =
-            counterfactualOpusUsd > 0
-              ? Math.round((savingsUsd / counterfactualOpusUsd) * 100 * 100) / 100
-              : null;
           return {
             scope: String(row.scope ?? ""),
             modelFamily: String(row.model_family ?? ""),
             routedUsd: toNum(row.routed_usd),
             counterfactualOpusUsd,
             savingsUsd,
-            savingsPct,
+            savingsPct: savingsPct(counterfactualOpusUsd, savingsUsd),
           };
         });
 
       return c.json(
         wrapResponse(
-          { fleet, byCronModel },
+          { fleet, byAgentModel, byCronModel },
           {
             dateRange: dateRangeMeta,
             generatedAt: new Date().toISOString(),
