@@ -449,7 +449,7 @@
     if (emptyEl) emptyEl.style.display = 'none';
 
     const fleet = data.fleet;
-    const smallN = data.runsWithCostData < 3;
+    const smallN = data.runsWithCostData > 0 && data.runsWithCostData < 3;
 
     // Routed/Opus KPIs
     if ($('ce-routed')) $('ce-routed').textContent = smallN ? '--' : fmtCost(fleet.routedUsd);
