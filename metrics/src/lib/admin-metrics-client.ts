@@ -47,6 +47,7 @@ export interface CronRunTokenStats {
   byCron: DoubleKeyedTokenAggregate[]; // key1=agentId, key2=cronName
   byModel: DoubleKeyedTokenAggregate[]; // key1=agentId, key2=model
   daily: DailyTokenAggregate[];
+  byCronModel: DoubleKeyedTokenAggregate[]; // key1=agentId:cronName, key2=model
 }
 
 /** Chat-daily-sourced stats: per-agent + per-model + daily. */
