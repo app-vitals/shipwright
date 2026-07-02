@@ -58,6 +58,10 @@ function makePr(overrides: Partial<PullRequest> = {}): PullRequest {
     claimedBy: null,
     claimedAt: null,
     heartbeatAt: null,
+    phase: null,
+    readyForReviewAt: null,
+    readyForPatchAt: null,
+    readyForDeployAt: null,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
@@ -139,6 +143,7 @@ function fakePrService(
     claimResult?: { status: 200 | 201; record: PullRequest } | Error;
     getResult?: PullRequest | null;
     listResult?: PullRequest[];
+    claimNextResult?: { pr: PullRequest; phase: "review" | "patch" | "deploy" } | null;
   } = {},
 ): PullRequestServiceLike {
   const store = opts.store ?? new Map<string, PullRequest>();
@@ -259,6 +264,15 @@ function fakePrService(
       } as PullRequest;
       store.set(id, updated);
       return updated;
+    },
+
+    async claimNext(
+      _agentId: string,
+      _maxConcurrent: number,
+      _repos?: string[],
+    ): Promise<{ pr: PullRequest; phase: "review" | "patch" | "deploy" } | null> {
+      if ("claimNextResult" in opts) return opts.claimNextResult ?? null;
+      return null;
     },
   };
 }
@@ -758,6 +772,30 @@ describe("/prs routes (smoke)", () => {
     expect(body.reviewState).toBe("approved");
   });
 
+  it("PATCH /prs/:id updates phase and readyFor*At fields", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1", phase: null }));
+    const app = makeApp({ prService: fakePrService({ store }) });
+
+    const readyAt = "2026-07-01T00:00:00.000Z";
+    const res = await app.request("/prs/pr-1", {
+      method: "PATCH",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        phase: "review",
+        readyForReviewAt: readyAt,
+        readyForPatchAt: readyAt,
+        readyForDeployAt: readyAt,
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PullRequest;
+    expect(body.phase).toBe("review");
+    expect(body.readyForReviewAt).toBe(readyAt);
+    expect(body.readyForPatchAt).toBe(readyAt);
+    expect(body.readyForDeployAt).toBe(readyAt);
+  });
+
   it("PATCH /prs/:id returns 400 for agent token with out-of-scope repo", async () => {
     const store = new Map<string, PullRequest>();
     store.set("pr-1", makePr({ id: "pr-1", repo: "other-org/other-repo" }));
@@ -811,5 +849,157 @@ describe("/prs routes (smoke)", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as PullRequest;
     expect(body.reviewCycles).toBe(2);
+  });
+
+  // ─── POST /prs/claim-next ─────────────────────────────────────────────────
+
+  it("POST /prs/claim-next returns 200 + {pr, phase} when work found", async () => {
+    const pr = makePr({ id: "pr-5", reviewState: "pending" });
+    const app = makeApp({
+      prService: fakePrService({
+        claimNextResult: { pr, phase: "review" },
+      }),
+    });
+
+    const res = await app.request("/prs/claim-next", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({ agentId: "agent-1", maxConcurrent: 3 }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { pr: PullRequest; phase: string };
+    expect(body.pr.id).toBe("pr-5");
+    expect(body.phase).toBe("review");
+  });
+
+  it("POST /prs/claim-next returns 204 when no work available", async () => {
+    const app = makeApp({
+      prService: fakePrService({ claimNextResult: null }),
+    });
+
+    const res = await app.request("/prs/claim-next", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({ agentId: "agent-1", maxConcurrent: 3 }),
+    });
+    expect(res.status).toBe(204);
+  });
+
+  it("POST /prs/claim-next returns 204 at concurrency limit (null result)", async () => {
+    const app = makeApp({
+      prService: fakePrService({ claimNextResult: null }),
+    });
+
+    const res = await app.request("/prs/claim-next", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({ agentId: "agent-1", maxConcurrent: 1 }),
+    });
+    expect(res.status).toBe(204);
+  });
+
+  it("POST /prs/claim-next pins agentId from agent token", async () => {
+    let capturedAgentId: string | undefined;
+    const pr = makePr({ id: "pr-6", reviewState: "pending" });
+
+    const prServiceWithCapture: PullRequestServiceLike = {
+      ...fakePrService({ claimNextResult: { pr, phase: "review" } }),
+      async claimNext(agentId, maxConcurrent) {
+        capturedAgentId = agentId;
+        return { pr, phase: "review" as const };
+      },
+    } as PullRequestServiceLike;
+
+    const app = makeApp({
+      tokenService: fakeAgentTokenService(),
+      scopeResolver: makeScopeResolver([SCOPED_REPO]),
+      prService: prServiceWithCapture,
+    });
+
+    const res = await app.request("/prs/claim-next", {
+      method: "POST",
+      headers: { ...agentAuth(), "content-type": "application/json" },
+      body: JSON.stringify({ maxConcurrent: 3 }),
+    });
+    expect(res.status).toBe(200);
+    // Agent token must pin agentId to the token's agentId
+    expect(capturedAgentId).toBe("agent-1");
+  });
+
+  it("POST /prs/claim-next with admin token uses agentId from body", async () => {
+    let capturedAgentId: string | undefined;
+    const pr = makePr({ id: "pr-7", reviewState: "pending" });
+
+    const prServiceWithCapture: PullRequestServiceLike = {
+      ...fakePrService({ claimNextResult: { pr, phase: "review" } }),
+      async claimNext(agentId, _maxConcurrent) {
+        capturedAgentId = agentId;
+        return { pr, phase: "review" as const };
+      },
+    } as PullRequestServiceLike;
+
+    const app = makeApp({
+      prService: prServiceWithCapture,
+    });
+
+    const res = await app.request("/prs/claim-next", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({ agentId: "my-agent", maxConcurrent: 3 }),
+    });
+    expect(res.status).toBe(200);
+    expect(capturedAgentId).toBe("my-agent");
+  });
+
+  it("POST /prs/claim-next passes repos scope to service for agent tokens", async () => {
+    let capturedRepos: string[] | undefined;
+    const pr = makePr({ id: "pr-8", reviewState: "pending", repo: SCOPED_REPO });
+
+    const prServiceWithCapture: PullRequestServiceLike = {
+      ...fakePrService({ claimNextResult: { pr, phase: "review" } }),
+      async claimNext(_agentId, _maxConcurrent, repos) {
+        capturedRepos = repos;
+        return { pr, phase: "review" as const };
+      },
+    } as PullRequestServiceLike;
+
+    const app = makeApp({
+      tokenService: fakeAgentTokenService(),
+      scopeResolver: makeScopeResolver([SCOPED_REPO]),
+      prService: prServiceWithCapture,
+    });
+
+    const res = await app.request("/prs/claim-next", {
+      method: "POST",
+      headers: { ...agentAuth(), "content-type": "application/json" },
+      body: JSON.stringify({ maxConcurrent: 3 }),
+    });
+    expect(res.status).toBe(200);
+    // Agent token must pass repos scope to the service
+    expect(capturedRepos).toEqual([SCOPED_REPO]);
+  });
+
+  it("POST /prs/claim-next with admin token does not pass repos scope", async () => {
+    let capturedRepos: string[] | undefined;
+    const pr = makePr({ id: "pr-9", reviewState: "pending" });
+
+    const prServiceWithCapture: PullRequestServiceLike = {
+      ...fakePrService({ claimNextResult: { pr, phase: "review" } }),
+      async claimNext(_agentId, _maxConcurrent, repos) {
+        capturedRepos = repos;
+        return { pr, phase: "review" as const };
+      },
+    } as PullRequestServiceLike;
+
+    const app = makeApp({ prService: prServiceWithCapture });
+
+    const res = await app.request("/prs/claim-next", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({ agentId: "admin-agent", maxConcurrent: 3 }),
+    });
+    expect(res.status).toBe(200);
+    // Admin tokens bypass scope — repos must be undefined
+    expect(capturedRepos).toBeUndefined();
   });
 });

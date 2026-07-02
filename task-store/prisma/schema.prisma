@@ -125,6 +125,15 @@ enum PrReviewState {
   approved
 }
 
+// ─── PR Phase ─────────────────────────────────────────────────────────────────
+// Tracks which pipeline phase a PR is currently in.
+
+enum PrPhase {
+  review
+  patch
+  deploy
+}
+
 // ─── Pull Request ─────────────────────────────────────────────────────────────
 // Tracks a GitHub PR through the Shipwright review → patch → deploy pipeline.
 // repo is in org/repo format (e.g. "app-vitals/shipwright").
@@ -148,12 +157,16 @@ model PullRequest {
   patchCycles  Int           @default(0)
   reviewCycles Int           @default(0)
   agentId      String?
-  reviewedAt  String?
-  patchedAt   String?
-  mergedAt    String?
-  claimedBy   String?
-  claimedAt   String?
-  heartbeatAt String?
+  reviewedAt        String?
+  patchedAt         String?
+  mergedAt          String?
+  claimedBy         String?
+  claimedAt         String?
+  heartbeatAt       String?
+  phase             PrPhase? // current pipeline phase: review | patch | deploy
+  readyForReviewAt  String?
+  readyForPatchAt   String?
+  readyForDeployAt  String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
