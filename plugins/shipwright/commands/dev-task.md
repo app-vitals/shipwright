@@ -567,7 +567,7 @@ gh pr list --head {branch} --state open --json number,url
 
 **If a PR already exists** (bundled task — joining an existing PR):
 - The push above added the commits to the existing branch/PR — no new PR needed
-- Set `pr: {existing-pr-number}` and `prCreatedAt: "{ISO timestamp}"` in the task store for this task
+- Set `pr: {existing-pr-number}`, `prCreatedAt: "{ISO timestamp}"`, and `repo: {repo}` in the task store for this task
 - Print the existing PR URL
 - Skip PR creation and proceed to Step 9b
 
@@ -814,7 +814,7 @@ PR_CREATED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   -H "Content-Type: application/json" \
   "$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}" \
-  -d "{\"status\": \"pr_open\", \"pr\": {pr_number}, \"prCreatedAt\": \"$PR_CREATED_AT\", \"ciFixAttempts\": {ci_attempt}, \"simplifyTotal\": {simplify_total}, \"simplifyDry\": {simplify_dry}, \"simplifyDeadCode\": {simplify_dead_code}, \"simplifyNaming\": {simplify_naming}, \"simplifyComplexity\": {simplify_complexity}, \"simplifyConsistency\": {simplify_consistency}, \"coverageDelta\": {coverage_delta}, \"model\": \"{EFFECTIVE_MODEL}\"}" | jq .
+  -d "{\"status\": \"pr_open\", \"pr\": {pr_number}, \"prCreatedAt\": \"$PR_CREATED_AT\", \"repo\": \"{repo}\", \"ciFixAttempts\": {ci_attempt}, \"simplifyTotal\": {simplify_total}, \"simplifyDry\": {simplify_dry}, \"simplifyDeadCode\": {simplify_dead_code}, \"simplifyNaming\": {simplify_naming}, \"simplifyComplexity\": {simplify_complexity}, \"simplifyConsistency\": {simplify_consistency}, \"coverageDelta\": {coverage_delta}, \"model\": \"{EFFECTIVE_MODEL}\"}" | jq .
 ```
 
 ### 10d. Print Handoff
