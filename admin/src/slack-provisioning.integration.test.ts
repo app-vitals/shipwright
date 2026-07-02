@@ -148,8 +148,11 @@ function makeMockDeps(
       },
     },
     agentEnvService: {
-      getByAgentId: async () => ({}),
+      getByAgentId: async () => ({ env: {}, secretKeys: [] }),
       upsert: async (agentId: string, env: Record<string, string>) => {
+        upsertCalls.push({ agentId, env });
+      },
+      patch: async (agentId: string, env: Record<string, string>) => {
         upsertCalls.push({ agentId, env });
       },
       deleteKey: async () => {},
