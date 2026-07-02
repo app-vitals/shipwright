@@ -599,6 +599,10 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
 
     const stats = await statsService.query();
 
+    // totals must not double-count tokens from the multi-model run
+    expect(stats.totals.input).toBe(300);
+    expect(stats.totals.output).toBe(150);
+
     // byModel should show 2 entries (from breakdown), not 1 (from dominant model)
     expect(stats.byModel).toHaveLength(2);
 

@@ -223,9 +223,13 @@ export class AgentCronRunStatsService {
         SUM("AgentCronRun"."outputTokens")        AS output,
         SUM("AgentCronRun"."cacheReadTokens")     AS cache_read,
         SUM("AgentCronRun"."cacheCreationTokens") AS cache_creation,
-        SUM(b."costUsd")                          AS cost_usd
+        SUM(b.cost_usd)                           AS cost_usd
       FROM "AgentCronRun"
-      LEFT JOIN "AgentCronRunModelBreakdown" b ON b."cronRunId" = "AgentCronRun".id
+      LEFT JOIN (
+        SELECT "cronRunId", SUM("costUsd") AS cost_usd
+        FROM "AgentCronRunModelBreakdown"
+        GROUP BY "cronRunId"
+      ) b ON b."cronRunId" = "AgentCronRun".id
       WHERE skipped = false
       ${filter}
     `;
@@ -239,9 +243,13 @@ export class AgentCronRunStatsService {
         SUM(r."outputTokens")        AS output,
         SUM(r."cacheReadTokens")     AS cache_read,
         SUM(r."cacheCreationTokens") AS cache_creation,
-        SUM(b."costUsd")             AS cost_usd
+        SUM(b.cost_usd)              AS cost_usd
       FROM "AgentCronRun" r
-      LEFT JOIN "AgentCronRunModelBreakdown" b ON b."cronRunId" = r.id
+      LEFT JOIN (
+        SELECT "cronRunId", SUM("costUsd") AS cost_usd
+        FROM "AgentCronRunModelBreakdown"
+        GROUP BY "cronRunId"
+      ) b ON b."cronRunId" = r.id
       WHERE r.skipped = false
       ${filter}
       GROUP BY r."agentId"
@@ -259,10 +267,14 @@ export class AgentCronRunStatsService {
         SUM(r."outputTokens")        AS output,
         SUM(r."cacheReadTokens")     AS cache_read,
         SUM(r."cacheCreationTokens") AS cache_creation,
-        SUM(b."costUsd")             AS cost_usd
+        SUM(b.cost_usd)              AS cost_usd
       FROM "AgentCronRun" r
       LEFT JOIN "AgentCronJob" j ON j.id = r."cronId"
-      LEFT JOIN "AgentCronRunModelBreakdown" b ON b."cronRunId" = r.id
+      LEFT JOIN (
+        SELECT "cronRunId", SUM("costUsd") AS cost_usd
+        FROM "AgentCronRunModelBreakdown"
+        GROUP BY "cronRunId"
+      ) b ON b."cronRunId" = r.id
       WHERE r.skipped = false
       ${filter}
       GROUP BY r."agentId", r."cronId", j.name
@@ -299,9 +311,13 @@ export class AgentCronRunStatsService {
         SUM("AgentCronRun"."outputTokens")        AS output,
         SUM("AgentCronRun"."cacheReadTokens")     AS cache_read,
         SUM("AgentCronRun"."cacheCreationTokens") AS cache_creation,
-        SUM(b."costUsd")                          AS cost_usd
+        SUM(b.cost_usd)                           AS cost_usd
       FROM "AgentCronRun"
-      LEFT JOIN "AgentCronRunModelBreakdown" b ON b."cronRunId" = "AgentCronRun".id
+      LEFT JOIN (
+        SELECT "cronRunId", SUM("costUsd") AS cost_usd
+        FROM "AgentCronRunModelBreakdown"
+        GROUP BY "cronRunId"
+      ) b ON b."cronRunId" = "AgentCronRun".id
       WHERE skipped = false
       ${filter}
       GROUP BY DATE("AgentCronRun"."startedAt")
