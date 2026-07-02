@@ -18,7 +18,12 @@ import {
 } from "./chat-token-reporter.ts";
 import { ClaudeRunError, ClaudeTimeoutError } from "./claude.ts";
 import type { ClaudeRunResult, TokenUsage } from "./claude.ts";
-import { formatPlanLink, markdownToBlocks, markdownToSlack } from "./format.ts";
+import {
+  formatPlanLink,
+  markdownToBlocks,
+  markdownToSlack,
+  richTextToMarkdown,
+} from "./format.ts";
 import { type Marker, parseMarkers } from "./markers.ts";
 import { threadKey as defaultThreadKey } from "./sessions.ts";
 import type { VoiceConfig } from "./voice.ts";
@@ -376,13 +381,15 @@ export function createSlackApp(
       channel_type?: string;
       files?: SlackFile[];
       user?: string;
+      blocks?: Array<{ type: string; elements?: unknown[] }>;
     };
 
     const isDM = msg.channel_type === "im";
     const hasText = !!msg.text?.trim();
     const hasFiles = !!msg.files?.length;
+    const hasRichText = !!msg.blocks?.some((b) => b.type === "rich_text");
 
-    if (!hasText && !hasFiles) return;
+    if (!hasText && !hasRichText && !hasFiles) return;
 
     if (!isDM) {
       if (!msg.thread_ts) return;
@@ -400,8 +407,11 @@ export function createSlackApp(
     };
     await setStatus("Thinking...");
 
+    const rawText =
+      msg.text || (hasRichText ? richTextToMarkdown(msg.blocks ?? []) : "");
+
     let prompt = await buildPromptWithFiles(
-      msg.text ?? "",
+      rawText,
       msg.files,
       fileDownloaderFn,
       slackConfig.botToken,

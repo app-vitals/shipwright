@@ -10,6 +10,41 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.6.177] - 2026-07-02
+
+### Changed
+
+- auto-bump to chart v1.6.177 triggered by release tag `agent-v0.110.1`
+
+## [1.6.176] - 2026-07-02
+
+### Changed
+
+- auto-bump to chart v1.6.176 triggered by release tag `agent-v0.110.0`
+
+## [1.6.175] - 2026-07-02
+
+### Changed
+
+- auto-bump to chart v1.6.175 triggered by release tag `agent-v0.109.0`
+
+## [1.6.174] - 2026-07-02
+
+### Changed
+
+- auto-bump to chart v1.6.174 triggered by release tag `chat-v0.0.1`
+
+## [1.6.173] - 2026-07-02
+
+### Added
+
+- chat service Deployment, Service, ServiceAccount, and CI workflow (CHT-2.1)
+- Helm unit tests for chat workload (`chat_workload_test.yaml`, 7 test cases)
+
+### Fixed
+
+- `docs/deploy-kubernetes.md`: correct chat env vars to `chat.extraEnv` (not `admin.env`)
+
 ## [1.6.172] - 2026-07-02
 
 ### Changed
@@ -41,6 +76,10 @@ independent of `appVersion`. CI enforces this with
 - auto-bump to chart v1.6.168 triggered by release tag `task-store-v0.43.0`
 
 ## [1.6.167] - 2026-07-02
+
+### Added
+
+- chat service Deployment, Service, ServiceAccount, and CI workflow (CHT-2.1)
 
 ### Changed
 

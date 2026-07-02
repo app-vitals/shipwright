@@ -1,9 +1,10 @@
 name: Auto-Bump Chart Version
 
-# Triggers whenever an image-build tag is pushed for any of the three
-# Shipwright services. Each build workflow (build-agent.yml, build-admin.yml,
-# build-metrics.yml) creates a tag like agent-v*, admin-v*, or metrics-v*
-# on main after a successful image push. This workflow detects those tags and
+# Triggers whenever an image-build tag is pushed for any of the Shipwright
+# services. Each build workflow (build-agent.yml, build-admin.yml,
+# build-metrics.yml, build-task-store.yml, build-chat.yml) creates a tag like
+# agent-v*, admin-v*, metrics-v*, task-store-v*, or chat-v* on main after a
+# successful image push. This workflow detects those tags and
 # opens a chart-version bump PR so no manual bump-chart.sh invocation is needed.
 #
 # Flow:
@@ -36,6 +37,7 @@ on:
       - "metrics-v*"
       - "agent-v*"
       - "task-store-v*"
+      - "chat-v*"
 
 # Queue concurrent bumps rather than cancelling them — if multiple tags land
 # at nearly the same time, each should produce its own chart bump PR. Using

@@ -274,3 +274,37 @@ Task-store ServiceAccount name.
 {{- default "default" .Values.taskStore.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{/*
+Chat component fullname: "<fullname>-chat".
+*/}}
+{{- define "shipwright.chat.fullname" -}}
+{{- printf "%s-chat" (include "shipwright.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Chat selector labels — fullname selector labels plus the component label.
+*/}}
+{{- define "shipwright.chat.selectorLabels" -}}
+{{ include "shipwright.selectorLabels" . }}
+app.kubernetes.io/component: chat
+{{- end }}
+
+{{/*
+Chat labels — common labels plus the component label.
+*/}}
+{{- define "shipwright.chat.labels" -}}
+{{ include "shipwright.labels" . }}
+app.kubernetes.io/component: chat
+{{- end }}
+
+{{/*
+Chat ServiceAccount name.
+*/}}
+{{- define "shipwright.chat.serviceAccountName" -}}
+{{- if .Values.chat.serviceAccount.create }}
+{{- default (include "shipwright.chat.fullname" .) .Values.chat.serviceAccount.name }}
+{{- else }}
+{{- default "default" .Values.chat.serviceAccount.name }}
+{{- end }}
+{{- end }}

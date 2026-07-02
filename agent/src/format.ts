@@ -113,6 +113,152 @@ export function markdownToBlocks(
   return { text: markdownToSlack(text), blocks };
 }
 
+// ─── Slack rich_text → Markdown ──────────────────────────────────────────────
+
+type TextStyle = {
+  bold?: boolean;
+  italic?: boolean;
+  code?: boolean;
+  strike?: boolean;
+};
+
+type RichTextElement =
+  | { type: "text"; text: string; style?: TextStyle }
+  | { type: "link"; url: string; text?: string }
+  | { type: "emoji"; name: string }
+  | { type: "user"; user_id: string }
+  | { type: string; [key: string]: unknown };
+
+type RichTextSection = {
+  type: "rich_text_section";
+  elements: RichTextElement[];
+};
+
+type RichTextPreformatted = {
+  type: "rich_text_preformatted";
+  elements: RichTextElement[];
+};
+
+type RichTextList = {
+  type: "rich_text_list";
+  style: "bullet" | "ordered";
+  elements: RichTextSection[];
+};
+
+type RichTextQuote = {
+  type: "rich_text_quote";
+  elements: RichTextElement[];
+};
+
+type RichTextBlockElement =
+  | RichTextSection
+  | RichTextPreformatted
+  | RichTextList
+  | RichTextQuote
+  | { type: string; [key: string]: unknown };
+
+type RichTextBlock = {
+  type: "rich_text";
+  elements: RichTextBlockElement[];
+};
+
+function isTextElement(
+  el: RichTextElement,
+): el is Extract<RichTextElement, { type: "text" }> {
+  return el.type === "text";
+}
+
+function isLinkElement(
+  el: RichTextElement,
+): el is Extract<RichTextElement, { type: "link" }> {
+  return el.type === "link";
+}
+
+function isEmojiElement(
+  el: RichTextElement,
+): el is Extract<RichTextElement, { type: "emoji" }> {
+  return el.type === "emoji";
+}
+
+function isUserElement(
+  el: RichTextElement,
+): el is Extract<RichTextElement, { type: "user" }> {
+  return el.type === "user";
+}
+
+function convertInlineElement(el: RichTextElement): string {
+  if (isTextElement(el)) {
+    const style = el.style ?? {};
+    let text = el.text;
+    if (style.code) text = `\`${text}\``;
+    if (style.bold) text = `**${text}**`;
+    if (style.italic) text = `*${text}*`;
+    if (style.strike) text = `~~${text}~~`;
+    return text;
+  }
+  if (isLinkElement(el)) {
+    return el.text ? `[${el.text}](${el.url})` : el.url;
+  }
+  if (isEmojiElement(el)) {
+    return `:${el.name}:`;
+  }
+  if (isUserElement(el)) {
+    return `<@${el.user_id}>`;
+  }
+  return "";
+}
+
+function convertSection(section: RichTextSection): string {
+  return section.elements.map(convertInlineElement).join("");
+}
+
+function convertRichTextBlock(block: RichTextBlock): string {
+  const parts: string[] = [];
+
+  for (const el of block.elements) {
+    if (el.type === "rich_text_section") {
+      parts.push(convertSection(el as RichTextSection));
+    } else if (el.type === "rich_text_preformatted") {
+      const pre = el as RichTextPreformatted;
+      const inner = pre.elements.map(convertInlineElement).join("");
+      parts.push(`\`\`\`\n${inner}\n\`\`\``);
+    } else if (el.type === "rich_text_list") {
+      const list = el as RichTextList;
+      const items = list.elements.map((item, i) => {
+        const text = convertSection(item);
+        return list.style === "ordered" ? `${i + 1}. ${text}` : `- ${text}`;
+      });
+      parts.push(items.join("\n"));
+    } else if (el.type === "rich_text_quote") {
+      const quote = el as RichTextQuote;
+      const inner = quote.elements.map(convertInlineElement).join("");
+      const quoted = inner
+        .split("\n")
+        .map((line) => `> ${line}`)
+        .join("\n");
+      parts.push(quoted);
+    }
+  }
+
+  return parts.join("\n\n");
+}
+
+/**
+ * Converts Slack rich_text blocks to markdown.
+ * Walks the blocks array for any `{type: "rich_text"}` block and converts
+ * its elements to markdown. Returns empty string if no rich_text block found.
+ */
+export function richTextToMarkdown(blocks: unknown[]): string {
+  const richBlocks = blocks.filter(
+    (b): b is RichTextBlock =>
+      b != null && typeof b === "object" && "type" in b && b.type === "rich_text",
+  );
+
+  if (richBlocks.length === 0) return "";
+
+  return richBlocks.map(convertRichTextBlock).join("\n");
+}
+
 /**
  * Builds a Slack message for a shareable plan/spec link: a single mrkdwn
  * section block (`<url|View plan>`, the Slack link form `markdownToSlack`
