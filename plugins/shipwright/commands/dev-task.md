@@ -18,11 +18,11 @@ Auto-detect the project toolchain (run once, reuse throughout). Skip this step u
 
 ## Step 1: Pick Task
 
-**First, check for an interrupted task** — if a prior session left a task `in_progress`, resume it. The task-store list endpoint does not reliably scope bare `status=` queries by assignee for agent tokens with repo-level access, so filter to this agent's own tasks client-side — otherwise this can pick up (and start committing to) a task assigned to a completely different agent:
+**First, check for an interrupted task** — if a prior session left a task `in_progress`, resume it. Pass `?assignee=` to narrow the task-store's repo-pool visibility down to this agent's own tasks, and filter again client-side as a backstop — otherwise this can pick up (and start committing to) a task assigned to a completely different agent:
 
 ```bash
 curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=in_progress" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=in_progress&assignee=$SHIPWRIGHT_AGENT_ID" \
   | jq --arg me "$SHIPWRIGHT_AGENT_ID" '.tasks | map(select(.assignee == $me))'
 ```
 

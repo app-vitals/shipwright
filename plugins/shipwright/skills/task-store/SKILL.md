@@ -55,7 +55,7 @@ Both env vars are provisioned automatically by the agent harness:
 | `SHIPWRIGHT_TASK_STORE_URL` | Base URL of the task store service |
 | `SHIPWRIGHT_TASK_STORE_TOKEN` | Bearer token for this agent |
 
-The bearer token scopes all API operations to the calling agent's own tasks automatically — the same token that authenticates you also filters results. No `?assignee=` parameter is needed on any endpoint.
+Visibility, not filtering, is what the bearer token controls: an agent token with repo access can see every task in that repo's pool — assigned to you, unassigned, or assigned to a different agent sharing the repo (useful for spotting unclaimed pool work). It does **not** narrow results to just your own tasks. Pass `?assignee=$SHIPWRIGHT_AGENT_ID` explicitly whenever you only want your own tasks — e.g. before resuming an `in_progress` task, so you don't pick up (and start committing to) another agent's active work.
 
 Verify the service is reachable before doing anything:
 
@@ -70,12 +70,12 @@ curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
 
 ### Pick next task
 
-The API scopes results to the calling agent automatically via the bearer token — no assignee parameter needed. Check for an interrupted task first, then fall back to the next ready one:
+Repo-pool visibility means an unfiltered query can return another agent's tasks — always pass `?assignee=$SHIPWRIGHT_AGENT_ID` to scope to your own. Check for an interrupted task first, then fall back to the next ready one:
 
 ```bash
 # 1. Resume interrupted task (in_progress assigned to you)
 curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=in_progress" | jq .
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=in_progress&assignee=$SHIPWRIGHT_AGENT_ID" | jq .
 
 # 2. If empty, pick next ready task
 curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
