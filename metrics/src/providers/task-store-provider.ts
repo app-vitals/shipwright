@@ -2,7 +2,7 @@
  * metrics/src/providers/task-store-provider.ts
  *
  * MetricsProvider backed by the Shipwright task store (tasks + PRs) and the
- * admin token-aggregation endpoints. Answers all 16 MetricQuery kinds by
+ * admin token-aggregation endpoints. Answers all 17 MetricQuery kinds by
  * aggregating client-side in TypeScript, emitting MetricTables. api.ts parses
  * the result positionally, so column shapes must remain stable across providers.
  *
@@ -217,6 +217,8 @@ export class TaskStoreProvider implements MetricsProvider {
         return this.tokensByAgentByCron(win);
       case "tokensByAgentByModel":
         return this.tokensByAgentByModel(win);
+      case "tokensByAgentByCronModel":
+        return this.tokensByAgentByCronModel(win);
       case "costEfficiency":
         return this.costEfficiency(win);
     }
@@ -748,6 +750,26 @@ export class TaskStoreProvider implements MetricsProvider {
       .sort((a, b) => Number(b[7]) - Number(a[7]));
 
     return table(["agent_id", "model", ...tokenColumns(), "cost_usd"], rows);
+  }
+
+  private async tokensByAgentByCronModel(win: {
+    from: string;
+    to: string;
+  }): Promise<MetricTable> {
+    // Cron-only: chat has no cron dimension (same reasoning as tokensByAgentByCron).
+    const cron = await this.safeCronStats(win);
+    const rows = cron.byCronModel
+      .map((a) => {
+        const sepIdx = a.key1.indexOf(":");
+        const agentId = sepIdx === -1 ? a.key1 : a.key1.slice(0, sepIdx);
+        const cronName = sepIdx === -1 ? "" : a.key1.slice(sepIdx + 1);
+        return [agentId, cronName, a.key2, ...tokenCells(a), a.costUsd ?? 0];
+      })
+      .sort((a, b) => Number(b[7]) - Number(a[7]));
+    return table(
+      ["agent_id", "cron_name", "model", ...tokenColumns(), "cost_usd"],
+      rows,
+    );
   }
 
   // ─── Graceful degradation helpers ─────────────────────────────────────────
