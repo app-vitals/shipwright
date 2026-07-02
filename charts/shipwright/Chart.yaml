@@ -30,6 +30,8 @@ annotations:
   artifacthub.io/changes: |
     - kind: added
       description: "chat service Deployment, Service, ServiceAccount, and CI workflow (CHT-2.1)"
+    - kind: changed
+      description: "auto-bump to chart v1.6.167 triggered by release tag metrics-v0.106.0"
 dependencies:
   # Bitnami PostgreSQL subchart. Pinned to a chart version whose default image tag
   # is concrete (NOT `latest`), because Bitnami's 2025 catalog change moved newer

@@ -16,6 +16,10 @@ independent of `appVersion`. CI enforces this with
 
 - chat service Deployment, Service, ServiceAccount, and CI workflow (CHT-2.1)
 
+### Changed
+
+- auto-bump to chart v1.6.167 triggered by release tag `metrics-v0.106.0`
+
 ## [1.6.166] - 2026-07-02
 
 ### Changed
