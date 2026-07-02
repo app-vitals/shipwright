@@ -37,6 +37,23 @@ describe("renderShipwrightToolbar", () => {
     test("checkbox input appears before nav element in DOM", () => {
       expect(html.indexOf("<input")).toBeLessThan(html.indexOf("<nav"));
     });
+
+    test("hamburger label has aria-expanded attribute for screen reader feedback", () => {
+      expect(html).toContain('aria-expanded="false"');
+    });
+
+    test("hamburger label has aria-controls pointing to nav content", () => {
+      expect(html).toContain('aria-controls="vos-nav-content"');
+    });
+
+    test("nav content div has id for aria-controls target", () => {
+      expect(html).toContain('id="vos-nav-content"');
+    });
+
+    test("includes JS shim to toggle aria-expanded on checkbox change", () => {
+      expect(html).toContain("aria-expanded");
+      expect(html).toContain("<script>");
+    });
   });
 
   describe("read-only mode (readOnly=true)", () => {
@@ -67,6 +84,23 @@ describe("renderShipwrightToolbar", () => {
 
     test("checkbox input appears before nav element in DOM", () => {
       expect(html.indexOf("<input")).toBeLessThan(html.indexOf("<nav"));
+    });
+
+    test("hamburger label has aria-expanded attribute for screen reader feedback", () => {
+      expect(html).toContain('aria-expanded="false"');
+    });
+
+    test("hamburger label has aria-controls pointing to nav content", () => {
+      expect(html).toContain('aria-controls="vos-nav-content"');
+    });
+
+    test("nav content div has id for aria-controls target", () => {
+      expect(html).toContain('id="vos-nav-content"');
+    });
+
+    test("includes JS shim to toggle aria-expanded on checkbox change", () => {
+      expect(html).toContain("aria-expanded");
+      expect(html).toContain("<script>");
     });
   });
 });

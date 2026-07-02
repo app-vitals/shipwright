@@ -201,18 +201,19 @@ export function renderShipwrightToolbar(
     return `<input type="checkbox" id="vos-nav-toggle" class="vos-nav-toggle" aria-hidden="true">
   <nav class="vos-toolbar" aria-label="Site navigation">
     <a href="${metricsUrl}" class="vos-wordmark">Shipwright</a>
-    <div class="vos-nav">
+    <div id="vos-nav-content" class="vos-nav">
       <a href="${metricsUrl}" class="vos-nav-link${active(metricsUrl)}">Metrics</a>
       <a href="${tasksUrl}" class="vos-nav-link${active(tasksUrl)}">Tasks</a>
     </div>
-    <label for="vos-nav-toggle" class="vos-hamburger" aria-label="Toggle navigation">☰</label>
-  </nav>`;
+    <label for="vos-nav-toggle" class="vos-hamburger" aria-label="Toggle navigation" aria-expanded="false" aria-controls="vos-nav-content">☰</label>
+  </nav>
+  <script>(function(){var t=document.getElementById('vos-nav-toggle');if(t)t.addEventListener('change',function(){var l=document.querySelector('label[for="vos-nav-toggle"]');if(l)l.setAttribute('aria-expanded',t.checked?'true':'false');});})();</script>`;
   }
 
   return `<input type="checkbox" id="vos-nav-toggle" class="vos-nav-toggle" aria-hidden="true">
   <nav class="vos-toolbar" aria-label="Site navigation">
     <a href="${adminBase}/admin/agents" class="vos-wordmark">Shipwright</a>
-    <div class="vos-nav">
+    <div id="vos-nav-content" class="vos-nav">
       <a href="${adminBase}/admin/agents" class="vos-nav-link${active("/admin/agents")}">Agents</a>
       <a href="${adminBase}/admin/provision" class="vos-nav-link${active("/admin/provision")}">Provision</a>
       <a href="${adminBase}/admin/tasks" class="vos-nav-link${active("/admin/tasks")}">Tasks</a>
@@ -226,6 +227,7 @@ export function renderShipwrightToolbar(
         <button type="submit" class="vos-signout-btn">Sign out</button>
       </form>
     </div>
-    <label for="vos-nav-toggle" class="vos-hamburger" aria-label="Toggle navigation">☰</label>
-  </nav>`;
+    <label for="vos-nav-toggle" class="vos-hamburger" aria-label="Toggle navigation" aria-expanded="false" aria-controls="vos-nav-content">☰</label>
+  </nav>
+  <script>(function(){var t=document.getElementById('vos-nav-toggle');if(t)t.addEventListener('change',function(){var l=document.querySelector('label[for="vos-nav-toggle"]');if(l)l.setAttribute('aria-expanded',t.checked?'true':'false');});})();</script>`;
 }

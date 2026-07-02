@@ -161,7 +161,7 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
   <input type="checkbox" id="vos-nav-toggle" class="vos-nav-toggle" aria-hidden="true">
   <nav class="vos-toolbar" aria-label="Site navigation">
     <a href="/admin/agents" class="vos-wordmark">Shipwright</a>
-    <div class="vos-nav">
+    <div id="vos-nav-content" class="vos-nav">
       <a href="/admin/agents" class="vos-nav-link">Agents</a>
       <a href="/admin/provision" class="vos-nav-link">Provision</a>
       <a href="/admin/tasks" class="vos-nav-link">Tasks</a>
@@ -175,8 +175,9 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
         <button type="submit" class="vos-signout-btn">Sign out</button>
       </form>
     </div>
-    <label for="vos-nav-toggle" class="vos-hamburger" aria-label="Toggle navigation">☰</label>
+    <label for="vos-nav-toggle" class="vos-hamburger" aria-label="Toggle navigation" aria-expanded="false" aria-controls="vos-nav-content">☰</label>
   </nav>
+  <script>(function(){var t=document.getElementById('vos-nav-toggle');if(t)t.addEventListener('change',function(){var l=document.querySelector('label[for="vos-nav-toggle"]');if(l)l.setAttribute('aria-expanded',t.checked?'true':'false');});})();</script>
   <div class="app">
 
     <!-- Page Controls -->
@@ -646,7 +647,7 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
   <input type="checkbox" id="vos-nav-toggle" class="vos-nav-toggle" aria-hidden="true">
   <nav class="vos-toolbar" aria-label="Site navigation">
     <a href="/admin/agents" class="vos-wordmark">Shipwright</a>
-    <div class="vos-nav">
+    <div id="vos-nav-content" class="vos-nav">
       <a href="/admin/agents" class="vos-nav-link">Agents</a>
       <a href="/admin/provision" class="vos-nav-link">Provision</a>
       <a href="/admin/tasks" class="vos-nav-link">Tasks</a>
@@ -660,8 +661,9 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
         <button type="submit" class="vos-signout-btn">Sign out</button>
       </form>
     </div>
-    <label for="vos-nav-toggle" class="vos-hamburger" aria-label="Toggle navigation">☰</label>
+    <label for="vos-nav-toggle" class="vos-hamburger" aria-label="Toggle navigation" aria-expanded="false" aria-controls="vos-nav-content">☰</label>
   </nav>
+  <script>(function(){var t=document.getElementById('vos-nav-toggle');if(t)t.addEventListener('change',function(){var l=document.querySelector('label[for="vos-nav-toggle"]');if(l)l.setAttribute('aria-expanded',t.checked?'true':'false');});})();</script>
   <div class="app">
 
     <!-- Page Controls -->
@@ -1131,7 +1133,7 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
   <input type="checkbox" id="vos-nav-toggle" class="vos-nav-toggle" aria-hidden="true">
   <nav class="vos-toolbar" aria-label="Site navigation">
     <a href="/admin/agents" class="vos-wordmark">Shipwright</a>
-    <div class="vos-nav">
+    <div id="vos-nav-content" class="vos-nav">
       <a href="/admin/agents" class="vos-nav-link">Agents</a>
       <a href="/admin/provision" class="vos-nav-link">Provision</a>
       <a href="/admin/tasks" class="vos-nav-link">Tasks</a>
@@ -1145,8 +1147,9 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
         <button type="submit" class="vos-signout-btn">Sign out</button>
       </form>
     </div>
-    <label for="vos-nav-toggle" class="vos-hamburger" aria-label="Toggle navigation">☰</label>
+    <label for="vos-nav-toggle" class="vos-hamburger" aria-label="Toggle navigation" aria-expanded="false" aria-controls="vos-nav-content">☰</label>
   </nav>
+  <script>(function(){var t=document.getElementById('vos-nav-toggle');if(t)t.addEventListener('change',function(){var l=document.querySelector('label[for="vos-nav-toggle"]');if(l)l.setAttribute('aria-expanded',t.checked?'true':'false');});})();</script>
   <div class="app">
 
     <!-- Page Controls -->
@@ -1616,7 +1619,7 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
   <input type="checkbox" id="vos-nav-toggle" class="vos-nav-toggle" aria-hidden="true">
   <nav class="vos-toolbar" aria-label="Site navigation">
     <a href="/admin/agents" class="vos-wordmark">Shipwright</a>
-    <div class="vos-nav">
+    <div id="vos-nav-content" class="vos-nav">
       <a href="/admin/agents" class="vos-nav-link">Agents</a>
       <a href="/admin/provision" class="vos-nav-link">Provision</a>
       <a href="/admin/tasks" class="vos-nav-link">Tasks</a>
@@ -1630,8 +1633,9 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
         <button type="submit" class="vos-signout-btn">Sign out</button>
       </form>
     </div>
-    <label for="vos-nav-toggle" class="vos-hamburger" aria-label="Toggle navigation">☰</label>
+    <label for="vos-nav-toggle" class="vos-hamburger" aria-label="Toggle navigation" aria-expanded="false" aria-controls="vos-nav-content">☰</label>
   </nav>
+  <script>(function(){var t=document.getElementById('vos-nav-toggle');if(t)t.addEventListener('change',function(){var l=document.querySelector('label[for="vos-nav-toggle"]');if(l)l.setAttribute('aria-expanded',t.checked?'true':'false');});})();</script>
   <div class="app">
 
     <!-- Page Controls -->
