@@ -67,6 +67,7 @@ export const SummaryResultSchema = z
     reviewsTotal: z.number().int(),
     reviewsShipIt: z.number().int(),
     reviewShipItRate: z.number().nullable(),
+    avgReviewIterations: z.number().nullable(),
     estimationAccuracy: z.number().nullable(),
     complexityDist: z.object({
       c1: z.number().int(),

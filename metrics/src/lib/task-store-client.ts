@@ -69,6 +69,8 @@ export interface PrRecord {
   mergedAt?: string | null;
   /** Owning repository in `org/repo` form. Used for public-mode repo scoping. */
   repo?: string | null;
+  reviewCycles?: number | null;
+  patchCycles?: number | null;
 }
 
 // ─── Error type ───────────────────────────────────────────────────────────────
