@@ -28,7 +28,6 @@ import {
   type AdminMetricsClient,
   type ChatTokenStats,
   type CronRunTokenStats,
-  type DoubleKeyedTokenAggregate,
   type TokenAggregate,
 } from "../lib/admin-metrics-client.ts";
 import { type Clock, SystemClock } from "../lib/clock.ts";
