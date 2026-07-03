@@ -33,11 +33,6 @@ describe("patch.md — toolchain detection steps present", () => {
     expect(section).toContain("### Step 6a.5: Detect Project Toolchain");
   });
 
-  it("has toolchain detection between Step 7a and Step 7b (Step 7a.5)", () => {
-    const section = extractSection(patch, "### Step 7a:", "### Step 7b:");
-    expect(section).toContain("### Step 7a.5: Detect Project Toolchain");
-  });
-
   it("references toolchain-patterns.md in the Step 5a.5 detection step", () => {
     const section = extractSection(patch, "### Step 5a.5:", "### Step 5b:");
     expect(section).toContain("toolchain-patterns.md");
@@ -45,11 +40,6 @@ describe("patch.md — toolchain detection steps present", () => {
 
   it("references toolchain-patterns.md in the Step 6a.5 detection step", () => {
     const section = extractSection(patch, "### Step 6a.5:", "### Step 6b:");
-    expect(section).toContain("toolchain-patterns.md");
-  });
-
-  it("references toolchain-patterns.md in the Step 7a.5 detection step", () => {
-    const section = extractSection(patch, "### Step 7a.5:", "### Step 7b:");
     expect(section).toContain("toolchain-patterns.md");
   });
 });
@@ -104,33 +94,6 @@ describe("patch.md — Step 6c subagent prompt: no hardcoded bun commands", () =
 
   it("uses {test command} placeholder in Step 6c [C] Validate", () => {
     const section = extractSection(patch, "### Step 6c:", "### Step 6d:");
-    expect(section).toContain("{test command}");
-  });
-});
-
-describe("patch.md — Step 7c subagent prompt: no hardcoded bun commands", () => {
-  it("does NOT contain 'Run: bun run lint' in Step 7c subagent prompt", () => {
-    const section = extractSection(patch, "### Step 7c:", "### Step 7d:");
-    expect(section).not.toContain("Run: bun run lint");
-  });
-
-  it("does NOT contain 'Run: bun test' in Step 7c subagent prompt", () => {
-    const section = extractSection(patch, "### Step 7c:", "### Step 7d:");
-    expect(section).not.toContain("Run: bun test");
-  });
-
-  it("has a TOOLCHAIN: block in Step 7c subagent prompt", () => {
-    const section = extractSection(patch, "### Step 7c:", "### Step 7d:");
-    expect(section).toContain("TOOLCHAIN:");
-  });
-
-  it("uses {lint command} placeholder in Step 7c [C] Validate", () => {
-    const section = extractSection(patch, "### Step 7c:", "### Step 7d:");
-    expect(section).toContain("{lint command}");
-  });
-
-  it("uses {test command} placeholder in Step 7c [C] Validate", () => {
-    const section = extractSection(patch, "### Step 7c:", "### Step 7d:");
     expect(section).toContain("{test command}");
   });
 });

@@ -112,7 +112,7 @@ describe("patch.md — subagent prompt templates", () => {
   it("uses {worktree-path} placeholder in all subagent prompts", () => {
     const occurrences = (patch.match(/Worktree: \{worktree-path\}/g) ?? [])
       .length;
-    expect(occurrences).toBe(4);
+    expect(occurrences).toBe(3);
   });
 });
 
