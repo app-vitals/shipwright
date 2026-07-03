@@ -842,4 +842,38 @@ describe("check-patch", () => {
     expect(result.exit).toBe(0);
     expect(result.output).toContain("patch");
   });
+
+  // ─── Bold-wrapped self-APPROVE verdicts (CPF-1.3) ──────────────────────────
+
+  test("exits 1 when only review is self-authored COMMENTED at current HEAD with a bold-wrapped APPROVE verdict", async () => {
+    const pr = makeOwnPr();
+    const reviewData = makePrReviewData({
+      headRefOid: "current-head-sha",
+      reviews: {
+        nodes: [
+          {
+            author: { login: "the-agent" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-26T10:00:00Z",
+            commit: { oid: "current-head-sha" },
+            body: "**APPROVE** — looks good, no changes needed.",
+          },
+        ],
+      },
+      reviewThreads: { nodes: [] },
+    });
+    const result = await run(
+      makeDeps(
+        [pr],
+        { 10: reviewData },
+        {},
+        {},
+        async () => {},
+        async () => [],
+        () => "the-agent",
+      ),
+    );
+    expect(result.exit).toBe(1);
+    expect(result.output).toBe("");
+  });
 });

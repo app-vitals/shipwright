@@ -97,6 +97,10 @@ export interface Deps {
  * approvals are always posted as COMMENTED — treating those as findings would
  * create a permanent false positive. A self-review with a real (non-APPROVE)
  * verdict is not matched here, so it still counts as a finding.
+ *
+ * Leading markdown bold markers (`**`) are stripped before the check, mirroring
+ * check-deploy.ts's `hasSelfApproveReview` — the review skill posts `**APPROVE**`
+ * but the body must still be treated as APPROVE.
  */
 function isSelfCleanApprove(
   review: Pick<PrReviewData["reviews"]["nodes"][number], "author" | "body">,
@@ -104,7 +108,7 @@ function isSelfCleanApprove(
 ): boolean {
   return (
     review.author.login === currentUser &&
-    review.body.trimStart().startsWith("APPROVE")
+    review.body.trimStart().replace(/^\*+/, "").startsWith("APPROVE")
   );
 }
 
