@@ -195,7 +195,7 @@ Claim semantics:
 - Same `commitSha` and `reviewState !== pending` → returns `409` (already reviewed at this commit)
 - Different `commitSha` or `reviewState === pending` → updates and returns `200` (new review cycle)
 
-When a `taskId` is provided, the claim operation also syncs `pr` and `repo` to the associated Task record. This keeps the PR reference and repo scope current on the task side without requiring a separate update call. If no `taskId` is provided, the Task table is not modified.
+The `taskId` field is optional and does not trigger any side effects on the Task table — it is stored as metadata on the PR record only for reference.
 
 #### Claim next PR (atomic)
 
