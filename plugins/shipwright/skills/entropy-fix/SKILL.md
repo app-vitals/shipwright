@@ -1,11 +1,11 @@
 ---
 name: entropy-fix
-description: Read entropy-report.md, fix pr_worthy violations, and open targeted PRs. One PR per concern. Requires entropy-scan to have run first.
+description: Read entropy-report.md, fix PR-worthy violations, and open targeted PRs. One PR per concern. Requires entropy-scan to have run first.
 ---
 
 # Entropy Fix
 
-Read the latest `entropy-report.md` and open focused, human-reviewable PRs for `pr_worthy` violations. Each PR fixes one rule — no bundled concerns, max 3 files changed per PR.
+Read the latest `entropy-report.md` and open focused, human-reviewable PRs for `PR-worthy` violations. Each PR fixes one rule — no bundled concerns, max 3 files changed per PR.
 
 **Prerequisites:** Run `/entropy-scan` first to produce `entropy-report.md`.
 
@@ -35,28 +35,29 @@ Before starting, check for flags:
 
 ---
 
-## Step 2: Load Golden Principles
+## Step 2: Load Principles
 
-Load the same golden principles config that the scan used:
+Load the same principles file that the scan used, filtered the same way:
 
-1. Check `.claude/entropy-patrol/golden-principles.yaml` in the project root. If it exists, load it.
-2. Otherwise, load the plugin default: `skills/entropy-scan/golden-principles.yaml`.
-3. Build a map of `rule_id → rule` for quick lookup (needed for `pr_worthy` status and PR body generation).
+1. Check `.claude/shipwright/principles.md` in the project root. If it exists, load it.
+2. Otherwise, load the plugin default: `references/principles.md` (relative to the plugin root).
+3. Filter to only entries containing a `**Detection:**` field — the same entropy-scannable set `/entropy-scan` used.
+4. Build a map of `rule_id → entry` for quick lookup (needed for `PR-worthy` status and PR body generation).
 
 ---
 
 ## Step 3: Filter and Group Findings
 
 1. Parse the report's `## Findings` section. Collect all unchecked (`- [ ]`) findings.
-2. Filter to only findings whose rule has `pr_worthy: true` in the golden principles config.
+2. Filter to only findings whose entry has `**PR-worthy:** true` in the principles file.
 3. If `--rule` flag was passed, further filter to only that rule's findings. If no findings match that rule ID, print: "No unchecked findings for rule `{rule_id}`. Nothing to fix." and stop.
 4. Group findings by `rule_id`. One PR will be opened per group.
 5. Sort groups: high-severity rules first, then medium, then low.
-6. If no `pr_worthy` unchecked findings exist, print:
+6. If no `PR-worthy` unchecked findings exist, print:
    ```
-   No pr_worthy findings to fix. All violations are either:
+   No PR-worthy findings to fix. All violations are either:
    - Already checked off (fixed)
-   - In categories marked pr_worthy: false (fix manually)
+   - In entries marked PR-worthy: false (fix manually)
    Run /entropy-scan to refresh the report.
    ```
    Then stop.
@@ -122,7 +123,7 @@ Stop after printing.
 If there are more than 10 rule groups to fix, note:
 
 ```
-Found {N} rules with pr_worthy findings. Capping at 10 PRs per run.
+Found {N} rules with PR-worthy findings. Capping at 10 PRs per run.
 Fixing highest-severity rules first. Re-run after merging to continue.
 ```
 
@@ -178,9 +179,9 @@ Findings ({count} total):
 - {file_path}:{line} — {finding_description}
 {Include ALL findings. If there are more than 20, include the first 20 and append: "(+N more — re-run /entropy-fix to see all)"}
 
-Fix guidance: {rule.detection_hint or remediation guidance from the golden principles config}
+Fix guidance: {rule.detection_hint or remediation guidance from the principles file}
 
-Rule: {rule.id} | Severity: {rule.severity} | Category: {rule.category}
+Rule: {rule.id} | Severity: {rule.severity} | Domain: {rule.domain}
 ```
 
 The `{YYYY-Www}` suffix in the task ID uses ISO week format. Compute from the current date:
@@ -279,7 +280,7 @@ PR body format:
 ```markdown
 ## Entropy Fix: {rule.description}
 
-**Golden Principle:** `{rule.id}` ({rule.severity})
+**Principle:** `{rule.id}` ({rule.severity})
 **Findings fixed:** {count}
 
 ### What was changed
@@ -361,5 +362,5 @@ entropy-report.md updated with fixed findings checked off.
 - **No auto-merge** — PRs always require human review before merge.
 - **No cascade** — only fix what's in the current `entropy-report.md`. Do not re-scan during a fix run.
 - **Sequential branches** — create branches one at a time. Parallel branch creation causes git conflicts.
-- **No golden-principles.yaml changes** — the fix skill enforces rules, it does not modify them.
+- **No principles.md changes** — the fix skill enforces principles, it does not modify them.
 - **Confirmation required for high-severity destructive ops** — never skip this gate.

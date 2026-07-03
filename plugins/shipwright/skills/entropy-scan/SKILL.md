@@ -1,11 +1,11 @@
 ---
 name: entropy-scan
-description: Scan codebase for golden principle deviations. Report only — no code changes.
+description: Scan codebase for principle deviations. Report only — no code changes.
 ---
 
 # Entropy Scan
 
-Scan the codebase for golden principle violations and write a structured report. This skill makes **no code changes** — it reads and reports only. Use `/entropy-fix` to act on the findings.
+Scan the codebase for principle violations and write a structured report. This skill makes **no code changes** — it reads and reports only. Use `/entropy-fix` to act on the findings.
 
 ---
 
@@ -13,7 +13,7 @@ Scan the codebase for golden principle violations and write a structured report.
 
 Before starting, check if any flags were passed:
 
-- `--init` — copy the default golden principles config to the project and exit (no scan)
+- `--init` — copy the default principles file to the project and exit (no scan)
 - `--summary` — print category counts to stdout; skip writing `entropy-report.md` or `quality-log.jsonl`
 - `--trend` — read `.entropy-patrol/quality-log.jsonl` and print a trend summary; skip the scan entirely
 
@@ -69,24 +69,24 @@ MOST WORSENING:  {rule_id} (▲ {N} violations)   {or "none — all rules stable
 
 If the `--init` flag was passed:
 
-1. Check if `.claude/entropy-patrol/golden-principles.yaml` already exists in the project root.
-   - If it exists, print: "Config already exists at `.claude/entropy-patrol/golden-principles.yaml`. Edit it to customize rules for this project." and stop.
-2. If it does not exist, create the directory and copy the default config:
-   - Source: `skills/entropy-scan/golden-principles.yaml` (relative to this skill file — the plugin's own default config)
-   - Destination: `.claude/entropy-patrol/golden-principles.yaml` in the project root
-3. Print: "Created `.claude/entropy-patrol/golden-principles.yaml`. Edit it to customize rules for this project. Re-run `/entropy-scan` to start scanning."
+1. Check if `.claude/shipwright/principles.md` already exists in the project root.
+   - If it exists, print: "Config already exists at `.claude/shipwright/principles.md`. Edit it to customize principles for this project." and stop.
+2. If it does not exist, create the directory and copy the default principles file:
+   - Source: `references/principles.md` (relative to the plugin root — the plugin's own shared principles file)
+   - Destination: `.claude/shipwright/principles.md` in the project root
+3. Print: "Created `.claude/shipwright/principles.md`. Edit it to customize principles for this project. Re-run `/entropy-scan` to start scanning."
 4. Stop — do not run the scan.
 
 ---
 
-## Step 2: Load Golden Principles
+## Step 2: Load Principles
 
-1. Check for a project-level override: `.claude/entropy-patrol/golden-principles.yaml` in the project root.
-2. If it exists, load it. Print: "Using project config: `.claude/entropy-patrol/golden-principles.yaml`"
-3. If it does not exist, load the plugin default: `skills/entropy-scan/golden-principles.yaml` (relative to this skill file). Print: "No project config found. Using default golden principles. Run `/entropy-scan --init` to customize."
-4. If neither file exists, print: "No golden principles found. Run `/entropy-scan --init` to get started." and stop.
-5. Parse the YAML. Read the `rules` list and the `todo_max_age_days` global config (default: 90).
-6. Filter out any rules where `disabled: true`. Print the count of active rules.
+1. Check for a project-level override: `.claude/shipwright/principles.md` in the project root.
+2. If it exists, load it. Print: "Using project config: `.claude/shipwright/principles.md`"
+3. If it does not exist, load the plugin default: `references/principles.md` (relative to the plugin root). Print: "No project config found. Using default principles. Run `/entropy-scan --init` to customize."
+4. If neither file exists, print: "No principles found. Run `/entropy-scan --init` to get started." and stop.
+5. Parse the markdown. Each `###` heading starting a rule entry; read its `**Domain:**`, `**Severity:**`, prose statement, and (if present) `**Detection:**`, `**PR-worthy:**`, and `**HITL:**` fields. `todo_max_age_days` defaults to 90 (no per-project override in this format — a project's `.claude/shipwright/principles.md` override can adjust the `stale_todo` entry's own Detection text if a different threshold is needed).
+6. **Filter to only entries containing a `**Detection:**` field** — these are the entropy-scannable rules; everything else is judgment-only (read by `review`/`plan-session`/`dev-task`, never mechanically scanned). Map each scannable entry's `**Domain:**` to a report category: `security` → `security`, `dead_code` → `dead_code`, `todo_debt` → `todo_debt`, `architecture` → `inconsistent_patterns`, `docs` → `documentation_gaps`. Print the count of scannable entries.
 
 ---
 
@@ -103,11 +103,10 @@ For each active rule (in order: security first, then high → medium → low sev
 
 **Order of categories:**
 1. `security` (highest stakes — always first)
-2. `missing_tests`
-3. `dead_code`
-4. `todo_debt`
-5. `inconsistent_patterns`
-6. `documentation_gaps`
+2. `dead_code`
+3. `todo_debt`
+4. `inconsistent_patterns`
+5. `documentation_gaps`
 
 Within each category, process high-severity rules before medium before low.
 
@@ -124,14 +123,13 @@ Write `entropy-report.md` to the project root (overwrite if it exists). Format:
 
 **Generated:** {YYYY-MM-DD HH:MM} {timezone}
 **Config:** {project override path | "plugin default"}
-**Rules scanned:** {count active rules} / {count total rules}
+**Rules scanned:** {count scannable entries} / {count total entries}
 
 ## Summary
 
 | Category | High | Medium | Low | Total |
 |----------|------|--------|-----|-------|
 | security | N | N | N | N |
-| missing_tests | N | N | N | N |
 | dead_code | N | N | N | N |
 | todo_debt | N | N | N | N |
 | inconsistent_patterns | N | N | N | N |
@@ -162,7 +160,7 @@ Write `entropy-report.md` to the project root (overwrite if it exists). Format:
 {List any categories or rules with zero findings here, as a quick confirmation they were checked.}
 
 ---
-_Run `/entropy-fix` to open PRs for `pr_worthy: true` violations._
+_Run `/entropy-fix` to open PRs for `PR-worthy: true` violations._
 _Run `/entropy-scan --init` to create a project-level config for rule customization._
 ```
 
@@ -171,7 +169,7 @@ Rules:
 - Each finding is a checkbox (`- [ ]`) so `/entropy-fix` can track which ones have been addressed
 - Include line numbers when available: `- [ ] \`{file_path}:{line_number}\` — {description} _{effort}_`
 - For file-level findings (no line number): `- [ ] \`{file_path}\` — {description} _{effort}_`
-- The "No Violations" section at the bottom lists all active rules where nothing was found — this confirms the rule ran and passed. Disabled rules do not appear anywhere in the report.
+- The "No Violations" section at the bottom lists all scannable entries where nothing was found — this confirms the entry ran and passed. Entries omitted from a project's `.claude/shipwright/principles.md` override do not appear anywhere in the report.
 
 ---
 
@@ -196,7 +194,7 @@ TOP ISSUES
   {severity} · {rule_id} · {file_path} — {description}
 
 {If any high-severity findings exist:}
-  ⚠️  Run /entropy-fix to open PRs for pr_worthy violations.
+  ⚠️  Run /entropy-fix to open PRs for PR-worthy violations.
 
 {If zero findings:}
   ✓ No violations found. Codebase is clean against active rules.
@@ -247,7 +245,7 @@ Schema reference: `skills/entropy-scan/references/quality-log-schema.md`
 - **No git operations.** Do not commit, branch, or stage anything.
 - **No PR creation.** That belongs to `/entropy-fix`.
 - **No network calls.** All detection is local file inspection.
-- **Respect `disabled: true`.** Never scan a disabled rule — not even "just to check."
+- **Respect the project override.** If a project's `.claude/shipwright/principles.md` omits an entry present in the plugin default, treat it as not scanned — not even "just to check."
 - **One scan, one report.** Each run fully overwrites `entropy-report.md`. Previous results are not preserved.
 - **Quality log is append-only.** Never overwrite or truncate `.entropy-patrol/quality-log.jsonl`. Appends only.
 - **`--summary` skips log.** When `--summary` is passed, no log entry is written (no report = no log entry).
