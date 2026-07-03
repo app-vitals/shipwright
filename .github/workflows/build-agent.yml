@@ -39,6 +39,7 @@ jobs:
               - ".claude-plugin/**"
               - "package.json"
               - "bun.lock"
+              - ".github/workflows/build-agent.yml"
 
   build-and-push:
     name: build / tag / push
