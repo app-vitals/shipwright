@@ -101,9 +101,14 @@ The chat service requires:
 ```bash
 kubectl -n shipwright patch secret shipwright-secrets --type merge \
   -p "{\"stringData\":{\"SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN\":\"$(openssl rand -hex 32)\"}}"
+```
 
---set chat.enabled=true \
---set chat.adminToken.existingSecret=shipwright-secrets
+Then upgrade the chart:
+
+```bash
+helm upgrade shipwright charts/shipwright \
+  --set chat.enabled=true \
+  --set chat.adminToken.existingSecret=shipwright-secrets
 ```
 
   The chart injects the **same raw token** into both sides: the chat container
