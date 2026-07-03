@@ -73,19 +73,25 @@ function makePrReviewData(overrides: Partial<PrReviewData> = {}): PrReviewData {
   };
 }
 
-function makeDeps(
-  ownPrs: OwnPr[],
-  reviewDataByPr: Record<number, PrReviewData>,
-  ciStatusByPr: Record<number, CiCheckStatus> = {},
-  mergeStatusByPr: Record<number, MergeStatusInfo> = {},
-  updateBranch: (
-    org: string,
-    repo: string,
-    pr: number,
-  ) => Promise<void> = async () => {},
-  listPrCommits: (_prNumber: number) => Promise<CommitInfo[]> = async () => [],
-  getCurrentUser: () => string = () => "the-agent",
-) {
+interface MakeDepsOptions {
+  ownPrs: OwnPr[];
+  reviewDataByPr: Record<number, PrReviewData>;
+  ciStatusByPr?: Record<number, CiCheckStatus>;
+  mergeStatusByPr?: Record<number, MergeStatusInfo>;
+  updateBranch?: (org: string, repo: string, pr: number) => Promise<void>;
+  listPrCommits?: (_prNumber: number) => Promise<CommitInfo[]>;
+  getCurrentUser?: () => string;
+}
+
+function makeDeps({
+  ownPrs,
+  reviewDataByPr,
+  ciStatusByPr = {},
+  mergeStatusByPr = {},
+  updateBranch = async () => {},
+  listPrCommits = async () => [],
+  getCurrentUser = () => "the-agent",
+}: MakeDepsOptions) {
   return {
     listOwnOpenPrs: async (_repo: string) => ownPrs,
     fetchPrReviews: async (
@@ -122,7 +128,7 @@ function makeDeps(
 
 describe("check-patch", () => {
   test("exits 1 when no own open PRs exist", async () => {
-    const result = await run(makeDeps([], {}));
+    const result = await run(makeDeps({ ownPrs: [], reviewDataByPr: {} }));
     expect(result.exit).toBe(1);
     expect(result.output).toBe("");
   });
@@ -142,7 +148,9 @@ describe("check-patch", () => {
         ],
       },
     });
-    const result = await run(makeDeps([pr], { 10: reviewData }));
+    const result = await run(
+      makeDeps({ ownPrs: [pr], reviewDataByPr: { 10: reviewData } }),
+    );
     expect(result.exit).toBe(1);
     expect(result.output).toBe("");
   });
@@ -175,7 +183,9 @@ describe("check-patch", () => {
         ],
       },
     });
-    const result = await run(makeDeps([pr], { 10: reviewData }));
+    const result = await run(
+      makeDeps({ ownPrs: [pr], reviewDataByPr: { 10: reviewData } }),
+    );
     expect(result.exit).toBe(0);
     expect(result.output).toContain("patch");
   });
@@ -197,7 +207,9 @@ describe("check-patch", () => {
       },
       reviewThreads: { nodes: [] },
     });
-    const result = await run(makeDeps([pr], { 10: reviewData }));
+    const result = await run(
+      makeDeps({ ownPrs: [pr], reviewDataByPr: { 10: reviewData } }),
+    );
     expect(result.exit).toBe(0);
     expect(result.output).toContain("patch");
   });
@@ -219,7 +231,9 @@ describe("check-patch", () => {
       },
       reviewThreads: { nodes: [] },
     });
-    const result = await run(makeDeps([pr], { 10: reviewData }));
+    const result = await run(
+      makeDeps({ ownPrs: [pr], reviewDataByPr: { 10: reviewData } }),
+    );
     expect(result.exit).toBe(1);
     expect(result.output).toBe("");
   });
@@ -250,7 +264,9 @@ describe("check-patch", () => {
         ],
       },
     });
-    const result = await run(makeDeps([pr], { 10: reviewData }));
+    const result = await run(
+      makeDeps({ ownPrs: [pr], reviewDataByPr: { 10: reviewData } }),
+    );
     expect(result.exit).toBe(1);
     expect(result.output).toBe("");
   });
@@ -272,7 +288,9 @@ describe("check-patch", () => {
       },
       reviewThreads: { nodes: [] }, // no inline threads — finding is in the body
     });
-    const result = await run(makeDeps([pr], { 10: reviewData }));
+    const result = await run(
+      makeDeps({ ownPrs: [pr], reviewDataByPr: { 10: reviewData } }),
+    );
     expect(result.exit).toBe(0);
     expect(result.output).toContain("patch");
   });
@@ -316,7 +334,9 @@ describe("check-patch", () => {
     };
     // PR 10 is clean (no findings, no failing CI, not behind) — continues to PR 11
     // PR 11 has findings — triggers patch (exit 0)
-    const result = await run(makeDeps(prs, reviewDataMap));
+    const result = await run(
+      makeDeps({ ownPrs: prs, reviewDataByPr: reviewDataMap }),
+    );
     expect(result.exit).toBe(0);
     expect(result.output).toContain("patch");
   });
@@ -350,12 +370,12 @@ describe("check-patch", () => {
     // PR 10 is BEHIND main — branch silently synced, loop continues
     // PR 11 has findings — triggers patch (exit 0)
     const result = await run(
-      makeDeps(
-        prs,
-        reviewDataMap,
-        {},
-        { 10: { isBehind: true, isDirty: false } },
-      ),
+      makeDeps({
+        ownPrs: prs,
+        reviewDataByPr: reviewDataMap,
+        ciStatusByPr: {},
+        mergeStatusByPr: { 10: { isBehind: true, isDirty: false } },
+      }),
     );
     expect(result.exit).toBe(0);
     expect(result.output).toContain("patch");
@@ -363,7 +383,13 @@ describe("check-patch", () => {
 
   test("prompt mentions shipwright:patch when PR has failing CI", async () => {
     const pr = makeOwnPr({ number: 10 });
-    const result = await run(makeDeps([pr], {}, { 10: { hasFailing: true } }));
+    const result = await run(
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: {},
+        ciStatusByPr: { 10: { hasFailing: true } },
+      }),
+    );
     expect(result.exit).toBe(0);
     expect(result.output.toLowerCase()).toContain("patch");
   });
@@ -387,7 +413,11 @@ describe("check-patch", () => {
     });
     // PR has both unaddressed findings AND failing CI — findings guard fires first, exit 0
     const result = await run(
-      makeDeps([pr], { 10: reviewData }, { 10: { hasFailing: true } }),
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: { 10: reviewData },
+        ciStatusByPr: { 10: { hasFailing: true } },
+      }),
     );
     expect(result.exit).toBe(0);
     expect(result.output).toContain("patch");
@@ -395,7 +425,13 @@ describe("check-patch", () => {
 
   test("exits 0 when own PR has failing CI checks", async () => {
     const pr = makeOwnPr({ number: 10 });
-    const result = await run(makeDeps([pr], {}, { 10: { hasFailing: true } }));
+    const result = await run(
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: {},
+        ciStatusByPr: { 10: { hasFailing: true } },
+      }),
+    );
     expect(result.exit).toBe(0);
     expect(result.output).toContain("patch");
   });
@@ -404,15 +440,15 @@ describe("check-patch", () => {
     const pr = makeOwnPr({ number: 10 });
     const updated: number[] = [];
     const result = await run(
-      makeDeps(
-        [pr],
-        {},
-        {},
-        { 10: { isBehind: true, isDirty: false } },
-        async (_org, _repo, prNum) => {
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: {},
+        ciStatusByPr: {},
+        mergeStatusByPr: { 10: { isBehind: true, isDirty: false } },
+        updateBranch: async (_org, _repo, prNum) => {
           updated.push(prNum);
         },
-      ),
+      }),
     );
     expect(updated).toContain(10);
     expect(result.exit).toBe(1);
@@ -422,15 +458,15 @@ describe("check-patch", () => {
     const pr = makeOwnPr({ number: 10 });
     const updated: number[] = [];
     const result = await run(
-      makeDeps(
-        [pr],
-        {},
-        { 10: { hasFailing: true } },
-        { 10: { isBehind: true, isDirty: false } },
-        async (_org, _repo, prNum) => {
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: {},
+        ciStatusByPr: { 10: { hasFailing: true } },
+        mergeStatusByPr: { 10: { isBehind: true, isDirty: false } },
+        updateBranch: async (_org, _repo, prNum) => {
           updated.push(prNum);
         },
-      ),
+      }),
     );
     expect(updated).toContain(10);
     expect(result.exit).toBe(0);
@@ -455,15 +491,15 @@ describe("check-patch", () => {
     });
     const updated: number[] = [];
     const result = await run(
-      makeDeps(
-        [pr],
-        { 10: reviewData },
-        {},
-        { 10: { isBehind: true, isDirty: false } },
-        async (_org, _repo, prNum) => {
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: { 10: reviewData },
+        ciStatusByPr: {},
+        mergeStatusByPr: { 10: { isBehind: true, isDirty: false } },
+        updateBranch: async (_org, _repo, prNum) => {
           updated.push(prNum);
         },
-      ),
+      }),
     );
     // Branch is silently synced; findings trigger patch (exit 0)
     expect(updated).toContain(10);
@@ -474,15 +510,15 @@ describe("check-patch", () => {
   test("exits 0 (patch-worthy) when updateBranch fails and no other issues", async () => {
     const pr = makeOwnPr({ number: 10 });
     const result = await run(
-      makeDeps(
-        [pr],
-        {},
-        {},
-        { 10: { isBehind: true, isDirty: false } },
-        async () => {
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: {},
+        ciStatusByPr: {},
+        mergeStatusByPr: { 10: { isBehind: true, isDirty: false } },
+        updateBranch: async () => {
           throw new Error("update failed");
         },
-      ),
+      }),
     );
     expect(result.exit).toBe(0);
   });
@@ -490,12 +526,12 @@ describe("check-patch", () => {
   test("exits 1 when PR has no findings, green CI, and is up to date", async () => {
     const pr = makeOwnPr({ number: 10 });
     const result = await run(
-      makeDeps(
-        [pr],
-        {},
-        { 10: { hasFailing: false } },
-        { 10: { isBehind: false, isDirty: false } },
-      ),
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: {},
+        ciStatusByPr: { 10: { hasFailing: false } },
+        mergeStatusByPr: { 10: { isBehind: false, isDirty: false } },
+      }),
     );
     expect(result.exit).toBe(1);
   });
@@ -503,12 +539,12 @@ describe("check-patch", () => {
   test("exits 0 when own PR has DIRTY merge state", async () => {
     const pr = makeOwnPr({ number: 10 });
     const result = await run(
-      makeDeps(
-        [pr],
-        {},
-        { 10: { hasFailing: false } },
-        { 10: { isBehind: false, isDirty: true } },
-      ),
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: {},
+        ciStatusByPr: { 10: { hasFailing: false } },
+        mergeStatusByPr: { 10: { isBehind: false, isDirty: true } },
+      }),
     );
     expect(result.exit).toBe(0);
     expect(result.output.toLowerCase()).toContain("patch");
@@ -538,14 +574,14 @@ describe("check-patch", () => {
       { sha: "merge-sha", parents: [{ sha: "a" }, { sha: "b" }] }, // merge commit
     ];
     const result = await run(
-      makeDeps(
-        [pr],
-        { 10: reviewData },
-        {},
-        {},
-        async () => {},
-        async () => commits,
-      ),
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: { 10: reviewData },
+        ciStatusByPr: {},
+        mergeStatusByPr: {},
+        updateBranch: async () => {},
+        listPrCommits: async () => commits,
+      }),
     );
     expect(result.exit).toBe(0);
     expect(result.output).toContain("patch");
@@ -582,14 +618,14 @@ describe("check-patch", () => {
       { sha: "merge-sha", parents: [{ sha: "a" }, { sha: "b" }] },
     ];
     const result = await run(
-      makeDeps(
-        [pr],
-        { 10: reviewData },
-        {},
-        {},
-        async () => {},
-        async () => commits,
-      ),
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: { 10: reviewData },
+        ciStatusByPr: {},
+        mergeStatusByPr: {},
+        updateBranch: async () => {},
+        listPrCommits: async () => commits,
+      }),
     );
     expect(result.exit).toBe(0);
     expect(result.output).toContain("patch");
@@ -617,14 +653,14 @@ describe("check-patch", () => {
       { sha: "real-work-sha", parents: [{ sha: "p1" }] }, // regular (non-merge) commit
     ];
     const result = await run(
-      makeDeps(
-        [pr],
-        { 10: reviewData },
-        {},
-        {},
-        async () => {},
-        async () => commits,
-      ),
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: { 10: reviewData },
+        ciStatusByPr: {},
+        mergeStatusByPr: {},
+        updateBranch: async () => {},
+        listPrCommits: async () => commits,
+      }),
     );
     expect(result.exit).toBe(1);
     expect(result.output).toBe("");
@@ -652,14 +688,14 @@ describe("check-patch", () => {
       { sha: "merge-sha", parents: [{ sha: "a" }, { sha: "b" }] },
     ];
     const result = await run(
-      makeDeps(
-        [pr],
-        { 10: reviewData },
-        {},
-        {},
-        async () => {},
-        async () => commits,
-      ),
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: { 10: reviewData },
+        ciStatusByPr: {},
+        mergeStatusByPr: {},
+        updateBranch: async () => {},
+        listPrCommits: async () => commits,
+      }),
     );
     expect(result.exit).toBe(1);
   });
@@ -684,15 +720,15 @@ describe("check-patch", () => {
       reviewThreads: { nodes: [] },
     });
     const result = await run(
-      makeDeps(
-        [pr],
-        { 10: reviewData },
-        {},
-        {},
-        async () => {},
-        async () => [],
-        () => "the-agent",
-      ),
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: { 10: reviewData },
+        ciStatusByPr: {},
+        mergeStatusByPr: {},
+        updateBranch: async () => {},
+        listPrCommits: async () => [],
+        getCurrentUser: () => "the-agent",
+      }),
     );
     expect(result.exit).toBe(1);
     expect(result.output).toBe("");
@@ -720,15 +756,15 @@ describe("check-patch", () => {
       { sha: "merge-sha", parents: [{ sha: "a" }, { sha: "b" }] }, // merge commit
     ];
     const result = await run(
-      makeDeps(
-        [pr],
-        { 10: reviewData },
-        {},
-        {},
-        async () => {},
-        async () => commits,
-        () => "the-agent",
-      ),
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: { 10: reviewData },
+        ciStatusByPr: {},
+        mergeStatusByPr: {},
+        updateBranch: async () => {},
+        listPrCommits: async () => commits,
+        getCurrentUser: () => "the-agent",
+      }),
     );
     expect(result.exit).toBe(1);
     expect(result.output).toBe("");
@@ -759,15 +795,15 @@ describe("check-patch", () => {
       reviewThreads: { nodes: [] },
     });
     const result = await run(
-      makeDeps(
-        [pr],
-        { 10: reviewData },
-        {},
-        {},
-        async () => {},
-        async () => [],
-        () => "the-agent",
-      ),
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: { 10: reviewData },
+        ciStatusByPr: {},
+        mergeStatusByPr: {},
+        updateBranch: async () => {},
+        listPrCommits: async () => [],
+        getCurrentUser: () => "the-agent",
+      }),
     );
     expect(result.exit).toBe(0);
     expect(result.output).toContain("patch");
@@ -793,15 +829,15 @@ describe("check-patch", () => {
       reviewThreads: { nodes: [] },
     });
     const result = await run(
-      makeDeps(
-        [pr],
-        { 10: reviewData },
-        {},
-        {},
-        async () => {},
-        async () => [],
-        () => "the-agent",
-      ),
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: { 10: reviewData },
+        ciStatusByPr: {},
+        mergeStatusByPr: {},
+        updateBranch: async () => {},
+        listPrCommits: async () => [],
+        getCurrentUser: () => "the-agent",
+      }),
     );
     expect(result.exit).toBe(0);
     expect(result.output).toContain("patch");
@@ -829,15 +865,15 @@ describe("check-patch", () => {
       { sha: "merge-sha", parents: [{ sha: "a" }, { sha: "b" }] }, // merge commit
     ];
     const result = await run(
-      makeDeps(
-        [pr],
-        { 10: reviewData },
-        {},
-        {},
-        async () => {},
-        async () => commits,
-        () => "the-agent",
-      ),
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: { 10: reviewData },
+        ciStatusByPr: {},
+        mergeStatusByPr: {},
+        updateBranch: async () => {},
+        listPrCommits: async () => commits,
+        getCurrentUser: () => "the-agent",
+      }),
     );
     expect(result.exit).toBe(0);
     expect(result.output).toContain("patch");
@@ -863,15 +899,15 @@ describe("check-patch", () => {
       reviewThreads: { nodes: [] },
     });
     const result = await run(
-      makeDeps(
-        [pr],
-        { 10: reviewData },
-        {},
-        {},
-        async () => {},
-        async () => [],
-        () => "the-agent",
-      ),
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: { 10: reviewData },
+        ciStatusByPr: {},
+        mergeStatusByPr: {},
+        updateBranch: async () => {},
+        listPrCommits: async () => [],
+        getCurrentUser: () => "the-agent",
+      }),
     );
     expect(result.exit).toBe(1);
     expect(result.output).toBe("");
