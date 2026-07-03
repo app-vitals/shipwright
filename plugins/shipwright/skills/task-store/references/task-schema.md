@@ -23,7 +23,7 @@ contract: the same shape whether the backend is GitHub Issues, Jira, or the loca
 | field | type | notes |
 |---|---|---|
 | `session` | string | Planning-session slug; groups tasks (a milestone / `session:` label on GitHub). |
-| `repo` | string | Source repo the task targets; routes `/dev-task` to the right tree. |
+| `repo` | string **(required)** | Source repo the task targets; routes `/dev-task` to the right tree. |
 | `layer` | string | `Shared`, `API`, `Database`, `Agent`, `CLI`, `Web`. |
 | `dependencies` | string[] | Task ids that must be satisfied before this is `--ready`. |
 | `branch` | string | Feature branch; used for same-branch dependency satisfaction. |
@@ -68,7 +68,7 @@ absent — set them in the **same `update`** that changes status:
 | transition | must set |
 |---|---|
 | → `in_progress` | `model` (soft — recommended) |
-| → `pr_open` | `pr` (or `prUrl`), `prCreatedAt`, **and** `repo` |
+| → `pr_open` | `pr` (or `prUrl`) and `prCreatedAt` |
 | `pr_open` → `approved` / `merged` | `ciFixAttempts` |
 
 The exact `PATCH` invocations for each transition are in `SKILL.md` (Standard lifecycle).

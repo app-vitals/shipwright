@@ -27,6 +27,8 @@ interactive `learning-capture` skill gets for free.
   Managed Agents: their run logs. Read every transcript in the requested window.
 - **Current context.** The repo's `CLAUDE.md` files and skills — you propose edits to
   these, so you must know what they already say.
+- **Docs.** `docs/*.md` files in the repo — you propose fixes to lines sessions kept
+  overriding, or docs that have drifted from the code they document.
 - **The Harness TODO queue.** A `# Harness TODO` section in `CLAUDE.local.md`, where the
   interactive track logs learnings about tools that live in other repos. You flush it.
 
@@ -38,8 +40,10 @@ interactive `learning-capture` skill gets for free.
 | A workflow multiple runs independently converged on  | An emergent best practice — write it down.       |
 | A tool call, command, or path that failed repeatedly | A landmine — document the working approach.      |
 | A `CLAUDE.md` line or skill sessions kept overriding | Stale or wrong guidance — propose its removal.   |
+| A `docs/*.md` line sessions kept overriding, or a doc drifted from the code it documents | Propose a fix in review mode (`LEARNINGS-REVIEW.md`); a full rewrite hands off to `docs-refresher` instead of hand-edited prose. |
 | Duplicated / contradictory lines already in context  | Memory bloat — propose a merge or a resolution.  |
 | Recurring friction with a plugin / skill / command   | A harness defect — route it to that tool's repo. |
+| A recurring, generalizable fact about a specific person or agent | Durable facts about collaborators — write to the harness's own memory system (`~/.claude/projects/.../memory/*.md`, type: user) when present, else `workspace/LEARNINGS.md` as fallback. |
 
 The last row is the steady-state catcher for harness problems. A complaint about a tool
 voiced once is noise; the same friction across many sessions is the signal that the tool
@@ -89,6 +93,10 @@ Every item cites the evidence:
 - **`CLAUDE.md`** — "always use the staging DB for local dev." Overridden in 6 of 9
   sessions; the team moved to per-branch ephemeral DBs. Stale.
 
+## Memory
+- **Dan** — approves PRs with "Ship it" comments; prefers code decisions explained
+  before asking him to merge. Seen in 8 sessions (mar-10 refactor, mar-12 ×2, mar-14 ×3, mar-15, mar-16).
+
 ## Harness — flushed to other repos
 - **`shipwright`** (`~/src/shipwright`) — 1 small edit applied, 1 issue
   filed → PR owner/shipwright#214.
@@ -120,8 +128,29 @@ For each `# Harness TODO` entry:
    becomes one reviewable PR per tool, not a scatter of commits.
 4. **Report and clear.** List what you applied, what you filed, and the PR link in the
    output summary. Remove flushed entries from `# Harness TODO`.
-5. **Repo not available / not owned.** Leave the entry in the queue and note why (no
-   local clone; `github` source — clone as a `directory` source to contribute).
+5. **Repo not available / not owned.** This trigger is broad — any target repo/plugin
+   outside our accessible repos (no local `directory`-source clone we can branch and push
+   to), not narrowly scoped to "other plugins." Do not leave the entry in the queue —
+   nobody re-reads that file, so the finding is effectively lost. Seed a task in the
+   Shipwright task store instead, using the `POST /tasks` pattern from
+   `skills/task-store/SKILL.md`:
+
+   ```bash
+   curl -sf -X POST \
+     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+     -H "Content-Type: application/json" \
+     "$SHIPWRIGHT_TASK_STORE_URL/tasks" \
+     -d '{"id": "HIT-X.1", "title": "...", "status": "pending", "repo": "owner/repo", "hitl": true, "description": "..."}' | jq .
+   ```
+
+   Set `hitl: true`, a title summarizing the proposed change, and a `description`
+   carrying the evidence from the transcripts plus the target repo/file/why.
+   **Deliberately omit `branch`** — per `commands/dev-task.md`'s "Validate required
+   fields" step, an absent `branch` means `/dev-task` skips the task, so it never
+   attempts to build a worktree for a repo we can't push to. This surfaces the task via
+   `/shipwright:hitl` for a human to action by hand. Once seeded, remove the entry
+   from `# Harness TODO` — the task store record is now the durable one, not the queue
+   file.
 
 The Harness flush *does* write to other repos, even in review mode, because those writes
 are PRs — nothing merges without a human. What review mode protects is **this project's**

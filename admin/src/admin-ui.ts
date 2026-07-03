@@ -47,6 +47,7 @@ import {
   renderTasksPage,
   renderTokensPage,
 } from "./admin-ui-pages.ts";
+import { validateAttachment } from "./attachment-validation.ts";
 import type { ChatClient, ChatThread } from "./http-chat-client.ts";
 import type { AgentCronJobService } from "./agent-cron-jobs.ts";
 import type { AgentCronRunService } from "./agent-cron-runs.ts";
@@ -2027,13 +2028,14 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
 
     const selectedAgentId = c.req.query("agentId") || undefined;
+    const q = c.req.query("q") || undefined;
     const agents: AgentOption[] = (await prisma.agent.findMany()).map((a) => ({
       id: a.id,
       name: a.name,
     }));
 
     if (!chatClient) {
-      return html(renderChatPage(agents, selectedAgentId, null, c.var.userEmail));
+      return html(renderChatPage(agents, selectedAgentId, null, c.var.userEmail, q));
     }
 
     let threads: ChatThread[] = [];
@@ -2041,13 +2043,20 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       try {
         const result = await chatClient.listThreads(selectedAgentId);
         threads = result.threads;
+        // Server-side filter by search query
+        if (q) {
+          const lowerQ = q.toLowerCase();
+          threads = threads.filter((t) =>
+            (t.title ?? "").toLowerCase().includes(lowerQ),
+          );
+        }
       } catch {
         threads = [];
       }
     }
 
     return html(
-      renderChatPage(agents, selectedAgentId, threads, c.var.userEmail),
+      renderChatPage(agents, selectedAgentId, threads, c.var.userEmail, q),
     );
   });
 
@@ -2059,21 +2068,24 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
     if (!chatClient) {
       return html(
-        renderChatThreadPage(agentId, null, null, c.var.userEmail),
+        renderChatThreadPage(agentId, null, null, null, c.var.userEmail),
       );
     }
 
     try {
-      const [thread, messagesResult] = await Promise.all([
+      const [thread, messagesResult, threadListResult, statsResult] = await Promise.all([
         chatClient.getThread(threadId),
         chatClient.listMessages(threadId),
+        chatClient.listThreads(agentId).catch(() => null),
+        chatClient.getThreadStats(threadId).catch(() => null),
       ]);
+      const threadList = threadListResult ? threadListResult.threads : null;
       return html(
-        renderChatThreadPage(agentId, thread, messagesResult.messages, c.var.userEmail),
+        renderChatThreadPage(agentId, thread, messagesResult.messages, threadList, c.var.userEmail, statsResult),
       );
     } catch {
       return html(
-        renderChatThreadPage(agentId, null, null, c.var.userEmail),
+        renderChatThreadPage(agentId, null, null, null, c.var.userEmail),
       );
     }
   });
@@ -2106,6 +2118,66 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }
   });
 
+  // Upload route — registered BEFORE the form POST /messages route so the more
+  // specific `/messages/upload` segment matches first. Returns JSON so the inline
+  // send flow can surface validation errors without a full-page redirect.
+  app.post(
+    "/admin/chat/:agentId/threads/:threadId/messages/upload",
+    requireAuth,
+    async (c) => {
+      if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+
+      const threadId = c.req.param("threadId");
+
+      if (!chatClient) {
+        return c.json({ error: "chat service not configured" }, 503);
+      }
+
+      let body: string | undefined;
+      let file: File | null = null;
+      try {
+        const formData = await c.req.formData();
+        body = formData.get("body")?.toString()?.trim();
+        const rawFile = formData.get("file");
+        file = rawFile instanceof File && rawFile.size > 0 ? rawFile : null;
+      } catch {
+        return c.json({ error: "invalid form data" }, 400);
+      }
+
+      let attachment:
+        | { filename: string; size: number; bytes: Uint8Array }
+        | undefined;
+      if (file) {
+        const validation = validateAttachment(file.name, file.size, file.type);
+        if (!validation.ok) {
+          return c.json({ error: validation.error }, validation.status);
+        }
+        attachment = {
+          filename: file.name,
+          size: file.size,
+          bytes: new Uint8Array(await file.arrayBuffer()),
+        };
+      }
+
+      // A message needs at least a body or a file.
+      if (!body && !attachment) {
+        return c.json({ error: "message body or file is required" }, 400);
+      }
+
+      try {
+        const message = await chatClient.createMessage(
+          threadId,
+          "user",
+          body ?? "",
+          attachment,
+        );
+        return c.json({ message }, 201);
+      } catch {
+        return c.json({ error: "failed to create message" }, 500);
+      }
+    },
+  );
+
   app.post(
     "/admin/chat/:agentId/threads/:threadId/messages",
     requireAuth,
@@ -2126,6 +2198,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
       let body: string | undefined;
       let role: MessageRole = "user";
+      let file: File | null = null;
       try {
         const formData = await c.req.formData();
         body = formData.get("body")?.toString()?.trim();
@@ -2133,21 +2206,161 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         role = (ALLOWED_ROLES as readonly string[]).includes(rawRole)
           ? (rawRole as MessageRole)
           : "user";
+        const rawFile = formData.get("file");
+        file = rawFile instanceof File && rawFile.size > 0 ? rawFile : null;
       } catch {
         return c.redirect(backUrl, 302);
       }
 
-      if (!body) {
+      let attachment:
+        | { filename: string; size: number; bytes: Uint8Array }
+        | undefined;
+      if (file) {
+        const validation = validateAttachment(file.name, file.size, file.type);
+        if (!validation.ok) {
+          // Invalid attachment — bounce back without queuing anything.
+          return c.redirect(backUrl, 302);
+        }
+        attachment = {
+          filename: file.name,
+          size: file.size,
+          bytes: new Uint8Array(await file.arrayBuffer()),
+        };
+      }
+
+      if (!body && !attachment) {
         return c.redirect(backUrl, 302);
       }
 
       try {
-        await chatClient.createMessage(threadId, role, body);
+        await chatClient.createMessage(threadId, role, body ?? "", attachment);
       } catch {
         // swallow — redirect back regardless
       }
 
       return c.redirect(backUrl, 302);
+    },
+  );
+
+  app.post(
+    "/admin/chat/:agentId/threads/:threadId/rename",
+    requireAuth,
+    async (c) => {
+      if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+
+      const agentId = c.req.param("agentId");
+      const threadId = c.req.param("threadId");
+      const backUrl = `/admin/chat/${encodeURIComponent(agentId)}/threads/${encodeURIComponent(threadId)}`;
+
+      if (!chatClient) {
+        return c.redirect(backUrl, 302);
+      }
+
+      let title: string | undefined;
+      try {
+        const formData = await c.req.formData();
+        title = formData.get("title")?.toString()?.trim() || undefined;
+      } catch {
+        return c.redirect(backUrl, 302);
+      }
+
+      // Guard: skip the API call when title is blank to avoid a silent no-op PATCH
+      if (!title) {
+        return c.redirect(backUrl, 302);
+      }
+
+      try {
+        await chatClient.updateThread(threadId, { title });
+      } catch {
+        // swallow — redirect back regardless
+      }
+
+      return c.redirect(backUrl, 302);
+    },
+  );
+
+  app.post(
+    "/admin/chat/:agentId/threads/:threadId/delete",
+    requireAuth,
+    async (c) => {
+      if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+
+      const agentId = c.req.param("agentId");
+      const threadId = c.req.param("threadId");
+
+      if (!chatClient) {
+        return c.redirect(
+          `/admin/chat?agentId=${encodeURIComponent(agentId)}`,
+          302,
+        );
+      }
+
+      try {
+        await chatClient.deleteThread(threadId);
+      } catch {
+        // swallow — redirect back regardless
+      }
+
+      return c.redirect(
+        `/admin/chat?agentId=${encodeURIComponent(agentId)}`,
+        302,
+      );
+    },
+  );
+
+  // ─── Chat JSON API routes ─────────────────────────────────────────────────
+
+  app.get(
+    "/admin/chat/:agentId/threads/:threadId/messages.json",
+    requireAuth,
+    async (c) => {
+      if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+
+      const threadId = c.req.param("threadId");
+
+      if (!chatClient) {
+        return c.json({ messages: [] });
+      }
+
+      try {
+        const result = await chatClient.listMessages(threadId);
+        return c.json({ messages: result.messages });
+      } catch {
+        return c.json({ messages: [] });
+      }
+    },
+  );
+
+  app.post(
+    "/admin/chat/:agentId/threads/:threadId/messages.json",
+    requireAuth,
+    async (c) => {
+      if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+
+      const threadId = c.req.param("threadId");
+
+      if (!chatClient) {
+        return c.json({ message: null });
+      }
+
+      let body: string | undefined;
+      try {
+        const jsonBody = await c.req.json<{ body?: string }>();
+        body = jsonBody.body?.trim();
+      } catch {
+        return c.json({ message: null }, 400);
+      }
+
+      if (!body) {
+        return c.json({ message: null }, 400);
+      }
+
+      try {
+        const message = await chatClient.createMessage(threadId, "user", body);
+        return c.json({ message });
+      } catch {
+        return c.json({ message: null }, 500);
+      }
     },
   );
 

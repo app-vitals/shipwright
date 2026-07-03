@@ -68,7 +68,7 @@ Agent tokens with a repo scope return tasks where `assignee === agentId` OR `rep
 POST /tasks
 ```
 
-Body (JSON): task fields. `title` and `status` are required. Agent tokens force `assignee` to their own ID. Returns `201` with the created task.
+Body (JSON): task fields. `title`, `status`, and `repo` are required. The `repo` key must be present; `null` is accepted as a valid value for tasks that are not scoped to a specific repository. Agent tokens force `assignee` to their own ID. Returns `201` with the created task.
 
 #### Bulk insert
 
@@ -76,7 +76,7 @@ Body (JSON): task fields. `title` and `status` are required. Agent tokens force 
 POST /tasks/bulk
 ```
 
-Body: JSON array of task objects. Skips conflicts (existing ID) rather than failing. Returns `{ inserted: number, updated: number }`.
+Body: JSON array of task objects. Each task must have `title`, `status`, and `repo` fields. The `repo` key must be present on every task; `null` is accepted as a valid value for tasks that are not scoped to a specific repository. Skips conflicts (existing ID) rather than failing. Returns `{ inserted: number, updated: number }`.
 
 #### Distinct values
 
@@ -195,7 +195,7 @@ Claim semantics:
 - Same `commitSha` and `reviewState !== pending` → returns `409` (already reviewed at this commit)
 - Different `commitSha` or `reviewState === pending` → updates and returns `200` (new review cycle)
 
-When a `taskId` is provided, the claim operation also syncs `pr` and `repo` to the associated Task record. This keeps the PR reference and repo scope current on the task side without requiring a separate update call. If no `taskId` is provided, the Task table is not modified.
+The `taskId` field is optional and does not trigger any side effects on the Task table — it is stored as metadata on the PR record only for reference.
 
 #### Claim next PR (atomic)
 

@@ -8,6 +8,13 @@ import type { PrismaClient, Thread } from "./index.ts";
 
 export type { Thread };
 
+export interface ThreadStats {
+  messageCount: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCostUsd: number;
+}
+
 export interface ThreadServiceLike {
   create(data: {
     agentId: string;
@@ -30,6 +37,8 @@ export interface ThreadServiceLike {
   ): Promise<Thread | null>;
 
   delete(id: string): Promise<Thread | null>;
+
+  getStats(thread: Thread): Promise<ThreadStats>;
 }
 
 export class ThreadService implements ThreadServiceLike {
@@ -111,7 +120,48 @@ export class ThreadService implements ThreadServiceLike {
       throw err;
     }
   }
+
+  async getStats(thread: Thread): Promise<ThreadStats> {
+    const threadId = thread.id;
+
+    const agg = await this.prisma.message.aggregate({
+      where: { threadId },
+      _count: { id: true },
+      _sum: { costUsd: true },
+    });
+
+    // tokens is a JSON blob — can't aggregate in SQL, so sum in JS.
+    // NOTE: this loads every message's token blob into memory. For
+    // admin-only usage the volume is acceptable, but callers should be
+    // aware that threads with thousands of messages will incur proportional
+    // memory overhead here.
+    const tokenRows = await this.prisma.message.findMany({
+      where: { threadId },
+      select: { tokens: true },
+    });
+
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+    for (const row of tokenRows) {
+      const t = row.tokens as {
+        input_tokens?: number;
+        output_tokens?: number;
+      } | null;
+      if (t && typeof t === "object") {
+        totalInputTokens += t.input_tokens ?? 0;
+        totalOutputTokens += t.output_tokens ?? 0;
+      }
+    }
+
+    return {
+      messageCount: agg._count.id,
+      totalInputTokens,
+      totalOutputTokens,
+      totalCostUsd: agg._sum.costUsd ?? 0,
+    };
+  }
 }
+
 
 function isPrismaNotFound(err: unknown): boolean {
   return (

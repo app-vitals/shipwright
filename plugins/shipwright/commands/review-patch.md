@@ -149,6 +149,6 @@ Elapsed:              {ELAPSED}s
 
 **Backward compatibility**: The cron invocation format is unchanged — `/shipwright:review-patch` works the same as before. No cron prompt updates are needed.
 
-**Scope expansion**: The new orchestrator delegates to `/shipwright:patch` (Lists B/C/D — BEHIND branches, merge conflicts, failing CI) and `/shipwright:review`, expanding scope beyond the old List A–only behavior. A single review-patch cron now covers all PR health checks.
+**Scope expansion**: The new orchestrator delegates to `/shipwright:patch` (Lists C/D — merge conflicts, failing CI) and `/shipwright:review`, expanding scope beyond the old List A–only behavior. A single review-patch cron now covers all PR health checks.
 
 **Cron overlap**: Agents running all three crons (review, patch, review-patch) on separate schedules risk concurrent sessions working the same PRs. Recommended configuration: use review-patch as the sole cron (replacing separate review and patch crons), since it now subsumes both. If all three must run, ensure non-overlapping schedules.

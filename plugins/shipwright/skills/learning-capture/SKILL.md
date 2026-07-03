@@ -77,8 +77,16 @@ unrelated work.
 | **Project · team** | `./CLAUDE.md` (committed) | this repo, everyone on it |
 | **Project · personal** | `./CLAUDE.local.md` (gitignored) | this repo, just you |
 | **User** | `~/.claude/CLAUDE.md` | every repo you work in, just you |
+| **Person / agent** | the harness's own memory system (`~/.claude/projects/.../memory/*.md`, type: user) when present, else `workspace/LEARNINGS.md` as fallback | durable facts about a specific person or agent that the user interacts with (role, review authority, tone preference) |
 | **Plugin / org** | a skill or file in a plugin — *in the plugin's own repo* | reusable across people and repos |
 | **Agent workspace** | `workspace/LEARNINGS.md` | persistent-agent workspaces where a LEARNINGS file is the session memory store |
+
+**Note on User vs. Person / agent:** The **User** row captures the acting user's own
+preferences — keyboard shortcuts, style choices, workflow habits. The **Person / agent**
+row captures durable facts *about* a specific individual or agent — their role, review
+authority, tone preference — not the person currently at the keyboard. This distinction
+allows you to remember facts about teammates, collaborators, or agents you interact with,
+separate from your own working preferences.
 
 The team-vs-personal split at the project level is the one to get right: if a teammate
 would benefit, it is `CLAUDE.md`; if it is your taste alone, it is `CLAUDE.local.md`.

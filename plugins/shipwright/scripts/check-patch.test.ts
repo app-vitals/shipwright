@@ -47,7 +47,6 @@ interface CiCheckStatus {
 }
 
 interface MergeStatusInfo {
-  isBehind: boolean;
   isDirty: boolean;
 }
 
@@ -78,7 +77,6 @@ interface MakeDepsOptions {
   reviewDataByPr: Record<number, PrReviewData>;
   ciStatusByPr?: Record<number, CiCheckStatus>;
   mergeStatusByPr?: Record<number, MergeStatusInfo>;
-  updateBranch?: (org: string, repo: string, pr: number) => Promise<void>;
   listPrCommits?: (_prNumber: number) => Promise<CommitInfo[]>;
   getCurrentUser?: () => string;
 }
@@ -88,7 +86,6 @@ function makeDeps({
   reviewDataByPr,
   ciStatusByPr = {},
   mergeStatusByPr = {},
-  updateBranch = async () => {},
   listPrCommits = async () => [],
   getCurrentUser = () => "the-agent",
 }: MakeDepsOptions) {
@@ -116,9 +113,8 @@ function makeDeps({
       _repo: string,
       pr: number,
     ): Promise<MergeStatusInfo> => {
-      return mergeStatusByPr[pr] ?? { isBehind: false, isDirty: false };
+      return mergeStatusByPr[pr] ?? { isDirty: false };
     },
-    updateBranch,
     listPrCommits,
     getCurrentUser,
   };
@@ -332,7 +328,7 @@ describe("check-patch", () => {
         },
       }),
     };
-    // PR 10 is clean (no findings, no failing CI, not behind) — continues to PR 11
+    // PR 10 is clean (no findings, no failing CI, no conflict) — continues to PR 11
     // PR 11 has findings — triggers patch (exit 0)
     const result = await run(
       makeDeps({ ownPrs: prs, reviewDataByPr: reviewDataMap }),
@@ -341,7 +337,7 @@ describe("check-patch", () => {
     expect(result.output).toContain("patch");
   });
 
-  test("exits 0 when multiple PRs and one has unaddressed findings AND another is behind main", async () => {
+  test("exits 0 when multiple PRs and one has unaddressed findings AND another is merely behind main (not dirty)", async () => {
     const prs = [
       makeOwnPr({ number: 10, headRefOid: "sha-behind" }),
       makeOwnPr({ number: 11, headRefOid: "sha-findings" }),
@@ -367,14 +363,14 @@ describe("check-patch", () => {
         reviewThreads: { nodes: [] },
       }),
     };
-    // PR 10 is BEHIND main — branch silently synced, loop continues
+    // PR 10 is behind but not dirty — not patch-worthy on its own, loop continues
     // PR 11 has findings — triggers patch (exit 0)
     const result = await run(
       makeDeps({
         ownPrs: prs,
         reviewDataByPr: reviewDataMap,
         ciStatusByPr: {},
-        mergeStatusByPr: { 10: { isBehind: true, isDirty: false } },
+        mergeStatusByPr: { 10: { isDirty: false } },
       }),
     );
     expect(result.exit).toBe(0);
@@ -436,101 +432,28 @@ describe("check-patch", () => {
     expect(result.output).toContain("patch");
   });
 
-  test("calls updateBranch and exits 1 when PR is BEHIND with no other issues", async () => {
+  test("exits 1 when PR is merely behind main (not dirty) with no other issues", async () => {
     const pr = makeOwnPr({ number: 10 });
-    const updated: number[] = [];
     const result = await run(
       makeDeps({
         ownPrs: [pr],
         reviewDataByPr: {},
         ciStatusByPr: {},
-        mergeStatusByPr: { 10: { isBehind: true, isDirty: false } },
-        updateBranch: async (_org, _repo, prNum) => {
-          updated.push(prNum);
-        },
+        mergeStatusByPr: { 10: { isDirty: false } },
       }),
     );
-    expect(updated).toContain(10);
     expect(result.exit).toBe(1);
+    expect(result.output).toBe("");
   });
 
-  test("calls updateBranch then exits 0 when PR is BEHIND with failing CI", async () => {
-    const pr = makeOwnPr({ number: 10 });
-    const updated: number[] = [];
-    const result = await run(
-      makeDeps({
-        ownPrs: [pr],
-        reviewDataByPr: {},
-        ciStatusByPr: { 10: { hasFailing: true } },
-        mergeStatusByPr: { 10: { isBehind: true, isDirty: false } },
-        updateBranch: async (_org, _repo, prNum) => {
-          updated.push(prNum);
-        },
-      }),
-    );
-    expect(updated).toContain(10);
-    expect(result.exit).toBe(0);
-    expect(result.output).toContain("patch");
-  });
-
-  test("calls updateBranch then exits 0 when PR is BEHIND with unaddressed review findings", async () => {
-    const pr = makeOwnPr({ number: 10 });
-    const reviewData = makePrReviewData({
-      reviews: {
-        nodes: [
-          {
-            author: { login: "reviewer1" },
-            state: "COMMENTED",
-            submittedAt: "2026-05-26T10:00:00Z",
-            commit: { oid: "current-head-sha" },
-            body: "Please fix this",
-          },
-        ],
-      },
-      reviewThreads: { nodes: [] },
-    });
-    const updated: number[] = [];
-    const result = await run(
-      makeDeps({
-        ownPrs: [pr],
-        reviewDataByPr: { 10: reviewData },
-        ciStatusByPr: {},
-        mergeStatusByPr: { 10: { isBehind: true, isDirty: false } },
-        updateBranch: async (_org, _repo, prNum) => {
-          updated.push(prNum);
-        },
-      }),
-    );
-    // Branch is silently synced; findings trigger patch (exit 0)
-    expect(updated).toContain(10);
-    expect(result.exit).toBe(0);
-    expect(result.output).toContain("patch");
-  });
-
-  test("exits 0 (patch-worthy) when updateBranch fails and no other issues", async () => {
-    const pr = makeOwnPr({ number: 10 });
-    const result = await run(
-      makeDeps({
-        ownPrs: [pr],
-        reviewDataByPr: {},
-        ciStatusByPr: {},
-        mergeStatusByPr: { 10: { isBehind: true, isDirty: false } },
-        updateBranch: async () => {
-          throw new Error("update failed");
-        },
-      }),
-    );
-    expect(result.exit).toBe(0);
-  });
-
-  test("exits 1 when PR has no findings, green CI, and is up to date", async () => {
+  test("exits 1 when PR has no findings, green CI, and no merge conflict", async () => {
     const pr = makeOwnPr({ number: 10 });
     const result = await run(
       makeDeps({
         ownPrs: [pr],
         reviewDataByPr: {},
         ciStatusByPr: { 10: { hasFailing: false } },
-        mergeStatusByPr: { 10: { isBehind: false, isDirty: false } },
+        mergeStatusByPr: { 10: { isDirty: false } },
       }),
     );
     expect(result.exit).toBe(1);
@@ -543,7 +466,7 @@ describe("check-patch", () => {
         ownPrs: [pr],
         reviewDataByPr: {},
         ciStatusByPr: { 10: { hasFailing: false } },
-        mergeStatusByPr: { 10: { isBehind: false, isDirty: true } },
+        mergeStatusByPr: { 10: { isDirty: true } },
       }),
     );
     expect(result.exit).toBe(0);
@@ -579,7 +502,6 @@ describe("check-patch", () => {
         reviewDataByPr: { 10: reviewData },
         ciStatusByPr: {},
         mergeStatusByPr: {},
-        updateBranch: async () => {},
         listPrCommits: async () => commits,
       }),
     );
@@ -623,7 +545,6 @@ describe("check-patch", () => {
         reviewDataByPr: { 10: reviewData },
         ciStatusByPr: {},
         mergeStatusByPr: {},
-        updateBranch: async () => {},
         listPrCommits: async () => commits,
       }),
     );
@@ -658,7 +579,6 @@ describe("check-patch", () => {
         reviewDataByPr: { 10: reviewData },
         ciStatusByPr: {},
         mergeStatusByPr: {},
-        updateBranch: async () => {},
         listPrCommits: async () => commits,
       }),
     );
@@ -693,7 +613,6 @@ describe("check-patch", () => {
         reviewDataByPr: { 10: reviewData },
         ciStatusByPr: {},
         mergeStatusByPr: {},
-        updateBranch: async () => {},
         listPrCommits: async () => commits,
       }),
     );
@@ -725,7 +644,6 @@ describe("check-patch", () => {
         reviewDataByPr: { 10: reviewData },
         ciStatusByPr: {},
         mergeStatusByPr: {},
-        updateBranch: async () => {},
         listPrCommits: async () => [],
         getCurrentUser: () => "the-agent",
       }),
@@ -761,7 +679,6 @@ describe("check-patch", () => {
         reviewDataByPr: { 10: reviewData },
         ciStatusByPr: {},
         mergeStatusByPr: {},
-        updateBranch: async () => {},
         listPrCommits: async () => commits,
         getCurrentUser: () => "the-agent",
       }),
@@ -800,7 +717,6 @@ describe("check-patch", () => {
         reviewDataByPr: { 10: reviewData },
         ciStatusByPr: {},
         mergeStatusByPr: {},
-        updateBranch: async () => {},
         listPrCommits: async () => [],
         getCurrentUser: () => "the-agent",
       }),
@@ -834,7 +750,6 @@ describe("check-patch", () => {
         reviewDataByPr: { 10: reviewData },
         ciStatusByPr: {},
         mergeStatusByPr: {},
-        updateBranch: async () => {},
         listPrCommits: async () => [],
         getCurrentUser: () => "the-agent",
       }),
@@ -870,7 +785,6 @@ describe("check-patch", () => {
         reviewDataByPr: { 10: reviewData },
         ciStatusByPr: {},
         mergeStatusByPr: {},
-        updateBranch: async () => {},
         listPrCommits: async () => commits,
         getCurrentUser: () => "the-agent",
       }),
@@ -904,7 +818,6 @@ describe("check-patch", () => {
         reviewDataByPr: { 10: reviewData },
         ciStatusByPr: {},
         mergeStatusByPr: {},
-        updateBranch: async () => {},
         listPrCommits: async () => [],
         getCurrentUser: () => "the-agent",
       }),

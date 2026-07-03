@@ -568,7 +568,7 @@ gh pr list --head {branch} --state open --json number,url
 
 **If a PR already exists** (bundled task — joining an existing PR):
 - The push above added the commits to the existing branch/PR — no new PR needed
-- Set `pr: {existing-pr-number}`, `prCreatedAt: "{ISO timestamp}"`, and `repo: {repo}` in the task store for this task
+- Set `pr: {existing-pr-number}` and `prCreatedAt: "{ISO timestamp}"` in the task store for this task
 - Print the existing PR URL
 - Skip PR creation and proceed to Step 9b
 
@@ -644,32 +644,24 @@ The execution cron will not pick it up until a human intervenes.
 
 ## Step 9b: CI Gate
 
-After PR creation, update the branch from main and monitor GitHub Actions CI checks before proceeding.
+After PR creation, check for merge conflicts with main and monitor GitHub Actions CI
+checks before proceeding. Branches are no longer required to be up to date with main
+before merging — main is merged into the branch only to resolve an actual conflict.
 
-### 9b.1. Update from Main
+### 9b.1. Check for Merge Conflicts
 
-Merge the latest main into the PR branch to satisfy branch protection rules:
+Check the PR's merge state — do not merge unless there's a real conflict:
 
+```bash
+gh pr view {pr-number} --repo {org}/{repo} --json mergeStateStatus
 ```
-git fetch origin main
-git merge origin/main
-```
 
-If the merge **succeeds** (no conflicts):
+**If `mergeStateStatus` is `"DIRTY"`** (real conflict): jump directly to 9b.4 (Fix Loop)
+with "merge conflict with origin/main" as the failure context. The fix subagent will run
+`git merge origin/main`, resolve the conflicts, commit, and push.
 
-Check whether the merge actually brought in new commits:
-```
-git diff HEAD @{1} --quiet
-```
-If no changes (exit code 0 = already up to date), skip the push — CI is already running against the current code. Proceed directly to 9b.2.
-
-If there are changes:
-```
-git push
-```
-The push triggers new CI runs against the updated code. Proceed to 9b.2.
-
-If the merge produces **conflicts**: do NOT commit the merge. Instead, abort it (`git merge --abort`) and jump directly to 9b.4 (Fix Loop) with the conflict details as the failure context. The fix subagent will run `git merge origin/main`, resolve the conflicts, commit, and push.
+**Otherwise** (including `"BEHIND"` — behind but no conflict): no merge needed. CI is
+already running against the code pushed in Step 9. Proceed directly to 9b.2.
 
 ### 9b.2. Wait for Checks
 
@@ -772,7 +764,7 @@ While `ci_attempt < ci_max_retries`:
 
 4. After the subagent completes, **append a one-line summary** of what this attempt tried to `ci_fix_history` (e.g., `"Attempt 1: updated failing snapshot in UserCard.test.tsx"`, `"Attempt 2: fixed type error in api/auth.ts — wrong return type"`).
 
-5. **Loop back to 9b.1** — update from main again (main may have moved while the fix was in progress), then re-wait for CI in 9b.2.
+5. **Loop back to 9b.1** — re-check merge state (main may have moved while the fix was in progress, potentially producing a new conflict), then re-wait for CI in 9b.2.
 
 5. **All checks pass:** Break the loop. Print:
    ```
@@ -815,7 +807,7 @@ PR_CREATED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   -H "Content-Type: application/json" \
   "$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}" \
-  -d "{\"status\": \"pr_open\", \"pr\": {pr_number}, \"prCreatedAt\": \"$PR_CREATED_AT\", \"repo\": \"{repo}\", \"ciFixAttempts\": {ci_attempt}, \"simplifyTotal\": {simplify_total}, \"simplifyDry\": {simplify_dry}, \"simplifyDeadCode\": {simplify_dead_code}, \"simplifyNaming\": {simplify_naming}, \"simplifyComplexity\": {simplify_complexity}, \"simplifyConsistency\": {simplify_consistency}, \"coverageDelta\": {coverage_delta}, \"model\": \"{EFFECTIVE_MODEL}\"}" | jq .
+  -d "{\"status\": \"pr_open\", \"pr\": {pr_number}, \"prCreatedAt\": \"$PR_CREATED_AT\", \"ciFixAttempts\": {ci_attempt}, \"simplifyTotal\": {simplify_total}, \"simplifyDry\": {simplify_dry}, \"simplifyDeadCode\": {simplify_dead_code}, \"simplifyNaming\": {simplify_naming}, \"simplifyComplexity\": {simplify_complexity}, \"simplifyConsistency\": {simplify_consistency}, \"coverageDelta\": {coverage_delta}, \"model\": \"{EFFECTIVE_MODEL}\"}" | jq .
 ```
 
 ### 10d. Print Handoff

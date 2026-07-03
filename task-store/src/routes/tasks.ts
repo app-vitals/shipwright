@@ -175,6 +175,11 @@ export function createTasksRoutes(
     if (typeof body.status !== "string" || !body.status) {
       throw new BadRequestError("status is required");
     }
+    if (!("repo" in body)) {
+      throw new BadRequestError(
+        "repo key is required (null is valid for unscoped tasks)",
+      );
+    }
     validateRepo(body.repo, agentId !== null ? repos : null);
     // Agent tokens force assignee to their own ID.
     if (agentId !== null) {
@@ -197,8 +202,13 @@ export function createTasksRoutes(
     if (!Array.isArray(body)) {
       throw new BadRequestError("body must be a JSON array of tasks");
     }
-    // Validate repo field on each task that has one.
+    // Validate repo presence and format on each task.
     for (const task of body as Record<string, unknown>[]) {
+      if (!("repo" in task)) {
+        throw new BadRequestError(
+          "repo key is required (null is valid for unscoped tasks)",
+        );
+      }
       validateRepo(task.repo, agentId !== null ? repos : null);
     }
     const tasks =

@@ -1,0 +1,244 @@
+name: Sync Plugin Version
+
+# Keeps the git-committed plugin version (package.json / plugin.json /
+# marketplace.json / version.txt — see scripts/sync-version.ts) in step with
+# every agent release, instead of relying on the release.yml semantic-release
+# job (workflow_dispatch-only, requires RELEASE_APP_ID/RELEASE_APP_PRIVATE_KEY
+# secrets that aren't provisioned).
+#
+# Why this needs to exist at all: the shipwright Claude Code plugin is
+# installed two ways —
+#   1. Baked into our own agent Docker image (a local-path marketplace source,
+#      see agent/src/setup.ts's installPlugins()). `claude plugin update`
+#      compares the plugin's declared version string against what's cached
+#      from a prior container generation, and skips re-syncing file content
+#      when that string is unchanged — so a frozen version silently prevents
+#      deployed agents from ever picking up new plugin script content, even
+#      though fresh source is baked into every new image. As of PVS-1.2,
+#      build-agent.yml stamps the correct version straight into the image at
+#      build time (agent/Dockerfile's `ARG AGENT_VERSION` + sync-version.ts
+#      RUN step) — this workflow no longer needs to solve that half of the
+#      problem, it just happens to also do so a cycle behind (see below).
+#   2. Installed externally via `claude plugin marketplace add <this-repo>` /
+#      `install shipwright@shipwright`, which reads the git-committed
+#      marketplace.json directly — a frozen version gives external installs
+#      no way to detect or pull updates at all. This is the case this
+#      workflow actually exists for: build-time stamping (above) never
+#      touches git, so it does nothing for external installs.
+#
+# Flow:
+#   agent-v* tag push (created by build-agent.yml on every merge that could
+#   plausibly change plugin content — see its own trigger paths)
+#     → this workflow
+#       → bun run scripts/sync-version.ts <version>
+#       → open PR (chore/plugin-version-v{version})
+#       → enable auto-merge (squash, [skip ci] on the squash subject)
+#     → PR merges to main
+#       → [skip ci] on the squash commit prevents this merge from
+#         re-triggering ANY push-triggered workflow. This matters more than
+#         it looks: the bump touches root package.json, a trigger path
+#         shared by all five build-*.yml workflows (agent/admin/metrics/
+#         task-store/chat) — without [skip ci] the merge could kick off
+#         some or all of them again.
+#
+# Lag, and where it does/doesn't matter: the commit this workflow lands on
+# main always trails the tag that triggered it by a minute or two (PR open +
+# checks + auto-merge). This matters not at all for the deployed image —
+# PVS-1.2 stamps the correct version directly into the image at build time,
+# independent of this workflow's git commit — but it does mean the
+# git-committed version (what `marketplace.json` on `main` shows, and what
+# external `claude plugin install` reads) is briefly behind the version
+# that's already live in production. That window is self-resolving (this
+# workflow's own PR closes it within minutes) and never regresses — main
+# only ever catches up to a version that was already actually built, never
+# claims one that wasn't.
+#
+# Manual test plan (cannot be tested in CI without a real tag + secrets):
+#   1. Push a dummy tag: git tag agent-v9.9.9 && git push origin agent-v9.9.9
+#   2. Observe this workflow runs, creates branch chore/plugin-version-v9.9.9,
+#      opens a PR, and enables auto-merge.
+#   3. Verify the PR's squash-merge subject includes "[skip ci]".
+#   4. After merge, confirm none of the five build-*.yml workflows fired for
+#      that merge commit.
+#   5. Delete the dummy tag to clean up:
+#        git push origin --delete agent-v9.9.9
+#
+# Logic tests live in .github/workflows/test-sync-plugin-version.sh.
+# Run locally: bash .github/workflows/test-sync-plugin-version.sh
+
+on:
+  push:
+    tags:
+      - "agent-v*"
+
+# Queue concurrent bumps rather than cancelling them, same reasoning as
+# auto-bump-chart.yml: if multiple agent-v* tags land close together, each
+# should still produce its own sync. The "Wait for PR to merge" step holds
+# the slot until the merge actually lands, so the next queued run always
+# reads the post-merge version.
+concurrency:
+  group: plugin-version-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: write      # push branch + commit
+  pull-requests: write # open PR + enable auto-merge
+
+jobs:
+  sync-version:
+    name: sync plugin version
+    runs-on: ubuntu-latest
+    steps:
+      # Check out main (not the tag's commit) so we always sync from the
+      # latest state on main, same reasoning as auto-bump-chart.yml.
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.DISPATCH_TOKEN }}
+          ref: main
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.x"
+
+      - name: Configure Git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      # Parse the bare semver off the triggering tag name (agent-v0.116.0 →
+      # 0.116.0). sync-version.ts's SEMVER_RE requires no leading "v".
+      - name: Parse version from tag
+        id: version
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#agent-v}"
+          BRANCH="chore/plugin-version-v${VERSION}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "branch=${BRANCH}"   >> "$GITHUB_OUTPUT"
+          echo "Triggering tag: ${TAG} → version ${VERSION} (branch: ${BRANCH})"
+
+      # Idempotency guard: if the branch for this exact version already
+      # exists on the remote, a prior run already opened the sync PR — skip.
+      # Safety net for the rare race where two runs slip past the
+      # concurrency group's check before either has pushed.
+      - name: Check for existing sync branch
+        id: idempotency
+        env:
+          GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+        run: |
+          BRANCH="${{ steps.version.outputs.branch }}"
+          if git ls-remote --heads origin "$BRANCH" | grep -q .; then
+            echo "Branch ${BRANCH} already exists on remote — skipping (burst-collapse)."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Sync version files
+        if: steps.idempotency.outputs.skip != 'true'
+        run: bun run scripts/sync-version.ts "${{ steps.version.outputs.version }}"
+
+      # No-op guard: if the version files already matched (e.g. a prior sync
+      # cycle already landed this exact version), there's nothing to commit.
+      - name: Check for changes
+        id: diff
+        if: steps.idempotency.outputs.skip != 'true'
+        run: |
+          if git diff --quiet; then
+            echo "No version drift — files already match ${{ steps.version.outputs.version }}."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit and push sync branch
+        id: commit-push
+        if: steps.idempotency.outputs.skip != 'true' && steps.diff.outputs.changed == 'true'
+        run: |
+          BRANCH="${{ steps.version.outputs.branch }}"
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="${{ github.ref_name }}"
+
+          git checkout -b "$BRANCH"
+          git add package.json plugins/shipwright/package.json \
+            plugins/shipwright/.claude-plugin/plugin.json metrics/package.json \
+            agent/package.json version.txt .claude-plugin/marketplace.json
+          git commit -m "chore(plugin): sync version to ${VERSION}
+
+          Auto-synced from release tag ${TAG}."
+
+          git push -u origin "$BRANCH" || {
+            echo "Branch ${BRANCH} already pushed by a concurrent run — skipping."
+            echo "push_skipped=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+
+      - name: Open sync PR
+        if: steps.idempotency.outputs.skip != 'true' && steps.diff.outputs.changed == 'true' && steps.commit-push.outputs.push_skipped != 'true'
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="${{ github.ref_name }}"
+          BRANCH="${{ steps.version.outputs.branch }}"
+
+          PR_URL=$(gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "chore(plugin): sync version to ${VERSION}" \
+            --body "$(cat <<EOF
+          ## Plugin version sync: → ${VERSION}
+
+          **Triggering tag:** \`${TAG}\`
+          **New version:** \`${VERSION}\`
+
+          Keeps package.json / plugin.json / marketplace.json / version.txt in
+          step with the agent release this tag represents.
+
+          ---
+          _Auto-generated by \`.github/workflows/sync-plugin-version.yml\`._
+          EOF
+          )")
+
+          echo "pr_url=${PR_URL}" >> "$GITHUB_OUTPUT"
+          echo "Opened PR: ${PR_URL}"
+
+      # [skip ci] on the SQUASH commit's subject only — not on the branch's
+      # own commit above, so the PR's required status checks still run
+      # normally pre-merge. Once merged, the push-to-main event for this
+      # commit carries [skip ci], so no push-triggered workflow re-fires.
+      - name: Enable auto-merge
+        if: steps.idempotency.outputs.skip != 'true' && steps.diff.outputs.changed == 'true' && steps.commit-push.outputs.push_skipped != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+        run: |
+          PR_URL="${{ steps.pr.outputs.pr_url }}"
+          VERSION="${{ steps.version.outputs.version }}"
+          gh pr merge "$PR_URL" --auto --squash \
+            --subject "chore(plugin): sync version to ${VERSION} [skip ci]"
+          echo "Auto-merge enabled on ${PR_URL}"
+
+      # Hold the concurrency slot until the PR merges, same reasoning as
+      # auto-bump-chart.yml: without this, the next queued run could read
+      # main before this sync landed and collide on the same branch name.
+      - name: Wait for PR to merge
+        if: steps.idempotency.outputs.skip != 'true' && steps.diff.outputs.changed == 'true' && steps.commit-push.outputs.push_skipped != 'true' && steps.pr.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+        run: |
+          PR_URL="${{ steps.pr.outputs.pr_url }}"
+          echo "Waiting for ${PR_URL} to merge (up to 10 minutes)..."
+          for i in $(seq 1 60); do
+            STATE=$(gh pr view "$PR_URL" --json state --jq '.state' 2>/dev/null || echo "UNKNOWN")
+            if [ "$STATE" = "MERGED" ] || [ "$STATE" = "CLOSED" ]; then
+              echo "PR is ${STATE} — releasing concurrency slot."
+              exit 0
+            fi
+            echo "  attempt ${i}/60: state=${STATE}"
+            sleep 10
+          done
+          echo "ERROR: timed out after 10 minutes waiting for ${PR_URL} to merge."
+          exit 1

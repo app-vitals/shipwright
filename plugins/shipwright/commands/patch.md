@@ -1,17 +1,16 @@
 ---
-description: Address unresolved review findings, BEHIND branches, merge conflicts, and failing CI on own open PRs — queries GitHub directly, fixes in worktree, pushes
+description: Address unresolved review findings, merge conflicts, and failing CI on own open PRs — queries GitHub directly, fixes in worktree, pushes
 ---
 
 # Patch
 
-Scan own open PRs for four conditions: unaddressed review/PR comments, branches BEHIND
-main that the precheck could not auto-update, merge conflicts with base, and failing CI.
-For each PR, apply the appropriate fix. Goes silent when nothing needs addressing.
+Scan own open PRs for three conditions: unaddressed review/PR comments, merge conflicts
+with base, and failing CI. For each PR, apply the appropriate fix. Goes silent when
+nothing needs addressing.
 
-> **Note:** The patch precheck (`check-patch.ts`) attempts to auto-update BEHIND branches
-> via `gh pr update-branch` before this skill runs. If the auto-update succeeds, the PR
-> does not appear in List B. If it fails (e.g., transient error), `check-patch.ts` exits 0
-> and this skill handles the stuck-BEHIND branch in Step 7.
+> **Note:** Branches merely BEHIND main (no conflict) are not patch-worthy. Main is only
+> merged into a branch to resolve an actual conflict — see Step 2.5 and Step 4 for the
+> conflict-only (DIRTY) path.
 
 **This command runs autonomously. Do not pause for user input.**
 
@@ -78,16 +77,15 @@ gh pr update-branch --rebase {number} --repo {org}/{repo}
 
 ---
 
-## Step 3: Classify PRs into Four Lists
+## Step 3: Classify PRs into Three Lists
 
-Check each PR against all four conditions independently. A PR may appear in multiple lists.
+Check each PR against all three conditions independently. A PR may appear in multiple lists.
 
 - **List A** — PRs with unresolved review or PR comments
-- **List B** — PRs that are BEHIND main and could not be auto-updated by the precheck
 - **List C** — PRs with merge conflicts (DIRTY)
 - **List D** — PRs with failing CI
 
-Work through all PRs before continuing. When a PR appears in multiple lists, all applicable fixes run — processed in the order the steps execute (C → A → D → B).
+Work through all PRs before continuing. When a PR appears in multiple lists, all applicable fixes run — processed in the order the steps execute (C → A → D).
 
 **This command does not read `state/reviews.json`.** All data comes from GitHub directly.
 
@@ -157,7 +155,7 @@ If a PR has unaddressed findings, add it to **List A**. Store the unresolved thr
 `id` — needed for the `resolveReviewThread` mutation in Step 5) and review bodies for use in
 Step 5.
 
-### Step 3b: Check for BEHIND or DIRTY State
+### Step 3b: Check for DIRTY State
 
 For each PR, check its merge state:
 
@@ -165,8 +163,9 @@ For each PR, check its merge state:
 gh pr view {pr} --repo {org}/{repo} --json mergeStateStatus
 ```
 
-- If `mergeStateStatus` is `"BEHIND"` → add to **List B**
 - If `mergeStateStatus` is `"DIRTY"` → add to **List C**
+- Any other state (including `"BEHIND"`) → not patch-worthy on its own; being behind
+  main without a conflict does not require action
 
 Store the fetched `mergeStateStatus` — do not re-fetch in Step 3c.
 
@@ -186,7 +185,7 @@ If failing CI is found, add the PR to **List D**.
 
 ### Step 3d: Summary
 
-If all four lists are empty:
+If all three lists are empty:
 
 ```
 No PRs need attention.
@@ -196,9 +195,8 @@ Append `[silent]` and stop.
 Print a summary before proceeding:
 
 ```
-Found {A} PR(s) with unaddressed review findings, {B} PR(s) BEHIND main (not auto-updated), {C} PR(s) with merge conflicts, {D} PR(s) with failing CI:
+Found {A} PR(s) with unaddressed review findings, {C} PR(s) with merge conflicts, {D} PR(s) with failing CI:
   Review findings:  {for each in List A: "#{pr} — {title} ({org}/{repo})"}
-  Behind main:      {for each in List B: "#{pr} — {title} ({org}/{repo})"}
   Merge conflicts:  {for each in List C: "#{pr} — {title} ({org}/{repo})"}
   Failing CI:       {for each in List D: "#{pr} — {title} ({org}/{repo})"}
 ```
@@ -728,126 +726,9 @@ git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} worktree remove ${SHIPWRIGHT_WOR
 
 ---
 
-## Step 7: Update BEHIND Branches
+## Step 7: Report
 
-For each PR in List B (branches that are BEHIND base and could not be auto-updated by
-the precheck), set up a worktree, attempt a merge, validate, and push. Fully complete
-one PR before moving to the next.
-
-### Step 7a: Set Up Worktree
-
-Same pattern as Step 5a — branch slug = branch name with `/` replaced by `-`:
-
-```bash
-git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} fetch origin
-git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} worktree add ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} origin/{branch}
-```
-
-If the worktree already exists (prior interrupted run):
-```bash
-git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} worktree remove ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} --force
-git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} worktree add ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} origin/{branch}
-```
-
-### Step 7a.5: Detect Project Toolchain
-
-From `{worktree-path}`, detect the project toolchain:
-
-1. Scan the project root for config files:
-   - `package.json` + lockfile → Node.js (detect manager: pnpm/yarn/npm/bun)
-   - `Cargo.toml` → Rust
-   - `go.mod` → Go
-   - `pom.xml` → Java/Maven (use `./mvnw` wrapper if present, else `mvn`)
-   - `build.gradle` / `build.gradle.kts` → Java/Gradle (use `./gradlew` wrapper if present, else `gradle`)
-   - `pyproject.toml` / `setup.py` → Python
-   - `Gemfile` → Ruby
-   - `Makefile` → Generic Make
-
-2. For Node.js: read `package.json` scripts for `test` and `lint`
-
-3. Store detected commands:
-   - **{lint command}**: e.g., `bun run lint`, `cargo clippy`, `golangci-lint run`
-   - **{test command}**: e.g., `bun test`, `cargo test`, `go test ./...`, `pytest`
-
-Refer to `references/toolchain-patterns.md` for the full detection lookup table.
-
-### Step 7b: Attempt Auto-Update
-
-Try a fast-path update via the GitHub API:
-
-```bash
-gh pr update-branch {number} --repo {org}/{repo}
-```
-
-- **Succeeds (exit 0)**: Branch updated cleanly. Proceed to Step 7e (cleanup).
-- **Fails (non-zero exit)**: GitHub could not auto-merge. Proceed to Step 7c to dispatch
-  a subagent for a manual merge.
-
-### Step 7c: Dispatch Update Subagent
-
-Dispatch a `general-purpose` subagent via the Agent tool with this prompt:
-
-```
-You are updating a branch that is behind its base. Merge the base branch, validate,
-and push.
-
-PR: #{pr} — {title}
-Repo: {org}/{repo}
-Branch: {branch}
-Base branch: {base}
-Worktree: {worktree-path}
-
-TOOLCHAIN:
-  Lint command: {lint command}
-  Test command: {test command}
-
-INSTRUCTIONS — follow in order:
-
-[A] Merge the base branch
-  - From the worktree: `git merge origin/{base}`
-  - If there are unresolvable conflicts, report BLOCKED — do not force-push or
-    discard changes
-
-[B] Validate
-  - Run: {lint command}
-  - Run: {test command}
-  - Fix any failures introduced by the merge
-  - Re-run until both pass cleanly
-
-[C] Push
-  - Push: `git push origin {branch}`
-
-[D] Report back
-  At the end, output:
-
-  STATUS: DONE / DONE_WITH_CONCERNS / BLOCKED
-
-  CONCERNS: (if DONE_WITH_CONCERNS)
-  BLOCKER: (if BLOCKED — include conflict details)
-```
-
-### Step 7d: Handle Subagent Status
-
-Parse the subagent's STATUS:
-
-- **DONE**: Record the update. Proceed to Step 7e (cleanup).
-- **DONE_WITH_CONCERNS**: Log concerns. If the push already happened, continue.
-- **BLOCKED**: Log the blocker. Skip cleanup. Move to the next PR in List B.
-  Include the blocker in the final report.
-
-### Step 7e: Cleanup Worktree
-
-After a successful push (subagent status DONE or DONE_WITH_CONCERNS with push completed):
-
-```bash
-git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} worktree remove ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} --force
-```
-
----
-
-## Step 8: Report
-
-After processing all four lists, print a summary:
+After processing all three lists, print a summary:
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -862,13 +743,6 @@ REVIEW FINDINGS ({A} PR(s)):
    {if DONE_WITH_CONCERNS: "⚠ Concerns: {concern summary}"}
    Findings addressed:
    {bullet list from subagent FINDINGS_ADDRESSED}"}
-
-BEHIND MAIN ({B} PR(s)):
-{for each PR in List B:
-  "#{pr} — {title} ({org}/{repo})
-   {if DONE or DONE_WITH_CONCERNS with push: "✓ Updated and pushed"}
-   {if BLOCKED: "✗ Blocked: {blocker summary}"}
-   {if DONE_WITH_CONCERNS: "⚠ Concerns: {concern summary}"}"}
 
 MERGE CONFLICTS ({C} PR(s)):
 {for each PR in List C:

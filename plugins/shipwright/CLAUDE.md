@@ -124,8 +124,8 @@ favors permissive: false positives are visible and self-correcting; false negati
 | `check-review.ts` | `review` cron | Open PRs with unreviewed commits (by headRefOid dedup against task store `/prs` records); respects `allow_self_review` policy |
 | `check-deploy.ts` | `deploy` cron | Open PRs with `APPROVED` review decision and green CI; respects `allow_self_review` for self-authored PRs; skips a repo with an active Deploy workflow run, scoped per repo — a busy repo does not block ready PRs in other configured repos |
 | `check-dev-task.ts` | `dev-task` cron | Pending tasks with all dependencies satisfied (task store `ready: true` query) |
-| `check-patch.ts` | `patch` cron | Auto-updates BEHIND branches via `gh pr update-branch`; signals patch skill for unaddressed review findings, stuck-BEHIND branches (update-branch failures), merge conflicts, and failing CI; queries GitHub directly — does NOT read `state/reviews.json` |
-| `check-review-patch.ts` | `review-patch` cron | Delegates to `check-patch.ts` + `check-review.ts`; exits 0 if either exits 0, covering the full scope of the review-patch orchestrator (unaddressed findings, failing CI, BEHIND branches, merge conflicts, and unreviewed commits) |
+| `check-patch.ts` | `patch` cron | Signals patch skill for unaddressed review findings, merge conflicts (DIRTY), and failing CI; queries GitHub directly — does NOT read `state/reviews.json`. Branches merely BEHIND main (no conflict) are not patch-worthy — main is only merged into a branch to resolve a conflict. |
+| `check-review-patch.ts` | `review-patch` cron | Delegates to `check-patch.ts` + `check-review.ts`; exits 0 if either exits 0, covering the full scope of the review-patch orchestrator (unaddressed findings, failing CI, merge conflicts, and unreviewed commits) |
 
 ---
 
