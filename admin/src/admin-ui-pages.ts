@@ -16,6 +16,7 @@ import type {
   ChatMessage,
   ChatThread,
 } from "./http-chat-client.ts";
+import { parseChatMarkers } from "./chat-markers.ts";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -2729,9 +2730,35 @@ export function renderChatThreadPage(
       errorBadge = `<div style="margin-top:6px;padding:4px 8px;background:#fee2e2;color:#b91c1c;border-radius:4px;font-size:12px;font-weight:600">${errorLabel}</div>`;
     }
 
+    // Parse markers from assistant messages to extract URLs/paths and clean text
+    let cleanedBody = m.body;
+    let markerBadges = "";
+    if (isAssistant) {
+      const { cleaned, uploads, planUrls } = parseChatMarkers(m.body);
+      cleanedBody = cleaned;
+
+      // Render upload badges
+      const uploadBadges = uploads
+        .map((path) => {
+          const filename = path.split("/").pop() || path;
+          return `<div style="display:inline-block;margin-right:6px;margin-top:8px;padding:3px 8px;background:#e5e7eb;color:#374151;border-radius:6px;font-size:12px">📎 ${escapeHtml(filename)}</div>`;
+        })
+        .join("");
+
+      // Render plan links
+      const planLinks = planUrls
+        .map(
+          (url) =>
+            `<a href="${escapeHtml(url)}" target="_blank" style="display:inline-block;margin-right:6px;margin-top:8px;padding:3px 8px;background:#dbeafe;color:#1e40af;border-radius:6px;font-size:12px;text-decoration:none">View plan →</a>`,
+        )
+        .join("");
+
+      markerBadges = uploadBadges + planLinks;
+    }
+
     // Render body: assistant messages get markdown, others get escaped text
     const bodyHtml = isAssistant
-      ? `<div style="font-size:14px;line-height:1.6;color:${bubbleColor}">${renderMarkdown(m.body)}</div>`
+      ? `<div style="font-size:14px;line-height:1.6;color:${bubbleColor}">${renderMarkdown(cleanedBody)}</div>`
       : `<div style="font-size:14px;white-space:pre-wrap;color:${bubbleColor}">${escapeHtml(m.body)}</div>`;
 
     // Attachment badge (metadata only — content is ephemeral, no re-download).
@@ -2743,6 +2770,7 @@ export function renderChatThreadPage(
       <div style="max-width:${maxWidth};background:${bubbleBg};border-radius:12px;padding:12px 16px;box-shadow:0 1px 2px rgba(0,0,0,0.06)">
         <div style="font-size:11px;font-weight:600;color:${bubbleColor};margin-bottom:4px;text-transform:uppercase;letter-spacing:0.05em">${escapeHtml(m.role)}</div>
         ${bodyHtml}
+        ${markerBadges}
         ${attachmentBadge}
         ${errorBadge}
         <div style="font-size:11px;color:#9ca3af;margin-top:6px">${escapeHtml(new Date(m.createdAt).toLocaleString())}</div>

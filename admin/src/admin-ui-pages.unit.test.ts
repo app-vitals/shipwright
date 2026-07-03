@@ -3158,4 +3158,109 @@ describe("renderChatThreadPage", () => {
     expect(html).not.toContain('<script>alert("xss")</script>');
     expect(html).toContain("&lt;script&gt;");
   });
+
+  test("renders [upload:/path/file] marker as artifact badge with filename", () => {
+    const msgWithUpload: ChatMessage = {
+      ...ASSISTANT_MSG,
+      body: "Here is the report [upload:/tmp/report.pdf]",
+    };
+    const html = renderChatThreadPage("agent-xyz", THREAD, [msgWithUpload], "alice");
+    // [upload:...] should be stripped from body text
+    expect(html).not.toContain("[upload:");
+    // Filename "report.pdf" should appear (not the full path)
+    expect(html).toContain("report.pdf");
+    // Should show as a badge (check for artifact/attachment styling)
+    expect(html).toContain("📎");
+  });
+
+  test("renders [plan:url] marker as clickable link", () => {
+    const msgWithPlan: ChatMessage = {
+      ...ASSISTANT_MSG,
+      body: "See the plan [plan:https://example.com/plan]",
+    };
+    const html = renderChatThreadPage("agent-xyz", THREAD, [msgWithPlan], "alice");
+    // [plan:...] should be stripped from body text
+    expect(html).not.toContain("[plan:");
+    // Should render as a link
+    expect(html).toContain("href=");
+    expect(html).toContain("https://example.com/plan");
+    // Should show link text
+    expect(html).toContain("View plan");
+  });
+
+  test("strips [silent] marker from displayed text", () => {
+    const msgWithSilent: ChatMessage = {
+      ...ASSISTANT_MSG,
+      body: "All done [silent]",
+    };
+    const html = renderChatThreadPage("agent-xyz", THREAD, [msgWithSilent], "alice");
+    expect(html).not.toContain("[silent]");
+    expect(html).toContain("All done");
+  });
+
+  test("strips [react:emoji] marker from displayed text", () => {
+    const msgWithReact: ChatMessage = {
+      ...ASSISTANT_MSG,
+      body: "Great work [react:thumbsup]",
+    };
+    const html = renderChatThreadPage("agent-xyz", THREAD, [msgWithReact], "alice");
+    expect(html).not.toContain("[react:");
+    expect(html).not.toContain("thumbsup");
+    expect(html).toContain("Great work");
+  });
+
+  test("strips [speak:text] marker from displayed text", () => {
+    const msgWithSpeak: ChatMessage = {
+      ...ASSISTANT_MSG,
+      body: "Done with the task [speak:all work complete]",
+    };
+    const html = renderChatThreadPage("agent-xyz", THREAD, [msgWithSpeak], "alice");
+    expect(html).not.toContain("[speak:");
+    expect(html).not.toContain("all work complete");
+    expect(html).toContain("Done with the task");
+  });
+
+  test("HTML-escapes marker content (XSS protection on paths/URLs)", () => {
+    const msgWithXss: ChatMessage = {
+      ...ASSISTANT_MSG,
+      body: 'File saved [upload:/tmp/file<script>.pdf]',
+    };
+    const html = renderChatThreadPage("agent-xyz", THREAD, [msgWithXss], "alice");
+    // The script tag should be escaped
+    expect(html).not.toContain("<script>");
+    // Should still show the filename (escaped)
+    expect(html).toContain("&lt;script&gt;");
+  });
+
+  test("handles multiple markers in one message", () => {
+    const msgWithMultiple: ChatMessage = {
+      ...ASSISTANT_MSG,
+      body: "Report: [upload:/tmp/report.pdf] Plan: [plan:https://example.com/plan] [react:eyes] [silent]",
+    };
+    const html = renderChatThreadPage("agent-xyz", THREAD, [msgWithMultiple], "alice");
+    // All markers should be stripped
+    expect(html).not.toContain("[upload:");
+    expect(html).not.toContain("[plan:");
+    expect(html).not.toContain("[react:");
+    expect(html).not.toContain("[silent]");
+    // But content should be present
+    expect(html).toContain("report.pdf");
+    expect(html).toContain("https://example.com/plan");
+    expect(html).toContain("Report:");
+    expect(html).toContain("Plan:");
+  });
+
+  test("renders multiple uploads and plans from one message", () => {
+    const msgWithMultipleMarkers: ChatMessage = {
+      ...ASSISTANT_MSG,
+      body: "[upload:/a.pdf] [upload:/b.pdf] [plan:http://x] [plan:http://y]",
+    };
+    const html = renderChatThreadPage("agent-xyz", THREAD, [msgWithMultipleMarkers], "alice");
+    // Should render both filenames
+    expect(html).toContain("a.pdf");
+    expect(html).toContain("b.pdf");
+    // Should render both links
+    expect(html).toContain("http://x");
+    expect(html).toContain("http://y");
+  });
 });
