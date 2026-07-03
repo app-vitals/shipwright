@@ -30,6 +30,7 @@ import {
   renderPrsPage,
   renderTaskDetailPage,
   renderTasksPage,
+  renderChatPage,
   renderChatThreadPage,
 } from "./admin-ui-pages.ts";
 import type { ChatMessage, ChatThread } from "./http-chat-client.ts";
@@ -3055,6 +3056,57 @@ describe("renderPrsPage — mobile column hiding", () => {
   });
 });
 
+// ─── renderChatPage ───────────────────────────────────────────────────────────
+
+describe("renderChatPage", () => {
+  const AGENTS = [
+    { id: "agent-1", name: "Agent One" },
+    { id: "agent-2", name: "Agent Two" },
+  ];
+
+  const THREADS: ChatThread[] = [
+    {
+      id: "thread-1",
+      agentId: "agent-1",
+      title: "First Thread",
+      memberId: null,
+      createdAt: "2024-01-01T00:00:00.000Z",
+      updatedAt: "2024-01-01T00:00:00.000Z",
+    },
+  ];
+
+  test("renders agent selector", () => {
+    const html = renderChatPage(AGENTS, undefined, null, "alice");
+    expect(html).toContain("Agent One");
+    expect(html).toContain("Agent Two");
+  });
+
+  test("degraded mode: renders not-configured notice when threads is null", () => {
+    const html = renderChatPage(AGENTS, "agent-1", null, "alice");
+    expect(html).toContain("SHIPWRIGHT_CHAT_SERVICE_URL");
+  });
+
+  test("renders thread list when threads are provided", () => {
+    const html = renderChatPage(AGENTS, "agent-1", THREADS, "alice");
+    expect(html).toContain("First Thread");
+  });
+
+  test("responsive: page includes a @media CSS rule for mobile", () => {
+    const html = renderChatPage(AGENTS, "agent-1", THREADS, "alice");
+    expect(html).toContain("@media");
+  });
+
+  test("responsive: sidebar has chat-list-sidebar class for mobile styling", () => {
+    const html = renderChatPage(AGENTS, "agent-1", THREADS, "alice");
+    expect(html).toContain("chat-list-sidebar");
+  });
+
+  test("responsive: layout wrapper has chat-list-layout class", () => {
+    const html = renderChatPage(AGENTS, "agent-1", THREADS, "alice");
+    expect(html).toContain("chat-list-layout");
+  });
+});
+
 // ─── renderChatThreadPage ─────────────────────────────────────────────────────
 
 describe("renderChatThreadPage", () => {
@@ -3194,5 +3246,140 @@ describe("renderChatThreadPage", () => {
     const html = renderChatThreadPage("agent-xyz", THREAD, [xssMsg], "alice");
     expect(html).not.toContain('<script>alert("xss")</script>');
     expect(html).toContain("&lt;script&gt;");
+  });
+
+  test("renders [upload:/path/file] marker as artifact badge with filename", () => {
+    const msgWithUpload: ChatMessage = {
+      ...ASSISTANT_MSG,
+      body: "Here is the report [upload:/tmp/report.pdf]",
+    };
+    const html = renderChatThreadPage("agent-xyz", THREAD, [msgWithUpload], "alice");
+    // [upload:...] should be stripped from body text
+    expect(html).not.toContain("[upload:");
+    // Filename "report.pdf" should appear (not the full path)
+    expect(html).toContain("report.pdf");
+    // Should show as a badge (check for artifact/attachment styling)
+    expect(html).toContain("📎");
+  });
+
+  test("renders [plan:url] marker as clickable link", () => {
+    const msgWithPlan: ChatMessage = {
+      ...ASSISTANT_MSG,
+      body: "See the plan [plan:https://example.com/plan]",
+    };
+    const html = renderChatThreadPage("agent-xyz", THREAD, [msgWithPlan], "alice");
+    // [plan:...] should be stripped from body text
+    expect(html).not.toContain("[plan:");
+    // Should render as a link
+    expect(html).toContain("href=");
+    expect(html).toContain("https://example.com/plan");
+    // Should show link text
+    expect(html).toContain("View plan");
+  });
+
+  test("strips [silent] marker from displayed text", () => {
+    const msgWithSilent: ChatMessage = {
+      ...ASSISTANT_MSG,
+      body: "All done [silent]",
+    };
+    const html = renderChatThreadPage("agent-xyz", THREAD, [msgWithSilent], "alice");
+    expect(html).not.toContain("[silent]");
+    expect(html).toContain("All done");
+  });
+
+  test("strips [react:emoji] marker from displayed text", () => {
+    const msgWithReact: ChatMessage = {
+      ...ASSISTANT_MSG,
+      body: "Great work [react:thumbsup]",
+    };
+    const html = renderChatThreadPage("agent-xyz", THREAD, [msgWithReact], "alice");
+    expect(html).not.toContain("[react:");
+    expect(html).not.toContain("thumbsup");
+    expect(html).toContain("Great work");
+  });
+
+  test("strips [speak:text] marker from displayed text", () => {
+    const msgWithSpeak: ChatMessage = {
+      ...ASSISTANT_MSG,
+      body: "Done with the task [speak:all work complete]",
+    };
+    const html = renderChatThreadPage("agent-xyz", THREAD, [msgWithSpeak], "alice");
+    expect(html).not.toContain("[speak:");
+    expect(html).not.toContain("all work complete");
+    expect(html).toContain("Done with the task");
+  });
+
+  test("HTML-escapes marker content (XSS protection on paths/URLs)", () => {
+    const msgWithXss: ChatMessage = {
+      ...ASSISTANT_MSG,
+      body: 'File saved [upload:/tmp/file<script>.pdf]',
+    };
+    const html = renderChatThreadPage("agent-xyz", THREAD, [msgWithXss], "alice");
+    // The raw XSS payload must not appear verbatim
+    expect(html).not.toContain("file<script>.pdf");
+    // Should still show the filename (escaped)
+    expect(html).toContain("&lt;script&gt;");
+  });
+
+  test("handles multiple markers in one message", () => {
+    const msgWithMultiple: ChatMessage = {
+      ...ASSISTANT_MSG,
+      body: "Report: [upload:/tmp/report.pdf] Plan: [plan:https://example.com/plan] [react:eyes] [silent]",
+    };
+    const html = renderChatThreadPage("agent-xyz", THREAD, [msgWithMultiple], "alice");
+    // All markers should be stripped
+    expect(html).not.toContain("[upload:");
+    expect(html).not.toContain("[plan:");
+    expect(html).not.toContain("[react:");
+    expect(html).not.toContain("[silent]");
+    // But content should be present
+    expect(html).toContain("report.pdf");
+    expect(html).toContain("https://example.com/plan");
+    expect(html).toContain("Report:");
+    expect(html).toContain("Plan:");
+  });
+
+  test("renders multiple uploads and plans from one message", () => {
+    const msgWithMultipleMarkers: ChatMessage = {
+      ...ASSISTANT_MSG,
+      body: "[upload:/a.pdf] [upload:/b.pdf] [plan:http://x] [plan:http://y]",
+    };
+    const html = renderChatThreadPage("agent-xyz", THREAD, [msgWithMultipleMarkers], "alice");
+    // Should render both filenames
+    expect(html).toContain("a.pdf");
+    expect(html).toContain("b.pdf");
+    // Should render both links
+    expect(html).toContain("http://x");
+    expect(html).toContain("http://y");
+  });
+
+  test("responsive: page includes a @media CSS rule for mobile", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
+    expect(html).toContain("@media");
+  });
+
+  test("responsive: thread sidebar has chat-thread-sidebar class", () => {
+    const THREADS_LIST: ChatThread[] = [
+      {
+        id: "thread-other",
+        agentId: "agent-xyz",
+        title: "Other Thread",
+        memberId: null,
+        createdAt: "2024-01-01T00:00:00.000Z",
+        updatedAt: "2024-01-01T00:00:00.000Z",
+      },
+    ];
+    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], THREADS_LIST, "alice");
+    expect(html).toContain("chat-thread-sidebar");
+  });
+
+  test("responsive: message bubble has chat-bubble-inner class for width overrides", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
+    expect(html).toContain("chat-bubble-inner");
+  });
+
+  test("responsive: main content wrapper has chat-thread-layout class for mobile reflow", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
+    expect(html).toContain("chat-thread-layout");
   });
 });

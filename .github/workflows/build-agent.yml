@@ -33,6 +33,19 @@ jobs:
           default_bump: patch
           fetch_all_tags: true
 
+      # Bare semver off the tag (agent-v0.117.0 → 0.117.0), stamped into the
+      # image at build time below so the deployed artifact's plugin.json
+      # always matches the tag it was built for — see agent/Dockerfile's
+      # "sync plugin version" step. This does not touch git; the git-committed
+      # version (needed for the public plugin marketplace listing) is synced
+      # asynchronously by .github/workflows/sync-plugin-version.yml, which
+      # this same tag also triggers.
+      - name: Parse bare version from tag
+        id: version
+        run: |
+          TAG="${{ steps.tag.outputs.new_tag }}"
+          echo "version=${TAG#agent-v}" >> "$GITHUB_OUTPUT"
+
       - name: Authenticate to GCP
         uses: google-github-actions/auth@v2
         with:
@@ -46,6 +59,7 @@ jobs:
         run: |
           docker build \
             -f agent/Dockerfile \
+            --build-arg AGENT_VERSION=${{ steps.version.outputs.version }} \
             -t ${{ secrets.ARTIFACT_REGISTRY_REPO }}/shipwright-agent:${{ steps.tag.outputs.new_tag }} \
             .
 

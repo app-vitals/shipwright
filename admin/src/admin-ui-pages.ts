@@ -18,6 +18,7 @@ import type {
   MessageTokens,
   ThreadStats,
 } from "./http-chat-client.ts";
+import { parseChatMarkers } from "./chat-markers.ts";
 import type { ModelBreakdownEntry } from "./openapi-schemas.ts";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -2549,6 +2550,17 @@ const threadPaneStyles = `
     .thread-pane-link:hover { background:#eef2ff;color:#4f46e5 }
     .thread-pane-link.active { background:#eef2ff;color:#4f46e5;font-weight:600 }`;
 
+const chatPageStyles = `
+    @media (max-width:640px) {
+      .chat-list-layout { flex-direction:column }
+      .chat-list-sidebar { width:100%;max-width:100%;min-width:0 }
+      /* chat-thread-layout: flex wrapper for thread+message area; stacks to column on mobile */
+      .chat-thread-layout { flex-direction:column }
+      .chat-thread-sidebar { display:none }
+      .chat-bubble-inner { max-width:90% !important }
+      #message-input { font-size:16px }
+    }`;
+
 export function renderChatPage(
   agents: AgentOption[],
   selectedAgentId: string | undefined,
@@ -2626,8 +2638,8 @@ export function renderChatPage(
 
     content = `
       ${searchForm}
-      <div style="display:flex;gap:24px;align-items:flex-start">
-        <div class="card" style="min-width:240px;max-width:300px;flex-shrink:0">
+      <div class="chat-list-layout" style="display:flex;gap:24px;align-items:flex-start">
+        <div class="card chat-list-sidebar" style="min-width:240px;max-width:300px;flex-shrink:0">
           <div class="card-title">Threads</div>
           ${newThreadForm}
           <div class="thread-pane-list">
@@ -2646,7 +2658,7 @@ export function renderChatPage(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Chat — Shipwright Admin</title>
-  <style>${baseStyles()}${threadPaneStyles}
+  <style>${baseStyles()}${threadPaneStyles}${chatPageStyles}
   </style>
 </head>
 <body>
@@ -2758,9 +2770,35 @@ export function renderChatThreadPage(
       errorBadge = `<div style="margin-top:6px;padding:4px 8px;background:#fee2e2;color:#b91c1c;border-radius:4px;font-size:12px;font-weight:600">${errorLabel}</div>`;
     }
 
+    // Parse markers from assistant messages to extract URLs/paths and clean text
+    let cleanedBody = m.body;
+    let markerBadges = "";
+    if (isAssistant) {
+      const { cleaned, uploads, planUrls } = parseChatMarkers(m.body);
+      cleanedBody = cleaned;
+
+      // Render upload badges
+      const uploadBadges = uploads
+        .map((path) => {
+          const filename = path.split("/").pop() || path;
+          return `<div style="display:inline-block;margin-right:6px;margin-top:8px;padding:3px 8px;background:#e5e7eb;color:#374151;border-radius:6px;font-size:12px">📎 ${escapeHtml(filename)}</div>`;
+        })
+        .join("");
+
+      // Render plan links
+      const planLinks = planUrls
+        .map(
+          (url) =>
+            `<a href="${escapeHtml(url)}" target="_blank" style="display:inline-block;margin-right:6px;margin-top:8px;padding:3px 8px;background:#dbeafe;color:#1e40af;border-radius:6px;font-size:12px;text-decoration:none">View plan →</a>`,
+        )
+        .join("");
+
+      markerBadges = uploadBadges + planLinks;
+    }
+
     // Render body: assistant messages get markdown, others get escaped text
     const bodyHtml = isAssistant
-      ? `<div style="font-size:14px;line-height:1.6;color:${bubbleColor}">${renderMarkdown(m.body)}</div>`
+      ? `<div style="font-size:14px;line-height:1.6;color:${bubbleColor}">${renderMarkdown(cleanedBody)}</div>`
       : `<div style="font-size:14px;white-space:pre-wrap;color:${bubbleColor}">${escapeHtml(m.body)}</div>`;
 
     // Attachment badge (metadata only — content is ephemeral, no re-download).
@@ -2780,9 +2818,10 @@ export function renderChatThreadPage(
     }
 
     return `<div style="display:flex;justify-content:${align};margin-bottom:12px">
-      <div style="max-width:${maxWidth};background:${bubbleBg};border-radius:12px;padding:12px 16px;box-shadow:0 1px 2px rgba(0,0,0,0.06)">
+      <div class="chat-bubble-inner" style="max-width:${maxWidth};background:${bubbleBg};border-radius:12px;padding:12px 16px;box-shadow:0 1px 2px rgba(0,0,0,0.06)">
         <div style="font-size:11px;font-weight:600;color:${bubbleColor};margin-bottom:4px;text-transform:uppercase;letter-spacing:0.05em">${escapeHtml(m.role)}</div>
         ${bodyHtml}
+        ${markerBadges}
         ${attachmentBadge}
         ${errorBadge}
         ${tokenBadge}
@@ -3040,7 +3079,7 @@ export function renderChatThreadPage(
 
   const sidebar =
     threads !== null
-      ? `<div class="card" style="min-width:220px;max-width:280px;flex-shrink:0">
+      ? `<div class="card chat-thread-sidebar" style="min-width:220px;max-width:280px;flex-shrink:0">
           <div class="card-title">Threads</div>
           ${newThreadForm}
           <div class="thread-pane-list">
@@ -3055,7 +3094,7 @@ export function renderChatThreadPage(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>${title} - Shipwright Admin</title>
-  <style>${baseStyles()}${threadPaneStyles}
+  <style>${baseStyles()}${threadPaneStyles}${chatPageStyles}
   </style>
 </head>
 <body>
@@ -3075,7 +3114,7 @@ export function renderChatThreadPage(
         ${deleteForm}
       </div>
     </div>
-    <div style="display:flex;gap:24px;flex:1;min-height:0;margin-top:16px">
+    <div class="chat-thread-layout" style="display:flex;gap:24px;flex:1;min-height:0;margin-top:16px">
       ${sidebar}
       <div style="flex:1;min-width:0;display:flex;flex-direction:column">
         <!-- Messages area (scrollable) -->
