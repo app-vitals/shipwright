@@ -26,7 +26,6 @@ Configuration for the Shipwright Claude Code plugin (`plugins/shipwright/`). The
 | `JIRA_PROJECT_KEY` | `string` | — | Jira project key (e.g. `SHIP`). Required when using the Jira backend. |
 | `SHIPWRIGHT_REPOS_DIR` | `string` | `<AGENT_HOME>/workspace/repos` | Override the workspace repos directory. Used by scripts that need to know where checked-out repos live. |
 | `SHIPWRIGHT_WORKTREE_DIR` | `string` | `<AGENT_HOME>/workspace/worktrees` | Override the workspace worktrees directory. |
-| `SHIPWRIGHT_DEV_CHAT` | `bool` | `false` | Enables the unauthenticated `POST /chat` endpoint on the agent. **Must not be set in production** (`NODE_ENV=production` blocks it via `chat-guard.ts`). |
 | `GH_CMD` | `string` | `gh` | Override the `gh` CLI executable. Useful in environments where `gh` is installed to a non-default path. |
 | `AGENT_HOME` | `string` | `/data/agent-home` | Persistent storage root for workspace files, mise caches, and `~/.claude`. Set in the agent container; also used by plugin scripts for workspace discovery. |
 | `WORKSPACE_PATH` | `string` | — | Direct workspace path override. Takes precedence over `AGENT_HOME`-based discovery when set. |
@@ -85,9 +84,9 @@ Provide either the GitHub App vars (recommended) or `GH_TOKEN` (PAT). App auth i
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `PORT` | `number` | `3000` | Hono server port. Applies to the admin service (`admin/src/main.ts`) and to the agent chat server (`agent/src/run-agent.ts`) when `SHIPWRIGHT_DEV_CHAT=true`. |
-| `SHIPWRIGHT_HEALTH_PORT` | `number` | `3459` | Dedicated health server port for K8s liveness probes. Used by `entrypoint-main.ts` (started in-process before the startup sequence) and by `run-agent.ts` `startServer()`. Set separately so the probe is always reachable regardless of whether the chat server is running. |
-| `NODE_ENV` | `string` | — | Runtime environment. Set to `production` to enforce production-safety guards (blocks `SHIPWRIGHT_DEV_CHAT`, `ADMIN_DEV_AUTH`). |
+| `PORT` | `number` | `3000` | Hono server port. Applies to the admin service (`admin/src/main.ts`). |
+| `SHIPWRIGHT_HEALTH_PORT` | `number` | `3459` | Dedicated health server port for K8s liveness probes. Started in-process by `entrypoint-main.ts` before the startup sequence so the probe is always reachable during init. |
+| `NODE_ENV` | `string` | — | Runtime environment. Set to `production` to enforce production-safety guards (blocks `ADMIN_DEV_AUTH`). |
 
 ### Metrics & Admin & Chat & Task-Store services
 
@@ -168,7 +167,6 @@ On Kubernetes these env vars are a deploy-time option of the Helm chart rather t
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `SHIPWRIGHT_DEV_CHAT` | `bool` | `false` | Enables the unauthenticated `POST /chat` endpoint. Blocked at startup when `NODE_ENV=production`. |
 | `ADMIN_DEV_AUTH` | `bool` | `false` | Enables `GET /admin/dev-login` (bypasses Google OAuth, mints a dev session). Blocked when `NODE_ENV=production`. |
 | `METRICS_DASHBOARD_DEV_AUTH` | `bool` | `false` | Bypasses `/dashboard` session auth and `/metrics/*` API auth for local dev. Must not be enabled in production — exits with an error if `NODE_ENV=production`. |
 | `TASK_STORE_SEED_ADMIN_TOKEN` | `string` | — | Bootstrap admin token seeded into the task-store on startup. Used only in local dev (`task stack`) to provision a bootstrapped admin token without manual token creation. Not a real secret — used only against the local dev Postgres instance. Ignored if empty. |

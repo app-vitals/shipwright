@@ -36,7 +36,6 @@ import {
   markSlackDisconnected,
   startHealthServer,
 } from "./health.ts";
-import { createComposedApp } from "./run-agent.ts";
 import { createFileSessionStore, threadKey } from "./sessions.ts";
 import { ensureAgentHome, installPlugins, runMiseStartup } from "./setup.ts";
 import { HttpShipwrightRuntimeClient } from "./shipwright-runtime-client.ts";
@@ -324,7 +323,7 @@ if (config.chat.serviceUrl && config.chat.serviceToken) {
 // ─── Step 7: Slack Bolt Socket Mode (only when credentials present) ───────────
 // Bolt's Socket Mode throws "Must provide an App-Level Token" if constructed
 // without an appToken, so the agent runs Slack ONLY when both tokens are present.
-// Absent creds → offline mode: skip Slack, keep health green, interact via /chat.
+// Absent creds → offline mode: skip Slack, keep health green, interact via the chat UI.
 
 const slackAppConfig = {
   botToken: config.slack.botToken ?? "",
@@ -362,20 +361,7 @@ if (hasSlackCredentials(slackAppConfig)) {
 } else {
   console.warn(
     "[agent] Slack credentials absent (need SLACK_BOT_TOKEN + SLACK_APP_TOKEN) — " +
-      "skipping Slack startup. Offline mode: use the dev /chat endpoint to interact.",
-  );
-}
-
-// ─── Step 7b: Dev-only /chat transport ────────────────────────────────────────
-// DEFAULT-DENY: only when SHIPWRIGHT_DEV_CHAT=true (a CI/doctor guard forbids
-// this in production — see chat-guard.ts). Reuses the same Claude runner as
-// Slack so local chat exercises the identical code path.
-if (process.env.SHIPWRIGHT_DEV_CHAT === "true") {
-  const chatPort = Number(process.env.PORT ?? 3000);
-  const chatApp = createComposedApp({ devChat: true, chatRunner: runner });
-  Bun.serve({ fetch: chatApp.fetch, port: chatPort });
-  console.warn(
-    `[agent] SHIPWRIGHT_DEV_CHAT=true — dev /chat endpoint on port ${chatPort} (must NOT be used in production)`,
+      "skipping Slack startup. Offline mode: use the admin chat UI (/admin/chat) to interact.",
   );
 }
 

@@ -1,17 +1,13 @@
 /**
  * agent/src/config-sync.ts
  *
- * Periodic config sync for the thin agent server (run-agent.ts).
+ * Periodic config sync for the agent server (index.ts).
  *
- * Restores the 60s config poll the agent carried in its source form
- * (`index.ts`, which is NOT wired into the Shipwright runtime): fetch the
- * agent's config bundle from the admin service and apply its env vars to the
- * live process so changes made after startup — e.g. a newly-added GH_TOKEN —
- * reach a RUNNING agent without a restart. Without this, config is fetched
- * exactly once, by the entrypoint, and later edits never propagate.
- *
- * The Slack/cron/voice machinery from `index.ts` is intentionally left out:
- * `run-agent.ts` is the thin Shipwright server, not the Slack-bot agent.
+ * Fetches the agent's config bundle from the admin service every 60s and
+ * applies its env vars to the live process so changes made after startup —
+ * e.g. a newly-added GH_TOKEN — reach a RUNNING agent without a restart.
+ * Without this, config is fetched exactly once, by the entrypoint, and later
+ * edits never propagate.
  *
  * Pure + injectable: the bundle source, timer seams, env target, and the
  * live-claude setter are all injected (defaulting to the real implementations)

@@ -131,8 +131,8 @@ This opens a tmux session (`shipwright`) with 6 panes:
 | metrics | Dashboard (fixtures mode) | <http://localhost:3460/dashboard> |
 | admin | Admin CRUD API + UI | <http://localhost:3001/admin> |
 | task-store | Task queue service (Postgres-backed) | <http://localhost:3002> |
-| agent | Shipwright agent in Docker | <http://localhost:3000> |
-| chat | TUI chat REPL | _(terminal)_ |
+| chat-svc | Chat service (threads/messages + tokens) | <http://localhost:3003> |
+| agent | Shipwright agent in Docker | _(terminal)_ |
 | logs | Scratch shell | _(terminal)_ |
 
 A browser window opens automatically to the admin dev-login page.
@@ -145,7 +145,7 @@ A browser window opens automatically to the admin dev-login page.
 > /plugin install shipwright@app-vitals/shipwright
 > ```
 
-Use the **chat** pane (or `bun scripts/chat.ts` in a new terminal) to send a message. The turn should round-trip through the Docker agent.
+Open the **Chat** tab in the admin console (<http://localhost:3001/admin/chat>), select the `dev-agent`, create a thread, and send a message. The turn should round-trip through the Docker agent: the agent's chat poll loop claims the message from the chat service, runs it through Claude, and posts the reply back into the thread.
 
 ### Stopping the stack
 

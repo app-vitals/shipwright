@@ -73,7 +73,7 @@ tasks:
 
   stack:
     aliases: [stack:up]
-    desc: Launch the full dev stack in a tmux session (6 panes — metrics :3460, admin :3001, task-store :3002, agent :3000, chat REPL, logs). Requires tmux; falls back to `task dev`.
+    desc: Launch the full dev stack in a tmux session (6 panes — metrics :3460, admin :3001, task-store :3002, chat-svc :3003, agent, logs). Chat with the agent at http://localhost:3001/admin/chat. Requires tmux; falls back to `task dev`.
     cmds:
       - bun scripts/dev-tmux.ts
 
