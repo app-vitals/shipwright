@@ -774,8 +774,10 @@ review was staged:
 
 3. **Check if the PR was already reviewed at the current commit** (defense-in-depth dedup):
 
-   If a record exists (from Step 14.2, `lastReviewedCommit` is non-empty), fetch the current
-   head commit:
+   If a record exists (from Step 14.2, `lastReviewedCommit` is non-empty) AND
+   `record.reviewState` is `posted` or `approved` (a review was actually posted, not just
+   claimed and abandoned — see `release()`, which sets `reviewState: "pending"` on an
+   incomplete claim), fetch the current head commit:
    ```bash
    gh pr view {pr} --repo {org}/{repo} --json headRefOid --jq '.headRefOid'
    ```
@@ -787,8 +789,9 @@ review was staged:
      ```
    - Stop.
 
-   If no record exists (first review), or if `headRefOid` differs from `record.commitSha`
-   (new commits exist), proceed to Step 4 below.
+   If no record exists (first review), or `record.reviewState` is `pending` (claimed but
+   never completed — never actually reviewed), or `headRefOid` differs from
+   `record.commitSha` (new commits exist), proceed to Step 4 below.
 
 4. Skip Step 3 (queue building) and go directly to Step 4 (checkout) with this
    specific PR as the target.
