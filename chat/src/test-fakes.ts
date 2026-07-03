@@ -145,9 +145,7 @@ export function fakeThreadService(
       const [deleted] = store.splice(idx, 1);
       return deleted ?? null;
     },
-    async getStats(threadId: string): Promise<ThreadStats | null> {
-      const exists = store.find((t) => t.id === threadId);
-      if (!exists) return null;
+    async getStats(_thread: Thread): Promise<ThreadStats> {
       // Fake has no message store — return zeros.
       return {
         messageCount: 0,

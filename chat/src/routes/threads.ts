@@ -81,8 +81,7 @@ export function createThreadsRoutes(
     const thread = await threadService.findById(c.req.param("id"));
     if (!thread) throw new NotFoundError("thread not found");
     enforceAgentScope(c.get("agentId"), thread.agentId);
-    const stats = await threadService.getStats(c.req.param("id"));
-    if (!stats) throw new NotFoundError("thread not found");
+    const stats = await threadService.getStats(thread);
     return c.json(stats, 200);
   });
 

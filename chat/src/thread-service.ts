@@ -38,7 +38,7 @@ export interface ThreadServiceLike {
 
   delete(id: string): Promise<Thread | null>;
 
-  getStats(threadId: string): Promise<ThreadStats | null>;
+  getStats(thread: Thread): Promise<ThreadStats>;
 }
 
 export class ThreadService implements ThreadServiceLike {
@@ -121,12 +121,8 @@ export class ThreadService implements ThreadServiceLike {
     }
   }
 
-  async getStats(threadId: string): Promise<ThreadStats | null> {
-    const thread = await this.prisma.thread.findUnique({
-      where: { id: threadId },
-      select: { id: true },
-    });
-    if (!thread) return null;
+  async getStats(thread: Thread): Promise<ThreadStats> {
+    const threadId = thread.id;
 
     const agg = await this.prisma.message.aggregate({
       where: { threadId },
@@ -135,6 +131,10 @@ export class ThreadService implements ThreadServiceLike {
     });
 
     // tokens is a JSON blob — can't aggregate in SQL, so sum in JS.
+    // NOTE: this loads every message's token blob into memory. For
+    // admin-only usage the volume is acceptable, but callers should be
+    // aware that threads with thousands of messages will incur proportional
+    // memory overhead here.
     const tokenRows = await this.prisma.message.findMany({
       where: { threadId },
       select: { tokens: true },
@@ -161,6 +161,7 @@ export class ThreadService implements ThreadServiceLike {
     };
   }
 }
+
 
 function isPrismaNotFound(err: unknown): boolean {
   return (
