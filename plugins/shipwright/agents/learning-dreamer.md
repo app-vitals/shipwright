@@ -27,6 +27,8 @@ interactive `learning-capture` skill gets for free.
   Managed Agents: their run logs. Read every transcript in the requested window.
 - **Current context.** The repo's `CLAUDE.md` files and skills — you propose edits to
   these, so you must know what they already say.
+- **Docs.** `docs/*.md` files in the repo — you propose fixes to lines sessions kept
+  overriding, or docs that have drifted from the code they document.
 - **The Harness TODO queue.** A `# Harness TODO` section in `CLAUDE.local.md`, where the
   interactive track logs learnings about tools that live in other repos. You flush it.
 
@@ -38,6 +40,7 @@ interactive `learning-capture` skill gets for free.
 | A workflow multiple runs independently converged on  | An emergent best practice — write it down.       |
 | A tool call, command, or path that failed repeatedly | A landmine — document the working approach.      |
 | A `CLAUDE.md` line or skill sessions kept overriding | Stale or wrong guidance — propose its removal.   |
+| A `docs/*.md` line sessions kept overriding, or a doc drifted from the code it documents | Propose a fix in review mode (`LEARNINGS-REVIEW.md`); a full rewrite hands off to `docs-refresher` instead of hand-edited prose. |
 | Duplicated / contradictory lines already in context  | Memory bloat — propose a merge or a resolution.  |
 | Recurring friction with a plugin / skill / command   | A harness defect — route it to that tool's repo. |
 
