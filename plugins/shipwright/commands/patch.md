@@ -252,6 +252,28 @@ From `{worktree-path}`, detect the project toolchain:
 
 Refer to `references/toolchain-patterns.md` for the full detection lookup table.
 
+### Step 4a.6: Renew the Claim Heartbeat
+
+The conflict-resolution subagent dispatched next can run long enough to outlast a
+leftover claim on this PR's task-store record — e.g. a still-claimed `phase: "review"`
+record left behind by `/shipwright:review` after posting (the record stays claimed until
+released or reaped). If that claim goes stale mid-fix, the reaper resets `reviewState`
+back to `pending`, which can trigger a duplicate review. Renew it now, before starting the
+merge/resolve, so the claim survives the resolve-and-push that follows. Best-effort — warn
+and continue on failure:
+
+```bash
+PR_RECORD_ID=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs?repo={org}/{repo}&prNumber={pr}" 2>/dev/null \
+  | jq -r '.prs[0].id // empty')
+if [ -n "$PR_RECORD_ID" ]; then
+  curl -s -o /dev/null -X POST \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/heartbeat" || \
+    echo "⚠ heartbeat renewal failed — continuing"
+fi
+```
+
 ### Step 4b: Dispatch Conflict Resolution Subagent
 
 Dispatch a `general-purpose` subagent via the Agent tool with this prompt:
@@ -413,6 +435,27 @@ From inside the worktree, collect the full picture of what needs fixing:
 
 4. **PR-level comments** (from Step 3a — already fetched, reuse):
    Include all non-bot comments as additional context.
+
+### Step 5a.6: Renew the Claim Heartbeat
+
+The fix subagent dispatched next can run long enough to outlast a leftover claim on this
+PR's task-store record — e.g. a still-claimed `phase: "review"` record left behind by
+`/shipwright:review` after posting (the record stays claimed until released or reaped).
+If that claim goes stale mid-fix, the reaper resets `reviewState` back to `pending`,
+which can trigger a duplicate review. Renew it now, before starting the fix, so the
+claim survives the fix-and-push that follows. Best-effort — warn and continue on failure:
+
+```bash
+PR_RECORD_ID=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs?repo={org}/{repo}&prNumber={pr}" 2>/dev/null \
+  | jq -r '.prs[0].id // empty')
+if [ -n "$PR_RECORD_ID" ]; then
+  curl -s -o /dev/null -X POST \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/heartbeat" || \
+    echo "⚠ heartbeat renewal failed — continuing"
+fi
+```
 
 ### Step 5b: Dispatch Fix Subagent
 
@@ -629,6 +672,27 @@ gh run view "$RUN_ID" --log --failed --repo {org}/{repo} 2>&1 | tail -200
 ```
 
 Store the log output for use in the subagent prompt.
+
+### Step 6b.5: Renew the Claim Heartbeat
+
+The fix subagent dispatched next can run long enough to outlast a leftover claim on this
+PR's task-store record — e.g. a still-claimed `phase: "review"` record left behind by
+`/shipwright:review` after posting (the record stays claimed until released or reaped).
+If that claim goes stale mid-fix, the reaper resets `reviewState` back to `pending`,
+which can trigger a duplicate review. Renew it now, before starting the fix, so the
+claim survives the fix-and-push that follows. Best-effort — warn and continue on failure:
+
+```bash
+PR_RECORD_ID=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs?repo={org}/{repo}&prNumber={pr}" 2>/dev/null \
+  | jq -r '.prs[0].id // empty')
+if [ -n "$PR_RECORD_ID" ]; then
+  curl -s -o /dev/null -X POST \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/heartbeat" || \
+    echo "⚠ heartbeat renewal failed — continuing"
+fi
+```
 
 ### Step 6c: Dispatch Fix Subagent
 

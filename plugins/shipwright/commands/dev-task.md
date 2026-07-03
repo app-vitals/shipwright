@@ -323,6 +323,20 @@ Parse the subagent's STATUS report:
 - **NEEDS_CONTEXT**: Provide the missing context and re-dispatch with the same prompt augmented with the answer.
 - **BLOCKED**: First, attempt a model upgrade: if the effective model (`task.model ?? 'sonnet'`) is 'haiku', re-dispatch with 'sonnet' and set `EFFECTIVE_MODEL = 'sonnet'`; if the effective model is 'sonnet', re-dispatch with 'opus' and set `EFFECTIVE_MODEL = 'opus'`. Re-dispatch the subagent once at the upgraded tier with the same prompt plus the blocker context appended. If still BLOCKED after the upgrade re-dispatch, or if the effective model is already 'opus', assess the blocker: if it is a context problem, provide more context; if the task is too large, break it into smaller sub-tasks; if the plan is wrong, escalate to the user.
 
+### 5d. Renew the Claim Heartbeat
+
+Implementation (Step 5) is the widest-duration part of this pipeline — the remaining steps
+(simplify, spec check, requirements verification, pre-ship checks, docs, push, and the CI
+fix loop) can together still run long enough to threaten the claim TTL. Renew the heartbeat
+now, before starting Step 6, so the stale-claim reaper does not reset this task back to
+`pending` mid-pipeline:
+
+```bash
+curl -s -o /dev/null -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}/heartbeat"
+```
+
 > **CRITICAL — DO NOT SKIP STEPS 6–10**
 > After the implementation subagent completes (Step 5), you MUST continue through ALL remaining steps: Simplify (6), Spec Compliance Check (6.5), Requirements Verification (7), Pre-Ship Checks (8), Auto-Refresh Docs (8.5), Push & PR (9), CI Gate (9b), Handoff (10). Do NOT stop or ask to run a separate workflow.
 
