@@ -137,11 +137,12 @@ For each `# Harness TODO` entry:
 
    Set `hitl: true`, a title summarizing the proposed change, and a `description`
    carrying the evidence from the transcripts plus the target repo/file/why.
-   **Deliberately omit `branch`** — per `task-schema.md`, an absent `branch` means
-   `/dev-task` skips the task, so it never attempts to build a worktree for a repo we
-   can't push to. This surfaces the task via `/shipwright:hitl` for a human to action by
-   hand. Once seeded, remove the entry from `# Harness TODO` — the task store record is
-   now the durable one, not the queue file.
+   **Deliberately omit `branch`** — per `commands/dev-task.md`'s "Validate required
+   fields" step, an absent `branch` means `/dev-task` skips the task, so it never
+   attempts to build a worktree for a repo we can't push to. This surfaces the task via
+   `/shipwright:hitl` for a human to action by hand. Once seeded, remove the entry
+   from `# Harness TODO` — the task store record is now the durable one, not the queue
+   file.
 
 The Harness flush *does* write to other repos, even in review mode, because those writes
 are PRs — nothing merges without a human. What review mode protects is **this project's**
