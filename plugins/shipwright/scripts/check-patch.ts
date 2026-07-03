@@ -89,14 +89,35 @@ export interface Deps {
 // ─── Staleness check (mirrors patch.md Step 3b) ───────────────────────────────
 
 /**
+ * True when a review is self-authored and its body is a clean APPROVE verdict
+ * (`body.trimStart().startsWith("APPROVE")`, matching deploy.md's Step 3a
+ * convention). GitHub blocks self-APPROVE via the API, so the agent's own clean
+ * approvals are always posted as COMMENTED — treating those as findings would
+ * create a permanent false positive. A self-review with a real (non-APPROVE)
+ * verdict is not matched here, so it still counts as a finding.
+ *
+ * Leading markdown bold markers (`**`) are stripped before the check, mirroring
+ * check-deploy.ts's `hasSelfApproveReview` — the review skill posts `**APPROVE**`
+ * but the body must still be treated as APPROVE.
+ */
+function isSelfCleanApprove(
+  review: Pick<PrReviewData["reviews"]["nodes"][number], "author" | "body">,
+  currentUser: string,
+): boolean {
+  return (
+    review.author.login === currentUser &&
+    review.body.trimStart().replace(/^\*+/, "").startsWith("APPROVE")
+  );
+}
+
+/**
  * Returns true if the PR has unaddressed findings:
  * - At least one COMMENTED or CHANGES_REQUESTED review posted at the current HEAD
  * - AND (has a non-empty review body OR has at least one unresolved inline thread)
  *
- * Self-authored reviews (author.login === currentUser) are excluded: GitHub
- * blocks self-APPROVE via the API, so the agent's own reviews are always
- * posted as COMMENTED even when the body is a clean approval — treating them
- * as findings would create a permanent false positive.
+ * A self-authored review is excluded only when it is a clean APPROVE verdict
+ * (see isSelfCleanApprove) — a self-review with a real (non-APPROVE) verdict
+ * still counts as an unaddressed finding, same as any other reviewer's.
  */
 function hasUnaddressedFindings(
   data: PrReviewData,
@@ -105,12 +126,12 @@ function hasUnaddressedFindings(
   const { headRefOid, reviews, reviewThreads } = data;
 
   // Find qualifying reviews: state COMMENTED or CHANGES_REQUESTED at current HEAD,
-  // excluding self-authored reviews.
+  // excluding self-authored clean-APPROVE reviews.
   const qualifyingReviews = reviews.nodes.filter(
     (r) =>
       (r.state === "COMMENTED" || r.state === "CHANGES_REQUESTED") &&
       r.commit.oid === headRefOid &&
-      r.author.login !== currentUser,
+      !isSelfCleanApprove(r, currentUser),
   );
 
   if (qualifyingReviews.length === 0) return false;
@@ -132,7 +153,9 @@ function hasUnaddressedFindings(
  * merge-only skip: a branch updated only via merge-from-main hasn't had real
  * author activity, so findings from the pre-merge review are still valid.
  *
- * Self-authored reviews are excluded — see hasUnaddressedFindings for why.
+ * A self-authored review is excluded only when it is a clean APPROVE verdict
+ * (see isSelfCleanApprove) — a self-review with a real (non-APPROVE) verdict
+ * still counts as a stale finding.
  */
 async function hasMergeOnlyStaleFindings(
   prNumber: number,
@@ -147,7 +170,7 @@ async function hasMergeOnlyStaleFindings(
     (r) =>
       (r.state === "COMMENTED" || r.state === "CHANGES_REQUESTED") &&
       r.commit.oid !== headRefOid &&
-      r.author.login !== currentUser,
+      !isSelfCleanApprove(r, currentUser),
   );
 
   if (staleReviews.length === 0) return false;
