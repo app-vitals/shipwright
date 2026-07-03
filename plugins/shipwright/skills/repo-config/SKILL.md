@@ -39,7 +39,7 @@ For each external integration named in the inventory, list the GitHub secret nee
 Minimum set for the test pipeline:
 - `TEST_CANARY_API_KEY` — scoped canary auth token
 - `TEST_TARGET_URL` per environment (often set in the workflow, not as a secret)
-- Per-external: `<SERVICE>_API_KEY` (used only if recording new cassettes)
+- Per-external: `<SERVICE>_API_KEY` (used only if recording new fixtures)
 - Per-environment GitHub Environments (`staging`, `production`) with required reviewers if promotion is gated
 
 ### 3. Deploy hooks
@@ -58,11 +58,13 @@ See [`references/deploy-canary-promote.md`](./references/deploy-canary-promote.m
 
 A PR template (`.github/pull_request_template.md`) can enforce the verification-output convention via a checklist.
 
-### 5. Cassette maintenance loop
+### 5. Recorded-fixture maintenance loop (deferred)
 
-Recorded fixtures (VCR cassettes, msw handlers, nock recordings) capture the shape of third-party API responses at a point in time. Without scheduled re-recording, cassettes go stale silently — the test suite stays green while the live integration is broken. A maintenance loop catches this before production does.
+Recorded fixture doubles (msw handlers, nock recordings, hand-authored JSON) capture the shape of third-party API responses at a point in time. Without scheduled re-recording, recorded fixtures go stale silently — the test suite stays green while the live integration is broken. A maintenance loop catches this before production does.
 
-See the [full cassette maintenance loop pattern](#cassette-maintenance-loop) below for implementation details.
+**Status: deferred — not implemented.** The auto-recording GitHub Actions pattern below is a target design, not built tooling. Do not wire it up until the manual, hand-authored-fixture workflow is running and tuned.
+
+See the [full recorded-fixture maintenance loop pattern](#recorded-fixture-maintenance-loop-deferred) below for implementation details (deferred).
 
 ## The pairing rule (Phase 4 — test-roadmap)
 
@@ -113,18 +115,20 @@ A `## Repo configuration tasks` block listed alongside the test tasks. By defaul
 
 A `## Closing checklist` section at the bottom.
 
-## Cassette maintenance loop
+## Recorded-fixture maintenance loop (deferred)
 
-Recorded fixtures (VCR cassettes, msw handlers, nock recordings) capture the shape of third-party API responses at a point in time. Without scheduled re-recording, cassettes go stale silently — the test suite passes while the integration is broken in production. A cassette maintenance loop catches drift weekly before it becomes a production incident.
+> **Deferred — not implemented.** This section documents the target auto-recording design (a scheduled GitHub Actions workflow). None of this tooling — the workflow, the environment, the re-record scripting — has been built yet. Defer implementation until the manual, hand-authored-fixture workflow is running and tuned.
+
+Recorded fixture doubles (msw handlers, nock recordings, hand-authored JSON) capture the shape of third-party API responses at a point in time. Without scheduled re-recording, recorded fixtures go stale silently — the test suite passes while the integration is broken in production. A recorded-fixture maintenance loop catches drift weekly before it becomes a production incident.
 
 ### Where the cron lives
 
-A dedicated GitHub Actions workflow `.github/workflows/cassette-refresh.yml` on a weekly schedule (e.g., `cron: '0 9 * * 1'` — Mondays at 09:00 UTC). The job:
+A dedicated GitHub Actions workflow `.github/workflows/recorded-fixture-refresh.yml` (not yet created) on a weekly schedule (e.g., `cron: '0 9 * * 1'` — Mondays at 09:00 UTC). The job:
 
 1. Checks out the repo
-2. Runs re-record mode for each service that has cassettes (typically `RECORD_MODE=all bun test` or the VCR/msw equivalent)
+2. Runs re-record mode for each service that has recorded fixtures (typically `RECORD_MODE=all bun test` or the msw/nock equivalent)
 3. Checks `git diff` for any changed fixture files
-4. If diff is non-empty: opens a PR titled `chore: refresh cassettes (auto)` via `gh pr create`, with a `git diff --stat` summary and one expanded hunk in the body
+4. If diff is non-empty: opens a PR titled `chore: refresh recorded fixtures (auto)` via `gh pr create`, with a `git diff --stat` summary and one expanded hunk in the body
 5. If diff is empty: exits 0 silently
 
 ### What triggers re-recording
@@ -133,16 +137,16 @@ A dedicated GitHub Actions workflow `.github/workflows/cassette-refresh.yml` on 
 |---|---|
 | Scheduled cron | Weekly (always) |
 | Manual `workflow_dispatch` | When a third-party publishes a breaking-change notice |
-| Feature-branch CI | Never — cassettes are not re-recorded on PRs (avoids network flake) |
+| Feature-branch CI | Never — recorded fixtures are not re-recorded on PRs (avoids network flake) |
 
-The re-record job authenticates against the real third-party APIs using credentials stored in a dedicated `cassette-refresh` GitHub Environment. This environment has narrower permissions than `production` and is not shared with integration test runs.
+The re-record job authenticates against the real third-party APIs using credentials stored in a dedicated `recorded-fixture-refresh` GitHub Environment. This environment has narrower permissions than `production` and is not shared with integration test runs.
 
 ### How diff alerts are surfaced
 
 | Scenario | Outcome |
 |---|---|
 | No diff | Silent pass — no PR, no noise |
-| Diff detected | PR opened, tagged `cassette-refresh`, body includes diff stat + one expanded hunk |
+| Diff detected | PR opened, tagged `recorded-fixture-refresh`, body includes diff stat + one expanded hunk |
 | API call fails during re-record | Workflow fails; GitHub sends default failure notification to repo watchers |
 | Open refresh PR already exists | Skip creation — check for existing open PR with same title before calling `gh pr create` |
 
@@ -152,14 +156,14 @@ The re-record job authenticates against the real third-party APIs using credenti
 
 Include in the **Required secrets and environments** section of the `test-system.md` artifact:
 
-- **GitHub Environment:** `cassette-refresh` — no required reviewers (cron runs unattended), restricted to the `cassette-refresh.yml` workflow
+- **GitHub Environment:** `recorded-fixture-refresh` — no required reviewers (cron runs unattended), restricted to the `recorded-fixture-refresh.yml` workflow
 - **Secrets in this environment:** one per external integration (`STRIPE_TEST_API_KEY`, `SENDGRID_API_KEY`, etc.)
-- The `cassette-refresh` workflow runs on `main` and submits PRs — it is safe to enable before branch protection is configured
+- The `recorded-fixture-refresh` workflow runs on `main` and submits PRs — it is safe to enable before branch protection is configured
 
 Include in the **test-readiness-plan.md** task list (M1):
 
-- One task per external HTTP dependency that has cassettes: "Wire cassette-refresh cron for `<service>`"
-- One task: "Add `cassette-refresh` GitHub Environment + secrets"
+- One task per external HTTP dependency that has recorded fixtures: "Wire recorded-fixture-refresh cron for `<service>`"
+- One task: "Add `recorded-fixture-refresh` GitHub Environment + secrets"
 
 These tasks depend on the same-layer "record fixtures for `<service>`" task, not on branch protection.
 
@@ -170,6 +174,6 @@ These tasks depend on the same-layer "record fixtures for `<service>`" task, not
 - **Admin exemption without a break-glass policy.** Exempting admins is fine if there's a documented "in case of fire" procedure; otherwise it's an unmonitored backdoor.
 - **Secrets baked into workflows.** Use GitHub Secrets + Environments. Workflow YAML references `${{ secrets.X }}`, never literal values.
 - **No PR template.** Closing checklists in issue bodies help, but PRs without a template forget the verification-output convention within weeks.
-- **Committing cassette diffs directly to main.** The refresh job must always open a PR, never push directly — the diff must be reviewed.
+- **Committing recorded-fixture diffs directly to main.** The refresh job must always open a PR, never push directly — the diff must be reviewed.
 - **Re-recording on every CI run.** Network calls in CI create flake, inflate build times, and burn third-party rate limits. Re-record on schedule only.
-- **Sharing cassette-refresh credentials with CI integration tests.** Integration tests should use read-only scoped tokens. Re-record credentials are broader — keep them scoped to the `cassette-refresh` environment.
+- **Sharing recorded-fixture-refresh credentials with CI integration tests.** Integration tests should use read-only scoped tokens. Re-record credentials are broader — keep them scoped to the `recorded-fixture-refresh` environment.

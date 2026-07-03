@@ -45,8 +45,8 @@ For every external dependency named in the inventory, prescribe a **local substi
 | Postgres / MySQL | Real DB per test run (testcontainers or a dedicated test DB). **Pattern:** wrap ORM calls in a typed service layer (interface + implementation); integration tests hit a real DB through that interface; unit tests mock the interface. Never mock the DB itself at the SQL or ORM level — that mocks the wrong thing. |
 | Redis | testcontainers / in-memory shim |
 | S3 / blob storage | localstack / minio |
-| Internal HTTP service | Cassettes (VCR / msw / nock) by default — they're faster and require no service infra. If the service ships a Go/TS client interface, prefer mocking that interface over mocking the wire protocol. Inline service or docker-compose only when cassettes are impractical (e.g., bidirectional streaming). |
-| Third-party HTTP API | Cassettes (VCR / msw / nock) — never live. Requires a cassette maintenance loop (see `repo-config/SKILL.md`) — without weekly re-recording, cassettes go stale silently. |
+| Internal HTTP service | Recorded fixture doubles (msw / nock / hand-authored JSON) by default — they're faster and require no service infra. If the service ships a Go/TS client interface, prefer mocking that interface over mocking the wire protocol. Inline service or docker-compose only when recorded fixture doubles are impractical (e.g., bidirectional streaming). |
+| Third-party HTTP API | Recorded fixture doubles (msw / nock / hand-authored JSON) — never live. Requires a recorded-fixture maintenance loop (see `repo-config/SKILL.md` — deferred, not yet implemented) — without periodic re-recording, recorded fixtures go stale silently. |
 | SMTP / email | mailhog / capture-only |
 | Webhook receiver | local HTTP listener (e.g., smee / ngrok-recorded) |
 
@@ -130,7 +130,7 @@ List the test-support code the implementation will need:
 Reference `${CLAUDE_PLUGIN_ROOT}/skills/repo-config/SKILL.md` and include a **Repo configuration** section in the artifact covering:
 
 - **Branch protection** rule definition for `main` — required status checks (every layer-relevant CI job from the pipeline shape above), required reviews, conversation resolution, admin enforcement decision
-- **Required secrets** — `TEST_CANARY_API_KEY`, per-external service auth tokens (for cassette recording), staging/prod deploy credentials
+- **Required secrets** — `TEST_CANARY_API_KEY`, per-external service auth tokens (for recorded-fixture recording), staging/prod deploy credentials
 - **Required GitHub Environments** — `staging`, `production` with reviewer gates
 - **PR template recommendation** — `.github/pull_request_template.md` with a Closing Checklist that requires the verification-command output
 

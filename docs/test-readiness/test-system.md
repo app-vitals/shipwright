@@ -12,7 +12,7 @@ boundary determines which dependencies are permitted in that test.
 | Layer | Boundary rule | Framework | When to use |
 |---|---|---|---|
 | **unit** | Pure logic — no I/O of any kind. No filesystem reads, no network calls, no process spawning. | `bun test` | Functions, parsers, validators, data-transformation utilities, any code whose only inputs/outputs are in-memory values. |
-| **integration** | Real dependency behavior via recorded fixtures or injected doubles. Exercises the integration seam without a live external service. | `bun test` + recorded-fixture clients injected via DI | Service classes, client wrappers, anything that reads/writes to an external system — tested via cassette-backed `RecordedXClient` doubles instead of the real service. |
+| **integration** | Real dependency behavior via recorded fixtures or injected doubles. Exercises the integration seam without a live external service. | `bun test` + recorded-fixture clients injected via DI | Service classes, client wrappers, anything that reads/writes to an external system — tested via recorded fixture doubles (`RecordedXClient`) instead of the real service. |
 | **smoke** | Hono endpoints exercised via in-process `app.request()`. No real socket, no port allocation. | `bun test` + Hono `app.request()` | HTTP route contracts: status codes, response shapes, auth checks, error handling. Full middleware + routing pipeline without spinning up a server. |
 | **e2e** | Full browser-driven flows against a real running server. | `@playwright/test` | Multi-step user journeys through the metrics dashboard UI: navigation, rendering, data display, interaction flows. Phase B only. |
 
@@ -45,7 +45,7 @@ The plugin is pure TypeScript — no server, no database, no external HTTP in pr
 | integration | `bun test --filter plugins/shipwright` | <500 ms | <2 s | <30 s |
 
 **Notes:**
-- Integration tests inject `RecordedGithubClient` (cassette-backed) for any GitHub API calls (issue reads/writes, label operations).
+- Integration tests inject `RecordedGithubClient` (a recorded fixture double) for any GitHub API calls (issue reads/writes, label operations).
 - No smoke or e2e layer — the plugin has no HTTP surface.
 - Plugin code must remain repo-agnostic; tests must not hardcode paths to any external repository.
 
@@ -60,7 +60,7 @@ The metrics service is a stateless Hono app backed by task-store/fixture provide
 | smoke | `bun test --filter metrics` | <2 s | <10 s | <30 s |
 
 **Notes:**
-- Integration tests inject `RecordedTaskStoreClient` (cassette-backed) for task and PR queries. Cassette data lives in `metrics/src/fixtures/task-store-fixtures.ts`.
+- Integration tests inject `RecordedTaskStoreClient` (a recorded fixture double) for task and PR queries. Fixture data lives in `metrics/src/fixtures/task-store-fixtures.ts`.
 - Smoke tests drive the Hono app via `app.request()` — no real socket, no `fetch()` to localhost. Import the app factory and call `app.request(new Request(...))` directly.
 - No e2e layer until Phase B ships a browser-rendered dashboard. E2e layer added then via Playwright.
 - Tests run offline by default with no external service URLs configured.
@@ -130,6 +130,7 @@ The agent is a thin runner with a Prisma-backed PostgreSQL database and a Hono H
 
 - **Layer order:** unit → integration → smoke → e2e. A lower-layer failure skips higher layers (fail-fast).
 - **Parallelism:** unit and integration run in parallel across packages. Smoke layers (metrics + agent) run in parallel with each other, sequentially after all integration jobs pass.
+- **Test-DB service container:** CI provisions a real `postgres:16` service container (see `.github/workflows/ci.yml`) for any DB-backed integration/smoke test (e.g., the agent's DB integration suite) — never a mocked or in-memory Postgres substitute.
 
 ## Speed budgets (consolidated)
 
@@ -150,7 +151,7 @@ The agent is a thin runner with a Prisma-backed PostgreSQL database and a Hono H
 
 **Time:** Any production code path that calls `new Date()` or `Date.now()` non-trivially must accept a `Clock` interface. Tests inject `FixedClock(t)`. Raw `Date.now()` in a code path under test is a bug — it makes time-sensitive assertions flaky.
 
-**External HTTP:** External service clients (`SlackClient`, `GithubClient`, etc.) are defined as interfaces with an `Http*Client` production implementation. Tests inject `Recorded*Client` doubles that replay cassettes from `tests/fixtures/<service>/*.json`. Cassette files are versioned JSON committed to the repository.
+**External HTTP:** External service clients (`SlackClient`, `GithubClient`, etc.) are defined as interfaces with an `Http*Client` production implementation. Tests inject `Recorded*Client` recorded fixture doubles that replay fixture data from `tests/fixtures/<service>/*.json`. Fixture files are versioned JSON committed to the repository.
 
 **No global state:** Tests must not mutate module-level globals, override built-in globals, or rely on test-execution order. Each test is independently runnable.
 
