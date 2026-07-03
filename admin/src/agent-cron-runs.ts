@@ -145,12 +145,11 @@ export class AgentCronRunService {
     if (input.modelBreakdown && input.modelBreakdown.length > 0) {
       // Wrap the run update and all breakdown upserts in a single transaction
       // so the two writes are atomic — partial breakdown rows are never visible.
-      const [updatedRun] = await this.prisma.$transaction([
-        this.prisma.agentCronRun.update({
-          where: { id: runId },
-          data: runData,
-          include: { modelBreakdown: true },
-        }),
+      // The run update (with its modelBreakdown include) must be the LAST
+      // statement in the array: Prisma's array-form $transaction issues
+      // statements in order, so an earlier include would return breakdown
+      // rows as they stood before this call's upserts ran.
+      const results = await this.prisma.$transaction([
         ...input.modelBreakdown.map((entry) =>
           this.prisma.agentCronRunModelBreakdown.upsert({
             where: {
@@ -174,7 +173,15 @@ export class AgentCronRunService {
             },
           }),
         ),
+        this.prisma.agentCronRun.update({
+          where: { id: runId },
+          data: runData,
+          include: { modelBreakdown: true },
+        }),
       ]);
+      const updatedRun = results[
+        results.length - 1
+      ] as AgentCronRunWithModelBreakdown;
       return updatedRun;
     }
 
