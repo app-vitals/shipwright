@@ -28,6 +28,15 @@ export interface ChatMessage {
   tokens: number | null;
   costUsd: number | null;
   errorKind?: string | null;
+  attachmentFilename: string | null;
+  attachmentSize: number | null;
+}
+
+/** Optional file attachment carried alongside a created message. */
+export interface MessageAttachment {
+  filename: string;
+  size: number;
+  bytes: Uint8Array;
 }
 
 export interface ListThreadsResult {
@@ -83,6 +92,7 @@ export interface ChatClient {
     threadId: string,
     role: string,
     body: string,
+    attachment?: MessageAttachment,
   ): Promise<ChatMessage>;
 }
 
@@ -177,11 +187,20 @@ export class HttpChatClient implements ChatClient {
     threadId: string,
     role: string,
     body: string,
+    attachment?: MessageAttachment,
   ): Promise<ChatMessage> {
+    const payload: Record<string, unknown> = { role, body };
+    if (attachment) {
+      payload.attachmentBytes = Buffer.from(attachment.bytes).toString(
+        "base64",
+      );
+      payload.attachmentFilename = attachment.filename;
+      payload.attachmentSize = attachment.size;
+    }
     const res = await fetch(`${this.baseUrl}/threads/${threadId}/messages`, {
       method: "POST",
       headers: this.authHeaders(),
-      body: JSON.stringify({ role, body }),
+      body: JSON.stringify(payload),
     });
     if (!res.ok) {
       throw new Error(
@@ -238,6 +257,7 @@ export class NoopChatClient implements ChatClient {
     threadId: string,
     role: string,
     body: string,
+    attachment?: MessageAttachment,
   ): Promise<ChatMessage> {
     return {
       id: "",
@@ -250,6 +270,8 @@ export class NoopChatClient implements ChatClient {
       tokens: null,
       costUsd: null,
       errorKind: null,
+      attachmentFilename: attachment?.filename ?? null,
+      attachmentSize: attachment?.size ?? null,
     };
   }
 }

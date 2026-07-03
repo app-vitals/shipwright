@@ -48,6 +48,8 @@ const MOCK_MESSAGE: ChatMessage = {
   tokens: null,
   costUsd: null,
   errorKind: null,
+  attachmentFilename: null,
+  attachmentSize: null,
 };
 
 const MOCK_ASSISTANT_MESSAGE: ChatMessage = {
@@ -61,6 +63,8 @@ const MOCK_ASSISTANT_MESSAGE: ChatMessage = {
   tokens: 50,
   costUsd: 0.0005,
   errorKind: null,
+  attachmentFilename: null,
+  attachmentSize: null,
 };
 
 const MOCK_ERROR_MESSAGE: ChatMessage = {
@@ -74,6 +78,8 @@ const MOCK_ERROR_MESSAGE: ChatMessage = {
   tokens: null,
   costUsd: null,
   errorKind: "rate-limited",
+  attachmentFilename: null,
+  attachmentSize: null,
 };
 
 // ─── JWT helper ───────────────────────────────────────────────────────────────

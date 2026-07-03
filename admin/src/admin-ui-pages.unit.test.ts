@@ -3041,6 +3041,8 @@ describe("renderChatThreadPage", () => {
     tokens: null,
     costUsd: null,
     errorKind: null,
+    attachmentFilename: null,
+    attachmentSize: null,
   };
 
   const ASSISTANT_MSG: ChatMessage = {
@@ -3054,6 +3056,8 @@ describe("renderChatThreadPage", () => {
     tokens: 100,
     costUsd: 0.001,
     errorKind: null,
+    attachmentFilename: null,
+    attachmentSize: null,
   };
 
   const ERROR_MSG: ChatMessage = {
@@ -3067,6 +3071,8 @@ describe("renderChatThreadPage", () => {
     tokens: null,
     costUsd: null,
     errorKind: "rate-limited",
+    attachmentFilename: null,
+    attachmentSize: null,
   };
 
   test("degraded mode: renders not-configured notice when thread is null", () => {
