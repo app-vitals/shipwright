@@ -2734,10 +2734,16 @@ export function renderChatThreadPage(
       ? `<div style="font-size:14px;line-height:1.6;color:${bubbleColor}">${renderMarkdown(m.body)}</div>`
       : `<div style="font-size:14px;white-space:pre-wrap;color:${bubbleColor}">${escapeHtml(m.body)}</div>`;
 
+    // Attachment badge (metadata only — content is ephemeral, no re-download).
+    const attachmentBadge = m.attachmentFilename
+      ? `<div style="display:inline-block;margin-top:8px;padding:3px 8px;background:#e5e7eb;color:#374151;border-radius:6px;font-size:12px">📎 ${escapeHtml(m.attachmentFilename)}</div>`
+      : "";
+
     return `<div style="display:flex;justify-content:${align};margin-bottom:12px">
       <div style="max-width:${maxWidth};background:${bubbleBg};border-radius:12px;padding:12px 16px;box-shadow:0 1px 2px rgba(0,0,0,0.06)">
         <div style="font-size:11px;font-weight:600;color:${bubbleColor};margin-bottom:4px;text-transform:uppercase;letter-spacing:0.05em">${escapeHtml(m.role)}</div>
         ${bodyHtml}
+        ${attachmentBadge}
         ${errorBadge}
         <div style="font-size:11px;color:#9ca3af;margin-top:6px">${escapeHtml(new Date(m.createdAt).toLocaleString())}</div>
       </div>
@@ -2774,10 +2780,14 @@ export function renderChatThreadPage(
   var form = document.getElementById('send-form');
   var input = document.getElementById('message-input');
   var sendBtn = document.getElementById('send-btn');
+  var attachBtn = document.getElementById('attach-btn');
+  var fileInput = document.getElementById('file-input');
+  var fileName = document.getElementById('file-name');
   var container = document.getElementById('messages-container');
   var agentId = ${JSON.stringify(agentId)};
   var threadId = ${JSON.stringify(thread.id)};
   var messagesJsonUrl = '/admin/chat/' + encodeURIComponent(agentId) + '/threads/' + encodeURIComponent(threadId) + '/messages.json';
+  var uploadUrl = '/admin/chat/' + encodeURIComponent(agentId) + '/threads/' + encodeURIComponent(threadId) + '/messages/upload';
 
   var pollTimer = null;
   var pollCount = 0;
@@ -2801,7 +2811,7 @@ export function renderChatThreadPage(
     return escaped;
   }
 
-  function addBubble(role, body, isError) {
+  function addBubble(role, body, isError, attachmentName) {
     var isUser = role === 'user';
     var align = isUser ? 'flex-end' : 'flex-start';
     var bg = isUser ? '#eef2ff' : '#f0fdf4';
@@ -2812,11 +2822,15 @@ export function renderChatThreadPage(
     var errorHtml = isError
       ? '<div style="margin-top:6px;padding:4px 8px;background:#fee2e2;color:#b91c1c;border-radius:4px;font-size:12px;font-weight:600">' + escHtml(body) + '</div>'
       : '';
+    var attachmentHtml = attachmentName
+      ? '<div style="display:inline-block;margin-top:8px;padding:3px 8px;background:#e5e7eb;color:#374151;border-radius:6px;font-size:12px">📎 ' + escHtml(attachmentName) + '</div>'
+      : '';
     var bubble = document.createElement('div');
     bubble.style.cssText = 'display:flex;justify-content:' + align + ';margin-bottom:12px';
     bubble.innerHTML = '<div style="max-width:70%;background:' + bg + ';border-radius:12px;padding:12px 16px;box-shadow:0 1px 2px rgba(0,0,0,0.06)">'
       + '<div style="font-size:11px;font-weight:600;color:' + color + ';margin-bottom:4px;text-transform:uppercase;letter-spacing:0.05em">' + escHtml(role) + '</div>'
       + (isError ? errorHtml : bodyHtml)
+      + attachmentHtml
       + '</div>';
     container.appendChild(bubble);
     container.scrollTop = container.scrollHeight;
@@ -2890,10 +2904,27 @@ export function renderChatThreadPage(
       });
   }
 
+  // Attach-file button opens the hidden file input; show the chosen name.
+  if (attachBtn && fileInput) {
+    attachBtn.addEventListener('click', function() {
+      fileInput.click();
+    });
+    fileInput.addEventListener('change', function() {
+      var f = fileInput.files && fileInput.files[0];
+      fileName.textContent = f ? ('📎 ' + f.name) : '';
+    });
+  }
+
+  function clearFile() {
+    if (fileInput) fileInput.value = '';
+    if (fileName) fileName.textContent = '';
+  }
+
   form.addEventListener('submit', function(e) {
     e.preventDefault();
     var text = input.value.trim();
-    if (!text) return;
+    var file = fileInput && fileInput.files && fileInput.files[0];
+    if (!text && !file) return;
 
     // Disable send button
     sendBtn.disabled = true;
@@ -2902,22 +2933,37 @@ export function renderChatThreadPage(
     // Record the time before sending so we can filter replies
     lastUserMessageTime = new Date();
 
-    // Clear input
+    // Build multipart body before clearing the inputs
+    var fd = new FormData();
+    fd.append('body', text);
+    if (file) fd.append('file', file);
+    var attachmentName = file ? file.name : null;
+
+    // Clear inputs
     input.value = '';
 
-    // Add user bubble optimistically
-    addBubble('user', text, false);
+    // Add user bubble optimistically (with attachment badge if present)
+    addBubble('user', text, false, attachmentName);
+    clearFile();
 
     // Show thinking indicator
     addThinkingIndicator();
 
-    // POST to messages.json
-    fetch(messagesJsonUrl, {
+    // POST multipart to the upload endpoint
+    fetch(uploadUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ body: text })
+      body: fd
+    }).then(function(r) {
+      if (!r.ok) {
+        return r.json().then(function(data) {
+          stopPolling();
+          removeThinkingIndicator();
+          addBubble('assistant', (data && data.error) || 'Upload failed.', true);
+          enableSend();
+        });
+      }
     }).catch(function() {
-      // POST failed — still start polling
+      // POST failed — still start polling for a reply
     });
 
     // Start polling every 3 seconds
@@ -2993,14 +3039,22 @@ export function renderChatThreadPage(
         </div>
 
         <!-- Send form -->
-        <form id="send-form" style="flex-shrink:0;padding:16px 0;border-top:1px solid #e5e7eb;margin-top:8px">
+        <form id="send-form" enctype="multipart/form-data" style="flex-shrink:0;padding:16px 0;border-top:1px solid #e5e7eb;margin-top:8px">
           <div style="display:flex;gap:8px;align-items:flex-end">
             <textarea
               id="message-input"
+              name="body"
               rows="3"
               placeholder="Type a message..."
               style="flex:1;resize:vertical;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;font-family:inherit;line-height:1.5;outline:none"
             ></textarea>
+            <input type="file" id="file-input" name="file" style="display:none" accept="text/*,image/*,application/pdf,application/json">
+            <button
+              type="button"
+              id="attach-btn"
+              class="btn btn-secondary"
+              style="flex-shrink:0;height:44px;padding:0 16px"
+            >Attach file</button>
             <button
               type="submit"
               id="send-btn"
@@ -3008,6 +3062,7 @@ export function renderChatThreadPage(
               style="flex-shrink:0;height:44px;padding:0 20px"
             >Send</button>
           </div>
+          <div id="file-name" style="font-size:12px;color:#6b7280;margin-top:6px;min-height:16px"></div>
         </form>
       </div>
     </div>

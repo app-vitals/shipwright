@@ -6,6 +6,9 @@
  */
 
 import { describe, expect, it, mock } from "bun:test";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { ChatServiceClient } from "./http-chat-service-client.ts";
 import { createChatPoller } from "./chat-poller.ts";
 
@@ -33,6 +36,7 @@ function makeMessage(threadId: string, messageId = "msg-1") {
     repliedAt: null,
     tokens: null,
     costUsd: null,
+    attachmentFilename: null,
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -63,6 +67,7 @@ function makeFakeClient(
       userMessage: makeMessage("thread-1"),
       assistantMessage: makeMessage("thread-1"),
     }),
+    getAttachment: async () => null,
     ...overrides,
   };
 }
@@ -337,5 +342,143 @@ describe("createChatPoller poll: multiple threads", () => {
     expect(claimedThreadIds.sort()).toEqual(["t1", "t2", "t3"]);
     expect(repliedThreadIds.sort()).toEqual(["t1", "t2", "t3"]);
     expect(runner).toHaveBeenCalledTimes(3);
+  });
+});
+
+// ─── poll: attachment handling ─────────────────────────────────────────────────
+
+function makeMessageWithAttachment(
+  threadId: string,
+  filename: string,
+  messageId = "msg-att",
+) {
+  return {
+    ...makeMessage(threadId, messageId),
+    attachmentFilename: filename,
+  };
+}
+
+describe("createChatPoller poll: attachment handling", () => {
+  it("pulls attachment, writes it to the workspace, and augments the runner message", async () => {
+    const workspaceDir = await mkdtemp(join(tmpdir(), "chat-poller-att-"));
+    try {
+      const threadId = "thread-att";
+      const messageId = "msg-att-1";
+      const thread = makeThread(threadId);
+      const message = makeMessageWithAttachment(
+        threadId,
+        "report.txt",
+        messageId,
+      );
+      const replyResult = makeReplyResult(makeMessage(threadId, messageId));
+
+      const fileBytes = new Uint8Array([104, 105]); // "hi"
+      const getAttachment = mock(async () => fileBytes);
+
+      const client = makeFakeClient({
+        listThreads: async () => ({
+          threads: [thread],
+          total: 1,
+          limit: 50,
+          offset: 0,
+        }),
+        claimMessage: async () => message,
+        replyToMessage: async () => replyResult,
+        getAttachment,
+      });
+
+      const runner = mock(async () => ({ result: "ok" }));
+
+      const poller = createChatPoller({ client, runner, workspaceDir });
+      await poller.pollOnce();
+
+      // getAttachment called with thread + message id
+      expect(getAttachment).toHaveBeenCalledTimes(1);
+      expect(getAttachment).toHaveBeenCalledWith(threadId, messageId);
+
+      // Runner message augmented with the attachment note
+      expect(runner).toHaveBeenCalledTimes(1);
+      const runnerArg = (runner.mock.calls[0] as unknown[])[0] as string;
+      expect(runnerArg).toContain(message.body);
+      expect(runnerArg).toContain("report.txt");
+
+      // File written to <workspace>/uploads/<id>-<filename>
+      const filePath = join(
+        workspaceDir,
+        "uploads",
+        `${messageId}-report.txt`,
+      );
+      const written = await readFile(filePath);
+      expect(Array.from(new Uint8Array(written))).toEqual([104, 105]);
+    } finally {
+      await rm(workspaceDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not augment the runner message when getAttachment returns null", async () => {
+    const workspaceDir = await mkdtemp(join(tmpdir(), "chat-poller-att-"));
+    try {
+      const threadId = "thread-att-null";
+      const thread = makeThread(threadId);
+      const message = makeMessageWithAttachment(threadId, "gone.txt");
+      const replyResult = makeReplyResult(makeMessage(threadId));
+
+      const getAttachment = mock(async () => null);
+      const client = makeFakeClient({
+        listThreads: async () => ({
+          threads: [thread],
+          total: 1,
+          limit: 50,
+          offset: 0,
+        }),
+        claimMessage: async () => message,
+        replyToMessage: async () => replyResult,
+        getAttachment,
+      });
+
+      const runner = mock(async () => ({ result: "ok" }));
+      const poller = createChatPoller({ client, runner, workspaceDir });
+      await poller.pollOnce();
+
+      expect(getAttachment).toHaveBeenCalledTimes(1);
+      const runnerArg = (runner.mock.calls[0] as unknown[])[0] as string;
+      expect(runnerArg).toBe(message.body);
+      expect(runnerArg).not.toContain("gone.txt");
+    } finally {
+      await rm(workspaceDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not call getAttachment when the message has no attachmentFilename", async () => {
+    const workspaceDir = await mkdtemp(join(tmpdir(), "chat-poller-att-"));
+    try {
+      const threadId = "thread-no-att";
+      const thread = makeThread(threadId);
+      const message = makeMessage(threadId);
+      const replyResult = makeReplyResult(message);
+
+      const getAttachment = mock(async () => new Uint8Array([1]));
+      const client = makeFakeClient({
+        listThreads: async () => ({
+          threads: [thread],
+          total: 1,
+          limit: 50,
+          offset: 0,
+        }),
+        claimMessage: async () => message,
+        replyToMessage: async () => replyResult,
+        getAttachment,
+      });
+
+      const runner = mock(async () => ({ result: "ok" }));
+      const poller = createChatPoller({ client, runner, workspaceDir });
+      await poller.pollOnce();
+
+      expect(getAttachment).not.toHaveBeenCalled();
+      const runnerArg = (runner.mock.calls[0] as unknown[])[0] as string;
+      expect(runnerArg).toBe(message.body);
+    } finally {
+      await rm(workspaceDir, { recursive: true, force: true });
+    }
   });
 });
