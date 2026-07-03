@@ -86,6 +86,40 @@ export interface Deps {
   getCurrentUser: () => string;
 }
 
+// ─── CI status (dedup stale reruns — CPC-1.1) ─────────────────────────────────
+
+/**
+ * Returns true if any workflow's latest run (highest run_number per
+ * workflow_id) failed or timed out.
+ *
+ * The GitHub Actions API returns one entry per *run*, not per workflow — a
+ * rerun of a failed workflow appears as an additional entry with the same
+ * workflow_id and a higher run_number, alongside the original failed entry.
+ * Evaluating every historical run at a SHA (rather than just the latest per
+ * workflow) produces a false positive when a failure was later rerun and
+ * passed. This mirrors how `gh pr checks` already reports only the latest
+ * run per check.
+ */
+export function hasFailingCi(
+  runs: {
+    workflow_id: number;
+    run_number: number;
+    conclusion: string | null;
+  }[],
+): boolean {
+  const latestByWorkflow = new Map<number, (typeof runs)[number]>();
+  for (const run of runs) {
+    const current = latestByWorkflow.get(run.workflow_id);
+    if (!current || run.run_number > current.run_number) {
+      latestByWorkflow.set(run.workflow_id, run);
+    }
+  }
+
+  return [...latestByWorkflow.values()].some(
+    (r) => r.conclusion === "failure" || r.conclusion === "timed_out",
+  );
+}
+
 // ─── Staleness check (mirrors patch.md Step 3b) ───────────────────────────────
 
 /**
@@ -325,16 +359,19 @@ export async function buildProductionDeps(): Promise<Deps> {
       sha: string,
     ) => {
       type ApiResponse = {
-        workflow_runs: { status: string; conclusion: string | null }[];
+        workflow_runs: {
+          status: string;
+          conclusion: string | null;
+          workflow_id: number;
+          run_number: number;
+        }[];
       };
       try {
         const data = ghJson<ApiResponse>([
           "api",
           `repos/${org}/${repo}/actions/runs?head_sha=${sha}`,
         ]);
-        const hasFailing = data.workflow_runs.some(
-          (r) => r.conclusion === "failure" || r.conclusion === "timed_out",
-        );
+        const hasFailing = hasFailingCi(data.workflow_runs);
         return { hasFailing };
       } catch (err) {
         process.stderr.write(

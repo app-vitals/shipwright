@@ -11,7 +11,7 @@
 
 import { describe, expect, test } from "bun:test";
 import type { CommitInfo } from "./check-helpers.ts";
-import { run } from "./check-patch.ts";
+import { hasFailingCi, run } from "./check-patch.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -650,5 +650,46 @@ describe("check-patch", () => {
     );
     expect(result.exit).toBe(0);
     expect(result.output).toContain("patch");
+  });
+});
+
+// ─── hasFailingCi (CPC-1.1) ────────────────────────────────────────────────────
+
+describe("hasFailingCi", () => {
+  test("returns false when a workflow's earlier run failed but a later rerun (same workflow_id, higher run_number) succeeded", () => {
+    // Mirrors app-vitals/shipwright#1045: pr-title-lint run #2131 (workflow_id
+    // 290585892) failed, was rerun as run #2132 (same workflow_id, same SHA)
+    // and passed. Only the latest run per workflow should count.
+    const runs = [
+      { workflow_id: 290585892, run_number: 2131, conclusion: "failure" },
+      { workflow_id: 290585892, run_number: 2132, conclusion: "success" },
+    ];
+    expect(hasFailingCi(runs)).toBe(false);
+  });
+
+  test("returns true when the latest run for a workflow_id has conclusion 'failure'", () => {
+    const runs = [
+      { workflow_id: 1, run_number: 1, conclusion: "success" },
+      { workflow_id: 2, run_number: 1, conclusion: "failure" },
+      { workflow_id: 2, run_number: 2, conclusion: "failure" },
+    ];
+    expect(hasFailingCi(runs)).toBe(true);
+  });
+
+  test("returns true when the latest run for a workflow_id has conclusion 'timed_out'", () => {
+    const runs = [
+      { workflow_id: 1, run_number: 1, conclusion: "success" },
+      { workflow_id: 3, run_number: 5, conclusion: "timed_out" },
+    ];
+    expect(hasFailingCi(runs)).toBe(true);
+  });
+
+  test("returns false for an empty runs array", () => {
+    expect(hasFailingCi([])).toBe(false);
+  });
+
+  test("returns false for a single passing run", () => {
+    const runs = [{ workflow_id: 1, run_number: 1, conclusion: "success" }];
+    expect(hasFailingCi(runs)).toBe(false);
   });
 });
