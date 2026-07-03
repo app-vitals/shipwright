@@ -47,6 +47,7 @@ import {
   renderTasksPage,
   renderTokensPage,
 } from "./admin-ui-pages.ts";
+import { validateAttachment } from "./attachment-validation.ts";
 import type { ChatClient, ChatThread } from "./http-chat-client.ts";
 import type { AgentCronJobService } from "./agent-cron-jobs.ts";
 import type { AgentCronRunService } from "./agent-cron-runs.ts";
@@ -2116,6 +2117,66 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }
   });
 
+  // Upload route — registered BEFORE the form POST /messages route so the more
+  // specific `/messages/upload` segment matches first. Returns JSON so the inline
+  // send flow can surface validation errors without a full-page redirect.
+  app.post(
+    "/admin/chat/:agentId/threads/:threadId/messages/upload",
+    requireAuth,
+    async (c) => {
+      if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+
+      const threadId = c.req.param("threadId");
+
+      if (!chatClient) {
+        return c.json({ error: "chat service not configured" }, 503);
+      }
+
+      let body: string | undefined;
+      let file: File | null = null;
+      try {
+        const formData = await c.req.formData();
+        body = formData.get("body")?.toString()?.trim();
+        const rawFile = formData.get("file");
+        file = rawFile instanceof File && rawFile.size > 0 ? rawFile : null;
+      } catch {
+        return c.json({ error: "invalid form data" }, 400);
+      }
+
+      let attachment:
+        | { filename: string; size: number; bytes: Uint8Array }
+        | undefined;
+      if (file) {
+        const validation = validateAttachment(file.name, file.size, file.type);
+        if (!validation.ok) {
+          return c.json({ error: validation.error }, validation.status);
+        }
+        attachment = {
+          filename: file.name,
+          size: file.size,
+          bytes: new Uint8Array(await file.arrayBuffer()),
+        };
+      }
+
+      // A message needs at least a body or a file.
+      if (!body && !attachment) {
+        return c.json({ error: "message body or file is required" }, 400);
+      }
+
+      try {
+        const message = await chatClient.createMessage(
+          threadId,
+          "user",
+          body ?? "",
+          attachment,
+        );
+        return c.json({ message }, 201);
+      } catch {
+        return c.json({ error: "failed to create message" }, 500);
+      }
+    },
+  );
+
   app.post(
     "/admin/chat/:agentId/threads/:threadId/messages",
     requireAuth,
@@ -2136,6 +2197,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
       let body: string | undefined;
       let role: MessageRole = "user";
+      let file: File | null = null;
       try {
         const formData = await c.req.formData();
         body = formData.get("body")?.toString()?.trim();
@@ -2143,16 +2205,34 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         role = (ALLOWED_ROLES as readonly string[]).includes(rawRole)
           ? (rawRole as MessageRole)
           : "user";
+        const rawFile = formData.get("file");
+        file = rawFile instanceof File && rawFile.size > 0 ? rawFile : null;
       } catch {
         return c.redirect(backUrl, 302);
       }
 
-      if (!body) {
+      let attachment:
+        | { filename: string; size: number; bytes: Uint8Array }
+        | undefined;
+      if (file) {
+        const validation = validateAttachment(file.name, file.size, file.type);
+        if (!validation.ok) {
+          // Invalid attachment — bounce back without queuing anything.
+          return c.redirect(backUrl, 302);
+        }
+        attachment = {
+          filename: file.name,
+          size: file.size,
+          bytes: new Uint8Array(await file.arrayBuffer()),
+        };
+      }
+
+      if (!body && !attachment) {
         return c.redirect(backUrl, 302);
       }
 
       try {
-        await chatClient.createMessage(threadId, role, body);
+        await chatClient.createMessage(threadId, role, body ?? "", attachment);
       } catch {
         // swallow — redirect back regardless
       }

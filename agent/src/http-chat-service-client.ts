@@ -29,6 +29,7 @@ export interface Message {
   repliedAt: Date | string | null;
   tokens: unknown;
   costUsd: number | null;
+  attachmentFilename: string | null;
   createdAt: Date | string;
   updatedAt: Date | string;
 }
@@ -80,6 +81,14 @@ export interface ChatServiceClient {
     messageId: string,
     opts: ReplyOptions,
   ): Promise<ReplyResult>;
+  /**
+   * Fetch a message's attachment bytes. Returns null when there is no
+   * attachment (404). The chat service drops the bytes after serving them.
+   */
+  getAttachment(
+    threadId: string,
+    messageId: string,
+  ): Promise<Uint8Array | null>;
 }
 
 // ─── HttpChatServiceClient ────────────────────────────────────────────────────
@@ -184,5 +193,31 @@ export class HttpChatServiceClient implements ChatServiceClient {
     }
 
     return res.json() as Promise<ReplyResult>;
+  }
+
+  async getAttachment(
+    threadId: string,
+    messageId: string,
+  ): Promise<Uint8Array | null> {
+    const url = `${this.baseUrl}/threads/${threadId}/messages/${messageId}/attachment`;
+
+    const res = await this.fetchFn(url, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${this.token}` },
+    });
+
+    // 404 = no attachment — not an error, nothing to pull.
+    if (res.status === 404) {
+      return null;
+    }
+
+    if (!res.ok) {
+      throw new ChatServiceClientError(
+        res.status,
+        `GET /threads/${threadId}/messages/${messageId}/attachment failed: ${res.status}`,
+      );
+    }
+
+    return new Uint8Array(await res.arrayBuffer());
   }
 }
