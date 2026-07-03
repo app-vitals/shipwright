@@ -1475,6 +1475,27 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         err instanceof Error
           ? err.message
           : "Unknown error creating Slack app.";
+      // In "new agent" mode, the agent row + K8s workload were already
+      // created above. A downstream Slack failure here must roll those
+      // back too, or a retry with the same name creates a second orphan
+      // (this flow isn't idempotent on newAgentName).
+      if (agentMode === "new") {
+        await provisioner.deprovision(resolvedAgentId).catch((cleanupErr) => {
+          console.error(
+            "[admin-ui] failed to deprovision agent after Slack manifest error:",
+            cleanupErr,
+          );
+        });
+        await prisma.agent
+          .delete({ where: { id: resolvedAgentId } })
+          .catch((cleanupErr) => {
+            console.error(
+              "[admin-ui] failed to roll back agent after Slack manifest error:",
+              cleanupErr,
+            );
+          });
+        return formError(`Agent created but Slack setup failed: ${msg}`);
+      }
       return formError(msg);
     }
 

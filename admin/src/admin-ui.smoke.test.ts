@@ -2307,6 +2307,117 @@ describe("admin UI — provision start form", () => {
     expect(html).toContain("alert-error");
     expect(html).not.toContain('href="https://slack.com');
   });
+
+  it("POST /admin/provision/start agentMode=new rolls back the agent row and deprovisions when the Slack manifest call fails", async () => {
+    const NEW_AGENT_ID = "agent-new-slack-fail-999";
+    let deleteCalledWith: string | null | undefined;
+    let deprovisionCalledWith: string | null | undefined;
+
+    const deps = makeMockDeps({
+      prisma: {
+        agent: {
+          findMany: async () => [],
+          findUnique: async () => ({
+            id: NEW_AGENT_ID,
+            name: "doomed-agent-2",
+            slackId: null,
+            selfHosted: false,
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+            repos: [],
+          }),
+          create: async () => ({
+            id: NEW_AGENT_ID,
+            name: "doomed-agent-2",
+            slackId: null,
+            selfHosted: false,
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+            repos: [],
+          }),
+          update: async (args: {
+            where: { id: string };
+            data: { repos: string[] };
+          }) => ({
+            id: args.where.id,
+            name: "doomed-agent-2",
+            slackId: null,
+            selfHosted: false,
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+            repos: args.data.repos,
+          }),
+          delete: async (args: { where: { id: string } }) => {
+            deleteCalledWith = args.where.id;
+            return {
+              id: args.where.id,
+              name: "doomed-agent-2",
+              slackId: null,
+              selfHosted: false,
+              createdAt: new Date("2024-01-01"),
+              updatedAt: new Date("2024-01-01"),
+              repos: [],
+            };
+          },
+        },
+        agentPlugin: { findMany: async () => [] },
+        agentMember: {
+          findMany: async () => [],
+          findUnique: async () => null,
+          create: async () => ({
+            id: "m1",
+            agentId: NEW_AGENT_ID,
+            email: "member@example.com",
+          }),
+          deleteMany: async () => ({ count: 0 }),
+        },
+      },
+      provisioner: {
+        provision: async () => ({
+          resourceName: "r",
+          secretName: "s",
+          deploymentName: "d",
+        }),
+        deprovision: async (agentId: string) => {
+          deprovisionCalledWith = agentId;
+        },
+        reconcile: async () => ({
+          recreated: [],
+          updated: [],
+          orphans: [],
+          failed: [],
+        }),
+      },
+      slackClient: {
+        createAppManifest: async () => {
+          throw new Error("slack manifest exploded");
+        },
+      },
+    });
+
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({
+      agentMode: "new",
+      newAgentName: "doomed-agent-2",
+      xoxpToken: "xoxe.xoxp-valid",
+      ghAuthMode: "pat",
+      ghPat: "ghp_token123",
+    });
+    const res = await app.request("/admin/provision/start", {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+
+    expect(deprovisionCalledWith).toBe(NEW_AGENT_ID);
+    expect(deleteCalledWith).toBe(NEW_AGENT_ID);
+    const html = await res.text();
+    expect(html).toContain("alert-error");
+    expect(html).not.toContain('href="https://slack.com');
+  });
 });
 
 // ─── Member access control ────────────────────────────────────────────────────
