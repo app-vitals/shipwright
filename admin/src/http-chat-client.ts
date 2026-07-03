@@ -17,6 +17,13 @@ export interface ChatThread {
   updatedAt: string;
 }
 
+export interface MessageTokens {
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_input_tokens?: number;
+  cache_creation_input_tokens?: number;
+}
+
 export interface ChatMessage {
   id: string;
   threadId: string;
@@ -25,11 +32,18 @@ export interface ChatMessage {
   createdAt: string;
   claimedBy: string | null;
   repliedAt: string | null;
-  tokens: number | null;
+  tokens: MessageTokens | null;
   costUsd: number | null;
   errorKind?: string | null;
   attachmentFilename: string | null;
   attachmentSize: number | null;
+}
+
+export interface ThreadStats {
+  messageCount: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCostUsd: number;
 }
 
 /** Optional file attachment carried alongside a created message. */
@@ -102,6 +116,8 @@ export interface ChatClient {
     body: string,
     attachment?: MessageAttachment,
   ): Promise<ChatMessage>;
+
+  getThreadStats(threadId: string): Promise<ThreadStats>;
 }
 
 // ─── Http implementation ──────────────────────────────────────────────────────
@@ -243,6 +259,18 @@ export class HttpChatClient implements ChatClient {
     }
     return res.json() as Promise<ChatMessage>;
   }
+
+  async getThreadStats(threadId: string): Promise<ThreadStats> {
+    const res = await fetch(`${this.baseUrl}/threads/${threadId}/stats`, {
+      headers: this.authHeaders(),
+    });
+    if (!res.ok) {
+      throw new Error(
+        `chat-service GET /threads/${threadId}/stats failed: ${res.status} ${res.statusText}`,
+      );
+    }
+    return res.json() as Promise<ThreadStats>;
+  }
 }
 
 // ─── Noop implementation ──────────────────────────────────────────────────────
@@ -321,6 +349,15 @@ export class NoopChatClient implements ChatClient {
       errorKind: null,
       attachmentFilename: attachment?.filename ?? null,
       attachmentSize: attachment?.size ?? null,
+    };
+  }
+
+  async getThreadStats(_threadId: string): Promise<ThreadStats> {
+    return {
+      messageCount: 0,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      totalCostUsd: 0,
     };
   }
 }
