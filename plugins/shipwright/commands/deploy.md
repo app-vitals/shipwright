@@ -421,6 +421,19 @@ Print progress on each poll:
 
 Use `-` for stages not yet seen (no run exists yet).
 
+**Renew the claim heartbeat at the midpoint** (elapsed ≈ 15 minutes, the midpoint of the
+30-minute budget): the `PullRequest` record claimed in Step 4 has a TTL shorter than this
+poll's full budget, so a pipeline that runs the full 30 minutes would otherwise let the
+claim go stale before Promote resolves. Renew once, best-effort:
+
+```bash
+if [ -n "$PR_RECORD_ID" ]; then
+  curl -s -o /dev/null -X POST \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/heartbeat"
+fi
+```
+
 ### ARC Desync Detection
 
 If the Deploy stage (or any stage) has `status: "queued"` for 15 or more minutes with no
