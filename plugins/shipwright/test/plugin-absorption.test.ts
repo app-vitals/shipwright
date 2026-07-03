@@ -107,6 +107,10 @@ describe("entropy-scan support files", () => {
       ).toBe(true);
     });
   }
+
+  it("references/principles.md exists", () => {
+    expect(existsSync(pluginPath("references", "principles.md"))).toBe(true);
+  });
 });
 
 // ── entropy-scan/entropy-fix repoint to principles.md ────────────────────────

@@ -179,7 +179,7 @@ Findings ({count} total):
 - {file_path}:{line} — {finding_description}
 {Include ALL findings. If there are more than 20, include the first 20 and append: "(+N more — re-run /entropy-fix to see all)"}
 
-Fix guidance: {rule.detection_hint or remediation guidance from the principles file}
+Fix guidance: {entry's **Detection:** field, or remediation guidance from the principles file}
 
 Rule: {rule.id} | Severity: {rule.severity} | Domain: {rule.domain}
 ```
