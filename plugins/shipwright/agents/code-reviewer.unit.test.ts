@@ -57,11 +57,15 @@ describe("code-reviewer.md — Rule 6 test-readiness adherence", () => {
 
   it("documents fallback to universal baseline when context is absent", () => {
     const hasFallback =
-      reviewerContent.includes("test-readiness-tenets.md") &&
+      reviewerContent.includes("principles.md") &&
       (reviewerContent.includes("absent") ||
         reviewerContent.includes("fallback") ||
         reviewerContent.includes("falls back"));
     expect(hasFallback).toBe(true);
+  });
+
+  it("references principles.md as the source for testing-domain entries", () => {
+    expect(reviewerContent.includes("principles.md")).toBe(true);
   });
 
   it("references the pre-existing issue filter from Rule 4", () => {
@@ -79,6 +83,74 @@ describe("code-reviewer.md — Rule 6 test-readiness adherence", () => {
         reviewerContent.includes("endorsement") &&
         reviewerContent.includes("filter"));
     expect(hasRule5Reference).toBe(true);
+  });
+});
+
+describe("code-reviewer.md — Rule 7 architecture-layering adherence", () => {
+  it("contains a Rule 7 Architecture-layering adherence section", () => {
+    const hasRule7 =
+      reviewerContent.includes("Rule 7") ||
+      (reviewerContent.toLowerCase().includes("architecture") &&
+        reviewerContent.toLowerCase().includes("layering"));
+    expect(hasRule7).toBe(true);
+  });
+
+  it("has the new rule labeled as Architecture-layering adherence", () => {
+    const hasLabel =
+      reviewerContent.includes("Architecture-layering adherence") ||
+      reviewerContent.toLowerCase().includes("architecture-layering adherence");
+    expect(hasLabel).toBe(true);
+  });
+
+  it("documents an activation gate for direct layer-skipping calls", () => {
+    const hasActivationGate =
+      reviewerContent.toLowerCase().includes("activation gate") &&
+      reviewerContent.toLowerCase().includes("layer") &&
+      (reviewerContent.toLowerCase().includes("handler") ||
+        reviewerContent.toLowerCase().includes("skip"));
+    expect(hasActivationGate).toBe(true);
+  });
+
+  it("references principles.md as the source for architecture-domain entries", () => {
+    expect(reviewerContent.includes("principles.md")).toBe(true);
+  });
+
+  it("documents graceful degradation when no declared layer structure exists", () => {
+    const hasDegradation =
+      reviewerContent.toLowerCase().includes("no declared layer structure") ||
+      (reviewerContent.toLowerCase().includes("no layer structure") ||
+        (reviewerContent.toLowerCase().includes("layer structure") &&
+          (reviewerContent.toLowerCase().includes("no ") ||
+            reviewerContent.toLowerCase().includes("does not"))));
+    expect(hasDegradation).toBe(true);
+  });
+
+  it("applies the Rule 4 pre-existing issue filter to the new rule", () => {
+    const rule7Section = reviewerContent.slice(
+      reviewerContent.indexOf("Architecture-layering adherence"),
+    );
+    const hasRule4Reference =
+      rule7Section.includes("Rule 4") ||
+      (rule7Section.includes("pre-existing") && rule7Section.includes("filter"));
+    expect(hasRule4Reference).toBe(true);
+  });
+
+  it("applies the Rule 5 CLAUDE.md endorsement filter to the new rule", () => {
+    const rule7Section = reviewerContent.slice(
+      reviewerContent.indexOf("Architecture-layering adherence"),
+    );
+    const hasRule5Reference =
+      rule7Section.includes("Rule 5") ||
+      (rule7Section.includes("CLAUDE.md") &&
+        rule7Section.includes("endorsement") &&
+        rule7Section.includes("filter"));
+    expect(hasRule5Reference).toBe(true);
+  });
+});
+
+describe("code-reviewer.md — architecture category in output format", () => {
+  it("includes architecture in the category enum", () => {
+    expect(reviewerContent).toContain("architecture");
   });
 });
 
