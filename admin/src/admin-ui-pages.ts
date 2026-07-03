@@ -2534,6 +2534,8 @@ const chatPageStyles = `
     @media (max-width:640px) {
       .chat-list-layout { flex-direction:column }
       .chat-list-sidebar { width:100%;max-width:100%;min-width:0 }
+      /* chat-thread-layout: flex wrapper for thread+message area; stacks to column on mobile */
+      .chat-thread-layout { flex-direction:column }
       .chat-thread-sidebar { display:none }
       .chat-bubble-inner { max-width:90% !important }
       #message-input { font-size:16px }
