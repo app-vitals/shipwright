@@ -180,7 +180,7 @@ export class AgentCronRunService {
         }),
       ]);
       const updatedRun = results[
-        results.length - 1
+        input.modelBreakdown.length
       ] as AgentCronRunWithModelBreakdown;
       return updatedRun;
     }
