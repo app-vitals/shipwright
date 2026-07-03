@@ -54,21 +54,19 @@ a human-facing admin CRUD API, a server-rendered admin UI, and a public read-onl
 
 
 
-<table><thead><tr><th>Mode</th><th>Entry point</th><th>Transport</th><th>When to use</th></tr></thead><tbody><tr><td>Pi / bare-metal</td><td><code>agent/src/index.ts</code></td><td>Slack Socket Mode</td><td>Running directly on a host with a local <code>.env</code> file</td></tr><tr><td>K8s container</td><td><code>agent/src/entrypoint-main.ts</code></td><td>Slack Socket Mode</td><td>Deployed via the Dockerfile (validates vars, fetches config, installs plugins, spawns runner)</td></tr><tr><td>Local dev</td><td><code>agent/scripts/run-agent.ts --agent-id &lt;id&gt;</code></td><td>HTTP <code>POST /chat</code></td><td>Testing Claude locally without a Slack workspace; requires <code>SHIPWRIGHT_DEV_CHAT=true</code></td></tr></tbody></table>
+<table><thead><tr><th>Mode</th><th>Entry point</th><th>Transport</th><th>When to use</th></tr></thead><tbody><tr><td>Pi / bare-metal</td><td><code>agent/src/index.ts</code></td><td>Slack Socket Mode</td><td>Running directly on a host with a local <code>.env</code> file</td></tr><tr><td>K8s container</td><td><code>agent/src/entrypoint-main.ts</code></td><td>Slack Socket Mode</td><td>Deployed via the Dockerfile (validates vars, fetches config, installs plugins, spawns runner)</td></tr><tr><td>Local dev</td><td><code>task stack</code> (Docker agent pane)</td><td>Chat poll loop → admin Chat UI</td><td>Testing Claude locally without a Slack workspace — chat via the admin console’s Chat tab</td></tr></tbody></table>
 <p>The admin service Dockerfile (<code>admin/Dockerfile</code>) <code>ENTRYPOINT</code> is <code>bun run admin/src/main.ts</code>,
 which runs migrations, constructs all services, and mounts all admin and runtime routes. The agent
 container Dockerfile (<code>agent/Dockerfile</code>) <code>ENTRYPOINT</code> is <code>bun run agent/src/entrypoint-main.ts</code>,
 which starts the health server in-process on <code>SHIPWRIGHT_HEALTH_PORT</code> (default <code>3459</code>) before the
 startup sequence so Kubernetes liveness probes are reachable during init.</p>
 <h2 id="running-the-agent-locally">Running the agent locally</h2>
-<p>Ask Claude Code:</p>
-<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="text"><code><span class="line"><span>Start the Shipwright agent locally in dev mode so I can test it via the chat REPL.</span></span></code></pre>
-<p>Manually:</p>
-<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-keyword)">export</span><span style="color:var(--astro-code-foreground)"> DATABASE_URL_SHIPWRIGHT_ADMIN</span><span style="color:var(--astro-code-token-keyword)">=</span><span style="color:var(--astro-code-token-string-expression)">&quot;postgresql://user:password@localhost:5432/shipwright_admin&quot;</span></span>
-<span class="line"><span style="color:var(--astro-code-token-function)">task</span><span style="color:var(--astro-code-token-string)"> db:provision</span><span style="color:var(--astro-code-token-comment)">          # prisma migrate deploy (idempotent)</span></span>
-<span class="line"><span style="color:var(--astro-code-foreground)">SHIPWRIGHT_DEV_CHAT</span><span style="color:var(--astro-code-token-keyword)">=</span><span style="color:var(--astro-code-token-string)">true</span><span style="color:var(--astro-code-token-function)"> bun</span><span style="color:var(--astro-code-token-string)"> agent/src/entrypoint-main.ts</span></span></code></pre>
-<p>Then in a second terminal:</p>
-<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-function)">bun</span><span style="color:var(--astro-code-token-string)"> scripts/chat.ts</span><span style="color:var(--astro-code-token-comment)">        # TUI REPL connects to the dev /chat endpoint</span></span></code></pre>
+<p>Run the full local dev stack:</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-function)">task</span><span style="color:var(--astro-code-token-string)"> stack</span></span></code></pre>
+<p>This launches every service (metrics, admin, task-store, chat service, and the agent in Docker)
+in a single tmux session, seeds dev tokens, and opens the admin console in your browser. Chat
+with the agent from the console’s <strong>Chat</strong> tab (<code>/admin/chat</code>) — the agent’s chat poll loop
+claims each message, runs it through Claude, and posts the reply back into the thread.</p>
 <h2 id="admin-crud-api">Admin CRUD API</h2>
 <p>The admin CRUD API is the human-facing control plane for agents. It is mounted at <code>/agents/*</code>.</p>
 <p>Auth is checked in this order: env API keys (<code>SHIPWRIGHT_ADMIN_API_KEYS</code>), then per-agent DB
