@@ -771,7 +771,26 @@ review was staged:
 10. Post Slack message using the format from Step 11
 
 **If no record or record is not staged** — review it:
-3. Skip Step 3 (queue building) and go directly to Step 4 (checkout) with this
+
+3. **Check if the PR was already reviewed at the current commit** (defense-in-depth dedup):
+
+   If a record exists (from Step 14.2, `lastReviewedCommit` is non-empty), fetch the current
+   head commit:
+   ```bash
+   gh pr view {pr} --repo {org}/{repo} --json headRefOid --jq '.headRefOid'
+   ```
+   Compare to `record.commitSha` (`lastReviewedCommit`). If `headRefOid == record.commitSha`
+   (the commit has already been reviewed and there are no new commits):
+   - Print:
+     ```
+     Skipping #{pr} — already reviewed at this commit ({headRefOid[0..7]}), nothing to do.
+     ```
+   - Stop.
+
+   If no record exists (first review), or if `headRefOid` differs from `record.commitSha`
+   (new commits exist), proceed to Step 4 below.
+
+4. Skip Step 3 (queue building) and go directly to Step 4 (checkout) with this
    specific PR as the target.
 
 ---
