@@ -359,3 +359,69 @@ tests:
     asserts:
       - hasDocuments:
           count: 0
+
+  # ── Chat-service wiring (chat.enabled + chat.adminToken) ─────────────────
+
+  - it: does not inject chat-service env by default
+    template: templates/admin-deployment.yaml
+    release:
+      name: r
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_CHAT_SERVICE_URL
+            value: http://r-shipwright-chat:3000
+
+  - it: does not inject chat-service env when chat.enabled but adminToken unset
+    template: templates/admin-deployment.yaml
+    set:
+      chat.enabled: true
+    release:
+      name: r
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_CHAT_SERVICE_URL
+            value: http://r-shipwright-chat:3000
+
+  - it: injects the in-cluster chat URL + admin token when chat.enabled and adminToken set
+    template: templates/admin-deployment.yaml
+    set:
+      chat.enabled: true
+      chat.adminToken.existingSecret: shipwright-secrets
+    release:
+      name: r
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_CHAT_SERVICE_URL
+            value: http://r-shipwright-chat:3000
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: shipwright-secrets
+                key: SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN
+
+  - it: chat admin token honors a custom secret name and key
+    template: templates/admin-deployment.yaml
+    set:
+      chat.enabled: true
+      chat.adminToken.existingSecret: my-chat-tokens
+      chat.adminToken.key: CHAT_ADMIN_RAW
+    release:
+      name: r
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: my-chat-tokens
+                key: CHAT_ADMIN_RAW
