@@ -120,8 +120,28 @@ For each `# Harness TODO` entry:
    becomes one reviewable PR per tool, not a scatter of commits.
 4. **Report and clear.** List what you applied, what you filed, and the PR link in the
    output summary. Remove flushed entries from `# Harness TODO`.
-5. **Repo not available / not owned.** Leave the entry in the queue and note why (no
-   local clone; `github` source — clone as a `directory` source to contribute).
+5. **Repo not available / not owned.** This trigger is broad — any target repo/plugin
+   outside our accessible repos (no local `directory`-source clone we can branch and push
+   to), not narrowly scoped to "other plugins." Do not leave the entry in the queue —
+   nobody re-reads that file, so the finding is effectively lost. Seed a task in the
+   Shipwright task store instead, using the `POST /tasks` pattern from
+   `skills/task-store/SKILL.md`:
+
+   ```bash
+   curl -sf -X POST \
+     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+     -H "Content-Type: application/json" \
+     "$SHIPWRIGHT_TASK_STORE_URL/tasks" \
+     -d '{"id": "HIT-X.1", "title": "...", "status": "pending", "repo": "owner/repo", "hitl": true, "description": "..."}' | jq .
+   ```
+
+   Set `hitl: true`, a title summarizing the proposed change, and a `description`
+   carrying the evidence from the transcripts plus the target repo/file/why.
+   **Deliberately omit `branch`** — per `task-schema.md`, an absent `branch` means
+   `/dev-task` skips the task, so it never attempts to build a worktree for a repo we
+   can't push to. This surfaces the task via `/shipwright:hitl` for a human to action by
+   hand. Once seeded, remove the entry from `# Harness TODO` — the task store record is
+   now the durable one, not the queue file.
 
 The Harness flush *does* write to other repos, even in review mode, because those writes
 are PRs — nothing merges without a human. What review mode protects is **this project's**
