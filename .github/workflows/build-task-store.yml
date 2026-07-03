@@ -22,11 +22,15 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
 
+      - name: Resolve base SHA
+        id: base
+        run: echo "sha=$(git rev-parse ${{ github.event.workflow_run.head_sha }}~1)" >> "$GITHUB_OUTPUT"
+
       - name: Filter paths
         id: filter
         uses: dorny/paths-filter@v3
         with:
-          base: ${{ github.event.workflow_run.head_sha }}~1
+          base: ${{ steps.base.outputs.sha }}
           ref: ${{ github.event.workflow_run.head_sha }}
           filters: |
             changed:
