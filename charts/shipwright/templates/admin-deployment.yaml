@@ -236,6 +236,22 @@ spec:
               value: {{ . | quote }}
             {{- end }}
             {{- end }}
+            {{- if and .Values.chat.enabled .Values.chat.adminToken.existingSecret }}
+            # ── Chat-service wiring ───────────────────────────────────────────
+            # Enables the admin console's Chat tab (/admin/chat) and per-agent
+            # chat-token minting during provisioning. The URL is the in-cluster
+            # chat Service; the token is the same raw value the chat service
+            # seeds at boot via CHAT_SEED_ADMIN_TOKEN, so the pair works out of
+            # the box. Override the URL via admin.extraEnv if needed (extraEnv
+            # is appended last and wins).
+            - name: SHIPWRIGHT_CHAT_SERVICE_URL
+              value: {{ printf "http://%s:%v" (include "shipwright.chat.fullname" .) .Values.chat.service.port | quote }}
+            - name: SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.chat.adminToken.existingSecret }}
+                  key: {{ .Values.chat.adminToken.key | default "SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN" }}
+            {{- end }}
             {{- with .Values.admin.extraEnv }}
             # admin.extraEnv: caller-supplied env vars appended last so they can
             # override anything above if needed.

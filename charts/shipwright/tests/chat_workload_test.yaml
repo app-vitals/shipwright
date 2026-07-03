@@ -120,3 +120,56 @@ tests:
     asserts:
       - hasDocuments:
           count: 0
+
+  # ── Admin-token seeding (chat.adminToken) ────────────────────────────────
+
+  - it: does not inject CHAT_SEED_ADMIN_TOKEN by default (adminToken unset)
+    template: templates/chat-deployment.yaml
+    set:
+      chat.enabled: true
+    release:
+      name: r
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CHAT_SEED_ADMIN_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: shipwright-secrets
+                key: SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN
+
+  - it: seeds CHAT_SEED_ADMIN_TOKEN from chat.adminToken.existingSecret (default key)
+    template: templates/chat-deployment.yaml
+    set:
+      chat.enabled: true
+      chat.adminToken.existingSecret: shipwright-secrets
+    release:
+      name: r
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CHAT_SEED_ADMIN_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: shipwright-secrets
+                key: SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN
+
+  - it: seeds CHAT_SEED_ADMIN_TOKEN honoring a custom secret name and key
+    template: templates/chat-deployment.yaml
+    set:
+      chat.enabled: true
+      chat.adminToken.existingSecret: my-chat-tokens
+      chat.adminToken.key: CHAT_ADMIN_RAW
+    release:
+      name: r
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CHAT_SEED_ADMIN_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: my-chat-tokens
+                key: CHAT_ADMIN_RAW

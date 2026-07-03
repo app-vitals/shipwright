@@ -55,6 +55,17 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.chat.database.existingSecret | default "shipwright-secrets" }}
                   key: DATABASE_URL_SHIPWRIGHT_CHAT
+            {{- if .Values.chat.adminToken.existingSecret }}
+            # Seed the admin token (stored hashed) at boot so the admin console
+            # can authenticate without manual token minting. Idempotent upsert —
+            # the same raw value is injected into the admin Deployment as
+            # SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN.
+            - name: CHAT_SEED_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.chat.adminToken.existingSecret }}
+                  key: {{ .Values.chat.adminToken.key | default "SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN" }}
+            {{- end }}
             {{- with .Values.chat.extraEnv }}
             # chat.extraEnv: caller-supplied env vars appended last so they can
             # override anything above if needed.
