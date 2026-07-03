@@ -1,24 +1,33 @@
-# Golden Principles Schema Reference
+# Principles Schema Reference
 
-This document describes the YAML format for entropy-patrol rule definitions.
+This document describes the markdown format for Shipwright principles entries
+(`references/principles.md`, and its project-level override at
+`.claude/shipwright/principles.md`).
 
 ## File structure
 
-```yaml
-version: "1.0"
+Each principle is one `###` entry with a fixed field order:
 
-rules:
-  - id: <rule_id>
-    category: <category>
-    severity: <severity>
-    description: <one-line description>
-    detection_hint: |
-      <multi-line instruction for the scanning agent>
-    pr_worthy: <true|false>
-    disabled: <true|false>   # optional; omit to enable
-
-todo_max_age_days: 90        # global config for stale_todo threshold
 ```
+### `<id>`
+
+**Domain:** <architecture | testing | security | dead_code | todo_debt | docs>
+**Severity:** <low | medium | high>
+
+<statement prose — what to do and why>
+
+**Detection:** <instruction for the scanning agent>
+**PR-worthy:** <true | false>
+**HITL:** <always | never | per-finding>
+```
+
+`**Detection:**`, `**PR-worthy:**`, and `**HITL:**` are only present together, on entries
+that are entropy-scannable. Entries without a `**Detection:**` field are judgment-only —
+read by `review`/`plan-session`/`dev-task` but never mechanically scanned by
+`entropy-scan`/`entropy-fix`.
+
+`##` headings group entries by domain for human readability, but the `**Domain:**` field
+on each entry is what consumers key off — not the heading it's nested under.
 
 ---
 
@@ -26,32 +35,35 @@ todo_max_age_days: 90        # global config for stale_todo threshold
 
 ### `id` (required)
 
-Unique string identifier for the rule. Use `snake_case`. Must be unique across all rules in the file.
+Unique string identifier for the entry, given as the `###` heading text in backticks.
+Use `snake_case`. Must be unique across all entries in the file.
 
-```yaml
-id: dead_exports
+```
+### `dead_exports`
 ```
 
 ---
 
-### `category` (required)
+### `**Domain:**` (required)
 
-Logical grouping for the rule. Used to organize the entropy report and filter rules by type.
+Machine-authoritative grouping for the entry. `entropy-scan` maps each scannable entry's
+domain to a report category:
 
-| Category | What it covers |
-|----------|---------------|
-| `dead_code` | Unused exports, unreferenced files, commented-out blocks |
-| `missing_tests` | Source files without test coverage |
-| `inconsistent_patterns` | Duplicated utilities, inconsistent error handling |
-| `todo_debt` | TODO/FIXME/HACK comments |
-| `documentation_gaps` | Missing JSDoc, missing README sections |
-| `security` | Ungated outbound calls, hardcoded secrets |
+| Domain | Report category |
+|--------|-----------------|
+| `security` | `security` |
+| `dead_code` | `dead_code` |
+| `todo_debt` | `todo_debt` |
+| `architecture` | `inconsistent_patterns` |
+| `docs` | `documentation_gaps` |
 
-You may define custom category strings for project-specific rules (e.g., `performance`, `accessibility`).
+`testing` entries are judgment-only (no `**Detection:**` field) and do not map to a
+report category — they're read by `plan-session`/`dev-task`/`review` for test-design
+guidance, not scanned.
 
 ---
 
-### `severity` (required)
+### `**Severity:**` (required)
 
 How urgently the issue should be addressed.
 
@@ -63,19 +75,18 @@ How urgently the issue should be addressed.
 
 ---
 
-### `description` (required)
+### Statement prose (required)
 
-One-line human-readable description of what the rule detects. Appears in the entropy report summary.
-
-```yaml
-description: Exported functions that are never imported anywhere in the codebase
-```
+Human-readable description of what the entry covers and why it matters, written as
+prose immediately after the `**Severity:**` field. Appears in the entropy report summary
+and is read directly by judgment-only consumers (`review`, `plan-session`, `dev-task`).
 
 ---
 
-### `detection_hint` (required)
+### `**Detection:**` (present only on entropy-scannable entries)
 
-Natural language instruction for the scanning Claude agent. This is the most important field — it determines scan quality. Write it like a task brief:
+Natural language instruction for the scanning Claude agent. This is the most important
+field on a scannable entry — it determines scan quality. Write it like a task brief:
 
 - Be specific enough that the agent can execute it without guessing
 - Name the exact patterns, file paths, or AST constructs to look for
@@ -84,76 +95,90 @@ Natural language instruction for the scanning Claude agent. This is the most imp
 - Don't be so prescriptive that it breaks on minor project variations
 
 **Example — good:**
-```yaml
-detection_hint: |
-  For each .ts file under src/ (excluding *.test.ts and index.ts), check if a
-  corresponding .test.ts file exists in the same directory. Flag every source
-  file with no test coverage. Report: file path and line count.
+```
+**Detection:** For each .ts file under src/ (excluding *.test.ts and index.ts), check if
+a corresponding .test.ts file exists in the same directory. Flag every source file with
+no test coverage. Report: file path and line count.
 ```
 
 **Example — too vague:**
-```yaml
-detection_hint: Check if tests exist.
+```
+**Detection:** Check if tests exist.
 ```
 
 **Example — too prescriptive:**
-```yaml
-detection_hint: Run `jest --coverage` and parse the JSON output for files with 0% coverage.
 ```
+**Detection:** Run `jest --coverage` and parse the JSON output for files with 0% coverage.
+```
+
+Omitting this field entirely marks the entry as judgment-only — it will not be scanned.
 
 ---
 
-### `pr_worthy` (required)
+### `**PR-worthy:**` (present only alongside `**Detection:**`)
 
-Whether `/entropy-fix` should open a pull request to address issues found by this rule.
+Whether `/entropy-fix` should open a pull request to address issues found by this entry.
 
-```yaml
-pr_worthy: true   # /entropy-fix will open a PR (max 3 files per PR)
-pr_worthy: false  # /entropy-scan reports it; /entropy-fix skips it
+```
+**PR-worthy:** true    <!-- /entropy-fix will open a PR (max 3 files per PR) -->
+**PR-worthy:** false   <!-- /entropy-scan reports it; /entropy-fix skips it -->
 ```
 
-Use `false` for rules where:
+Use `false` for entries where:
 - The fix requires human judgment (e.g., whether a dead file should be deleted or revived)
 - The fix is high-risk (e.g., deleting a file)
-- The rule surfaces information rather than an actionable change
+- The entry surfaces information rather than an actionable change
 
 ---
 
-### `disabled` (optional)
+### `**HITL:**` (present only alongside `**Detection:**`, on `**PR-worthy:** true` entries)
 
-Set to `true` to skip a rule without deleting it. Useful for disabling a default rule that doesn't apply to your project.
+Documents routing intent for how a PR-worthy finding should be classified:
 
-```yaml
-disabled: true
+| Value | Meaning |
+|-------|---------|
+| `always` | Every finding from this entry always routes to human-in-the-loop review |
+| `never` | Findings route to an autonomous fix without human review |
+| `per-finding` | Routing is decided per finding, at fix time |
+
+This field records classification intent only — `entropy-fix`'s actual queue/HITL routing
+logic is wired independently.
+
+---
+
+## Removing an entry
+
+There is no `disabled` flag in this format. Omit an entry entirely from your project's
+`.claude/shipwright/principles.md` override to stop it from running — it will not appear
+anywhere in the entropy report ("No Violations" included).
+
+---
+
+## Complete example entry
+
+```
+### `missing_test_file`
+
+**Domain:** testing
+**Severity:** high
+
+Source files in src/ that have no corresponding .test.ts file. Missing test coverage
+compounds silently until a regression surfaces it the hard way.
+
+**Detection:** For each .ts file under src/ (excluding *.test.ts, *.spec.ts, index.ts, and
+type-only files that export only interfaces/types), check if a corresponding .test.ts
+file exists in the same directory or a __tests__/ subdirectory. Flag every source file
+with no test coverage file. Report: file path, file size (lines), approximate complexity
+(does it export functions?).
+**PR-worthy:** false
+**HITL:** never
 ```
 
-Omit this field (or set to `false`) to enable the rule.
-
 ---
 
-## Complete example rule
+## Global config
 
-```yaml
-- id: missing_test_file
-  category: missing_tests
-  severity: high
-  description: Source files in src/ that have no corresponding .test.ts file
-  detection_hint: |
-    For each .ts file under src/ (excluding *.test.ts, *.spec.ts, index.ts, and
-    type-only files that export only interfaces/types), check if a corresponding
-    .test.ts file exists in the same directory or a __tests__/ subdirectory.
-    Flag every source file with no test coverage file.
-    Report: file path, file size (lines), approximate complexity (does it export functions?).
-  pr_worthy: false
-```
-
----
-
-## Global config fields
-
-These appear at the top level of the YAML file (not inside `rules`).
-
-| Field | Default | Description |
-|-------|---------|-------------|
-| `todo_max_age_days` | `90` | Age threshold for `stale_todo` rule (in days) |
-| `version` | `"1.0"` | Schema version — used for future migration |
+**Age threshold** for the `stale_todo` / `todo_fixme_hack` entries defaults to 90 days
+(`todo_max_age_days`). There is no per-project config field for this in the current
+format — adjust the relevant entry's own `**Detection:**` text in a project override if
+a different threshold is needed.

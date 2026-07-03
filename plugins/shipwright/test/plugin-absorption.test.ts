@@ -107,6 +107,33 @@ describe("entropy-scan support files", () => {
       ).toBe(true);
     });
   }
+
+  it("references/principles.md exists", () => {
+    expect(existsSync(pluginPath("references", "principles.md"))).toBe(true);
+  });
+});
+
+// ── entropy-scan/entropy-fix repoint to principles.md ────────────────────────
+
+describe("entropy-scan/entropy-fix reference principles.md, not golden-principles.yaml", () => {
+  const skillFiles = [
+    pluginPath("skills", "entropy-scan", "SKILL.md"),
+    pluginPath("skills", "entropy-fix", "SKILL.md"),
+  ];
+
+  for (const file of skillFiles) {
+    const relPath = file.replace(`${pluginRoot}/`, "");
+
+    it(`${relPath} does not reference golden-principles.yaml`, () => {
+      const content = readFileSync(file, "utf8");
+      expect(content.includes("golden-principles.yaml")).toBe(false);
+    });
+
+    it(`${relPath} references principles.md`, () => {
+      const content = readFileSync(file, "utf8");
+      expect(content.includes("principles.md")).toBe(true);
+    });
+  }
 });
 
 // ── learning-capture support files ───────────────────────────────────────────
