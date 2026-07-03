@@ -134,6 +134,37 @@ export function createMessagesRoutes(
     return c.json(claimed, 200);
   });
 
+  // ─── Get attachment (ephemeral) ──────────────────────────────────────────────
+  // Registered before /:id so "/:id/attachment" matches. Streams the stored
+  // bytes once, then drops them — content is not retained after the agent pulls
+  // it into its workspace.
+  app.get("/:id/attachment", async (c) => {
+    const threadId = c.req.param("threadId") as string;
+    await requireThread(c, threadService, threadId);
+
+    const message = await messageService.findById(c.req.param("id") as string);
+    if (!message || message.threadId !== threadId)
+      throw new NotFoundError("message not found");
+
+    if (message.attachmentBytes === null) {
+      throw new NotFoundError("no attachment");
+    }
+
+    const bytes = message.attachmentBytes;
+    const filename = message.attachmentFilename ?? "attachment";
+
+    // Drop the bytes now that they've been served (ephemeral retention).
+    await messageService.clearAttachmentBytes(message.id);
+
+    return new Response(bytes, {
+      status: 200,
+      headers: {
+        "Content-Type": "application/octet-stream",
+        "Content-Disposition": `attachment; filename="${filename.replace(/"/g, "")}"`,
+      },
+    });
+  });
+
   // ─── Get ───────────────────────────────────────────────────────────────────
   app.get("/:id", async (c) => {
     const threadId = c.req.param("threadId") as string;
