@@ -10,6 +10,11 @@ A shipwright builds ships. This one ships software.
 /plugin install shipwright@app-vitals/shipwright
 ```
 
+The plugin's version (`.claude-plugin/plugin.json`) advances automatically on
+every agent release — `.github/workflows/sync-plugin-version.yml` syncs it
+from each `agent-v*` tag, so `claude plugin update` can detect and pull new
+plugin content instead of comparing against a frozen version string.
+
 ## The Pipeline
 
 ```mermaid

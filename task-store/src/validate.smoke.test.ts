@@ -285,14 +285,18 @@ describe("org/repo format validation — POST /tasks", () => {
     expect(res.status).toBe(201);
   });
 
-  it("accepts POST /tasks without a repo field → 201 (no validation triggered)", async () => {
+  it("rejects POST /tasks without a repo field → 400", async () => {
     const app = makeAgentApp(["example-org/my-service"]);
     const res = await app.request("/tasks", {
       method: "POST",
       headers: { ...agentAuth(), "content-type": "application/json" },
       body: JSON.stringify({ title: "T", status: "pending" }),
     });
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe(
+      "repo key is required (null is valid for unscoped tasks)",
+    );
   });
 });
 
@@ -379,14 +383,14 @@ describe("org/repo validation — POST /tasks/bulk", () => {
     expect(res.status).toBe(200);
   });
 
-  it("skips validation for tasks with null repo in bulk", async () => {
+  it("accepts tasks with null repo in bulk → 200", async () => {
     const app = makeAdminApp();
     const res = await app.request("/tasks/bulk", {
       method: "POST",
       headers: { ...adminAuth(), "content-type": "application/json" },
       body: JSON.stringify([
         { title: "T1", status: "pending", repo: null },
-        { title: "T2", status: "pending" },
+        { title: "T2", status: "pending", repo: null },
       ]),
     });
     expect(res.status).toBe(200);
@@ -402,6 +406,23 @@ describe("org/repo validation — POST /tasks/bulk", () => {
       ]),
     });
     expect(res.status).toBe(400);
+  });
+
+  it("rejects POST /tasks/bulk when any task missing repo → 400", async () => {
+    const app = makeAdminApp();
+    const res = await app.request("/tasks/bulk", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify([
+        { title: "T1", status: "pending", repo: "example-org/my-service" },
+        { title: "T2", status: "pending" },
+      ]),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe(
+      "repo key is required (null is valid for unscoped tasks)",
+    );
   });
 });
 

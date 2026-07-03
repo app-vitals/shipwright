@@ -8,7 +8,7 @@
 
 import { beforeAll, describe, expect, it } from "bun:test";
 import { sign } from "hono/jwt";
-import type { ChatClient, ChatMessage, ChatThread } from "./http-chat-client.ts";
+import type { ChatClient, ChatMessage, ChatThread, ThreadStats } from "./http-chat-client.ts";
 import { createAdminUIApp } from "./admin-ui.ts";
 import type { AdminUIDeps, AdminUISlackClient } from "./admin-ui.ts";
 import type {
@@ -60,7 +60,7 @@ const MOCK_ASSISTANT_MESSAGE: ChatMessage = {
   createdAt: "2024-01-01T00:01:00.000Z",
   claimedBy: null,
   repliedAt: "2024-01-01T00:01:05.000Z",
-  tokens: 50,
+  tokens: { input_tokens: 50, output_tokens: 30, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
   costUsd: 0.0005,
   errorKind: null,
   attachmentFilename: null,
@@ -105,6 +105,13 @@ async function makeSessionCookie(
 
 // ─── Mock ChatClient ──────────────────────────────────────────────────────────
 
+const MOCK_THREAD_STATS: ThreadStats = {
+  messageCount: 1,
+  totalInputTokens: 0,
+  totalOutputTokens: 0,
+  totalCostUsd: 0,
+};
+
 function makeMockChatClient(overrides?: Partial<ChatClient>): ChatClient {
   return {
     listThreads: async () => ({
@@ -127,6 +134,7 @@ function makeMockChatClient(overrides?: Partial<ChatClient>): ChatClient {
       offset: 0,
     }),
     createMessage: async () => MOCK_MESSAGE,
+    getThreadStats: async () => MOCK_THREAD_STATS,
     ...overrides,
   };
 }
@@ -344,6 +352,126 @@ describe("GET /admin/chat — degraded mode (no chatClient)", () => {
     expect(html).toContain("Chat");
     // Should show a degraded notice
     expect(html.toLowerCase()).toMatch(/not configured|unavailable|degraded/);
+  });
+});
+
+// ─── Thread stats: token/cost display ────────────────────────────────────────
+
+describe("GET /admin/chat/:agentId/threads/:threadId — token/cost display", () => {
+  let sessionCookie: string;
+
+  beforeAll(async () => {
+    sessionCookie = await makeSessionCookie();
+  });
+
+  it("shows per-message token/cost info on assistant messages that have token data", async () => {
+    const tokenRichMessage: ChatMessage = {
+      id: "msg-token-rich",
+      threadId: THREAD_ID,
+      role: "assistant",
+      body: "Here is my response.",
+      createdAt: "2024-01-01T00:01:00.000Z",
+      claimedBy: null,
+      repliedAt: "2024-01-01T00:01:05.000Z",
+      tokens: { input_tokens: 512, output_tokens: 234, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+      costUsd: 0.0005,
+      errorKind: null,
+      attachmentFilename: null,
+      attachmentSize: null,
+    };
+    const chatClient = makeMockChatClient({
+      listMessages: async () => ({
+        messages: [tokenRichMessage],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      }),
+      getThreadStats: async () => ({
+        messageCount: 1,
+        totalInputTokens: 512,
+        totalOutputTokens: 234,
+        totalCostUsd: 0.0005,
+      }),
+    });
+    const app = createAdminUIApp(makeBaseDeps({ chatClient }));
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}`,
+      { headers: { Cookie: `admin_session=${sessionCookie}` } },
+    );
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    // Per-message token info: "512 in / 234 out"
+    expect(html).toContain("512");
+    expect(html).toContain("234");
+    // Cost info
+    expect(html).toContain("0.0005");
+  });
+
+  it("shows nothing extra on messages with null tokens/costUsd", async () => {
+    const noTokenMessage: ChatMessage = {
+      id: "msg-no-token",
+      threadId: THREAD_ID,
+      role: "assistant",
+      body: "No token data.",
+      createdAt: "2024-01-01T00:01:00.000Z",
+      claimedBy: null,
+      repliedAt: "2024-01-01T00:01:05.000Z",
+      tokens: null,
+      costUsd: null,
+      errorKind: null,
+      attachmentFilename: null,
+      attachmentSize: null,
+    };
+    const chatClient = makeMockChatClient({
+      listMessages: async () => ({
+        messages: [noTokenMessage],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      }),
+      getThreadStats: async () => ({
+        messageCount: 1,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        totalCostUsd: 0,
+      }),
+    });
+    const app = createAdminUIApp(makeBaseDeps({ chatClient }));
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}`,
+      { headers: { Cookie: `admin_session=${sessionCookie}` } },
+    );
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    // Should not show token badge content for null token messages
+    expect(html).not.toContain("in / ");
+  });
+
+  it("shows thread-level total token/cost stats in the header", async () => {
+    const chatClient = makeMockChatClient({
+      listMessages: async () => ({
+        messages: [MOCK_ASSISTANT_MESSAGE],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      }),
+      getThreadStats: async () => ({
+        messageCount: 1,
+        totalInputTokens: 1200,
+        totalOutputTokens: 567,
+        totalCostUsd: 0.0032,
+      }),
+    });
+    const app = createAdminUIApp(makeBaseDeps({ chatClient }));
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}`,
+      { headers: { Cookie: `admin_session=${sessionCookie}` } },
+    );
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    // Thread-level stats should appear in the header
+    expect(html).toContain("1.2k");
+    expect(html).toContain("0.0032");
   });
 });
 
