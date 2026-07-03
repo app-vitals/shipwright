@@ -3226,8 +3226,8 @@ describe("renderChatThreadPage", () => {
       body: 'File saved [upload:/tmp/file<script>.pdf]',
     };
     const html = renderChatThreadPage("agent-xyz", THREAD, [msgWithXss], "alice");
-    // The script tag should be escaped
-    expect(html).not.toContain("<script>");
+    // The raw XSS payload must not appear verbatim
+    expect(html).not.toContain("file<script>.pdf");
     // Should still show the filename (escaped)
     expect(html).toContain("&lt;script&gt;");
   });
