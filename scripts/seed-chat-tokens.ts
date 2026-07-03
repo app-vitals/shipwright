@@ -129,8 +129,7 @@ if (import.meta.main) {
   });
   try {
     await seedChatTokens({
-      // biome-ignore lint/suspicious/noExplicitAny: generated client satisfies the upsert slice
-      prisma: prisma as any,
+      prisma: prisma as unknown as ChatTokenUpserter,
       adminRawToken: adminToken,
       agentRawToken: agentToken,
       agentId,
