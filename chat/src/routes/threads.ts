@@ -76,6 +76,15 @@ export function createThreadsRoutes(
     return c.json(thread, 201);
   });
 
+  // ─── Stats ─────────────────────────────────────────────────────────────────
+  app.get("/:id/stats", async (c) => {
+    const thread = await threadService.findById(c.req.param("id"));
+    if (!thread) throw new NotFoundError("thread not found");
+    enforceAgentScope(c.get("agentId"), thread.agentId);
+    const stats = await threadService.getStats(thread);
+    return c.json(stats, 200);
+  });
+
   // ─── Get ───────────────────────────────────────────────────────────────────
   app.get("/:id", async (c) => {
     const thread = await threadService.findById(c.req.param("id"));

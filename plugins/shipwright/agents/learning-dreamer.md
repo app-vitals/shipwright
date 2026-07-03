@@ -40,6 +40,7 @@ interactive `learning-capture` skill gets for free.
 | A `CLAUDE.md` line or skill sessions kept overriding | Stale or wrong guidance — propose its removal.   |
 | Duplicated / contradictory lines already in context  | Memory bloat — propose a merge or a resolution.  |
 | Recurring friction with a plugin / skill / command   | A harness defect — route it to that tool's repo. |
+| A recurring, generalizable fact about a specific person or agent | Durable facts about collaborators — write to the harness's own memory system (`~/.claude/projects/.../memory/*.md`, type: user) when present, else `workspace/LEARNINGS.md` as fallback. |
 
 The last row is the steady-state catcher for harness problems. A complaint about a tool
 voiced once is noise; the same friction across many sessions is the signal that the tool
@@ -88,6 +89,10 @@ Every item cites the evidence:
 ## Remove
 - **`CLAUDE.md`** — "always use the staging DB for local dev." Overridden in 6 of 9
   sessions; the team moved to per-branch ephemeral DBs. Stale.
+
+## Memory
+- **Dan** — approves PRs with "Ship it" comments; prefers code decisions explained
+  before asking him to merge. Seen in 8 sessions (mar-10 refactor, mar-12 ×2, mar-14 ×3, mar-15, mar-16).
 
 ## Harness — flushed to other repos
 - **`shipwright`** (`~/src/shipwright`) — 1 small edit applied, 1 issue

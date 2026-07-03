@@ -2073,14 +2073,15 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }
 
     try {
-      const [thread, messagesResult, threadListResult] = await Promise.all([
+      const [thread, messagesResult, threadListResult, statsResult] = await Promise.all([
         chatClient.getThread(threadId),
         chatClient.listMessages(threadId),
         chatClient.listThreads(agentId).catch(() => null),
+        chatClient.getThreadStats(threadId).catch(() => null),
       ]);
       const threadList = threadListResult ? threadListResult.threads : null;
       return html(
-        renderChatThreadPage(agentId, thread, messagesResult.messages, threadList, c.var.userEmail),
+        renderChatThreadPage(agentId, thread, messagesResult.messages, threadList, c.var.userEmail, statsResult),
       );
     } catch {
       return html(

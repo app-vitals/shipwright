@@ -30,6 +30,7 @@ import {
   renderPrsPage,
   renderTaskDetailPage,
   renderTasksPage,
+  renderChatPage,
   renderChatThreadPage,
 } from "./admin-ui-pages.ts";
 import type { ChatMessage, ChatThread } from "./http-chat-client.ts";
@@ -3018,6 +3019,57 @@ describe("renderPrsPage — mobile column hiding", () => {
   });
 });
 
+// ─── renderChatPage ───────────────────────────────────────────────────────────
+
+describe("renderChatPage", () => {
+  const AGENTS = [
+    { id: "agent-1", name: "Agent One" },
+    { id: "agent-2", name: "Agent Two" },
+  ];
+
+  const THREADS: ChatThread[] = [
+    {
+      id: "thread-1",
+      agentId: "agent-1",
+      title: "First Thread",
+      memberId: null,
+      createdAt: "2024-01-01T00:00:00.000Z",
+      updatedAt: "2024-01-01T00:00:00.000Z",
+    },
+  ];
+
+  test("renders agent selector", () => {
+    const html = renderChatPage(AGENTS, undefined, null, "alice");
+    expect(html).toContain("Agent One");
+    expect(html).toContain("Agent Two");
+  });
+
+  test("degraded mode: renders not-configured notice when threads is null", () => {
+    const html = renderChatPage(AGENTS, "agent-1", null, "alice");
+    expect(html).toContain("SHIPWRIGHT_CHAT_SERVICE_URL");
+  });
+
+  test("renders thread list when threads are provided", () => {
+    const html = renderChatPage(AGENTS, "agent-1", THREADS, "alice");
+    expect(html).toContain("First Thread");
+  });
+
+  test("responsive: page includes a @media CSS rule for mobile", () => {
+    const html = renderChatPage(AGENTS, "agent-1", THREADS, "alice");
+    expect(html).toContain("@media");
+  });
+
+  test("responsive: sidebar has chat-list-sidebar class for mobile styling", () => {
+    const html = renderChatPage(AGENTS, "agent-1", THREADS, "alice");
+    expect(html).toContain("chat-list-sidebar");
+  });
+
+  test("responsive: layout wrapper has chat-list-layout class", () => {
+    const html = renderChatPage(AGENTS, "agent-1", THREADS, "alice");
+    expect(html).toContain("chat-list-layout");
+  });
+});
+
 // ─── renderChatThreadPage ─────────────────────────────────────────────────────
 
 describe("renderChatThreadPage", () => {
@@ -3053,7 +3105,7 @@ describe("renderChatThreadPage", () => {
     createdAt: "2024-01-01T00:01:00.000Z",
     claimedBy: null,
     repliedAt: "2024-01-01T00:01:05.000Z",
-    tokens: 100,
+    tokens: { input_tokens: 100, output_tokens: 50, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
     costUsd: 0.001,
     errorKind: null,
     attachmentFilename: null,
@@ -3262,5 +3314,35 @@ describe("renderChatThreadPage", () => {
     // Should render both links
     expect(html).toContain("http://x");
     expect(html).toContain("http://y");
+  });
+
+  test("responsive: page includes a @media CSS rule for mobile", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
+    expect(html).toContain("@media");
+  });
+
+  test("responsive: thread sidebar has chat-thread-sidebar class", () => {
+    const THREADS_LIST: ChatThread[] = [
+      {
+        id: "thread-other",
+        agentId: "agent-xyz",
+        title: "Other Thread",
+        memberId: null,
+        createdAt: "2024-01-01T00:00:00.000Z",
+        updatedAt: "2024-01-01T00:00:00.000Z",
+      },
+    ];
+    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], THREADS_LIST, "alice");
+    expect(html).toContain("chat-thread-sidebar");
+  });
+
+  test("responsive: message bubble has chat-bubble-inner class for width overrides", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
+    expect(html).toContain("chat-bubble-inner");
+  });
+
+  test("responsive: main content wrapper has chat-thread-layout class for mobile reflow", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
+    expect(html).toContain("chat-thread-layout");
   });
 });

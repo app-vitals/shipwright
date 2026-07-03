@@ -195,6 +195,79 @@ describe("PATCH /threads/:id", () => {
   });
 });
 
+// ─── Stats ────────────────────────────────────────────────────────────────────
+
+describe("GET /threads/:id/stats", () => {
+  it("admin can get stats for a thread (200 with aggregated data)", async () => {
+    const ts = fakeThreadService();
+    const thread = await ts.create({ agentId: "a1", title: "T1" });
+    const app = adminApp(ts);
+    const res = await app.request(`/threads/${thread.id}/stats`, {
+      headers: HA(),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      messageCount: number;
+      totalInputTokens: number;
+      totalOutputTokens: number;
+      totalCostUsd: number;
+    };
+    expect(typeof body.messageCount).toBe("number");
+    expect(typeof body.totalInputTokens).toBe("number");
+    expect(typeof body.totalOutputTokens).toBe("number");
+    expect(typeof body.totalCostUsd).toBe("number");
+  });
+
+  it("returns 404 for unknown thread", async () => {
+    const app = adminApp();
+    const res = await app.request("/threads/nonexistent/stats", {
+      headers: HA(),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("agent token scoped to own thread (403 for another agent's thread)", async () => {
+    const ts = fakeThreadService();
+    const thread = await ts.create({
+      agentId: "other-agent",
+      title: "Not mine",
+    });
+    const app = agentApp(ts);
+    const res = await app.request(`/threads/${thread.id}/stats`, {
+      headers: HA(AGENT_TOKEN),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("returns zeros when messages have no token data", async () => {
+    const ts = fakeThreadService();
+    const thread = await ts.create({ agentId: "a1", title: "T1" });
+    const app = adminApp(ts);
+    const res = await app.request(`/threads/${thread.id}/stats`, {
+      headers: HA(),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      messageCount: number;
+      totalInputTokens: number;
+      totalOutputTokens: number;
+      totalCostUsd: number;
+    };
+    expect(body.messageCount).toBe(0);
+    expect(body.totalInputTokens).toBe(0);
+    expect(body.totalOutputTokens).toBe(0);
+    expect(body.totalCostUsd).toBe(0);
+  });
+
+  it("returns 401 without bearer token", async () => {
+    const ts = fakeThreadService();
+    const thread = await ts.create({ agentId: "a1", title: "T1" });
+    const app = adminApp(ts);
+    const res = await app.request(`/threads/${thread.id}/stats`);
+    expect(res.status).toBe(401);
+  });
+});
+
 // ─── Delete ───────────────────────────────────────────────────────────────────
 
 describe("DELETE /threads/:id", () => {
