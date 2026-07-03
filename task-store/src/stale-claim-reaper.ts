@@ -10,7 +10,7 @@
  *   2. heartbeatAt IS NULL and claimedAt < cutoff (agent claimed but never beat)
  *
  * The cutoff is: clock.now() - ttlMs.
- * Default TTL: 300 000 ms (5 min), overridable via SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS.
+ * Default TTL: 900 000 ms (15 min), overridable via SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS.
  *
  * Usage: register via setInterval(() => reaper.reap(), 60_000) in main.ts.
  */
@@ -18,7 +18,7 @@
 import { type Clock, SystemClock } from "./clock.ts";
 import type { PrismaClient } from "./index.ts";
 
-const DEFAULT_TTL_MS = 300_000;
+const DEFAULT_TTL_MS = 900_000;
 
 export class StaleClaimReaper {
   private readonly ttlMs: number;
