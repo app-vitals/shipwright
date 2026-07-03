@@ -51,8 +51,9 @@ export function parseChatMarkers(text: string): ParseChatMarkersResult {
   // [upload:/path]
   cleaned = cleaned.replace(UPLOAD_REGEX, (_match, pathRaw: string) => {
     const path = pathRaw.trim();
+    // Note: UPLOAD_REGEX uses [^\]]+ (one-or-more), so `path` is never empty here.
+    // This guard is unreachable but kept for defensive consistency.
     if (!path) {
-      // Malformed: empty path. Leave in text.
       return _match;
     }
     uploads.push(path);
@@ -62,10 +63,11 @@ export function parseChatMarkers(text: string): ParseChatMarkersResult {
   cleaned = cleaned.trim();
 
   // [speak:text] — Slack-only, strip silently
+  // Note: SPEAK_REGEX uses [\s\S]*? (zero-or-more), so `text` can be empty — this guard is reachable.
   cleaned = cleaned.replace(SPEAK_REGEX, (_match, textRaw: string) => {
     const text = textRaw.trim();
     if (!text) {
-      // Malformed: empty text. Leave in text.
+      // Malformed: empty speak text. Leave in text.
       return _match;
     }
     return "";
@@ -74,13 +76,14 @@ export function parseChatMarkers(text: string): ParseChatMarkersResult {
   cleaned = cleaned.trim();
 
   // [react:emoji1,emoji2,...] — Slack-only, strip silently
+  // Note: REACT_REGEX uses [^\]]+ (one-or-more), so `raw` is never empty; after split+filter,
+  // emojis.length === 0 is unreachable. Guard kept for defensive consistency.
   cleaned = cleaned.replace(REACT_REGEX, (_match, raw: string) => {
     const emojis = raw
       .split(",")
       .map((e) => e.trim())
       .filter(Boolean);
     if (emojis.length === 0) {
-      // Malformed: empty emoji list. Leave in text.
       return _match;
     }
     return "";
@@ -89,10 +92,16 @@ export function parseChatMarkers(text: string): ParseChatMarkersResult {
   cleaned = cleaned.trim();
 
   // [plan:url]
+  // Note: PLAN_REGEX uses [^\]]+ (one-or-more), so `url` is never empty here.
+  // Guard kept for defensive consistency. Also filter non-http(s) schemes (e.g. javascript:)
+  // as defense-in-depth against injection via agent-generated messages.
   cleaned = cleaned.replace(PLAN_REGEX, (_match, urlRaw: string) => {
     const url = urlRaw.trim();
     if (!url) {
-      // Malformed: empty URL. Leave in text.
+      return _match;
+    }
+    if (!url.startsWith("http://") && !url.startsWith("https://")) {
+      // Non-http scheme (e.g. javascript:). Leave in text rather than rendering as a link.
       return _match;
     }
     planUrls.push(url);

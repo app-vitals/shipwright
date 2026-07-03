@@ -105,4 +105,12 @@ describe("parseChatMarkers", () => {
     expect(result.uploads).toEqual(["/a.pdf", "/b.pdf"]);
     expect(result.planUrls).toEqual(["http://x", "http://y"]);
   });
+
+  it("does not extract non-http plan URLs (defense-in-depth against javascript: injection)", () => {
+    const text = "See [plan:javascript:alert(1)] and [plan:https://safe.example.com]";
+    const result = parseChatMarkers(text);
+    // javascript: URL should not be extracted — left in text as-is
+    expect(result.planUrls).toEqual(["https://safe.example.com"]);
+    expect(result.cleaned).toContain("[plan:javascript:alert(1)]");
+  });
 });
