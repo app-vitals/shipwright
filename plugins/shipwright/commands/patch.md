@@ -174,12 +174,18 @@ Store the fetched `mergeStateStatus` — do not re-fetch in Step 3c.
 For each PR not in List C (DIRTY PRs have unreliable CI until conflicts are resolved), check its CI checks:
 
 ```bash
-gh api "repos/{org}/{repo}/actions/runs?branch={branch}&per_page=10" \
-  -q '.workflow_runs[] | select(.head_sha == "{headRefOid}") | "\(.name): \(.status) \(.conclusion)"'
+gh api "repos/{org}/{repo}/actions/runs?head_sha={headRefOid}&per_page=20" \
+  -q '.workflow_runs[] | {workflow_id, run_number, conclusion}'
 ```
 
-A PR has **failing CI** when at least one workflow run matching the current HEAD SHA has
-`conclusion == "failure"` or `conclusion == "timed_out"`.
+A PR has **failing CI** when any workflow's **latest run** (highest `run_number` per
+`workflow_id`) has `conclusion == "failure"` or `conclusion == "timed_out"`.
+
+**Why deduplicate by workflow:** When a workflow run fails and is rerun, the GitHub API
+returns both the original failed run and the new rerun as separate entries with the same
+`workflow_id` but different `run_number` values. Evaluating every historical run would
+produce a false positive if an older run failed but a newer rerun passed. Deduplication
+by keeping only the latest run per workflow mirrors the behavior of `gh pr checks`.
 
 If failing CI is found, add the PR to **List D**.
 
