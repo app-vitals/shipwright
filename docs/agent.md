@@ -6,7 +6,7 @@
 
 The agent owns nine first-class Prisma models (`Agent` and its `Env` / `CronJob` / `CronRun` / `Tool` / `Token` / `Plugin` / `Member` children, plus `AgentChatTokenUsageDailyByModel` for daily token usage rollups) on a **dedicated database** (`DATABASE_URL_SHIPWRIGHT_ADMIN`). Secrets at rest (env values, Slack/Anthropic keys) are AES-256-GCM encrypted at the service layer; agent API tokens are stored only as SHA-256 hashes.
 
-> The Dockerfile `ENTRYPOINT` is `bun run admin/src/main.ts`, which runs migrations, constructs all services, and mounts all admin + runtime routes. The implemented HTTP surfaces are the admin CRUD API (`admin/src/agents-api.ts`, auth via `api-auth.ts`), the runtime API (`admin/src/api.ts`), the server-rendered admin UI (`admin/src/admin-ui.ts`), the public read-only task board (`GET /public/tasks` — no auth, configurable repo scope), the Prisma store + service classes (all in the `@shipwright/admin` package), the Slack event handler (`slack.ts`), and the cron runtime (`cron-handler.ts`). On startup the runner calls `POST /agents/:id/crons/reconcile` to sync system crons. A dev-only `POST /chat` transport (`chat.ts`) is available when `SHIPWRIGHT_DEV_CHAT=true`; it is never registered in production (enforced by `chat-guard.ts`).
+> The Dockerfile `ENTRYPOINT` is `bun run admin/src/main.ts`, which runs migrations, constructs all services, and mounts all admin + runtime routes. The implemented HTTP surfaces are the admin CRUD API (`admin/src/agents-api.ts`, auth via `api-auth.ts`), the runtime API (`admin/src/api.ts`), the server-rendered admin UI (`admin/src/admin-ui.ts`), the public read-only task board (`GET /public/tasks` — no auth, configurable repo scope), the Prisma store + service classes (all in the `@shipwright/admin` package), the Slack event handler (`slack.ts`), and the cron runtime (`cron-handler.ts`). On startup the runner calls `POST /agents/:id/crons/reconcile` to sync system crons.
 
 ## Agent run modes
 
@@ -16,9 +16,9 @@ There are three ways to run the agent process, depending on the deployment conte
 |---|---|---|---|
 | Pi / bare-metal | `agent/src/index.ts` | Slack Socket Mode | Running directly on a host with a local `.env` file |
 | K8s container | `agent/src/entrypoint-main.ts` | Slack Socket Mode | Deployed via the Dockerfile — validates required vars, fetches config from the admin API, applies env, symlinks `~/.claude`, sets up GitHub auth, runs mise, installs plugins, then spawns `index.ts` |
-| Local dev (no Slack) | `agent/scripts/run-agent.ts --agent-id <id>` | HTTP `POST /chat` | Testing Claude locally without a Slack workspace; requires `SHIPWRIGHT_DEV_CHAT=true` |
+| Local dev (no Slack) | `task stack` (Docker agent pane) | Chat poll loop → admin Chat UI | Testing Claude locally without a Slack workspace — chat via the admin console's Chat tab (`/admin/chat`) |
 
-`agent/src/index.ts` is the production agent entrypoint in all transport modes — it wires the health server, config sync loop, cron sync loop, Slack Bolt app, and graceful shutdown. `agent/src/run-agent.ts` is the minimal dev-only HTTP server; it is not used in production.
+`agent/src/index.ts` is the production agent entrypoint in all transport modes — it wires the health server, config sync loop, cron sync loop, chat poll loop, Slack Bolt app, and graceful shutdown.
 
 ## Running locally
 
@@ -99,23 +99,9 @@ Mounted at `/public/tasks`. **No authentication required** — renders a read-on
 
 Mounted at `/admin/dev-login`. **DEFAULT-DENY:** only registered (and only returns a session) when `devAuthEnabled=true` is injected into `createAdminUIApp()`. The flag is pre-computed from `isDevAuthAllowed()` in `dev-auth-guard.ts`, which hard-blocks the route when `NODE_ENV=production` regardless of the `ADMIN_DEV_AUTH` env var. When disabled, `GET /admin/dev-login` returns `404`. When enabled, it mints an `admin_session` JWT cookie (userId `"dev"`, email `"dev@localhost"`) and redirects to `/admin/agents` — no Google OAuth required.
 
-### Dev chat transport (`chat.ts`) — local convenience
+### Chatting with a local agent
 
-Mounted at `/chat`. **DEFAULT-DENY:** only registered when `SHIPWRIGHT_DEV_CHAT=true` at server startup. When the env var is absent or false, `POST /chat` returns `404`. This endpoint is **unauthenticated** and must never be enabled in production — `chat-guard.ts` enforces this by exiting with an error if `SHIPWRIGHT_DEV_CHAT=true` and `NODE_ENV=production`.
-
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| POST | `/chat` | none | Send a message to the Claude runner. Body: `{ message: string, session?: string }`. Returns `{ result: string, sessionId?: string }`. Successive calls with the same `session` resume the same conversation. |
-
-**TUI client (`scripts/chat.ts`):** A terminal REPL that drives this endpoint. Start the agent with `SHIPWRIGHT_DEV_CHAT=true`, then in a second terminal:
-
-```bash
-bun scripts/chat.ts
-# or point at a non-default port:
-AGENT_URL=http://localhost:3000 bun scripts/chat.ts
-```
-
-Each REPL session generates a single `session` UUID so successive messages resume the same Claude conversation. Ctrl-D exits cleanly.
+There is no HTTP chat endpoint on the agent. Chat flows through the chat service: the admin console's Chat tab (`/admin/chat`) posts user messages to the chat service, and the agent's chat poll loop (`chat-poller.ts`) claims them, runs them through Claude, and posts replies. `task stack` wires all of this up locally, including seeded dev tokens.
 
 ## Data model
 
@@ -160,8 +146,8 @@ Every new agent is seeded with ten system crons (the canonical definitions live 
 | `SHIPWRIGHT_API_URL` | ✅ (entrypoint) | Base URL of the Shipwright API used to fetch agent config at startup. Also settable via `--api-url`. |
 | `SHIPWRIGHT_AGENT_API_KEY` | ✅ (entrypoint) | Bearer token for the config fetch at startup (`/agents/:id/config` and `/agents/:id/crons`). Also settable via `--api-key`. The value must be registered in `SHIPWRIGHT_ADMIN_API_KEYS` on the server with scope `<agentId>` (or `*` for admin bypass) — an agent key not listed there will receive a 401 at startup. |
 | `AGENT_HOME` | entrypoint | Persistent storage root (default: `/data/agent-home`). Mount a PVC here in Kubernetes so mise caches, workspace files, and `~/.claude` survive pod restarts. |
-| `PORT` | server | Chat server port (default: `3000`). Only used when `SHIPWRIGHT_DEV_CHAT=true`; also the port for the admin service (`admin/src/main.ts`). |
-| `SHIPWRIGHT_HEALTH_PORT` | server | Dedicated health server port for K8s liveness probes (default: `3459`). Used by both `entrypoint-main.ts` (in-process, before startup) and `run-agent.ts` (started by `startServer()`). |
+| `PORT` | server | Port for the admin service (`admin/src/main.ts`). Default: `3000`. |
+| `SHIPWRIGHT_HEALTH_PORT` | server | Dedicated health server port for K8s liveness probes (default: `3459`). Started in-process by `entrypoint-main.ts` before startup. |
 | `SHIPWRIGHT_SESSION_SECRET` | admin API | Secret for verifying the `admin_session` JWT cookie. |
 | `SHIPWRIGHT_ADMIN_API_KEYS` | admin API | Comma-separated `name:token:scope` tuples for env-based bearer auth on `/agents/*`. Scope `*` → admin (bypasses per-agent checks); scope `<agentId>` → restricted to that agent's routes. Optional — absent means env key auth is disabled and only DB tokens and session cookies are accepted. Example: `bodhi:sk_bodhi_abc:*,svc:sk_svc_xyz:agent-id-123`. |
 | `GOOGLE_CLIENT_ID` | admin UI (OAuth) | Google OAuth 2.0 client ID. Required for the admin login flow. |
@@ -173,7 +159,6 @@ Every new agent is seeded with ten system crons (the canonical definitions live 
 | `GH_APP_PRIVATE_KEY` | GitHub App auth | PEM private key for the GitHub App (newlines may be `\n`-escaped). Required when using the App auth path. |
 | `GH_APP_INSTALLATION_ID` | GitHub App auth | Installation ID for the target org/repo. Required when using the App auth path. |
 | `GH_TOKEN` | GitHub PAT auth | Personal Access Token for the legacy `gh auth setup-git` path. Used only if the App env vars are absent. |
-| `SHIPWRIGHT_DEV_CHAT` | dev only | Set to `"true"` to enable the unauthenticated `POST /chat` endpoint (local dev convenience). Must **not** be set in production (`NODE_ENV=production`). |
 | `ADMIN_DEV_AUTH` | dev only | Set to `"true"` to enable `GET /admin/dev-login` (bypasses Google OAuth, mints a dev session). Hard-blocked when `NODE_ENV=production` by `dev-auth-guard.ts`. |
 
 ## Baked marketplaces (derived images)
@@ -223,14 +208,11 @@ The constant `BAKED_MARKETPLACES_ROOT` and function `discoverBakedMarketplaces()
 | `admin/src/agent-cron-jobs.ts` | Cron service + system-cron reconciliation. Provides `list()` for basic cron jobs and `listWithRunSummary()` for crons enriched with execution history (last run time/outcome, today's run count). |
 | `admin/src/agent-tools.ts` / `agent-tokens.ts` / `agent-plugins.ts` | Per-resource service classes. |
 | `agent/src/index.ts` | Production agent startup entrypoint — boots in eight steps: agent home + mise + plugins → config sync (60s) → reconcileSystemCrons → health server → cron sync loop (60s) → chat poll loop (5s, when `SHIPWRIGHT_CHAT_SERVICE_URL` and `SHIPWRIGHT_CHAT_SERVICE_TOKEN` are configured) → Slack Bolt Socket Mode app (wired with `HttpChatTokenReporter` when `SHIPWRIGHT_API_URL`, `SHIPWRIGHT_AGENT_API_KEY`, and `SHIPWRIGHT_AGENT_ID` are configured; `NoopChatTokenReporter` otherwise) → graceful SIGTERM/SIGINT shutdown. |
-| `agent/src/entrypoint-main.ts` | Production CLI entry point — wires real deps and calls `runEntrypoint()`. Starts the health server in-process on `SHIPWRIGHT_HEALTH_PORT` (default `3459`) before the startup sequence so K8s liveness probes are reachable during init, then runs the full startup sequence and spawns `run-agent.ts`. |
+| `agent/src/entrypoint-main.ts` | Production CLI entry point — wires real deps and calls `runEntrypoint()`. Starts the health server in-process on `SHIPWRIGHT_HEALTH_PORT` (default `3459`) before the startup sequence so K8s liveness probes are reachable during init, then runs the full startup sequence and spawns `index.ts`. |
 | `agent/src/entrypoint.ts` | Container startup sequence (`runEntrypoint()`) — dependency-injected for testability. Validates vars, fetches config, applies env, symlinks `~/.claude`, runs GitHub auth + mise + plugin install, then spawns the server. |
 | `agent/src/cli-args.ts` | CLI argument parsing (`parseCliArgs()`) — `--agent-id`, `--api-url`, `--api-key` flags with env var fallbacks. Pure, no I/O. |
-| `agent/src/run-agent.ts` | Minimal agent server — dev `/chat` transport only (UNI-1.3: health check and `/agents/*` proxy were removed). `createComposedApp(deps: ComposedAppDeps)` accepts optional `devChat` / `chatRunner` deps to register `POST /chat` (DEFAULT-DENY). `startServer()` starts the dedicated health server on `SHIPWRIGHT_HEALTH_PORT` (default `3459`) and, when `SHIPWRIGHT_DEV_CHAT=true`, binds the chat server on `PORT` (default `3000`). |
-| `agent/src/chat.ts` | Dev-only chat transport: `createChatApp(deps)` — thin Hono sub-app exposing `POST /chat`. Maps opaque caller `session` keys to internal runner session keys for conversation continuity. |
 | `agent/src/chat-poller.ts` | Chat poll loop: `createChatPoller(opts)` — polls the chat service for pending messages, claims and runs them through Claude with per-thread session continuity, and posts replies. Exports `ChatPoller` (interface with `start()`, `stop()`, `pollOnce()`), `ChatRunner` (message handler), and `ChatPollerOptions` (config with optional `workspaceDir` for attachment handling). Session persistence is handled internally by the injected `ChatRunner` (a `createRunClaude` instance wired to a dedicated `chatSessions` store) — `ChatPollerOptions` does not expose a `sessions` field. When `workspaceDir` is set and a claimed message carries an attachment, the poller calls `client.getAttachment()` to fetch the ephemeral bytes, writes them to `<workspaceDir>/uploads/{messageId}-{filename}`, and injects a note into the Claude prompt. Integrates with `HttpChatServiceClient` to claim messages, fetch attachments, and reply. Started in Step 6b of agent startup when `SHIPWRIGHT_CHAT_SERVICE_URL` and `SHIPWRIGHT_CHAT_SERVICE_TOKEN` are configured. |
 | `agent/src/http-chat-service-client.ts` | Typed HTTP client for the Shipwright chat service REST API. Exports `ChatServiceClient` (interface for DI), `HttpChatServiceClient` (production implementation with injectable `fetchFn`), `ChatServiceClientError` (typed error with `statusCode`), and type definitions (`Thread`, `Message` with optional `attachmentFilename`, `ReplyResult`, `ListThreadsOptions`, `ListThreadsResult`). `ChatServiceClient` interface exposes `getAttachment(threadId, messageId): Promise<Uint8Array | null>` to stream an ephemeral file attachment (404 if not found or already dropped). Used by `createChatPoller()` to list threads, claim messages, fetch attachments, and post replies. |
-| `agent/src/chat-guard.ts` | Doctor/CI guard: `devChatGuardViolation(env)` — pure predicate that returns a violation reason string when `SHIPWRIGHT_DEV_CHAT=true` and `NODE_ENV=production`, otherwise `null`. Executable as a CLI script. |
 | `agent/src/shipwright-config-client.ts` | `ShipwrightConfigClient` interface + `HttpShipwrightConfigClient` (real HTTP) + `RecordedShipwrightConfigClient` (cassette double for tests). |
 | `agent/src/setup.ts` | Workspace bootstrapping — directory scaffolding, identity-file seeding, plugin installation, and mise startup. Safe to call on every agent startup (idempotent). |
 | `admin/src/crypto.ts` / `token-crypto.ts` | AES-256-GCM + token hashing helpers. |
@@ -240,9 +222,6 @@ The constant `BAKED_MARKETPLACES_ROOT` and function `discoverBakedMarketplaces()
 | `agent/src/setup-github-auth.ts` | `setupGitHubAuth()` — wires GitHub auth on agent startup: App path (token manager + credential helper + git identity) or PAT path (`gh auth setup-git`). |
 | `agent/scripts/bin/git-credential-shipwright.sh` | Git credential helper that reads the token file written by the App auth path. |
 | `agent/scripts/entrypoint.ts` | Container entrypoint: validates env, fetches config, wires symlinks + GitHub auth, dynamic-imports `index.ts`. |
-| `agent/scripts/run-agent.ts` | Local dev launcher: fetches config, sets env, spawns the agent process. Takes `--agent-id`, `--dry-run`. |
-| `agent/scripts/cli-args.ts` | Pure CLI helpers: `getArg(name, argv)` and `hasFlag(name, argv)` for `--name=value` and `--name value` forms. |
-| `scripts/chat.ts` | TUI REPL client for the dev `/chat` endpoint. Pure functions (`buildChatRequest`, `formatAgentResponse`, `fetchChatResponse`, `formatFetchError`) exported for unit testing; `runRepl()` drives the stdin/stdout loop. Requires `SHIPWRIGHT_DEV_CHAT=true` on the agent. |
 | `agent/src/shipwright-config-client.ts` | `ShipwrightConfigClient` interface + `HttpShipwrightConfigClient` — calls `GET /agents/:id/config` with Bearer auth. |
 | `agent/src/entrypoint-startup.ts` | Extracted startup logic (`runStartup(agentId, deps)`) — DI-injected for integration testing without real network or filesystem side effects. |
 | `agent/src/cron-handler.ts` | Cron runtime: `handleCronRequest()` — runs a cron prompt through Claude and posts the result to Slack. Supports `preCheck` scripts, `silent` suppression, channel vs. DM delivery, and `onPost`/`onSession` callbacks. Fire-and-forget reporting via `CronRunReporter` (when configured) using a two-step interface: `createRun()` at start (POST), `completeRun()` / `skipRun()` at completion (PATCH). |

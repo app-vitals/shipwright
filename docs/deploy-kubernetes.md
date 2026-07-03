@@ -514,7 +514,7 @@ who can reach the service is authenticated. This is the Minikube/dev default.
 ### `auth.mode=google` — Google OAuth (production)
 
 Sets `NODE_ENV=production` (which also hard-blocks the dev-only escapes like
-`ADMIN_DEV_AUTH` and `SHIPWRIGHT_DEV_CHAT`) and enables real Google OAuth.
+`ADMIN_DEV_AUTH`) and enables real Google OAuth.
 Requires:
 
 ```yaml

@@ -6,9 +6,13 @@
  *   0. metrics    — metrics dashboard, offline SQLite mode             (:3460)
  *   1. admin      — standalone admin service (CRUD API + UI)           (:3001)
  *   2. task-store — task-store service (Postgres-backed task queue)    (:3002)
- *   3. agent      — thin Shipwright agent with the dev /chat endpoint  (:3000)
- *   4. chat       — the TUI chat REPL (scripts/chat.ts)
+ *   3. chat-svc   — chat service (threads/messages queue + tokens)     (:3003)
+ *   4. agent      — Shipwright agent in Docker (chat poll loop)
  *   5. logs       — a scratch shell pane
+ *
+ * Chatting with the agent happens in the browser: the admin console's Chat tab
+ * (/admin/chat) talks to the chat service, and the agent's poll loop claims
+ * messages and posts replies.
  *
  * `task dev` is deliberately left untouched — it is the no-tmux fallback that
  * the quickstart depends on. This launcher is additive.
@@ -41,7 +45,7 @@ export const WINDOW_INDEX = 0;
 export const METRICS_PORT = 3460;
 export const ADMIN_PORT = 3001;
 export const TASK_STORE_PORT = 3002;
-export const AGENT_PORT = 3000;
+export const CHAT_SERVICE_PORT = 3003;
 /** The metrics dashboard UI — a browser page (NOT a tmux pane). */
 export const DASHBOARD_URL = `http://localhost:${METRICS_PORT}/dashboard`;
 /** The admin dev-login page — auto-opened after stack launch. */
@@ -63,6 +67,11 @@ const DUMMY_AGENT_API_KEY = "dev-agent-key";
 // Bootstrap admin token seeded into the task-store on startup. Not a real
 // secret — used only against the local dev Postgres instance.
 export const DEV_TASK_STORE_ADMIN_TOKEN = "dev-task-store-admin-token";
+// Bootstrap chat-service tokens, seeded (hashed) into the chat DB by a
+// preflight. The admin token enables the /admin/chat UI; the agent-scoped
+// token enables the agent's chat poll loop. NOT secrets — local DB only.
+export const DEV_CHAT_ADMIN_TOKEN = "dev-chat-admin-token";
+export const DEV_CHAT_AGENT_TOKEN = "dev-chat-agent-token";
 // Session-cookie signing key (HS256). Must be non-empty — Web Crypto rejects a
 // zero-length HMAC key with "DataError", which surfaces as a 500 on first login.
 const DUMMY_SESSION_SECRET = "dev-session-secret-not-for-production-use!";
@@ -84,6 +93,11 @@ const DEV_DATABASE_URL = `postgresql://${
 const DEV_TASK_STORE_DATABASE_URL = `postgresql://${
   DEV_DB_USER ? `${DEV_DB_USER}@` : ""
 }localhost:5432/shipwright_task_store_dev`;
+// The chat service likewise owns a dedicated database (its schema warns against
+// a shared one). Same local Postgres server, distinct database name.
+const DEV_CHAT_DATABASE_URL = `postgresql://${
+  DEV_DB_USER ? `${DEV_DB_USER}@` : ""
+}localhost:5432/shipwright_chat_dev`;
 /** Homebrew formula `task stack` provisions Postgres from on macOS. */
 const PG_FORMULA = "postgresql@16";
 /**
@@ -93,7 +107,7 @@ const PG_FORMULA = "postgresql@16";
  * `bun install` (as `admin` was) silently has none, and the pane crashes on a
  * missing package. The preflight installs deps when any of these is missing.
  */
-const STACK_WORKSPACE_DIRS = ["metrics", "agent", "admin", "task-store"];
+const STACK_WORKSPACE_DIRS = ["metrics", "agent", "admin", "task-store", "chat"];
 const DEV_AGENT_HOME = "state/agent-home";
 
 // ---------------------------------------------------------------------------
@@ -154,10 +168,10 @@ export function buildLogsBanner(): string {
   const lines = [
     "Shipwright dev stack",
     `  console (agents/tasks/PRs)  ${ADMIN_DEV_LOGIN_URL}   (opening in your browser)`,
+    `  chat with the agent         http://localhost:${ADMIN_PORT}/admin/chat`,
     `  metrics dashboard           ${DASHBOARD_URL}`,
     `  task-store API              http://localhost:${TASK_STORE_PORT}`,
-    `  agent (use the chat pane)   http://localhost:${AGENT_PORT}`,
-    "  chat                        <- the pane to the left",
+    `  chat service API            http://localhost:${CHAT_SERVICE_PORT}`,
     "",
     "Scratch shell — run ad-hoc commands here.",
   ];
@@ -209,6 +223,11 @@ export const STACK_PANES: Pane[] = [
       // shell may export.
       SHIPWRIGHT_TASK_STORE_URL: `http://localhost:${TASK_STORE_PORT}`,
       SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN: DEV_TASK_STORE_ADMIN_TOKEN,
+      // Wire the admin console to the chat service so the Chat tab works
+      // instead of rendering the "Chat service not configured" degraded mode.
+      // The admin token is seeded (hashed) into the chat DB by a preflight.
+      SHIPWRIGHT_CHAT_SERVICE_URL: `http://localhost:${CHAT_SERVICE_PORT}`,
+      SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN: DEV_CHAT_ADMIN_TOKEN,
     },
   },
   {
@@ -226,6 +245,17 @@ export const STACK_PANES: Pane[] = [
     },
   },
   {
+    label: "chat-svc",
+    cmd: ["bun", "chat/src/main.ts"],
+    env: {
+      PORT: String(CHAT_SERVICE_PORT),
+      // Dedicated database for the chat service — its Prisma schema reads
+      // DATABASE_URL_SHIPWRIGHT_CHAT. Shares the local Postgres server with the
+      // other services but a distinct database, per the schema's warning.
+      DATABASE_URL_SHIPWRIGHT_CHAT: DEV_CHAT_DATABASE_URL,
+    },
+  },
+  {
     label: "agent",
     // All env is passed via -e flags inside cmd; pane env stays empty so
     // paneShellLine() emits no inline prefix — docker manages its own env.
@@ -237,8 +267,6 @@ export const STACK_PANES: Pane[] = [
       "--rm",
       "--name",
       DEV_DOCKER_IMAGE,
-      "-p",
-      `${AGENT_PORT}:${AGENT_PORT}`,
       "-v",
       `${DEV_AGENT_VOLUME}:/data/agent-home`,
       // Repo is mounted read-only at build time; the exact host path is
@@ -249,22 +277,20 @@ export const STACK_PANES: Pane[] = [
       "--env-file",
       "state/dev-agent.env",
       "-e",
-      "SHIPWRIGHT_DEV_CHAT=true",
-      "-e",
       `SHIPWRIGHT_API_URL=http://host.docker.internal:${ADMIN_PORT}`,
       "-e",
       "SHIPWRIGHT_AGENT_ID=dev-agent",
       "-e",
       `SHIPWRIGHT_AGENT_API_KEY=${DUMMY_AGENT_API_KEY}`,
+      // Chat poll loop: the agent claims user messages from the chat service
+      // and posts replies. The agent-scoped token is seeded by a preflight.
       "-e",
-      `PORT=${AGENT_PORT}`,
+      `SHIPWRIGHT_CHAT_SERVICE_URL=http://host.docker.internal:${CHAT_SERVICE_PORT}`,
+      "-e",
+      `SHIPWRIGHT_CHAT_SERVICE_TOKEN=${DEV_CHAT_AGENT_TOKEN}`,
       DEV_DOCKER_IMAGE,
     ],
     env: {},
-  },
-  {
-    label: "chat",
-    cmd: ["bun", "scripts/chat.ts"],
   },
   {
     label: "logs",
@@ -365,7 +391,7 @@ export function buildStackCommands(
   // 2b. Label every pane with its service name via a titled top border.
   // pane-border-status/format are WINDOW options (set once with `-w`); each
   // pane's title comes from its `label`. Scoped to THIS session via `-t`, so
-  // the user's global tmux config is untouched. The final chat-focus
+  // the user's global tmux config is untouched. The final logs-focus
   // select-pane below runs after these, so it still wins the active pane.
   cmds.push({
     kind: "set-option",
@@ -391,6 +417,7 @@ export function buildStackCommands(
 
   const adminIndex = panes.findIndex((p) => p.label === "admin");
   const taskStoreIndex = panes.findIndex((p) => p.label === "task-store");
+  const chatSvcIndex = panes.findIndex((p) => p.label === "chat-svc");
   const agentIndex = panes.findIndex((p) => p.label === "agent");
 
   // 3+4+5. For each pane, send its command.
@@ -430,6 +457,31 @@ export function buildStackCommands(
           "sh",
           "-c",
           `bun run scripts/seed-task-store-token.ts --db-url ${DEV_TASK_STORE_DATABASE_URL} --token ${DEV_TASK_STORE_ADMIN_TOKEN}`,
+        ],
+      });
+    }
+    if (i === chatSvcIndex) {
+      // Preflight: generate the chat Prisma client then apply migrations
+      // against its dedicated database, so the service's schema is up to date
+      // before it starts. Mirrors the admin/task-store preflights.
+      cmds.push({
+        kind: "preflight",
+        argv: [
+          "sh",
+          "-c",
+          `cd chat && bunx prisma generate --schema=prisma/schema.prisma && DATABASE_URL_SHIPWRIGHT_CHAT=${DEV_CHAT_DATABASE_URL} bunx prisma migrate deploy --schema=prisma/schema.prisma`,
+        ],
+      });
+      // Preflight: seed the chat tokens — the admin token the /admin/chat UI
+      // uses and the agent-scoped token the agent's poll loop uses. Idempotent
+      // upsert (no-op when they already exist). Runs after the migrate-deploy
+      // above so the ChatToken table exists.
+      cmds.push({
+        kind: "preflight",
+        argv: [
+          "sh",
+          "-c",
+          `bun run scripts/seed-chat-tokens.ts --db-url ${DEV_CHAT_DATABASE_URL} --admin-token ${DEV_CHAT_ADMIN_TOKEN} --agent-token ${DEV_CHAT_AGENT_TOKEN} --agent-id dev-agent`,
         ],
       });
     }
@@ -489,12 +541,13 @@ export function buildStackCommands(
     });
   });
 
-  // Focus the chat pane so the user lands on the REPL.
-  const chatIndex = panes.findIndex((p) => p.label === "chat");
-  if (chatIndex >= 0) {
+  // Focus the logs pane so the user lands on the scratch shell (chatting with
+  // the agent happens in the browser via the admin console's Chat tab).
+  const logsIndex = panes.findIndex((p) => p.label === "logs");
+  if (logsIndex >= 0) {
     cmds.push({
       kind: "select-pane",
-      argv: ["select-pane", "-t", paneTarget(session, chatIndex)],
+      argv: ["select-pane", "-t", paneTarget(session, logsIndex)],
     });
   }
 
@@ -534,7 +587,7 @@ export function tmuxIsInstalled(
 }
 
 const NO_TMUX_MESSAGE = [
-  "[stack] tmux is not installed — `task stack` needs it for the 5-pane dashboard.",
+  "[stack] tmux is not installed — `task stack` needs it for the 6-pane dashboard.",
   "[stack] Install tmux (macOS: `brew install tmux`, Debian/Ubuntu: `apt install tmux`),",
   "[stack] or use the no-tmux fallback: `task dev` (starts the metrics dashboard).",
 ].join("\n");
@@ -890,7 +943,7 @@ if (import.meta.main) {
   await ensurePostgresReady(DEV_DATABASE_URL);
 
   console.log(
-    `[stack] launching tmux session "${SESSION_NAME}" — metrics :${METRICS_PORT}, admin :${ADMIN_PORT}, task-store :${TASK_STORE_PORT}, agent :${AGENT_PORT}, chat REPL, logs`,
+    `[stack] launching tmux session "${SESSION_NAME}" — metrics :${METRICS_PORT}, admin :${ADMIN_PORT}, task-store :${TASK_STORE_PORT}, chat-svc :${CHAT_SERVICE_PORT}, agent, logs`,
   );
   try {
     runStack(STACK_PANES, realExec, { repoPath: process.cwd() });

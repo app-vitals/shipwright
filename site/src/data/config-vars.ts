@@ -6,7 +6,6 @@ export interface ConfigVar {
 }
 
 export const pluginEnvVars: ConfigVar[] = [
-  { name: "SHIPWRIGHT_DEV_CHAT", type: "bool", def: "false", desc: "Enables the unauthenticated POST /chat endpoint. Must not be set in production." },
   { name: "GH_CMD", type: "string", def: "gh", desc: "Override the gh CLI executable. Useful in environments where gh is installed to a non-default path." },
   { name: "AGENT_HOME", type: "string", def: "/data/agent-home", desc: "Persistent storage root for workspace files, mise caches, and ~/.claude." },
   { name: "WORKSPACE_PATH", type: "string", def: "—", desc: "Direct workspace path override. Takes precedence over AGENT_HOME-based discovery when set." },
@@ -45,8 +44,8 @@ export const agentPlatformVars: ConfigVar[] = [
 ];
 
 export const agentServerVars: ConfigVar[] = [
-  { name: "PORT", type: "number", def: "3000", desc: "Dev-only chat server port (SHIPWRIGHT_DEV_CHAT gate, DEFAULT-DENY). Not used in production." },
-  { name: "SHIPWRIGHT_HEALTH_PORT", type: "number", def: "3459", desc: "Agent health server port for the K8s liveness probe. Served in-process by entrypoint-main.ts on a dedicated port separate from the chat server." },
+  { name: "PORT", type: "number", def: "3000", desc: "Hono server port for the admin service (admin/src/main.ts)." },
+  { name: "SHIPWRIGHT_HEALTH_PORT", type: "number", def: "3459", desc: "Agent health server port for the K8s liveness probe. Served in-process by entrypoint-main.ts on a dedicated port." },
   { name: "NODE_ENV", type: "string", def: "—", desc: "Runtime environment. Set to production to enforce production-safety guards." },
 ];
 
@@ -78,7 +77,6 @@ export const agentVoiceVars: ConfigVar[] = [
 ];
 
 export const agentDevVars: ConfigVar[] = [
-  { name: "SHIPWRIGHT_DEV_CHAT", type: "bool", def: "false", desc: "Enables the unauthenticated POST /chat endpoint. Blocked at startup when NODE_ENV=production." },
   { name: "ADMIN_DEV_AUTH", type: "bool", def: "false", desc: "Enables GET /admin/dev-login (bypasses Google OAuth, mints a dev session). Blocked when NODE_ENV=production." },
   { name: "METRICS_DASHBOARD_DEV_AUTH", type: "bool", def: "false", desc: "Bypasses /dashboard session auth and /metrics/* API auth for local dev. Must not be enabled in production — exits with an error if NODE_ENV=production." },
   { name: "TASK_STORE_SEED_ADMIN_TOKEN", type: "string", def: "—", desc: "Bootstrap admin token seeded into the task-store on startup. Used only in local dev (task stack) to provision a bootstrapped admin token without manual token creation. Ignored if empty." },
