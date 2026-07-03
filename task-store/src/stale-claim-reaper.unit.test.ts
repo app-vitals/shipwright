@@ -279,7 +279,7 @@ describe("StaleClaimReaper", () => {
   // ─── 900_000ms default TTL boundary ────────────────────────────────────────
 
   test("phase='review' claim just under 900_000ms old is NOT reaped", async () => {
-    // 0 tasks, 0 PRs affected — simulates a claim just inside the TTL window
+    // 0 tasks, 0 PRs affected — verifies the cutoff constant and date math
     const prisma = makePrismaDouble([0, 0]);
     const reaper = new StaleClaimReaper(prisma as never, clock);
 
