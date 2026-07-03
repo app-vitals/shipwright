@@ -14,11 +14,17 @@ name: Sync Plugin Version
 #      from a prior container generation, and skips re-syncing file content
 #      when that string is unchanged — so a frozen version silently prevents
 #      deployed agents from ever picking up new plugin script content, even
-#      though fresh source is baked into every new image.
+#      though fresh source is baked into every new image. As of PVS-1.2,
+#      build-agent.yml stamps the correct version straight into the image at
+#      build time (agent/Dockerfile's `ARG AGENT_VERSION` + sync-version.ts
+#      RUN step) — this workflow no longer needs to solve that half of the
+#      problem, it just happens to also do so a cycle behind (see below).
 #   2. Installed externally via `claude plugin marketplace add <this-repo>` /
 #      `install shipwright@shipwright`, which reads the git-committed
 #      marketplace.json directly — a frozen version gives external installs
-#      no way to detect or pull updates at all.
+#      no way to detect or pull updates at all. This is the case this
+#      workflow actually exists for: build-time stamping (above) never
+#      touches git, so it does nothing for external installs.
 #
 # Flow:
 #   agent-v* tag push (created by build-agent.yml on every merge that could
@@ -35,15 +41,17 @@ name: Sync Plugin Version
 #         task-store/chat) — without [skip ci] the merge could kick off
 #         some or all of them again.
 #
-# Known, accepted lag: the image build-agent.yml produces in a given run is
-# built BEFORE that same run's tag triggers this workflow, so the image
-# actually deployed each cycle still has the *previous* cycle's version
-# number baked in, even though its file content (agent + plugin code) is
-# fully current. This is harmless — the baked-in version number still
-# changes on every real deploy relative to the last one (since a sync cycle
-# runs after every tag), which is the only thing `claude plugin update`'s
-# cache-diff needs to correctly detect and re-sync fresh content. Given
-# merges land many times a day, the lag self-heals within one deploy cycle.
+# Lag, and where it does/doesn't matter: the commit this workflow lands on
+# main always trails the tag that triggered it by a minute or two (PR open +
+# checks + auto-merge). This matters not at all for the deployed image —
+# PVS-1.2 stamps the correct version directly into the image at build time,
+# independent of this workflow's git commit — but it does mean the
+# git-committed version (what `marketplace.json` on `main` shows, and what
+# external `claude plugin install` reads) is briefly behind the version
+# that's already live in production. That window is self-resolving (this
+# workflow's own PR closes it within minutes) and never regresses — main
+# only ever catches up to a version that was already actually built, never
+# claims one that wasn't.
 #
 # Manual test plan (cannot be tested in CI without a real tag + secrets):
 #   1. Push a dummy tag: git tag agent-v9.9.9 && git push origin agent-v9.9.9

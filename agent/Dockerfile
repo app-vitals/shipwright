@@ -74,6 +74,15 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
 
 FROM base AS build
 
+# Bare semver (no "agent-v" prefix) for the tag this image is being built
+# for — passed via --build-arg from build-agent.yml. Stamped into the
+# plugin's version files below so the deployed image always matches the tag
+# it was built for, independent of scripts/sync-version.ts's separate,
+# asynchronous git-commit path (.github/workflows/sync-plugin-version.yml).
+# Defaulted so ci.yml's PR-time `docker build` (no --build-arg passed) still
+# succeeds — sync-version.ts requires valid semver and would fail on empty.
+ARG AGENT_VERSION=0.0.0-dev
+
 WORKDIR /app
 
 # Copy workspace manifests first (layer caching for deps)
@@ -101,6 +110,12 @@ COPY lib/ ./lib/
 # Copy the plugin source so the local marketplace is available at runtime
 COPY plugins/ ./plugins/
 COPY .claude-plugin/ ./.claude-plugin/
+# Copy the version-sync script so the version stamp below can run.
+COPY scripts/ ./scripts/
+
+# Stamp AGENT_VERSION into the plugin's version files inside the image only
+# (no git commit, no git operations) — see ARG AGENT_VERSION above for why.
+RUN bun run scripts/sync-version.ts "${AGENT_VERSION}"
 
 # Module-resolution guard: bundle every agent source file as its own entry
 # point so an unresolvable import fails the build itself, rather than only
