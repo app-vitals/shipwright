@@ -313,6 +313,7 @@ if (config.chat.serviceUrl && config.chat.serviceToken) {
     client: chatClient,
     runner: chatRunner,
     intervalMs: config.chat.pollIntervalMs ?? 5_000,
+    workspaceDir: config.paths.workspace,
   });
   chatPoller.start();
   console.log(
