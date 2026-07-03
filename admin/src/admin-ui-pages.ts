@@ -2530,6 +2530,17 @@ const threadPaneStyles = `
     .thread-pane-link:hover { background:#eef2ff;color:#4f46e5 }
     .thread-pane-link.active { background:#eef2ff;color:#4f46e5;font-weight:600 }`;
 
+const chatPageStyles = `
+    @media (max-width:640px) {
+      .chat-list-layout { flex-direction:column }
+      .chat-list-sidebar { width:100%;max-width:100%;min-width:0 }
+      /* chat-thread-layout: flex wrapper for thread+message area; stacks to column on mobile */
+      .chat-thread-layout { flex-direction:column }
+      .chat-thread-sidebar { display:none }
+      .chat-bubble-inner { max-width:90% !important }
+      #message-input { font-size:16px }
+    }`;
+
 export function renderChatPage(
   agents: AgentOption[],
   selectedAgentId: string | undefined,
@@ -2607,8 +2618,8 @@ export function renderChatPage(
 
     content = `
       ${searchForm}
-      <div style="display:flex;gap:24px;align-items:flex-start">
-        <div class="card" style="min-width:240px;max-width:300px;flex-shrink:0">
+      <div class="chat-list-layout" style="display:flex;gap:24px;align-items:flex-start">
+        <div class="card chat-list-sidebar" style="min-width:240px;max-width:300px;flex-shrink:0">
           <div class="card-title">Threads</div>
           ${newThreadForm}
           <div class="thread-pane-list">
@@ -2627,7 +2638,7 @@ export function renderChatPage(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Chat — Shipwright Admin</title>
-  <style>${baseStyles()}${threadPaneStyles}
+  <style>${baseStyles()}${threadPaneStyles}${chatPageStyles}
   </style>
 </head>
 <body>
@@ -2761,7 +2772,7 @@ export function renderChatThreadPage(
     }
 
     return `<div style="display:flex;justify-content:${align};margin-bottom:12px">
-      <div style="max-width:${maxWidth};background:${bubbleBg};border-radius:12px;padding:12px 16px;box-shadow:0 1px 2px rgba(0,0,0,0.06)">
+      <div class="chat-bubble-inner" style="max-width:${maxWidth};background:${bubbleBg};border-radius:12px;padding:12px 16px;box-shadow:0 1px 2px rgba(0,0,0,0.06)">
         <div style="font-size:11px;font-weight:600;color:${bubbleColor};margin-bottom:4px;text-transform:uppercase;letter-spacing:0.05em">${escapeHtml(m.role)}</div>
         ${bodyHtml}
         ${attachmentBadge}
@@ -3021,7 +3032,7 @@ export function renderChatThreadPage(
 
   const sidebar =
     threads !== null
-      ? `<div class="card" style="min-width:220px;max-width:280px;flex-shrink:0">
+      ? `<div class="card chat-thread-sidebar" style="min-width:220px;max-width:280px;flex-shrink:0">
           <div class="card-title">Threads</div>
           ${newThreadForm}
           <div class="thread-pane-list">
@@ -3036,7 +3047,7 @@ export function renderChatThreadPage(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>${title} - Shipwright Admin</title>
-  <style>${baseStyles()}${threadPaneStyles}
+  <style>${baseStyles()}${threadPaneStyles}${chatPageStyles}
   </style>
 </head>
 <body>
@@ -3056,7 +3067,7 @@ export function renderChatThreadPage(
         ${deleteForm}
       </div>
     </div>
-    <div style="display:flex;gap:24px;flex:1;min-height:0;margin-top:16px">
+    <div class="chat-thread-layout" style="display:flex;gap:24px;flex:1;min-height:0;margin-top:16px">
       ${sidebar}
       <div style="flex:1;min-width:0;display:flex;flex-direction:column">
         <!-- Messages area (scrollable) -->
