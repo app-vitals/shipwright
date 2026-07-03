@@ -68,6 +68,10 @@ export interface CreateThreadOptions {
   memberId?: string;
 }
 
+export interface UpdateThreadOptions {
+  title?: string;
+}
+
 // ─── Interface ────────────────────────────────────────────────────────────────
 
 export interface ChatClient {
@@ -82,6 +86,10 @@ export interface ChatClient {
     agentId: string,
     opts?: CreateThreadOptions,
   ): Promise<ChatThread>;
+
+  updateThread(id: string, data: UpdateThreadOptions): Promise<ChatThread>;
+
+  deleteThread(id: string): Promise<void>;
 
   listMessages(
     threadId: string,
@@ -164,6 +172,32 @@ export class HttpChatClient implements ChatClient {
     return res.json() as Promise<ChatThread>;
   }
 
+  async updateThread(id: string, data: UpdateThreadOptions): Promise<ChatThread> {
+    const res = await fetch(`${this.baseUrl}/threads/${id}`, {
+      method: "PATCH",
+      headers: this.authHeaders(),
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      throw new Error(
+        `chat-service PATCH /threads/${id} failed: ${res.status} ${res.statusText}`,
+      );
+    }
+    return res.json() as Promise<ChatThread>;
+  }
+
+  async deleteThread(id: string): Promise<void> {
+    const res = await fetch(`${this.baseUrl}/threads/${id}`, {
+      method: "DELETE",
+      headers: this.authHeaders(),
+    });
+    if (!res.ok) {
+      throw new Error(
+        `chat-service DELETE /threads/${id} failed: ${res.status} ${res.statusText}`,
+      );
+    }
+  }
+
   async listMessages(
     threadId: string,
     opts?: ListMessagesOptions,
@@ -244,6 +278,21 @@ export class NoopChatClient implements ChatClient {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
+  }
+
+  async updateThread(_id: string, data: UpdateThreadOptions): Promise<ChatThread> {
+    return {
+      id: _id,
+      agentId: "",
+      title: data.title ?? null,
+      memberId: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  async deleteThread(_id: string): Promise<void> {
+    // noop
   }
 
   async listMessages(

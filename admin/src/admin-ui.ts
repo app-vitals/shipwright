@@ -2028,13 +2028,14 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
 
     const selectedAgentId = c.req.query("agentId") || undefined;
+    const q = c.req.query("q") || undefined;
     const agents: AgentOption[] = (await prisma.agent.findMany()).map((a) => ({
       id: a.id,
       name: a.name,
     }));
 
     if (!chatClient) {
-      return html(renderChatPage(agents, selectedAgentId, null, c.var.userEmail));
+      return html(renderChatPage(agents, selectedAgentId, null, c.var.userEmail, q));
     }
 
     let threads: ChatThread[] = [];
@@ -2042,13 +2043,20 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       try {
         const result = await chatClient.listThreads(selectedAgentId);
         threads = result.threads;
+        // Server-side filter by search query
+        if (q) {
+          const lowerQ = q.toLowerCase();
+          threads = threads.filter((t) =>
+            (t.title ?? "").toLowerCase().includes(lowerQ),
+          );
+        }
       } catch {
         threads = [];
       }
     }
 
     return html(
-      renderChatPage(agents, selectedAgentId, threads, c.var.userEmail),
+      renderChatPage(agents, selectedAgentId, threads, c.var.userEmail, q),
     );
   });
 
@@ -2060,21 +2068,23 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
     if (!chatClient) {
       return html(
-        renderChatThreadPage(agentId, null, null, c.var.userEmail),
+        renderChatThreadPage(agentId, null, null, null, c.var.userEmail),
       );
     }
 
     try {
-      const [thread, messagesResult] = await Promise.all([
+      const [thread, messagesResult, threadListResult] = await Promise.all([
         chatClient.getThread(threadId),
         chatClient.listMessages(threadId),
+        chatClient.listThreads(agentId).catch(() => null),
       ]);
+      const threadList = threadListResult ? threadListResult.threads : null;
       return html(
-        renderChatThreadPage(agentId, thread, messagesResult.messages, c.var.userEmail),
+        renderChatThreadPage(agentId, thread, messagesResult.messages, threadList, c.var.userEmail),
       );
     } catch {
       return html(
-        renderChatThreadPage(agentId, null, null, c.var.userEmail),
+        renderChatThreadPage(agentId, null, null, null, c.var.userEmail),
       );
     }
   });
@@ -2228,6 +2238,72 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       }
 
       return c.redirect(backUrl, 302);
+    },
+  );
+
+  app.post(
+    "/admin/chat/:agentId/threads/:threadId/rename",
+    requireAuth,
+    async (c) => {
+      if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+
+      const agentId = c.req.param("agentId");
+      const threadId = c.req.param("threadId");
+      const backUrl = `/admin/chat/${encodeURIComponent(agentId)}/threads/${encodeURIComponent(threadId)}`;
+
+      if (!chatClient) {
+        return c.redirect(backUrl, 302);
+      }
+
+      let title: string | undefined;
+      try {
+        const formData = await c.req.formData();
+        title = formData.get("title")?.toString()?.trim() || undefined;
+      } catch {
+        return c.redirect(backUrl, 302);
+      }
+
+      // Guard: skip the API call when title is blank to avoid a silent no-op PATCH
+      if (!title) {
+        return c.redirect(backUrl, 302);
+      }
+
+      try {
+        await chatClient.updateThread(threadId, { title });
+      } catch {
+        // swallow — redirect back regardless
+      }
+
+      return c.redirect(backUrl, 302);
+    },
+  );
+
+  app.post(
+    "/admin/chat/:agentId/threads/:threadId/delete",
+    requireAuth,
+    async (c) => {
+      if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+
+      const agentId = c.req.param("agentId");
+      const threadId = c.req.param("threadId");
+
+      if (!chatClient) {
+        return c.redirect(
+          `/admin/chat?agentId=${encodeURIComponent(agentId)}`,
+          302,
+        );
+      }
+
+      try {
+        await chatClient.deleteThread(threadId);
+      } catch {
+        // swallow — redirect back regardless
+      }
+
+      return c.redirect(
+        `/admin/chat?agentId=${encodeURIComponent(agentId)}`,
+        302,
+      );
     },
   );
 
