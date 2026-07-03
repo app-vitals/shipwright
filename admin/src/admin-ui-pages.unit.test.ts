@@ -3235,4 +3235,9 @@ describe("renderChatThreadPage", () => {
     const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
     expect(html).toContain("chat-bubble-inner");
   });
+
+  test("responsive: main content wrapper has chat-thread-layout class for mobile reflow", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
+    expect(html).toContain("chat-thread-layout");
+  });
 });
