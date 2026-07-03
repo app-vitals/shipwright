@@ -329,7 +329,7 @@ CLAIM_RESULT=$(curl -sf -X POST \
   -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   -H "Content-Type: application/json" \
   "$SHIPWRIGHT_TASK_STORE_URL/prs/claim" \
-  -d "{\"repo\":\"{org}/{repo}\",\"prNumber\":{pr},\"commitSha\":\"$HEAD_SHA\"}" 2>/dev/null)
+  -d "{\"repo\":\"{org}/{repo}\",\"prNumber\":{pr},\"commitSha\":\"$HEAD_SHA\",\"phase\":\"patch\"}" 2>/dev/null)
 PR_ID=$(echo "$CLAIM_RESULT" | jq -r '.id // empty' 2>/dev/null)
 if [ -n "$PR_ID" ]; then
   curl -sf -X POST \
@@ -548,7 +548,7 @@ CLAIM_RESULT=$(curl -sf -X POST \
   -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   -H "Content-Type: application/json" \
   "$SHIPWRIGHT_TASK_STORE_URL/prs/claim" \
-  -d "{\"repo\":\"{org}/{repo}\",\"prNumber\":{pr},\"commitSha\":\"$HEAD_SHA\"}" 2>/dev/null)
+  -d "{\"repo\":\"{org}/{repo}\",\"prNumber\":{pr},\"commitSha\":\"$HEAD_SHA\",\"phase\":\"patch\"}" 2>/dev/null)
 PR_ID=$(echo "$CLAIM_RESULT" | jq -r '.id // empty' 2>/dev/null)
 if [ -n "$PR_ID" ]; then
   curl -sf -X POST \
@@ -708,7 +708,7 @@ CLAIM_RESULT=$(curl -sf -X POST \
   -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   -H "Content-Type: application/json" \
   "$SHIPWRIGHT_TASK_STORE_URL/prs/claim" \
-  -d "{\"repo\":\"{org}/{repo}\",\"prNumber\":{pr},\"commitSha\":\"$HEAD_SHA\"}" 2>/dev/null)
+  -d "{\"repo\":\"{org}/{repo}\",\"prNumber\":{pr},\"commitSha\":\"$HEAD_SHA\",\"phase\":\"patch\"}" 2>/dev/null)
 PR_ID=$(echo "$CLAIM_RESULT" | jq -r '.id // empty' 2>/dev/null)
 if [ -n "$PR_ID" ]; then
   curl -sf -X POST \

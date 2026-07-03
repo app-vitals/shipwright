@@ -292,6 +292,34 @@ describeOrSkip("PullRequestService.claim() phase support (integration)", () => {
     expect(result.record.claimedBy).toBe("agent-b");
   });
 
+  it.each([
+    ["pending", 710],
+    ["in_progress", 711],
+    ["posted", 712],
+    ["approved", 713],
+  ] as const)(
+    "claim(phase=patch) never mutates reviewState=%s",
+    async (priorReviewState, prNumber) => {
+      const repo = "app-vitals/shipwright";
+      const commitSha = `sha-patch-${priorReviewState}`;
+
+      await prisma.pullRequest.create({
+        data: {
+          repo,
+          prNumber,
+          commitSha,
+          reviewState: priorReviewState,
+          phase: "review",
+          claimedBy: null,
+        },
+      });
+
+      const result = await service.claim(repo, prNumber, commitSha, "agent-b", undefined, "patch");
+      expect(result.record.reviewState).toBe(priorReviewState);
+      expect(result.record.phase).toBe("patch");
+    },
+  );
+
   it("claim(phase=deploy) sets phase=deploy, readyForDeployAt if null, does not clear reviewState", async () => {
     const repo = "app-vitals/shipwright";
     const prNumber = 701;

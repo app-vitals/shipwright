@@ -189,6 +189,7 @@ Body:
 | `commitSha` | yes | Current head commit SHA |
 | `claimedBy` | admin only | Agent ID (agent tokens pin to their own ID) |
 | `taskId` | no | Associated task ID |
+| `phase` | no | Pipeline phase (`review`, `patch`, or `deploy`; default: `review`). When set, the phase is updated and reviewState is preserved. |
 
 Claim semantics:
 - No existing record → creates and returns `201`
@@ -196,6 +197,8 @@ Claim semantics:
 - Different `commitSha` or `reviewState === pending` → updates and returns `200` (new review cycle)
 
 The `taskId` field is optional and does not trigger any side effects on the Task table — it is stored as metadata on the PR record only for reference.
+
+The `phase` field is optional (defaults to `review`). When provided, it sets the PR's phase directly. Unlike the review phase, the patch and deploy phases do not alter the PR's reviewState — they preserve it as-is, allowing a PR in `posted` review state to transition to `patch` for patching while maintaining its review history.
 
 #### Claim next PR (atomic)
 
