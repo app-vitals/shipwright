@@ -22,7 +22,7 @@ There are three ways to run the agent depending on your context:
 |------|-------------|-----------|-------------|
 | Pi / bare-metal | `agent/src/index.ts` | Slack Socket Mode | Running directly on a host with a local `.env` file |
 | K8s container | `agent/src/entrypoint-main.ts` | Slack Socket Mode | Deployed via the Dockerfile (validates vars, fetches config, installs plugins, spawns runner) |
-| Local dev | `agent/scripts/run-agent.ts --agent-id <id>` | HTTP `POST /chat` | Testing Claude locally without a Slack workspace; requires `SHIPWRIGHT_DEV_CHAT=true` |
+| Local dev | `task stack` (Docker agent pane) | Chat poll loop → admin Chat UI | Testing Claude locally without a Slack workspace — chat via the admin console's Chat tab |
 
 The admin service Dockerfile (`admin/Dockerfile`) `ENTRYPOINT` is `bun run admin/src/main.ts`,
 which runs migrations, constructs all services, and mounts all admin and runtime routes. The agent
@@ -32,25 +32,16 @@ startup sequence so Kubernetes liveness probes are reachable during init.
 
 ## Running the agent locally
 
-Ask Claude Code:
-
-```text
-Start the Shipwright agent locally in dev mode so I can test it via the chat REPL.
-```
-
-Manually:
+Run the full local dev stack:
 
 ```bash
-export DATABASE_URL_SHIPWRIGHT_ADMIN="postgresql://user:password@localhost:5432/shipwright_admin"
-task db:provision          # prisma migrate deploy (idempotent)
-SHIPWRIGHT_DEV_CHAT=true bun agent/src/entrypoint-main.ts
+task stack
 ```
 
-Then in a second terminal:
-
-```bash
-bun scripts/chat.ts        # TUI REPL connects to the dev /chat endpoint
-```
+This launches every service (metrics, admin, task-store, chat service, and the agent in Docker)
+in a single tmux session, seeds dev tokens, and opens the admin console in your browser. Chat
+with the agent from the console's **Chat** tab (`/admin/chat`) — the agent's chat poll loop
+claims each message, runs it through Claude, and posts the reply back into the thread.
 
 ## Admin CRUD API
 

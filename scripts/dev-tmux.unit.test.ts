@@ -16,8 +16,10 @@ import { describe, expect, test } from "bun:test";
 import {
   ADMIN_DEV_LOGIN_URL,
   ADMIN_PORT,
-  AGENT_PORT,
+  CHAT_SERVICE_PORT,
   DASHBOARD_URL,
+  DEV_CHAT_ADMIN_TOKEN,
+  DEV_CHAT_AGENT_TOKEN,
   METRICS_PORT,
   type Pane,
   SESSION_NAME,
@@ -296,26 +298,28 @@ describe("runStack — per-pane commands via injected exec", () => {
     expect(sk).toContain("DATABASE_URL_SHIPWRIGHT_TASK_STORE=");
   });
 
-  test("agent pane (pane 3) runs docker container with SHIPWRIGHT_API_URL via host.docker.internal", () => {
+  test("chat-svc pane (pane 3) runs chat/src/main.ts with PORT=3003 and DATABASE_URL_SHIPWRIGHT_CHAT", () => {
     const { calls, exec } = makeRecorder();
     runStack(STACK_PANES, exec);
     const sk = sendKeysForPane(calls, 3)?.join(" ") ?? "";
-    expect(sk).toContain("docker run");
-    expect(sk).not.toContain("agent/src/run-agent.ts");
-    expect(sk).toContain(`PORT=${AGENT_PORT}`);
-    expect(sk).toContain("SHIPWRIGHT_DEV_CHAT=true");
-    expect(sk).toContain(
-      `SHIPWRIGHT_API_URL=http://host.docker.internal:${ADMIN_PORT}`,
-    );
-    // container is isolated — no direct DB access
-    expect(sk).not.toContain("DATABASE_URL=");
+    expect(sk).toContain("chat/src/main.ts");
+    expect(sk).toContain(`PORT=${CHAT_SERVICE_PORT}`);
+    expect(sk).toContain("DATABASE_URL_SHIPWRIGHT_CHAT=");
   });
 
-  test("chat pane (pane 4) runs scripts/chat.ts", () => {
+  test("agent pane (pane 4) runs docker container with SHIPWRIGHT_API_URL via host.docker.internal", () => {
     const { calls, exec } = makeRecorder();
     runStack(STACK_PANES, exec);
     const sk = sendKeysForPane(calls, 4)?.join(" ") ?? "";
-    expect(sk).toContain("scripts/chat.ts");
+    expect(sk).toContain("docker run");
+    expect(sk).not.toContain("agent/src/run-agent.ts");
+    expect(sk).toContain(
+      `SHIPWRIGHT_API_URL=http://host.docker.internal:${ADMIN_PORT}`,
+    );
+    // The dev-only /chat transport is gone — the chat poll loop replaces it.
+    expect(sk).not.toContain("SHIPWRIGHT_DEV_CHAT");
+    // container is isolated — no direct DB access
+    expect(sk).not.toContain("DATABASE_URL=");
   });
 
   test("logs pane (pane 5) is a scratch shell (no server command)", () => {
@@ -329,8 +333,15 @@ describe("runStack — per-pane commands via injected exec", () => {
   test("logs pane (pane 5) prints a signpost banner then drops into a shell", () => {
     const cmd = STACK_PANES[5].cmd.join(" ");
     expect(cmd).toContain(DASHBOARD_URL); // tells the user where the UI is
-    expect(cmd).toContain(`localhost:${AGENT_PORT}`);
+    expect(cmd).toContain(`localhost:${CHAT_SERVICE_PORT}`);
     expect(cmd).toContain('exec "$SHELL"'); // remains an interactive scratch shell
+  });
+
+  test("logs banner points at the chat UI (admin console), not a chat pane", () => {
+    const banner = buildLogsBanner();
+    expect(banner).toContain(`http://localhost:${ADMIN_PORT}/admin/chat`);
+    expect(banner).not.toContain("scripts/chat.ts");
+    expect(banner).not.toContain("the pane to the left");
   });
 
   test("logs banner includes admin service URL", () => {
@@ -384,8 +395,10 @@ describe("pane env values are obviously dev dummies (public-safe)", () => {
 });
 
 describe("ports", () => {
-  test("agent pane is wired for :3000", () => {
-    expect(AGENT_PORT).toBe(3000);
+  test("chat service is wired for :3003 (distinct from the other services)", () => {
+    expect(CHAT_SERVICE_PORT).toBe(3003);
+    expect(CHAT_SERVICE_PORT).not.toBe(ADMIN_PORT);
+    expect(CHAT_SERVICE_PORT).not.toBe(TASK_STORE_PORT);
   });
 });
 
@@ -582,22 +595,27 @@ describe("agent pane — docker run", () => {
     expect(agent.cmd.join(" ")).not.toContain("run-agent.ts");
   });
 
-  test("agent pane docker run includes port -p 3000:3000", () => {
-    const agent = STACK_PANES.find((p) => p.label === "agent") as Pane;
-    const cmdStr = agent.cmd.join(" ");
-    expect(cmdStr).toContain("-p 3000:3000");
-  });
-
   test("agent pane docker run mounts named volume shipwright-agent-home at /data/agent-home", () => {
     const agent = STACK_PANES.find((p) => p.label === "agent") as Pane;
     const cmdStr = agent.cmd.join(" ");
     expect(cmdStr).toContain("shipwright-agent-home:/data/agent-home");
   });
 
-  test("agent pane docker run passes SHIPWRIGHT_DEV_CHAT=true via -e flag", () => {
+  test("agent pane docker run wires the chat poll loop (URL via host.docker.internal + agent token)", () => {
     const agent = STACK_PANES.find((p) => p.label === "agent") as Pane;
     const cmdStr = agent.cmd.join(" ");
-    expect(cmdStr).toContain("SHIPWRIGHT_DEV_CHAT=true");
+    expect(cmdStr).toContain(
+      `SHIPWRIGHT_CHAT_SERVICE_URL=http://host.docker.internal:${CHAT_SERVICE_PORT}`,
+    );
+    expect(cmdStr).toContain(
+      `SHIPWRIGHT_CHAT_SERVICE_TOKEN=${DEV_CHAT_AGENT_TOKEN}`,
+    );
+  });
+
+  test("agent pane docker run does not enable the removed dev /chat transport", () => {
+    const agent = STACK_PANES.find((p) => p.label === "agent") as Pane;
+    const cmdStr = agent.cmd.join(" ");
+    expect(cmdStr).not.toContain("SHIPWRIGHT_DEV_CHAT");
   });
 
   test("agent pane docker run passes SHIPWRIGHT_API_URL pointing at host.docker.internal", () => {
@@ -635,7 +653,7 @@ describe("buildStackCommands — docker build + seed preflights", () => {
     const agentSendKeysIdx = cmds.findIndex(
       (c) =>
         c.kind === "send-keys" &&
-        c.argv.some((a) => a.includes(`${SESSION_NAME}:0.3`)),
+        c.argv.some((a) => a.includes(`${SESSION_NAME}:0.4`)),
     );
     expect(dockerBuildIdx).toBeGreaterThanOrEqual(0);
     expect(agentSendKeysIdx).toBeGreaterThanOrEqual(0);
@@ -669,7 +687,7 @@ describe("buildStackCommands — docker build + seed preflights", () => {
     const agentSendKeysIdx = cmds.findIndex(
       (c) =>
         c.kind === "send-keys" &&
-        c.argv.some((a) => a.includes(`${SESSION_NAME}:0.3`)),
+        c.argv.some((a) => a.includes(`${SESSION_NAME}:0.4`)),
     );
     expect(rmIdx).toBeGreaterThanOrEqual(0);
     expect(cmds[rmIdx]?.kind).toBe("preflight");
@@ -702,7 +720,7 @@ describe("buildStackCommands — docker build + seed preflights", () => {
     const agentSendKeysIdx = cmds.findIndex(
       (c) =>
         c.kind === "send-keys" &&
-        c.argv.some((a) => a.includes(`${SESSION_NAME}:0.3`)),
+        c.argv.some((a) => a.includes(`${SESSION_NAME}:0.4`)),
     );
     expect(seedIdx).toBeGreaterThanOrEqual(0);
     expect(migrateIdx).toBeGreaterThanOrEqual(0);
@@ -730,7 +748,7 @@ describe("buildStackCommands — docker build + seed preflights", () => {
     const agentSendKeys = cmds.find(
       (c) =>
         c.kind === "send-keys" &&
-        c.argv.some((a) => a.includes(`${SESSION_NAME}:0.3`)),
+        c.argv.some((a) => a.includes(`${SESSION_NAME}:0.4`)),
     );
     const shellLine = agentSendKeys?.argv.join(" ") ?? "";
     expect(shellLine).toContain("/fake/repo:/repo:ro");
@@ -742,7 +760,7 @@ describe("buildStackCommands — docker build + seed preflights", () => {
     const agentSendKeys = cmds.find(
       (c) =>
         c.kind === "send-keys" &&
-        c.argv.some((a) => a.includes(`${SESSION_NAME}:0.3`)),
+        c.argv.some((a) => a.includes(`${SESSION_NAME}:0.4`)),
     );
     const shellLine = agentSendKeys?.argv.join(" ") ?? "";
     // Exactly the named volume and the read-only repo — no host home paths.
@@ -754,9 +772,9 @@ describe("buildStackCommands — docker build + seed preflights", () => {
 });
 
 describe("task-store pane", () => {
-  test("TASK_STORE_PORT is 3002 (distinct from agent :3000 and admin :3001)", () => {
+  test("TASK_STORE_PORT is 3002 (distinct from chat-svc :3003 and admin :3001)", () => {
     expect(TASK_STORE_PORT).toBe(3002);
-    expect(TASK_STORE_PORT).not.toBe(AGENT_PORT);
+    expect(TASK_STORE_PORT).not.toBe(CHAT_SERVICE_PORT);
     expect(TASK_STORE_PORT).not.toBe(ADMIN_PORT);
   });
 
@@ -765,10 +783,11 @@ describe("task-store pane", () => {
     expect(taskStore).toBeDefined();
   });
 
-  test("task-store pane sits at index 2 (after admin, before agent)", () => {
+  test("task-store pane sits at index 2 (after admin, before chat-svc and agent)", () => {
     expect(STACK_PANES[1].label).toBe("admin");
     expect(STACK_PANES[2].label).toBe("task-store");
-    expect(STACK_PANES[3].label).toBe("agent");
+    expect(STACK_PANES[3].label).toBe("chat-svc");
+    expect(STACK_PANES[4].label).toBe("agent");
   });
 
   test("task-store pane runs task-store/src/main.ts with PORT=3002", () => {
@@ -828,6 +847,108 @@ describe("task-store pane", () => {
   test("logs banner includes the task-store service URL", () => {
     const banner = buildLogsBanner();
     expect(banner).toContain(`localhost:${TASK_STORE_PORT}`);
+  });
+});
+
+describe("chat-svc pane", () => {
+  test("a chat-svc pane exists and runs chat/src/main.ts on :3003 with its own DB", () => {
+    const chatSvc = STACK_PANES.find((p) => p.label === "chat-svc") as Pane;
+    expect(chatSvc).toBeDefined();
+    expect(chatSvc.cmd.join(" ")).toContain("chat/src/main.ts");
+    expect(chatSvc.env?.PORT).toBe(String(CHAT_SERVICE_PORT));
+    expect(chatSvc.env?.DATABASE_URL_SHIPWRIGHT_CHAT).toContain("postgresql:");
+  });
+
+  test("chat prisma preflight (generate → migrate) fires BEFORE the chat-svc pane command", () => {
+    const cmds = buildStackCommands(STACK_PANES);
+    const preflightIdx = cmds.findIndex(
+      (c) =>
+        c.kind === "preflight" &&
+        c.argv.join(" ").includes("cd chat") &&
+        c.argv.join(" ").includes("prisma generate"),
+    );
+    const chatSendKeysIdx = cmds.findIndex(
+      (c) =>
+        c.kind === "send-keys" &&
+        c.argv.some((a) => a.includes("chat/src/main.ts")),
+    );
+    expect(preflightIdx).toBeGreaterThanOrEqual(0);
+    expect(chatSendKeysIdx).toBeGreaterThanOrEqual(0);
+    expect(preflightIdx).toBeLessThan(chatSendKeysIdx);
+    const cmd = cmds[preflightIdx]?.argv.join(" ") ?? "";
+    expect(cmd).toContain("DATABASE_URL_SHIPWRIGHT_CHAT=");
+    expect(cmd.indexOf("prisma generate")).toBeLessThan(
+      cmd.indexOf("migrate deploy"),
+    );
+  });
+
+  test("seeds the chat tokens AFTER the chat migrate deploy, before the pane starts", () => {
+    const cmds = buildStackCommands(STACK_PANES);
+    const chatMigrateIdx = cmds.findIndex((c) =>
+      c.argv.join(" ").includes("DATABASE_URL_SHIPWRIGHT_CHAT="),
+    );
+    const seedIdx = cmds.findIndex((c) =>
+      c.argv.join(" ").includes("seed-chat-tokens.ts"),
+    );
+    const chatSendKeysIdx = cmds.findIndex(
+      (c) =>
+        c.kind === "send-keys" &&
+        c.argv.some((a) => a.includes("chat/src/main.ts")),
+    );
+    expect(seedIdx).toBeGreaterThanOrEqual(0);
+    expect(cmds[seedIdx]?.kind).toBe("preflight");
+    // ChatToken table must exist before seeding into it.
+    expect(chatMigrateIdx).toBeLessThan(seedIdx);
+    expect(seedIdx).toBeLessThan(chatSendKeysIdx);
+  });
+
+  test("the seeded admin token matches the token handed to the admin pane", () => {
+    // Drift guard: a mismatch would seed one token but auth the admin UI with
+    // another (→ 401 → degraded Chat tab).
+    const { calls, exec } = makeRecorder();
+    runStack(STACK_PANES, exec);
+    const adminSk = sendKeysForPane(calls, 1)?.join(" ") ?? "";
+    const tokenMatch = adminSk.match(
+      /SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN=(\S+)/,
+    );
+    expect(tokenMatch).not.toBeNull();
+    const seedCmd =
+      calls
+        .find((c) => c.argv.join(" ").includes("seed-chat-tokens.ts"))
+        ?.argv.join(" ") ?? "";
+    expect(seedCmd).toContain(`--admin-token ${tokenMatch?.[1] ?? ""}`);
+  });
+
+  test("the seeded agent token matches the token handed to the agent container", () => {
+    // Same drift guard for the poll loop: agent token mismatch → 401 → the
+    // agent silently never claims messages.
+    const { calls, exec } = makeRecorder();
+    runStack(STACK_PANES, exec);
+    const agentSk = sendKeysForPane(calls, 4)?.join(" ") ?? "";
+    const tokenMatch = agentSk.match(/SHIPWRIGHT_CHAT_SERVICE_TOKEN=(\S+)/);
+    expect(tokenMatch).not.toBeNull();
+    const seedCmd =
+      calls
+        .find((c) => c.argv.join(" ").includes("seed-chat-tokens.ts"))
+        ?.argv.join(" ") ?? "";
+    expect(seedCmd).toContain(`--agent-token ${tokenMatch?.[1] ?? ""}`);
+    // And the seed scopes that token to the seeded dev agent record.
+    expect(seedCmd).toContain("--agent-id dev-agent");
+  });
+
+  test("admin pane wires the chat-service URL + admin token so the Chat tab is not degraded", () => {
+    const admin = STACK_PANES.find((p) => p.label === "admin") as Pane;
+    expect(admin.env?.SHIPWRIGHT_CHAT_SERVICE_URL).toBe(
+      `http://localhost:${CHAT_SERVICE_PORT}`,
+    );
+    expect(admin.env?.SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN).toBe(
+      DEV_CHAT_ADMIN_TOKEN,
+    );
+  });
+
+  test("logs banner includes the chat service URL", () => {
+    const banner = buildLogsBanner();
+    expect(banner).toContain(`localhost:${CHAT_SERVICE_PORT}`);
   });
 });
 
