@@ -2808,8 +2808,45 @@ describe("renderCronRunsPage", () => {
     expect(html).toContain("Started");
     expect(html).toContain("Duration");
     expect(html).toContain("Tokens");
+    expect(html).toContain("<th>Model</th>");
+    // Cost is shown inline within the Model column's badges, not as its own column.
     expect(html).not.toContain("<th>Cost</th>");
-    expect(html).not.toContain("<th>Model</th>");
+  });
+
+  test("renders per-model badges with cost for a multi-model run", () => {
+    const html = render([
+      makeRun({
+        modelBreakdown: [
+          {
+            model: "claude-sonnet-4-5",
+            inputTokens: 200,
+            outputTokens: 100,
+            cacheReadTokens: 8,
+            cacheCreationTokens: 4,
+            costUsd: 0.002,
+          },
+          {
+            model: "claude-haiku-4-5",
+            inputTokens: 50,
+            outputTokens: 20,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 0,
+            costUsd: 0.0005,
+          },
+        ],
+      }),
+    ]);
+    expect(html).toContain("claude-sonnet-4-5");
+    expect(html).toContain("claude-haiku-4-5");
+    expect(html).toContain("$0.0020");
+    expect(html).toContain("$0.0005");
+  });
+
+  test("renders em-dash in the Model column when modelBreakdown is empty or undefined", () => {
+    const htmlEmpty = render([makeRun({ modelBreakdown: [] })]);
+    const htmlUndefined = render([makeRun({ modelBreakdown: undefined })]);
+    expect(htmlEmpty).toContain("—");
+    expect(htmlUndefined).toContain("—");
   });
 
   test("renders populated runs with outcome and tokens", () => {

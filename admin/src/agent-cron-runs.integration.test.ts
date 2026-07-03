@@ -200,6 +200,67 @@ describeOrSkip("AgentCronRunService (integration)", () => {
     );
   });
 
+  it("list() returns modelBreakdown rows for a run with multiple models", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId);
+
+    const run = await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-15T10:00:00Z"),
+      skipped: false,
+    });
+
+    await runService.patch(run.id, agentId, cronId, {
+      outcome: "success",
+      modelBreakdown: [
+        {
+          model: "claude-sonnet-4-5",
+          inputTokens: 200,
+          outputTokens: 100,
+          cacheReadTokens: 8,
+          cacheCreationTokens: 4,
+          costUsd: 0.002,
+        },
+        {
+          model: "claude-haiku-4-5",
+          inputTokens: 50,
+          outputTokens: 20,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          costUsd: 0.0005,
+        },
+      ],
+    });
+
+    const { items } = await runService.list(cronId, agentId);
+
+    expect(items).toHaveLength(1);
+    const breakdown = items[0].modelBreakdown;
+    expect(breakdown).toHaveLength(2);
+    const models = breakdown.map((b) => b.model).sort();
+    expect(models).toEqual(["claude-haiku-4-5", "claude-sonnet-4-5"]);
+    const sonnet = breakdown.find((b) => b.model === "claude-sonnet-4-5");
+    expect(sonnet?.inputTokens).toBe(200);
+    expect(sonnet?.outputTokens).toBe(100);
+    expect(sonnet?.cacheReadTokens).toBe(8);
+    expect(sonnet?.cacheCreationTokens).toBe(4);
+    expect(sonnet?.costUsd).toBeCloseTo(0.002);
+  });
+
+  it("list() returns an empty modelBreakdown array for a run with no model breakdown rows", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId);
+
+    await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-15T10:00:00Z"),
+      skipped: false,
+    });
+
+    const { items } = await runService.list(cronId, agentId);
+
+    expect(items).toHaveLength(1);
+    expect(items[0].modelBreakdown).toEqual([]);
+  });
+
   // ─── patch ──────────────────────────────────────────────────────────────────
 
   it("patch() updates token fields and completion fields on a run", async () => {

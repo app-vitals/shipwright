@@ -19,6 +19,7 @@ import type {
   ThreadStats,
 } from "./http-chat-client.ts";
 import { parseChatMarkers } from "./chat-markers.ts";
+import type { ModelBreakdownEntry } from "./openapi-schemas.ts";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -136,6 +137,7 @@ export interface CronRunItem {
   error: string | null;
   inputTokens: number | null;
   outputTokens: number | null;
+  modelBreakdown?: ModelBreakdownEntry[];
 }
 
 // Inline CSS for cron-run outcome badges, keyed by outcome string.
@@ -153,6 +155,11 @@ const CRON_OUTCOME_STYLE_DEFAULT = "background:#9ca3af;color:white";
 function cronOutcomeStyle(outcome: string | null | undefined): string {
   return CRON_OUTCOME_STYLE[outcome ?? ""] ?? CRON_OUTCOME_STYLE_DEFAULT;
 }
+
+// Inline CSS for per-model cost badges on the cron runs page. A single run can
+// span multiple models, so each gets its own neutral badge — no outcome-style
+// color coding needed here.
+const MODEL_BADGE_STYLE = "background:#eef2ff;color:#4338ca";
 
 export interface ToolItem {
   id: string;
@@ -2245,17 +2252,28 @@ export function renderCronRunsPage(opts: {
         ? "—"
         : `${escapeHtml(String(r.inputTokens ?? 0))} in / ${escapeHtml(String(r.outputTokens ?? 0))} out`;
 
+    const modelCell =
+      r.modelBreakdown && r.modelBreakdown.length > 0
+        ? r.modelBreakdown
+            .map(
+              (m) =>
+                `<span class="badge" style="${MODEL_BADGE_STYLE}">${escapeHtml(m.model)} — $${m.costUsd.toFixed(4)}</span>`,
+            )
+            .join('<br style="line-height:6px" />')
+        : "—";
+
     return `<tr>
       <td>${outcomeCell}</td>
       <td style="font-size:12px">${startedCell}</td>
       <td class="mono" style="font-size:12px">${durationCell}</td>
       <td class="mono" style="font-size:12px">${tokensCell}</td>
+      <td style="font-size:12px">${modelCell}</td>
     </tr>`;
   }
 
   const bodyRows =
     runs.length === 0
-      ? `<tr><td colspan="4" class="empty-state">No runs recorded yet.</td></tr>`
+      ? `<tr><td colspan="5" class="empty-state">No runs recorded yet.</td></tr>`
       : runs.map(row).join("\n");
 
   const cronLabel = cron.name ?? cron.schedule;
@@ -2289,6 +2307,7 @@ export function renderCronRunsPage(opts: {
             <th>Started</th>
             <th>Duration</th>
             <th>Tokens</th>
+            <th>Model</th>
           </tr>
         </thead>
         <tbody>

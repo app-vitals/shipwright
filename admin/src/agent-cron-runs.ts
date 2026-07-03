@@ -6,10 +6,19 @@
  * returned false), the outcome, and any error.
  */
 
-import type { AgentCronRun, PrismaClient } from "../prisma/client/index.js";
+import type {
+  AgentCronRun,
+  Prisma,
+  PrismaClient,
+} from "../prisma/client/index.js";
 import { NotFoundError } from "./errors.ts";
 
 export type { AgentCronRun };
+
+/** An AgentCronRun with its per-model token/cost breakdown rows attached. */
+export type AgentCronRunWithModelBreakdown = Prisma.AgentCronRunGetPayload<{
+  include: { modelBreakdown: true };
+}>;
 
 export interface CreateAgentCronRunInput {
   startedAt: Date;
@@ -48,7 +57,7 @@ export interface ListAgentCronRunsOptions {
 }
 
 export interface AgentCronRunList {
-  items: AgentCronRun[];
+  items: AgentCronRunWithModelBreakdown[];
   total: number;
   limit: number;
   offset: number;
@@ -100,7 +109,7 @@ export class AgentCronRunService {
     agentId: string,
     cronId: string,
     input: PatchAgentCronRunInput,
-  ): Promise<AgentCronRun> {
+  ): Promise<AgentCronRunWithModelBreakdown> {
     const run = await this.prisma.agentCronRun.findUnique({
       where: { id: runId },
     });
@@ -136,11 +145,11 @@ export class AgentCronRunService {
     if (input.modelBreakdown && input.modelBreakdown.length > 0) {
       // Wrap the run update and all breakdown upserts in a single transaction
       // so the two writes are atomic — partial breakdown rows are never visible.
-      const [updatedRun] = await this.prisma.$transaction([
-        this.prisma.agentCronRun.update({
-          where: { id: runId },
-          data: runData,
-        }),
+      // The run update (with its modelBreakdown include) must be the LAST
+      // statement in the array: Prisma's array-form $transaction issues
+      // statements in order, so an earlier include would return breakdown
+      // rows as they stood before this call's upserts ran.
+      const results = await this.prisma.$transaction([
         ...input.modelBreakdown.map((entry) =>
           this.prisma.agentCronRunModelBreakdown.upsert({
             where: {
@@ -164,13 +173,22 @@ export class AgentCronRunService {
             },
           }),
         ),
+        this.prisma.agentCronRun.update({
+          where: { id: runId },
+          data: runData,
+          include: { modelBreakdown: true },
+        }),
       ]);
+      const updatedRun = results[
+        input.modelBreakdown.length
+      ] as AgentCronRunWithModelBreakdown;
       return updatedRun;
     }
 
     return this.prisma.agentCronRun.update({
       where: { id: runId },
       data: runData,
+      include: { modelBreakdown: true },
     });
   }
 
@@ -202,6 +220,7 @@ export class AgentCronRunService {
         orderBy: { startedAt: "desc" },
         take: limit,
         skip: offset,
+        include: { modelBreakdown: true },
       }),
       this.prisma.agentCronRun.count({
         where: { cronId, agentId },
