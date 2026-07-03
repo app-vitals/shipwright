@@ -6,7 +6,7 @@
 
 import type { Prisma } from "../prisma/client/index.js";
 import type { Message, MessageServiceLike } from "./message-service.ts";
-import type { Thread, ThreadServiceLike } from "./thread-service.ts";
+import type { Thread, ThreadServiceLike, ThreadStats } from "./thread-service.ts";
 import type { ChatToken, ChatTokenServiceLike } from "./token-service.ts";
 
 // ─── Token fakes ──────────────────────────────────────────────────────────────
@@ -144,6 +144,15 @@ export function fakeThreadService(
       if (idx === -1) return null;
       const [deleted] = store.splice(idx, 1);
       return deleted ?? null;
+    },
+    async getStats(_thread: Thread): Promise<ThreadStats> {
+      // Fake has no message store — return zeros.
+      return {
+        messageCount: 0,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        totalCostUsd: 0,
+      };
     },
   };
 }

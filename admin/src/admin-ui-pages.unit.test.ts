@@ -3053,7 +3053,7 @@ describe("renderChatThreadPage", () => {
     createdAt: "2024-01-01T00:01:00.000Z",
     claimedBy: null,
     repliedAt: "2024-01-01T00:01:05.000Z",
-    tokens: 100,
+    tokens: { input_tokens: 100, output_tokens: 50, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
     costUsd: 0.001,
     errorKind: null,
     attachmentFilename: null,

@@ -15,6 +15,8 @@ import {
 import type {
   ChatMessage,
   ChatThread,
+  MessageTokens,
+  ThreadStats,
 } from "./http-chat-client.ts";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -2641,6 +2643,13 @@ export function renderChatPage(
 </html>`;
 }
 
+function formatTokenCount(n: number): string {
+  if (n >= 1000) {
+    return `${(n / 1000).toFixed(1)}k`;
+  }
+  return String(n);
+}
+
 /**
  * Renders a thread detail page at /admin/chat/:agentId/threads/:threadId.
  *
@@ -2656,6 +2665,7 @@ export function renderChatThreadPage(
   messages: ChatMessage[] | null,
   threadsOrUserName: ChatThread[] | null | string,
   userNameArg?: string,
+  stats?: ThreadStats | null,
 ): string {
   // Support both 4-arg (threads omitted) and 5-arg call signatures
   const threads: ChatThread[] | null =
@@ -2739,12 +2749,24 @@ export function renderChatThreadPage(
       ? `<div style="display:inline-block;margin-top:8px;padding:3px 8px;background:#e5e7eb;color:#374151;border-radius:6px;font-size:12px">📎 ${escapeHtml(m.attachmentFilename)}</div>`
       : "";
 
+    let tokenBadge = "";
+    if (isAssistant && m.tokens !== null && typeof m.tokens === "object") {
+      const t = m.tokens as MessageTokens;
+      const inTok = t.input_tokens ?? 0;
+      const outTok = t.output_tokens ?? 0;
+      const costPart = m.costUsd !== null
+        ? ` · $${m.costUsd.toFixed(4)}`
+        : "";
+      tokenBadge = `<div style="font-size:11px;color:#6b7280;margin-top:4px">${escapeHtml(`${inTok} in / ${outTok} out${costPart}`)}</div>`;
+    }
+
     return `<div style="display:flex;justify-content:${align};margin-bottom:12px">
       <div style="max-width:${maxWidth};background:${bubbleBg};border-radius:12px;padding:12px 16px;box-shadow:0 1px 2px rgba(0,0,0,0.06)">
         <div style="font-size:11px;font-weight:600;color:${bubbleColor};margin-bottom:4px;text-transform:uppercase;letter-spacing:0.05em">${escapeHtml(m.role)}</div>
         ${bodyHtml}
         ${attachmentBadge}
         ${errorBadge}
+        ${tokenBadge}
         <div style="font-size:11px;color:#9ca3af;margin-top:6px">${escapeHtml(new Date(m.createdAt).toLocaleString())}</div>
       </div>
     </div>`;
@@ -3025,6 +3047,11 @@ export function renderChatThreadPage(
         <a href="/admin/chat?agentId=${safeAgentId}" class="btn btn-secondary" style="margin-bottom:8px">&larr; Back to threads</a>
         <h1 class="page-title">${title}</h1>
         <div style="font-size:12px;color:#9ca3af;margin-top:4px">Thread <span class="mono">${safeThreadId}</span></div>
+        ${
+          stats && (stats.totalInputTokens > 0 || stats.totalOutputTokens > 0 || stats.totalCostUsd > 0)
+            ? `<div style="font-size:12px;color:#6b7280;margin-top:4px">${escapeHtml(`${formatTokenCount(stats.totalInputTokens)} in / ${formatTokenCount(stats.totalOutputTokens)} out | $${stats.totalCostUsd.toFixed(4)}`)}</div>`
+            : ""
+        }
         ${renameForm}
         ${deleteForm}
       </div>

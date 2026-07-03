@@ -68,7 +68,7 @@ Agent tokens with a repo scope return tasks where `assignee === agentId` OR `rep
 POST /tasks
 ```
 
-Body (JSON): task fields. `title` and `status` are required. Agent tokens force `assignee` to their own ID. Returns `201` with the created task.
+Body (JSON): task fields. `title`, `status`, and `repo` are required. The `repo` key must be present; `null` is accepted as a valid value for tasks that are not scoped to a specific repository. Agent tokens force `assignee` to their own ID. Returns `201` with the created task.
 
 #### Bulk insert
 
@@ -76,7 +76,7 @@ Body (JSON): task fields. `title` and `status` are required. Agent tokens force 
 POST /tasks/bulk
 ```
 
-Body: JSON array of task objects. Skips conflicts (existing ID) rather than failing. Returns `{ inserted: number, updated: number }`.
+Body: JSON array of task objects. Each task must have `title`, `status`, and `repo` fields. The `repo` key must be present on every task; `null` is accepted as a valid value for tasks that are not scoped to a specific repository. Skips conflicts (existing ID) rather than failing. Returns `{ inserted: number, updated: number }`.
 
 #### Distinct values
 
