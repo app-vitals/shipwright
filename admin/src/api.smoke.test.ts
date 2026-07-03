@@ -511,6 +511,7 @@ function buildCombinedApp() {
         costUsd: null,
         model: null,
         createdAt: new Date(),
+        modelBreakdown: [],
       }),
     },
     agentToolService: {

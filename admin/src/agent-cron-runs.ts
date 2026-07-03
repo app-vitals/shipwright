@@ -109,7 +109,7 @@ export class AgentCronRunService {
     agentId: string,
     cronId: string,
     input: PatchAgentCronRunInput,
-  ): Promise<AgentCronRun> {
+  ): Promise<AgentCronRunWithModelBreakdown> {
     const run = await this.prisma.agentCronRun.findUnique({
       where: { id: runId },
     });
@@ -149,6 +149,7 @@ export class AgentCronRunService {
         this.prisma.agentCronRun.update({
           where: { id: runId },
           data: runData,
+          include: { modelBreakdown: true },
         }),
         ...input.modelBreakdown.map((entry) =>
           this.prisma.agentCronRunModelBreakdown.upsert({
@@ -180,6 +181,7 @@ export class AgentCronRunService {
     return this.prisma.agentCronRun.update({
       where: { id: runId },
       data: runData,
+      include: { modelBreakdown: true },
     });
   }
 

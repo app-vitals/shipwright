@@ -410,6 +410,7 @@ function makeMockDeps(): AdminDeps {
         cacheReadTokens: null,
         cacheCreationTokens: null,
         createdAt: new Date("2024-01-01T09:00:00.000Z"),
+        modelBreakdown: [],
       }),
     },
     agentCronRunStatsService: {
@@ -2177,7 +2178,7 @@ function makeMockDepsWithRunService(opts?: {
                   `cron run ${_runId} not found`,
                 );
               }
-              return { ...mockRun };
+              return { ...mockRun, modelBreakdown: [] };
             }
           : async () => ({
               ...mockRun,
@@ -2187,6 +2188,7 @@ function makeMockDepsWithRunService(opts?: {
               outputTokens: 500,
               cacheReadTokens: 100,
               cacheCreationTokens: 50,
+              modelBreakdown: [],
             }),
     },
   };

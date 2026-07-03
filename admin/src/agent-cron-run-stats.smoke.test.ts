@@ -360,6 +360,7 @@ function makeMockDeps(): AdminDeps {
         costUsd: null,
         model: null,
         createdAt: new Date(),
+        modelBreakdown: [],
       }),
     },
     agentCronRunStatsService: makeMockStatsService(),
