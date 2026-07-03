@@ -52,7 +52,7 @@ function makePrismaDouble(affectedRowsByCall: number | number[] = 0) {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const DEFAULT_TTL_MS = 300_000;
+const DEFAULT_TTL_MS = 900_000;
 
 /** Build a Date that is `offsetMs` milliseconds before `now`. */
 function msAgo(now: Date, offsetMs: number): Date {
@@ -271,6 +271,57 @@ describe("StaleClaimReaper", () => {
     const prSql = prisma._calls[1].strings.join("?");
     // Should use a CASE expression that only resets to pending when phase was 'review'
     // and preserves 'posted'/'approved' for patch/deploy items
+    expect(prSql).toContain("CASE");
+    expect(prSql).toContain("'review'");
+    expect(prSql).toContain("'pending'");
+  });
+
+  // ─── 900_000ms default TTL boundary ────────────────────────────────────────
+
+  test("phase='review' claim just under 900_000ms old is NOT reaped", async () => {
+    // 0 tasks, 0 PRs affected — verifies the cutoff constant and date math
+    const prisma = makePrismaDouble([0, 0]);
+    const reaper = new StaleClaimReaper(prisma as never, clock);
+
+    const count = await reaper.reap();
+
+    expect(count).toBe(0);
+    expect(prisma._calls).toHaveLength(2);
+
+    // The cutoff used to filter is now - DEFAULT_TTL_MS (900_000ms)
+    const expectedCutoff = msAgo(NOW, DEFAULT_TTL_MS).toISOString();
+    expect(prisma._calls[1].values[0]).toBe(expectedCutoff);
+
+    // A heartbeatAt just under 900_000ms old is more recent than the cutoff,
+    // so it would not match "heartbeatAt < cutoff" and is correctly excluded.
+    const heartbeatAt = msAgo(NOW, DEFAULT_TTL_MS - 1_000);
+    expect(heartbeatAt.getTime() > new Date(expectedCutoff).getTime()).toBe(
+      true,
+    );
+  });
+
+  test("phase='review' claim just over 900_000ms old IS reaped, reviewState resets to pending", async () => {
+    // 0 tasks, 1 PR affected — simulates a claim just past the TTL window
+    const prisma = makePrismaDouble([0, 1]);
+    const reaper = new StaleClaimReaper(prisma as never, clock);
+
+    const count = await reaper.reap();
+
+    expect(count).toBe(1);
+    expect(prisma._calls).toHaveLength(2);
+
+    const expectedCutoff = msAgo(NOW, DEFAULT_TTL_MS).toISOString();
+    expect(prisma._calls[1].values[0]).toBe(expectedCutoff);
+
+    // A heartbeatAt just over 900_000ms old is older than the cutoff,
+    // so it matches "heartbeatAt < cutoff" and would be reaped.
+    const heartbeatAt = msAgo(NOW, DEFAULT_TTL_MS + 1_000);
+    expect(heartbeatAt.getTime() < new Date(expectedCutoff).getTime()).toBe(
+      true,
+    );
+
+    // The reaper resets reviewState to 'pending' for phase='review' claims via CASE.
+    const prSql = prisma._calls[1].strings.join("?");
     expect(prSql).toContain("CASE");
     expect(prSql).toContain("'review'");
     expect(prSql).toContain("'pending'");

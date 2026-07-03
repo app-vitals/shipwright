@@ -324,9 +324,9 @@ export class PullRequestService implements PullRequestServiceLike {
   ): Promise<{ pr: PullRequest; phase: PrPhase } | null> {
     const now = this.clock.now();
     const nowIso = now.toISOString();
-    // Cutoff for "fresh" heartbeat — same as reaper default (5 min)
+    // Cutoff for "fresh" heartbeat — same as reaper default (15 min)
     const cutoffMs = Number(
-      process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS ?? 300_000,
+      process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS ?? 900_000,
     );
     const cutoff = new Date(now.getTime() - cutoffMs).toISOString();
 

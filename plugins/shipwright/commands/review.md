@@ -338,6 +338,16 @@ feedback is found: release the claim so the record returns to `pending`
 (`POST $SHIPWRIGHT_TASK_STORE_URL/prs/{PR_RECORD_ID}/release`), skip this PR, and return to
 Step 3b to pick the next candidate.
 
+8. **Renew the claim heartbeat**: context-gathering plus the deep review that follows can
+   together run longer than the claim TTL, so renew the heartbeat now, before starting the
+   review-writing phase — this keeps the claim alive so the stale-claim reaper does not reset
+   it back to `pending` mid-review:
+   ```bash
+   curl -s -o /dev/null -X POST \
+     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+     "$SHIPWRIGHT_TASK_STORE_URL/prs/{PR_RECORD_ID}/heartbeat"
+   ```
+
 ---
 
 ## Step 6: Classify Changes by Domain
