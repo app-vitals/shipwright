@@ -52,6 +52,13 @@ export interface MessageServiceLike {
   delete(id: string): Promise<Message | null>;
 
   /**
+   * Drop the attachment bytes for a message, retaining only its metadata.
+   * Used after the agent pulls a file into its workspace so content is not
+   * retained long-term. Returns the updated message or null if not found.
+   */
+  clearAttachmentBytes(id: string): Promise<Message | null>;
+
+  /**
    * Atomically claim the next unclaimed user message in a thread.
    * Returns the claimed message, or null if no unclaimed messages exist.
    */
@@ -160,6 +167,18 @@ export class MessageService implements MessageServiceLike {
   async delete(id: string): Promise<Message | null> {
     try {
       return await this.prisma.message.delete({ where: { id } });
+    } catch (err: unknown) {
+      if (isPrismaNotFound(err)) return null;
+      throw err;
+    }
+  }
+
+  async clearAttachmentBytes(id: string): Promise<Message | null> {
+    try {
+      return await this.prisma.message.update({
+        where: { id },
+        data: { attachmentBytes: null },
+      });
     } catch (err: unknown) {
       if (isPrismaNotFound(err)) return null;
       throw err;

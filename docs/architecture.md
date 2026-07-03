@@ -64,7 +64,9 @@ A small in-memory HTML store for short-lived, regenerable artifacts (one-pagers,
 
 ## Chat Service
 
-Postgres-backed service for web chat conversations (`chat/`). Owns three Prisma models (`ChatToken`, `Thread`, `Message`) on a **dedicated database** (`DATABASE_URL_SHIPWRIGHT_CHAT`). The Hono app is composed from injected services by `createChatServiceApp` (`chat/src/app.ts`); `/health` is unauthenticated, all other routes require a valid bearer token (scoped to agents via `agentId`). Provides `/tokens/*` (admin token create/list/revoke/update), `/threads/*` (thread CRUD), and `/threads/:threadId/messages/*` (message CRUD) endpoints.
+Postgres-backed service for web chat conversations (`chat/`). Owns three Prisma models (`ChatToken`, `Thread`, `Message`) on a **dedicated database** (`DATABASE_URL_SHIPWRIGHT_CHAT`). The Hono app is composed from injected services by `createChatServiceApp` (`chat/src/app.ts`); `/health` is unauthenticated, all other routes require a valid bearer token (scoped to agents via `agentId`). Provides `/tokens/*` (admin token create/list/revoke/update), `/threads/*` (thread CRUD), and `/threads/:threadId/messages/*` (message CRUD + attachment streaming) endpoints.
+
+**Ephemeral attachments:** Messages may carry file attachments (stored as binary `attachmentBytes` in Postgres, up to 10 MB). Attachments are **not** persisted long-term — the agent is expected to stream them via `GET /:id/attachment` (which returns the bytes and immediately clears them from the database). This pattern avoids disk bloat while supporting the agent's workflow of pulling files into its workspace. Attachment validation (size and MIME type) is performed in the admin upload route before the message reaches the chat service.
 
 ## Supporting surfaces
 

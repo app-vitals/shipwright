@@ -512,3 +512,103 @@ describe("agent scoping — queue API", () => {
     expect(res.status).toBe(403);
   });
 });
+
+// ─── Attachment download (ephemeral) ──────────────────────────────────────────
+
+/** Wrap a fake message service, spying on clearAttachmentBytes calls. */
+function spyClearAttachment(
+  ms: ReturnType<typeof fakeMessageService>,
+): ReturnType<typeof fakeMessageService> & { clearedIds: string[] } {
+  const clearedIds: string[] = [];
+  const original = ms.clearAttachmentBytes.bind(ms);
+  return Object.assign(ms, {
+    clearedIds,
+    async clearAttachmentBytes(id: string) {
+      clearedIds.push(id);
+      return original(id);
+    },
+  });
+}
+
+describe("GET /threads/:id/messages/:msgId/attachment", () => {
+  it("returns 200 with bytes when an attachment exists", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({ agentId: "a1" });
+    const bytes = new Uint8Array([1, 2, 3, 4, 5]);
+    const msg = await ms.create(thread.id, {
+      role: "user",
+      body: "See attached",
+      attachmentFilename: "data.bin",
+      attachmentSize: bytes.byteLength,
+      attachmentBytes: bytes,
+    });
+    const app = buildApp(ts, ms);
+
+    const res = await app.request(
+      `/threads/${thread.id}/messages/${msg.id}/attachment`,
+      { headers: H.get },
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-disposition")).toContain("data.bin");
+    const buf = new Uint8Array(await res.arrayBuffer());
+    expect(Array.from(buf)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("returns 404 when the message has no attachment bytes", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({ agentId: "a1" });
+    const msg = await ms.create(thread.id, { role: "user", body: "No file" });
+    const app = buildApp(ts, ms);
+
+    const res = await app.request(
+      `/threads/${thread.id}/messages/${msg.id}/attachment`,
+      { headers: H.get },
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 404 when the message does not exist", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({ agentId: "a1" });
+    const app = buildApp(ts, ms);
+
+    const res = await app.request(
+      `/threads/${thread.id}/messages/nonexistent/attachment`,
+      { headers: H.get },
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("clears the attachment bytes after a successful GET", async () => {
+    const ts = fakeThreadService();
+    const ms = spyClearAttachment(fakeMessageService());
+    const thread = await ts.create({ agentId: "a1" });
+    const bytes = new Uint8Array([9, 8, 7]);
+    const msg = await ms.create(thread.id, {
+      role: "user",
+      body: "See attached",
+      attachmentFilename: "once.bin",
+      attachmentSize: bytes.byteLength,
+      attachmentBytes: bytes,
+    });
+    const app = buildApp(ts, ms);
+
+    const res = await app.request(
+      `/threads/${thread.id}/messages/${msg.id}/attachment`,
+      { headers: H.get },
+    );
+    expect(res.status).toBe(200);
+    // clearAttachmentBytes must have been called for this message id
+    expect(ms.clearedIds).toContain(msg.id);
+
+    // A second fetch now finds no bytes → 404 (ephemeral)
+    const res2 = await app.request(
+      `/threads/${thread.id}/messages/${msg.id}/attachment`,
+      { headers: H.get },
+    );
+    expect(res2.status).toBe(404);
+  });
+});

@@ -216,6 +216,12 @@ export function fakeMessageService(
       const [deleted] = store.splice(idx, 1);
       return deleted ?? null;
     },
+    async clearAttachmentBytes(id) {
+      const msg = store.find((m) => m.id === id);
+      if (!msg) return null;
+      msg.attachmentBytes = null;
+      return msg;
+    },
     async claim(threadId, claimedBy) {
       const msg = store.find(
         (m) => m.threadId === threadId && m.role === "user" && !m.claimed,
