@@ -675,23 +675,29 @@ HEAD_SHA=$(git rev-parse HEAD)
 
 Poll every 30 seconds for up to **10 minutes** (20 polls max). On each poll:
 ```bash
-gh api "repos/$REPO/actions/runs?branch={branch}&per_page=10" \
-  --jq '[.workflow_runs[] | select(.head_sha == "'$HEAD_SHA'") | {id, name, status, conclusion}]'
+gh api "repos/$REPO/actions/runs?head_sha=$HEAD_SHA&per_page=20" \
+  --jq '[.workflow_runs[] | {id, name, workflow_id, run_number, status, conclusion}]'
 ```
 
-Filter to runs where `head_sha == HEAD_SHA`. Keep polling while any matching run has `status` of `queued`, `in_progress`, or `waiting`. If the poll times out at 10 minutes, treat it as a failure.
+Filter to runs where `head_sha == HEAD_SHA`. Keep polling while any run has `status` of
+`queued`, `in_progress`, or `waiting`. If the poll times out at 10 minutes, treat it as a failure.
+
+**Deduplicate by workflow:** When a workflow run fails and is rerun, both the original and
+rerun appear with the same `workflow_id` but different `run_number` values. Evaluate only
+the **latest run per workflow** (highest `run_number` for each `workflow_id`) to match the
+behavior of `gh pr checks`.
 
 **No CI configured:** If no matching runs appear after 60 seconds (2 polls), skip the rest of Step 9b and proceed to Step 10. Print:
 ```
 ⏭ No CI checks configured — skipping CI gate
 ```
 
-**All checks pass:** If all matching runs have `conclusion == "success"`, print and proceed to Step 10:
+**All checks pass:** If all latest-per-workflow runs have `conclusion == "success"`, print and proceed to Step 10:
 ```
 ✓ CI checks passed
 ```
 
-**Any check fails:** If any run has `conclusion != "success"` (e.g., `failure`, `cancelled`, `timed_out`), continue to 9b.3.
+**Any check fails:** If any latest-per-workflow run has `conclusion != "success"` (e.g., `failure`, `cancelled`, `timed_out`), continue to 9b.3.
 
 ### 9b.3. Collect Failure Logs
 
@@ -699,8 +705,9 @@ Initialize: `ci_checks = []` (accumulates structured check data from each failed
 
 1. Get failed run IDs from the Actions API (reuse `$REPO` and `$HEAD_SHA` from 9b.2):
    ```bash
-   gh api "repos/$REPO/actions/runs?branch={branch}&per_page=10" \
-     --jq '.workflow_runs[] | select(.head_sha == "'$HEAD_SHA'" and .conclusion == "failure") | {id, name}'
+   gh api "repos/$REPO/actions/runs?head_sha=$HEAD_SHA&per_page=20" \
+     --jq '.workflow_runs[] | {id, name, workflow_id, run_number, conclusion}' \
+     | jq -s 'group_by(.workflow_id) | map(max_by(.run_number)) | .[] | select(.conclusion == "failure") | {id, name}'
    ```
 
 2. For each failed run, get per-job results:
