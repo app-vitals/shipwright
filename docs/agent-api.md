@@ -197,7 +197,21 @@ Returns `204`. System crons (flagged `isSystem=true`) cannot be deleted — retu
 POST /agents/:id/crons/reconcile
 ```
 
-Reconciles the agent's system crons against the `SYSTEM_CRONS` list in the harness. Called automatically on agent startup. Returns `204`.
+Reconciles the agent's system crons against the `SYSTEM_CRONS` list in the harness. Called automatically on agent startup. Returns `200` with a summary:
+
+```json
+{
+  "created": 0,
+  "updated": 2,
+  "deleted": 0
+}
+```
+
+**How reconciliation works:**
+
+- **Existing crons:** For each system cron that already exists (matched by name), the endpoint updates it in place with the current definition from `SYSTEM_CRONS`, preserving its ID and existing enabled state. Updating in place (rather than delete+recreate) keeps the cron's ID stable across agent restarts, so `AgentCronRun` history (linked by foreign key with cascade-delete) is never wiped out.
+- **New crons:** Crons in `SYSTEM_CRONS` that don't yet exist are created with their default enabled state.
+- **Orphaned crons:** System crons whose names are no longer in `SYSTEM_CRONS` are deleted.
 
 ### Cron summary
 
