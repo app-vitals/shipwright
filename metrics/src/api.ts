@@ -922,6 +922,7 @@ export function createMetricsApp(
         byAgentBySessionTypeResult,
         byAgentByCronResult,
         byAgentByModelResult,
+        byAgentByCronModelResult,
       ] = await Promise.all([
         provider.query({ kind: "tokensTotals", range: dateRange }),
         provider.query({ kind: "tokensBySessionType", range: dateRange }),
@@ -933,6 +934,10 @@ export function createMetricsApp(
         }),
         provider.query({ kind: "tokensByAgentByCron", range: dateRange }),
         provider.query({ kind: "tokensByAgentByModel", range: dateRange }),
+        provider.query({
+          kind: "tokensByAgentByCronModel",
+          range: dateRange,
+        }),
       ]);
 
       const totalsRow = rowToObject(totalsResult) ?? {};
@@ -1049,6 +1054,25 @@ export function createMetricsApp(
         cronName: cronDisplayNameMap.get(row.cronName) ?? row.cronName,
       }));
 
+      const byAgentCronModelRaw = resultToRows(byAgentByCronModelResult).map(
+        (row) => ({
+          agentId: String(row.agent_id ?? ""),
+          cronName: String(row.cron_name ?? ""),
+          model: String(row.model ?? ""),
+          input: toNum(row.input_tokens),
+          output: toNum(row.output_tokens),
+          cacheRead: toNum(row.cache_read_input_tokens),
+          cacheCreation: toNum(row.cache_creation_input_tokens),
+          total: toNum(row.total_tokens),
+          cost: toNum(row.cost_usd),
+        }),
+      );
+
+      const byAgentCronModel = byAgentCronModelRaw.map((row) => ({
+        ...row,
+        cronName: cronDisplayNameMap.get(row.cronName) ?? row.cronName,
+      }));
+
       const byAgentModel = resultToRows(byAgentByModelResult).map((row) => ({
         agentId: String(row.agent_id ?? ""),
         model: String(row.model ?? ""),
@@ -1070,6 +1094,7 @@ export function createMetricsApp(
             byAgentSessionType,
             byAgentCron,
             byAgentModel,
+            byAgentCronModel,
           },
           {
             dateRange: dateRangeMeta,

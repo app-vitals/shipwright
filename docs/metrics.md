@@ -65,7 +65,7 @@ Require a bearer token (scope `"*"`) or session cookie (with `OWNER` role if req
 | GET | `/metrics/features` | Per-feature task / CI / review breakdown. |
 | GET | `/metrics/queue` | Shipwright v3 queue metrics: funnel counts, block rate, avg cycle time (days), avg review findings. |
 | GET | `/metrics/cost-efficiency` | Fleet-wide and per-cron cost efficiency: routed cost vs. all-Opus counterfactual. Run/cron-centric. |
-| GET | `/metrics/tokens` | Token usage — totals, by agent, by session type, by agent + session type, by agent + cron, by agent + model, and trends; each group includes a `cost` field (USD). |
+| GET | `/metrics/tokens` | Token usage — totals, by agent, by session type, by agent + session type, by agent + cron, by agent + model, by agent + cron + model, and trends; each group includes a `cost` field (USD). |
 | GET | `/dashboard` | Server-rendered dashboard HTML (session-gated). |
 | GET | `/dashboard/*` | Static dashboard assets (`styles.css`, `app.js`). |
 

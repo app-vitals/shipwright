@@ -326,8 +326,13 @@
       $("token-cost").textContent = "$0.00";
       return;
     }
-    const { totals, byAgent, byAgentCron, byAgentModel, byAgentSessionType } =
-      res.data;
+    const {
+      totals,
+      byAgent,
+      byAgentCron,
+      byAgentCronModel,
+      byAgentSessionType,
+    } = res.data;
     $("token-input").textContent = fmtTokens(totals.input);
     $("token-output").textContent = fmtTokens(totals.output);
     $("token-cache").textContent = fmtTokens(
@@ -348,9 +353,6 @@
             (r) => r.agentId === agent.agentId,
           );
           const agentSessionRows = (byAgentSessionType || []).filter(
-            (r) => r.agentId === agent.agentId,
-          );
-          const agentModelRows = (byAgentModel || []).filter(
             (r) => r.agentId === agent.agentId,
           );
 
@@ -403,25 +405,34 @@
               tr.appendChild(td);
             }
             agentTbody.appendChild(tr);
-          }
 
-          // Model sub-rows
-          for (const modelRow of agentModelRows) {
-            const tr = document.createElement("tr");
-            tr.className = "agent-model-row";
-            const modelCells = [
-              `◦ ${modelRow.model}`,
-              "--",
-              "--",
-              fmtTokens(modelRow.total),
-              fmtCost(modelRow.cost),
-            ];
-            for (const text of modelCells) {
-              const td = document.createElement("td");
-              td.textContent = text;
-              tr.appendChild(td);
+            // Model sub-rows nested under this cron sub-row. Both
+            // byAgentCronModel and byAgentCron are mapped through
+            // cronDisplayNameMap in api.ts before reaching the client, so
+            // comparing cronName here is safe — keep both sides mapped
+            // consistently if this logic changes.
+            const cronModelRows = (byAgentCronModel || []).filter(
+              (r) =>
+                r.agentId === agent.agentId &&
+                r.cronName === cronRow.cronName,
+            );
+            for (const modelRow of cronModelRows) {
+              const modelTr = document.createElement("tr");
+              modelTr.className = "agent-cron-model-row";
+              const modelCells = [
+                `  ◦ ${modelRow.model}`,
+                "--",
+                "--",
+                fmtTokens(modelRow.total),
+                fmtCost(modelRow.cost),
+              ];
+              for (const text of modelCells) {
+                const td = document.createElement("td");
+                td.textContent = text;
+                modelTr.appendChild(td);
+              }
+              agentTbody.appendChild(modelTr);
             }
-            agentTbody.appendChild(tr);
           }
         }
       }

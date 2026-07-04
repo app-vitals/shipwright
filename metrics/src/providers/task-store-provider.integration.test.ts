@@ -3,7 +3,7 @@
  * Integration: drive TaskStoreProvider over Recorded task-store + admin doubles
  * with a FixedClock, asserting it emits sql-provider-identical MetricTables for
  * the headline kinds, that token totals = cron + chat (no double-counting), that
- * a custom {from,to} range filters cassette rows, and that all 16 kinds return a
+ * a custom {from,to} range filters cassette rows, and that all 17 kinds return a
  * table without throwing.
  */
 
@@ -128,7 +128,18 @@ const CRON_STATS: CronRunTokenStats = {
     { key1: "agent-a", key2: "opus", ...agg(1000, 500, 200, 100, 1.5) },
   ],
   daily: [{ period: "2026-06-02", ...agg(1000, 500, 200, 100, 1.5) }],
-  byCronModel: [],
+  byCronModel: [
+    {
+      key1: "agent-a:ship-loop",
+      key2: "opus",
+      ...agg(700, 350, 140, 70, 1.0),
+    },
+    {
+      key1: "agent-a:patrol",
+      key2: "opus",
+      ...agg(300, 150, 60, 30, 0.5),
+    },
+  ],
 };
 
 const CHAT_STATS: ChatTokenStats = {
@@ -348,6 +359,33 @@ describe("TaskStoreProvider (integration)", () => {
     expect(t.results[0][7]).toBe(1.0);
   });
 
+  test("tokensByAgentByCronModel is cron-only with cost_usd, split from key1", async () => {
+    const provider = buildProvider();
+    const t = await provider.query({
+      kind: "tokensByAgentByCronModel",
+      range: RANGE,
+    });
+    expect(t.columns).toEqual([
+      "agent_id",
+      "cron_name",
+      "model",
+      "input_tokens",
+      "output_tokens",
+      "cache_read_input_tokens",
+      "cache_creation_input_tokens",
+      "total_tokens",
+      "cost_usd",
+    ]);
+    expect(t.results.length).toBe(2);
+    // sorted by total desc → ship-loop first
+    expect(t.results[0][0]).toBe("agent-a");
+    expect(t.results[0][1]).toBe("ship-loop");
+    expect(t.results[0][2]).toBe("opus");
+    expect(t.results[0][8]).toBe(1.0);
+    expect(t.results[1][1]).toBe("patrol");
+    expect(t.results[1][8]).toBe(0.5);
+  });
+
   test("custom {from,to} range filters out-of-window tasks", async () => {
     const provider = buildProvider();
     // Window covering only July → only PV-9.9 completes
@@ -360,7 +398,7 @@ describe("TaskStoreProvider (integration)", () => {
     expect(row[colIndex(t, "tasks_blocked")]).toBe(0);
   });
 
-  test("all 16 kinds return a non-throwing MetricTable", async () => {
+  test("all 17 kinds return a non-throwing MetricTable", async () => {
     const provider = buildProvider();
     const kinds: MetricQuery[] = [
       { kind: "summary", range: RANGE },
@@ -379,6 +417,7 @@ describe("TaskStoreProvider (integration)", () => {
       { kind: "tokensByAgentBySessionType", range: RANGE },
       { kind: "tokensByAgentByCron", range: RANGE },
       { kind: "tokensByAgentByModel", range: RANGE },
+      { kind: "tokensByAgentByCronModel", range: RANGE },
     ];
     for (const q of kinds) {
       const t = await provider.query(q);
@@ -569,7 +608,7 @@ describe("TaskStoreProvider (integration)", () => {
     expect(row[4]).toBe(0);
   });
 
-  test("graceful degradation: all 7 token methods handle cron failure", async () => {
+  test("graceful degradation: all 8 token methods handle cron failure", async () => {
     const taskStore = new RecordedTaskStoreClient(TASKS, PRS);
     const admin = new FaultingCronAdminMetricsClient(CRON_STATS, CHAT_STATS);
     const provider = new TaskStoreProvider(taskStore, admin, CLOCK);
@@ -582,6 +621,7 @@ describe("TaskStoreProvider (integration)", () => {
       { kind: "tokensByAgentBySessionType", range: RANGE },
       { kind: "tokensByAgentByCron", range: RANGE },
       { kind: "tokensByAgentByModel", range: RANGE },
+      { kind: "tokensByAgentByCronModel", range: RANGE },
     ];
 
     for (const q of kinds) {

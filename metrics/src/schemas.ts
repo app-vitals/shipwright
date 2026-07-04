@@ -236,6 +236,20 @@ const TokensByAgentByModelSchema = z
   })
   .openapi("TokensByAgentByModel");
 
+const TokensByAgentByCronModelSchema = z
+  .object({
+    agentId: z.string(),
+    cronName: z.string(),
+    model: z.string(),
+    input: z.number(),
+    output: z.number(),
+    cacheRead: z.number(),
+    cacheCreation: z.number(),
+    total: z.number(),
+    cost: z.number(),
+  })
+  .openapi("TokensByAgentByCronModel");
+
 export const TokensResultSchema = z
   .object({
     totals: TokenTotalsSchema,
@@ -245,6 +259,7 @@ export const TokensResultSchema = z
     byAgentSessionType: z.array(TokensByAgentBySessionTypeSchema),
     byAgentCron: z.array(TokensByAgentByCronSchema),
     byAgentModel: z.array(TokensByAgentByModelSchema),
+    byAgentCronModel: z.array(TokensByAgentByCronModelSchema),
   })
   .openapi("TokensResult");
 
