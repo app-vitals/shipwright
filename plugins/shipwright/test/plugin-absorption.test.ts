@@ -136,6 +136,33 @@ describe("entropy-scan/entropy-fix reference principles.md, not golden-principle
   }
 });
 
+// ── entropy-fix queue-only + HITL classification ─────────────────────────────
+
+describe("entropy-fix SKILL.md is queue-only with HITL classification", () => {
+  const skillFile = pluginPath("skills", "entropy-fix", "SKILL.md");
+  const content = readFileSync(skillFile, "utf8");
+
+  it("does not contain a PR-mode section header", () => {
+    expect(content.includes("Step 6 (PR Mode)")).toBe(false);
+  });
+
+  it("does not contain a direct gh pr create path", () => {
+    expect(content.includes("gh pr create")).toBe(false);
+  });
+
+  it("contains a task-store cross-check step", () => {
+    expect(content.toLowerCase().includes("cross-check")).toBe(true);
+  });
+
+  it("does not contain an inline yes/no confirmation prompt", () => {
+    expect(content.includes("(yes/no)")).toBe(false);
+  });
+
+  it("contains a hitl field in the task JSON section", () => {
+    expect(content.includes('"hitl"')).toBe(true);
+  });
+});
+
 // ── learning-capture support files ───────────────────────────────────────────
 
 describe("learning-capture support files", () => {

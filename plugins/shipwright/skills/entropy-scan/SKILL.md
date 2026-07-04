@@ -160,7 +160,7 @@ Write `entropy-report.md` to the project root (overwrite if it exists). Format:
 {List any categories or rules with zero findings here, as a quick confirmation they were checked.}
 
 ---
-_Run `/entropy-fix` to open PRs for `PR-worthy: true` violations._
+_Run `/entropy-fix` to queue task-store tasks for `PR-worthy: true` violations._
 _Run `/entropy-scan --init` to create a project-level config for rule customization._
 ```
 
@@ -194,7 +194,7 @@ TOP ISSUES
   {severity} · {rule_id} · {file_path} — {description}
 
 {If any high-severity findings exist:}
-  ⚠️  Run /entropy-fix to open PRs for PR-worthy violations.
+  ⚠️  Run /entropy-fix to queue task-store tasks for PR-worthy violations.
 
 {If zero findings:}
   ✓ No violations found. Codebase is clean against active rules.
@@ -243,7 +243,7 @@ Schema reference: `skills/entropy-scan/references/quality-log-schema.md`
 
 - **No code changes.** This skill reads and reports only. The only files written are `entropy-report.md` and `.entropy-patrol/quality-log.jsonl`.
 - **No git operations.** Do not commit, branch, or stage anything.
-- **No PR creation.** That belongs to `/entropy-fix`.
+- **No PR creation.** `entropy-scan` never creates PRs or tasks — queueing PR-worthy findings as task-store tasks belongs to `/entropy-fix`.
 - **No network calls.** All detection is local file inspection.
 - **Respect the project override.** If a project's `.claude/shipwright/principles.md` omits an entry present in the plugin default, treat it as not scanned — not even "just to check."
 - **One scan, one report.** Each run fully overwrites `entropy-report.md`. Previous results are not preserved.

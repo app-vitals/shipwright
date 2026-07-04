@@ -1,15 +1,20 @@
 ---
 name: entropy-fix
-description: Read entropy-report.md, fix PR-worthy violations, and open targeted PRs. One PR per concern. Requires entropy-scan to have run first.
+description: Read entropy-report.md and queue PR-worthy violations as task-store tasks, one task per rule, with per-finding HITL classification. Requires entropy-scan to have run first.
 ---
 
 # Entropy Fix
 
-Read the latest `entropy-report.md` and open focused, human-reviewable PRs for `PR-worthy` violations. Each PR fixes one rule — no bundled concerns, max 3 files changed per PR.
+Read the latest `entropy-report.md` and queue focused, human-reviewable tasks for
+`PR-worthy` violations. Each task fixes one rule — no bundled concerns. Findings are
+never turned into direct PRs; they always become task-store tasks that `dev-task`
+(or a human, for HITL tasks) picks up later.
 
 **Prerequisites:** Run `/entropy-scan` first to produce `entropy-report.md`.
 
-> **Task store setup:** When using the `--queue` flag, this skill pushes findings to the Shipwright task store. If `SHIPWRIGHT_TASK_STORE_URL` or `SHIPWRIGHT_TASK_STORE_TOKEN` is missing, invoke `/shipwright:task-store` for setup instructions.
+> **Task store setup:** This skill pushes findings to the Shipwright task store. If
+> `SHIPWRIGHT_TASK_STORE_URL` or `SHIPWRIGHT_TASK_STORE_TOKEN` is missing, invoke
+> `/shipwright:task-store` for setup instructions.
 
 ---
 
@@ -17,9 +22,12 @@ Read the latest `entropy-report.md` and open focused, human-reviewable PRs for `
 
 Before starting, check for flags:
 
-- `--dry-run` — print what PRs would be opened without creating branches, making changes, or creating PRs
-- `--rule {id}` — fix only violations of a specific rule ID (e.g., `--rule dead_exports`)
-- `--queue` — instead of opening PRs, push findings as tasks to the task store (via the task store API). Enables automated deferred fixing.
+- `--dry-run` — print what tasks would be queued without querying the task store for
+  dedup or writing any tasks
+- `--rule {id}` — queue only violations of a specific rule ID (e.g., `--rule dead_exports`)
+
+> **Note:** Queueing is the only mode. There is no PR mode and no `--queue` flag — every
+> run queues tasks. `--dry-run` shows a preview and stops without touching the task store.
 
 ---
 
@@ -42,7 +50,10 @@ Load the same principles file that the scan used, filtered the same way:
 1. Check `.claude/shipwright/principles.md` in the project root. If it exists, load it.
 2. Otherwise, load the plugin default: `references/principles.md` (relative to the plugin root).
 3. Filter to only entries containing a `**Detection:**` field — the same entropy-scannable set `/entropy-scan` used.
-4. Build a map of `rule_id → entry` for quick lookup (needed for `PR-worthy` status and PR body generation).
+4. Build a map of `rule_id → entry` for quick lookup. Retain each entry's `**Severity:**`,
+   `**PR-worthy:**`, and `**HITL:**` fields — the `**HITL:**` value (`always` / `never` /
+   `per-finding`) is the authoritative classification source used in Step 6q.4. Do not
+   hardcode a duplicate classification table here; principles.md is the single source of truth.
 
 ---
 
@@ -50,12 +61,12 @@ Load the same principles file that the scan used, filtered the same way:
 
 1. Parse the report's `## Findings` section. Collect all unchecked (`- [ ]`) findings.
 2. Filter to only findings whose entry has `**PR-worthy:** true` in the principles file.
-3. If `--rule` flag was passed, further filter to only that rule's findings. If no findings match that rule ID, print: "No unchecked findings for rule `{rule_id}`. Nothing to fix." and stop.
-4. Group findings by `rule_id`. One PR will be opened per group.
+3. If `--rule` flag was passed, further filter to only that rule's findings. If no findings match that rule ID, print: "No unchecked findings for rule `{rule_id}`. Nothing to queue." and stop.
+4. Group findings by `rule_id`. One task will be queued per group.
 5. Sort groups: high-severity rules first, then medium, then low.
 6. If no `PR-worthy` unchecked findings exist, print:
    ```
-   No PR-worthy findings to fix. All violations are either:
+   No PR-worthy findings to queue. All violations are either:
    - Already checked off (fixed)
    - In entries marked PR-worthy: false (fix manually)
    Run /entropy-scan to refresh the report.
@@ -64,40 +75,13 @@ Load the same principles file that the scan used, filtered the same way:
 
 ---
 
-## Step 4: Dry-Run Output (if --dry-run, without --queue)
+## Step 4: Dry-Run Output (if --dry-run)
 
-If `--dry-run` was passed **and `--queue` was NOT passed**, print a preview and stop:
+If `--dry-run` was passed, print a preview and stop without querying or writing to the task store:
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ENTROPY FIX — DRY RUN
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Would open {N} PRs:
-
-  1. fix/entropy-{rule-id}-{short-description}
-     Rule: {rule.description} ({severity})
-     Findings: {count} instances
-     Files affected: {list of unique file paths}
-
-  2. ...
-
-No branches created. No files changed. No PRs opened.
-Re-run without --dry-run to execute.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
-
-Stop after printing.
-
----
-
-## Step 4b: Queue + Dry-Run Preview (if --queue AND --dry-run)
-
-If both `--queue` and `--dry-run` were passed, print a preview and stop:
-
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-ENTROPY FIX — QUEUE DRY RUN
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Would queue {N} tasks:
@@ -106,11 +90,12 @@ Would queue {N} tasks:
      Rule: {rule.description} ({severity})
      Findings: {count} instances
      Files: {list of unique file paths}
+     HITL: {true|false} (classification per Step 6q.4)
 
   2. ...
 
 No tasks written to task store.
-Re-run with --queue (without --dry-run) to queue tasks.
+Re-run without --dry-run to queue tasks.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
@@ -120,20 +105,20 @@ Stop after printing.
 
 ## Step 5: Cap Check
 
-If there are more than 10 rule groups to fix, note:
+If there are more than 10 rule groups to queue, note:
 
 ```
-Found {N} rules with PR-worthy findings. Capping at 10 PRs per run.
-Fixing highest-severity rules first. Re-run after merging to continue.
+Found {N} rules with PR-worthy findings. Capping at 10 tasks per run.
+Queueing highest-severity rules first. Re-run after these land to continue.
 ```
 
 Process only the first 10 groups (sorted by severity).
 
 ---
 
-## Step 6: Queue Tasks (if --queue)
+## Step 6: Queue Tasks
 
-If `--queue` was passed, run this workflow instead of Steps 6a-6e.
+Queueing is the only mode. Run this workflow for every run.
 
 ### 6q.1 Dedup Check
 
@@ -153,6 +138,31 @@ Extract the rule IDs from existing tasks by parsing the `id` field (format: `ent
 
 For each rule group: if its `rule_id` is in the "already active" set, skip it. Print: `Skipping {rule_id} — task already active`.
 
+Keep both `.tasks` arrays in memory — the task-store cross-check in 6q.2 reuses them.
+
+### 6q.2 Task-Store Cross-Check (dead-code deletion findings)
+
+Before enqueueing any finding for a **deletion** rule — `dead_exports`, `unreferenced_files`,
+or `commented_out_blocks` — cross-check it against the pending and in-progress tasks already
+fetched in 6q.1. This prevents deleting code that another queued task is about to depend on.
+(`commented_out_blocks` is currently `PR-worthy: false` in principles.md, so Step 3 filters
+it out before it ever reaches this cross-check — this reference applies if that flag is
+ever flipped to `true`.)
+
+For each candidate finding under one of those three rules:
+
+1. Extract the finding's flagged **file path** and, where the finding names one, its **symbol
+   name** (e.g. the export name for `dead_exports`).
+2. Scan the `title` and `description` text of every pending/in-progress task for a reference
+   to that file path or symbol name (substring match on the path, and whole-word match on the
+   symbol name to avoid spurious hits).
+3. If a match is found, **skip** that finding — do not add it to the task's findings list.
+   Record it for the final summary as: `deferred — {file}:{symbol} referenced by task {task-id}`.
+
+After cross-checking, if a rule group has **zero** remaining findings (all were deferred),
+skip the whole group and note it as deferred in the summary. Rules other than the three
+deletion rules are not cross-checked — they pass through unchanged.
+
 ### 6q.3 Build Task JSON
 
 For each remaining rule group, build a task object:
@@ -166,22 +176,23 @@ For each remaining rule group, build a task object:
   "branch": "fix/entropy-{rule-id}-{short-description}",
   "layer": "Shared",
   "status": "pending",
+  "hitl": <true | false — computed per Step 6q.4>,
   "addedAt": "<current ISO timestamp>",
   "description": "<findings summary — see below>"
 }
 ```
 
-The `description` field must give dev-task enough context to fix without re-reading entropy-report.md:
+The `description` field must give dev-task (or the HITL executor) enough context to fix without re-reading entropy-report.md:
 ```
 Entropy patrol finding: {rule.id} — {rule.description} ({rule.severity})
 
 Findings ({count} total):
 - {file_path}:{line} — {finding_description}
-{Include ALL findings. If there are more than 20, include the first 20 and append: "(+N more — re-run /entropy-fix to see all)"}
+{Include ALL findings that survived the 6q.2 cross-check. If there are more than 20, include the first 20 and append: "(+N more — re-run /entropy-fix to see all)"}
 
 Fix guidance: {entry's **Detection:** field, or remediation guidance from the principles file}
 
-Rule: {rule.id} | Severity: {rule.severity} | Domain: {rule.domain}
+Rule: {rule.id} | Severity: {rule.severity} | Domain: {rule.domain} | HITL: {hitl}
 ```
 
 The `{YYYY-Www}` suffix in the task ID uses ISO week format. Compute from the current date:
@@ -192,7 +203,37 @@ The `{YYYY-Www}` suffix in the task ID uses ISO week format. Compute from the cu
 
 `short-description`: lowercase, hyphens, max 5 words from rule.description.
 
-### 6q.4 Write and Append
+### 6q.4 Compute the `hitl` Field
+
+The `hitl` boolean is computed **per finding-group** by reading the rule's `**HITL:**` field
+from the principles map loaded in Step 2 — this file is the single source of truth for the
+classification, so do not maintain a duplicate table here. There is **no** numeric backstop:
+no file-count or line-count threshold ever forces a task to HITL.
+
+Look up `rule.hitl` (the `**HITL:**` field value) and route:
+
+- **`never`** → `hitl: false` unconditionally. The fix is obvious by construction. This is
+  `dead_exports` (nothing imports it), `unreferenced_files`, and `commented_out_blocks` (once
+  reviewed, deletion/restoration is unambiguous). These three still pass through the 6q.2
+  cross-check before they are enqueued. (`commented_out_blocks` is currently
+  `PR-worthy: false`, so this `hitl` classification is dormant until that flag changes —
+  see the 6q.2 note.)
+- **`always`** → `hitl: true` unconditionally. This is `hardcoded_secrets`: a committed secret
+  is compromised and needs rotation — an infra/access action outside the codebase that a code
+  edit alone cannot resolve. `entropy-fix` never autonomously "fixes" a secret.
+- **`per-finding`** → evaluate the specific finding group and decide. This is
+  `duplicated_utility` and `architecture_layering`. Use judgment (you are the Claude agent
+  running this skill), grounded in the principle's prose:
+  - `hitl: false` (autonomous) when the fix is a clear, mechanical, single-approach move —
+    a single obvious call site, a clear drop-in replacement with matching behavior, or a
+    trivial one-line move up into an **existing** service method.
+  - `hitl: true` (needs a human) when it is ambiguous or multi-approach — behavior differs
+    between the local copy and the shared lib, there are multiple reasonable ways to
+    consolidate/restructure, or **no service boundary exists yet** to move the logic into.
+  - No default lean either way; judge each group on its own facts. This is a judgment call
+    made at runtime, never a count-based heuristic.
+
+### 6q.5 Write and Append
 
 1. Write all task objects to `/tmp/entropy-tasks-{unix-timestamp}.json` as a JSON array
 2. Run:
@@ -205,162 +246,61 @@ The `{YYYY-Www}` suffix in the task ID uses ISO week format. Compute from the cu
    ```
 3. Delete the temp file after appending
 
-### 6q.5 Print Summary
+### 6q.6 Print Summary
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ENTROPY FIX — QUEUED
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  QUEUED   {N} tasks
-  SKIPPED  {N} rule groups (already active)
+  QUEUED    {N} tasks   ({A} autonomous, {H} HITL)
+  SKIPPED   {N} rule groups (already active)
+  DEFERRED  {N} findings (referenced by pending/in-progress tasks)
 
 Tasks queued:
-  entropy-{rule-id}-{YYYY-Www} — {rule.description}
+  entropy-{rule-id}-{YYYY-Www} — {rule.description}  [hitl: {true|false}]
   ...
 
 {If any skipped:}
 Skipped (already active):
   {rule_id} — task already in queue or in progress
 
-Run /shipwright:dev-task to execute.
+{If any deferred by cross-check:}
+Deferred (referenced by existing task):
+  {file}:{symbol} — referenced by task {task-id}
+
+Run /shipwright:dev-task to execute autonomous tasks. HITL tasks are picked up via
+/shipwright:hitl.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-Stop after printing. Do NOT run Steps 6a-6e (branch creation, PR opening) in queue mode.
-
----
-
-## Step 6 (PR Mode): Fix Each Group
-
-If `--queue` was NOT passed, run the PR workflow for each group (one rule at a time, sequentially — never parallel):
-
-### 6a. Confirmation Gate for High-Severity Destructive Fixes
-
-If the rule severity is `high` AND any finding involves deleting code (not just adding tests, moving functions, or renaming — specifically removing existing logic), print:
-
-```
-⚠️  HIGH-SEVERITY DESTRUCTIVE FIX
-Rule: {rule.id} — {rule.description}
-Findings:
-  - {file}:{line} — {description}
-  ...
-
-This fix involves removing existing code. Confirm to proceed? (yes/no)
-```
-
-Wait for confirmation. If the answer is not `yes`, skip this group and note it in the final summary.
-
-### 6b. Branch Check
-
-Check if branch `fix/entropy-{rule-id}-{short-description}` already exists (locally or remotely):
-- Construct short-description: lowercase, hyphens, max 5 words from rule.description
-- If branch exists, skip this group. Print: "Branch `fix/entropy-{rule-id}-...` already exists — skipping. Merge or delete it first."
-
-### 6c. Create Branch and Make Fixes
-
-1. Create branch from base: `git checkout main && git checkout -b fix/entropy-{rule-id}-{short-description}`
-2. For each finding in this group:
-   - Apply the fix described by the rule's `detection_hint` remediation guidance
-   - Keep changes focused: only fix what the finding describes. Do not refactor surrounding code.
-   - Blast radius cap: if this group has more than 3 unique files to modify, fix the 3 highest-severity or most clearly scoped findings and note the rest as "deferred — re-run after merge"
-3. Commit: `fix(entropy): resolve {rule.id} — {finding_count} instance(s)`
-
-### 6d. Open PR
-
-Run:
-```
-gh pr create \
-  --title "fix(entropy): {rule.description} ({finding_count} instance(s))" \
-  --body "..." \
-  --base main
-```
-
-PR body format:
-```markdown
-## Entropy Fix: {rule.description}
-
-**Principle:** `{rule.id}` ({rule.severity})
-**Findings fixed:** {count}
-
-### What was changed
-{bullet list: `file_path:line` — one-line description of change}
-
-### Why this matters
-{rule.description — explain the principle being enforced and why drift here costs the team}
-
-### Review notes
-{Any caveats: "N instances auto-fixed; M flagged as needs-human-review and left as comments"}
-{If blast radius cap applied: "N additional findings deferred — re-run /entropy-fix after merge"}
-
----
-_Generated by [shipwright](https://github.com/app-vitals/shipwright). Review carefully before merging._
-```
-
-### 6e. Update entropy-report.md
-
-After the PR is opened successfully, go back to the base branch and update `entropy-report.md`:
-- Check off the fixed findings: change `- [ ]` to `- [x]` for each finding that was addressed in this PR
-- Add a note below each checked finding: `_(fixed in PR #{pr_number})_`
-
-### 6f. Log PR Result
-
-Record the result for the final summary (success, skip, or failure with reason).
-
----
-
-## Step 7: Return to Base Branch
-
-After processing all groups, run `git checkout {original-branch}` to return to where you started.
-
----
-
-## Step 8: Print Final Summary
-
-> **Note:** In `--queue` mode, execution stops at Step 6q.5 and this Step 8 summary is not printed. The queue summary is the final output.
-
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-ENTROPY FIX COMPLETE
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  OPENED    {N} PRs
-  SKIPPED   {N} groups (branch exists or no-confirm)
-  FAILED    {N} PRs (see below)
-
-PRs opened:
-  #{pr_number} — {rule.id}: {title}
-  ...
-
-{If any failures:}
-Failures (fix manually):
-  {rule.id} — {reason}
-
-{If any deferred findings:}
-Deferred findings (run /entropy-fix again after merging open PRs):
-  {rule.id} — {N} remaining findings
-
-entropy-report.md updated with fixed findings checked off.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
+Stop after printing — this is the sole final output.
 
 ---
 
 ## Error Handling
 
-- **`gh pr create` fails**: Log the failure, continue to the next group. Do not abort the run.
-- **Branch creation fails** (e.g., git conflict): Log and skip this group. Include in final summary under failures.
-- **Fix attempt produces no diff**: Don't commit an empty change. Skip and note: "No diff produced for {rule.id} — may already be fixed. Check entropy-report.md."
-- **More than 10 groups**: Cap at 10 as described in Step 5. Always process highest-severity first.
+- **Task-store query fails** (dedup/cross-check in 6q.1): log the failure and stop. Do not
+  queue tasks without a dedup + cross-check pass, or you risk duplicate tasks and deleting
+  code a pending task depends on.
+- **Bulk append fails** (`/tasks/bulk` non-2xx): log the response body and stop. Do not retry
+  blindly; re-running the skill is idempotent because the dedup check will skip already-queued
+  rules.
+- **No PR-worthy findings**: handled in Step 3 — print the "nothing to queue" message and stop.
+- **More than 10 groups**: cap at 10 as described in Step 5. Always queue highest-severity first.
 
 ---
 
 ## Constraints (Do Not Violate)
 
-- **One PR per rule** — never bundle multiple rule violations into one PR.
-- **3-file blast radius cap** — never modify more than 3 files in a single PR.
-- **No auto-merge** — PRs always require human review before merge.
-- **No cascade** — only fix what's in the current `entropy-report.md`. Do not re-scan during a fix run.
-- **Sequential branches** — create branches one at a time. Parallel branch creation causes git conflicts.
-- **No principles.md changes** — the fix skill enforces principles, it does not modify them.
-- **Confirmation required for high-severity destructive ops** — never skip this gate.
+- **One task per rule** — never bundle multiple rule violations into one task.
+- **Queue only** — this skill never opens PRs and never leaves the base branch. It only writes
+  tasks to the task store; the actual fix lands later via `dev-task` or `/shipwright:hitl`.
+- **Cross-check before deletion** — never enqueue a `dead_exports` / `unreferenced_files` /
+  `commented_out_blocks` finding without running the 6q.2 task-store cross-check first.
+- **No cascade** — only queue what's in the current `entropy-report.md`. Do not re-scan during a run.
+- **No principles.md changes** — the fix skill enforces principles, it does not modify them,
+  and it reads the `**HITL:**` classification from principles.md rather than duplicating it.
+- **entropy-report.md is not checked off here** — a queued task only means a fix is scheduled.
+  The report's findings are checked off when the queued task actually lands its fix, via a
+  separate mechanism, not by this skill.

@@ -117,10 +117,10 @@ Omitting this field entirely marks the entry as judgment-only — it will not be
 
 ### `**PR-worthy:**` (present only alongside `**Detection:**`)
 
-Whether `/entropy-fix` should open a pull request to address issues found by this entry.
+Whether `/entropy-fix` should queue a task-store task to address issues found by this entry.
 
 ```
-**PR-worthy:** true    <!-- /entropy-fix will open a PR (max 3 files per PR) -->
+**PR-worthy:** true    <!-- /entropy-fix will queue a task-store task -->
 **PR-worthy:** false   <!-- /entropy-scan reports it; /entropy-fix skips it -->
 ```
 
@@ -141,8 +141,9 @@ Documents routing intent for how a PR-worthy finding should be classified:
 | `never` | Findings route to an autonomous fix without human review |
 | `per-finding` | Routing is decided per finding, at fix time |
 
-This field records classification intent only — `entropy-fix`'s actual queue/HITL routing
-logic is wired independently.
+This field is the authoritative routing source for entropy-fix. The skill reads it directly
+(never → false, always → true, per-finding → agent judgment at runtime) to set the `hitl`
+boolean on each queued task.
 
 ---
 

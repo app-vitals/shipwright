@@ -31,10 +31,10 @@ Each principle is one `###` entry with a fixed field order:
   and `entropy-fix` filter to entries containing a `**Detection:**` field; everything
   else is judgment-only — readable by `review`/`plan-session`/`dev-task` but never
   mechanically scanned.
-- **The `**HITL:**` field documents routing intent only.** It records how a
+- **The `**HITL:**` field is the authoritative routing source.** It records how a
   `pr_worthy` finding should be classified (`always` HITL / `never` HITL /
-  `per-finding` judgment). `entropy-fix`'s actual queue/HITL routing logic is wired in
-  a separate task; this file only declares the classification.
+  `per-finding` judgment), and `entropy-fix` reads this field directly to set the
+  `hitl` boolean on each queued task.
 
 **Age threshold** for the `stale_todo` / `todo_fixme_hack` rules is configured per repo
 via `todo_max_age_days` (default 90).
