@@ -107,6 +107,8 @@ export const TrendsPeriodSchema = z.object({
   simplifyAvgComplexity: z.number().nullable(),
   simplifyAvgConsistency: z.number().nullable(),
   avgReviewFindings: z.number().nullable(),
+  coverageReports: z.number().int(),
+  avgCoverageDelta: z.number().nullable(),
 });
 
 export const TrendsResultSchema = z
