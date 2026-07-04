@@ -227,6 +227,19 @@ jobs:
         run: |
           PR_URL="${{ steps.pr.outputs.pr_url }}"
           VERSION="${{ steps.version.outputs.version }}"
+
+          # `gh pr checks --watch` fails fast with "no checks reported" if it
+          # runs before GitHub has registered any check runs on the new
+          # commit — the check-triggering workflows haven't started yet
+          # immediately after `gh pr create`. Poll until at least one check
+          # appears before handing off to --watch.
+          echo "Waiting for checks to register on ${PR_URL}..."
+          for _ in $(seq 1 30); do
+            CHECK_COUNT=$(gh pr checks "$PR_URL" --json name -q 'length' 2>/dev/null || echo 0)
+            [ "$CHECK_COUNT" -gt 0 ] && break
+            sleep 2
+          done
+
           echo "Waiting for required checks on ${PR_URL}..."
           gh pr checks "$PR_URL" --watch --interval 15 --required
           echo "Checks passed — merging ${PR_URL}."
