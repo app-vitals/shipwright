@@ -1,7 +1,12 @@
 # Test-Readiness Tenets — Universal Baseline
 
-Checklist of diff-checkable test quality tenets. Used by code-reviewer Rule 6 when
-`testReadinessContext` is absent (graceful degradation) or as a supplemental baseline.
+> **Superseded note (PRN-2.2):** Rule 6's graceful-degradation fallback now reads the
+> testing-domain entries in `references/principles.md` instead of this file. This file is
+> retained as a supplemental baseline / historical reference but is no longer the active
+> fallback source.
+
+Checklist of diff-checkable test quality tenets. Previously used by code-reviewer Rule 6
+when `testReadinessContext` is absent (graceful degradation) or as a supplemental baseline.
 
 ## Graceful Degradation
 
