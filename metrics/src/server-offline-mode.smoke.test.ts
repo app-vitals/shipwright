@@ -87,6 +87,29 @@ describe("server.ts fixture-branch — METRICS_OFFLINE=true + METRICS_DASHBOARD_
     expect(body.data.avgCoverageDelta).toBeCloseTo((5 + 3 + 8) / 3, 5);
   });
 
+  test("/metrics/trends?preset=7d&groupBy=day returns coverageReports and avgCoverageDelta per row", async () => {
+    const deps = buildFixtureDeps();
+    const app = createMetricsApp(new Map(), noopAccountsClient, deps);
+    const res = await app.request("/metrics/trends?preset=7d&groupBy=day");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Array.isArray(body.data.rows)).toBe(true);
+    expect(body.data.rows.length).toBeGreaterThan(0);
+    for (const row of body.data.rows) {
+      expect(typeof row.coverageReports).toBe("number");
+      expect(
+        row.avgCoverageDelta === null || typeof row.avgCoverageDelta === "number",
+      ).toBe(true);
+    }
+    // Same fixture cassette as the summary test above: QS-1.1, QS-1.2, MQ-2.1
+    // collectively report 3 coverage deltas across the 7d window's per-day rows.
+    const totalCoverageReports = body.data.rows.reduce(
+      (sum: number, r: { coverageReports: number }) => sum + r.coverageReports,
+      0,
+    );
+    expect(totalCoverageReports).toBe(3);
+  });
+
   test("/dashboard returns 200 server-rendered HTML without credentials", async () => {
     const deps = buildFixtureDeps();
     const app = createMetricsApp(new Map(), noopAccountsClient, deps);

@@ -583,6 +583,8 @@ function makeTrendsHandler(
           simplifyAvgComplexity: toNumOrNull(row.simplify_avg_complexity),
           simplifyAvgConsistency: toNumOrNull(row.simplify_avg_consistency),
           avgReviewFindings: toNumOrNull(row.avg_review_findings),
+          coverageReports: toNum(row.coverage_reports),
+          avgCoverageDelta: toNumOrNull(row.avg_coverage_delta),
         };
       });
 
