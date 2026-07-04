@@ -1342,7 +1342,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         renderProvisionStartPage(c.var.userEmail, agentOptions, { error: msg }),
       );
 
+    let agentMode: string | undefined;
     let agentId: string | undefined;
+    let newAgentName: string | undefined;
+    let newAgentRepos: string | undefined;
     let xoxpToken: string | undefined;
     let ghAuthMode: string | undefined;
     let ghPat: string | undefined;
@@ -1354,7 +1357,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
     try {
       const formData = await c.req.formData();
+      agentMode = formData.get("agentMode")?.toString() ?? "existing";
       agentId = formData.get("agentId")?.toString();
+      newAgentName = formData.get("newAgentName")?.toString()?.trim();
+      newAgentRepos = formData.get("newAgentRepos")?.toString()?.trim();
       xoxpToken = formData.get("xoxpToken")?.toString();
       ghAuthMode = formData.get("ghAuthMode")?.toString() ?? "pat";
       ghPat = formData.get("ghPat")?.toString();
@@ -1369,7 +1375,11 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
     // ── Validate before any Slack call ────────────────────────────────────
 
-    if (!agentId) {
+    if (agentMode === "new") {
+      if (!newAgentName) {
+        return formError("Agent name is required.");
+      }
+    } else if (!agentId) {
       return formError("Agent is required.");
     }
 
@@ -1403,9 +1413,57 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       return formError("Invalid GitHub auth mode.");
     }
 
+    // ── Create new agent + provision (with rollback) ──────────────────────
+    // Mirrors POST /agents in agents-api.ts: create the row, optionally
+    // attach repos, then provision — rolling the row back if provisioning
+    // throws so we never leave a half-created agent with no workload.
+
+    if (agentMode === "new") {
+      // biome-ignore lint/style/noNonNullAssertion: validated above (agentMode === "new" requires newAgentName)
+      const name = newAgentName!;
+      const repos = (newAgentRepos ?? "")
+        .split(/\r?\n/)
+        .map((r) => r.trim())
+        .filter((r) => r.length > 0);
+      const invalid = repos.filter((r) => !isOrgRepo(r));
+      if (invalid.length > 0) {
+        return formError(
+          `Invalid repo format: ${invalid.join(", ")}. Expected org/repo.`,
+        );
+      }
+
+      const newAgent = await prisma.agent.create({
+        data: { name, selfHosted: false, ...(repos.length > 0 && { repos }) },
+      });
+      agentId = newAgent.id;
+
+      try {
+        await provisioner.provision(newAgent.id, { slug: newAgent.name });
+      } catch (err) {
+        await prisma.agent
+          .delete({ where: { id: newAgent.id } })
+          .catch((cleanupErr) => {
+            console.error(
+              "[admin-ui] failed to roll back agent after provision error:",
+              cleanupErr,
+            );
+          });
+        const msg =
+          err instanceof Error ? err.message : "Unknown provisioning error.";
+        return formError(`Agent created but provisioning failed: ${msg}`);
+      }
+    }
+
     // ── Fetch agent name for manifest ─────────────────────────────────────
 
-    const agent = await prisma.agent.findUnique({ where: { id: agentId } });
+    // agentId is guaranteed to be a non-empty string here: either validated
+    // directly above (existing mode) or set to the newly-created agent's id
+    // (new mode).
+    // biome-ignore lint/style/noNonNullAssertion: see comment above
+    const resolvedAgentId = agentId!;
+    const agent = await prisma.agent.findUnique({
+      where: { id: resolvedAgentId },
+    });
     if (!agent) {
       return formError("Agent not found.");
     }
@@ -1428,6 +1486,27 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         err instanceof Error
           ? err.message
           : "Unknown error creating Slack app.";
+      // In "new agent" mode, the agent row + K8s workload were already
+      // created above. A downstream Slack failure here must roll those
+      // back too, or a retry with the same name creates a second orphan
+      // (this flow isn't idempotent on newAgentName).
+      if (agentMode === "new") {
+        await provisioner.deprovision(resolvedAgentId).catch((cleanupErr) => {
+          console.error(
+            "[admin-ui] failed to deprovision agent after Slack manifest error:",
+            cleanupErr,
+          );
+        });
+        await prisma.agent
+          .delete({ where: { id: resolvedAgentId } })
+          .catch((cleanupErr) => {
+            console.error(
+              "[admin-ui] failed to roll back agent after Slack manifest error:",
+              cleanupErr,
+            );
+          });
+        return formError(`Agent created but Slack setup failed: ${msg}`);
+      }
       return formError(msg);
     }
 
@@ -1439,7 +1518,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     const now = Math.floor(Date.now() / 1000);
     const provisionToken = await sign(
       {
-        agentId,
+        agentId: resolvedAgentId,
         clientId,
         clientSecret,
         signingSecret,
@@ -1486,7 +1565,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       newEnv.CLAUDE_CODE_OAUTH_TOKEN = claudeCodeOauthToken;
     }
 
-    await agentEnvService.patch(agentId, newEnv);
+    await agentEnvService.patch(resolvedAgentId, newEnv);
 
     // Use c.html() so the Set-Cookie header from setCookie() is included
     return c.html(

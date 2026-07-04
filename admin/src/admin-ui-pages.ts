@@ -1093,13 +1093,41 @@ export function renderProvisionStartPage(
         After authorizing, the app credentials have been saved for your agent.
       </p>`
     : `<form method="POST" action="/admin/provision/start">
-        <div class="form-group">
-          <label class="form-label" for="agentId">Agent</label>
-          <select id="agentId" name="agentId" class="form-input" required>
-            <option value="">— select an agent —</option>
-          ${agentOptions}
-          </select>
-        </div>
+        <fieldset style="border:1px solid #e8e8ee;border-radius:8px;padding:16px;margin-bottom:16px">
+          <legend style="font-size:13px;font-weight:600;padding:0 8px">Agent</legend>
+          <div class="form-group" style="margin-bottom:12px">
+            <label style="font-size:13px;font-weight:500;margin-right:16px">
+              <input type="radio" name="agentMode" value="existing" checked
+                onchange="document.getElementById('existing-agent-fields').style.display='block';document.getElementById('new-agent-fields').style.display='none'"
+              /> Use existing agent
+            </label>
+            <label style="font-size:13px;font-weight:500">
+              <input type="radio" name="agentMode" value="new"
+                onchange="document.getElementById('existing-agent-fields').style.display='none';document.getElementById('new-agent-fields').style.display='block'"
+              /> Create new agent
+            </label>
+          </div>
+          <div id="existing-agent-fields">
+            <div class="form-group">
+              <label class="form-label" for="agentId">Agent</label>
+              <select id="agentId" name="agentId" class="form-input">
+                <option value="">— select an agent —</option>
+              ${agentOptions}
+              </select>
+            </div>
+          </div>
+          <div id="new-agent-fields" style="display:none">
+            <div class="form-group">
+              <label class="form-label" for="newAgentName">Agent name</label>
+              <input id="newAgentName" name="newAgentName" type="text" class="form-input" placeholder="my-agent" />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="newAgentRepos">Repos (optional, one per line)</label>
+              <textarea id="newAgentRepos" name="newAgentRepos" class="form-input" rows="4" placeholder="my-org/repo-one&#10;my-org/repo-two"></textarea>
+              <p style="font-size:12px;color:#6b7280;margin-top:4px">Format: <span class="mono">org/repo</span></p>
+            </div>
+          </div>
+        </fieldset>
 
         <fieldset style="border:1px solid #e8e8ee;border-radius:8px;padding:16px;margin-bottom:16px">
           <legend style="font-size:13px;font-weight:600;padding:0 8px">GitHub Authentication</legend>
