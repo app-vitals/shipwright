@@ -6,10 +6,11 @@
  * Services are injected as in-memory test doubles.
  */
 
-import { beforeAll, describe, expect, it } from "bun:test";
+import { beforeAll, describe, expect, it, spyOn } from "bun:test";
 import { sign } from "hono/jwt";
 import { createAdminUIApp } from "./admin-ui.ts";
 import type { AdminUIDeps, AdminUISlackClient } from "./admin-ui.ts";
+import type { TaskStoreProvisioningClient } from "./task-store-provisioning-client.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -593,5 +594,98 @@ describe("POST /admin/provision/xapp-token", () => {
     const html = await res.text();
     expect(html.toLowerCase()).toContain("error");
     expect(state.upsertCalls.length).toBe(0);
+  });
+
+  it("taskStoreProvisioningClient configured → mints a task-store token, patches SHIPWRIGHT_TASK_STORE_TOKEN/URL", async () => {
+    const state: MockState = {
+      upsertCalls: [],
+      patchCalls: [],
+      reconcileCalls: [],
+      createTokenCalls: [],
+    };
+    const mintCalls: Array<{ label: string; agentId?: string }> = [];
+    const taskStoreProvisioningClient: TaskStoreProvisioningClient = {
+      mintToken: async (label: string, agentId?: string) => {
+        mintCalls.push({ label, agentId });
+        return { id: "ts-tok-1", rawToken: "ts-raw-token-xyz" };
+      },
+      revokeToken: async () => {},
+    };
+    const app = createAdminUIApp(
+      makeMockDeps(state, {
+        taskStoreProvisioningClient,
+        taskStoreBaseUrl: "https://task-store.example.com",
+      }),
+    );
+
+    const body = new URLSearchParams({
+      agentId: AGENT_ID,
+      xappToken: "xapp-1-TEST-fake-socket-token",
+    });
+
+    const res = await app.request("/admin/provision/xapp-token", {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${sessionCookie}`,
+      },
+    });
+
+    expect(res.status).toBe(200);
+    expect(mintCalls).toEqual([
+      { label: `agent:${AGENT_ID}`, agentId: AGENT_ID },
+    ]);
+
+    const taskStorePatch = state.patchCalls.find(
+      (c) => "SHIPWRIGHT_TASK_STORE_TOKEN" in c.env,
+    );
+    expect(taskStorePatch).toBeDefined();
+    expect(taskStorePatch?.env.SHIPWRIGHT_TASK_STORE_TOKEN).toBe(
+      "ts-raw-token-xyz",
+    );
+    expect(taskStorePatch?.env.SHIPWRIGHT_TASK_STORE_URL).toBe(
+      "https://task-store.example.com",
+    );
+  });
+
+  it("no taskStoreProvisioningClient configured → logs a warning, no task-store env stored", async () => {
+    const state: MockState = {
+      upsertCalls: [],
+      patchCalls: [],
+      reconcileCalls: [],
+      createTokenCalls: [],
+    };
+    const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const app = createAdminUIApp(makeMockDeps(state));
+
+      const body = new URLSearchParams({
+        agentId: AGENT_ID,
+        xappToken: "xapp-1-TEST-fake-socket-token",
+      });
+
+      const res = await app.request("/admin/provision/xapp-token", {
+        method: "POST",
+        body: body.toString(),
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: `admin_session=${sessionCookie}`,
+        },
+      });
+
+      expect(res.status).toBe(200);
+      expect(warnSpy).toHaveBeenCalledWith(
+        "[admin] task-store not configured — skipping task-store provisioning for agent",
+        AGENT_ID,
+      );
+
+      const taskStorePatch = state.patchCalls.find(
+        (c) => "SHIPWRIGHT_TASK_STORE_TOKEN" in c.env,
+      );
+      expect(taskStorePatch).toBeUndefined();
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });
