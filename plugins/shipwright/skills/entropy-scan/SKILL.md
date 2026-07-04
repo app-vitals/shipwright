@@ -243,7 +243,7 @@ Schema reference: `skills/entropy-scan/references/quality-log-schema.md`
 
 - **No code changes.** This skill reads and reports only. The only files written are `entropy-report.md` and `.entropy-patrol/quality-log.jsonl`.
 - **No git operations.** Do not commit, branch, or stage anything.
-- **No PR creation.** That belongs to `/entropy-fix`.
+- **No PR creation.** `entropy-scan` never creates PRs or tasks — queueing PR-worthy findings as task-store tasks belongs to `/entropy-fix`.
 - **No network calls.** All detection is local file inspection.
 - **Respect the project override.** If a project's `.claude/shipwright/principles.md` omits an entry present in the plugin default, treat it as not scanned — not even "just to check."
 - **One scan, one report.** Each run fully overwrites `entropy-report.md`. Previous results are not preserved.
