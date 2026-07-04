@@ -1075,6 +1075,19 @@ describe("renderProvisionStartPage", () => {
     );
   });
 
+  test("authorize link does NOT open in new tab (no target=\"_blank\")", () => {
+    const html = renderProvisionStartPage(USER_NAME, [], {
+      oauthUrl: "https://slack.com/oauth/v2/authorize?client_id=123",
+    });
+    // Extract the authorize link line to check its attributes
+    const linkMatch = html.match(
+      /<a href="https:\/\/slack\.com\/oauth\/v2\/authorize\?client_id=123"[^>]*>/,
+    );
+    expect(linkMatch).toBeTruthy();
+    const linkTag = linkMatch?.[0] ?? "";
+    expect(linkTag).not.toContain('target="_blank"');
+  });
+
   test("with oauthUrl: does NOT show xoxp form", () => {
     const html = renderProvisionStartPage(USER_NAME, [], {
       oauthUrl: "https://slack.com/oauth/v2/authorize?client_id=123",

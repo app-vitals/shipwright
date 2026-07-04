@@ -1086,7 +1086,7 @@ export function renderProvisionStartPage(
         <strong>App created!</strong> Click the link below to authorize the Slack app.
       </div>
       <div class="oauth-url-box">${escapeHtml(opts.oauthUrl)}</div>
-      <a href="${escapeHtml(safeOauthUrl)}" class="btn btn-primary" target="_blank" rel="noopener noreferrer">
+      <a href="${escapeHtml(safeOauthUrl)}" class="btn btn-primary" rel="noopener noreferrer">
         Authorize Slack App →
       </a>
       <p style="margin-top:16px;font-size:13px;color:#6b7280">
