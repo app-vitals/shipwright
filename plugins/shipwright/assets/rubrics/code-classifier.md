@@ -2,6 +2,8 @@
 
 Used by the `test-inventory` skill to classify every meaningful unit of code into one of six categories. The category drives the layer prescription (see `layer-criteria.md`).
 
+**Layer definitions live elsewhere.** This rubric classifies code into categories only — it does not define the four test layers (unit / integration / smoke / E2E). The canonical source for layer definitions and testing-domain principles is `references/principles.md` (see its `## Testing` domain and the `data_layer_*` entries in `## Architecture`); `layer-criteria.md` maps these six categories onto those layers.
+
 ## The six categories
 
 ### 1. Pure business logic
