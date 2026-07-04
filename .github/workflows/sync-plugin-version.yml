@@ -219,6 +219,19 @@ jobs:
       # protection otherwise rejects the merge outright — confirmed via
       # PR #1084, where `gh pr merge --squash` (no `--admin`) failed with
       # "the base branch policy prohibits the merge" even after checks passed.
+      #
+      # Retry on stale-base races: this workflow and auto-bump-chart.yml both
+      # trigger off the same tag pushes and race to merge onto main. When the
+      # other workflow's PR lands first, main moves out from under this PR
+      # (no textual conflict — just a stale base ref) and `gh pr merge` fails
+      # with a transient GraphQL error: "Base branch was modified. Review and
+      # try the merge again." Confirmed via PR #1127 and agent-v0.130.0/
+      # 0.128.0/0.125.0 (all 2026-07-04). Retry a few times with a short sleep
+      # to absorb that window. Any other failure (real conflict, auth error,
+      # branch protection rejection, etc.) is NOT retried — fail immediately
+      # so a human is alerted, same as before this change. If the stale-base
+      # error persists past all retries, the step still ultimately fails for
+      # the same reason.
       - name: Wait for checks and merge
         if: steps.idempotency.outputs.skip != 'true' && steps.diff.outputs.changed == 'true' && steps.commit-push.outputs.push_skipped != 'true'
         timeout-minutes: 10
@@ -243,5 +256,36 @@ jobs:
           echo "Waiting for required checks on ${PR_URL}..."
           gh pr checks "$PR_URL" --watch --interval 15 --required
           echo "Checks passed — merging ${PR_URL}."
-          gh pr merge "$PR_URL" --squash --admin \
-            --subject "chore(plugin): sync version to ${VERSION} [skip ci]"
+
+          # Detects the transient stale-base GraphQL error (see comment
+          # above). Mirrors .github/workflows/test-sync-plugin-version.sh —
+          # keep both copies in sync.
+          is_stale_base_error() {
+            local output="$1"
+            if echo "$output" | grep -qi "Base branch was modified" || \
+               echo "$output" | grep -qi "try the merge again"; then
+              return 0
+            fi
+            return 1
+          }
+
+          MAX_ATTEMPTS=3
+          for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
+            MERGE_OUTPUT=$(gh pr merge "$PR_URL" --squash --admin \
+              --subject "chore(plugin): sync version to ${VERSION} [skip ci]" 2>&1) && {
+              echo "$MERGE_OUTPUT"
+              echo "Merged ${PR_URL}."
+              exit 0
+            }
+
+            echo "$MERGE_OUTPUT" >&2
+
+            if is_stale_base_error "$MERGE_OUTPUT" && [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
+              echo "Stale-base race detected (attempt ${attempt}/${MAX_ATTEMPTS}) — retrying in 5s..."
+              sleep 5
+              continue
+            fi
+
+            echo "Merge failed on attempt ${attempt}/${MAX_ATTEMPTS} — not retrying (either not a stale-base error, or retries exhausted)."
+            exit 1
+          done

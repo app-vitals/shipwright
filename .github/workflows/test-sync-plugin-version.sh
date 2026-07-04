@@ -69,6 +69,51 @@ assert_eq "branch for 0.116.0" "chore/plugin-version-v0.116.0" "$(branch_name '0
 assert_eq "branch for 1.0.0"   "chore/plugin-version-v1.0.0"   "$(branch_name '1.0.0')"
 
 # ---------------------------------------------------------------------------
+# Stale-base merge-retry logic (mirrors the "Wait for checks and merge" step)
+#
+# gh pr merge --admin can fail with a transient GraphQL error when a
+# concurrent workflow (e.g. auto-bump-chart.yml) merges its own PR first and
+# moves main out from under this one — "Base branch was modified. Review and
+# try the merge again." This is NOT a real conflict; it resolves itself on
+# retry once the base ref settles. is_stale_base_error() detects that specific
+# signature so the workflow can retry instead of failing outright on a
+# transient race. Any other merge failure (real conflict, auth error, branch
+# protection rejection, etc.) must NOT match — those should fail fast.
+# ---------------------------------------------------------------------------
+
+# Mirrors the function of the same name inlined in sync-plugin-version.yml's
+# "Wait for checks and merge" step. Keep both copies in sync.
+is_stale_base_error() {
+  local output="$1"
+  if echo "$output" | grep -qi "Base branch was modified" || \
+     echo "$output" | grep -qi "try the merge again"; then
+    return 0
+  fi
+  return 1
+}
+
+echo ""
+echo "=== is_stale_base_error tests ==="
+
+if is_stale_base_error "GraphQL: Base branch was modified. Review and try the merge again. (mergePullRequest)"; then
+  pass "real stale-base GraphQL error text → true"
+else
+  fail "real stale-base GraphQL error text → true" "true (match)" "false (no match)"
+fi
+
+if is_stale_base_error "GraphQL: the base branch policy prohibits the merge (mergePullRequest)"; then
+  fail "unrelated error text → false" "false (no match)" "true (match)"
+else
+  pass "unrelated error text → false"
+fi
+
+if is_stale_base_error ""; then
+  fail "empty string → false" "false (no match)" "true (match)"
+else
+  pass "empty string → false"
+fi
+
+# ---------------------------------------------------------------------------
 # Tests: idempotency guard (git ls-remote --heads matching, no network)
 # ---------------------------------------------------------------------------
 
