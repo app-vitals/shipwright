@@ -386,7 +386,8 @@ a single prompt block containing:
 - **`testReadinessContext`** — contents of `docs/test-readiness/test-system.md` plus the
   Testing section of the repo's CLAUDE.md (gathered in Step 5.7); omit this field entirely
   when no test-readiness content was gathered (the subagent falls back to the universal
-  baseline in `references/test-readiness-tenets.md` when the field is absent)
+  baseline in the testing-domain entries of `references/principles.md` when the field is
+  absent)
 - **Policy** — pass `min_confidence` and `max_findings` from Step 1
 
 The subagent returns a JSON object with `summary`, `findings[]`, `strengths[]`,

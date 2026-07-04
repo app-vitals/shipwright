@@ -4,8 +4,9 @@ The single source of truth for Shipwright's code-design and testing principles.
 Every consumer — `plan-session`, `dev-task`, `review`, `entropy-scan`/`entropy-fix`,
 and the test-readiness rubrics — reads its principles from this file.
 
-> **Status note:** This file is net-new and additive. Consumers are repointed at it
-> in later tasks (PRN-2.x / PRN-3.1). Until then nothing reads it — it is pure content.
+> **Status note:** This file is net-new and additive. As of PRN-2.2, code-reviewer Rules 6
+> and 7 read the testing-domain and architecture-domain entries from this file,
+> respectively. Remaining consumers are repointed at it in later tasks (PRN-2.x / PRN-3.1).
 
 ## How to read this file
 
