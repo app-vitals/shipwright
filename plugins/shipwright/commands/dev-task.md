@@ -342,7 +342,7 @@ curl -s -o /dev/null -X POST \
 
 ## Step 6: Simplify
 
-After implementation completes, run a simplification pass:
+After implementation completes, run a simplification pass. Ground both the implementation subagent's build (Step 5) and this pass in `plugins/shipwright/references/principles.md` — the shared architecture/testing principles file `plan-session` and `review` also read from. Respect its `architecture` domain entries (e.g. `architecture_layering`) when arranging code across layers, and its `testing` domain entries (e.g. the `t*` rules) when writing or adjusting tests during simplification.
 
 1. Review `git diff main...HEAD` to see all changes on this branch
 2. Look for and fix:
