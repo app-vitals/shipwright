@@ -6,7 +6,7 @@
  *   - All required skill directories exist with SKILL.md
  *   - All required commands exist
  *   - agents/learning-dreamer.md exists
- *   - entropy-scan support files (golden-principles.yaml, references/) exist
+ *   - entropy-scan support files (references/) exist; golden-principles.yaml is absent
  *   - learning-capture references/generalization-gate.md exists
  *   - No files contain old plugin-prefix invocation refs
  */
@@ -86,12 +86,12 @@ describe("absorbed agents", () => {
 // ── entropy-scan support files ────────────────────────────────────────────────
 
 describe("entropy-scan support files", () => {
-  it("skills/entropy-scan/golden-principles.yaml exists", () => {
+  it("skills/entropy-scan/golden-principles.yaml is absent (removed in favor of principles.md)", () => {
     expect(
       existsSync(
         pluginPath("skills", "entropy-scan", "golden-principles.yaml"),
       ),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   const requiredRefs = [

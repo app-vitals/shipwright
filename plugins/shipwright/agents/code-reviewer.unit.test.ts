@@ -3,21 +3,13 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const AGENT_DIR = import.meta.dir;
-const REFERENCES_DIR = join(AGENT_DIR, "../references");
 
 const CODE_REVIEWER_PATH = join(AGENT_DIR, "code-reviewer.md");
-const TENETS_PATH = join(REFERENCES_DIR, "test-readiness-tenets.md");
 
 let reviewerContent: string;
-let tenetsContent: string;
 
 beforeAll(() => {
   reviewerContent = readFileSync(CODE_REVIEWER_PATH, "utf-8");
-  if (existsSync(TENETS_PATH)) {
-    tenetsContent = readFileSync(TENETS_PATH, "utf-8");
-  } else {
-    tenetsContent = "";
-  }
 });
 
 describe("code-reviewer.md — Rule 6 test-readiness adherence", () => {
@@ -189,69 +181,9 @@ describe("code-reviewer.md — frontmatter and inputs", () => {
   });
 });
 
-describe("test-readiness-tenets.md — file exists and contains universal baseline", () => {
-  it("the reference file exists", () => {
-    expect(existsSync(TENETS_PATH)).toBe(true);
-  });
-
-  it("is readable and non-empty", () => {
-    expect(tenetsContent.length).toBeGreaterThan(200);
-  });
-
-  it("contains the no global mocking tenet", () => {
-    const hasTenet =
-      tenetsContent.toLowerCase().includes("global mocking") ||
-      tenetsContent.toLowerCase().includes("no global mock");
-    expect(hasTenet).toBe(true);
-  });
-
-  it("contains the clock injection tenet", () => {
-    const hasTenet =
-      tenetsContent.toLowerCase().includes("clock injection") ||
-      tenetsContent.toLowerCase().includes("clock interface") ||
-      (tenetsContent.toLowerCase().includes("clock") &&
-        tenetsContent.toLowerCase().includes("inject"));
-    expect(hasTenet).toBe(true);
-  });
-
-  it("contains the recorded fixtures tenet", () => {
-    const hasTenet =
-      tenetsContent.toLowerCase().includes("recorded fixture") ||
-      tenetsContent.toLowerCase().includes("recorded-fixture");
-    expect(hasTenet).toBe(true);
-  });
-
-  it("contains the real-boundary integration tenet", () => {
-    const hasTenet =
-      tenetsContent.toLowerCase().includes("real-boundary") ||
-      (tenetsContent.toLowerCase().includes("real") &&
-        tenetsContent.toLowerCase().includes("boundary") &&
-        tenetsContent.toLowerCase().includes("integration"));
-    expect(hasTenet).toBe(true);
-  });
-
-  it("contains the no-duplicate coverage tenet", () => {
-    const hasTenet =
-      tenetsContent.toLowerCase().includes("duplicate") &&
-      (tenetsContent.toLowerCase().includes("coverage") ||
-        tenetsContent.toLowerCase().includes("layer"));
-    expect(hasTenet).toBe(true);
-  });
-
-  it("contains confidence guidance", () => {
-    const hasConfidenceGuidance =
-      tenetsContent.toLowerCase().includes("confidence") &&
-      (tenetsContent.includes("75") || tenetsContent.includes("80"));
-    expect(hasConfidenceGuidance).toBe(true);
-  });
-
-  it("contains a graceful-degradation note for repos without test-readiness docs", () => {
-    const hasDegradationNote =
-      tenetsContent.toLowerCase().includes("graceful") ||
-      tenetsContent.toLowerCase().includes("degradation") ||
-      (tenetsContent.toLowerCase().includes("absent") &&
-        tenetsContent.toLowerCase().includes("docs")) ||
-      tenetsContent.toLowerCase().includes("no test-readiness");
-    expect(hasDegradationNote).toBe(true);
+describe("test-readiness-tenets.md — retired in favor of principles.md", () => {
+  it("the legacy reference file is absent", () => {
+    const tenetsPath = join(AGENT_DIR, "../references/test-readiness-tenets.md");
+    expect(existsSync(tenetsPath)).toBe(false);
   });
 });
