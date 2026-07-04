@@ -337,6 +337,13 @@ curl -sf -X DELETE \
 
 ## Creating a New Agent (Admin Only)
 
+Two paths, depending on whether the agent is self-hosted.
+
+**Non-self-hosted (preferred):** use the inline provisioning wizard at `/admin/provision`.
+Select the "Create new agent" toggle (instead of "Use existing agent") to walk through
+Slack app creation, GitHub auth, and AI credentials in one flow.
+
+**Self-hosted:** the wizard doesn't apply — register the agent directly via the admin API.
 Requires an admin-level API key configured in `SHIPWRIGHT_ADMIN_API_KEYS` on the server.
 
 ```bash
@@ -348,8 +355,8 @@ curl -sf -X POST \
 # Returns: { id, name, slackId, createdAt }
 ```
 
-After creating an agent, set env vars, add tool patterns, install plugins, and seed crons.
-See `docs/agent-onboarding.md` for the full provisioning runbook.
+After creating a self-hosted agent via the raw API, set env vars, add tool patterns, install
+plugins, and seed crons using the endpoints documented elsewhere in this skill.
 
 ---
 
