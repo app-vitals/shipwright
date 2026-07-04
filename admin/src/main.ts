@@ -419,6 +419,13 @@ async function startServer(): Promise<void> {
           // local/laptop agent can resolve it; the in-cluster fetchers above keep
           // using the internal SHIPWRIGHT_TASK_STORE_URL.
           taskStoreBaseUrl: resolveTaskStoreBaseUrl(process.env),
+          // Mints a per-agent task-store token during Slack wizard provisioning
+          // (POST /admin/provision/xapp-token), mirroring the K8s provisioning
+          // path's taskStore wiring in buildProvisioner above.
+          taskStoreProvisioningClient: new HttpTaskStoreProvisioningClient(
+            taskStoreUrl,
+            taskStoreAdminToken,
+          ),
         }
       : {};
 

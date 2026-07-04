@@ -64,6 +64,7 @@ import {
   AGENT_BOT_SCOPES,
   buildAgentManifest,
 } from "./slack-provisioning-client.ts";
+import type { TaskStoreProvisioningClient } from "./task-store-provisioning-client.ts";
 
 type AdminUIEnv = { Variables: { userEmail: string; isAdmin: boolean } };
 
@@ -306,6 +307,13 @@ export interface AdminUIDeps {
    * When absent, all chat routes render in degraded mode (notice, no table/messages).
    */
   chatClient?: ChatClient;
+  /**
+   * Task-store provisioning client used by the xapp-token handler to mint a
+   * per-agent task-store token during Slack wizard provisioning, mirroring
+   * the K8s provisioning path. When absent, provisioning proceeds without
+   * task-store credentials and a warning is logged.
+   */
+  taskStoreProvisioningClient?: TaskStoreProvisioningClient;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -414,6 +422,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     taskStoreBaseUrl,
     publicRepo,
     chatClient,
+    taskStoreProvisioningClient,
   } = deps;
 
   const app = new Hono<AdminUIEnv>();
@@ -1757,10 +1766,40 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         rawToken = created.rawToken;
       }
 
+      // Mint a task-store token the same way the K8s provisioning path does
+      // (agent-provisioner.ts), gated on the same idempotency guard as
+      // SHIPWRIGHT_AGENT_API_KEY above so a resubmit can't orphan a second
+      // token. When the admin server has no task-store client configured,
+      // warn instead of silently skipping provisioning.
+      const alreadyHasTaskStoreToken = Boolean(
+        existingBundle?.env.SHIPWRIGHT_TASK_STORE_TOKEN,
+      );
+      let taskStoreToken: string | undefined;
+      if (!taskStoreProvisioningClient) {
+        console.warn(
+          "[admin] task-store not configured — skipping task-store provisioning for agent",
+          agentId,
+        );
+      } else if (!alreadyHasTaskStoreToken) {
+        const minted = await taskStoreProvisioningClient.mintToken(
+          `agent:${agentId}`,
+          agentId,
+        );
+        taskStoreToken = minted.rawToken;
+      }
+
       // Use patch() to merge new keys without overwriting existing env vars
       await agentEnvService.patch(agentId, {
         SLACK_APP_TOKEN: xappToken,
         ...(rawToken ? { SHIPWRIGHT_AGENT_API_KEY: rawToken } : {}),
+        ...(taskStoreToken
+          ? {
+              SHIPWRIGHT_TASK_STORE_TOKEN: taskStoreToken,
+              ...(taskStoreBaseUrl
+                ? { SHIPWRIGHT_TASK_STORE_URL: taskStoreBaseUrl }
+                : {}),
+            }
+          : {}),
       });
 
       // Seed system crons
