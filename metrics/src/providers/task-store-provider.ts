@@ -10,11 +10,10 @@
  * tokens (the "cron" session source) and chat-daily tokens (the "chat" session
  * source) are disjoint, so summing them field-wise is the correct total.
  *
- * Where a metric genuinely has no task-store equivalent (e.g. simplify
- * sub-scores, files-changed, retries, fix-cascade depth — those lived only in
- * the now-removed PostHog event stream), the column is kept and filled with a
- * neutral empty value (null/0) rather than dropped: every kind must return a
- * valid table (AC#1).
+ * Where a metric genuinely has no task-store equivalent (e.g. files-changed,
+ * retries, fix-cascade depth — those lived only in the now-removed PostHog
+ * event stream), the column is kept and filled with a neutral empty value
+ * (null/0) rather than dropped: every kind must return a valid table (AC#1).
  */
 
 import {
@@ -306,11 +305,11 @@ export class TaskStoreProvider implements MetricsProvider {
       avg(ciTasks.map((t) => num(t.ciFixAttempts))),
       completed.filter((t) => num(t.simplifyTotal) !== null).length, // simplify_total = tasks with a simplify pass
       sum(completed.map((t) => num(t.simplifyTotal))), // simplify_total_fixes
-      null, // simplify_avg_dry — no task-store source
-      null, // simplify_avg_dead_code — no task-store source
-      null, // simplify_avg_naming — no task-store source
-      null, // simplify_avg_complexity — no task-store source
-      null, // simplify_avg_consistency — no task-store source
+      avg(completed.map((t) => num(t.simplifyDry))),
+      avg(completed.map((t) => num(t.simplifyDeadCode))),
+      avg(completed.map((t) => num(t.simplifyNaming))),
+      avg(completed.map((t) => num(t.simplifyComplexity))),
+      avg(completed.map((t) => num(t.simplifyConsistency))),
       prs.length,
       shipIt,
       avgReviewIterations,
@@ -391,6 +390,8 @@ export class TaskStoreProvider implements MetricsProvider {
       "simplify_avg_complexity",
       "simplify_avg_consistency",
       "avg_review_findings",
+      "coverage_reports",
+      "avg_coverage_delta",
     ];
 
     const completedOn = (p: string) =>
@@ -456,12 +457,14 @@ export class TaskStoreProvider implements MetricsProvider {
         estAcc.length
           ? estAcc.reduce((a, b) => a + b, 0) / estAcc.length
           : null,
-        null, // simplify_avg_dry — no source
-        null, // simplify_avg_dead_code — no source
-        null, // simplify_avg_naming — no source
-        null, // simplify_avg_complexity — no source
-        null, // simplify_avg_consistency — no source
+        avg(c.map((t) => num(t.simplifyDry))),
+        avg(c.map((t) => num(t.simplifyDeadCode))),
+        avg(c.map((t) => num(t.simplifyNaming))),
+        avg(c.map((t) => num(t.simplifyComplexity))),
+        avg(c.map((t) => num(t.simplifyConsistency))),
         null, // avg_review_findings — task-store PR records carry no findings count
+        c.filter((t) => num(t.coverageDelta) !== null).length, // coverage_reports
+        avg(c.map((t) => num(t.coverageDelta))), // avg_coverage_delta
       ];
     });
 

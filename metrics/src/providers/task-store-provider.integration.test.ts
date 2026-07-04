@@ -41,6 +41,11 @@ const TASKS: TaskRecord[] = [
     simplifyTotal: 2,
     addedAt: "2026-06-01T08:00:00.000Z",
     coverageDelta: 2.5,
+    simplifyDry: 4,
+    simplifyDeadCode: 2,
+    simplifyNaming: 6,
+    simplifyComplexity: 1,
+    simplifyConsistency: 3,
   },
   {
     id: "QS-1.2",
@@ -56,6 +61,11 @@ const TASKS: TaskRecord[] = [
     simplifyTotal: 1,
     addedAt: "2026-06-02T08:00:00.000Z",
     coverageDelta: null,
+    simplifyDry: 2,
+    simplifyDeadCode: 0,
+    simplifyNaming: 4,
+    simplifyComplexity: 3,
+    simplifyConsistency: 1,
   },
   {
     id: "MQ-2.1",
@@ -220,6 +230,12 @@ describe("TaskStoreProvider (integration)", () => {
     expect(row[colIndex(t, "avg_coverage_delta")]).toBe(2.5);
     // avg_review_iterations = avg(reviewCycles + patchCycles) = avg(2, 3) = 2.5
     expect(row[colIndex(t, "avg_review_iterations")]).toBe(2.5);
+    // simplify category averages: QS-1.1 (4,2,6,1,3) + QS-1.2 (2,0,4,3,1)
+    expect(row[colIndex(t, "simplify_avg_dry")]).toBe(3);
+    expect(row[colIndex(t, "simplify_avg_dead_code")]).toBe(1);
+    expect(row[colIndex(t, "simplify_avg_naming")]).toBe(5);
+    expect(row[colIndex(t, "simplify_avg_complexity")]).toBe(2);
+    expect(row[colIndex(t, "simplify_avg_consistency")]).toBe(2);
   });
 
   test("summary coverage aggregation excludes null coverageDelta tasks from the average", async () => {
@@ -274,6 +290,83 @@ describe("TaskStoreProvider (integration)", () => {
     expect(row[colIndex(t, "avg_coverage_delta")]).toBe(1);
   });
 
+  test("summary simplify category averages exclude tasks with null/undefined values", async () => {
+    const tasks: TaskRecord[] = [
+      {
+        id: "SX-1.1",
+        status: "merged",
+        startedAt: "2026-06-02T08:00:00.000Z",
+        completedAt: "2026-06-02T12:00:00.000Z",
+        mergedAt: "2026-06-02T12:00:00.000Z",
+        addedAt: "2026-06-01T08:00:00.000Z",
+        simplifyDry: 6,
+        simplifyDeadCode: 4,
+        simplifyNaming: 8,
+        simplifyComplexity: 2,
+        simplifyConsistency: 5,
+      },
+      {
+        id: "SX-1.2",
+        status: "merged",
+        startedAt: "2026-06-03T08:00:00.000Z",
+        completedAt: "2026-06-03T12:00:00.000Z",
+        mergedAt: "2026-06-03T12:00:00.000Z",
+        addedAt: "2026-06-02T08:00:00.000Z",
+        simplifyDry: null,
+        simplifyDeadCode: null,
+        simplifyNaming: null,
+        simplifyComplexity: null,
+        simplifyConsistency: null,
+      },
+      {
+        id: "SX-1.3",
+        status: "merged",
+        startedAt: "2026-06-04T08:00:00.000Z",
+        completedAt: "2026-06-04T12:00:00.000Z",
+        mergedAt: "2026-06-04T12:00:00.000Z",
+        addedAt: "2026-06-03T08:00:00.000Z",
+        // simplify* fields intentionally omitted (undefined)
+      },
+    ];
+    const taskStore = new RecordedTaskStoreClient(tasks, []);
+    const admin = new RecordedAdminMetricsClient(CRON_STATS, CHAT_STATS);
+    const provider = new TaskStoreProvider(taskStore, admin, CLOCK);
+
+    const t = await provider.query({ kind: "summary", range: RANGE });
+    const row = t.results[0];
+    // Only SX-1.1 has non-null simplify category values → average equals its
+    // own values, not diluted by the null/undefined tasks.
+    expect(row[colIndex(t, "simplify_avg_dry")]).toBe(6);
+    expect(row[colIndex(t, "simplify_avg_dead_code")]).toBe(4);
+    expect(row[colIndex(t, "simplify_avg_naming")]).toBe(8);
+    expect(row[colIndex(t, "simplify_avg_complexity")]).toBe(2);
+    expect(row[colIndex(t, "simplify_avg_consistency")]).toBe(5);
+  });
+
+  test("summary simplify category averages are null when no tasks have simplify data", async () => {
+    const tasks: TaskRecord[] = [
+      {
+        id: "SX-2.1",
+        status: "merged",
+        startedAt: "2026-06-02T08:00:00.000Z",
+        completedAt: "2026-06-02T12:00:00.000Z",
+        mergedAt: "2026-06-02T12:00:00.000Z",
+        addedAt: "2026-06-01T08:00:00.000Z",
+      },
+    ];
+    const taskStore = new RecordedTaskStoreClient(tasks, []);
+    const admin = new RecordedAdminMetricsClient(CRON_STATS, CHAT_STATS);
+    const provider = new TaskStoreProvider(taskStore, admin, CLOCK);
+
+    const t = await provider.query({ kind: "summary", range: RANGE });
+    const row = t.results[0];
+    expect(row[colIndex(t, "simplify_avg_dry")]).toBeNull();
+    expect(row[colIndex(t, "simplify_avg_dead_code")]).toBeNull();
+    expect(row[colIndex(t, "simplify_avg_naming")]).toBeNull();
+    expect(row[colIndex(t, "simplify_avg_complexity")]).toBeNull();
+    expect(row[colIndex(t, "simplify_avg_consistency")]).toBeNull();
+  });
+
   test("summary coverage aggregation returns 0/null when no tasks have coverageDelta", async () => {
     const tasks: TaskRecord[] = [
       {
@@ -312,6 +405,68 @@ describe("TaskStoreProvider (integration)", () => {
     expect(row[colIndex(t, "tasks_approved")]).toBe(1);
     // task-store PR records carry no findings count → always null
     expect(row[colIndex(t, "avg_review_findings")]).toBeNull();
+  });
+
+  test("trends includes coverage_reports and avg_coverage_delta columns computed per period", async () => {
+    const provider = buildProvider();
+    const t = await provider.query({
+      kind: "trends",
+      range: RANGE,
+      groupBy: "day",
+    });
+
+    expect(t.columns).toContain("coverage_reports");
+    expect(t.columns).toContain("avg_coverage_delta");
+
+    // QS-1.1 completes on 2026-06-02 with coverageDelta=2.5.
+    const day1 = t.results.find(
+      (r) => r[colIndex(t, "period")] === "2026-06-02",
+    );
+    expect(day1).toBeDefined();
+    expect(day1?.[colIndex(t, "coverage_reports")]).toBe(1);
+    expect(day1?.[colIndex(t, "avg_coverage_delta")]).toBe(2.5);
+
+    // QS-1.2 completes on 2026-06-03 with coverageDelta=null → excluded, not
+    // treated as zero.
+    const day2 = t.results.find(
+      (r) => r[colIndex(t, "period")] === "2026-06-03",
+    );
+    expect(day2).toBeDefined();
+    expect(day2?.[colIndex(t, "coverage_reports")]).toBe(0);
+    expect(day2?.[colIndex(t, "avg_coverage_delta")]).toBeNull();
+  });
+
+  test("trends per-period simplify_avg_* columns are non-null when simplify data exists", async () => {
+    const provider = buildProvider();
+    const t = await provider.query({
+      kind: "trends",
+      range: RANGE,
+      groupBy: "day",
+    });
+
+    // QS-1.1 completes on 2026-06-02 with simplifyDry=4, simplifyDeadCode=2,
+    // simplifyNaming=6, simplifyComplexity=1, simplifyConsistency=3.
+    const day1 = t.results.find(
+      (r) => r[colIndex(t, "period")] === "2026-06-02",
+    );
+    expect(day1).toBeDefined();
+    expect(day1?.[colIndex(t, "simplify_avg_dry")]).toBe(4);
+    expect(day1?.[colIndex(t, "simplify_avg_dead_code")]).toBe(2);
+    expect(day1?.[colIndex(t, "simplify_avg_naming")]).toBe(6);
+    expect(day1?.[colIndex(t, "simplify_avg_complexity")]).toBe(1);
+    expect(day1?.[colIndex(t, "simplify_avg_consistency")]).toBe(3);
+
+    // QS-1.2 completes on 2026-06-03 with simplifyDry=2, simplifyDeadCode=0,
+    // simplifyNaming=4, simplifyComplexity=3, simplifyConsistency=1.
+    const day2 = t.results.find(
+      (r) => r[colIndex(t, "period")] === "2026-06-03",
+    );
+    expect(day2).toBeDefined();
+    expect(day2?.[colIndex(t, "simplify_avg_dry")]).toBe(2);
+    expect(day2?.[colIndex(t, "simplify_avg_dead_code")]).toBe(0);
+    expect(day2?.[colIndex(t, "simplify_avg_naming")]).toBe(4);
+    expect(day2?.[colIndex(t, "simplify_avg_complexity")]).toBe(3);
+    expect(day2?.[colIndex(t, "simplify_avg_consistency")]).toBe(1);
   });
 
   test("tokensTotals = cron + chat summed field-wise (no double counting)", async () => {
