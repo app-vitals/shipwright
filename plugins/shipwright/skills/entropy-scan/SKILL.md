@@ -160,7 +160,7 @@ Write `entropy-report.md` to the project root (overwrite if it exists). Format:
 {List any categories or rules with zero findings here, as a quick confirmation they were checked.}
 
 ---
-_Run `/entropy-fix` to open PRs for `PR-worthy: true` violations._
+_Run `/entropy-fix` to queue task-store tasks for `PR-worthy: true` violations._
 _Run `/entropy-scan --init` to create a project-level config for rule customization._
 ```
 
@@ -194,7 +194,7 @@ TOP ISSUES
   {severity} · {rule_id} · {file_path} — {description}
 
 {If any high-severity findings exist:}
-  ⚠️  Run /entropy-fix to open PRs for PR-worthy violations.
+  ⚠️  Run /entropy-fix to queue task-store tasks for PR-worthy violations.
 
 {If zero findings:}
   ✓ No violations found. Codebase is clean against active rules.

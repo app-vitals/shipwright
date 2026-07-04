@@ -117,10 +117,10 @@ Omitting this field entirely marks the entry as judgment-only — it will not be
 
 ### `**PR-worthy:**` (present only alongside `**Detection:**`)
 
-Whether `/entropy-fix` should open a pull request to address issues found by this entry.
+Whether `/entropy-fix` should queue a task-store task to address issues found by this entry.
 
 ```
-**PR-worthy:** true    <!-- /entropy-fix will open a PR (max 3 files per PR) -->
+**PR-worthy:** true    <!-- /entropy-fix will queue a task-store task -->
 **PR-worthy:** false   <!-- /entropy-scan reports it; /entropy-fix skips it -->
 ```
 
