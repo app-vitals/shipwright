@@ -357,9 +357,11 @@ export class AgentCronJobService {
    * Reconcile system crons for the given agent.
    *
    * For each entry in SYSTEM_CRONS:
-   *   - If an existing system cron with matching name exists: delete it and
-   *     recreate it with current SYSTEM_CRONS definition, preserving the
-   *     existing enabled state.
+   *   - If an existing system cron with matching name exists: update it in
+   *     place with the current SYSTEM_CRONS definition, preserving its id and
+   *     existing enabled state. Updating in place (rather than delete+create)
+   *     keeps the row's id stable across restarts so AgentCronRun history
+   *     (FK onDelete: Cascade) is never wiped out from under it.
    *   - If no matching cron exists: create it with SYSTEM_CRONS default enabled.
    *
    * Orphan pass: delete any cron with system=true whose name is no longer in SYSTEM_CRONS.
@@ -395,29 +397,38 @@ export class AgentCronJobService {
       // Reconcile each SYSTEM_CRON entry
       for (const systemCron of SYSTEM_CRONS) {
         const existing = existingByName.get(systemCron.name);
-        const enabled = existing ? existing.enabled : systemCron.enabled;
 
         if (existing) {
-          await tx.agentCronJob.delete({ where: { id: existing.id } });
+          // Update in place — preserves id (and thus AgentCronRun history,
+          // which cascade-deletes when its AgentCronJob is deleted) and the
+          // existing enabled state.
+          await tx.agentCronJob.update({
+            where: { id: existing.id },
+            data: {
+              schedule: systemCron.schedule,
+              prompt: systemCron.prompt,
+              silent: systemCron.silent ?? false,
+              preCheck: systemCron.preCheck ?? null,
+            },
+          });
           updated++;
         } else {
+          await tx.agentCronJob.create({
+            data: {
+              agentId,
+              name: systemCron.name,
+              system: true,
+              schedule: systemCron.schedule,
+              prompt: systemCron.prompt,
+              silent: systemCron.silent ?? false,
+              preCheck: systemCron.preCheck ?? null,
+              channel: null,
+              user: null,
+              enabled: systemCron.enabled,
+            },
+          });
           created++;
         }
-
-        await tx.agentCronJob.create({
-          data: {
-            agentId,
-            name: systemCron.name,
-            system: true,
-            schedule: systemCron.schedule,
-            prompt: systemCron.prompt,
-            silent: systemCron.silent ?? false,
-            preCheck: systemCron.preCheck ?? null,
-            channel: null,
-            user: null,
-            enabled,
-          },
-        });
       }
 
       // Orphan pass: delete any system cron whose name is not in SYSTEM_CRONS.
