@@ -145,6 +145,9 @@ Keep both `.tasks` arrays in memory — the task-store cross-check in 6q.2 reuse
 Before enqueueing any finding for a **deletion** rule — `dead_exports`, `unreferenced_files`,
 or `commented_out_blocks` — cross-check it against the pending and in-progress tasks already
 fetched in 6q.1. This prevents deleting code that another queued task is about to depend on.
+(`commented_out_blocks` is currently `PR-worthy: false` in principles.md, so Step 3 filters
+it out before it ever reaches this cross-check — this reference applies if that flag is
+ever flipped to `true`.)
 
 For each candidate finding under one of those three rules:
 
@@ -212,7 +215,9 @@ Look up `rule.hitl` (the `**HITL:**` field value) and route:
 - **`never`** → `hitl: false` unconditionally. The fix is obvious by construction. This is
   `dead_exports` (nothing imports it), `unreferenced_files`, and `commented_out_blocks` (once
   reviewed, deletion/restoration is unambiguous). These three still pass through the 6q.2
-  cross-check before they are enqueued.
+  cross-check before they are enqueued. (`commented_out_blocks` is currently
+  `PR-worthy: false`, so this `hitl` classification is dormant until that flag changes —
+  see the 6q.2 note.)
 - **`always`** → `hitl: true` unconditionally. This is `hardcoded_secrets`: a committed secret
   is compromised and needs rotation — an infra/access action outside the codebase that a code
   edit alone cannot resolve. `entropy-fix` never autonomously "fixes" a secret.
