@@ -323,6 +323,29 @@ describe("ensureAgentHome", () => {
     expect(content).toContain("@IDENTITY.md");
   });
 
+  it("CLAUDE.md loads @BOOTSTRAP.md immediately after @IDENTITY.md for a freshly-seeded workspace", () => {
+    ensureAgentHome(testHome);
+    const content = readFileSync(
+      join(testHome, "workspace", "CLAUDE.md"),
+      "utf8",
+    );
+    expect(content).toContain("@BOOTSTRAP.md");
+    // @file includes are loaded literally by Claude Code, unconditionally — the
+    // ordering matters (right after @IDENTITY.md) so the First-Run Ritual is
+    // the next thing loaded after identity, not a prose note the model has to
+    // notice and act on.
+    const identityIdx = content.indexOf("@IDENTITY.md");
+    const bootstrapIdx = content.indexOf("@BOOTSTRAP.md");
+    expect(identityIdx).toBeGreaterThanOrEqual(0);
+    expect(bootstrapIdx).toBeGreaterThan(identityIdx);
+    const between = content.slice(
+      identityIdx + "@IDENTITY.md".length,
+      bootstrapIdx,
+    );
+    // Nothing but whitespace/newlines between the two includes.
+    expect(between.trim()).toBe("");
+  });
+
   it("seeds state/todos.json as empty array", () => {
     ensureAgentHome(testHome);
     const todosPath = join(testHome, "workspace", "state", "todos.json");
@@ -411,6 +434,59 @@ describe("ensureAgentHome", () => {
     const state = loadState(testHome);
     expect(state.setupCompletedAt).toBeDefined();
     expect(typeof state.setupCompletedAt).toBe("string");
+  });
+
+  it("strips the @BOOTSTRAP.md include line from CLAUDE.md the moment setupCompletedAt first fires", () => {
+    ensureAgentHome(testHome);
+    const claudeMdPath = join(testHome, "workspace", "CLAUDE.md");
+    const beforeContent = readFileSync(claudeMdPath, "utf8");
+    expect(beforeContent).toContain("@BOOTSTRAP.md");
+
+    // Simulate the ritual completing: BOOTSTRAP.md deleted, IDENTITY.md filled in.
+    rmSync(join(testHome, "workspace", "BOOTSTRAP.md"));
+    writeFileSync(
+      join(testHome, "workspace", "IDENTITY.md"),
+      "# Identity (filled)",
+      "utf8",
+    );
+
+    ensureAgentHome(testHome);
+
+    const state = loadState(testHome);
+    expect(state.setupCompletedAt).toBeDefined();
+
+    const afterContent = readFileSync(claudeMdPath, "utf8");
+    expect(afterContent).not.toContain("@BOOTSTRAP.md");
+
+    // Rest of the file is untouched — compare byte-for-byte minus the
+    // stripped line (and its trailing newline).
+    const expected = beforeContent
+      .split("\n")
+      .filter((line) => !line.includes("@BOOTSTRAP.md"))
+      .join("\n");
+    expect(afterContent).toBe(expected);
+  });
+
+  it("does not re-strip or error when ensureAgentHome runs again after setupCompletedAt is already set", () => {
+    ensureAgentHome(testHome);
+    rmSync(join(testHome, "workspace", "BOOTSTRAP.md"));
+    writeFileSync(
+      join(testHome, "workspace", "IDENTITY.md"),
+      "# Identity (filled)",
+      "utf8",
+    );
+    ensureAgentHome(testHome); // fires the strip
+    const claudeMdPath = join(testHome, "workspace", "CLAUDE.md");
+    const strippedContent = readFileSync(claudeMdPath, "utf8");
+    expect(strippedContent).not.toContain("@BOOTSTRAP.md");
+
+    // Custom edit after ritual completion — must survive further startups.
+    const customContent = `${strippedContent}\n<!-- custom note -->\n`;
+    writeFileSync(claudeMdPath, customContent, "utf8");
+
+    ensureAgentHome(testHome); // must be a no-op w.r.t. CLAUDE.md content
+
+    expect(readFileSync(claudeMdPath, "utf8")).toBe(customContent);
   });
 
   it("does not re-seed BOOTSTRAP.md when bootstrapSeededAt already set", () => {
