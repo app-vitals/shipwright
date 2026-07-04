@@ -214,11 +214,11 @@ jobs:
       # Merge directly once required checks pass, rather than GitHub's native
       # queued auto-merge (`gh pr merge --auto`). Native auto-merge only
       # re-evaluates mergeability on its own schedule, which can lag well past
-      # this workflow's 10-minute wait when the merge relies on a repo
-      # ruleset bypass (self-authored PR, no external reviewer) instead of a
-      # genuine approval — `gh pr checks --watch` blocks on required checks,
-      # then an immediate `gh pr merge` (no `--auto`) applies the bypass right
-      # away, the same way a manual merge click does.
+      # this workflow's 10-minute wait. `--admin` is required because this PR
+      # is self-authored (no external reviewer can approve it) and branch
+      # protection otherwise rejects the merge outright — confirmed via
+      # PR #1084, where `gh pr merge --squash` (no `--admin`) failed with
+      # "the base branch policy prohibits the merge" even after checks passed.
       - name: Wait for checks and merge
         if: steps.idempotency.outputs.skip != 'true' && steps.diff.outputs.changed == 'true' && steps.commit-push.outputs.push_skipped != 'true'
         timeout-minutes: 10
@@ -243,5 +243,5 @@ jobs:
           echo "Waiting for required checks on ${PR_URL}..."
           gh pr checks "$PR_URL" --watch --interval 15 --required
           echo "Checks passed — merging ${PR_URL}."
-          gh pr merge "$PR_URL" --squash \
+          gh pr merge "$PR_URL" --squash --admin \
             --subject "chore(plugin): sync version to ${VERSION} [skip ci]"
