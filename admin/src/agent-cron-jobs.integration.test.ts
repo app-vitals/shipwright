@@ -297,4 +297,46 @@ describeOrSkip("AgentCronJobService (integration)", () => {
     expect(result.updated).toBeGreaterThan(0);
     expect(result.created).toBe(0);
   });
+
+  it("reconcileSystemCrons() preserves cron id and AgentCronRun history across a reconcile", async () => {
+    const agentId = await createAgent(prisma);
+    // First reconcile seeds all system crons
+    await service.reconcileSystemCrons(agentId);
+
+    const jobs = await service.list(agentId);
+    const target = jobs.find((j) => j.system && j.name);
+    if (!target) {
+      throw new Error("expected at least one system cron to be seeded");
+    }
+    const originalId = target.id;
+
+    // Record a run against this cron, as the runtime does after executing it.
+    const run = await prisma.agentCronRun.create({
+      data: {
+        cronId: originalId,
+        agentId,
+        startedAt: new Date(),
+        completedAt: new Date(),
+        skipped: false,
+        outcome: "success",
+      },
+    });
+
+    // Reconciling again (e.g. on agent restart) must not wipe history: it
+    // should update the existing row in place rather than delete+recreate it.
+    const result = await service.reconcileSystemCrons(agentId);
+    expect(result.updated).toBeGreaterThan(0);
+    expect(result.created).toBe(0);
+
+    const jobsAfter = await service.list(agentId);
+    const targetAfter = jobsAfter.find((j) => j.name === target.name);
+    expect(targetAfter).toBeDefined();
+    expect(targetAfter?.id).toBe(originalId);
+
+    const survivingRun = await prisma.agentCronRun.findUnique({
+      where: { id: run.id },
+    });
+    expect(survivingRun).not.toBeNull();
+    expect(survivingRun?.cronId).toBe(originalId);
+  });
 });
