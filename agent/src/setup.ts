@@ -512,6 +512,20 @@ export function ensureDotClaudeSymlink(
   log(`[entrypoint] symlinked ${jsonLink} → ${jsonTarget}`);
 }
 
+/**
+ * Strips the `@BOOTSTRAP.md` include line from workspace/CLAUDE.md so it
+ * doesn't dangle once the First-Run Ritual deletes BOOTSTRAP.md itself.
+ * No-op if the path or the include line doesn't exist.
+ */
+export function stripBootstrapInclude(claudeMdPath: string): void {
+  if (!existsSync(claudeMdPath)) return;
+  const content = readFileSync(claudeMdPath, "utf8");
+  const lines = content.split("\n");
+  const filtered = lines.filter((line) => !line.includes("@BOOTSTRAP.md"));
+  if (filtered.length === lines.length) return; // nothing to strip
+  writeFileSync(claudeMdPath, filtered.join("\n"), "utf8");
+}
+
 export function ensureAgentHome(home: string): void {
   const workspaceDir = join(home, "workspace");
   const stateDir = join(workspaceDir, "state");
@@ -592,8 +606,12 @@ export function ensureAgentHome(home: string): void {
     saveState(home, state);
   } else if (
     state.bootstrapSeededAt &&
-    !existsSync(join(workspaceDir, "BOOTSTRAP.md"))
+    !existsSync(join(workspaceDir, "BOOTSTRAP.md")) &&
+    !state.setupCompletedAt
   ) {
+    // First startup after the ritual deletes BOOTSTRAP.md — clean up the
+    // now-dangling include before setupCompletedAt gates this branch off.
+    stripBootstrapInclude(join(workspaceDir, "CLAUDE.md"));
     state.setupCompletedAt = new Date().toISOString();
     saveState(home, state);
   }
