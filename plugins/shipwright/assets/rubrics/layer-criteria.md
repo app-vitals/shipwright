@@ -2,6 +2,8 @@
 
 Maps the six code categories from `code-classifier.md` to the four test layers. Enforces the canonical-layer rule — each functional unit is tested at exactly one layer, the lowest layer that can prove the property.
 
+**Source of truth:** the layer definitions below are this rubric's own content, but the testing-domain principles that justify them — no-duplicate-coverage, layer/speed alignment, and the real-boundary rule for the data sub-layer — live in `references/principles.md` (`## Testing` domain: `t5_no_duplicate_coverage`, `t6_layer_speed_mismatch`; `## Architecture` domain: `data_layer_own_database`, `data_layer_external_client`). Where this rubric's content overlaps with those entries, treat `references/principles.md` as canonical and this file as the layer-specific application of it.
+
 ## The four layers
 
 ### Unit
@@ -16,7 +18,7 @@ Maps the six code categories from `code-classifier.md` to the four test layers. 
 
 **Proves:** A real boundary works — the DB returns what we expect, the file write actually persists, the internal RPC actually completes. Schema compatibility. Transaction semantics. Idempotency at the boundary.
 
-**Boundaries:** One or more real boundaries. Tests boot the dependency locally (testcontainers, docker-compose, in-memory adapter — never a hosted service). The test asserts behavior *only at the boundary itself* — never re-asserts business rules that are already proved at unit.
+**Boundaries:** One or more real boundaries. Tests boot the dependency locally (testcontainers, docker-compose, in-memory adapter — never a hosted service). The test asserts behavior *only at the boundary itself* — never re-asserts business rules that are already proved at unit. The specific boundary discipline differs by data sub-layer — never mocked against a real test DB for a service's own database (`data_layer_own_database`), recorded fixture doubles for an external client/API (`data_layer_external_client`) — see `references/principles.md` for the full rationale.
 
 **Default for:** Categories 2 (service-boundary code), 4 (error paths involving real failures), 5 (external integrations via recorded fixtures).
 
@@ -55,7 +57,7 @@ unit > integration > smoke > E2E
 | Real third-party API response shape | Integration (recorded fixture) |
 | Auth/session middleware actually attaches user | Smoke |
 
-**Illegitimate higher-layer assertions (= trim in Phase 3):**
+**Illegitimate higher-layer assertions (= trim in Phase 3):** this is the worked application of the no-duplicate-coverage principle (`t5_no_duplicate_coverage` in `references/principles.md`) to this rubric's four layers — see that entry for the general rule; the table below is layer-criteria-specific examples.
 
 | If a unit test already proves | Then this assertion in the higher test is redundant |
 |---|---|
@@ -88,7 +90,7 @@ Canary is not a layer — it's a tag on smoke/E2E tests that also run against a 
 
 ## Speed budget alignment
 
-The canonical layer for a piece of code is also chosen with speed in mind. Per the `speed-budgets` skill:
+The canonical layer for a piece of code is also chosen with speed in mind — this is the layer-criteria application of `t6_layer_speed_mismatch` in `references/principles.md` (tests must sit in the correct speed tier). Per the `speed-budgets` skill, the concrete budgets are:
 
 - A test that requires <50ms execution → must be unit
 - A test that requires <2s and a real boundary → must be integration

@@ -28,6 +28,8 @@ Read these signals to determine language and frameworks:
 
 Record stack profile (language, package manager, primary framework if obvious — e.g., Hono, Express, FastAPI, Rails).
 
+**CLAUDE.md layer-declaration convention:** also check the target repo's root `CLAUDE.md` for a section declaring its concrete layer structure (e.g. "handler → service → data", or whatever naming that repo uses — `architecture_layering` in `references/principles.md` is explicit that the layering principle concerns the *relationship* between layers, not literal names, and each repo's own `CLAUDE.md` should declare its concrete layer names). This mirrors the existing "## Testing" section pattern: `commands/review.md` extracts a repo's CLAUDE.md Testing section into `testReadinessContext` for `code-reviewer.md`'s test-readiness rule to consume, falling back to the universal baseline in `references/principles.md` when no such section exists. Apply the same fallback here — if the repo's CLAUDE.md declares a layer structure, use its concrete names when classifying and reporting; if it doesn't, fall back to the generic handler/service/data naming from `code-classifier.md`/`layer-criteria.md`. Like the Testing section, a CLAUDE.md layer-structure declaration is kept accurate as the repo evolves via the existing docs-refresher (`agents/docs-refresher.md`, invoked from `/shipwright:dev-task` Step 8.5) and `research-docs` mechanisms — no new tooling is required; it is simply another doc surface those mechanisms already watch.
+
 ### Step 2 — discover code surfaces
 
 Use Glob + Grep to enumerate code areas. Source dirs vary; default to common conventions (`src/`, `app/`, `lib/`, `internal/`, language-specific). Exclude vendored deps, generated code, and existing test files.
