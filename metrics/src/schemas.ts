@@ -77,6 +77,8 @@ export const SummaryResultSchema = z
       c5: z.number().int(),
     }),
     avgFixCascadeDepth: z.number().nullable(),
+    coverageReports: z.number().int(),
+    avgCoverageDelta: z.number().nullable(),
   })
   .openapi("SummaryResult");
 

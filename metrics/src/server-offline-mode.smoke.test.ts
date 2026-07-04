@@ -73,6 +73,20 @@ describe("server.ts fixture-branch — METRICS_OFFLINE=true + METRICS_DASHBOARD_
     expect(typeof body.data.tasksCompleted).toBe("number");
   });
 
+  test("/metrics/summary?preset=7d returns coverageReports and avgCoverageDelta end to end", async () => {
+    const deps = buildFixtureDeps();
+    const app = createMetricsApp(new Map(), noopAccountsClient, deps);
+    const res = await app.request("/metrics/summary?preset=7d");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // Fixture cassette: QS-1.1 (coverageDelta=5), QS-1.2 (coverageDelta=3),
+    // MQ-2.1 (coverageDelta=8) are all completed within the 7d window.
+    expect(typeof body.data.coverageReports).toBe("number");
+    expect(body.data.coverageReports).toBe(3);
+    expect(typeof body.data.avgCoverageDelta).toBe("number");
+    expect(body.data.avgCoverageDelta).toBeCloseTo((5 + 3 + 8) / 3, 5);
+  });
+
   test("/dashboard returns 200 server-rendered HTML without credentials", async () => {
     const deps = buildFixtureDeps();
     const app = createMetricsApp(new Map(), noopAccountsClient, deps);
