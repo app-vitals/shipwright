@@ -140,6 +140,63 @@ describe("code-reviewer.md — Rule 7 architecture-layering adherence", () => {
   });
 });
 
+describe("code-reviewer.md — Rule 8 security-domain adherence", () => {
+  it("contains a Rule 8 Security-domain adherence section", () => {
+    const hasRule8 =
+      reviewerContent.includes("Rule 8") ||
+      (reviewerContent.toLowerCase().includes("security-domain") &&
+        reviewerContent.toLowerCase().includes("adherence"));
+    expect(hasRule8).toBe(true);
+  });
+
+  it("has the new rule labeled as Security-domain adherence", () => {
+    const hasLabel =
+      reviewerContent.includes("Security-domain adherence") ||
+      reviewerContent.toLowerCase().includes("security-domain adherence");
+    expect(hasLabel).toBe(true);
+  });
+
+  it("documents an activation gate for security-sensitive surface", () => {
+    const hasActivationGate =
+      reviewerContent.toLowerCase().includes("activation gate") &&
+      reviewerContent.toLowerCase().includes("security") &&
+      (reviewerContent.toLowerCase().includes("authn") ||
+        reviewerContent.toLowerCase().includes("webhook") ||
+        reviewerContent.toLowerCase().includes("secret"));
+    expect(hasActivationGate).toBe(true);
+  });
+
+  it("references principles.md as the source for security-domain entries", () => {
+    const hasSecurityDomainReference = reviewerContent.includes(
+      "security-domain",
+    );
+    expect(hasSecurityDomainReference).toBe(true);
+    expect(reviewerContent.includes("principles.md")).toBe(true);
+  });
+
+  it("applies the Rule 4 pre-existing issue filter to the new rule", () => {
+    const rule8Section = reviewerContent.slice(
+      reviewerContent.indexOf("Security-domain adherence"),
+    );
+    const hasRule4Reference =
+      rule8Section.includes("Rule 4") ||
+      (rule8Section.includes("pre-existing") && rule8Section.includes("filter"));
+    expect(hasRule4Reference).toBe(true);
+  });
+
+  it("applies the Rule 5 CLAUDE.md endorsement filter to the new rule", () => {
+    const rule8Section = reviewerContent.slice(
+      reviewerContent.indexOf("Security-domain adherence"),
+    );
+    const hasRule5Reference =
+      rule8Section.includes("Rule 5") ||
+      (rule8Section.includes("CLAUDE.md") &&
+        rule8Section.includes("endorsement") &&
+        rule8Section.includes("filter"));
+    expect(hasRule5Reference).toBe(true);
+  });
+});
+
 describe("code-reviewer.md — architecture category in output format", () => {
   it("includes architecture in the category enum", () => {
     expect(reviewerContent).toContain("architecture");
