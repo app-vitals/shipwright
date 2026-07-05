@@ -19,7 +19,7 @@ go-task (`Taskfile.yml`) is the single local entrypoint:
 
 ```bash
 task setup        # bun install across all workspaces
-task ci           # lint → check-strings → typecheck → check-config-docs → check-version-sync → test → secret-scan → doctor (the merge-blocking gate)
+task ci           # lint → check-strings → typecheck → check-config-docs → check-version-sync → test → secret-scan (the merge-blocking gate)
 task test         # bun test (all packages)
 ```
 
@@ -73,7 +73,7 @@ A unit test over 200 ms is a suspected hidden integration test (audit its import
 
 ## CI gates
 
-CI runs the exact `task ci` chain: **lint → check-strings → typecheck → check-config-docs → check-version-sync → test → secret-scan → doctor**, layer order unit → integration → smoke → e2e (a lower-layer failure fails fast and skips higher layers). Unit and integration run in parallel across packages; smoke (metrics + agent) runs after all integration jobs pass; e2e (Playwright — metrics dashboard + admin UI) runs last and only in Phase B+.
+CI runs the exact `task ci` chain: **lint → check-strings → typecheck → check-config-docs → check-version-sync → test → secret-scan**, layer order unit → integration → smoke → e2e (a lower-layer failure fails fast and skips higher layers). Unit and integration run in parallel across packages; smoke (metrics + agent) runs after all integration jobs pass; e2e (Playwright — metrics dashboard + admin UI) runs last and only in Phase B+.
 
 ## References
 

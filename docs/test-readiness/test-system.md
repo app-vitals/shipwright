@@ -88,7 +88,7 @@ The agent is a thin runner with a Prisma-backed PostgreSQL database and a Hono H
 |---|---|---|
 | All layers, all packages | `bun test` | <2 min |
 | Single package | `bun test --filter <package-name>` | see per-component above |
-| CI gates (lint → check-strings → typecheck → test → secret-scan → doctor) | `task ci` | <5 min |
+| CI gates (lint → check-strings → typecheck → check-config-docs → check-version-sync → test → secret-scan) | `task ci` | <5 min |
 
 ## CI pipeline shape
 

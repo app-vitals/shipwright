@@ -1,6 +1,6 @@
 # Metrics Dashboard
 
-> Hono service (artifact **B**) that turns Shipwright's pipeline events into analytics. Five read-only JSON endpoints served by a backend-agnostic `MetricsProvider`, plus a session-gated server-rendered dashboard. Two modes: **fixtures** (offline) and **taskstore** (live task-store + admin APIs).
+> Hono service (artifact **B**) that turns Shipwright's pipeline events into analytics. Six read-only JSON endpoints served by a backend-agnostic `MetricsProvider`, plus a session-gated server-rendered dashboard. Two modes: **fixtures** (offline) and **taskstore** (live task-store + admin APIs).
 
 ## Overview
 
