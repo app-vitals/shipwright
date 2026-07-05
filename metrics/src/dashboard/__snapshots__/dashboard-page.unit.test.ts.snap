@@ -164,7 +164,7 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
     <div id="vos-nav-content" class="vos-nav">
       <a href="/admin/agents" class="vos-nav-link">Agents</a>
       <a href="/admin/provision" class="vos-nav-link">Provision</a>
-      <a href="/admin/tasks" class="vos-nav-link">Tasks</a>
+      <a href="/admin/tasks?state=ready" class="vos-nav-link">Tasks</a>
       <a href="/admin/prs" class="vos-nav-link">PRs</a>
       <a href="/admin/chat" class="vos-nav-link">Chat</a>
       <a href="/admin/tokens" class="vos-nav-link">Task Store Tokens</a>
@@ -657,7 +657,7 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
     <div id="vos-nav-content" class="vos-nav">
       <a href="/admin/agents" class="vos-nav-link">Agents</a>
       <a href="/admin/provision" class="vos-nav-link">Provision</a>
-      <a href="/admin/tasks" class="vos-nav-link">Tasks</a>
+      <a href="/admin/tasks?state=ready" class="vos-nav-link">Tasks</a>
       <a href="/admin/prs" class="vos-nav-link">PRs</a>
       <a href="/admin/chat" class="vos-nav-link">Chat</a>
       <a href="/admin/tokens" class="vos-nav-link">Task Store Tokens</a>
@@ -1150,7 +1150,7 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
     <div id="vos-nav-content" class="vos-nav">
       <a href="/admin/agents" class="vos-nav-link">Agents</a>
       <a href="/admin/provision" class="vos-nav-link">Provision</a>
-      <a href="/admin/tasks" class="vos-nav-link">Tasks</a>
+      <a href="/admin/tasks?state=ready" class="vos-nav-link">Tasks</a>
       <a href="/admin/prs" class="vos-nav-link">PRs</a>
       <a href="/admin/chat" class="vos-nav-link">Chat</a>
       <a href="/admin/tokens" class="vos-nav-link">Task Store Tokens</a>
@@ -1643,7 +1643,7 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
     <div id="vos-nav-content" class="vos-nav">
       <a href="/admin/agents" class="vos-nav-link">Agents</a>
       <a href="/admin/provision" class="vos-nav-link">Provision</a>
-      <a href="/admin/tasks" class="vos-nav-link">Tasks</a>
+      <a href="/admin/tasks?state=ready" class="vos-nav-link">Tasks</a>
       <a href="/admin/prs" class="vos-nav-link">PRs</a>
       <a href="/admin/chat" class="vos-nav-link">Chat</a>
       <a href="/admin/tokens" class="vos-nav-link">Task Store Tokens</a>
