@@ -157,9 +157,7 @@ function cronOutcomeStyle(outcome: string | null | undefined): string {
 }
 
 /** Label for a cron run's outcome badge — "skipped" takes priority over outcome. */
-function cronRunOutcomeLabel(
-  run: { skipped: boolean; outcome: string | null },
-): string {
+function cronRunOutcomeLabel(run: { skipped: boolean; outcome: string | null }): string {
   return run.skipped ? "skipped" : (run.outcome ?? "unknown");
 }
 
@@ -626,11 +624,12 @@ export function renderAgentDetailPage(
           <button type="submit" class="btn btn-primary" style="font-size:11px;padding:3px 8px;align-self:flex-start">Save</button>
         </form>
       </details>`;
+    const lastRunOutcomeLabel = c.lastRun ? cronRunOutcomeLabel(c.lastRun) : null;
     const lastRunHtml = c.lastRun?.startedAt
       ? `
       <div style="font-size:11px;color:#6b7280;margin-bottom:4px">${relativeTime(c.lastRun.startedAt, now)}</div>
       <div>
-        <span class="badge" style="${cronOutcomeStyle(cronRunOutcomeLabel(c.lastRun))}">${escapeHtml(cronRunOutcomeLabel(c.lastRun))}</span>
+        <span class="badge" style="${cronOutcomeStyle(lastRunOutcomeLabel)}">${escapeHtml(lastRunOutcomeLabel ?? "unknown")}</span>
       </div>
       <div style="font-size:11px;color:#6b7280;margin-top:4px">${c.runCountToday ?? 0} run${(c.runCountToday ?? 0) === 1 ? "" : "s"}</div>`
       : `<div style="color:#d1d5db">never</div>`;
