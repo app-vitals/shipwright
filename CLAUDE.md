@@ -28,7 +28,7 @@ go-task (`Taskfile.yml`) is the single local entrypoint; the root `package.json`
 
 ```bash
 task setup        # bun install across all workspaces
-task ci           # lint → check-strings → typecheck → test → secret-scan → doctor (the merge-blocking gate; CI runs this exact chain)
+task ci           # lint → check-strings → typecheck → check-config-docs → check-version-sync → test → secret-scan (the merge-blocking gate; CI runs this exact chain)
 task test         # bun test            (single file: bun test path/to/file.test.ts)
 task lint         # bunx biome lint .
 task format       # bunx biome format --write .
@@ -162,7 +162,11 @@ To load additional context into a session, add `@docs/filename.md` entries here 
 - **docs/architecture.md** — the four-artifact A→B→C→D design (plugin / metrics / agent / task-store), supporting surfaces, and workspace layout
 - **docs/testing.md** — the four-layer test model (unit / integration / smoke / e2e), run commands, speed budgets, and the isolation contract
 - **docs/metrics.md** — metrics service (B): JSON endpoints, server-rendered dashboard, dual auth (Bearer / session), and environment
-- **docs/agent.md** — Shipwright agent (C): runtime + admin CRUD APIs, the six-model Prisma store, and encryption/env notes
+- **docs/agent.md** — Shipwright agent (C): runtime + admin CRUD APIs, the ten-model Prisma store, and encryption/env notes
+- **docs/agent-api.md** — the admin CRUD API (D): agents, envs, crons, cron runs, tools, tokens, plugins, and chat-token-usage endpoints, plus auth paths
+- **docs/task-store.md** — task store service (D): HTTP service API (tasks, PRs, tokens, ephemeral docs) and plugin backends (JSON file, Jira), CLI reference, and troubleshooting
 - **docs/deploy-kubernetes.md** — Kubernetes deployment guide: Minikube / GKE (Gateway API + cert-manager) / EKS (ALB), the agent runtime-provisioning RBAC model, and auth modes
+- **docs/helm-repo.md** — installing the published `shipwright` Helm chart, how chart publishing and version bumps are automated
+- **docs/quickstart.md** — local onboarding: metrics-only quickstart and the full dev stack (`task stack`)
 - **docs/test-readiness/test-system.md** — the authoritative test blueprint: layer matrix, boundary rules, per-component budgets, CI pipeline shape, and the full isolation contract
 - **docs/migration.md** — breaking changes and migration steps across versions (e.g. `AgentProvisioner.reconcile()` interface change)
