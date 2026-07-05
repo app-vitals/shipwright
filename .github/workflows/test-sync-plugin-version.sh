@@ -75,18 +75,18 @@ assert_eq "branch for 1.0.0"   "chore/plugin-version-v1.0.0"   "$(branch_name '1
 # concurrent workflow (e.g. auto-bump-chart.yml) merges its own PR first and
 # moves main out from under this one — "Base branch was modified. Review and
 # try the merge again." This is NOT a real conflict; it resolves itself on
-# retry once the base ref settles. is_stale_base_error() detects that specific
-# signature so the workflow can retry instead of failing outright on a
-# transient race. Any other merge failure (real conflict, auth error, branch
-# protection rejection, etc.) must NOT match — those should fail fast.
+# retry once the base ref settles. is_stale_base_error() matches on "Base
+# branch was modified" alone — that phrase is unambiguous and always present
+# in the real error text, so matching on it is sufficient. Any other merge
+# failure (real conflict, auth error, branch protection rejection, etc.) must
+# NOT match — those should fail fast.
 # ---------------------------------------------------------------------------
 
 # Mirrors the function of the same name inlined in sync-plugin-version.yml's
 # "Wait for checks and merge" step. Keep both copies in sync.
 is_stale_base_error() {
   local output="$1"
-  if echo "$output" | grep -qi "Base branch was modified" || \
-     echo "$output" | grep -qi "try the merge again"; then
+  if echo "$output" | grep -qi "Base branch was modified"; then
     return 0
   fi
   return 1
@@ -105,6 +105,12 @@ if is_stale_base_error "GraphQL: the base branch policy prohibits the merge (mer
   fail "unrelated error text → false" "false (no match)" "true (match)"
 else
   pass "unrelated error text → false"
+fi
+
+if is_stale_base_error "GraphQL: some other conflict, try the merge again later (mergePullRequest)"; then
+  fail "'try the merge again' without 'Base branch was modified' → false" "false (no match)" "true (match)"
+else
+  pass "'try the merge again' without 'Base branch was modified' → false"
 fi
 
 if is_stale_base_error ""; then

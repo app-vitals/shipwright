@@ -266,11 +266,16 @@ jobs:
       # `gh pr merge` fails with a transient GraphQL error: "Base branch was
       # modified. Review and try the merge again." Confirmed via run
       # 28703925995 (agent-v0.129.0, 2026-07-04 10:54). Retry a few times
-      # with a short sleep to absorb that window. Any other failure (real
-      # conflict, auth error, branch protection rejection, etc.) is NOT
-      # retried — fail immediately so a human is alerted, same as before this
-      # change. If the stale-base error persists past all retries, the step
-      # still ultimately fails for the same reason.
+      # with a short sleep to absorb that window. Detection matches on "Base
+      # branch was modified" alone — that phrase is unambiguous and always
+      # present in the real error, so it's sufficient without also matching
+      # the more generic "try the merge again" (which could otherwise match
+      # unrelated errors and retry something that isn't a stale-base race).
+      # Any other failure (real conflict, auth error, branch protection
+      # rejection, etc.) is NOT retried — fail immediately so a human is
+      # alerted, same as before this change. If the stale-base error persists
+      # past all retries, the step still ultimately fails for the same
+      # reason.
       - name: Wait for checks and merge
         if: steps.idempotency.outputs.skip != 'true' && steps.commit-push.outputs.push_skipped != 'true'
         timeout-minutes: 10
@@ -300,8 +305,7 @@ jobs:
           # both copies in sync.
           is_stale_base_error() {
             local output="$1"
-            if echo "$output" | grep -qi "Base branch was modified" || \
-               echo "$output" | grep -qi "try the merge again"; then
+            if echo "$output" | grep -qi "Base branch was modified"; then
               return 0
             fi
             return 1
