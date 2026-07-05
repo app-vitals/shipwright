@@ -19,7 +19,7 @@ go-task (`Taskfile.yml`) is the single local entrypoint:
 
 ```bash
 task setup        # bun install across all workspaces
-task ci           # lint → check-strings → typecheck → check-config-docs → check-version-sync → test → secret-scan → doctor (the merge-blocking gate)
+task ci           # lint → check-strings → typecheck → check-config-docs → check-version-sync → test → secret-scan (the merge-blocking gate)
 task test         # bun test (all packages)
 ```
 
