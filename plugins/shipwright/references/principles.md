@@ -4,9 +4,10 @@ The single source of truth for Shipwright's code-design and testing principles.
 Every consumer — `plan-session`, `dev-task`, `review`, `entropy-scan`/`entropy-fix`,
 and the test-readiness rubrics — reads its principles from this file.
 
-> **Status note:** This file is net-new and additive. As of PRN-2.2, code-reviewer Rules 6
-> and 7 read the testing-domain and architecture-domain entries from this file,
-> respectively. Remaining consumers are repointed at it in later tasks (PRN-2.x / PRN-3.1).
+> **Status note:** This file is net-new and additive. As of PRN-2.2 and SEC-1.2,
+> code-reviewer Rules 6, 7, and 8 read the testing-domain, architecture-domain, and
+> security-domain entries from this file, respectively. Remaining consumers are repointed
+> at it in later tasks (PRN-2.x / PRN-3.1).
 
 ## How to read this file
 
@@ -187,6 +188,93 @@ string literal (e.g. `const token = "ghp_..."`). Skip test files that use obviou
 values (e.g. `"test-token"`, `"fake-key"`).
 **PR-worthy:** true
 **HITL:** always
+
+### `authn_authz_boundary`
+
+**Domain:** security
+**Severity:** high
+
+Every handler that requires an authenticated or authorized caller must enforce that
+check before reaching business logic — not partway through, not after a data-layer call
+has already run. A missing or misplaced authn/authz check is a security-critical layering
+violation: the earlier a route rejects an unauthorized caller, the smaller the blast
+radius of any bug further down the call chain.
+
+Judgment-only — auth requirements vary per-route (some routes are intentionally public,
+some require a session, some require a specific role or scope) and can't be mechanically
+inferred from source alone; this entry carries no Detection field and is never
+entropy-scanned.
+
+### `webhook_signature_verification`
+
+**Domain:** security
+**Severity:** high
+
+A webhook route handler (a Stripe, GitHub, Slack, or other inbound-event receiver) that
+processes a payload without verifying its signature or HMAC against a shared secret is
+not actually authenticated — anyone who discovers the URL can forge events. Signature
+verification must happen before the payload is parsed and acted on, using the raw request
+body (not a body already re-serialized by a JSON parser, which can change byte-for-byte
+equality and break signature checks).
+
+**Detection:** Identify route handlers whose path or name looks webhook-like (`/webhook`,
+`/hooks/`, `/callback`, function names like `handleWebhook`/`onWebhookEvent`). For each,
+check whether the payload is parsed or acted on (`req.body`, `JSON.parse`, dispatching to
+a handler) without a preceding call to a signature-verification function (e.g.
+`verifySignature`, `crypto.timingSafeEqual` against an HMAC digest,
+`stripe.webhooks.constructEvent`, a GitHub `X-Hub-Signature-256` check). Flag any webhook
+handler with no such call on the path from request to payload use. Report: file, handler
+name, the missing verification step.
+**PR-worthy:** true
+**HITL:** always
+
+### `injection_at_trust_boundary`
+
+**Domain:** security
+**Severity:** high
+
+Any point where external input — user input, a webhook payload, a third-party API
+response — crosses into a raw SQL query, a shell command, or a template/expression
+evaluator without parameterization or escaping is an injection risk. String-concatenating
+untrusted input into a query or command is never safe, regardless of how unlikely the
+input source seems to produce malicious content today.
+
+Judgment-only — the correct fix depends on the specific sink (a parameterized query for
+SQL, proper shell-escaping or avoiding `shell: true` entirely for commands, a sandboxed
+evaluator or no evaluator at all for templates) and can't be mechanically classified as
+safe or unsafe without understanding intent; this entry carries no Detection field and is
+never entropy-scanned.
+
+### `least_privilege_tokens`
+
+**Domain:** security
+**Severity:** medium
+
+Scoped tokens and credentials (task-store tokens, API keys, service-account tokens)
+should carry the minimum scope needed for their purpose. A token scoped to "read tasks
+for repo X" should not also grant write access to unrelated repos or reach admin
+endpoints — a broader-than-needed scope turns a single leaked token into a much larger
+incident than it needed to be.
+
+Judgment-only — the correct scope boundary is a design decision made when the token is
+provisioned, not a mechanical check against source code; this entry carries no Detection
+field and is never entropy-scanned.
+
+### `secrets_in_logs`
+
+**Domain:** security
+**Severity:** medium
+
+Log statements must not include secret material — tokens, passwords, API keys, or full
+request/response bodies that may carry credentials — even at `debug` level. This is a
+narrower, judgment-only sibling of `hardcoded_secrets`: it covers runtime logging rather
+than source code, where the same value that would never be hardcoded can still leak by
+being logged in full.
+
+Judgment-only — flagging every log call mechanically would be extremely high-noise (most
+logged values are not secrets), and the fix is usually a redaction or field-allowlist
+decision specific to the call site; this entry carries no Detection field and is never
+entropy-scanned.
 
 ---
 

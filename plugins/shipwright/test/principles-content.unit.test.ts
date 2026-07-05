@@ -60,6 +60,11 @@ describe("principles.md — required rule IDs present", () => {
     "missing_readme_section",
     // security
     "hardcoded_secrets",
+    "authn_authz_boundary",
+    "webhook_signature_verification",
+    "injection_at_trust_boundary",
+    "least_privilege_tokens",
+    "secrets_in_logs",
     // inconsistent patterns
     "duplicated_utility",
     // architecture
@@ -126,6 +131,25 @@ describe("principles.md — architecture_layering entry", () => {
   });
 });
 
+// ── webhook_signature_verification entry is entropy-scannable ───────────────
+
+describe("principles.md — webhook_signature_verification entry", () => {
+  it("has a Detection field", () => {
+    const block = entryBlock(readPrinciples(), "webhook_signature_verification");
+    expect(block).toContain("**Detection:**");
+  });
+
+  it("is PR-worthy: true", () => {
+    const block = entryBlock(readPrinciples(), "webhook_signature_verification");
+    expect(block).toContain("**PR-worthy:** true");
+  });
+
+  it("has HITL: always", () => {
+    const block = entryBlock(readPrinciples(), "webhook_signature_verification");
+    expect(block).toContain("**HITL:** always");
+  });
+});
+
 // ── Per-entry required fields (spot-check one per domain) ─────────────────────
 
 describe("principles.md — required per-entry fields", () => {
@@ -159,6 +183,10 @@ describe("principles.md — judgment-only entries omit Detection", () => {
     "t1_no_global_mocking",
     "t5_no_duplicate_coverage",
     "error_handling",
+    "authn_authz_boundary",
+    "injection_at_trust_boundary",
+    "least_privilege_tokens",
+    "secrets_in_logs",
   ];
 
   for (const id of judgmentOnly) {
