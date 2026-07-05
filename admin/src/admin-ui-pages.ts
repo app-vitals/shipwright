@@ -156,6 +156,13 @@ function cronOutcomeStyle(outcome: string | null | undefined): string {
   return CRON_OUTCOME_STYLE[outcome ?? ""] ?? CRON_OUTCOME_STYLE_DEFAULT;
 }
 
+/** Label for a cron run's outcome badge — "skipped" takes priority over outcome. */
+function cronRunOutcomeLabel(
+  run: { skipped: boolean; outcome: string | null },
+): string {
+  return run.skipped ? "skipped" : (run.outcome ?? "unknown");
+}
+
 // Inline CSS for per-model cost badges on the cron runs page. A single run can
 // span multiple models, so each gets its own neutral badge — no outcome-style
 // color coding needed here.
@@ -623,7 +630,7 @@ export function renderAgentDetailPage(
       ? `
       <div style="font-size:11px;color:#6b7280;margin-bottom:4px">${relativeTime(c.lastRun.startedAt, now)}</div>
       <div>
-        <span class="badge" style="${cronOutcomeStyle(c.lastRun.outcome)}">${escapeHtml(c.lastRun.outcome || "unknown")}</span>
+        <span class="badge" style="${cronOutcomeStyle(cronRunOutcomeLabel(c.lastRun))}">${escapeHtml(cronRunOutcomeLabel(c.lastRun))}</span>
       </div>
       <div style="font-size:11px;color:#6b7280;margin-top:4px">${c.runCountToday ?? 0} run${(c.runCountToday ?? 0) === 1 ? "" : "s"}</div>`
       : `<div style="color:#d1d5db">never</div>`;
@@ -2254,7 +2261,7 @@ export function renderCronRunsPage(opts: {
   }
 
   function row(r: CronRunItem): string {
-    const outcomeLabel = r.skipped ? "skipped" : (r.outcome ?? "unknown");
+    const outcomeLabel = cronRunOutcomeLabel(r);
     const badgeStyle = cronOutcomeStyle(outcomeLabel);
     const badgeTitle = r.skipped && r.skipReason ? r.skipReason : outcomeLabel;
     const outcomeCell = `<span class="badge" style="${badgeStyle}" title="${escapeHtml(badgeTitle)}">${escapeHtml(outcomeLabel)}</span>`;

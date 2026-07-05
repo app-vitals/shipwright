@@ -815,6 +815,35 @@ describe("renderAgentDetailPage — crons", () => {
     );
     expect(html).toContain("1 run");
   });
+
+  test("renderCronRow with lastRun skipped: shows 'skipped' badge (not 'unknown')", () => {
+    const fixedNow = new Date("2024-06-01T12:00:00Z");
+    const twoHoursAgo = new Date(fixedNow.getTime() - 2 * 3600 * 1000);
+    const cronWithSkippedRun: CronJobItem = {
+      ...CUSTOM_CRON,
+      lastRun: {
+        startedAt: twoHoursAgo,
+        completedAt: new Date(twoHoursAgo.getTime() + 1000),
+        skipped: true,
+        outcome: null,
+      },
+      runCountToday: 0,
+    };
+    const html = renderAgentDetailPage(
+      AGENT,
+      {},
+      [cronWithSkippedRun],
+      [],
+      [],
+      [],
+      [],
+      USER_NAME,
+      true,
+      { now: fixedNow, timezone: "UTC" },
+    );
+    expect(html).toContain(">skipped<");
+    expect(html).not.toContain(">unknown<");
+  });
 });
 
 // ─── renderAgentDetailPage — tools section ───────────────────────────────────
