@@ -96,6 +96,48 @@ describe("normalizeModelToRateKey — fable family", () => {
   });
 });
 
+describe("normalizeModelToRateKey — dated CLI snapshot IDs", () => {
+  test('"claude-haiku-4-5-20251001" strips snapshot suffix and maps to haiku canonical key', () => {
+    expect(normalizeModelToRateKey("claude-haiku-4-5-20251001")).toBe(
+      "claude-haiku-4-5",
+    );
+  });
+
+  test('"claude-haiku-4-6-20251001" strips snapshot suffix and maps to haiku canonical key', () => {
+    expect(normalizeModelToRateKey("claude-haiku-4-6-20251001")).toBe(
+      "claude-haiku-4-5",
+    );
+  });
+
+  test('"claude-sonnet-4-6-20250929" strips snapshot suffix and maps to sonnet canonical key', () => {
+    expect(normalizeModelToRateKey("claude-sonnet-4-6-20250929")).toBe(
+      "claude-sonnet-4-6",
+    );
+  });
+
+  test('"claude-opus-4-8-20250915" strips snapshot suffix and maps to opus canonical key', () => {
+    expect(normalizeModelToRateKey("claude-opus-4-8-20250915")).toBe(
+      "claude-opus-4-8",
+    );
+  });
+
+  test('"claude-opus-4-7-20250601" strips snapshot suffix and maps to opus canonical key', () => {
+    expect(normalizeModelToRateKey("claude-opus-4-7-20250601")).toBe(
+      "claude-opus-4-8",
+    );
+  });
+
+  test('"claude-fable-5-20251101" strips snapshot suffix and maps to fable canonical key', () => {
+    expect(normalizeModelToRateKey("claude-fable-5-20251101")).toBe(
+      "claude-fable-5",
+    );
+  });
+
+  test('unknown dated snapshot still returns null (no crash)', () => {
+    expect(normalizeModelToRateKey("claude-nope-1-0-20251001")).toBeNull();
+  });
+});
+
 describe("normalizeModelToRateKey — unknown inputs", () => {
   test('"unknown-model" returns null', () => {
     expect(normalizeModelToRateKey("unknown-model")).toBeNull();

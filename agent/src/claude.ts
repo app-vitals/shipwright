@@ -34,8 +34,23 @@ export interface TokenUsage {
   cache_creation_input_tokens: number;
 }
 
-/** Per-model token usage map: model name → TokenUsage. */
-export type ModelUsage = Record<string, TokenUsage>;
+/**
+ * Per-model token usage entry, as emitted by the Claude CLI's `modelUsage`
+ * map (camelCase) — distinct from the snake_case top-level `usage` shape.
+ */
+export interface ModelUsageEntry {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadInputTokens: number;
+  cacheCreationInputTokens: number;
+  costUSD: number;
+  webSearchRequests?: number;
+  contextWindow?: number;
+  maxOutputTokens?: number;
+}
+
+/** Per-model token usage map: model name → ModelUsageEntry. */
+export type ModelUsage = Record<string, ModelUsageEntry>;
 
 export interface ClaudeRunResult {
   result: string;
@@ -46,17 +61,15 @@ export interface ClaudeRunResult {
 }
 
 /**
- * Returns the model name with the highest output_tokens from the CLI's
+ * Returns the model name with the highest outputTokens from the CLI's
  * modelUsage map. Returns undefined when the map is empty.
  */
-export function dominantModel(
-  modelUsage: Record<string, TokenUsage>,
-): string | undefined {
+export function dominantModel(modelUsage: ModelUsage): string | undefined {
   let best: string | undefined;
   let bestTokens = -1;
   for (const [model, usage] of Object.entries(modelUsage)) {
-    if (usage.output_tokens > bestTokens) {
-      bestTokens = usage.output_tokens;
+    if (usage.outputTokens > bestTokens) {
+      bestTokens = usage.outputTokens;
       best = model;
     }
   }
@@ -70,7 +83,7 @@ interface ClaudeJsonOutput {
   api_error_status?: number;
   usage?: TokenUsage;
   total_cost_usd?: number;
-  model_usage?: Record<string, TokenUsage>;
+  modelUsage?: ModelUsage;
 }
 
 export class ClaudeRunError extends Error {
@@ -245,7 +258,7 @@ export function createRunClaude(
       sessionId: structured.session_id,
       usage: structured.usage,
       totalCostUsd: structured.total_cost_usd,
-      modelUsage: structured.model_usage,
+      modelUsage: structured.modelUsage,
     };
   }
 

@@ -82,15 +82,11 @@ export class HttpChatTokenReporter implements ChatTokenReporter {
     if (modelUsage && Object.keys(modelUsage).length > 0) {
       modelBreakdown = Object.entries(modelUsage).map(([model, mu]) => ({
         model,
-        inputTokens: mu.input_tokens,
-        outputTokens: mu.output_tokens,
-        cacheReadTokens: mu.cache_read_input_tokens,
-        cacheCreationTokens: mu.cache_creation_input_tokens,
-        // Allocate cost proportionally by output tokens when individual model
-        // costs are unavailable; fall back to full session cost for the single model.
-        costUsd: totalCostUsd !== undefined
-          ? allocateCost(totalCostUsd, model, modelUsage)
-          : calculateCost(mu, model),
+        inputTokens: mu.inputTokens,
+        outputTokens: mu.outputTokens,
+        cacheReadTokens: mu.cacheReadInputTokens,
+        cacheCreationTokens: mu.cacheCreationInputTokens,
+        costUsd: mu.costUSD,
       }));
     } else {
       modelBreakdown = [
@@ -127,27 +123,6 @@ export class HttpChatTokenReporter implements ChatTokenReporter {
       );
     }
   }
-}
-
-/**
- * Allocate total session cost proportionally to a model by its share of output tokens.
- * Falls back to calculateCost when total output is zero.
- */
-function allocateCost(
-  totalCostUsd: number,
-  model: string,
-  modelUsage: ModelUsage,
-): number {
-  const totalOutput = Object.values(modelUsage).reduce(
-    (sum, u) => sum + u.output_tokens,
-    0,
-  );
-  if (totalOutput === 0) {
-    const mu = modelUsage[model];
-    return mu ? calculateCost(mu, model) : 0;
-  }
-  const modelOutput = modelUsage[model]?.output_tokens ?? 0;
-  return totalCostUsd * (modelOutput / totalOutput);
 }
 
 export class NoopChatTokenReporter implements ChatTokenReporter {
