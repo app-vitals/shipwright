@@ -7,6 +7,10 @@
     "./admin-types": "./admin-types.ts",
     "./org-repo": "./org-repo.ts",
     "./pricing": "./pricing.ts",
+    "./sentry": "./sentry.ts",
     "./web/*": "./web/*"
+  },
+  "dependencies": {
+    "@sentry/bun": "^10.63.0"
   }
 }
