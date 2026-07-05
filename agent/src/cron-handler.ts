@@ -10,8 +10,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type { WebClient } from "@slack/web-api";
-import type { ClaudeRunResult, TokenUsage } from "./claude.ts";
-import { calculateCost } from "./pricing.ts";
+import type { ClaudeRunResult, ModelUsage, TokenUsage } from "./claude.ts";
 import type { ModelBreakdownEntry } from "./cron-run-reporter.ts";
 import { type Clock, SystemClock } from "./clock.ts";
 import type { CronRunReporter } from "./cron-run-reporter.ts";
@@ -22,7 +21,7 @@ import type { VoiceConfig } from "./voice.ts";
 
 function buildTokenPayload(
   usage: TokenUsage | undefined,
-  modelUsage: Record<string, TokenUsage> | undefined,
+  modelUsage: ModelUsage | undefined,
 ): {
   inputTokens?: number;
   outputTokens?: number;
@@ -35,11 +34,11 @@ function buildTokenPayload(
   if (modelUsage && Object.keys(modelUsage).length > 0) {
     modelBreakdown = Object.entries(modelUsage).map(([model, mu]) => ({
       model,
-      inputTokens: mu.input_tokens,
-      outputTokens: mu.output_tokens,
-      cacheReadTokens: mu.cache_read_input_tokens,
-      cacheCreationTokens: mu.cache_creation_input_tokens,
-      costUsd: calculateCost(mu, model),
+      inputTokens: mu.inputTokens,
+      outputTokens: mu.outputTokens,
+      cacheReadTokens: mu.cacheReadInputTokens,
+      cacheCreationTokens: mu.cacheCreationInputTokens,
+      costUsd: mu.costUSD,
     }));
   }
 
@@ -277,7 +276,7 @@ export async function handleCronRequest(
   // ── Runner scope ─────────────────────────────────────────────────────────
   // Errors here record a genuine failure and re-throw so the caller sees them.
   let usage: TokenUsage | undefined;
-  let modelUsage: Record<string, TokenUsage> | undefined;
+  let modelUsage: ModelUsage | undefined;
   let result: string;
   let sessionId: string | undefined;
   try {

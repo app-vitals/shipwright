@@ -821,20 +821,24 @@ describe("runClaude — totalCostUsd and modelUsage", () => {
     expect(output.totalCostUsd).toBe(0.0042);
   });
 
-  test("returns modelUsage from JSON output when model_usage is present", async () => {
+  test("returns modelUsage from JSON output when modelUsage is present", async () => {
     const modelUsage = {
       "claude-sonnet-4-6": {
-        input_tokens: 10,
-        output_tokens: 5,
-        cache_read_input_tokens: 0,
-        cache_creation_input_tokens: 0,
+        inputTokens: 10,
+        outputTokens: 5,
+        cacheReadInputTokens: 0,
+        cacheCreationInputTokens: 0,
+        webSearchRequests: 0,
+        costUSD: 0.0021,
+        contextWindow: 200000,
+        maxOutputTokens: 8192,
       },
     };
     const json = JSON.stringify({
       result: "Hello",
       session_id: "sess-usage",
       is_error: false,
-      model_usage: modelUsage,
+      modelUsage,
     });
     mockSpawn.mockReturnValue(fakeProc(json) as ReturnType<typeof Bun.spawn>);
     const output = await runClaude("hello");
@@ -852,19 +856,21 @@ describe("runClaude — totalCostUsd and modelUsage", () => {
 // ─── dominantModel ────────────────────────────────────────────────────────────
 
 describe("dominantModel", () => {
-  test("returns the model with the highest output_tokens", () => {
+  test("returns the model with the highest outputTokens", () => {
     const result = dominantModel({
       "claude-sonnet-4-6": {
-        input_tokens: 100,
-        output_tokens: 50,
-        cache_read_input_tokens: 0,
-        cache_creation_input_tokens: 0,
+        inputTokens: 100,
+        outputTokens: 50,
+        cacheReadInputTokens: 0,
+        cacheCreationInputTokens: 0,
+        costUSD: 0.001,
       },
       "claude-opus-4-8": {
-        input_tokens: 200,
-        output_tokens: 200,
-        cache_read_input_tokens: 0,
-        cache_creation_input_tokens: 0,
+        inputTokens: 200,
+        outputTokens: 200,
+        cacheReadInputTokens: 0,
+        cacheCreationInputTokens: 0,
+        costUSD: 0.01,
       },
     });
     expect(result).toBe("claude-opus-4-8");
@@ -877,10 +883,11 @@ describe("dominantModel", () => {
   test("handles single model", () => {
     const result = dominantModel({
       "claude-haiku-4-6": {
-        input_tokens: 10,
-        output_tokens: 5,
-        cache_read_input_tokens: 0,
-        cache_creation_input_tokens: 0,
+        inputTokens: 10,
+        outputTokens: 5,
+        cacheReadInputTokens: 0,
+        cacheCreationInputTokens: 0,
+        costUSD: 0.0001,
       },
     });
     expect(result).toBe("claude-haiku-4-6");
@@ -889,16 +896,18 @@ describe("dominantModel", () => {
   test("breaks ties deterministically — returns one of the tied models", () => {
     const result = dominantModel({
       "model-a": {
-        input_tokens: 10,
-        output_tokens: 100,
-        cache_read_input_tokens: 0,
-        cache_creation_input_tokens: 0,
+        inputTokens: 10,
+        outputTokens: 100,
+        cacheReadInputTokens: 0,
+        cacheCreationInputTokens: 0,
+        costUSD: 0.001,
       },
       "model-b": {
-        input_tokens: 10,
-        output_tokens: 100,
-        cache_read_input_tokens: 0,
-        cache_creation_input_tokens: 0,
+        inputTokens: 10,
+        outputTokens: 100,
+        cacheReadInputTokens: 0,
+        cacheCreationInputTokens: 0,
+        costUSD: 0.001,
       },
     });
     expect(result === "model-a" || result === "model-b").toBe(true);

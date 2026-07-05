@@ -20,7 +20,7 @@ import {
   NoopChatTokenReporter,
 } from "./chat-token-reporter.ts";
 import { ClaudeRunError, ClaudeTimeoutError } from "./claude.ts";
-import type { TokenUsage } from "./claude.ts";
+import type { ModelUsage, TokenUsage } from "./claude.ts";
 import type { markdownToBlocks } from "./format.ts";
 import { threadKey } from "./sessions.ts";
 import {
@@ -58,7 +58,7 @@ const mockRunClaude = mock(
     sessionId?: string;
     usage?: TokenUsage;
     totalCostUsd?: number;
-    modelUsage?: Record<string, TokenUsage>;
+    modelUsage?: ModelUsage;
   }> => ({
     result: "Claude response text",
     sessionId: "sess-xyz",
@@ -271,7 +271,7 @@ describe("message handler — DM routing", () => {
       async (
         _usage?: TokenUsage,
         _totalCostUsd?: number,
-        _modelUsage?: Record<string, TokenUsage>,
+        _modelUsage?: ModelUsage,
       ) => {},
     );
     createSlackApp({ chatTokenReporter: { recordSession } });

@@ -145,16 +145,18 @@ describe("HttpChatTokenReporter", () => {
     const reporter = makeReporter();
     const modelUsage: ModelUsage = {
       "claude-sonnet-4-5": {
-        input_tokens: 80,
-        output_tokens: 40,
-        cache_read_input_tokens: 15,
-        cache_creation_input_tokens: 8,
+        inputTokens: 80,
+        outputTokens: 40,
+        cacheReadInputTokens: 15,
+        cacheCreationInputTokens: 8,
+        costUSD: 0.006,
       },
       "claude-haiku-3-5": {
-        input_tokens: 20,
-        output_tokens: 10,
-        cache_read_input_tokens: 5,
-        cache_creation_input_tokens: 2,
+        inputTokens: 20,
+        outputTokens: 10,
+        cacheReadInputTokens: 5,
+        cacheCreationInputTokens: 2,
+        costUSD: 0.0008,
       },
     };
     await reporter.recordSession(USAGE, undefined, modelUsage);
@@ -165,6 +167,14 @@ describe("HttpChatTokenReporter", () => {
     expect(breakdown.length).toBe(2);
     const models = breakdown.map((b) => b.model).sort();
     expect(models).toEqual(["claude-haiku-3-5", "claude-sonnet-4-5"]);
+    const byModel = Object.fromEntries(breakdown.map((b) => [b.model, b]));
+    // costUsd is passed through directly from the CLI's costUSD per model
+    expect(byModel["claude-sonnet-4-5"].costUsd).toBe(0.006);
+    expect(byModel["claude-haiku-3-5"].costUsd).toBe(0.0008);
+    expect(byModel["claude-sonnet-4-5"].inputTokens).toBe(80);
+    expect(byModel["claude-sonnet-4-5"].outputTokens).toBe(40);
+    expect(byModel["claude-sonnet-4-5"].cacheReadTokens).toBe(15);
+    expect(byModel["claude-sonnet-4-5"].cacheCreationTokens).toBe(8);
   });
 
   test("recordSession uses live model as fallback when modelUsage is not provided", async () => {

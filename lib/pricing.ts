@@ -37,25 +37,26 @@ export function calculateCost(usage: TokenUsage, model: string): number {
 }
 
 export function normalizeModelToRateKey(model: string): string | null {
+  const bareModel = model.replace(/-\d{8}$/, "");
   if (
-    model === "haiku" ||
-    model === "claude-haiku-4-5" ||
-    model === "claude-haiku-4-6"
+    bareModel === "haiku" ||
+    bareModel === "claude-haiku-4-5" ||
+    bareModel === "claude-haiku-4-6"
   ) {
     return "claude-haiku-4-5";
   }
-  if (model === "sonnet" || model === "claude-sonnet-4-6") {
+  if (bareModel === "sonnet" || bareModel === "claude-sonnet-4-6") {
     return "claude-sonnet-4-6";
   }
   if (
-    model === "opus" ||
-    model === "claude-opus-4-8" ||
-    model === "claude-opus-4-7" ||
-    model === "claude-opus-4-6"
+    bareModel === "opus" ||
+    bareModel === "claude-opus-4-8" ||
+    bareModel === "claude-opus-4-7" ||
+    bareModel === "claude-opus-4-6"
   ) {
     return "claude-opus-4-8";
   }
-  if (model === "fable" || model === "claude-fable-5") {
+  if (bareModel === "fable" || bareModel === "claude-fable-5") {
     return "claude-fable-5";
   }
   return null;

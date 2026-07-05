@@ -16,7 +16,7 @@ import { join } from "node:path";
 import type { WebClient } from "@slack/web-api";
 import type { Server } from "bun";
 import { FixedClock } from "./clock.ts";
-import type { TokenUsage } from "./claude.ts";
+import type { ModelUsage, TokenUsage } from "./claude.ts";
 import { ValidationError, handleCronRequest } from "./cron-handler.ts";
 import { HttpCronRunReporter } from "./cron-run-reporter.ts";
 import { startHealthServer } from "./health.ts";
@@ -44,7 +44,7 @@ const mockRunner = mock(
     sessionId?: string;
     usage?: TokenUsage;
     totalCostUsd?: number;
-    modelUsage?: Record<string, TokenUsage>;
+    modelUsage?: ModelUsage;
   }> => Promise.resolve({ result: "claude reply", sessionId: "sess-1" }),
 );
 
@@ -1079,10 +1079,11 @@ describe("handleCronRequest — CronRunReporter", () => {
       totalCostUsd: 0.005,
       modelUsage: {
         "claude-sonnet-4-6": {
-          input_tokens: 100,
-          output_tokens: 50,
-          cache_read_input_tokens: 20,
-          cache_creation_input_tokens: 10,
+          inputTokens: 100,
+          outputTokens: 50,
+          cacheReadInputTokens: 20,
+          cacheCreationInputTokens: 10,
+          costUSD: 0.005,
         },
       },
     });
@@ -1106,6 +1107,11 @@ describe("handleCronRequest — CronRunReporter", () => {
     expect(patchBody.outputTokens).toBe(50);
     expect(patchBody.cacheReadTokens).toBe(20);
     expect(patchBody.cacheCreationTokens).toBe(10);
+    const modelBreakdown = patchBody.modelBreakdown as Array<
+      Record<string, unknown>
+    >;
+    expect(modelBreakdown).toHaveLength(1);
+    expect(modelBreakdown[0].costUsd).toBe(0.005);
   });
 
   test("token data sent correctly when multiple models used (modelBreakdown preserved)", async () => {
@@ -1121,16 +1127,18 @@ describe("handleCronRequest — CronRunReporter", () => {
       totalCostUsd: 0.012,
       modelUsage: {
         "claude-sonnet-4-6": {
-          input_tokens: 100,
-          output_tokens: 50,
-          cache_read_input_tokens: 0,
-          cache_creation_input_tokens: 0,
+          inputTokens: 100,
+          outputTokens: 50,
+          cacheReadInputTokens: 0,
+          cacheCreationInputTokens: 0,
+          costUSD: 0.002,
         },
         "claude-opus-4-8": {
-          input_tokens: 200,
-          output_tokens: 200,
-          cache_read_input_tokens: 0,
-          cache_creation_input_tokens: 0,
+          inputTokens: 200,
+          outputTokens: 200,
+          cacheReadInputTokens: 0,
+          cacheCreationInputTokens: 0,
+          costUSD: 0.01,
         },
       },
     });
@@ -1144,9 +1152,18 @@ describe("handleCronRequest — CronRunReporter", () => {
     const patchReq = reporterState.requests.find((r) => r.method === "PATCH");
     expect(patchReq).toBeDefined();
     const patchBody = patchReq?.body as Record<string, unknown>;
-    // Token data present, no costUsd or model scalars
+    // Token data present, plus per-model costUsd passed through directly from costUSD
     expect(patchBody.inputTokens).toBe(300);
     expect(patchBody.outputTokens).toBe(250);
+    const modelBreakdown = patchBody.modelBreakdown as Array<
+      Record<string, unknown>
+    >;
+    expect(modelBreakdown).toHaveLength(2);
+    const byModel = Object.fromEntries(
+      modelBreakdown.map((m) => [m.model, m]),
+    );
+    expect(byModel["claude-sonnet-4-6"].costUsd).toBe(0.002);
+    expect(byModel["claude-opus-4-8"].costUsd).toBe(0.01);
   });
 
   test("PATCH called with outcome='failed' + error message when runner throws", async () => {
