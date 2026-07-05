@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { initSentry, scrubEvent, scrubLog } from "./sentry.ts";
+import { SECRET_ENV_VARS, initSentry, scrubEvent, scrubLog } from "./sentry.ts";
 
-/** Minimal fake matching the subset of the real @sentry/bun client surface initSentry calls. */
 function createFakeSentryClient() {
   const calls: unknown[] = [];
   return {
@@ -11,26 +10,6 @@ function createFakeSentryClient() {
     calls,
   };
 }
-
-const SECRET_ENV_VARS = [
-  "ANTHROPIC_API_KEY",
-  "CLAUDE_CODE_OAUTH_TOKEN",
-  "GH_APP_PRIVATE_KEY",
-  "GH_TOKEN",
-  "SLACK_BOT_TOKEN",
-  "SLACK_APP_TOKEN",
-  "SLACK_SIGNING_SECRET",
-  "SLACK_ADMIN_TOKEN",
-  "SHIPWRIGHT_AGENT_API_KEY",
-  "SHIPWRIGHT_TASK_STORE_TOKEN",
-  "SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN",
-  "SHIPWRIGHT_CHAT_SERVICE_TOKEN",
-  "SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN",
-  "SHIPWRIGHT_ADMIN_API_KEYS",
-  "SHIPWRIGHT_SESSION_SECRET",
-  "SHIPWRIGHT_ENCRYPTION_KEY",
-  "GOOGLE_CLIENT_SECRET",
-];
 
 // Snapshot the env vars this suite touches so we can restore them exactly,
 // keeping this suite isolated from sibling suites sharing the Bun test process.

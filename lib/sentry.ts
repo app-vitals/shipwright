@@ -13,24 +13,17 @@ type SentryLog = NonNullable<BunOptions["beforeSendLog"]> extends (
   ? L
   : never;
 
-/** Options accepted by {@link initSentry}. */
 export interface InitSentryOptions {
-  /** Value tagged onto every event/log as `service` (e.g. "metrics", "agent"). */
   service: string;
 }
 
-/** The subset of the @sentry/bun client surface initSentry depends on — injectable for tests. */
+/** Narrowed to the one method initSentry calls, so tests can inject a fake without mock.module(). */
 export interface SentryClient {
   init: (options: Record<string, unknown>) => void;
 }
 
-/**
- * Fixed list of secret-shaped env vars redacted from Sentry events/logs. Any string value
- * (anywhere, nested) that exactly matches the *current* value of one of these is replaced
- * with "[Filtered]". Unset/empty vars are never matched, so there is no false-positive
- * redaction when a secret simply isn't configured in the current environment.
- */
-const SECRET_ENV_VARS = [
+/** Secret-shaped env vars redacted from Sentry events/logs when currently set to a non-empty value. */
+export const SECRET_ENV_VARS = [
   "ANTHROPIC_API_KEY",
   "CLAUDE_CODE_OAUTH_TOKEN",
   "GH_APP_PRIVATE_KEY",
@@ -53,14 +46,13 @@ const SECRET_ENV_VARS = [
 /** Max depth walked when scrubbing, so a pathological/deeply-nested object can't hang scrubbing. */
 const MAX_SCRUB_DEPTH = 20;
 
-/** Returns the currently-set (non-empty) secret env var values, recomputed per call so tests can mutate env freely. */
+/** Recomputed per call (not cached at module load) so tests can mutate env freely between assertions. */
 function liveSecretValues(): string[] {
   return SECRET_ENV_VARS.map((key) => process.env[key]).filter(
     (value): value is string => !!value,
   );
 }
 
-/** Recursively replaces string values matching a live secret with "[Filtered]", guarding against cycles and excessive depth. */
 function redactSecrets<T>(
   value: T,
   secrets: string[],
@@ -95,7 +87,6 @@ function redactSecrets<T>(
   return result as unknown as T;
 }
 
-/** Strips Authorization/Cookie request headers unconditionally, mutating a shallow-cloned headers object. */
 function stripSensitiveHeaders(event: ErrorEvent): ErrorEvent {
   const headers = event.request?.headers;
   if (!headers) return event;
@@ -116,10 +107,6 @@ function stripSensitiveHeaders(event: ErrorEvent): ErrorEvent {
   };
 }
 
-/**
- * Sentry `beforeSend` hook: strips Authorization/Cookie request headers unconditionally, then
- * recursively redacts any string value matching a currently-set secret env var.
- */
 export function scrubEvent(
   event: ErrorEvent,
   _hint: EventHint,
@@ -133,21 +120,11 @@ export function scrubEvent(
   );
 }
 
-/**
- * Sentry `beforeSendLog` hook: recursively redacts any string value (message, attributes, etc.)
- * matching a currently-set secret env var.
- */
 export function scrubLog(log: SentryLog): SentryLog {
   return redactSecrets(log, liveSecretValues(), new WeakSet(), 0);
 }
 
-/**
- * Initializes Sentry for a Shipwright service. Reads `SENTRY_DSN` from the environment — if
- * unset, returns immediately without calling `sentryClient.init()` (zero telemetry, full stop).
- *
- * `sentryClient` defaults to the real `@sentry/bun` client but is injectable so tests can assert
- * init call/no-call behavior without `mock.module()` or `global.*` overrides.
- */
+/** No-ops (zero telemetry, no init call) when SENTRY_DSN is unset. */
 export function initSentry(
   opts: InitSentryOptions,
   sentryClient: SentryClient = Sentry,
