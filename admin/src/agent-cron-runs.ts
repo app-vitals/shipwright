@@ -120,6 +120,11 @@ export class AgentCronRunService {
       throw new NotFoundError(`cron run ${runId} not found`);
     }
 
+    // The top-level token fields (inputTokens/outputTokens/…) are still accepted
+    // on the input for backward compatibility with older agent builds, but they
+    // are no longer persisted: those columns were dropped and all token
+    // accounting now flows through AgentCronRunModelBreakdown (see modelBreakdown
+    // below). We simply ignore them here.
     const runData = {
       ...(input.completedAt !== undefined && {
         completedAt: input.completedAt,
@@ -128,18 +133,6 @@ export class AgentCronRunService {
       ...(input.error !== undefined && { error: input.error }),
       ...(input.skipped !== undefined && { skipped: input.skipped }),
       ...(input.skipReason !== undefined && { skipReason: input.skipReason }),
-      ...(input.inputTokens !== undefined && {
-        inputTokens: input.inputTokens,
-      }),
-      ...(input.outputTokens !== undefined && {
-        outputTokens: input.outputTokens,
-      }),
-      ...(input.cacheReadTokens !== undefined && {
-        cacheReadTokens: input.cacheReadTokens,
-      }),
-      ...(input.cacheCreationTokens !== undefined && {
-        cacheCreationTokens: input.cacheCreationTokens,
-      }),
     };
 
     if (input.modelBreakdown && input.modelBreakdown.length > 0) {

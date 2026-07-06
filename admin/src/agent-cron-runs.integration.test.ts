@@ -267,7 +267,7 @@ describeOrSkip("AgentCronRunService (integration)", () => {
 
   // ─── patch ──────────────────────────────────────────────────────────────────
 
-  it("patch() updates token fields and completion fields on a run", async () => {
+  it("patch() updates completion fields and ignores legacy token fields", async () => {
     const agentId = await createAgent(prisma);
     const cronId = await createCron(cronJobService, agentId);
     const startedAt = new Date("2026-01-15T10:00:00Z");
@@ -278,6 +278,9 @@ describeOrSkip("AgentCronRunService (integration)", () => {
       skipped: false,
     });
 
+    // Legacy top-level token fields are still accepted in the input (older agent
+    // builds send them) but are no longer persisted — the columns were dropped
+    // and all token accounting flows through AgentCronRunModelBreakdown.
     const updated = await runService.patch(run.id, agentId, cronId, {
       completedAt,
       outcome: "success",
@@ -290,10 +293,9 @@ describeOrSkip("AgentCronRunService (integration)", () => {
     expect(updated.id).toBe(run.id);
     expect(updated.completedAt).toEqual(completedAt);
     expect(updated.outcome).toBe("success");
-    expect(updated.inputTokens).toBe(1234);
-    expect(updated.outputTokens).toBe(567);
-    expect(updated.cacheReadTokens).toBe(89);
-    expect(updated.cacheCreationTokens).toBe(10);
+    // Token columns no longer exist on the run; no breakdown rows were written
+    // because the payload carried no modelBreakdown.
+    expect(updated.modelBreakdown).toEqual([]);
   });
 
   it("patch() updates error and skipped fields", async () => {

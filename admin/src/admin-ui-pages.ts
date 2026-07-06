@@ -135,8 +135,6 @@ export interface CronRunItem {
   skipped: boolean;
   skipReason: string | null;
   error: string | null;
-  inputTokens: number | null;
-  outputTokens: number | null;
   modelBreakdown?: ModelBreakdownEntry[];
 }
 
@@ -157,7 +155,10 @@ function cronOutcomeStyle(outcome: string | null | undefined): string {
 }
 
 /** Label for a cron run's outcome badge — "skipped" takes priority over outcome. */
-function cronRunOutcomeLabel(run: { skipped: boolean; outcome: string | null }): string {
+function cronRunOutcomeLabel(run: {
+  skipped: boolean;
+  outcome: string | null;
+}): string {
   return run.skipped ? "skipped" : (run.outcome ?? "unknown");
 }
 
@@ -624,7 +625,9 @@ export function renderAgentDetailPage(
           <button type="submit" class="btn btn-primary" style="font-size:11px;padding:3px 8px;align-self:flex-start">Save</button>
         </form>
       </details>`;
-    const lastRunOutcomeLabel = c.lastRun ? cronRunOutcomeLabel(c.lastRun) : null;
+    const lastRunOutcomeLabel = c.lastRun
+      ? cronRunOutcomeLabel(c.lastRun)
+      : null;
     const lastRunHtml = c.lastRun?.startedAt
       ? `
       <div style="font-size:11px;color:#6b7280;margin-bottom:4px">${relativeTime(c.lastRun.startedAt, now)}</div>
@@ -2281,10 +2284,20 @@ export function renderCronRunsPage(opts: {
         )
       : "—";
 
+    // Token totals are summed from the per-model breakdown rows — the sole
+    // source of cron-run token data. A run with no breakdown shows an em-dash.
+    const breakdown = r.modelBreakdown ?? [];
     const tokensCell =
-      r.inputTokens === null && r.outputTokens === null
+      breakdown.length === 0
         ? "—"
-        : `${escapeHtml(String(r.inputTokens ?? 0))} in / ${escapeHtml(String(r.outputTokens ?? 0))} out`;
+        : (() => {
+            const input = breakdown.reduce((sum, m) => sum + m.inputTokens, 0);
+            const output = breakdown.reduce(
+              (sum, m) => sum + m.outputTokens,
+              0,
+            );
+            return `${escapeHtml(String(input))} in / ${escapeHtml(String(output))} out`;
+          })();
 
     const modelCell =
       r.modelBreakdown && r.modelBreakdown.length > 0
@@ -2850,9 +2863,7 @@ export function renderChatThreadPage(
       const t = m.tokens as MessageTokens;
       const inTok = t.input_tokens ?? 0;
       const outTok = t.output_tokens ?? 0;
-      const costPart = m.costUsd !== null
-        ? ` · $${m.costUsd.toFixed(4)}`
-        : "";
+      const costPart = m.costUsd !== null ? ` · $${m.costUsd.toFixed(4)}` : "";
       tokenBadge = `<div style="font-size:11px;color:#6b7280;margin-top:4px">${escapeHtml(`${inTok} in / ${outTok} out${costPart}`)}</div>`;
     }
 
@@ -3145,7 +3156,12 @@ export function renderChatThreadPage(
         <h1 class="page-title">${title}</h1>
         <div style="font-size:12px;color:#9ca3af;margin-top:4px">Thread <span class="mono">${safeThreadId}</span></div>
         ${
-          stats && (stats.totalInputTokens > 0 || stats.totalOutputTokens > 0 || stats.totalCostUsd > 0)
+          stats &&
+          (
+            stats.totalInputTokens > 0 ||
+              stats.totalOutputTokens > 0 ||
+              stats.totalCostUsd > 0
+          )
             ? `<div style="font-size:12px;color:#6b7280;margin-top:4px">${escapeHtml(`${formatTokenCount(stats.totalInputTokens)} in / ${formatTokenCount(stats.totalOutputTokens)} out | $${stats.totalCostUsd.toFixed(4)}`)}</div>`
             : ""
         }
