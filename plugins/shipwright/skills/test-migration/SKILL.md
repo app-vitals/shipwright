@@ -48,6 +48,8 @@ Wrong fundamentals:
 
 A test contains assertions that re-assert functionality already covered at a lower (canonical) layer. Layer hierarchy: **unit > integration > smoke > E2E**. Higher-layer tests are kept — they prove wiring and user-visible outcomes that lower layers cannot — but redundant *assertions* inside them are trimmed.
 
+The no-duplicate-coverage principle (`t5_no_duplicate_coverage` in `references/principles.md`) is the authoritative source for this rule: each layer tests only what that layer can verify; don't re-assert business rules already covered by lower-layer unit tests. Treat `references/principles.md` as canonical.
+
 **Do not delete E2E tests.** E2E tests prove what unit and integration tests cannot: that pieces connect, that state persists correctly across requests, that the system delivers the user-visible outcome end-to-end. A unit test for a business rule does not make the E2E redundant — the E2E still validates the wire.
 
 **Check git history before any trim.** E2E tests added after production outages often document seam failures that unit tests missed — a DB constraint that wasn't tested, a middleware that dropped a header, a race condition across services. If a test has an outage-linked commit, its assertions are intentional. Mark it `reuse` and leave it.
@@ -136,7 +138,7 @@ Load `${CLAUDE_PLUGIN_ROOT}/assets/templates/test-migration.md.tmpl`. Write to `
 
 ## Failure modes to avoid
 
-- **Don't auto-delete based on filename or directory.** Read the test. A `unit/foo.test.ts` that spins up a DB is integration, not unit.
+- **Don't auto-delete based on filename or directory.** Read the test. A `unit/foo.test.ts` that spins up a DB is integration, not unit. The file-naming convention principle (`t8_file_naming_convention` in `references/principles.md`) is about correctly encoding the layer in the filename, not inferring the layer from it; the code is the truth.
 - **Don't mark "passes locally" as reuse-grade.** It must pass locally AND assert behavior AND be at the canonical layer AND meet speed budget.
 - **Don't accept "we already have an E2E for that" as canary coverage.** Canary requires read-only or self-cleaning; most E2E tests are not.
 - **Don't skip the risk callout on `delete` verdicts.** A test currently flagged green being recommended for deletion is the single most reviewable judgment call in the report.

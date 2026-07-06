@@ -40,6 +40,8 @@ A test is canary-eligible iff **all** of the following hold:
 5. **Tolerates eventual consistency.** Deployed envs may have queues, CDN caches, etc. that local-mode does not. Use retry-with-backoff in the assertion if applicable, with a hard time cap.
 6. **Zero DB-dependent local tests.** A test that boots a local database in `local` mode is not canary-eligible. In canary mode there is no local database to boot — the test will fail at the setup step, not at the assertion. If a test currently boots a DB, it must be refactored to use the deployed service's API for any state setup before it can be promoted to the canary suite.
 
+Rules 3 and the cleanup discipline below are derived from `t7_canary_safety` in `references/principles.md` — canary-eligible tests must be wrapped with the canary-mode helper and must clean up after themselves. Treat `references/principles.md` as the canonical source for these safety principles.
+
 ### Budget
 
 - **Per-test 95p target**: <5 s smoke, <30 s E2E (same as local mode)

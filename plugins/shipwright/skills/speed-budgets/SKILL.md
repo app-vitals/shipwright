@@ -23,6 +23,8 @@ Encode speed as a first-class design constraint, not an emergent property. Slow 
 
 A repo may tighten budgets in Phase 2 (`test-system.md`). It may never loosen them below these defaults — that's the point of "default."
 
+**Source of truth:** the per-layer speed budgets below are this skill's own content, but the testing-domain principle that justifies them — `t6_layer_speed_mismatch` — lives in `references/principles.md`. Tests must sit in the correct speed tier; a test exceeding its layer's hard cap is at the wrong layer regardless of correctness. Treat `references/principles.md` as canonical.
+
 ## Rationale baked in
 
 ### Why speed = trust
