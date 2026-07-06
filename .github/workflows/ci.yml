@@ -23,12 +23,21 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+          -c max_connections=200
     env:
       # Admin and task-store integration tests (admin/src/*.integration.test.ts,
       # task-store/src/*.integration.test.ts) gate on the *_TEST vars below and
       # skip silently when absent.
-      DATABASE_URL_ADMIN_TEST: postgres://shipwright:shipwright@localhost:5432/shipwright_admin_test
-      DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST: postgres://shipwright:shipwright@localhost:5432/shipwright_task_store_test
+      #
+      # Every integration test's beforeEach spins up a brand-new PrismaClient
+      # (its own pooled connection), and Bun runs many test files/tests
+      # concurrently, so without a cap these can exhaust Postgres's default
+      # max_connections=100 ("too many clients already"). connection_limit
+      # bounds each client's own pool; max_connections above (on the service
+      # container) raises the server-side ceiling as a safety margin on top of
+      # that cap — the two together keep total connections well under limit.
+      DATABASE_URL_ADMIN_TEST: postgres://shipwright:shipwright@localhost:5432/shipwright_admin_test?connection_limit=5&pool_timeout=20
+      DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST: postgres://shipwright:shipwright@localhost:5432/shipwright_task_store_test?connection_limit=5&pool_timeout=20
       # The schema.prisma files read the non-_TEST var names below (per their
       # own `datasource db { url = env(...) }` declarations), so `prisma migrate
       # deploy` needs these set to the same connection strings as the _TEST vars
