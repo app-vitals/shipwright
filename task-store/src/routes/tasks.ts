@@ -437,7 +437,7 @@ const releaseRoute = createRoute({
   method: "post",
   path: "/{id}/release",
   summary: "Release a task",
-  description: "Unclains a task and sets status back to pending.",
+  description: "Unclaims a task and sets status back to pending.",
   request: { params: IdParamsSchema },
   responses: {
     200: {
