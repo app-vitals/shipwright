@@ -383,10 +383,6 @@ function makeMockDeps(): AdminDeps {
         skipReason: null,
         outcome: "success",
         error: null,
-        inputTokens: null,
-        outputTokens: null,
-        cacheReadTokens: null,
-        cacheCreationTokens: null,
         createdAt: new Date("2024-01-01T09:00:00.000Z"),
       }),
       list: async () => ({
@@ -405,10 +401,6 @@ function makeMockDeps(): AdminDeps {
         skipReason: null,
         outcome: null,
         error: null,
-        inputTokens: null,
-        outputTokens: null,
-        cacheReadTokens: null,
-        cacheCreationTokens: null,
         createdAt: new Date("2024-01-01T09:00:00.000Z"),
         modelBreakdown: [],
       }),
@@ -2014,10 +2006,16 @@ describe("admin API — cron runs", () => {
         body: JSON.stringify({
           completedAt: "2026-01-01T08:05:00.000Z",
           outcome: "success",
-          inputTokens: 1000,
-          outputTokens: 500,
-          cacheReadTokens: 100,
-          cacheCreationTokens: 50,
+          modelBreakdown: [
+            {
+              model: "claude-sonnet-4-5",
+              inputTokens: 1000,
+              outputTokens: 500,
+              cacheReadTokens: 100,
+              cacheCreationTokens: 50,
+              costUsd: 0.01,
+            },
+          ],
         }),
         headers: {
           "Content-Type": "application/json",
@@ -2131,10 +2129,6 @@ function makeMockDepsWithRunService(opts?: {
     skipReason: null,
     outcome: "success",
     error: null,
-    inputTokens: null,
-    outputTokens: null,
-    cacheReadTokens: null,
-    cacheCreationTokens: null,
     createdAt: new Date("2026-01-01T08:00:00.000Z"),
   };
 
@@ -2184,11 +2178,18 @@ function makeMockDepsWithRunService(opts?: {
               ...mockRun,
               completedAt: new Date("2026-01-01T08:05:00.000Z"),
               outcome: "success",
-              inputTokens: 1000,
-              outputTokens: 500,
-              cacheReadTokens: 100,
-              cacheCreationTokens: 50,
-              modelBreakdown: [],
+              modelBreakdown: [
+                {
+                  id: "breakdown-0",
+                  cronRunId: RUN_ID,
+                  model: "claude-sonnet-4-5",
+                  inputTokens: 1000,
+                  outputTokens: 500,
+                  cacheReadTokens: 100,
+                  cacheCreationTokens: 50,
+                  costUsd: 0.01,
+                },
+              ],
             }),
     },
   };
