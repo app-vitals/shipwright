@@ -115,3 +115,55 @@ describe("deploy.md — PR upsert on merge (PRI-2.4)", () => {
     expect(hasPrRecordId).toBe(true);
   });
 });
+
+describe("deploy.md — pre-merge PR claim lock (CLM-2.2)", () => {
+  it("claims the PR record (phase: deploy) before the gh pr merge call", () => {
+    // The pre-merge claim must appear BEFORE the merge command in Step 4.
+    // Format-independent: matches the claim call site and the merge command
+    // literally, rather than a bash-escaped JSON body fragment that would
+    // break silently if the claim body's quoting style changed.
+    const claimIdx = content.indexOf("/prs/claim");
+    const mergeIdx = content.indexOf("gh pr merge {pr}");
+    expect(claimIdx).toBeGreaterThan(-1);
+    expect(mergeIdx).toBeGreaterThan(-1);
+    expect(claimIdx).toBeLessThan(mergeIdx);
+  });
+
+  it("skips the merge and does not call gh pr merge when the claim returns 409", () => {
+    const hasConflictHandling =
+      content.includes("PR_CLAIM") &&
+      (content.includes('"409"') || content.includes("409"));
+    const hasSkipLanguage =
+      content.includes("do NOT merge") || content.includes("skipping");
+    expect(hasConflictHandling).toBe(true);
+    expect(hasSkipLanguage).toBe(true);
+  });
+
+  it("on 409 in scan mode, moves to the next candidate; ends the run if none remain", () => {
+    expect(content).toContain("CANDIDATE_LIST");
+    expect(content).toContain("next candidate");
+  });
+
+  it("post-merge upsert reuses PR_RECORD_ID from the pre-merge claim (plain PATCH, no redundant claim)", () => {
+    // The post-merge section should PATCH the already-claimed record rather than
+    // issuing a second POST /prs/claim call.
+    const postMergeSectionIdx = content.indexOf("Update PullRequest Record (post-merge)");
+    expect(postMergeSectionIdx).toBeGreaterThan(-1);
+    const postMergeSection = content.slice(postMergeSectionIdx, postMergeSectionIdx + 1500);
+    expect(postMergeSection.includes("/prs/claim")).toBe(false);
+    expect(postMergeSection.includes("/prs/$PR_RECORD_ID")).toBe(true);
+  });
+
+  it("releases the pre-merge claim if the merge does not complete within 60 seconds", () => {
+    // A stuck/timed-out merge must not leave the phase: "deploy" claim dangling —
+    // otherwise a retry within the claim TTL hits a spurious 409.
+    const timeoutIdx = content.indexOf("did not complete within 60 seconds");
+    expect(timeoutIdx).toBeGreaterThan(-1);
+    const beforeTimeout = content.slice(0, timeoutIdx);
+    const releaseIdx = beforeTimeout.lastIndexOf("/prs/$PR_RECORD_ID/release");
+    expect(releaseIdx).toBeGreaterThan(-1);
+    // The release call must come after the pre-merge claim and before the timeout message
+    const claimIdx = content.indexOf("/prs/claim");
+    expect(releaseIdx).toBeGreaterThan(claimIdx);
+  });
+});
