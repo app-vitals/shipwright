@@ -24,22 +24,28 @@ describe("patch.md — pre-work PR claim lock (CLM-2.1)", () => {
   });
 
   it("Step 5 (review findings): claims the PR (phase: patch) before dispatching the fix subagent", () => {
+    const step5a6Idx = content.indexOf("### Step 5a.6:");
     const step5bIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
+    expect(step5a6Idx).toBeGreaterThan(-1);
     expect(step5bIdx).toBeGreaterThan(-1);
-    const preStep5b = content.slice(0, step5bIdx);
+    const preStep5b = content.slice(step5a6Idx, step5bIdx);
     const lastClaimBeforeStep5b = preStep5b.lastIndexOf("/prs/claim");
     expect(lastClaimBeforeStep5b).toBeGreaterThan(-1);
+    // The nearest preceding claim call must carry phase: "patch"
     const claimSnippet = preStep5b.slice(lastClaimBeforeStep5b, lastClaimBeforeStep5b + 400);
     expect(claimSnippet).toContain("phase");
     expect(claimSnippet).toContain("patch");
   });
 
   it("Step 6 (failing CI): claims the PR (phase: patch) before dispatching the CI-fix subagent", () => {
+    const step6b5Idx = content.indexOf("### Step 6b.5:");
     const step6cIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
+    expect(step6b5Idx).toBeGreaterThan(-1);
     expect(step6cIdx).toBeGreaterThan(-1);
-    const preStep6c = content.slice(0, step6cIdx);
+    const preStep6c = content.slice(step6b5Idx, step6cIdx);
     const lastClaimBeforeStep6c = preStep6c.lastIndexOf("/prs/claim");
     expect(lastClaimBeforeStep6c).toBeGreaterThan(-1);
+    // The nearest preceding claim call must carry phase: "patch"
     const claimSnippet = preStep6c.slice(lastClaimBeforeStep6c, lastClaimBeforeStep6c + 400);
     expect(claimSnippet).toContain("phase");
     expect(claimSnippet).toContain("patch");
@@ -97,6 +103,36 @@ describe("patch.md — pre-work PR claim lock (CLM-2.1)", () => {
     expect(hasSkipLanguage).toBe(true);
     expect(preDispatchSection.toLowerCase()).toContain("next");
     expect(preDispatchSection).toContain("List D");
+  });
+
+  it("Step 4c (merge conflicts): BLOCKED path releases the pre-work claim", () => {
+    const step4cIdx = content.indexOf("### Step 4c: Handle Subagent Status");
+    const step4c5Idx = content.indexOf("### Step 4c.5:");
+    expect(step4cIdx).toBeGreaterThan(-1);
+    expect(step4c5Idx).toBeGreaterThan(-1);
+    const section = content.slice(step4cIdx, step4c5Idx);
+    expect(section).toContain("BLOCKED");
+    expect(section).toContain("/prs/$PR_RECORD_ID/release");
+  });
+
+  it("Step 5c (review findings): BLOCKED path releases the pre-work claim", () => {
+    const step5cIdx = content.indexOf("### Step 5c: Handle Subagent Status");
+    const step5c5Idx = content.indexOf("### Step 5c.5:");
+    expect(step5cIdx).toBeGreaterThan(-1);
+    expect(step5c5Idx).toBeGreaterThan(-1);
+    const section = content.slice(step5cIdx, step5c5Idx);
+    expect(section).toContain("BLOCKED");
+    expect(section).toContain("/prs/$PR_RECORD_ID/release");
+  });
+
+  it("Step 6d (failing CI): BLOCKED path releases the pre-work claim", () => {
+    const step6dIdx = content.indexOf("### Step 6d: Handle Subagent Status");
+    const step6d5Idx = content.indexOf("### Step 6d.5:");
+    expect(step6dIdx).toBeGreaterThan(-1);
+    expect(step6d5Idx).toBeGreaterThan(-1);
+    const section = content.slice(step6dIdx, step6d5Idx);
+    expect(section).toContain("BLOCKED");
+    expect(section).toContain("/prs/$PR_RECORD_ID/release");
   });
 
   it("post-fix step 4c.5 reuses PR_RECORD_ID instead of re-calling POST /prs/claim", () => {
