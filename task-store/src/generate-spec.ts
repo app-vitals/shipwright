@@ -121,7 +121,10 @@ function prefixPaths(
 ): Record<string, Record<string, unknown>> {
   const result: Record<string, Record<string, unknown>> = {};
   for (const [path, def] of Object.entries(paths)) {
-    const prefixed = path === "/" ? prefix : `${prefix}${path}`;
+    const prefixed = (path === "/" ? prefix : `${prefix}${path}`).replace(
+      /:([\w]+)/g,
+      "{$1}",
+    );
     result[prefixed] = def as Record<string, unknown>;
   }
   return result;

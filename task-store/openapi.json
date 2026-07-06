@@ -280,7 +280,7 @@
         }
       }
     },
-    "/tasks/:id": {
+    "/tasks/{id}": {
       "get": {
         "tags": [
           "tasks"
@@ -471,7 +471,7 @@
         }
       }
     },
-    "/tasks/:id/claim": {
+    "/tasks/{id}/claim": {
       "post": {
         "tags": [
           "tasks"
@@ -562,7 +562,7 @@
         }
       }
     },
-    "/tasks/:id/heartbeat": {
+    "/tasks/{id}/heartbeat": {
       "post": {
         "tags": [
           "tasks"
@@ -623,7 +623,7 @@
         }
       }
     },
-    "/tasks/:id/complete": {
+    "/tasks/{id}/complete": {
       "post": {
         "tags": [
           "tasks"
@@ -684,7 +684,7 @@
         }
       }
     },
-    "/tasks/:id/fail": {
+    "/tasks/{id}/fail": {
       "post": {
         "tags": [
           "tasks"
@@ -755,7 +755,7 @@
         }
       }
     },
-    "/tasks/:id/release": {
+    "/tasks/{id}/release": {
       "post": {
         "tags": [
           "tasks"
@@ -897,7 +897,7 @@
         }
       }
     },
-    "/tokens/:id": {
+    "/tokens/{id}": {
       "patch": {
         "tags": [
           "tokens"
@@ -1243,7 +1243,7 @@
         }
       }
     },
-    "/prs/:id": {
+    "/prs/{id}": {
       "get": {
         "tags": [
           "PRs"
@@ -1343,7 +1343,7 @@
         }
       }
     },
-    "/prs/:id/heartbeat": {
+    "/prs/{id}/heartbeat": {
       "post": {
         "tags": [
           "PRs"
@@ -1374,7 +1374,7 @@
         }
       }
     },
-    "/prs/:id/complete": {
+    "/prs/{id}/complete": {
       "post": {
         "tags": [
           "PRs"
@@ -1415,7 +1415,7 @@
         }
       }
     },
-    "/prs/:id/patch": {
+    "/prs/{id}/patch": {
       "post": {
         "tags": [
           "PRs"
@@ -1456,7 +1456,7 @@
         }
       }
     },
-    "/prs/:id/release": {
+    "/prs/{id}/release": {
       "post": {
         "tags": [
           "PRs"
