@@ -9,6 +9,7 @@
     "agent",
     "admin",
     "task-store",
+    "mcp-server",
     "chat"
   ],
   "scripts": {
