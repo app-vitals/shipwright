@@ -544,6 +544,10 @@ export const ClaimPrBodySchema = z
       .string()
       .optional()
       .openapi({ example: "clx1234567890", description: "Associated task ID" }),
+    phase: z
+      .enum(["review", "patch", "deploy"])
+      .optional()
+      .openapi({ example: "patch", description: "Pipeline phase this claim is for (defaults to 'review' when omitted)" }),
   })
   .openapi("ClaimPrBody");
 

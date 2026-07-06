@@ -314,7 +314,7 @@ export function createPrsRoutes(
     const repos = c.get("repos");
     const body = await readJson(c);
 
-    const { repo, prNumber, commitSha, claimedBy, taskId } = body;
+    const { repo, prNumber, commitSha, claimedBy, taskId, phase } = body;
 
     // Validate required fields
     if (typeof repo !== "string" || !repo) {
@@ -348,12 +348,24 @@ export function createPrsRoutes(
     const resolvedTaskId =
       typeof taskId === "string" && taskId ? taskId : undefined;
 
+    // Only pass an explicit phase when the caller supplied one — leaving it
+    // undefined lets the service's own `= "review"` default parameter apply,
+    // matching callers (like review.md) that don't send phase at all.
+    // OpenAPIHono validates the body against ClaimPrBodySchema's phase enum
+    // before this handler runs, so a present value is already one of
+    // "review" | "patch" | "deploy".
+    const resolvedPhase =
+      phase === "review" || phase === "patch" || phase === "deploy"
+        ? phase
+        : undefined;
+
     const { status, record } = await prService.claim(
       repo,
       prNumber,
       commitSha,
       resolvedClaimedBy,
       resolvedTaskId,
+      resolvedPhase,
     );
 
     return c.json(record, status);
