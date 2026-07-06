@@ -362,3 +362,99 @@ export const TaskTokenSchema = z
   .openapi("TaskToken");
 
 export type TaskToken = z.infer<typeof TaskTokenSchema>;
+
+// ─── PR Route Schemas ─────────────────────────────────────────────────────────
+
+export const PrIdParamSchema = z
+  .object({
+    id: z.string().openapi({ example: "clx0987654321" }),
+  })
+  .openapi("PrIdParam");
+
+export const PrListQuerySchema = z
+  .object({
+    repo: z.string().optional().openapi({ example: "org/repo" }),
+    prNumber: z
+      .string()
+      .optional()
+      .openapi({ example: "42", description: "PR number (parsed as integer)" }),
+    taskId: z.string().optional().openapi({ example: "clx1234567890" }),
+    state: z
+      .enum(["open", "merged", "closed"])
+      .optional()
+      .openapi({ example: "open" }),
+    reviewState: z
+      .enum(["pending", "in_progress", "posted", "approved"])
+      .optional()
+      .openapi({ example: "pending" }),
+    staged: z
+      .enum(["true", "false"])
+      .optional()
+      .openapi({ example: "false", description: "Filter by staged flag" }),
+    limit: z
+      .string()
+      .optional()
+      .openapi({ example: "50", description: "Max records to return" }),
+    offset: z
+      .string()
+      .optional()
+      .openapi({ example: "0", description: "Pagination offset" }),
+  })
+  .openapi("PrListQuery");
+
+export const PrListResponseSchema = z
+  .object({
+    prs: z.array(PullRequestSchema).openapi({ description: "Array of pull requests" }),
+    total: z.number().int().openapi({ example: 1 }),
+    limit: z.number().int().openapi({ example: 50 }),
+    offset: z.number().int().openapi({ example: 0 }),
+  })
+  .openapi("PrListResponse");
+
+export const ClaimPrBodySchema = z
+  .object({
+    repo: z
+      .string()
+      .openapi({ example: "org/repo", description: "Repository in org/repo format" }),
+    prNumber: z
+      .number()
+      .int()
+      .openapi({ example: 42, description: "Pull request number" }),
+    commitSha: z
+      .string()
+      .openapi({ example: "abc123def456", description: "Commit SHA to associate" }),
+    claimedBy: z
+      .string()
+      .optional()
+      .openapi({ example: "agent-id-123", description: "Agent claiming this PR (admin tokens only)" }),
+    taskId: z
+      .string()
+      .optional()
+      .openapi({ example: "clx1234567890", description: "Associated task ID" }),
+  })
+  .openapi("ClaimPrBody");
+
+export const ClaimNextBodySchema = z
+  .object({
+    agentId: z
+      .string()
+      .optional()
+      .openapi({ example: "agent-id-123", description: "Agent ID (admin tokens only; agent tokens use token identity)" }),
+    maxConcurrent: z
+      .number()
+      .int()
+      .optional()
+      .openapi({ example: 1, description: "Maximum concurrent PRs to claim" }),
+  })
+  .openapi("ClaimNextBody");
+
+export const UpdatePrBodySchema = z
+  .record(z.string(), z.unknown())
+  .openapi("UpdatePrBody");
+
+export const ClaimNextResponseSchema = z
+  .object({
+    pr: PullRequestSchema,
+    phase: z.enum(["review", "patch", "deploy"]).openapi({ example: "review" }),
+  })
+  .openapi("ClaimNextResponse");
