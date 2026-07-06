@@ -1,3 +1,4 @@
+import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import type { Server } from "bun";
 import { Hono } from "hono";
 import type { AnalyticsSummary } from "./analytics.ts";
@@ -87,6 +88,11 @@ export function createHealthApp(): Hono {
  * K8s liveness probe → pod restart → fresh socket. Transient reconnect blips and
  * the not-yet-connected startup window (downSince === null) stay 200 so the pod
  * is not killed during normal reconnects or cold start.
+ *
+ * `sentryClient` is optional — when absent (Sentry not initialized, i.e.
+ * SENTRY_DSN unset), the POST /cron catch block simply skips the capture call
+ * and behaves exactly as before. Only unhandled runner/delivery errors are
+ * reported; ValidationError (422) is an expected, typed outcome and is not.
  */
 export function startHealthServer(
   port: number,
@@ -94,6 +100,7 @@ export function startHealthServer(
   cronDeps?: CronHandlerDeps,
   clock: Clock = SystemClock(),
   graceMs: number = SLACK_DOWN_GRACE_MS,
+  sentryClient?: ErrorCapturingClient,
 ): Server<undefined> {
   return Bun.serve({
     port,
@@ -169,6 +176,7 @@ export function startHealthServer(
           if (err instanceof ValidationError) {
             return Response.json({ error: err.message }, { status: 422 });
           }
+          sentryClient?.captureException(err);
           console.error("[agent:cron] handler error:", err);
           const message = err instanceof Error ? err.message : String(err);
           return Response.json({ error: message }, { status: 500 });
