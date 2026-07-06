@@ -2,8 +2,8 @@
  * task-store/src/routes/prs.ts
  * PR tracking routes — review claim/heartbeat/complete/patch/release lifecycle.
  *
- * Returns a Hono sub-app mounted at /prs by app.ts. Auth is applied by the
- * parent app, so these handlers assume the caller is already authenticated.
+ * Returns an OpenAPIHono sub-app mounted at /prs by app.ts. Auth is applied by
+ * the parent app, so these handlers assume the caller is already authenticated.
  *
  * Agent tokens (agentId set) are repo-scoped:
  *   - writes validate that the PR's repo is in c.get('repos')
@@ -21,9 +21,19 @@
  *   POST   /prs/:id/release   unclaim → reviewState=pending
  */
 
-import { Hono } from "hono";
+import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
 import type { TaskStoreAuthEnv } from "../auth.ts";
 import { BadRequestError, NotFoundError } from "../errors.ts";
+import {
+  ClaimNextBodySchema,
+  ClaimPrBodySchema,
+  ErrorSchema,
+  PrIdParamSchema,
+  PrListQuerySchema,
+  PrListResponseSchema,
+  PullRequestSchema,
+  UpdatePrBodySchema,
+} from "../openapi-schemas.ts";
 import type { PullRequest } from "../index.ts";
 import type { PullRequestServiceLike } from "../pull-request-service.ts";
 import { isOrgRepo } from "../validate.ts";
@@ -53,13 +63,219 @@ function validateRepo(repo: unknown, repos: string[] | null): void {
   }
 }
 
+// ─── Route definitions ────────────────────────────────────────────────────────
+
+const listRoute = createRoute({
+  method: "get",
+  path: "/",
+  tags: ["PRs"],
+  summary: "List pull requests",
+  request: {
+    query: PrListQuerySchema,
+  },
+  responses: {
+    200: {
+      content: { "application/json": { schema: PrListResponseSchema } },
+      description: "List of pull requests",
+    },
+  },
+});
+
+const claimRoute = createRoute({
+  method: "post",
+  path: "/claim",
+  tags: ["PRs"],
+  summary: "Claim a pull request (atomic)",
+  request: {
+    body: {
+      content: { "application/json": { schema: ClaimPrBodySchema } },
+      required: true,
+    },
+  },
+  responses: {
+    200: {
+      content: { "application/json": { schema: PullRequestSchema } },
+      description: "Updated existing claim",
+    },
+    201: {
+      content: { "application/json": { schema: PullRequestSchema } },
+      description: "New claim created",
+    },
+    400: {
+      content: { "application/json": { schema: ErrorSchema } },
+      description: "Bad request",
+    },
+    409: {
+      content: { "application/json": { schema: ErrorSchema } },
+      description: "Conflict — already claimed with same commitSha",
+    },
+  },
+});
+
+const claimNextRoute = createRoute({
+  method: "post",
+  path: "/claim-next",
+  tags: ["PRs"],
+  summary: "Atomic find-and-claim of oldest eligible PR",
+  request: {
+    body: {
+      content: { "application/json": { schema: ClaimNextBodySchema } },
+      required: false,
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: PullRequestSchema,
+        },
+      },
+      description: "PR claimed — returns {pr, phase}",
+    },
+    204: {
+      description: "No eligible PR found",
+    },
+    400: {
+      content: { "application/json": { schema: ErrorSchema } },
+      description: "Bad request",
+    },
+  },
+});
+
+const getOneRoute = createRoute({
+  method: "get",
+  path: "/:id",
+  tags: ["PRs"],
+  summary: "Fetch a single pull request",
+  request: {
+    params: PrIdParamSchema,
+  },
+  responses: {
+    200: {
+      content: { "application/json": { schema: PullRequestSchema } },
+      description: "Pull request record",
+    },
+    404: {
+      content: { "application/json": { schema: ErrorSchema } },
+      description: "Not found",
+    },
+  },
+});
+
+const updateRoute = createRoute({
+  method: "patch",
+  path: "/:id",
+  tags: ["PRs"],
+  summary: "Update pull request fields",
+  request: {
+    params: PrIdParamSchema,
+    body: {
+      content: { "application/json": { schema: UpdatePrBodySchema } },
+      required: true,
+    },
+  },
+  responses: {
+    200: {
+      content: { "application/json": { schema: PullRequestSchema } },
+      description: "Updated pull request",
+    },
+    400: {
+      content: { "application/json": { schema: ErrorSchema } },
+      description: "Bad request",
+    },
+    404: {
+      content: { "application/json": { schema: ErrorSchema } },
+      description: "Not found",
+    },
+  },
+});
+
+const heartbeatRoute = createRoute({
+  method: "post",
+  path: "/:id/heartbeat",
+  tags: ["PRs"],
+  summary: "Touch heartbeatAt for a claimed PR",
+  request: {
+    params: PrIdParamSchema,
+  },
+  responses: {
+    200: {
+      content: { "application/json": { schema: PullRequestSchema } },
+      description: "PR with updated heartbeatAt",
+    },
+  },
+});
+
+const completeRoute = createRoute({
+  method: "post",
+  path: "/:id/complete",
+  tags: ["PRs"],
+  summary: "Mark PR review as complete (reviewState=posted)",
+  request: {
+    params: PrIdParamSchema,
+  },
+  responses: {
+    200: {
+      content: { "application/json": { schema: PullRequestSchema } },
+      description: "Completed PR",
+    },
+    404: {
+      content: { "application/json": { schema: ErrorSchema } },
+      description: "Not found",
+    },
+  },
+});
+
+const patchRoute = createRoute({
+  method: "post",
+  path: "/:id/patch",
+  tags: ["PRs"],
+  summary: "Increment patchCycles and reset reviewState=pending",
+  request: {
+    params: PrIdParamSchema,
+  },
+  responses: {
+    200: {
+      content: { "application/json": { schema: PullRequestSchema } },
+      description: "Patched PR",
+    },
+    404: {
+      content: { "application/json": { schema: ErrorSchema } },
+      description: "Not found",
+    },
+  },
+});
+
+const releaseRoute = createRoute({
+  method: "post",
+  path: "/:id/release",
+  tags: ["PRs"],
+  summary: "Release a claim (reviewState=pending, claimedBy cleared)",
+  request: {
+    params: PrIdParamSchema,
+  },
+  responses: {
+    200: {
+      content: { "application/json": { schema: PullRequestSchema } },
+      description: "Released PR",
+    },
+    404: {
+      content: { "application/json": { schema: ErrorSchema } },
+      description: "Not found",
+    },
+  },
+});
+
+// ─── Factory ──────────────────────────────────────────────────────────────────
+
 export function createPrsRoutes(
   prService: PullRequestServiceLike,
-): Hono<TaskStoreAuthEnv> {
-  const app = new Hono<TaskStoreAuthEnv>();
+): OpenAPIHono<TaskStoreAuthEnv> {
+  const app = new OpenAPIHono<TaskStoreAuthEnv>();
 
   // ─── List ──────────────────────────────────────────────────────────────────
-  app.get("/", async (c) => {
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(listRoute, async (c): Promise<any> => {
     const limitRaw = c.req.query("limit");
     const offsetRaw = c.req.query("offset");
     const prNumberRaw = c.req.query("prNumber");
@@ -91,7 +307,8 @@ export function createPrsRoutes(
   });
 
   // ─── Claim (atomic) — must be before /:id to avoid param capture ───────────
-  app.post("/claim", async (c) => {
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(claimRoute, async (c): Promise<any> => {
     const agentId = c.get("agentId");
     const repos = c.get("repos");
     const body = await readJson(c);
@@ -143,7 +360,8 @@ export function createPrsRoutes(
 
   // ─── Claim-next (atomic find-and-claim) ───────────────────────────────────
   // Must be before /:id to avoid param capture.
-  app.post("/claim-next", async (c) => {
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(claimNextRoute, async (c): Promise<any> => {
     const agentId = c.get("agentId");
     const repos = c.get("repos");
     const body = await readJson(c);
@@ -182,7 +400,8 @@ export function createPrsRoutes(
   });
 
   // ─── Get one ───────────────────────────────────────────────────────────────
-  app.get("/:id", async (c) => {
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(getOneRoute, async (c): Promise<any> => {
     const pr = await prService.get(c.req.param("id"));
     if (!pr) throw new NotFoundError("pr not found");
     return c.json(pr, 200);
@@ -213,7 +432,8 @@ export function createPrsRoutes(
     "readyForDeployAt",
   ];
 
-  app.patch("/:id", async (c) => {
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(updateRoute, async (c): Promise<any> => {
     const agentId = c.get("agentId");
     const repos = c.get("repos");
     const body = await readJson(c);
@@ -241,25 +461,29 @@ export function createPrsRoutes(
   });
 
   // ─── Heartbeat ─────────────────────────────────────────────────────────────
-  app.post("/:id/heartbeat", async (c) => {
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(heartbeatRoute, async (c): Promise<any> => {
     const pr = await prService.heartbeat(c.req.param("id"));
     return c.json(pr, 200);
   });
 
   // ─── Complete ──────────────────────────────────────────────────────────────
-  app.post("/:id/complete", async (c) => {
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(completeRoute, async (c): Promise<any> => {
     const pr = await prService.complete(c.req.param("id"));
     return c.json(pr, 200);
   });
 
   // ─── Patch ─────────────────────────────────────────────────────────────────
-  app.post("/:id/patch", async (c) => {
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(patchRoute, async (c): Promise<any> => {
     const pr = await prService.patch(c.req.param("id"));
     return c.json(pr, 200);
   });
 
   // ─── Release ───────────────────────────────────────────────────────────────
-  app.post("/:id/release", async (c) => {
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(releaseRoute, async (c): Promise<any> => {
     const pr = await prService.release(c.req.param("id"));
     return c.json(pr, 200);
   });
