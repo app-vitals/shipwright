@@ -118,8 +118,11 @@ describe("deploy.md — PR upsert on merge (PRI-2.4)", () => {
 
 describe("deploy.md — pre-merge PR claim lock (CLM-2.2)", () => {
   it("claims the PR record (phase: deploy) before the gh pr merge call", () => {
-    // The pre-merge claim must appear BEFORE the merge command in Step 4
-    const claimIdx = content.indexOf('\\"phase\\": \\"deploy\\"');
+    // The pre-merge claim must appear BEFORE the merge command in Step 4.
+    // Format-independent: matches the claim call site and the merge command
+    // literally, rather than a bash-escaped JSON body fragment that would
+    // break silently if the claim body's quoting style changed.
+    const claimIdx = content.indexOf("/prs/claim");
     const mergeIdx = content.indexOf("gh pr merge {pr}");
     expect(claimIdx).toBeGreaterThan(-1);
     expect(mergeIdx).toBeGreaterThan(-1);
@@ -149,5 +152,18 @@ describe("deploy.md — pre-merge PR claim lock (CLM-2.2)", () => {
     const postMergeSection = content.slice(postMergeSectionIdx, postMergeSectionIdx + 1500);
     expect(postMergeSection.includes("/prs/claim")).toBe(false);
     expect(postMergeSection.includes("/prs/$PR_RECORD_ID")).toBe(true);
+  });
+
+  it("releases the pre-merge claim if the merge does not complete within 60 seconds", () => {
+    // A stuck/timed-out merge must not leave the phase: "deploy" claim dangling —
+    // otherwise a retry within the claim TTL hits a spurious 409.
+    const timeoutIdx = content.indexOf("did not complete within 60 seconds");
+    expect(timeoutIdx).toBeGreaterThan(-1);
+    const beforeTimeout = content.slice(0, timeoutIdx);
+    const releaseIdx = beforeTimeout.lastIndexOf("/prs/$PR_RECORD_ID/release");
+    expect(releaseIdx).toBeGreaterThan(-1);
+    // The release call must come after the pre-merge claim and before the timeout message
+    const claimIdx = content.indexOf("/prs/claim");
+    expect(releaseIdx).toBeGreaterThan(claimIdx);
   });
 });

@@ -269,7 +269,17 @@ Poll for the merge to complete — check `gh pr view {pr} --json state --jq '.st
 SQUASH_SHA=$(gh api "repos/{org}/{repo}/git/refs/heads/main" --jq '.object.sha')
 ```
 
-If the state has not become `"MERGED"` after 60 seconds, print and stop:
+If the state has not become `"MERGED"` after 60 seconds, release the pre-merge claim from
+Step 4a so a subsequent retry is not blocked by a stale `phase: "deploy"` lock — the merge
+never completed, so nothing is actually in flight:
+
+```bash
+[ -n "$PR_RECORD_ID" ] && curl -s -o /dev/null -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/release"
+```
+
+Then print and stop:
 ```
 ✗ Merge did not complete within 60 seconds (last state: {state}).
   Check the PR on GitHub — it may require a human to resolve a merge conflict or branch protection issue.
