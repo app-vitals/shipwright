@@ -42,7 +42,7 @@
     },
     "agent": {
       "name": "@shipwright/agent",
-      "version": "0.135.1",
+      "version": "0.137.0",
       "dependencies": {
         "@octokit/auth-app": "^8.2.0",
         "@shipwright/admin": "workspace:*",
@@ -93,7 +93,7 @@
     },
     "metrics": {
       "name": "@shipwright/metrics",
-      "version": "0.135.1",
+      "version": "0.137.0",
       "dependencies": {
         "@hono/zod-openapi": "^0.18.3",
         "@shipwright/lib": "*",
@@ -109,7 +109,7 @@
     },
     "plugins/shipwright": {
       "name": "@shipwright/plugin",
-      "version": "0.135.1",
+      "version": "0.137.0",
       "devDependencies": {
         "bun-types": "*",
         "typescript": "*",
