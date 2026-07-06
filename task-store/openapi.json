@@ -1,0 +1,2443 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Shipwright Task Store API",
+    "version": "0.1.0",
+    "description": "REST API for the Shipwright task-store service — task queue management, PR tracking, and scoped token administration."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3002",
+      "description": "Local dev"
+    }
+  ],
+  "paths": {
+    "/tasks": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "List tasks",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "pending"
+            },
+            "required": false,
+            "name": "status",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "open",
+                "closed",
+                "in_progress",
+                "ready",
+                "blocked"
+              ],
+              "example": "open"
+            },
+            "required": false,
+            "name": "state",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "session-123"
+            },
+            "required": false,
+            "name": "session",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "org/repo"
+            },
+            "required": false,
+            "name": "repo",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "user@example.com"
+            },
+            "required": false,
+            "name": "assignee",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "agent-id-123"
+            },
+            "required": false,
+            "name": "claimedBy",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "feat/feature-x"
+            },
+            "required": false,
+            "name": "branch",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "42"
+            },
+            "required": false,
+            "name": "pr",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "50"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "0"
+            },
+            "required": false,
+            "name": "offset",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "example": "true"
+            },
+            "required": false,
+            "name": "ready",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of tasks with total count",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Create a task",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTaskBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created task",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tasks/bulk": {
+      "post": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Bulk insert tasks",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkInsertBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Bulk insert result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkInsertResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tasks/distinct": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Get distinct session and repo values",
+        "responses": {
+          "200": {
+            "description": "Distinct values",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DistinctResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tasks/:id": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Get a task by ID",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Task",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Update a task",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTaskBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated task",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Delete a task",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tasks/:id/claim": {
+      "post": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Atomically claim a task",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClaimBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Claimed task",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict — already claimed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tasks/:id/heartbeat": {
+      "post": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Touch heartbeatAt on a claimed task",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated task",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tasks/:id/complete": {
+      "post": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Mark a task as done",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated task",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tasks/:id/fail": {
+      "post": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Mark a task as blocked",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FailBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated task",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tasks/:id/release": {
+      "post": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Release a task back to pending",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated task",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tokens": {
+      "get": {
+        "tags": [
+          "tokens"
+        ],
+        "summary": "List all tokens",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Array of token metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TaskToken"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — admin token required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "tokens"
+        ],
+        "summary": "Create a new token — raw value returned exactly once",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created token including the one-time raw value",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskTokenWithRaw"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — admin token required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tokens/:id": {
+      "patch": {
+        "tags": [
+          "tokens"
+        ],
+        "summary": "Update token label and/or agentId",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clxtoken123456"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated token metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskToken"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request — token is revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — admin token required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Token not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "tokens"
+        ],
+        "summary": "Revoke a token",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clxtoken123456"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Revoked token metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskToken"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — admin token required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Token not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/prs": {
+      "get": {
+        "tags": [
+          "PRs"
+        ],
+        "summary": "List pull requests",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "org/repo"
+            },
+            "required": false,
+            "name": "repo",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "PR number (parsed as integer)",
+              "example": "42"
+            },
+            "required": false,
+            "name": "prNumber",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": false,
+            "name": "taskId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "open",
+                "merged",
+                "closed"
+              ],
+              "example": "open"
+            },
+            "required": false,
+            "name": "state",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "in_progress",
+                "posted",
+                "approved"
+              ],
+              "example": "pending"
+            },
+            "required": false,
+            "name": "reviewState",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "description": "Filter by staged flag",
+              "example": "false"
+            },
+            "required": false,
+            "name": "staged",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Max records to return",
+              "example": "50"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Pagination offset",
+              "example": "0"
+            },
+            "required": false,
+            "name": "offset",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of pull requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/prs/claim": {
+      "post": {
+        "tags": [
+          "PRs"
+        ],
+        "summary": "Claim a pull request (atomic)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClaimPrBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated existing claim",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PullRequest"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "New claim created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PullRequest"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict — already claimed with same commitSha",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/prs/claim-next": {
+      "post": {
+        "tags": [
+          "PRs"
+        ],
+        "summary": "Atomic find-and-claim of oldest eligible PR",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClaimNextBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "PR claimed — returns {pr, phase}",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaimNextResponse"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "No eligible PR found"
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/prs/:id": {
+      "get": {
+        "tags": [
+          "PRs"
+        ],
+        "summary": "Fetch a single pull request",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx0987654321"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pull request record",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PullRequest"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "PRs"
+        ],
+        "summary": "Update pull request fields",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx0987654321"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePrBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated pull request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PullRequest"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/prs/:id/heartbeat": {
+      "post": {
+        "tags": [
+          "PRs"
+        ],
+        "summary": "Touch heartbeatAt for a claimed PR",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx0987654321"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "PR with updated heartbeatAt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PullRequest"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/prs/:id/complete": {
+      "post": {
+        "tags": [
+          "PRs"
+        ],
+        "summary": "Mark PR review as complete (reviewState=posted)",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx0987654321"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Completed PR",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PullRequest"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/prs/:id/patch": {
+      "post": {
+        "tags": [
+          "PRs"
+        ],
+        "summary": "Increment patchCycles and reset reviewState=pending",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx0987654321"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Patched PR",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PullRequest"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/prs/:id/release": {
+      "post": {
+        "tags": [
+          "PRs"
+        ],
+        "summary": "Release a claim (reviewState=pending, claimedBy cleared)",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx0987654321"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Released PR",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PullRequest"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Task": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "title": {
+            "type": "string",
+            "example": "Implement feature X"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "in_progress",
+              "pr_open",
+              "approved",
+              "merged",
+              "done",
+              "deploying",
+              "deployed",
+              "blocked",
+              "cancelled"
+            ],
+            "example": "pending"
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "manual"
+          },
+          "session": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "session-123"
+          },
+          "repo": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "org/repo"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "Task description"
+          },
+          "acceptanceCriteria": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "Criterion 1",
+              "Criterion 2"
+            ]
+          },
+          "layer": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "feature"
+          },
+          "branch": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "feat/feature-x"
+          },
+          "dependencies": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "task-1",
+              "task-2"
+            ]
+          },
+          "pr": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 42
+          },
+          "hours": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "example": 5.5
+          },
+          "addedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "2026-01-01T00:00:00.000Z"
+          },
+          "startedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "2026-01-02T00:00:00.000Z"
+          },
+          "prCreatedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "2026-01-03T00:00:00.000Z"
+          },
+          "mergedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "2026-01-04T00:00:00.000Z"
+          },
+          "blockedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          },
+          "blockedReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "Waiting on dependency"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "Some notes"
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "feature"
+          },
+          "priority": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "high"
+          },
+          "cancelledAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          },
+          "completedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "2026-01-05T00:00:00.000Z"
+          },
+          "deployingAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          },
+          "deployedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "2026-01-06T00:00:00.000Z"
+          },
+          "ciFixAttempts": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 2
+          },
+          "mergeCommit": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "abc123def456"
+          },
+          "prUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "https://github.com/org/repo/pull/42"
+          },
+          "assignee": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "user@example.com"
+          },
+          "issue": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "GH-123"
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "sonnet"
+          },
+          "complexity": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 7
+          },
+          "hitl": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "example": true
+          },
+          "hitlNotifiedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "2026-01-02T00:00:00.000Z"
+          },
+          "claimedBy": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "agent-id-123"
+          },
+          "agentHint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "prefer-sonnet"
+          },
+          "claimedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "2026-01-02T00:00:00.000Z"
+          },
+          "heartbeatAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "2026-01-06T12:00:00.000Z"
+          },
+          "simplifyTotal": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 10
+          },
+          "simplifyDry": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 2
+          },
+          "simplifyDeadCode": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 3
+          },
+          "simplifyNaming": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 1
+          },
+          "simplifyComplexity": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 2
+          },
+          "simplifyConsistency": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 2
+          },
+          "coverageDelta": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "example": 5.5
+          },
+          "effortLevel": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "medium"
+          },
+          "inputTokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 1000
+          },
+          "outputTokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 500
+          },
+          "cacheReadTokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 100
+          },
+          "cacheCreationTokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 50
+          },
+          "costUsd": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "example": 0.02
+          },
+          "metadata": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": {},
+            "example": {
+              "customKey": "customValue"
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-06T12:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "status",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "TaskListResponse": {
+        "type": "object",
+        "properties": {
+          "tasks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Task"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "example": 10
+          }
+        },
+        "required": [
+          "tasks",
+          "total"
+        ]
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "example": "not found"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "CreateTaskBody": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "example": "Implement feature X"
+          },
+          "status": {
+            "type": "string",
+            "minLength": 1,
+            "example": "pending"
+          },
+          "repo": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "org/repo"
+          },
+          "session": {
+            "type": "string",
+            "example": "session-123"
+          },
+          "description": {
+            "type": "string",
+            "example": "Task description"
+          },
+          "layer": {
+            "type": "string",
+            "example": "service"
+          },
+          "branch": {
+            "type": "string",
+            "example": "feat/feature-x"
+          },
+          "dependencies": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": []
+          },
+          "acceptanceCriteria": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": []
+          },
+          "assignee": {
+            "type": "string",
+            "example": "user@example.com"
+          },
+          "priority": {
+            "type": "string",
+            "example": "high"
+          },
+          "type": {
+            "type": "string",
+            "example": "feature"
+          },
+          "source": {
+            "type": "string",
+            "example": "manual"
+          }
+        }
+      },
+      "BulkInsertResponse": {
+        "type": "object",
+        "properties": {
+          "inserted": {
+            "type": "integer",
+            "example": 3
+          },
+          "updated": {
+            "type": "integer",
+            "example": 1
+          }
+        },
+        "required": [
+          "inserted",
+          "updated"
+        ]
+      },
+      "BulkInsertBody": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "example": "Implement feature X"
+            },
+            "status": {
+              "type": "string",
+              "minLength": 1,
+              "example": "pending"
+            },
+            "repo": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "example": "org/repo"
+            }
+          }
+        }
+      },
+      "DistinctResponse": {
+        "type": "object",
+        "properties": {
+          "sessions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "session-1"
+            ]
+          },
+          "repos": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "org/repo"
+            ]
+          }
+        },
+        "required": [
+          "sessions",
+          "repos"
+        ]
+      },
+      "UpdateTaskBody": {
+        "type": "object",
+        "additionalProperties": {}
+      },
+      "ClaimBody": {
+        "type": "object",
+        "properties": {
+          "claimedBy": {
+            "type": "string",
+            "example": "agent-id-123"
+          }
+        }
+      },
+      "FailBody": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "example": "build failed"
+          }
+        }
+      },
+      "TaskToken": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clxtoken123456"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "ci-runner"
+          },
+          "agentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "agent-id-123"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          },
+          "revokedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": null
+          }
+        },
+        "required": [
+          "id",
+          "createdAt"
+        ]
+      },
+      "TaskTokenWithRaw": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/TaskToken"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "rawToken": {
+                "type": "string",
+                "example": "raw-token-value-shown-once"
+              }
+            },
+            "required": [
+              "rawToken"
+            ]
+          }
+        ]
+      },
+      "TokenBody": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "example": "ci-runner"
+          },
+          "agentId": {
+            "type": "string",
+            "example": "agent-id-123"
+          }
+        }
+      },
+      "PullRequest": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clx0987654321"
+          },
+          "repo": {
+            "type": "string",
+            "example": "org/repo"
+          },
+          "prNumber": {
+            "type": "integer",
+            "example": 42
+          },
+          "taskId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "clx1234567890"
+          },
+          "staged": {
+            "type": "boolean",
+            "default": false,
+            "example": false
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "open",
+              "merged",
+              "closed"
+            ],
+            "default": "open",
+            "example": "open"
+          },
+          "reviewState": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "in_progress",
+              "posted",
+              "approved"
+            ],
+            "default": "pending",
+            "example": "pending"
+          },
+          "commitSha": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "abc123def456"
+          },
+          "patchCycles": {
+            "type": "integer",
+            "default": 0,
+            "example": 1
+          },
+          "reviewCycles": {
+            "type": "integer",
+            "default": 0,
+            "example": 0
+          },
+          "agentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "agent-id-123"
+          },
+          "reviewedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "2026-01-03T00:00:00.000Z"
+          },
+          "patchedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          },
+          "mergedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          },
+          "claimedBy": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "agent-id-123"
+          },
+          "claimedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "2026-01-02T00:00:00.000Z"
+          },
+          "heartbeatAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "2026-01-06T12:00:00.000Z"
+          },
+          "phase": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "review",
+              "patch",
+              "deploy"
+            ],
+            "example": "review"
+          },
+          "readyForReviewAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "2026-01-02T00:00:00.000Z"
+          },
+          "readyForPatchAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          },
+          "readyForDeployAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-06T12:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "repo",
+          "prNumber",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "PrListResponse": {
+        "type": "object",
+        "properties": {
+          "prs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PullRequest"
+            },
+            "description": "Array of pull requests"
+          },
+          "total": {
+            "type": "integer",
+            "example": 1
+          },
+          "limit": {
+            "type": "integer",
+            "example": 50
+          },
+          "offset": {
+            "type": "integer",
+            "example": 0
+          }
+        },
+        "required": [
+          "prs",
+          "total",
+          "limit",
+          "offset"
+        ]
+      },
+      "ClaimPrBody": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Repository in org/repo format",
+            "example": "org/repo"
+          },
+          "prNumber": {
+            "type": "integer",
+            "description": "Pull request number",
+            "example": 42
+          },
+          "commitSha": {
+            "type": "string",
+            "description": "Commit SHA to associate",
+            "example": "abc123def456"
+          },
+          "claimedBy": {
+            "type": "string",
+            "description": "Agent claiming this PR (admin tokens only)",
+            "example": "agent-id-123"
+          },
+          "taskId": {
+            "type": "string",
+            "description": "Associated task ID",
+            "example": "clx1234567890"
+          }
+        },
+        "required": [
+          "repo",
+          "prNumber",
+          "commitSha"
+        ]
+      },
+      "ClaimNextResponse": {
+        "type": "object",
+        "properties": {
+          "pr": {
+            "$ref": "#/components/schemas/PullRequest"
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "review",
+              "patch",
+              "deploy"
+            ],
+            "example": "review"
+          }
+        },
+        "required": [
+          "pr",
+          "phase"
+        ]
+      },
+      "ClaimNextBody": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "description": "Agent ID (admin tokens only; agent tokens use token identity)",
+            "example": "agent-id-123"
+          },
+          "maxConcurrent": {
+            "type": "integer",
+            "description": "Maximum concurrent PRs to claim",
+            "example": 1
+          }
+        }
+      },
+      "UpdatePrBody": {
+        "type": "object",
+        "additionalProperties": {}
+      }
+    }
+  }
+}
