@@ -9,7 +9,8 @@
     "agent",
     "admin",
     "task-store",
-    "chat"
+    "chat",
+    "mcp-server"
   ],
   "scripts": {
     "test": "bun test",
