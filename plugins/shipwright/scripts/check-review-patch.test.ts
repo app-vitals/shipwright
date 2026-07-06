@@ -22,6 +22,7 @@ interface PrInfo {
   author: { login: string };
   headRefName: string;
   headRefOid: string;
+  isDraft: boolean;
 }
 
 // ─── Types mirroring check-patch's Deps ───────────────────────────────────────
@@ -57,6 +58,7 @@ function makeReviewDepsTriggering() {
         author: { login: "other-user" },
         headRefName: "feat/thing",
         headRefOid: "sha-abc",
+        isDraft: false,
       },
     ],
     queryPrRecord: async (_repo: string, _prNumber: number) => null, // no record → triggers
