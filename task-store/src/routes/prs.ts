@@ -26,6 +26,7 @@ import type { TaskStoreAuthEnv } from "../auth.ts";
 import { BadRequestError, NotFoundError } from "../errors.ts";
 import {
   ClaimNextBodySchema,
+  ClaimNextResponseSchema,
   ClaimPrBodySchema,
   ErrorSchema,
   PrIdParamSchema,
@@ -127,7 +128,7 @@ const claimNextRoute = createRoute({
     200: {
       content: {
         "application/json": {
-          schema: PullRequestSchema,
+          schema: ClaimNextResponseSchema,
         },
       },
       description: "PR claimed — returns {pr, phase}",

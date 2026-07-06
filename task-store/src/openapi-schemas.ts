@@ -451,3 +451,10 @@ export const ClaimNextBodySchema = z
 export const UpdatePrBodySchema = z
   .record(z.string(), z.unknown())
   .openapi("UpdatePrBody");
+
+export const ClaimNextResponseSchema = z
+  .object({
+    pr: PullRequestSchema,
+    phase: z.enum(["review", "patch", "deploy"]).openapi({ example: "review" }),
+  })
+  .openapi("ClaimNextResponse");
