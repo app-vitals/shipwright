@@ -14,8 +14,10 @@
  *   - 400 when updating a revoked token
  */
 
+import { OpenAPIHono } from "@hono/zod-openapi";
 import { describe, expect, it } from "bun:test";
 import { createTaskStoreApp } from "./app.ts";
+import { createTokensRoutes } from "./routes/tokens.ts";
 import type { TaskServiceLike } from "./task-service.ts";
 import type { TaskToken, TokenServiceLike } from "./token-service.ts";
 
@@ -281,5 +283,14 @@ describe("PATCH /tokens/:id", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, unknown>;
     expect(body.rawToken).toBeUndefined();
+  });
+});
+
+// ─── OpenAPIHono instance check ───────────────────────────────────────────────
+
+describe("createTokensRoutes", () => {
+  it("returns an OpenAPIHono instance", () => {
+    const app = createTokensRoutes(fakeAdminTokenService());
+    expect(app).toBeInstanceOf(OpenAPIHono);
   });
 });
