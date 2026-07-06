@@ -614,9 +614,10 @@ describe("handleCronRequest — preCheck", () => {
 
   test("runs preCheck with cwd = workspace (resolves state relative to workspace)", async () => {
     // Plugin preChecks resolve state relative to process.cwd() — e.g.
-    // check-dev-task.ts reads `state/agent-policy.md` via the HTTP task-store
-    // client. The file lives in the workspace; the preCheck must run there,
-    // not in the agent's cwd (/app in prod, the repo root in tests).
+    // check-review.ts / check-deploy.ts (via check-helpers.ts) read
+    // workspace-relative files like `state/agent-policy.md`. The file lives
+    // in the workspace; the preCheck must run there, not in the agent's cwd
+    // (/app in prod, the repo root in tests).
     const ws = join(tmpDir, "ws");
     mkdirSync(join(ws, "state"), { recursive: true });
     writeFileSync(join(ws, "state", "agent-policy.md"), "# Agent Policy\n");
