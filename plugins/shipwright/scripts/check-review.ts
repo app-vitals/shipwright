@@ -38,6 +38,7 @@ interface PrInfo {
   headRefOid: string;
   repo?: string;
   isDraft: boolean;
+  labels?: { name: string }[];
 }
 
 interface PrRecord {
@@ -70,6 +71,7 @@ export async function run(deps: Deps): Promise<RunResult> {
   for (const pr of prs) {
     if (pr.isDraft) continue;
     if (pr.author.login === "app/dependabot") continue;
+    if (pr.labels?.some((l) => l.name === "automated")) continue;
     if (!deps.isSelfReviewAllowed && pr.author.login === currentUser) continue;
 
     let record: PrRecord | null = null;
@@ -125,7 +127,7 @@ export async function buildProductionDeps(): Promise<Deps> {
           "--repo",
           repo,
           "--json",
-          "number,title,author,headRefName,headRefOid,isDraft",
+          "number,title,author,headRefName,headRefOid,isDraft,labels",
         ]);
         allPrs.push(...repoPrs.map((pr) => ({ ...pr, repo })));
       }

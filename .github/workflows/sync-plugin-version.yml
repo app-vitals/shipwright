@@ -189,6 +189,7 @@ jobs:
             --base main \
             --head "$BRANCH" \
             --title "chore(plugin): sync version to ${VERSION}" \
+            --label automated \
             --body "$(cat <<EOF
           ## Plugin version sync: → ${VERSION}
 

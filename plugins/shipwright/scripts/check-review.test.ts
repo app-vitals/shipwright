@@ -20,6 +20,7 @@ interface PrInfo {
   headRefOid: string;
   repo?: string;
   isDraft: boolean;
+  labels?: { name: string }[];
 }
 
 interface PrRecord {
@@ -252,6 +253,35 @@ describe("check-review", () => {
       makePr({ number: 3, author: { login: "danmcaulay" } }),
     ];
     const result = await run(makeDeps(prs, async () => null));
+    expect(result.exit).toBe(0);
+    expect(result.output).toBeTruthy();
+  });
+
+  // ─── automated label exclusion ────────────────────────────────────────────
+
+  test("exits 1 when all open PRs are labeled automated", async () => {
+    const prs = [
+      makePr({ number: 1, labels: [{ name: "automated" }] }),
+      makePr({ number: 2, labels: [{ name: "automated" }] }),
+    ];
+    const result = await run(makeDeps(prs, async () => null));
+    expect(result.exit).toBe(1);
+    expect(result.output).toBe("");
+  });
+
+  test("exits 0 when mix of automated/eligible PRs has one eligible non-automated PR", async () => {
+    const prs = [
+      makePr({ number: 1, labels: [{ name: "automated" }] }),
+      makePr({ number: 2, author: { login: "danmcaulay" } }),
+    ];
+    const result = await run(makeDeps(prs, async () => null));
+    expect(result.exit).toBe(0);
+    expect(result.output).toBeTruthy();
+  });
+
+  test("exits 0 when PR has unrelated labels (not automated)", async () => {
+    const pr = makePr({ labels: [{ name: "bug" }, { name: "enhancement" }] });
+    const result = await run(makeDeps([pr], async () => null));
     expect(result.exit).toBe(0);
     expect(result.output).toBeTruthy();
   });

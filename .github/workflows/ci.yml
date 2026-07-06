@@ -6,9 +6,70 @@ on:
   pull_request:
 
 jobs:
+  # Detects whether this run only touches the files auto-bump-chart.yml or
+  # sync-plugin-version.yml commit — chart-version bumps (Chart.yaml,
+  # CHANGELOG.md) and plugin-version syncs (package.json across workspaces,
+  # plugin.json, marketplace.json, version.txt). Both are fully automated,
+  # bot-authored, version-string-only changes that never touch application
+  # logic — so the app/docker/site jobs below are gated on this and skipped
+  # when nothing else changed. helm.yml (separately path-filtered on
+  # charts/**) still runs and is what actually validates a chart change.
+  #
+  # Fails open on purpose: any inability to compute the diff (unresolvable
+  # base ref, unexpected event shape) defaults `app=true`, running the full
+  # suite. Silently skipping real tests on an error would be worse than
+  # running them unnecessarily.
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      app: ${{ steps.filter.outputs.app }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Determine whether app code changed
+        id: filter
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+            HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          else
+            # push to main: each merge here is one squash commit, so the
+            # parent is exactly "what main looked like before this merge."
+            BASE="HEAD^"
+            HEAD_SHA="HEAD"
+          fi
+
+          if ! git rev-parse --verify "$BASE" >/dev/null 2>&1; then
+            echo "Could not resolve base ref '${BASE}' — running full suite to be safe."
+            echo "app=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CHANGED=$(git diff --name-only "$BASE" "$HEAD_SHA")
+          echo "Changed files (${BASE}...${HEAD_SHA}):"
+          echo "$CHANGED"
+
+          # Exact allowlist — the full set of files auto-bump-chart.yml and
+          # sync-plugin-version.yml ever touch. Anything else in the diff
+          # means real code changed, so the full suite runs.
+          PATTERN='^(charts/shipwright/Chart\.yaml|charts/shipwright/CHANGELOG\.md|package\.json|plugins/shipwright/package\.json|plugins/shipwright/\.claude-plugin/plugin\.json|metrics/package\.json|agent/package\.json|version\.txt|\.claude-plugin/marketplace\.json)$'
+
+          if [ -z "$CHANGED" ] || echo "$CHANGED" | grep -qvE "$PATTERN"; then
+            echo "app=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "app=false" >> "$GITHUB_OUTPUT"
+            echo "Only automated chart/plugin-version-bump files changed — skipping app-level CI jobs."
+          fi
+
   ci:
     name: lint / typecheck / test
     runs-on: ubuntu-latest
+    needs: changes
+    # always() so this still runs (fail-open) if the changes job itself
+    # errored rather than auto-skipping every job in the suite.
+    if: always() && (needs.changes.result != 'success' || needs.changes.outputs.app == 'true')
     services:
       postgres:
         image: postgres:16
@@ -69,6 +130,8 @@ jobs:
   site:
     name: site build / brand-lint / smoke
     runs-on: ubuntu-latest
+    needs: changes
+    if: always() && (needs.changes.result != 'success' || needs.changes.outputs.app == 'true')
     steps:
       - uses: actions/checkout@v4
 
@@ -94,6 +157,8 @@ jobs:
   admin-docker-build:
     name: admin docker build
     runs-on: ubuntu-latest
+    needs: changes
+    if: always() && (needs.changes.result != 'success' || needs.changes.outputs.app == 'true')
     steps:
       - uses: actions/checkout@v4
 
@@ -103,6 +168,8 @@ jobs:
   agent-docker-build:
     name: agent docker build
     runs-on: ubuntu-latest
+    needs: changes
+    if: always() && (needs.changes.result != 'success' || needs.changes.outputs.app == 'true')
     steps:
       - uses: actions/checkout@v4
 
@@ -112,6 +179,8 @@ jobs:
   metrics-docker-build:
     name: metrics docker build
     runs-on: ubuntu-latest
+    needs: changes
+    if: always() && (needs.changes.result != 'success' || needs.changes.outputs.app == 'true')
     steps:
       - uses: actions/checkout@v4
 
