@@ -2,8 +2,9 @@
  * task-store/src/routes/tasks.ts
  * Task CRUD + claim/heartbeat/complete/fail/release routes.
  *
- * Returns a Hono sub-app mounted at /tasks by app.ts. Auth is applied by the
- * parent app, so these handlers assume the caller is already authenticated.
+ * Returns an OpenAPIHono sub-app mounted at /tasks by app.ts. Auth is applied
+ * by the parent app, so these handlers assume the caller is already
+ * authenticated.
  *
  * Agent tokens (agentId set) are scoped to their own tasks:
  *   - reads return only tasks where assignee === agentId
@@ -26,10 +27,24 @@
  *   POST   /tasks/:id/release   unclaim → pending
  */
 
-import { Hono } from "hono";
+import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
 import type { TaskStoreAuthEnv } from "../auth.ts";
 import { BadRequestError, ForbiddenError, NotFoundError } from "../errors.ts";
 import type { Prisma } from "../index.ts";
+import {
+  BulkInsertBodySchema,
+  BulkInsertResponseSchema,
+  ClaimBodySchema,
+  CreateTaskBodySchema,
+  DistinctResponseSchema,
+  ErrorSchema,
+  FailBodySchema,
+  TaskIdParamSchema,
+  TaskListQuerySchema,
+  TaskListResponseSchema,
+  TaskSchema,
+  UpdateTaskBodySchema,
+} from "../openapi-schemas.ts";
 import type { TaskServiceLike } from "../task-service.ts";
 import { isOrgRepo } from "../validate.ts";
 
@@ -85,13 +100,353 @@ async function requireOwnership(
   return task;
 }
 
+// ─── Route definitions ────────────────────────────────────────────────────────
+
+const listRoute = createRoute({
+  method: "get",
+  path: "/",
+  tags: ["tasks"],
+  summary: "List tasks",
+  request: {
+    query: TaskListQuerySchema,
+  },
+  responses: {
+    200: {
+      description: "List of tasks with total count",
+      content: { "application/json": { schema: TaskListResponseSchema } },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
+const createTaskRoute = createRoute({
+  method: "post",
+  path: "/",
+  tags: ["tasks"],
+  summary: "Create a task",
+  request: {
+    body: {
+      content: { "application/json": { schema: CreateTaskBodySchema } },
+    },
+  },
+  responses: {
+    201: {
+      description: "Created task",
+      content: { "application/json": { schema: TaskSchema } },
+    },
+    400: {
+      description: "Bad request",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
+const bulkRoute = createRoute({
+  method: "post",
+  path: "/bulk",
+  tags: ["tasks"],
+  summary: "Bulk insert tasks",
+  request: {
+    body: {
+      content: { "application/json": { schema: BulkInsertBodySchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: "Bulk insert result",
+      content: { "application/json": { schema: BulkInsertResponseSchema } },
+    },
+    400: {
+      description: "Bad request",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
+const distinctRoute = createRoute({
+  method: "get",
+  path: "/distinct",
+  tags: ["tasks"],
+  summary: "Get distinct session and repo values",
+  responses: {
+    200: {
+      description: "Distinct values",
+      content: { "application/json": { schema: DistinctResponseSchema } },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
+const getOneRoute = createRoute({
+  method: "get",
+  path: "/:id",
+  tags: ["tasks"],
+  summary: "Get a task by ID",
+  request: {
+    params: TaskIdParamSchema,
+  },
+  responses: {
+    200: {
+      description: "Task",
+      content: { "application/json": { schema: TaskSchema } },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    403: {
+      description: "Forbidden",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    404: {
+      description: "Not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
+const updateRoute = createRoute({
+  method: "patch",
+  path: "/:id",
+  tags: ["tasks"],
+  summary: "Update a task",
+  request: {
+    params: TaskIdParamSchema,
+    body: {
+      content: { "application/json": { schema: UpdateTaskBodySchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: "Updated task",
+      content: { "application/json": { schema: TaskSchema } },
+    },
+    400: {
+      description: "Bad request",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    403: {
+      description: "Forbidden",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    404: {
+      description: "Not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
+const deleteRoute = createRoute({
+  method: "delete",
+  path: "/:id",
+  tags: ["tasks"],
+  summary: "Delete a task",
+  request: {
+    params: TaskIdParamSchema,
+  },
+  responses: {
+    204: {
+      description: "Deleted",
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    403: {
+      description: "Forbidden",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    404: {
+      description: "Not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
+const claimRoute = createRoute({
+  method: "post",
+  path: "/:id/claim",
+  tags: ["tasks"],
+  summary: "Atomically claim a task",
+  request: {
+    params: TaskIdParamSchema,
+    body: {
+      content: { "application/json": { schema: ClaimBodySchema } },
+      required: false,
+    },
+  },
+  responses: {
+    200: {
+      description: "Claimed task",
+      content: { "application/json": { schema: TaskSchema } },
+    },
+    400: {
+      description: "Bad request",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    403: {
+      description: "Forbidden",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    404: {
+      description: "Not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    409: {
+      description: "Conflict — already claimed",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
+const heartbeatRoute = createRoute({
+  method: "post",
+  path: "/:id/heartbeat",
+  tags: ["tasks"],
+  summary: "Touch heartbeatAt on a claimed task",
+  request: {
+    params: TaskIdParamSchema,
+  },
+  responses: {
+    200: {
+      description: "Updated task",
+      content: { "application/json": { schema: TaskSchema } },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    403: {
+      description: "Forbidden",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    404: {
+      description: "Not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
+const completeRoute = createRoute({
+  method: "post",
+  path: "/:id/complete",
+  tags: ["tasks"],
+  summary: "Mark a task as done",
+  request: {
+    params: TaskIdParamSchema,
+  },
+  responses: {
+    200: {
+      description: "Updated task",
+      content: { "application/json": { schema: TaskSchema } },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    403: {
+      description: "Forbidden",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    404: {
+      description: "Not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
+const failRoute = createRoute({
+  method: "post",
+  path: "/:id/fail",
+  tags: ["tasks"],
+  summary: "Mark a task as blocked",
+  request: {
+    params: TaskIdParamSchema,
+    body: {
+      content: { "application/json": { schema: FailBodySchema } },
+      required: false,
+    },
+  },
+  responses: {
+    200: {
+      description: "Updated task",
+      content: { "application/json": { schema: TaskSchema } },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    403: {
+      description: "Forbidden",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    404: {
+      description: "Not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
+const releaseRoute = createRoute({
+  method: "post",
+  path: "/:id/release",
+  tags: ["tasks"],
+  summary: "Release a task back to pending",
+  request: {
+    params: TaskIdParamSchema,
+  },
+  responses: {
+    200: {
+      description: "Updated task",
+      content: { "application/json": { schema: TaskSchema } },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    403: {
+      description: "Forbidden",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    404: {
+      description: "Not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
+// ─── Factory ──────────────────────────────────────────────────────────────────
+
 export function createTasksRoutes(
   taskService: TaskServiceLike,
-): Hono<TaskStoreAuthEnv> {
-  const app = new Hono<TaskStoreAuthEnv>();
+): OpenAPIHono<TaskStoreAuthEnv> {
+  const app = new OpenAPIHono<TaskStoreAuthEnv>();
 
   // ─── List ──────────────────────────────────────────────────────────────────
-  app.get("/", async (c) => {
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(listRoute, async (c): Promise<any> => {
     const agentId = c.get("agentId");
     const repos = c.get("repos");
     const stateRaw = c.req.query("state");
@@ -165,7 +520,8 @@ export function createTasksRoutes(
   });
 
   // ─── Create ────────────────────────────────────────────────────────────────
-  app.post("/", async (c) => {
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(createTaskRoute, async (c): Promise<any> => {
     const agentId = c.get("agentId");
     const repos = c.get("repos");
     const body = await readJson(c);
@@ -190,7 +546,8 @@ export function createTasksRoutes(
   });
 
   // ─── Bulk insert ───────────────────────────────────────────────────────────
-  app.post("/bulk", async (c) => {
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(bulkRoute, async (c): Promise<any> => {
     const agentId = c.get("agentId");
     const repos = c.get("repos");
     let body: unknown;
@@ -224,7 +581,8 @@ export function createTasksRoutes(
 
   // ─── Distinct values ───────────────────────────────────────────────────────
   // Must be registered before /:id routes to avoid param capture.
-  app.get("/distinct", async (c) => {
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(distinctRoute, async (c): Promise<any> => {
     const agentId = c.get("agentId");
     const repos = c.get("repos");
     return c.json(
@@ -237,7 +595,8 @@ export function createTasksRoutes(
   });
 
   // ─── Get one ───────────────────────────────────────────────────────────────
-  app.get("/:id", async (c) => {
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(getOneRoute, async (c): Promise<any> => {
     const agentId = c.get("agentId");
     const repos = c.get("repos") ?? [];
     const task = await requireOwnership(
@@ -250,7 +609,8 @@ export function createTasksRoutes(
   });
 
   // ─── Update ────────────────────────────────────────────────────────────────
-  app.patch("/:id", async (c) => {
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(updateRoute, async (c): Promise<any> => {
     const agentId = c.get("agentId");
     const repos = c.get("repos");
     const task = await requireOwnership(
@@ -278,7 +638,8 @@ export function createTasksRoutes(
   });
 
   // ─── Delete ────────────────────────────────────────────────────────────────
-  app.delete("/:id", async (c) => {
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(deleteRoute, async (c): Promise<any> => {
     const agentId = c.get("agentId");
     const repos = c.get("repos") ?? [];
     await requireOwnership(taskService, c.req.param("id"), agentId, repos);
@@ -287,7 +648,8 @@ export function createTasksRoutes(
   });
 
   // ─── Claim (atomic) ────────────────────────────────────────────────────────
-  app.post("/:id/claim", async (c) => {
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(claimRoute, async (c): Promise<any> => {
     const agentId = c.get("agentId");
     const repos = c.get("repos") ?? [];
     await requireOwnership(taskService, c.req.param("id"), agentId, repos);
@@ -308,7 +670,8 @@ export function createTasksRoutes(
   });
 
   // ─── Heartbeat ─────────────────────────────────────────────────────────────
-  app.post("/:id/heartbeat", async (c) => {
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(heartbeatRoute, async (c): Promise<any> => {
     const agentId = c.get("agentId");
     const repos = c.get("repos") ?? [];
     await requireOwnership(taskService, c.req.param("id"), agentId, repos);
@@ -317,7 +680,8 @@ export function createTasksRoutes(
   });
 
   // ─── Complete ──────────────────────────────────────────────────────────────
-  app.post("/:id/complete", async (c) => {
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(completeRoute, async (c): Promise<any> => {
     const agentId = c.get("agentId");
     const repos = c.get("repos") ?? [];
     await requireOwnership(taskService, c.req.param("id"), agentId, repos);
@@ -326,7 +690,8 @@ export function createTasksRoutes(
   });
 
   // ─── Fail ──────────────────────────────────────────────────────────────────
-  app.post("/:id/fail", async (c) => {
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(failRoute, async (c): Promise<any> => {
     const agentId = c.get("agentId");
     const repos = c.get("repos") ?? [];
     await requireOwnership(taskService, c.req.param("id"), agentId, repos);
@@ -337,7 +702,8 @@ export function createTasksRoutes(
   });
 
   // ─── Release ───────────────────────────────────────────────────────────────
-  app.post("/:id/release", async (c) => {
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(releaseRoute, async (c): Promise<any> => {
     const agentId = c.get("agentId");
     const repos = c.get("repos") ?? [];
     await requireOwnership(taskService, c.req.param("id"), agentId, repos);

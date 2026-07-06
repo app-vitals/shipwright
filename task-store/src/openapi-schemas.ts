@@ -363,6 +363,119 @@ export const TaskTokenSchema = z
 
 export type TaskToken = z.infer<typeof TaskTokenSchema>;
 
+// ─── Task route schemas ───────────────────────────────────────────────────────
+
+/** Path param for routes with /:id */
+export const TaskIdParamSchema = z.object({
+  id: z.string().openapi({ example: "clx1234567890" }),
+});
+
+/** Query params for GET /tasks */
+export const TaskListQuerySchema = z.object({
+  status: z.string().optional().openapi({ example: "pending" }),
+  state: z
+    .enum(["open", "closed", "in_progress", "ready", "blocked"])
+    .optional()
+    .openapi({ example: "open" }),
+  session: z.string().optional().openapi({ example: "session-123" }),
+  repo: z.string().optional().openapi({ example: "org/repo" }),
+  assignee: z.string().optional().openapi({ example: "user@example.com" }),
+  claimedBy: z.string().optional().openapi({ example: "agent-id-123" }),
+  branch: z.string().optional().openapi({ example: "feat/feature-x" }),
+  pr: z.string().optional().openapi({ example: "42" }),
+  limit: z.string().optional().openapi({ example: "50" }),
+  offset: z.string().optional().openapi({ example: "0" }),
+  ready: z.enum(["true", "false"]).optional().openapi({ example: "true" }),
+});
+
+/** Response for GET /tasks */
+export const TaskListResponseSchema = z
+  .object({
+    tasks: z.array(TaskSchema),
+    total: z.number().int().openapi({ example: 10 }),
+  })
+  .openapi("TaskListResponse");
+
+/** Request body for POST /tasks.
+ * Required fields (title, status, repo) are validated by the handler rather
+ * than by Zod so custom error messages are returned instead of ZodError objects.
+ * All fields are optional here; the handler enforces presence at runtime.
+ */
+export const CreateTaskBodySchema = z
+  .object({
+    title: z.string().min(1).optional().openapi({ example: "Implement feature X" }),
+    status: z.string().min(1).optional().openapi({ example: "pending" }),
+    repo: z
+      .string()
+      .nullable()
+      .optional()
+      .openapi({ example: "org/repo" }),
+    session: z.string().optional().openapi({ example: "session-123" }),
+    description: z.string().optional().openapi({ example: "Task description" }),
+    layer: z.string().optional().openapi({ example: "service" }),
+    branch: z.string().optional().openapi({ example: "feat/feature-x" }),
+    dependencies: z.array(z.string()).optional().openapi({ example: [] }),
+    acceptanceCriteria: z.array(z.string()).optional().openapi({ example: [] }),
+    assignee: z.string().optional().openapi({ example: "user@example.com" }),
+    priority: z.string().optional().openapi({ example: "high" }),
+    type: z.string().optional().openapi({ example: "feature" }),
+    source: z.string().optional().openapi({ example: "manual" }),
+  })
+  .passthrough()
+  .openapi("CreateTaskBody");
+
+/** Request body for PATCH /tasks/:id */
+export const UpdateTaskBodySchema = z
+  .record(z.string(), z.unknown())
+  .openapi("UpdateTaskBody");
+
+/** Single item in a bulk insert array.
+ * Required fields (title, status, repo) are optional here so the handler can
+ * return custom error messages rather than raw ZodError objects.
+ */
+const BulkInsertItemSchema = z
+  .object({
+    title: z.string().min(1).optional().openapi({ example: "Implement feature X" }),
+    status: z.string().min(1).optional().openapi({ example: "pending" }),
+    repo: z.string().nullable().optional().openapi({ example: "org/repo" }),
+  })
+  .passthrough();
+
+/** Request body for POST /tasks/bulk */
+export const BulkInsertBodySchema = z
+  .array(BulkInsertItemSchema)
+  .openapi("BulkInsertBody");
+
+/** Response for POST /tasks/bulk */
+export const BulkInsertResponseSchema = z
+  .object({
+    inserted: z.number().int().openapi({ example: 3 }),
+    updated: z.number().int().openapi({ example: 1 }),
+  })
+  .openapi("BulkInsertResponse");
+
+/** Response for GET /tasks/distinct */
+export const DistinctResponseSchema = z
+  .object({
+    sessions: z.array(z.string()).openapi({ example: ["session-1"] }),
+    repos: z.array(z.string()).openapi({ example: ["org/repo"] }),
+  })
+  .openapi("DistinctResponse");
+
+/** Request body for POST /tasks/:id/claim (admin tokens supply claimedBy) */
+export const ClaimBodySchema = z
+  .object({
+    claimedBy: z.string().optional().openapi({ example: "agent-id-123" }),
+  })
+  .openapi("ClaimBody");
+
+/** Request body for POST /tasks/:id/fail */
+export const FailBodySchema = z
+  .object({
+    reason: z.string().optional().openapi({ example: "build failed" }),
+  })
+  .openapi("FailBody");
+
 // ─── PR Route Schemas ─────────────────────────────────────────────────────────
 
 export const PrIdParamSchema = z
