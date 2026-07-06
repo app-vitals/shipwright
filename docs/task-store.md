@@ -193,8 +193,9 @@ Body:
 
 Claim semantics:
 - No existing record → creates and returns `201`
-- Same `commitSha` and `reviewState !== pending` → returns `409` (already reviewed at this commit)
-- Different `commitSha` or `reviewState === pending` → updates and returns `200` (new review cycle)
+- Same `commitSha`, same `phase`, and already claimed by another agent → returns `409` (phase already locked)
+- Same `commitSha` and `reviewState !== pending` (review phase only) → returns `409` (already reviewed at this commit)
+- Different `commitSha` or `reviewState === pending` → updates and returns `200` (new cycle)
 
 The `taskId` field is optional and does not trigger any side effects on the Task table — it is stored as metadata on the PR record only for reference.
 
