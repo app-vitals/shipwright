@@ -19,6 +19,7 @@ interface PrInfo {
   headRefName: string;
   headRefOid: string;
   repo?: string;
+  isDraft: boolean;
 }
 
 interface PrRecord {
@@ -36,6 +37,7 @@ function makePr(overrides: Partial<PrInfo> = {}): PrInfo {
     headRefName: "feat/x",
     headRefOid: "abc123def456",
     repo: "example-repo",
+    isDraft: false,
     ...overrides,
   };
 }
@@ -217,6 +219,39 @@ describe("check-review", () => {
       isSelfReviewAllowed: false,
     };
     const result = await run(deps);
+    expect(result.exit).toBe(0);
+    expect(result.output).toBeTruthy();
+  });
+
+  // ─── draft / dependabot exclusions ───────────────────────────────────────────
+
+  test("exits 1 when all open PRs are drafts", async () => {
+    const prs = [
+      makePr({ number: 1, isDraft: true }),
+      makePr({ number: 2, isDraft: true }),
+    ];
+    const result = await run(makeDeps(prs, async () => null));
+    expect(result.exit).toBe(1);
+    expect(result.output).toBe("");
+  });
+
+  test("exits 1 when all open PRs are authored by app/dependabot", async () => {
+    const prs = [
+      makePr({ number: 1, author: { login: "app/dependabot" } }),
+      makePr({ number: 2, author: { login: "app/dependabot" } }),
+    ];
+    const result = await run(makeDeps(prs, async () => null));
+    expect(result.exit).toBe(1);
+    expect(result.output).toBe("");
+  });
+
+  test("exits 0 when mix of draft/dependabot/eligible PRs has one eligible non-draft non-dependabot PR", async () => {
+    const prs = [
+      makePr({ number: 1, isDraft: true }),
+      makePr({ number: 2, author: { login: "app/dependabot" } }),
+      makePr({ number: 3, author: { login: "danmcaulay" } }),
+    ];
+    const result = await run(makeDeps(prs, async () => null));
     expect(result.exit).toBe(0);
     expect(result.output).toBeTruthy();
   });
