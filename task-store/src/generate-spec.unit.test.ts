@@ -1,6 +1,6 @@
 /**
- * task-store/src/generate-spec.smoke.test.ts
- * Smoke test: verify the task-store OpenAPI spec generator produces a valid
+ * task-store/src/generate-spec.unit.test.ts
+ * Unit test: verify the task-store OpenAPI spec generator produces a valid
  * OpenAPI 3.1 document that covers all three route groups.
  */
 
