@@ -16,7 +16,7 @@
  *   - Auth rejection (missing / invalid / revoked tokens)
  */
 
-import { beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { createTaskStoreApp } from "./app.ts";
 import { PrismaClient } from "./index.ts";
 import { TaskService } from "./task-service.ts";
@@ -49,6 +49,10 @@ describeOrSkip("task-store API (integration)", () => {
     app = createTaskStoreApp({ taskService, tokenService });
   });
 
+  afterEach(async () => {
+    await prisma.$disconnect();
+  });
+
   function auth(token = rawToken): Record<string, string> {
     return {
       Authorization: `Bearer ${token}`,
@@ -60,7 +64,7 @@ describeOrSkip("task-store API (integration)", () => {
     const res = await app.request("/tasks", {
       method: "POST",
       headers: auth(),
-      body: JSON.stringify({ title, status: "pending" }),
+      body: JSON.stringify({ title, status: "pending", repo: null }),
     });
     expect(res.status).toBe(201);
     const body = (await res.json()) as { id: string };

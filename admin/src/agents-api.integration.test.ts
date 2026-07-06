@@ -10,7 +10,7 @@
  * - GET /tokens shows hash metadata only (no rawToken)
  */
 
-import { beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { sign } from "hono/jwt";
 import { PrismaClient } from "../prisma/client/index.js";
 import { AgentChatTokenService } from "./agent-chat-tokens.ts";
@@ -104,6 +104,10 @@ describeOrSkip("admin CRUD API (integration)", () => {
     app = createAdminApp(deps);
   });
 
+  afterEach(async () => {
+    await prisma.$disconnect();
+  });
+
   // ─── Env var encryption ───────────────────────────────────────────────────────
 
   it("POST /envs encrypts values at rest — raw DB value differs from input", async () => {
@@ -119,7 +123,7 @@ describeOrSkip("admin CRUD API (integration)", () => {
           Cookie: `admin_session=${cookie}`,
         },
       });
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(201);
 
       // Raw DB value should be encrypted (not plain text)
       const raw = await prisma.agentEnv.findFirst({

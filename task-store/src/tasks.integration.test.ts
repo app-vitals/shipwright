@@ -6,7 +6,7 @@
  * Requires DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST to be set; skips otherwise.
  */
 
-import { beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { PrismaClient } from "../prisma/client/index.js";
 import { TaskService } from "./task-service.ts";
 
@@ -28,6 +28,10 @@ describeOrSkip("Task store schema (integration)", () => {
     prisma = makePrisma();
     await prisma.taskToken.deleteMany();
     await prisma.task.deleteMany();
+  });
+
+  afterEach(async () => {
+    await prisma.$disconnect();
   });
 
   // ─── Task round-trip ──────────────────────────────────────────────────────────

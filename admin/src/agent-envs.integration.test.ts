@@ -5,7 +5,7 @@
  * Requires DATABASE_URL_ADMIN_TEST to be set; skips otherwise.
  */
 
-import { beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { PrismaClient } from "../prisma/client/index.js";
 import { AgentEnvService } from "./agent-envs.ts";
 import { UnprocessableEntityError } from "./errors.ts";
@@ -43,6 +43,10 @@ describeOrSkip("AgentEnvService (integration)", () => {
     await prisma.agentEnv.deleteMany();
     await prisma.agent.deleteMany();
     service = new AgentEnvService(prisma, identityCrypto);
+  });
+
+  afterEach(async () => {
+    await prisma.$disconnect();
   });
 
   it("upsert() writes values and getByAgentId() returns them", async () => {

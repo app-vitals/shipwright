@@ -10,11 +10,23 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
-## [1.6.287] - 2026-07-06
+## [1.6.289] - 2026-07-06
 
 ### Added
 
 - metrics: optional SENTRY_DSN/SENTRY_ENVIRONMENT env passthrough for Sentry error reporting
+
+## [1.6.288] - 2026-07-06
+
+### Changed
+
+- auto-bump to chart v1.6.288 triggered by release tag `task-store-v0.69.0`
+
+## [1.6.287] - 2026-07-06
+
+### Changed
+
+- auto-bump to chart v1.6.287 triggered by release tag `admin-v0.159.0`
 
 ## [1.6.286] - 2026-07-06
 

@@ -5,7 +5,7 @@
  * Requires DATABASE_URL_ADMIN_TEST to be set; skips otherwise.
  */
 
-import { beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { PrismaClient } from "../prisma/client/index.js";
 import { AgentChatTokenService } from "./agent-chat-tokens.ts";
 import { NotFoundError } from "./errors.ts";
@@ -43,6 +43,10 @@ describeOrSkip("AgentChatTokenService (integration)", () => {
     await prisma.agentMember.deleteMany();
     await prisma.agent.deleteMany();
     service = new AgentChatTokenService(prisma);
+  });
+
+  afterEach(async () => {
+    await prisma.$disconnect();
   });
 
   // ─── upsertDailyByModel: create ─────────────────────────────────────────────
