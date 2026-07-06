@@ -28,6 +28,53 @@ describe("dev-task.md Step 1 — in_progress resume safeguard", () => {
   });
 });
 
+describe("dev-task.md Step 2 — atomic claim", () => {
+  it("no longer marks in-progress via a plain PATCH with a status body", () => {
+    // The old flow PATCHed the task with a status:in_progress body to mark it
+    // in progress. That specific PATCH invocation must be gone from Step 2 —
+    // scoped narrowly so it doesn't clash with Step 1's `?status=in_progress`
+    // query string check or other PATCH calls elsewhere in the doc (e.g. blocked).
+    expect(content).not.toContain('-d "{\\"status\\": \\"in_progress\\", \\"startedAt\\"');
+  });
+
+  it("calls POST /tasks/{id}/claim to atomically claim the task", () => {
+    expect(content).toContain("/tasks/{id}/claim");
+    // Must be a POST, not a PATCH.
+    const claimIdx = content.indexOf("/tasks/{id}/claim");
+    const before = content.slice(Math.max(0, claimIdx - 400), claimIdx);
+    expect(before).toMatch(/-X POST/);
+  });
+
+  it("does not send a JSON body on the claim call (agent token pins claimedBy server-side)", () => {
+    const claimIdx = content.indexOf("/tasks/{id}/claim");
+    expect(claimIdx).toBeGreaterThan(-1);
+    // Look at the surrounding claim command block only, not the whole doc.
+    const block = content.slice(Math.max(0, claimIdx - 400), claimIdx + 200);
+    expect(block).not.toContain('-d "{\\"claimedBy\\"');
+    expect(block).not.toContain("-d '{\"claimedBy\"");
+  });
+
+  it("handles 409 by instructing to loop back to Step 1 and pick the next ready task", () => {
+    const claimIdx = content.indexOf("/tasks/{id}/claim");
+    expect(claimIdx).toBeGreaterThan(-1);
+    const after = content.slice(claimIdx, claimIdx + 1500);
+    expect(after).toContain("409");
+    expect(after).toMatch(/Step 1/);
+  });
+
+  it("captures the HTTP status code of the claim call (mirrors review.md's claim pattern)", () => {
+    const claimIdx = content.indexOf("/tasks/{id}/claim");
+    const before = content.slice(Math.max(0, claimIdx - 400), claimIdx);
+    expect(before).toContain("%{http_code}");
+  });
+
+  it("does not separately PATCH startedAt after claiming (claim() sets it atomically)", () => {
+    const claimIdx = content.indexOf("/tasks/{id}/claim");
+    const after = content.slice(claimIdx, claimIdx + 1500);
+    expect(after).not.toContain("startedAt");
+  });
+});
+
 describe("Step 4 — stale bundle branch detection", () => {
   it("checks --state merged before entering the bundled-task path", () => {
     // The merged-PR check must appear BEFORE the bundled worktree add command
