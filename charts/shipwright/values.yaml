@@ -155,6 +155,13 @@ admin:
   # List of Kubernetes envVar objects (name/value or name/valueFrom). Use for
   # env vars not otherwise covered by chart values.
   extraEnv: []
+  # -- Optional Sentry error reporting for the admin service. Leave
+  # dsn.existingSecret empty to disable (no Sentry init, no middleware mounted).
+  sentry:
+    dsn:
+      existingSecret: ""
+      key: SENTRY_DSN
+    environment: ""
 
 # -- Metrics dashboard (@shipwright/metrics) — event-store-backed service. Port 3460.
 # In postgres mode it reads/writes an `events` table in the bundled PostgreSQL and

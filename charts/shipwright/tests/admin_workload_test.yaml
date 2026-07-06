@@ -425,3 +425,41 @@ tests:
               secretKeyRef:
                 name: my-chat-tokens
                 key: CHAT_ADMIN_RAW
+
+  # ── admin.sentry ──────────────────────────────────────────────────────────
+
+  - it: does not wire SENTRY_DSN or SENTRY_ENVIRONMENT by default
+    template: templates/admin-deployment.yaml
+    release:
+      name: r
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SENTRY_DSN
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SENTRY_ENVIRONMENT
+
+  - it: wires SENTRY_DSN from an existingSecret and SENTRY_ENVIRONMENT when configured
+    template: templates/admin-deployment.yaml
+    set:
+      admin.sentry.dsn.existingSecret: my-sentry-secret
+      admin.sentry.environment: production
+    release:
+      name: r
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SENTRY_DSN
+            valueFrom:
+              secretKeyRef:
+                name: my-sentry-secret
+                key: SENTRY_DSN
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SENTRY_ENVIRONMENT
+            value: production
