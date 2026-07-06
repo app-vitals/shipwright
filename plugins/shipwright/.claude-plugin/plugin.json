@@ -1,6 +1,6 @@
 {
   "name": "shipwright",
-  "version": "0.147.1",
+  "version": "0.149.0",
   "description": "The autonomous delivery agent for Claude Code — conversational planning, queue-driven execution, policy-controlled code review, a five-phase test-readiness pipeline, and autonomous deploy (merge → canary → promote) for any software project.",
   "author": {
     "name": "App Vitals",

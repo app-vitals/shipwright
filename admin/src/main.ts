@@ -18,6 +18,9 @@
  */
 
 import { join } from "node:path";
+import * as Sentry from "@sentry/bun";
+import { sentry } from "@sentry/hono/bun";
+import { buildSentryInitOptions, initSentry } from "@shipwright/lib/sentry";
 import { Hono } from "hono";
 import { PrismaClient } from "../prisma/client/index.js";
 import type { PullRequestItem } from "./admin-ui-pages.ts";
@@ -37,11 +40,11 @@ import { AgentTokenService } from "./agent-tokens.ts";
 import { AgentToolService } from "./agent-tools.ts";
 import { createAdminApp, parseAdminApiKeys } from "./agents-api.ts";
 import { createAgentRuntimeApp } from "./api.ts";
+import { HttpChatServiceProvisioningClient } from "./chat-service-provisioning-client.ts";
 import { isDevAuthAllowed } from "./dev-auth-guard.ts";
 import { HttpGoogleAuthClient } from "./google-auth-client.ts";
-import { HttpKubernetesClient } from "./kubernetes-client.ts";
-import { HttpChatServiceProvisioningClient } from "./chat-service-provisioning-client.ts";
 import { HttpChatClient } from "./http-chat-client.ts";
+import { HttpKubernetesClient } from "./kubernetes-client.ts";
 import { HttpSlackProvisioningClient } from "./slack-provisioning-client.ts";
 import { HttpTaskStoreProvisioningClient } from "./task-store-provisioning-client.ts";
 import { makeTokenCrypto } from "./token-crypto.ts";
@@ -218,6 +221,11 @@ export function resolvePublicRepo(
 }
 
 async function startServer(): Promise<void> {
+  // Initializes Sentry (no-op when SENTRY_DSN is unset) so that startup
+  // failures below (e.g. a failed migration) are captured too. See
+  // task-store's main.ts for the rationale on why re-initializing is safe.
+  initSentry({ service: "admin" });
+
   const port = Number(process.env.PORT ?? DEFAULT_PORT);
 
   console.log(`[admin] starting admin service on port ${port}`);
@@ -265,6 +273,17 @@ async function startServer(): Promise<void> {
 
   const root = new Hono();
 
+  // Only mounted when SENTRY_DSN is set — a complete no-op otherwise, matching
+  // the app's behavior with Sentry absent. `@sentry/hono`'s `sentry()`
+  // middleware performs its own `Sentry.init` call internally, so this stays
+  // the only Hono-level init site; it's mounted on the root app (rather than
+  // inside a single sub-app) since root is the actual process entry composing
+  // the full route tree (health, runtime API, admin API, admin UI).
+  const sentryInitOptions = buildSentryInitOptions({ service: "admin" });
+  if (sentryInitOptions) {
+    root.use("*", sentry(root, sentryInitOptions));
+  }
+
   // 1. Health check — no auth
   root.get("/health", (c) => c.json({ status: "ok" }));
 
@@ -303,6 +322,7 @@ async function startServer(): Promise<void> {
     provisioner,
     sessionSecret,
     adminApiKeys,
+    sentryClient: process.env.SENTRY_DSN ? Sentry : undefined,
   });
   root.route("/", adminApiApp);
 

@@ -252,6 +252,17 @@ spec:
                   name: {{ .Values.chat.adminToken.existingSecret }}
                   key: {{ .Values.chat.adminToken.key | default "SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN" }}
             {{- end }}
+            {{- if .Values.admin.sentry.dsn.existingSecret }}
+            - name: SENTRY_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.admin.sentry.dsn.existingSecret }}
+                  key: {{ .Values.admin.sentry.dsn.key | default "SENTRY_DSN" }}
+            {{- end }}
+            {{- if .Values.admin.sentry.environment }}
+            - name: SENTRY_ENVIRONMENT
+              value: {{ .Values.admin.sentry.environment | quote }}
+            {{- end }}
             {{- with .Values.admin.extraEnv }}
             # admin.extraEnv: caller-supplied env vars appended last so they can
             # override anything above if needed.

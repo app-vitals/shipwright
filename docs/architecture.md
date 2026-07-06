@@ -62,6 +62,22 @@ A small in-memory HTML store for short-lived, regenerable artifacts (one-pagers,
 
 > ⚠️ **Single-replica caveat.** Storage is process-local (a plain `Map` in `task-store/src/doc-store.ts`) — a document POSTed to one replica is **not** visible from another, and all documents are lost on restart. Acceptable for the ephemeral MVP; it requires a single replica or sticky routing, and is flagged for a future durable backend (object storage / DB-backed blob).
 
+## MCP Server
+
+A Model Context Protocol (MCP) server that exposes a curated subset of the task-store HTTP API as discoverable MCP tools (`@shipwright/mcp-server`). Tools are generated automatically from the task-store OpenAPI specification — the `generate-mcp-tools` script (`scripts/generate-mcp-tools.ts`) reads `task-store/openapi.json` and emits tool definitions (name, description, JSON-Schema) plus routing metadata (HTTP method, path template, query/path parameters). The allowlist (`mcp-server/src/tool-allowlist.ts`) then filters the generated set down to the agreed public surface: read operations (`tasks_list`, `tasks_get`, `prs_list`, `prs_get`), ordinary field edits (`tasks_create`, `tasks_update`, `prs_update`), and bulk reads (`tasks_bulk`, `tasks_distinct`). Pipeline-internal lifecycle ops (claim, heartbeat, complete, fail, release), destructive ops (delete), and all token-management routes are excluded.
+
+**Transport:**
+
+The server is transport-agnostic. The primary entry point is `mcp-server/src/serve.ts`, which launches the server over **stdio** — the standard transport MCP clients (e.g. Claude Code) expect.
+
+**Tool execution:**
+
+The server proxies tool calls to the task-store HTTP API; `SHIPWRIGHT_TASK_STORE_URL` and `SHIPWRIGHT_TASK_STORE_TOKEN` env vars are resolved at startup. Tools use bearer auth; the token is injected into all downstream requests.
+
+**Discovery:**
+
+The Hono app (`mcp-server/src/index.ts`) also exposes a lightweight `GET /mcp/tools` endpoint for humans to inspect the tool catalog without speaking the MCP protocol.
+
 ## Chat Service
 
 Postgres-backed service for web chat conversations (`chat/`). Owns three Prisma models (`ChatToken`, `Thread`, `Message`) on a **dedicated database** (`DATABASE_URL_SHIPWRIGHT_CHAT`). The Hono app is composed from injected services by `createChatServiceApp` (`chat/src/app.ts`); `/health` is unauthenticated, all other routes require a valid bearer token (scoped to agents via `agentId`). Provides `/tokens/*` (admin token create/list/revoke/update), `/threads/*` (thread CRUD), and `/threads/:threadId/messages/*` (message CRUD + attachment streaming) endpoints.
@@ -78,7 +94,7 @@ Postgres-backed service for web chat conversations (`chat/`). Owns three Prisma 
 
 ## Workspace layout
 
-The repo is a Bun-workspaces monorepo with **go-task** (`Taskfile.yml`) as the single local entrypoint. Six workspaces — `plugins/shipwright`, `metrics`, `agent`, `admin`, `task-store`, `chat` — are wired into the root `package.json`. The `site/` is intentionally excluded from the root `bun test` scan (its Playwright `*.spec.ts` files would crash Bun's runner).
+The repo is a Bun-workspaces monorepo with **go-task** (`Taskfile.yml`) as the single local entrypoint. Seven workspaces — `plugins/shipwright`, `metrics`, `agent`, `admin`, `task-store`, `chat`, `mcp-server` — are wired into the root `package.json`. The `site/` is intentionally excluded from the root `bun test` scan (its Playwright `*.spec.ts` files would crash Bun's runner).
 
 ```
 shipwright/
@@ -87,6 +103,7 @@ shipwright/
 ├── agent/                C — Shipwright agent runtime (entrypoint, cron, Slack, GitHub auth)
 ├── admin/                C — Admin service: CRUD API, admin UI, Prisma store (@shipwright/admin)
 ├── task-store/           D — Task queue service: Postgres + Prisma, exports @shipwright/task-store
+├── mcp-server/           D — MCP server: exposes task-store API as Model Context Protocol tools (generated from OpenAPI spec)
 ├── chat/                 Chat service: web conversation threads, Postgres + Prisma
 ├── site/                 marketing site (Astro, separate toolchain)
 ├── brand/                locked design system
