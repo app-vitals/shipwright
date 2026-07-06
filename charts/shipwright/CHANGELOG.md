@@ -16,6 +16,12 @@ independent of `appVersion`. CI enforces this with
 
 - metrics: optional SENTRY_DSN/SENTRY_ENVIRONMENT env passthrough for Sentry error reporting
 
+## [1.6.286] - 2026-07-06
+
+### Changed
+
+- auto-bump to chart v1.6.286 triggered by release tag `agent-v0.147.1`
+
 ## [1.6.285] - 2026-07-06
 
 ### Changed
