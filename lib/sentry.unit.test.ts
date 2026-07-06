@@ -150,6 +150,28 @@ describe("scrubEvent — secret redaction", () => {
     expect(scrubbed.exception.values[0].value).toBe("[Filtered]");
   });
 
+  test("redacts a secret embedded within a longer string, not just an exact match", () => {
+    process.env.GH_TOKEN = "ghp_secretvalue";
+    const event = {
+      exception: {
+        values: [
+          {
+            type: "Error",
+            value: "Failed to authenticate: Bearer ghp_secretvalue",
+          },
+        ],
+      },
+    };
+
+    const scrubbed = scrubEvent(event as never, {} as never) as {
+      exception: { values: Array<{ value: string }> };
+    };
+
+    expect(scrubbed.exception.values[0].value).toBe(
+      "Failed to authenticate: Bearer [Filtered]",
+    );
+  });
+
   test("does not redact anything when no secrets are set (no false positives)", () => {
     const event = {
       message: "a perfectly normal message",

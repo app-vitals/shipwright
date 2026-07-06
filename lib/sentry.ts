@@ -62,7 +62,13 @@ function redactSecrets<T>(
   if (secrets.length === 0) return value;
 
   if (typeof value === "string") {
-    return (secrets.includes(value) ? "[Filtered]" : value) as unknown as T;
+    let result = value;
+    for (const secret of secrets) {
+      if (result.includes(secret)) {
+        result = result.split(secret).join("[Filtered]");
+      }
+    }
+    return result as unknown as T;
   }
 
   if (value === null || typeof value !== "object" || depth >= MAX_SCRUB_DEPTH) {
