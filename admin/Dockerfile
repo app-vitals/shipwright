@@ -49,9 +49,15 @@ ENV NODE_ENV=production
 
 # Copy hoisted + workspace-local node_modules from the deps stage. bun workspaces
 # install package-specific deps under the workspace dir (/app/admin/node_modules),
-# NOT the hoisted root — both are required at runtime.
+# NOT the hoisted root — both are required at runtime. lib/node_modules is also
+# copied defensively: bun nests a shared lib dependency under lib/node_modules
+# instead of hoisting it to root whenever a consuming service also declares that
+# same dependency directly (this broke task-store + @sentry/bun at runtime —
+# see app-vitals/shipwright#1187). admin doesn't hit that today, but copying
+# lib/node_modules here means it can't happen silently if that changes.
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/admin/node_modules ./admin/node_modules
+COPY --from=deps /app/lib/node_modules ./lib/node_modules
 
 # Copy entire monorepo source
 COPY . .
