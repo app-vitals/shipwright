@@ -23,7 +23,7 @@ Key surfaces (see `plugins/shipwright/README.md` and `plugins/shipwright/CLAUDE.
 
 - **Commands** (`commands/`) — `prd`, `plan-session`, `dev-task`, `review`, `patch`, `deploy`, the five-phase test-readiness pipeline (`test-inventory` → `test-design` → `test-migration` → `test-roadmap` → `test-publish`), `metrics`, `research`, `research-docs`, and more.
 - **Skills** (`skills/`) — autonomous behaviors including `pull-requests`, `review-staged`, `entropy-scan`, `entropy-fix`, `agent-admin`, `investigate-cron`, `learning-capture`, `task-store`, `test-readiness`, `test-debt`, `triage-dependabot-pr`, and `triage-dependabot-prs`.
-- **Scripts** (`scripts/`) — the task-store adapters, `check-dev-task.ts`, and supporting tooling.
+- **Scripts** (`scripts/`) — the task-store adapters, precheck scripts (`check-dev-task.ts`, `check-dependabot-triage.ts`), and supporting tooling.
 - **References** (`references/`) — schemas and recipes (`metrics-schema.md`, `task-store.md`, `doc-refresh-recipe.md`, `reviews-schema.md`, …).
 
 The plugin is pure TypeScript with **no server, no database, and no external HTTP in production code** — only `unit` and `integration` test layers apply.
