@@ -69,10 +69,12 @@ For each PR, check in order:
    ```
    Skip if no CI run has `status == "completed"` and `conclusion == "success"`.
 
-Pick the **first** PR that passes all checks. If none qualifies, respond `[silent]`
-and stop — no output.
+Keep the ordered list of qualifying PRs as `CANDIDATE_LIST`. Pick the **first** entry
+as the primary candidate. If none qualify, respond `[silent]` and stop — no output.
 
 Once a qualifying PR is found, proceed to Step 2 with that PR number and repo as the target.
+If Step 4a's pre-merge claim later hits a 409 conflict, control returns here to retry with
+the next untried entry in `CANDIDATE_LIST`.
 
 ---
 
@@ -216,6 +218,38 @@ If both checks pass:
 Record `deploy_started_at` as the current ISO timestamp. This is used for pipeline
 timing in Step 8.
 
+### 4a. Claim PR Record (pre-merge lock)
+
+Before merging, claim the PR record with `phase: "deploy"`. GitHub itself prevents a PR
+from being double-merged, but without this claim, two overlapping deploy runs can both
+pass Step 3's approval/CI checks and both proceed into post-merge CI-watch polling and
+canary-revert logic — risking duplicate work and potentially duplicate revert PRs on a
+canary failure.
+
+```bash
+HEAD_SHA_PRE_MERGE=$(gh pr view {pr} --repo {org}/{repo} --json headRefOid -q '.headRefOid')
+PR_CLAIM=$(curl -s -o /tmp/pr_claim_deploy.json -w '%{http_code}' -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs/claim" \
+  -d "{\"repo\": \"{org}/{repo}\", \"prNumber\": {pr}, \"commitSha\": \"$HEAD_SHA_PRE_MERGE\", \"phase\": \"deploy\"}")
+PR_RECORD_ID=$(jq -r '.id // empty' /tmp/pr_claim_deploy.json)
+```
+
+**If `PR_CLAIM` is `409`** (another deploy run already claimed this PR at phase `deploy`):
+do NOT merge. Print:
+```
+⏸ PR #{pr} is already claimed by another deploy run — skipping.
+```
+- **Scan mode**: return to Step 1a's `CANDIDATE_LIST` and retry Steps 2 through 4a with the
+  next candidate PR. If no candidates remain, respond `[silent]` and stop.
+- **Explicit-target mode**: there is no other candidate to fall back to. Stop here.
+
+**Otherwise** (`200` or `201`): the claim succeeded. `PR_RECORD_ID` is reused by the
+post-merge update in Step 4c — no second claim call is needed. Proceed to Step 4b.
+
+### 4b. Squash Merge
+
 Squash merge the PR. The merge command depends on the approval source from Step 3a:
 
 - **GitHub approval** (`approval_source == "github"`): queue via auto-merge (waits for branch protection to clear):
@@ -257,35 +291,20 @@ curl -sf -X PATCH \
   -d "{\"status\": \"merged\", \"mergedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" | jq .
 ```
 
-### Upsert PullRequest record
+### 4c. Update PullRequest Record (post-merge)
 
-Upsert a PullRequest record to mark this PR as merged. First, claim or create the record:
-
-```bash
-PR_RECORD=$(curl -sf -X POST \
-  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  -H "Content-Type: application/json" \
-  "$SHIPWRIGHT_TASK_STORE_URL/prs/claim" \
-  -d "{\"repo\": \"{org}/{repo}\", \"prNumber\": {pr}, \"commitSha\": \"$SQUASH_SHA\"}" 2>&1)
-PR_RECORD_ID=$(echo "$PR_RECORD" | jq -r '.id // empty')
-```
-
-If `PR_RECORD_ID` is non-empty, update the record to mark it as merged:
+The record was already claimed pre-merge in Step 4a — `PR_RECORD_ID` is already set, so
+this is a plain update against the existing claim, not a redundant claim call:
 
 ```bash
-[ -n "$PR_RECORD_ID" ] && \
+if [ -n "$PR_RECORD_ID" ]; then
   curl -sf -X PATCH \
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
     -H "Content-Type: application/json" \
     "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
-    -d "{\"state\": \"merged\", \"mergedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\", \"reviewState\": \"approved\"}" \
+    -d "{\"state\": \"merged\", \"mergedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\", \"reviewState\": \"approved\", \"commitSha\": \"$SQUASH_SHA\"}" \
     > /dev/null 2>&1 || echo "⚠ PATCH /prs/$PR_RECORD_ID failed — continuing"
-```
-
-If the claim or patch call fails (or `PR_RECORD_ID` is empty), print a warning and continue:
-
-```bash
-if [ -z "$PR_RECORD_ID" ]; then
+else
   echo "⚠ Failed to upsert PullRequest record — continuing"
 fi
 ```
