@@ -142,14 +142,29 @@ From the response, extract:
 
 A PR has **unaddressed findings** when ANY of the following are true:
 - At least one inline thread has `isResolved == false`
-- At least one review with `state == "COMMENTED"` or `state == "CHANGES_REQUESTED"` has a non-empty `body` (a review body without matching inline threads is itself a finding)
+- At least one review with `state == "COMMENTED"` or `state == "CHANGES_REQUESTED"` has a
+  non-empty `body` (a review body without matching inline threads is itself a finding),
+  excluding self-authored clean-APPROVE reviews (see below)
 
 A PR has **no findings** (skip it) when ALL of the following are true:
 - All inline threads are resolved (`isResolved == true` for every thread)
-- No COMMENTED or CHANGES_REQUESTED review has a non-empty body
+- No COMMENTED or CHANGES_REQUESTED review has a non-empty body, other than self-authored
+  clean-APPROVE reviews (see below)
 
-If neither condition applies (e.g., no reviews at all, only approved reviews), skip the PR —
-it does not belong in List A.
+**Self-authored clean-APPROVE exclusion**: A review is excluded from the body check above
+when `author.login == CURRENT_USER` (resolved in Step 1) AND its body — leading markdown
+bold markers (`**`) stripped — starts with `APPROVE`. Per review.md's Step 10 note
+("Self-review event override"), GitHub rejects self-APPROVE via the API, so the agent's own
+clean approval of its own PR is always posted as `COMMENTED` with a body like
+`"APPROVE — looks good, no changes needed."` instead of an `APPROVED` review. Without this
+exclusion, that clean self-approval would look identical to a real finding and loop the
+patch cron forever on an already-approved PR. The exclusion is scoped to clean APPROVE
+verdicts only — a self-authored review whose body does **not** start with `APPROVE` (i.e.
+the agent found a real issue in its own PR) still counts as a finding, same as any other
+reviewer's.
+
+If neither condition applies (e.g., no reviews at all, only approved reviews, or only an
+excluded self-authored clean-APPROVE review), skip the PR — it does not belong in List A.
 
 If a PR has unaddressed findings, add it to **List A**. Store the unresolved threads (with their
 `id` — needed for the `resolveReviewThread` mutation in Step 5) and review bodies for use in
