@@ -69,7 +69,7 @@ A unit test over 200 ms is a suspected hidden integration test (audit its import
 - **Time:** any production code path that calls `new Date()` / `Date.now()` non-trivially must accept a `Clock` interface; tests inject `FixedClock(t)`. Raw `Date.now()` in code under test is a bug.
 - **External HTTP:** service clients (`TaskStoreClient`, `GithubClient`, …) are interfaces with an `Http*Client` production impl; tests inject `Recorded*Client` recorded fixture doubles replaying fixture data from `tests/fixtures/<service>/*.json` (versioned JSON committed to the repo).
 - **No global state:** **no `mock.module()`**, **no `global.fetch` / `global.*` overrides.** Bun runs test files in the same process, so module-level mocks and global mutation leak across sibling suites. Each test must be independently runnable, order-independent.
-- **Offline by default:** no live external calls. Live external service credentials must be absent for metrics unit/integration/smoke tests; `DATABASE_URL_ADMIN_TEST` must be set to a Postgres connection string for agent DB integration tests (suites skip automatically when the var is absent).
+- **Offline by default:** no live external calls. Live external service credentials must be absent for metrics unit/integration/smoke tests; `DATABASE_URL_ADMIN_TEST` must be set to a Postgres connection string for admin DB integration tests, and `DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST` for task-store DB integration tests (suites skip automatically when the respective var is absent).
 
 ## CI gates
 
