@@ -96,7 +96,7 @@ describe("check-dependabot-triage", () => {
     expect(result.output).toBeTruthy();
   });
 
-  test("exits 0 when zero repos are configured is NOT the case — zero repos means zero PRs, exits 1", async () => {
+  test("exits 1 when zero repos are configured (nothing to scan)", async () => {
     const deps = makeDeps({
       resolveRepos: () => [],
       listOpenDependabotPrs: async () => {
