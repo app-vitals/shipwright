@@ -116,6 +116,39 @@ describe("deploy.md — PR upsert on merge (PRI-2.4)", () => {
   });
 });
 
+describe("deploy.md — self-approve bold-markdown strip (PCK-1.4)", () => {
+  it("Step 1a's jq check strips leading ** before startswith(\"APPROVE\")", () => {
+    // Must apply a jq sub() (or equivalent) that strips leading markdown bold
+    // markers from the review body before the startswith("APPROVE") check —
+    // mirroring check-deploy.ts's hasSelfApproveReview strip.
+    const step1aMatch = content.match(
+      /1a\. Find Qualifying PRs[\s\S]*?(?=###|## Step 2)/,
+    );
+    expect(step1aMatch).not.toBeNull();
+    const step1aSection = step1aMatch?.[0] ?? "";
+    expect(step1aSection).toContain('sub("^\\\\*+";"")');
+    expect(step1aSection).toContain('startswith("APPROVE")');
+  });
+
+  it("Step 3a's AGENT_LOGIN self-approval check strips leading ** before the comparison", () => {
+    const step3aMatch = content.match(
+      /### 3a\. Verify PR Approval[\s\S]*?(?=### 3b)/,
+    );
+    expect(step3aMatch).not.toBeNull();
+    const step3aSection = step3aMatch?.[0] ?? "";
+    expect(step3aSection).toContain('sub("^\\\\*+";"")');
+    expect(step3aSection.toLowerCase()).toContain("strip");
+  });
+
+  it("Step 3a's prose describes stripping leading bold markers before startsWith(\"APPROVE\")", () => {
+    const step3aMatch = content.match(
+      /### 3a\. Verify PR Approval[\s\S]*?(?=### 3b)/,
+    );
+    const step3aSection = step3aMatch?.[0] ?? "";
+    expect(step3aSection).toContain('startsWith("APPROVE")');
+  });
+});
+
 describe("deploy.md — pre-merge PR claim lock (CLM-2.2)", () => {
   it("claims the PR record (phase: deploy) before the gh pr merge call", () => {
     // The pre-merge claim must appear BEFORE the merge command in Step 4.
