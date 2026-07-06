@@ -127,8 +127,8 @@ Every new agent is seeded with ten system crons (the canonical definitions live 
 | Cron | Schedule (cron expr) | Default | What it does |
 |---|---|---|---|
 | `shipwright-dev-task` | `0,30 * * * *` (min 0, 30) | **on** | Picks the next ready task, builds it with tests, opens a PR. |
-| `shipwright-review-patch` | `10,40 * * * *` (min 10, 40) | **on** | Reviews open PRs and patches the ones failing CI or review. |
-| `shipwright-review` | `15,45 * * * *` (min 15, 45) | off | Review-only pass over open PRs. |
+| `shipwright-review-patch` | `10,40 * * * *` (min 10, 40) | **on** | Reviews open PRs (excluding drafts and Dependabot PRs) and patches the ones failing CI or review. |
+| `shipwright-review` | `15,45 * * * *` (min 15, 45) | off | Review-only pass over open PRs (excluding drafts and Dependabot PRs). |
 | `shipwright-patch` | `5,35 * * * *` (min 5, 35) | off | Fixes failing CI and unresolved review findings. |
 | `shipwright-deploy` | `20,50 * * * *` (min 20, 50) | off | Merges approved PRs and deploys them. |
 | `shipwright-test-readiness` | `0 6 * * *` (daily, 06:00) | off | Runs the full test-readiness audit (`--full --publish`). |
