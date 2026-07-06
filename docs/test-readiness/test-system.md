@@ -77,10 +77,10 @@ The agent is a thin runner with a Prisma-backed PostgreSQL database and a Hono H
 
 **Notes:**
 - Integration tests inject `RecordedGithubClient` for issue/PR operations and a `RecordedMetricsClient` for forwarding calls.
-- **DB integration tests** (added in SHE-1.2) run against a real Postgres database (`DATABASE_URL_ADMIN_TEST="postgresql://user:password@localhost:5432/shipwright_admin_test"`). Each test suite provisions the schema via `prisma migrate deploy` and tears down after. No Prisma mocking — service classes own all DB queries.
+- **DB integration tests** (added in SHE-1.2) run against real Postgres databases: `DATABASE_URL_ADMIN_TEST="postgresql://user:password@localhost:5432/shipwright_admin_test"` for admin service tests and `DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST="postgresql://user:password@localhost:5432/shipwright_task_store_test"` for task-store tests. Each test suite provisions the schema via `prisma migrate deploy` and tears down after. No Prisma mocking — service classes own all DB queries.
 - **Smoke tests** drive the Hono app via `app.request()` — no real socket, no port allocation. Import the app factory and call `app.request(new Request(...))` directly. Covers health endpoints, agent CRUD routes, and auth checks.
 - The agent's execution loop must accept a `Clock` injection for deterministic scheduling tests.
-- `DATABASE_URL_ADMIN_TEST` must be set to a Postgres connection string (e.g. `postgresql://user:password@localhost:5432/shipwright_admin_test`) for DB integration tests to run; suites skip automatically when the var is absent.
+- `DATABASE_URL_ADMIN_TEST` must be set to a Postgres connection string (e.g. `postgresql://user:password@localhost:5432/shipwright_admin_test`) for admin DB integration tests to run; `DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST` for task-store DB integration tests. Suites skip automatically when the respective var is absent.
 
 ## Full suite commands
 

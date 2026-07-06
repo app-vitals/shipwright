@@ -5,7 +5,7 @@
  * Requires DATABASE_URL_ADMIN_TEST to be set; skips otherwise.
  */
 
-import { beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { PrismaClient } from "../prisma/client/index.js";
 import { AgentCronJobService } from "./agent-cron-jobs.ts";
 import { AgentCronRunService } from "./agent-cron-runs.ts";
@@ -61,6 +61,10 @@ describeOrSkip("AgentCronRunService (integration)", () => {
     await prisma.agent.deleteMany();
     cronJobService = new AgentCronJobService(prisma, FixedClock(FIXED_NOW));
     runService = new AgentCronRunService(prisma);
+  });
+
+  afterEach(async () => {
+    await prisma.$disconnect();
   });
 
   // ─── create ─────────────────────────────────────────────────────────────────

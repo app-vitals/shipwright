@@ -7,7 +7,7 @@
  * Requires DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST to be set; skips otherwise.
  */
 
-import { beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { PrismaClient } from "../prisma/client/index.js";
 import { FixedClock } from "./clock.ts";
 import { ConflictError } from "./errors.ts";
@@ -29,6 +29,10 @@ describeOrSkip("PullRequest model (integration)", () => {
   beforeEach(async () => {
     prisma = makePrisma();
     await prisma.pullRequest.deleteMany();
+  });
+
+  afterEach(async () => {
+    await prisma.$disconnect();
   });
 
   it("inserts a PullRequest with all defaults", async () => {
@@ -157,6 +161,10 @@ describeOrSkip("PullRequestService.claim() atomicity (integration)", () => {
     await prisma.pullRequest.deleteMany();
   });
 
+  afterEach(async () => {
+    await prisma.$disconnect();
+  });
+
   it("concurrent claims on same (repo, prNumber): one succeeds, one gets ConflictError", async () => {
     const repo = "app-vitals/shipwright";
     const prNumber = 100;
@@ -266,6 +274,10 @@ describeOrSkip("PullRequestService.claim() phase support (integration)", () => {
     prisma = makePrisma();
     service = new PullRequestService(prisma);
     await prisma.pullRequest.deleteMany();
+  });
+
+  afterEach(async () => {
+    await prisma.$disconnect();
   });
 
   it("claim(phase=patch) does not reset reviewState — stays posted", async () => {
@@ -397,6 +409,10 @@ describeOrSkip("PullRequestService.complete() readyForPatchAt (integration)", ()
     await prisma.pullRequest.deleteMany();
   });
 
+  afterEach(async () => {
+    await prisma.$disconnect();
+  });
+
   it("complete() sets readyForPatchAt=now alongside reviewState=posted", async () => {
     const now = new Date("2026-07-01T10:00:00.000Z");
     const clock = FixedClock(now);
@@ -489,6 +505,10 @@ describeOrSkip("PullRequestService.claimNext() (integration)", () => {
     prisma = makePrisma();
     service = new PullRequestService(prisma);
     await prisma.pullRequest.deleteMany();
+  });
+
+  afterEach(async () => {
+    await prisma.$disconnect();
   });
 
   it("claimNext() returns null when active claim count >= maxConcurrent", async () => {
