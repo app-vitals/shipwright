@@ -15,7 +15,7 @@ The HTTP service (artifact **D**) is the recommended production setup. Plugin ba
 
 ## HTTP service
 
-The task store ships as a standalone Hono service backed by PostgreSQL. Agents connect to it via `SHIPWRIGHT_TASK_STORE_URL` + `SHIPWRIGHT_TASK_STORE_TOKEN`. The admin service provisions per-agent tokens automatically during agent setup.
+The task store ships as a standalone OpenAPIHono service backed by PostgreSQL. Agents connect to it via `SHIPWRIGHT_TASK_STORE_URL` + `SHIPWRIGHT_TASK_STORE_TOKEN`. The admin service provisions per-agent tokens automatically during agent setup.
 
 ### Authentication
 
