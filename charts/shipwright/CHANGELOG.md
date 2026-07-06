@@ -16,6 +16,18 @@ independent of `appVersion`. CI enforces this with
 
 - optional SENTRY_DSN/SENTRY_ENVIRONMENT env passthrough for the admin service
 
+## [1.6.278] - 2026-07-06
+
+### Changed
+
+- auto-bump to chart v1.6.278 triggered by release tag `agent-v0.143.1`
+
+## [1.6.277] - 2026-07-06
+
+### Changed
+
+- auto-bump to chart v1.6.277 triggered by release tag `task-store-v0.66.0`
+
 ## [1.6.276] - 2026-07-06
 
 ### Changed
