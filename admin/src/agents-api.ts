@@ -20,6 +20,7 @@
  */
 
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import type { PrismaClient } from "../prisma/client/index.js";
 import type { AgentChatTokenService } from "./agent-chat-tokens.ts";
 import type {
@@ -130,6 +131,13 @@ export interface AdminDeps {
   sessionSecret: string;
   /** Parsed SHIPWRIGHT_ADMIN_API_KEYS — optional; absent means env key auth is disabled. */
   adminApiKeys?: Map<string, AdminApiKey>;
+  /**
+   * Optional Sentry client for reporting unhandled errors. Undefined means
+   * Sentry is not initialized (SENTRY_DSN unset) — onError simply skips the
+   * capture call. Production wiring in main.ts passes the real `Sentry` from
+   * `@sentry/bun` only when SENTRY_DSN is set.
+   */
+  sentryClient?: ErrorCapturingClient;
 }
 
 // Re-export for callers that need to build the map from an env string.
@@ -780,6 +788,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     provisioner,
     sessionSecret,
     adminApiKeys,
+    sentryClient,
   } = deps;
 
   const app = new OpenAPIHono<AdminAuthEnv>({
@@ -795,12 +804,20 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
   });
 
   app.onError((err, c) => {
-    if (err instanceof ApiError) {
+    if (err instanceof ApiError && err.statusCode < 500) {
       return c.json(
         { error: err.message },
-        err.statusCode as 400 | 401 | 403 | 404 | 409 | 422 | 500 | 502,
+        err.statusCode as 400 | 401 | 403 | 404 | 409 | 422,
       );
     }
+    if (err instanceof ApiError) {
+      sentryClient?.captureException(err);
+      return c.json(
+        { error: err.message },
+        err.statusCode as 500 | 502,
+      );
+    }
+    sentryClient?.captureException(err);
     console.error("[agents-api] unhandled error:", err);
     return c.json({ error: "Internal server error" }, 500);
   });

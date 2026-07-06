@@ -16,6 +16,8 @@
   "dependencies": {
     "@hono/zod-openapi": "^0.18.3",
     "@prisma/client": "^6.19.2",
+    "@sentry/bun": "^10.63.0",
+    "@sentry/hono": "^10.63.0",
     "@shipwright/lib": "*",
     "hono": "^4",
     "zod": "^3"
