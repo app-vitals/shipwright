@@ -12,6 +12,8 @@
  */
 
 import { join } from "node:path";
+import * as Sentry from "@sentry/bun";
+import { initSentry } from "@shipwright/lib/sentry";
 import { createTaskStoreApp } from "./app.ts";
 import { createScopeResolver } from "./auth.ts";
 import { SystemClock } from "./clock.ts";
@@ -72,6 +74,17 @@ async function runMigrations(): Promise<void> {
 // ─── Server entry ─────────────────────────────────────────────────────────────
 
 async function startServer(): Promise<void> {
+  // Initializes Sentry (no-op when SENTRY_DSN is unset) so that startup
+  // failures below (e.g. a failed migration) are captured too. When
+  // SENTRY_DSN is set, `createTaskStoreApp` mounts `@sentry/hono`'s `sentry()`
+  // middleware, which performs its own equivalent `Sentry.init` call using
+  // the same options (see `buildSentryInitOptions`) — Sentry's own guidance
+  // is that the Hono middleware should be the sole init site, but initializing
+  // here first means boot-time errors before the app exists are still
+  // reported, and re-initializing with identical options in app.ts is a safe
+  // no-op (same client config, no drift).
+  initSentry({ service: "task-store" });
+
   const port = Number(process.env.PORT ?? DEFAULT_PORT);
 
   console.log(`[task-store] starting service on port ${port}`);
@@ -127,6 +140,7 @@ async function startServer(): Promise<void> {
     scopeResolver,
     docStore,
     docPublicBaseUrl,
+    sentryClient: process.env.SENTRY_DSN ? Sentry : undefined,
   });
 
   const reaper = new StaleClaimReaper(prisma);

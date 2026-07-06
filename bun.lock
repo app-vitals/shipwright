@@ -42,7 +42,7 @@
     },
     "agent": {
       "name": "@shipwright/agent",
-      "version": "0.133.0",
+      "version": "0.134.0",
       "dependencies": {
         "@octokit/auth-app": "^8.2.0",
         "@shipwright/admin": "workspace:*",
@@ -82,7 +82,7 @@
     },
     "metrics": {
       "name": "@shipwright/metrics",
-      "version": "0.133.0",
+      "version": "0.134.0",
       "dependencies": {
         "@hono/zod-openapi": "^0.18.3",
         "@shipwright/lib": "*",
@@ -98,7 +98,7 @@
     },
     "plugins/shipwright": {
       "name": "@shipwright/plugin",
-      "version": "0.133.0",
+      "version": "0.134.0",
       "devDependencies": {
         "bun-types": "*",
         "typescript": "*",
@@ -109,6 +109,8 @@
       "version": "0.1.0",
       "dependencies": {
         "@prisma/client": "^6.19.2",
+        "@sentry/bun": "^10.63.0",
+        "@sentry/hono": "^10.63.0",
         "@shipwright/lib": "*",
         "hono": "^4.12.26",
       },
@@ -267,6 +269,8 @@
     "@sentry/conventions": ["@sentry/conventions@0.12.0", "", {}, "sha512-z1JQrl/1SLY+8wpzvork6vl+fpsg/oCCxM7HWWhUnI/R+OGNyoIzieQuggX3uUMY7NBtp8UWCQx6FeFazzOF9g=="],
 
     "@sentry/core": ["@sentry/core@10.63.0", "", {}, "sha512-OtUbsrnbEHffOF2S2+M5zXa3HIM0U2b4CDVLKMY1dgS0J3ivRF8XvkjvyIcEG/y8JXnwXbnprLyjhG+AqMdUZQ=="],
+
+    "@sentry/hono": ["@sentry/hono@10.63.0", "", { "dependencies": { "@opentelemetry/api": "^1.9.1", "@sentry/core": "10.63.0" }, "peerDependencies": { "@cloudflare/workers-types": "^4.x", "@hono/node-server": "^1.x || ^2.x", "@sentry/bun": "10.63.0", "@sentry/cloudflare": "10.63.0", "@sentry/deno": "10.63.0", "@sentry/node": "10.63.0", "hono": "^4.x" }, "optionalPeers": ["@cloudflare/workers-types", "@hono/node-server", "@sentry/bun", "@sentry/cloudflare", "@sentry/deno", "@sentry/node"] }, "sha512-sNQyT2w1Beq9H3VZSJdite/PJQES11+NCO14TPn3ciVdpuN3oCrWgbELB5/JgmS+PGOB0iVYzQbw8Jw9xqbL+g=="],
 
     "@sentry/node": ["@sentry/node@10.63.0", "", { "dependencies": { "@opentelemetry/api": "^1.9.1", "@opentelemetry/instrumentation": "^0.214.0", "@opentelemetry/sdk-trace-base": "^2.6.1", "@opentelemetry/semantic-conventions": "^1.40.0", "@sentry/conventions": "^0.12.0", "@sentry/core": "10.63.0", "@sentry/node-core": "10.63.0", "@sentry/opentelemetry": "10.63.0", "@sentry/server-utils": "10.63.0", "import-in-the-middle": "^3.0.0" } }, "sha512-E+JfDTdUDGQPRsAfCTR2YgmQgxYdoxk4ks6niHN+ByW8alEZL+nXlcN9vI57qj1LsS4v2jjfLxJf1/cMMt84YA=="],
 

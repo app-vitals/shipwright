@@ -55,6 +55,17 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.taskStore.database.existingSecret | default "shipwright-secrets" }}
                   key: DATABASE_URL_SHIPWRIGHT_TASK_STORE
+            {{- if .Values.taskStore.sentry.dsn.existingSecret }}
+            - name: SENTRY_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.taskStore.sentry.dsn.existingSecret }}
+                  key: {{ .Values.taskStore.sentry.dsn.key | default "SENTRY_DSN" }}
+            {{- end }}
+            {{- if .Values.taskStore.sentry.environment }}
+            - name: SENTRY_ENVIRONMENT
+              value: {{ .Values.taskStore.sentry.environment | quote }}
+            {{- end }}
             {{- with .Values.taskStore.extraEnv }}
             # taskStore.extraEnv: caller-supplied env vars appended last so they can
             # override anything above if needed.
