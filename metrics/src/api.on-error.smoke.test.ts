@@ -20,6 +20,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import {
   type MetricsDeps,
   createMetricsApp,
@@ -34,6 +35,19 @@ import {
 import { makeAccountsClientMock } from "./lib/test-helpers.ts";
 import type { MetricsProvider } from "./metrics-provider.ts";
 import type { HogQLResult } from "./types.ts";
+
+/** A fake ErrorCapturingClient that records every error passed to captureException. */
+function fakeErrorCapturingClient(): ErrorCapturingClient & {
+  capturedErrors: unknown[];
+} {
+  const capturedErrors: unknown[] = [];
+  return {
+    captureException: (err: unknown) => {
+      capturedErrors.push(err);
+    },
+    capturedErrors,
+  };
+}
 
 const emptyResult: HogQLResult = {
   columns: [],
@@ -119,6 +133,37 @@ describe("createMetricsApp — shared makeOnError wiring", () => {
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({ error: "Something unexpected" });
   });
+
+  test("calls sentryClient.captureException for an unhandled (non-ApiError) error", async () => {
+    const sentryClient = fakeErrorCapturingClient();
+    const deps: MetricsDeps = { provider: makeEmptyProvider(), sentryClient };
+    const app = createMetricsApp(parseApiKeys(""), noopAccountsClient, deps);
+    withThrowingRoute(app, "/__test/boom", new Error("Something unexpected"));
+
+    const res = await app.request("/__test/boom");
+
+    expect(res.status).toBe(500);
+    expect(sentryClient.capturedErrors.length).toBe(1);
+    expect((sentryClient.capturedErrors[0] as Error).message).toBe(
+      "Something unexpected",
+    );
+  });
+
+  test("does NOT call sentryClient.captureException for a typed ApiError", async () => {
+    const sentryClient = fakeErrorCapturingClient();
+    const deps: MetricsDeps = { provider: makeEmptyProvider(), sentryClient };
+    const app = createMetricsApp(parseApiKeys(""), noopAccountsClient, deps);
+    withThrowingRoute(
+      app,
+      "/__test/not-found",
+      new NotFoundError("Widget not found"),
+    );
+
+    const res = await app.request("/__test/not-found");
+
+    expect(res.status).toBe(404);
+    expect(sentryClient.capturedErrors.length).toBe(0);
+  });
 });
 
 describe("createPublicMetricsApp — shared makeOnError wiring", () => {
@@ -168,5 +213,44 @@ describe("createPublicMetricsApp — shared makeOnError wiring", () => {
     const res = await app.request("/__test/boom");
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({ error: "Something unexpected" });
+  });
+
+  test("calls sentryClient.captureException for an unhandled (non-ApiError) error", async () => {
+    const sentryClient = fakeErrorCapturingClient();
+    const app = createPublicMetricsApp(
+      makeEmptyProvider(),
+      "",
+      undefined,
+      sentryClient,
+    );
+    withThrowingRoute(app, "/__test/boom", new Error("Something unexpected"));
+
+    const res = await app.request("/__test/boom");
+
+    expect(res.status).toBe(500);
+    expect(sentryClient.capturedErrors.length).toBe(1);
+    expect((sentryClient.capturedErrors[0] as Error).message).toBe(
+      "Something unexpected",
+    );
+  });
+
+  test("does NOT call sentryClient.captureException for a typed ApiError", async () => {
+    const sentryClient = fakeErrorCapturingClient();
+    const app = createPublicMetricsApp(
+      makeEmptyProvider(),
+      "",
+      undefined,
+      sentryClient,
+    );
+    withThrowingRoute(
+      app,
+      "/__test/not-found",
+      new NotFoundError("Widget not found"),
+    );
+
+    const res = await app.request("/__test/not-found");
+
+    expect(res.status).toBe(404);
+    expect(sentryClient.capturedErrors.length).toBe(0);
   });
 });
