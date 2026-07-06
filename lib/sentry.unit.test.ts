@@ -12,7 +12,9 @@ function createFakeSentryClient() {
   };
 }
 
-function createFakeErrorCapturingClient() {
+function createFakeErrorCapturingClient(): ErrorCapturingClient & {
+  capturedErrors: unknown[];
+} {
   const capturedErrors: unknown[] = [];
   return {
     captureException: (err: unknown) => {
@@ -122,15 +124,12 @@ describe("initSentry — SENTRY_DSN set", () => {
 
 describe("ErrorCapturingClient — captureException injection point", () => {
   test("a fake client satisfying the ErrorCapturingClient shape records captured errors", () => {
-    const fakeClient: ErrorCapturingClient = createFakeErrorCapturingClient();
+    const fakeClient = createFakeErrorCapturingClient();
     const err = new Error("boom");
 
     fakeClient.captureException(err);
 
-    expect(
-      (fakeClient as ReturnType<typeof createFakeErrorCapturingClient>)
-        .capturedErrors,
-    ).toEqual([err]);
+    expect(fakeClient.capturedErrors).toEqual([err]);
   });
 });
 
