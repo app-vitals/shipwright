@@ -47,16 +47,21 @@ export interface TaskStoreProvisioningClient {
 export class HttpTaskStoreProvisioningClient
   implements TaskStoreProvisioningClient
 {
+  private readonly fetchFn: typeof fetch;
+
   constructor(
     private readonly baseUrl: string,
     private readonly adminToken: string,
-  ) {}
+    opts?: { fetchFn?: typeof fetch },
+  ) {
+    this.fetchFn = opts?.fetchFn ?? fetch;
+  }
 
   async mintToken(
     label: string,
     agentId?: string,
   ): Promise<{ id: string; rawToken: string }> {
-    const res = await fetch(`${this.baseUrl}/tokens`, {
+    const res = await this.fetchFn(`${this.baseUrl}/tokens`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -74,7 +79,7 @@ export class HttpTaskStoreProvisioningClient
   }
 
   async revokeToken(id: string): Promise<void> {
-    const res = await fetch(`${this.baseUrl}/tokens/${id}`, {
+    const res = await this.fetchFn(`${this.baseUrl}/tokens/${id}`, {
       method: "DELETE",
       headers: {
         Authorization: `Bearer ${this.adminToken}`,
