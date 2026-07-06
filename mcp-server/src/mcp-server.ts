@@ -20,6 +20,7 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { generatedTools } from "./generated-tools.ts";
+import { allowedTools } from "./tool-allowlist.ts";
 import {
   type ToolCallerConfig,
   callTool,
@@ -33,6 +34,7 @@ export interface CreateMcpServerOptions {
 
 export function createMcpServer(options: CreateMcpServerOptions = {}): Server {
   const config = options.config ?? configFromEnv();
+  const tools = allowedTools(generatedTools);
 
   const server = new Server(
     { name: "shipwright-task-store", version: "0.1.0" },
@@ -40,7 +42,7 @@ export function createMcpServer(options: CreateMcpServerOptions = {}): Server {
   );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: generatedTools.map((tool) => ({
+    tools: tools.map((tool) => ({
       name: tool.name,
       description: tool.description,
       inputSchema: tool.inputSchema,
@@ -50,7 +52,7 @@ export function createMcpServer(options: CreateMcpServerOptions = {}): Server {
   server.setRequestHandler(
     CallToolRequestSchema,
     async (request): Promise<CallToolResult> => {
-      const tool = generatedTools.find((t) => t.name === request.params.name);
+      const tool = tools.find((t) => t.name === request.params.name);
       if (!tool) {
         return {
           content: [
