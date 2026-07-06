@@ -199,10 +199,11 @@ export async function handleCronRequest(
 
     // Run the preCheck from the workspace, not the agent's cwd (/app). Plugin
     // preChecks resolve state relative to process.cwd() — e.g. check-dev-task.ts
-    // → JsonTaskStore(process.cwd()) reads `state/todos.json`. Without this the
-    // store roots at /app, the file is missing, and the job is wrongly suppressed
-    // ("/app/state/todos.json not found — run setup first"). Mirrors the claude
-    // run, which is already rooted at the workspace.
+    // queries the hosted task-store HTTP API (via check-helpers.ts) using
+    // SHIPWRIGHT_TASK_STORE_URL/TOKEN, and other prechecks read workspace-relative
+    // files like `state/agent-policy.md`. Without this the cwd roots at /app and
+    // workspace-relative reads fail. Mirrors the claude run, which is already
+    // rooted at the workspace.
     const checkProc = Bun.spawn(["bun", scriptPath], {
       ...(workspace ? { cwd: workspace } : {}),
       // env: process.env is required — Bun.spawn otherwise snapshots env at Bun

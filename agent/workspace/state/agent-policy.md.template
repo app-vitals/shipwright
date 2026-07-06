@@ -23,7 +23,7 @@ Conservative defaults are set for safety. Relax them as trust grows.
 
 ### Scope
 - **review_shipwright_prs**: true
-  Review PRs created by this agent (from state/todos.json with status pr_open).
+  Review PRs created by this agent (from the task store with status pr_open).
 
 - **review_external_prs**: true
   Review open PRs not created by this agent. Safe with auto_post_reviews off
@@ -31,8 +31,8 @@ Conservative defaults are set for safety. Relax them as trust grows.
 
 - **allow_self_review**: false
   Review own open PRs. GitHub blocks self-APPROVE, so own PRs are always posted
-  as COMMENT events. The actual verdict is recorded in state/reviews.json for
-  the deploy command to act on.
+  as COMMENT events. The actual verdict is recorded in the task store's
+  `PullRequest` record for the deploy command to act on.
 
 ### Quality Thresholds
 - **min_confidence**: 75
