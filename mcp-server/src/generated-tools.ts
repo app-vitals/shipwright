@@ -25,6 +25,10 @@ export interface GeneratedTool {
   pathParams: string[];
   /** True if the operation accepts a JSON request body. */
   hasBody: boolean;
+  /** True when the request body is a JSON array (not an object).
+   * The input schema exposes an `items` property of type `array`;
+   * `callTool` sends `args.items` directly as the body. */
+  hasArrayBody?: boolean;
 }
 
 export const generatedTools: GeneratedTool[] = [
@@ -183,7 +187,31 @@ export const generatedTools: GeneratedTool[] = [
     description: "Bulk insert tasks",
     inputSchema: {
       type: "object",
-      properties: {},
+      properties: {
+        items: {
+          type: "array",
+          description: "Array of items to submit as the request body.",
+          items: {
+            type: "object",
+            properties: {
+              title: {
+                type: "string",
+                minLength: 1,
+                example: "Implement feature X",
+              },
+              status: {
+                type: "string",
+                minLength: 1,
+                example: "pending",
+              },
+              repo: {
+                type: ["string", "null"],
+                example: "org/repo",
+              },
+            },
+          },
+        },
+      },
       required: [],
       additionalProperties: false,
     },
@@ -192,6 +220,7 @@ export const generatedTools: GeneratedTool[] = [
     queryParams: [],
     pathParams: [],
     hasBody: true,
+    hasArrayBody: true,
   },
   {
     name: "tasks_distinct",

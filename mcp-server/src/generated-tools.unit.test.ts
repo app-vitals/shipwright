@@ -74,4 +74,18 @@ describe("generatedTools", () => {
       expect(tool.description.length).toBeGreaterThan(0);
     }
   });
+
+  it("tasks_bulk has a usable array-body inputSchema", () => {
+    const tool = generatedTools.find((t) => t.name === "tasks_bulk");
+    expect(tool).toBeDefined();
+    expect(tool?.hasBody).toBe(true);
+    expect(tool?.hasArrayBody).toBe(true);
+    // items property must be present and typed as array
+    expect(tool?.inputSchema.properties).toHaveProperty("items");
+    const itemsProp = tool?.inputSchema.properties.items as Record<string, unknown>;
+    expect(itemsProp?.type).toBe("array");
+    // the spec's requestBody has no required:true, so items is optional
+    // but the property must be present and well-typed
+    expect(tool?.inputSchema.required).not.toContain("items");
+  });
 });

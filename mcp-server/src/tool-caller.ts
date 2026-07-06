@@ -24,14 +24,25 @@ export interface ToolResult {
   isError?: boolean;
 }
 
-/** Resolve caller config from the standard task-store env vars. */
+/** Resolve caller config from the standard task-store env vars.
+ * Throws a clear error at startup if either required var is missing,
+ * rather than failing deep inside the first `callTool` invocation. */
 export function configFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): ToolCallerConfig {
-  return {
-    baseUrl: env.SHIPWRIGHT_TASK_STORE_URL ?? "",
-    token: env.SHIPWRIGHT_TASK_STORE_TOKEN ?? "",
-  };
+  const baseUrl = env.SHIPWRIGHT_TASK_STORE_URL;
+  const token = env.SHIPWRIGHT_TASK_STORE_TOKEN;
+  if (!baseUrl) {
+    throw new Error(
+      "SHIPWRIGHT_TASK_STORE_URL is not set. Set it to the task-store base URL before starting the MCP server.",
+    );
+  }
+  if (!token) {
+    throw new Error(
+      "SHIPWRIGHT_TASK_STORE_TOKEN is not set. Set it to a valid task-store bearer token before starting the MCP server.",
+    );
+  }
+  return { baseUrl, token };
 }
 
 export async function callTool(
@@ -71,15 +82,27 @@ export async function callTool(
   const init: RequestInit = { method: tool.method, headers };
 
   if (tool.hasBody) {
-    // Body fields are everything that isn't a path or query param.
-    const consumed = new Set([...tool.pathParams, ...tool.queryParams]);
-    const body: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(args)) {
-      if (!consumed.has(key)) body[key] = value;
-    }
-    if (Object.keys(body).length > 0) {
+    if (tool.hasArrayBody) {
+      // Array-typed body: the caller passes `args.items`; send the array directly.
+      const items = args.items;
+      if (!Array.isArray(items)) {
+        return errorResult(
+          `${tool.name} expects an array body — pass items as an array in the "items" argument.`,
+        );
+      }
       headers["content-type"] = "application/json";
-      init.body = JSON.stringify(body);
+      init.body = JSON.stringify(items);
+    } else {
+      // Object body fields are everything that isn't a path or query param.
+      const consumed = new Set([...tool.pathParams, ...tool.queryParams]);
+      const body: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(args)) {
+        if (!consumed.has(key)) body[key] = value;
+      }
+      if (Object.keys(body).length > 0) {
+        headers["content-type"] = "application/json";
+        init.body = JSON.stringify(body);
+      }
     }
   }
 

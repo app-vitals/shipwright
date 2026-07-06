@@ -100,13 +100,26 @@ function resolveRef(ref: string, spec: OpenApiSpec): JsonSchema | undefined {
   return spec.components?.schemas?.[match[1]];
 }
 
+/** Resolve a request body schema to its canonical form, following `$ref`. */
+function resolveBodySchema(
+  schema: JsonSchema | undefined,
+  spec: OpenApiSpec,
+): JsonSchema | undefined {
+  if (!schema) return undefined;
+  if (typeof schema.$ref === "string") return resolveRef(schema.$ref, spec);
+  return schema;
+}
+
 /** Inline an object schema's own `properties`/`required`, following one `$ref`
  * and flattening a single level of `allOf`. Intentionally shallow — the
- * task-store spec is flat. */
+ * task-store spec is flat.
+ *
+ * Returns `null` when the resolved schema is array-typed — callers must
+ * special-case that path (see `generateTools`). */
 function inlineObjectSchema(
   schema: JsonSchema | undefined,
   spec: OpenApiSpec,
-): { properties: Record<string, JsonSchema>; required: string[] } {
+): { properties: Record<string, JsonSchema>; required: string[] } | null {
   const properties: Record<string, JsonSchema> = {};
   const required: string[] = [];
   if (!schema) return { properties, required };
@@ -117,9 +130,13 @@ function inlineObjectSchema(
   }
   if (!resolved) return { properties, required };
 
+  // Array-typed body: caller must use a dedicated property wrapper.
+  if (resolved.type === "array") return null;
+
   if (Array.isArray(resolved.allOf)) {
     for (const part of resolved.allOf as JsonSchema[]) {
       const inner = inlineObjectSchema(part, spec);
+      if (inner === null) continue; // skip array fragments (shouldn't occur in flat spec)
       Object.assign(properties, inner.properties);
       required.push(...inner.required);
     }
@@ -152,6 +169,10 @@ export interface GeneratedTool {
   queryParams: string[];
   pathParams: string[];
   hasBody: boolean;
+  /** True when the request body is a JSON array (not an object).
+   * The input schema will expose an `items` property of type `array`;
+   * `callTool` sends `args.items` directly as the body. */
+  hasArrayBody?: boolean;
 }
 
 export function generateTools(spec: OpenApiSpec): GeneratedTool[] {
@@ -184,14 +205,29 @@ export function generateTools(spec: OpenApiSpec): GeneratedTool[] {
 
       const bodySchema = op.requestBody?.content?.["application/json"]?.schema;
       const hasBody = Boolean(bodySchema);
+      let hasArrayBody = false;
       if (bodySchema) {
         const inlined = inlineObjectSchema(bodySchema, spec);
-        for (const [key, value] of Object.entries(inlined.properties)) {
-          if (!(key in properties)) properties[key] = value;
-        }
-        if (op.requestBody?.required) {
-          for (const key of inlined.required) {
-            if (!required.includes(key)) required.push(key);
+        if (inlined === null) {
+          // Array-typed request body: expose an `items` property so callers
+          // can pass the array as `{ items: [...] }`.
+          hasArrayBody = true;
+          const resolved = resolveBodySchema(bodySchema, spec);
+          properties.items = {
+            type: "array",
+            description:
+              "Array of items to submit as the request body.",
+            ...(resolved?.items ? { items: resolved.items } : {}),
+          };
+          if (op.requestBody?.required) required.push("items");
+        } else {
+          for (const [key, value] of Object.entries(inlined.properties)) {
+            if (!(key in properties)) properties[key] = value;
+          }
+          if (op.requestBody?.required) {
+            for (const key of inlined.required) {
+              if (!required.includes(key)) required.push(key);
+            }
           }
         }
       }
@@ -210,6 +246,7 @@ export function generateTools(spec: OpenApiSpec): GeneratedTool[] {
         queryParams,
         pathParams,
         hasBody,
+        ...(hasArrayBody ? { hasArrayBody: true } : {}),
       });
     }
   }
@@ -245,6 +282,10 @@ export interface GeneratedTool {
   pathParams: string[];
   /** True if the operation accepts a JSON request body. */
   hasBody: boolean;
+  /** True when the request body is a JSON array (not an object).
+   * The input schema exposes an \`items\` property of type \`array\`;
+   * \`callTool\` sends \`args.items\` directly as the body. */
+  hasArrayBody?: boolean;
 }
 
 export const generatedTools: GeneratedTool[] = ${JSON.stringify(tools, null, 2)};

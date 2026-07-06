@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { callTool } from "./tool-caller.ts";
+import { callTool, configFromEnv } from "./tool-caller.ts";
 import type { GeneratedTool } from "./generated-tools.ts";
 
 const claimTool: GeneratedTool = {
@@ -26,6 +26,25 @@ const listTool: GeneratedTool = {
   queryParams: ["status", "limit"],
   pathParams: [],
   hasBody: false,
+};
+
+const bulkTool: GeneratedTool = {
+  name: "tasks_bulk",
+  description: "Bulk insert tasks",
+  inputSchema: {
+    type: "object",
+    properties: {
+      items: { type: "array", description: "Array of items to submit as the request body." },
+    },
+    required: ["items"],
+    additionalProperties: false,
+  },
+  method: "POST",
+  pathTemplate: "/tasks/bulk",
+  queryParams: [],
+  pathParams: [],
+  hasBody: true,
+  hasArrayBody: true,
 };
 
 /** Build an injected fetch double that records the request and returns a JSON body. */
@@ -98,5 +117,57 @@ describe("callTool", () => {
       },
     );
     expect(result.isError).toBe(true);
+  });
+
+  it("sends array body directly for hasArrayBody tools", async () => {
+    const { fn, calls } = fakeFetch([{ id: "t1" }, { id: "t2" }]);
+    const tasks = [{ title: "Task A", status: "pending" }, { title: "Task B", status: "pending" }];
+    const result = await callTool(
+      bulkTool,
+      { items: tasks },
+      { ...config, fetchImpl: fn },
+    );
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toBe("https://tasks.example.com/tasks/bulk");
+    expect(calls[0].init?.method).toBe("POST");
+    const headers = new Headers(calls[0].init?.headers);
+    expect(headers.get("content-type")).toBe("application/json");
+    expect(calls[0].init?.body).toBe(JSON.stringify(tasks));
+    expect(result.isError).toBeFalsy();
+  });
+
+  it("returns an error for hasArrayBody tools when items is not an array", async () => {
+    const { fn } = fakeFetch({});
+    const result = await callTool(
+      bulkTool,
+      { items: "not-an-array" },
+      { ...config, fetchImpl: fn },
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("array");
+  });
+});
+
+describe("configFromEnv", () => {
+  it("throws when SHIPWRIGHT_TASK_STORE_URL is missing", () => {
+    expect(() =>
+      configFromEnv({ SHIPWRIGHT_TASK_STORE_TOKEN: "tok" }),
+    ).toThrow("SHIPWRIGHT_TASK_STORE_URL");
+  });
+
+  it("throws when SHIPWRIGHT_TASK_STORE_TOKEN is missing", () => {
+    expect(() =>
+      configFromEnv({ SHIPWRIGHT_TASK_STORE_URL: "https://example.com" }),
+    ).toThrow("SHIPWRIGHT_TASK_STORE_TOKEN");
+  });
+
+  it("returns config when both vars are set", () => {
+    const cfg = configFromEnv({
+      SHIPWRIGHT_TASK_STORE_URL: "https://example.com",
+      SHIPWRIGHT_TASK_STORE_TOKEN: "tok",
+    });
+    expect(cfg.baseUrl).toBe("https://example.com");
+    expect(cfg.token).toBe("tok");
   });
 });
