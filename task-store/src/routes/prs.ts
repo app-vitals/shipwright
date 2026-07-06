@@ -351,9 +351,8 @@ export function createPrsRoutes(
     // Only pass an explicit phase when the caller supplied one — leaving it
     // undefined lets the service's own `= "review"` default parameter apply,
     // matching callers (like review.md) that don't send phase at all.
-    // OpenAPIHono validates the body against ClaimPrBodySchema's phase enum
-    // before this handler runs, so a present value is already one of
-    // "review" | "patch" | "deploy".
+    // readJson reads the raw body, not the Zod-validated payload — this guard
+    // narrows phase to the allowed enum values before forwarding to the service.
     const resolvedPhase =
       phase === "review" || phase === "patch" || phase === "deploy"
         ? phase
