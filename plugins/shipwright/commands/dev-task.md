@@ -131,13 +131,33 @@ If the task's current status is already `in_progress`:
 
 ### Mark In-Progress
 
+This path is for the fresh-pending-task pick from Step 1 (the resume/orphan path above
+already owns an `in_progress` task and does not need to claim it). Claim the task
+atomically instead of a plain PATCH — a plain read-modify-write PATCH here would race
+against any other concurrent `dev-task` run that read the same `ready=true` list. The
+claim is a single conditional `UPDATE ... WHERE status='pending'`; it also sets
+`claimedAt`, `heartbeatAt`, and `startedAt` atomically, so no separate PATCH of
+`startedAt` is needed afterward:
+
 ```bash
-STARTED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  -H "Content-Type: application/json" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}" \
-  -d "{\"status\": \"in_progress\", \"startedAt\": \"$STARTED_AT\"}" | jq .
+CLAIM_CODE=$(curl -s -o /tmp/task_claim.json -w '%{http_code}' -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}/claim")
 ```
+
+No request body is sent — with an agent token (what `$SHIPWRIGHT_TASK_STORE_TOKEN` is in
+this deployment), the task-store pins `claimedBy` to the calling agent's own ID
+server-side and ignores the body.
+
+- **200**: claimed successfully. Print the updated task: `jq . /tmp/task_claim.json`.
+- **409**: another agent already claimed this task since it was read as `ready` in
+  Step 1. Print:
+  ```
+  ⚠ Task {id} was claimed by another agent — picking next ready task.
+  ```
+  Do NOT proceed with this task. Loop back to Step 1 and pick the next ready task instead.
+- **404**: task not found (should not normally happen since Step 1 just fetched it).
+  Treat as a hard stop for this task — do not proceed to Step 3.
 
 ## Step 3: Build Feature-Dev Prompt
 
