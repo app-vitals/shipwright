@@ -1,0 +1,19 @@
+{
+  "name": "@shipwright/mcp-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "description": "Shipwright MCP server — Model Context Protocol service for agent integration",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "hono": "^4.12.26"
+  },
+  "devDependencies": {
+    "bun-types": "^1.3.14",
+    "typescript": "*"
+  }
+}

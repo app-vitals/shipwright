@@ -42,7 +42,7 @@
     },
     "agent": {
       "name": "@shipwright/agent",
-      "version": "0.134.0",
+      "version": "0.135.1",
       "dependencies": {
         "@octokit/auth-app": "^8.2.0",
         "@shipwright/admin": "workspace:*",
@@ -80,9 +80,20 @@
         "@sentry/bun": "^10.63.0",
       },
     },
+    "mcp-server": {
+      "name": "@shipwright/mcp-server",
+      "version": "0.1.0",
+      "dependencies": {
+        "hono": "^4.12.26",
+      },
+      "devDependencies": {
+        "bun-types": "^1.3.14",
+        "typescript": "*",
+      },
+    },
     "metrics": {
       "name": "@shipwright/metrics",
-      "version": "0.134.0",
+      "version": "0.135.1",
       "dependencies": {
         "@hono/zod-openapi": "^0.18.3",
         "@shipwright/lib": "*",
@@ -98,7 +109,7 @@
     },
     "plugins/shipwright": {
       "name": "@shipwright/plugin",
-      "version": "0.134.0",
+      "version": "0.135.1",
       "devDependencies": {
         "bun-types": "*",
         "typescript": "*",
@@ -287,6 +298,8 @@
     "@shipwright/chat": ["@shipwright/chat@workspace:chat"],
 
     "@shipwright/lib": ["@shipwright/lib@workspace:lib"],
+
+    "@shipwright/mcp-server": ["@shipwright/mcp-server@workspace:mcp-server"],
 
     "@shipwright/metrics": ["@shipwright/metrics@workspace:metrics"],
 
