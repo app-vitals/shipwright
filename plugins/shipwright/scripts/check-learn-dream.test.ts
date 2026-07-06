@@ -92,13 +92,24 @@ describe("check-learn-dream", () => {
     expect(result.output).toContain("2");
   });
 
-  test("exits 0 when listTranscriptMtimes returns null (read failure — permissive)", async () => {
+  test("exits 0 with non-empty output when listTranscriptMtimes returns null (read failure — permissive)", async () => {
     const deps = makeDeps({
       readLastRunAnchor: () => "2026-07-01T00:00:00.000Z",
       listTranscriptMtimes: () => null,
     });
     const result = await run(deps);
     expect(result.exit).toBe(0);
+    expect(result.output.length).toBeGreaterThan(0);
+  });
+
+  test("exits 0 with non-empty output when the anchor is unparsable (permissive)", async () => {
+    const deps = makeDeps({
+      readLastRunAnchor: () => "not-a-valid-date",
+      listTranscriptMtimes: () => [],
+    });
+    const result = await run(deps);
+    expect(result.exit).toBe(0);
+    expect(result.output.length).toBeGreaterThan(0);
   });
 });
 

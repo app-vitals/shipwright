@@ -56,12 +56,18 @@ export async function run(deps: Deps): Promise<RunResult> {
 
   // Read failure — unknown state, exit permissively
   if (mtimes === null) {
-    return { exit: 0, output: "" };
+    return {
+      exit: 0,
+      output: "Transcript read failed — running permissively.",
+    };
   }
 
   // Anchor unparsable — unknown state, exit permissively
   if (Number.isNaN(anchorMs)) {
-    return { exit: 0, output: "" };
+    return {
+      exit: 0,
+      output: "Anchor unparsable — running permissively.",
+    };
   }
 
   const newerCount = mtimes.filter((mtime) => mtime > anchorMs).length;
