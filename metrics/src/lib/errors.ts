@@ -3,6 +3,7 @@
  * Typed HTTP error classes for use across all service handlers.
  */
 
+import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import type { Context } from "hono";
 import type { AuthEnv } from "./api-auth.ts";
 
@@ -58,7 +59,17 @@ export class BadGatewayError extends ApiError {
   }
 }
 
-export function makeOnError(servicePrefix: string) {
+/**
+ * Shared onError factory used by every metrics app (createMetricsApp,
+ * createPublicMetricsApp) so error-mapping logic lives in one place. Optional
+ * `sentryClient` reports 5xx-mapped and unhandled errors to Sentry — omitted
+ * (undefined) means Sentry is not initialized (SENTRY_DSN unset), so the
+ * capture calls are simply skipped.
+ */
+export function makeOnError(
+  servicePrefix: string,
+  sentryClient?: ErrorCapturingClient,
+) {
   return (err: Error, c: Context<AuthEnv>) => {
     if (err.message.includes("Malformed JSON")) {
       return c.json({ error: "Invalid JSON body" }, 400);
@@ -66,6 +77,7 @@ export function makeOnError(servicePrefix: string) {
     if (err instanceof ApiError) {
       if (err.statusCode >= 500) {
         console.error(`[${servicePrefix}] error:`, err);
+        sentryClient?.captureException(err);
       }
       return c.json(
         { error: err.message },
@@ -73,6 +85,7 @@ export function makeOnError(servicePrefix: string) {
       );
     }
     console.error(`[${servicePrefix}] unhandled error:`, err);
+    sentryClient?.captureException(err);
     return c.json({ error: err.message }, 500);
   };
 }

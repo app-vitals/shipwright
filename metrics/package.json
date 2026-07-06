@@ -10,6 +10,8 @@
   },
   "dependencies": {
     "@hono/zod-openapi": "^0.18.3",
+    "@sentry/bun": "^10.63.0",
+    "@sentry/hono": "^10.63.0",
     "@shipwright/lib": "*",
     "hono": "^4",
     "openapi-fetch": "^0.13",

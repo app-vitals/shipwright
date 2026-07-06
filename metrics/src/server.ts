@@ -21,6 +21,8 @@
  *                                                     set METRICS_OFFLINE=true)
  */
 
+import * as Sentry from "@sentry/bun";
+import { initSentry } from "@shipwright/lib/sentry";
 import { Hono } from "hono";
 import { createMetricsApp, createPublicMetricsApp } from "./api.ts";
 import type { MetricsDeps } from "./api.ts";
@@ -36,6 +38,13 @@ import type { MetricsProvider } from "./metrics-provider.ts";
 import { selectProviderMode } from "./select-provider.ts";
 
 loadEnv();
+
+// Initializes Sentry (no-op when SENTRY_DSN is unset) so that startup failures
+// below are captured too. When SENTRY_DSN is set, createMetricsApp mounts
+// @sentry/hono's sentry() middleware, which performs its own equivalent
+// Sentry.init call using the same options — re-initializing with identical
+// options in api.ts is a safe no-op (same client config, no drift).
+initSentry({ service: "metrics" });
 
 // Fail fast if PUBLIC_MODE=true but PUBLIC_REPO is unset.
 validatePublicModeEnv();
@@ -137,6 +146,8 @@ if (mode === "fixtures") {
   );
 }
 
+deps.sentryClient = process.env.SENTRY_DSN ? Sentry : undefined;
+
 const metricsApp = createMetricsApp(
   parseApiKeys(process.env.METRICS_API_KEYS),
   accountsClient,
@@ -147,7 +158,12 @@ const metricsApp = createMetricsApp(
 // same root. Routes are pathed under /public/* so they never collide with the
 // authenticated /metrics/* + /dashboard routes.
 if (getPublicMode() && publicProvider) {
-  const publicApp = createPublicMetricsApp(publicProvider, basePath);
+  const publicApp = createPublicMetricsApp(
+    publicProvider,
+    basePath,
+    undefined,
+    deps.sentryClient,
+  );
   metricsApp.route("/", publicApp);
   console.log(
     `[metrics-api] PUBLIC mode enabled — /public/* scoped to repo "${getPublicRepo()}"`,

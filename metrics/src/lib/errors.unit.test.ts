@@ -97,6 +97,15 @@ describe("makeOnError", () => {
     return { ctx, calls };
   }
 
+  /** Matches lib/sentry.unit.test.ts's fake-client pattern — no mock.module(). */
+  function makeFakeSentryClient() {
+    const captured: unknown[] = [];
+    return {
+      client: { captureException: (err: unknown) => captured.push(err) },
+      captured,
+    };
+  }
+
   it("returns 400 for Malformed JSON", () => {
     const handler = makeOnError("test");
     const { ctx, calls } = makeCtx();
@@ -148,5 +157,79 @@ describe("makeOnError", () => {
     );
     expect(calls[0]?.status).toBe(500);
     expect(calls[0]?.body).toEqual({ error: "Something unexpected" });
+  });
+
+  it("works without a sentryClient argument (backward compatible)", () => {
+    const handler = makeOnError("test");
+    const { ctx, calls } = makeCtx();
+    expect(() =>
+      handler(
+        new Error("Something unexpected"),
+        ctx as Parameters<ReturnType<typeof makeOnError>>[1],
+      ),
+    ).not.toThrow();
+    expect(calls[0]?.status).toBe(500);
+  });
+
+  it("captures 5xx ApiError (e.g. BadGatewayError) to Sentry when sentryClient is provided", () => {
+    const { client, captured } = makeFakeSentryClient();
+    const handler = makeOnError("test", client);
+    const { ctx } = makeCtx();
+    const err = new BadGatewayError("Upstream failed");
+    handler(err, ctx as Parameters<ReturnType<typeof makeOnError>>[1]);
+    expect(captured).toEqual([err]);
+  });
+
+  it("does NOT capture 4xx ApiErrors (NotFoundError) to Sentry", () => {
+    const { client, captured } = makeFakeSentryClient();
+    const handler = makeOnError("test", client);
+    const { ctx } = makeCtx();
+    handler(
+      new NotFoundError("Widget not found"),
+      ctx as Parameters<ReturnType<typeof makeOnError>>[1],
+    );
+    expect(captured).toEqual([]);
+  });
+
+  it("does NOT capture 4xx ApiErrors (ConflictError) to Sentry", () => {
+    const { client, captured } = makeFakeSentryClient();
+    const handler = makeOnError("test", client);
+    const { ctx } = makeCtx();
+    handler(
+      new ConflictError("Already exists"),
+      ctx as Parameters<ReturnType<typeof makeOnError>>[1],
+    );
+    expect(captured).toEqual([]);
+  });
+
+  it("does NOT capture 4xx ApiErrors (BadRequestError) to Sentry", () => {
+    const { client, captured } = makeFakeSentryClient();
+    const handler = makeOnError("test", client);
+    const { ctx } = makeCtx();
+    handler(
+      new BadRequestError("Bad input"),
+      ctx as Parameters<ReturnType<typeof makeOnError>>[1],
+    );
+    expect(captured).toEqual([]);
+  });
+
+  it("captures unhandled (non-ApiError) errors to Sentry when sentryClient is provided", () => {
+    const { client, captured } = makeFakeSentryClient();
+    const handler = makeOnError("test", client);
+    const { ctx } = makeCtx();
+    const err = new Error("Something unexpected");
+    handler(err, ctx as Parameters<ReturnType<typeof makeOnError>>[1]);
+    expect(captured).toEqual([err]);
+  });
+
+  it("does NOT capture Malformed JSON errors to Sentry", () => {
+    const { client, captured } = makeFakeSentryClient();
+    const handler = makeOnError("test", client);
+    const { ctx } = makeCtx();
+    handler(
+      new Error("Malformed JSON in body"),
+      ctx as Parameters<ReturnType<typeof makeOnError>>[1],
+    );
+    expect(captured).toEqual([]);
   });
 });
