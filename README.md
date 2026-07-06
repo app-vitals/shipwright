@@ -174,6 +174,10 @@ Shipwright enforces a four-layer test architecture (unit / integration / smoke /
 
 All configuration options — plugin env vars, agent env vars, and policy fields — are documented in [`docs/configuration.md`](./docs/configuration.md).
 
+## Observability
+
+Optional Sentry error/log reporting, disabled by default and self-host-friendly. See [`docs/observability.md`](./docs/observability.md) for exactly what is collected.
+
 ## Contributing
 
 Issues and discussion are welcome. See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for conventions and workflow, and our [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md). This repository is MIT-licensed and public — please keep contributions free of any proprietary or confidential material.

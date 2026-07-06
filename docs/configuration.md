@@ -177,6 +177,17 @@ On Kubernetes these env vars are a deploy-time option of the Helm chart rather t
 
 ---
 
+## Observability
+
+Each of `admin`, `metrics`, `task-store`, and `agent` reads its own `SENTRY_DSN` from its own environment — there is no shared/global toggle. See [`docs/observability.md`](./observability.md) for exactly what is (and isn't) collected and how the scrub hooks work.
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `SENTRY_DSN` | `string` | — | Sentry error/log reporting DSN. Set per-service (each of `admin`, `metrics`, `task-store`, `agent` reads its own). When set, that service initializes Sentry with shared scrub hooks (`lib/sentry.ts`) that redact secrets and strip sensitive headers. When unset, Sentry is fully inert for that service (no init call, zero telemetry). Works with self-hosted Sentry instances — point the DSN at your own instance/project. Env-var-only (secret). |
+| `SENTRY_ENVIRONMENT` | `string` | — | Sentry environment tag for the service. Defaults to `NODE_ENV` if unset, then `production`. Passed as the `environment` field in Sentry init options. Optional alongside `SENTRY_DSN`. |
+
+---
+
 ## Policy Config
 
 Agent behavior is controlled by `state/agent-policy.md`. This is a Markdown file with a YAML front-matter block. Edit it directly to change review posting, merge permissions, and autonomy levels without reconfiguring crons or restarting the agent.

@@ -171,3 +171,4 @@ To load additional context into a session, add `@docs/filename.md` entries here 
 - **docs/quickstart.md** — local onboarding: metrics-only quickstart and the full dev stack (`task stack`)
 - **docs/test-readiness/test-system.md** — the authoritative test blueprint: layer matrix, boundary rules, per-component budgets, CI pipeline shape, and the full isolation contract
 - **docs/migration.md** — breaking changes and migration steps across versions (e.g. `AgentProvisioner.reconcile()` interface change)
+- **docs/observability.md** — Sentry error/log reporting: what's collected, what's scrubbed, how to disable, and self-hosted Sentry support
