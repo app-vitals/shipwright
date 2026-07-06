@@ -333,10 +333,7 @@ function makeCostEfficiencyHandler(
     const startMs = Date.now();
 
     try {
-      const result = await provider.query({
-        kind: "costEfficiency",
-        range: dateRange,
-      });
+      const result = await provider.query({ kind: "costEfficiency", range: dateRange });
 
       const scopeIdx = result.columns.indexOf("scope");
       const modelIdx = result.columns.indexOf("model_family");
@@ -379,37 +376,18 @@ function makeCostEfficiencyHandler(
         const savingsUsd = toNum(row[savingsIdx]);
 
         if (scope === "fleet") {
-          fleetByModel.push({
-            modelFamily,
-            routedUsd,
-            counterfactualOpusUsd: opusUsd,
-            savingsUsd,
-          });
+          fleetByModel.push({ modelFamily, routedUsd, counterfactualOpusUsd: opusUsd, savingsUsd });
           fleetRoutedUsd += routedUsd;
           fleetOpusUsd += opusUsd;
         } else if (scope.startsWith("agent:")) {
           const agentId = scope.slice("agent:".length);
-          const savingsPct =
-            opusUsd > 0
-              ? Math.round((savingsUsd / opusUsd) * 10000) / 100
-              : null;
-          byAgentModel.push({
-            agentId,
-            modelFamily,
-            routedUsd,
-            counterfactualOpusUsd: opusUsd,
-            savingsUsd,
-            savingsPct,
-          });
+          const savingsPct = opusUsd > 0
+            ? Math.round((savingsUsd / opusUsd) * 10000) / 100
+            : null;
+          byAgentModel.push({ agentId, modelFamily, routedUsd, counterfactualOpusUsd: opusUsd, savingsUsd, savingsPct });
         } else if (scope.startsWith("cron:")) {
           const cronKey = scope.slice("cron:".length);
-          byCronModel.push({
-            cronKey,
-            modelFamily,
-            routedUsd,
-            counterfactualOpusUsd: opusUsd,
-            savingsUsd,
-          });
+          byCronModel.push({ cronKey, modelFamily, routedUsd, counterfactualOpusUsd: opusUsd, savingsUsd });
         }
       }
 
@@ -420,9 +398,7 @@ function makeCostEfficiencyHandler(
           : null;
 
       const runsTotal = new Set(byCronModel.map((r) => r.cronKey)).size;
-      const runsWithCostData = new Set(
-        byCronModel.filter((r) => r.routedUsd > 0).map((r) => r.cronKey),
-      ).size;
+      const runsWithCostData = new Set(byCronModel.filter((r) => r.routedUsd > 0).map((r) => r.cronKey)).size;
 
       return c.json(
         wrapResponse(
@@ -1159,12 +1135,7 @@ export function createMetricsApp(
   registerWithAuthz(app, featuresRoute, metricsPolicy, handleFeatures);
   registerWithAuthz(app, queueRoute, metricsPolicy, handleQueue);
   registerWithAuthz(app, tokensRoute, metricsPolicy, handleTokens);
-  registerWithAuthz(
-    app,
-    costEfficiencyRoute,
-    metricsPolicy,
-    makeCostEfficiencyHandler(provider),
-  );
+  registerWithAuthz(app, costEfficiencyRoute, metricsPolicy, makeCostEfficiencyHandler(provider));
 
   // ─── Dashboard static files ───────────────────────────────────────────────
 
@@ -1470,9 +1441,7 @@ export function createPublicMetricsApp(
     app,
     publicCostEfficiencyRoute,
     PUBLIC_POLICY,
-    makeCostEfficiencyHandler(provider) as unknown as AppHandler<
-      typeof publicCostEfficiencyRoute
-    >,
+    makeCostEfficiencyHandler(provider) as unknown as AppHandler<typeof publicCostEfficiencyRoute>,
   );
 
   // Token usage is owner-only telemetry — not exposed publicly.
