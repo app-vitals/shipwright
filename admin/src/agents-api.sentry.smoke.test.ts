@@ -6,8 +6,10 @@
  * Asserts:
  *   - an unhandled (non-ApiError) error triggers sentryClient.captureException
  *     when a fake sentryClient is injected via AdminDeps
- *   - ApiError instances (expected, typed errors mapped to real HTTP status
- *     codes) do NOT trigger captureException
+ *   - 4xx ApiError instances (expected, typed client errors mapped to real
+ *     HTTP status codes) do NOT trigger captureException
+ *   - 5xx ApiError instances (server faults, e.g. BadGatewayError) DO trigger
+ *     captureException
  *   - with no sentryClient dep (undefined — Sentry not initialized), onError
  *     does not throw and behaves exactly as before
  */
@@ -18,7 +20,7 @@ import type { AgentEnvService } from "./agent-envs.ts";
 import type { AgentProvisioner, ProvisionResult } from "./agent-provisioner.ts";
 import { createAdminApp } from "./agents-api.ts";
 import type { AdminDeps } from "./agents-api.ts";
-import { NotFoundError } from "./errors.ts";
+import { BadGatewayError, NotFoundError } from "./errors.ts";
 
 const AGENT_ID = "agent-test-123";
 const VALID_BEARER_TOKEN = "valid-bearer-token-value";
@@ -73,6 +75,20 @@ function apiErrorAgentEnvService(): AdminDeps["agentEnvService"] {
       get() {
         return async () => {
           throw new NotFoundError("agent not found");
+        };
+      },
+    },
+  ) as AgentEnvService;
+}
+
+/** An AgentEnvService whose getByAgentId throws a 5xx ApiError (BadGatewayError). */
+function serverFaultAgentEnvService(): AdminDeps["agentEnvService"] {
+  return new Proxy(
+    {},
+    {
+      get() {
+        return async () => {
+          throw new BadGatewayError("upstream Kubernetes API failed");
         };
       },
     },
@@ -181,7 +197,7 @@ describe("onError — Sentry capture wiring", () => {
     );
   });
 
-  it("does NOT call sentryClient.captureException for a typed ApiError", async () => {
+  it("does NOT call sentryClient.captureException for a 4xx ApiError", async () => {
     const sentryClient = fakeErrorCapturingClient();
     const app = createAdminApp({
       ...makeBaseDeps(apiErrorAgentEnvService()),
@@ -194,6 +210,24 @@ describe("onError — Sentry capture wiring", () => {
 
     expect(res.status).toBe(404);
     expect(sentryClient.capturedErrors.length).toBe(0);
+  });
+
+  it("calls sentryClient.captureException for a 5xx ApiError (server fault)", async () => {
+    const sentryClient = fakeErrorCapturingClient();
+    const app = createAdminApp({
+      ...makeBaseDeps(serverFaultAgentEnvService()),
+      sentryClient,
+    });
+
+    const res = await app.request(`/agents/${AGENT_ID}/envs`, {
+      headers: { Authorization: `Bearer ${VALID_BEARER_TOKEN}` },
+    });
+
+    expect(res.status).toBe(502);
+    expect(sentryClient.capturedErrors.length).toBe(1);
+    expect((sentryClient.capturedErrors[0] as Error).message).toBe(
+      "upstream Kubernetes API failed",
+    );
   });
 
   it("does not throw when sentryClient is undefined (Sentry not initialized)", async () => {

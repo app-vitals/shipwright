@@ -804,10 +804,17 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
   });
 
   app.onError((err, c) => {
-    if (err instanceof ApiError) {
+    if (err instanceof ApiError && err.statusCode < 500) {
       return c.json(
         { error: err.message },
-        err.statusCode as 400 | 401 | 403 | 404 | 409 | 422 | 500 | 502,
+        err.statusCode as 400 | 401 | 403 | 404 | 409 | 422,
+      );
+    }
+    if (err instanceof ApiError) {
+      sentryClient?.captureException(err);
+      return c.json(
+        { error: err.message },
+        err.statusCode as 500 | 502,
       );
     }
     sentryClient?.captureException(err);
