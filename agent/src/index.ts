@@ -14,6 +14,8 @@
  */
 
 import { join } from "node:path";
+import * as Sentry from "@sentry/bun";
+import { initSentry } from "@shipwright/lib/sentry";
 import { WebClient } from "@slack/web-api";
 import nodeCron from "node-cron";
 import { createAnalyticsStore } from "./analytics.ts";
@@ -56,6 +58,13 @@ for (const level of ["log", "warn", "error"] as const) {
   console[level] = (...args: unknown[]) =>
     orig(`[${new Date().toISOString()}]`, ...args);
 }
+
+// ─── Sentry (no-op when SENTRY_DSN is unset) ─────────────────────────────────
+// Placed AFTER the console monkeypatch above so Sentry's consoleLoggingIntegration
+// wraps on top of it — this captures clean log args in Sentry while local
+// output keeps its timestamp prefix.
+
+initSentry({ service: "agent" });
 
 // ─── Step 1: Agent home ───────────────────────────────────────────────────────
 
@@ -120,7 +129,14 @@ const cronDeps: CronHandlerDeps = {
 const healthPort = Number(
   process.env.SHIPWRIGHT_HEALTH_PORT ?? DEFAULT_HEALTH_PORT,
 );
-startHealthServer(healthPort, analytics.summarize, cronDeps, slackClock);
+startHealthServer(
+  healthPort,
+  analytics.summarize,
+  cronDeps,
+  slackClock,
+  undefined,
+  process.env.SENTRY_DSN ? Sentry : undefined,
+);
 console.log(`[agent] health server on port ${healthPort}`);
 
 // ─── Step 3: mise + default plugins ──────────────────────────────────────────
