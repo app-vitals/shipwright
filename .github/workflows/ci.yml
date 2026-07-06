@@ -13,9 +13,9 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_USER: metrics
-          POSTGRES_PASSWORD: metrics
-          POSTGRES_DB: metrics_test
+          POSTGRES_USER: shipwright
+          POSTGRES_PASSWORD: shipwright
+          POSTGRES_DB: shipwright_admin_test
         ports:
           - 5432:5432
         options: >-
@@ -24,10 +24,18 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      METRICS_DATABASE_URL: postgres://metrics:metrics@localhost:5432/metrics_test
-      # The Postgres integration tests gate on METRICS_TEST_POSTGRES_URL (postgres-provider.integration.test.ts);
-      # without it the suite silently skips even though the postgres service is up.
-      METRICS_TEST_POSTGRES_URL: postgres://metrics:metrics@localhost:5432/metrics_test
+      # Admin and task-store integration tests (admin/src/*.integration.test.ts,
+      # task-store/src/*.integration.test.ts) gate on the *_TEST vars below and
+      # skip silently when absent.
+      DATABASE_URL_ADMIN_TEST: postgres://shipwright:shipwright@localhost:5432/shipwright_admin_test
+      DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST: postgres://shipwright:shipwright@localhost:5432/shipwright_task_store_test
+      # The schema.prisma files read the non-_TEST var names below (per their
+      # own `datasource db { url = env(...) }` declarations), so `prisma migrate
+      # deploy` needs these set to the same connection strings as the _TEST vars
+      # above to sync schema against the right databases. Nothing else in this
+      # job reads these two vars at runtime.
+      DATABASE_URL_SHIPWRIGHT_ADMIN: postgres://shipwright:shipwright@localhost:5432/shipwright_admin_test
+      DATABASE_URL_SHIPWRIGHT_TASK_STORE: postgres://shipwright:shipwright@localhost:5432/shipwright_task_store_test
     steps:
       - uses: actions/checkout@v4
 
@@ -54,6 +62,14 @@ jobs:
 
       - name: Check config docs
         run: task check-config-docs
+
+      - name: Create task-store test database
+        run: PGPASSWORD=shipwright psql -h localhost -U shipwright -d shipwright_admin_test -c "CREATE DATABASE shipwright_task_store_test;"
+
+      - name: Sync test DB schema
+        run: |
+          bunx prisma migrate deploy --schema=admin/prisma/schema.prisma
+          bunx prisma migrate deploy --schema=task-store/prisma/schema.prisma
 
       - name: Test
         run: task test
