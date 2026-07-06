@@ -266,6 +266,13 @@ metrics:
     # -- Repo slug the public surface is hard-scoped to, never user-selectable
     # (injects SHIPWRIGHT_METRICS_PUBLIC_REPO). e.g. "app-vitals/shipwright".
     repo: ""
+  # -- Optional Sentry error reporting for the metrics service. Leave
+  # dsn.existingSecret empty to disable (no Sentry init, no middleware mounted).
+  sentry:
+    dsn:
+      existingSecret: ""
+      key: SENTRY_DSN
+    environment: ""
 
 # -- Agent service (@shipwright/agent) — autonomous runner + admin CRUD. Port 3000.
 agent:

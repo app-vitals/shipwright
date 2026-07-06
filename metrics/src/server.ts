@@ -21,6 +21,8 @@
  *                                                     set METRICS_OFFLINE=true)
  */
 
+import * as Sentry from "@sentry/bun";
+import { initSentry } from "@shipwright/lib/sentry";
 import { Hono } from "hono";
 import { createMetricsApp, createPublicMetricsApp } from "./api.ts";
 import type { MetricsDeps } from "./api.ts";
@@ -36,6 +38,14 @@ import type { MetricsProvider } from "./metrics-provider.ts";
 import { selectProviderMode } from "./select-provider.ts";
 
 loadEnv();
+
+// Initializes Sentry (no-op when SENTRY_DSN is unset). createMetricsApp and
+// createPublicMetricsApp additionally mount @sentry/hono's sentry() middleware
+// (built from the same options via buildSentryInitOptions) when SENTRY_DSN is
+// set — re-initializing there with identical options is a safe no-op.
+initSentry({ service: "metrics" });
+
+const sentryClient = process.env.SENTRY_DSN ? Sentry : undefined;
 
 // Fail fast if PUBLIC_MODE=true but PUBLIC_REPO is unset.
 validatePublicModeEnv();
@@ -82,6 +92,7 @@ if (mode === "fixtures") {
     offlineMode: true,
     dashboardDevAuth,
     basePath,
+    sentryClient,
   };
   // Fixtures carry no repo attribution, so a repo filter would empty the table.
   // Offline public mode reuses the unscoped fixture provider for a live preview.
@@ -122,6 +133,7 @@ if (mode === "fixtures") {
     dashboardToken: process.env.METRICS_DASHBOARD_TOKEN,
     dashboardDevAuth,
     basePath,
+    sentryClient,
   };
   // Repo-scoped provider for the public surface (same clients, repo injected).
   if (getPublicMode()) {
@@ -147,7 +159,12 @@ const metricsApp = createMetricsApp(
 // same root. Routes are pathed under /public/* so they never collide with the
 // authenticated /metrics/* + /dashboard routes.
 if (getPublicMode() && publicProvider) {
-  const publicApp = createPublicMetricsApp(publicProvider, basePath);
+  const publicApp = createPublicMetricsApp(
+    publicProvider,
+    basePath,
+    undefined,
+    sentryClient,
+  );
   metricsApp.route("/", publicApp);
   console.log(
     `[metrics-api] PUBLIC mode enabled — /public/* scoped to repo "${getPublicRepo()}"`,
