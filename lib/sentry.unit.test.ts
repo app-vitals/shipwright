@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import type { ErrorCapturingClient } from "./sentry.ts";
 import { SECRET_ENV_VARS, initSentry, scrubEvent, scrubLog } from "./sentry.ts";
 
 function createFakeSentryClient() {
@@ -9,18 +8,6 @@ function createFakeSentryClient() {
       calls.push(options);
     },
     calls,
-  };
-}
-
-function createFakeErrorCapturingClient(): ErrorCapturingClient & {
-  capturedErrors: unknown[];
-} {
-  const capturedErrors: unknown[] = [];
-  return {
-    captureException: (err: unknown) => {
-      capturedErrors.push(err);
-    },
-    capturedErrors,
   };
 }
 
@@ -119,17 +106,6 @@ describe("initSentry — SENTRY_DSN set", () => {
     const options = fakeClient.calls[0] as { integrations: unknown[] };
     expect(Array.isArray(options.integrations)).toBe(true);
     expect(options.integrations.length).toBeGreaterThan(0);
-  });
-});
-
-describe("ErrorCapturingClient — captureException injection point", () => {
-  test("a fake client satisfying the ErrorCapturingClient shape records captured errors", () => {
-    const fakeClient = createFakeErrorCapturingClient();
-    const err = new Error("boom");
-
-    fakeClient.captureException(err);
-
-    expect(fakeClient.capturedErrors).toEqual([err]);
   });
 });
 
