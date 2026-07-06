@@ -5,7 +5,11 @@ import { createMcpServer } from "./mcp-server.ts";
 
 describe("MCP server tools/list", () => {
   it("lists the generated tools over a JSON-RPC connection", async () => {
-    const server = createMcpServer();
+    // Pass a stub config so configFromEnv() is not called in CI where
+    // SHIPWRIGHT_TASK_STORE_URL / SHIPWRIGHT_TASK_STORE_TOKEN are unset.
+    const server = createMcpServer({
+      config: { baseUrl: "http://localhost:3002", token: "test-token" },
+    });
     const [clientTransport, serverTransport] =
       InMemoryTransport.createLinkedPair();
 
