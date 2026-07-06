@@ -64,7 +64,7 @@ A small in-memory HTML store for short-lived, regenerable artifacts (one-pagers,
 
 ## MCP Server
 
-A Model Context Protocol (MCP) server that exposes the task-store HTTP API as discoverable MCP tools (`@shipwright/mcp-server`). Tools are generated automatically from the task-store OpenAPI specification — the `generate-mcp-tools` script (`scripts/generate-mcp-tools.ts`) reads `task-store/openapi.json` and emits tool definitions (name, description, JSON-Schema) plus routing metadata (HTTP method, path template, query/path parameters).
+A Model Context Protocol (MCP) server that exposes a curated subset of the task-store HTTP API as discoverable MCP tools (`@shipwright/mcp-server`). Tools are generated automatically from the task-store OpenAPI specification — the `generate-mcp-tools` script (`scripts/generate-mcp-tools.ts`) reads `task-store/openapi.json` and emits tool definitions (name, description, JSON-Schema) plus routing metadata (HTTP method, path template, query/path parameters). The allowlist (`mcp-server/src/tool-allowlist.ts`) then filters the generated set down to the agreed public surface: read operations (`tasks_list`, `tasks_get`, `prs_list`, `prs_get`), ordinary field edits (`tasks_create`, `tasks_update`, `prs_update`), and bulk reads (`tasks_bulk`, `tasks_distinct`). Pipeline-internal lifecycle ops (claim, heartbeat, complete, fail, release), destructive ops (delete), and all token-management routes are excluded.
 
 **Transport:**
 
