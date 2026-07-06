@@ -84,7 +84,7 @@ Prerequisites: tmux, Docker, PostgreSQL running on localhost:5432, Bun, go-task.
      task stack
 
    This opens a tmux session named "shipwright" with 6 panes:
-     metrics (:3460)  admin (:3001)  task-store (:3002)  agent (:3000)  chat  logs
+     metrics (:3460)  admin (:3001)  task-store (:3002)  chat-svc (:3003)  agent  logs
 
 4. Open the dashboard in your browser:
      http://localhost:3460/dashboard
@@ -109,7 +109,7 @@ It runs in **your** environment, on **your** codebase — you own it, it's MIT, 
 Shipwright turns a feature idea into shipped, reviewed code through a sequence of Claude Code commands — each stage producing a durable artifact the next stage consumes:
 
 - **Write a PRD** for your idea — a structured product spec ready for /plan-session.
-- **Plan** the spec into a queue of well-scoped, dependency-ordered tasks (tracked as **GitHub Issues** — the queue lives where your team already works).
+- **Plan** the spec into a queue of well-scoped, dependency-ordered tasks (tracked in the **Shipwright task store** — a shared queue any agent or contributor can query).
 - **Execute** the next ready task — build, test, and open a PR.
 - **Review** the PR with policy-controlled, inline feedback.
 - **Ship** the merged change.
@@ -141,7 +141,7 @@ Shipwright turns a feature idea into shipped, reviewed code through a sequence o
 /shipwright:deploy         → merge + deploy
 ```
 
-Tasks are tracked as GitHub Issues, so the queue lives where your team already works.
+Tasks are tracked in the Shipwright task store (see [`docs/task-store.md`](./docs/task-store.md)), so the queue is shared across every agent working the pipeline.
 
 ## Project status
 
@@ -158,7 +158,7 @@ task dev        # dev supervisor: starts metrics + Ctrl-C kills all children
 task stack      # full dev stack in a tmux session (6 panes) — requires tmux
 ```
 
-`task stack` brings up a single tmux session (`shipwright`) with a 6-pane dashboard: **metrics** (SQLite, :3460), **admin** (CRUD API + UI, :3001), **task-store** (:3002), the **agent** with the dev `/chat` endpoint enabled (:3000), the **chat** REPL, and a scratch **logs** shell. It runs a Prisma `migrate deploy` preflight first so the admin service's Postgres schema is up to date; on macOS the preflight checks Postgres is reachable and offers to run the needed `brew`/`createdb` commands if it isn't. `task stack` requires `tmux`; if it isn't installed, use `task dev` (the no-tmux fallback that starts the metrics dashboard).
+`task stack` brings up a single tmux session (`shipwright`) with a 6-pane dashboard: **metrics** (SQLite, :3460), **admin** (CRUD API + UI, :3001), **task-store** (:3002), **chat-svc** (the chat service, :3003), the **agent** in Docker with the chat poll loop enabled, and a scratch **logs** shell. Chatting with the agent happens in the browser via the admin console's Chat tab (`/admin/chat`), not a REPL or an endpoint on the agent itself. It runs a Prisma `migrate deploy` preflight first so the admin service's Postgres schema is up to date; on macOS the preflight checks Postgres is reachable and offers to run the needed `brew`/`createdb` commands if it isn't. `task stack` requires `tmux`; if it isn't installed, use `task dev` (the no-tmux fallback that starts the metrics dashboard).
 
 See [`docs/quickstart.md`](./docs/quickstart.md) for the full onboarding prompt and offline-default behavior.
 
