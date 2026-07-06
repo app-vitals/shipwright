@@ -178,10 +178,10 @@ export function buildTaskStoreSpec(): Record<string, unknown> {
 }
 
 /** Write the spec to task-store/openapi.json. */
-export function generateTaskStoreSpec(outDir?: string): void {
+export function generateTaskStoreSpec(outPath?: string): void {
   const spec = buildTaskStoreSpec();
-  const resolvedOutDir =
-    outDir ?? resolve(import.meta.dir, "../openapi.json");
-  writeFileSync(resolvedOutDir, `${JSON.stringify(spec, null, 2)}\n`);
-  console.log(`Written to ${resolvedOutDir}`);
+  const resolvedOutPath =
+    outPath ?? resolve(import.meta.dir, "../openapi.json");
+  writeFileSync(resolvedOutPath, `${JSON.stringify(spec, null, 2)}\n`);
+  console.log(`Written to ${resolvedOutPath}`);
 }
