@@ -64,7 +64,7 @@ describeOrSkip("task-store API (integration)", () => {
     const res = await app.request("/tasks", {
       method: "POST",
       headers: auth(),
-      body: JSON.stringify({ title, status: "pending" }),
+      body: JSON.stringify({ title, status: "pending", repo: null }),
     });
     expect(res.status).toBe(201);
     const body = (await res.json()) as { id: string };

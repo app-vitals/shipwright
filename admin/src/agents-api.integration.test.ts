@@ -123,7 +123,7 @@ describeOrSkip("admin CRUD API (integration)", () => {
           Cookie: `admin_session=${cookie}`,
         },
       });
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(201);
 
       // Raw DB value should be encrypted (not plain text)
       const raw = await prisma.agentEnv.findFirst({
