@@ -10,7 +10,7 @@
  * - GET /tokens shows hash metadata only (no rawToken)
  */
 
-import { beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { sign } from "hono/jwt";
 import { PrismaClient } from "../prisma/client/index.js";
 import { AgentChatTokenService } from "./agent-chat-tokens.ts";
@@ -102,6 +102,10 @@ describeOrSkip("admin CRUD API (integration)", () => {
     };
 
     app = createAdminApp(deps);
+  });
+
+  afterEach(async () => {
+    await prisma.$disconnect();
   });
 
   // ─── Env var encryption ───────────────────────────────────────────────────────
