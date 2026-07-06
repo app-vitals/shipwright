@@ -414,7 +414,7 @@ export async function installPlugins(
  *
  * Safe to call on every startup:
  * - Identity/skill files are seeded once with wx semantics (user edits preserved)
- * - state/todos.json, state/reviews.json, state/agent-policy.md are seeded once if absent
+ * - state/agent-policy.md is seeded once if absent
  *
  * Throws if required directories cannot be created.
  */
@@ -575,15 +575,6 @@ export function ensureAgentHome(home: string): void {
     join(workspaceDir, "requirements.txt"),
     readTemplate("requirements.txt.template"),
   );
-
-  // Seed state/todos.json — shipwright work queue
-  seedFile(
-    join(stateDir, "todos.json"),
-    readTemplate("state/todos.json.template"),
-  );
-
-  // Seed state/reviews.json — review tracking
-  seedFile(join(stateDir, "reviews.json"), "[]\n");
 
   // Create state/reviews/ directory for review artifacts (PR_REVIEW files)
   mkdirSync(join(stateDir, "reviews"), { recursive: true });

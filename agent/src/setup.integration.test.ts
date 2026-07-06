@@ -346,22 +346,14 @@ describe("ensureAgentHome", () => {
     expect(between.trim()).toBe("");
   });
 
-  it("seeds state/todos.json as empty array", () => {
+  it("does not seed state/todos.json or state/reviews.json (superseded by the task-store HTTP API)", () => {
     ensureAgentHome(testHome);
-    const todosPath = join(testHome, "workspace", "state", "todos.json");
-    expect(existsSync(todosPath)).toBe(true);
-    const todos = JSON.parse(readFileSync(todosPath, "utf8"));
-    expect(Array.isArray(todos)).toBe(true);
-    expect(todos).toHaveLength(0);
-  });
-
-  it("seeds state/reviews.json as empty array", () => {
-    ensureAgentHome(testHome);
-    const reviewsPath = join(testHome, "workspace", "state", "reviews.json");
-    expect(existsSync(reviewsPath)).toBe(true);
-    const reviews = JSON.parse(readFileSync(reviewsPath, "utf8"));
-    expect(Array.isArray(reviews)).toBe(true);
-    expect(reviews).toHaveLength(0);
+    expect(
+      existsSync(join(testHome, "workspace", "state", "todos.json")),
+    ).toBe(false);
+    expect(
+      existsSync(join(testHome, "workspace", "state", "reviews.json")),
+    ).toBe(false);
   });
 
   it("creates state/reviews/ directory", () => {
