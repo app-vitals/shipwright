@@ -4,7 +4,7 @@
  *
  * Exported as a pure function so it can be called from:
  *   - scripts/generate-task-store-spec.ts (the CLI entry point)
- *   - task-store/src/generate-spec.unit.test.ts (for automated verification)
+ *   - task-store/src/generate-spec.test.ts (for automated verification)
  *
  * Instantiates the tasks, tokens, and prs sub-apps with minimal stubs
  * (no real DB, no real services), calls getOpenAPI31Document() on each, and
