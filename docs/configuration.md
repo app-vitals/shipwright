@@ -22,15 +22,13 @@ Configuration for the Shipwright Claude Code plugin (`plugins/shipwright/`). The
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `JIRA_BASE_URL` | `string` | — | Base URL of the Jira instance (e.g. `https://example.atlassian.net`). Required when using the Jira backend. |
-| `JIRA_PROJECT_KEY` | `string` | — | Jira project key (e.g. `SHIP`). Required when using the Jira backend. |
 | `SHIPWRIGHT_REPOS_DIR` | `string` | `<AGENT_HOME>/workspace/repos` | Override the workspace repos directory. Used by scripts that need to know where checked-out repos live. |
 | `SHIPWRIGHT_WORKTREE_DIR` | `string` | `<AGENT_HOME>/workspace/worktrees` | Override the workspace worktrees directory. |
 | `GH_CMD` | `string` | `gh` | Override the `gh` CLI executable. Useful in environments where `gh` is installed to a non-default path. |
 | `AGENT_HOME` | `string` | `/data/agent-home` | Persistent storage root for workspace files, mise caches, and `~/.claude`. Set in the agent container; also used by plugin scripts for workspace discovery. |
 | `WORKSPACE_PATH` | `string` | — | Direct workspace path override. Takes precedence over `AGENT_HOME`-based discovery when set. |
-| `JIRA_API_TOKEN` | `string` | — | API token for Jira authentication. Required when `taskStore` is `"jira"`. Env-var-only (secret). |
-| `JIRA_EMAIL` | `string` | — | Email address for Jira authentication. Required when `taskStore` is `"jira"`. |
+| `SHIPWRIGHT_TASK_STORE_URL` | `string` | — | Base URL of the Shipwright task-store HTTP service — the only task-store backend. Required (alongside `SHIPWRIGHT_TASK_STORE_TOKEN`) for `dev-task`, `review`, `patch`, `deploy`, and the `task-store` skill to function. |
+| `SHIPWRIGHT_TASK_STORE_TOKEN` | `string` | — | Bearer token for task-store API access. See the [Metrics & Admin & Chat & Task-Store services](#metrics--admin--chat--task-store-services) table below for how it's minted and injected for managed agents. Env-var-only (secret). |
 
 ---
 
