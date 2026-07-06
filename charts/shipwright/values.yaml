@@ -532,6 +532,13 @@ taskStore:
   # wiring (e.g. SHIPWRIGHT_TASK_STORE_AGENTS_URL + AGENTS_API_KEY for the
   # scope resolver) without baking those into the chart template.
   extraEnv: []
+  # -- Optional Sentry error reporting for the task-store service. Leave
+  # dsn.existingSecret empty to disable (no Sentry init, no middleware mounted).
+  sentry:
+    dsn:
+      existingSecret: ""
+      key: SENTRY_DSN
+    environment: ""
   # -- ServiceAccount for the task-store pod. Set create: false and name: <sa>
   # to reuse an existing SA (e.g. the umbrella chart'''s Workload Identity SA).
   serviceAccount:

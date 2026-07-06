@@ -22,6 +22,16 @@ export interface SentryClient {
   init: (options: Record<string, unknown>) => void;
 }
 
+/**
+ * Narrowed to the one method callers need to report unhandled errors, so tests
+ * can inject a fake without mock.module(). Mirrors the SentryClient pattern —
+ * the real `Sentry` from `@sentry/bun` satisfies this shape via its
+ * `captureException` export.
+ */
+export interface ErrorCapturingClient {
+  captureException: (err: unknown) => void;
+}
+
 /** Secret-shaped env vars redacted from Sentry events/logs when currently set to a non-empty value. */
 export const SECRET_ENV_VARS = [
   "ANTHROPIC_API_KEY",
@@ -62,7 +72,7 @@ function redactSecrets<T>(
   if (secrets.length === 0) return value;
 
   if (typeof value === "string") {
-    let result = value;
+    let result: string = value;
     for (const secret of secrets) {
       if (result.includes(secret)) {
         result = result.split(secret).join("[Filtered]");
@@ -130,15 +140,20 @@ export function scrubLog(log: SentryLog): SentryLog {
   return redactSecrets(log, liveSecretValues(), new WeakSet(), 0);
 }
 
-/** No-ops (zero telemetry, no init call) when SENTRY_DSN is unset. */
-export function initSentry(
+/**
+ * Builds the init options `initSentry` passes to `sentryClient.init` — shared
+ * with callers (like `@sentry/hono`'s `sentry()` middleware) that must
+ * perform their own `Sentry.init` call, so every init site gets the same
+ * enableLogs/environment/scrub-hook config instead of each duplicating it.
+ * Returns `undefined` when SENTRY_DSN is unset (nothing to init).
+ */
+export function buildSentryInitOptions(
   opts: InitSentryOptions,
-  sentryClient: SentryClient = Sentry,
-): void {
+): Record<string, unknown> | undefined {
   const dsn = process.env.SENTRY_DSN;
-  if (!dsn) return;
+  if (!dsn) return undefined;
 
-  sentryClient.init({
+  return {
     dsn,
     enableLogs: true,
     integrations: [
@@ -149,5 +164,16 @@ export function initSentry(
     initialScope: { tags: { service: opts.service } },
     beforeSend: scrubEvent,
     beforeSendLog: scrubLog,
-  });
+  };
+}
+
+/** No-ops (zero telemetry, no init call) when SENTRY_DSN is unset. */
+export function initSentry(
+  opts: InitSentryOptions,
+  sentryClient: SentryClient = Sentry,
+): void {
+  const options = buildSentryInitOptions(opts);
+  if (!options) return;
+
+  sentryClient.init(options);
 }

@@ -21,6 +21,11 @@
  * Thrown ApiError subclasses are mapped to HTTP responses by the onError hook.
  */
 
+import { sentry } from "@sentry/hono/bun";
+import {
+  type ErrorCapturingClient,
+  buildSentryInitOptions,
+} from "@shipwright/lib/sentry";
 import { Hono } from "hono";
 import { type TaskStoreAuthEnv, createBearerAuthMiddleware } from "./auth.ts";
 import { type DocStoreLike, createDocStore } from "./doc-store.ts";
@@ -76,6 +81,13 @@ export interface TaskStoreDeps {
    * POST /docs. Falls back to the request's own origin when unset.
    */
   docPublicBaseUrl?: string;
+  /**
+   * Optional Sentry client for reporting unhandled errors. Undefined means
+   * Sentry is not initialized (SENTRY_DSN unset) — onError simply skips the
+   * capture call. Production wiring in main.ts passes the real `Sentry` from
+   * `@sentry/bun` only when SENTRY_DSN is set.
+   */
+  sentryClient?: ErrorCapturingClient;
 }
 
 export function createTaskStoreApp(
@@ -84,11 +96,24 @@ export function createTaskStoreApp(
   const app = new Hono<TaskStoreAuthEnv>();
   const docStore = deps.docStore ?? createDocStore();
 
+  // Only mounted when SENTRY_DSN is set — a complete no-op otherwise, matching
+  // the app's behavior with Sentry absent. `@sentry/hono`'s `sentry()`
+  // middleware performs its own `Sentry.init` call internally (that's how the
+  // SDK integrates with Hono), so it must be the *sole* init site — main.ts
+  // does not also call `initSentry()` when serving this app. Options are
+  // built via the same `buildSentryInitOptions` helper `initSentry` uses, so
+  // scrub hooks / environment / service tag stay identical across services.
+  const sentryInitOptions = buildSentryInitOptions({ service: "task-store" });
+  if (sentryInitOptions) {
+    app.use("*", sentry(app, sentryInitOptions));
+  }
+
   // Map typed errors to responses; everything else is a 500.
   app.onError((err, c) => {
     if (err instanceof ApiError) {
       return c.json({ error: err.message }, err.statusCode as 400);
     }
+    deps.sentryClient?.captureException(err);
     console.error("[task-store] unhandled error:", err);
     const message = err instanceof Error ? err.message : String(err);
     return c.json({ error: message }, 500);
