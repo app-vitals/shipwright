@@ -72,7 +72,7 @@ function redactSecrets<T>(
   if (secrets.length === 0) return value;
 
   if (typeof value === "string") {
-    let result = value;
+    let result: string = value;
     for (const secret of secrets) {
       if (result.includes(secret)) {
         result = result.split(secret).join("[Filtered]");
