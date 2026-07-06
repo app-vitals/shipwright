@@ -66,6 +66,17 @@ Delegate the heavy reading to the `learning-dreamer` agent. It:
      team trusts the dream job — and only with `CLAUDE.md` under version control, so
      every dreamed change is reviewable in the diff and revertable.
 
+7. **Records the run.** On successful completion (either mode), write
+   `state/learn-dream-last-run.json` with the current timestamp:
+   ```json
+   { "lastRun": "2026-07-06T03:00:00.000Z" }
+   ```
+   This is the anchor `scripts/check-learn-dream.ts` reads to gate future cron firings —
+   without it, the precheck never has a baseline and every firing falls through to a full
+   session. Write it last, after the review file or applied edits are in place, so a run
+   that fails partway through does not falsely advance the anchor past unprocessed
+   transcripts.
+
 ## Scheduling
 
 Wire it to run overnight so learnings are waiting in the morning:

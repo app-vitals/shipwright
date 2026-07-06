@@ -75,6 +75,7 @@ export const SYSTEM_CRONS: readonly SystemCron[] = [
   {
     name: "learn-dream",
     schedule: "0 3 * * *",
+    preCheck: "shipwright:check-learn-dream.ts",
     prompt: "/shipwright:learn-dream --since 1d --review",
     silent: true,
     enabled: false,
