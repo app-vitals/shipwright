@@ -1,5 +1,5 @@
 /**
- * task-store/src/generate-spec.test.ts
+ * task-store/src/generate-spec.unit.test.ts
  * Verify the task-store OpenAPI spec generator produces a valid
  * OpenAPI 3.1 document that covers all three route groups.
  *

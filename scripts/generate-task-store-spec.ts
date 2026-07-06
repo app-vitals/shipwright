@@ -4,7 +4,7 @@
  *
  * Delegates to task-store/src/generate-spec.ts for the actual spec assembly.
  * This thin wrapper keeps the CLI entry point separate from the reusable
- * generator function used by smoke tests.
+ * generator function used by unit tests.
  *
  * Usage:
  *   bun run generate:task-store-spec
