@@ -32,7 +32,7 @@ const marketPoles = [
   },
   {
     label: "Autonomous Agents",
-    examples: "Devin, OpenHands",
+    examples: "Devin, OpenHands, Augment Code",
     description:
       "Fire-and-forget agents that operate with minimal human involvement. Best when you trust the agent fully and want maximum autonomy.",
     shipwright: false,
@@ -95,6 +95,19 @@ const landscape = [
     self: false,
   },
   {
+    tool: "Augment Code",
+    license: "Commercial",
+    models: "Agnostic (Claude/GPT/Gemini)",
+    taskQueue: "Yes — Remote Agent queue",
+    teamVisibility: "Slack + PR",
+    policyControls: "Enterprise (SOC 2 / ISO 42001)",
+    humanReviewGate: "PR review",
+    cronScheduling: "No",
+    slackWorkflow: "Yes — codebase Q&A",
+    testsFirst: "No",
+    self: false,
+  },
+  {
     tool: "Shipwright Harness",
     license: "MIT",
     models: "Claude Code",
@@ -143,7 +156,7 @@ const tableColumns = [
 
 <BaseLayout
   title="How Shipwright compares — Shipwright Harness"
-  description="An honest comparison of Shipwright Harness against the commercial AI coding agent tier (Devin, Cursor, GitHub Copilot Agent, OpenHands) — and where each one fits."
+  description="An honest comparison of Shipwright Harness against the commercial AI coding agent tier (Devin, Cursor, GitHub Copilot Agent, OpenHands, Augment Code) — and where each one fits."
   pagefindIgnore={true}
 >
   <!-- Page header -->
@@ -203,8 +216,9 @@ const tableColumns = [
       when choosing an AI delivery layer. MIT / own-it / self-hosted is
       table-stakes on the open-source side — every serious open-source tool
       runs on your infra, so it earns parity, not separation. The delivery-pipeline
-      layer is already contested: OpenHands runs it today, and the commercial
-      tier is moving fast.
+      layer is already contested: OpenHands runs it today, Augment Code's Remote
+      Agents pull from a background task queue and land review-ready PRs, and the
+      commercial tier is moving fast.
     </p>
     <div class="mt-6 overflow-x-auto">
       <table style="width:100%; border-collapse:collapse;">
@@ -249,9 +263,10 @@ const tableColumns = [
       The pattern in this table: individual copilots (Cursor, GitHub Copilot Agent
       in simple mode) are optimized for single-developer productivity — no team
       queue, no visibility, no review gate needed. Autonomous agents (Devin,
-      OpenHands) are optimized for fire-and-forget — high autonomy, optional
-      review. Shipwright sits between: structured pipeline, shared queue, and a
-      human review gate by default. That structure is the whole point.
+      OpenHands, Augment Code) are optimized for fire-and-forget — high
+      autonomy, PR-gated or optional review. Shipwright sits between: structured
+      pipeline, shared queue, and a human review gate by default. That structure
+      is the whole point.
     </p>
   </section>
 
@@ -366,6 +381,39 @@ helm install shipwright shipwright/shipwright</code></pre>
           <li>You need BYOK / model-agnostic across many providers, including local models.</li>
           <li>You want the largest community and the most mature ecosystem available right now.</li>
           <li>You are not committed to a single runtime and want to keep that optionality.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- Focused head-to-head: Augment Code -->
+  <section class="relative z-10 py-20" style="border-top: 1px solid var(--sw-color-border-subtle);">
+    <p class="sw-label">Head to head</p>
+    <h2 class="mt-4">Shipwright vs Augment Code</h2>
+    <p class="mt-3 max-w-2xl">
+      Augment Code pairs a context engine built for very large codebases with
+      "Remote Agents" — cloud workers that pull tasks from a queue, run in the
+      background, and land review-ready PRs — plus a Slack app for
+      codebase-aware Q&A. It is well-funded and enterprise-focused, with real
+      autonomous-agent chops. Here is where the two differ:
+    </p>
+    <div class="mt-8 grid gap-6 sm:grid-cols-2">
+      <div class="sw-card">
+        <p class="sw-label" style="color:var(--sw-color-brand-default);">Choose Shipwright when</p>
+        <ul class="mt-3 flex flex-col gap-2" style="color:var(--sw-color-text-body); padding-left:1.1rem; list-style:disc;">
+          <li>You want MIT / self-hosted on your own infra, not a managed SaaS with enterprise contracts.</li>
+          <li>You want a human to approve the plan before code is written — not review after the fact on a PR the agent already opened.</li>
+          <li>Tests-first and CI-green are enforced by the pipeline, not left to the agent's judgment.</li>
+          <li>You have committed to Claude Code and want a pipeline tuned for it, not a router averaging across providers.</li>
+        </ul>
+      </div>
+      <div class="sw-card">
+        <p class="sw-label" style="color:var(--sw-color-support-patriot-bright);">Choose Augment Code when</p>
+        <ul class="mt-3 flex flex-col gap-2" style="color:var(--sw-color-text-body); padding-left:1.1rem; list-style:disc;">
+          <li>Your codebase is very large and you want a purpose-built context engine across hundreds of thousands of files.</li>
+          <li>You want a managed service with enterprise security certifications and no self-hosting overhead.</li>
+          <li>Your team already lives in the IDE and Slack, and wants agent access woven into both.</li>
+          <li>Model flexibility across providers matters more than depth on a single runtime.</li>
         </ul>
       </div>
     </div>

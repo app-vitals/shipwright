@@ -15,7 +15,7 @@ _You're seeing this because this is a fresh workspace. Run the ritual, then dele
 7. **Walk through the dev loop** — explain that two cron jobs are enabled by default:
    - `shipwright-dev-task` (every 30 min) — picks up approved todos and ships them via `/shipwright:dev-task`
    - `shipwright-review-patch` (every 30 min) — fixes findings from own PR reviews via `/shipwright:review-patch`
-   Work flows in via `state/todos.json`. Once a todo is approved, it gets picked up automatically.
+   Work flows in via the hosted task store. Once a task is approved, it gets picked up automatically.
    Note: `shipwright-patch`, `shipwright-review`, and `shipwright-deploy` are installed but disabled by default — enable them via the accounts API when the agent is ready for autonomous patching, reviewing, and deployment.
 8. **Delete this file** — once bootstrap is complete, remove BOOTSTRAP.md
 
