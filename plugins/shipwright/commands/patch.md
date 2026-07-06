@@ -267,27 +267,36 @@ From `{worktree-path}`, detect the project toolchain:
 
 Refer to `references/toolchain-patterns.md` for the full detection lookup table.
 
-### Step 4a.6: Renew the Claim Heartbeat
+### Step 4a.6: Claim PR Record (pre-work lock)
 
-The conflict-resolution subagent dispatched next can run long enough to outlast a
-leftover claim on this PR's task-store record — e.g. a still-claimed `phase: "review"`
-record left behind by `/shipwright:review` after posting (the record stays claimed until
-released or reaped). If that claim goes stale mid-fix, the reaper resets `reviewState`
-back to `pending`, which can trigger a duplicate review. Renew it now, before starting the
-merge/resolve, so the claim survives the resolve-and-push that follows. Best-effort — warn
-and continue on failure:
+The conflict-resolution subagent dispatched next can run long enough to overlap with
+another patch run (or a stale leftover claim from `/shipwright:review`, e.g. a
+still-claimed `phase: "review"` record left behind after posting — the record stays
+claimed until released or reaped). Without a pre-work claim, two overlapping patch runs
+could both dispatch competing fix subagents against the same branch. Claim the PR record
+with `phase: "patch"` now, before starting the merge/resolve, mirroring deploy.md's Step
+4a pre-merge claim:
 
 ```bash
-PR_RECORD_ID=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/prs?repo={org}/{repo}&prNumber={pr}" 2>/dev/null \
-  | jq -r '.prs[0].id // empty')
-if [ -n "$PR_RECORD_ID" ]; then
-  curl -s -o /dev/null -X POST \
-    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/heartbeat" || \
-    echo "⚠ heartbeat renewal failed — continuing"
-fi
+HEAD_SHA_PRE_PATCH=$(git -C ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} rev-parse HEAD)
+PR_CLAIM=$(curl -s -o /tmp/pr_claim_patch.json -w '%{http_code}' -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs/claim" \
+  -d "{\"repo\": \"{org}/{repo}\", \"prNumber\": {pr}, \"commitSha\": \"$HEAD_SHA_PRE_PATCH\", \"phase\": \"patch\"}")
+PR_RECORD_ID=$(jq -r '.id // empty' /tmp/pr_claim_patch.json)
 ```
+
+**If `PR_CLAIM` is `409`** (another patch run already claimed this PR at phase `patch`):
+do NOT dispatch the conflict-resolution subagent. Print:
+```
+⏸ PR #{pr} is already claimed by another patch run — skipping.
+```
+Skip the rest of Step 4 for this PR. Move to the next candidate PR in List C. If no
+candidates remain, continue to Step 5.
+
+**Otherwise** (`200` or `201`): the claim succeeded. `PR_RECORD_ID` is reused by the
+post-fix update in Step 4c.5 — no second claim call is needed. Proceed to Step 4b.
 
 ### Step 4b: Dispatch Conflict Resolution Subagent
 
@@ -357,24 +366,22 @@ Parse the subagent's STATUS:
 
 ### Step 4c.5: Upsert PR Record
 
-After a successful push, upsert a PullRequest record in the task store to track that a
-patch cycle has occurred. Warn and continue on any failure — do not stop.
+The record was already claimed pre-work in Step 4a.6 — `PR_RECORD_ID` is already set, so
+this renews the claim's heartbeat and increments `patchCycles` rather than re-claiming.
+Warn and continue on any failure — do not stop.
 
 ```bash
-HEAD_SHA=$(git -C ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} rev-parse HEAD)
-CLAIM_RESULT=$(curl -sf -X POST \
-  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  -H "Content-Type: application/json" \
-  "$SHIPWRIGHT_TASK_STORE_URL/prs/claim" \
-  -d "{\"repo\":\"{org}/{repo}\",\"prNumber\":{pr},\"commitSha\":\"$HEAD_SHA\",\"phase\":\"patch\"}" 2>/dev/null)
-PR_ID=$(echo "$CLAIM_RESULT" | jq -r '.id // empty' 2>/dev/null)
-if [ -n "$PR_ID" ]; then
+if [ -n "$PR_RECORD_ID" ]; then
+  curl -s -o /dev/null -X POST \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/heartbeat" || \
+    echo "⚠ heartbeat renewal failed — continuing"
   curl -sf -X POST \
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_ID/patch" > /dev/null 2>&1 || \
-    echo "⚠ POST /prs/$PR_ID/patch failed — continuing"
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/patch" > /dev/null 2>&1 || \
+    echo "⚠ POST /prs/$PR_RECORD_ID/patch failed — continuing"
 else
-  echo "⚠ POST /prs/claim failed — continuing"
+  echo "⚠ no PR_RECORD_ID from pre-work claim — skipping PR record update"
 fi
 ```
 
@@ -451,26 +458,36 @@ From inside the worktree, collect the full picture of what needs fixing:
 4. **PR-level comments** (from Step 3a — already fetched, reuse):
    Include all non-bot comments as additional context.
 
-### Step 5a.6: Renew the Claim Heartbeat
+### Step 5a.6: Claim PR Record (pre-work lock)
 
-The fix subagent dispatched next can run long enough to outlast a leftover claim on this
-PR's task-store record — e.g. a still-claimed `phase: "review"` record left behind by
-`/shipwright:review` after posting (the record stays claimed until released or reaped).
-If that claim goes stale mid-fix, the reaper resets `reviewState` back to `pending`,
-which can trigger a duplicate review. Renew it now, before starting the fix, so the
-claim survives the fix-and-push that follows. Best-effort — warn and continue on failure:
+The fix subagent dispatched next can run long enough to overlap with another patch run
+(or a stale leftover claim from `/shipwright:review`, e.g. a still-claimed
+`phase: "review"` record left behind after posting — the record stays claimed until
+released or reaped). Without a pre-work claim, two overlapping patch runs could both
+dispatch competing fix subagents against the same branch. Claim the PR record with
+`phase: "patch"` now, before starting the fix, mirroring deploy.md's Step 4a pre-merge
+claim:
 
 ```bash
-PR_RECORD_ID=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/prs?repo={org}/{repo}&prNumber={pr}" 2>/dev/null \
-  | jq -r '.prs[0].id // empty')
-if [ -n "$PR_RECORD_ID" ]; then
-  curl -s -o /dev/null -X POST \
-    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/heartbeat" || \
-    echo "⚠ heartbeat renewal failed — continuing"
-fi
+HEAD_SHA_PRE_PATCH=$(git -C ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} rev-parse HEAD)
+PR_CLAIM=$(curl -s -o /tmp/pr_claim_patch.json -w '%{http_code}' -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs/claim" \
+  -d "{\"repo\": \"{org}/{repo}\", \"prNumber\": {pr}, \"commitSha\": \"$HEAD_SHA_PRE_PATCH\", \"phase\": \"patch\"}")
+PR_RECORD_ID=$(jq -r '.id // empty' /tmp/pr_claim_patch.json)
 ```
+
+**If `PR_CLAIM` is `409`** (another patch run already claimed this PR at phase `patch`):
+do NOT dispatch the fix subagent. Print:
+```
+⏸ PR #{pr} is already claimed by another patch run — skipping.
+```
+Skip the rest of Step 5 for this PR. Move to the next qualifying PR in List A. If no
+candidates remain, continue to Step 6.
+
+**Otherwise** (`200` or `201`): the claim succeeded. `PR_RECORD_ID` is reused by the
+post-fix update in Step 5c.5 — no second claim call is needed. Proceed to Step 5b.
 
 ### Step 5b: Dispatch Fix Subagent
 
@@ -597,24 +614,22 @@ Parse the subagent's STATUS:
 
 ### Step 5c.5: Upsert PR Record
 
-After a successful push, upsert a PullRequest record in the task store to track that a
-patch cycle has occurred. Warn and continue on any failure — do not stop.
+The record was already claimed pre-work in Step 5a.6 — `PR_RECORD_ID` is already set, so
+this renews the claim's heartbeat and increments `patchCycles` rather than re-claiming.
+Warn and continue on any failure — do not stop.
 
 ```bash
-HEAD_SHA=$(git -C ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} rev-parse HEAD)
-CLAIM_RESULT=$(curl -sf -X POST \
-  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  -H "Content-Type: application/json" \
-  "$SHIPWRIGHT_TASK_STORE_URL/prs/claim" \
-  -d "{\"repo\":\"{org}/{repo}\",\"prNumber\":{pr},\"commitSha\":\"$HEAD_SHA\",\"phase\":\"patch\"}" 2>/dev/null)
-PR_ID=$(echo "$CLAIM_RESULT" | jq -r '.id // empty' 2>/dev/null)
-if [ -n "$PR_ID" ]; then
+if [ -n "$PR_RECORD_ID" ]; then
+  curl -s -o /dev/null -X POST \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/heartbeat" || \
+    echo "⚠ heartbeat renewal failed — continuing"
   curl -sf -X POST \
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_ID/patch" > /dev/null 2>&1 || \
-    echo "⚠ POST /prs/$PR_ID/patch failed — continuing"
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/patch" > /dev/null 2>&1 || \
+    echo "⚠ POST /prs/$PR_RECORD_ID/patch failed — continuing"
 else
-  echo "⚠ POST /prs/claim failed — continuing"
+  echo "⚠ no PR_RECORD_ID from pre-work claim — skipping PR record update"
 fi
 ```
 
@@ -688,26 +703,36 @@ gh run view "$RUN_ID" --log --failed --repo {org}/{repo} 2>&1 | tail -200
 
 Store the log output for use in the subagent prompt.
 
-### Step 6b.5: Renew the Claim Heartbeat
+### Step 6b.5: Claim PR Record (pre-work lock)
 
-The fix subagent dispatched next can run long enough to outlast a leftover claim on this
-PR's task-store record — e.g. a still-claimed `phase: "review"` record left behind by
-`/shipwright:review` after posting (the record stays claimed until released or reaped).
-If that claim goes stale mid-fix, the reaper resets `reviewState` back to `pending`,
-which can trigger a duplicate review. Renew it now, before starting the fix, so the
-claim survives the fix-and-push that follows. Best-effort — warn and continue on failure:
+The fix subagent dispatched next can run long enough to overlap with another patch run
+(or a stale leftover claim from `/shipwright:review`, e.g. a still-claimed
+`phase: "review"` record left behind after posting — the record stays claimed until
+released or reaped). Without a pre-work claim, two overlapping patch runs could both
+dispatch competing fix subagents against the same branch. Claim the PR record with
+`phase: "patch"` now, before starting the fix, mirroring deploy.md's Step 4a pre-merge
+claim:
 
 ```bash
-PR_RECORD_ID=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/prs?repo={org}/{repo}&prNumber={pr}" 2>/dev/null \
-  | jq -r '.prs[0].id // empty')
-if [ -n "$PR_RECORD_ID" ]; then
-  curl -s -o /dev/null -X POST \
-    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/heartbeat" || \
-    echo "⚠ heartbeat renewal failed — continuing"
-fi
+HEAD_SHA_PRE_PATCH=$(git -C ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} rev-parse HEAD)
+PR_CLAIM=$(curl -s -o /tmp/pr_claim_patch.json -w '%{http_code}' -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs/claim" \
+  -d "{\"repo\": \"{org}/{repo}\", \"prNumber\": {pr}, \"commitSha\": \"$HEAD_SHA_PRE_PATCH\", \"phase\": \"patch\"}")
+PR_RECORD_ID=$(jq -r '.id // empty' /tmp/pr_claim_patch.json)
 ```
+
+**If `PR_CLAIM` is `409`** (another patch run already claimed this PR at phase `patch`):
+do NOT dispatch the fix subagent. Print:
+```
+⏸ PR #{pr} is already claimed by another patch run — skipping.
+```
+Skip the rest of Step 6 for this PR. Move to the next PR in List D. If no candidates
+remain, continue to Step 7.
+
+**Otherwise** (`200` or `201`): the claim succeeded. `PR_RECORD_ID` is reused by the
+post-fix update in Step 6d.5 — no second claim call is needed. Proceed to Step 6c.
 
 ### Step 6c: Dispatch Fix Subagent
 
@@ -778,24 +803,22 @@ Parse the subagent's STATUS:
 
 ### Step 6d.5: Upsert PR Record
 
-After a successful push, upsert a PullRequest record in the task store to track that a
-patch cycle has occurred. Warn and continue on any failure — do not stop.
+The record was already claimed pre-work in Step 6b.5 — `PR_RECORD_ID` is already set, so
+this renews the claim's heartbeat and increments `patchCycles` rather than re-claiming.
+Warn and continue on any failure — do not stop.
 
 ```bash
-HEAD_SHA=$(git -C ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} rev-parse HEAD)
-CLAIM_RESULT=$(curl -sf -X POST \
-  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  -H "Content-Type: application/json" \
-  "$SHIPWRIGHT_TASK_STORE_URL/prs/claim" \
-  -d "{\"repo\":\"{org}/{repo}\",\"prNumber\":{pr},\"commitSha\":\"$HEAD_SHA\",\"phase\":\"patch\"}" 2>/dev/null)
-PR_ID=$(echo "$CLAIM_RESULT" | jq -r '.id // empty' 2>/dev/null)
-if [ -n "$PR_ID" ]; then
+if [ -n "$PR_RECORD_ID" ]; then
+  curl -s -o /dev/null -X POST \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/heartbeat" || \
+    echo "⚠ heartbeat renewal failed — continuing"
   curl -sf -X POST \
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_ID/patch" > /dev/null 2>&1 || \
-    echo "⚠ POST /prs/$PR_ID/patch failed — continuing"
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/patch" > /dev/null 2>&1 || \
+    echo "⚠ POST /prs/$PR_RECORD_ID/patch failed — continuing"
 else
-  echo "⚠ POST /prs/claim failed — continuing"
+  echo "⚠ no PR_RECORD_ID from pre-work claim — skipping PR record update"
 fi
 ```
 
