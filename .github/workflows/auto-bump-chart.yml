@@ -7,25 +7,51 @@ name: Auto-Bump Chart Version
 # successful image push. This workflow detects those tags and
 # opens a chart-version bump PR so no manual bump-chart.sh invocation is needed.
 #
+# Debounce: services release independently, so it's common for two or three
+# tags to land within seconds/minutes of each other (e.g. admin-v0.156.0
+# immediately followed by agent-v0.144.0). Bumping the chart once per tag in
+# that situation produces a chart-bump PR/merge/publish cycle per tag for what
+# is really one release event — multiplying merge noise and Deploy runs for no
+# added safety. The `debounce` job absorbs bursts: it sleeps for
+# DEBOUNCE_SECONDS, and its `chart-bump-debounce` concurrency group
+# (cancel-in-progress: true) means a newer tag arriving during that sleep
+# cancels the older run outright — only the *last* tag in a burst survives to
+# reach the `bump-chart` job. `bump-chart` then credits every release tag that
+# landed since the previous chart-bump commit (not just its own triggering
+# tag) so the batch is still fully traceable, just collapsed into a single
+# version bump.
+#
+# Known limitation: if tags land continuously faster than DEBOUNCE_SECONDS
+# apart, no run ever clears the debounce window and no bump lands. This is an
+# accepted tradeoff — release cadence here is a handful of tags a day, not a
+# continuous stream. If that changes, add a max-wait fallback.
+#
 # Flow:
-#   tag push (agent-v* / admin-v* / metrics-v*)
-#     → this workflow
-#       → bump patch version in Chart.yaml
-#       → open PR (chore/chart-v{new_version})
+#   tag push (agent-v* / admin-v* / metrics-v* / task-store-v* / chat-v*)
+#     → debounce job: sleep DEBOUNCE_SECONDS
+#       → superseded by a newer tag push? cancelled, bump-chart never runs.
+#       → quiet period elapsed? proceeds to bump-chart.
+#     → bump-chart job
+#       → collect every release tag pushed since the last chart-bump commit
+#       → bump patch version in Chart.yaml once for the whole batch
+#       → open PR (chore/chart-v{new_version}) crediting all batched tags
 #       → wait for required checks, then merge (squash)
 #     → PR merges to main
 #       → chart-release.yml triggers (paths: charts/shipwright/**)
 #         → packages the chart + commits .tgz + index.yaml to gh-pages
 #
-# Manual test plan (cannot be tested in CI without real tag + secrets):
-#   1. Push a dummy tag matching one of the trigger patterns:
-#        git tag agent-v9.9.9 && git push origin agent-v9.9.9
-#   2. Observe this workflow runs, creates branch chore/chart-v{N},
-#      opens a PR, and merges it once checks pass.
-#   3. Verify PR description includes the triggering tag name.
-#   4. After merge, confirm chart-release.yml fires and publishes the new version.
-#   5. Delete the dummy tag to clean up:
-#        git push origin --delete agent-v9.9.9
+# Manual test plan (cannot be tested in CI without real tags + secrets):
+#   1. Push two dummy tags a few seconds apart to simulate a burst:
+#        git tag agent-v9.9.8 && git push origin agent-v9.9.8
+#        git tag admin-v9.9.9 && git push origin admin-v9.9.9
+#   2. Observe the first run's `debounce` job gets cancelled (superseded) and
+#      only the second run's `debounce` job completes and proceeds.
+#   3. Observe `bump-chart` opens exactly one PR, and its body/CHANGELOG entry
+#      credits both agent-v9.9.8 and admin-v9.9.9.
+#   4. Verify the PR merges once checks pass, and chart-release.yml fires
+#      exactly once.
+#   5. Delete the dummy tags to clean up:
+#        git push origin --delete agent-v9.9.8 admin-v9.9.9
 #
 # Logic tests live in .github/workflows/test-auto-bump-chart.sh.
 # Run locally: bash .github/workflows/test-auto-bump-chart.sh
@@ -39,24 +65,43 @@ on:
       - "task-store-v*"
       - "chat-v*"
 
-# Queue concurrent bumps rather than cancelling them — if multiple tags land
-# at nearly the same time, each should produce its own chart bump PR. Using
-# cancel-in-progress: false ensures they queue up and run sequentially. The
-# "Wait for PR to merge" step at the end of the job holds the slot until the
-# merge actually lands on main, so the next queued run always reads the
-# post-merge chart version and computes a fresh increment.
-concurrency:
-  group: chart-bump
-  cancel-in-progress: false
-
 permissions:
   contents: write      # push branch + commit
   pull-requests: write # open PR + enable auto-merge
 
 jobs:
+  # Absorbs bursts of near-simultaneous release tags into a single downstream
+  # bump. Deliberately does no repo work itself — cancellation here must never
+  # leave a half-done Chart.yaml/branch/PR behind, so all mutating work lives
+  # in bump-chart, which only ever starts after a debounce job actually
+  # completes (not merely starts).
+  debounce:
+    name: debounce burst of release tags
+    runs-on: ubuntu-latest
+    concurrency:
+      group: chart-bump-debounce
+      cancel-in-progress: true
+    steps:
+      - name: Wait for quiet period
+        env:
+          DEBOUNCE_SECONDS: 90
+        run: |
+          echo "Tag ${GITHUB_REF_NAME} landed — waiting ${DEBOUNCE_SECONDS}s for other releases to land before bumping the chart."
+          sleep "${DEBOUNCE_SECONDS}"
+          echo "Quiet period elapsed with no superseding tag — proceeding to bump-chart."
+
   bump-chart:
     name: bump chart version
+    needs: debounce
     runs-on: ubuntu-latest
+    # Separate from the debounce group and still queued (not cancelled): once
+    # we're doing real repo mutation, a run must always finish rather than be
+    # cancelled mid-PR/mid-merge. This is only a safety net for the rare case
+    # where two debounce windows resolve close together — the common case is
+    # exactly one bump-chart run per burst.
+    concurrency:
+      group: chart-bump
+      cancel-in-progress: false
     steps:
       # Check out main (not the tag's commit) so we always bump from the
       # latest chart version on main rather than whatever state the tag points at.
@@ -72,6 +117,51 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
+      # Credit every release tag that landed since the last chart-bump commit,
+      # not just the tag that happened to trigger this run — that's everything
+      # the debounce window batched together. Falls back to the triggering tag
+      # alone if no prior bump commit exists (e.g. first-ever bump).
+      - name: Collect release tags in this batch
+        id: batch
+        run: |
+          PATTERNS=("agent-v*" "admin-v*" "metrics-v*" "task-store-v*" "chat-v*")
+
+          LAST_BUMP_SHA=$(git log -1 --format=%H --grep='^chore(chart): bump chart version' -- charts/shipwright/Chart.yaml || true)
+
+          SINCE=""
+          if [ -n "$LAST_BUMP_SHA" ]; then
+            SINCE=$(git log -1 --format=%cI "$LAST_BUMP_SHA")
+          fi
+
+          TAGS=()
+          if [ -n "$SINCE" ]; then
+            for PATTERN in "${PATTERNS[@]}"; do
+              while IFS= read -r LINE; do
+                [ -z "$LINE" ] && continue
+                TAGS+=("$LINE")
+              done < <(git for-each-ref "refs/tags/${PATTERN}" \
+                --format='%(creatordate:iso-strict)|%(refname:short)' \
+                | awk -F'|' -v since="$SINCE" '$1 > since { print $2 }')
+            done
+          fi
+
+          # Always include the triggering tag even if it fell outside the
+          # window (clock skew, first-ever bump) — never silently drop the
+          # tag that fired this run.
+          TRIGGER="${GITHUB_REF_NAME}"
+          FOUND=false
+          for T in "${TAGS[@]:-}"; do
+            [ "$T" = "$TRIGGER" ] && FOUND=true
+          done
+          if [ "$FOUND" = "false" ]; then
+            TAGS+=("$TRIGGER")
+          fi
+
+          TAGS_CSV=$(printf '%s\n' "${TAGS[@]}" | sort -u | paste -sd, -)
+
+          echo "tags=${TAGS_CSV}" >> "$GITHUB_OUTPUT"
+          echo "Batched tags for this bump: ${TAGS_CSV}"
+
       # Read the current chart version using grep+sed — avoids a yq dependency.
       # The version line in Chart.yaml is always "version: X.Y.Z" (no spaces
       # before the key, plain value — no quoting).
@@ -83,7 +173,8 @@ jobs:
           echo "Current chart version: ${VERSION}"
 
       # Increment the patch component only. Chart version bumps are always
-      # patch-level here — minor/major bumps remain a manual step.
+      # patch-level here — minor/major bumps remain a manual step. One bump
+      # covers the whole batch of tags collected above, however many landed.
       - name: Compute new chart version
         id: new
         run: |
@@ -98,11 +189,9 @@ jobs:
 
       # Idempotency guard: if the branch for this exact chart version already
       # exists on the remote, a prior run already opened the bump PR — skip.
-      # This handles the rare race where two runs slip past the concurrency
-      # group's ls-remote check before either has pushed (non-atomic window).
-      # With the "Wait for PR to merge" step holding the slot until the PR
-      # lands on main, this guard is only a safety net for true edge cases;
-      # under normal sequencing each run computes a distinct new version.
+      # With debounce collapsing bursts into a single bump-chart run, this is
+      # now only a safety net for the rare case of two debounce windows
+      # resolving close together, not the common path.
       - name: Check for existing bump branch
         id: idempotency
         env:
@@ -133,27 +222,28 @@ jobs:
               f.write(content)
           PYEOF
 
-      # Record which release tag triggered this bump in the Artifact Hub
-      # change log annotation. This surfaces the triggering tag in the
-      # Artifact Hub UI when the chart is published.
+      # Record every batched release tag in the Artifact Hub change log
+      # annotation — one "changed" entry per tag, so a burst-collapsed bump
+      # still surfaces exactly which releases it contains.
       - name: Update artifacthub.io/changes annotation
         if: steps.idempotency.outputs.skip != 'true'
         run: |
-          TAG="${{ github.ref_name }}"
+          TAGS_CSV="${{ steps.batch.outputs.tags }}"
           NEW_VERSION="${{ steps.new.outputs.version }}"
-          python3 - charts/shipwright/Chart.yaml "$TAG" "$NEW_VERSION" <<'PYEOF'
+          python3 - charts/shipwright/Chart.yaml "$TAGS_CSV" "$NEW_VERSION" <<'PYEOF'
           import sys, re
-          path, tag, ver = sys.argv[1], sys.argv[2], sys.argv[3]
+          path, tags_csv, ver = sys.argv[1], sys.argv[2], sys.argv[3]
+          tags = [t for t in tags_csv.split(',') if t]
           with open(path, 'r') as f:
               content = f.read()
-          new_block = (
-              "  artifacthub.io/changes: |\n"
-              f"    - kind: changed\n"
-              f'      description: "auto-bump to chart v{ver} triggered by release tag {tag}"\n'
-          )
+          lines = ["  artifacthub.io/changes: |"]
+          for tag in tags:
+              lines.append("    - kind: changed")
+              lines.append(f'      description: "auto-bump to chart v{ver} triggered by release tag {tag}"')
+          new_block = "\n".join(lines)
           content = re.sub(
               r'  artifacthub\.io/changes:.*?(?=\n\S|\Z)',
-              new_block.rstrip('\n'),
+              new_block,
               content,
               flags=re.DOTALL,
           )
@@ -167,9 +257,10 @@ jobs:
         if: steps.idempotency.outputs.skip != 'true'
         run: |
           NEW_VERSION="${{ steps.new.outputs.version }}"
-          TAG="${{ github.ref_name }}"
+          TAGS_CSV="${{ steps.batch.outputs.tags }}"
+          TAGS_LIST=$(echo "$TAGS_CSV" | tr ',' '\n' | sed 's/^/`/; s/$/`/' | paste -sd, - | sed 's/,/, /g')
           DATE=$(date -u +%Y-%m-%d)
-          ENTRY="## [${NEW_VERSION}] - ${DATE}\n\n### Changed\n\n- auto-bump to chart v${NEW_VERSION} triggered by release tag \`${TAG}\`\n"
+          ENTRY="## [${NEW_VERSION}] - ${DATE}\n\n### Changed\n\n- auto-bump to chart v${NEW_VERSION} triggered by release tag(s): ${TAGS_LIST}\n"
           # Prepend the new entry after the header block (after the last line starting with '#' in the preamble)
           python3 - charts/shipwright/CHANGELOG.md "$ENTRY" <<'PYEOF'
           import sys
@@ -194,13 +285,16 @@ jobs:
         run: |
           BRANCH="${{ steps.new.outputs.branch }}"
           NEW_VERSION="${{ steps.new.outputs.version }}"
-          TAG="${{ github.ref_name }}"
+          TAGS_CSV="${{ steps.batch.outputs.tags }}"
+          TAGS_LINES=$(echo "$TAGS_CSV" | tr ',' '\n' | sed 's/^/  - /')
 
           git checkout -b "$BRANCH"
           git add charts/shipwright/Chart.yaml charts/shipwright/CHANGELOG.md
           git commit -m "chore(chart): bump chart version to ${NEW_VERSION}
 
-          Auto-bump triggered by release tag ${TAG}.
+          Auto-bump triggered by release tag(s):
+          ${TAGS_LINES}
+
           After merge, chart-release.yml will publish chart v${NEW_VERSION}."
 
           # Fault-tolerant push: if a concurrent run slips through the
@@ -223,7 +317,8 @@ jobs:
         run: |
           NEW_VERSION="${{ steps.new.outputs.version }}"
           CURRENT_VERSION="${{ steps.current.outputs.version }}"
-          TAG="${{ github.ref_name }}"
+          TAGS_CSV="${{ steps.batch.outputs.tags }}"
+          TAGS_LINES=$(echo "$TAGS_CSV" | tr ',' '\n' | sed 's/^/- `/; s/$/`/')
           BRANCH="${{ steps.new.outputs.branch }}"
 
           PR_URL=$(gh pr create \
@@ -233,7 +328,9 @@ jobs:
             --body "$(cat <<EOF
           ## Chart version bump: ${CURRENT_VERSION} → ${NEW_VERSION}
 
-          **Triggering tag:** \`${TAG}\`
+          **Triggering tags:**
+          ${TAGS_LINES}
+
           **New chart version:** \`${NEW_VERSION}\`
 
           ### What happens next

@@ -41,11 +41,21 @@ packaged a `.tgz` is allowed to finish rather than being cancelled mid-publish.
 
 Chart version bumps are **automated** by the
 [`auto-bump-chart.yml`](../.github/workflows/auto-bump-chart.yml) workflow.
-Whenever a release tag is pushed matching `agent-v*`, `admin-v*`, or `metrics-v*`
-(created by the service build workflows on successful image push), the automation
-detects the tag, increments the chart patch version in `Chart.yaml`, opens a PR
-(targeting `main`), and enables auto-merge. Once the PR merges, `chart-release.yml`
-fires and publishes the new chart version. No manual version bump is required.
+Whenever a release tag is pushed matching `agent-v*`, `admin-v*`, `metrics-v*`,
+`task-store-v*`, or `chat-v*` (created by the service build workflows on
+successful image push), the automation detects the tag, increments the chart
+patch version in `Chart.yaml`, opens a PR (targeting `main`), and merges it
+once checks pass. Once the PR merges, `chart-release.yml` fires and publishes
+the new chart version. No manual version bump is required.
+
+Services release independently, so it's common for two or three tags to land
+within seconds or minutes of each other. Rather than bumping the chart once
+per tag (a PR/merge/publish cycle per tag for what's really one release
+event), the workflow **debounces**: a 90-second quiet period absorbs bursts,
+and only the last tag in a burst triggers the actual bump. The resulting PR
+credits every release tag that landed since the previous chart-bump commit,
+so the batch stays fully traceable even though it's collapsed into a single
+version bump.
 
 ## First-time setup (one-time)
 
