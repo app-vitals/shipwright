@@ -290,6 +290,11 @@ describe("SYSTEM_CRONS", () => {
     expect(cron?.prompt).not.toContain("/learn-dream ");
   });
 
+  test("learn-dream cron has correct preCheck", () => {
+    const cron = SYSTEM_CRONS.find((c) => c.name === "learn-dream");
+    expect(cron?.preCheck).toBe("shipwright:check-learn-dream.ts");
+  });
+
   test("dependabot-triage cron has schedule 0 8 * * *", () => {
     const cron = SYSTEM_CRONS.find((c) => c.name === "dependabot-triage");
     expect(cron?.schedule).toBe("0 8 * * *");
