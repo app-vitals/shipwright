@@ -84,6 +84,7 @@ describe("patch.md — pre-work PR claim lock (CLM-2.1)", () => {
       preDispatchSection.includes("skip") || preDispatchSection.includes("skipping");
     expect(hasSkipLanguage).toBe(true);
     expect(preDispatchSection.toLowerCase()).toContain("next");
+    expect(preDispatchSection).toContain("List A");
   });
 
   it("409 handling causes the PR to be skipped and the next candidate in the list to be tried (List D)", () => {

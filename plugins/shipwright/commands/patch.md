@@ -361,7 +361,15 @@ Parse the subagent's STATUS:
 - **DONE_WITH_CONCERNS**: Read concerns. If the push already happened, log concerns and
   proceed to Step 4c.5 (upsert PR record). If the subagent did not push, note it in the
   final report and skip Step 4c.5.
-- **BLOCKED**: Log the blocker. Skip Steps 4c.5 and 4d. Move to the next PR in List C.
+- **BLOCKED**: Release the pre-work claim from Step 4a.6 so a subsequent patch/review-patch
+  run within the reaper's TTL is not 409-blocked by a stale `phase: "patch"` lock — the fix
+  never completed, so nothing is actually in flight:
+  ```bash
+  [ -n "$PR_RECORD_ID" ] && curl -s -o /dev/null -X POST \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/release"
+  ```
+  Log the blocker. Skip Steps 4c.5 and 4d. Move to the next PR in List C.
   Include the blocker in the final report.
 
 ### Step 4c.5: Upsert PR Record
@@ -609,7 +617,15 @@ Parse the subagent's STATUS:
 - **DONE_WITH_CONCERNS**: Read concerns. If they are correctness gaps, log them in the
   report but proceed (the push already happened) to Step 5c.5 (upsert PR record). If the
   subagent did not push due to a concern, note it and skip Step 5c.5.
-- **BLOCKED**: Log the blocker. Skip Steps 5c.5 and 5d. Move to the next qualifying PR.
+- **BLOCKED**: Release the pre-work claim from Step 5a.6 so a subsequent patch/review-patch
+  run within the reaper's TTL is not 409-blocked by a stale `phase: "patch"` lock — the fix
+  never completed, so nothing is actually in flight:
+  ```bash
+  [ -n "$PR_RECORD_ID" ] && curl -s -o /dev/null -X POST \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/release"
+  ```
+  Log the blocker. Skip Steps 5c.5 and 5d. Move to the next qualifying PR.
   Include the blocker in the final report.
 
 ### Step 5c.5: Upsert PR Record
@@ -798,7 +814,15 @@ Parse the subagent's STATUS:
 - **DONE_WITH_CONCERNS**: Read concerns. If the push already happened, log concerns and
   proceed to Step 6d.5 (upsert PR record). If the subagent did not push, note it in the
   final report and skip Step 6d.5.
-- **BLOCKED**: Log the blocker. Skip Steps 6d.5 and 6e. Move to the next PR in List D.
+- **BLOCKED**: Release the pre-work claim from Step 6b.5 so a subsequent patch/review-patch
+  run within the reaper's TTL is not 409-blocked by a stale `phase: "patch"` lock — the fix
+  never completed, so nothing is actually in flight:
+  ```bash
+  [ -n "$PR_RECORD_ID" ] && curl -s -o /dev/null -X POST \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/release"
+  ```
+  Log the blocker. Skip Steps 6d.5 and 6e. Move to the next PR in List D.
   Include the blocker in the final report.
 
 ### Step 6d.5: Upsert PR Record
