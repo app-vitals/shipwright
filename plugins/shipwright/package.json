@@ -1,6 +1,6 @@
 {
   "name": "@shipwright/plugin",
-  "version": "0.139.0",
+  "version": "0.139.1",
   "private": true,
   "description": "Shipwright Claude Code plugin — spec → plan → execute → review → deploy",
   "scripts": {
