@@ -19,7 +19,8 @@
     "typecheck": "bun run --filter='*' typecheck",
     "generate:admin-spec": "bun run scripts/generate-admin-spec.ts",
     "generate:admin-types": "bunx openapi-typescript ./admin/openapi.json --output ./lib/admin-types.ts",
-    "generate:task-store-spec": "bun run scripts/generate-task-store-spec.ts"
+    "generate:task-store-spec": "bun run scripts/generate-task-store-spec.ts",
+    "generate:task-store-types": "bunx openapi-typescript ./task-store/openapi.json --output ./lib/task-store-types.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
