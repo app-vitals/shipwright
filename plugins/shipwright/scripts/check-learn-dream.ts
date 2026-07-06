@@ -81,13 +81,15 @@ export async function run(deps: Deps): Promise<RunResult> {
 
 /**
  * Derive the Claude Code project directory name for a workspace path, the
- * same way Claude Code itself does: the absolute path with `/` replaced by
- * `-` (e.g. `/data/agent-home/workspace` → `-data-agent-home-workspace`).
+ * same way Claude Code itself does: the absolute path with `/` and `.`
+ * replaced by `-` (e.g. `/data/agent-home/workspace` →
+ * `-data-agent-home-workspace`; `/home/user/my.workspace` →
+ * `-home-user-my-workspace`).
  */
 export function sanitizeWorkspacePathForClaudeProjects(
   workspacePath: string,
 ): string {
-  return workspacePath.replace(/\//g, "-");
+  return workspacePath.replace(/[/.]/g, "-");
 }
 
 function buildProductionDeps(): Deps {

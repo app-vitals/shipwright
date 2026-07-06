@@ -8,7 +8,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { run } from "./check-learn-dream.ts";
+import {
+  run,
+  sanitizeWorkspacePathForClaudeProjects,
+} from "./check-learn-dream.ts";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -96,5 +99,25 @@ describe("check-learn-dream", () => {
     });
     const result = await run(deps);
     expect(result.exit).toBe(0);
+  });
+});
+
+describe("sanitizeWorkspacePathForClaudeProjects", () => {
+  test("replaces slashes with dashes", () => {
+    expect(sanitizeWorkspacePathForClaudeProjects("/data/agent-home/workspace")).toBe(
+      "-data-agent-home-workspace",
+    );
+  });
+
+  test("replaces dots with dashes so dotted workspace paths resolve correctly", () => {
+    expect(sanitizeWorkspacePathForClaudeProjects("/home/user/my.workspace")).toBe(
+      "-home-user-my-workspace",
+    );
+  });
+
+  test("replaces both slashes and dots in the same path", () => {
+    expect(
+      sanitizeWorkspacePathForClaudeProjects("/Users/me/proj.ects/app.v2"),
+    ).toBe("-Users-me-proj-ects-app-v2");
   });
 });
