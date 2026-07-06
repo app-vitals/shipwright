@@ -86,13 +86,20 @@ All list calls return an envelope with a `.tasks` array. Paginated calls (`?stat
 
 ### Start a task
 
+Claim atomically instead of a plain PATCH — a read-modify-write PATCH races any other
+concurrent runner that read the same `ready=true` list. The claim is a single conditional
+`UPDATE ... WHERE status='pending'`; it also sets `claimedAt`, `heartbeatAt`, and
+`startedAt`, so no separate PATCH is needed:
+
 ```bash
-curl -sf -X PATCH \
+curl -sf -X POST \
   -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  -H "Content-Type: application/json" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}" \
-  -d "{\"status\": \"in_progress\", \"startedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" | jq .
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}/claim" | jq .
 ```
+
+No request body is sent — with an agent token, the task-store pins `claimedBy` to the
+calling agent's own ID server-side and ignores the body. A `409` means another agent
+already claimed the task since it was read as `ready` — skip it and pick the next one.
 
 ### Open a PR
 
