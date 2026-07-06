@@ -1,4 +1,8 @@
 import { afterEach, describe, expect, it } from "bun:test";
+import type {
+  AgentProvisioner,
+  KubernetesAgentProvisionerConfig,
+} from "./agent-provisioner.ts";
 import {
   KubernetesAgentProvisioner,
   NoopAgentProvisioner,
@@ -14,6 +18,14 @@ import {
 /** Stub token service — buildProvisioner only threads it through, never calls it. */
 function stubAgentTokenService(): AgentTokenService {
   return {} as unknown as AgentTokenService;
+}
+
+/** Reaches into the private `config` field so branch behavior is actually verifiable. */
+function configOf(
+  provisioner: AgentProvisioner,
+): KubernetesAgentProvisionerConfig {
+  return (provisioner as unknown as { config: KubernetesAgentProvisionerConfig })
+    .config;
 }
 
 // resolvePublicRepo is the pure env rule wired into main.ts startServer():
@@ -111,7 +123,17 @@ describe("buildProvisioner", () => {
       { SHIPWRIGHT_K8S_PROVISIONING: "enabled" },
       stubAgentTokenService(),
     );
-    expect(provisioner).toBeInstanceOf(KubernetesAgentProvisioner);
+    const config = configOf(provisioner);
+    expect(config.namespace).toBe("default");
+    expect(config.image).toBe("");
+    expect(config.imageTag).toBe("latest");
+    expect(config.apiUrl).toBe("");
+    expect(config.replicas).toBeUndefined();
+    expect(config.pvcStorageGi).toBeUndefined();
+    expect(config.voice).toBeUndefined();
+    expect(config.taskStore).toBeUndefined();
+    expect(config.chatService).toBeUndefined();
+    expect(config.pvcName).toBeUndefined();
   });
 
   it("parses numeric env (replicas, pvcStorageGi) when set and finite", () => {
@@ -123,7 +145,9 @@ describe("buildProvisioner", () => {
       },
       stubAgentTokenService(),
     );
-    expect(provisioner).toBeInstanceOf(KubernetesAgentProvisioner);
+    const config = configOf(provisioner);
+    expect(config.replicas).toBe(3);
+    expect(config.pvcStorageGi).toBe(80);
   });
 
   it("ignores non-finite numeric env (NaN) rather than passing it through", () => {
@@ -134,7 +158,8 @@ describe("buildProvisioner", () => {
       },
       stubAgentTokenService(),
     );
-    expect(provisioner).toBeInstanceOf(KubernetesAgentProvisioner);
+    const config = configOf(provisioner);
+    expect(config.replicas).toBeUndefined();
   });
 
   it("builds a voice env block only from the voice vars that are set", () => {
@@ -148,7 +173,13 @@ describe("buildProvisioner", () => {
       },
       stubAgentTokenService(),
     );
-    expect(provisioner).toBeInstanceOf(KubernetesAgentProvisioner);
+    const config = configOf(provisioner);
+    expect(config.voice).toEqual({
+      whisperServiceUrl: "http://whisper.svc:9000",
+      groqApiKey: "groq-key",
+      elevenLabsApiKey: "elevenlabs-key",
+      voiceId: "voice-1",
+    });
   });
 
   it("omits the voice block entirely when no voice env vars are set", () => {
@@ -156,7 +187,7 @@ describe("buildProvisioner", () => {
       { SHIPWRIGHT_K8S_PROVISIONING: "enabled" },
       stubAgentTokenService(),
     );
-    expect(provisioner).toBeInstanceOf(KubernetesAgentProvisioner);
+    expect(configOf(provisioner).voice).toBeUndefined();
   });
 
   it("wires a task-store client only when both URL and admin token are set", () => {
@@ -168,7 +199,9 @@ describe("buildProvisioner", () => {
       },
       stubAgentTokenService(),
     );
-    expect(withTaskStore).toBeInstanceOf(KubernetesAgentProvisioner);
+    const withConfig = configOf(withTaskStore);
+    expect(withConfig.taskStore).toBeDefined();
+    expect(withConfig.taskStoreUrl).toBe("http://task-store.svc:3002");
 
     const withoutTaskStore = buildProvisioner(
       {
@@ -178,7 +211,8 @@ describe("buildProvisioner", () => {
       },
       stubAgentTokenService(),
     );
-    expect(withoutTaskStore).toBeInstanceOf(KubernetesAgentProvisioner);
+    expect(configOf(withoutTaskStore).taskStore).toBeUndefined();
+    expect(configOf(withoutTaskStore).taskStoreUrl).toBeUndefined();
   });
 
   it("wires a chat-service client only when both URL and admin token are set", () => {
@@ -190,7 +224,9 @@ describe("buildProvisioner", () => {
       },
       stubAgentTokenService(),
     );
-    expect(withChatService).toBeInstanceOf(KubernetesAgentProvisioner);
+    const withConfig = configOf(withChatService);
+    expect(withConfig.chatService).toBeDefined();
+    expect(withConfig.chatServiceUrl).toBe("http://chat.svc:3003");
 
     const withoutChatService = buildProvisioner(
       {
@@ -200,7 +236,8 @@ describe("buildProvisioner", () => {
       },
       stubAgentTokenService(),
     );
-    expect(withoutChatService).toBeInstanceOf(KubernetesAgentProvisioner);
+    expect(configOf(withoutChatService).chatService).toBeUndefined();
+    expect(configOf(withoutChatService).chatServiceUrl).toBeUndefined();
   });
 
   it("sets a pvcName template function when SHIPWRIGHT_AGENT_PVC_NAME_TEMPLATE is set", () => {
@@ -211,7 +248,9 @@ describe("buildProvisioner", () => {
       },
       stubAgentTokenService(),
     );
-    expect(provisioner).toBeInstanceOf(KubernetesAgentProvisioner);
+    const config = configOf(provisioner);
+    expect(config.pvcName).toBeDefined();
+    expect(config.pvcName?.("my-agent")).toBe("acme-agent-my-agent-home");
   });
 });
 
