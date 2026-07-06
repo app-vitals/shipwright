@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import type { WebClient } from "@slack/web-api";
 import type { Server } from "bun";
 import { FixedClock } from "./clock.ts";
@@ -613,16 +614,18 @@ describe("handleCronRequest — preCheck", () => {
   });
 
   test("runs preCheck with cwd = workspace (resolves state relative to workspace)", async () => {
-    // Mirrors check-dev-task.ts → JsonTaskStore(process.cwd()) reading
-    // `state/todos.json`. The file lives in the workspace; the preCheck must run
-    // there, not in the agent's cwd (/app in prod, the repo root in tests).
+    // Plugin preChecks resolve state relative to process.cwd() — e.g.
+    // check-review.ts / check-deploy.ts (via check-helpers.ts) read
+    // workspace-relative files like `state/agent-policy.md`. The file lives
+    // in the workspace; the preCheck must run there, not in the agent's cwd
+    // (/app in prod, the repo root in tests).
     const ws = join(tmpDir, "ws");
     mkdirSync(join(ws, "state"), { recursive: true });
-    writeFileSync(join(ws, "state", "todos.json"), "[]");
+    writeFileSync(join(ws, "state", "agent-policy.md"), "# Agent Policy\n");
     const script = join(tmpDir, "check.ts");
     writeFileSync(
       script,
-      `import { existsSync } from "node:fs";\nconsole.log(existsSync("state/todos.json") ? "HAS_STATE" : "NO_STATE");\nprocess.exit(0);`,
+      `import { existsSync } from "node:fs";\nconsole.log(existsSync("state/agent-policy.md") ? "HAS_STATE" : "NO_STATE");\nprocess.exit(0);`,
     );
 
     await handleCronRequest(
@@ -1386,9 +1389,19 @@ describe("POST /cron HTTP endpoint", () => {
   // biome-ignore lint/suspicious/noExplicitAny: Server type param varies by bun version
   const servers: Server<any>[] = [];
 
-  // biome-ignore lint/suspicious/noExplicitAny: Server type param varies by bun version
-  function serve(port: number): Server<any> {
-    const s = startHealthServer(port, undefined, deps);
+  function serve(
+    port: number,
+    sentryClient?: ErrorCapturingClient,
+    // biome-ignore lint/suspicious/noExplicitAny: Server type param varies by bun version
+  ): Server<any> {
+    const s = startHealthServer(
+      port,
+      undefined,
+      deps,
+      undefined,
+      undefined,
+      sentryClient,
+    );
     servers.push(s);
     return s;
   }
@@ -1481,6 +1494,63 @@ describe("POST /cron HTTP endpoint", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ jobId: "j5", prompt: "run", channel: "C-X" }),
     });
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toContain("claude down");
+  });
+
+  test("500 with sentryClient injected — captureException called with the error, response unchanged", async () => {
+    mockRunner.mockRejectedValueOnce(new Error("claude down"));
+    const capturedErrors: unknown[] = [];
+    const fakeSentryClient: ErrorCapturingClient = {
+      captureException: (err: unknown) => {
+        capturedErrors.push(err);
+      },
+    };
+    serve(19930, fakeSentryClient);
+
+    const res = await fetch("http://localhost:19930/cron", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jobId: "j8", prompt: "run", channel: "C-X" }),
+    });
+
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toContain("claude down");
+    expect(capturedErrors.length).toBe(1);
+    expect((capturedErrors[0] as Error).message).toBe("claude down");
+  });
+
+  test("422 ValidationError does NOT call sentryClient.captureException", async () => {
+    const capturedErrors: unknown[] = [];
+    const fakeSentryClient: ErrorCapturingClient = {
+      captureException: (err: unknown) => {
+        capturedErrors.push(err);
+      },
+    };
+    serve(19931, fakeSentryClient);
+
+    const res = await fetch("http://localhost:19931/cron", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jobId: "j9", prompt: "hello" }),
+    });
+
+    expect(res.status).toBe(422);
+    expect(capturedErrors.length).toBe(0);
+  });
+
+  test("500 with no sentryClient wired — behaves exactly as before (no throw, same response)", async () => {
+    mockRunner.mockRejectedValueOnce(new Error("claude down"));
+    serve(19932);
+
+    const res = await fetch("http://localhost:19932/cron", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jobId: "j10", prompt: "run", channel: "C-X" }),
+    });
+
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.error).toContain("claude down");

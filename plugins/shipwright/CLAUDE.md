@@ -19,8 +19,8 @@ and the skill will discover what it needs from live state.
 ### 1. GitHub is the Source of Truth
 
 Skills query GitHub directly for PR state, CI status, authorship, and review decisions.
-Local file `state/reviews.json` is a cache — a convenient shortcut
-when available, but never load-bearing.
+Local state files are a cache — a convenient shortcut when available, but never
+load-bearing.
 
 Applies to: **review**, **deploy**, **patch**, **dev-task**
 

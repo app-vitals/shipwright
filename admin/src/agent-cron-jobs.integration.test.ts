@@ -5,7 +5,7 @@
  * Requires DATABASE_URL_ADMIN_TEST to be set; skips otherwise.
  */
 
-import { beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { PrismaClient } from "../prisma/client/index.js";
 import { AgentCronJobService } from "./agent-cron-jobs.ts";
 import { NotFoundError, UnprocessableEntityError } from "./errors.ts";
@@ -41,6 +41,10 @@ describeOrSkip("AgentCronJobService (integration)", () => {
     await prisma.agentEnv.deleteMany();
     await prisma.agent.deleteMany();
     service = new AgentCronJobService(prisma);
+  });
+
+  afterEach(async () => {
+    await prisma.$disconnect();
   });
 
   // ─── create ─────────────────────────────────────────────────────────────────

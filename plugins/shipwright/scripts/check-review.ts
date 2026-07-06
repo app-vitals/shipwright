@@ -37,6 +37,7 @@ interface PrInfo {
   headRefName: string;
   headRefOid: string;
   repo?: string;
+  isDraft: boolean;
 }
 
 interface PrRecord {
@@ -67,6 +68,8 @@ export async function run(deps: Deps): Promise<RunResult> {
   const prs = await deps.listOpenPrs("default");
 
   for (const pr of prs) {
+    if (pr.isDraft) continue;
+    if (pr.author.login === "app/dependabot") continue;
     if (!deps.isSelfReviewAllowed && pr.author.login === currentUser) continue;
 
     let record: PrRecord | null = null;
@@ -122,7 +125,7 @@ export async function buildProductionDeps(): Promise<Deps> {
           "--repo",
           repo,
           "--json",
-          "number,title,author,headRefName,headRefOid",
+          "number,title,author,headRefName,headRefOid,isDraft",
         ]);
         allPrs.push(...repoPrs.map((pr) => ({ ...pr, repo })));
       }

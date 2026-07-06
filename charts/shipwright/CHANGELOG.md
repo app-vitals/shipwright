@@ -10,6 +10,66 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.6.290] - 2026-07-06
+
+### Changed
+
+- auto-bump to chart v1.6.290 triggered by release tag `agent-v0.148.0`
+
+## [1.6.289] - 2026-07-06
+
+### Changed
+
+- auto-bump to chart v1.6.289 triggered by release tag `admin-v0.160.0`
+
+## [1.6.288] - 2026-07-06
+
+### Changed
+
+- auto-bump to chart v1.6.288 triggered by release tag `task-store-v0.69.0`
+
+## [1.6.287] - 2026-07-06
+
+### Changed
+
+- auto-bump to chart v1.6.287 triggered by release tag `admin-v0.159.0`
+
+## [1.6.286] - 2026-07-06
+
+### Changed
+
+- auto-bump to chart v1.6.286 triggered by release tag `agent-v0.147.1`
+
+## [1.6.285] - 2026-07-06
+
+### Changed
+
+- auto-bump to chart v1.6.285 triggered by release tag `agent-v0.147.0`
+
+## [1.6.284] - 2026-07-06
+
+### Changed
+
+- auto-bump to chart v1.6.284 triggered by release tag `agent-v0.146.0`
+
+## [1.6.283] - 2026-07-06
+
+### Changed
+
+- auto-bump to chart v1.6.283 triggered by release tag `admin-v0.158.0`
+
+## [1.6.282] - 2026-07-06
+
+### Changed
+
+- auto-bump to chart v1.6.282 triggered by release tag `agent-v0.145.0`
+
+## [1.6.281] - 2026-07-06
+
+### Changed
+
+- auto-bump to chart v1.6.281 triggered by release tag `metrics-v0.132.0`
+
 ## [1.6.280] - 2026-07-06
 
 ### Changed

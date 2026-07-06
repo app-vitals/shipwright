@@ -12,7 +12,7 @@
  *   - seed() without env var: calling it with undefined is a no-op (no error)
  */
 
-import { beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { PrismaClient } from "./index.ts";
 import { TaskTokenService } from "./token-service.ts";
 
@@ -33,6 +33,10 @@ describeOrSkip("TaskTokenService.seed() (integration)", () => {
     prisma = makePrisma();
     await prisma.taskToken.deleteMany();
     tokenService = new TaskTokenService(prisma);
+  });
+
+  afterEach(async () => {
+    await prisma.$disconnect();
   });
 
   it("creates an admin token (agentId: null) from the raw token", async () => {

@@ -78,9 +78,15 @@ All planning and code changes use the shipwright workflow:
 - **Execution:** `/shipwright:dev-task` (single) or `/shipwright:dev-loop` (continuous)
 - **Review:** `/shipwright:review`
 
-The work queue lives in `state/todos.json`. The `shipwright-dev-task` cron picks up the
-next pending item every 30 minutes. The `shipwright-review-patch` cron addresses
-findings from own PR reviews automatically.
+The work queue lives in the hosted task-store service — query it directly:
+
+```bash
+curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?ready=true" | jq '.tasks'
+```
+
+The `shipwright-dev-task` cron picks up the next pending item every 30 minutes. The
+`shipwright-review-patch` cron addresses findings from own PR reviews automatically.
 
 ### Policy
 
@@ -90,8 +96,9 @@ edit this file to change agent behavior without reconfiguring crons.
 
 ### Reviews
 
-Review state is tracked in `state/reviews.json`. Review artifacts (PR_REVIEW files
-and review JSON) live in `state/reviews/`. See `/shipwright:review` for the full flow.
+Review state is tracked in the task store's `PullRequest` record (`staged` +
+`commitSha` fields). Review artifacts (PR_REVIEW files and review JSON) live in
+`state/reviews/`. See `/shipwright:review` for the full flow.
 
 ### Dev Tools (mise)
 

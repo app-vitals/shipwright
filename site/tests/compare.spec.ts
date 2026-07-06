@@ -41,6 +41,7 @@ test("landscape table names the commercial tier", async ({ page }) => {
     "Cursor",
     "GitHub Copilot Agent",
     "OpenHands",
+    "Augment Code",
     "Shipwright Harness",
   ]) {
     await expect(page.getByText(tool, { exact: false }).first()).toBeVisible();
@@ -146,6 +147,18 @@ test("focused OpenHands head-to-head is present and fair", async ({ page }) => {
   ).toBeVisible();
   // It credits OpenHands as the category leader (fair framing).
   await expect(page.getByText(/category leader/i).first()).toBeVisible();
+});
+
+test("focused Augment Code head-to-head is present and fair", async ({
+  page,
+}) => {
+  await page.goto("/compare");
+  await expect(
+    page.getByRole("heading", { name: /Shipwright vs Augment Code/i }),
+  ).toBeVisible();
+  const text = (await page.locator("main").textContent())?.toLowerCase() ?? "";
+  expect(text).toContain("choose augment code");
+  expect(text).toContain("choose shipwright");
 });
 
 test("CTA repeats the install command and links GitHub + discovery call", async ({
