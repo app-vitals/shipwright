@@ -136,6 +136,17 @@ spec:
             - name: SHIPWRIGHT_METRICS_PUBLIC_REPO
               value: {{ required "metrics.public.repo is required when metrics.public.enabled=true" .Values.metrics.public.repo | quote }}
             {{- end }}
+            {{- if .Values.metrics.sentry.dsn.existingSecret }}
+            - name: SENTRY_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.metrics.sentry.dsn.existingSecret }}
+                  key: {{ .Values.metrics.sentry.dsn.key | default "SENTRY_DSN" }}
+            {{- end }}
+            {{- if .Values.metrics.sentry.environment }}
+            - name: SENTRY_ENVIRONMENT
+              value: {{ .Values.metrics.sentry.environment | quote }}
+            {{- end }}
           {{- with .Values.metrics.resources }}
           resources:
             {{- toYaml . | nindent 12 }}

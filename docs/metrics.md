@@ -125,6 +125,8 @@ The `/public/*` endpoints require **no authentication**. Access is controlled by
 | `METRICS_INTERNAL_API_KEY` | | — | Internal key for the accounts client. |
 | `METRICS_DASHBOARD_TOKEN` | | — | Optional dashboard access token. |
 | `METRICS_DASHBOARD_DEV_AUTH` | | `false` | Bypasses `/dashboard` and `/metrics/*` auth for local dev (no login flow in `task stack`). Must not be enabled in production. |
+| `SENTRY_DSN` | | — | Optional Sentry error reporting DSN. When set, the metrics service initializes Sentry and mounts error-capture middleware that reports 5xx and unhandled exceptions. When unset, Sentry is disabled (zero telemetry overhead). Env-var-only (secret). |
+| `SENTRY_ENVIRONMENT` | | — | Sentry environment tag (e.g., `production`, `staging`). Defaults to `NODE_ENV` if unset, then `production`. Passed as the `environment` field in Sentry init options. Optional alongside `SENTRY_DSN`. |
 | `GCP_PROJECT_ID` | | — | Optional — enables GCP Secret Manager as an env-absent fallback for secrets. |
 | `SHIPWRIGHT_ENV_FILE` | | `~/.shipwright/.env` | Dotenv file loaded at startup (existing vars win). |
 

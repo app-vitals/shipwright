@@ -7,6 +7,11 @@
 
 import { join } from "node:path";
 import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
+import { sentry } from "@sentry/hono/bun";
+import {
+  type ErrorCapturingClient,
+  buildSentryInitOptions,
+} from "@shipwright/lib/sentry";
 import { getCookie } from "hono/cookie";
 import { createMiddleware } from "hono/factory";
 import { verify } from "hono/jwt";
@@ -20,6 +25,7 @@ import type { AccountsClient } from "./lib/accounts-client.ts";
 import type { AppHandler, AuthEnv, Caller } from "./lib/api-auth.ts";
 import { ErrorSchema } from "./lib/api-schemas.ts";
 import { registerWithAuthz } from "./lib/api-utils.ts";
+import { makeOnError } from "./lib/errors.ts";
 import {
   SESSION_COOKIE,
   createSessionMiddleware,
@@ -73,6 +79,13 @@ export interface MetricsDeps {
    * then "" (same-origin relative links — the default for single-host ingress).
    */
   adminBaseUrl?: string;
+  /**
+   * Optional Sentry client for reporting 5xx and unhandled errors. Undefined
+   * means Sentry is not initialized (SENTRY_DSN unset) — onError simply skips
+   * the capture call. Production wiring in server.ts passes the real `Sentry`
+   * from `@sentry/bun` only when SENTRY_DSN is set.
+   */
+  sentryClient?: ErrorCapturingClient;
 }
 
 // ─── Route definitions (inlined) ─────────────────────────────────────────────
@@ -854,10 +867,16 @@ export function createMetricsApp(
     },
   });
 
-  app.onError((err, c) => {
-    console.error("unhandled error:", err);
-    return c.json({ error: err.message }, 500);
-  });
+  // Only mounted when SENTRY_DSN is set — a complete no-op otherwise, matching
+  // the app's behavior with Sentry absent. See task-store/src/app.ts for the
+  // rationale on this being the sole `Sentry.init` call site for the request
+  // lifecycle when Sentry is enabled.
+  const sentryInitOptions = buildSentryInitOptions({ service: "metrics" });
+  if (sentryInitOptions) {
+    app.use("*", sentry(app, sentryInitOptions));
+  }
+
+  app.onError(makeOnError("metrics", deps?.sentryClient));
 
   // Health check — no auth required
   app.get("/health", (c) => c.json({ status: "ok" }, 200));
@@ -1344,11 +1363,14 @@ const PUBLIC_POLICY = { kind: "public" as const };
  * @param basePath - optional path prefix the whole public mount sits under.
  * @param dashboardDir - directory holding the dashboard static assets
  *   (styles.css, app.js); defaults to the bundled ./dashboard dir.
+ * @param sentryClient - optional Sentry client for reporting 5xx and unhandled
+ *   errors. Undefined means Sentry is not initialized (SENTRY_DSN unset).
  */
 export function createPublicMetricsApp(
   provider: MetricsProvider,
   basePath = "",
   dashboardDir: string = join(import.meta.dir, "dashboard"),
+  sentryClient?: ErrorCapturingClient,
 ): OpenAPIHono<AuthEnv> {
   // Base for the public dashboard's assets + client API calls. The public routes
   // are registered literally under "/public/*", so the rendered base must resolve
@@ -1365,10 +1387,14 @@ export function createPublicMetricsApp(
     },
   });
 
-  app.onError((err, c) => {
-    console.error("unhandled error:", err);
-    return c.json({ error: err.message }, 500);
-  });
+  // Only mounted when SENTRY_DSN is set — a complete no-op otherwise, matching
+  // the app's behavior with Sentry absent.
+  const sentryInitOptions = buildSentryInitOptions({ service: "metrics" });
+  if (sentryInitOptions) {
+    app.use("*", sentry(app, sentryInitOptions));
+  }
+
+  app.onError(makeOnError("metrics", sentryClient));
 
   // Read-only metric endpoints — no auth, repo-scoped via the injected provider.
   //
