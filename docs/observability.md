@@ -18,7 +18,7 @@ When `SENTRY_DSN` is set, a service reports:
 
 ## What is never collected
 
-- **Request headers** — `Authorization` and `Cookie` headers are unconditionally stripped from every event before it leaves the process, regardless of whether any secret env var is set.
+- **Request headers** — `Authorization` and `Cookie` header **values** are unconditionally redacted to `[Filtered]` in every event before it leaves the process, regardless of whether any secret env var is set. (The header keys remain; only the values are scrubbed.)
 - **Request bodies** — request/response bodies are never attached to Sentry events.
 - **Secret values** — any currently-set value of a secret-shaped env var (`ANTHROPIC_API_KEY`, `GH_TOKEN`, `SHIPWRIGHT_SESSION_SECRET`, etc. — see `SECRET_ENV_VARS` in `lib/sentry.ts` for the full list) is redacted to `[Filtered]` wherever it appears in an event or log, including nested inside longer strings. This scrub runs on both error events (`scrubEvent`) and console-derived logs (`scrubLog`).
 
