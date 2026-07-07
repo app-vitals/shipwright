@@ -1,10 +1,16 @@
 /**
- * metrics/src/lib/admin-metrics-client.unit.test.ts
- * Unit: HttpAdminMetricsClient builds correct URLs/headers for the two admin
- * token-stats endpoints, slices ISO datetimes to date-only for the chat-tokens
- * endpoint, and throws a typed error on non-2xx. Uses an injected fetch double
- * — no global override (Bun shares the test process), mirroring
- * task-store-client.unit.test.ts's FetchLike pattern.
+ * metrics/src/lib/admin-metrics-client.integration.test.ts
+ * Integration: HttpAdminMetricsClient builds correct URLs/headers for the two
+ * admin token-stats endpoints, slices ISO datetimes to date-only for the
+ * chat-tokens endpoint, and throws a typed error on non-2xx. Exercises the
+ * real external-HTTP-client boundary via an injected `FetchLike` double
+ * (recorded-response fixture, not a mock) — no global override (Bun shares
+ * the test process), mirroring task-store-client.unit.test.ts's FetchLike
+ * pattern. Filed as `*.integration.test.ts` per docs/testing.md's layer
+ * convention: external HTTP client tests are integration-layer even when the
+ * "recording" is an inline fixture rather than a cassette file, since the
+ * client's request/response contract with a real dependency is what's under
+ * test.
  */
 
 import { describe, expect, test } from "bun:test";
