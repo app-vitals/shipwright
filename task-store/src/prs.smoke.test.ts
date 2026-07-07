@@ -136,6 +136,16 @@ function makeScopeResolver(
   return async (agentId: string) => (agentId === "agent-1" ? repos : []);
 }
 
+/** Captured args from each fakePrService.claim() call — for asserting phase forwarding. */
+interface CapturedClaimCall {
+  repo: string;
+  prNumber: number;
+  commitSha: string;
+  claimedBy: string;
+  taskId?: string;
+  phase?: "review" | "patch" | "deploy";
+}
+
 /** Minimal in-memory PullRequestServiceLike fake. */
 function fakePrService(
   opts: {
@@ -144,6 +154,7 @@ function fakePrService(
     getResult?: PullRequest | null;
     listResult?: PullRequest[];
     claimNextResult?: { pr: PullRequest; phase: "review" | "patch" | "deploy" } | null;
+    claimCalls?: CapturedClaimCall[];
   } = {},
 ): PullRequestServiceLike {
   const store = opts.store ?? new Map<string, PullRequest>();
@@ -191,7 +202,16 @@ function fakePrService(
       commitSha: string,
       claimedBy: string,
       taskId?: string,
+      phase?: "review" | "patch" | "deploy",
     ): Promise<{ status: 200 | 201; record: PullRequest }> {
+      opts.claimCalls?.push({
+        repo,
+        prNumber,
+        commitSha,
+        claimedBy,
+        taskId,
+        phase,
+      });
       if (opts.claimResult !== undefined) {
         if (opts.claimResult instanceof Error) throw opts.claimResult;
         return opts.claimResult;
@@ -204,6 +224,7 @@ function fakePrService(
         commitSha,
         claimedBy,
         taskId: taskId ?? null,
+        phase: phase ?? "review",
         reviewState: "in_progress",
         claimedAt: new Date().toISOString(),
         heartbeatAt: new Date().toISOString(),
@@ -482,6 +503,43 @@ describe("/prs routes (smoke)", () => {
       }),
     });
     expect(res.status).toBe(201);
+  });
+
+  it('POST /prs/claim forwards phase:"patch" from the request body to service.claim()', async () => {
+    const claimCalls: CapturedClaimCall[] = [];
+    const app = makeApp({ prService: fakePrService({ claimCalls }) });
+    const res = await app.request("/prs/claim", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        repo: ADMIN_REPO,
+        prNumber: 42,
+        commitSha: "abc123",
+        claimedBy: "agent-1",
+        phase: "patch",
+      }),
+    });
+    expect(res.status).toBe(201);
+    expect(claimCalls).toHaveLength(1);
+    expect(claimCalls[0]?.phase).toBe("patch");
+  });
+
+  it("POST /prs/claim without a phase field leaves phase undefined (service default applies)", async () => {
+    const claimCalls: CapturedClaimCall[] = [];
+    const app = makeApp({ prService: fakePrService({ claimCalls }) });
+    const res = await app.request("/prs/claim", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        repo: ADMIN_REPO,
+        prNumber: 42,
+        commitSha: "abc123",
+        claimedBy: "agent-1",
+      }),
+    });
+    expect(res.status).toBe(201);
+    expect(claimCalls).toHaveLength(1);
+    expect(claimCalls[0]?.phase).toBeUndefined();
   });
 
   // ─── POST /prs/:id/complete ───────────────────────────────────────────────
