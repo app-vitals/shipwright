@@ -1,0 +1,70 @@
+{
+  "exchangeOAuthCode_success": {
+    "status": 200,
+    "body": { "ok": true, "access_token": "xoxb-test-bot-token" }
+  },
+  "exchangeOAuthCode_http_error": {
+    "status": 500,
+    "body": { "ok": false, "error": "internal_error" }
+  },
+  "exchangeOAuthCode_slack_error": {
+    "status": 200,
+    "body": { "ok": false, "error": "invalid_code" }
+  },
+  "exchangeOAuthCode_missing_access_token": {
+    "status": 200,
+    "body": { "ok": true }
+  },
+  "updateAppManifest_success": {
+    "status": 200,
+    "body": { "ok": true }
+  },
+  "updateAppManifest_http_error": {
+    "status": 500,
+    "body": { "ok": false, "error": "internal_error" }
+  },
+  "updateAppManifest_slack_error": {
+    "status": 200,
+    "body": { "ok": false, "error": "invalid_manifest" }
+  },
+  "createAppManifest_success": {
+    "status": 200,
+    "body": {
+      "ok": true,
+      "app_id": "A0123456789",
+      "oauth_authorize_url": "https://slack.com/oauth/authorize?client_id=123",
+      "credentials": {
+        "client_id": "123456789.987654321",
+        "client_secret": "test-client-secret",
+        "signing_secret": "test-signing-secret"
+      }
+    }
+  },
+  "createAppManifest_http_error": {
+    "status": 500,
+    "body": { "ok": false, "error": "internal_error" }
+  },
+  "createAppManifest_slack_error": {
+    "status": 200,
+    "body": { "ok": false, "error": "invalid_manifest" }
+  },
+  "createAppManifest_missing_app_id": {
+    "status": 200,
+    "body": {
+      "ok": true,
+      "credentials": {
+        "client_id": "123456789.987654321",
+        "client_secret": "test-client-secret",
+        "signing_secret": "test-signing-secret"
+      }
+    }
+  },
+  "createAppManifest_missing_credentials": {
+    "status": 200,
+    "body": {
+      "ok": true,
+      "app_id": "A0123456789",
+      "oauth_authorize_url": "https://slack.com/oauth/authorize?client_id=123"
+    }
+  }
+}

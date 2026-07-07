@@ -1,0 +1,26 @@
+{
+  "mintToken_success": {
+    "status": 201,
+    "body": { "id": "tok_abc123", "rawToken": "sts_raw_test_token_value" }
+  },
+  "mintToken_success_with_agentId": {
+    "status": 201,
+    "body": { "id": "tok_def456", "rawToken": "sts_raw_test_token_agent_scoped" }
+  },
+  "mintToken_500": {
+    "status": 500,
+    "body": { "error": "internal server error" }
+  },
+  "revokeToken_success": {
+    "status": 204,
+    "body": {}
+  },
+  "revokeToken_404": {
+    "status": 404,
+    "body": { "error": "not found" }
+  },
+  "revokeToken_500": {
+    "status": 500,
+    "body": { "error": "internal server error" }
+  }
+}

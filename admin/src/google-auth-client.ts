@@ -56,13 +56,19 @@ class GoogleAuthClientError extends Error {
 // ─── HTTP implementation ────────────────────────────────────────────────────
 
 export class HttpGoogleAuthClient implements GoogleAuthClient {
+  private readonly fetchFn: typeof fetch;
+
+  constructor(opts?: { fetchFn?: typeof fetch }) {
+    this.fetchFn = opts?.fetchFn ?? fetch;
+  }
+
   async exchangeCode(params: {
     code: string;
     clientId: string;
     clientSecret: string;
     redirectUri: string;
   }): Promise<GoogleTokenResponse> {
-    const res = await fetch(GOOGLE_TOKEN_URL, {
+    const res = await this.fetchFn(GOOGLE_TOKEN_URL, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
@@ -98,7 +104,7 @@ export class HttpGoogleAuthClient implements GoogleAuthClient {
   }
 
   async getUserInfo(accessToken: string): Promise<GoogleUserInfo> {
-    const res = await fetch(GOOGLE_USERINFO_URL, {
+    const res = await this.fetchFn(GOOGLE_USERINFO_URL, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
 

@@ -189,9 +189,11 @@ export function buildAgentManifest(
  */
 export class HttpSlackProvisioningClient implements SlackProvisioningClient {
   private readonly apiBase: string;
+  private readonly fetchFn: typeof fetch;
 
-  constructor(opts?: { apiBase?: string }) {
+  constructor(opts?: { apiBase?: string; fetchFn?: typeof fetch }) {
     this.apiBase = opts?.apiBase ?? "https://slack.com/api";
+    this.fetchFn = opts?.fetchFn ?? fetch;
   }
 
   async exchangeOAuthCode(
@@ -209,7 +211,7 @@ export class HttpSlackProvisioningClient implements SlackProvisioningClient {
     const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString(
       "base64",
     );
-    const resp = await fetch(url, {
+    const resp = await this.fetchFn(url, {
       method: "POST",
       headers: {
         Authorization: `Basic ${credentials}`,
@@ -247,7 +249,7 @@ export class HttpSlackProvisioningClient implements SlackProvisioningClient {
     manifest: AppManifest,
   ): Promise<void> {
     const url = `${this.apiBase}/apps.manifest.update`;
-    const resp = await fetch(url, {
+    const resp = await this.fetchFn(url, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${xoxpToken}`,
@@ -283,7 +285,7 @@ export class HttpSlackProvisioningClient implements SlackProvisioningClient {
     signingSecret: string;
   }> {
     const url = `${this.apiBase}/apps.manifest.create`;
-    const resp = await fetch(url, {
+    const resp = await this.fetchFn(url, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${xoxpToken}`,
