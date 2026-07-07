@@ -10,7 +10,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { PrismaClient } from "../prisma/client/index.js";
 import { FixedClock } from "./clock.ts";
-import { ConflictError } from "./errors.ts";
+import { ConflictError, NotFoundError } from "./errors.ts";
 import { PullRequestService } from "./pull-request-service.ts";
 
 const TEST_DB = process.env.DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST;
@@ -714,5 +714,237 @@ describeOrSkip("PullRequestService.claimNext() (integration)", () => {
     expect(result?.pr.id).toBe(inScopePr.id);
     expect(result?.pr.repo).toBe("app-vitals/shipwright");
     expect(result?.phase).toBe("review");
+  });
+});
+
+// ─── list() / get() (reads) ──────────────────────────────────────────────────
+
+describeOrSkip("PullRequestService.list() and get() (integration)", () => {
+  let prisma: PrismaClient;
+  let service: PullRequestService;
+
+  beforeEach(async () => {
+    prisma = makePrisma();
+    service = new PullRequestService(prisma);
+    await prisma.pullRequest.deleteMany();
+  });
+
+  afterEach(async () => {
+    await prisma.$disconnect();
+  });
+
+  it("list() with no filters returns all PRs with pagination defaults", async () => {
+    await prisma.pullRequest.createMany({
+      data: [
+        { repo: "app-vitals/shipwright", prNumber: 1001 },
+        { repo: "app-vitals/shipwright", prNumber: 1002 },
+      ],
+    });
+
+    const result = await service.list();
+    expect(result.total).toBe(2);
+    expect(result.limit).toBe(50);
+    expect(result.offset).toBe(0);
+    expect(result.prs).toHaveLength(2);
+  });
+
+  it("list() filters by repo, prNumber, taskId, state, reviewState, and staged", async () => {
+    await prisma.pullRequest.create({
+      data: {
+        repo: "app-vitals/shipwright",
+        prNumber: 1010,
+        taskId: "task-abc",
+        state: "open",
+        reviewState: "pending",
+        staged: true,
+      },
+    });
+    await prisma.pullRequest.create({
+      data: {
+        repo: "app-vitals/other-repo",
+        prNumber: 1011,
+        taskId: "task-def",
+        state: "closed",
+        reviewState: "approved",
+        staged: false,
+      },
+    });
+
+    const byRepo = await service.list({ repo: "app-vitals/shipwright" });
+    expect(byRepo.total).toBe(1);
+    expect(byRepo.prs[0].prNumber).toBe(1010);
+
+    const byPrNumber = await service.list({ prNumber: 1011 });
+    expect(byPrNumber.total).toBe(1);
+    expect(byPrNumber.prs[0].repo).toBe("app-vitals/other-repo");
+
+    const byTaskId = await service.list({ taskId: "task-abc" });
+    expect(byTaskId.total).toBe(1);
+    expect(byTaskId.prs[0].prNumber).toBe(1010);
+
+    const byState = await service.list({ state: "closed" });
+    expect(byState.total).toBe(1);
+    expect(byState.prs[0].prNumber).toBe(1011);
+
+    const byReviewState = await service.list({ reviewState: "approved" });
+    expect(byReviewState.total).toBe(1);
+    expect(byReviewState.prs[0].prNumber).toBe(1011);
+
+    const byStaged = await service.list({ staged: true });
+    expect(byStaged.total).toBe(1);
+    expect(byStaged.prs[0].prNumber).toBe(1010);
+  });
+
+  it("list() respects limit and offset for pagination", async () => {
+    await prisma.pullRequest.createMany({
+      data: [
+        { repo: "app-vitals/shipwright", prNumber: 1020 },
+        { repo: "app-vitals/shipwright", prNumber: 1021 },
+        { repo: "app-vitals/shipwright", prNumber: 1022 },
+      ],
+    });
+
+    const page1 = await service.list({ limit: 2, offset: 0 });
+    expect(page1.prs).toHaveLength(2);
+    expect(page1.total).toBe(3);
+    expect(page1.limit).toBe(2);
+    expect(page1.offset).toBe(0);
+
+    const page2 = await service.list({ limit: 2, offset: 2 });
+    expect(page2.prs).toHaveLength(1);
+    expect(page2.offset).toBe(2);
+  });
+
+  it("get() returns the PR when it exists", async () => {
+    const created = await prisma.pullRequest.create({
+      data: { repo: "app-vitals/shipwright", prNumber: 1030 },
+    });
+
+    const found = await service.get(created.id);
+    expect(found).not.toBeNull();
+    expect(found?.id).toBe(created.id);
+  });
+
+  it("get() returns null when the PR does not exist", async () => {
+    const found = await service.get("00000000-0000-0000-0000-000000000000");
+    expect(found).toBeNull();
+  });
+});
+
+// ─── heartbeat() / release() / patch() (liveness + lifecycle) ────────────────
+
+describeOrSkip("PullRequestService.heartbeat/release/patch (integration)", () => {
+  let prisma: PrismaClient;
+  let service: PullRequestService;
+
+  beforeEach(async () => {
+    prisma = makePrisma();
+    service = new PullRequestService(prisma);
+    await prisma.pullRequest.deleteMany();
+  });
+
+  afterEach(async () => {
+    await prisma.$disconnect();
+  });
+
+  it("heartbeat() updates heartbeatAt for an existing PR", async () => {
+    const now = new Date("2026-07-02T09:00:00.000Z");
+    const clock = FixedClock(now);
+    const svc = new PullRequestService(prisma, clock);
+
+    const created = await prisma.pullRequest.create({
+      data: { repo: "app-vitals/shipwright", prNumber: 1100 },
+    });
+
+    const updated = await svc.heartbeat(created.id);
+    expect(updated.heartbeatAt).toBe(now.toISOString());
+  });
+
+  it("heartbeat() throws NotFoundError when the PR does not exist", async () => {
+    let caught: unknown;
+    try {
+      await service.heartbeat("00000000-0000-0000-0000-000000000000");
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(NotFoundError);
+  });
+
+  it("release() resets claim fields and reviewState to pending for an existing PR", async () => {
+    const { record: created } = await service.claim(
+      "app-vitals/shipwright",
+      1110,
+      "sha-release",
+      "agent-a",
+    );
+    expect(created.claimedBy).toBe("agent-a");
+
+    const released = await service.release(created.id);
+    expect(released.reviewState).toBe("pending");
+    expect(released.claimedBy).toBeNull();
+    expect(released.claimedAt).toBeNull();
+    expect(released.heartbeatAt).toBeNull();
+  });
+
+  it("release() throws NotFoundError when the PR does not exist", async () => {
+    let caught: unknown;
+    try {
+      await service.release("00000000-0000-0000-0000-000000000000");
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(NotFoundError);
+  });
+
+  it("patch() increments patchCycles, sets patchedAt, and resets reviewState to pending", async () => {
+    const now = new Date("2026-07-02T10:00:00.000Z");
+    const clock = FixedClock(now);
+    const svc = new PullRequestService(prisma, clock);
+
+    const created = await prisma.pullRequest.create({
+      data: {
+        repo: "app-vitals/shipwright",
+        prNumber: 1120,
+        reviewState: "posted",
+        patchCycles: 1,
+      },
+    });
+
+    const patched = await svc.patch(created.id);
+    expect(patched.patchCycles).toBe(2);
+    expect(patched.patchedAt).toBe(now.toISOString());
+    expect(patched.reviewState).toBe("pending");
+  });
+
+  it("patch() throws NotFoundError when the PR does not exist", async () => {
+    let caught: unknown;
+    try {
+      await service.patch("00000000-0000-0000-0000-000000000000");
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(NotFoundError);
+  });
+
+  it("update() throws NotFoundError when the PR does not exist", async () => {
+    let caught: unknown;
+    try {
+      await service.update("00000000-0000-0000-0000-000000000000", {
+        state: "closed",
+      });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(NotFoundError);
+  });
+
+  it("complete() throws NotFoundError when the PR does not exist", async () => {
+    let caught: unknown;
+    try {
+      await service.complete("00000000-0000-0000-0000-000000000000");
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(NotFoundError);
   });
 });
