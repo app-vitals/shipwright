@@ -136,7 +136,12 @@ export function createGitHubTokenManager(): GitHubTokenManager {
   return new GitHubTokenManager({ auth, installationId });
 }
 
-async function fetchBotIdentity(
+/**
+ * Exported (in addition to getBotIdentity) so tests can inject a fake
+ * `fetchFn` and exercise the GitHub API error branches without a real
+ * network call or a live GitHub App installation.
+ */
+export async function fetchBotIdentity(
   appId: string,
   privateKey: string,
   fetchFn: FetchFn = fetch,

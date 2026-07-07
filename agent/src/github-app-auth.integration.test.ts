@@ -7,9 +7,26 @@
  * Isolation contract: no mock.module(), no global overrides, no real network.
  */
 
-import { beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { generateKeyPairSync } from "node:crypto";
 import { FixedClock } from "./clock.ts";
-import { GitHubTokenManager } from "./github-app-auth.ts";
+import {
+  createGitHubTokenManager,
+  fetchBotIdentity,
+  type FetchFn,
+  getBotIdentity,
+  GitHubTokenManager,
+} from "./github-app-auth.ts";
+
+// ─── Test RSA key pair (generated at test time — pure computation, no I/O) ────
+// @octokit/auth-app signs a real JWT, so fetchBotIdentity needs a structurally
+// valid RSA private key. Generated fresh per test run; never a real App key.
+
+const { privateKey: TEST_PRIVATE_KEY } = generateKeyPairSync("rsa", {
+  modulusLength: 2048,
+  privateKeyEncoding: { type: "pkcs1", format: "pem" },
+  publicKeyEncoding: { type: "pkcs1", format: "pem" },
+});
 
 // ─── Recorded client double ───────────────────────────────────────────────────
 
@@ -212,5 +229,191 @@ describe("GitHubTokenManager — background refresh (integration)", () => {
     const token2 = await nearExpiryManager.getToken();
     expect(token2).toBe("near-expiry-token-2");
     expect(nearExpiryClient.callCount).toBe(2);
+  });
+});
+
+// ─── createGitHubTokenManager() — env var wiring & missing-config errors ─────
+
+describe("createGitHubTokenManager() — env var wiring", () => {
+  const ORIGINAL_ENV = {
+    GH_APP_ID: process.env.GH_APP_ID,
+    GH_APP_PRIVATE_KEY: process.env.GH_APP_PRIVATE_KEY,
+    GH_APP_INSTALLATION_ID: process.env.GH_APP_INSTALLATION_ID,
+  };
+
+  afterEach(() => {
+    process.env.GH_APP_ID = ORIGINAL_ENV.GH_APP_ID;
+    process.env.GH_APP_PRIVATE_KEY = ORIGINAL_ENV.GH_APP_PRIVATE_KEY;
+    process.env.GH_APP_INSTALLATION_ID = ORIGINAL_ENV.GH_APP_INSTALLATION_ID;
+  });
+
+  it("throws when GH_APP_ID is missing", () => {
+    process.env.GH_APP_ID = undefined;
+    process.env.GH_APP_PRIVATE_KEY = TEST_PRIVATE_KEY;
+    process.env.GH_APP_INSTALLATION_ID = "123";
+
+    expect(() => createGitHubTokenManager()).toThrow(
+      /Missing required env vars/,
+    );
+  });
+
+  it("throws when GH_APP_PRIVATE_KEY is missing", () => {
+    process.env.GH_APP_ID = "12345";
+    process.env.GH_APP_PRIVATE_KEY = undefined;
+    process.env.GH_APP_INSTALLATION_ID = "123";
+
+    expect(() => createGitHubTokenManager()).toThrow(
+      /Missing required env vars/,
+    );
+  });
+
+  it("throws when GH_APP_INSTALLATION_ID is missing", () => {
+    process.env.GH_APP_ID = "12345";
+    process.env.GH_APP_PRIVATE_KEY = TEST_PRIVATE_KEY;
+    process.env.GH_APP_INSTALLATION_ID = undefined;
+
+    expect(() => createGitHubTokenManager()).toThrow(
+      /Missing required env vars/,
+    );
+  });
+
+  it("throws when GH_APP_INSTALLATION_ID is not a valid number (0/NaN is falsy)", () => {
+    process.env.GH_APP_ID = "12345";
+    process.env.GH_APP_PRIVATE_KEY = TEST_PRIVATE_KEY;
+    process.env.GH_APP_INSTALLATION_ID = "not-a-number";
+
+    expect(() => createGitHubTokenManager()).toThrow(
+      /Missing required env vars/,
+    );
+  });
+
+  it("builds a GitHubTokenManager and unescapes literal \\n sequences in the private key", () => {
+    process.env.GH_APP_ID = "12345";
+    process.env.GH_APP_PRIVATE_KEY = TEST_PRIVATE_KEY.replace(/\n/g, "\\n");
+    process.env.GH_APP_INSTALLATION_ID = "999";
+
+    const manager = createGitHubTokenManager();
+    expect(manager).toBeInstanceOf(GitHubTokenManager);
+  });
+});
+
+// ─── fetchBotIdentity() — success & error branches (injected fetchFn) ────────
+
+describe("fetchBotIdentity() (integration)", () => {
+  function fakeFetch(opts: {
+    appStatus?: number;
+    appBody?: unknown;
+    userStatus?: number;
+    userBody?: unknown;
+  }): FetchFn {
+    const {
+      appStatus = 200,
+      appBody = { slug: "shipwright-bot", name: "Shipwright Bot" },
+      userStatus = 200,
+      userBody = { id: 987654 },
+    } = opts;
+
+    return (async (url: string | URL | Request) => {
+      const urlStr = url.toString();
+      if (urlStr === "https://api.github.com/app") {
+        return new Response(JSON.stringify(appBody), {
+          status: appStatus,
+          statusText: appStatus >= 400 ? "Error" : "OK",
+        });
+      }
+      // GET /users/:slug[bot]
+      return new Response(JSON.stringify(userBody), {
+        status: userStatus,
+        statusText: userStatus >= 400 ? "Error" : "OK",
+      });
+    }) as FetchFn;
+  }
+
+  it("resolves the bot identity on success (slug, name, userId)", async () => {
+    const fetchFn = fakeFetch({});
+    const identity = await fetchBotIdentity("12345", TEST_PRIVATE_KEY, fetchFn);
+
+    expect(identity).toEqual({
+      slug: "shipwright-bot",
+      name: "Shipwright Bot",
+      userId: 987654,
+    });
+  });
+
+  it("throws when GET /app returns a non-ok status", async () => {
+    const fetchFn = fakeFetch({ appStatus: 401 });
+
+    let caught: unknown;
+    try {
+      await fetchBotIdentity("12345", TEST_PRIVATE_KEY, fetchFn);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toContain("GET /app failed: 401");
+  });
+
+  it("throws when GET /users/:slug[bot] returns a non-ok status", async () => {
+    const fetchFn = fakeFetch({ userStatus: 404 });
+
+    let caught: unknown;
+    try {
+      await fetchBotIdentity("12345", TEST_PRIVATE_KEY, fetchFn);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toContain(
+      "GET /users/shipwright-bot[bot] failed: 404",
+    );
+  });
+
+  it("URL-encodes the bot username lookup (slug[bot])", async () => {
+    const calls: string[] = [];
+    const fetchFn: FetchFn = (async (url: string | URL | Request) => {
+      const urlStr = url.toString();
+      calls.push(urlStr);
+      if (urlStr === "https://api.github.com/app") {
+        return new Response(
+          JSON.stringify({ slug: "my-app", name: "My App" }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify({ id: 1 }), { status: 200 });
+    }) as FetchFn;
+
+    await fetchBotIdentity("12345", TEST_PRIVATE_KEY, fetchFn);
+
+    expect(calls[1]).toBe(
+      `https://api.github.com/users/${encodeURIComponent("my-app[bot]")}`,
+    );
+  });
+});
+
+// ─── getBotIdentity() — missing env var errors ───────────────────────────────
+
+describe("getBotIdentity() — missing env var errors", () => {
+  const ORIGINAL_ENV = {
+    GH_APP_ID: process.env.GH_APP_ID,
+    GH_APP_PRIVATE_KEY: process.env.GH_APP_PRIVATE_KEY,
+  };
+
+  afterEach(() => {
+    process.env.GH_APP_ID = ORIGINAL_ENV.GH_APP_ID;
+    process.env.GH_APP_PRIVATE_KEY = ORIGINAL_ENV.GH_APP_PRIVATE_KEY;
+  });
+
+  it("throws when GH_APP_ID is missing", () => {
+    process.env.GH_APP_ID = undefined;
+    process.env.GH_APP_PRIVATE_KEY = TEST_PRIVATE_KEY;
+
+    expect(() => getBotIdentity()).toThrow(/Missing required env vars/);
+  });
+
+  it("throws when GH_APP_PRIVATE_KEY is missing", () => {
+    process.env.GH_APP_ID = "12345";
+    process.env.GH_APP_PRIVATE_KEY = undefined;
+
+    expect(() => getBotIdentity()).toThrow(/Missing required env vars/);
   });
 });

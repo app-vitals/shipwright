@@ -1,14 +1,17 @@
 /**
  * task-store/src/auth.smoke.test.ts
  *
- * Smoke tests for the bearer auth middleware's scope resolver integration.
- * Tests run in-process via a minimal Hono app — no real HTTP socket, no real DB.
+ * Smoke tests for the bearer auth middleware. Tests run in-process via a
+ * minimal Hono app — no real HTTP socket, no real DB.
  *
  * Covers:
- *   1. When resolver returns repos, c.get('repos') is populated for agent tokens
- *   2. No scope resolver (URL not set path) → repos defaults to []
- *   3. Scope resolver throws → repos defaults to [] (no crash)
- *   4. Admin token (agentId null) → repos = null (unrestricted), resolver not called
+ *   1. Base 401 paths: missing Authorization header, malformed non-"Bearer "
+ *      header, and an invalid/unknown token
+ *   2. Scope resolver integration:
+ *      a. When resolver returns repos, c.get('repos') is populated for agent tokens
+ *      b. No scope resolver (URL not set path) → repos defaults to []
+ *      c. Scope resolver throws → repos defaults to [] (no crash)
+ *      d. Admin token (agentId null) → repos = null (unrestricted), resolver not called
  */
 
 import { describe, expect, it } from "bun:test";
@@ -60,6 +63,64 @@ function makeAuthApp(
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
+
+describe("bearer auth middleware — base 401 paths", () => {
+  it("returns 401 with WWW-Authenticate: Bearer when the Authorization header is absent", async () => {
+    const app = makeAuthApp(fakeAdminTokenService());
+    const res = await app.request("/whoami");
+
+    expect(res.status).toBe(401);
+    expect(res.headers.get("WWW-Authenticate")).toBe("Bearer");
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("Unauthorized");
+  });
+
+  it("returns 401 when the Authorization header is present but not a Bearer scheme", async () => {
+    const app = makeAuthApp(fakeAdminTokenService());
+    const res = await app.request("/whoami", {
+      headers: { Authorization: `Basic ${btoa("user:pass")}` },
+    });
+
+    expect(res.status).toBe(401);
+    expect(res.headers.get("WWW-Authenticate")).toBe("Bearer");
+  });
+
+  it("returns 401 when the Authorization header is malformed (missing 'Bearer ' prefix)", async () => {
+    const app = makeAuthApp(fakeAdminTokenService());
+    const res = await app.request("/whoami", {
+      headers: { Authorization: ADMIN_TOKEN },
+    });
+
+    expect(res.status).toBe(401);
+    expect(res.headers.get("WWW-Authenticate")).toBe("Bearer");
+  });
+
+  it("returns 401 with invalid_token error when the token does not validate", async () => {
+    const app = makeAuthApp(fakeAdminTokenService());
+    const res = await app.request("/whoami", {
+      headers: { Authorization: "Bearer not-a-real-token" },
+    });
+
+    expect(res.status).toBe(401);
+    expect(res.headers.get("WWW-Authenticate")).toBe(
+      'Bearer error="invalid_token"',
+    );
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("Unauthorized");
+  });
+
+  it("accepts a valid token and sets tokenId/agentId on the context", async () => {
+    const app = makeAuthApp(fakeAdminTokenService());
+    const res = await app.request("/whoami", {
+      headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { tokenId: string; agentId: null };
+    expect(body.tokenId).toBe("tok-admin");
+    expect(body.agentId).toBeNull();
+  });
+});
 
 describe("bearer auth middleware — scope resolver", () => {
   it("populates repos from scope resolver for agent tokens", async () => {
