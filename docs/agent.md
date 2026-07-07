@@ -218,7 +218,7 @@ The constant `BAKED_MARKETPLACES_ROOT` and function `discoverBakedMarketplaces()
 | `agent/src/setup.ts` | Workspace bootstrapping — directory scaffolding, identity-file seeding, plugin installation, and mise startup. Safe to call on every agent startup (idempotent). |
 | `admin/src/crypto.ts` / `token-crypto.ts` | AES-256-GCM + token hashing helpers. |
 | `admin/src/system-crons.ts` | System-cron definitions reconciled onto each agent. |
-| `agent/src/github-app-auth.ts` | `GitHubTokenManager` — installation-token cache + proactive 30-min background refresh; `getBotIdentity()` for git author config. |
+| `agent/src/github-app-auth.ts` | `GitHubTokenManager` — installation-token cache + proactive 30-min background refresh; `getBotIdentity()` and `fetchBotIdentity()` for git author config and bot identity resolution (testable with injected `fetchFn`). |
 | `agent/src/github-token-store.ts` | Atomic file-based token store (`writeToken` / `readToken` / `resolveTokenPath`) used by the credential helper. |
 | `agent/src/setup-github-auth.ts` | `setupGitHubAuth()` — wires GitHub auth on agent startup: App path (token manager + credential helper + git identity) or PAT path (`gh auth setup-git`). |
 | `agent/scripts/bin/git-credential-shipwright.sh` | Git credential helper that reads the token file written by the App auth path. |
