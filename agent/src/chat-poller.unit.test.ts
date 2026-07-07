@@ -304,6 +304,33 @@ describe("createChatPoller poll: per-thread error isolation", () => {
   });
 });
 
+// ─── poll: listThreads failure ─────────────────────────────────────────────────
+
+describe("createChatPoller poll: listThreads failure", () => {
+  it("does not throw and skips the poll iteration when listThreads fails", async () => {
+    const listThreads = mock(async () => {
+      throw new Error("chat service unreachable");
+    });
+    const claimMessage = mock(async () => null);
+    const client = makeFakeClient({ listThreads, claimMessage });
+    const runner = mock(async () => ({ result: "ok" }));
+
+    const poller = createChatPoller({ client, runner });
+
+    await expect(poller.pollOnce()).resolves.toBeUndefined();
+    expect(listThreads).toHaveBeenCalledTimes(1);
+    expect(claimMessage).not.toHaveBeenCalled();
+    expect(runner).not.toHaveBeenCalled();
+  });
+});
+
+// ─── start/stop: timer lifecycle ───────────────────────────────────────────────
+//
+// Moved to chat-poller.integration.test.ts — these tests drive real
+// setInterval/clearInterval across real ~100ms wall-clock waits, which puts
+// them over the unit-layer <200ms hard cap and outside its "no I/O of any
+// kind" boundary (see docs/test-readiness/test-system.md).
+
 // ─── poll: multiple threads ────────────────────────────────────────────────────
 
 describe("createChatPoller poll: multiple threads", () => {
@@ -444,6 +471,46 @@ describe("createChatPoller poll: attachment handling", () => {
       const runnerArg = (runner.mock.calls[0] as unknown[])[0] as string;
       expect(runnerArg).toBe(message.body);
       expect(runnerArg).not.toContain("gone.txt");
+    } finally {
+      await rm(workspaceDir, { recursive: true, force: true });
+    }
+  });
+
+  it("continues without augmenting the message when getAttachment throws", async () => {
+    const workspaceDir = await mkdtemp(join(tmpdir(), "chat-poller-att-"));
+    try {
+      const threadId = "thread-att-error";
+      const thread = makeThread(threadId);
+      const message = makeMessageWithAttachment(threadId, "broken.txt");
+      const replyResult = makeReplyResult(makeMessage(threadId));
+
+      const getAttachment = mock(async () => {
+        throw new Error("attachment fetch failed");
+      });
+      const client = makeFakeClient({
+        listThreads: async () => ({
+          threads: [thread],
+          total: 1,
+          limit: 50,
+          offset: 0,
+        }),
+        claimMessage: async () => message,
+        replyToMessage: async () => replyResult,
+        getAttachment,
+      });
+
+      const runner = mock(async () => ({ result: "ok" }));
+      const poller = createChatPoller({ client, runner, workspaceDir });
+
+      // Must not throw — the attachment fetch error is caught and logged, and
+      // the runner still gets called with the un-augmented message body.
+      await expect(poller.pollOnce()).resolves.toBeUndefined();
+
+      expect(getAttachment).toHaveBeenCalledTimes(1);
+      expect(runner).toHaveBeenCalledTimes(1);
+      const runnerArg = (runner.mock.calls[0] as unknown[])[0] as string;
+      expect(runnerArg).toBe(message.body);
+      expect(runnerArg).not.toContain("broken.txt");
     } finally {
       await rm(workspaceDir, { recursive: true, force: true });
     }
