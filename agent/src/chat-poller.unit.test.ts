@@ -325,70 +325,11 @@ describe("createChatPoller poll: listThreads failure", () => {
 });
 
 // ─── start/stop: timer lifecycle ───────────────────────────────────────────────
-
-describe("createChatPoller start/stop", () => {
-  it("start() invokes pollOnce on the configured interval, and stop() halts it", async () => {
-    const thread = makeThread("thread-timer");
-    const claimMessage = mock(async () => null);
-    const client = makeFakeClient({
-      listThreads: async () => ({
-        threads: [thread],
-        total: 1,
-        limit: 50,
-        offset: 0,
-      }),
-      claimMessage,
-    });
-    const runner = mock(async () => ({ result: "ok" }));
-
-    const poller = createChatPoller({ client, runner, intervalMs: 10 });
-    poller.start();
-
-    // Let a couple of intervals elapse.
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    poller.stop();
-    const callsAtStop = claimMessage.mock.calls.length;
-    expect(callsAtStop).toBeGreaterThan(0);
-
-    // No further polling after stop().
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    expect(claimMessage.mock.calls.length).toBe(callsAtStop);
-  });
-
-  it("start() is a no-op when already running (does not create a second timer)", async () => {
-    const thread = makeThread("thread-timer-2");
-    const claimMessage = mock(async () => null);
-    const client = makeFakeClient({
-      listThreads: async () => ({
-        threads: [thread],
-        total: 1,
-        limit: 50,
-        offset: 0,
-      }),
-      claimMessage,
-    });
-    const runner = mock(async () => ({ result: "ok" }));
-
-    const poller = createChatPoller({ client, runner, intervalMs: 10 });
-    poller.start();
-    poller.start(); // second call should be a no-op guard
-
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    poller.stop();
-
-    // If a second timer had been created, calls would double up per tick.
-    // Just assert it ran and stopped cleanly without throwing.
-    expect(claimMessage.mock.calls.length).toBeGreaterThan(0);
-  });
-
-  it("stop() is a no-op when the poller was never started", () => {
-    const client = makeFakeClient();
-    const runner = mock(async () => ({ result: "ok" }));
-    const poller = createChatPoller({ client, runner });
-
-    expect(() => poller.stop()).not.toThrow();
-  });
-});
+//
+// Moved to chat-poller.integration.test.ts — these tests drive real
+// setInterval/clearInterval across real ~100ms wall-clock waits, which puts
+// them over the unit-layer <200ms hard cap and outside its "no I/O of any
+// kind" boundary (see docs/test-readiness/test-system.md).
 
 // ─── poll: multiple threads ────────────────────────────────────────────────────
 
