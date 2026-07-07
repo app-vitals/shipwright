@@ -54,8 +54,14 @@ import { makeTokenCrypto } from "./token-crypto.ts";
 /**
  * Runs `prisma migrate deploy` as a boot preflight.
  * Idempotent — safe to call on every startup. Throws on migration failure.
+ *
+ * Exported for the early-return branch (DATABASE_URL_SHIPWRIGHT_ADMIN unset) to
+ * be unit-tested directly. The Bun.spawn path below it requires a real `bunx
+ * prisma migrate deploy` process and a live Postgres — that's process-wiring /
+ * real-I/O, exercised in deployed environments and the integration DB rather
+ * than a unit test.
  */
-async function runMigrations(): Promise<void> {
+export async function runMigrations(): Promise<void> {
   const databaseUrl = process.env.DATABASE_URL_SHIPWRIGHT_ADMIN;
   if (!databaseUrl) {
     console.warn(
@@ -107,8 +113,13 @@ async function runMigrations(): Promise<void> {
  * value) return a `NoopAgentProvisioner` so create/delete behave exactly as
  * before — no cluster required. This keeps the new wiring safe to deploy
  * standalone behind the flag's default.
+ *
+ * Exported so its many env-driven branches (K8s provisioning flag, voice env
+ * passthrough, task-store/chat-service client construction, PVC name template)
+ * can be unit-tested directly with an injected/stub AgentTokenService, without
+ * needing a real Prisma connection or K8s cluster.
  */
-function buildProvisioner(
+export function buildProvisioner(
   env: NodeJS.ProcessEnv,
   agentTokenService: AgentTokenService,
 ): AgentProvisioner {
@@ -220,6 +231,17 @@ export function resolvePublicRepo(
   return env.SHIPWRIGHT_ADMIN_PUBLIC_REPO?.trim() || undefined;
 }
 
+// startServer() is the process entrypoint: it runs the real migration
+// preflight, constructs a real PrismaClient (live DB connection), calls
+// Bun.serve to bind an actual socket, and mounts every sub-app. This is
+// process-wiring / real-I/O by design — there is no pure logic left to
+// extract once buildProvisioner, resolveTaskStoreBaseUrl, resolvePublicRepo,
+// and runMigrations's early-return are unit-tested in isolation (see
+// main.unit.test.ts). It is exercised in deployed environments (and via the
+// smoke/integration suites of the services it wires together), not by a unit
+// test — forcing a mock-heavy unit test here would mean re-implementing
+// Bun.serve/PrismaClient/Hono routing as fakes without gaining real coverage
+// of the wiring behavior itself.
 async function startServer(): Promise<void> {
   // Initializes Sentry (no-op when SENTRY_DSN is unset) so that startup
   // failures below (e.g. a failed migration) are captured too. See
