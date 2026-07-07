@@ -63,7 +63,7 @@ describeOrSkip("AgentPluginService (integration)", () => {
     expect(plugin.version).toBe("1.2.3");
   });
 
-  it("add() re-adding an existing plugin updates version and re-enables it (upsert)", async () => {
+  it("add() creates a fresh row after the original was removed (unique constraint freed)", async () => {
     const agentId = await createAgent(prisma);
     const plugin = await service.add(agentId, "shipwright@shipwright", "1.0.0");
     await service.remove(agentId, plugin.id);
