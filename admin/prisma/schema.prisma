@@ -159,10 +159,6 @@ model AgentCronRun {
   skipReason         String?
   outcome            String?
   error              String?
-  inputTokens        Int?
-  outputTokens       Int?
-  cacheReadTokens    Int?
-  cacheCreationTokens Int?
   createdAt          DateTime  @default(now())
 
   modelBreakdown AgentCronRunModelBreakdown[]

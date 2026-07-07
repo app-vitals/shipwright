@@ -45,6 +45,38 @@ async function createCron(
   return job.id;
 }
 
+/**
+ * Seed token usage for a run by inserting an AgentCronRunModelBreakdown row.
+ *
+ * Since AgentCronRun no longer stores token columns directly, all token data
+ * flows through the breakdown table. This mirrors what the agents-api PATCH
+ * handler does when it receives a modelBreakdown payload.
+ */
+async function seedTokens(
+  prisma: PrismaClient,
+  runId: string,
+  tokens: {
+    input: number;
+    output: number;
+    cacheRead?: number;
+    cacheCreation?: number;
+    model?: string;
+    costUsd?: number;
+  },
+): Promise<void> {
+  await prisma.agentCronRunModelBreakdown.create({
+    data: {
+      cronRunId: runId,
+      model: tokens.model ?? "legacy-unattributed",
+      inputTokens: tokens.input,
+      outputTokens: tokens.output,
+      cacheReadTokens: tokens.cacheRead ?? 0,
+      cacheCreationTokens: tokens.cacheCreation ?? 0,
+      costUsd: tokens.costUsd ?? 0,
+    },
+  });
+}
+
 describeOrSkip("AgentCronRunStatsService (integration)", () => {
   let prisma: PrismaClient;
   let cronJobService: AgentCronJobService;
@@ -84,17 +116,17 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
       skipped: false,
     });
 
-    await runService.patch(run1.id, agentId, cronId, {
-      inputTokens: 100,
-      outputTokens: 50,
-      cacheReadTokens: 10,
-      cacheCreationTokens: 5,
+    await seedTokens(prisma, run1.id, {
+      input: 100,
+      output: 50,
+      cacheRead: 10,
+      cacheCreation: 5,
     });
-    await runService.patch(run2.id, agentId, cronId, {
-      inputTokens: 200,
-      outputTokens: 100,
-      cacheReadTokens: 20,
-      cacheCreationTokens: 10,
+    await seedTokens(prisma, run2.id, {
+      input: 200,
+      output: 100,
+      cacheRead: 20,
+      cacheCreation: 10,
     });
 
     const stats = await statsService.query();
@@ -104,7 +136,9 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
     expect(stats.totals.cacheRead).toBe(30);
     expect(stats.totals.cacheCreation).toBe(15);
     expect(stats.totals.total).toBe(300 + 150 + 30 + 15);
-    expect(stats.totals.costUsd).toBeUndefined();
+    // Breakdown rows exist (with costUsd 0), so the SUM resolves to 0 rather
+    // than NULL — cost is present and zero, not undefined.
+    expect(stats.totals.costUsd).toBe(0);
   });
 
   it("query() excludes skipped runs from totals", async () => {
@@ -115,12 +149,7 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
       startedAt: new Date("2026-01-10T09:00:00Z"),
       skipped: false,
     });
-    await runService.patch(run1.id, agentId, cronId, {
-      inputTokens: 100,
-      outputTokens: 50,
-      cacheReadTokens: 0,
-      cacheCreationTokens: 0,
-    });
+    await seedTokens(prisma, run1.id, { input: 100, output: 50 });
 
     // Skipped run with tokens — must be excluded
     await runService.create(cronId, agentId, {
@@ -163,18 +192,8 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
       skipped: false,
     });
 
-    await runService.patch(run1.id, agentId1, cronId1, {
-      inputTokens: 100,
-      outputTokens: 50,
-      cacheReadTokens: 0,
-      cacheCreationTokens: 0,
-    });
-    await runService.patch(run2.id, agentId2, cronId2, {
-      inputTokens: 300,
-      outputTokens: 150,
-      cacheReadTokens: 0,
-      cacheCreationTokens: 0,
-    });
+    await seedTokens(prisma, run1.id, { input: 100, output: 50 });
+    await seedTokens(prisma, run2.id, { input: 300, output: 150 });
 
     const stats = await statsService.query();
 
@@ -200,12 +219,7 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
       startedAt: new Date("2026-01-10T09:00:00Z"),
       skipped: false,
     });
-    await runService.patch(run1.id, agentId, cronId, {
-      inputTokens: 50,
-      outputTokens: 25,
-      cacheReadTokens: 0,
-      cacheCreationTokens: 0,
-    });
+    await seedTokens(prisma, run1.id, { input: 50, output: 25 });
 
     // Skipped run — excluded
     await runService.create(cronId, agentId, {
@@ -230,12 +244,7 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
       startedAt: new Date("2026-01-10T09:00:00Z"),
       skipped: false,
     });
-    await runService.patch(run.id, agentId, cronId, {
-      inputTokens: 100,
-      outputTokens: 50,
-      cacheReadTokens: 0,
-      cacheCreationTokens: 0,
-    });
+    await seedTokens(prisma, run.id, { input: 100, output: 50 });
 
     const stats = await statsService.query();
 
@@ -253,12 +262,7 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
       startedAt: new Date("2026-01-10T09:00:00Z"),
       skipped: false,
     });
-    await runService.patch(run.id, agentId, cronId, {
-      inputTokens: 80,
-      outputTokens: 40,
-      cacheReadTokens: 0,
-      cacheCreationTokens: 0,
-    });
+    await seedTokens(prisma, run.id, { input: 80, output: 40 });
 
     const stats = await statsService.query();
 
@@ -274,12 +278,7 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
       startedAt: new Date("2026-01-10T09:00:00Z"),
       skipped: false,
     });
-    await runService.patch(run1.id, agentId, cronId, {
-      inputTokens: 60,
-      outputTokens: 30,
-      cacheReadTokens: 0,
-      cacheCreationTokens: 0,
-    });
+    await seedTokens(prisma, run1.id, { input: 60, output: 30 });
 
     // Skipped run — excluded
     await runService.create(cronId, agentId, {
@@ -347,32 +346,22 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
     expect(opus?.input).toBe(200);
   });
 
-  it("query() byModel excludes runs without breakdown rows", async () => {
+  it("query() excludes runs without breakdown rows from all token sums", async () => {
     const agentId = await createAgent(prisma);
     const cronId = await createCron(cronJobService, agentId);
 
-    // Run without breakdown rows — should not appear in byModel
-    const run1 = await runService.create(cronId, agentId, {
+    // Run without any breakdown rows — now the sole source of token data is
+    // AgentCronRunModelBreakdown, so a run with no breakdown contributes zero
+    // to every aggregation and never appears in byModel.
+    await runService.create(cronId, agentId, {
       startedAt: new Date("2026-01-10T09:00:00Z"),
       skipped: false,
     });
-    await runService.patch(run1.id, agentId, cronId, {
-      inputTokens: 100,
-      outputTokens: 50,
-      cacheReadTokens: 0,
-      cacheCreationTokens: 0,
-    });
 
-    // Run with breakdown rows — appears in byModel
+    // Run with a breakdown row — contributes to totals and byModel.
     const run2 = await runService.create(cronId, agentId, {
       startedAt: new Date("2026-01-11T09:00:00Z"),
       skipped: false,
-    });
-    await runService.patch(run2.id, agentId, cronId, {
-      inputTokens: 200,
-      outputTokens: 100,
-      cacheReadTokens: 0,
-      cacheCreationTokens: 0,
     });
     await prisma.agentCronRunModelBreakdown.create({
       data: {
@@ -388,9 +377,9 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
 
     const stats = await statsService.query();
 
-    // Totals include both runs
-    expect(stats.totals.input).toBe(300);
-    // byModel only includes the run with breakdown rows
+    // Totals come only from the run with a breakdown row.
+    expect(stats.totals.input).toBe(200);
+    // byModel only includes the run with breakdown rows.
     expect(stats.byModel).toHaveLength(1);
     expect(stats.byModel[0].key2).toBe("claude-sonnet-4-5");
     expect(stats.byModel[0].input).toBe(200);
@@ -415,24 +404,9 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
       skipped: false,
     });
 
-    await runService.patch(run1.id, agentId, cronId, {
-      inputTokens: 100,
-      outputTokens: 50,
-      cacheReadTokens: 0,
-      cacheCreationTokens: 0,
-    });
-    await runService.patch(run2.id, agentId, cronId, {
-      inputTokens: 150,
-      outputTokens: 75,
-      cacheReadTokens: 0,
-      cacheCreationTokens: 0,
-    });
-    await runService.patch(run3.id, agentId, cronId, {
-      inputTokens: 200,
-      outputTokens: 100,
-      cacheReadTokens: 0,
-      cacheCreationTokens: 0,
-    });
+    await seedTokens(prisma, run1.id, { input: 100, output: 50 });
+    await seedTokens(prisma, run2.id, { input: 150, output: 75 });
+    await seedTokens(prisma, run3.id, { input: 200, output: 100 });
 
     const stats = await statsService.query();
 
@@ -458,12 +432,7 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
       startedAt: new Date("2026-01-10T09:00:00Z"),
       skipped: false,
     });
-    await runService.patch(run1.id, agentId, cronId, {
-      inputTokens: 100,
-      outputTokens: 50,
-      cacheReadTokens: 0,
-      cacheCreationTokens: 0,
-    });
+    await seedTokens(prisma, run1.id, { input: 100, output: 50 });
 
     // Skipped run on same day — excluded
     await runService.create(cronId, agentId, {
@@ -497,24 +466,9 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
       skipped: false,
     });
 
-    await runService.patch(run1.id, agentId, cronId, {
-      inputTokens: 10,
-      outputTokens: 5,
-      cacheReadTokens: 0,
-      cacheCreationTokens: 0,
-    });
-    await runService.patch(run2.id, agentId, cronId, {
-      inputTokens: 100,
-      outputTokens: 50,
-      cacheReadTokens: 0,
-      cacheCreationTokens: 0,
-    });
-    await runService.patch(run3.id, agentId, cronId, {
-      inputTokens: 1000,
-      outputTokens: 500,
-      cacheReadTokens: 0,
-      cacheCreationTokens: 0,
-    });
+    await seedTokens(prisma, run1.id, { input: 10, output: 5 });
+    await seedTokens(prisma, run2.id, { input: 100, output: 50 });
+    await seedTokens(prisma, run3.id, { input: 1000, output: 500 });
 
     // Only include run2
     const stats = await statsService.query(
@@ -541,18 +495,8 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
       skipped: false,
     });
 
-    await runService.patch(run1.id, agentId, cronId, {
-      inputTokens: 10,
-      outputTokens: 5,
-      cacheReadTokens: 0,
-      cacheCreationTokens: 0,
-    });
-    await runService.patch(run2.id, agentId, cronId, {
-      inputTokens: 100,
-      outputTokens: 50,
-      cacheReadTokens: 0,
-      cacheCreationTokens: 0,
-    });
+    await seedTokens(prisma, run1.id, { input: 10, output: 5 });
+    await seedTokens(prisma, run2.id, { input: 100, output: 50 });
 
     const stats = await statsService.query("2026-01-08T00:00:00Z");
 
@@ -570,12 +514,6 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
     const run = await runService.create(cronId, agentId, {
       startedAt: new Date("2026-01-10T09:00:00Z"),
       skipped: false,
-    });
-    await runService.patch(run.id, agentId, cronId, {
-      inputTokens: 300,
-      outputTokens: 150,
-      cacheReadTokens: 10,
-      cacheCreationTokens: 5,
     });
     // Write breakdown rows directly (simulating what agents-api PATCH handler does)
     await prisma.agentCronRunModelBreakdown.createMany({
@@ -624,7 +562,6 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
     expect(haiku?.output).toBe(50);
   });
 
-
   // ─── byCronModel ─────────────────────────────────────────────────────────────
 
   it("query() includes byCronModel breakdown by agentId:cronName and model", async () => {
@@ -637,12 +574,6 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
     const runA = await runService.create(cronId1, agentId1, {
       startedAt: new Date("2026-01-10T09:00:00Z"),
       skipped: false,
-    });
-    await runService.patch(runA.id, agentId1, cronId1, {
-      inputTokens: 100,
-      outputTokens: 50,
-      cacheReadTokens: 0,
-      cacheCreationTokens: 0,
     });
     await prisma.agentCronRunModelBreakdown.create({
       data: {
@@ -661,12 +592,6 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
       startedAt: new Date("2026-01-11T09:00:00Z"),
       skipped: false,
     });
-    await runService.patch(runB.id, agentId1, cronId1, {
-      inputTokens: 200,
-      outputTokens: 100,
-      cacheReadTokens: 0,
-      cacheCreationTokens: 0,
-    });
     await prisma.agentCronRunModelBreakdown.create({
       data: {
         cronRunId: runB.id,
@@ -683,12 +608,6 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
     const runC = await runService.create(cronId2, agentId2, {
       startedAt: new Date("2026-01-10T10:00:00Z"),
       skipped: false,
-    });
-    await runService.patch(runC.id, agentId2, cronId2, {
-      inputTokens: 300,
-      outputTokens: 150,
-      cacheReadTokens: 0,
-      cacheCreationTokens: 0,
     });
     await prisma.agentCronRunModelBreakdown.create({
       data: {
@@ -745,12 +664,6 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
       startedAt: new Date("2026-01-10T09:00:00Z"),
       skipped: false,
     });
-    await runService.patch(runA.id, agentId1, cronId1, {
-      inputTokens: 100,
-      outputTokens: 50,
-      cacheReadTokens: 10,
-      cacheCreationTokens: 5,
-    });
     await prisma.agentCronRunModelBreakdown.create({
       data: {
         cronRunId: runA.id,
@@ -768,12 +681,6 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
       startedAt: new Date("2026-01-11T09:00:00Z"),
       skipped: false,
     });
-    await runService.patch(runB.id, agentId2, cronId2, {
-      inputTokens: 200,
-      outputTokens: 100,
-      cacheReadTokens: 20,
-      cacheCreationTokens: 10,
-    });
     await prisma.agentCronRunModelBreakdown.create({
       data: {
         cronRunId: runB.id,
@@ -790,12 +697,6 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
     const runC = await runService.create(cronId1, agentId1, {
       startedAt: new Date("2026-01-12T09:00:00Z"),
       skipped: false,
-    });
-    await runService.patch(runC.id, agentId1, cronId1, {
-      inputTokens: 300,
-      outputTokens: 150,
-      cacheReadTokens: 30,
-      cacheCreationTokens: 15,
     });
     await prisma.agentCronRunModelBreakdown.create({
       data: {
@@ -862,7 +763,8 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
     // key1 = agentId:cronName, key2 = model
     expect(stats.byCronModel).toHaveLength(2);
     const byCMSonnet = stats.byCronModel.find(
-      (m) => m.key1 === `${agentId1}:cron-alpha` && m.key2 === "claude-sonnet-4-5",
+      (m) =>
+        m.key1 === `${agentId1}:cron-alpha` && m.key2 === "claude-sonnet-4-5",
     );
     const byCMOpus = stats.byCronModel.find(
       (m) => m.key1 === `${agentId2}:cron-beta` && m.key2 === "claude-opus-4-5",
@@ -873,5 +775,53 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
     expect(byCMOpus).toBeDefined();
     expect(byCMOpus?.input).toBe(200); // runB only
     expect(byCMOpus?.costUsd).toBeCloseTo(0.002);
+  });
+
+  // ─── backfilled legacy rows ──────────────────────────────────────────────────
+
+  it("surfaces a backfilled legacy run (model=legacy-unattributed, cost=0) in all dimensions", async () => {
+    // Simulates the state after the consolidation migration backfills a
+    // pre-2026-07-01 run whose token counts lived in the now-dropped
+    // AgentCronRun columns. The migration inserts a single breakdown row with
+    // model = 'legacy-unattributed' and costUsd = 0.
+    const agentId = await createAgent(prisma, "Legacy Agent");
+    const cronId = await createCron(cronJobService, agentId, "legacy-cron");
+
+    const run = await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-06-15T09:00:00Z"),
+      skipped: false,
+    });
+    await seedTokens(prisma, run.id, {
+      input: 500,
+      output: 250,
+      cacheRead: 40,
+      cacheCreation: 20,
+      model: "legacy-unattributed",
+      costUsd: 0,
+    });
+
+    const stats = await statsService.query();
+
+    // totals reflect the backfilled token counts
+    expect(stats.totals.input).toBe(500);
+    expect(stats.totals.output).toBe(250);
+    expect(stats.totals.cacheRead).toBe(40);
+    expect(stats.totals.cacheCreation).toBe(20);
+    expect(stats.totals.total).toBe(500 + 250 + 40 + 20);
+    // cost is $0 for backfilled legacy rows
+    expect(stats.totals.costUsd).toBe(0);
+
+    // byModel surfaces the placeholder model name
+    expect(stats.byModel).toHaveLength(1);
+    expect(stats.byModel[0].key1).toBe(agentId);
+    expect(stats.byModel[0].key2).toBe("legacy-unattributed");
+    expect(stats.byModel[0].input).toBe(500);
+    expect(stats.byModel[0].costUsd).toBe(0);
+
+    // byCronModel too
+    expect(stats.byCronModel).toHaveLength(1);
+    expect(stats.byCronModel[0].key1).toBe(`${agentId}:legacy-cron`);
+    expect(stats.byCronModel[0].key2).toBe("legacy-unattributed");
+    expect(stats.byCronModel[0].input).toBe(500);
   });
 });

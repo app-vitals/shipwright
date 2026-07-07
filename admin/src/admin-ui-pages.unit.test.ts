@@ -1104,7 +1104,7 @@ describe("renderProvisionStartPage", () => {
     );
   });
 
-  test("authorize link does NOT open in new tab (no target=\"_blank\")", () => {
+  test('authorize link does NOT open in new tab (no target="_blank")', () => {
     const html = renderProvisionStartPage(USER_NAME, [], {
       oauthUrl: "https://slack.com/oauth/v2/authorize?client_id=123",
     });
@@ -2893,8 +2893,16 @@ describe("renderCronRunsPage", () => {
       skipped: false,
       skipReason: null,
       error: null,
-      inputTokens: 1200,
-      outputTokens: 340,
+      modelBreakdown: [
+        {
+          model: "claude-sonnet-4-5",
+          inputTokens: 1200,
+          outputTokens: 340,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          costUsd: 0.001,
+        },
+      ],
       ...overrides,
     };
   }
@@ -2980,15 +2988,41 @@ describe("renderCronRunsPage", () => {
     expect(html).toContain("No runs recorded yet.");
   });
 
-  test("renders em-dash for null tokens and no duration", () => {
+  test("renders em-dash for empty token breakdown and no duration", () => {
     const html = render([
       makeRun({
-        inputTokens: null,
-        outputTokens: null,
+        modelBreakdown: [],
         completedAt: null,
       }),
     ]);
     expect(html).toContain("—");
+  });
+
+  test("Tokens column sums input/output across modelBreakdown rows", () => {
+    const html = render([
+      makeRun({
+        modelBreakdown: [
+          {
+            model: "claude-sonnet-4-5",
+            inputTokens: 200,
+            outputTokens: 100,
+            cacheReadTokens: 8,
+            cacheCreationTokens: 4,
+            costUsd: 0.002,
+          },
+          {
+            model: "claude-haiku-4-5",
+            inputTokens: 50,
+            outputTokens: 20,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 0,
+            costUsd: 0.0005,
+          },
+        ],
+      }),
+    ]);
+    // 200 + 50 = 250 in, 100 + 20 = 120 out
+    expect(html).toContain("250 in / 120 out");
   });
 
   test("escapes XSS in the outcome field", () => {
@@ -3020,10 +3054,7 @@ describe("renderCronRunsPage", () => {
 // ─── renderTasksPage — mobile column hiding ───────────────────────────────────
 
 describe("renderTasksPage — mobile column hiding", () => {
-  function render(
-    tasks: TaskItem[] = [TASK_ITEM],
-    readOnly = false,
-  ): string {
+  function render(tasks: TaskItem[] = [TASK_ITEM], readOnly = false): string {
     return renderTasksPage(
       tasks,
       {},
@@ -3081,8 +3112,12 @@ describe("renderTasksPage — mobile column hiding", () => {
   // Multiple tasks → all rows get the correct classes
   test("all task rows have col-session and col-repo on their <td> cells", () => {
     const html = render([TASK_ITEM, TASK_ITEM_PENDING]);
-    const sessionTdMatches = html.match(/<td[^>]*class="[^"]*col-session[^"]*"[^>]*>/g);
-    const repoTdMatches = html.match(/<td[^>]*class="[^"]*col-repo[^"]*"[^>]*>/g);
+    const sessionTdMatches = html.match(
+      /<td[^>]*class="[^"]*col-session[^"]*"[^>]*>/g,
+    );
+    const repoTdMatches = html.match(
+      /<td[^>]*class="[^"]*col-repo[^"]*"[^>]*>/g,
+    );
     // One col-session td per row (2 rows)
     expect(sessionTdMatches).not.toBeNull();
     expect((sessionTdMatches ?? []).length).toBe(2);
@@ -3094,7 +3129,9 @@ describe("renderTasksPage — mobile column hiding", () => {
 // ─── renderPrsPage — mobile column hiding (AMB-1.4) ──────────────────────────
 
 describe("renderPrsPage — mobile column hiding", () => {
-  function render(prs: PrListItem[] = [PR_LIST_ITEM_1, PR_LIST_ITEM_2]): string {
+  function render(
+    prs: PrListItem[] = [PR_LIST_ITEM_1, PR_LIST_ITEM_2],
+  ): string {
     return renderPrsPage(
       prs,
       {},
@@ -3109,21 +3146,27 @@ describe("renderPrsPage — mobile column hiding", () => {
   test("Review Cycles <th> has class col-review-cycles", () => {
     const html = render();
     expect(html).toContain('class="col-review-cycles"');
-    expect(html).toMatch(/<th[^>]*class="[^"]*col-review-cycles[^"]*"[^>]*>Review Cycles<\/th>/);
+    expect(html).toMatch(
+      /<th[^>]*class="[^"]*col-review-cycles[^"]*"[^>]*>Review Cycles<\/th>/,
+    );
   });
 
   // AC2: col-patch-cycles class on the Patch Cycles <th>
   test("Patch Cycles <th> has class col-patch-cycles", () => {
     const html = render();
     expect(html).toContain('class="col-patch-cycles"');
-    expect(html).toMatch(/<th[^>]*class="[^"]*col-patch-cycles[^"]*"[^>]*>Patch Cycles<\/th>/);
+    expect(html).toMatch(
+      /<th[^>]*class="[^"]*col-patch-cycles[^"]*"[^>]*>Patch Cycles<\/th>/,
+    );
   });
 
   // AC2: col-claimed-by class on the Claimed By <th>
   test("Claimed By <th> has class col-claimed-by", () => {
     const html = render();
     expect(html).toContain('class="col-claimed-by"');
-    expect(html).toMatch(/<th[^>]*class="[^"]*col-claimed-by[^"]*"[^>]*>Claimed By<\/th>/);
+    expect(html).toMatch(
+      /<th[^>]*class="[^"]*col-claimed-by[^"]*"[^>]*>Claimed By<\/th>/,
+    );
   });
 
   // AC2: col-review-cycles class on every Review Cycles <td>
@@ -3150,9 +3193,15 @@ describe("renderPrsPage — mobile column hiding", () => {
   // Multiple rows → all rows get the correct classes
   test("all PR rows have col-review-cycles, col-patch-cycles, and col-claimed-by on their <td> cells", () => {
     const html = render([PR_LIST_ITEM_1, PR_LIST_ITEM_2]);
-    const reviewCyclesTdMatches = html.match(/<td[^>]*class="[^"]*col-review-cycles[^"]*"[^>]*>/g);
-    const patchCyclesTdMatches = html.match(/<td[^>]*class="[^"]*col-patch-cycles[^"]*"[^>]*>/g);
-    const claimedByTdMatches = html.match(/<td[^>]*class="[^"]*col-claimed-by[^"]*"[^>]*>/g);
+    const reviewCyclesTdMatches = html.match(
+      /<td[^>]*class="[^"]*col-review-cycles[^"]*"[^>]*>/g,
+    );
+    const patchCyclesTdMatches = html.match(
+      /<td[^>]*class="[^"]*col-patch-cycles[^"]*"[^>]*>/g,
+    );
+    const claimedByTdMatches = html.match(
+      /<td[^>]*class="[^"]*col-claimed-by[^"]*"[^>]*>/g,
+    );
     // One of each per row (2 rows)
     expect(reviewCyclesTdMatches).not.toBeNull();
     expect((reviewCyclesTdMatches ?? []).length).toBe(2);
@@ -3249,7 +3298,12 @@ describe("renderChatThreadPage", () => {
     createdAt: "2024-01-01T00:01:00.000Z",
     claimedBy: null,
     repliedAt: "2024-01-01T00:01:05.000Z",
-    tokens: { input_tokens: 100, output_tokens: 50, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+    tokens: {
+      input_tokens: 100,
+      output_tokens: 50,
+      cache_read_input_tokens: 0,
+      cache_creation_input_tokens: 0,
+    },
     costUsd: 0.001,
     errorKind: null,
     attachmentFilename: null,
@@ -3294,28 +3348,53 @@ describe("renderChatThreadPage", () => {
   });
 
   test("assistant messages are left-aligned with green background", () => {
-    const html = renderChatThreadPage("agent-xyz", THREAD, [ASSISTANT_MSG], "alice");
+    const html = renderChatThreadPage(
+      "agent-xyz",
+      THREAD,
+      [ASSISTANT_MSG],
+      "alice",
+    );
     expect(html).toContain("#f0fdf4");
     expect(html).toContain("flex-start");
   });
 
   test("assistant messages render markdown: bold text becomes <strong>", () => {
-    const html = renderChatThreadPage("agent-xyz", THREAD, [ASSISTANT_MSG], "alice");
+    const html = renderChatThreadPage(
+      "agent-xyz",
+      THREAD,
+      [ASSISTANT_MSG],
+      "alice",
+    );
     expect(html).toContain("<strong>bold text</strong>");
   });
 
   test("assistant messages render markdown: inline code becomes <code>", () => {
-    const html = renderChatThreadPage("agent-xyz", THREAD, [ASSISTANT_MSG], "alice");
+    const html = renderChatThreadPage(
+      "agent-xyz",
+      THREAD,
+      [ASSISTANT_MSG],
+      "alice",
+    );
     expect(html).toContain("<code>inline code</code>");
   });
 
   test("errorKind rate-limited shows human-readable error state", () => {
-    const html = renderChatThreadPage("agent-xyz", THREAD, [ERROR_MSG], "alice");
+    const html = renderChatThreadPage(
+      "agent-xyz",
+      THREAD,
+      [ERROR_MSG],
+      "alice",
+    );
     expect(html).toContain("Rate limited");
   });
 
   test("errorKind message renders a red/error badge or indicator", () => {
-    const html = renderChatThreadPage("agent-xyz", THREAD, [ERROR_MSG], "alice");
+    const html = renderChatThreadPage(
+      "agent-xyz",
+      THREAD,
+      [ERROR_MSG],
+      "alice",
+    );
     // should have some red / error styling
     expect(html.toLowerCase()).toMatch(/error|#ef4444|#fee2e2|#b91c1c|#dc2626/);
   });
@@ -3360,7 +3439,12 @@ describe("renderChatThreadPage", () => {
       ...ASSISTANT_MSG,
       body: "Here is the report [upload:/tmp/report.pdf]",
     };
-    const html = renderChatThreadPage("agent-xyz", THREAD, [msgWithUpload], "alice");
+    const html = renderChatThreadPage(
+      "agent-xyz",
+      THREAD,
+      [msgWithUpload],
+      "alice",
+    );
     // [upload:...] should be stripped from body text
     expect(html).not.toContain("[upload:");
     // Filename "report.pdf" should appear (not the full path)
@@ -3374,7 +3458,12 @@ describe("renderChatThreadPage", () => {
       ...ASSISTANT_MSG,
       body: "See the plan [plan:https://example.com/plan]",
     };
-    const html = renderChatThreadPage("agent-xyz", THREAD, [msgWithPlan], "alice");
+    const html = renderChatThreadPage(
+      "agent-xyz",
+      THREAD,
+      [msgWithPlan],
+      "alice",
+    );
     // [plan:...] should be stripped from body text
     expect(html).not.toContain("[plan:");
     // Should render as a link
@@ -3389,7 +3478,12 @@ describe("renderChatThreadPage", () => {
       ...ASSISTANT_MSG,
       body: "All done [silent]",
     };
-    const html = renderChatThreadPage("agent-xyz", THREAD, [msgWithSilent], "alice");
+    const html = renderChatThreadPage(
+      "agent-xyz",
+      THREAD,
+      [msgWithSilent],
+      "alice",
+    );
     expect(html).not.toContain("[silent]");
     expect(html).toContain("All done");
   });
@@ -3399,7 +3493,12 @@ describe("renderChatThreadPage", () => {
       ...ASSISTANT_MSG,
       body: "Great work [react:thumbsup]",
     };
-    const html = renderChatThreadPage("agent-xyz", THREAD, [msgWithReact], "alice");
+    const html = renderChatThreadPage(
+      "agent-xyz",
+      THREAD,
+      [msgWithReact],
+      "alice",
+    );
     expect(html).not.toContain("[react:");
     expect(html).not.toContain("thumbsup");
     expect(html).toContain("Great work");
@@ -3410,7 +3509,12 @@ describe("renderChatThreadPage", () => {
       ...ASSISTANT_MSG,
       body: "Done with the task [speak:all work complete]",
     };
-    const html = renderChatThreadPage("agent-xyz", THREAD, [msgWithSpeak], "alice");
+    const html = renderChatThreadPage(
+      "agent-xyz",
+      THREAD,
+      [msgWithSpeak],
+      "alice",
+    );
     expect(html).not.toContain("[speak:");
     expect(html).not.toContain("all work complete");
     expect(html).toContain("Done with the task");
@@ -3419,9 +3523,14 @@ describe("renderChatThreadPage", () => {
   test("HTML-escapes marker content (XSS protection on paths/URLs)", () => {
     const msgWithXss: ChatMessage = {
       ...ASSISTANT_MSG,
-      body: 'File saved [upload:/tmp/file<script>.pdf]',
+      body: "File saved [upload:/tmp/file<script>.pdf]",
     };
-    const html = renderChatThreadPage("agent-xyz", THREAD, [msgWithXss], "alice");
+    const html = renderChatThreadPage(
+      "agent-xyz",
+      THREAD,
+      [msgWithXss],
+      "alice",
+    );
     // The raw XSS payload must not appear verbatim
     expect(html).not.toContain("file<script>.pdf");
     // Should still show the filename (escaped)
@@ -3433,7 +3542,12 @@ describe("renderChatThreadPage", () => {
       ...ASSISTANT_MSG,
       body: "Report: [upload:/tmp/report.pdf] Plan: [plan:https://example.com/plan] [react:eyes] [silent]",
     };
-    const html = renderChatThreadPage("agent-xyz", THREAD, [msgWithMultiple], "alice");
+    const html = renderChatThreadPage(
+      "agent-xyz",
+      THREAD,
+      [msgWithMultiple],
+      "alice",
+    );
     // All markers should be stripped
     expect(html).not.toContain("[upload:");
     expect(html).not.toContain("[plan:");
@@ -3451,7 +3565,12 @@ describe("renderChatThreadPage", () => {
       ...ASSISTANT_MSG,
       body: "[upload:/a.pdf] [upload:/b.pdf] [plan:http://x] [plan:http://y]",
     };
-    const html = renderChatThreadPage("agent-xyz", THREAD, [msgWithMultipleMarkers], "alice");
+    const html = renderChatThreadPage(
+      "agent-xyz",
+      THREAD,
+      [msgWithMultipleMarkers],
+      "alice",
+    );
     // Should render both filenames
     expect(html).toContain("a.pdf");
     expect(html).toContain("b.pdf");
@@ -3476,7 +3595,13 @@ describe("renderChatThreadPage", () => {
         updatedAt: "2024-01-01T00:00:00.000Z",
       },
     ];
-    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], THREADS_LIST, "alice");
+    const html = renderChatThreadPage(
+      "agent-xyz",
+      THREAD,
+      [USER_MSG],
+      THREADS_LIST,
+      "alice",
+    );
     expect(html).toContain("chat-thread-sidebar");
   });
 

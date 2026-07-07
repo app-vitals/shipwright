@@ -1484,13 +1484,34 @@ function serializeCronRun(run: {
   skipReason: string | null;
   outcome: string | null;
   error: string | null;
-  inputTokens?: number | null;
-  outputTokens?: number | null;
-  cacheReadTokens?: number | null;
-  cacheCreationTokens?: number | null;
   createdAt: Date;
   modelBreakdown?: ModelBreakdownEntry[];
 }): z.infer<typeof AgentCronRunSchema> {
+  // Token totals are no longer columns on AgentCronRun — they're summed from
+  // the per-model breakdown, the sole source of truth post-consolidation.
+  // A run with no breakdown rows reports null (unknown), not zero.
+  const breakdown = run.modelBreakdown ?? [];
+  const tokenTotals =
+    breakdown.length === 0
+      ? {
+          inputTokens: null,
+          outputTokens: null,
+          cacheReadTokens: null,
+          cacheCreationTokens: null,
+        }
+      : {
+          inputTokens: breakdown.reduce((sum, m) => sum + m.inputTokens, 0),
+          outputTokens: breakdown.reduce((sum, m) => sum + m.outputTokens, 0),
+          cacheReadTokens: breakdown.reduce(
+            (sum, m) => sum + m.cacheReadTokens,
+            0,
+          ),
+          cacheCreationTokens: breakdown.reduce(
+            (sum, m) => sum + m.cacheCreationTokens,
+            0,
+          ),
+        };
+
   return {
     id: run.id,
     cronId: run.cronId,
@@ -1501,10 +1522,7 @@ function serializeCronRun(run: {
     skipReason: run.skipReason,
     outcome: run.outcome,
     error: run.error,
-    inputTokens: run.inputTokens ?? null,
-    outputTokens: run.outputTokens ?? null,
-    cacheReadTokens: run.cacheReadTokens ?? null,
-    cacheCreationTokens: run.cacheCreationTokens ?? null,
+    ...tokenTotals,
     createdAt: run.createdAt.toISOString(),
     ...(run.modelBreakdown !== undefined && {
       modelBreakdown: run.modelBreakdown.map((entry) => ({
