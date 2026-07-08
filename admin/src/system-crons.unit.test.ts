@@ -97,11 +97,11 @@ describe("SYSTEM_CRONS pipeline schedule staggering", () => {
 });
 
 describe("SYSTEM_CRONS", () => {
-  test("exports exactly ten crons", () => {
-    expect(SYSTEM_CRONS).toHaveLength(10);
+  test("exports exactly eleven crons", () => {
+    expect(SYSTEM_CRONS).toHaveLength(11);
   });
 
-  test("cron names are the ten expected crons", () => {
+  test("cron names are the eleven expected crons", () => {
     const names = SYSTEM_CRONS.map((c) => c.name);
     expect(names).toContain("shipwright-dev-task");
     expect(names).toContain("shipwright-patch");
@@ -113,6 +113,7 @@ describe("SYSTEM_CRONS", () => {
     expect(names).toContain("learn-dream");
     expect(names).toContain("dependabot-triage");
     expect(names).toContain("entropy-patrol-maintenance");
+    expect(names).toContain("shipwright-loop");
   });
 
   test("all crons have silent: true", () => {
@@ -265,7 +266,8 @@ describe("SYSTEM_CRONS", () => {
         c.name !== "shipwright-docs-freshness" &&
         c.name !== "learn-dream" &&
         c.name !== "dependabot-triage" &&
-        c.name !== "entropy-patrol-maintenance",
+        c.name !== "entropy-patrol-maintenance" &&
+        c.name !== "shipwright-loop",
     );
     for (const cron of pollingCrons) {
       expect(cron.schedule).toMatch(/^\d+,\d+ \* \* \* \*$/);
@@ -363,5 +365,27 @@ describe("SYSTEM_CRONS", () => {
         "/learn-dream",
       );
     }
+  });
+});
+
+describe("shipwright-loop", () => {
+  test("has a 1-minute cron schedule", () => {
+    const cron = SYSTEM_CRONS.find((c) => c.name === "shipwright-loop");
+    expect(cron?.schedule).toBe("* * * * *");
+  });
+
+  test("has enabled: false — new system crons always ship disabled", () => {
+    const cron = SYSTEM_CRONS.find((c) => c.name === "shipwright-loop");
+    expect(cron?.enabled).toBe(false);
+  });
+
+  test("has silent: true", () => {
+    const cron = SYSTEM_CRONS.find((c) => c.name === "shipwright-loop");
+    expect(cron?.silent).toBe(true);
+  });
+
+  test("has no preCheck — the loop has its own toggle-reading logic instead", () => {
+    const cron = SYSTEM_CRONS.find((c) => c.name === "shipwright-loop");
+    expect(cron?.preCheck).toBeUndefined();
   });
 });
