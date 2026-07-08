@@ -69,6 +69,7 @@ describeOrSkip("PullRequest model (integration)", () => {
     expect(read.readyForReviewAt).toBeNull();
     expect(read.readyForPatchAt).toBeNull();
     expect(read.readyForDeployAt).toBeNull();
+    expect(read.prCreatedAt).toBeNull();
     expect(read.createdAt).toBeInstanceOf(Date);
     expect(read.updatedAt).toBeInstanceOf(Date);
   });
@@ -125,6 +126,27 @@ describeOrSkip("PullRequest model (integration)", () => {
     expect(rows[0].prNumber).toBe(602); // earliest: readyForReviewAt 01:00
     expect(rows[1].prNumber).toBe(601); // middle:   readyForPatchAt  02:00
     expect(rows[2].prNumber).toBe(603); // latest:   readyForDeployAt 03:00
+  });
+
+  it("round-trips prCreatedAt", async () => {
+    const prCreatedAt = "2026-06-15T08:30:00.000Z";
+
+    const created = await prisma.pullRequest.create({
+      data: {
+        repo: "app-vitals/shipwright",
+        prNumber: 55,
+        prCreatedAt,
+      },
+    });
+
+    const read = await prisma.pullRequest.findUnique({
+      where: { id: created.id },
+    });
+
+    expect(read).not.toBeNull();
+    if (!read) return;
+
+    expect(read.prCreatedAt).toBe(prCreatedAt);
   });
 
   it("rejects duplicate (repo, prNumber)", async () => {

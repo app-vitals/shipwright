@@ -160,6 +160,7 @@ model PullRequest {
   reviewedAt        String?
   patchedAt         String?
   mergedAt          String?
+  prCreatedAt       String? // ISO timestamp of the GitHub PR's actual creation (distinct from createdAt, the task-store record's creation)
   claimedBy         String?
   claimedAt         String?
   heartbeatAt       String?
