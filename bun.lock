@@ -44,7 +44,7 @@
     },
     "agent": {
       "name": "@shipwright/agent",
-      "version": "0.149.0",
+      "version": "0.153.1",
       "dependencies": {
         "@octokit/auth-app": "^8.2.0",
         "@sentry/bun": "^10.63.0",
@@ -66,6 +66,7 @@
       "name": "@shipwright/chat",
       "version": "0.1.0",
       "dependencies": {
+        "@hono/zod-openapi": "^0.18.3",
         "@prisma/client": "^6.19.2",
         "@shipwright/lib": "*",
         "hono": "^4.12.26",
@@ -97,7 +98,7 @@
     },
     "metrics": {
       "name": "@shipwright/metrics",
-      "version": "0.149.0",
+      "version": "0.153.1",
       "dependencies": {
         "@hono/zod-openapi": "^0.18.3",
         "@sentry/bun": "^10.63.0",
@@ -115,7 +116,7 @@
     },
     "plugins/shipwright": {
       "name": "@shipwright/plugin",
-      "version": "0.149.0",
+      "version": "0.153.1",
       "devDependencies": {
         "bun-types": "*",
         "typescript": "*",
