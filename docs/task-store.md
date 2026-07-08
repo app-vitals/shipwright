@@ -246,6 +246,21 @@ Writable fields: `staged`, `commitSha`, `taskId`, `agentId`, `state`, `mergedAt`
 
 `phase`: `review` | `patch` | `deploy` — tracks which pipeline phase the PR is currently in. Set via `PATCH /prs/:id`. The `readyForReviewAt`, `readyForPatchAt`, and `readyForDeployAt` timestamps record when the PR became ready for each phase; COALESCE across them gives a unified queue-entry time.
 
+#### PR timestamp fields
+
+The following timestamp fields are managed by the task store:
+
+| Field | Managed by | Description |
+|-------|-----------|-------------|
+| `prCreatedAt` | Lifecycle endpoints | ISO timestamp of the GitHub PR's actual creation time (distinct from `createdAt`, which records when the task-store record itself was created). Read-only. |
+| `createdAt` | Auto | ISO timestamp when the task-store PR record was created. |
+| `updatedAt` | Auto | ISO timestamp when the task-store PR record was last modified. |
+| `reviewedAt` | `POST /prs/:id/complete` | Set when the review cycle completes. |
+| `patchedAt` | `POST /prs/:id/patch` | Set when the patch cycle completes. |
+| `mergedAt` | Writable via `PATCH /prs/:id` | Manually set or updated when marking the PR as merged. |
+| `claimedAt` | `POST /prs/claim` | Set when the PR is claimed by an agent. |
+| `heartbeatAt` | `POST /prs/:id/heartbeat` | Updated to now whenever the claiming agent signals it is still working. |
+
 ### Token management (admin only)
 
 All `/tokens` endpoints require an admin token.
