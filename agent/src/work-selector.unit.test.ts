@@ -91,8 +91,15 @@ describe("selectNextWorkItem", () => {
     expect(result).toEqual({ type: "task", task });
   });
 
-  it("treats a same-branch pr_open/approved dependency as unblocked (bundled)", () => {
+  it("treats a same-branch pr_open dependency as unblocked (bundled)", () => {
     const dep = makeTask({ id: "dep-1", status: "pr_open", branch: "feat/shared" });
+    const task = makeTask({ id: "t1", dependencies: ["dep-1"], branch: "feat/shared" });
+    const result = selectNextWorkItem([dep, task], []);
+    expect(result).toEqual({ type: "task", task });
+  });
+
+  it("treats a same-branch approved dependency as unblocked (bundled)", () => {
+    const dep = makeTask({ id: "dep-1", status: "approved", branch: "feat/shared" });
     const task = makeTask({ id: "t1", dependencies: ["dep-1"], branch: "feat/shared" });
     const result = selectNextWorkItem([dep, task], []);
     expect(result).toEqual({ type: "task", task });
