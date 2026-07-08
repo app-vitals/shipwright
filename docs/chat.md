@@ -223,7 +223,7 @@ On success, sets `repliedAt` on the user message and creates a new `role: "assis
 
 ## Data model
 
-Three Prisma models, defined in `chat/prisma/schema.prisma` and owned exclusively by this service.
+Three Prisma models, defined in `chat/prisma/schema.prisma` and owned exclusively by this service. Request and response shapes are validated and documented via Zod schemas with OpenAPI metadata in `chat/src/openapi-schemas.ts` — mirrors the pattern in `admin/src/openapi-schemas.ts`.
 
 ### ChatToken
 
