@@ -230,6 +230,7 @@ jobs:
             --base main \
             --head "$BRANCH" \
             --title "chore(chart): bump chart version to ${NEW_VERSION}" \
+            --label automated \
             --body "$(cat <<EOF
           ## Chart version bump: ${CURRENT_VERSION} → ${NEW_VERSION}
 

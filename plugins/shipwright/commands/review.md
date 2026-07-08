@@ -141,13 +141,17 @@ REPOS=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
 
 ```bash
 gh pr list --state open --repo {org}/{repo} \
-  --json number,title,author,headRefName,baseRefName,isDraft,reviews,createdAt,updatedAt,additions,deletions
+  --json number,title,author,headRefName,baseRefName,isDraft,reviews,createdAt,updatedAt,additions,deletions,labels
 ```
 
 Exclude:
 - Draft PRs
 - PRs where `author.login == CURRENT_USER` and `allow_self_review` is false
 - PRs where `author.login == "app/dependabot"` — handled exclusively by the dependabot-review plugin
+- PRs labeled `automated` — fully bot-authored, bot-merged infra bumps (chart-version bumps,
+  plugin-version syncs, image-tag bumps) with no application logic to review. Applied by the
+  automated workflows that create these PRs (e.g. `auto-bump-chart.yml`,
+  `sync-plugin-version.yml`, and downstream consumer repos' own bump workflows).
 
 When a PR is checked out for review, also query the task store for a task whose `pr`
 field matches the PR number — if found, record the `id` (used as `taskId` to link the PR
