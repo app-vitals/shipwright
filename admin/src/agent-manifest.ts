@@ -36,6 +36,19 @@ export const AGENT_HOME_MOUNT_PATH = "/data/agent-home";
 export const AGENT_REPO_DIR = `${AGENT_HOME_MOUNT_PATH}/workspace/repos`;
 export const AGENT_WORKTREE_DIR = `${AGENT_HOME_MOUNT_PATH}/workspace/worktrees`;
 
+/**
+ * Container resources. Requests mirror the GKE Autopilot defaults the agent
+ * ran with before these were explicit. The memory limit exists to contain a
+ * runaway Claude run to its own container (OOM-kill) rather than letting it
+ * grow until the kubelet evicts neighbouring pods under node memory pressure
+ * (observed: ~11.6Gi used against the 2Gi request). No CPU limit — CPU
+ * contention throttles instead of evicting.
+ */
+export const AGENT_CONTAINER_RESOURCES = {
+  requests: { cpu: "500m", memory: "2Gi", "ephemeral-storage": "1Gi" },
+  limits: { memory: "8Gi", "ephemeral-storage": "1Gi" },
+};
+
 /** Non-root uid/gid the agent runs as (matches the agent image). */
 const AGENT_RUN_AS = 1000;
 
@@ -332,6 +345,7 @@ export function buildAgentDeploymentManifest(
               name: AGENT_APP_NAME,
               image: `${opts.image}:${opts.imageTag}`,
               ports: [{ containerPort: AGENT_HEALTH_PORT, protocol: "TCP" }],
+              resources: AGENT_CONTAINER_RESOURCES,
               env: [
                 { name: "SHIPWRIGHT_AGENT_ID", value: opts.agentId },
                 { name: "SHIPWRIGHT_API_URL", value: opts.apiUrl },

@@ -72,6 +72,10 @@ export interface KubernetesContainer {
   name: string;
   image: string;
   env?: KubernetesEnvVar[];
+  resources?: {
+    requests?: Record<string, string>;
+    limits?: Record<string, string>;
+  };
   volumeMounts?: Array<{
     name: string;
     mountPath: string;
@@ -747,18 +751,24 @@ export class RecordedKubernetesClient implements KubernetesClient {
       spec?: {
         template?: {
           spec?: {
-            containers?: Array<{ name: string; image: string }>;
+            containers?: KubernetesContainer[];
           };
         };
       };
     };
-    const newImage = p.spec?.template?.spec?.containers?.[0]?.image;
+    // Emulate the strategic-merge semantics the real API server applies:
+    // container fields are replaced, except env, which merges by name
+    // (patched entries win, unmentioned live entries survive).
+    const patchContainer = p.spec?.template?.spec?.containers?.[0];
     const existing = dep.spec.template.spec.containers[0];
-    if (newImage !== undefined && existing !== undefined) {
-      dep.spec.template.spec.containers[0] = {
-        ...existing,
-        image: newImage,
-      };
+    if (patchContainer !== undefined && existing !== undefined) {
+      const merged: KubernetesContainer = { ...existing, ...patchContainer };
+      if (patchContainer.env && existing.env) {
+        const byName = new Map(existing.env.map((e) => [e.name, e]));
+        for (const entry of patchContainer.env) byName.set(entry.name, entry);
+        merged.env = [...byName.values()];
+      }
+      dep.spec.template.spec.containers[0] = merged;
     }
   }
 
