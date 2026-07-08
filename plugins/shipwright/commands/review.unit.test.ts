@@ -66,7 +66,7 @@ describe("review.md — CPF-2.2 verdict phrase requirement", () => {
     ).toBe(true);
   });
 
-  it("the Slack message template's Verdict line renders literal 'Verdict: APPROVE' / 'Verdict: COMMENT' text", () => {
+  it("Slack message template has a *Verdict:* placeholder line", () => {
     const slackVerdictLine = content.includes("*Verdict:* {APPROVE|COMMENT}");
     expect(slackVerdictLine).toBe(true);
   });
