@@ -825,6 +825,139 @@ describe("check-patch", () => {
     expect(result.exit).toBe(1);
     expect(result.output).toBe("");
   });
+
+  // ─── Narrative "Verdict: APPROVE" self-reviews (CPF-2.1) ───────────────────
+
+  test("exits 1 when only review is self-authored COMMENTED at current HEAD with a narrative ending in Verdict: APPROVE", async () => {
+    const pr = makeOwnPr();
+    const reviewData = makePrReviewData({
+      headRefOid: "current-head-sha",
+      reviews: {
+        nodes: [
+          {
+            author: { login: "the-agent" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-26T10:00:00Z",
+            commit: { oid: "current-head-sha" },
+            body: "Reviewed the diff for correctness and style. Everything checks out, no issues found.\n\nVerdict: APPROVE",
+          },
+        ],
+      },
+      reviewThreads: { nodes: [] },
+    });
+    const result = await run(
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: { 10: reviewData },
+        ciStatusByPr: {},
+        mergeStatusByPr: {},
+        listPrCommits: async () => [],
+        getCurrentUser: () => "the-agent",
+      }),
+    );
+    expect(result.exit).toBe(1);
+    expect(result.output).toBe("");
+  });
+
+  test("exits 1 when self-authored review trails reasoning after Verdict: APPROVE on the same line (verbatim shipwright PR #1272 case)", async () => {
+    const pr = makeOwnPr();
+    const reviewData = makePrReviewData({
+      headRefOid: "current-head-sha",
+      reviews: {
+        nodes: [
+          {
+            author: { login: "the-agent" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-26T10:00:00Z",
+            commit: { oid: "current-head-sha" },
+            body: "Clean, well-scoped PR. Verified the generator output is byte-identical to the committed `docs/mcp-tools.md` (no drift), all 9 sections match the allowlist's filtered tool set exactly, unit tests (10/10) and lint pass, and no Helm/Kubernetes content leaked into the doc. All 5 acceptance criteria met. Verdict: APPROVE (posted as COMMENT — GitHub disallows self-approval via the API).",
+          },
+        ],
+      },
+      reviewThreads: { nodes: [] },
+    });
+    const result = await run(
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: { 10: reviewData },
+        ciStatusByPr: {},
+        mergeStatusByPr: {},
+        listPrCommits: async () => [],
+        getCurrentUser: () => "the-agent",
+      }),
+    );
+    expect(result.exit).toBe(1);
+    expect(result.output).toBe("");
+  });
+
+  test("exits 0 when a narrative Verdict: APPROVE self-review coexists with a different reviewer's CHANGES_REQUESTED finding", async () => {
+    const pr = makeOwnPr();
+    const reviewData = makePrReviewData({
+      headRefOid: "current-head-sha",
+      reviews: {
+        nodes: [
+          {
+            author: { login: "the-agent" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-26T10:00:00Z",
+            commit: { oid: "current-head-sha" },
+            body: "Reviewed the diff for correctness and style. Everything checks out, no issues found.\n\nVerdict: APPROVE",
+          },
+          {
+            author: { login: "reviewer1" },
+            state: "CHANGES_REQUESTED",
+            submittedAt: "2026-05-26T11:00:00Z",
+            commit: { oid: "current-head-sha" },
+            body: "Please address these issues before merging.",
+          },
+        ],
+      },
+      reviewThreads: { nodes: [] },
+    });
+    const result = await run(
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: { 10: reviewData },
+        ciStatusByPr: {},
+        mergeStatusByPr: {},
+        listPrCommits: async () => [],
+        getCurrentUser: () => "the-agent",
+      }),
+    );
+    expect(result.exit).toBe(0);
+    expect(result.output).toContain("patch");
+  });
+
+  test("exits 0 when self-authored review has a narrative ending in Verdict: CHANGES_REQUESTED", async () => {
+    const pr = makeOwnPr();
+    const reviewData = makePrReviewData({
+      headRefOid: "current-head-sha",
+      reviews: {
+        nodes: [
+          {
+            author: { login: "the-agent" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-26T10:00:00Z",
+            commit: { oid: "current-head-sha" },
+            body: "Reviewed the diff and found a race condition in the retry logic that needs a fix before merge.\n\nVerdict: CHANGES_REQUESTED",
+          },
+        ],
+      },
+      reviewThreads: { nodes: [] },
+    });
+    const result = await run(
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: { 10: reviewData },
+        ciStatusByPr: {},
+        mergeStatusByPr: {},
+        listPrCommits: async () => [],
+        getCurrentUser: () => "the-agent",
+      }),
+    );
+    expect(result.exit).toBe(0);
+    expect(result.output).toContain("patch");
+  });
 });
 
 // ─── hasFailingCi (CPC-1.1) ────────────────────────────────────────────────────
