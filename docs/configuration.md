@@ -22,8 +22,9 @@ Configuration for the Shipwright Claude Code plugin (`plugins/shipwright/`). The
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `SHIPWRIGHT_REPOS_DIR` | `string` | `<AGENT_HOME>/workspace/repos` | Override the workspace repos directory. Used by scripts that need to know where checked-out repos live. |
-| `SHIPWRIGHT_WORKTREE_DIR` | `string` | `<AGENT_HOME>/workspace/worktrees` | Override the workspace worktrees directory. |
+| `SHIPWRIGHT_REPOS_DIR` | `string` | `<workspace>/repos` | Fallback repos directory for plugin scripts when workspace discovery finds no `repos/` dir. |
+| `SHIPWRIGHT_REPO_DIR` | `string` | `$HOME/src` | Where the plugin commands (`dev-task`, `patch`, `deploy`) look for repo clones. The provisioner injects `<AGENT_HOME>/workspace/repos` for managed agents so clones live on the PVC. |
+| `SHIPWRIGHT_WORKTREE_DIR` | `string` | `$HOME/worktrees` | Where the plugin commands create git worktrees. The provisioner injects `<AGENT_HOME>/workspace/worktrees` for managed agents — `$HOME` is ephemeral overlay storage in the agent container, and worktrees there can trigger pod eviction. |
 | `GH_CMD` | `string` | `gh` | Override the `gh` CLI executable. Useful in environments where `gh` is installed to a non-default path. |
 | `AGENT_HOME` | `string` | `/data/agent-home` | Persistent storage root for workspace files, mise caches, and `~/.claude`. Set in the agent container; also used by plugin scripts for workspace discovery. |
 | `WORKSPACE_PATH` | `string` | — | Direct workspace path override. Takes precedence over `AGENT_HOME`-based discovery when set. |
