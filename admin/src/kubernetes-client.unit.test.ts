@@ -432,6 +432,67 @@ describe("RecordedKubernetesClient.patchDeployment()", () => {
       }),
     ).rejects.toBeInstanceOf(NotFoundError);
   });
+
+  it("merges resources key-by-key, preserving live keys not in the patch", async () => {
+    const rec = new RecordedKubernetesClient({
+      deployments: {
+        "shipwright/agent-abc": {
+          apiVersion: "apps/v1" as const,
+          kind: "Deployment" as const,
+          metadata: { name: "agent-abc", namespace: "shipwright" },
+          spec: {
+            replicas: 1,
+            selector: { matchLabels: { app: "agent-abc" } },
+            template: {
+              metadata: { labels: { app: "agent-abc" } },
+              spec: {
+                containers: [
+                  {
+                    name: "agent-abc",
+                    image: "ghcr.io/example/agent:v1",
+                    resources: {
+                      requests: { memory: "1Gi", cpu: "500m" },
+                      limits: { memory: "4Gi", cpu: "2" },
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+      secrets: {},
+    });
+
+    // Patch only mentions memory — cpu keys (Autopilot-injected) must survive.
+    await rec.patchDeployment("shipwright", "agent-abc", {
+      spec: {
+        template: {
+          spec: {
+            containers: [
+              {
+                name: "agent-abc",
+                image: "ghcr.io/example/agent:v1",
+                resources: {
+                  requests: { memory: "2Gi" },
+                  limits: { memory: "8Gi" },
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const dep = await rec.getDeployment("shipwright", "agent-abc");
+    const resources = dep.spec.template.spec.containers[0]?.resources;
+    // Patched values applied.
+    expect(resources?.requests?.memory).toBe("2Gi");
+    expect(resources?.limits?.memory).toBe("8Gi");
+    // Live-only keys survived the patch.
+    expect(resources?.requests?.cpu).toBe("500m");
+    expect(resources?.limits?.cpu).toBe("2");
+  });
 });
 
 // ─── Request body shaping: Secrets ──────────────────────────────────────────

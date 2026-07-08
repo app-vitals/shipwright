@@ -146,6 +146,14 @@ describe("buildAgentDeploymentManifest", () => {
     );
   });
 
+  it("sets explicit container resources with a memory limit", () => {
+    const d = buildAgentDeploymentManifest(deployOpts);
+    const resources = d.spec.template.spec.containers[0].resources;
+    expect(resources?.requests?.memory).toBe("2Gi");
+    expect(resources?.limits?.memory).toBe("8Gi");
+    expect(resources?.limits?.["ephemeral-storage"]).toBe("1Gi");
+  });
+
   it("defines liveness and readiness probes on the health port", () => {
     const d = buildAgentDeploymentManifest(deployOpts);
     const c = d.spec.template.spec.containers[0];

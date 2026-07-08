@@ -8,8 +8,12 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { sanitizeAgentName } from "./agent-manifest.ts";
 import {
+  buildAgentDeploymentManifest,
+  sanitizeAgentName,
+} from "./agent-manifest.ts";
+import {
+  containerDrifted,
   KubernetesAgentProvisioner,
   type KubernetesAgentProvisionerConfig,
 } from "./agent-provisioner.ts";
@@ -228,34 +232,25 @@ describe("KubernetesAgentProvisioner.reconcile() — image-update detection", ()
     );
   });
 
-  it("skips patch when image is already up-to-date", async () => {
+  it("skips patch when the container already matches the manifest", async () => {
     const agentId = "cmqalfjcm000m4101iharq28k";
     const resourceName = sanitizeAgentName(agentId);
 
     let patchCalled = false;
     const recorded = new RecordedKubernetesClient({
       deployments: {
-        [`${NAMESPACE}/${resourceName}`]: {
-          apiVersion: "apps/v1",
-          kind: "Deployment",
-          metadata: { name: resourceName, namespace: NAMESPACE },
-          spec: {
-            replicas: 1,
-            selector: { matchLabels: { app: resourceName } },
-            template: {
-              metadata: { labels: { app: resourceName } },
-              spec: {
-                containers: [
-                  {
-                    name: "shipwright-agent",
-                    // Matches BASE_CONFIG: image:imageTag
-                    image: "ghcr.io/app-vitals/shipwright-agent:v1.0.0",
-                  },
-                ],
-              },
-            },
-          },
-        },
+        // Seed the exact desired manifest (image, env, resources) so there is
+        // no drift of any kind.
+        [`${NAMESPACE}/${resourceName}`]: buildAgentDeploymentManifest({
+          agentId,
+          namespace: NAMESPACE,
+          image: BASE_CONFIG.image,
+          imageTag: BASE_CONFIG.imageTag,
+          apiUrl: BASE_CONFIG.apiUrl,
+          pvcName: `${resourceName}-home`,
+          secretName: `${resourceName}-token`,
+          tokenSecretKey: "token",
+        }),
       },
       secrets: {},
       pvcs: {},
@@ -361,6 +356,172 @@ describe("KubernetesAgentProvisioner.reconcile() — image-update detection", ()
     expect(result.failed).toEqual([
       { agentId, error: "patch failed: server error" },
     ]);
+  });
+
+  it("patches a Deployment whose env is missing manifest vars, preserving manual extras", async () => {
+    const agentId = "cmqalfjcm000m4101iharq28k";
+    const resourceName = sanitizeAgentName(agentId);
+
+    // Seed the desired manifest, then simulate a Deployment provisioned by an
+    // older admin: strip the workspace-dir vars and add a manual kubectl var.
+    const stale = buildAgentDeploymentManifest({
+      agentId,
+      namespace: NAMESPACE,
+      image: BASE_CONFIG.image,
+      imageTag: BASE_CONFIG.imageTag,
+      apiUrl: BASE_CONFIG.apiUrl,
+      pvcName: `${resourceName}-home`,
+      secretName: `${resourceName}-token`,
+      tokenSecretKey: "token",
+    });
+    const container = stale.spec.template.spec.containers[0];
+    container.env = [
+      ...(container.env ?? []).filter(
+        (e) =>
+          e.name !== "SHIPWRIGHT_REPO_DIR" &&
+          e.name !== "SHIPWRIGHT_WORKTREE_DIR",
+      ),
+      { name: "STARTUP_TIMEOUT_MS", value: "300000" },
+    ];
+
+    const k8s = new RecordedKubernetesClient({
+      deployments: { [`${NAMESPACE}/${resourceName}`]: stale },
+      secrets: {},
+      pvcs: {},
+    });
+    const provisioner = new KubernetesAgentProvisioner(
+      k8s,
+      stubTokens() as AgentTokenService,
+      BASE_CONFIG,
+    );
+
+    const result = await provisioner.reconcile([{ id: agentId }]);
+
+    expect(result.updated).toEqual([agentId]);
+    expect(result.failed).toEqual([]);
+
+    const dep = await k8s.getDeployment(NAMESPACE, resourceName);
+    const env = dep.spec.template.spec.containers[0].env ?? [];
+    const names = env.map((e) => e.name);
+    expect(names).toContain("SHIPWRIGHT_REPO_DIR");
+    expect(names).toContain("SHIPWRIGHT_WORKTREE_DIR");
+    // The manually-added var survives the strategic-merge patch.
+    expect(names).toContain("STARTUP_TIMEOUT_MS");
+  });
+
+  it("patches a Deployment with drifted resources, preserving Autopilot-injected resource keys", async () => {
+    const agentId = "cmqalfjcm000m4101iharq28k";
+    const resourceName = sanitizeAgentName(agentId);
+
+    // Seed the desired manifest, then simulate GKE Autopilot having injected a
+    // cpu key into requests and limits that the manifest doesn't specify.
+    const stale = buildAgentDeploymentManifest({
+      agentId,
+      namespace: NAMESPACE,
+      image: BASE_CONFIG.image,
+      imageTag: BASE_CONFIG.imageTag,
+      apiUrl: BASE_CONFIG.apiUrl,
+      pvcName: `${resourceName}-home`,
+      secretName: `${resourceName}-token`,
+      tokenSecretKey: "token",
+    });
+    const container = stale.spec.template.spec.containers[0];
+    // Simulate Autopilot injecting cpu — and also strip the memory limit so
+    // containerDrifted() detects drift and triggers a patch.
+    container.resources = {
+      requests: { ...container.resources?.requests, cpu: "500m" },
+      limits: { cpu: "2" }, // missing memory limit → drift
+    };
+
+    const k8s = new RecordedKubernetesClient({
+      deployments: { [`${NAMESPACE}/${resourceName}`]: stale },
+      secrets: {},
+      pvcs: {},
+    });
+    const provisioner = new KubernetesAgentProvisioner(
+      k8s,
+      stubTokens() as AgentTokenService,
+      BASE_CONFIG,
+    );
+
+    const result = await provisioner.reconcile([{ id: agentId }]);
+
+    expect(result.updated).toEqual([agentId]);
+    expect(result.failed).toEqual([]);
+
+    const dep = await k8s.getDeployment(NAMESPACE, resourceName);
+    const resources = dep.spec.template.spec.containers[0].resources;
+    // Desired manifest values are applied.
+    expect(resources?.requests?.memory).toBe("2Gi");
+    expect(resources?.limits?.memory).toBe("8Gi");
+    // Autopilot-injected cpu key survives the strategic-merge patch.
+    expect(resources?.requests?.cpu).toBe("500m");
+    expect(resources?.limits?.cpu).toBe("2");
+  });
+});
+
+// ─── containerDrifted ─────────────────────────────────────────────────────────
+
+describe("containerDrifted", () => {
+  const desired = () =>
+    buildAgentDeploymentManifest({
+      agentId: "agent-1",
+      namespace: NAMESPACE,
+      image: BASE_CONFIG.image,
+      imageTag: BASE_CONFIG.imageTag,
+      apiUrl: BASE_CONFIG.apiUrl,
+      pvcName: "agent-1-home",
+      secretName: "agent-1-token",
+      tokenSecretKey: "token",
+    }).spec.template.spec.containers[0];
+
+  it("no drift when current equals desired", () => {
+    expect(containerDrifted(desired(), desired())).toBe(false);
+  });
+
+  it("drifts on image change", () => {
+    const current = { ...desired(), image: "other:v0" };
+    expect(containerDrifted(current, desired())).toBe(true);
+  });
+
+  it("drifts when a desired env var is missing", () => {
+    const current = desired();
+    current.env = (current.env ?? []).filter(
+      (e) => e.name !== "SHIPWRIGHT_WORKTREE_DIR",
+    );
+    expect(containerDrifted(current, desired())).toBe(true);
+  });
+
+  it("drifts when a desired env value differs", () => {
+    const current = desired();
+    current.env = (current.env ?? []).map((e) =>
+      e.name === "SHIPWRIGHT_WORKTREE_DIR" ? { ...e, value: "/elsewhere" } : e,
+    );
+    expect(containerDrifted(current, desired())).toBe(true);
+  });
+
+  it("extra live env vars are not drift", () => {
+    const current = desired();
+    current.env = [
+      ...(current.env ?? []),
+      { name: "STARTUP_TIMEOUT_MS", value: "300000" },
+    ];
+    expect(containerDrifted(current, desired())).toBe(false);
+  });
+
+  it("extra live resource keys (e.g. Autopilot-injected) are not drift", () => {
+    const current = desired();
+    current.resources = {
+      requests: { ...current.resources?.requests, cpu: "500m" },
+      limits: { ...current.resources?.limits, cpu: "2" },
+    };
+    expect(containerDrifted(current, desired())).toBe(false);
+  });
+
+  it("drifts when a desired resource value is missing or different", () => {
+    const current = desired();
+    current.resources = { requests: current.resources?.requests }; // no limits
+    expect(containerDrifted(current, desired())).toBe(true);
   });
 });
 

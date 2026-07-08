@@ -33,6 +33,8 @@ import type { AgentTokenService } from "./agent-tokens.ts";
 import { ConflictError, NotFoundError } from "./errors.ts";
 import type {
   KubernetesClient,
+  KubernetesContainer,
+  KubernetesEnvVar,
   PvcSpec,
   SecretSpec,
 } from "./kubernetes-client.ts";
@@ -68,7 +70,10 @@ export interface ReconcileResult {
    * non-empty `failed` arrays.
    */
   failed: Array<{ agentId: string; error: string }>;
-  /** Agent IDs whose Deployments were stale and have been patched to the current image. */
+  /**
+   * Agent IDs whose Deployments had drifted from the desired container spec
+   * (image, env, or resources) and have been patched back to it.
+   */
   updated: string[];
 }
 
@@ -160,6 +165,47 @@ export interface KubernetesAgentProvisionerConfig {
   chatServiceUrl?: string;
 }
 
+function envEntryEqual(a: KubernetesEnvVar, b: KubernetesEnvVar): boolean {
+  return (
+    a.value === b.value &&
+    a.valueFrom?.secretKeyRef?.name === b.valueFrom?.secretKeyRef?.name &&
+    a.valueFrom?.secretKeyRef?.key === b.valueFrom?.secretKeyRef?.key
+  );
+}
+
+/**
+ * True when the live container is missing anything the desired container
+ * specifies (image, env entries, resource values).
+ *
+ * Subset semantics: extra live env vars (added manually via kubectl) and extra
+ * resource keys (injected by cluster autoscalers like GKE Autopilot) are NOT
+ * drift — reconcile must not fight other actors. Only a desired value that is
+ * absent or different counts.
+ */
+export function containerDrifted(
+  current: KubernetesContainer,
+  desired: KubernetesContainer,
+): boolean {
+  if (current.image !== desired.image) return true;
+
+  const currentEnv = new Map((current.env ?? []).map((e) => [e.name, e]));
+  for (const entry of desired.env ?? []) {
+    const live = currentEnv.get(entry.name);
+    if (!live || !envEntryEqual(live, entry)) return true;
+  }
+
+  const cur = current.resources ?? {};
+  for (const bucket of ["requests", "limits"] as const) {
+    for (const [key, value] of Object.entries(
+      desired.resources?.[bucket] ?? {},
+    )) {
+      if (cur[bucket]?.[key] !== value) return true;
+    }
+  }
+
+  return false;
+}
+
 function isConflict(err: unknown): boolean {
   return err instanceof ConflictError;
 }
@@ -195,6 +241,28 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
     return this.config.pvcName
       ? this.config.pvcName(slug ? sanitizeAgentName(slug) : resourceName)
       : `${resourceName}-home`;
+  }
+
+  /**
+   * The desired Deployment manifest for an agent — the single source of truth
+   * used both to create (provision) and to drift-correct (reconcile).
+   */
+  private deploymentManifestFor(agentId: string, slug?: string) {
+    const resourceName = this.resourceName(agentId);
+    return buildAgentDeploymentManifest({
+      agentId,
+      namespace: this.config.namespace,
+      image: this.config.image,
+      imageTag: this.config.imageTag,
+      apiUrl: this.config.apiUrl,
+      pvcName: this.pvcNameFor(resourceName, slug),
+      secretName: this.secretNameFor(resourceName),
+      tokenSecretKey: this.tokenKey,
+      replicas: this.config.replicas,
+      voice: this.config.voice,
+      taskStoreUrl: this.config.taskStoreUrl,
+      chatServiceUrl: this.config.chatServiceUrl,
+    });
   }
 
   async provision(
@@ -286,20 +354,7 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
     try {
       await this.k8s.createDeploymentManifest(
         this.config.namespace,
-        buildAgentDeploymentManifest({
-          agentId,
-          namespace: this.config.namespace,
-          image: this.config.image,
-          imageTag: this.config.imageTag,
-          apiUrl: this.config.apiUrl,
-          pvcName: this.pvcNameFor(resourceName, opts?.slug),
-          secretName,
-          tokenSecretKey: this.tokenKey,
-          replicas: this.config.replicas,
-          voice: this.config.voice,
-          taskStoreUrl: this.config.taskStoreUrl,
-          chatServiceUrl: this.config.chatServiceUrl,
-        }),
+        this.deploymentManifestFor(agentId, opts?.slug),
       );
     } catch (err) {
       if (isConflict(err)) {
@@ -386,16 +441,21 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
           });
         }
       } else {
-        // Deployment already exists — check for a stale image and patch if needed.
+        // Deployment already exists — re-apply the desired container spec when
+        // it has drifted. The manifest builder is the single source of truth
+        // for image, env, and resources; the strategic-merge patch upserts env
+        // entries by name, so manually-added extra vars survive. (Patching only
+        // the image here would mean existing Deployments never pick up env or
+        // resource changes shipped in a new admin version.)
         try {
           const deployment = await this.k8s.getDeployment(
             this.config.namespace,
             resourceName,
           );
-          const currentImage =
-            deployment.spec.template.spec.containers[0]?.image;
-          const desiredImage = `${this.config.image}:${this.config.imageTag}`;
-          if (currentImage !== desiredImage) {
+          const current = deployment.spec.template.spec.containers[0];
+          const desired = this.deploymentManifestFor(agent.id, agent.slug).spec
+            .template.spec.containers[0];
+          if (current && desired && containerDrifted(current, desired)) {
             await this.k8s.patchDeployment(
               this.config.namespace,
               resourceName,
@@ -404,7 +464,12 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
                   template: {
                     spec: {
                       containers: [
-                        { name: "shipwright-agent", image: desiredImage },
+                        {
+                          name: desired.name,
+                          image: desired.image,
+                          env: desired.env,
+                          resources: desired.resources,
+                        },
                       ],
                     },
                   },
