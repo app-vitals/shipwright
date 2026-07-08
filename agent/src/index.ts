@@ -267,10 +267,7 @@ if (runtimeClient && agentId) {
     // five pipeline phase jobs are excluded here (loop-config-only) only
     // when this agent's own shipwright-loop job is present and enabled.
     const scheduled = classifyCronJobsForScheduling(jobs);
-    const desired = new Map<string, (typeof scheduled)[number]>();
-    for (const entry of scheduled) {
-      desired.set(entry.job.id, entry);
-    }
+    const desired = new Map(scheduled.map((entry) => [entry.job.id, entry]));
 
     // Cancel removed/disabled jobs
     for (const [id, task] of cronTasks) {
