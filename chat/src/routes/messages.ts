@@ -41,6 +41,20 @@ import { parseIntParam } from "./utils.ts";
 /** Maximum allowed size for message attachment bytes (10 MB). */
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
+async function readJson(c: {
+  req: { json: () => Promise<unknown> };
+}): Promise<Record<string, unknown>> {
+  try {
+    const body = await c.req.json();
+    if (body && typeof body === "object" && !Array.isArray(body)) {
+      return body as Record<string, unknown>;
+    }
+    return {};
+  } catch {
+    return {};
+  }
+}
+
 // ─── Route-local schemas ──────────────────────────────────────────────────────
 
 /** Path param for routes with /:id */
@@ -345,12 +359,7 @@ export function createMessagesRoutes(
     const threadId = c.req.param("threadId") as string;
     await requireThread(c, threadService, threadId);
 
-    let body: Record<string, unknown> = {};
-    try {
-      body = (await c.req.json()) as Record<string, unknown>;
-    } catch {
-      // Non-JSON or empty body — validation below will catch missing fields.
-    }
+    const body = await readJson(c);
 
     const role = typeof body.role === "string" ? body.role : undefined;
     if (!role) throw new BadRequestError("role is required");
@@ -474,12 +483,7 @@ export function createMessagesRoutes(
     if (!existing || existing.threadId !== threadId)
       throw new NotFoundError("message not found");
 
-    let body: Record<string, unknown> = {};
-    try {
-      body = (await c.req.json()) as Record<string, unknown>;
-    } catch {
-      // empty body → no-op
-    }
+    const body = await readJson(c);
 
     const updated = await messageService.update(c.req.param("id"), {
       body: typeof body.body === "string" ? body.body : undefined,
@@ -527,12 +531,7 @@ export function createMessagesRoutes(
     if (existing.repliedAt !== null)
       throw new ConflictError("message already has a reply");
 
-    let body: Record<string, unknown> = {};
-    try {
-      body = (await c.req.json()) as Record<string, unknown>;
-    } catch {
-      // empty body → validation below catches missing body
-    }
+    const body = await readJson(c);
 
     const replyBody = typeof body.body === "string" ? body.body : undefined;
     if (replyBody === undefined) throw new BadRequestError("body is required");
