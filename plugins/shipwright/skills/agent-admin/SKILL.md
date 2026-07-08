@@ -52,6 +52,20 @@ curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
   "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/config" | jq .
 ```
 
+## Finding Other Agents
+
+To manage another agent (e.g. resolve a name like "warchild" to an ID), list all agents:
+
+```bash
+curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
+  "$SHIPWRIGHT_API_URL/agents" | jq .
+# Returns: [{ id, name, selfHosted }, ...]
+```
+
+**Admin-scoped keys only** — this 403s unless your `SHIPWRIGHT_AGENT_API_KEY` is registered
+in `SHIPWRIGHT_ADMIN_API_KEYS` with `scope: "*"`. Most per-agent keys don't have this; check
+with whoever manages the admin service if you get a 403.
+
 ---
 
 ## Cron Jobs
@@ -213,11 +227,19 @@ curl -sf -X POST \
   -d '{"SLACK_BOT_TOKEN": "xoxb-...", "GH_TOKEN": "ghp_..."}' | jq .
 
 # Merge — update specific keys, leave unmentioned keys unchanged
+# Note: unlike POST, the PATCH body wraps keys under "env" — a flat body 400s with "env: Required"
 curl -sf -X PATCH \
   -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
   -H "Content-Type: application/json" \
   "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/envs" \
-  -d '{"GH_TOKEN": "ghp_new_token"}' | jq .
+  -d '{"env": {"GH_TOKEN": "ghp_new_token"}}' | jq .
+
+# Merge and flag a key as secret (masked in future GETs) — secretKeys is optional
+curl -sf -X PATCH \
+  -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/envs" \
+  -d '{"env": {"GH_TOKEN": "ghp_new_token"}, "secretKeys": ["GH_TOKEN"]}' | jq .
 
 # Delete a single key
 curl -sf -X DELETE \
