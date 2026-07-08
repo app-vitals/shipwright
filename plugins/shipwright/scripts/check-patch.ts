@@ -123,24 +123,45 @@ export function hasFailingCi(
 // ─── Staleness check (mirrors patch.md Step 3b) ───────────────────────────────
 
 /**
- * True when a review is self-authored and its body is a clean APPROVE verdict
- * (`body.trimStart().startsWith("APPROVE")`, matching deploy.md's Step 3a
- * convention). GitHub blocks self-APPROVE via the API, so the agent's own clean
- * approvals are always posted as COMMENTED — treating those as findings would
- * create a permanent false positive. A self-review with a real (non-APPROVE)
- * verdict is not matched here, so it still counts as a finding.
+ * Matches a standalone "Verdict: APPROVE" line anywhere in a review body
+ * (case-insensitive, optional leading markdown bold markers around either
+ * word, tolerant of trailing punctuation/whitespace after APPROVE). Used to
+ * catch the agent's narrative self-review convention, which ends a summary
+ * with a verdict line rather than leading with it — e.g. "...no issues found.
+ * \n\nVerdict: APPROVE". Deliberately anchored on a `Verdict:` label so a
+ * stray "approve" in prose (or a genuine "Verdict: CHANGES_REQUESTED") never
+ * matches.
+ */
+const VERDICT_APPROVE_LINE = /^\s*\**\s*verdict\**\s*:\s*\**\s*approve\**\s*$/im;
+
+/**
+ * True when a review is self-authored and is a clean APPROVE verdict, matched
+ * either by:
+ * - a leading `APPROVE` (`body.trimStart().startsWith("APPROVE")`, matching
+ *   deploy.md's Step 3a convention), or
+ * - a "Verdict: APPROVE" line anywhere in the body (the agent's narrative
+ *   self-review convention, which ends a summary with the verdict rather than
+ *   leading with it — CPF-2.1).
  *
- * Leading markdown bold markers (`**`) are stripped before the check, mirroring
- * check-deploy.ts's `hasSelfApproveReview` — the review skill posts `**APPROVE**`
- * but the body must still be treated as APPROVE.
+ * GitHub blocks self-APPROVE via the API, so the agent's own clean approvals
+ * are always posted as COMMENTED — treating those as findings would create a
+ * permanent false positive. A self-review with a real (non-APPROVE) verdict
+ * (e.g. "Verdict: CHANGES_REQUESTED") is not matched here, so it still counts
+ * as a finding.
+ *
+ * Leading markdown bold markers (`**`) are stripped before the leading-prefix
+ * check, mirroring check-deploy.ts's `hasSelfApproveReview` — the review
+ * skill posts `**APPROVE**` but the body must still be treated as APPROVE.
  */
 function isSelfCleanApprove(
   review: Pick<PrReviewData["reviews"]["nodes"][number], "author" | "body">,
   currentUser: string,
 ): boolean {
+  if (review.author.login !== currentUser) return false;
+
   return (
-    review.author.login === currentUser &&
-    review.body.trimStart().replace(/^\*+/, "").startsWith("APPROVE")
+    review.body.trimStart().replace(/^\*+/, "").startsWith("APPROVE") ||
+    VERDICT_APPROVE_LINE.test(review.body)
   );
 }
 

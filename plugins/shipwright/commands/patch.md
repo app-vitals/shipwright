@@ -152,16 +152,22 @@ A PR has **no findings** (skip it) when ALL of the following are true:
   clean-APPROVE reviews (see below)
 
 **Self-authored clean-APPROVE exclusion**: A review is excluded from the body check above
-when `author.login == CURRENT_USER` (resolved in Step 1) AND its body — leading markdown
-bold markers (`**`) stripped — starts with `APPROVE`. Per review.md's Step 10 note
-("Self-review event override"), GitHub rejects self-APPROVE via the API, so the agent's own
-clean approval of its own PR is always posted as `COMMENTED` with a body like
-`"APPROVE — looks good, no changes needed."` instead of an `APPROVED` review. Without this
-exclusion, that clean self-approval would look identical to a real finding and loop the
-patch cron forever on an already-approved PR. The exclusion is scoped to clean APPROVE
-verdicts only — a self-authored review whose body does **not** start with `APPROVE` (i.e.
-the agent found a real issue in its own PR) still counts as a finding, same as any other
-reviewer's.
+when `author.login == CURRENT_USER` (resolved in Step 1) AND its body is a clean APPROVE
+verdict, matched either by:
+- leading markdown bold markers (`**`) stripped, the body starts with `APPROVE`, or
+- a `Verdict: APPROVE` line appears anywhere in the body (case-insensitive, optional bold
+  markers around either word), e.g. a narrative summary that ends in
+  `"...no issues found.\n\nVerdict: APPROVE"` rather than leading with it.
+
+Per review.md's Step 10 note ("Self-review event override"), GitHub rejects self-APPROVE via
+the API, so the agent's own clean approval of its own PR is always posted as `COMMENTED`
+with a body like `"APPROVE — looks good, no changes needed."` or a narrative ending in
+`"Verdict: APPROVE"` instead of an `APPROVED` review. Without this exclusion, that clean
+self-approval would look identical to a real finding and loop the patch cron forever on an
+already-approved PR. The exclusion is scoped to clean APPROVE verdicts only — a self-authored
+review whose body neither starts with `APPROVE` nor contains a `Verdict: APPROVE` line (e.g.
+it ends in `Verdict: CHANGES_REQUESTED`, meaning the agent found a real issue in its own PR)
+still counts as a finding, same as any other reviewer's.
 
 If neither condition applies (e.g., no reviews at all, only approved reviews, or only an
 excluded self-authored clean-APPROVE review), skip the PR — it does not belong in List A.
