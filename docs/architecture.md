@@ -94,10 +94,11 @@ Postgres-backed service for web chat conversations (`chat/`). Owns three Prisma 
 
 ## Workspace layout
 
-The repo is a Bun-workspaces monorepo with **go-task** (`Taskfile.yml`) as the single local entrypoint. Seven workspaces — `plugins/shipwright`, `metrics`, `agent`, `admin`, `task-store`, `chat`, `mcp-server` — are wired into the root `package.json`. The `site/` is intentionally excluded from the root `bun test` scan (its Playwright `*.spec.ts` files would crash Bun's runner).
+The repo is a Bun-workspaces monorepo with **go-task** (`Taskfile.yml`) as the single local entrypoint. Eight workspaces — `lib`, `plugins/shipwright`, `metrics`, `agent`, `admin`, `task-store`, `chat`, `mcp-server` — are wired into the root `package.json`. The `site/` is intentionally excluded from the root `bun test` scan (its Playwright `*.spec.ts` files would crash Bun's runner).
 
 ```
 shipwright/
+├── lib/                  shared utilities: admin-types, org-repo, pricing, sentry, web helpers (@shipwright/lib)
 ├── plugins/shipwright/   A — the plugin (commands, skills, agents, scripts)
 ├── metrics/              B — provider-agnostic Hono service (fixtures / taskstore)
 ├── agent/                C — Shipwright agent runtime (entrypoint, cron, Slack, GitHub auth)
