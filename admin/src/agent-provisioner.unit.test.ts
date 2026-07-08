@@ -408,6 +408,56 @@ describe("KubernetesAgentProvisioner.reconcile() — image-update detection", ()
     // The manually-added var survives the strategic-merge patch.
     expect(names).toContain("STARTUP_TIMEOUT_MS");
   });
+
+  it("patches a Deployment with drifted resources, preserving Autopilot-injected resource keys", async () => {
+    const agentId = "cmqalfjcm000m4101iharq28k";
+    const resourceName = sanitizeAgentName(agentId);
+
+    // Seed the desired manifest, then simulate GKE Autopilot having injected a
+    // cpu key into requests and limits that the manifest doesn't specify.
+    const stale = buildAgentDeploymentManifest({
+      agentId,
+      namespace: NAMESPACE,
+      image: BASE_CONFIG.image,
+      imageTag: BASE_CONFIG.imageTag,
+      apiUrl: BASE_CONFIG.apiUrl,
+      pvcName: `${resourceName}-home`,
+      secretName: `${resourceName}-token`,
+      tokenSecretKey: "token",
+    });
+    const container = stale.spec.template.spec.containers[0];
+    // Simulate Autopilot injecting cpu — and also strip the memory limit so
+    // containerDrifted() detects drift and triggers a patch.
+    container.resources = {
+      requests: { ...container.resources?.requests, cpu: "500m" },
+      limits: { cpu: "2" }, // missing memory limit → drift
+    };
+
+    const k8s = new RecordedKubernetesClient({
+      deployments: { [`${NAMESPACE}/${resourceName}`]: stale },
+      secrets: {},
+      pvcs: {},
+    });
+    const provisioner = new KubernetesAgentProvisioner(
+      k8s,
+      stubTokens() as AgentTokenService,
+      BASE_CONFIG,
+    );
+
+    const result = await provisioner.reconcile([{ id: agentId }]);
+
+    expect(result.updated).toEqual([agentId]);
+    expect(result.failed).toEqual([]);
+
+    const dep = await k8s.getDeployment(NAMESPACE, resourceName);
+    const resources = dep.spec.template.spec.containers[0].resources;
+    // Desired manifest values are applied.
+    expect(resources?.requests?.memory).toBe("2Gi");
+    expect(resources?.limits?.memory).toBe("8Gi");
+    // Autopilot-injected cpu key survives the strategic-merge patch.
+    expect(resources?.requests?.cpu).toBe("500m");
+    expect(resources?.limits?.cpu).toBe("2");
+  });
 });
 
 // ─── containerDrifted ─────────────────────────────────────────────────────────

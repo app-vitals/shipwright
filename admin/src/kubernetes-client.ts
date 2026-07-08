@@ -757,8 +757,9 @@ export class RecordedKubernetesClient implements KubernetesClient {
       };
     };
     // Emulate the strategic-merge semantics the real API server applies:
-    // container fields are replaced, except env, which merges by name
-    // (patched entries win, unmentioned live entries survive).
+    // container fields are replaced, except env (merges by name) and
+    // resources.requests/limits (merges key-by-key) — patched entries win,
+    // unmentioned live entries (e.g. Autopilot-injected cpu keys) survive.
     const patchContainer = p.spec?.template?.spec?.containers?.[0];
     const existing = dep.spec.template.spec.containers[0];
     if (patchContainer !== undefined && existing !== undefined) {
@@ -767,6 +768,18 @@ export class RecordedKubernetesClient implements KubernetesClient {
         const byName = new Map(existing.env.map((e) => [e.name, e]));
         for (const entry of patchContainer.env) byName.set(entry.name, entry);
         merged.env = [...byName.values()];
+      }
+      if (patchContainer.resources !== undefined) {
+        merged.resources = {
+          requests: {
+            ...existing.resources?.requests,
+            ...patchContainer.resources.requests,
+          },
+          limits: {
+            ...existing.resources?.limits,
+            ...patchContainer.resources.limits,
+          },
+        };
       }
       dep.spec.template.spec.containers[0] = merged;
     }
