@@ -314,7 +314,7 @@ export function createPrsRoutes(
     const repos = c.get("repos");
     const body = await readJson(c);
 
-    const { repo, prNumber, commitSha, claimedBy, taskId, phase } = body;
+    const { repo, prNumber, commitSha, claimedBy, taskId, phase, prCreatedAt } = body;
 
     // Validate required fields
     if (typeof repo !== "string" || !repo) {
@@ -358,6 +358,9 @@ export function createPrsRoutes(
         ? phase
         : undefined;
 
+    const resolvedPrCreatedAt =
+      typeof prCreatedAt === "string" && prCreatedAt ? prCreatedAt : undefined;
+
     const { status, record } = await prService.claim(
       repo,
       prNumber,
@@ -365,6 +368,7 @@ export function createPrsRoutes(
       resolvedClaimedBy,
       resolvedTaskId,
       resolvedPhase,
+      resolvedPrCreatedAt,
     );
 
     return c.json(record, status);

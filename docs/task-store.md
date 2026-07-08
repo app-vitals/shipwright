@@ -183,6 +183,7 @@ Body:
 | `claimedBy` | admin only | Agent ID (agent tokens pin to their own ID) |
 | `taskId` | no | Associated task ID |
 | `phase` | no | Pipeline phase (`review`, `patch`, or `deploy`; default: `review`). When set, the phase is updated and reviewState is preserved. |
+| `prCreatedAt` | no | ISO timestamp of the GitHub PR's actual creation time. Only applied when the claim creates a new record (`201`); ignored on subsequent claims (`200`) of an existing record since the field is immutable once set. |
 
 Claim semantics:
 - No existing record → creates and returns `201`
@@ -252,7 +253,7 @@ The following timestamp fields are managed by the task store:
 
 | Field | Managed by | Description |
 |-------|-----------|-------------|
-| `prCreatedAt` | Lifecycle endpoints | ISO timestamp of the GitHub PR's actual creation time (distinct from `createdAt`, which records when the task-store record itself was created). Read-only. |
+| `prCreatedAt` | `POST /prs/claim` | ISO timestamp of the GitHub PR's actual creation time (distinct from `createdAt`, which records when the task-store record itself was created). Set once via the optional `prCreatedAt` field on the first `POST /prs/claim` call that creates the record (`201`); read-only thereafter — later claims cannot modify it. Not currently populated by any Shipwright command; callers must supply GitHub's PR `createdAt` explicitly to use this field. |
 | `createdAt` | Auto | ISO timestamp when the task-store PR record was created. |
 | `updatedAt` | Auto | ISO timestamp when the task-store PR record was last modified. |
 | `reviewedAt` | `POST /prs/:id/complete` | Set when the review cycle completes. |
