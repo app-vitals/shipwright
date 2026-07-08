@@ -165,6 +165,7 @@ To load additional context into a session, add `@docs/filename.md` entries here 
 - **docs/agent.md** — Shipwright agent (C): runtime + admin CRUD APIs, the ten-model Prisma store, and encryption/env notes
 - **docs/agent-api.md** — the admin CRUD API (D): agents, envs, crons, cron runs, tools, tokens, plugins, and chat-token-usage endpoints, plus auth paths
 - **docs/task-store.md** — task store service (D): the sole HTTP-service backend — tasks, PR tracking, tokens, ephemeral docs — and troubleshooting
+- **docs/mcp-tools.md** — generated MCP server tool reference (name, description, HTTP method/path, parameters, body) derived from task-store/openapi.json + the tool allowlist; regenerate with `bun run generate:mcp-docs`
 - **docs/chat.md** — chat service (D): auth model (admin vs. agent tokens, scope resolver), thread/message/token endpoints (incl. attachment streaming and the claim/reply queue), data model, and environment
 - **docs/deploy-kubernetes.md** — Kubernetes deployment guide: Minikube / GKE (Gateway API + cert-manager) / EKS (ALB), the agent runtime-provisioning RBAC model, and auth modes
 - **docs/helm-repo.md** — installing the published `shipwright` Helm chart, how chart publishing and version bumps are automated
