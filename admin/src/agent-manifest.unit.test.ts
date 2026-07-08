@@ -134,6 +134,18 @@ describe("buildAgentDeploymentManifest", () => {
     expect(agentHome?.value).toBe(AGENT_HOME_MOUNT_PATH);
   });
 
+  it("routes repo clones and worktrees to the PVC, not ephemeral $HOME", () => {
+    const d = buildAgentDeploymentManifest(deployOpts);
+    const env = d.spec.template.spec.containers[0].env ?? [];
+    const byName = new Map(env.map((e) => [e.name, e]));
+    expect(byName.get("SHIPWRIGHT_REPO_DIR")?.value).toBe(
+      `${AGENT_HOME_MOUNT_PATH}/workspace/repos`,
+    );
+    expect(byName.get("SHIPWRIGHT_WORKTREE_DIR")?.value).toBe(
+      `${AGENT_HOME_MOUNT_PATH}/workspace/worktrees`,
+    );
+  });
+
   it("defines liveness and readiness probes on the health port", () => {
     const d = buildAgentDeploymentManifest(deployOpts);
     const c = d.spec.template.spec.containers[0];
@@ -188,13 +200,15 @@ describe("buildAgentDeploymentManifest — voice env", () => {
   const envNames = (d: ReturnType<typeof buildAgentDeploymentManifest>) =>
     (d.spec.template.spec.containers[0].env ?? []).map((e) => e.name);
 
-  it("injects only the 4 base vars when no voice config is supplied (disabled)", () => {
+  it("injects only the 6 base vars when no voice config is supplied (disabled)", () => {
     const d = buildAgentDeploymentManifest(deployOpts);
     expect(envNames(d)).toEqual([
       "SHIPWRIGHT_AGENT_ID",
       "SHIPWRIGHT_API_URL",
       "SHIPWRIGHT_AGENT_API_KEY",
       "AGENT_HOME",
+      "SHIPWRIGHT_REPO_DIR",
+      "SHIPWRIGHT_WORKTREE_DIR",
     ]);
   });
 
@@ -246,17 +260,19 @@ describe("buildAgentDeploymentManifest — voice env", () => {
     expect(byName.get("ELEVENLABS_VOICE_ID")?.value).toBe("voice-xyz");
   });
 
-  it("keeps the base 4 vars first and appends voice vars after AGENT_HOME", () => {
+  it("keeps the base 6 vars first and appends voice vars after them", () => {
     const d = buildAgentDeploymentManifest({
       ...deployOpts,
       voice: { whisperServiceUrl: "http://w:9000", elevenLabsApiKey: "k" },
     });
     const names = envNames(d);
-    expect(names.slice(0, 4)).toEqual([
+    expect(names.slice(0, 6)).toEqual([
       "SHIPWRIGHT_AGENT_ID",
       "SHIPWRIGHT_API_URL",
       "SHIPWRIGHT_AGENT_API_KEY",
       "AGENT_HOME",
+      "SHIPWRIGHT_REPO_DIR",
+      "SHIPWRIGHT_WORKTREE_DIR",
     ]);
     expect(names).toContain("WHISPER_SERVICE_URL");
   });

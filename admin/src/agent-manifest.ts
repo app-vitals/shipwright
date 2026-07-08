@@ -27,6 +27,15 @@ export const AGENT_HEALTH_PORT = 3459;
 /** Where the agent's persistent home volume is mounted in the container. */
 export const AGENT_HOME_MOUNT_PATH = "/data/agent-home";
 
+/**
+ * Repo clones and git worktrees must live on the PVC. The plugin commands
+ * default to `$HOME/src` / `$HOME/worktrees`, which sit on the container's
+ * ephemeral overlay layer — a single worktree with node_modules can exceed
+ * the pod's ephemeral-storage limit and get the pod evicted.
+ */
+export const AGENT_REPO_DIR = `${AGENT_HOME_MOUNT_PATH}/workspace/repos`;
+export const AGENT_WORKTREE_DIR = `${AGENT_HOME_MOUNT_PATH}/workspace/worktrees`;
+
 /** Non-root uid/gid the agent runs as (matches the agent image). */
 const AGENT_RUN_AS = 1000;
 
@@ -154,7 +163,7 @@ export interface AgentDeploymentOpts {
   /**
    * When set, inject SHIPWRIGHT_TASK_STORE_TOKEN (via secretKeyRef from the
    * agent Secret) and SHIPWRIGHT_TASK_STORE_URL (as a plain value) into the
-   * agent Deployment. Placed after AGENT_HOME and before voice env vars.
+   * agent Deployment. Placed after the base vars and before voice env vars.
    */
   taskStoreUrl?: string;
   /**
@@ -334,14 +343,17 @@ export function buildAgentDeploymentManifest(
                 },
                 // Tell the agent where its persistent home directory is mounted.
                 { name: "AGENT_HOME", value: AGENT_HOME_MOUNT_PATH },
-                // Task-store env — injected after AGENT_HOME when task-store is
-                // configured; omitted entirely when taskStoreUrl is absent.
+                // Route repo clones and worktrees to the PVC (see constants).
+                { name: "SHIPWRIGHT_REPO_DIR", value: AGENT_REPO_DIR },
+                { name: "SHIPWRIGHT_WORKTREE_DIR", value: AGENT_WORKTREE_DIR },
+                // Task-store env — injected after the base vars when task-store
+                // is configured; omitted entirely when taskStoreUrl is absent.
                 ...taskStoreEnvEntries(opts),
                 // Chat-service env — injected after task-store vars when chat
                 // service is configured; omitted entirely when chatServiceUrl is absent.
                 ...chatServiceEnvEntries(opts),
                 // Voice (STT/TTS) env — appended only for the keys that are set
-                // (none when voice is disabled, preserving the 4 base vars).
+                // (none when voice is disabled, preserving the 6 base vars).
                 ...voiceEnvEntries(opts.voice),
               ],
               volumeMounts: [
