@@ -859,6 +859,37 @@ describe("check-patch", () => {
     expect(result.output).toBe("");
   });
 
+  test("exits 1 when self-authored review trails reasoning after Verdict: APPROVE on the same line (verbatim shipwright PR #1272 case)", async () => {
+    const pr = makeOwnPr();
+    const reviewData = makePrReviewData({
+      headRefOid: "current-head-sha",
+      reviews: {
+        nodes: [
+          {
+            author: { login: "the-agent" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-26T10:00:00Z",
+            commit: { oid: "current-head-sha" },
+            body: "Clean, well-scoped PR. Verified the generator output is byte-identical to the committed `docs/mcp-tools.md` (no drift), all 9 sections match the allowlist's filtered tool set exactly, unit tests (10/10) and lint pass, and no Helm/Kubernetes content leaked into the doc. All 5 acceptance criteria met. Verdict: APPROVE (posted as COMMENT — GitHub disallows self-approval via the API).",
+          },
+        ],
+      },
+      reviewThreads: { nodes: [] },
+    });
+    const result = await run(
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: { 10: reviewData },
+        ciStatusByPr: {},
+        mergeStatusByPr: {},
+        listPrCommits: async () => [],
+        getCurrentUser: () => "the-agent",
+      }),
+    );
+    expect(result.exit).toBe(1);
+    expect(result.output).toBe("");
+  });
+
   test("exits 0 when a narrative Verdict: APPROVE self-review coexists with a different reviewer's CHANGES_REQUESTED finding", async () => {
     const pr = makeOwnPr();
     const reviewData = makePrReviewData({

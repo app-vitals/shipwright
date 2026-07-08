@@ -155,18 +155,21 @@ A PR has **no findings** (skip it) when ALL of the following are true:
 when `author.login == CURRENT_USER` (resolved in Step 1) AND its body is a clean APPROVE
 verdict, matched either by:
 - leading markdown bold markers (`**`) stripped, the body starts with `APPROVE`, or
-- a `Verdict: APPROVE` line appears anywhere in the body (case-insensitive, optional bold
-  markers around either word), e.g. a narrative summary that ends in
-  `"...no issues found.\n\nVerdict: APPROVE"` rather than leading with it.
+- a `Verdict: APPROVE` label appears anywhere in the body (case-insensitive, optional bold
+  markers around either word) — **not** anchored to end-of-line, since the agent's narrative
+  self-reviews often trail reasoning after the verdict on the same line, e.g.
+  `"...All 5 acceptance criteria met. Verdict: APPROVE (posted as COMMENT — GitHub disallows
+  self-approval via the API)."` (verbatim from shipwright PR #1272, the case that motivated
+  this).
 
 Per review.md's Step 10 note ("Self-review event override"), GitHub rejects self-APPROVE via
 the API, so the agent's own clean approval of its own PR is always posted as `COMMENTED`
-with a body like `"APPROVE — looks good, no changes needed."` or a narrative ending in
+with a body like `"APPROVE — looks good, no changes needed."` or a narrative containing
 `"Verdict: APPROVE"` instead of an `APPROVED` review. Without this exclusion, that clean
 self-approval would look identical to a real finding and loop the patch cron forever on an
 already-approved PR. The exclusion is scoped to clean APPROVE verdicts only — a self-authored
-review whose body neither starts with `APPROVE` nor contains a `Verdict: APPROVE` line (e.g.
-it ends in `Verdict: CHANGES_REQUESTED`, meaning the agent found a real issue in its own PR)
+review whose body neither starts with `APPROVE` nor contains a `Verdict: APPROVE` label (e.g.
+it contains `Verdict: CHANGES_REQUESTED`, meaning the agent found a real issue in its own PR)
 still counts as a finding, same as any other reviewer's.
 
 If neither condition applies (e.g., no reviews at all, only approved reviews, or only an

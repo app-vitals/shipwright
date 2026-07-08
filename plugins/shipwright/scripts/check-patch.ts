@@ -123,23 +123,24 @@ export function hasFailingCi(
 // ─── Staleness check (mirrors patch.md Step 3b) ───────────────────────────────
 
 /**
- * Matches a standalone "Verdict: APPROVE" line anywhere in a review body
- * (case-insensitive, optional leading markdown bold markers around either
- * word, tolerant of trailing punctuation/whitespace after APPROVE). Used to
- * catch the agent's narrative self-review convention, which ends a summary
- * with a verdict line rather than leading with it — e.g. "...no issues found.
- * \n\nVerdict: APPROVE". Deliberately anchored on a `Verdict:` label so a
- * stray "approve" in prose (or a genuine "Verdict: CHANGES_REQUESTED") never
- * matches.
+ * Matches a "Verdict: APPROVE" label anywhere in a review body (case-
+ * insensitive, optional markdown bold markers around either word). Deliberately
+ * NOT anchored to end-of-line — the agent's real narrative self-reviews trail
+ * reasoning after the verdict on the same line, e.g. "...All 5 acceptance
+ * criteria met. Verdict: APPROVE (posted as COMMENT — GitHub disallows
+ * self-approval via the API)." (verbatim from shipwright PR #1272, the case
+ * that motivated this). The trailing `\b` requires "approve" to end as a whole
+ * word, so a genuine "Verdict: CHANGES_REQUESTED" or "Verdict: DISAPPROVE" of
+ * X never matches.
  */
-const VERDICT_APPROVE_LINE = /^\s*\**\s*verdict\**\s*:\s*\**\s*approve\**\s*$/im;
+const VERDICT_APPROVE_LABEL = /verdict\**\s*:\s*\**approve\b/i;
 
 /**
  * True when a review is self-authored and is a clean APPROVE verdict, matched
  * either by:
  * - a leading `APPROVE` (`body.trimStart().startsWith("APPROVE")`, matching
  *   deploy.md's Step 3a convention), or
- * - a "Verdict: APPROVE" line anywhere in the body (the agent's narrative
+ * - a "Verdict: APPROVE" label anywhere in the body (the agent's narrative
  *   self-review convention, which ends a summary with the verdict rather than
  *   leading with it — CPF-2.1).
  *
@@ -161,7 +162,7 @@ function isSelfCleanApprove(
 
   return (
     review.body.trimStart().replace(/^\*+/, "").startsWith("APPROVE") ||
-    VERDICT_APPROVE_LINE.test(review.body)
+    VERDICT_APPROVE_LABEL.test(review.body)
   );
 }
 
