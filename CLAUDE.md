@@ -28,8 +28,9 @@ go-task (`Taskfile.yml`) is the single local entrypoint; the root `package.json`
 
 ```bash
 task setup        # bun install across all workspaces
-task ci           # lint → check-strings → typecheck → check-config-docs → check-version-sync → test → secret-scan (the merge-blocking gate; CI runs this exact chain)
+task ci           # lint → check-strings → typecheck → check-config-docs → check-version-sync → test:coverage → secret-scan (the merge-blocking gate; CI runs this exact chain)
 task test         # bun test            (single file: bun test path/to/file.test.ts)
+task test:coverage  # bun test --coverage --coverage-reporter=lcov, then gate on aggregate 80/80 lines/functions (scripts/check-coverage.ts)
 task lint         # bunx biome lint .
 task format       # bunx biome format --write .
 task typecheck    # bun run --filter='*' typecheck

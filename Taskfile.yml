@@ -26,6 +26,12 @@ tasks:
     cmds:
       - bun test
 
+  test:coverage:
+    desc: Run all tests with coverage, then gate on aggregate 80/80 lines/functions (scripts/check-coverage.ts)
+    cmds:
+      - bun test --coverage --coverage-reporter=lcov
+      - bun run scripts/check-coverage.ts
+
   check-strings:
     desc: Scan entire repo for banned strings (confidential identifiers, client names)
     cmds:
@@ -42,14 +48,14 @@ tasks:
       - bun run scripts/sync-version.ts --check
 
   ci:
-    desc: Run all CI checks (lint → check-strings → typecheck → check-config-docs → check-version-sync → test → secret-scan)
+    desc: Run all CI checks (lint → check-strings → typecheck → check-config-docs → check-version-sync → test:coverage → secret-scan)
     cmds:
       - task: lint
       - task: check-strings
       - task: typecheck
       - task: check-config-docs
       - task: check-version-sync
-      - task: test
+      - task: test:coverage
       - task: secret-scan
 
   api:
