@@ -58,6 +58,14 @@ export const SYSTEM_CRONS: readonly SystemCron[] = [
     enabled: false,
   },
   {
+    name: "shipwright-loop",
+    schedule: "* * * * *",
+    prompt:
+      "internal: dispatched via handleLoopCronRequest, not run through Claude",
+    silent: true,
+    enabled: false,
+  },
+  {
     name: "shipwright-test-readiness",
     schedule: "0 6 * * *",
     prompt: "/shipwright:test-readiness --full --publish",

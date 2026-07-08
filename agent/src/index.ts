@@ -20,16 +20,15 @@ import { WebClient } from "@slack/web-api";
 import nodeCron from "node-cron";
 import { createAnalyticsStore } from "./analytics.ts";
 import { createChatPoller } from "./chat-poller.ts";
+import {
+  HttpChatTokenReporter,
+  NoopChatTokenReporter,
+} from "./chat-token-reporter.ts";
 import { createRunClaude, setLiveClaudeConfig } from "./claude.ts";
 import { SystemClock } from "./clock.ts";
 import { createConfig } from "./config.ts";
 import { handleCronRequest } from "./cron-handler.ts";
 import type { CronHandlerDeps } from "./cron-handler.ts";
-import { HttpChatServiceClient } from "./http-chat-service-client.ts";
-import {
-  HttpChatTokenReporter,
-  NoopChatTokenReporter,
-} from "./chat-token-reporter.ts";
 import { HttpCronRunReporter } from "./cron-run-reporter.ts";
 import { markdownToSlack } from "./format.ts";
 import {
@@ -38,6 +37,11 @@ import {
   markSlackDisconnected,
   startHealthServer,
 } from "./health.ts";
+import { HttpChatServiceClient } from "./http-chat-service-client.ts";
+import {
+  classifyCronJobsForScheduling,
+  handleLoopCronRequest,
+} from "./loop-cron-classifier.ts";
 import { createFileSessionStore, threadKey } from "./sessions.ts";
 import { ensureAgentHome, installPlugins, runMiseStartup } from "./setup.ts";
 import { HttpShipwrightRuntimeClient } from "./shipwright-runtime-client.ts";
@@ -257,10 +261,15 @@ if (runtimeClient && agentId) {
       return;
     }
 
-    // Build desired map of enabled jobs
-    const desired = new Map<string, (typeof jobs)[number]>();
-    for (const job of jobs) {
-      if (job.enabled) desired.set(job.id, job);
+    // Classify this agent's own job list: which jobs get an independent
+    // schedule, and with which dispatch kind (loop vs. generic). See
+    // loop-cron-classifier.ts for the full decision — in particular, the
+    // five pipeline phase jobs are excluded here (loop-config-only) only
+    // when this agent's own shipwright-loop job is present and enabled.
+    const scheduled = classifyCronJobsForScheduling(jobs);
+    const desired = new Map<string, (typeof scheduled)[number]>();
+    for (const entry of scheduled) {
+      desired.set(entry.job.id, entry);
     }
 
     // Cancel removed/disabled jobs
@@ -273,22 +282,27 @@ if (runtimeClient && agentId) {
     }
 
     // Schedule new jobs
-    for (const [id, job] of desired) {
+    for (const [id, entry] of desired) {
       if (!cronTasks.has(id)) {
+        const { job, dispatch } = entry;
         const task = nodeCron.schedule(job.schedule, async () => {
           console.log(`[cron] firing job ${id}`);
           try {
-            await handleCronRequest(
-              {
-                jobId: id,
-                prompt: job.prompt,
-                channel: job.channel ?? undefined,
-                user: job.user ?? undefined,
-                silent: job.silent,
-                preCheck: job.preCheck ?? undefined,
-              },
-              cronDeps,
-            );
+            if (dispatch === "loop") {
+              await handleLoopCronRequest(jobs);
+            } else {
+              await handleCronRequest(
+                {
+                  jobId: id,
+                  prompt: job.prompt,
+                  channel: job.channel ?? undefined,
+                  user: job.user ?? undefined,
+                  silent: job.silent,
+                  preCheck: job.preCheck ?? undefined,
+                },
+                cronDeps,
+              );
+            }
           } catch (err) {
             console.error(
               `[cron] job ${id} failed:`,
