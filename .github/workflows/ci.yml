@@ -145,7 +145,7 @@ jobs:
           bunx prisma migrate deploy --schema=task-store/prisma/schema.prisma
 
       - name: Test
-        run: task test
+        run: task test:coverage
 
       - name: Secret scan
         run: |
