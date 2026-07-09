@@ -69,12 +69,12 @@ Don't enumerate findings in the body -- the author sees both body and inline com
 
 **This literal phrase is load-bearing, not stylistic.** `check-patch.ts`'s
 `isSelfCleanApprove` matches `Verdict: APPROVE` (case-insensitive, optional `**` markdown
-bold) anywhere in a self-authored review body to recognize a clean self-approve -- this
-matters because GitHub blocks self-APPROVE via the API, so a self-review's clean approval
-is always posted as `event: COMMENT`. Free-form approval prose without the literal phrase
-(e.g. "Clean conversion, no blocking issues.") never matches, and the patch cron then
-treats the review as an unaddressed finding forever. Always lead with the `Verdict: ...`
-label -- don't paraphrase it away.
+bold) anywhere in a review body to recognize a clean APPROVE -- this matters because
+GitHub blocks self-APPROVE via the API, so a self-review's clean approval is always
+posted as `event: COMMENT`. Free-form approval prose without the literal phrase (e.g.
+"Clean conversion, no blocking issues.") never matches, and the patch cron then treats
+the review as an unaddressed finding forever. Always lead with the `Verdict: ...` label
+-- don't paraphrase it away.
 
 ### Tone
 
