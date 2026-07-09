@@ -90,6 +90,12 @@ export interface SlackProvisioningClient {
   ): Promise<void>;
 
   /**
+   * Call apps.manifest.delete with the given xoxp- user token and app ID.
+   * Permanently deletes a provisioned Slack app.
+   */
+  deleteApp(xoxpToken: string, appId: string): Promise<void>;
+
+  /**
    * Exchange an OAuth authorization code for a bot token via oauth.v2.access.
    */
   exchangeOAuthCode(
@@ -271,6 +277,30 @@ export class HttpSlackProvisioningClient implements SlackProvisioningClient {
 
     if (!data.ok) {
       throw new Error(`Slack apps.manifest.update failed: ${data.error}`);
+    }
+  }
+
+  async deleteApp(xoxpToken: string, appId: string): Promise<void> {
+    const url = `${this.apiBase}/apps.manifest.delete`;
+    const resp = await this.fetchFn(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${xoxpToken}`,
+        "Content-Type": "application/json; charset=utf-8",
+      },
+      body: JSON.stringify({ app_id: appId }),
+    });
+
+    if (!resp.ok) {
+      throw new Error(
+        `Slack apps.manifest.delete HTTP error: ${resp.status} ${resp.statusText}`,
+      );
+    }
+
+    const data = (await resp.json()) as { ok: boolean; error?: string };
+
+    if (!data.ok) {
+      throw new Error(`Slack apps.manifest.delete failed: ${data.error}`);
     }
   }
 
