@@ -8,6 +8,7 @@
  * does NOT fall through to the cookie path.
  */
 
+import type { Caller } from "@shipwright/lib/request-context";
 import type { MiddlewareHandler } from "hono";
 import { getCookie } from "hono/cookie";
 import { verify } from "hono/jwt";
@@ -15,7 +16,9 @@ import type { AgentTokenService } from "./agent-tokens.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type AdminAuthEnv = { Variables: { isAdmin: boolean } };
+export type AdminAuthEnv = {
+  Variables: { isAdmin: boolean; caller: Caller };
+};
 
 /**
  * Declarative authorization policy for the admin service.
@@ -133,6 +136,7 @@ export function createAdminAuthMiddleware(deps: {
           if (envKey.scope === "*") {
             // Admin key — bypass all scope checks.
             c.set("isAdmin", true);
+            c.set("caller", { name: envKey.name, scope: "*" });
             return next();
           }
           // Scoped key — enforce route agentId matches key scope.
@@ -143,6 +147,7 @@ export function createAdminAuthMiddleware(deps: {
           // Non-agent routes: scoped keys are permitted (no agentId to enforce against).
           // All current /agents/* routes match AGENT_ROUTE_RE — revisit if that changes.
           c.set("isAdmin", false);
+          c.set("caller", { name: envKey.name, scope: envKey.scope });
           return next();
         }
       }
@@ -163,6 +168,7 @@ export function createAdminAuthMiddleware(deps: {
       }
       // DB token path — per-agent bearer, not an admin.
       c.set("isAdmin", false);
+      c.set("caller", { name: result.agentId, scope: result.agentId });
       return next();
     }
 
@@ -171,6 +177,7 @@ export function createAdminAuthMiddleware(deps: {
     if (!sessionToken) {
       return c.json({ error: "Unauthorized" }, 401);
     }
+    let email: string;
     try {
       const payload = (await verify(
         sessionToken,
@@ -185,11 +192,13 @@ export function createAdminAuthMiddleware(deps: {
       ) {
         return c.json({ error: "Unauthorized" }, 401);
       }
+      email = payload.email;
     } catch {
       return c.json({ error: "Unauthorized" }, 401);
     }
     // Session cookie — admin.
     c.set("isAdmin", true);
+    c.set("caller", { name: email, scope: "session" });
     return next();
   };
 }

@@ -7,9 +7,11 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import type { Caller } from "@shipwright/lib/request-context";
 import { Hono } from "hono";
 import { sign } from "hono/jwt";
 import type { AgentTokenService, AgentTokenValidated } from "./agent-tokens.ts";
+import type { AdminAuthEnv } from "./api-auth.ts";
 import { createAdminAuthMiddleware, parseAdminApiKeys } from "./api-auth.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -38,12 +40,12 @@ async function makeSessionJwt(secret = SESSION_SECRET): Promise<string> {
 function buildApp(
   validateFn: (raw: string) => Promise<AgentTokenValidated | null>,
   adminApiKeys?: Map<string, { name: string; scope: string }>,
-): Hono {
+): Hono<AdminAuthEnv> {
   const mockTokenService: Pick<AgentTokenService, "validate"> = {
     validate: validateFn,
   };
 
-  const app = new Hono();
+  const app = new Hono<AdminAuthEnv>();
   app.use(
     "*",
     createAdminAuthMiddleware({
@@ -52,9 +54,11 @@ function buildApp(
       adminApiKeys,
     }),
   );
-  app.get("/test", (c) => c.json({ ok: true }));
+  app.get("/test", (c) => c.json({ ok: true, caller: c.get("caller") }));
   // Scoped agent route — mirrors real admin API pattern
-  app.get("/agents/:id/envs", (c) => c.json({ agentId: c.req.param("id") }));
+  app.get("/agents/:id/envs", (c) =>
+    c.json({ agentId: c.req.param("id"), caller: c.get("caller") }),
+  );
   return app;
 }
 
@@ -367,5 +371,65 @@ describe("createAdminAuthMiddleware — admin API keys", () => {
     });
     expect(res.status).toBe(200);
     expect(validateCalled).toBe(true);
+  });
+});
+
+// ─── Shared Caller tests (AOB-3.4) ─────────────────────────────────────────────
+
+describe("createAdminAuthMiddleware — shared Caller", () => {
+  it("sets caller = {name, scope: '*'} for an admin env key", async () => {
+    const adminApiKeys = new Map([
+      [ADMIN_TOKEN, { name: "admin", scope: "*" }],
+    ]);
+    const app = buildApp(async () => null, adminApiKeys);
+
+    const res = await app.request("/test", {
+      headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { caller: Caller };
+    expect(body.caller).toEqual({ name: "admin", scope: "*" });
+  });
+
+  it("sets caller = {name, scope: agentId} for a scoped env key", async () => {
+    const adminApiKeys = new Map([
+      [SCOPED_TOKEN, { name: "svc", scope: AGENT_ID }],
+    ]);
+    const app = buildApp(async () => null, adminApiKeys);
+
+    const res = await app.request(`/agents/${AGENT_ID}/envs`, {
+      headers: { Authorization: `Bearer ${SCOPED_TOKEN}` },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { caller: Caller };
+    expect(body.caller).toEqual({ name: "svc", scope: AGENT_ID });
+  });
+
+  it("sets caller = {name: agentId, scope: agentId} for a DB agent token", async () => {
+    const app = buildApp(async (raw) =>
+      raw === VALID_RAW_TOKEN ? { agentId: AGENT_ID } : null,
+    );
+
+    const res = await app.request("/test", {
+      headers: { Authorization: `Bearer ${VALID_RAW_TOKEN}` },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { caller: Caller };
+    expect(body.caller).toEqual({ name: AGENT_ID, scope: AGENT_ID });
+  });
+
+  it("sets caller = {name: email, scope: 'session'} for a session cookie", async () => {
+    const app = buildApp(async () => null);
+    const jwt = await makeSessionJwt();
+
+    const res = await app.request("/test", {
+      headers: { Cookie: `admin_session=${jwt}` },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { caller: Caller };
+    expect(body.caller).toEqual({
+      name: "admin@example.com",
+      scope: "session",
+    });
   });
 });

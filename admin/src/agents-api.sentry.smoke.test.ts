@@ -1,7 +1,8 @@
 /**
  * admin/src/agents-api.sentry.smoke.test.ts
  *
- * Smoke tests for the onError hook's Sentry wiring (SEN-1.3).
+ * Smoke tests for the onError hook's Sentry wiring (SEN-1.3) and caller
+ * logging (AOB-3.4).
  *
  * Asserts:
  *   - an unhandled (non-ApiError) error triggers sentryClient.captureException
@@ -12,9 +13,13 @@
  *     captureException
  *   - with no sentryClient dep (undefined — Sentry not initialized), onError
  *     does not throw and behaves exactly as before
+ *   - the unhandled-error console.error log line includes the resolved
+ *     caller's label (via callerLabel()), for both a DB agent token and an
+ *     admin env key
  */
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
+import { callerLabel } from "@shipwright/lib/request-context";
 import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import type { AgentEnvService } from "./agent-envs.ts";
 import type { AgentProvisioner, ProvisionResult } from "./agent-provisioner.ts";
@@ -239,5 +244,55 @@ describe("onError — Sentry capture wiring", () => {
     });
 
     expect(res.status).toBe(500);
+  });
+});
+
+describe("onError — caller label logging (AOB-3.4)", () => {
+  it("includes the DB agent token's caller label in the unhandled-error console.error line", async () => {
+    const consoleErrorSpy = spyOn(console, "error").mockImplementation(
+      () => {},
+    );
+    try {
+      const app = createAdminApp(makeBaseDeps(throwingAgentEnvService()));
+
+      const res = await app.request(`/agents/${AGENT_ID}/envs`, {
+        headers: { Authorization: `Bearer ${VALID_BEARER_TOKEN}` },
+      });
+
+      expect(res.status).toBe(500);
+      expect(consoleErrorSpy).toHaveBeenCalled();
+      const loggedArgs = consoleErrorSpy.mock.calls.flat().join(" ");
+      expect(loggedArgs).toContain(
+        callerLabel({ name: AGENT_ID, scope: AGENT_ID }),
+      );
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
+  });
+
+  it("includes the admin env key's caller label in the unhandled-error console.error line", async () => {
+    const consoleErrorSpy = spyOn(console, "error").mockImplementation(
+      () => {},
+    );
+    try {
+      const adminApiKeys = new Map([
+        ["admin-env-key-token", { name: "admin", scope: "*" }],
+      ]);
+      const app = createAdminApp({
+        ...makeBaseDeps(throwingAgentEnvService()),
+        adminApiKeys,
+      });
+
+      const res = await app.request(`/agents/${AGENT_ID}/envs`, {
+        headers: { Authorization: "Bearer admin-env-key-token" },
+      });
+
+      expect(res.status).toBe(500);
+      expect(consoleErrorSpy).toHaveBeenCalled();
+      const loggedArgs = consoleErrorSpy.mock.calls.flat().join(" ");
+      expect(loggedArgs).toContain(callerLabel({ name: "admin", scope: "*" }));
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
   });
 });
