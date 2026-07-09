@@ -777,6 +777,96 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
     expect(byCMOpus?.costUsd).toBeCloseTo(0.002);
   });
 
+  // ─── byPhase ─────────────────────────────────────────────────────────────────
+
+  it("query() groups byPhase correctly across runs with different phases", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId);
+
+    const run1 = await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-10T09:00:00Z"),
+      skipped: false,
+      phase: "dev-task",
+    });
+    const run2 = await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-11T09:00:00Z"),
+      skipped: false,
+      phase: "review",
+    });
+
+    await seedTokens(prisma, run1.id, { input: 100, output: 50 });
+    await seedTokens(prisma, run2.id, { input: 200, output: 100 });
+
+    const stats = await statsService.query();
+
+    expect(stats.byPhase).toHaveLength(2);
+
+    const devTask = stats.byPhase.find((p) => p.key === "dev-task");
+    const review = stats.byPhase.find((p) => p.key === "review");
+
+    expect(devTask).toBeDefined();
+    expect(devTask?.input).toBe(100);
+    expect(devTask?.output).toBe(50);
+
+    expect(review).toBeDefined();
+    expect(review?.input).toBe(200);
+    expect(review?.output).toBe(100);
+  });
+
+  it("query() byPhase excludes runs with a null phase (legacy runs)", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId);
+
+    // Legacy run — no phase set
+    const run1 = await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-10T09:00:00Z"),
+      skipped: false,
+    });
+    await seedTokens(prisma, run1.id, { input: 100, output: 50 });
+
+    // Phase-tagged run
+    const run2 = await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-11T09:00:00Z"),
+      skipped: false,
+      phase: "deploy",
+    });
+    await seedTokens(prisma, run2.id, { input: 200, output: 100 });
+
+    const stats = await statsService.query();
+
+    // byPhase only surfaces runs with a non-null phase
+    expect(stats.byPhase).toHaveLength(1);
+    expect(stats.byPhase[0].key).toBe("deploy");
+    expect(stats.byPhase[0].input).toBe(200);
+
+    // totals still reflect both runs — phase grouping is additive, not exclusionary
+    expect(stats.totals.input).toBe(300);
+  });
+
+  it("query() byPhase excludes skipped runs", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId);
+
+    const run1 = await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-10T09:00:00Z"),
+      skipped: false,
+      phase: "patch",
+    });
+    await seedTokens(prisma, run1.id, { input: 60, output: 30 });
+
+    // Skipped run with a phase — excluded
+    await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-11T09:00:00Z"),
+      skipped: true,
+      phase: "patch",
+    });
+
+    const stats = await statsService.query();
+
+    expect(stats.byPhase).toHaveLength(1);
+    expect(stats.byPhase[0].input).toBe(60);
+  });
+
   // ─── backfilled legacy rows ──────────────────────────────────────────────────
 
   it("surfaces a backfilled legacy run (model=legacy-unattributed, cost=0) in all dimensions", async () => {

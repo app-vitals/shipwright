@@ -159,6 +159,8 @@ model AgentCronRun {
   skipReason         String?
   outcome            String?
   error              String?
+  phase              String?   // pipeline phase this run served (dev-task/review/patch/deploy);
+                                // null for legacy five-job crons where cronId itself was the phase signal
   createdAt          DateTime  @default(now())
 
   modelBreakdown AgentCronRunModelBreakdown[]

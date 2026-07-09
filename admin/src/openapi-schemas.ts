@@ -199,6 +199,14 @@ export const AgentCronRunSchema = z
       .openapi({ example: "pre-check returned false" }),
     outcome: z.string().nullable().openapi({ example: "success" }),
     error: z.string().nullable().openapi({ example: null }),
+    phase: z
+      .string()
+      .nullable()
+      .openapi({
+        example: "dev-task",
+        description:
+          "Pipeline phase this run served (dev-task/review/patch/deploy). Null for legacy five-job crons.",
+      }),
     inputTokens: z.number().int().nullable().openapi({ example: 1234 }),
     outputTokens: z.number().int().nullable().openapi({ example: 567 }),
     cacheReadTokens: z.number().int().nullable().openapi({ example: 89 }),
@@ -244,6 +252,15 @@ export const CreateAgentCronRunBodySchema = z
       .openapi({ example: "pre-check returned false" }),
     outcome: z.string().nullable().optional().openapi({ example: "success" }),
     error: z.string().nullable().optional().openapi({ example: null }),
+    phase: z
+      .string()
+      .nullable()
+      .optional()
+      .openapi({
+        example: "dev-task",
+        description:
+          "Pipeline phase this run served (dev-task/review/patch/deploy)",
+      }),
   })
   .openapi("CreateAgentCronRunBody");
 
@@ -626,6 +643,8 @@ export const CronRunTokenStatsSchema = z
     byModel: z.array(DoubleKeyedTokenAggregateSchema),
     daily: z.array(DailyTokenAggregateSchema),
     byCronModel: z.array(DoubleKeyedTokenAggregateSchema),
+    /** Keyed by phase (dev-task/review/patch/deploy). Runs with a null phase are excluded. */
+    byPhase: z.array(KeyedTokenAggregateSchema),
   })
   .openapi("CronRunTokenStats");
 

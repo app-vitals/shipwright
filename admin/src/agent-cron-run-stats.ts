@@ -1,11 +1,13 @@
 /**
  * admin/src/agent-cron-run-stats.ts
- * AgentCronRunStatsService — aggregates AgentCronRun token columns into five
- * dimensions: totals, byAgent, byCron (with AgentCronJob name JOIN), byModel,
- * and daily (DATE(startedAt)).
+ * AgentCronRunStatsService — aggregates AgentCronRun token columns into
+ * several dimensions: totals, byAgent, byCron (with AgentCronJob name JOIN),
+ * byModel, daily (DATE(startedAt)), byCronModel, and byPhase.
  *
  * Skipped runs (skipped=true) are always excluded from all aggregations.
- * Uses $queryRaw for all five dimensions — Prisma groupBy doesn't support the
+ * byPhase additionally excludes runs with a null phase (legacy five-job
+ * crons that predate phase tracking).
+ * Uses $queryRaw for all dimensions — Prisma groupBy doesn't support the
  * LEFT JOIN needed for byCron.
  */
 
@@ -45,6 +47,7 @@ export interface CronRunTokenStats {
   byModel: DoubleKeyedTokenAggregate[];
   daily: DailyTokenAggregate[];
   byCronModel: DoubleKeyedTokenAggregate[]; // key1=agentId:cronName, key2=model
+  byPhase: KeyedTokenAggregate[]; // key=phase; runs with a null phase are excluded
 }
 
 // ─── Raw row types from $queryRaw ────────────────────────────────────────────
@@ -101,6 +104,15 @@ interface ByCronModelRow {
   cron_id: string;
   cron_name: string | null;
   model: string;
+  input: bigint | null;
+  output: bigint | null;
+  cache_read: bigint | null;
+  cache_creation: bigint | null;
+  cost_usd: number | null;
+}
+
+interface ByPhaseRow {
+  phase: string;
   input: bigint | null;
   output: bigint | null;
   cache_read: bigint | null;
@@ -195,6 +207,7 @@ export class AgentCronRunStatsService {
       byModelRows,
       dailyRows,
       byCronModelRows,
+      byPhaseRows,
     ] = await Promise.all([
       this.queryTotals(filterR),
       this.queryByAgent(filterR),
@@ -202,6 +215,7 @@ export class AgentCronRunStatsService {
       this.queryByModel(filterR),
       this.queryDaily(filterR),
       this.queryByCronModel(filterR),
+      this.queryByPhase(filterR),
     ]);
 
     const totalsRow = totalsRows[0];
@@ -239,7 +253,12 @@ export class AgentCronRunStatsService {
       }),
     );
 
-    return { totals, byAgent, byCron, byModel, daily, byCronModel };
+    const byPhase: KeyedTokenAggregate[] = byPhaseRows.map((row) => ({
+      ...toAggregate(row),
+      key: row.phase,
+    }));
+
+    return { totals, byAgent, byCron, byModel, daily, byCronModel, byPhase };
   }
 
   // ─── Private query methods ──────────────────────────────────────────────────
@@ -359,6 +378,26 @@ export class AgentCronRunStatsService {
       ${filter}
       GROUP BY r."agentId", r."cronId", j.name, b.model
       ORDER BY r."agentId", r."cronId", b.model
+    `;
+  }
+
+  private queryByPhase(filter: Prisma.Sql): Promise<ByPhaseRow[]> {
+    // Runs with no phase (legacy five-job crons) are excluded — phase is
+    // additive grouping, not a replacement for totals/byAgent/etc.
+    return this.prisma.$queryRaw<ByPhaseRow[]>`
+      SELECT
+        r.phase                      AS phase,
+        SUM(b."inputTokens")         AS input,
+        SUM(b."outputTokens")        AS output,
+        SUM(b."cacheReadTokens")     AS cache_read,
+        SUM(b."cacheCreationTokens") AS cache_creation,
+        SUM(b."costUsd")             AS cost_usd
+      FROM "AgentCronRun" r
+      LEFT JOIN "AgentCronRunModelBreakdown" b ON b."cronRunId" = r.id
+      WHERE r.skipped = false AND r.phase IS NOT NULL
+      ${filter}
+      GROUP BY r.phase
+      ORDER BY r.phase
     `;
   }
 }

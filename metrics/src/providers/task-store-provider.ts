@@ -67,6 +67,7 @@ const ZERO_CRON_STATS: CronRunTokenStats = {
   byModel: [],
   daily: [],
   byCronModel: [],
+  byPhase: [],
 };
 
 const ZERO_CHAT_STATS: ChatTokenStats = {

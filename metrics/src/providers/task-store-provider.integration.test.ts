@@ -150,6 +150,7 @@ const CRON_STATS: CronRunTokenStats = {
       ...agg(300, 150, 60, 30, 0.5),
     },
   ],
+  byPhase: [],
 };
 
 const CHAT_STATS: ChatTokenStats = {

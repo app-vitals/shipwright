@@ -97,6 +97,7 @@ const CRON_STATS: CronRunTokenStats = {
     },
   ],
   daily: [],
+  byPhase: [],
 };
 
 const CHAT_STATS: ChatTokenStats = {

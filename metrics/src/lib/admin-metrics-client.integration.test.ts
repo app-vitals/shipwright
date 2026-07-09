@@ -62,6 +62,7 @@ const emptyCronStats: CronRunTokenStats = {
   byModel: [],
   daily: [],
   byCronModel: [],
+  byPhase: [],
 };
 
 const emptyChatStats: ChatTokenStats = {

@@ -241,6 +241,7 @@ Body:
 | `skipped` | no | `true` if the pre-check returned false |
 | `skipReason` | no | Reason the run was skipped |
 | `outcome` | no | `"success"` or `"error"` |
+| `phase` | no | Pipeline phase this run served (`"dev-task"`, `"review"`, `"patch"`, `"deploy"`). Set by the unified `shipwright-loop` cron, which reports many distinct phase invocations under one `cronId`; null for legacy five-job crons where `cronId` itself was the phase signal. |
 
 Returns `201` with the created run record.
 
@@ -252,7 +253,7 @@ GET /agents/:id/crons/:cronId/runs
 
 Query params: `limit` (default 20), `offset` (default 0). Returns `{ items: AgentCronRun[], total: number }`.
 
-Each run record includes: `id`, `cronId`, `agentId`, `startedAt`, `completedAt`, `skipped`, `skipReason`, `outcome`, `error`, `inputTokens`, `outputTokens`, `cacheReadTokens`, `cacheCreationTokens`, `costUsd`, `model`, `modelBreakdown` (optional per-model token and cost breakdown array, each entry: `{ model, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, costUsd }`).
+Each run record includes: `id`, `cronId`, `agentId`, `startedAt`, `completedAt`, `skipped`, `skipReason`, `outcome`, `error`, `phase`, `inputTokens`, `outputTokens`, `cacheReadTokens`, `cacheCreationTokens`, `costUsd`, `model`, `modelBreakdown` (optional per-model token and cost breakdown array, each entry: `{ model, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, costUsd }`).
 
 ### Update cron run
 
@@ -279,9 +280,12 @@ Returns:
   "byCron": { "<cronId>": { ... } },
   "byModel": { "<modelId>": { ... } },
   "byCronModel": [{ "key1": "<agentId>:<cronName>", "key2": "<model>", ... }],
-  "daily": [{ "date": "YYYY-MM-DD", ... }]
+  "daily": [{ "date": "YYYY-MM-DD", ... }],
+  "byPhase": [{ "key": "<phase>", ... }]
 }
 ```
+
+`byPhase` groups token stats by the `phase` field (dev-task/review/patch/deploy) set on `AgentCronRun`; runs with no phase (legacy five-job crons) are excluded from this dimension only — they still count toward `totals` and the other dimensions.
 
 ---
 

@@ -1181,6 +1181,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
       skipReason: body.skipReason,
       outcome: body.outcome,
       error: body.error,
+      phase: body.phase,
     });
     return c.json({ run: serializeCronRun(run) }, 201);
   });
@@ -1484,6 +1485,7 @@ function serializeCronRun(run: {
   skipReason: string | null;
   outcome: string | null;
   error: string | null;
+  phase: string | null;
   createdAt: Date;
   modelBreakdown?: ModelBreakdownEntry[];
 }): z.infer<typeof AgentCronRunSchema> {
@@ -1522,6 +1524,7 @@ function serializeCronRun(run: {
     skipReason: run.skipReason,
     outcome: run.outcome,
     error: run.error,
+    phase: run.phase,
     ...tokenTotals,
     createdAt: run.createdAt.toISOString(),
     ...(run.modelBreakdown !== undefined && {
