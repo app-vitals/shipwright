@@ -36,6 +36,7 @@ export interface WorkPrCandidate {
   id: string;
   age: string;
   claimedBy?: string | null;
+  phase?: "review" | "patch" | "deploy";
 }
 
 export type WorkItem =
