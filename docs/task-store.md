@@ -27,6 +27,8 @@ Two token types:
 
 Tokens are created via `POST /tokens` (admin only). The raw token is returned once at creation; only its SHA-256 hash is stored. Agent tokens are automatically repo-scoped when the admin service is configured — writes to tasks outside the agent's repo scope return `400`.
 
+On each authenticated request, the service resolves the request's caller — a shared `Caller` identity (from `lib/request-context.ts`) — and makes it available to handlers and error logging. Admin tokens resolve to `{name: 'admin', scope: '*'}` and agent tokens resolve to `{name: agentId, scope: agentId}`. Unhandled errors log the caller label for observability (e.g., `[task-store] unhandled error (caller: agent-42): ...`).
+
 ### Tasks
 
 #### List tasks
