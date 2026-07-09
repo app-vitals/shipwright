@@ -69,7 +69,11 @@ async function makeProvisionStateCookie(
 
 interface MockState {
   upsertCalls: Array<{ agentId: string; env: Record<string, string> }>;
-  patchCalls: Array<{ agentId: string; env: Record<string, string> }>;
+  patchCalls: Array<{
+    agentId: string;
+    env: Record<string, string>;
+    secretKeys: string[];
+  }>;
   reconcileCalls: string[];
   createTokenCalls: Array<{ agentId: string; label?: string }>;
 }
@@ -165,8 +169,16 @@ function makeMockDeps(
       upsert: async (agentId: string, env: Record<string, string>) => {
         state.upsertCalls.push({ agentId, env });
       },
-      patch: async (agentId: string, env: Record<string, string>) => {
-        state.patchCalls.push({ agentId, env });
+      patch: async (
+        agentId: string,
+        env: Record<string, string>,
+        secretKeys?: Set<string>,
+      ) => {
+        state.patchCalls.push({
+          agentId,
+          env,
+          secretKeys: secretKeys ? [...secretKeys] : [],
+        });
       },
       deleteKey: async () => {},
       getConfigBundle: async () => null,
@@ -297,8 +309,13 @@ describe("GET /admin/provision/complete — OAuth callback", () => {
 
     // SLACK_BOT_TOKEN should have been stored via patch()
     expect(state.patchCalls.length).toBeGreaterThan(0);
-    const storedEnv = state.patchCalls[state.patchCalls.length - 1].env;
-    expect(storedEnv).toHaveProperty("SLACK_BOT_TOKEN", "xoxb-mock-bot-token");
+    const lastPatch = state.patchCalls[state.patchCalls.length - 1];
+    expect(lastPatch.env).toHaveProperty(
+      "SLACK_BOT_TOKEN",
+      "xoxb-mock-bot-token",
+    );
+    // SLACK_BOT_TOKEN must be marked as a secret so it's masked on read
+    expect(lastPatch.secretKeys).toContain("SLACK_BOT_TOKEN");
   });
 
   it("absent cookie → renders error page (not blank form)", async () => {
@@ -401,8 +418,16 @@ describe("GET /admin/provision/complete — reinstall path (SLACK_APP_TOKEN alre
         upsert: async (agentId: string, env: Record<string, string>) => {
           state.upsertCalls.push({ agentId, env });
         },
-        patch: async (agentId: string, env: Record<string, string>) => {
-          state.patchCalls.push({ agentId, env });
+        patch: async (
+          agentId: string,
+          env: Record<string, string>,
+          secretKeys?: Set<string>,
+        ) => {
+          state.patchCalls.push({
+            agentId,
+            env,
+            secretKeys: secretKeys ? [...secretKeys] : [],
+          });
         },
         deleteKey: async () => {},
         getConfigBundle: async () => ({
@@ -434,8 +459,13 @@ describe("GET /admin/provision/complete — reinstall path (SLACK_APP_TOKEN alre
     expect(location).toContain(`/admin/agents/${AGENT_ID}`);
 
     // SLACK_BOT_TOKEN should still have been stored via patch() (new token)
-    const storedEnv = state.patchCalls[state.patchCalls.length - 1]?.env;
-    expect(storedEnv).toHaveProperty("SLACK_BOT_TOKEN", "xoxb-mock-bot-token");
+    const lastPatch = state.patchCalls[state.patchCalls.length - 1];
+    expect(lastPatch?.env).toHaveProperty(
+      "SLACK_BOT_TOKEN",
+      "xoxb-mock-bot-token",
+    );
+    // SLACK_BOT_TOKEN must be marked as a secret so it's masked on read
+    expect(lastPatch?.secretKeys).toContain("SLACK_BOT_TOKEN");
   });
 });
 
@@ -514,6 +544,8 @@ describe("POST /admin/provision/xapp-token", () => {
     expect(appTokenPatch?.env.SLACK_APP_TOKEN).toBe(
       "xapp-1-TEST-fake-socket-token",
     );
+    // SLACK_APP_TOKEN must be marked as a secret so it's masked on read
+    expect(appTokenPatch?.secretKeys).toContain("SLACK_APP_TOKEN");
 
     // Neither key gets minted here — K8s-managed agents already have both from
     // provisioner.provision() (Secret is the source of truth); self-hosted
@@ -625,6 +657,8 @@ describe("POST /admin/provision/xapp-token", () => {
     expect(slackAppTokenPatch?.env.SLACK_APP_TOKEN).toBe(
       "xapp-1-TEST-fake-socket-token",
     );
+    // SLACK_APP_TOKEN must be marked as a secret so it's masked on read
+    expect(slackAppTokenPatch?.secretKeys).toContain("SLACK_APP_TOKEN");
     expect(
       state.patchCalls.some((c) => "SHIPWRIGHT_AGENT_API_KEY" in c.env),
     ).toBe(false);
