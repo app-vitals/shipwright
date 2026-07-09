@@ -236,6 +236,31 @@ describe("check-deploy", () => {
     expect(result.output).toBeTruthy();
   });
 
+  test("exits 0 when clean 'Verdict: APPROVE' review is from a different author than currentUser (identity-agnostic clean-approve fallback)", async () => {
+    const pr = makeGhPr({
+      author: { login: "bodhi-agent" },
+      reviewDecision: null,
+    });
+    const reviews: GhReview[] = [
+      {
+        author: { login: "some-other-agent" },
+        body: "All 5 acceptance criteria met. Verdict: APPROVE (posted as COMMENT — GitHub disallows self-approval via the API).",
+        state: "COMMENTED",
+      },
+    ];
+    const result = await run(
+      makeDeps({
+        currentUser: "bodhi-agent",
+        isSelfReviewAllowed: true,
+        prs: { "acme/example-repo": [pr] },
+        reviews: { 50: reviews },
+        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
+      }),
+    );
+    expect(result.exit).toBe(0);
+    expect(result.output).toBeTruthy();
+  });
+
   test("exits 1 when self-review has a non-APPROVE verdict label", async () => {
     const pr = makeGhPr({
       author: { login: "bodhi-agent" },

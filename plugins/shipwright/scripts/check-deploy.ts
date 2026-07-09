@@ -100,10 +100,18 @@ function isActiveRun(run: WorkflowRun, now: string): boolean {
   return false;
 }
 
-function hasSelfApproveReview(reviews: GhReview[], userLogin: string): boolean {
-  return reviews.some(
-    (r) => r.author.login === userLogin && isCleanApproveBody(r.body),
-  );
+/**
+ * True when any review on the PR is a clean APPROVE verdict (see
+ * check-helpers.ts's isCleanApproveBody). Not restricted to a specific
+ * author (SRV-1.1): multiple distinct Shipwright agents operate under
+ * different GitHub identities in the same repo, so WHO posted a clean
+ * APPROVE verdict is not meaningful — the verdict text itself is the ground
+ * truth. The separate hard authorship filter in run() independently
+ * guarantees only the current user's own PRs reach the deploy candidate
+ * stage, regardless of who reviewed them.
+ */
+function hasSelfApproveReview(reviews: GhReview[]): boolean {
+  return reviews.some((r) => isCleanApproveBody(r.body));
 }
 
 // ─── Core logic ───────────────────────────────────────────────────────────────
@@ -181,12 +189,9 @@ export async function run(deps: Deps): Promise<RunResult> {
 
         if (pr.reviewDecision === "APPROVED") {
           approved = true;
-        } else if (
-          deps.isSelfReviewAllowed &&
-          pr.author.login === currentUser
-        ) {
+        } else if (deps.isSelfReviewAllowed) {
           const reviews = await deps.fetchPrReviews(org, repoName, pr.number);
-          if (hasSelfApproveReview(reviews, currentUser)) {
+          if (hasSelfApproveReview(reviews)) {
             approved = true;
           }
         }

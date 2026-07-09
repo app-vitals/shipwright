@@ -54,16 +54,15 @@ gh pr list --state open --repo {org}/{repo} --author "$AGENT_LOGIN" \
 For each PR, check in order:
 
 1. **Approval** — if `reviewDecision == "APPROVED"`: approved. Otherwise, if
-   `allow_self_review` is true: fetch the PR's reviews and check if any review authored
-   by `AGENT_LOGIN` has a clean APPROVE body — either a leading `APPROVE` (stripping
-   leading markdown bold markers (`**`) first, since the review skill posts
-   `"**APPROVE**"`) or a `Verdict: APPROVE` label anywhere in the body (the narrative
-   self-review convention, case-insensitive, optional `**` around either word — mirrors
-   `check-helpers.ts`'s `isCleanApproveBody`, shared by `check-deploy.ts`'s
-   `hasSelfApproveReview` and `check-patch.ts`'s `isSelfCleanApprove`):
+   `allow_self_review` is true: fetch the PR's reviews and check if any review has a clean
+   APPROVE body — either a leading `APPROVE` (stripping leading markdown bold markers (`**`)
+   first, since the review skill posts `"**APPROVE**"`) or a `Verdict: APPROVE` label
+   anywhere in the body (the narrative self-review convention, case-insensitive, optional
+   `**` around either word — mirrors `check-helpers.ts`'s `isCleanApproveBody`, shared by
+   `check-deploy.ts`'s `hasSelfApproveReview` and `check-patch.ts`'s `isSelfCleanApprove`):
    ```bash
    gh pr view {pr} --repo {org}/{repo} --json reviews \
-     --jq '[.reviews[] | select(.author.login == "'$AGENT_LOGIN'") | .body] | any(
+     --jq '[.reviews[] | .body] | any(
        (sub("^\\s*";"") | sub("^\\*+";"") | startswith("APPROVE"))
        or test("verdict\\**\\s*:\\s*\\**approve\\b"; "i")
      )'
@@ -167,18 +166,17 @@ gh pr view {pr} --repo {org}/{repo} --json reviewDecision,reviews \
 **If `reviewDecision` is `"APPROVED"`**: Record `approval_source = "github"` and `approvers = [list]`. Proceed to Step 3b.
 
 **If `reviewDecision` is not `"APPROVED"`**: Read `allow_self_review` from
-`state/agent-policy.md` (default: true). If `allow_self_review` is true AND the PR is
-authored by the current agent (`PR_AUTHOR == AGENT_LOGIN` from Step 2a), fetch the PR's
-reviews from GitHub and check if any review from `AGENT_LOGIN` has a clean APPROVE body —
-either a leading `APPROVE` (strip any leading markdown bold markers (`**`) first, since
-the review skill posts `"**APPROVE**"`) or a `Verdict: APPROVE` label anywhere in the body
-(the narrative self-review convention, case-insensitive, optional `**` around either word
-— mirrors `check-helpers.ts`'s `isCleanApproveBody`, shared by `check-deploy.ts`'s
+`state/agent-policy.md` (default: true). If `allow_self_review` is true, fetch the PR's
+reviews from GitHub and check if any review has a clean APPROVE body — either a leading
+`APPROVE` (strip any leading markdown bold markers (`**`) first, since the review skill
+posts `"**APPROVE**"`) or a `Verdict: APPROVE` label anywhere in the body (the narrative
+self-review convention, case-insensitive, optional `**` around either word — mirrors
+`check-helpers.ts`'s `isCleanApproveBody`, shared by `check-deploy.ts`'s
 `hasSelfApproveReview` and `check-patch.ts`'s `isSelfCleanApprove`):
 
 ```bash
 gh pr view {pr} --repo {org}/{repo} --json reviews \
-  --jq '[.reviews[] | select(.author.login == "'$AGENT_LOGIN'") | .body] | any(
+  --jq '[.reviews[] | .body] | any(
     (sub("^\\s*";"") | sub("^\\*+";"") | startswith("APPROVE"))
     or test("verdict\\**\\s*:\\s*\\**approve\\b"; "i")
   )'
@@ -189,7 +187,7 @@ A matching review is one whose stripped body `startsWith("APPROVE")` or that con
 "self_review"` and proceed to Step 3b.
 Print:
 ```
-ℹ No GitHub approval (solo-authored PR). Proceeding on self-posted APPROVE review.
+ℹ No GitHub approval. Proceeding on clean APPROVE review.
 ```
 
 If no matching review is found (or `allow_self_review` is false), print and stop:
