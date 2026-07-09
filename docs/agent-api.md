@@ -253,7 +253,7 @@ GET /agents/:id/crons/:cronId/runs
 
 Query params: `limit` (default 20), `offset` (default 0). Returns `{ items: AgentCronRun[], total: number }`.
 
-Each run record includes: `id`, `cronId`, `agentId`, `startedAt`, `completedAt`, `skipped`, `skipReason`, `outcome`, `error`, `phase`, `inputTokens`, `outputTokens`, `cacheReadTokens`, `cacheCreationTokens`, `costUsd`, `model`, `modelBreakdown` (optional per-model token and cost breakdown array, each entry: `{ model, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, costUsd }`).
+Each run record includes: `id`, `cronId`, `agentId`, `startedAt`, `completedAt`, `skipped`, `skipReason`, `outcome`, `error`, `phase`, `createdAt`, `modelBreakdown` (per-model token and cost breakdown array, each entry: `{ model, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, costUsd }`). Top-level token fields (`inputTokens`/`outputTokens`/`cacheReadTokens`/`cacheCreationTokens`/`model`) were dropped from `AgentCronRun` — all token accounting now lives on `modelBreakdown`.
 
 ### Update cron run
 
@@ -261,7 +261,7 @@ Each run record includes: `id`, `cronId`, `agentId`, `startedAt`, `completedAt`,
 PATCH /agents/:id/crons/:cronId/runs/:runId
 ```
 
-Used to record completion data after a run finishes. Updatable fields: `completedAt`, `outcome`, `error`, `inputTokens`, `outputTokens`, `cacheReadTokens`, `cacheCreationTokens`, `costUsd`, `model`. Returns the updated run.
+Used to record completion data after a run finishes. Updatable fields: `completedAt`, `outcome`, `error`, `skipped`, `skipReason`, `modelBreakdown` (array of `{ model, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, costUsd }` — upserted per `[cronRunId, model]`). The legacy top-level `inputTokens`/`outputTokens`/`cacheReadTokens`/`cacheCreationTokens`/`model` fields are still accepted for backward compatibility with older agent builds but are silently ignored (not persisted) — send `modelBreakdown` instead. Returns the updated run.
 
 ### Cron run stats
 
