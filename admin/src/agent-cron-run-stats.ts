@@ -1,11 +1,13 @@
 /**
  * admin/src/agent-cron-run-stats.ts
- * AgentCronRunStatsService — aggregates AgentCronRun token columns into five
- * dimensions: totals, byAgent, byCron (with AgentCronJob name JOIN), byModel,
- * and daily (DATE(startedAt)).
+ * AgentCronRunStatsService — aggregates AgentCronRun token columns into
+ * several dimensions: totals, byAgent, byCron (with AgentCronJob name JOIN),
+ * byModel, daily (DATE(startedAt)), byCronModel, and byPhase.
  *
  * Skipped runs (skipped=true) are always excluded from all aggregations.
- * Uses $queryRaw for all five dimensions — Prisma groupBy doesn't support the
+ * byPhase additionally excludes runs with a null phase (legacy five-job
+ * crons that predate phase tracking).
+ * Uses $queryRaw for all dimensions — Prisma groupBy doesn't support the
  * LEFT JOIN needed for byCron.
  */
 

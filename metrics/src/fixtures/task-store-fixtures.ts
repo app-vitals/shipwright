@@ -198,6 +198,7 @@ export function createFixtureTaskStoreProvider(): MetricsProvider {
         ...agg(300, 150, 60, 30, 0.5),
       },
     ],
+    byPhase: [],
   };
 
   const CHAT_STATS: ChatTokenStats = {
