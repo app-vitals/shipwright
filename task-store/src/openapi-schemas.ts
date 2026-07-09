@@ -285,6 +285,15 @@ export const PullRequestSchema = z
       .openapi({ example: "2026-01-03T00:00:00.000Z" }),
     patchedAt: z.string().nullable().optional().openapi({ example: null }),
     mergedAt: z.string().nullable().optional().openapi({ example: null }),
+    prCreatedAt: z
+      .string()
+      .nullable()
+      .optional()
+      .openapi({
+        example: "2026-01-01T00:00:00.000Z",
+        description:
+          "ISO timestamp of the GitHub PR's actual creation time. Set once via POST /prs/claim (first claim only); read-only thereafter.",
+      }),
     claimedBy: z
       .string()
       .nullable()
@@ -548,6 +557,14 @@ export const ClaimPrBodySchema = z
       .enum(["review", "patch", "deploy"])
       .optional()
       .openapi({ example: "patch", description: "Pipeline phase this claim is for (defaults to 'review' when omitted)" }),
+    prCreatedAt: z
+      .string()
+      .optional()
+      .openapi({
+        example: "2026-01-01T00:00:00.000Z",
+        description:
+          "ISO timestamp of the GitHub PR's actual creation time. Only applied on first claim (record creation); ignored on subsequent claims since the field is immutable once set.",
+      }),
   })
   .openapi("ClaimPrBody");
 

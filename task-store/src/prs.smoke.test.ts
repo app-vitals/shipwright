@@ -55,6 +55,7 @@ function makePr(overrides: Partial<PullRequest> = {}): PullRequest {
     reviewedAt: null,
     patchedAt: null,
     mergedAt: null,
+    prCreatedAt: null,
     claimedBy: null,
     claimedAt: null,
     heartbeatAt: null,
@@ -144,6 +145,7 @@ interface CapturedClaimCall {
   claimedBy: string;
   taskId?: string;
   phase?: "review" | "patch" | "deploy";
+  prCreatedAt?: string;
 }
 
 /** Minimal in-memory PullRequestServiceLike fake. */
@@ -203,6 +205,7 @@ function fakePrService(
       claimedBy: string,
       taskId?: string,
       phase?: "review" | "patch" | "deploy",
+      prCreatedAt?: string,
     ): Promise<{ status: 200 | 201; record: PullRequest }> {
       opts.claimCalls?.push({
         repo,
@@ -211,6 +214,7 @@ function fakePrService(
         claimedBy,
         taskId,
         phase,
+        prCreatedAt,
       });
       if (opts.claimResult !== undefined) {
         if (opts.claimResult instanceof Error) throw opts.claimResult;
@@ -228,6 +232,7 @@ function fakePrService(
         reviewState: "in_progress",
         claimedAt: new Date().toISOString(),
         heartbeatAt: new Date().toISOString(),
+        prCreatedAt: prCreatedAt ?? null,
       });
       store.set(record.id, record);
       return { status: 201, record };
@@ -540,6 +545,45 @@ describe("/prs routes (smoke)", () => {
     expect(res.status).toBe(201);
     expect(claimCalls).toHaveLength(1);
     expect(claimCalls[0]?.phase).toBeUndefined();
+  });
+
+  it("POST /prs/claim forwards prCreatedAt from the request body to service.claim() and returns it in the response", async () => {
+    const claimCalls: CapturedClaimCall[] = [];
+    const app = makeApp({ prService: fakePrService({ claimCalls }) });
+    const res = await app.request("/prs/claim", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        repo: ADMIN_REPO,
+        prNumber: 42,
+        commitSha: "abc123",
+        claimedBy: "agent-1",
+        prCreatedAt: "2026-01-01T00:00:00.000Z",
+      }),
+    });
+    expect(res.status).toBe(201);
+    expect(claimCalls).toHaveLength(1);
+    expect(claimCalls[0]?.prCreatedAt).toBe("2026-01-01T00:00:00.000Z");
+    const body = (await res.json()) as PullRequest;
+    expect(body.prCreatedAt).toBe("2026-01-01T00:00:00.000Z");
+  });
+
+  it("POST /prs/claim without prCreatedAt leaves it undefined (not persisted)", async () => {
+    const claimCalls: CapturedClaimCall[] = [];
+    const app = makeApp({ prService: fakePrService({ claimCalls }) });
+    const res = await app.request("/prs/claim", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        repo: ADMIN_REPO,
+        prNumber: 42,
+        commitSha: "abc123",
+        claimedBy: "agent-1",
+      }),
+    });
+    expect(res.status).toBe(201);
+    expect(claimCalls).toHaveLength(1);
+    expect(claimCalls[0]?.prCreatedAt).toBeUndefined();
   });
 
   // ─── POST /prs/:id/complete ───────────────────────────────────────────────

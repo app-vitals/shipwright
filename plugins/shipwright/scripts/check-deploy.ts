@@ -7,7 +7,8 @@
  * Lists open PRs across configured repos via GitHub. For each, checks:
  * 1. Approval: GitHub reviewDecision == "APPROVED" OR author is current user,
  *    allow_self_review is true in agent-policy.md, and author has a review
- *    with "APPROVE" in the body.
+ *    with a clean APPROVE body (leading "APPROVE" or "Verdict: APPROVE"
+ *    anywhere in the body — see check-helpers.ts's isCleanApproveBody).
  * 2. CI: at least one CI run with conclusion == "success" for the PR's HEAD SHA
  * 3. Deploying guard: a repo with an active Deploy workflow run is skipped
  *    for this pass — scoped per repo, so a busy repo does not block PRs in
@@ -21,6 +22,7 @@ import {
   createTaskStoreClient,
   getCurrentUser,
   ghJson,
+  isCleanApproveBody,
   readAllowSelfReview,
   resolveAllRepos,
   resolveWorkspacePath,
@@ -100,14 +102,7 @@ function isActiveRun(run: WorkflowRun, now: string): boolean {
 
 function hasSelfApproveReview(reviews: GhReview[], userLogin: string): boolean {
   return reviews.some(
-    (r) =>
-      r.author.login === userLogin &&
-      // Strip leading markdown bold markers (**) before checking — the review
-      // skill posts "**APPROVE**" but the body must still be treated as APPROVE.
-      r.body
-        .trimStart()
-        .replace(/^\*+/, "")
-        .startsWith("APPROVE"),
+    (r) => r.author.login === userLogin && isCleanApproveBody(r.body),
   );
 }
 

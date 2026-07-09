@@ -20,6 +20,7 @@
  */
 
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { callerLabel } from "@shipwright/lib/request-context";
 import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import type { PrismaClient } from "../prisma/client/index.js";
 import type { AgentChatTokenService } from "./agent-chat-tokens.ts";
@@ -818,7 +819,10 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
       );
     }
     sentryClient?.captureException(err);
-    console.error("[agents-api] unhandled error:", err);
+    console.error(
+      `[agents-api] unhandled error (caller: ${callerLabel(c.get("caller"))}):`,
+      err,
+    );
     return c.json({ error: "Internal server error" }, 500);
   });
 

@@ -502,12 +502,24 @@ regardless of the review outcome — GitHub rejects self-APPROVE via the API. Th
 (`APPROVE` or `COMMENT`) is still recorded faithfully in the review file so the deploy skill
 can read the verdict directly from the GitHub review body.
 
+**The `body` field MUST contain the literal phrase `Verdict: APPROVE` or `Verdict: COMMENT`**,
+matching whichever verdict was selected below in Event selection — not just implied wording or
+free-form approval prose. `check-patch.ts`'s `isSelfCleanApprove` (`VERDICT_APPROVE_LABEL =
+/verdict\**\s*:\s*\**approve\b/i`) scans the GitHub-posted review body for this exact phrase to
+recognize a clean self-approve on a self-authored PR (where `event` is forced to `COMMENT` above,
+since GitHub blocks self-APPROVE via the API). A body like "Clean conversion, all routes
+verified, no blocking issues." reads as a genuine approval to a human but contains neither
+`APPROVE` nor `Verdict: APPROVE`, so `isSelfCleanApprove` never matches it — the patch cron then
+treats it as an unaddressed finding forever. Always lead the body with the literal `Verdict: ...`
+label, on both the initial-review and re-review paths (Steps 10/11 run identically for both;
+see Step 14's re-review flow).
+
 Write `state/reviews/pr_review_{pr}.json`:
 
 ```json
 {
   "commit_id": "{head_sha}",
-  "body": "{concise verdict}",
+  "body": "Verdict: APPROVE — Looks good, approved.",
   "event": "APPROVE|COMMENT",
   "comments": [
     {
@@ -519,6 +531,9 @@ Write `state/reviews/pr_review_{pr}.json`:
   ]
 }
 ```
+
+For a COMMENT verdict, the `body` follows the same convention, e.g.
+`"body": "Verdict: COMMENT — {one-line summary of the most important finding}"`.
 
 **Diff-line mapping**: for each finding with a `file:line` reference, check if the
 line is in the diff (`git diff {base}...HEAD -- {file}`). Only lines within diff
