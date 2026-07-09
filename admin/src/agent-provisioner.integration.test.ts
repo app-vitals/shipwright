@@ -545,6 +545,9 @@ describeOrSkip("KubernetesAgentProvisioner (integration)", () => {
       async revokeToken(_id: string) {
         // no-op in this test
       },
+      async listTokensForAgent(_agentId: string) {
+        return [];
+      },
     };
 
     const provisioner = new KubernetesAgentProvisioner(k8s, tokens, {

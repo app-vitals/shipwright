@@ -27,10 +27,21 @@ export interface TaskStoreProvisioningClient {
 
   /**
    * Revoke a previously-minted task-store token. Called as part of the rollback
-   * path when Deployment creation fails after the token was minted.
+   * path when Deployment creation fails after the token was minted, and as
+   * part of agent-deletion credential cleanup.
    * Should be best-effort — callers do not propagate errors from this call.
    */
   revokeToken(id: string): Promise<void>;
+
+  /**
+   * List the ids of every task-store token scoped to `agentId`.
+   *
+   * task-store's GET /tokens has no server-side agentId filter — it returns
+   * every token in the store — so this fetches the full list and filters
+   * client-side. Intended to be paired with `revokeToken` by the caller (e.g.
+   * agent-deletion cleanup): list, then revoke each match.
+   */
+  listTokensForAgent(agentId: string): Promise<{ id: string }[]>;
 }
 
 // ─── HTTP implementation ──────────────────────────────────────────────────────
@@ -91,6 +102,24 @@ export class HttpTaskStoreProvisioningClient
       );
     }
   }
+
+  async listTokensForAgent(agentId: string): Promise<{ id: string }[]> {
+    const res = await this.fetchFn(`${this.baseUrl}/tokens`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${this.adminToken}`,
+      },
+    });
+    if (!res.ok) {
+      throw new Error(
+        `task-store GET /tokens failed: ${res.status} ${res.statusText}`,
+      );
+    }
+    const tokens = (await res.json()) as { id: string; agentId?: string | null }[];
+    return tokens
+      .filter((token) => token.agentId === agentId)
+      .map((token) => ({ id: token.id }));
+  }
 }
 
 // ─── No-op implementation ─────────────────────────────────────────────────────
@@ -112,5 +141,9 @@ export class NoopTaskStoreProvisioningClient
 
   async revokeToken(_id: string): Promise<void> {
     // intentionally a no-op
+  }
+
+  async listTokensForAgent(_agentId: string): Promise<{ id: string }[]> {
+    return [];
   }
 }
