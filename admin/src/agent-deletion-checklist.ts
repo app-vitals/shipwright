@@ -3,7 +3,7 @@
  *
  * Pure builder for the operator-facing "manual steps" checklist surfaced when
  * an agent is deleted. Several agent secrets (GH_TOKEN, LINEAR_API_KEY,
- * VITALS_OS_API_KEY, CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY, ...) are
+ * STRIPE_API_KEY, CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY, ...) are
  * hand-pasted into AgentEnv with no stored ID/owner metadata, so no automated
  * revocation is possible on agent delete. Rather than silently dropping them,
  * this module turns the agent's `AgentEnv` rows into a reminder checklist for

@@ -62,13 +62,13 @@ describe("buildManualStepsChecklist — generic/custom secrets", () => {
     );
   });
 
-  it("produces the generic message for VITALS_OS_API_KEY", () => {
+  it("produces the generic message for STRIPE_API_KEY", () => {
     const steps = buildManualStepsChecklist([
-      { key: "VITALS_OS_API_KEY", secret: true },
+      { key: "STRIPE_API_KEY", secret: true },
     ]);
     expect(steps).toHaveLength(1);
-    expect(steps[0].key).toBe("VITALS_OS_API_KEY");
-    expect(steps[0].message).toContain("VITALS_OS_API_KEY");
+    expect(steps[0].key).toBe("STRIPE_API_KEY");
+    expect(steps[0].message).toContain("STRIPE_API_KEY");
   });
 
   it("produces the generic message for an arbitrary unknown custom secret key", () => {
@@ -109,7 +109,7 @@ describe("buildManualStepsChecklist — general behavior", () => {
       { key: "SLACK_SIGNING_SECRET", secret: true },
       { key: "SLACK_BOT_TOKEN", secret: true },
       { key: "LINEAR_API_KEY", secret: true },
-      { key: "VITALS_OS_API_KEY", secret: true },
+      { key: "STRIPE_API_KEY", secret: true },
       { key: "NON_SECRET_VALUE", secret: false },
     ]);
     const keys = steps.map((s) => s.key);
@@ -118,7 +118,7 @@ describe("buildManualStepsChecklist — general behavior", () => {
       "ANTHROPIC_API_KEY",
       "CLAUDE_CODE_OAUTH_TOKEN",
       "LINEAR_API_KEY",
-      "VITALS_OS_API_KEY",
+      "STRIPE_API_KEY",
     ]);
   });
 
