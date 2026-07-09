@@ -122,7 +122,7 @@ All child models cascade-delete with their `Agent` (including `AgentCronRun` via
 
 ## Default system crons
 
-Every new agent is seeded with eleven system crons (the canonical definitions live in [`admin/src/system-crons.ts`](../admin/src/system-crons.ts) and are reconciled onto each agent at startup via `POST /agents/:id/crons/reconcile`). Two are **enabled by default**; the rest are opt-in (toggle in the admin UI or via `PATCH /agents/:id/crons/:cronId`). All run `silent` (they post to Slack only on a result worth surfacing, or on error), and most carry a `preCheck` script whose stdout becomes the actual prompt — so a cron only spends a Claude turn when there is real work ready.
+Every new agent is seeded with twelve system crons (the canonical definitions live in [`admin/src/system-crons.ts`](../admin/src/system-crons.ts) and are reconciled onto each agent at startup via `POST /agents/:id/crons/reconcile`). Two are **enabled by default**; the rest are opt-in (toggle in the admin UI or via `PATCH /agents/:id/crons/:cronId`). All run `silent` (they post to Slack only on a result worth surfacing, or on error), and most carry a `preCheck` script whose stdout becomes the actual prompt — so a cron only spends a Claude turn when there is real work ready.
 
 | Cron | Schedule (cron expr) | Default | What it does |
 |---|---|---|---|
@@ -137,6 +137,7 @@ Every new agent is seeded with eleven system crons (the canonical definitions li
 | `learn-dream` | `0 3 * * *` (daily, 03:00) | off | Mines the last day of merged PRs for durable learnings. |
 | `dependabot-triage` | `0 8 * * *` (daily, 08:00) | off | Reviews and triages open Dependabot PRs. |
 | `entropy-patrol-maintenance` | `0 4 * * 1` (weekly, Mon 04:00) | off | Scans for code entropy and fixes what's PR-worthy. |
+| `error-patrol-maintenance` | `0 4 * * *` (daily, 04:00) | off | Scans for unresolved Sentry errors and fixes what's PR-worthy. |
 
 ## Environment
 
