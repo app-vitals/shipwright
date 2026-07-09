@@ -6,11 +6,10 @@
  * Services are injected as in-memory test doubles.
  */
 
-import { beforeAll, describe, expect, it, spyOn } from "bun:test";
+import { beforeAll, describe, expect, it } from "bun:test";
 import { sign } from "hono/jwt";
 import { createAdminUIApp } from "./admin-ui.ts";
 import type { AdminUIDeps, AdminUISlackClient } from "./admin-ui.ts";
-import type { TaskStoreProvisioningClient } from "./task-store-provisioning-client.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -482,7 +481,7 @@ describe("POST /admin/provision/xapp-token", () => {
     sessionCookie = await makeSessionCookie();
   });
 
-  it("valid data → 200, SLACK_APP_TOKEN stored, SHIPWRIGHT_AGENT_API_KEY stored, crons reconciled, raw token shown", async () => {
+  it("valid data → 200, SLACK_APP_TOKEN stored, no agent API key or task-store token minted, crons reconciled", async () => {
     const state: MockState = {
       upsertCalls: [],
       patchCalls: [],
@@ -506,7 +505,6 @@ describe("POST /admin/provision/xapp-token", () => {
     });
 
     expect(res.status).toBe(200);
-    const html = await res.text();
 
     // SLACK_APP_TOKEN should be stored via patch()
     const appTokenPatch = state.patchCalls.find(
@@ -517,24 +515,19 @@ describe("POST /admin/provision/xapp-token", () => {
       "xapp-1-TEST-fake-socket-token",
     );
 
-    // SHIPWRIGHT_AGENT_API_KEY should be stored via patch()
-    const apiKeyPatch = state.patchCalls.find(
-      (c) => "SHIPWRIGHT_AGENT_API_KEY" in c.env,
-    );
-    expect(apiKeyPatch).toBeDefined();
-    expect(apiKeyPatch?.env.SHIPWRIGHT_AGENT_API_KEY).toBe(
-      "raw_test_token_abc123def456",
-    );
+    // Neither key gets minted here — K8s-managed agents already have both from
+    // provisioner.provision() (Secret is the source of truth); self-hosted
+    // agents mint their own token separately from the agent detail page.
+    expect(
+      state.patchCalls.some((c) => "SHIPWRIGHT_AGENT_API_KEY" in c.env),
+    ).toBe(false);
+    expect(
+      state.patchCalls.some((c) => "SHIPWRIGHT_TASK_STORE_TOKEN" in c.env),
+    ).toBe(false);
+    expect(state.createTokenCalls.length).toBe(0);
 
     // Crons should have been reconciled
     expect(state.reconcileCalls).toContain(AGENT_ID);
-
-    // agentTokenService.create should have been called
-    expect(state.createTokenCalls.length).toBeGreaterThan(0);
-    expect(state.createTokenCalls[0].agentId).toBe(AGENT_ID);
-
-    // Raw token should appear in the response HTML
-    expect(html).toContain("raw_test_token_abc123def456");
   });
 
   it("missing agentId → shows error in xapp-token page", async () => {
@@ -596,24 +589,15 @@ describe("POST /admin/provision/xapp-token", () => {
     expect(state.upsertCalls.length).toBe(0);
   });
 
-  it("taskStoreProvisioningClient configured → mints a task-store token, patches SHIPWRIGHT_TASK_STORE_TOKEN/URL", async () => {
+  it("xapp-token step never mints SHIPWRIGHT_AGENT_API_KEY or SHIPWRIGHT_TASK_STORE_TOKEN — K8s-managed agents already have both from provisioner.provision(), self-hosted agents don't use either", async () => {
     const state: MockState = {
       upsertCalls: [],
       patchCalls: [],
       reconcileCalls: [],
       createTokenCalls: [],
     };
-    const mintCalls: Array<{ label: string; agentId?: string }> = [];
-    const taskStoreProvisioningClient: TaskStoreProvisioningClient = {
-      mintToken: async (label: string, agentId?: string) => {
-        mintCalls.push({ label, agentId });
-        return { id: "ts-tok-1", rawToken: "ts-raw-token-xyz" };
-      },
-      revokeToken: async () => {},
-    };
     const app = createAdminUIApp(
       makeMockDeps(state, {
-        taskStoreProvisioningClient,
         taskStoreBaseUrl: "https://task-store.example.com",
       }),
     );
@@ -633,59 +617,19 @@ describe("POST /admin/provision/xapp-token", () => {
     });
 
     expect(res.status).toBe(200);
-    expect(mintCalls).toEqual([
-      { label: `agent:${AGENT_ID}`, agentId: AGENT_ID },
-    ]);
+    expect(state.createTokenCalls.length).toBe(0);
 
-    const taskStorePatch = state.patchCalls.find(
-      (c) => "SHIPWRIGHT_TASK_STORE_TOKEN" in c.env,
+    const slackAppTokenPatch = state.patchCalls.find(
+      (c) => "SLACK_APP_TOKEN" in c.env,
     );
-    expect(taskStorePatch).toBeDefined();
-    expect(taskStorePatch?.env.SHIPWRIGHT_TASK_STORE_TOKEN).toBe(
-      "ts-raw-token-xyz",
+    expect(slackAppTokenPatch?.env.SLACK_APP_TOKEN).toBe(
+      "xapp-1-TEST-fake-socket-token",
     );
-    expect(taskStorePatch?.env.SHIPWRIGHT_TASK_STORE_URL).toBe(
-      "https://task-store.example.com",
-    );
-  });
-
-  it("no taskStoreProvisioningClient configured → logs a warning, no task-store env stored", async () => {
-    const state: MockState = {
-      upsertCalls: [],
-      patchCalls: [],
-      reconcileCalls: [],
-      createTokenCalls: [],
-    };
-    const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      const app = createAdminUIApp(makeMockDeps(state));
-
-      const body = new URLSearchParams({
-        agentId: AGENT_ID,
-        xappToken: "xapp-1-TEST-fake-socket-token",
-      });
-
-      const res = await app.request("/admin/provision/xapp-token", {
-        method: "POST",
-        body: body.toString(),
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          Cookie: `admin_session=${sessionCookie}`,
-        },
-      });
-
-      expect(res.status).toBe(200);
-      expect(warnSpy).toHaveBeenCalledWith(
-        "[admin] task-store not configured — skipping task-store provisioning for agent",
-        AGENT_ID,
-      );
-
-      const taskStorePatch = state.patchCalls.find(
-        (c) => "SHIPWRIGHT_TASK_STORE_TOKEN" in c.env,
-      );
-      expect(taskStorePatch).toBeUndefined();
-    } finally {
-      warnSpy.mockRestore();
-    }
+    expect(
+      state.patchCalls.some((c) => "SHIPWRIGHT_AGENT_API_KEY" in c.env),
+    ).toBe(false);
+    expect(
+      state.patchCalls.some((c) => "SHIPWRIGHT_TASK_STORE_TOKEN" in c.env),
+    ).toBe(false);
   });
 });

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { SECRET_ENV_VARS, initSentry, scrubEvent, scrubLog } from "./sentry.ts";
+import { SECRET_ENV_VARS } from "./secret-env-vars.ts";
+import { initSentry, scrubEvent, scrubLog } from "./sentry.ts";
 
 function createFakeSentryClient() {
   const calls: unknown[] = [];
