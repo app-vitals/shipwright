@@ -139,7 +139,9 @@ export class PullRequestService implements PullRequestServiceLike {
    * Atomically claim a PR using a Prisma transaction.
    *
    * phase defaults to 'review'. Phase-specific behaviour:
-   *   - review (default): sets reviewState='in_progress', phase='review'
+   *   - review (default): sets reviewState='in_progress', phase='review';
+   *     on first creation of the record, also stamps readyForReviewAt=now
+   *     (mirrors claimNext()'s behaviour for pre-existing records)
    *   - patch: sets phase='patch', claim fields; does NOT touch reviewState
    *   - deploy: sets phase='deploy', claim fields, sets readyForDeployAt=now if null
    *
@@ -237,6 +239,7 @@ export class PullRequestService implements PullRequestServiceLike {
 
         if (phase === "review") {
           createData.reviewState = "in_progress";
+          createData.readyForReviewAt = now;
         } else if (phase === "deploy") {
           createData.readyForDeployAt = now;
         }

@@ -388,6 +388,30 @@ describeOrSkip("PullRequestService.claim() phase support (integration)", () => {
     expect(result.record.reviewState).toBe("in_progress");
   });
 
+  it("claim(phase=review) stamps readyForReviewAt=now on record creation", async () => {
+    const now = new Date("2026-07-01T12:00:00.000Z");
+    const clock = FixedClock(now);
+    const svc = new PullRequestService(prisma, clock);
+
+    const repo = "app-vitals/shipwright";
+    const prNumber = 704;
+    const commitSha = "sha-review-created";
+
+    const result = await svc.claim(repo, prNumber, commitSha, "agent-a", undefined, "review");
+    expect(result.status).toBe(201);
+    expect(result.record.readyForReviewAt).toBe(now.toISOString());
+  });
+
+  it("claim(phase=patch) does not stamp readyForReviewAt on record creation", async () => {
+    const repo = "app-vitals/shipwright";
+    const prNumber = 705;
+    const commitSha = "sha-patch-created";
+
+    const result = await service.claim(repo, prNumber, commitSha, "agent-a", undefined, "patch");
+    expect(result.status).toBe(201);
+    expect(result.record.readyForReviewAt).toBeNull();
+  });
+
   it("claim(phase=patch) conflict: 409 if same commitSha and phase=patch and already claimed", async () => {
     const repo = "app-vitals/shipwright";
     const prNumber = 703;
