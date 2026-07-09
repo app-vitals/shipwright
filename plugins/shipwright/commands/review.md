@@ -88,7 +88,7 @@ Before building the queue, resolve the current GitHub CLI user once and remember
 gh api /user -q '.login'
 ```
 
-### Step 3a: Drain Staged Queue (interactive mode)
+### Step 3a: Report Staged Queue
 
 Fetch staged PR records for each configured repo:
 ```bash
@@ -117,16 +117,17 @@ Display:
 | #123 | example-repo | Add feature X | APPROVE | +45/-12 (57) | 2h ago |
 | #456 | example-repo | Fix bug Y | COMMENT | +120/-30 (150) | 1h ago |
 
-Post staged reviews, or skip to new reviews?
+Post with: /shipwright:review {org}/{repo}#{pr}
 ```
 
 The "Staged" column comes from `record.updatedAt`.
 
-**If posting**: work through them one at a time using the Step 14 posting mechanics
-(show review summary → confirm → post → move to next). After all staged reviews are
-processed or skipped, continue to Step 3b.
-
-**If skipping**: proceed directly to Step 3b.
+**Never post from this step, under any circumstance.** This step is report-only — display
+the queue, then always continue to Step 3b. There is no "post" branch here to take, so
+there is nothing for a non-interactive run (cron, subagent) to get wrong by proceeding
+without a reply. Staged reviews are posted only via the explicit targeted invocation in
+Step 14 (`/shipwright:review {org}/{repo}#{pr}`), which is the owner's approval gesture —
+see the design note at the top of Step 14.
 
 ---
 
