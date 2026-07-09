@@ -18,9 +18,10 @@
  *     409) as already-provisioned rather than failing, and if Deployment
  *     creation fails after the Secret was created it best-effort deletes the
  *     Secret so a retry starts from a clean slate.
- *   - deprovision() deletes the Deployment then the Secret and swallows
- *     NotFoundError (404) so tearing down an absent / half-absent agent is a
- *     no-op rather than an error.
+ *   - deprovision() deletes the Deployment, then the Secret, then the PVC
+ *     (unlike provision()'s rollback path, a deliberate full deprovision DOES
+ *     remove the PVC) and swallows NotFoundError (404) so tearing down an
+ *     absent / half-absent agent is a no-op rather than an error.
  */
 
 import {
@@ -30,6 +31,7 @@ import {
   sanitizeAgentName,
 } from "./agent-manifest.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
+import type { ChatServiceProvisioningClient } from "./chat-service-provisioning-client.ts";
 import { ConflictError, NotFoundError } from "./errors.ts";
 import type {
   KubernetesClient,
@@ -38,7 +40,6 @@ import type {
   PvcSpec,
   SecretSpec,
 } from "./kubernetes-client.ts";
-import type { ChatServiceProvisioningClient } from "./chat-service-provisioning-client.ts";
 import type { TaskStoreProvisioningClient } from "./task-store-provisioning-client.ts";
 
 // ─── Interface ──────────────────────────────────────────────────────────────
@@ -83,8 +84,12 @@ export interface AgentProvisioner {
     agentId: string,
     opts?: { slug?: string },
   ): Promise<ProvisionResult>;
-  /** Delete the agent's Deployment + Secret. Tolerates already-absent. */
-  deprovision(agentId: string): Promise<void>;
+  /**
+   * Delete the agent's Deployment, Secret, and PVC. Tolerates already-absent
+   * resources (idempotent). `opts.slug` mirrors provision()'s shape and is
+   * used to resolve the PVC name when a `pvcName` template is configured.
+   */
+  deprovision(agentId: string, opts?: { slug?: string }): Promise<void>;
   /**
    * Reconcile K8s Deployment state against a list of known agent IDs.
    * Re-provisions agents whose Deployments are missing; surfaces orphaned
@@ -380,14 +385,20 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
     return result;
   }
 
-  async deprovision(agentId: string): Promise<void> {
+  async deprovision(agentId: string, opts?: { slug?: string }): Promise<void> {
     const resourceName = this.resourceName(agentId);
     const secretName = this.secretNameFor(resourceName);
+    const pvcName = this.pvcNameFor(resourceName, opts?.slug);
 
-    // Delete the Deployment first (it depends on the Secret), then the Secret.
-    // Already-absent resources (404) are swallowed so teardown is idempotent.
+    // Delete the Deployment first (it depends on the Secret), then the Secret,
+    // then the PVC. Already-absent resources (404) are swallowed so teardown
+    // is idempotent. Unlike provision()'s rollback path (which deliberately
+    // never deletes the PVC — see the "data safety policy" note above), a
+    // deliberate full agent deprovision also removes the PVC so deleted
+    // agents don't leak storage indefinitely.
     await this.deleteDeploymentBestEffort(resourceName);
     await this.deleteSecretBestEffort(secretName);
+    await this.deletePvcBestEffort(pvcName);
   }
 
   async reconcile(
@@ -583,6 +594,14 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
       if (!isNotFound(err)) throw err;
     }
   }
+
+  private async deletePvcBestEffort(name: string): Promise<void> {
+    try {
+      await this.k8s.deletePvc(this.config.namespace, name);
+    } catch (err) {
+      if (!isNotFound(err)) throw err;
+    }
+  }
 }
 
 // ─── No-op implementation ─────────────────────────────────────────────────────
@@ -604,7 +623,10 @@ export class NoopAgentProvisioner implements AgentProvisioner {
     };
   }
 
-  async deprovision(_agentId: string): Promise<void> {
+  async deprovision(
+    _agentId: string,
+    _opts?: { slug?: string },
+  ): Promise<void> {
     // intentionally a no-op
   }
 

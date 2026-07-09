@@ -1492,12 +1492,14 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       // back too, or a retry with the same name creates a second orphan
       // (this flow isn't idempotent on newAgentName).
       if (agentMode === "new") {
-        await provisioner.deprovision(resolvedAgentId).catch((cleanupErr) => {
-          console.error(
-            "[admin-ui] failed to deprovision agent after Slack manifest error:",
-            cleanupErr,
-          );
-        });
+        await provisioner
+          .deprovision(resolvedAgentId, { slug: agent.name })
+          .catch((cleanupErr) => {
+            console.error(
+              "[admin-ui] failed to deprovision agent after Slack manifest error:",
+              cleanupErr,
+            );
+          });
         await prisma.agent
           .delete({ where: { id: resolvedAgentId } })
           .catch((cleanupErr) => {
@@ -2574,7 +2576,12 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
     const agentId = c.req.param("id");
     try {
-      await provisioner.deprovision(agentId);
+      // The agent row may already be gone (e.g. a retried delete) — that must
+      // not block the k8s cleanup attempt, so fall back to agentId alone.
+      const existing = await prisma.agent.findUnique({
+        where: { id: agentId },
+      });
+      await provisioner.deprovision(agentId, { slug: existing?.name });
       await prisma.agent.delete({ where: { id: agentId } });
     } catch (err) {
       const msg =

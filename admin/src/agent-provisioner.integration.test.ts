@@ -158,7 +158,7 @@ describeOrSkip("KubernetesAgentProvisioner (integration)", () => {
     expect(order).toEqual(["pvc", "secret", "deployment"]);
   });
 
-  it("deprovision() deletes Deployment and Secret but leaves PVC", async () => {
+  it("deprovision() deletes Deployment, Secret, and PVC", async () => {
     const agentId = await createAgent();
     const k8s = emptyClient();
     const provisioner = new KubernetesAgentProvisioner(k8s, tokens, CONFIG);
@@ -167,11 +167,12 @@ describeOrSkip("KubernetesAgentProvisioner (integration)", () => {
     await provisioner.deprovision(agentId);
 
     const name = sanitizeAgentName(agentId);
-    // Deployment and Secret must be gone
+    // Deployment, Secret, and PVC must all be gone — a deliberate full agent
+    // delete (unlike provision()'s rollback path) also removes the PVC so
+    // deleted agents don't leak storage indefinitely.
     await expect(k8s.getDeployment(NAMESPACE, name)).rejects.toThrow();
     await expect(k8s.getSecret(NAMESPACE, `${name}-token`)).rejects.toThrow();
-    // PVC must still be present (data safety)
-    await expect(k8s.getPvc(NAMESPACE, `${name}-home`)).resolves.toBeDefined();
+    await expect(k8s.getPvc(NAMESPACE, `${name}-home`)).rejects.toThrow();
   });
 
   it("provision() is safe to retry (provision twice → no throw)", async () => {
@@ -477,6 +478,7 @@ describeOrSkip("KubernetesAgentProvisioner (integration)", () => {
     const name = sanitizeAgentName(agentId);
     await expect(k8s.getSecret(NAMESPACE, `${name}-token`)).rejects.toThrow();
     await expect(k8s.getDeployment(NAMESPACE, name)).rejects.toThrow();
+    await expect(k8s.getPvc(NAMESPACE, `${name}-home`)).rejects.toThrow();
   });
 
   it("deprovision() tolerates already-absent resources (no throw)", async () => {
@@ -490,6 +492,42 @@ describeOrSkip("KubernetesAgentProvisioner (integration)", () => {
     await provisioner.provision(agentId);
     await provisioner.deprovision(agentId);
     await expect(provisioner.deprovision(agentId)).resolves.toBeUndefined();
+  });
+
+  it("deprovision() tolerates an already-absent PVC (idempotent re-delete, no throw)", async () => {
+    const agentId = await createAgent();
+    const k8s = emptyClient();
+    const provisioner = new KubernetesAgentProvisioner(k8s, tokens, CONFIG);
+
+    // Provision, then deprovision once — the PVC is deleted along with the
+    // Deployment and Secret. A second deprovision call must not throw even
+    // though the PVC (and everything else) is already gone (404 swallowed).
+    await provisioner.provision(agentId);
+    await provisioner.deprovision(agentId);
+
+    const name = sanitizeAgentName(agentId);
+    await expect(k8s.getPvc(NAMESPACE, `${name}-home`)).rejects.toThrow();
+    await expect(provisioner.deprovision(agentId)).resolves.toBeUndefined();
+  });
+
+  it("deprovision() deletes the templated PVC name derived from slug", async () => {
+    const agentId = await createAgent("OkWOW Agent");
+    const k8s = emptyClient();
+    const provisioner = new KubernetesAgentProvisioner(k8s, tokens, {
+      ...CONFIG,
+      pvcName: (name) => `acme-agent-${name}-home`,
+    });
+
+    await provisioner.provision(agentId, { slug: "okwow" });
+    await expect(
+      k8s.getPvc(NAMESPACE, "acme-agent-okwow-home"),
+    ).resolves.toBeDefined();
+
+    await provisioner.deprovision(agentId, { slug: "okwow" });
+
+    await expect(
+      k8s.getPvc(NAMESPACE, "acme-agent-okwow-home"),
+    ).rejects.toThrow();
   });
 
   // ─── task-store token in Secret ──────────────────────────────────────────────
