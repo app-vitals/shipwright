@@ -1,0 +1,156 @@
+{
+  "mintToken_success": {
+    "status": 201,
+    "body": { "id": "tok_abc123", "rawToken": "cst_raw_test_token_value" }
+  },
+  "mintToken_success_with_agentId": {
+    "status": 201,
+    "body": {
+      "id": "tok_def456",
+      "rawToken": "cst_raw_test_token_agent_scoped"
+    }
+  },
+  "mintToken_500": {
+    "status": 500,
+    "body": { "error": "internal server error" }
+  },
+  "revokeToken_success": {
+    "status": 204,
+    "body": {}
+  },
+  "revokeToken_404": {
+    "status": 404,
+    "body": { "error": "not found" }
+  },
+  "revokeToken_500": {
+    "status": 500,
+    "body": { "error": "internal server error" }
+  },
+  "listTokens_mixed_agents": {
+    "status": 200,
+    "body": [
+      {
+        "id": "tok_1",
+        "label": "a",
+        "agentId": "agent-123",
+        "createdAt": "2026-01-01T00:00:00.000Z"
+      },
+      {
+        "id": "tok_2",
+        "label": "b",
+        "agentId": "agent-456",
+        "createdAt": "2026-01-01T00:00:00.000Z"
+      },
+      {
+        "id": "tok_3",
+        "label": "c",
+        "agentId": "agent-123",
+        "createdAt": "2026-01-01T00:00:00.000Z"
+      },
+      {
+        "id": "tok_4",
+        "label": "d",
+        "agentId": null,
+        "createdAt": "2026-01-01T00:00:00.000Z"
+      }
+    ]
+  },
+  "listTokens_empty": {
+    "status": 200,
+    "body": []
+  },
+  "listTokens_500": {
+    "status": 500,
+    "body": { "error": "internal server error" }
+  },
+  "listThreads_page_agent123_page1": {
+    "status": 200,
+    "body": {
+      "threads": [
+        {
+          "id": "thread_1",
+          "agentId": "agent-123",
+          "createdAt": "2026-01-01T00:00:00.000Z",
+          "updatedAt": "2026-01-01T00:00:00.000Z"
+        },
+        {
+          "id": "thread_2",
+          "agentId": "agent-123",
+          "createdAt": "2026-01-01T00:00:00.000Z",
+          "updatedAt": "2026-01-01T00:00:00.000Z"
+        }
+      ],
+      "total": 3,
+      "limit": 2,
+      "offset": 0
+    }
+  },
+  "listThreads_page_agent123_page2": {
+    "status": 200,
+    "body": {
+      "threads": [
+        {
+          "id": "thread_3",
+          "agentId": "agent-123",
+          "createdAt": "2026-01-01T00:00:00.000Z",
+          "updatedAt": "2026-01-01T00:00:00.000Z"
+        }
+      ],
+      "total": 3,
+      "limit": 2,
+      "offset": 2
+    }
+  },
+  "listThreads_agent456_single_page": {
+    "status": 200,
+    "body": {
+      "threads": [
+        {
+          "id": "thread_10",
+          "agentId": "agent-456",
+          "createdAt": "2026-01-01T00:00:00.000Z",
+          "updatedAt": "2026-01-01T00:00:00.000Z"
+        },
+        {
+          "id": "thread_11",
+          "agentId": "agent-456",
+          "createdAt": "2026-01-01T00:00:00.000Z",
+          "updatedAt": "2026-01-01T00:00:00.000Z"
+        }
+      ],
+      "total": 2,
+      "limit": 100,
+      "offset": 0
+    }
+  },
+  "listThreads_empty": {
+    "status": 200,
+    "body": {
+      "threads": [],
+      "total": 0,
+      "limit": 100,
+      "offset": 0
+    }
+  },
+  "listThreads_500": {
+    "status": 500,
+    "body": { "error": "internal server error" }
+  },
+  "deleteThread_success": {
+    "status": 200,
+    "body": {
+      "id": "thread_1",
+      "agentId": "agent-123",
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-01T00:00:00.000Z"
+    }
+  },
+  "deleteThread_404": {
+    "status": 404,
+    "body": { "error": "not found" }
+  },
+  "deleteThread_500": {
+    "status": 500,
+    "body": { "error": "internal server error" }
+  }
+}
