@@ -87,7 +87,7 @@ gh pr view {prNumber} --repo {org}/{repo} \
   `Skipping #{pr} — savepoint/WIP commit on branch ({sha}: "{message}").`
 - **Open CHANGES_REQUESTED from a teammate** — flag and skip with:
   `Skipping #{pr} — @{login} requested changes on {date} and there are no commits since.`
-  (Use the same teammate-comment logic from `/shipwright:review` Step 3b: not a bot,
+  (Use the same teammate-comment logic from `/shipwright:review` Step 3: not a bot,
   not `CURRENT_USER`, no commits pushed after the review.)
 - **Stale staged review** — if `record.commitSha` differs from the current `headRefOid`,
   skip with: `Skipping #{pr} — new commits since review was staged. Re-run /shipwright:review {org}/{repo}#{pr}.`
@@ -160,9 +160,16 @@ Match the owner's response:
 
 ### `post it`
 
-Use the existing posting mechanics from `/shipwright:review` Step 14 (re-fetch
-for new teammate feedback, then `gh api -X POST /repos/{org}/{repo}/pulls/{pr}/reviews`
-with `state/reviews/pr_review_{pr}.json`).
+Submit the review:
+
+```bash
+gh api -X POST /repos/{org}/{repo}/pulls/{pr}/reviews \
+  --input state/reviews/pr_review_{pr}.json
+```
+
+Capture `html_url` from the response. The teammate-feedback and staleness gates in
+step 3b already ran immediately before this PR was presented, so there's no separate
+re-fetch here — this skill owns staged-review posting end to end.
 
 After posting successfully, update the task store record:
 
