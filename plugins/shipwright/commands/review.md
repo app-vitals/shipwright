@@ -607,9 +607,9 @@ Use the Slack MCP tool if available. If no Slack integration is configured, prin
 
 ## Step 11b: Mark PullRequest Record Posted
 
-Run this step immediately after posting a review (Step 11's `auto_post_reviews: true` path — the only place this command posts). Skip this step when the review is staged (not posted).
+Run this step immediately after posting a review. The only place this command posts is Step 11's `auto_post_reviews: true` path; `/shipwright:review-staged`'s `post it` action also runs this step (after its own staged-flag clear, which is the one thing this step doesn't do) since posting-then-completing is identical either way. Skip this step when the review is staged (not posted).
 
-Use `{verdict}` (from Step 10) and `PR_RECORD_ID` — the record ID captured from the claim in Step 4.
+Use `{verdict}` and `PR_RECORD_ID` — from Step 10 and the claim in Step 4 respectively when called from this command; `record.reviewState == "approved" ? APPROVE : COMMENT` and `record.id` respectively when called from `/shipwright:review-staged`.
 
 ### 1. Confirm the record ID
 

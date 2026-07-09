@@ -160,20 +160,16 @@ Match the owner's response:
 
 ### `post it`
 
-Submit the review:
+1. Submit the review:
+   ```bash
+   gh api -X POST /repos/{org}/{repo}/pulls/{pr}/reviews \
+     --input state/reviews/pr_review_{pr}.json
+   ```
+   Capture `html_url` from the response. The teammate-feedback and staleness gates in
+   step 3b already ran immediately before this PR was presented, so there's no separate
+   re-fetch here — this skill owns staged-review posting end to end.
 
-```bash
-gh api -X POST /repos/{org}/{repo}/pulls/{pr}/reviews \
-  --input state/reviews/pr_review_{pr}.json
-```
-
-Capture `html_url` from the response. The teammate-feedback and staleness gates in
-step 3b already ran immediately before this PR was presented, so there's no separate
-re-fetch here — this skill owns staged-review posting end to end.
-
-After posting successfully, update the task store record:
-
-1. Clear the staged flag:
+2. Clear the staged flag:
    ```bash
    curl -sf -X PATCH \
      -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
@@ -182,28 +178,11 @@ After posting successfully, update the task store record:
      -d '{"staged": false}' >/dev/null
    ```
 
-2. Mark the review complete:
-   ```bash
-   curl -sf -X POST \
-     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-     "$SHIPWRIGHT_TASK_STORE_URL/prs/{record.id}/complete" >/dev/null
-   ```
-
-3. Re-assert agentId and reviewState. `complete()` unconditionally sets `reviewState: "posted"`,
-   so for APPROVE verdicts (where the staged record had `reviewState: "approved"`), explicitly
-   re-assert `"approved"` in this PATCH — mirroring review.md Step 11b:
-   ```bash
-   if [ "{record.reviewState}" = "approved" ]; then
-     PATCH_DATA="{\"agentId\": \"$SHIPWRIGHT_AGENT_ID\", \"reviewedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\", \"reviewState\": \"approved\"}"
-   else
-     PATCH_DATA="{\"agentId\": \"$SHIPWRIGHT_AGENT_ID\", \"reviewedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}"
-   fi
-   curl -sf -X PATCH \
-     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-     -H "Content-Type: application/json" \
-     "$SHIPWRIGHT_TASK_STORE_URL/prs/{record.id}" \
-     -d "$PATCH_DATA" >/dev/null
-   ```
+3. Run `/shipwright:review` Step 11b with `PR_RECORD_ID = {record.id}` and
+   `{verdict}` = `APPROVE` if `record.reviewState == "approved"` else `COMMENT` — it marks
+   the record complete and reasserts `agentId`/`reviewState`. Posting-then-completing a
+   review is identical whether it happened immediately or was staged first; no need for
+   a second copy of that logic here.
 
 Print the posted review URL.
 
