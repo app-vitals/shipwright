@@ -225,6 +225,8 @@ On success, sets `repliedAt` on the user message and creates a new `role: "assis
 
 Three Prisma models, defined in `chat/prisma/schema.prisma` and owned exclusively by this service. Request and response shapes are validated and documented via Zod schemas with OpenAPI metadata in `chat/src/openapi-schemas.ts` — mirrors the pattern in `admin/src/openapi-schemas.ts`.
 
+The OpenAPI 3.1 specification is generated from these schemas via `chat/src/generate-spec.ts` and written to `chat/openapi.json`. Regenerate the spec at any time with `bun run generate:chat-spec` (or `npm run generate:chat-spec`).
+
 ### ChatToken
 
 | Field | Type | Notes |
