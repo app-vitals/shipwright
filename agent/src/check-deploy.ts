@@ -21,11 +21,14 @@
  */
 
 import {
+  candidateId,
+  createPrRecordQuery,
   getCurrentUser,
   isCleanApproveBody,
   readAllowSelfReview,
   resolveAllRepos,
   resolveWorkspacePath,
+  splitOrgRepo,
 } from "./check-helpers.ts";
 import type { WorkPrCandidate } from "./work-selector.ts";
 
@@ -108,16 +111,6 @@ function hasSelfApproveReview(reviews: GhReview[], userLogin: string): boolean {
   return reviews.some(
     (r) => r.author.login === userLogin && isCleanApproveBody(r.body),
   );
-}
-
-function candidateId(repo: string, prNumber: number): string {
-  return `${repo}#${prNumber}`;
-}
-
-function splitOrgRepo(repo: string): [string, string] {
-  return repo.includes("/")
-    ? (repo.split("/", 2) as [string, string])
-    : ["app-vitals", repo];
 }
 
 // ─── Core logic ───────────────────────────────────────────────────────────────
@@ -262,29 +255,19 @@ export async function buildProductionDeps(opts: {
   const clock = () => new Date().toISOString();
   const { ghJson } = opts;
 
-  const taskStoreUrl = (process.env.SHIPWRIGHT_TASK_STORE_URL ?? "").trim();
-  const taskStoreToken = (process.env.SHIPWRIGHT_TASK_STORE_TOKEN ?? "").trim();
-  const doFetch = opts.fetchFn ?? fetch;
-
   return {
     getCurrentUser,
     isSelfReviewAllowed: readAllowSelfReview(workspacePath),
     repos: allRepos,
     clock,
     fetchActiveDeployRuns: async (org: string, repo: string) => {
-      const [inProgress, queued] = await Promise.all([
-        Promise.resolve(
-          ghJson<GhWorkflowRunsJson>([
-            "api",
-            `repos/${org}/${repo}/actions/runs?status=in_progress&per_page=10`,
-          ]),
-        ),
-        Promise.resolve(
-          ghJson<GhWorkflowRunsJson>([
-            "api",
-            `repos/${org}/${repo}/actions/runs?status=queued&per_page=10`,
-          ]),
-        ),
+      const inProgress = ghJson<GhWorkflowRunsJson>([
+        "api",
+        `repos/${org}/${repo}/actions/runs?status=in_progress&per_page=10`,
+      ]);
+      const queued = ghJson<GhWorkflowRunsJson>([
+        "api",
+        `repos/${org}/${repo}/actions/runs?status=queued&per_page=10`,
       ]);
       return [...inProgress.workflow_runs, ...queued.workflow_runs]
         .filter((r) => r.name === "Deploy")
@@ -307,64 +290,27 @@ export async function buildProductionDeps(opts: {
       ]);
     },
     fetchPrReviews: async (org: string, repo: string, pr: number) => {
-      const data = await Promise.resolve(
-        ghJson<GhPrReviewsJson>([
-          "pr",
-          "view",
-          String(pr),
-          "--repo",
-          `${org}/${repo}`,
-          "--json",
-          "reviews",
-        ]),
-      );
+      const data = ghJson<GhPrReviewsJson>([
+        "pr",
+        "view",
+        String(pr),
+        "--repo",
+        `${org}/${repo}`,
+        "--json",
+        "reviews",
+      ]);
       return data.reviews;
     },
     fetchCiRuns: async (org: string, repo: string, headSha: string) => {
-      const data = await Promise.resolve(
-        ghJson<GhWorkflowRunsJson>([
-          "api",
-          `repos/${org}/${repo}/actions/runs?head_sha=${headSha}&per_page=20`,
-        ]),
-      );
+      const data = ghJson<GhWorkflowRunsJson>([
+        "api",
+        `repos/${org}/${repo}/actions/runs?head_sha=${headSha}&per_page=20`,
+      ]);
       return data.workflow_runs
         .filter((r) => r.name === "CI")
         .map((r) => ({ status: r.status, conclusion: r.conclusion }));
     },
     isBundleComplete: undefined,
-    queryPrRecord: async (
-      repo: string,
-      prNumber: number,
-    ): Promise<PrRecord | null> => {
-      if (!taskStoreUrl || !taskStoreToken) return null;
-      try {
-        const baseUrl = taskStoreUrl.replace(/\/$/, "");
-        const params = new URLSearchParams({
-          repo,
-          prNumber: String(prNumber),
-        });
-        const res = await doFetch(`${baseUrl}/prs?${params}`, {
-          headers: {
-            Authorization: `Bearer ${taskStoreToken}`,
-            "Content-Type": "application/json",
-          },
-        });
-        if (!res.ok) return null;
-        const data = (await res.json()) as unknown;
-        let prs: PrRecord[] = [];
-        if (Array.isArray(data)) {
-          prs = data as PrRecord[];
-        } else if (
-          data !== null &&
-          typeof data === "object" &&
-          Array.isArray((data as Record<string, unknown>).prs)
-        ) {
-          prs = (data as Record<string, unknown>).prs as PrRecord[];
-        }
-        return prs[0] ?? null;
-      } catch {
-        return null;
-      }
-    },
+    queryPrRecord: createPrRecordQuery<PrRecord>({ fetchFn: opts.fetchFn }),
   };
 }

@@ -342,6 +342,70 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
   };
 }
 
+// ─── PR candidate helpers ─────────────────────────────────────────────────────
+//
+// Shared by the WL-2.2 candidate providers (check-review.ts, check-patch.ts,
+// check-deploy.ts) so the id/org-repo/task-store-record logic can't diverge
+// across the three phase-specific ports.
+
+/** Stable, human-readable candidate id: "org/repo#prNumber". */
+export function candidateId(repo: string, prNumber: number): string {
+  return `${repo}#${prNumber}`;
+}
+
+/** Split "org/repo" into [org, repo], defaulting org to "app-vitals" for a bare repo name. */
+export function splitOrgRepo(repo: string): [string, string] {
+  return repo.includes("/")
+    ? (repo.split("/", 2) as [string, string])
+    : ["app-vitals", repo];
+}
+
+/**
+ * Build a `(repo, prNumber) => record | null` query function against the
+ * task-store `/prs` endpoint. Returns null on missing config, a non-ok
+ * response, or any fetch error — a missing task-store PR record must not
+ * throw, since an unclaimed PR simply has no record yet.
+ *
+ * Accepts an optional `fetchFn` for dependency injection in tests, matching
+ * createTaskStoreClient's pattern.
+ */
+export function createPrRecordQuery<T>(opts?: {
+  fetchFn?: FetchFn;
+}): (repo: string, prNumber: number) => Promise<T | null> {
+  const taskStoreUrl = (process.env.SHIPWRIGHT_TASK_STORE_URL ?? "").trim();
+  const taskStoreToken = (process.env.SHIPWRIGHT_TASK_STORE_TOKEN ?? "").trim();
+  const doFetch: FetchFn = opts?.fetchFn ?? fetch;
+
+  return async (repo: string, prNumber: number): Promise<T | null> => {
+    if (!taskStoreUrl || !taskStoreToken) return null;
+    try {
+      const baseUrl = taskStoreUrl.replace(/\/$/, "");
+      const params = new URLSearchParams({ repo, prNumber: String(prNumber) });
+      const res = await doFetch(`${baseUrl}/prs?${params}`, {
+        headers: {
+          Authorization: `Bearer ${taskStoreToken}`,
+          "Content-Type": "application/json",
+        },
+      });
+      if (!res.ok) return null;
+      const data = (await res.json()) as unknown;
+      let records: T[] = [];
+      if (Array.isArray(data)) {
+        records = data as T[];
+      } else if (
+        data !== null &&
+        typeof data === "object" &&
+        Array.isArray((data as Record<string, unknown>).prs)
+      ) {
+        records = (data as Record<string, unknown>).prs as T[];
+      }
+      return records[0] ?? null;
+    } catch {
+      return null;
+    }
+  };
+}
+
 // ─── gh CLI helper ────────────────────────────────────────────────────────────
 
 /**

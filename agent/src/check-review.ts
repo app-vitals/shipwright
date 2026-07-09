@@ -21,7 +21,14 @@
  * yet — a missing record must not throw.
  */
 
-import { getCurrentUser, readAllowSelfReview, resolveAllRepos, resolveWorkspacePath } from "./check-helpers.ts";
+import {
+  candidateId,
+  createPrRecordQuery,
+  getCurrentUser,
+  readAllowSelfReview,
+  resolveAllRepos,
+  resolveWorkspacePath,
+} from "./check-helpers.ts";
 import type { WorkPrCandidate } from "./work-selector.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -50,12 +57,6 @@ export interface CheckReviewDeps {
   isSelfReviewAllowed: boolean;
   listOpenPrs: (repo: string) => Promise<PrInfo[]>;
   queryPrRecord: (repo: string, prNumber: number) => Promise<PrRecord | null>;
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function candidateId(repo: string | undefined, prNumber: number): string {
-  return `${repo ?? "unknown"}#${prNumber}`;
 }
 
 // ─── Core logic ───────────────────────────────────────────────────────────────
@@ -88,7 +89,7 @@ export async function getReviewCandidates(
     // No record → eligible
     if (!record) {
       candidates.push({
-        id: candidateId(pr.repo, pr.number),
+        id: candidateId(pr.repo ?? "unknown", pr.number),
         age: pr.createdAt ?? "",
         claimedBy: null,
         phase: "review",
@@ -103,7 +104,7 @@ export async function getReviewCandidates(
 
     // Different SHA or pending → eligible
     candidates.push({
-      id: candidateId(pr.repo, pr.number),
+      id: candidateId(pr.repo ?? "unknown", pr.number),
       age: record.readyForReviewAt ?? pr.createdAt ?? "",
       claimedBy: record.claimedBy ?? null,
       phase: "review",
@@ -121,10 +122,6 @@ export async function buildProductionDeps(opts?: {
 }): Promise<CheckReviewDeps> {
   const workspacePath = resolveWorkspacePath();
   const allRepos = resolveAllRepos(workspacePath);
-
-  const taskStoreUrl = (process.env.SHIPWRIGHT_TASK_STORE_URL ?? "").trim();
-  const taskStoreToken = (process.env.SHIPWRIGHT_TASK_STORE_TOKEN ?? "").trim();
-  const doFetch = opts?.fetchFn ?? fetch;
   const ghJsonFn = opts?.ghJson;
 
   return {
@@ -148,39 +145,6 @@ export async function buildProductionDeps(opts?: {
       }
       return allPrs;
     },
-    queryPrRecord: async (
-      repo: string,
-      prNumber: number,
-    ): Promise<PrRecord | null> => {
-      if (!taskStoreUrl || !taskStoreToken) return null;
-      try {
-        const baseUrl = taskStoreUrl.replace(/\/$/, "");
-        const params = new URLSearchParams({
-          repo,
-          prNumber: String(prNumber),
-        });
-        const res = await doFetch(`${baseUrl}/prs?${params}`, {
-          headers: {
-            Authorization: `Bearer ${taskStoreToken}`,
-            "Content-Type": "application/json",
-          },
-        });
-        if (!res.ok) return null;
-        const data = (await res.json()) as unknown;
-        let prs: PrRecord[] = [];
-        if (Array.isArray(data)) {
-          prs = data as PrRecord[];
-        } else if (
-          data !== null &&
-          typeof data === "object" &&
-          Array.isArray((data as Record<string, unknown>).prs)
-        ) {
-          prs = (data as Record<string, unknown>).prs as PrRecord[];
-        }
-        return prs[0] ?? null;
-      } catch {
-        return null;
-      }
-    },
+    queryPrRecord: createPrRecordQuery<PrRecord>({ fetchFn: opts?.fetchFn }),
   };
 }

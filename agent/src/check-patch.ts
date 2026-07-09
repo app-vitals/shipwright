@@ -19,10 +19,13 @@
 
 import type { CommitInfo } from "./check-helpers.ts";
 import {
+  candidateId,
+  createPrRecordQuery,
   isCleanApproveBody,
   isMergeOnlyUpdate,
   resolveAllRepos,
   resolveWorkspacePath,
+  splitOrgRepo,
 } from "./check-helpers.ts";
 import type { WorkPrCandidate } from "./work-selector.ts";
 
@@ -232,18 +235,6 @@ async function hasMergeOnlyStaleFindings(
   return isMergeOnlyUpdate(prNumber, anchorCommit, deps, repo);
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function candidateId(repo: string, prNumber: number): string {
-  return `${repo}#${prNumber}`;
-}
-
-function splitOrgRepo(repo: string): [string, string] {
-  return repo.includes("/")
-    ? (repo.split("/", 2) as [string, string])
-    : ["app-vitals", repo];
-}
-
 // ─── Core logic ───────────────────────────────────────────────────────────────
 
 /**
@@ -358,10 +349,6 @@ export async function buildProductionDeps(opts: {
   const allRepos = resolveAllRepos(workspacePath);
   const { ghJson, ghGraphql, getCurrentUser: getUser } = opts;
 
-  const taskStoreUrl = (process.env.SHIPWRIGHT_TASK_STORE_URL ?? "").trim();
-  const taskStoreToken = (process.env.SHIPWRIGHT_TASK_STORE_TOKEN ?? "").trim();
-  const doFetch = opts.fetchFn ?? fetch;
-
   return {
     listOwnOpenPrs: async (_repo: string) => {
       const user = await getUser();
@@ -472,39 +459,6 @@ export async function buildProductionDeps(opts: {
       ]);
     },
     getCurrentUser: getUser,
-    queryPrRecord: async (
-      repo: string,
-      prNumber: number,
-    ): Promise<PrRecord | null> => {
-      if (!taskStoreUrl || !taskStoreToken) return null;
-      try {
-        const baseUrl = taskStoreUrl.replace(/\/$/, "");
-        const params = new URLSearchParams({
-          repo,
-          prNumber: String(prNumber),
-        });
-        const res = await doFetch(`${baseUrl}/prs?${params}`, {
-          headers: {
-            Authorization: `Bearer ${taskStoreToken}`,
-            "Content-Type": "application/json",
-          },
-        });
-        if (!res.ok) return null;
-        const data = (await res.json()) as unknown;
-        let prs: PrRecord[] = [];
-        if (Array.isArray(data)) {
-          prs = data as PrRecord[];
-        } else if (
-          data !== null &&
-          typeof data === "object" &&
-          Array.isArray((data as Record<string, unknown>).prs)
-        ) {
-          prs = (data as Record<string, unknown>).prs as PrRecord[];
-        }
-        return prs[0] ?? null;
-      } catch {
-        return null;
-      }
-    },
+    queryPrRecord: createPrRecordQuery<PrRecord>({ fetchFn: opts.fetchFn }),
   };
 }
