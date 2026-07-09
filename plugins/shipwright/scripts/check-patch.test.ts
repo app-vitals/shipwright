@@ -687,6 +687,37 @@ describe("check-patch", () => {
     expect(result.output).toBe("");
   });
 
+  test("exits 1 when only review is a clean 'Verdict: APPROVE' from a different author than currentUser (identity-agnostic clean-approve)", async () => {
+    const pr = makeOwnPr();
+    const reviewData = makePrReviewData({
+      headRefOid: "current-head-sha",
+      reviews: {
+        nodes: [
+          {
+            author: { login: "some-other-agent" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-26T10:00:00Z",
+            commit: { oid: "current-head-sha" },
+            body: "Reviewed the diff for correctness and style. Everything checks out, no issues found.\n\nVerdict: APPROVE",
+          },
+        ],
+      },
+      reviewThreads: { nodes: [] },
+    });
+    const result = await run(
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: { 10: reviewData },
+        ciStatusByPr: {},
+        mergeStatusByPr: {},
+        listPrCommits: async () => [],
+        getCurrentUser: () => "the-agent",
+      }),
+    );
+    expect(result.exit).toBe(1);
+    expect(result.output).toBe("");
+  });
+
   test("exits 0 when self-authored review coexists with a different reviewer's CHANGES_REQUESTED finding", async () => {
     const pr = makeOwnPr();
     const reviewData = makePrReviewData({
