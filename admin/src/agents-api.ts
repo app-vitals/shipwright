@@ -812,7 +812,10 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     }
     if (err instanceof ApiError) {
       sentryClient?.captureException(err);
-      return c.json({ error: err.message }, err.statusCode as 500 | 502);
+      return c.json(
+        { error: err.message },
+        err.statusCode as 500 | 502,
+      );
     }
     sentryClient?.captureException(err);
     console.error("[agents-api] unhandled error:", err);

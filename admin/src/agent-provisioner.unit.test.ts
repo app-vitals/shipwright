@@ -707,37 +707,47 @@ describe("KubernetesAgentProvisioner — task-store token minting", () => {
 
 // ─── deprovision() deletes the PVC ────────────────────────────────────────────
 
+/**
+ * Wraps a RecordedKubernetesClient, delegating every call through to it while
+ * recording each deletePvc invocation for assertion.
+ */
+function spyOnDeletePvc(recorded: RecordedKubernetesClient): {
+  client: KubernetesClient;
+  deletedPvcs: Array<{ namespace: string; name: string }>;
+} {
+  const deletedPvcs: Array<{ namespace: string; name: string }> = [];
+  const client: KubernetesClient = {
+    createDeployment: (ns, spec) => recorded.createDeployment(ns, spec),
+    createDeploymentManifest: (ns, manifest) =>
+      recorded.createDeploymentManifest(ns, manifest),
+    getDeployment: (ns, name) => recorded.getDeployment(ns, name),
+    deploymentExists: (ns, name) => recorded.deploymentExists(ns, name),
+    listDeployments: (ns, sel) => recorded.listDeployments(ns, sel),
+    deleteDeployment: (ns, name) => recorded.deleteDeployment(ns, name),
+    patchDeployment: (ns, name, patch) =>
+      recorded.patchDeployment(ns, name, patch),
+    createSecret: (ns, spec) => recorded.createSecret(ns, spec),
+    getSecret: (ns, name) => recorded.getSecret(ns, name),
+    deleteSecret: (ns, name) => recorded.deleteSecret(ns, name),
+    createPvc: (ns, spec) => recorded.createPvc(ns, spec),
+    getPvc: (ns, name) => recorded.getPvc(ns, name),
+    deletePvc: (ns, name) => {
+      deletedPvcs.push({ namespace: ns, name });
+      return recorded.deletePvc(ns, name);
+    },
+  };
+  return { client, deletedPvcs };
+}
+
 describe("KubernetesAgentProvisioner.deprovision() — PVC deletion", () => {
   it("calls deletePvc with the default {resourceName}-home name", async () => {
     const agentId = "cmqalfjcm000m4101iharq28k";
     const resourceName = sanitizeAgentName(agentId);
     const expectedPvcName = `${resourceName}-home`;
 
-    const deletedPvcs: Array<{ namespace: string; name: string }> = [];
-    const recorded = emptyClient();
-    const spied: KubernetesClient = {
-      createDeployment: (ns, spec) => recorded.createDeployment(ns, spec),
-      createDeploymentManifest: (ns, manifest) =>
-        recorded.createDeploymentManifest(ns, manifest),
-      getDeployment: (ns, name) => recorded.getDeployment(ns, name),
-      deploymentExists: (ns, name) => recorded.deploymentExists(ns, name),
-      listDeployments: (ns, sel) => recorded.listDeployments(ns, sel),
-      deleteDeployment: (ns, name) => recorded.deleteDeployment(ns, name),
-      patchDeployment: (ns, name, patch) =>
-        recorded.patchDeployment(ns, name, patch),
-      createSecret: (ns, spec) => recorded.createSecret(ns, spec),
-      getSecret: (ns, name) => recorded.getSecret(ns, name),
-      deleteSecret: (ns, name) => recorded.deleteSecret(ns, name),
-      createPvc: (ns, spec) => recorded.createPvc(ns, spec),
-      getPvc: (ns, name) => recorded.getPvc(ns, name),
-      deletePvc: (ns, name) => {
-        deletedPvcs.push({ namespace: ns, name });
-        return recorded.deletePvc(ns, name);
-      },
-    };
-
+    const { client, deletedPvcs } = spyOnDeletePvc(emptyClient());
     const provisioner = new KubernetesAgentProvisioner(
-      spied,
+      client,
       stubTokens() as AgentTokenService,
       BASE_CONFIG,
     );
@@ -755,35 +765,13 @@ describe("KubernetesAgentProvisioner.deprovision() — PVC deletion", () => {
     const slug = "okwow";
     const expectedPvcName = "acme-agent-okwow-home";
 
-    const deletedPvcs: Array<{ namespace: string; name: string }> = [];
-    const recorded = emptyClient();
     const config: KubernetesAgentProvisionerConfig = {
       ...BASE_CONFIG,
       pvcName: (name) => `acme-agent-${name}-home`,
     };
-    const spied: KubernetesClient = {
-      createDeployment: (ns, spec) => recorded.createDeployment(ns, spec),
-      createDeploymentManifest: (ns, manifest) =>
-        recorded.createDeploymentManifest(ns, manifest),
-      getDeployment: (ns, name) => recorded.getDeployment(ns, name),
-      deploymentExists: (ns, name) => recorded.deploymentExists(ns, name),
-      listDeployments: (ns, sel) => recorded.listDeployments(ns, sel),
-      deleteDeployment: (ns, name) => recorded.deleteDeployment(ns, name),
-      patchDeployment: (ns, name, patch) =>
-        recorded.patchDeployment(ns, name, patch),
-      createSecret: (ns, spec) => recorded.createSecret(ns, spec),
-      getSecret: (ns, name) => recorded.getSecret(ns, name),
-      deleteSecret: (ns, name) => recorded.deleteSecret(ns, name),
-      createPvc: (ns, spec) => recorded.createPvc(ns, spec),
-      getPvc: (ns, name) => recorded.getPvc(ns, name),
-      deletePvc: (ns, name) => {
-        deletedPvcs.push({ namespace: ns, name });
-        return recorded.deletePvc(ns, name);
-      },
-    };
-
+    const { client, deletedPvcs } = spyOnDeletePvc(emptyClient());
     const provisioner = new KubernetesAgentProvisioner(
-      spied,
+      client,
       stubTokens() as AgentTokenService,
       config,
     );
