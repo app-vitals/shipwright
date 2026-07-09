@@ -48,6 +48,9 @@ import {
   renderTasksPage,
   renderTokensPage,
 } from "./admin-ui-pages.ts";
+import type { ManualStep } from "./agent-deletion-checklist.ts";
+import type { DeleteAgentFullyDeps } from "./agent-deletion.ts";
+import { deleteAgentFully } from "./agent-deletion.ts";
 import type { AgentCronJobService } from "./agent-cron-jobs.ts";
 import type { AgentCronRunService } from "./agent-cron-runs.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
@@ -152,6 +155,12 @@ interface PrismaAgentLike {
 
 interface PrismaLike {
   agent: PrismaAgentLike;
+  agentEnv: {
+    findMany(args: {
+      where: { agentId: string };
+      select: { key: true; value: true; secret: true };
+    }): Promise<{ key: string; value: string; secret: boolean }[]>;
+  };
   agentPlugin: {
     findMany(args: {
       where: { agentId: string; enabled: boolean };
@@ -210,6 +219,16 @@ export interface AdminUIDeps {
   >;
   agentPluginService: Pick<AgentPluginService, "list">;
   provisioner: AgentProvisioner;
+  /**
+   * Cleanup deps for the full delete-agent orchestration (POST
+   * /admin/agents/:id/delete → deleteAgentFully()). Matches
+   * DeleteAgentFullyDeps's shapes exactly, mirroring agents-api.ts's AdminDeps
+   * so both delete entry points share the same production wiring in main.ts.
+   */
+  taskStore: DeleteAgentFullyDeps["taskStore"];
+  chatService: DeleteAgentFullyDeps["chatService"];
+  slack: DeleteAgentFullyDeps["slack"];
+  decrypt: DeleteAgentFullyDeps["decrypt"];
   sessionSecret: string;
   googleClient: GoogleAuthClient;
   googleClientId: string;
@@ -409,6 +428,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     agentTokenService,
     agentPluginService,
     provisioner,
+    taskStore,
+    chatService,
+    slack,
+    decrypt,
     sessionSecret,
     googleClient,
     googleClientId,
@@ -644,8 +667,26 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       const agentIds = memberships.map((m) => m.agentId);
       agents = await prisma.agent.findMany({ where: { id: { in: agentIds } } });
     }
+    const successMsg =
+      c.req.query("success") === "deleted" ? "Agent deleted." : undefined;
+    // Surfaced by POST /admin/agents/:id/delete after a successful
+    // deleteAgentFully() call — operator-facing reminders that would
+    // otherwise be silently dropped on the redirect to this list.
+    const manualStepsRaw = c.req.query("manualSteps");
+    let manualSteps: ManualStep[] | undefined;
+    if (manualStepsRaw) {
+      try {
+        const parsed = JSON.parse(manualStepsRaw);
+        if (Array.isArray(parsed)) manualSteps = parsed;
+      } catch {
+        // malformed/tampered query param — render without the panel
+      }
+    }
     return html(
-      renderAgentsPage(agents, c.var.userEmail, c.var.isAdmin, timezone),
+      renderAgentsPage(agents, c.var.userEmail, c.var.isAdmin, timezone, {
+        successMsg,
+        manualSteps,
+      }),
     );
   });
 
@@ -2594,13 +2635,42 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
     const agentId = c.req.param("id");
     try {
-      // The agent row may already be gone (e.g. a retried delete) — that must
-      // not block the k8s cleanup attempt, so fall back to agentId alone.
-      const existing = await prisma.agent.findUnique({
-        where: { id: agentId },
+      // Full teardown: K8s workload, task-store + chat-service tokens/threads,
+      // optional Slack app deletion, then the Agent row itself (deleted last,
+      // only if every automatable step succeeded). Same orchestration DELETE
+      // /agents/:id uses (agents-api.ts) — this was previously a separate
+      // inline provisioner.deprovision() + prisma.agent.delete() path that
+      // had drifted from it.
+      const result = await deleteAgentFully(agentId, {
+        prisma,
+        provisioner,
+        taskStore,
+        chatService,
+        slack,
+        decrypt,
       });
-      await provisioner.deprovision(agentId, { slug: existing?.name });
-      await prisma.agent.delete({ where: { id: agentId } });
+      if (!result.agentDeleted) {
+        // Cleanup is incomplete — keep the operator on the agent's own page
+        // (NOT the agents list) so the agent doesn't appear deleted while
+        // steps still need a retry.
+        const failedSteps = result.failed.map((f) => f.step).join(", ");
+        return c.redirect(
+          `/admin/agents/${agentId}?error=${encodeURIComponent(
+            `Cleanup incomplete — retry. Failed steps: ${failedSteps}`,
+          )}`,
+          302,
+        );
+      }
+      const manualStepsParam =
+        result.manualStepsRequired.length > 0
+          ? `&manualSteps=${encodeURIComponent(
+              JSON.stringify(result.manualStepsRequired),
+            )}`
+          : "";
+      return c.redirect(
+        `/admin/agents?success=deleted${manualStepsParam}`,
+        302,
+      );
     } catch (err) {
       const msg =
         err instanceof Error
@@ -2608,7 +2678,6 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
           : "delete_failed";
       return c.redirect(`/admin/agents/${agentId}?error=${msg}`, 302);
     }
-    return c.redirect("/admin/agents?success=deleted", 302);
   });
 
   // ─── Public read-only task board ──────────────────────────────────────────
