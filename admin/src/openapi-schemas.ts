@@ -620,10 +620,21 @@ const KeyedTokenAggregateSchema = TokenAggregateSchema.extend({
   key: z.string().openapi({ example: "agent-id-123" }),
 }).openapi("KeyedTokenAggregate");
 
-/** A token aggregate keyed by two grouping values (e.g. agentId + cronName). */
+/**
+ * A token aggregate keyed by two grouping values (e.g. agentId + cronName).
+ * `phase` is populated on byCron/byCronModel rows (WL-3.5): the pipeline
+ * phase (dev-task/review/patch/deploy) the row's runs served, or null for
+ * legacy runs that predate phase tracking. Omitted/undefined on dimensions
+ * that don't group by phase (e.g. byModel).
+ */
 const DoubleKeyedTokenAggregateSchema = TokenAggregateSchema.extend({
   key1: z.string().openapi({ example: "agent-id-123" }),
   key2: z.string().openapi({ example: "morning-brief" }),
+  phase: z
+    .string()
+    .nullable()
+    .optional()
+    .openapi({ example: "dev-task" }),
 }).openapi("DoubleKeyedTokenAggregate");
 
 /** A token aggregate bucketed by day (YYYY-MM-DD). */

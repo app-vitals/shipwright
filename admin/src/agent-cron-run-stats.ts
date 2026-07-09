@@ -9,6 +9,14 @@
  * crons that predate phase tracking).
  * Uses $queryRaw for all dimensions — Prisma groupBy doesn't support the
  * LEFT JOIN needed for byCron.
+ *
+ * byCron/byCronModel additionally group by phase (WL-3.5): each row carries
+ * a `phase` field. A run with no phase (legacy five-job crons) has phase
+ * NULL, and since SQL GROUP BY treats NULL as a single group, all of a
+ * cron's legacy runs still collapse into one row — identical to today's
+ * cronId-only display. Runs that do carry a phase (unified loop) produce one
+ * row per (cronId, phase), surfacing the dev-task/review/patch/deploy
+ * breakdown that used to be implicit in having five separate crons.
  */
 
 import { Prisma } from "../prisma/client/index.js";
@@ -34,6 +42,13 @@ export interface KeyedTokenAggregate extends TokenAggregate {
 export interface DoubleKeyedTokenAggregate extends TokenAggregate {
   key1: string;
   key2: string;
+  /**
+   * Pipeline phase this row's runs served (dev-task/review/patch/deploy).
+   * Only populated on byCron/byCronModel rows; null for legacy runs that
+   * predate phase tracking, and always undefined on other dimensions
+   * (byAgent, byModel) which don't group by phase.
+   */
+  phase?: string | null;
 }
 
 export interface DailyTokenAggregate extends TokenAggregate {
@@ -73,6 +88,7 @@ interface ByCronRow {
   agent_id: string;
   cron_id: string;
   cron_name: string | null;
+  phase: string | null;
   input: bigint | null;
   output: bigint | null;
   cache_read: bigint | null;
@@ -104,6 +120,7 @@ interface ByCronModelRow {
   cron_id: string;
   cron_name: string | null;
   model: string;
+  phase: string | null;
   input: bigint | null;
   output: bigint | null;
   cache_read: bigint | null;
@@ -232,6 +249,7 @@ export class AgentCronRunStatsService {
       ...toAggregate(row),
       key1: row.agent_id,
       key2: row.cron_name ?? row.cron_id,
+      phase: row.phase,
     }));
 
     const byModel: DoubleKeyedTokenAggregate[] = byModelRows.map((row) => ({
@@ -250,6 +268,7 @@ export class AgentCronRunStatsService {
         ...toAggregate(row),
         key1: `${row.agent_id}:${row.cron_name ?? row.cron_id}`,
         key2: row.model,
+        phase: row.phase,
       }),
     );
 
@@ -300,11 +319,16 @@ export class AgentCronRunStatsService {
   }
 
   private queryByCron(filter: Prisma.Sql): Promise<ByCronRow[]> {
+    // GROUP BY includes r.phase (WL-3.5): Postgres treats NULL as a single
+    // group, so legacy runs (phase IS NULL) for a cron still collapse into
+    // one row — identical to the pre-WL-3.5 cronId-only grouping. Runs that
+    // do carry a phase produce one row per (cronId, phase).
     return this.prisma.$queryRaw<ByCronRow[]>`
       SELECT
         r."agentId"                  AS agent_id,
         r."cronId"                   AS cron_id,
         j.name                       AS cron_name,
+        r.phase                      AS phase,
         SUM(b."inputTokens")         AS input,
         SUM(b."outputTokens")        AS output,
         SUM(b."cacheReadTokens")     AS cache_read,
@@ -315,8 +339,8 @@ export class AgentCronRunStatsService {
       LEFT JOIN "AgentCronRunModelBreakdown" b ON b."cronRunId" = r.id
       WHERE r.skipped = false
       ${filter}
-      GROUP BY r."agentId", r."cronId", j.name
-      ORDER BY r."agentId", r."cronId"
+      GROUP BY r."agentId", r."cronId", j.name, r.phase
+      ORDER BY r."agentId", r."cronId", r.phase
     `;
   }
 
@@ -360,12 +384,15 @@ export class AgentCronRunStatsService {
   }
 
   private queryByCronModel(filter: Prisma.Sql): Promise<ByCronModelRow[]> {
+    // GROUP BY includes r.phase (WL-3.5) — same NULL-collapses-to-one-group
+    // reasoning as queryByCron above.
     return this.prisma.$queryRaw<ByCronModelRow[]>`
       SELECT
         r."agentId"                    AS agent_id,
         r."cronId"                     AS cron_id,
         j.name                         AS cron_name,
         b.model                        AS model,
+        r.phase                        AS phase,
         SUM(b."inputTokens")           AS input,
         SUM(b."outputTokens")          AS output,
         SUM(b."cacheReadTokens")       AS cache_read,
@@ -376,8 +403,8 @@ export class AgentCronRunStatsService {
       INNER JOIN "AgentCronRunModelBreakdown" b ON b."cronRunId" = r.id
       WHERE r.skipped = false
       ${filter}
-      GROUP BY r."agentId", r."cronId", j.name, b.model
-      ORDER BY r."agentId", r."cronId", b.model
+      GROUP BY r."agentId", r."cronId", j.name, b.model, r.phase
+      ORDER BY r."agentId", r."cronId", b.model, r.phase
     `;
   }
 

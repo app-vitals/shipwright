@@ -292,6 +292,70 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
     expect(stats.byCron[0].input).toBe(60);
   });
 
+  it("byCron groups a single cron into separate rows per phase (WL-3.5)", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId, "shipwright-loop");
+
+    const devTaskRun = await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-10T09:00:00Z"),
+      skipped: false,
+      phase: "dev-task",
+    });
+    await seedTokens(prisma, devTaskRun.id, { input: 100, output: 50 });
+
+    const reviewRun = await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-11T09:00:00Z"),
+      skipped: false,
+      phase: "review",
+    });
+    await seedTokens(prisma, reviewRun.id, { input: 200, output: 100 });
+
+    const stats = await statsService.query();
+
+    // Same (agentId, cronId) but two phases → two distinct byCron rows.
+    expect(stats.byCron).toHaveLength(2);
+    const devTaskRow = stats.byCron.find((r) => r.phase === "dev-task");
+    const reviewRow = stats.byCron.find((r) => r.phase === "review");
+
+    expect(devTaskRow).toBeDefined();
+    expect(devTaskRow?.key1).toBe(agentId);
+    expect(devTaskRow?.key2).toBe("shipwright-loop");
+    expect(devTaskRow?.input).toBe(100);
+
+    expect(reviewRow).toBeDefined();
+    expect(reviewRow?.key1).toBe(agentId);
+    expect(reviewRow?.key2).toBe("shipwright-loop");
+    expect(reviewRow?.input).toBe(200);
+  });
+
+  it("byCron collapses legacy runs with a null phase into a single row per cron (no fragmentation)", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId, "morning-brief");
+
+    // Two legacy runs, neither with a phase set — must collapse into ONE row,
+    // identical to today's cronId-only grouping (AC#1).
+    const run1 = await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-10T09:00:00Z"),
+      skipped: false,
+    });
+    await seedTokens(prisma, run1.id, { input: 40, output: 20 });
+
+    const run2 = await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-11T09:00:00Z"),
+      skipped: false,
+    });
+    await seedTokens(prisma, run2.id, { input: 60, output: 30 });
+
+    const stats = await statsService.query();
+
+    expect(stats.byCron).toHaveLength(1);
+    expect(stats.byCron[0].key1).toBe(agentId);
+    expect(stats.byCron[0].key2).toBe("morning-brief");
+    expect(stats.byCron[0].phase).toBeNull();
+    // Both legacy runs summed into the single collapsed row.
+    expect(stats.byCron[0].input).toBe(100);
+  });
+
   // ─── byModel ─────────────────────────────────────────────────────────────────
 
   it("query() groups byModel correctly across 2 models", async () => {
@@ -649,6 +713,111 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
     expect(opusRow).toBeDefined();
     expect(opusRow?.input).toBe(300);
     expect(opusRow?.output).toBe(150);
+  });
+
+  it("byCronModel groups a single cron+model into separate rows per phase (WL-3.5)", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId, "shipwright-loop");
+
+    const devTaskRun = await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-10T09:00:00Z"),
+      skipped: false,
+      phase: "dev-task",
+    });
+    await prisma.agentCronRunModelBreakdown.create({
+      data: {
+        cronRunId: devTaskRun.id,
+        model: "claude-sonnet-4-5",
+        inputTokens: 100,
+        outputTokens: 50,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        costUsd: 0.001,
+      },
+    });
+
+    const reviewRun = await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-11T09:00:00Z"),
+      skipped: false,
+      phase: "review",
+    });
+    await prisma.agentCronRunModelBreakdown.create({
+      data: {
+        cronRunId: reviewRun.id,
+        model: "claude-sonnet-4-5",
+        inputTokens: 200,
+        outputTokens: 100,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        costUsd: 0.002,
+      },
+    });
+
+    const stats = await statsService.query();
+
+    // Same key1 (agentId:cronName) and key2 (model) but different phases →
+    // two distinct byCronModel rows.
+    expect(stats.byCronModel).toHaveLength(2);
+    const key1 = `${agentId}:shipwright-loop`;
+    const devTaskRow = stats.byCronModel.find(
+      (r) => r.key1 === key1 && r.phase === "dev-task",
+    );
+    const reviewRow = stats.byCronModel.find(
+      (r) => r.key1 === key1 && r.phase === "review",
+    );
+
+    expect(devTaskRow).toBeDefined();
+    expect(devTaskRow?.key2).toBe("claude-sonnet-4-5");
+    expect(devTaskRow?.input).toBe(100);
+
+    expect(reviewRow).toBeDefined();
+    expect(reviewRow?.key2).toBe("claude-sonnet-4-5");
+    expect(reviewRow?.input).toBe(200);
+  });
+
+  it("byCronModel collapses legacy runs with a null phase into a single row (no fragmentation)", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId, "legacy-cron");
+
+    const run1 = await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-10T09:00:00Z"),
+      skipped: false,
+    });
+    await prisma.agentCronRunModelBreakdown.create({
+      data: {
+        cronRunId: run1.id,
+        model: "claude-sonnet-4-5",
+        inputTokens: 50,
+        outputTokens: 25,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        costUsd: 0.0005,
+      },
+    });
+
+    const run2 = await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-11T09:00:00Z"),
+      skipped: false,
+    });
+    await prisma.agentCronRunModelBreakdown.create({
+      data: {
+        cronRunId: run2.id,
+        model: "claude-sonnet-4-5",
+        inputTokens: 70,
+        outputTokens: 35,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        costUsd: 0.0007,
+      },
+    });
+
+    const stats = await statsService.query();
+
+    expect(stats.byCronModel).toHaveLength(1);
+    expect(stats.byCronModel[0].key1).toBe(`${agentId}:legacy-cron`);
+    expect(stats.byCronModel[0].key2).toBe("claude-sonnet-4-5");
+    expect(stats.byCronModel[0].phase).toBeNull();
+    expect(stats.byCronModel[0].input).toBe(120);
   });
 
   // ─── 3+ runs across 2 agents and 2 crons (acceptance test) ──────────────────

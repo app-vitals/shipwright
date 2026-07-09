@@ -388,12 +388,19 @@
           }
           agentTbody.appendChild(headerTr);
 
-          // Cron sub-rows
+          // Cron sub-rows. byAgentCron is grouped by (agentId, cronId, phase)
+          // server-side: a legacy (no-phase) cron yields exactly one row here,
+          // identical to before WL-3.5; a phase-tagged cron (e.g. the unified
+          // shipwright-loop) yields one row per phase, so the per-phase
+          // breakdown falls out of this same loop with no extra grouping.
           for (const cronRow of agentCronRows) {
             const tr = document.createElement("tr");
             tr.className = "agent-cron-row";
+            const cronLabel = cronRow.phase
+              ? `› ${cronRow.cronName} — ${cronRow.phase}`
+              : `› ${cronRow.cronName}`;
             const cronCells = [
-              `› ${cronRow.cronName}`,
+              cronLabel,
               fmtTokens(cronRow.total),
               "--",
               fmtTokens(cronRow.total),
@@ -406,15 +413,18 @@
             }
             agentTbody.appendChild(tr);
 
-            // Model sub-rows nested under this cron sub-row. Both
+            // Model sub-rows nested under this cron (+ phase) sub-row. Both
             // byAgentCronModel and byAgentCron are mapped through
             // cronDisplayNameMap in api.ts before reaching the client, so
             // comparing cronName here is safe — keep both sides mapped
-            // consistently if this logic changes.
+            // consistently if this logic changes. Phase must also match so a
+            // phase-tagged cron's model rows aren't double-counted under
+            // every one of its phase sub-rows.
             const cronModelRows = (byAgentCronModel || []).filter(
               (r) =>
                 r.agentId === agent.agentId &&
-                r.cronName === cronRow.cronName,
+                r.cronName === cronRow.cronName &&
+                (r.phase ?? null) === (cronRow.phase ?? null),
             );
             for (const modelRow of cronModelRows) {
               const modelTr = document.createElement("tr");

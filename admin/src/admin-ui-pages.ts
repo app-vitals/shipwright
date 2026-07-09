@@ -136,6 +136,8 @@ export interface CronRunItem {
   skipReason: string | null;
   error: string | null;
   modelBreakdown?: ModelBreakdownEntry[];
+  /** Pipeline phase this run served (dev-task/review/patch/deploy). Null for legacy five-job crons. */
+  phase?: string | null;
 }
 
 // Inline CSS for cron-run outcome badges, keyed by outcome string.
@@ -2309,18 +2311,22 @@ export function renderCronRunsPage(opts: {
             .join('<br style="line-height:6px" />')
         : "—";
 
+    // Legacy five-job crons never set phase — em-dash rather than a blank cell.
+    const phaseCell = r.phase ? escapeHtml(r.phase) : "—";
+
     return `<tr>
       <td>${outcomeCell}</td>
       <td style="font-size:12px">${startedCell}</td>
       <td class="mono" style="font-size:12px">${durationCell}</td>
       <td class="mono" style="font-size:12px">${tokensCell}</td>
       <td style="font-size:12px">${modelCell}</td>
+      <td style="font-size:12px">${phaseCell}</td>
     </tr>`;
   }
 
   const bodyRows =
     runs.length === 0
-      ? `<tr><td colspan="5" class="empty-state">No runs recorded yet.</td></tr>`
+      ? `<tr><td colspan="6" class="empty-state">No runs recorded yet.</td></tr>`
       : runs.map(row).join("\n");
 
   const cronLabel = cron.name ?? cron.schedule;
@@ -2355,6 +2361,7 @@ export function renderCronRunsPage(opts: {
             <th>Duration</th>
             <th>Tokens</th>
             <th>Model</th>
+            <th>Phase</th>
           </tr>
         </thead>
         <tbody>

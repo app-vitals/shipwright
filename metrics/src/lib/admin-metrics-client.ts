@@ -33,6 +33,13 @@ export interface KeyedTokenAggregate extends TokenAggregate {
 export interface DoubleKeyedTokenAggregate extends TokenAggregate {
   key1: string;
   key2: string;
+  /**
+   * Pipeline phase this row's runs served (dev-task/review/patch/deploy).
+   * Populated on byCron/byCronModel rows; null for legacy runs that predate
+   * phase tracking (WL-3.4/WL-3.5). Undefined on dimensions that don't group
+   * by phase (e.g. byModel).
+   */
+  phase?: string | null;
 }
 
 /** A token aggregate bucketed by day (YYYY-MM-DD). */
