@@ -184,7 +184,7 @@ Body:
 | `commitSha` | yes | Current head commit SHA |
 | `claimedBy` | admin only | Agent ID (agent tokens pin to their own ID) |
 | `taskId` | no | Associated task ID |
-| `phase` | no | Pipeline phase (`review`, `patch`, or `deploy`; default: `review`). When set, the phase is updated and reviewState is preserved. |
+| `phase` | no | Pipeline phase (`review`, `patch`, or `deploy`; default: `review`). When set, the phase is updated and reviewState is preserved. Phase-specific behavior on record creation: `review` sets `readyForReviewAt=now`; `deploy` sets `readyForDeployAt=now`; `patch` does not set a ready timestamp. |
 | `prCreatedAt` | no | ISO timestamp of the GitHub PR's actual creation time. Only applied when the claim creates a new record (`201`); ignored on subsequent claims (`200`) of an existing record since the field is immutable once set. |
 
 Claim semantics:
@@ -258,6 +258,9 @@ The following timestamp fields are managed by the task store:
 | `prCreatedAt` | `POST /prs/claim` | ISO timestamp of the GitHub PR's actual creation time (distinct from `createdAt`, which records when the task-store record itself was created). Set once via the optional `prCreatedAt` field on the first `POST /prs/claim` call that creates the record (`201`); read-only thereafter — later claims cannot modify it. Not currently populated by any Shipwright command; callers must supply GitHub's PR `createdAt` explicitly to use this field. |
 | `createdAt` | Auto | ISO timestamp when the task-store PR record was created. |
 | `updatedAt` | Auto | ISO timestamp when the task-store PR record was last modified. |
+| `readyForReviewAt` | `POST /prs/claim` (phase=review) | Set to `now` when `POST /prs/claim` creates a new record with `phase=review`. Records when the PR became eligible for review. |
+| `readyForPatchAt` | (internal use) | Records when the PR transitioned to the patch phase; not currently populated by any Shipwright command but available via `PATCH /prs/:id`. |
+| `readyForDeployAt` | `POST /prs/claim` (phase=deploy) | Set to `now` when `POST /prs/claim` creates a new record with `phase=deploy`. Records when the PR became eligible for deployment. |
 | `reviewedAt` | `POST /prs/:id/complete` | Set when the review cycle completes. |
 | `patchedAt` | `POST /prs/:id/patch` | Set when the patch cycle completes. |
 | `mergedAt` | Writable via `PATCH /prs/:id` | Manually set or updated when marking the PR as merged. |
