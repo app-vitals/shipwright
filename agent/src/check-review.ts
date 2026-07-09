@@ -116,19 +116,18 @@ export async function getReviewCandidates(
 
 // ─── Production deps ──────────────────────────────────────────────────────────
 
-export async function buildProductionDeps(opts?: {
+export async function buildProductionDeps(opts: {
   ghJson: <T>(args: string[]) => T;
   fetchFn?: typeof fetch;
 }): Promise<CheckReviewDeps> {
   const workspacePath = resolveWorkspacePath();
   const allRepos = resolveAllRepos(workspacePath);
-  const ghJsonFn = opts?.ghJson;
+  const { ghJson: ghJsonFn } = opts;
 
   return {
     getCurrentUser,
     isSelfReviewAllowed: readAllowSelfReview(workspacePath),
     listOpenPrs: async (_repo: string) => {
-      if (!ghJsonFn) return [];
       const allPrs: PrInfo[] = [];
       for (const repo of allRepos) {
         const repoPrs = ghJsonFn<PrInfo[]>([
@@ -145,6 +144,6 @@ export async function buildProductionDeps(opts?: {
       }
       return allPrs;
     },
-    queryPrRecord: createPrRecordQuery<PrRecord>({ fetchFn: opts?.fetchFn }),
+    queryPrRecord: createPrRecordQuery<PrRecord>({ fetchFn: opts.fetchFn }),
   };
 }
