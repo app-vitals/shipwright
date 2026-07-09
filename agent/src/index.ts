@@ -30,7 +30,6 @@ import { createConfig } from "./config.ts";
 import { handleCronRequest } from "./cron-handler.ts";
 import type { CronHandlerDeps } from "./cron-handler.ts";
 import { HttpCronRunReporter } from "./cron-run-reporter.ts";
-import { buildLogPrefix } from "./log-prefix.ts";
 import { markdownToSlack } from "./format.ts";
 import {
   DEFAULT_HEALTH_PORT,
@@ -39,6 +38,7 @@ import {
   startHealthServer,
 } from "./health.ts";
 import { HttpChatServiceClient } from "./http-chat-service-client.ts";
+import { buildLogPrefix } from "./log-prefix.ts";
 import {
   classifyCronJobsForScheduling,
   handleLoopCronRequest,
