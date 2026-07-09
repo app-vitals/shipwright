@@ -2050,6 +2050,13 @@ export interface components {
              */
             allowedTools: string[];
             plugins: components["schemas"]["AgentConfigPlugin"][];
+            /**
+             * @example [
+             *       "org/repo1",
+             *       "org/repo2"
+             *     ]
+             */
+            repos: string[];
         };
         RuntimeError: {
             /** @example Not found */
