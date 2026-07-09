@@ -69,6 +69,7 @@ describe("principles.md — required rule IDs present", () => {
     "duplicated_utility",
     // architecture
     "architecture_layering",
+    "claim_heartbeat_release",
     // testing (t4 intentionally skipped — elevated to architecture)
     "t1_no_global_mocking",
     "t2_clock_injection",
@@ -187,6 +188,7 @@ describe("principles.md — judgment-only entries omit Detection", () => {
     "injection_at_trust_boundary",
     "least_privilege_tokens",
     "secrets_in_logs",
+    "claim_heartbeat_release",
   ];
 
   for (const id of judgmentOnly) {
