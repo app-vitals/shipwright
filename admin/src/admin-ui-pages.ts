@@ -12,13 +12,13 @@ import {
   escapeHtml,
   renderAdminToolbar,
 } from "./admin-ui-styles.ts";
+import { parseChatMarkers } from "./chat-markers.ts";
 import type {
   ChatMessage,
   ChatThread,
   MessageTokens,
   ThreadStats,
 } from "./http-chat-client.ts";
-import { parseChatMarkers } from "./chat-markers.ts";
 import type { ModelBreakdownEntry } from "./openapi-schemas.ts";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -2373,41 +2373,15 @@ export function renderProvisionCompletePage(
     success: boolean;
     agentId?: string;
     error?: string;
-    rawToken?: string;
-    alreadyConfigured?: boolean;
   },
 ): string {
-  const tokenStatusHtml = opts.rawToken
-    ? `<div class="alert alert-success" style="margin-top:16px">
-        <strong>Internal API Key — copy it now, it will not be shown again.</strong><br />
-        <code
-          id="raw-token"
-          class="mono"
-          style="display:block;margin-top:8px;font-size:13px;word-break:break-all;padding:8px;background:#f0fdf4;border-radius:4px"
-        >${escapeHtml(opts.rawToken)}</code>
-        <button
-          type="button"
-          onclick="navigator.clipboard.writeText(document.getElementById('raw-token').textContent)"
-          class="btn btn-secondary"
-          style="margin-top:8px;font-size:12px"
-        >Copy to clipboard</button>
-        <p style="font-size:12px;color:#6b7280;margin-top:8px">
-          Store this as <code class="mono">SHIPWRIGHT_AGENT_API_KEY</code> in your agent configuration.
-        </p>
-      </div>`
-    : opts.alreadyConfigured
-      ? `<div class="alert alert-success" style="margin-top:16px">
-        An API key is already configured for this agent — no new key was minted.
-      </div>`
-      : "";
-
   const bodyHtml = opts.success
     ? `<div class="alert alert-success">
         <strong>Provisioning complete!</strong> — Slack app credentials and tokens stored.
       </div>
-      ${tokenStatusHtml}
       <p style="font-size:14px;margin-bottom:16px;margin-top:16px">
         All credentials have been saved to the agent's env vars and system crons have been seeded.
+        For a self-hosted agent, mint its own API key from the agent's detail page.
       </p>
       ${opts.agentId ? `<a href="/admin/agents/${escapeHtml(opts.agentId)}" class="btn btn-primary">View Agent →</a>` : ""}
       <a href="/admin/agents" class="btn btn-secondary" style="margin-left:8px">Back to Agents</a>`

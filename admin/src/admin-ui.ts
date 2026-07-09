@@ -21,6 +21,7 @@
  */
 
 import { isOrgRepo } from "@shipwright/lib/org-repo";
+import { SECRET_ENV_VARS } from "@shipwright/lib/secret-env-vars";
 import { Hono, type MiddlewareHandler } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { sign, verify } from "hono/jwt";
@@ -47,8 +48,6 @@ import {
   renderTasksPage,
   renderTokensPage,
 } from "./admin-ui-pages.ts";
-import { validateAttachment } from "./attachment-validation.ts";
-import type { ChatClient, ChatThread } from "./http-chat-client.ts";
 import type { AgentCronJobService } from "./agent-cron-jobs.ts";
 import type { AgentCronRunService } from "./agent-cron-runs.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
@@ -57,14 +56,15 @@ import type { AgentProvisioner } from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 import type { AgentToolService } from "./agent-tools.ts";
 import { publicNoAuthMiddleware } from "./api-auth.ts";
+import { validateAttachment } from "./attachment-validation.ts";
 import { ForbiddenError, UnprocessableEntityError } from "./errors.ts";
 import type { GoogleAuthClient } from "./google-auth-client.ts";
+import type { ChatClient, ChatThread } from "./http-chat-client.ts";
 import type { AppManifest } from "./slack-provisioning-client.ts";
 import {
   AGENT_BOT_SCOPES,
   buildAgentManifest,
 } from "./slack-provisioning-client.ts";
-import type { TaskStoreProvisioningClient } from "./task-store-provisioning-client.ts";
 
 type AdminUIEnv = { Variables: { userEmail: string; isAdmin: boolean } };
 
@@ -307,13 +307,6 @@ export interface AdminUIDeps {
    * When absent, all chat routes render in degraded mode (notice, no table/messages).
    */
   chatClient?: ChatClient;
-  /**
-   * Task-store provisioning client used by the xapp-token handler to mint a
-   * per-agent task-store token during Slack wizard provisioning, mirroring
-   * the K8s provisioning path. When absent, provisioning proceeds without
-   * task-store credentials and a warning is logged.
-   */
-  taskStoreProvisioningClient?: TaskStoreProvisioningClient;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -422,7 +415,6 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     taskStoreBaseUrl,
     publicRepo,
     chatClient,
-    taskStoreProvisioningClient,
   } = deps;
 
   const app = new Hono<AdminUIEnv>();
@@ -1574,7 +1566,11 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       newEnv.CLAUDE_CODE_OAUTH_TOKEN = claudeCodeOauthToken;
     }
 
-    await agentEnvService.patch(resolvedAgentId, newEnv);
+    await agentEnvService.patch(
+      resolvedAgentId,
+      newEnv,
+      new Set(SECRET_ENV_VARS),
+    );
 
     // Use c.html() so the Set-Cookie header from setCookie() is included
     return c.html(
@@ -1686,9 +1682,11 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       provisionState.agentId,
     );
     // Use patch() to merge SLACK_BOT_TOKEN without overwriting other keys
-    await agentEnvService.patch(provisionState.agentId, {
-      SLACK_BOT_TOKEN: botToken,
-    });
+    await agentEnvService.patch(
+      provisionState.agentId,
+      { SLACK_BOT_TOKEN: botToken },
+      new Set(SECRET_ENV_VARS),
+    );
 
     // If SLACK_APP_TOKEN is already set this is a reinstall (not fresh provisioning).
     // Skip the xapp-token page and redirect directly to the agent detail page.
@@ -1751,56 +1749,22 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }
 
     try {
-      // If SHIPWRIGHT_AGENT_API_KEY is already set, skip minting a new one — the
-      // form has no CSRF/idempotency guard, so a resubmit must not mint (and
-      // silently orphan) a second key while the configured one stays valid.
-      const existingBundle = await agentEnvService.getConfigBundle(agentId);
-      const alreadyConfigured = Boolean(
-        existingBundle?.env.SHIPWRIGHT_AGENT_API_KEY,
-      );
-
-      let rawToken: string | undefined;
-      if (!alreadyConfigured) {
-        // Create scoped token first so both secrets land in one upsert
-        const created = await agentTokenService.create(agentId, "provision");
-        rawToken = created.rawToken;
-      }
-
-      // Mint a task-store token the same way the K8s provisioning path does
-      // (agent-provisioner.ts), gated on the same idempotency guard as
-      // SHIPWRIGHT_AGENT_API_KEY above so a resubmit can't orphan a second
-      // token. When the admin server has no task-store client configured,
-      // warn instead of silently skipping provisioning.
-      const alreadyHasTaskStoreToken = Boolean(
-        existingBundle?.env.SHIPWRIGHT_TASK_STORE_TOKEN,
-      );
-      let taskStoreToken: string | undefined;
-      if (!taskStoreProvisioningClient) {
-        console.warn(
-          "[admin] task-store not configured — skipping task-store provisioning for agent",
-          agentId,
-        );
-      } else if (!alreadyHasTaskStoreToken) {
-        const minted = await taskStoreProvisioningClient.mintToken(
-          `agent:${agentId}`,
-          agentId,
-        );
-        taskStoreToken = minted.rawToken;
-      }
+      // SHIPWRIGHT_AGENT_API_KEY and SHIPWRIGHT_TASK_STORE_TOKEN are NOT minted
+      // here. K8s-managed agents already have both minted straight into the K8s
+      // Secret by provisioner.provision() (agent-provisioner.ts) — that Secret is
+      // the sole source of truth (via secretKeyRef in the Deployment manifest).
+      // Self-hosted agents never run the containerized entrypoint that reads
+      // SHIPWRIGHT_AGENT_API_KEY (agent/src/entrypoint.ts), and use the
+      // GitHub-backed task-store CLI config instead of a bearer token, so they
+      // don't need either key in AgentEnv. Minting them here previously orphaned
+      // a second, different, unused live credential per key on every provision.
 
       // Use patch() to merge new keys without overwriting existing env vars
-      await agentEnvService.patch(agentId, {
-        SLACK_APP_TOKEN: xappToken,
-        ...(rawToken ? { SHIPWRIGHT_AGENT_API_KEY: rawToken } : {}),
-        ...(taskStoreToken
-          ? {
-              SHIPWRIGHT_TASK_STORE_TOKEN: taskStoreToken,
-              ...(taskStoreBaseUrl
-                ? { SHIPWRIGHT_TASK_STORE_URL: taskStoreBaseUrl }
-                : {}),
-            }
-          : {}),
-      });
+      await agentEnvService.patch(
+        agentId,
+        { SLACK_APP_TOKEN: xappToken },
+        new Set(SECRET_ENV_VARS),
+      );
 
       // Seed system crons
       await agentCronJobService.reconcileSystemCrons(agentId);
@@ -1809,8 +1773,6 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         renderProvisionCompletePage(userEmail, {
           success: true,
           agentId,
-          rawToken,
-          alreadyConfigured,
         }),
       );
     } catch (err) {
@@ -2166,7 +2128,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }));
 
     if (!chatClient) {
-      return html(renderChatPage(agents, selectedAgentId, null, c.var.userEmail, q));
+      return html(
+        renderChatPage(agents, selectedAgentId, null, c.var.userEmail, q),
+      );
     }
 
     let threads: ChatThread[] = [];
@@ -2204,15 +2168,23 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }
 
     try {
-      const [thread, messagesResult, threadListResult, statsResult] = await Promise.all([
-        chatClient.getThread(threadId),
-        chatClient.listMessages(threadId),
-        chatClient.listThreads(agentId).catch(() => null),
-        chatClient.getThreadStats(threadId).catch(() => null),
-      ]);
+      const [thread, messagesResult, threadListResult, statsResult] =
+        await Promise.all([
+          chatClient.getThread(threadId),
+          chatClient.listMessages(threadId),
+          chatClient.listThreads(agentId).catch(() => null),
+          chatClient.getThreadStats(threadId).catch(() => null),
+        ]);
       const threadList = threadListResult ? threadListResult.threads : null;
       return html(
-        renderChatThreadPage(agentId, thread, messagesResult.messages, threadList, c.var.userEmail, statsResult),
+        renderChatThreadPage(
+          agentId,
+          thread,
+          messagesResult.messages,
+          threadList,
+          c.var.userEmail,
+          statsResult,
+        ),
       );
     } catch {
       return html(
@@ -2227,7 +2199,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     const agentId = c.req.param("agentId");
 
     if (!chatClient) {
-      return c.redirect(`/admin/chat?agentId=${encodeURIComponent(agentId)}`, 302);
+      return c.redirect(
+        `/admin/chat?agentId=${encodeURIComponent(agentId)}`,
+        302,
+      );
     }
 
     let title: string | undefined;
@@ -2235,7 +2210,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       const formData = await c.req.formData();
       title = formData.get("title")?.toString()?.trim() || undefined;
     } catch {
-      return c.redirect(`/admin/chat?agentId=${encodeURIComponent(agentId)}`, 302);
+      return c.redirect(
+        `/admin/chat?agentId=${encodeURIComponent(agentId)}`,
+        302,
+      );
     }
 
     try {
@@ -2245,7 +2223,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         302,
       );
     } catch {
-      return c.redirect(`/admin/chat?agentId=${encodeURIComponent(agentId)}`, 302);
+      return c.redirect(
+        `/admin/chat?agentId=${encodeURIComponent(agentId)}`,
+        302,
+      );
     }
   });
 

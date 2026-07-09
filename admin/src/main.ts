@@ -457,17 +457,11 @@ async function startServer(): Promise<void> {
                 `task-store DELETE /tokens/${id} → ${res.status}`,
               );
           },
-          // Advertise the PUBLIC task-store URL in the mint-token env block so a
-          // local/laptop agent can resolve it; the in-cluster fetchers above keep
-          // using the internal SHIPWRIGHT_TASK_STORE_URL.
+          // Advertised on the manual Tokens page so a self-hosted/local agent's
+          // operator can read it and configure the local task-store CLI config
+          // themselves; the in-cluster fetchers above keep using the internal
+          // SHIPWRIGHT_TASK_STORE_URL.
           taskStoreBaseUrl: resolveTaskStoreBaseUrl(process.env),
-          // Mints a per-agent task-store token during Slack wizard provisioning
-          // (POST /admin/provision/xapp-token), mirroring the K8s provisioning
-          // path's taskStore wiring in buildProvisioner above.
-          taskStoreProvisioningClient: new HttpTaskStoreProvisioningClient(
-            taskStoreUrl,
-            taskStoreAdminToken,
-          ),
         }
       : {};
 

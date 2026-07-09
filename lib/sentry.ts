@@ -1,6 +1,7 @@
 import * as Sentry from "@sentry/bun";
 import { consoleLoggingIntegration } from "@sentry/bun";
 import type { BunOptions, ErrorEvent, EventHint } from "@sentry/bun";
+import { SECRET_ENV_VARS } from "./secret-env-vars.ts";
 
 /**
  * `@sentry/bun` doesn't re-export the `Log` type directly (it lives in `@sentry/core`, a
@@ -31,27 +32,6 @@ export interface SentryClient {
 export interface ErrorCapturingClient {
   captureException: (err: unknown) => void;
 }
-
-/** Secret-shaped env vars redacted from Sentry events/logs when currently set to a non-empty value. */
-export const SECRET_ENV_VARS = [
-  "ANTHROPIC_API_KEY",
-  "CLAUDE_CODE_OAUTH_TOKEN",
-  "GH_APP_PRIVATE_KEY",
-  "GH_TOKEN",
-  "SLACK_BOT_TOKEN",
-  "SLACK_APP_TOKEN",
-  "SLACK_SIGNING_SECRET",
-  "SLACK_ADMIN_TOKEN",
-  "SHIPWRIGHT_AGENT_API_KEY",
-  "SHIPWRIGHT_TASK_STORE_TOKEN",
-  "SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN",
-  "SHIPWRIGHT_CHAT_SERVICE_TOKEN",
-  "SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN",
-  "SHIPWRIGHT_ADMIN_API_KEYS",
-  "SHIPWRIGHT_SESSION_SECRET",
-  "SHIPWRIGHT_ENCRYPTION_KEY",
-  "GOOGLE_CLIENT_SECRET",
-] as const;
 
 /** Max depth walked when scrubbing, so a pathological/deeply-nested object can't hang scrubbing. */
 const MAX_SCRUB_DEPTH = 20;

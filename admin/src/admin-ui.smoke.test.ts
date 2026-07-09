@@ -3271,7 +3271,7 @@ describe("admin UI — xapp-token route", () => {
     adminCookie = await makeSessionCookie();
   });
 
-  it("fresh-mint path: no existing SHIPWRIGHT_AGENT_API_KEY → mints a token and shows it", async () => {
+  it("never mints SHIPWRIGHT_AGENT_API_KEY — K8s-managed agents already have it from provisioner.provision(), self-hosted agents mint their own from the agent detail page", async () => {
     let createCalled = false;
     const app = createAdminUIApp(
       makeMockDeps({
@@ -3309,56 +3309,8 @@ describe("admin UI — xapp-token route", () => {
       },
     });
     expect(res.status).toBe(200);
-    expect(createCalled).toBe(true);
-    const text = await res.text();
-    expect(text).toContain("copy it now");
-    expect(text).toContain("sw_raw123456");
-  });
-
-  it("already-set/skip-mint path: SHIPWRIGHT_AGENT_API_KEY already set → does not mint, shows already-configured message", async () => {
-    let createCalled = false;
-    const app = createAdminUIApp(
-      makeMockDeps({
-        agentEnvService: {
-          getByAgentId: async () => ({ env: {}, secretKeys: [] }),
-          upsert: async () => {},
-          patch: async () => {},
-          deleteKey: async () => {},
-          getConfigBundle: async () => ({
-            env: {
-              SLACK_BOT_TOKEN: "xoxb-existing",
-              SHIPWRIGHT_AGENT_API_KEY: "sw_already_set_abc123",
-            },
-            agentId: AGENT_ID,
-            allowedTools: [],
-          }),
-        },
-        agentTokenService: {
-          listForAgent: async () => [MOCK_TOKEN],
-          create: async () => {
-            createCalled = true;
-            return { token: MOCK_TOKEN, rawToken: "sw_raw123456" };
-          },
-          revoke: async () => MOCK_TOKEN,
-        },
-      }),
-    );
-    const body = new URLSearchParams({
-      agentId: AGENT_ID,
-      xappToken: "xapp-1-valid-token",
-    });
-    const res = await app.request("/admin/provision/xapp-token", {
-      method: "POST",
-      body: body.toString(),
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Cookie: `admin_session=${adminCookie}`,
-      },
-    });
-    expect(res.status).toBe(200);
     expect(createCalled).toBe(false);
     const text = await res.text();
-    expect(text).toContain("already configured");
     expect(text).not.toContain("sw_raw123456");
   });
 });
