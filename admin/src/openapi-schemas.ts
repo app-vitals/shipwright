@@ -663,6 +663,7 @@ export const AgentConfigResponseSchema = z
       .openapi({ example: { SLACK_BOT_TOKEN: "xoxb-..." } }),
     allowedTools: z.array(z.string()).openapi({ example: ["Read", "Write"] }),
     plugins: z.array(AgentConfigPluginSchema),
+    repos: z.array(z.string()).openapi({ example: ["org/repo1", "org/repo2"] }),
   })
   .openapi("AgentConfigResponse");
 
