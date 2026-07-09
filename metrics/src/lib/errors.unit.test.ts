@@ -5,6 +5,7 @@
 
 import { describe, expect, it } from "bun:test";
 import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
+import type { Caller } from "./api-auth.ts";
 import {
   ApiError,
   BadGatewayError,
@@ -87,13 +88,14 @@ describe("BadGatewayError", () => {
 });
 
 describe("makeOnError", () => {
-  function makeCtx() {
+  function makeCtx(caller?: Caller) {
     const calls: Array<{ body: unknown; status: number }> = [];
     const ctx = {
       json: (body: unknown, status: number) => {
         calls.push({ body, status });
         return { body, status };
       },
+      get: (_key: string) => caller,
     };
     return { ctx, calls };
   }
@@ -211,6 +213,46 @@ describe("makeOnError", () => {
         handler(err, ctx as Parameters<ReturnType<typeof makeOnError>>[1]),
       ).not.toThrow();
       expect(calls[0]?.status).toBe(502);
+    });
+  });
+
+  describe("caller label in unhandled error log", () => {
+    it("includes caller label in logged unhandled-error line", () => {
+      const errorMsgs: string[] = [];
+      const origError = console.error;
+      console.error = (...args: unknown[]) => {
+        errorMsgs.push(String(args[0]));
+      };
+
+      try {
+        const handler = makeOnError("test");
+        const { ctx } = makeCtx({ name: "bodhi", scope: "*" });
+        const err = new Error("Something unexpected");
+        handler(err, ctx as Parameters<ReturnType<typeof makeOnError>>[1]);
+
+        expect(errorMsgs[0]).toContain("bodhi (*)");
+      } finally {
+        console.error = origError;
+      }
+    });
+
+    it("logs anonymous when no caller is provided", () => {
+      const errorMsgs: string[] = [];
+      const origError = console.error;
+      console.error = (...args: unknown[]) => {
+        errorMsgs.push(String(args[0]));
+      };
+
+      try {
+        const handler = makeOnError("test");
+        const { ctx } = makeCtx(undefined);
+        const err = new Error("Something unexpected");
+        handler(err, ctx as Parameters<ReturnType<typeof makeOnError>>[1]);
+
+        expect(errorMsgs[0]).toContain("anonymous");
+      } finally {
+        console.error = origError;
+      }
     });
   });
 });

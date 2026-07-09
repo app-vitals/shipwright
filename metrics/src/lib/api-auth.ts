@@ -18,18 +18,12 @@
 import type { RouteConfig, RouteHandler } from "@hono/zod-openapi";
 import type { Context } from "hono";
 import { createMiddleware } from "hono/factory";
+import type { Caller } from "@shipwright/lib/request-context";
 import type { AccountsClient } from "./accounts-client.ts";
 import { ForbiddenError } from "./errors.ts";
 
-/**
- * Represents an authenticated API caller.
- * scope === "*" → admin (all clients)
- * scope === "<clientId>" → scoped to a single client
- */
-export interface Caller {
-  name: string;
-  scope: string; // "*" or a clientId
-}
+// Re-export the shared Caller type for consumers of this module
+export type { Caller } from "@shipwright/lib/request-context";
 
 // Hono env type for routes that use the auth middleware
 export type AuthEnv = { Variables: { caller: Caller } };
