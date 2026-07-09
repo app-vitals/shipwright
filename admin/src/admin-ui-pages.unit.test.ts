@@ -2967,6 +2967,25 @@ describe("renderCronRunsPage", () => {
     expect(html).toContain("—");
   });
 
+  test("renders a Phase column header (WL-3.5)", () => {
+    const html = render([makeRun()]);
+    expect(html).toContain("<th>Phase</th>");
+  });
+
+  test("renders the run's phase when set", () => {
+    const html = render([makeRun({ phase: "dev-task" })]);
+    expect(html).toContain("dev-task");
+  });
+
+  test("renders an em-dash for the phase cell when phase is null (legacy run)", () => {
+    const html = render([makeRun({ phase: null })]);
+    // Locate the tbody row specifically (not the thead row) to check the
+    // phase cell — the last <td> in the row.
+    const bodyRowMatch = html.match(/<tbody>([\s\S]*?)<\/tbody>/);
+    expect(bodyRowMatch).not.toBeNull();
+    expect(bodyRowMatch?.[1]).toContain("—");
+  });
+
   test("Tokens column sums input/output across modelBreakdown rows", () => {
     const html = render([
       makeRun({

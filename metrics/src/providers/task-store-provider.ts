@@ -699,13 +699,21 @@ export class TaskStoreProvider implements MetricsProvider {
     from: string;
     to: string;
   }): Promise<MetricTable> {
-    // Cron-only: chat has no cron name.
+    // Cron-only: chat has no cron name. Grouped by (cronId, phase) at the
+    // admin layer (WL-3.5) — a row's `phase` is null for legacy runs, so
+    // this is a straight pass-through, not a re-group.
     const cron = await this.safeCronStats(win);
     const rows = cron.byCron
-      .map((a) => [a.key1, a.key2, ...tokenCells(a), a.costUsd ?? 0])
-      .sort((a, b) => Number(b[6]) - Number(a[6]));
+      .map((a) => [
+        a.key1,
+        a.key2,
+        a.phase ?? null,
+        ...tokenCells(a),
+        a.costUsd ?? 0,
+      ])
+      .sort((a, b) => Number(b[7]) - Number(a[7]));
     return table(
-      ["agent_id", "cron_name", ...tokenColumns(), "cost_usd"],
+      ["agent_id", "cron_name", "phase", ...tokenColumns(), "cost_usd"],
       rows,
     );
   }
@@ -773,18 +781,34 @@ export class TaskStoreProvider implements MetricsProvider {
     from: string;
     to: string;
   }): Promise<MetricTable> {
-    // Cron-only: chat has no cron dimension (same reasoning as tokensByAgentByCron).
+    // Cron-only: chat has no cron dimension (same reasoning as
+    // tokensByAgentByCron). Grouped by (cronId, phase, model) at the admin
+    // layer (WL-3.5) — a straight pass-through of the `phase` field.
     const cron = await this.safeCronStats(win);
     const rows = cron.byCronModel
       .map((a) => {
         const sepIdx = a.key1.indexOf(":");
         const agentId = sepIdx === -1 ? a.key1 : a.key1.slice(0, sepIdx);
         const cronName = sepIdx === -1 ? "" : a.key1.slice(sepIdx + 1);
-        return [agentId, cronName, a.key2, ...tokenCells(a), a.costUsd ?? 0];
+        return [
+          agentId,
+          cronName,
+          a.key2,
+          a.phase ?? null,
+          ...tokenCells(a),
+          a.costUsd ?? 0,
+        ];
       })
-      .sort((a, b) => Number(b[7]) - Number(a[7]));
+      .sort((a, b) => Number(b[8]) - Number(a[8]));
     return table(
-      ["agent_id", "cron_name", "model", ...tokenColumns(), "cost_usd"],
+      [
+        "agent_id",
+        "cron_name",
+        "model",
+        "phase",
+        ...tokenColumns(),
+        "cost_usd",
+      ],
       rows,
     );
   }

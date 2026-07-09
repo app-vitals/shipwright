@@ -131,6 +131,7 @@ const CRON_STATS: CronRunTokenStats = {
   totals: agg(1000, 500, 200, 100, 1.5),
   byAgent: [{ key: "agent-a", ...agg(1000, 500, 200, 100, 1.5) }],
   byCron: [
+    // Legacy, no-phase rows (fall back to today's cronId-only grouping).
     { key1: "agent-a", key2: "ship-loop", ...agg(700, 350, 140, 70, 1.0) },
     { key1: "agent-a", key2: "patrol", ...agg(300, 150, 60, 30, 0.5) },
   ],
@@ -151,6 +152,48 @@ const CRON_STATS: CronRunTokenStats = {
     },
   ],
   byPhase: [],
+};
+
+// Phase-aware cron stats (mirrors CRON_STATS but with `phase` set on byCron /
+// byCronModel rows) — used to exercise the WL-3.5 grouping/pass-through path.
+const CRON_STATS_WITH_PHASE: CronRunTokenStats = {
+  ...CRON_STATS,
+  byCron: [
+    {
+      key1: "agent-a",
+      key2: "shipwright-loop",
+      phase: "dev-task",
+      ...agg(700, 350, 140, 70, 1.0),
+    },
+    {
+      key1: "agent-a",
+      key2: "shipwright-loop",
+      phase: "review",
+      ...agg(300, 150, 60, 30, 0.5),
+    },
+    // Legacy row on a different cron — no phase set, must fall back to
+    // cronId-only display (phase omitted/null).
+    { key1: "agent-a", key2: "patrol", ...agg(100, 50, 20, 10, 0.2) },
+  ],
+  byCronModel: [
+    {
+      key1: "agent-a:shipwright-loop",
+      key2: "opus",
+      phase: "dev-task",
+      ...agg(700, 350, 140, 70, 1.0),
+    },
+    {
+      key1: "agent-a:shipwright-loop",
+      key2: "opus",
+      phase: "review",
+      ...agg(300, 150, 60, 30, 0.5),
+    },
+    {
+      key1: "agent-a:patrol",
+      key2: "opus",
+      ...agg(100, 50, 20, 10, 0.2),
+    },
+  ],
 };
 
 const CHAT_STATS: ChatTokenStats = {
@@ -492,7 +535,7 @@ describe("TaskStoreProvider (integration)", () => {
     expect(row[5]).toBe((c.costUsd ?? 0) + (h.costUsd ?? 0));
   });
 
-  test("tokensByAgentByCron is cron-only with cost_usd", async () => {
+  test("tokensByAgentByCron is cron-only with cost_usd and a phase column", async () => {
     const provider = buildProvider();
     const t = await provider.query({
       kind: "tokensByAgentByCron",
@@ -501,6 +544,7 @@ describe("TaskStoreProvider (integration)", () => {
     expect(t.columns).toEqual([
       "agent_id",
       "cron_name",
+      "phase",
       "input_tokens",
       "output_tokens",
       "cache_read_input_tokens",
@@ -512,10 +556,47 @@ describe("TaskStoreProvider (integration)", () => {
     // sorted by total desc → ship-loop first
     expect(t.results[0][1]).toBe("ship-loop");
     expect(t.results[0][0]).toBe("agent-a");
-    expect(t.results[0][7]).toBe(1.0);
+    expect(t.results[0][8]).toBe(1.0);
+    // legacy (no-phase) rows carry a null phase — no fabricated bucket.
+    expect(t.results[0][2]).toBeNull();
+    expect(t.results[1][2]).toBeNull();
   });
 
-  test("tokensByAgentByCronModel is cron-only with cost_usd, split from key1", async () => {
+  test("tokensByAgentByCron groups (cronId, phase): a phase-tagged cron yields one row per phase", async () => {
+    const taskStore = new RecordedTaskStoreClient(TASKS, PRS);
+    const admin = new RecordedAdminMetricsClient(
+      CRON_STATS_WITH_PHASE,
+      CHAT_STATS,
+    );
+    const provider = new TaskStoreProvider(taskStore, admin, CLOCK);
+
+    const t = await provider.query({
+      kind: "tokensByAgentByCron",
+      range: RANGE,
+    });
+
+    expect(t.results.length).toBe(3);
+    const devTaskRow = t.results.find(
+      (r) => r[1] === "shipwright-loop" && r[2] === "dev-task",
+    );
+    const reviewRow = t.results.find(
+      (r) => r[1] === "shipwright-loop" && r[2] === "review",
+    );
+    const legacyRow = t.results.find((r) => r[1] === "patrol");
+
+    expect(devTaskRow).toBeDefined();
+    expect(devTaskRow?.[0]).toBe("agent-a");
+    expect(devTaskRow?.[8]).toBe(1.0);
+
+    expect(reviewRow).toBeDefined();
+    expect(reviewRow?.[8]).toBe(0.5);
+
+    // Legacy no-phase cron still collapses to a single row (fallback path).
+    expect(legacyRow).toBeDefined();
+    expect(legacyRow?.[2]).toBeNull();
+  });
+
+  test("tokensByAgentByCronModel is cron-only with cost_usd, split from key1, and a phase column", async () => {
     const provider = buildProvider();
     const t = await provider.query({
       kind: "tokensByAgentByCronModel",
@@ -525,6 +606,7 @@ describe("TaskStoreProvider (integration)", () => {
       "agent_id",
       "cron_name",
       "model",
+      "phase",
       "input_tokens",
       "output_tokens",
       "cache_read_input_tokens",
@@ -537,9 +619,43 @@ describe("TaskStoreProvider (integration)", () => {
     expect(t.results[0][0]).toBe("agent-a");
     expect(t.results[0][1]).toBe("ship-loop");
     expect(t.results[0][2]).toBe("opus");
-    expect(t.results[0][8]).toBe(1.0);
+    expect(t.results[0][9]).toBe(1.0);
+    expect(t.results[0][3]).toBeNull();
     expect(t.results[1][1]).toBe("patrol");
-    expect(t.results[1][8]).toBe(0.5);
+    expect(t.results[1][9]).toBe(0.5);
+  });
+
+  test("tokensByAgentByCronModel groups (cronId, phase, model): a phase-tagged cron yields one row per phase", async () => {
+    const taskStore = new RecordedTaskStoreClient(TASKS, PRS);
+    const admin = new RecordedAdminMetricsClient(
+      CRON_STATS_WITH_PHASE,
+      CHAT_STATS,
+    );
+    const provider = new TaskStoreProvider(taskStore, admin, CLOCK);
+
+    const t = await provider.query({
+      kind: "tokensByAgentByCronModel",
+      range: RANGE,
+    });
+
+    expect(t.results.length).toBe(3);
+    const devTaskRow = t.results.find(
+      (r) => r[1] === "shipwright-loop" && r[3] === "dev-task",
+    );
+    const reviewRow = t.results.find(
+      (r) => r[1] === "shipwright-loop" && r[3] === "review",
+    );
+    const legacyRow = t.results.find((r) => r[1] === "patrol");
+
+    expect(devTaskRow).toBeDefined();
+    expect(devTaskRow?.[2]).toBe("opus");
+    expect(devTaskRow?.[9]).toBe(1.0);
+
+    expect(reviewRow).toBeDefined();
+    expect(reviewRow?.[9]).toBe(0.5);
+
+    expect(legacyRow).toBeDefined();
+    expect(legacyRow?.[3]).toBeNull();
   });
 
   test("custom {from,to} range filters out-of-window tasks", async () => {

@@ -298,6 +298,11 @@ function toNumOrNull(v: unknown): number | null {
   return Number.isNaN(n) ? null : n;
 }
 
+function toNullableString(v: unknown): string | null {
+  if (v === null || v === undefined) return null;
+  return String(v);
+}
+
 function handleQueryError(
   c: { json: (v: unknown, s: number) => Response },
   err: unknown,
@@ -1036,6 +1041,10 @@ export function createMetricsApp(
       const byAgentCronRaw = resultToRows(byAgentByCronResult).map((row) => ({
         agentId: String(row.agent_id ?? ""),
         cronName: String(row.cron_name ?? ""),
+        // Pipeline phase this row's runs served (dev-task/review/patch/
+        // deploy). null for legacy runs — falls back to today's
+        // cronId-only grouping/display (WL-3.5 AC#1).
+        phase: toNullableString(row.phase),
         input: toNum(row.input_tokens),
         output: toNum(row.output_tokens),
         cacheRead: toNum(row.cache_read_input_tokens),
@@ -1080,6 +1089,8 @@ export function createMetricsApp(
           agentId: String(row.agent_id ?? ""),
           cronName: String(row.cron_name ?? ""),
           model: String(row.model ?? ""),
+          // See byAgentCronRaw above — null for legacy (no-phase) runs.
+          phase: toNullableString(row.phase),
           input: toNum(row.input_tokens),
           output: toNum(row.output_tokens),
           cacheRead: toNum(row.cache_read_input_tokens),
