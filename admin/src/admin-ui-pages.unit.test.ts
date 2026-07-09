@@ -1477,6 +1477,102 @@ describe("renderTasksPage — row click navigation", () => {
   });
 });
 
+// ─── renderTasksPage — back-link context (TBL-1.1) ───────────────────────────
+
+describe("renderTasksPage — back-link context (TBL-1.1)", () => {
+  // AC1: default list view (no filters, page 1) keeps emitting bare links —
+  // this guards the exact-match assertions in the describe block above.
+  test("default list view (no filters, page 1) omits ?from= from row links", () => {
+    const html = renderTasksPage(
+      [TASK_ITEM],
+      {},
+      false,
+      USER_NAME,
+      {},
+      { total: 1, limit: 50, page: 1 },
+      undefined,
+      undefined,
+    );
+    expect(html).toContain(`data-href="/admin/tasks/${TASK_ITEM.id}"`);
+    expect(html).not.toContain("from=");
+  });
+
+  // AC1: a non-default filter (status) causes row links to carry ?from=<current list URL>
+  test("row links carry ?from=<current list URL> when a status filter is active", () => {
+    const html = renderTasksPage(
+      [TASK_ITEM],
+      { status: "in_progress" },
+      false,
+      USER_NAME,
+      {},
+      { total: 1, limit: 50, page: 1 },
+      undefined,
+      undefined,
+    );
+    const expectedFrom = encodeURIComponent("/admin/tasks?status=in_progress");
+    expect(html).toContain(
+      `data-href="/admin/tasks/${TASK_ITEM.id}?from=${expectedFrom}"`,
+    );
+    expect(html).toContain(
+      `<a href="/admin/tasks/${TASK_ITEM.id}?from=${expectedFrom}"`,
+    );
+  });
+
+  // AC1: state filter also triggers ?from=
+  test("row links carry ?from= when a state filter is active", () => {
+    const html = renderTasksPage(
+      [TASK_ITEM],
+      { state: "blocked" },
+      false,
+      USER_NAME,
+      {},
+      { total: 1, limit: 50, page: 1 },
+      undefined,
+      undefined,
+    );
+    const expectedFrom = encodeURIComponent("/admin/tasks?state=blocked");
+    expect(html).toContain(
+      `data-href="/admin/tasks/${TASK_ITEM.id}?from=${expectedFrom}"`,
+    );
+  });
+
+  // AC1: page > 1 also triggers ?from=
+  test("row links carry ?from= when page is greater than 1", () => {
+    const html = renderTasksPage(
+      [TASK_ITEM],
+      {},
+      false,
+      USER_NAME,
+      {},
+      { total: 100, limit: 50, page: 2 },
+      undefined,
+      undefined,
+    );
+    const expectedFrom = encodeURIComponent("/admin/tasks?page=2");
+    expect(html).toContain(
+      `data-href="/admin/tasks/${TASK_ITEM.id}?from=${expectedFrom}"`,
+    );
+  });
+
+  // AC1: the title link (second <td>) also carries ?from=
+  test("title link also carries ?from= when filters are active", () => {
+    const html = renderTasksPage(
+      [TASK_ITEM],
+      { repo: "org/repo" },
+      false,
+      USER_NAME,
+      {},
+      { total: 1, limit: 50, page: 1 },
+      undefined,
+      undefined,
+    );
+    const expectedFrom = encodeURIComponent("/admin/tasks?repo=org%2Frepo");
+    expect(html).toContain(
+      `<a href="/admin/tasks/${TASK_ITEM.id}?from=${expectedFrom}" style="color:inherit;text-decoration:none">${TASK_ITEM.title}</a>`,
+    );
+  });
+});
+
 // ─── renderAgentDetailPage — repos section ───────────────────────────────────
 
 describe("renderAgentDetailPage — repos", () => {
@@ -2285,6 +2381,53 @@ describe("renderTaskDetailPage — markdown", () => {
     // The interior lines must NOT produce orphaned <li> tags — there is no actual
     // list in this input, so no <li> should appear anywhere in the rendered page.
     expect(html).not.toContain("<li>");
+  });
+});
+
+// ─── renderTaskDetailPage — back link (TBL-1.1) ──────────────────────────────
+
+describe("renderTaskDetailPage — back link (TBL-1.1)", () => {
+  // AC3: default back link is the bare /admin/tasks URL when backHref is omitted
+  test("defaults to bare /admin/tasks when backHref is not provided", () => {
+    const html = renderTaskDetailPage(
+      TASK_DETAIL,
+      "user@example.com",
+      {},
+      "UTC",
+    );
+    expect(html).toContain(
+      `<a href="/admin/tasks" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>`,
+    );
+  });
+
+  // AC3: a provided backHref is rendered (HTML-escaped) for the ← Tasks anchor
+  test("renders the given backHref for the ← Tasks anchor", () => {
+    const backHref = "/admin/tasks?status=in_progress&page=2";
+    const html = renderTaskDetailPage(
+      TASK_DETAIL,
+      "user@example.com",
+      {},
+      "UTC",
+      undefined,
+      backHref,
+    );
+    expect(html).toContain(
+      `<a href="${backHref.replace(/&/g, "&amp;")}" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>`,
+    );
+  });
+
+  // AC3: backHref is HTML-escaped to prevent attribute-breakout XSS
+  test("HTML-escapes a malicious backHref", () => {
+    const html = renderTaskDetailPage(
+      TASK_DETAIL,
+      "user@example.com",
+      {},
+      "UTC",
+      undefined,
+      '/admin/tasks"><script>xss()</script>',
+    );
+    expect(html).not.toContain('"><script>xss()</script>');
+    expect(html).toContain("&lt;script&gt;");
   });
 });
 

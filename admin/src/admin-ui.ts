@@ -381,6 +381,22 @@ function createUIAuthMiddleware(
   };
 }
 
+// ─── Task detail back-link validation ──────────────────────────────────────────
+
+// Allowlist: a same-path /admin/tasks URL, optionally followed by a query
+// string. Rejects protocol-relative (//evil.com), absolute (https://evil.com),
+// javascript:, and any other-path values — those fall back to /admin/tasks so
+// the "← Tasks" anchor on the detail page can never be used as an
+// open-redirect/phishing hop off the admin domain.
+const TASK_LIST_BACK_HREF_PATTERN = /^\/admin\/tasks(\?[^\s]*)?$/;
+
+function resolveTaskDetailBackHref(fromParam: string | undefined): string {
+  if (fromParam && TASK_LIST_BACK_HREF_PATTERN.test(fromParam)) {
+    return fromParam;
+  }
+  return "/admin/tasks";
+}
+
 // ─── App factory ──────────────────────────────────────────────────────────────
 
 export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
@@ -1960,6 +1976,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   app.get("/admin/tasks/:id", requireAuth, async (c) => {
     if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
     const taskId = c.req.param("id");
+    const backHref = resolveTaskDetailBackHref(c.req.query("from"));
     if (!fetchTaskStoreTask)
       return c.redirect("/admin/tasks?error=task_store_unavailable", 302);
     let task: TaskItem | null = null;
@@ -1999,6 +2016,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         agentNames,
         timezone,
         pullRequest,
+        backHref,
       ),
     );
   });
