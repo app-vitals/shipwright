@@ -62,7 +62,7 @@ Before starting, check for flags:
 3. Split into two groups:
    - **Mapped** — entries with a concrete repo dir name. These proceed to Step 3.
    - **Unmapped** — entries marked `**UNMAPPED**`. These are **never** queued. Set them
-     aside for the "surfaced for human triage" section of the final summary (Step 8).
+     aside for the "surfaced for human triage" section of the final summary (Step 10).
 4. If neither group has any entries (report shows "No new issues..." and "No regressed
    issues..." for both sections), print:
    ```
@@ -91,7 +91,7 @@ curl -sS -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" \
   "https://sentry.io/api/0/organizations/$SENTRY_ORG/issues/$ISSUE_ID/events/latest/"
 ```
 
-Use these two responses as the basis for Step 5 (hitl classification) and Step 6 (companion
+Use these two responses as the basis for Step 6 (hitl classification) and Step 7 (companion
 task detection). Never print or log `$SENTRY_AUTH_TOKEN` — reference it by name only, in
 this file and in any output.
 
@@ -114,12 +114,12 @@ ERROR FIX — DRY RUN
 
 Would queue {N} tasks:
 
-  1. error-{sentryIssueId}-{slug}
+  1. error-{sentry-issue-id}-{slug}
      Issue: {issue title} _{service}_ [hitl: {true|false}]
      Repo: {repo dir name}
      Reasoning: {one-line rationale for the hitl call}
 
-  2. error-{sentryIssueId}-obs-{slug}   (companion)
+  2. error-{sentry-issue-id}-obs-{slug}   (companion)
      Call site: {file/module description}
      Reasoning: {one-line rationale — instrumentation gap found}
      [hitl: {true|false}]
@@ -155,10 +155,10 @@ Parse both `.tasks` arrays. From the combined results, collect tasks where:
 - `title` starts with `"Error fix:"`
 
 Extract the Sentry issue ID each already-active task covers, using either signal available:
-1. Parse the task `id` field (format: `error-{sentryIssueId}-{shortId-or-slug}`) — the
+1. Parse the task `id` field (format: `error-{sentry-issue-id}-{shortId-or-slug}`) — the
    segment immediately after `error-` up to the next `-` is the Sentry issue ID.
 2. Cross-reference `state/error-patrol-ledger.json`'s `taskLinks` map (written by this skill
-   in Step 8 — see below) — invert it (`taskId -> sentryIssueId`) and match against the
+   in Step 9 — see below) — invert it (`taskId -> sentry-issue-id`) and match against the
    fetched tasks' `id` fields for a second signal, in case a task ID was hand-edited.
 
 Build a set of "already active" Sentry issue IDs from the union of both signals.
@@ -249,11 +249,11 @@ For each issue with a primary fix task to queue:
 
 ```json
 {
-  "id": "error-{sentryIssueId}-{slug}",
+  "id": "error-{sentry-issue-id}-{slug}",
   "title": "Error fix: {issue title}",
   "source": "shipwright",
   "repo": "<repo dir name from error-report.md's Service → Repo Mapping table, or re-derived from state/error-patrol-ledger.json's serviceRepoMap if the report is stale>",
-  "branch": "fix/error-{sentryIssueId}-{slug}",
+  "branch": "fix/error-{sentry-issue-id}-{slug}",
   "layer": "Background",
   "status": "pending",
   "hitl": <true | false — computed per Step 6>,
@@ -266,11 +266,11 @@ For each companion observability-fix task to queue:
 
 ```json
 {
-  "id": "error-{sentryIssueId}-obs-{slug}",
+  "id": "error-{sentry-issue-id}-obs-{slug}",
   "title": "Error fix (observability): {call site description}",
   "source": "shipwright",
   "repo": "<same repo derivation as the primary task>",
-  "branch": "fix/error-{sentryIssueId}-obs-{slug}",
+  "branch": "fix/error-{sentry-issue-id}-obs-{slug}",
   "layer": "Background",
   "status": "pending",
   "hitl": <true | false — computed per Step 7>,
@@ -309,7 +309,7 @@ path/to/file.ts:42" or "this requires a product decision on Y; do not guess"}
 {If a companion task was also queued for this issue:}
 Related observability task: {companion task id} — {one-line reason}
 
-Issue: {sentryIssueId} | HITL: {hitl}
+Issue: {sentry-issue-id} | HITL: {hitl}
 ```
 
 The companion task's `description`:
@@ -328,9 +328,9 @@ actionable error}"}
 Recurs at: {list of other locations observed, if known}
 
 {If the primary fix depends on this landing first:}
-Blocks: error-{sentryIssueId}-{slug} — {reason}
+Blocks: error-{sentry-issue-id}-{slug} — {reason}
 
-Issue: {sentryIssueId} | HITL: {hitl}
+Issue: {sentry-issue-id} | HITL: {hitl}
 ```
 
 ### 8.2 Write and Append
@@ -363,7 +363,7 @@ Schema for `taskLinks`:
 ```json
 {
   "taskLinks": {
-    "<sentryIssueId>": {
+    "<sentry_issue_id>": {
       "primary": "<primary task id, or null if this issue only got a companion task>",
       "companion": "<companion task id, or omitted if none was queued>"
     }
@@ -396,8 +396,8 @@ ERROR FIX — QUEUED
   UNMAPPED   {N} issues (surfaced for human triage, not queued)
 
 Tasks queued:
-  error-{sentryIssueId}-{slug} — {issue title}  [hitl: {true|false}]
-  error-{sentryIssueId}-obs-{slug} — {call site description}  [hitl: {true|false}] (companion)
+  error-{sentry-issue-id}-{slug} — {issue title}  [hitl: {true|false}]
+  error-{sentry-issue-id}-obs-{slug} — {call site description}  [hitl: {true|false}] (companion)
   ...
 
 {If any skipped:}
