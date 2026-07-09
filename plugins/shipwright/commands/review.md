@@ -683,9 +683,11 @@ gh pr view {pr} --repo {org}/{repo} --json headRefOid --jq '.headRefOid'
 ```
 
 - **`headRefOid == record.commitSha`** (no new commits — the staged review is still
-  current, nothing to refresh). Print:
+  current, nothing to refresh). Translate `record.reviewState` to a verdict the same way
+  `/shipwright:review-staged` does (`approved` → APPROVE, `posted`/`in_progress` → COMMENT),
+  then print:
   ```
-  #{pr} already has a staged review ({record.reviewState}) waiting on a decision.
+  #{pr} already has a staged review ({verdict}) waiting on a decision.
   Run /shipwright:review-staged to post, skip, or discuss it.
   ```
   Stop.
