@@ -16,6 +16,7 @@
  */
 
 import type { RouteConfig, RouteHandler } from "@hono/zod-openapi";
+import type { Caller } from "@shipwright/lib/request-context";
 import type { Context } from "hono";
 import { createMiddleware } from "hono/factory";
 import type { AccountsClient } from "./accounts-client.ts";
@@ -25,11 +26,11 @@ import { ForbiddenError } from "./errors.ts";
  * Represents an authenticated API caller.
  * scope === "*" → admin (all clients)
  * scope === "<clientId>" → scoped to a single client
+ *
+ * Re-exported so existing `import type { Caller } from "./lib/api-auth.ts"`
+ * consumers keep working unchanged.
  */
-export interface Caller {
-  name: string;
-  scope: string; // "*" or a clientId
-}
+export type { Caller };
 
 // Hono env type for routes that use the auth middleware
 export type AuthEnv = { Variables: { caller: Caller } };
