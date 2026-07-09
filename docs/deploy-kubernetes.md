@@ -397,10 +397,9 @@ Setting `agent.provisioning.enabled=true` switches the admin service to the
   agent home storage), mints a scoped per-agent token, creates a per-agent
   **Secret** (carrying the token), and a per-agent **Deployment** (referencing
   both), in that order. All operations are idempotent and safe to retry. **Exception:** if the agent is marked `selfHosted: true`, provisioning is skipped — the agent is expected to manage its own workload.
-- `DELETE /agents/:id` deletes the agent's Deployment then its Secret,
-  tolerating already-absent resources. The **PVC is intentionally left behind**
-  (data safety policy) — cluster admins may clean it up manually once its data
-  has been exported if needed.
+- `DELETE /agents/:id` deletes the agent's Deployment, Secret, and PVC,
+  tolerating already-absent resources (idempotent). Deleted agents do not leak
+  persistent storage.
 
 ### What the chart renders when provisioning is enabled
 
