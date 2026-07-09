@@ -439,5 +439,6 @@ Used by the agent harness on startup and during the config sync loop. Returns th
 - `env` — decrypted key/value env vars
 - `allowedTools` — array of tool patterns
 - `plugins` — installed plugins with derived marketplace URLs
+- `repos` — array of `org/repo` strings (scoped repositories this agent may access)
 
 Returns `404` if the agent doesn't exist.

@@ -42,6 +42,7 @@ export interface AgentConfigResponse {
   env: Record<string, string>;
   allowedTools: string[];
   plugins: AgentPlugin[];
+  repos: string[];
 }
 
 interface AgentEnvServiceLike {
@@ -67,7 +68,7 @@ interface AgentCronJobServiceLike {
 
 interface PrismaLike {
   agent: {
-    findUnique(args: { where: { id: string } }): Promise<{ id: string } | null>;
+    findUnique(args: { where: { id: string } }): Promise<{ id: string; repos: string[] } | null>;
   };
   agentPlugin: {
     findMany(args: {
@@ -196,6 +197,7 @@ export function createAgentRuntimeApp(deps: AgentRuntimeDeps): OpenAPIHono {
           ? { marketplace: "shipwright", plugin: p.name }
           : { plugin: p.name.slice(0, at), marketplace: p.name.slice(at + 1) };
       }),
+      repos: agent.repos,
     };
 
     return c.json(response, 200);

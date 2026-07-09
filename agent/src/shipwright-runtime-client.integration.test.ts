@@ -22,6 +22,7 @@ const SAMPLE_CONFIG: AgentConfigResponse = {
   env: { ANTHROPIC_MODEL: "claude-sonnet-4-6" },
   allowedTools: ["Read", "Bash"],
   plugins: [{ marketplace: "shipwright", plugin: "my-plugin" }],
+  repos: [],
 };
 
 const SAMPLE_CRONS: AgentCronJob[] = [

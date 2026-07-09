@@ -15,7 +15,7 @@ const DEFAULT_MODEL = "claude-test-model";
 function makeBundle(
   overrides: Partial<AgentConfigResponse> = {},
 ): AgentConfigResponse {
-  return { env: {}, allowedTools: [], plugins: [], ...overrides };
+  return { env: {}, allowedTools: [], plugins: [], repos: [], ...overrides };
 }
 
 /** A bundle source that returns a fixed bundle and counts calls. */

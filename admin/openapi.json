@@ -1541,12 +1541,23 @@
             "items": {
               "$ref": "#/components/schemas/AgentConfigPlugin"
             }
+          },
+          "repos": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "org/repo1",
+              "org/repo2"
+            ]
           }
         },
         "required": [
           "env",
           "allowedTools",
-          "plugins"
+          "plugins",
+          "repos"
         ]
       },
       "RuntimeError": {
