@@ -3653,6 +3653,66 @@ describe("admin UI — tasks page", () => {
     expect(html).toContain(AGENT_ID);
   });
 
+  it("GET /admin/tasks/:id?from=<valid list URL> round-trips into the ← Tasks back link", async () => {
+    const mockTask = {
+      id: "task-42",
+      title: "Build the thing",
+      status: "in_progress",
+      session: null,
+      repo: "org/repo",
+    };
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTask: async (id: string) =>
+          id === "task-42" ? mockTask : null,
+      }),
+    );
+    const from = "/admin/tasks?status=in_progress&page=2";
+    const res = await app.request(
+      `/admin/tasks/task-42?from=${encodeURIComponent(from)}`,
+      { headers: { Cookie: `admin_session=${cookie}` } },
+    );
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain(
+      `<a href="${from.replace(/&/g, "&amp;")}" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>`,
+    );
+  });
+
+  it.each([
+    ["https://evil.com", "absolute URL"],
+    ["//evil.com", "protocol-relative URL"],
+    ["javascript:alert(1)", "javascript: URI"],
+    ["/admin/other", "different admin path"],
+  ])(
+    "GET /admin/tasks/:id?from=<malicious %s (%s)> falls back to /admin/tasks",
+    async (maliciousFrom) => {
+      const mockTask = {
+        id: "task-42",
+        title: "Build the thing",
+        status: "in_progress",
+        session: null,
+        repo: "org/repo",
+      };
+      const app = createAdminUIApp(
+        makeMockDeps({
+          fetchTaskStoreTask: async (id: string) =>
+            id === "task-42" ? mockTask : null,
+        }),
+      );
+      const res = await app.request(
+        `/admin/tasks/task-42?from=${encodeURIComponent(maliciousFrom)}`,
+        { headers: { Cookie: `admin_session=${cookie}` } },
+      );
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain(
+        `<a href="/admin/tasks" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>`,
+      );
+      expect(html).not.toContain(maliciousFrom);
+    },
+  );
+
   it("GET /admin/tasks/:id redirects to list when task not found", async () => {
     const app = createAdminUIApp(
       makeMockDeps({
