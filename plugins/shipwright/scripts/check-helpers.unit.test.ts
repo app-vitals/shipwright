@@ -18,6 +18,7 @@ import { join } from "node:path";
 import {
   createTaskStoreClient,
   getCurrentUser,
+  isCleanApproveBody,
   resolveAllRepos,
   resolveRepos,
 } from "./check-helpers.ts";
@@ -431,5 +432,41 @@ describe("removed exports", () => {
     expect(
       (checkHelpers as Record<string, unknown>).readReviews,
     ).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isCleanApproveBody
+// ---------------------------------------------------------------------------
+
+describe("isCleanApproveBody", () => {
+  test("matches a leading APPROVE", () => {
+    expect(isCleanApproveBody("APPROVE")).toBe(true);
+    expect(isCleanApproveBody("APPROVE — looks good")).toBe(true);
+  });
+
+  test("matches a leading APPROVE with markdown bold markers stripped", () => {
+    expect(isCleanApproveBody("**APPROVE** — all criteria met")).toBe(true);
+  });
+
+  test("matches a narrative 'Verdict: APPROVE' label anywhere in the body", () => {
+    expect(
+      isCleanApproveBody(
+        "All 5 acceptance criteria met. Verdict: APPROVE (posted as COMMENT — GitHub disallows self-approval via the API).",
+      ),
+    ).toBe(true);
+  });
+
+  test("matches 'Verdict: APPROVE' case-insensitively with bold markers", () => {
+    expect(isCleanApproveBody("verdict: **approve** — ship it")).toBe(true);
+  });
+
+  test("does not match free-form approval prose without APPROVE or the Verdict label", () => {
+    expect(isCleanApproveBody("Looks good, no blocking issues.")).toBe(false);
+  });
+
+  test("does not match a non-APPROVE verdict", () => {
+    expect(isCleanApproveBody("Verdict: CHANGES_REQUESTED")).toBe(false);
+    expect(isCleanApproveBody("Verdict: DISAPPROVE")).toBe(false);
   });
 });
