@@ -25,7 +25,9 @@ function makeTask(overrides: Partial<WorkTaskCandidate> = {}): WorkTaskCandidate
   };
 }
 
-function makePr(overrides: Partial<WorkPrCandidate> = {}): WorkPrCandidate {
+function makePr(
+  overrides: Partial<WorkPrCandidate> = {},
+): WorkPrCandidate {
   return {
     id: "pr-1",
     age: "2026-01-01T00:00:00.000Z",
@@ -148,5 +150,27 @@ describe("selectNextWorkItem", () => {
     const pr2 = makePr({ id: "pr2", age: "2026-01-10T00:00:00.000Z", claimedBy: "agent-y" });
     const result = selectNextWorkItem([t1, t2], [pr1, pr2]);
     expect(result).toEqual({ type: "task", task: t2 });
+  });
+
+  it("carries the phase field through unchanged to the winning PR", () => {
+    const pr = makePr({ id: "pr1", age: "2026-01-01T00:00:00.000Z", phase: "review" });
+    const result = selectNextWorkItem([], [pr]);
+    expect(result).toEqual({ type: "pr", pr: expect.objectContaining({ phase: "review" }) });
+  });
+
+  it("ranks by age regardless of phase — older review-phase beats newer deploy-phase", () => {
+    const olderReview = makePr({ id: "pr-older", age: "2026-01-01T00:00:00.000Z", phase: "review" });
+    const newerDeploy = makePr({ id: "pr-newer", age: "2026-01-02T00:00:00.000Z", phase: "deploy" });
+    const result = selectNextWorkItem([], [newerDeploy, olderReview]);
+    expect(result).toEqual({ type: "pr", pr: olderReview });
+    expect(result?.type === "pr" && result.pr.phase).toBe("review");
+  });
+
+  it("handles PR without phase set (undefined) in ranking correctly", () => {
+    const older = makePr({ id: "pr-older", age: "2026-01-01T00:00:00.000Z" });
+    const newer = makePr({ id: "pr-newer", age: "2026-01-02T00:00:00.000Z", phase: "patch" });
+    const result = selectNextWorkItem([], [newer, older]);
+    expect(result).toEqual({ type: "pr", pr: older });
+    expect(result?.type === "pr" && result.pr.phase).toBeUndefined();
   });
 });
