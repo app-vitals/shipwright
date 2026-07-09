@@ -277,15 +277,15 @@ Returns:
 {
   "totals": { "inputTokens": 0, "outputTokens": 0, "cacheReadTokens": 0, "cacheCreationTokens": 0, "costUsd": 0 },
   "byAgent": { "<agentId>": { ... } },
-  "byCron": { "<cronId>": { ... } },
+  "byCron": [{ "key1": "<agentId>", "key2": "<cronName>", "phase": "dev-task", ... }],
   "byModel": { "<modelId>": { ... } },
-  "byCronModel": [{ "key1": "<agentId>:<cronName>", "key2": "<model>", ... }],
+  "byCronModel": [{ "key1": "<agentId>:<cronName>", "key2": "<model>", "phase": "dev-task", ... }],
   "daily": [{ "date": "YYYY-MM-DD", ... }],
   "byPhase": [{ "key": "<phase>", ... }]
 }
 ```
 
-`byPhase` groups token stats by the `phase` field (dev-task/review/patch/deploy) set on `AgentCronRun`; runs with no phase (legacy five-job crons) are excluded from this dimension only — they still count toward `totals` and the other dimensions.
+`byCron` and `byCronModel` rows include a `phase` field (dev-task/review/patch/deploy) for runs that specify it, or `null` for legacy five-job crons that predate phase tracking. `byPhase` groups token stats by the `phase` field set on `AgentCronRun`; runs with no phase (legacy five-job crons) are excluded from this dimension only — they still count toward `totals` and the other dimensions.
 
 ---
 
