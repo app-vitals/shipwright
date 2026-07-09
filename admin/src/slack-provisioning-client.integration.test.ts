@@ -173,6 +173,39 @@ describe("HttpSlackProvisioningClient — updateAppManifest", () => {
   });
 });
 
+// ─── deleteApp ───────────────────────────────────────────────────────────────
+
+describe("HttpSlackProvisioningClient — deleteApp", () => {
+  it("POSTs Bearer-auth JSON to apps.manifest.delete", async () => {
+    const { client, lastRequest } = makeClient("deleteApp_success");
+    await client.deleteApp("xoxp-token", "A0123456789");
+
+    const req = lastRequest();
+    expect(req.method).toBe("POST");
+    expect(req.url).toBe("https://slack.com/api/apps.manifest.delete");
+    expect(req.headers.get("authorization")).toBe("Bearer xoxp-token");
+    expect(req.headers.get("content-type")).toBe(
+      "application/json; charset=utf-8",
+    );
+    const body = JSON.parse(req.body ?? "{}");
+    expect(body.app_id).toBe("A0123456789");
+  });
+
+  it("throws on an HTTP error response", async () => {
+    const { client } = makeClient("deleteApp_http_error");
+    await expect(
+      client.deleteApp("xoxp-token", "A0123456789"),
+    ).rejects.toThrow(/Slack apps\.manifest\.delete HTTP error: 500/);
+  });
+
+  it("throws when Slack returns ok: false", async () => {
+    const { client } = makeClient("deleteApp_slack_error");
+    await expect(
+      client.deleteApp("xoxp-token", "A0123456789"),
+    ).rejects.toThrow(/Slack apps\.manifest\.delete failed: app_not_found/);
+  });
+});
+
 // ─── createAppManifest ───────────────────────────────────────────────────────
 
 describe("HttpSlackProvisioningClient — createAppManifest", () => {

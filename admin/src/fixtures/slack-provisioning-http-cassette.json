@@ -66,5 +66,17 @@
       "app_id": "A0123456789",
       "oauth_authorize_url": "https://slack.com/oauth/authorize?client_id=123"
     }
+  },
+  "deleteApp_success": {
+    "status": 200,
+    "body": { "ok": true }
+  },
+  "deleteApp_http_error": {
+    "status": 500,
+    "body": { "ok": false, "error": "internal_error" }
+  },
+  "deleteApp_slack_error": {
+    "status": 200,
+    "body": { "ok": false, "error": "app_not_found" }
   }
 }
