@@ -256,6 +256,7 @@ function makeBaseDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
           repos: [],
         }),
       },
+      agentEnv: { findMany: async () => [] },
       agentPlugin: { findMany: async () => [] },
       agentMember: {
         findMany: async () => [],
@@ -312,6 +313,19 @@ function makeBaseDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
         updated: [],
       }),
     },
+    taskStore: {
+      listTokensForAgent: async () => [],
+      revokeToken: async () => {},
+    },
+    chatService: {
+      listTokensForAgent: async () => [],
+      revokeToken: async () => {},
+      deleteThreadsForAgent: async () => ({ deleted: 0 }),
+    },
+    slack: {
+      deleteApp: async () => {},
+    },
+    decrypt: (value: string) => value,
     sessionSecret: SESSION_SECRET,
     googleClientId: GOOGLE_CLIENT_ID,
     googleClientSecret: GOOGLE_CLIENT_SECRET,

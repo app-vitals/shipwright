@@ -150,6 +150,9 @@ function makeMockDeps(
           repos: [],
         }),
       },
+      agentEnv: {
+        findMany: async () => [],
+      },
       agentPlugin: {
         findMany: async () => [],
       },
@@ -268,6 +271,19 @@ function makeMockDeps(
         failed: [],
       }),
     },
+    taskStore: {
+      listTokensForAgent: async () => [],
+      revokeToken: async () => {},
+    },
+    chatService: {
+      listTokensForAgent: async () => [],
+      revokeToken: async () => {},
+      deleteThreadsForAgent: async () => ({ deleted: 0 }),
+    },
+    slack: {
+      deleteApp: async () => {},
+    },
+    decrypt: (value: string) => value,
     appBaseUrl: "https://example.com",
     ...overrides,
   };
