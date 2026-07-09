@@ -22,6 +22,7 @@
  */
 
 import { sentry } from "@sentry/hono/bun";
+import { callerLabel } from "@shipwright/lib/request-context";
 import {
   type ErrorCapturingClient,
   buildSentryInitOptions,
@@ -114,7 +115,10 @@ export function createTaskStoreApp(
       return c.json({ error: err.message }, err.statusCode as 400);
     }
     deps.sentryClient?.captureException(err);
-    console.error("[task-store] unhandled error:", err);
+    console.error(
+      `[task-store] unhandled error (caller: ${callerLabel(c.get("caller"))}):`,
+      err,
+    );
     const message = err instanceof Error ? err.message : String(err);
     return c.json({ error: message }, 500);
   });
