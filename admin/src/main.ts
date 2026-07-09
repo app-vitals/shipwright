@@ -40,13 +40,21 @@ import { AgentTokenService } from "./agent-tokens.ts";
 import { AgentToolService } from "./agent-tools.ts";
 import { createAdminApp, parseAdminApiKeys } from "./agents-api.ts";
 import { createAgentRuntimeApp } from "./api.ts";
-import { HttpChatServiceProvisioningClient } from "./chat-service-provisioning-client.ts";
+import type { ChatServiceProvisioningClient } from "./chat-service-provisioning-client.ts";
+import {
+  HttpChatServiceProvisioningClient,
+  NoopChatServiceProvisioningClient,
+} from "./chat-service-provisioning-client.ts";
 import { isDevAuthAllowed } from "./dev-auth-guard.ts";
 import { HttpGoogleAuthClient } from "./google-auth-client.ts";
 import { HttpChatClient } from "./http-chat-client.ts";
 import { HttpKubernetesClient } from "./kubernetes-client.ts";
 import { HttpSlackProvisioningClient } from "./slack-provisioning-client.ts";
-import { HttpTaskStoreProvisioningClient } from "./task-store-provisioning-client.ts";
+import type { TaskStoreProvisioningClient } from "./task-store-provisioning-client.ts";
+import {
+  HttpTaskStoreProvisioningClient,
+  NoopTaskStoreProvisioningClient,
+} from "./task-store-provisioning-client.ts";
 import { makeTokenCrypto } from "./token-crypto.ts";
 
 // ─── Migration preflight ──────────────────────────────────────────────────────
@@ -202,6 +210,52 @@ export function buildProvisioner(
   });
 }
 
+// ─── Agent-deletion client selection ──────────────────────────────────────────
+
+/**
+ * Select the task-store and chat-service clients used by DELETE /agents/:id's
+ * `deleteAgentFully()` orchestration (agent-deletion.ts).
+ *
+ * Independent of `buildProvisioner`/`SHIPWRIGHT_K8S_PROVISIONING`: unlike the
+ * token-minting clients constructed inside that function's closure (only
+ * built when K8s provisioning is enabled), agent deletion must be able to
+ * revoke task-store/chat-service tokens regardless of whether K8s
+ * provisioning is on — e.g. a local dev setup with provisioning disabled but
+ * a real task-store/chat-service still running.
+ *
+ * Gated on the same env-var pairs as `buildProvisioner` (URL + admin token
+ * both set) so the "unconfigured" case is unambiguous. When unconfigured,
+ * returns the No-op client rather than `undefined` — constructing either
+ * client is cheap (no I/O happens until a call is made), so this avoids
+ * making `taskStore`/`chatService` optional in `AdminDeps`/`DeleteAgentFullyDeps`
+ * for the common case (K8s provisioning disabled, e.g. local dev): a
+ * deleteAgentFully() call with nothing to revoke (listTokensForAgent → [])
+ * completes cleanly instead of surfacing a new error path.
+ */
+export function buildDeletionClients(env: NodeJS.ProcessEnv): {
+  taskStore: TaskStoreProvisioningClient;
+  chatService: ChatServiceProvisioningClient;
+} {
+  const taskStoreUrl = env.SHIPWRIGHT_TASK_STORE_URL;
+  const taskStoreAdminToken = env.SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN;
+  const taskStore =
+    taskStoreUrl && taskStoreAdminToken
+      ? new HttpTaskStoreProvisioningClient(taskStoreUrl, taskStoreAdminToken)
+      : new NoopTaskStoreProvisioningClient();
+
+  const chatServiceUrl = env.SHIPWRIGHT_CHAT_SERVICE_URL;
+  const chatServiceAdminToken = env.SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN;
+  const chatService =
+    chatServiceUrl && chatServiceAdminToken
+      ? new HttpChatServiceProvisioningClient(
+          chatServiceUrl,
+          chatServiceAdminToken,
+        )
+      : new NoopChatServiceProvisioningClient();
+
+  return { taskStore, chatService };
+}
+
 // ─── Server entry ─────────────────────────────────────────────────────────────
 
 const DEFAULT_PORT = 3000;
@@ -293,6 +347,12 @@ async function startServer(): Promise<void> {
   const googleClient = new HttpGoogleAuthClient();
   const slackClient = new HttpSlackProvisioningClient();
 
+  // Task-store + chat-service clients for DELETE /agents/:id's
+  // deleteAgentFully() cleanup — independent of SHIPWRIGHT_K8S_PROVISIONING
+  // (see buildDeletionClients doc comment).
+  const { taskStore: deletionTaskStore, chatService: deletionChatService } =
+    buildDeletionClients(process.env);
+
   const root = new Hono();
 
   // Only mounted when SENTRY_DSN is set — a complete no-op otherwise, matching
@@ -342,6 +402,10 @@ async function startServer(): Promise<void> {
     agentChatTokenService,
     prisma,
     provisioner,
+    taskStore: deletionTaskStore,
+    chatService: deletionChatService,
+    slack: slackClient,
+    decrypt: crypto.decrypt,
     sessionSecret,
     adminApiKeys,
     sentryClient: process.env.SENTRY_DSN ? Sentry : undefined,

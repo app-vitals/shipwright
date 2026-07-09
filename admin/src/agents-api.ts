@@ -30,6 +30,8 @@ import type {
 } from "./agent-cron-jobs.ts";
 import type { AgentCronRunStatsService } from "./agent-cron-run-stats.ts";
 import type { AgentCronRunService } from "./agent-cron-runs.ts";
+import type { DeleteAgentFullyDeps } from "./agent-deletion.ts";
+import { deleteAgentFully } from "./agent-deletion.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
 import type { AgentPluginService } from "./agent-plugins.ts";
 import type { AgentProvisioner } from "./agent-provisioner.ts";
@@ -69,6 +71,8 @@ import {
   CronRunTokenStatsSchema,
   CronRunsListSchema,
   CronsWithSummaryWrapperSchema,
+  DeleteAgentBodySchema,
+  DeleteAgentResultSchema,
   EnvKeyParamSchema,
   ErrorSchema,
   ListCronRunsQuerySchema,
@@ -122,13 +126,26 @@ export interface AdminDeps {
     AgentChatTokenService,
     "upsertDailyByModel" | "queryStats"
   >;
-  prisma: Pick<PrismaClient, "agent">;
+  prisma: Pick<PrismaClient, "agent" | "agentEnv">;
   /**
    * Provisions (and tears down) the workload backing an agent. Defaults to a
    * no-op when Kubernetes provisioning is disabled (preserving create/delete
    * behavior without a cluster). See `agent-provisioner.ts`.
    */
   provisioner: AgentProvisioner;
+  /**
+   * Cleanup deps for the full delete-agent orchestration (DELETE /agents/:id
+   * → deleteAgentFully()). Matches DeleteAgentFullyDeps's shapes exactly so
+   * this app can pass them straight through. Production wiring in main.ts
+   * defaults taskStore/chatService to no-op clients when their respective
+   * URL/token env vars are unset (independent of SHIPWRIGHT_K8S_PROVISIONING),
+   * so this stays required rather than optional — there is always a valid
+   * (possibly no-op) value to inject.
+   */
+  taskStore: DeleteAgentFullyDeps["taskStore"];
+  chatService: DeleteAgentFullyDeps["chatService"];
+  slack: DeleteAgentFullyDeps["slack"];
+  decrypt: DeleteAgentFullyDeps["decrypt"];
   sessionSecret: string;
   /** Parsed SHIPWRIGHT_ADMIN_API_KEYS — optional; absent means env key auth is disabled. */
   adminApiKeys?: Map<string, AdminApiKey>;
@@ -322,9 +339,19 @@ const patchAgentRoute = createRoute({
 const deleteAgentRoute = createRoute({
   method: "delete",
   path: "/agents/{id}",
-  request: { params: AgentIdParamSchema },
+  request: {
+    params: AgentIdParamSchema,
+    body: {
+      required: false,
+      content: { "application/json": { schema: DeleteAgentBodySchema } },
+    },
+  },
   responses: {
-    204: { description: "Agent deleted" },
+    200: {
+      description:
+        "Delete outcome — agentDeleted is false when a cleanup step failed; the Agent row is preserved for retry",
+      content: { "application/json": { schema: DeleteAgentResultSchema } },
+    },
     403: { description: "Forbidden", ...jsonError },
     404: { description: "Agent not found", ...jsonError },
   },
@@ -787,6 +814,10 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     agentChatTokenService,
     prisma,
     provisioner,
+    taskStore,
+    chatService,
+    slack,
+    decrypt,
     sessionSecret,
     adminApiKeys,
     sentryClient,
@@ -1006,14 +1037,25 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
       throw new NotFoundError(`agent ${agentId} not found`);
     }
 
-    // Tear down the workload first, then delete the row. Child rows
-    // (AgentEnv / AgentCronJob / AgentTool / AgentToken / AgentPlugin) cascade
-    // via `onDelete: Cascade` in the Prisma schema. deprovision() tolerates an
-    // already-absent workload, so a retried delete is a no-op.
-    await provisioner.deprovision(agentId, { slug: existing.name });
-    await prisma.agent.delete({ where: { id: agentId } });
+    // Body is optional — an absent/empty body is the common case (most
+    // current callers don't send one) and simply means no xoxpToken.
+    const body = c.req.valid("json");
 
-    return c.body(null, 204);
+    // Full teardown: K8s workload, task-store + chat-service tokens/threads,
+    // optional Slack app deletion, then the Agent row itself (deleted last,
+    // only if every automatable step succeeded). deleteAgentFully() catches
+    // per-step failures internally and reports them in the result rather than
+    // throwing, so this call is intentionally NOT wrapped in try/catch — a
+    // 500 here would only mean a genuinely unexpected error (e.g. the row
+    // vanishing between the check above and this call), which should
+    // propagate to the existing onError handler like any other ApiError.
+    const result = await deleteAgentFully(
+      agentId,
+      { prisma, provisioner, taskStore, chatService, slack, decrypt },
+      { xoxpToken: body?.xoxpToken },
+    );
+
+    return c.json(result, 200);
   });
 
   // GET /agents — list all agents (id + name + selfHosted) for metrics name resolution.
