@@ -3,6 +3,7 @@
  * Typed HTTP error classes for use across all service handlers.
  */
 
+import { callerLabel } from "@shipwright/lib/request-context";
 import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import type { Context } from "hono";
 import type { AuthEnv } from "./api-auth.ts";
@@ -83,7 +84,10 @@ export function makeOnError(
         err.statusCode as 400 | 401 | 403 | 404 | 409 | 422 | 500 | 502,
       );
     }
-    console.error(`[${servicePrefix}] unhandled error:`, err);
+    console.error(
+      `[${servicePrefix}] unhandled error (caller: ${callerLabel(c.get("caller"))}):`,
+      err,
+    );
     sentryClient?.captureException(err);
     return c.json({ error: err.message }, 500);
   };

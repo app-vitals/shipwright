@@ -3,7 +3,8 @@
  * Unit tests for typed HTTP error classes and makeOnError factory.
  */
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
+import { callerLabel } from "@shipwright/lib/request-context";
 import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import {
   ApiError,
@@ -87,13 +88,14 @@ describe("BadGatewayError", () => {
 });
 
 describe("makeOnError", () => {
-  function makeCtx() {
+  function makeCtx(opts?: { caller?: { name: string; scope: string } }) {
     const calls: Array<{ body: unknown; status: number }> = [];
     const ctx = {
       json: (body: unknown, status: number) => {
         calls.push({ body, status });
         return { body, status };
       },
+      get: (key: string) => (key === "caller" ? opts?.caller : undefined),
     };
     return { ctx, calls };
   }
@@ -211,6 +213,28 @@ describe("makeOnError", () => {
         handler(err, ctx as Parameters<ReturnType<typeof makeOnError>>[1]),
       ).not.toThrow();
       expect(calls[0]?.status).toBe(502);
+    });
+  });
+
+  describe("caller label logging", () => {
+    it("includes the resolved caller label in the unhandled-error log line", () => {
+      const consoleErrorSpy = spyOn(console, "error").mockImplementation(
+        () => {},
+      );
+      try {
+        const caller = { name: "agent-42", scope: "agent-42" };
+        const handler = makeOnError("test");
+        const { ctx } = makeCtx({ caller });
+        handler(
+          new Error("Something unexpected"),
+          ctx as Parameters<ReturnType<typeof makeOnError>>[1],
+        );
+        expect(consoleErrorSpy).toHaveBeenCalled();
+        const loggedArgs = consoleErrorSpy.mock.calls.flat().join(" ");
+        expect(loggedArgs).toContain(callerLabel(caller));
+      } finally {
+        consoleErrorSpy.mockRestore();
+      }
     });
   });
 });
