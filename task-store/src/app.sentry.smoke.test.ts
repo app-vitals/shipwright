@@ -57,35 +57,14 @@ function fakeTokenService(): TokenServiceLike {
   };
 }
 
-/** A token service that validates both an admin token and an agent token,
- *  so onError caller-label coverage can assert both resolved callers. */
+/** Same as fakeTokenService, but also validates an agent token — so onError
+ *  caller-label coverage can assert both the admin and agent resolved caller. */
 function fakeTokenServiceWithAgent(): TokenServiceLike {
   return {
-    async create(label?: string) {
-      return {
-        token: {
-          id: "tok-1",
-          token: "hash",
-          label: label ?? null,
-          agentId: null,
-          createdAt: new Date(),
-          revokedAt: null,
-        },
-        rawToken: "raw",
-      };
-    },
+    ...fakeTokenService(),
     async validate(raw: string) {
       if (raw === VALID_TOKEN) return { id: "tok-1", agentId: null };
       if (raw === AGENT_TOKEN) return { id: "tok-2", agentId: AGENT_ID };
-      return null;
-    },
-    async revoke() {
-      return null;
-    },
-    async list() {
-      return [];
-    },
-    async update() {
       return null;
     },
   };
