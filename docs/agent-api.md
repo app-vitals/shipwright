@@ -71,7 +71,7 @@ Admin-only. Updatable fields: `selfHosted` (boolean), `repos` (array of `org/rep
 DELETE /agents/:id
 ```
 
-Admin-only. Deprovisions the agent's K8s workload (Deployment + Secret; PVC is retained for data safety), then deletes the DB record. All child records (envs, crons, tools, tokens, plugins) are cascade-deleted.
+Admin-only. Deprovisions the agent's K8s workload (Deployment, Secret, and PVC), then deletes the DB record. All child records (envs, crons, tools, tokens, plugins) are cascade-deleted.
 
 ### Provision agent
 

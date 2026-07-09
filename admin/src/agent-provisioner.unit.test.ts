@@ -13,17 +13,17 @@ import {
   sanitizeAgentName,
 } from "./agent-manifest.ts";
 import {
-  containerDrifted,
   KubernetesAgentProvisioner,
   type KubernetesAgentProvisionerConfig,
+  containerDrifted,
 } from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
+import type { ChatServiceProvisioningClient } from "./chat-service-provisioning-client.ts";
 import { ConflictError } from "./errors.ts";
 import {
   type KubernetesClient,
   RecordedKubernetesClient,
 } from "./kubernetes-client.ts";
-import type { ChatServiceProvisioningClient } from "./chat-service-provisioning-client.ts";
 import type { TaskStoreProvisioningClient } from "./task-store-provisioning-client.ts";
 
 const NAMESPACE = "shipwright";
@@ -702,6 +702,86 @@ describe("KubernetesAgentProvisioner — task-store token minting", () => {
     // But because it was a conflict (deployment already existed), we rolled back
     // the Secret — the task-store token should also be revoked.
     expect(revoked).toEqual([minted[0].id]);
+  });
+});
+
+// ─── deprovision() deletes the PVC ────────────────────────────────────────────
+
+/**
+ * Wraps a RecordedKubernetesClient, delegating every call through to it while
+ * recording each deletePvc invocation for assertion.
+ */
+function spyOnDeletePvc(recorded: RecordedKubernetesClient): {
+  client: KubernetesClient;
+  deletedPvcs: Array<{ namespace: string; name: string }>;
+} {
+  const deletedPvcs: Array<{ namespace: string; name: string }> = [];
+  const client: KubernetesClient = {
+    createDeployment: (ns, spec) => recorded.createDeployment(ns, spec),
+    createDeploymentManifest: (ns, manifest) =>
+      recorded.createDeploymentManifest(ns, manifest),
+    getDeployment: (ns, name) => recorded.getDeployment(ns, name),
+    deploymentExists: (ns, name) => recorded.deploymentExists(ns, name),
+    listDeployments: (ns, sel) => recorded.listDeployments(ns, sel),
+    deleteDeployment: (ns, name) => recorded.deleteDeployment(ns, name),
+    patchDeployment: (ns, name, patch) =>
+      recorded.patchDeployment(ns, name, patch),
+    createSecret: (ns, spec) => recorded.createSecret(ns, spec),
+    getSecret: (ns, name) => recorded.getSecret(ns, name),
+    deleteSecret: (ns, name) => recorded.deleteSecret(ns, name),
+    createPvc: (ns, spec) => recorded.createPvc(ns, spec),
+    getPvc: (ns, name) => recorded.getPvc(ns, name),
+    deletePvc: (ns, name) => {
+      deletedPvcs.push({ namespace: ns, name });
+      return recorded.deletePvc(ns, name);
+    },
+  };
+  return { client, deletedPvcs };
+}
+
+describe("KubernetesAgentProvisioner.deprovision() — PVC deletion", () => {
+  it("calls deletePvc with the default {resourceName}-home name", async () => {
+    const agentId = "cmqalfjcm000m4101iharq28k";
+    const resourceName = sanitizeAgentName(agentId);
+    const expectedPvcName = `${resourceName}-home`;
+
+    const { client, deletedPvcs } = spyOnDeletePvc(emptyClient());
+    const provisioner = new KubernetesAgentProvisioner(
+      client,
+      stubTokens() as AgentTokenService,
+      BASE_CONFIG,
+    );
+
+    await provisioner.provision(agentId);
+    await provisioner.deprovision(agentId);
+
+    expect(deletedPvcs).toEqual([
+      { namespace: NAMESPACE, name: expectedPvcName },
+    ]);
+  });
+
+  it("calls deletePvc with the templated name derived from slug", async () => {
+    const agentId = "cmqalfjcm000m4101iharq28k";
+    const slug = "okwow";
+    const expectedPvcName = "acme-agent-okwow-home";
+
+    const config: KubernetesAgentProvisionerConfig = {
+      ...BASE_CONFIG,
+      pvcName: (name) => `acme-agent-${name}-home`,
+    };
+    const { client, deletedPvcs } = spyOnDeletePvc(emptyClient());
+    const provisioner = new KubernetesAgentProvisioner(
+      client,
+      stubTokens() as AgentTokenService,
+      config,
+    );
+
+    await provisioner.provision(agentId, { slug });
+    await provisioner.deprovision(agentId, { slug });
+
+    expect(deletedPvcs).toEqual([
+      { namespace: NAMESPACE, name: expectedPvcName },
+    ]);
   });
 });
 

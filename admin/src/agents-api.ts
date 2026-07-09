@@ -996,7 +996,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     // 404 on unknown id before any side effects.
     const existing = await prisma.agent.findUnique({
       where: { id: agentId },
-      select: { id: true },
+      select: { id: true, name: true },
     });
     if (!existing) {
       throw new NotFoundError(`agent ${agentId} not found`);
@@ -1006,7 +1006,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     // (AgentEnv / AgentCronJob / AgentTool / AgentToken / AgentPlugin) cascade
     // via `onDelete: Cascade` in the Prisma schema. deprovision() tolerates an
     // already-absent workload, so a retried delete is a no-op.
-    await provisioner.deprovision(agentId);
+    await provisioner.deprovision(agentId, { slug: existing.name });
     await prisma.agent.delete({ where: { id: agentId } });
 
     return c.body(null, 204);
