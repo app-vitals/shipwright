@@ -35,7 +35,7 @@ Resolve the list of repos to scan. Use the same resolver as other shipwright com
 
 ```bash
 REPOS=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
-  "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID" | jq -r '.repos[]')
+  "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/config" | jq -r '.repos[]')
 ```
 
 Iterate over the results to scan each repo.

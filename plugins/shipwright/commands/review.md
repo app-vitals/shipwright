@@ -99,7 +99,7 @@ If `review_external_prs` is true, resolve the configured repos and fetch open PR
 
 ```bash
 REPOS=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
-  "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID" | jq -r '.repos[]')
+  "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/config" | jq -r '.repos[]')
 ```
 
 ```bash
@@ -659,7 +659,7 @@ When invoked with a specific PR (e.g. `/shipwright:review app-vitals/shipwright#
    infer `org/repo` via:
    ```bash
    curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
-     "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID" | jq -r '.repos[0] // empty'
+     "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/config" | jq -r '.repos[0] // empty'
    ```
    Fall back to the current workspace repo if the command fails.
    **Limitation**: bare numbers only check the first configured repo (`repos[0]`). Multi-repo agents should use the full `org/repo#number` form to target a PR in any repo beyond the first.
