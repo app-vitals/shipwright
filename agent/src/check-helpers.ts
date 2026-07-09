@@ -1,7 +1,19 @@
 /**
- * plugins/shipwright/scripts/check-helpers.ts
+ * agent/src/check-helpers.ts
  *
- * Shared helpers for the four pre-check scripts.
+ * Shared helpers ported from plugins/shipwright/scripts/check-helpers.ts —
+ * a native, directly-importable copy for the agent runtime. The plugin
+ * scripts remain the source of truth for agents that still run the
+ * check-*.ts scripts as separate processes; this module exists so
+ * in-process precheck ports (WL-2.2) can import the same logic without a
+ * subprocess hop.
+ *
+ * Behavior is unchanged from the plugin source except createTaskStoreClient,
+ * which gains an optional injectable fetch function so callers can supply a
+ * fake fetch in tests instead of overriding globalThis.fetch (agent/src test
+ * isolation rule: no global.fetch/global.* overrides). When no fetchFn is
+ * passed, it falls back to global fetch — identical behavior to the plugin
+ * version.
  *
  * Covers:
  * - Workspace path resolution (WORKSPACE_PATH env var or cwd heuristic)
@@ -76,35 +88,6 @@ export function parseAllowSelfReview(content: string): boolean {
     /(?:`allow_self_review`\s*\|\s*|\*\*allow_self_review\*\*:\s*)(true|false)/,
   );
   return match?.[1] !== "false"; // default true if missing
-}
-
-// ─── Self-review body matching ────────────────────────────────────────────────
-
-/**
- * Matches a "Verdict: APPROVE" label anywhere in a review body (case-
- * insensitive, optional markdown bold markers around either word). Not
- * anchored to end-of-line — narrative self-reviews trail reasoning after the
- * verdict on the same line. The trailing `\b` requires "approve" to end as a
- * whole word, so "Verdict: CHANGES_REQUESTED" or "Verdict: DISAPPROVE" never
- * matches.
- */
-export const VERDICT_APPROVE_LABEL = /verdict\**\s*:\s*\**approve\b/i;
-
-/**
- * True when a review body is a clean APPROVE verdict, matched either by:
- * - a leading `APPROVE` (after stripping leading markdown bold markers), or
- * - a "Verdict: APPROVE" label anywhere in the body (the narrative
- *   self-review convention, which ends a summary with the verdict rather
- *   than leading with it).
- *
- * Shared by check-deploy.ts's hasSelfApproveReview and check-patch.ts's
- * isSelfCleanApprove so the two self-review consumers can't diverge again.
- */
-export function isCleanApproveBody(body: string): boolean {
-  return (
-    body.trimStart().replace(/^\*+/, "").startsWith("APPROVE") ||
-    VERDICT_APPROVE_LABEL.test(body)
-  );
 }
 
 export function readAllowSelfReview(workspacePath: string): boolean {
@@ -262,6 +245,11 @@ export async function isMergeOnlyUpdate(
 
 // ─── Task store HTTP client ───────────────────────────────────────────────────
 
+type FetchFn = (
+  url: RequestInfo | URL,
+  init?: RequestInit,
+) => Promise<Response>;
+
 /**
  * Reads SHIPWRIGHT_TASK_STORE_URL and SHIPWRIGHT_TASK_STORE_TOKEN from the
  * environment, validates they are present, and returns a minimal fetch client
@@ -269,8 +257,11 @@ export async function isMergeOnlyUpdate(
  *
  * Exits with code 1 if either variable is missing so callers (precheck scripts)
  * get a clean error rather than a confusing undefined/TypeError at call-time.
+ *
+ * Accepts an optional `fetchFn` for dependency injection in tests; defaults to
+ * global fetch when not provided (identical behavior to the plugin version).
  */
-export function createTaskStoreClient(): {
+export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
   query(params: URLSearchParams): Promise<Task[]>;
   update(id: string, fields: Record<string, unknown>): Promise<Task>;
 } {
@@ -289,10 +280,11 @@ export function createTaskStoreClient(): {
     Authorization: `Bearer ${taskStoreToken}`,
     "Content-Type": "application/json",
   };
+  const doFetch: FetchFn = opts?.fetchFn ?? fetch;
 
   return {
     async query(params: URLSearchParams): Promise<Task[]> {
-      const res = await fetch(`${baseUrl}/tasks?${params}`, { headers });
+      const res = await doFetch(`${baseUrl}/tasks?${params}`, { headers });
       if (!res.ok)
         throw new Error(`task-store GET /tasks?${params} → ${res.status}`);
       const data = (await res.json()) as unknown;
@@ -309,7 +301,7 @@ export function createTaskStoreClient(): {
       );
     },
     async update(id: string, fields: Record<string, unknown>): Promise<Task> {
-      const res = await fetch(`${baseUrl}/tasks/${id}`, {
+      const res = await doFetch(`${baseUrl}/tasks/${id}`, {
         method: "PATCH",
         headers,
         body: JSON.stringify(fields),

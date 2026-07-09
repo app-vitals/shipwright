@@ -1,11 +1,15 @@
 /**
- * plugins/shipwright/scripts/check-helpers.unit.test.ts
+ * agent/src/check-helpers.unit.test.ts
  *
  * Unit tests for resolveRepos(), getCurrentUser(), and createTaskStoreClient()
- * in check-helpers.ts
+ * in check-helpers.ts. Ported from
+ * plugins/shipwright/scripts/check-helpers.unit.test.ts — adapted so
+ * createTaskStoreClient() tests inject a fake fetch function instead of
+ * overriding globalThis.fetch (agent/src test isolation rule: no
+ * global.fetch/global.* overrides).
  */
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   chmodSync,
   mkdirSync,
@@ -18,7 +22,6 @@ import { join } from "node:path";
 import {
   createTaskStoreClient,
   getCurrentUser,
-  isCleanApproveBody,
   resolveAllRepos,
   resolveRepos,
 } from "./check-helpers.ts";
@@ -267,6 +270,184 @@ describe("resolveAllRepos", () => {
 });
 
 // ---------------------------------------------------------------------------
+// resolveWorkspacePath
+// ---------------------------------------------------------------------------
+
+describe("resolveWorkspacePath", () => {
+  let savedWorkspacePath: string | undefined;
+  let savedAgentHome: string | undefined;
+
+  beforeEach(() => {
+    savedWorkspacePath = process.env.WORKSPACE_PATH;
+    savedAgentHome = process.env.AGENT_HOME;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.WORKSPACE_PATH;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.AGENT_HOME;
+  });
+
+  afterEach(() => {
+    if (savedWorkspacePath !== undefined) {
+      process.env.WORKSPACE_PATH = savedWorkspacePath;
+    } else {
+      // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+      delete process.env.WORKSPACE_PATH;
+    }
+    if (savedAgentHome !== undefined) {
+      process.env.AGENT_HOME = savedAgentHome;
+    } else {
+      // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+      delete process.env.AGENT_HOME;
+    }
+  });
+
+  test("returns WORKSPACE_PATH when set, taking priority over AGENT_HOME", () => {
+    process.env.WORKSPACE_PATH = "/explicit/workspace";
+    process.env.AGENT_HOME = "/agent/home";
+    expect(checkHelpers.resolveWorkspacePath()).toBe("/explicit/workspace");
+  });
+
+  test("derives from AGENT_HOME/workspace when WORKSPACE_PATH is unset", () => {
+    process.env.AGENT_HOME = "/agent/home";
+    expect(checkHelpers.resolveWorkspacePath()).toBe(
+      join("/agent/home", "workspace"),
+    );
+  });
+
+  test("throws when neither WORKSPACE_PATH nor AGENT_HOME is set", () => {
+    expect(() => checkHelpers.resolveWorkspacePath()).toThrow(
+      "AGENT_HOME is not set",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseAllowSelfReview / readAllowSelfReview
+// ---------------------------------------------------------------------------
+
+describe("parseAllowSelfReview", () => {
+  test("returns true when the table cell says true", () => {
+    expect(
+      checkHelpers.parseAllowSelfReview("| `allow_self_review` | true |"),
+    ).toBe(true);
+  });
+
+  test("returns false when the table cell says false", () => {
+    expect(
+      checkHelpers.parseAllowSelfReview("| `allow_self_review` | false |"),
+    ).toBe(false);
+  });
+
+  test("returns false for bold-style false", () => {
+    expect(
+      checkHelpers.parseAllowSelfReview("**allow_self_review**: false"),
+    ).toBe(false);
+  });
+
+  test("returns true for bold-style true", () => {
+    expect(
+      checkHelpers.parseAllowSelfReview("**allow_self_review**: true"),
+    ).toBe(true);
+  });
+
+  test("defaults to true when the field is missing entirely", () => {
+    expect(checkHelpers.parseAllowSelfReview("no policy here")).toBe(true);
+  });
+});
+
+describe("readAllowSelfReview", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "read-allow-self-review-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test("reads and parses state/agent-policy.md when present", () => {
+    mkdirSync(join(tmpDir, "state"), { recursive: true });
+    writeFileSync(
+      join(tmpDir, "state", "agent-policy.md"),
+      "| `allow_self_review` | false |",
+    );
+    expect(checkHelpers.readAllowSelfReview(tmpDir)).toBe(false);
+  });
+
+  test("defaults to true when the policy file does not exist", () => {
+    expect(checkHelpers.readAllowSelfReview(tmpDir)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isMergeOnlyUpdate
+// ---------------------------------------------------------------------------
+
+describe("isMergeOnlyUpdate", () => {
+  test("returns true when every commit after the anchor is a merge commit", async () => {
+    const deps = {
+      listPrCommits: async () => [
+        { sha: "a", parents: [{ sha: "root" }] },
+        { sha: "b", parents: [{ sha: "a" }, { sha: "other" }] },
+        { sha: "c", parents: [{ sha: "b" }, { sha: "other2" }] },
+      ],
+    };
+    expect(await checkHelpers.isMergeOnlyUpdate(1, "a", deps)).toBe(true);
+  });
+
+  test("returns false when a non-merge commit follows the anchor", async () => {
+    const deps = {
+      listPrCommits: async () => [
+        { sha: "a", parents: [{ sha: "root" }] },
+        { sha: "b", parents: [{ sha: "a" }] },
+      ],
+    };
+    expect(await checkHelpers.isMergeOnlyUpdate(1, "a", deps)).toBe(false);
+  });
+
+  test("returns false when the anchor commit is not found", async () => {
+    const deps = {
+      listPrCommits: async () => [{ sha: "z", parents: [{ sha: "root" }] }],
+    };
+    expect(await checkHelpers.isMergeOnlyUpdate(1, "missing", deps)).toBe(
+      false,
+    );
+  });
+
+  test("returns false when there are no commits after the anchor", () => {
+    const deps = {
+      listPrCommits: async () => [{ sha: "a", parents: [{ sha: "root" }] }],
+    };
+    expect(checkHelpers.isMergeOnlyUpdate(1, "a", deps)).resolves.toBe(false);
+  });
+
+  test("returns false when listPrCommits throws", async () => {
+    const deps = {
+      listPrCommits: async () => {
+        throw new Error("network error");
+      },
+    };
+    expect(await checkHelpers.isMergeOnlyUpdate(1, "a", deps)).toBe(false);
+  });
+
+  test("passes the repo argument through to listPrCommits", async () => {
+    let receivedRepo: string | undefined;
+    const deps = {
+      listPrCommits: async (_prNumber: number, repo?: string) => {
+        receivedRepo = repo;
+        return [
+          { sha: "a", parents: [{ sha: "root" }] },
+          { sha: "b", parents: [{ sha: "a" }, { sha: "other" }] },
+        ];
+      },
+    };
+    await checkHelpers.isMergeOnlyUpdate(1, "a", deps, "acme/example-repo");
+    expect(receivedRepo).toBe("acme/example-repo");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // getCurrentUser
 // ---------------------------------------------------------------------------
 
@@ -281,6 +462,17 @@ function writeFakeGhBinary(dir: string, viewerLogin: string): string {
   const response = JSON.stringify({ data: { viewer: { login: viewerLogin } } });
   // A minimal shell script that ignores all args and prints the baked response.
   writeFileSync(binPath, `#!/bin/sh\nprintf '%s\\n' '${response}'\n`);
+  chmodSync(binPath, 0o755);
+  return binPath;
+}
+
+/** Write a fake `gh` binary that always fails with a given exit code. */
+function writeFailingGhBinary(dir: string, exitCode: number, stderr: string): string {
+  const binPath = join(dir, "gh");
+  writeFileSync(
+    binPath,
+    `#!/bin/sh\nprintf '%s\\n' '${stderr}' >&2\nexit ${exitCode}\n`,
+  );
   chmodSync(binPath, 0o755);
   return binPath;
 }
@@ -301,25 +493,31 @@ describe("getCurrentUser", () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  test("returns login as-is for a regular PAT user", async () => {
+  test("returns login as-is for a regular PAT user", () => {
     writeFakeGhBinary(tmpDir, "dmcaulay");
     process.env.PATH = `${tmpDir}:${savedPath}`;
-    const result = await getCurrentUser();
+    const result = getCurrentUser();
     expect(result).toBe("dmcaulay");
   });
 
-  test("normalises [bot] suffix to app/ prefix for GitHub App identity", async () => {
+  test("normalises [bot] suffix to app/ prefix for GitHub App identity", () => {
     writeFakeGhBinary(tmpDir, "my-app[bot]");
     process.env.PATH = `${tmpDir}:${savedPath}`;
-    const result = await getCurrentUser();
+    const result = getCurrentUser();
     expect(result).toBe("app/my-app");
   });
 
-  test("handles hyphenated app name in [bot] normalisation", async () => {
+  test("handles hyphenated app name in [bot] normalisation", () => {
     writeFakeGhBinary(tmpDir, "example-repo-agent[bot]");
     process.env.PATH = `${tmpDir}:${savedPath}`;
-    const result = await getCurrentUser();
+    const result = getCurrentUser();
     expect(result).toBe("app/example-repo-agent");
+  });
+
+  test("throws when gh exits non-zero", () => {
+    writeFailingGhBinary(tmpDir, 1, "not authenticated");
+    process.env.PATH = `${tmpDir}:${savedPath}`;
+    expect(() => getCurrentUser()).toThrow("gh api graphql failed");
   });
 });
 
@@ -335,7 +533,6 @@ describe("createTaskStoreClient query()", () => {
   };
 
   let savedEnv: { url?: string; token?: string };
-  let savedFetch: typeof globalThis.fetch;
 
   beforeEach(() => {
     savedEnv = {
@@ -344,11 +541,9 @@ describe("createTaskStoreClient query()", () => {
     };
     process.env.SHIPWRIGHT_TASK_STORE_URL = "https://task-store.example.com";
     process.env.SHIPWRIGHT_TASK_STORE_TOKEN = "test-token";
-    savedFetch = globalThis.fetch;
   });
 
   afterEach(() => {
-    globalThis.fetch = savedFetch;
     if (savedEnv.url !== undefined) {
       process.env.SHIPWRIGHT_TASK_STORE_URL = savedEnv.url;
     } else {
@@ -361,23 +556,22 @@ describe("createTaskStoreClient query()", () => {
       // biome-ignore lint/performance/noDelete: intentional env cleanup
       delete process.env.SHIPWRIGHT_TASK_STORE_TOKEN;
     }
-    mock.restore();
   });
 
   test("unwraps { tasks } envelope from ?ready=true", async () => {
-    globalThis.fetch = (async () =>
+    const fakeFetch = (async () =>
       ({
         ok: true,
         json: async () => ({ tasks: [FAKE_TASK], total: 1 }),
       }) as Response) as unknown as typeof fetch;
 
-    const client = createTaskStoreClient();
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
     const result = await client.query(new URLSearchParams({ ready: "true" }));
     expect(result).toEqual([FAKE_TASK]);
   });
 
   test("unwraps paginated { tasks } envelope (returned by ?status=...)", async () => {
-    globalThis.fetch = (async () =>
+    const fakeFetch = (async () =>
       ({
         ok: true,
         json: async () => ({
@@ -388,7 +582,7 @@ describe("createTaskStoreClient query()", () => {
         }),
       }) as Response) as unknown as typeof fetch;
 
-    const client = createTaskStoreClient();
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
     const result = await client.query(
       new URLSearchParams({ status: "in_progress" }),
     );
@@ -396,13 +590,13 @@ describe("createTaskStoreClient query()", () => {
   });
 
   test("returns empty array when paginated envelope has empty tasks list", async () => {
-    globalThis.fetch = (async () =>
+    const fakeFetch = (async () =>
       ({
         ok: true,
         json: async () => ({ tasks: [], total: 0, limit: 50, offset: 0 }),
       }) as Response) as unknown as typeof fetch;
 
-    const client = createTaskStoreClient();
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
     const result = await client.query(
       new URLSearchParams({ status: "in_progress" }),
     );
@@ -410,16 +604,133 @@ describe("createTaskStoreClient query()", () => {
   });
 
   test("throws on unrecognised response shape", async () => {
-    globalThis.fetch = (async () =>
+    const fakeFetch = (async () =>
       ({
         ok: true,
         json: async () => ({ unexpected: true }),
       }) as Response) as unknown as typeof fetch;
 
-    const client = createTaskStoreClient();
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
     await expect(
       client.query(new URLSearchParams({ status: "in_progress" })),
     ).rejects.toThrow("Unexpected task-store response format");
+  });
+
+  test("accepts a legacy bare Task[] response", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: true,
+        json: async () => [FAKE_TASK],
+      }) as Response) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    const result = await client.query(new URLSearchParams({ ready: "true" }));
+    expect(result).toEqual([FAKE_TASK]);
+  });
+
+  test("throws when the query response is not ok", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: false,
+        status: 500,
+        json: async () => ({}),
+      }) as Response) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    await expect(
+      client.query(new URLSearchParams({ ready: "true" })),
+    ).rejects.toThrow("task-store GET /tasks");
+  });
+
+  test("update() PATCHes the task and returns the parsed response", async () => {
+    let capturedUrl: string | undefined;
+    let capturedInit: RequestInit | undefined;
+    const fakeFetch = (async (url: RequestInfo | URL, init?: RequestInit) => {
+      capturedUrl = String(url);
+      capturedInit = init;
+      return {
+        ok: true,
+        json: async () => ({ ...FAKE_TASK, status: "in_progress" }),
+      } as Response;
+    }) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    const result = await client.update("T-1", { status: "in_progress" });
+
+    expect(capturedUrl).toBe(
+      "https://task-store.example.com/tasks/T-1",
+    );
+    expect(capturedInit?.method).toBe("PATCH");
+    expect(result).toEqual({ ...FAKE_TASK, status: "in_progress" });
+  });
+
+  test("throws when the update response is not ok", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: false,
+        status: 404,
+        json: async () => ({}),
+      }) as Response) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    await expect(
+      client.update("T-1", { status: "in_progress" }),
+    ).rejects.toThrow("task-store PATCH /tasks/T-1");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createTaskStoreClient — missing env vars
+// ---------------------------------------------------------------------------
+
+describe("createTaskStoreClient env validation", () => {
+  let savedEnv: { url?: string; token?: string };
+  let savedExit: typeof process.exit;
+  let exitCode: number | undefined;
+
+  beforeEach(() => {
+    savedEnv = {
+      url: process.env.SHIPWRIGHT_TASK_STORE_URL,
+      token: process.env.SHIPWRIGHT_TASK_STORE_TOKEN,
+    };
+    savedExit = process.exit;
+    exitCode = undefined;
+    process.exit = ((code?: number) => {
+      exitCode = code;
+      throw new Error(`process.exit(${code})`);
+    }) as typeof process.exit;
+  });
+
+  afterEach(() => {
+    process.exit = savedExit;
+    if (savedEnv.url !== undefined) {
+      process.env.SHIPWRIGHT_TASK_STORE_URL = savedEnv.url;
+    } else {
+      // biome-ignore lint/performance/noDelete: intentional env cleanup
+      delete process.env.SHIPWRIGHT_TASK_STORE_URL;
+    }
+    if (savedEnv.token !== undefined) {
+      process.env.SHIPWRIGHT_TASK_STORE_TOKEN = savedEnv.token;
+    } else {
+      // biome-ignore lint/performance/noDelete: intentional env cleanup
+      delete process.env.SHIPWRIGHT_TASK_STORE_TOKEN;
+    }
+  });
+
+  test("exits 1 when SHIPWRIGHT_TASK_STORE_URL is missing", () => {
+    // biome-ignore lint/performance/noDelete: intentional env cleanup
+    delete process.env.SHIPWRIGHT_TASK_STORE_URL;
+    process.env.SHIPWRIGHT_TASK_STORE_TOKEN = "test-token";
+    expect(() => createTaskStoreClient()).toThrow();
+    expect(exitCode).toBe(1);
+  });
+
+  test("exits 1 when SHIPWRIGHT_TASK_STORE_TOKEN is missing", () => {
+    process.env.SHIPWRIGHT_TASK_STORE_URL = "https://task-store.example.com";
+    // biome-ignore lint/performance/noDelete: intentional env cleanup
+    delete process.env.SHIPWRIGHT_TASK_STORE_TOKEN;
+    expect(() => createTaskStoreClient()).toThrow();
+    expect(exitCode).toBe(1);
   });
 });
 
@@ -432,41 +743,5 @@ describe("removed exports", () => {
     expect(
       (checkHelpers as Record<string, unknown>).readReviews,
     ).toBeUndefined();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// isCleanApproveBody
-// ---------------------------------------------------------------------------
-
-describe("isCleanApproveBody", () => {
-  test("matches a leading APPROVE", () => {
-    expect(isCleanApproveBody("APPROVE")).toBe(true);
-    expect(isCleanApproveBody("APPROVE — looks good")).toBe(true);
-  });
-
-  test("matches a leading APPROVE with markdown bold markers stripped", () => {
-    expect(isCleanApproveBody("**APPROVE** — all criteria met")).toBe(true);
-  });
-
-  test("matches a narrative 'Verdict: APPROVE' label anywhere in the body", () => {
-    expect(
-      isCleanApproveBody(
-        "All 5 acceptance criteria met. Verdict: APPROVE (posted as COMMENT — GitHub disallows self-approval via the API).",
-      ),
-    ).toBe(true);
-  });
-
-  test("matches 'Verdict: APPROVE' case-insensitively with bold markers", () => {
-    expect(isCleanApproveBody("verdict: **approve** — ship it")).toBe(true);
-  });
-
-  test("does not match free-form approval prose without APPROVE or the Verdict label", () => {
-    expect(isCleanApproveBody("Looks good, no blocking issues.")).toBe(false);
-  });
-
-  test("does not match a non-APPROVE verdict", () => {
-    expect(isCleanApproveBody("Verdict: CHANGES_REQUESTED")).toBe(false);
-    expect(isCleanApproveBody("Verdict: DISAPPROVE")).toBe(false);
   });
 });

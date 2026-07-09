@@ -211,6 +211,55 @@ describe("check-deploy", () => {
     expect(result.exit).toBe(1);
   });
 
+  test("exits 0 when self-review body uses the narrative 'Verdict: APPROVE' label", async () => {
+    const pr = makeGhPr({
+      author: { login: "bodhi-agent" },
+      reviewDecision: null,
+    });
+    const reviews: GhReview[] = [
+      {
+        author: { login: "bodhi-agent" },
+        body: "All 5 acceptance criteria met. Verdict: APPROVE (posted as COMMENT — GitHub disallows self-approval via the API).",
+        state: "COMMENTED",
+      },
+    ];
+    const result = await run(
+      makeDeps({
+        currentUser: "bodhi-agent",
+        isSelfReviewAllowed: true,
+        prs: { "acme/example-repo": [pr] },
+        reviews: { 50: reviews },
+        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
+      }),
+    );
+    expect(result.exit).toBe(0);
+    expect(result.output).toBeTruthy();
+  });
+
+  test("exits 1 when self-review has a non-APPROVE verdict label", async () => {
+    const pr = makeGhPr({
+      author: { login: "bodhi-agent" },
+      reviewDecision: null,
+    });
+    const reviews: GhReview[] = [
+      {
+        author: { login: "bodhi-agent" },
+        body: "Found a blocking issue. Verdict: CHANGES_REQUESTED",
+        state: "COMMENTED",
+      },
+    ];
+    const result = await run(
+      makeDeps({
+        currentUser: "bodhi-agent",
+        isSelfReviewAllowed: true,
+        prs: { "acme/example-repo": [pr] },
+        reviews: { 50: reviews },
+        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
+      }),
+    );
+    expect(result.exit).toBe(1);
+  });
+
   test("exits 1 when PR is approved but CI is not green (in_progress)", async () => {
     const pr = makeGhPr({ reviewDecision: "APPROVED" });
     const result = await run(

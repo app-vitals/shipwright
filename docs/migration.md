@@ -82,7 +82,7 @@ When `blockedBy` is empty, the task is ready to execute (assuming it has `status
 
 **What to update:**
 - Any code that calls `GET /tasks` and expects an array must unwrap `.tasks` from the response.
-- `check-helpers.ts` in the plugin is updated in this PR. Custom scripts or agents calling `/tasks` directly need the same fix.
+- `check-helpers.ts` in the plugin is updated in this PR. Agent in-process code can import shared helpers directly from `agent/src/check-helpers.ts` (a ported native copy); custom plugin scripts still depend on the plugin version.
 - Code that checks task readiness should use the `blockedBy` array instead of duplicating dependency logic.
 - `GET /tasks?ready=true` is unchanged — it still returns `Task[]` (filtered to ready tasks only, with `blockedBy` also present).
 

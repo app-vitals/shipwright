@@ -1,0 +1,1421 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Shipwright Chat API",
+    "version": "0.1.0",
+    "description": "REST API for the Shipwright chat service — threads, messages, attachments, and scoped token administration."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3003",
+      "description": "Local dev"
+    }
+  ],
+  "paths": {
+    "/tokens": {
+      "get": {
+        "tags": [
+          "tokens"
+        ],
+        "summary": "List all tokens",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Array of token metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChatToken"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — admin token required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "tokens"
+        ],
+        "summary": "Create a new token — raw value returned exactly once",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created token including the one-time raw value",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatTokenWithRaw"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — admin token required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tokens/{id}": {
+      "patch": {
+        "tags": [
+          "tokens"
+        ],
+        "summary": "Update token label and/or agentId",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clxtoken123456"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated token metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatToken"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request — token is revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — admin token required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Token not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "tokens"
+        ],
+        "summary": "Revoke a token",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clxtoken123456"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Revoked token metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatToken"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — admin token required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Token not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/threads": {
+      "get": {
+        "tags": [
+          "threads"
+        ],
+        "summary": "List threads (scoped to agentId for agent tokens)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "50"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "0"
+            },
+            "required": false,
+            "name": "offset",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "agent-id-123"
+            },
+            "required": false,
+            "name": "agentId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "member-id-123"
+            },
+            "required": false,
+            "name": "memberId",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of threads with total count",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "threads"
+        ],
+        "summary": "Create a thread",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateThreadBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created thread",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Thread"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request — agentId is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — agent token may only create threads for itself",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/threads/{id}/stats": {
+      "get": {
+        "tags": [
+          "threads"
+        ],
+        "summary": "Get aggregated stats for a thread",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clxthread123456"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Aggregated thread stats",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadStats"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — agent token may not access this thread",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Thread not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/threads/{id}": {
+      "get": {
+        "tags": [
+          "threads"
+        ],
+        "summary": "Get a thread by id",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clxthread123456"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Thread",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Thread"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — agent token may not access this thread",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Thread not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "threads"
+        ],
+        "summary": "Update thread title and/or memberId",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clxthread123456"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateThreadBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated thread",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Thread"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — agent token may not access this thread",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Thread not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "threads"
+        ],
+        "summary": "Delete a thread",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clxthread123456"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted thread",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Thread"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — agent token may not access this thread",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Thread not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/threads/{threadId}/messages": {
+      "get": {
+        "tags": [
+          "messages"
+        ],
+        "summary": "List messages in a thread",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "50"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "0"
+            },
+            "required": false,
+            "name": "offset",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of messages with pagination info",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageListResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Thread not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "messages"
+        ],
+        "summary": "Create a message",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMessageBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created message",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Thread not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Attachment exceeds size limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/threads/{threadId}/messages/claim": {
+      "post": {
+        "tags": [
+          "messages"
+        ],
+        "summary": "Claim the next unclaimed user message in a thread",
+        "responses": {
+          "200": {
+            "description": "Claimed message",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Thread not found, or no unclaimed messages in thread",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/threads/{threadId}/messages/{id}/attachment": {
+      "get": {
+        "tags": [
+          "messages"
+        ],
+        "summary": "Stream a message's attachment (ephemeral — cleared after read)",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clxmessage123456"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Attachment bytes",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Thread not found, message not found, or no attachment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/threads/{threadId}/messages/{id}": {
+      "get": {
+        "tags": [
+          "messages"
+        ],
+        "summary": "Get a message by ID",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clxmessage123456"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Message",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Thread or message not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "messages"
+        ],
+        "summary": "Update a message",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clxmessage123456"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMessageBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated message",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Thread or message not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "messages"
+        ],
+        "summary": "Delete a message",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clxmessage123456"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted message",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Thread or message not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/threads/{threadId}/messages/{id}/reply": {
+      "post": {
+        "tags": [
+          "messages"
+        ],
+        "summary": "Post an agent reply to a user message",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clxmessage123456"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplyBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "User message and the newly created assistant reply",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Thread or message not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Message already has a reply",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ChatToken": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clxtoken123456"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "ci-runner"
+          },
+          "agentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "agent-id-123"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          },
+          "revokedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": null
+          }
+        },
+        "required": [
+          "id",
+          "createdAt"
+        ]
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "example": "not found"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "ChatTokenWithRaw": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ChatToken"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "rawToken": {
+                "type": "string",
+                "example": "raw-token-value-shown-once"
+              }
+            },
+            "required": [
+              "rawToken"
+            ]
+          }
+        ]
+      },
+      "TokenBody": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "example": "ci-runner"
+          },
+          "agentId": {
+            "type": "string",
+            "example": "agent-id-123"
+          }
+        }
+      },
+      "Thread": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clxthread123456"
+          },
+          "agentId": {
+            "type": "string",
+            "example": "agent-id-123"
+          },
+          "memberId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "member-id-123"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "Deployment question"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-06T12:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "ThreadListResponse": {
+        "type": "object",
+        "properties": {
+          "threads": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Thread"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "example": 10
+          },
+          "limit": {
+            "type": "integer",
+            "example": 50
+          },
+          "offset": {
+            "type": "integer",
+            "example": 0
+          }
+        },
+        "required": [
+          "threads",
+          "total",
+          "limit",
+          "offset"
+        ]
+      },
+      "CreateThreadBody": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "example": "agent-id-123"
+          },
+          "memberId": {
+            "type": "string",
+            "example": "member-id-123"
+          },
+          "title": {
+            "type": "string",
+            "example": "Deployment question"
+          }
+        },
+        "required": [
+          "agentId"
+        ]
+      },
+      "ThreadStats": {
+        "type": "object",
+        "properties": {
+          "messageCount": {
+            "type": "integer",
+            "example": 5
+          },
+          "totalInputTokens": {
+            "type": "integer",
+            "example": 100
+          },
+          "totalOutputTokens": {
+            "type": "integer",
+            "example": 200
+          },
+          "totalCostUsd": {
+            "type": "number",
+            "example": 0.05
+          }
+        },
+        "required": [
+          "messageCount",
+          "totalInputTokens",
+          "totalOutputTokens",
+          "totalCostUsd"
+        ]
+      },
+      "UpdateThreadBody": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "New title"
+          },
+          "memberId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "member-id-123"
+          }
+        }
+      },
+      "Message": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clxmessage123456"
+          },
+          "threadId": {
+            "type": "string",
+            "example": "clxthread123456"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "assistant"
+            ],
+            "example": "user"
+          },
+          "body": {
+            "type": "string",
+            "example": "How do I deploy this?"
+          },
+          "tokens": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": {},
+            "example": {
+              "input_tokens": 10,
+              "output_tokens": 20
+            }
+          },
+          "costUsd": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "example": 0.02
+          },
+          "attachmentFilename": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "screenshot.png"
+          },
+          "attachmentSize": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 1024
+          },
+          "claimed": {
+            "type": "boolean",
+            "default": false,
+            "example": false
+          },
+          "claimedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": null
+          },
+          "claimedBy": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "agent-id-123"
+          },
+          "repliedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": null
+          },
+          "errorKind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "threadId",
+          "role",
+          "body",
+          "createdAt"
+        ]
+      },
+      "MessageListResponse": {
+        "type": "object",
+        "properties": {
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Message"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "example": 10
+          },
+          "limit": {
+            "type": "integer",
+            "example": 50
+          },
+          "offset": {
+            "type": "integer",
+            "example": 0
+          }
+        },
+        "required": [
+          "messages",
+          "total",
+          "limit",
+          "offset"
+        ]
+      },
+      "CreateMessageBody": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "assistant"
+            ],
+            "example": "user"
+          },
+          "body": {
+            "type": "string",
+            "example": "How do I deploy this?"
+          },
+          "tokens": {
+            "type": "object",
+            "additionalProperties": {},
+            "example": {
+              "input_tokens": 10,
+              "output_tokens": 20
+            }
+          },
+          "costUsd": {
+            "type": "number",
+            "example": 0.02
+          },
+          "attachmentFilename": {
+            "type": "string",
+            "example": "screenshot.png"
+          },
+          "attachmentSize": {
+            "type": "integer",
+            "example": 1024
+          },
+          "attachmentBytes": {
+            "type": "string",
+            "example": "base64-encoded-bytes"
+          }
+        }
+      },
+      "UpdateMessageBody": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "string",
+            "example": "Updated text"
+          },
+          "tokens": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": {},
+            "example": {
+              "input_tokens": 10,
+              "output_tokens": 20
+            }
+          },
+          "costUsd": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "example": 0.03
+          },
+          "errorKind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          }
+        }
+      },
+      "ReplyResponse": {
+        "type": "object",
+        "properties": {
+          "userMessage": {
+            "$ref": "#/components/schemas/Message"
+          },
+          "assistantMessage": {
+            "$ref": "#/components/schemas/Message"
+          }
+        },
+        "required": [
+          "userMessage",
+          "assistantMessage"
+        ]
+      },
+      "ReplyBody": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "string",
+            "example": "Sure, here is the answer."
+          },
+          "tokens": {
+            "type": "object",
+            "additionalProperties": {},
+            "example": {
+              "input_tokens": 10,
+              "output_tokens": 20
+            }
+          },
+          "costUsd": {
+            "type": "number",
+            "example": 0.02
+          }
+        }
+      }
+    }
+  }
+}

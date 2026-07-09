@@ -818,6 +818,12 @@ function stubChatService(opts?: { throwOnMint?: boolean }): {
     async revokeToken(id: string) {
       revoked.push(id);
     },
+    async listTokensForAgent(_agentId: string) {
+      return [];
+    },
+    async deleteThreadsForAgent(_agentId: string) {
+      return { deleted: 0 };
+    },
   };
 
   return { client, minted, revoked };
