@@ -90,6 +90,35 @@ export function parseAllowSelfReview(content: string): boolean {
   return match?.[1] !== "false"; // default true if missing
 }
 
+// ─── Self-review body matching ────────────────────────────────────────────────
+
+/**
+ * Matches a "Verdict: APPROVE" label anywhere in a review body (case-
+ * insensitive, optional markdown bold markers around either word). Not
+ * anchored to end-of-line — narrative self-reviews trail reasoning after the
+ * verdict on the same line. The trailing `\b` requires "approve" to end as a
+ * whole word, so "Verdict: CHANGES_REQUESTED" or "Verdict: DISAPPROVE" never
+ * matches.
+ */
+export const VERDICT_APPROVE_LABEL = /verdict\**\s*:\s*\**approve\b/i;
+
+/**
+ * True when a review body is a clean APPROVE verdict, matched either by:
+ * - a leading `APPROVE` (after stripping leading markdown bold markers), or
+ * - a "Verdict: APPROVE" label anywhere in the body (the narrative
+ *   self-review convention, which ends a summary with the verdict rather
+ *   than leading with it).
+ *
+ * Shared by check-deploy.ts's hasSelfApproveReview and check-patch.ts's
+ * isSelfCleanApprove so the two self-review consumers can't diverge again.
+ */
+export function isCleanApproveBody(body: string): boolean {
+  return (
+    body.trimStart().replace(/^\*+/, "").startsWith("APPROVE") ||
+    VERDICT_APPROVE_LABEL.test(body)
+  );
+}
+
 export function readAllowSelfReview(workspacePath: string): boolean {
   try {
     const content = readFileSync(
