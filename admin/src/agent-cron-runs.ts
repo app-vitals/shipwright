@@ -27,6 +27,8 @@ export interface CreateAgentCronRunInput {
   skipReason?: string | null;
   outcome?: string | null;
   error?: string | null;
+  /** Pipeline phase this run served (dev-task/review/patch/deploy). Null for legacy five-job crons. */
+  phase?: string | null;
 }
 
 export interface ModelBreakdownEntry {
@@ -94,6 +96,7 @@ export class AgentCronRunService {
         skipReason: input.skipReason ?? null,
         outcome: input.outcome ?? null,
         error: input.error ?? null,
+        phase: input.phase ?? null,
       },
     });
   }

@@ -110,6 +110,41 @@ describeOrSkip("AgentCronRunService (integration)", () => {
     expect(run.skipReason).toBe("pre-check returned false");
   });
 
+  it("create() round-trips an optional phase field", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId);
+    const startedAt = new Date();
+
+    const run = await runService.create(cronId, agentId, {
+      startedAt,
+      skipped: false,
+      outcome: "success",
+      phase: "dev-task",
+    });
+
+    expect(run.phase).toBe("dev-task");
+
+    const { items } = await runService.list(cronId, agentId);
+    expect(items[0].phase).toBe("dev-task");
+  });
+
+  it("create() leaves phase null when not provided (legacy behavior unchanged)", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId);
+    const startedAt = new Date();
+
+    const run = await runService.create(cronId, agentId, {
+      startedAt,
+      skipped: false,
+      outcome: "success",
+    });
+
+    expect(run.phase).toBeNull();
+
+    const { items } = await runService.list(cronId, agentId);
+    expect(items[0].phase).toBeNull();
+  });
+
   it("create() throws NotFoundError when cronId does not exist", async () => {
     const agentId = await createAgent(prisma);
 

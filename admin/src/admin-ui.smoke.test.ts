@@ -549,6 +549,7 @@ describe("admin UI — authenticated pages", () => {
                 skipReason: null,
                 outcome: "posted",
                 error: null,
+                phase: null,
                 inputTokens: 999,
                 outputTokens: 111,
                 cacheReadTokens: null,

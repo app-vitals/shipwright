@@ -480,6 +480,7 @@ function buildCombinedApp() {
         skipReason: null,
         outcome: null,
         error: null,
+        phase: null,
         inputTokens: null,
         outputTokens: null,
         cacheReadTokens: null,
@@ -504,6 +505,7 @@ function buildCombinedApp() {
         skipReason: null,
         outcome: null,
         error: null,
+        phase: null,
         inputTokens: null,
         outputTokens: null,
         cacheReadTokens: null,
@@ -614,6 +616,7 @@ function buildCombinedApp() {
         byModel: [],
         daily: [],
         byCronModel: [],
+        byPhase: [],
       }),
     },
     prisma: {

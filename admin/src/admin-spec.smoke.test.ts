@@ -152,6 +152,7 @@ function buildSpecApp() {
         skipReason: null,
         outcome: null,
         error: null,
+        phase: null,
         inputTokens: null,
         outputTokens: null,
         cacheReadTokens: null,
@@ -171,6 +172,7 @@ function buildSpecApp() {
         skipReason: null,
         outcome: null,
         error: null,
+        phase: null,
         inputTokens: null,
         outputTokens: null,
         cacheReadTokens: null,
@@ -281,6 +283,7 @@ function buildSpecApp() {
         byModel: [],
         daily: [],
         byCronModel: [],
+        byPhase: [],
       }),
     },
     prisma: {

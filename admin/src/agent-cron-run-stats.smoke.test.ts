@@ -135,6 +135,26 @@ const MOCK_STATS = {
     },
   ],
   byCronModel: [],
+  byPhase: [
+    {
+      key: "dev-task",
+      input: 400,
+      output: 200,
+      cacheRead: 40,
+      cacheCreation: 20,
+      total: 660,
+      costUsd: 0.004,
+    },
+    {
+      key: "review",
+      input: 200,
+      output: 100,
+      cacheRead: 20,
+      cacheCreation: 10,
+      total: 330,
+      costUsd: 0.002,
+    },
+  ],
 };
 
 function makeMockStatsService(): Pick<AgentCronRunStatsService, "query"> {
@@ -334,6 +354,7 @@ function makeMockDeps(): AdminDeps {
         skipReason: null,
         outcome: null,
         error: null,
+        phase: null,
         inputTokens: null,
         outputTokens: null,
         cacheReadTokens: null,
@@ -353,6 +374,7 @@ function makeMockDeps(): AdminDeps {
         skipReason: null,
         outcome: null,
         error: null,
+        phase: null,
         inputTokens: null,
         outputTokens: null,
         cacheReadTokens: null,
@@ -442,12 +464,13 @@ describe("admin API — GET /agents/all/cron-runs/stats", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
 
-    // Check all five dimensions are present
+    // Check all dimensions are present, including byPhase
     expect(body.totals).toBeDefined();
     expect(body.byAgent).toBeDefined();
     expect(body.byCron).toBeDefined();
     expect(body.byModel).toBeDefined();
     expect(body.daily).toBeDefined();
+    expect(body.byPhase).toBeDefined();
 
     // Verify totals shape
     expect(typeof body.totals.input).toBe("number");
@@ -479,6 +502,11 @@ describe("admin API — GET /agents/all/cron-runs/stats", () => {
       expect(body.daily[0].period).toBeDefined();
       expect(typeof body.daily[0].input).toBe("number");
     }
+    expect(Array.isArray(body.byPhase)).toBe(true);
+    if (body.byPhase.length > 0) {
+      expect(body.byPhase[0].key).toBeDefined();
+      expect(typeof body.byPhase[0].input).toBe("number");
+    }
   });
 
   it("returns correct mock data values", async () => {
@@ -495,6 +523,8 @@ describe("admin API — GET /agents/all/cron-runs/stats", () => {
     expect(body.byCron).toHaveLength(2);
     expect(body.byModel).toHaveLength(2);
     expect(body.daily).toHaveLength(3);
+    expect(body.byPhase).toHaveLength(2);
+    expect(body.byPhase[0].key).toBe("dev-task");
   });
 
   it("accepts from/to query params without error", async () => {

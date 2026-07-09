@@ -134,6 +134,7 @@ function makeBaseDeps(
         byModel: [],
         daily: [],
         byCronModel: [],
+        byPhase: [],
       }),
     },
     agentToolService: {
