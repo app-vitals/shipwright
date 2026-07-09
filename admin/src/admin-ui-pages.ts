@@ -12,6 +12,7 @@ import {
   escapeHtml,
   renderAdminToolbar,
 } from "./admin-ui-styles.ts";
+import type { ManualStep } from "./agent-deletion-checklist.ts";
 import { parseChatMarkers } from "./chat-markers.ts";
 import type {
   ChatMessage,
@@ -410,7 +411,24 @@ export function renderAgentsPage(
   userName: string,
   isAdmin: boolean,
   timezone: string,
+  opts?: { successMsg?: string; manualSteps?: ManualStep[] },
 ): string {
+  const successHtml = opts?.successMsg
+    ? `<div class="alert alert-success">${escapeHtml(opts.successMsg)}</div>`
+    : "";
+
+  const manualStepsHtml =
+    opts?.manualSteps && opts.manualSteps.length > 0
+      ? `<div class="alert alert-warning" id="manual-steps-panel" style="position:relative;padding-right:32px">
+      <button type="button" onclick="document.getElementById('manual-steps-panel').style.display='none'"
+              style="position:absolute;top:8px;right:10px;background:none;border:none;cursor:pointer;font-size:14px;color:inherit" aria-label="Dismiss">×</button>
+      <strong>Manual cleanup required:</strong>
+      <ul style="margin:8px 0 0 20px">
+        ${opts.manualSteps.map((s) => `<li>${escapeHtml(s.message)}</li>`).join("\n        ")}
+      </ul>
+    </div>`
+      : "";
+
   const rows =
     agents.length === 0
       ? `<tr><td colspan="4" class="empty-state">${isAdmin ? 'No agents yet. <a href="/admin/provision">Provision one →</a>' : "No agents."}</td></tr>`
@@ -445,6 +463,8 @@ export function renderAgentsPage(
       <h1 class="page-title">Agents</h1>
       ${provisionButton}
     </div>
+    ${successHtml}
+    ${manualStepsHtml}
     <div class="card">
       <table class="data-table">
         <thead>

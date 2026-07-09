@@ -347,9 +347,10 @@ async function startServer(): Promise<void> {
   const googleClient = new HttpGoogleAuthClient();
   const slackClient = new HttpSlackProvisioningClient();
 
-  // Task-store + chat-service clients for DELETE /agents/:id's
-  // deleteAgentFully() cleanup — independent of SHIPWRIGHT_K8S_PROVISIONING
-  // (see buildDeletionClients doc comment).
+  // Task-store + chat-service clients for deleteAgentFully() cleanup, shared
+  // by both delete entry points (DELETE /agents/:id and the admin-ui danger
+  // zone) — independent of SHIPWRIGHT_K8S_PROVISIONING (see buildDeletionClients
+  // doc comment).
   const { taskStore: deletionTaskStore, chatService: deletionChatService } =
     buildDeletionClients(process.env);
 
@@ -561,6 +562,10 @@ async function startServer(): Promise<void> {
     agentTokenService,
     agentPluginService,
     provisioner,
+    taskStore: deletionTaskStore,
+    chatService: deletionChatService,
+    slack: slackClient,
+    decrypt: crypto.decrypt,
     sessionSecret,
     googleClientId,
     googleClientSecret,
