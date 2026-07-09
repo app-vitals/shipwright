@@ -30,8 +30,8 @@ Configuration for the Shipwright Claude Code plugin (`plugins/shipwright/`). The
 | `WORKSPACE_PATH` | `string` | — | Direct workspace path override. Takes precedence over `AGENT_HOME`-based discovery when set. |
 | `SHIPWRIGHT_TASK_STORE_URL` | `string` | — | Base URL of the Shipwright task-store HTTP service — the only task-store backend. Required (alongside `SHIPWRIGHT_TASK_STORE_TOKEN`) for `dev-task`, `review`, `patch`, `deploy`, and the `task-store` skill to function. |
 | `SHIPWRIGHT_TASK_STORE_TOKEN` | `string` | — | Bearer token for task-store API access. See the [Metrics & Admin & Chat & Task-Store services](#metrics--admin--chat--task-store-services) table below for how it's minted and injected for managed agents. Env-var-only (secret). |
-| `SENTRY_ORG` | `string` | — | Sentry organization slug (e.g., `acme-corp`). Required (alongside `SENTRY_AUTH_TOKEN`) for the `error-scan` skill to query the Sentry Issues API. When unset, the error-scan skill exits early with a skipped status. Env-var-only (secret — exposes the org name). |
-| `SENTRY_AUTH_TOKEN` | `string` | — | Sentry API token for authentication. Required (alongside `SENTRY_ORG`) for the `error-scan` skill to access Sentry project data and issues. Must have permissions to query projects and issues in the target org. Env-var-only (secret). |
+| `SENTRY_ORG` | `string` | — | Sentry organization slug (e.g., `acme-corp`). Required (alongside `SENTRY_AUTH_TOKEN`) for the `error-scan` and `error-resolve` skills to query the Sentry Issues API. When unset, the error-scan and error-resolve skills exit early with a skipped status. Env-var-only (secret — exposes the org name). |
+| `SENTRY_AUTH_TOKEN` | `string` | — | Sentry API token for authentication. Required (alongside `SENTRY_ORG`) for the `error-scan` and `error-resolve` skills to access Sentry project data and issues. Must have permissions to query projects and issues (and mutate issue state for error-resolve) in the target org. Env-var-only (secret). |
 
 ---
 
