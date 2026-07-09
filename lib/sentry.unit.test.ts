@@ -46,6 +46,18 @@ describe("initSentry — SENTRY_DSN unset", () => {
   });
 });
 
+describe("initSentry — NODE_ENV=test", () => {
+  test("never calls sentryClient.init even with SENTRY_DSN set", () => {
+    process.env.NODE_ENV = "test";
+    process.env.SENTRY_DSN = "https://example@o0.ingest.sentry.io/0";
+    const fakeClient = createFakeSentryClient();
+
+    initSentry({ service: "metrics" }, fakeClient);
+
+    expect(fakeClient.calls.length).toBe(0);
+  });
+});
+
 describe("initSentry — SENTRY_DSN set", () => {
   test("calls sentryClient.init with enableLogs, service tag, and scrub hooks wired", () => {
     process.env.SENTRY_DSN = "https://example@o0.ingest.sentry.io/0";
