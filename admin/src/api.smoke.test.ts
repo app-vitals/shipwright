@@ -34,6 +34,7 @@ interface MockPlugin {
 interface MockAgent {
   id: string;
   name: string;
+  repos: string[];
 }
 
 // ─── Mock factories ───────────────────────────────────────────────────────────
@@ -154,6 +155,7 @@ function buildApp(opts?: {
   bundleOrNull?: AgentEnvBundle | null;
   plugins?: MockPlugin[];
   crons?: AgentCronJob[];
+  repos?: string[];
 }) {
   const hasAgent = opts?.hasAgent ?? true;
   const bundle: AgentEnvBundle | null =
@@ -168,6 +170,7 @@ function buildApp(opts?: {
     makePlugin(KNOWN_AGENT_ID, "shipwright@shipwright"),
   ];
   const crons = opts?.crons ?? [makeCron(KNOWN_AGENT_ID, "cron-1")];
+  const repos = opts?.repos ?? ["org/repo1", "org/repo2"];
 
   const agents = new Map<string, MockAgent>();
   const bundles = new Map<string, AgentEnvBundle | null>();
@@ -175,7 +178,11 @@ function buildApp(opts?: {
   const cronMap = new Map<string, AgentCronJob[]>();
 
   if (hasAgent) {
-    agents.set(KNOWN_AGENT_ID, { id: KNOWN_AGENT_ID, name: "Test Agent" });
+    agents.set(KNOWN_AGENT_ID, {
+      id: KNOWN_AGENT_ID,
+      name: "Test Agent",
+      repos,
+    });
     bundles.set(KNOWN_AGENT_ID, bundle);
     pluginMap.set(KNOWN_AGENT_ID, plugins);
     cronMap.set(KNOWN_AGENT_ID, crons);
@@ -210,6 +217,18 @@ describe("GET /:id/config (mounted as GET /agents/:id/config from root)", () => 
     expect(body.plugins).toEqual([
       { marketplace: "shipwright", plugin: "shipwright" },
     ]);
+    expect(body.repos).toEqual(["org/repo1", "org/repo2"]);
+  });
+
+  test("200 returns repos exactly as stored on the agent, including empty", async () => {
+    const app = buildApp({ repos: [] });
+    const res = await app.request(`/${KNOWN_AGENT_ID}/config`, {
+      headers: { Authorization: `Bearer ${VALID_ADMIN_KEY}` },
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.repos).toEqual([]);
   });
 
   test("parses the canonical plugin@marketplace spec, defaulting bare names to shipwright", async () => {
@@ -363,7 +382,7 @@ function buildCombinedApp() {
     prisma: {
       agent: {
         async findUnique() {
-          return { id: COMBINED_AGENT_ID };
+          return { id: COMBINED_AGENT_ID, repos: [] };
         },
       },
       agentPlugin: {
@@ -676,5 +695,7 @@ describe("combined server — regression guard: runtime middleware must not bloc
       headers: { Authorization: `Bearer ${COMBINED_ADMIN_KEY}` },
     });
     expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.repos).toEqual([]);
   });
 });
