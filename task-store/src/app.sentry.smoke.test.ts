@@ -1,7 +1,8 @@
 /**
  * task-store/src/app.sentry.smoke.test.ts
  *
- * Smoke tests for the onError hook's Sentry wiring (SEN-1.2).
+ * Smoke tests for the onError hook's Sentry wiring (SEN-1.2) and caller
+ * logging (AOB-3.3).
  *
  * Asserts:
  *   - an unhandled (non-ApiError) error triggers sentryClient.captureException
@@ -10,9 +11,12 @@
  *     codes) do NOT trigger captureException
  *   - with no sentryClient dep (undefined — Sentry not initialized), onError
  *     does not throw and behaves exactly as before
+ *   - the unhandled-error console.error log line includes the resolved
+ *     caller's label (via callerLabel()), for both admin and agent tokens
  */
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
+import { callerLabel } from "@shipwright/lib/request-context";
 import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import { createTaskStoreApp } from "./app.ts";
 import { NotFoundError } from "./errors.ts";
@@ -20,6 +24,8 @@ import type { TaskServiceLike } from "./task-service.ts";
 import type { TokenServiceLike } from "./token-service.ts";
 
 const VALID_TOKEN = "valid-token";
+const AGENT_TOKEN = "agent-token";
+const AGENT_ID = "agent-42";
 
 function fakeTokenService(): TokenServiceLike {
   return {
@@ -46,6 +52,19 @@ function fakeTokenService(): TokenServiceLike {
       return [];
     },
     async update() {
+      return null;
+    },
+  };
+}
+
+/** Same as fakeTokenService, but also validates an agent token — so onError
+ *  caller-label coverage can assert both the admin and agent resolved caller. */
+function fakeTokenServiceWithAgent(): TokenServiceLike {
+  return {
+    ...fakeTokenService(),
+    async validate(raw: string) {
+      if (raw === VALID_TOKEN) return { id: "tok-1", agentId: null };
+      if (raw === AGENT_TOKEN) return { id: "tok-2", agentId: AGENT_ID };
       return null;
     },
   };
@@ -138,5 +157,55 @@ describe("onError — Sentry capture wiring", () => {
     });
 
     expect(res.status).toBe(500);
+  });
+});
+
+describe("onError — caller label logging (AOB-3.3)", () => {
+  it("includes the admin caller label in the unhandled-error console.error line", async () => {
+    const consoleErrorSpy = spyOn(console, "error").mockImplementation(
+      () => {},
+    );
+    try {
+      const app = createTaskStoreApp({
+        taskService: throwingTaskService(),
+        tokenService: fakeTokenServiceWithAgent(),
+      });
+
+      const res = await app.request("/tasks/abc", {
+        headers: { Authorization: `Bearer ${VALID_TOKEN}` },
+      });
+
+      expect(res.status).toBe(500);
+      expect(consoleErrorSpy).toHaveBeenCalled();
+      const loggedArgs = consoleErrorSpy.mock.calls.flat().join(" ");
+      expect(loggedArgs).toContain(callerLabel({ name: "admin", scope: "*" }));
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
+  });
+
+  it("includes the agent caller label in the unhandled-error console.error line", async () => {
+    const consoleErrorSpy = spyOn(console, "error").mockImplementation(
+      () => {},
+    );
+    try {
+      const app = createTaskStoreApp({
+        taskService: throwingTaskService(),
+        tokenService: fakeTokenServiceWithAgent(),
+      });
+
+      const res = await app.request("/tasks/abc", {
+        headers: { Authorization: `Bearer ${AGENT_TOKEN}` },
+      });
+
+      expect(res.status).toBe(500);
+      expect(consoleErrorSpy).toHaveBeenCalled();
+      const loggedArgs = consoleErrorSpy.mock.calls.flat().join(" ");
+      expect(loggedArgs).toContain(
+        callerLabel({ name: AGENT_ID, scope: AGENT_ID }),
+      );
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
   });
 });

@@ -12,10 +12,14 @@
  *      b. No scope resolver (URL not set path) → repos defaults to []
  *      c. Scope resolver throws → repos defaults to [] (no crash)
  *      d. Admin token (agentId null) → repos = null (unrestricted), resolver not called
+ *   3. Shared Caller (AOB-3.3):
+ *      a. Admin token → caller = {name: 'admin', scope: '*'}
+ *      b. Agent token → caller = {name: agentId, scope: agentId}
  */
 
 import { describe, expect, it } from "bun:test";
 import { Hono } from "hono";
+import type { Caller } from "@shipwright/lib/request-context";
 import { createBearerAuthMiddleware } from "./auth.ts";
 import type { TaskStoreAuthEnv } from "./auth.ts";
 import type { TokenServiceLike } from "./token-service.ts";
@@ -57,6 +61,7 @@ function makeAuthApp(
       tokenId: c.get("tokenId"),
       agentId: c.get("agentId"),
       repos: c.get("repos"),
+      caller: c.get("caller"),
     });
   });
   return app;
@@ -183,5 +188,29 @@ describe("bearer auth middleware — scope resolver", () => {
     expect(body.agentId).toBeNull();
     expect(body.repos).toBeNull();
     expect(resolverCalled).toBe(false);
+  });
+});
+
+describe("bearer auth middleware — shared Caller", () => {
+  it("sets caller = {name: 'admin', scope: '*'} for admin tokens", async () => {
+    const app = makeAuthApp(fakeAdminTokenService());
+    const res = await app.request("/whoami", {
+      headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { caller: Caller };
+    expect(body.caller).toEqual({ name: "admin", scope: "*" });
+  });
+
+  it("sets caller = {name: agentId, scope: agentId} for agent tokens", async () => {
+    const app = makeAuthApp(fakeAgentTokenService());
+    const res = await app.request("/whoami", {
+      headers: { Authorization: `Bearer ${AGENT_TOKEN}` },
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { caller: Caller };
+    expect(body.caller).toEqual({ name: AGENT_ID, scope: AGENT_ID });
   });
 });

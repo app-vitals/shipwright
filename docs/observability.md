@@ -15,6 +15,7 @@ When `SENTRY_DSN` is set, a service reports:
 - **Unhandled exceptions and 5xx errors**, with stack traces, after scrubbing (see below).
 - **`console.log` / `console.warn` / `console.error` calls**, forwarded as structured Sentry Logs via `consoleLoggingIntegration`.
 - **Request path and method** for errors that occur inside an HTTP handler (via `@sentry/hono`'s `sentry()` middleware, or the app's own `onError` hook).
+- **Caller identity** (admin or agent token) in error logs from task-store, for tracing which token triggered an unhandled error.
 
 ## What is never collected
 

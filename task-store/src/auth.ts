@@ -14,9 +14,16 @@
  *   agent's repos from the agents service. The result is stored as `repos`.
  *   Admin tokens always get `repos: null` (unrestricted) and skip the lookup.
  *   On any error from the resolver, `repos` falls back to `[]` silently (fail-safe restrictive).
+ *
+ * Caller:
+ *   A shared `Caller` (see lib/request-context.ts) is also stored as `caller`,
+ *   for use in logging (e.g. app.ts's onError handler). Admin tokens resolve
+ *   to {name: 'admin', scope: '*'}; agent tokens resolve to {name: agentId,
+ *   scope: agentId}.
  */
 
 import type { MiddlewareHandler } from "hono";
+import type { Caller } from "@shipwright/lib/request-context";
 import type { TokenServiceLike } from "./token-service.ts";
 
 export type TaskStoreAuthEnv = {
@@ -31,6 +38,8 @@ export type TaskStoreAuthEnv = {
      * [...] = agent token with known repo scope.
      */
     repos: string[] | null;
+    /** Shared caller identity, derived from agentId — see lib/request-context.ts. */
+    caller: Caller;
   };
 };
 
@@ -66,6 +75,12 @@ export function createBearerAuthMiddleware(deps: {
 
     c.set("tokenId", result.id);
     c.set("agentId", result.agentId);
+    c.set(
+      "caller",
+      result.agentId === null
+        ? { name: "admin", scope: "*" }
+        : { name: result.agentId, scope: result.agentId },
+    );
 
     // Resolve repos for agent tokens when a scope resolver is configured.
     // Admin tokens (agentId null) get repos: null (unrestricted — skip the lookup).
