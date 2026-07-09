@@ -41,7 +41,7 @@ Write to `state/reviews/pr_review_<number>.json`:
 ```json
 {
   "commit_id": "<head_sha>",
-  "body": "<concise verdict + one-liner>",
+  "body": "Verdict: APPROVE — <concise one-liner>",
   "event": "APPROVE|COMMENT",
   "comments": [
     {
@@ -56,13 +56,25 @@ Write to `state/reviews/pr_review_<number>.json`:
 
 ### Body Guidelines
 
-Keep the body minimal -- inline comments carry the detail. A good body is:
+Keep the body minimal -- inline comments carry the detail. The body MUST start with the
+literal phrase `Verdict: APPROVE` or `Verdict: COMMENT` (matching the verdict), followed
+by a short one-liner. A good body is:
 
-- **APPROVE**: "Looks good, approved." or "Looks good -- a few suggestions inline."
-- **COMMENT**: "A few issues to address before merging." + one-line summary of the
-  most important finding.
+- **APPROVE**: "Verdict: APPROVE — Looks good, approved." or "Verdict: APPROVE — Looks
+  good, a few suggestions inline."
+- **COMMENT**: "Verdict: COMMENT — A few issues to address before merging." + one-line
+  summary of the most important finding.
 
 Don't enumerate findings in the body -- the author sees both body and inline comments.
+
+**This literal phrase is load-bearing, not stylistic.** `check-patch.ts`'s
+`isSelfCleanApprove` matches `Verdict: APPROVE` (case-insensitive, optional `**` markdown
+bold) anywhere in a self-authored review body to recognize a clean self-approve -- this
+matters because GitHub blocks self-APPROVE via the API, so a self-review's clean approval
+is always posted as `event: COMMENT`. Free-form approval prose without the literal phrase
+(e.g. "Clean conversion, no blocking issues.") never matches, and the patch cron then
+treats the review as an unaddressed finding forever. Always lead with the `Verdict: ...`
+label -- don't paraphrase it away.
 
 ### Tone
 
