@@ -125,11 +125,16 @@ export function scrubLog(log: SentryLog): SentryLog {
  * with callers (like `@sentry/hono`'s `sentry()` middleware) that must
  * perform their own `Sentry.init` call, so every init site gets the same
  * enableLogs/environment/scrub-hook config instead of each duplicating it.
- * Returns `undefined` when SENTRY_DSN is unset (nothing to init).
+ * Returns `undefined` when SENTRY_DSN is unset (nothing to init), or when
+ * NODE_ENV is "test" — Bun auto-sets this for `bun test`, and without this
+ * guard any SENTRY_DSN present in the environment would leak intentional
+ * error-path test assertions to production Sentry as real events.
  */
 export function buildSentryInitOptions(
   opts: InitSentryOptions,
 ): Record<string, unknown> | undefined {
+  if (process.env.NODE_ENV === "test") return undefined;
+
   const dsn = process.env.SENTRY_DSN;
   if (!dsn) return undefined;
 

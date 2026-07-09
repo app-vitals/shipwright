@@ -4,7 +4,7 @@
 
 ## Overview
 
-Every Shipwright service (`admin`, `metrics`, `task-store`, `agent`) can report to Sentry when `SENTRY_DSN` is set in its own environment. Each service reads its own `SENTRY_DSN` — there is no shared/global toggle. When `SENTRY_DSN` is unset (the default), Sentry is fully inert: no init call, zero telemetry, zero overhead.
+Every Shipwright service (`admin`, `metrics`, `task-store`, `agent`) can report to Sentry when `SENTRY_DSN` is set in its own environment. Each service reads its own `SENTRY_DSN` — there is no shared/global toggle. When `SENTRY_DSN` is unset (the default), or when `NODE_ENV` is `"test"` (auto-set by `bun test`), Sentry is fully inert: no init call, zero telemetry, zero overhead. The test guard prevents test error-path assertions from leaking to production Sentry as real events.
 
 All services share the same init options and scrub hooks via `buildSentryInitOptions()` / `initSentry()` in `lib/sentry.ts`, so behavior is identical regardless of which service reports.
 
@@ -24,7 +24,7 @@ When `SENTRY_DSN` is set, a service reports:
 
 ## Disabling Sentry
 
-Unset `SENTRY_DSN` (or never set it) for the service in question. This is the default — no other configuration is required to keep a service fully offline from Sentry's perspective.
+Unset `SENTRY_DSN` (or never set it) for the service in question. This is the default — no other configuration is required to keep a service fully offline from Sentry's perspective. Alternatively, `Sentry` is automatically disabled during test runs (when `NODE_ENV` is `"test"`, auto-set by `bun test`) even if `SENTRY_DSN` is present in the environment, preventing test assertions from polluting production Sentry with unintended error events.
 
 ## Self-hosted Sentry
 
