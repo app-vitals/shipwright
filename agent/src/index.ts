@@ -30,6 +30,7 @@ import { createConfig } from "./config.ts";
 import { handleCronRequest } from "./cron-handler.ts";
 import type { CronHandlerDeps } from "./cron-handler.ts";
 import { HttpCronRunReporter } from "./cron-run-reporter.ts";
+import { buildLogPrefix } from "./log-prefix.ts";
 import { markdownToSlack } from "./format.ts";
 import {
   DEFAULT_HEALTH_PORT,
@@ -55,12 +56,19 @@ import { synthesizeSpeech } from "./voice.ts";
 const agentHome = process.env.AGENT_HOME ?? "/data/agent-home";
 const { config } = createConfig(agentHome);
 
-// ─── Timestamp prefix ─────────────────────────────────────────────────────────
+// ─── Agent ID (hoisted for use in console monkeypatch) ────────────────────────
+
+const agentId = config.shipwright.agentId;
+
+// ─── Timestamp + agent ID prefix ──────────────────────────────────────────────
 
 for (const level of ["log", "warn", "error"] as const) {
   const orig = console[level].bind(console);
-  console[level] = (...args: unknown[]) =>
-    orig(`[${new Date().toISOString()}]`, ...args);
+  console[level] = (...args: unknown[]) => {
+    const timestamp = new Date().toISOString();
+    const prefix = buildLogPrefix(agentId, timestamp);
+    orig(prefix, ...args);
+  };
 }
 
 // ─── Sentry (no-op when SENTRY_DSN is unset) ─────────────────────────────────
@@ -153,7 +161,6 @@ console.log("[agent] default plugin install complete");
 
 // ─── Runtime client ───────────────────────────────────────────────────────────
 
-const agentId = config.shipwright.agentId;
 const runtimeClient =
   config.shipwright.apiUrl && config.shipwright.apiKey
     ? new HttpShipwrightRuntimeClient({
