@@ -22,5 +22,64 @@
   "revokeToken_500": {
     "status": 500,
     "body": { "error": "internal server error" }
+  },
+  "listTokens_mixedAgents": {
+    "status": 200,
+    "body": [
+      {
+        "id": "tok_agent1_a",
+        "label": "agent-1 token a",
+        "agentId": "agent-1",
+        "createdAt": "2026-01-01T00:00:00.000Z"
+      },
+      {
+        "id": "tok_agent2_a",
+        "label": "agent-2 token",
+        "agentId": "agent-2",
+        "createdAt": "2026-01-01T00:00:00.000Z"
+      },
+      {
+        "id": "tok_agent1_b",
+        "label": "agent-1 token b",
+        "agentId": "agent-1",
+        "createdAt": "2026-01-02T00:00:00.000Z"
+      },
+      {
+        "id": "tok_admin_noagent",
+        "label": "admin token",
+        "createdAt": "2026-01-01T00:00:00.000Z"
+      },
+      {
+        "id": "tok_agent1_revoked",
+        "label": "agent-1 already revoked",
+        "agentId": "agent-1",
+        "createdAt": "2026-01-01T00:00:00.000Z",
+        "revokedAt": "2026-01-03T00:00:00.000Z"
+      }
+    ]
+  },
+  "listTokens_noMatches": {
+    "status": 200,
+    "body": [
+      {
+        "id": "tok_agent2_a",
+        "label": "agent-2 token",
+        "agentId": "agent-2",
+        "createdAt": "2026-01-01T00:00:00.000Z"
+      },
+      {
+        "id": "tok_admin_noagent",
+        "label": "admin token",
+        "createdAt": "2026-01-01T00:00:00.000Z"
+      }
+    ]
+  },
+  "listTokens_empty": {
+    "status": 200,
+    "body": []
+  },
+  "listTokens_500": {
+    "status": 500,
+    "body": { "error": "internal server error" }
   }
 }

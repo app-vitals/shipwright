@@ -587,6 +587,9 @@ function stubTaskStore(opts?: { throwOnMint?: boolean }): {
     async revokeToken(id: string) {
       revoked.push(id);
     },
+    async listTokensForAgent(_agentId: string) {
+      return [];
+    },
   };
 
   return { client, minted, revoked };
