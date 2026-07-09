@@ -219,42 +219,41 @@ describe("makeOnError", () => {
     });
   });
 
+  /** Captures console.error calls during `fn`, restoring the original after. */
+  function withCapturedConsoleError(fn: () => void): string {
+    const originalError = console.error;
+    const logCalls: unknown[][] = [];
+    console.error = (...args: unknown[]) => {
+      logCalls.push(args);
+    };
+    try {
+      fn();
+    } finally {
+      console.error = originalError;
+    }
+    return logCalls.flat().join(" ");
+  }
+
   describe("caller label in unhandled-error log line", () => {
     it("includes the resolved caller label when a caller is injected via context", () => {
-      const originalError = console.error;
-      const logCalls: unknown[][] = [];
-      console.error = (...args: unknown[]) => {
-        logCalls.push(args);
-      };
-      try {
-        const handler = makeOnError("test");
-        const caller = { name: "bodhi", scope: "client-xyz" };
-        const { ctx } = makeCtx(caller);
-        const err = new Error("Something unexpected");
-        handler(err, ctx as Parameters<ReturnType<typeof makeOnError>>[1]);
-        const logged = logCalls.flat().join(" ");
-        expect(logged).toContain(callerLabel(caller));
-      } finally {
-        console.error = originalError;
-      }
+      const handler = makeOnError("test");
+      const caller = { name: "bodhi", scope: "client-xyz" };
+      const { ctx } = makeCtx(caller);
+      const err = new Error("Something unexpected");
+      const logged = withCapturedConsoleError(() =>
+        handler(err, ctx as Parameters<ReturnType<typeof makeOnError>>[1]),
+      );
+      expect(logged).toContain(callerLabel(caller));
     });
 
     it("logs 'anonymous' when no caller is present on the context", () => {
-      const originalError = console.error;
-      const logCalls: unknown[][] = [];
-      console.error = (...args: unknown[]) => {
-        logCalls.push(args);
-      };
-      try {
-        const handler = makeOnError("test");
-        const { ctx } = makeCtx();
-        const err = new Error("Something unexpected");
-        handler(err, ctx as Parameters<ReturnType<typeof makeOnError>>[1]);
-        const logged = logCalls.flat().join(" ");
-        expect(logged).toContain(callerLabel(undefined));
-      } finally {
-        console.error = originalError;
-      }
+      const handler = makeOnError("test");
+      const { ctx } = makeCtx();
+      const err = new Error("Something unexpected");
+      const logged = withCapturedConsoleError(() =>
+        handler(err, ctx as Parameters<ReturnType<typeof makeOnError>>[1]),
+      );
+      expect(logged).toContain(callerLabel(undefined));
     });
   });
 });
