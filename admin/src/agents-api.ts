@@ -1028,27 +1028,19 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     }
     const { id: agentId } = c.req.valid("param");
 
-    // 404 on unknown id before any side effects.
-    const existing = await prisma.agent.findUnique({
-      where: { id: agentId },
-      select: { id: true, name: true },
-    });
-    if (!existing) {
-      throw new NotFoundError(`agent ${agentId} not found`);
-    }
-
     // Body is optional — an absent/empty body is the common case (most
     // current callers don't send one) and simply means no xoxpToken.
     const body = c.req.valid("json");
 
     // Full teardown: K8s workload, task-store + chat-service tokens/threads,
     // optional Slack app deletion, then the Agent row itself (deleted last,
-    // only if every automatable step succeeded). deleteAgentFully() catches
-    // per-step failures internally and reports them in the result rather than
-    // throwing, so this call is intentionally NOT wrapped in try/catch — a
-    // 500 here would only mean a genuinely unexpected error (e.g. the row
-    // vanishing between the check above and this call), which should
-    // propagate to the existing onError handler like any other ApiError.
+    // only if every automatable step succeeded). deleteAgentFully() does its
+    // own findUnique and throws NotFoundError for an unknown id (→ 404 via
+    // the existing onError handler), so no separate pre-check is needed here.
+    // It catches per-step teardown failures internally and reports them in
+    // the result rather than throwing, so this call is intentionally NOT
+    // wrapped in try/catch — a 500 here would only mean a genuinely
+    // unexpected error, which should propagate like any other ApiError.
     const result = await deleteAgentFully(
       agentId,
       { prisma, provisioner, taskStore, chatService, slack, decrypt },
