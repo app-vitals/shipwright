@@ -185,6 +185,7 @@ Body:
 | `claimedBy` | admin only | Agent ID (agent tokens pin to their own ID) |
 | `taskId` | no | Associated task ID |
 | `phase` | no | Pipeline phase (`review`, `patch`, or `deploy`; default: `review`). When set, the phase is updated and reviewState is preserved. |
+| `prCreatedAt` | no | ISO timestamp of the GitHub PR's actual creation time. Only applied when the claim creates a new record (`201`); ignored on subsequent claims (`200`) of an existing record since the field is immutable once set. |
 
 Claim semantics:
 - No existing record → creates and returns `201`
@@ -247,6 +248,21 @@ Writable fields: `staged`, `commitSha`, `taskId`, `agentId`, `state`, `mergedAt`
 `reviewState`: `pending` → `in_progress` → `posted` | `approved`
 
 `phase`: `review` | `patch` | `deploy` — tracks which pipeline phase the PR is currently in. Set via `PATCH /prs/:id`. The `readyForReviewAt`, `readyForPatchAt`, and `readyForDeployAt` timestamps record when the PR became ready for each phase; COALESCE across them gives a unified queue-entry time.
+
+#### PR timestamp fields
+
+The following timestamp fields are managed by the task store:
+
+| Field | Managed by | Description |
+|-------|-----------|-------------|
+| `prCreatedAt` | `POST /prs/claim` | ISO timestamp of the GitHub PR's actual creation time (distinct from `createdAt`, which records when the task-store record itself was created). Set once via the optional `prCreatedAt` field on the first `POST /prs/claim` call that creates the record (`201`); read-only thereafter — later claims cannot modify it. Not currently populated by any Shipwright command; callers must supply GitHub's PR `createdAt` explicitly to use this field. |
+| `createdAt` | Auto | ISO timestamp when the task-store PR record was created. |
+| `updatedAt` | Auto | ISO timestamp when the task-store PR record was last modified. |
+| `reviewedAt` | `POST /prs/:id/complete` | Set when the review cycle completes. |
+| `patchedAt` | `POST /prs/:id/patch` | Set when the patch cycle completes. |
+| `mergedAt` | Writable via `PATCH /prs/:id` | Manually set or updated when marking the PR as merged. |
+| `claimedAt` | `POST /prs/claim` | Set when the PR is claimed by an agent. |
+| `heartbeatAt` | `POST /prs/:id/heartbeat` | Updated to now whenever the claiming agent signals it is still working. |
 
 ### Token management (admin only)
 

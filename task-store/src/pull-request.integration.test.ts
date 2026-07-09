@@ -69,6 +69,7 @@ describeOrSkip("PullRequest model (integration)", () => {
     expect(read.readyForReviewAt).toBeNull();
     expect(read.readyForPatchAt).toBeNull();
     expect(read.readyForDeployAt).toBeNull();
+    expect(read.prCreatedAt).toBeNull();
     expect(read.createdAt).toBeInstanceOf(Date);
     expect(read.updatedAt).toBeInstanceOf(Date);
   });
@@ -125,6 +126,27 @@ describeOrSkip("PullRequest model (integration)", () => {
     expect(rows[0].prNumber).toBe(602); // earliest: readyForReviewAt 01:00
     expect(rows[1].prNumber).toBe(601); // middle:   readyForPatchAt  02:00
     expect(rows[2].prNumber).toBe(603); // latest:   readyForDeployAt 03:00
+  });
+
+  it("round-trips prCreatedAt", async () => {
+    const prCreatedAt = "2026-06-15T08:30:00.000Z";
+
+    const created = await prisma.pullRequest.create({
+      data: {
+        repo: "app-vitals/shipwright",
+        prNumber: 55,
+        prCreatedAt,
+      },
+    });
+
+    const read = await prisma.pullRequest.findUnique({
+      where: { id: created.id },
+    });
+
+    expect(read).not.toBeNull();
+    if (!read) return;
+
+    expect(read.prCreatedAt).toBe(prCreatedAt);
   });
 
   it("rejects duplicate (repo, prNumber)", async () => {
@@ -394,6 +416,91 @@ describeOrSkip("PullRequestService.claim() phase support (integration)", () => {
       expect(err).toBeInstanceOf(ConflictError);
     }
     expect(threw).toBe(true);
+  });
+});
+
+// ─── claim() prCreatedAt wiring ────────────────────────────────────────────────
+
+describeOrSkip("PullRequestService.claim() prCreatedAt wiring (integration)", () => {
+  let prisma: PrismaClient;
+  let service: PullRequestService;
+
+  beforeEach(async () => {
+    prisma = makePrisma();
+    service = new PullRequestService(prisma);
+    await prisma.pullRequest.deleteMany();
+  });
+
+  afterEach(async () => {
+    await prisma.$disconnect();
+  });
+
+  it("claim() sets prCreatedAt on first claim (record creation) when provided", async () => {
+    const repo = "app-vitals/shipwright";
+    const prNumber = 800;
+    const prCreatedAt = "2026-01-01T00:00:00.000Z";
+
+    const result = await service.claim(
+      repo,
+      prNumber,
+      "sha-1",
+      "agent-a",
+      undefined,
+      "review",
+      prCreatedAt,
+    );
+
+    expect(result.status).toBe(201);
+    expect(result.record.prCreatedAt).toBe(prCreatedAt);
+  });
+
+  it("claim() leaves prCreatedAt null on record creation when not provided", async () => {
+    const repo = "app-vitals/shipwright";
+    const prNumber = 801;
+
+    const result = await service.claim(repo, prNumber, "sha-1", "agent-a");
+
+    expect(result.status).toBe(201);
+    expect(result.record.prCreatedAt).toBeNull();
+  });
+
+  it("claim() never overwrites an existing prCreatedAt on subsequent claims (immutable)", async () => {
+    const repo = "app-vitals/shipwright";
+    const prNumber = 802;
+    const originalPrCreatedAt = "2026-01-01T00:00:00.000Z";
+
+    // First claim sets prCreatedAt.
+    await service.claim(
+      repo,
+      prNumber,
+      "sha-1",
+      "agent-a",
+      undefined,
+      "review",
+      originalPrCreatedAt,
+    );
+
+    // Release so a new claim can proceed, then claim again with a different
+    // sha and a different (bogus) prCreatedAt — it must not be applied since
+    // the field is read-only once set.
+    const releaseTarget = await prisma.pullRequest.findUnique({
+      where: { repo_prNumber: { repo, prNumber } },
+    });
+    if (!releaseTarget) throw new Error("expected record to exist");
+    await service.release(releaseTarget.id);
+
+    const second = await service.claim(
+      repo,
+      prNumber,
+      "sha-2",
+      "agent-b",
+      undefined,
+      "review",
+      "2026-12-31T00:00:00.000Z",
+    );
+
+    expect(second.status).toBe(200);
+    expect(second.record.prCreatedAt).toBe(originalPrCreatedAt);
   });
 });
 

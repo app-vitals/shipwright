@@ -49,6 +49,7 @@ export interface PullRequestServiceLike {
     claimedBy: string,
     taskId?: string,
     phase?: PrPhase,
+    prCreatedAt?: string,
   ): Promise<{ status: 200 | 201; record: PullRequest }>;
   heartbeat(id: string): Promise<PullRequest>;
   complete(id: string): Promise<PullRequest>;
@@ -153,6 +154,7 @@ export class PullRequestService implements PullRequestServiceLike {
     claimedBy: string,
     taskId?: string,
     phase: PrPhase = "review",
+    prCreatedAt?: string,
   ): Promise<{ status: 200 | 201; record: PullRequest }> {
     const now = this.clock.now().toISOString();
 
@@ -227,6 +229,10 @@ export class PullRequestService implements PullRequestServiceLike {
           heartbeatAt: now,
           phase,
           ...(taskId !== undefined ? { taskId } : {}),
+          // prCreatedAt is only ever set here, at record creation — it is
+          // immutable thereafter (never touched by the update branch above),
+          // matching the "read-only via the API" contract in docs/task-store.md.
+          ...(prCreatedAt !== undefined ? { prCreatedAt } : {}),
         };
 
         if (phase === "review") {

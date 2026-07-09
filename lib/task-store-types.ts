@@ -1647,6 +1647,11 @@ export interface components {
             patchedAt?: string | null;
             /** @example null */
             mergedAt?: string | null;
+            /**
+             * @description ISO timestamp of the GitHub PR's actual creation time. Set once via POST /prs/claim (first claim only); read-only thereafter.
+             * @example 2026-01-01T00:00:00.000Z
+             */
+            prCreatedAt?: string | null;
             /** @example agent-id-123 */
             claimedBy?: string | null;
             /** @example 2026-01-02T00:00:00.000Z */
@@ -1711,6 +1716,17 @@ export interface components {
              * @example clx1234567890
              */
             taskId?: string;
+            /**
+             * @description Pipeline phase this claim is for (defaults to 'review' when omitted)
+             * @example patch
+             * @enum {string}
+             */
+            phase?: "review" | "patch" | "deploy";
+            /**
+             * @description ISO timestamp of the GitHub PR's actual creation time. Only applied on first claim (record creation); ignored on subsequent claims since the field is immutable once set.
+             * @example 2026-01-01T00:00:00.000Z
+             */
+            prCreatedAt?: string;
         };
         ClaimNextResponse: {
             pr: components["schemas"]["PullRequest"];
