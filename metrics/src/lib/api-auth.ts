@@ -16,9 +16,9 @@
  */
 
 import type { RouteConfig, RouteHandler } from "@hono/zod-openapi";
+import type { Caller } from "@shipwright/lib/request-context";
 import type { Context } from "hono";
 import { createMiddleware } from "hono/factory";
-import type { Caller } from "@shipwright/lib/request-context";
 import type { AccountsClient } from "./accounts-client.ts";
 import { ForbiddenError } from "./errors.ts";
 

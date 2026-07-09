@@ -85,10 +85,7 @@ export function makeOnError(
       );
     }
     const caller = callerLabel(c.get("caller"));
-    console.error(
-      `[${servicePrefix}] unhandled error (${caller}):`,
-      err,
-    );
+    console.error(`[${servicePrefix}] unhandled error (${caller}):`, err);
     sentryClient?.captureException(err);
     return c.json({ error: err.message }, 500);
   };
