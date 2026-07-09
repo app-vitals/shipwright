@@ -409,33 +409,6 @@ cross-language principle:
 
 Judgment-only — this entry carries no Detection field and is never entropy-scanned.
 
-### `claim_heartbeat_release`
-
-**Domain:** architecture
-**Severity:** medium
-
-Any command that coordinates work through a claimable record (a task, a PR, a review)
-follows the same three-step lifecycle: **claim, heartbeat, release.** An atomic claim sets
-`claimedBy`/`claimedAt`/`heartbeatAt` (and, where applicable, a `phase`) so concurrent
-callers don't double-process the same record. Before any long-running step in the
-pipeline — dispatching a subagent, waiting on CI, or any other step that can outlast a
-single heartbeat interval — the claim is renewed with a fresh heartbeat so it stays alive
-across the pipeline's longest steps. On completion, the claim fields
-(`claimedBy`/`claimedAt`/`heartbeatAt`/`phase`) are explicitly cleared — regardless of
-outcome, whether the run ended in success or a benign no-op. Every normal-completion code
-path owns this release step itself; there is no separate mechanism that performs it on a
-command's behalf.
-
-The stale-claim reaper (a background TTL-based sweep that reclaims claims whose heartbeat
-has gone silent past a threshold) exists solely as a **crash backstop** — it recovers a
-claim left behind by a session that died mid-pipeline and never reached its own release
-step. It must never be treated as the primary way a claim gets released: relying on the
-reaper to clean up after a normal completion (rather than clearing the claim fields
-explicitly in that code path) leaves a claim looking "active" for the full TTL window,
-blocking every other caller from picking up the record in the meantime.
-
-Judgment-only — this entry carries no Detection field and is never entropy-scanned.
-
 ---
 
 ## Testing
