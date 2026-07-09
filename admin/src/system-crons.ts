@@ -103,4 +103,13 @@ export const SYSTEM_CRONS: readonly SystemCron[] = [
     silent: true,
     enabled: false,
   },
+  {
+    name: "error-patrol-maintenance",
+    schedule: "0 4 * * *",
+    prompt:
+      '/shipwright:error-scan\n/shipwright:error-fix\n/shipwright:error-resolve\nAfter the chain completes, write state/error-patrol-ledger.json\'s lastRun field: "<ISO timestamp>". Use [silent] if no new or regressed issues are found.',
+    silent: true,
+    preCheck: "shipwright:check-error-patrol.ts",
+    enabled: false,
+  },
 ] as const;
