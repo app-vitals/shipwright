@@ -21,7 +21,9 @@ narrative itself is still written locally to `state/reviews/PR_REVIEW_{pr}.md` a
 
 Parse `$ARGUMENTS`:
 - `org/repo#number` (e.g. `app-vitals/shipwright#123`): target a specific PR. If a staged
-  review exists (PR record with `staged: true`), post it. Otherwise, review it.
+  review exists and has gone stale (new commits since staging), refresh it. Otherwise
+  review it fresh. This command never posts a staged review — use `/shipwright:review-staged`
+  for that.
 - `number` or `#number`: same, using the repo from the task store API
 - No arguments: normal review flow — find the next PR to review from the queue
 
@@ -88,49 +90,10 @@ Before building the queue, resolve the current GitHub CLI user once and remember
 gh api /user -q '.login'
 ```
 
-### Step 3a: Drain Staged Queue (interactive mode)
-
-Fetch staged PR records for each configured repo:
-```bash
-curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/prs?repo={org}/{repo}&staged=true" | jq -c '.prs[]'
-```
-
-If any staged records exist, fetch current GitHub metadata for each (the record may hold
-stale metadata) to populate the display:
-```bash
-gh pr view {pr} --repo {org}/{repo} --json title,additions,deletions
-```
-`diffSize` = `additions + deletions`. Treat a record with `reviewState: "approved"` as an
-APPROVE verdict for sorting. `reviewState: "in_progress"` means COMMENT (records staged
-before the verdict-persist fix — backwards-compatible).
-
-Present them in priority order:
-1. **APPROVE verdicts first** (`reviewState: "approved"`) — unblocking is highest value
-2. **Then by `diffSize` ascending** — smallest diffs are fastest to confirm
-
-Display:
-```
-## Staged Reviews ({N})
-| PR | Repo | Title | Verdict | Diff | Staged |
-|----|------|-------|---------|------|--------|
-| #123 | example-repo | Add feature X | APPROVE | +45/-12 (57) | 2h ago |
-| #456 | example-repo | Fix bug Y | COMMENT | +120/-30 (150) | 1h ago |
-
-Post staged reviews, or skip to new reviews?
-```
-
-The "Staged" column comes from `record.updatedAt`.
-
-**If posting**: work through them one at a time using the Step 14 posting mechanics
-(show review summary → confirm → post → move to next). After all staged reviews are
-processed or skipped, continue to Step 3b.
-
-**If skipping**: proceed directly to Step 3b.
-
----
-
-### Step 3b: Build Review Queue
+Staged reviews (`staged: true` records) are entirely out of scope for this command —
+listing, walking, and posting them is owned exclusively by `/shipwright:review-staged`.
+This command only ever produces or refreshes review content; see Step 14 for the one
+exception (refreshing a stale staged review on explicit targeted invocation).
 
 If `review_external_prs` is true, resolve the configured repos and fetch open PRs for each:
 
@@ -184,7 +147,7 @@ Apply this eligibility logic:
 
 - **No record**: eligible (new PR, Tier 2). `LAST_REVIEWED_COMMIT` is empty. No local
   entry is created — the task store creates the record atomically on first claim in Step 4.
-- **`staged: true`**: exclude — Step 3a owns staged records.
+- **`staged: true`**: exclude — owned exclusively by `/shipwright:review-staged`.
 - **`reviewState: "in_progress"`**: skip (another run has claimed it).
 - **`reviewState: "posted"` or `"approved"`**: check for new commits since last review:
   ```bash
@@ -238,11 +201,12 @@ re-reviewing closes the loop and can unblock a merge.
 The PR has no record yet, or the record has `reviewState: "pending"`. Never been reviewed —
 give it first feedback so every open PR gets coverage.
 
-Staged records (`staged: true`) are NOT picked here — Step 3a owns them. During a cron run,
-nobody has seen a staged review yet, so refreshing it just burns the slot. Staged records
-are re-reviewed only on demand via an explicit `/shipwright:review {org}/{repo}#{pr}`
-invocation (the `/shipwright:review-staged` walkthrough already skips stale entries and
-directs the owner there).
+Staged records (`staged: true`) are NOT picked here — `/shipwright:review-staged` owns
+them. During a cron run, nobody has seen a staged review yet, so refreshing it just burns
+the slot. Staged records are re-reviewed only on demand via an explicit
+`/shipwright:review {org}/{repo}#{pr}` invocation when the head SHA has drifted (the
+`/shipwright:review-staged` walkthrough already skips stale entries and directs the
+owner there); see Step 14.
 
 Pick the first PR from the highest non-empty tier. Order within tiers:
 - **Tier 1**: sort by `record.updatedAt` descending (most recently touched first).
@@ -273,7 +237,7 @@ git -C repos/{repo} worktree add worktrees/{repo}-{branch-slug} origin/{branch}
 
 ### Claim using pre-captured commit SHA
 
-`LAST_REVIEWED_COMMIT` was already captured in Step 3b from the PR record fetched during
+`LAST_REVIEWED_COMMIT` was already captured in Step 3 from the PR record fetched during
 deduplication (empty if no record existed). The claim will overwrite `commitSha` with the
 new head — `LAST_REVIEWED_COMMIT` preserves the pre-claim value without an extra fetch.
 Use it in Steps 5 and 9.
@@ -293,7 +257,7 @@ PR_CLAIM=$(curl -s -o /tmp/pr_claim.json -w '%{http_code}' -X POST \
   `PR_RECORD_ID`; the claim sets `reviewState: "in_progress"`.
 - `409` (conflict): another agent holds the claim at this commit. Remove the worktree
   (`git -C repos/{repo} worktree remove worktrees/{repo}-{branch-slug} --force 2>/dev/null`),
-  **skip this PR**, and return to Step 3b to pick the next candidate.
+  **skip this PR**, and return to Step 3 to pick the next candidate.
 
 All subsequent steps run from `worktrees/{repo}-{branch-slug}/`.
 
@@ -331,7 +295,7 @@ All subsequent steps run from `worktrees/{repo}-{branch-slug}/`.
 7. **Test-readiness context** (optional): try to read `worktrees/{repo}-{branch-slug}/docs/test-readiness/test-system.md`. If absent, note that no repo-specific test-readiness doc exists. When the changed files include any path that looks like a test file — by common conventions across languages (e.g. files named or located in a way that signals they contain tests, such as files in `test/`, `tests/`, `spec/`, or `__tests__/` directories, or files whose names follow typical test-naming conventions for the project's language), also extract the "## Testing" section from the root CLAUDE.md (if present). Use the project's language and toolchain (visible from the diff and CLAUDE.md) to recognise test files — do not apply a fixed set of glob patterns. Combine both pieces into `testReadinessContext`. If neither produces content, `testReadinessContext` is absent — omit it entirely from the subagent prompt.
 
 `lastReviewedCommit` is the `LAST_REVIEWED_COMMIT` value saved from the pre-claim record in
-Step 3b (the record's `commitSha` before the claim overwrote it).
+Step 3 (the record's `commitSha` before the claim overwrote it).
 
 Apply the unresolved comment check from Step 3 using the fetched `reviews` and `comments`
 (they were just fetched above — no extra API call needed). **If `lastReviewedCommit` is set AND
@@ -340,7 +304,7 @@ re-review unconditionally.** Only run the check for first reviews (no `lastRevie
 when the head has not moved (`headRefOid == lastReviewedCommit`). If any substantive unresolved
 feedback is found: release the claim so the record returns to `pending`
 (`POST $SHIPWRIGHT_TASK_STORE_URL/prs/{PR_RECORD_ID}/release`), skip this PR, and return to
-Step 3b to pick the next candidate.
+Step 3 to pick the next candidate.
 
 8. **Renew the claim heartbeat**: context-gathering plus the deep review that follows can
    together run longer than the claim TTL, so renew the heartbeat now, before starting the
@@ -589,7 +553,7 @@ should be held; the inline comments convey the specific feedback to the author.
 ### If `auto_post_reviews` is false (default):
 
 1. Mark the PR record staged, persisting the verdict so the APPROVE-first sort in
-   `/shipwright:review-staged` (and the drain display above) works correctly:
+   `/shipwright:review-staged` works correctly:
 
    If `{verdict}` is `APPROVE`:
    ```bash
@@ -643,9 +607,9 @@ Use the Slack MCP tool if available. If no Slack integration is configured, prin
 
 ## Step 11b: Mark PullRequest Record Posted
 
-Run this step immediately after posting a review (applies to both the `auto_post_reviews` path in Step 11 and the targeted PR posting path in Step 14). Skip this step when the review is staged (not posted).
+Run this step immediately after posting a review. The only place this command posts is Step 11's `auto_post_reviews: true` path; `/shipwright:review-staged`'s `post it` action also runs this step (after its own staged-flag clear, which is the one thing this step doesn't do) since posting-then-completing is identical either way. Skip this step when the review is staged (not posted).
 
-Use `{verdict}` (from Step 10) and `PR_RECORD_ID` — the record ID captured from the claim in Step 4 (targeted flow: from the staged record fetched in Step 14).
+Use `{verdict}` and `PR_RECORD_ID` — from Step 10 and the claim in Step 4 respectively when called from this command; `record.reviewState == "approved" ? APPROVE : COMMENT` and `record.id` respectively when called from `/shipwright:review-staged`.
 
 ### 1. Confirm the record ID
 
@@ -706,22 +670,30 @@ When invoked with a specific PR (e.g. `/shipwright:review app-vitals/shipwright#
    ```
    Capture the record's `id` as `PR_RECORD_ID` and `commitSha` as `lastReviewedCommit`.
 
-**If a record exists with `staged: true`** — check for drift, then post:
+**This command never posts a staged review — posting a staged review is owned exclusively
+by `/shipwright:review-staged`.** `/shipwright:review` only ever produces or refreshes
+review content. The one thing a targeted invocation does with an existing staged record
+is refresh it if it's gone stale — nothing more.
 
-> **Design note**: When `auto_post_reviews` is false, the cron stages reviews and
-> notifies the owner. Explicitly targeting a staged PR (`/shipwright:review {pr}`) IS
-> the posting confirmation — the owner ran the command knowing a review is staged.
-> No additional confirmation prompt is needed; targeted invocation is the approval gesture.
+**If a record exists with `staged: true`**:
 
-**2a. Head-SHA drift check** — before anything else, fetch the current head commit:
+Fetch the current head commit and compare to `record.commitSha` (`lastReviewedCommit`):
 ```bash
 gh pr view {pr} --repo {org}/{repo} --json headRefOid --jq '.headRefOid'
 ```
-Compare to `record.commitSha` (`lastReviewedCommit`).
 
-If `headRefOid != record.commitSha` (author pushed new commits since the review was staged):
-- Do **not** post the stale review body.
-- Re-claim the record at the new head to flip it to `in_progress` and clear staged:
+- **`headRefOid == record.commitSha`** (no new commits — the staged review is still
+  current, nothing to refresh). Translate `record.reviewState` to a verdict the same way
+  `/shipwright:review-staged` does (`approved` → APPROVE, `posted`/`in_progress` → COMMENT),
+  then print:
+  ```
+  #{pr} already has a staged review ({verdict}) waiting on a decision.
+  Run /shipwright:review-staged to post, skip, or discuss it.
+  ```
+  Stop.
+- **`headRefOid != record.commitSha`** (author pushed new commits since staging — the
+  staged review is stale and needs a refresh). Re-claim the record at the new head to
+  flip it to `in_progress`:
   ```bash
   curl -sf -X POST \
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
@@ -729,61 +701,16 @@ If `headRefOid != record.commitSha` (author pushed new commits since the review 
     "$SHIPWRIGHT_TASK_STORE_URL/prs/claim" \
     -d "{\"repo\": \"{org}/{repo}\", \"prNumber\": {pr}, \"commitSha\": \"{headRefOid}\"}" >/dev/null
   ```
-- Print:
+  Print:
   ```
   Staged review is stale — {pr} has new commits since the review was written ({record.commitSha[0..7]} → {headRefOid[0..7]}).
   Re-reviewing now.
   ```
-- Continue from **Step 4** (checkout into worktree) with this PR as the target.
-  The Step 9 "Re-Review (Update)" mechanics will append an update section to the
-  existing `state/reviews/PR_REVIEW_{pr}.md` and re-stage the record.
-- Stop the post flow here.
-
-**2b. Re-fetch for new unresolved feedback** before posting (only reached when head SHA matches):
-```bash
-gh pr view {pr} --repo {org}/{repo} --json reviews,comments,commits
-```
-Apply the unresolved comment check from Step 3, but restricted to feedback that arrived
-**after the record's `reviewedAt`** timestamp.
-
-If any substantive unresolved comments or `CHANGES_REQUESTED` reviews arrived since the
-review was staged:
-- No state change is needed — the record stays staged.
-- Print:
-  ```
-  Not posting — new unresolved feedback arrived since the review was staged:
-  - @{login} ({date}): "{first 120 chars of body}"
-  ...
-  Review remains staged. Address the feedback, then re-run /shipwright:review {org}/{repo}#{pr}.
-  ```
-- Stop.
-
-3. Read `state/reviews/PR_REVIEW_{pr}.md` and extract the verdict and findings summary
-4. Print what is about to be posted so the owner can see it before the API call fires:
-   ```
-   Posting staged review for #{pr}: {title}
-   Verdict: {APPROVE|COMMENT} — {findingsCount} findings
-   {One-line key findings summary, or "No blocking issues" if clean}
-   Review file: state/reviews/PR_REVIEW_{pr}.md
-   ```
-5. Read `state/reviews/pr_review_{pr}.json`
-6. Submit:
-   ```bash
-   gh api -X POST /repos/{org}/{repo}/pulls/{pr}/reviews \
-     --input state/reviews/pr_review_{pr}.json
-   ```
-7. Capture `html_url`
-8. Clear the staged flag, then run Step 11b to mark the record posted:
-   ```bash
-   curl -sf -X PATCH \
-     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-     -H "Content-Type: application/json" \
-     "$SHIPWRIGHT_TASK_STORE_URL/prs/${PR_RECORD_ID}" \
-     -d '{"staged": false}' >/dev/null
-   ```
-   Then run Step 11b (using `PR_RECORD_ID`) to `complete()` and set `agentId`/`reviewState`.
-9. Print: `Posted review for #{pr}: {html_url}`
-10. Post Slack message using the format from Step 11
+  Continue from **Step 4** (checkout into worktree) with this PR as the target. The
+  Step 9 "Re-Review (Update)" mechanics append an update section to the existing
+  `state/reviews/PR_REVIEW_{pr}.md`, and Step 11 re-stages the record — the same
+  policy-gated staging path any other review goes through. This command never posts
+  it; running `/shipwright:review-staged` afterward is how the owner acts on it.
 
 **If no record or record is not staged** — review it:
 
