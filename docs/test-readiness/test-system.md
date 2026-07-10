@@ -98,7 +98,7 @@ The agent is a thin runner with a Prisma-backed PostgreSQL database and a Hono H
 └────┬────┘
      │
 ┌────▼──────┐
-│ Typecheck │  bun run --filter="*" typecheck
+│ Typecheck │  bun run --filter="*" --sequential typecheck
 └────┬──────┘
      │
      ├──────────────┬──────────────┐
