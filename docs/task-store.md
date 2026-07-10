@@ -238,7 +238,7 @@ Writable fields: `staged`, `commitSha`, `taskId`, `agentId`, `state`, `mergedAt`
 |----------|--------|
 | `POST /prs/:id/heartbeat` | Touch `heartbeatAt` |
 | `POST /prs/:id/complete` | `reviewState=posted`, increment `reviewCycles`, set `reviewedAt` |
-| `POST /prs/:id/patch` | `reviewState=pending`, increment `patchCycles`, set `patchedAt` |
+| `POST /prs/:id/patch` | Increment `patchCycles`, set `patchedAt`, clear `claimedBy`/`claimedAt`/`heartbeatAt`/`phase`. Conditionally reset `reviewState=pending` based on optional `commitSha` in body: if omitted, unconditionally reset to pending; if provided and differs from record's stored `commitSha`, reset to pending and update `commitSha`; if provided and matches, leave `reviewState` untouched (no-op patch cycle). |
 | `POST /prs/:id/release` | Clear `claimedBy`/`claimedAt`, `reviewState=pending` |
 
 #### PR state enums
