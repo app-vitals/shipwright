@@ -506,6 +506,39 @@ describe("createLoopOrchestrator", () => {
     expect(skips.map((s) => s.phase)).toEqual(["dev-task"]);
   });
 
+  test("a runner throw during dispatch reports a failed run, rethrows, and still releases the busy flag", async () => {
+    const consumed = new Set<string>();
+    const { reporter, creates, completes, skips } = makeRecordingReporter();
+    const devTaskCandidates = [task("SWC-1.1", "2026-01-01T00:00:00Z")];
+    const runner = async (message: string) => {
+      throw new Error(`claude run failed for ${message}`);
+    };
+    const deps = makeDeps({
+      devTaskCandidates,
+      runner,
+      reporter,
+      consumed,
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await expect(loop([job("shipwright-dev-task", true)])).rejects.toThrow(
+      "claude run failed for /shipwright:dev-task",
+    );
+
+    // The run was created and then completed with outcome "failed" — never
+    // silently dropped — and the error propagated instead of being swallowed.
+    expect(creates.map((c) => c.phase)).toEqual(["dev-task"]);
+    expect(completes).toEqual([
+      { cronId: "shipwright-loop", runId: "run-1", outcome: "failed", phase: "dev-task" },
+    ]);
+    expect(skips).toEqual([]);
+
+    // The SAME closure's busy flag is released — a subsequent tick on it is
+    // not blocked (all phases disabled here, so it just no-ops on candidates).
+    await loop([job("shipwright-dev-task", false)]);
+    expect(creates.map((c) => c.phase)).toEqual(["dev-task"]);
+  });
+
   test("releases the busy flag even when an iteration throws", async () => {
     let firstCall = true;
     const deps = makeDeps({
