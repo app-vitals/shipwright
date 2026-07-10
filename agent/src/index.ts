@@ -29,7 +29,10 @@ import { SystemClock } from "./clock.ts";
 import { createConfig } from "./config.ts";
 import { handleCronRequest } from "./cron-handler.ts";
 import type { CronHandlerDeps } from "./cron-handler.ts";
-import { HttpCronRunReporter } from "./cron-run-reporter.ts";
+import {
+  HttpCronRunReporter,
+  NoopCronRunReporter,
+} from "./cron-run-reporter.ts";
 import { markdownToSlack } from "./format.ts";
 import {
   DEFAULT_HEALTH_PORT,
@@ -39,10 +42,9 @@ import {
 } from "./health.ts";
 import { HttpChatServiceClient } from "./http-chat-service-client.ts";
 import { buildLogPrefix } from "./log-prefix.ts";
-import {
-  classifyCronJobsForScheduling,
-  handleLoopCronRequest,
-} from "./loop-cron-classifier.ts";
+import { classifyCronJobsForScheduling } from "./loop-cron-classifier.ts";
+import type { CronJobLike } from "./loop-cron-classifier.ts";
+import { createProductionLoopOrchestrator } from "./loop-orchestrator.ts";
 import { createFileSessionStore, threadKey } from "./sessions.ts";
 import { ensureAgentHome, installPlugins, runMiseStartup } from "./setup.ts";
 import { HttpShipwrightRuntimeClient } from "./shipwright-runtime-client.ts";
@@ -254,6 +256,40 @@ if (runtimeClient && agentId) {
 
 const cronTasks = new Map<string, ReturnType<typeof nodeCron.schedule>>();
 
+// The shipwright-loop orchestrator is a single stateful closure (it owns the
+// cross-tick busy flag), so it must be constructed once and reused across
+// ticks — not rebuilt per fire. Built lazily on the first loop dispatch so
+// agents without a shipwright-loop cron never pay its GitHub/workspace dep
+// wiring cost, and its construction errors surface at fire time (logged by the
+// cron callback's try/catch) rather than crashing agent startup.
+let loopOrchestrator: ((jobs: CronJobLike[]) => Promise<void>) | undefined;
+let loopOrchestratorInit: Promise<
+  (jobs: CronJobLike[]) => Promise<void>
+> | null = null;
+
+async function getLoopOrchestrator(): Promise<
+  (jobs: CronJobLike[]) => Promise<void>
+> {
+  if (loopOrchestrator) return loopOrchestrator;
+  if (!loopOrchestratorInit) {
+    loopOrchestratorInit = createProductionLoopOrchestrator({
+      runner,
+      cronRunReporter: cronRunReporter ?? new NoopCronRunReporter(),
+    })
+      .then((orch) => {
+        loopOrchestrator = orch;
+        return orch;
+      })
+      .catch((err) => {
+        // Reset so a transient dep-wiring failure (e.g. gh unavailable) can be
+        // retried on the next loop tick rather than caching the rejection.
+        loopOrchestratorInit = null;
+        throw err;
+      });
+  }
+  return loopOrchestratorInit;
+}
+
 if (runtimeClient && agentId) {
   async function syncCrons() {
     if (!runtimeClient || !agentId) return;
@@ -293,7 +329,8 @@ if (runtimeClient && agentId) {
           console.log(`[cron] firing job ${id}`);
           try {
             if (dispatch === "loop") {
-              await handleLoopCronRequest(jobs);
+              const orchestrator = await getLoopOrchestrator();
+              await orchestrator(jobs);
             } else {
               await handleCronRequest(
                 {

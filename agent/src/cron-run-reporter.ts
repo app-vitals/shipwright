@@ -19,8 +19,22 @@ export interface ModelBreakdownEntry {
 }
 
 export interface CronRunReporter {
-  /** Called at run start — returns the runId to use for completion (null for no-op). */
-  createRun(cronId: string, startedAt: Date): Promise<string | null>;
+  /**
+   * Called at run start — returns the runId to use for completion (null for
+   * no-op).
+   *
+   * `phase` tags the run with the pipeline phase it serves (dev-task / review /
+   * patch / deploy). Under the single-cron loop model every invocation shares
+   * one cronId, so the phase is the only way to attribute a run to a specific
+   * command in the admin UI and metrics dashboard. Optional and additive —
+   * callers that don't pass it (e.g. the generic cron handler) keep working
+   * unchanged.
+   */
+  createRun(
+    cronId: string,
+    startedAt: Date,
+    phase?: string,
+  ): Promise<string | null>;
   /** Called when run completes (success or error). Includes token data for non-error. */
   completeRun(
     cronId: string,
@@ -35,6 +49,7 @@ export interface CronRunReporter {
       cacheCreationTokens?: number;
       modelBreakdown?: ModelBreakdownEntry[];
     },
+    phase?: string,
   ): Promise<void>;
   /** Called when precheck causes a skip. No token data. */
   skipRun(
@@ -43,6 +58,7 @@ export interface CronRunReporter {
     completedAt: Date,
     skipReason: string,
     opts?: { error?: string },
+    phase?: string,
   ): Promise<void>;
 }
 
@@ -81,9 +97,18 @@ export class HttpCronRunReporter implements CronRunReporter {
     }
   }
 
-  async createRun(cronId: string, startedAt: Date): Promise<string | null> {
+  async createRun(
+    cronId: string,
+    startedAt: Date,
+    phase?: string,
+  ): Promise<string | null> {
     const { apiUrl, agentId, apiKey } = this.opts;
     const url = `${apiUrl}/agents/${agentId}/crons/${cronId}/runs`;
+
+    const startBody: Record<string, unknown> = {
+      startedAt: startedAt.toISOString(),
+    };
+    if (phase !== undefined) startBody.phase = phase;
 
     try {
       const res = await fetch(url, {
@@ -92,7 +117,7 @@ export class HttpCronRunReporter implements CronRunReporter {
           "Content-Type": "application/json",
           Authorization: `Bearer ${apiKey}`,
         },
-        body: JSON.stringify({ startedAt: startedAt.toISOString() }),
+        body: JSON.stringify(startBody),
       });
       if (!res.ok) {
         console.warn(
@@ -123,6 +148,7 @@ export class HttpCronRunReporter implements CronRunReporter {
       cacheCreationTokens?: number;
       modelBreakdown?: ModelBreakdownEntry[];
     },
+    phase?: string,
   ): Promise<void> {
     if (runId === null) return;
 
@@ -142,6 +168,7 @@ export class HttpCronRunReporter implements CronRunReporter {
       body.cacheCreationTokens = opts.cacheCreationTokens;
     if (opts?.modelBreakdown !== undefined)
       body.modelBreakdown = opts.modelBreakdown;
+    if (phase !== undefined) body.phase = phase;
 
     await this.patchRun(url, body);
   }
@@ -152,6 +179,7 @@ export class HttpCronRunReporter implements CronRunReporter {
     completedAt: Date,
     skipReason: string,
     opts?: { error?: string },
+    phase?: string,
   ): Promise<void> {
     if (runId === null) return;
 
@@ -164,13 +192,18 @@ export class HttpCronRunReporter implements CronRunReporter {
       skipReason,
     };
     if (opts?.error !== undefined) body.error = opts.error;
+    if (phase !== undefined) body.phase = phase;
 
     await this.patchRun(url, body);
   }
 }
 
 export class NoopCronRunReporter implements CronRunReporter {
-  async createRun(_cronId: string, _startedAt: Date): Promise<string | null> {
+  async createRun(
+    _cronId: string,
+    _startedAt: Date,
+    _phase?: string,
+  ): Promise<string | null> {
     return null;
   }
 
@@ -187,6 +220,7 @@ export class NoopCronRunReporter implements CronRunReporter {
       cacheCreationTokens?: number;
       modelBreakdown?: ModelBreakdownEntry[];
     },
+    _phase?: string,
   ): Promise<void> {
     // intentional no-op
   }
@@ -197,6 +231,7 @@ export class NoopCronRunReporter implements CronRunReporter {
     _completedAt: Date,
     _skipReason: string,
     _opts?: { error?: string },
+    _phase?: string,
   ): Promise<void> {
     // intentional no-op
   }

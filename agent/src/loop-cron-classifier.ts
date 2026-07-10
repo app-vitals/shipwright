@@ -20,8 +20,9 @@
  *   case, and produce byte-for-byte today's scheduling behavior.
  *
  * resolveLoopPhaseToggles(jobs) → LoopPhaseToggles
- *   The loop's own toggle-reading logic (used by the not-yet-built WL-3.3
- *   drain-until-dry orchestrator). Resolves dev-task/review/patch/deploy as
+ *   The loop's own toggle-reading logic (consumed by the WL-3.3
+ *   drain-until-dry orchestrator in loop-orchestrator.ts). Resolves
+ *   dev-task/review/patch/deploy as
  *   four independent, non-mutually-exclusive phase booleans looked up by
  *   job name (false when the named job is absent). Deliberately never reads
  *   or references shipwright-review-patch — its internal review-vs-patch
@@ -118,20 +119,4 @@ export function resolveLoopPhaseToggles<T extends CronJobLike>(
     patch: enabledByName("shipwright-patch"),
     deploy: enabledByName("shipwright-deploy"),
   };
-}
-
-// ─── Loop cron handler (placeholder) ───────────────────────────────────────────
-
-/**
- * PLACEHOLDER for the shipwright-loop dispatch handler. Resolves the current
- * phase toggles and logs them — the actual multi-invocation drain-until-dry
- * orchestration (claiming work, firing /shipwright:dev-task, /shipwright:review,
- * /shipwright:patch, /shipwright:deploy per enabled phase, looping until dry)
- * is WL-3.3's job and explicitly out of scope here.
- */
-export async function handleLoopCronRequest<T extends CronJobLike>(
-  jobs: T[],
-): Promise<void> {
-  const toggles = resolveLoopPhaseToggles(jobs);
-  console.log("[cron] loop toggles:", toggles);
 }
