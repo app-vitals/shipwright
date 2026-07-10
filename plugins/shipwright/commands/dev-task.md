@@ -265,6 +265,16 @@ Before dispatching:
 
 ### 5b. Dispatch Implementation Subagent
 
+Renew the claim heartbeat now, before dispatching — implementation is the widest-duration
+step in this pipeline and can run long enough on its own to threaten the claim TTL, in
+addition to the renewal after it completes in Step 5d:
+
+```bash
+curl -s -o /dev/null -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}/heartbeat"
+```
+
 Dispatch a `general-purpose` subagent with this prompt (fill in all `{placeholders}` from context already collected). Pass `model: task.model ?? 'sonnet'` to the Agent() call so tasks can opt into a different model tier. At dispatch time, set `EFFECTIVE_MODEL = task.model ?? 'sonnet'` — this variable tracks the model the implementation subagent actually runs on, and is written back to the task store as `model` in Step 10a.
 
 ```
