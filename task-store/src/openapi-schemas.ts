@@ -586,6 +586,16 @@ export const UpdatePrBodySchema = z
   .record(z.string(), z.unknown())
   .openapi("UpdatePrBody");
 
+export const PatchPrBodySchema = z
+  .object({
+    commitSha: z.string().optional().openapi({
+      example: "abc123def456",
+      description:
+        "Current head commit SHA. When provided and it differs from the record's stored commitSha, reviewState resets to pending and commitSha is updated. When it matches, reviewState is left untouched (no-op patch cycle). When omitted, reviewState unconditionally resets to pending (legacy behavior).",
+    }),
+  })
+  .openapi("PatchPrBody");
+
 export const ClaimNextResponseSchema = z
   .object({
     pr: PullRequestSchema,
