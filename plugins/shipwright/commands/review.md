@@ -568,7 +568,10 @@ should be held; the inline comments convey the specific feedback to the author.
 ### If `auto_post_reviews` is false (default):
 
 1. Mark the PR record staged, persisting the verdict so the APPROVE-first sort in
-   `/shipwright:review-staged` works correctly:
+   `/shipwright:review-staged` works correctly. Both branches also release the claim
+   (`claimedBy`/`claimedAt`/`heartbeatAt`/`phase` all cleared to `null`, mirroring
+   `pull-request-service.ts`'s `patch()` claim-clearing) — the review-writing work is
+   done regardless of posting status, so nothing should keep holding the claim:
 
    If `{verdict}` is `APPROVE`:
    ```bash
@@ -576,7 +579,7 @@ should be held; the inline comments convey the specific feedback to the author.
      -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
      -H "Content-Type: application/json" \
      "$SHIPWRIGHT_TASK_STORE_URL/prs/${PR_RECORD_ID}" \
-     -d '{"staged": true, "reviewState": "approved"}' >/dev/null
+     -d '{"staged": true, "reviewState": "approved", "claimedBy": null, "claimedAt": null, "heartbeatAt": null, "phase": null}' >/dev/null
    ```
 
    If `{verdict}` is `COMMENT`:
@@ -585,7 +588,7 @@ should be held; the inline comments convey the specific feedback to the author.
      -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
      -H "Content-Type: application/json" \
      "$SHIPWRIGHT_TASK_STORE_URL/prs/${PR_RECORD_ID}" \
-     -d '{"staged": true}' >/dev/null
+     -d '{"staged": true, "reviewState": "posted", "claimedBy": null, "claimedAt": null, "heartbeatAt": null, "phase": null}' >/dev/null
    ```
 
    (`PR_RECORD_ID` is the claim response `.id` from Step 4.)
