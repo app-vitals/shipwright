@@ -395,9 +395,12 @@ if [ -n "$PR_RECORD_ID" ]; then
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
     "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/heartbeat" || \
     echo "⚠ heartbeat renewal failed — continuing"
+  HEAD_SHA_POST_PATCH=$(git -C ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} rev-parse HEAD)
   curl -sf -X POST \
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/patch" > /dev/null 2>&1 || \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/patch" \
+    -d "{\"commitSha\": \"$HEAD_SHA_POST_PATCH\"}" > /dev/null 2>&1 || \
     echo "⚠ POST /prs/$PR_RECORD_ID/patch failed — continuing"
 else
   echo "⚠ no PR_RECORD_ID from pre-work claim — skipping PR record update"
@@ -651,9 +654,12 @@ if [ -n "$PR_RECORD_ID" ]; then
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
     "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/heartbeat" || \
     echo "⚠ heartbeat renewal failed — continuing"
+  HEAD_SHA_POST_PATCH=$(git -C ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} rev-parse HEAD)
   curl -sf -X POST \
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/patch" > /dev/null 2>&1 || \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/patch" \
+    -d "{\"commitSha\": \"$HEAD_SHA_POST_PATCH\"}" > /dev/null 2>&1 || \
     echo "⚠ POST /prs/$PR_RECORD_ID/patch failed — continuing"
 else
   echo "⚠ no PR_RECORD_ID from pre-work claim — skipping PR record update"
@@ -848,9 +854,12 @@ if [ -n "$PR_RECORD_ID" ]; then
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
     "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/heartbeat" || \
     echo "⚠ heartbeat renewal failed — continuing"
+  HEAD_SHA_POST_PATCH=$(git -C ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} rev-parse HEAD)
   curl -sf -X POST \
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/patch" > /dev/null 2>&1 || \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/patch" \
+    -d "{\"commitSha\": \"$HEAD_SHA_POST_PATCH\"}" > /dev/null 2>&1 || \
     echo "⚠ POST /prs/$PR_RECORD_ID/patch failed — continuing"
 else
   echo "⚠ no PR_RECORD_ID from pre-work claim — skipping PR record update"
