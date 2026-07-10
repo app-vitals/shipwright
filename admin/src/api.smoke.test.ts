@@ -650,6 +650,19 @@ function buildCombinedApp() {
       },
     } as never,
     provisioner: new NoopAgentProvisioner(),
+    taskStore: {
+      listTokensForAgent: async () => [],
+      revokeToken: async () => {},
+    },
+    chatService: {
+      listTokensForAgent: async () => [],
+      revokeToken: async () => {},
+      deleteThreadsForAgent: async () => ({ deleted: 0 }),
+    },
+    slack: {
+      deleteApp: async () => {},
+    },
+    decrypt: (value: string) => value,
     sessionSecret: COMBINED_SESSION_SECRET,
     adminApiKeys: parseAdminApiKeys(`admin:${COMBINED_ADMIN_KEY}:*`),
   });

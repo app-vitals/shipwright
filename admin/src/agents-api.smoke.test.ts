@@ -371,6 +371,9 @@ function makeMockDeps(): AdminDeps {
           updatedAt: new Date("2024-01-01"),
         }),
       },
+      agentEnv: {
+        findMany: async () => [],
+      },
     } as unknown as AdminDeps["prisma"],
     agentCronRunService: {
       create: async () => ({
@@ -425,6 +428,19 @@ function makeMockDeps(): AdminDeps {
       }),
     },
     provisioner: new RecordingProvisioner(),
+    taskStore: {
+      listTokensForAgent: async () => [],
+      revokeToken: async () => {},
+    },
+    chatService: {
+      listTokensForAgent: async () => [],
+      revokeToken: async () => {},
+      deleteThreadsForAgent: async () => ({ deleted: 0 }),
+    },
+    slack: {
+      deleteApp: async () => {},
+    },
+    decrypt: (value: string) => value,
     sessionSecret: SESSION_SECRET,
   };
 }
@@ -1110,7 +1126,7 @@ describe("admin API — create agent", () => {
 // ─── Delete agent smoke tests ─────────────────────────────────────────────────
 
 describe("admin API — delete agent", () => {
-  it("DELETE /agents/:id with session cookie → 204 + deprovisions", async () => {
+  it("DELETE /agents/:id with session cookie → 200 + deprovisions + agentDeleted: true", async () => {
     const cookie = await makeSessionCookie();
     const provisioner = new RecordingProvisioner();
     const deps: AdminDeps = { ...makeMockDeps(), provisioner };
@@ -1119,11 +1135,15 @@ describe("admin API — delete agent", () => {
       method: "DELETE",
       headers: { Cookie: `admin_session=${cookie}` },
     });
-    expect(res.status).toBe(204);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.agentDeleted).toBe(true);
+    expect(body.completed).toContain("k8s");
+    expect(body.failed).toEqual([]);
     expect(provisioner.deprovisioned).toEqual([AGENT_ID]);
   });
 
-  it("DELETE /agents/:id with admin bearer → 204", async () => {
+  it("DELETE /agents/:id with admin bearer → 200 + agentDeleted: true", async () => {
     const provisioner = new RecordingProvisioner();
     const deps: AdminDeps = {
       ...makeMockDeps(),
@@ -1135,16 +1155,32 @@ describe("admin API — delete agent", () => {
       method: "DELETE",
       headers: { Authorization: `Bearer ${ADMIN_API_KEY}` },
     });
-    expect(res.status).toBe(204);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.agentDeleted).toBe(true);
     expect(provisioner.deprovisioned).toEqual([AGENT_ID]);
   });
 
-  it("DELETE /agents/:id returns 500 and preserves the row when deprovision throws", async () => {
+  it("DELETE /agents/:id with no request body still works (xoxpToken defaults to absent)", async () => {
+    const cookie = await makeSessionCookie();
+    const deps: AdminDeps = { ...makeMockDeps() };
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      method: "DELETE",
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.agentDeleted).toBe(true);
+  });
+
+  it("DELETE /agents/:id returns 200 + agentDeleted: false and preserves the row when deprovision (k8s) throws", async () => {
     const cookie = await makeSessionCookie();
     const deleted: string[] = [];
-    // Provisioner whose deprovision() rejects with a non-NotFound error. The
-    // throw must propagate (→ 500) BEFORE the agent row is deleted, leaving the
-    // row intact so the delete is retry-safe.
+    // Provisioner whose deprovision() rejects with a non-NotFound error.
+    // deleteAgentFully() catches this internally (records it as a failed
+    // step) rather than throwing, so the row must survive and the response
+    // must be 200 with agentDeleted: false — NOT a 500.
     const provisioner: AgentProvisioner = {
       async provision(agentId: string): Promise<ProvisionResult> {
         return {
@@ -1168,7 +1204,15 @@ describe("admin API — delete agent", () => {
         agent: {
           findUnique: async (args: { where: { id: string } }) =>
             args.where.id === AGENT_ID
-              ? { id: AGENT_ID, name: "Existing Agent" }
+              ? {
+                  id: AGENT_ID,
+                  name: "Existing Agent",
+                  slackId: null,
+                  selfHosted: false,
+                  repos: [],
+                  createdAt: new Date("2024-01-01"),
+                  updatedAt: new Date("2024-01-01"),
+                }
               : null,
           delete: async (args: { where: { id: string } }) => {
             deleted.push(args.where.id);
@@ -1181,6 +1225,7 @@ describe("admin API — delete agent", () => {
             };
           },
         },
+        agentEnv: { findMany: async () => [] },
       } as unknown as AdminDeps["prisma"],
     };
     const app = createAdminApp(deps);
@@ -1188,9 +1233,113 @@ describe("admin API — delete agent", () => {
       method: "DELETE",
       headers: { Cookie: `admin_session=${cookie}` },
     });
-    expect(res.status).toBe(500);
-    // The deprovision error surfaced before the row was deleted — row preserved.
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.agentDeleted).toBe(false);
+    expect(body.failed).toEqual([{ step: "k8s", error: "k8s API timeout" }]);
+    // The row was NOT deleted — preserved for retry.
     expect(deleted).toEqual([]);
+
+    // Confirm via a follow-up GET that the row still exists.
+    const getRes = await app.request(`/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(getRes.status).toBe(200);
+  });
+
+  it("DELETE /agents/:id returns 200 + agentDeleted: false when the task-store dependency fails, and the row is still GET-able", async () => {
+    const cookie = await makeSessionCookie();
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      taskStore: {
+        listTokensForAgent: async () => [{ id: "ts-1" }],
+        revokeToken: async () => {
+          throw new Error("task-store unreachable");
+        },
+      },
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      method: "DELETE",
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.agentDeleted).toBe(false);
+    expect(body.failed).toEqual([
+      { step: "task-store-tokens", error: "task-store unreachable" },
+    ]);
+
+    const getRes = await app.request(`/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(getRes.status).toBe(200);
+  });
+
+  it("DELETE /agents/:id populates manualStepsRequired when the agent has secret AgentEnv rows", async () => {
+    const cookie = await makeSessionCookie();
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      prisma: {
+        ...base.prisma,
+        agentEnv: {
+          findMany: async () => [
+            { key: "GH_TOKEN", value: "ghp_x", secret: true },
+            { key: "PORT", value: "3000", secret: false },
+          ],
+        },
+      } as unknown as AdminDeps["prisma"],
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      method: "DELETE",
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.agentDeleted).toBe(true);
+    const keys = body.manualStepsRequired.map((s: { key: string }) => s.key);
+    expect(keys).toEqual(["GH_TOKEN"]);
+  });
+
+  it("DELETE /agents/:id with { xoxpToken } passes it through to the injected slack double", async () => {
+    const cookie = await makeSessionCookie();
+    const slackCalls: Array<{ token: string; appId: string }> = [];
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      prisma: {
+        ...base.prisma,
+        agentEnv: {
+          findMany: async () => [
+            { key: "SLACK_APP_ID", value: "A123", secret: true },
+          ],
+        },
+      } as unknown as AdminDeps["prisma"],
+      slack: {
+        deleteApp: async (token: string, appId: string) => {
+          slackCalls.push({ token, appId });
+        },
+      },
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      method: "DELETE",
+      body: JSON.stringify({ xoxpToken: "xoxp-user-token" }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.agentDeleted).toBe(true);
+    expect(body.completed).toContain("slack-app");
+    expect(slackCalls).toEqual([
+      { token: "xoxp-user-token", appId: "A123" },
+    ]);
   });
 
   it("DELETE /agents/:id unknown id → 404 (no deprovision)", async () => {

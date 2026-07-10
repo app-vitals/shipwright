@@ -2,8 +2,8 @@
  * admin/src/agent-deletion.ts
  *
  * `deleteAgentFully()` — the single shared orchestration both agent-delete entry
- * points (DELETE /agents/:id and the admin-ui "danger zone") will be wired into
- * (wiring is a separate future task). Previously each caller independently ran
+ * points (DELETE /agents/:id and the admin-ui "danger zone") are wired into.
+ * Previously each caller independently ran
  * `provisioner.deprovision()` + `prisma.agent.delete()` with no shared cleanup,
  * so any fix to one drifted from the other. This module centralizes the full
  * teardown so there is one place to fix.
