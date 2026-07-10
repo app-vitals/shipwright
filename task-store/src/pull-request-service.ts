@@ -158,7 +158,10 @@ export class PullRequestService implements PullRequestServiceLike {
    *   - deploy: sets phase='deploy', claim fields, sets readyForDeployAt=now if null
    *
    * Conflict detection:
-   *   - Same commitSha AND claimedBy IS NOT NULL with fresh heartbeat for same phase → 409
+   *   - Same commitSha AND claimedBy IS NOT NULL for same phase → 409. Staleness of
+   *     the existing claim's heartbeat is never checked inline here — a stale claim
+   *     still blocks; only the reaper (a separate process) adjudicates staleness and
+   *     clears stale claims asynchronously.
    *   - Legacy review path: same commitSha AND reviewState !== 'pending' → 409
    */
   async claim(
@@ -178,8 +181,9 @@ export class PullRequestService implements PullRequestServiceLike {
       });
 
       if (existing) {
-        // Conflict: same commitSha AND already claimed by someone with fresh heartbeat
-        // for the same phase
+        // Conflict: same commitSha AND already claimed by someone for the same phase.
+        // Heartbeat staleness is not checked here — a stale claim still blocks; only
+        // the reaper resolves staleness and clears stale claims.
         if (
           existing.commitSha === commitSha &&
           existing.claimedBy !== null &&
