@@ -311,6 +311,16 @@ post-fix update in Step 4c.5 — no second claim call is needed. Proceed to Step
 
 ### Step 4b: Dispatch Conflict Resolution Subagent
 
+Renew the claim heartbeat now, before dispatching — conflict resolution can run long
+enough on its own to threaten the claim TTL, in addition to the renewal after it
+completes in Step 4c.5:
+
+```bash
+curl -s -o /dev/null -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/heartbeat"
+```
+
 Dispatch a `general-purpose` subagent via the Agent tool with this prompt:
 
 ```
@@ -512,6 +522,16 @@ candidates remain, continue to Step 6.
 post-fix update in Step 5c.5 — no second claim call is needed. Proceed to Step 5b.
 
 ### Step 5b: Dispatch Fix Subagent
+
+Renew the claim heartbeat now, before dispatching — addressing review findings can run
+long enough on its own to threaten the claim TTL, in addition to the renewal after it
+completes in Step 5c.5:
+
+```bash
+curl -s -o /dev/null -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/heartbeat"
+```
 
 Dispatch a `general-purpose` subagent via the Agent tool with this prompt:
 
@@ -768,6 +788,15 @@ remain, continue to Step 7.
 post-fix update in Step 6d.5 — no second claim call is needed. Proceed to Step 6c.
 
 ### Step 6c: Dispatch Fix Subagent
+
+Renew the claim heartbeat now, before dispatching — fixing CI can run long enough on its
+own to threaten the claim TTL, in addition to the renewal after it completes in Step 6d.5:
+
+```bash
+curl -s -o /dev/null -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/heartbeat"
+```
 
 Dispatch a `general-purpose` subagent via the Agent tool with this prompt:
 

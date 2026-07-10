@@ -119,7 +119,7 @@ Atomically claims a pending task — a single conditional `UPDATE ... WHERE stat
 POST /tasks/:id/heartbeat
 ```
 
-Updates `heartbeatAt` to now. Used by agents to signal they are still working.
+Updates `heartbeatAt` to now. Used by agents to renew the claim before any long-running operation (e.g., dispatching a subagent, waiting on CI) to prevent the stale-claim reaper from reclaiming the task mid-pipeline. Agents must call this endpoint periodically to keep the claim alive across all pipeline steps.
 
 #### Complete task
 
@@ -143,7 +143,7 @@ Sets `status=blocked`. Optional body: `{ reason: string }`.
 POST /tasks/:id/release
 ```
 
-Clears `claimedBy` and `claimedAt`, resets `status=pending`. Use when the agent stops work without completing or failing.
+Clears `claimedBy`, `claimedAt`, and `heartbeatAt`, resets `status=pending`. Use when the agent stops work without completing or failing.
 
 ### Task status lifecycle
 
@@ -241,7 +241,7 @@ Writable fields: `staged`, `commitSha`, `taskId`, `agentId`, `state`, `mergedAt`
 | `POST /prs/:id/heartbeat` | Touch `heartbeatAt` |
 | `POST /prs/:id/complete` | `reviewState=posted`, increment `reviewCycles`, set `reviewedAt` |
 | `POST /prs/:id/patch` | Increment `patchCycles`, set `patchedAt`, clear `claimedBy`/`claimedAt`/`heartbeatAt`/`phase`. Conditionally reset `reviewState=pending` based on optional `commitSha` in body: if omitted, unconditionally reset to pending; if provided and differs from record's stored `commitSha`, reset to pending and update `commitSha`; if provided and matches, leave `reviewState` untouched (no-op patch cycle). |
-| `POST /prs/:id/release` | Clear `claimedBy`/`claimedAt`, `reviewState=pending` |
+| `POST /prs/:id/release` | Clear `claimedBy`/`claimedAt`/`heartbeatAt`, `reviewState=pending` |
 
 #### PR state enums
 
