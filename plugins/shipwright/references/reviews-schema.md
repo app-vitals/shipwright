@@ -75,7 +75,7 @@ curl -X POST -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
 |-------|--------|---------|
 | `pending` | review.md Step 3 | PR discovered, not yet reviewed |
 | `in_progress` | review.md Step 4 (claim) | Review in progress — claim acquired |
-| `posted` | review.md Step 11b | Review posted to GitHub |
+| `posted` | review.md Step 11 (staged COMMENT) or Step 11b (posted) | Review written (staged) or posted to GitHub — see `staged` to distinguish |
 | `approved` | review.md Step 11b (APPROVE verdict) | Review posted with APPROVE verdict |
 
 ## Field Reference
