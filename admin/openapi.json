@@ -231,6 +231,87 @@
           }
         }
       },
+      "FailedStep": {
+        "type": "object",
+        "properties": {
+          "step": {
+            "type": "string",
+            "example": "k8s"
+          },
+          "error": {
+            "type": "string",
+            "example": "k8s API timeout"
+          }
+        },
+        "required": [
+          "step",
+          "error"
+        ]
+      },
+      "ManualStep": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "example": "GH_TOKEN"
+          },
+          "message": {
+            "type": "string",
+            "example": "GH_TOKEN was not automatically revoked — rotate or revoke it manually."
+          }
+        },
+        "required": [
+          "key",
+          "message"
+        ]
+      },
+      "DeleteAgentResult": {
+        "type": "object",
+        "properties": {
+          "agentDeleted": {
+            "type": "boolean",
+            "example": true
+          },
+          "completed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "k8s",
+              "task-store-tokens",
+              "chat-service-tokens-and-threads"
+            ]
+          },
+          "failed": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FailedStep"
+            }
+          },
+          "manualStepsRequired": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ManualStep"
+            }
+          }
+        },
+        "required": [
+          "agentDeleted",
+          "completed",
+          "failed",
+          "manualStepsRequired"
+        ]
+      },
+      "DeleteAgentBody": {
+        "type": "object",
+        "properties": {
+          "xoxpToken": {
+            "type": "string",
+            "example": "xoxp-user-token"
+          }
+        }
+      },
       "AgentSummary": {
         "type": "object",
         "properties": {
@@ -703,6 +784,14 @@
             ],
             "example": null
           },
+          "phase": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Pipeline phase this run served (dev-task/review/patch/deploy). Null for legacy five-job crons.",
+            "example": "dev-task"
+          },
           "inputTokens": {
             "type": [
               "integer",
@@ -753,6 +842,7 @@
           "skipReason",
           "outcome",
           "error",
+          "phase",
           "inputTokens",
           "outputTokens",
           "cacheReadTokens",
@@ -811,6 +901,14 @@
               "null"
             ],
             "example": null
+          },
+          "phase": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Pipeline phase this run served (dev-task/review/patch/deploy)",
+            "example": "dev-task"
           }
         },
         "required": [
@@ -1263,6 +1361,13 @@
               "key2": {
                 "type": "string",
                 "example": "morning-brief"
+              },
+              "phase": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "example": "dev-task"
               }
             },
             "required": [
@@ -1326,6 +1431,12 @@
             "items": {
               "$ref": "#/components/schemas/DoubleKeyedTokenAggregate"
             }
+          },
+          "byPhase": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KeyedTokenAggregate"
+            }
           }
         },
         "required": [
@@ -1334,7 +1445,8 @@
           "byCron",
           "byModel",
           "daily",
-          "byCronModel"
+          "byCronModel",
+          "byPhase"
         ]
       },
       "ChatTokenStats": {
@@ -1850,9 +1962,26 @@
             "in": "path"
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteAgentBody"
+              }
+            }
+          }
+        },
         "responses": {
-          "204": {
-            "description": "Agent deleted"
+          "200": {
+            "description": "Delete outcome — agentDeleted is false when a cleanup step failed; the Agent row is preserved for retry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteAgentResult"
+                }
+              }
+            }
           },
           "403": {
             "description": "Forbidden",

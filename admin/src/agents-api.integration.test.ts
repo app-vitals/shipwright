@@ -24,6 +24,8 @@ import { AgentTokenService } from "./agent-tokens.ts";
 import { AgentToolService } from "./agent-tools.ts";
 import { createAdminApp } from "./agents-api.ts";
 import type { AdminDeps } from "./agents-api.ts";
+import { NoopChatServiceProvisioningClient } from "./chat-service-provisioning-client.ts";
+import { NoopTaskStoreProvisioningClient } from "./task-store-provisioning-client.ts";
 import { makeTokenCrypto } from "./token-crypto.ts";
 
 const TEST_DB = process.env.DATABASE_URL_ADMIN_TEST;
@@ -98,6 +100,12 @@ describeOrSkip("admin CRUD API (integration)", () => {
       agentChatTokenService: new AgentChatTokenService(prisma),
       prisma,
       provisioner: new NoopAgentProvisioner(),
+      taskStore: new NoopTaskStoreProvisioningClient(),
+      chatService: new NoopChatServiceProvisioningClient(),
+      slack: {
+        deleteApp: async () => {},
+      },
+      decrypt: (value: string) => crypto.decrypt(value),
       sessionSecret: SESSION_SECRET,
     };
 
