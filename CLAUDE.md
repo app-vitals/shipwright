@@ -33,7 +33,7 @@ task test         # bun test            (single file: bun test path/to/file.test
 task test:coverage  # bun test --coverage --coverage-reporter=lcov, then gate on aggregate 80/80 lines/functions (scripts/check-coverage.ts)
 task lint         # bunx biome lint .
 task format       # bunx biome format --write .
-task typecheck    # bun run --filter='*' typecheck
+task typecheck    # bun run --filter='*' --sequential typecheck
 task check-strings  # scan entire repo for banned/confidential identifiers (client names, internal infra IDs)
 ```
 
