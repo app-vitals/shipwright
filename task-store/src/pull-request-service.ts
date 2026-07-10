@@ -53,7 +53,7 @@ export interface PullRequestServiceLike {
   ): Promise<{ status: 200 | 201; record: PullRequest }>;
   heartbeat(id: string): Promise<PullRequest>;
   complete(id: string): Promise<PullRequest>;
-  patch(id: string): Promise<PullRequest>;
+  patch(id: string, commitSha?: string): Promise<PullRequest>;
   release(id: string): Promise<PullRequest>;
   claimNext(
     agentId: string,
@@ -294,19 +294,55 @@ export class PullRequestService implements PullRequestServiceLike {
   }
 
   /**
-   * Increment patch cycles. Sets patchCycles+1, patchedAt=now, reviewState=pending.
-   * Called when a patch run is started after a review posted findings.
+   * Increment patch cycles and always release the claim — the patch invocation
+   * is complete regardless of outcome. Sets patchCycles+1, patchedAt=now, and
+   * clears claimedBy/claimedAt/heartbeatAt/phase to null (mirrors release()'s
+   * claim-clearing, extended to phase).
+   *
+   * reviewState reset is conditional on `commitSha`:
+   *   - commitSha omitted: reviewState unconditionally resets to 'pending'
+   *     (legacy behavior — preserved for callers not yet passing commitSha).
+   *   - commitSha provided and differs from the record's stored commitSha: a
+   *     real fix landed — reviewState resets to 'pending' and commitSha is
+   *     updated to the new value.
+   *   - commitSha provided and matches the record's stored commitSha: a no-op
+   *     patch cycle — reviewState is left untouched entirely (absent from the
+   *     update payload, so Prisma does not touch it).
+   *
+   * Root-cause fix for PR app-vitals/shipwright#1321's review pile-up: patch()
+   * was unconditionally resetting reviewState even on no-op cycles, causing
+   * findings to be re-reviewed forever.
    */
-  async patch(id: string): Promise<PullRequest> {
+  async patch(id: string, commitSha?: string): Promise<PullRequest> {
     const now = this.clock.now().toISOString();
+
+    const updateData: Prisma.PullRequestUpdateInput = {
+      patchCycles: { increment: 1 },
+      patchedAt: now,
+      claimedBy: null,
+      claimedAt: null,
+      heartbeatAt: null,
+      phase: null,
+    };
+
+    if (commitSha === undefined) {
+      updateData.reviewState = "pending";
+    } else {
+      // Not a Prisma error — thrown directly, must bypass translateNotFound.
+      const existing = await this.prisma.pullRequest.findUnique({ where: { id } });
+      if (!existing) {
+        throw new NotFoundError("pr not found");
+      }
+      if (existing.commitSha !== commitSha) {
+        updateData.reviewState = "pending";
+        updateData.commitSha = commitSha;
+      }
+    }
+
     try {
       return await this.prisma.pullRequest.update({
         where: { id },
-        data: {
-          patchCycles: { increment: 1 },
-          patchedAt: now,
-          reviewState: "pending",
-        },
+        data: updateData,
       });
     } catch (err: unknown) {
       throw this.translateNotFound(err, "pr not found");

@@ -17,7 +17,7 @@
  *   PATCH  /prs/:id           update fields
  *   POST   /prs/:id/heartbeat touch heartbeatAt
  *   POST   /prs/:id/complete  reviewState=posted
- *   POST   /prs/:id/patch     patchCycles++, reviewState=pending
+ *   POST   /prs/:id/patch     patchCycles++, reviewState=pending (conditionally on commitSha)
  *   POST   /prs/:id/release   unclaim → reviewState=pending
  */
 
@@ -29,6 +29,7 @@ import {
   ClaimNextResponseSchema,
   ClaimPrBodySchema,
   ErrorSchema,
+  PatchPrBodySchema,
   PrIdParamSchema,
   PrListQuerySchema,
   PrListResponseSchema,
@@ -231,9 +232,13 @@ const patchRoute = createRoute({
   method: "post",
   path: "/:id/patch",
   tags: ["PRs"],
-  summary: "Increment patchCycles and reset reviewState=pending",
+  summary: "Increment patchCycles and conditionally reset reviewState=pending",
   request: {
     params: PrIdParamSchema,
+    body: {
+      content: { "application/json": { schema: PatchPrBodySchema } },
+      required: false,
+    },
   },
   responses: {
     200: {
@@ -493,7 +498,12 @@ export function createPrsRoutes(
   // ─── Patch ─────────────────────────────────────────────────────────────────
   // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
   app.openapi(patchRoute, async (c): Promise<any> => {
-    const pr = await prService.patch(c.req.param("id"));
+    const body = await readJson(c);
+    const commitSha =
+      typeof body.commitSha === "string" && body.commitSha
+        ? body.commitSha
+        : undefined;
+    const pr = await prService.patch(c.req.param("id"), commitSha);
     return c.json(pr, 200);
   });
 
