@@ -19,7 +19,7 @@ import { parseMarkers } from "./markers.ts";
 import { type SynthesizeSpeechFn, dispatchMarkers } from "./slack.ts";
 import type { VoiceConfig } from "./voice.ts";
 
-function buildTokenPayload(
+export function buildTokenPayload(
   usage: TokenUsage | undefined,
   modelUsage: ModelUsage | undefined,
 ): {
@@ -353,8 +353,7 @@ export async function handleCronRequest(
     console.log(`[agent:cron] job "${jobId}" posted to channel ${channel}`);
     if (postResult.ts) {
       onPost?.(channel, postResult.ts);
-      if (onSession && sessionId)
-        onSession(channel, postResult.ts, sessionId);
+      if (onSession && sessionId) onSession(channel, postResult.ts, sessionId);
     } else {
       console.warn(
         `[agent:cron] job "${jobId}" postMessage returned no ts — react markers will be skipped`,

@@ -85,6 +85,56 @@ export const PatchAgentBodySchema = z
   })
   .openapi("PatchAgentBody");
 
+/**
+ * DELETE /agents/:id request body. Entirely optional — omit it (or the
+ * xoxpToken field) to skip automatic Slack app deletion; a present Slack app
+ * then becomes a manual checklist entry instead of a hard failure.
+ */
+export const DeleteAgentBodySchema = z
+  .object({
+    xoxpToken: z
+      .string()
+      .optional()
+      .openapi({ example: "xoxp-user-token" }),
+  })
+  .openapi("DeleteAgentBody");
+
+/** A single manual operator reminder in DeleteAgentResult.manualStepsRequired. */
+const ManualStepSchema = z
+  .object({
+    key: z.string().openapi({ example: "GH_TOKEN" }),
+    message: z.string().openapi({
+      example:
+        "GH_TOKEN was not automatically revoked — rotate or revoke it manually.",
+    }),
+  })
+  .openapi("ManualStep");
+
+/** A single failed step in DeleteAgentResult.failed. */
+const FailedStepSchema = z
+  .object({
+    step: z.string().openapi({ example: "k8s" }),
+    error: z.string().openapi({ example: "k8s API timeout" }),
+  })
+  .openapi("FailedStep");
+
+/**
+ * DELETE /agents/:id response body — the outcome of deleteAgentFully().
+ * `agentDeleted: false` means at least one automatable step failed and the
+ * Agent row was intentionally preserved for a later retry (see
+ * agent-deletion.ts for the full retry/idempotency contract).
+ */
+export const DeleteAgentResultSchema = z
+  .object({
+    agentDeleted: z.boolean().openapi({ example: true }),
+    completed: z.array(z.string()).openapi({
+      example: ["k8s", "task-store-tokens", "chat-service-tokens-and-threads"],
+    }),
+    failed: z.array(FailedStepSchema),
+    manualStepsRequired: z.array(ManualStepSchema),
+  })
+  .openapi("DeleteAgentResult");
+
 // ─── AgentCronJob ─────────────────────────────────────────────────────────────
 
 export const AgentCronJobSchema = z

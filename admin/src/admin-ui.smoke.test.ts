@@ -180,6 +180,9 @@ function makeMockDeps(
           repos: [],
         }),
       },
+      agentEnv: {
+        findMany: async () => [],
+      },
       agentPlugin: {
         findMany: async () => [],
       },
@@ -254,6 +257,19 @@ function makeMockDeps(
         failed: [],
       }),
     },
+    taskStore: {
+      listTokensForAgent: async () => [],
+      revokeToken: async () => {},
+    },
+    chatService: {
+      listTokensForAgent: async () => [],
+      revokeToken: async () => {},
+      deleteThreadsForAgent: async () => ({ deleted: 0 }),
+    },
+    slack: {
+      deleteApp: async () => {},
+    },
+    decrypt: (value: string) => value,
     appBaseUrl: "https://example.com",
     ...rest,
   };
@@ -715,6 +731,7 @@ describe("admin UI — authenticated pages", () => {
                 repos: [],
               }),
             },
+            agentEnv: { findMany: async () => [] },
             agentPlugin: { findMany: async () => [] },
             agentMember: {
               findMany: async () => [],
@@ -849,6 +866,7 @@ describe("admin UI — authenticated pages", () => {
                 repos: [],
               }),
             },
+            agentEnv: { findMany: async () => [] },
             agentPlugin: { findMany: async () => [] },
             agentMember: {
               findMany: async () => [],
@@ -914,6 +932,7 @@ describe("admin UI — authenticated pages", () => {
                 repos: [],
               }),
             },
+            agentEnv: { findMany: async () => [] },
             agentPlugin: { findMany: async () => [] },
             agentMember: {
               findMany: async () => [],
@@ -990,6 +1009,7 @@ describe("admin UI — authenticated pages", () => {
                 repos: [],
               }),
             },
+            agentEnv: { findMany: async () => [] },
             agentPlugin: { findMany: async () => [] },
             agentMember: {
               findMany: async () => [],
@@ -1084,6 +1104,7 @@ describe("admin UI — authenticated pages", () => {
                 repos: [],
               }),
             },
+            agentEnv: { findMany: async () => [] },
             agentPlugin: { findMany: async () => [] },
             agentMember: {
               findMany: async () => [],
@@ -1164,6 +1185,7 @@ describe("admin UI — authenticated pages", () => {
                 repos: [],
               }),
             },
+            agentEnv: { findMany: async () => [] },
             agentPlugin: { findMany: async () => [] },
             agentMember: {
               findMany: async () => [],
@@ -1977,6 +1999,7 @@ describe("admin UI — provision start form", () => {
             throw new Error("should not be called");
           },
         },
+        agentEnv: { findMany: async () => [] },
         agentPlugin: { findMany: async () => [] },
         agentMember: {
           findMany: async () => [],
@@ -2041,6 +2064,7 @@ describe("admin UI — provision start form", () => {
             throw new Error("should not be called");
           },
         },
+        agentEnv: { findMany: async () => [] },
         agentPlugin: { findMany: async () => [] },
         agentMember: {
           findMany: async () => [],
@@ -2138,6 +2162,7 @@ describe("admin UI — provision start form", () => {
             repos: [],
           }),
         },
+        agentEnv: { findMany: async () => [] },
         agentPlugin: { findMany: async () => [] },
         agentMember: {
           findMany: async () => [],
@@ -2261,6 +2286,7 @@ describe("admin UI — provision start form", () => {
             };
           },
         },
+        agentEnv: { findMany: async () => [] },
         agentPlugin: { findMany: async () => [] },
         agentMember: {
           findMany: async () => [],
@@ -2362,6 +2388,7 @@ describe("admin UI — provision start form", () => {
             };
           },
         },
+        agentEnv: { findMany: async () => [] },
         agentPlugin: { findMany: async () => [] },
         agentMember: {
           findMany: async () => [],
@@ -2472,6 +2499,7 @@ describe("admin UI — member access control", () => {
             repos: [],
           }),
         },
+        agentEnv: { findMany: async () => [] },
         agentPlugin: { findMany: async () => [] },
         agentMember: {
           findMany: async () => [],
@@ -2572,6 +2600,7 @@ describe("admin UI — member access control", () => {
             repos: [],
           }),
         },
+        agentEnv: { findMany: async () => [] },
         agentPlugin: { findMany: async () => [] },
         agentMember: {
           findMany: async () => [
@@ -2662,6 +2691,7 @@ describe("admin UI — member access control", () => {
             repos: [],
           }),
         },
+        agentEnv: { findMany: async () => [] },
         agentPlugin: { findMany: async () => [] },
         agentMember: {
           findMany: async () => [
@@ -2743,9 +2773,12 @@ describe("admin UI — agent delete route", () => {
     );
   });
 
-  it("admin POST /admin/agents/:id/delete → 302 redirect to /admin/agents?success=deleted", async () => {
+  it("admin POST /admin/agents/:id/delete → 302 redirect to /admin/agents?success=deleted, deleteAgentFully's composed dependencies invoked, row actually deleted", async () => {
     let deprovisioned: string | null = null;
     let deleted: string | null = null;
+    const taskStoreRevoked: string[] = [];
+    const chatRevoked: string[] = [];
+    const chatThreadsDeletedFor: string[] = [];
     const deps = makeMockDeps({
       provisioner: {
         provision: async () => ({
@@ -2755,6 +2788,114 @@ describe("admin UI — agent delete route", () => {
         }),
         deprovision: async (agentId: string) => {
           deprovisioned = agentId;
+        },
+        reconcile: async () => ({
+          recreated: [],
+          updated: [],
+          orphans: [],
+          failed: [],
+        }),
+      },
+      taskStore: {
+        listTokensForAgent: async () => [{ id: "ts-1" }],
+        revokeToken: async (id: string) => {
+          taskStoreRevoked.push(id);
+        },
+      },
+      chatService: {
+        listTokensForAgent: async () => [{ id: "chat-1" }],
+        revokeToken: async (id: string) => {
+          chatRevoked.push(id);
+        },
+        deleteThreadsForAgent: async (agentId: string) => {
+          chatThreadsDeletedFor.push(agentId);
+          return { deleted: 0 };
+        },
+      },
+      prisma: {
+        agent: {
+          findMany: async () => [],
+          findUnique: async () => ({
+            id: AGENT_ID,
+            name: "Test Agent",
+            slackId: "U123456",
+            selfHosted: false,
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+            repos: [],
+          }),
+          create: async () => ({
+            id: AGENT_ID,
+            name: "Test Agent",
+            slackId: "U123456",
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+            repos: [],
+          }),
+          update: async () => ({
+            id: AGENT_ID,
+            name: "Test Agent",
+            slackId: "U123456",
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+            repos: [],
+          }),
+          delete: async ({ where }: { where: { id: string } }) => {
+            deleted = where.id;
+            return {
+              id: where.id,
+              name: "Test Agent",
+              slackId: null,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+              repos: [],
+            };
+          },
+        },
+        // No secret/manual-step-worthy env rows — the success redirect must
+        // be the bare "?success=deleted" with no &manualSteps= appended.
+        agentEnv: { findMany: async () => [] },
+        agentPlugin: { findMany: async () => [] },
+        agentMember: {
+          findMany: async () => [],
+          findUnique: async () => null,
+          create: async () => ({
+            id: "m1",
+            agentId: AGENT_ID,
+            email: "member@example.com",
+          }),
+          deleteMany: async () => ({ count: 0 }),
+        },
+      },
+    });
+    const app = createAdminUIApp(deps);
+    const res = await app.request(`/admin/agents/${AGENT_ID}/delete`, {
+      method: "POST",
+      headers: { Cookie: `admin_session=${adminCookie}` },
+    });
+    expect(res.status).toBe(302);
+    // Exactly this Location — no &manualSteps= since there are no secret env rows.
+    expect(res.headers.get("Location")).toBe("/admin/agents?success=deleted");
+    // biome-ignore lint/style/noNonNullAssertion: set by the spy closure above
+    expect(deprovisioned!).toBe(AGENT_ID);
+    expect(taskStoreRevoked).toEqual(["ts-1"]);
+    expect(chatRevoked).toEqual(["chat-1"]);
+    expect(chatThreadsDeletedFor).toEqual([AGENT_ID]);
+    // biome-ignore lint/style/noNonNullAssertion: set by the spy closure above
+    expect(deleted!).toBe(AGENT_ID);
+  });
+
+  it("admin POST /admin/agents/:id/delete → when deprovision (k8s) throws, redirects to the agent's OWN page with an error and preserves the row (retry path)", async () => {
+    let deleted: string | null = null;
+    const deps = makeMockDeps({
+      provisioner: {
+        provision: async () => ({
+          resourceName: "r",
+          secretName: "s",
+          deploymentName: "d",
+        }),
+        deprovision: async () => {
+          throw new Error("k8s API timeout");
         },
         reconcile: async () => ({
           recreated: [],
@@ -2803,6 +2944,7 @@ describe("admin UI — agent delete route", () => {
             };
           },
         },
+        agentEnv: { findMany: async () => [] },
         agentPlugin: { findMany: async () => [] },
         agentMember: {
           findMany: async () => [],
@@ -2822,11 +2964,123 @@ describe("admin UI — agent delete route", () => {
       headers: { Cookie: `admin_session=${adminCookie}` },
     });
     expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/admin/agents?success=deleted");
-    // biome-ignore lint/style/noNonNullAssertion: set by the spy closure above
-    expect(deprovisioned!).toBe(AGENT_ID);
-    // biome-ignore lint/style/noNonNullAssertion: set by the spy closure above
-    expect(deleted!).toBe(AGENT_ID);
+    const location = res.headers.get("Location") ?? "";
+    // Redirects back to the agent's OWN page — NOT the agents list — so the
+    // row doesn't appear deleted from the operator's perspective.
+    expect(location.startsWith(`/admin/agents/${AGENT_ID}?error=`)).toBe(
+      true,
+    );
+    const errorMsg = decodeURIComponent(location.split("error=")[1] ?? "");
+    expect(errorMsg).toContain("k8s");
+    expect(deleted).toBeNull();
+  });
+
+  it("admin POST /admin/agents/:id/delete → surfaces manualStepsRequired on the success redirect when the agent has secret env rows", async () => {
+    const deps = makeMockDeps({
+      provisioner: {
+        provision: async () => ({
+          resourceName: "r",
+          secretName: "s",
+          deploymentName: "d",
+        }),
+        deprovision: async () => {},
+        reconcile: async () => ({
+          recreated: [],
+          updated: [],
+          orphans: [],
+          failed: [],
+        }),
+      },
+      prisma: {
+        agent: {
+          findMany: async () => [
+            {
+              id: AGENT_ID,
+              name: "Test Agent",
+              slackId: "U123456",
+              createdAt: new Date("2024-01-01"),
+            },
+          ],
+          findUnique: async () => ({
+            id: AGENT_ID,
+            name: "Test Agent",
+            slackId: "U123456",
+            selfHosted: false,
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+            repos: [],
+          }),
+          create: async () => ({
+            id: AGENT_ID,
+            name: "Test Agent",
+            slackId: "U123456",
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+            repos: [],
+          }),
+          update: async () => ({
+            id: AGENT_ID,
+            name: "Test Agent",
+            slackId: "U123456",
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+            repos: [],
+          }),
+          delete: async ({ where }: { where: { id: string } }) => ({
+            id: where.id,
+            name: "Test Agent",
+            slackId: null,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            repos: [],
+          }),
+        },
+        agentEnv: {
+          findMany: async () => [
+            { key: "GH_TOKEN", value: "ghp_x", secret: true },
+            { key: "PORT", value: "3000", secret: false },
+          ],
+        },
+        agentPlugin: { findMany: async () => [] },
+        agentMember: {
+          findMany: async () => [],
+          findUnique: async () => null,
+          create: async () => ({
+            id: "m1",
+            agentId: AGENT_ID,
+            email: "member@example.com",
+          }),
+          deleteMany: async () => ({ count: 0 }),
+        },
+      },
+    });
+    const app = createAdminUIApp(deps);
+    const res = await app.request(`/admin/agents/${AGENT_ID}/delete`, {
+      method: "POST",
+      headers: { Cookie: `admin_session=${adminCookie}` },
+    });
+    expect(res.status).toBe(302);
+    const location = res.headers.get("Location") ?? "";
+    expect(location.startsWith("/admin/agents?success=deleted&manualSteps=")).toBe(
+      true,
+    );
+    const manualStepsRaw = new URLSearchParams(location.split("?")[1]).get(
+      "manualSteps",
+    );
+    expect(manualStepsRaw).not.toBeNull();
+    // biome-ignore lint/style/noNonNullAssertion: asserted non-null above
+    const manualSteps = JSON.parse(manualStepsRaw!) as Array<{ key: string }>;
+    expect(manualSteps.map((s) => s.key)).toEqual(["GH_TOKEN"]);
+
+    // A subsequent GET /admin/agents with that manualSteps query param renders
+    // the dismissible panel (renderAgentsPage's opts wiring).
+    const getRes = await app.request(`/admin/agents?${location.split("?")[1]}`, {
+      headers: { Cookie: `admin_session=${adminCookie}` },
+    });
+    expect(getRes.status).toBe(200);
+    const html = await getRes.text();
+    expect(html).toContain("Manual cleanup required");
+    expect(html).toContain("GitHub personal access token");
   });
 
   it("non-admin POST /admin/agents/:id/delete → 403", async () => {
@@ -2888,6 +3142,7 @@ describe("admin UI — member management routes", () => {
             repos: [],
           }),
         },
+        agentEnv: { findMany: async () => [] },
         agentPlugin: { findMany: async () => [] },
         agentMember: {
           findMany: async () => [],
@@ -2959,6 +3214,7 @@ describe("admin UI — member management routes", () => {
             repos: [],
           }),
         },
+        agentEnv: { findMany: async () => [] },
         agentPlugin: { findMany: async () => [] },
         agentMember: {
           findMany: async () => [],
@@ -3652,6 +3908,66 @@ describe("admin UI — tasks page", () => {
     expect(html).toContain("Test Agent");
     expect(html).toContain(AGENT_ID);
   });
+
+  it("GET /admin/tasks/:id?from=<valid list URL> round-trips into the ← Tasks back link", async () => {
+    const mockTask = {
+      id: "task-42",
+      title: "Build the thing",
+      status: "in_progress",
+      session: null,
+      repo: "org/repo",
+    };
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTask: async (id: string) =>
+          id === "task-42" ? mockTask : null,
+      }),
+    );
+    const from = "/admin/tasks?status=in_progress&page=2";
+    const res = await app.request(
+      `/admin/tasks/task-42?from=${encodeURIComponent(from)}`,
+      { headers: { Cookie: `admin_session=${cookie}` } },
+    );
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain(
+      `<a href="${from.replace(/&/g, "&amp;")}" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>`,
+    );
+  });
+
+  it.each([
+    ["https://evil.com", "absolute URL"],
+    ["//evil.com", "protocol-relative URL"],
+    ["javascript:alert(1)", "javascript: URI"],
+    ["/admin/other", "different admin path"],
+  ])(
+    "GET /admin/tasks/:id?from=<malicious %s (%s)> falls back to /admin/tasks",
+    async (maliciousFrom) => {
+      const mockTask = {
+        id: "task-42",
+        title: "Build the thing",
+        status: "in_progress",
+        session: null,
+        repo: "org/repo",
+      };
+      const app = createAdminUIApp(
+        makeMockDeps({
+          fetchTaskStoreTask: async (id: string) =>
+            id === "task-42" ? mockTask : null,
+        }),
+      );
+      const res = await app.request(
+        `/admin/tasks/task-42?from=${encodeURIComponent(maliciousFrom)}`,
+        { headers: { Cookie: `admin_session=${cookie}` } },
+      );
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain(
+        `<a href="/admin/tasks" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>`,
+      );
+      expect(html).not.toContain(maliciousFrom);
+    },
+  );
 
   it("GET /admin/tasks/:id redirects to list when task not found", async () => {
     const app = createAdminUIApp(

@@ -1271,7 +1271,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Increment patchCycles and reset reviewState=pending */
+        /** Increment patchCycles and conditionally reset reviewState=pending */
         post: {
             parameters: {
                 query?: never;
@@ -1281,7 +1281,11 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: never;
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["PatchPrBody"];
+                };
+            };
             responses: {
                 /** @description Patched PR */
                 200: {
@@ -1750,6 +1754,13 @@ export interface components {
         };
         UpdatePrBody: {
             [key: string]: unknown;
+        };
+        PatchPrBody: {
+            /**
+             * @description Current head commit SHA. When provided and it differs from the record's stored commitSha, reviewState resets to pending and commitSha is updated. When it matches, reviewState is left untouched (no-op patch cycle). When omitted, reviewState unconditionally resets to pending (legacy behavior).
+             * @example abc123def456
+             */
+            commitSha?: string;
         };
     };
     responses: never;

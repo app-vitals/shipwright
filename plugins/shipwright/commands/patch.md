@@ -144,16 +144,15 @@ A PR has **unaddressed findings** when ANY of the following are true:
 - At least one inline thread has `isResolved == false`
 - At least one review with `state == "COMMENTED"` or `state == "CHANGES_REQUESTED"` has a
   non-empty `body` (a review body without matching inline threads is itself a finding),
-  excluding self-authored clean-APPROVE reviews (see below)
+  excluding clean-APPROVE reviews (see below)
 
 A PR has **no findings** (skip it) when ALL of the following are true:
 - All inline threads are resolved (`isResolved == true` for every thread)
-- No COMMENTED or CHANGES_REQUESTED review has a non-empty body, other than self-authored
-  clean-APPROVE reviews (see below)
+- No COMMENTED or CHANGES_REQUESTED review has a non-empty body, other than clean-APPROVE
+  reviews (see below)
 
-**Self-authored clean-APPROVE exclusion**: A review is excluded from the body check above
-when `author.login == CURRENT_USER` (resolved in Step 1) AND its body is a clean APPROVE
-verdict, matched either by:
+**Clean-APPROVE exclusion**: A review is excluded from the body check above when its body is
+a clean APPROVE verdict, matched either by:
 - leading markdown bold markers (`**`) stripped, the body starts with `APPROVE`, or
 - a `Verdict: APPROVE` label appears anywhere in the body (case-insensitive, optional bold
   markers around either word) — **not** anchored to end-of-line, since the agent's narrative
@@ -162,18 +161,21 @@ verdict, matched either by:
   self-approval via the API)."` (verbatim from shipwright PR #1272, the case that motivated
   this).
 
-Per review.md's Step 10 note ("Self-review event override"), GitHub rejects self-APPROVE via
-the API, so the agent's own clean approval of its own PR is always posted as `COMMENTED`
-with a body like `"APPROVE — looks good, no changes needed."` or a narrative containing
-`"Verdict: APPROVE"` instead of an `APPROVED` review. Without this exclusion, that clean
-self-approval would look identical to a real finding and loop the patch cron forever on an
-already-approved PR. The exclusion is scoped to clean APPROVE verdicts only — a self-authored
-review whose body neither starts with `APPROVE` nor contains a `Verdict: APPROVE` label (e.g.
-it contains `Verdict: CHANGES_REQUESTED`, meaning the agent found a real issue in its own PR)
-still counts as a finding, same as any other reviewer's.
+Not restricted to self-authored reviews (SRV-1.1): multiple distinct Shipwright agents
+operate under different GitHub identities in the same repo, so WHO posted a clean APPROVE
+verdict is not meaningful — the verdict text itself is the ground truth. Per review.md's
+Step 10 note ("Self-review event override"), GitHub rejects self-APPROVE via the API, so an
+agent's own clean approval of its own PR is always posted as `COMMENTED` with a body like
+`"APPROVE — looks good, no changes needed."` or a narrative containing `"Verdict: APPROVE"`
+instead of an `APPROVED` review. Without this exclusion, that clean approval would look
+identical to a real finding and loop the patch cron forever on an already-approved PR. The
+exclusion is scoped to clean APPROVE verdicts only — a review whose body neither starts with
+`APPROVE` nor contains a `Verdict: APPROVE` label (e.g. it contains `Verdict:
+CHANGES_REQUESTED`, meaning the reviewer found a real issue) still counts as a finding,
+regardless of who posted it.
 
 If neither condition applies (e.g., no reviews at all, only approved reviews, or only an
-excluded self-authored clean-APPROVE review), skip the PR — it does not belong in List A.
+excluded clean-APPROVE review), skip the PR — it does not belong in List A.
 
 If a PR has unaddressed findings, add it to **List A**. Store the unresolved threads (with their
 `id` — needed for the `resolveReviewThread` mutation in Step 5) and review bodies for use in
@@ -393,9 +395,12 @@ if [ -n "$PR_RECORD_ID" ]; then
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
     "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/heartbeat" || \
     echo "⚠ heartbeat renewal failed — continuing"
+  HEAD_SHA_POST_PATCH=$(git -C ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} rev-parse HEAD)
   curl -sf -X POST \
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/patch" > /dev/null 2>&1 || \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/patch" \
+    -d "{\"commitSha\": \"$HEAD_SHA_POST_PATCH\"}" > /dev/null 2>&1 || \
     echo "⚠ POST /prs/$PR_RECORD_ID/patch failed — continuing"
 else
   echo "⚠ no PR_RECORD_ID from pre-work claim — skipping PR record update"
@@ -649,9 +654,12 @@ if [ -n "$PR_RECORD_ID" ]; then
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
     "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/heartbeat" || \
     echo "⚠ heartbeat renewal failed — continuing"
+  HEAD_SHA_POST_PATCH=$(git -C ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} rev-parse HEAD)
   curl -sf -X POST \
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/patch" > /dev/null 2>&1 || \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/patch" \
+    -d "{\"commitSha\": \"$HEAD_SHA_POST_PATCH\"}" > /dev/null 2>&1 || \
     echo "⚠ POST /prs/$PR_RECORD_ID/patch failed — continuing"
 else
   echo "⚠ no PR_RECORD_ID from pre-work claim — skipping PR record update"
@@ -846,9 +854,12 @@ if [ -n "$PR_RECORD_ID" ]; then
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
     "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/heartbeat" || \
     echo "⚠ heartbeat renewal failed — continuing"
+  HEAD_SHA_POST_PATCH=$(git -C ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} rev-parse HEAD)
   curl -sf -X POST \
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/patch" > /dev/null 2>&1 || \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/patch" \
+    -d "{\"commitSha\": \"$HEAD_SHA_POST_PATCH\"}" > /dev/null 2>&1 || \
     echo "⚠ POST /prs/$PR_RECORD_ID/patch failed — continuing"
 else
   echo "⚠ no PR_RECORD_ID from pre-work claim — skipping PR record update"

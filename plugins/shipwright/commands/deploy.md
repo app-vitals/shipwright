@@ -48,22 +48,21 @@ REPOS=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
 For each configured repo, fetch all open PRs authored by `AGENT_LOGIN`:
 ```bash
 gh pr list --state open --repo {org}/{repo} --author "$AGENT_LOGIN" \
-  --json number,headRefOid,author,reviewDecision
+  --json number,headRefOid,headRefName,author,reviewDecision
 ```
 
 For each PR, check in order:
 
 1. **Approval** — if `reviewDecision == "APPROVED"`: approved. Otherwise, if
-   `allow_self_review` is true: fetch the PR's reviews and check if any review authored
-   by `AGENT_LOGIN` has a clean APPROVE body — either a leading `APPROVE` (stripping
-   leading markdown bold markers (`**`) first, since the review skill posts
-   `"**APPROVE**"`) or a `Verdict: APPROVE` label anywhere in the body (the narrative
-   self-review convention, case-insensitive, optional `**` around either word — mirrors
-   `check-helpers.ts`'s `isCleanApproveBody`, shared by `check-deploy.ts`'s
-   `hasSelfApproveReview` and `check-patch.ts`'s `isSelfCleanApprove`):
+   `allow_self_review` is true: fetch the PR's reviews and check if any review has a clean
+   APPROVE body — either a leading `APPROVE` (stripping leading markdown bold markers (`**`)
+   first, since the review skill posts `"**APPROVE**"`) or a `Verdict: APPROVE` label
+   anywhere in the body (the narrative self-review convention, case-insensitive, optional
+   `**` around either word — mirrors `check-helpers.ts`'s `isCleanApproveBody`, shared by
+   `check-deploy.ts`'s `hasSelfApproveReview` and `check-patch.ts`'s `isSelfCleanApprove`):
    ```bash
    gh pr view {pr} --repo {org}/{repo} --json reviews \
-     --jq '[.reviews[] | select(.author.login == "'$AGENT_LOGIN'") | .body] | any(
+     --jq '[.reviews[] | .body] | any(
        (sub("^\\s*";"") | sub("^\\*+";"") | startswith("APPROVE"))
        or test("verdict\\**\\s*:\\s*\\**approve\\b"; "i")
      )'
@@ -77,12 +76,22 @@ For each PR, check in order:
    ```
    Skip if no CI run has `status == "completed"` and `conclusion == "success"`.
 
+3. **Bundle completeness** — a PR's branch may have sibling tasks (bundle-mates) still in
+   flight. Skip PRs whose bundle isn't complete yet rather than picking a doomed candidate.
+   Mirrors `check-deploy.ts`'s `isBundleComplete` gate exactly:
+   ```bash
+   BRANCH_TASKS=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" "$SHIPWRIGHT_TASK_STORE_URL/tasks?branch={headRefName}" 2>/dev/null || echo '{"tasks":[],"total":0,"limit":50,"offset":0}')
+   INCOMPLETE=$(echo "$BRANCH_TASKS" | jq '[.tasks[] | select(.status == "pending" or .status == "in_progress" or .status == "blocked")] | length')
+   ```
+   Skip if `INCOMPLETE > 0`.
+
 Keep the ordered list of qualifying PRs as `CANDIDATE_LIST`. Pick the **first** entry
 as the primary candidate. If none qualify, respond `[silent]` and stop — no output.
 
 Once a qualifying PR is found, proceed to Step 2 with that PR number and repo as the target.
-If Step 4a's pre-merge claim later hits a 409 conflict, control returns here to retry with
-the next untried entry in `CANDIDATE_LIST`.
+If Step 2b's bundle re-check or Step 4a's pre-merge claim later finds the candidate blocked
+(a bundle-mate went in flight, or another deploy run already claimed it), control returns
+here to retry with the next untried entry in `CANDIDATE_LIST`.
 
 ---
 
@@ -133,6 +142,12 @@ Before running pre-flight checks, verify that all tasks on this branch are `pr_o
 beyond (i.e., no bundle-mates are still in flight). This prevents deploying a PR while
 sibling tasks on the same branch are still being developed or are blocked.
 
+Scan mode already excluded bundle-incomplete PRs from `CANDIDATE_LIST` in Step 1a. This
+re-check is defense-in-depth for the case where a bundle-mate task transitioned to
+pending/in_progress/blocked in the time between Step 1a's scan and Step 2's arrival at this
+specific candidate — it also covers explicit-target mode, which skips Step 1a entirely and
+arrives here directly.
+
 ```bash
 HEAD_BRANCH=$(gh pr view {pr} --repo {org}/{repo} --json headRefName --jq '.headRefName')
 BRANCH_TASKS=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" "$SHIPWRIGHT_TASK_STORE_URL/tasks?branch=$HEAD_BRANCH" 2>/dev/null || echo '{"tasks":[],"total":0,"limit":50,"offset":0}')
@@ -140,14 +155,22 @@ INCOMPLETE_TASKS=$(echo "$BRANCH_TASKS" | jq '[.tasks[] | select(.status == "pen
 INCOMPLETE=$(echo "$INCOMPLETE_TASKS" | jq 'length')
 ```
 
-If `INCOMPLETE > 0`: print and stop [silent]:
+**If `INCOMPLETE > 0`**: do NOT proceed to pre-flight. Print:
 ```
 ⏸ Bundle gate: {INCOMPLETE} task(s) on branch {HEAD_BRANCH} are still in flight:
   {for each item in INCOMPLETE_TASKS: "  - {id} ({status})"}
   Waiting for bundle-mates to reach pr_open before deploying.
 ```
+- **Scan mode**: log which candidate was skipped and why:
+  ```
+  ⏭ Skipping PR #{pr} — bundle-blocked on branch {HEAD_BRANCH}, trying next candidate.
+  ```
+  Then return to Step 1a's `CANDIDATE_LIST` and retry Steps 2 through 4a with the next
+  candidate PR. If no candidates remain, respond `[silent]` and stop.
+- **Explicit-target mode**: there is no other candidate to fall back to. Stop here `[silent]`.
 
-If `INCOMPLETE == 0` (no tasks tracked, or all tasks are `pr_open` or beyond): proceed to Step 3.
+**Otherwise** (`INCOMPLETE == 0` — no tasks tracked, or all tasks are `pr_open` or beyond):
+proceed to Step 3.
 
 ---
 
@@ -167,18 +190,17 @@ gh pr view {pr} --repo {org}/{repo} --json reviewDecision,reviews \
 **If `reviewDecision` is `"APPROVED"`**: Record `approval_source = "github"` and `approvers = [list]`. Proceed to Step 3b.
 
 **If `reviewDecision` is not `"APPROVED"`**: Read `allow_self_review` from
-`state/agent-policy.md` (default: true). If `allow_self_review` is true AND the PR is
-authored by the current agent (`PR_AUTHOR == AGENT_LOGIN` from Step 2a), fetch the PR's
-reviews from GitHub and check if any review from `AGENT_LOGIN` has a clean APPROVE body —
-either a leading `APPROVE` (strip any leading markdown bold markers (`**`) first, since
-the review skill posts `"**APPROVE**"`) or a `Verdict: APPROVE` label anywhere in the body
-(the narrative self-review convention, case-insensitive, optional `**` around either word
-— mirrors `check-helpers.ts`'s `isCleanApproveBody`, shared by `check-deploy.ts`'s
+`state/agent-policy.md` (default: true). If `allow_self_review` is true, fetch the PR's
+reviews from GitHub and check if any review has a clean APPROVE body — either a leading
+`APPROVE` (strip any leading markdown bold markers (`**`) first, since the review skill
+posts `"**APPROVE**"`) or a `Verdict: APPROVE` label anywhere in the body (the narrative
+self-review convention, case-insensitive, optional `**` around either word — mirrors
+`check-helpers.ts`'s `isCleanApproveBody`, shared by `check-deploy.ts`'s
 `hasSelfApproveReview` and `check-patch.ts`'s `isSelfCleanApprove`):
 
 ```bash
 gh pr view {pr} --repo {org}/{repo} --json reviews \
-  --jq '[.reviews[] | select(.author.login == "'$AGENT_LOGIN'") | .body] | any(
+  --jq '[.reviews[] | .body] | any(
     (sub("^\\s*";"") | sub("^\\*+";"") | startswith("APPROVE"))
     or test("verdict\\**\\s*:\\s*\\**approve\\b"; "i")
   )'
@@ -189,7 +211,7 @@ A matching review is one whose stripped body `startsWith("APPROVE")` or that con
 "self_review"` and proceed to Step 3b.
 Print:
 ```
-ℹ No GitHub approval (solo-authored PR). Proceeding on self-posted APPROVE review.
+ℹ No GitHub approval. Proceeding on clean APPROVE review.
 ```
 
 If no matching review is found (or `allow_self_review` is false), print and stop:

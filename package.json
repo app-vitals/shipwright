@@ -1,6 +1,6 @@
 {
   "name": "shipwright-monorepo",
-  "version": "0.164.0",
+  "version": "0.171.0",
   "private": true,
   "workspaces": [
     "lib",
@@ -16,7 +16,7 @@
     "test": "bun test",
     "lint": "bunx biome lint .",
     "format": "bunx biome format --write .",
-    "typecheck": "bun run --filter='*' typecheck",
+    "typecheck": "bun run --filter='*' --sequential typecheck",
     "generate:admin-spec": "bun run scripts/generate-admin-spec.ts",
     "generate:admin-types": "bunx openapi-typescript ./admin/openapi.json --output ./lib/admin-types.ts",
     "generate:task-store-spec": "bun run scripts/generate-task-store-spec.ts",

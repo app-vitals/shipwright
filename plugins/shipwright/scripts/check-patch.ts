@@ -124,24 +124,23 @@ export function hasFailingCi(
 // ─── Staleness check (mirrors patch.md Step 3b) ───────────────────────────────
 
 /**
- * True when a review is self-authored and is a clean APPROVE verdict (see
- * check-helpers.ts's isCleanApproveBody — leading `APPROVE` or a "Verdict:
- * APPROVE" label anywhere in the body, the agent's narrative self-review
- * convention, which ends a summary with the verdict rather than leading with
- * it — CPF-2.1).
+ * True when a review is a clean APPROVE verdict (see check-helpers.ts's
+ * isCleanApproveBody — leading `APPROVE` or a "Verdict: APPROVE" label
+ * anywhere in the body, the agent's narrative self-review convention, which
+ * ends a summary with the verdict rather than leading with it — CPF-2.1).
  *
- * GitHub blocks self-APPROVE via the API, so the agent's own clean approvals
- * are always posted as COMMENTED — treating those as findings would create a
- * permanent false positive. A self-review with a real (non-APPROVE) verdict
- * (e.g. "Verdict: CHANGES_REQUESTED") is not matched here, so it still counts
- * as a finding.
+ * Not restricted to self-authored reviews (SRV-1.1): multiple distinct
+ * Shipwright agents operate under different GitHub identities in the same
+ * repo, so WHO posted a clean APPROVE verdict is not meaningful — the
+ * verdict text itself is the ground truth. GitHub blocks self-APPROVE via
+ * the API, so an agent's own clean approvals are always posted as COMMENTED
+ * — treating those as findings would create a permanent false positive. A
+ * review with a real (non-APPROVE) verdict (e.g. "Verdict: CHANGES_REQUESTED")
+ * is not matched here, so it still counts as a finding.
  */
 function isSelfCleanApprove(
-  review: Pick<PrReviewData["reviews"]["nodes"][number], "author" | "body">,
-  currentUser: string,
+  review: Pick<PrReviewData["reviews"]["nodes"][number], "body">,
 ): boolean {
-  if (review.author.login !== currentUser) return false;
-
   return isCleanApproveBody(review.body);
 }
 
@@ -150,23 +149,20 @@ function isSelfCleanApprove(
  * - At least one COMMENTED or CHANGES_REQUESTED review posted at the current HEAD
  * - AND (has a non-empty review body OR has at least one unresolved inline thread)
  *
- * A self-authored review is excluded only when it is a clean APPROVE verdict
- * (see isSelfCleanApprove) — a self-review with a real (non-APPROVE) verdict
- * still counts as an unaddressed finding, same as any other reviewer's.
+ * A review is excluded only when it is a clean APPROVE verdict (see
+ * isSelfCleanApprove) — a review with a real (non-APPROVE) verdict still
+ * counts as an unaddressed finding, regardless of who posted it.
  */
-function hasUnaddressedFindings(
-  data: PrReviewData,
-  currentUser: string,
-): boolean {
+function hasUnaddressedFindings(data: PrReviewData): boolean {
   const { headRefOid, reviews, reviewThreads } = data;
 
   // Find qualifying reviews: state COMMENTED or CHANGES_REQUESTED at current HEAD,
-  // excluding self-authored clean-APPROVE reviews.
+  // excluding clean-APPROVE reviews.
   const qualifyingReviews = reviews.nodes.filter(
     (r) =>
       (r.state === "COMMENTED" || r.state === "CHANGES_REQUESTED") &&
       r.commit.oid === headRefOid &&
-      !isSelfCleanApprove(r, currentUser),
+      !isSelfCleanApprove(r),
   );
 
   if (qualifyingReviews.length === 0) return false;
@@ -188,16 +184,15 @@ function hasUnaddressedFindings(
  * merge-only skip: a branch updated only via merge-from-main hasn't had real
  * author activity, so findings from the pre-merge review are still valid.
  *
- * A self-authored review is excluded only when it is a clean APPROVE verdict
- * (see isSelfCleanApprove) — a self-review with a real (non-APPROVE) verdict
- * still counts as a stale finding.
+ * A review is excluded only when it is a clean APPROVE verdict (see
+ * isSelfCleanApprove) — a review with a real (non-APPROVE) verdict still
+ * counts as a stale finding, regardless of who posted it.
  */
 async function hasMergeOnlyStaleFindings(
   prNumber: number,
   data: PrReviewData,
   deps: Pick<Deps, "listPrCommits">,
   repo: string | undefined,
-  currentUser: string,
 ): Promise<boolean> {
   const { headRefOid, reviews, reviewThreads } = data;
 
@@ -205,7 +200,7 @@ async function hasMergeOnlyStaleFindings(
     (r) =>
       (r.state === "COMMENTED" || r.state === "CHANGES_REQUESTED") &&
       r.commit.oid !== headRefOid &&
-      !isSelfCleanApprove(r, currentUser),
+      !isSelfCleanApprove(r),
   );
 
   if (staleReviews.length === 0) return false;
@@ -234,8 +229,6 @@ interface RunResult {
 }
 
 export async function run(deps: Deps): Promise<RunResult> {
-  const currentUser = await deps.getCurrentUser();
-
   const prs = await deps.listOwnOpenPrs("default");
   if (prs.length === 0) return { exit: 1, output: "" };
 
@@ -256,7 +249,7 @@ export async function run(deps: Deps): Promise<RunResult> {
     }
 
     const reviewData = await deps.fetchPrReviews(org, repo, pr.number);
-    if (hasUnaddressedFindings(reviewData, currentUser)) {
+    if (hasUnaddressedFindings(reviewData)) {
       return {
         exit: 0,
         output:
@@ -267,13 +260,7 @@ export async function run(deps: Deps): Promise<RunResult> {
     // If findings exist at a stale commit but all new commits are merges, the
     // findings are still valid — only a merge-from-main landed, not real author work.
     if (
-      await hasMergeOnlyStaleFindings(
-        pr.number,
-        reviewData,
-        deps,
-        pr.repo,
-        currentUser,
-      )
+      await hasMergeOnlyStaleFindings(pr.number, reviewData, deps, pr.repo)
     ) {
       return {
         exit: 0,

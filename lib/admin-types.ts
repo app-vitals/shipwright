@@ -246,14 +246,20 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: never;
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["DeleteAgentBody"];
+                };
+            };
             responses: {
-                /** @description Agent deleted */
-                204: {
+                /** @description Delete outcome — agentDeleted is false when a cleanup step failed; the Agent row is preserved for retry */
+                200: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["DeleteAgentResult"];
+                    };
                 };
                 /** @description Forbidden */
                 403: {
@@ -1561,6 +1567,36 @@ export interface components {
              */
             repos?: string[];
         };
+        FailedStep: {
+            /** @example k8s */
+            step: string;
+            /** @example k8s API timeout */
+            error: string;
+        };
+        ManualStep: {
+            /** @example GH_TOKEN */
+            key: string;
+            /** @example GH_TOKEN was not automatically revoked — rotate or revoke it manually. */
+            message: string;
+        };
+        DeleteAgentResult: {
+            /** @example true */
+            agentDeleted: boolean;
+            /**
+             * @example [
+             *       "k8s",
+             *       "task-store-tokens",
+             *       "chat-service-tokens-and-threads"
+             *     ]
+             */
+            completed: string[];
+            failed: components["schemas"]["FailedStep"][];
+            manualStepsRequired: components["schemas"]["ManualStep"][];
+        };
+        DeleteAgentBody: {
+            /** @example xoxp-user-token */
+            xoxpToken?: string;
+        };
         AgentSummary: {
             /** @example clx1234567890 */
             id: string;
@@ -1763,6 +1799,11 @@ export interface components {
             outcome: string | null;
             /** @example null */
             error: string | null;
+            /**
+             * @description Pipeline phase this run served (dev-task/review/patch/deploy). Null for legacy five-job crons.
+             * @example dev-task
+             */
+            phase: string | null;
             /** @example 1234 */
             inputTokens: number | null;
             /** @example 567 */
@@ -1800,6 +1841,11 @@ export interface components {
             outcome?: string | null;
             /** @example null */
             error?: string | null;
+            /**
+             * @description Pipeline phase this run served (dev-task/review/patch/deploy)
+             * @example dev-task
+             */
+            phase?: string | null;
         };
         CronRunsList: {
             items: components["schemas"]["AgentCronRun"][];
@@ -1958,6 +2004,8 @@ export interface components {
             key1: string;
             /** @example morning-brief */
             key2: string;
+            /** @example dev-task */
+            phase?: string | null;
         };
         DailyTokenAggregate: components["schemas"]["TokenAggregate"] & {
             /** @example 2026-01-10 */
@@ -1970,6 +2018,7 @@ export interface components {
             byModel: components["schemas"]["DoubleKeyedTokenAggregate"][];
             daily: components["schemas"]["DailyTokenAggregate"][];
             byCronModel: components["schemas"]["DoubleKeyedTokenAggregate"][];
+            byPhase: components["schemas"]["KeyedTokenAggregate"][];
         };
         ChatTokenStats: {
             totals: components["schemas"]["TokenAggregate"];

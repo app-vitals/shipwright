@@ -19,7 +19,7 @@ tasks:
   typecheck:
     desc: Type-check all packages
     cmds:
-      - bun run --filter="*" typecheck
+      - bun run --filter="*" --sequential typecheck
 
   test:
     desc: Run all tests

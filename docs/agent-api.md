@@ -71,7 +71,35 @@ Admin-only. Updatable fields: `selfHosted` (boolean), `repos` (array of `org/rep
 DELETE /agents/:id
 ```
 
-Admin-only. Deprovisions the agent's K8s workload (Deployment, Secret, and PVC), then deletes the DB record. All child records (envs, crons, tools, tokens, plugins) are cascade-deleted.
+Admin-only. Runs the full `deleteAgentFully()` teardown: deprovisions the agent's K8s workload (Deployment, Secret, and PVC), revokes its task-store and chat-service tokens, deletes its chat threads, and — if a `SLACK_APP_ID` env var is present and an `xoxpToken` was supplied — deletes its Slack app. The Agent DB row (and its cascade-deleted child records: envs, crons, tools, tokens, plugins) is deleted **last**, and only if every one of those steps succeeded.
+
+Body (optional):
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `xoxpToken` | no | Slack user token (`xoxp-...`) authorizing Slack app deletion. Omit to skip automatic Slack app deletion — a present Slack app then becomes a `manualStepsRequired` entry instead of a hard failure. |
+
+Returns `200` with:
+
+```json
+{
+  "agentDeleted": true,
+  "completed": ["k8s", "task-store-tokens", "chat-service-tokens-and-threads", "slack-app"],
+  "failed": [],
+  "manualStepsRequired": [
+    { "key": "GH_TOKEN", "message": "Revoke this GitHub personal access token at https://github.com/settings/tokens (or the fine-grained PAT settings page)." }
+  ]
+}
+```
+
+- `agentDeleted` — `true` only when every automatable step succeeded and the Agent row was deleted. `false` means at least one step failed and the row was intentionally **preserved** for retry.
+- `completed` — steps that succeeded, in execution order (`k8s`, `task-store-tokens`, `chat-service-tokens-and-threads`, `slack-app`).
+- `failed` — `{ step, error }` entries for steps that threw. A failed step does not abort the remaining steps — every step is still attempted so a retry makes maximum forward progress.
+- `manualStepsRequired` — operator reminders for state with no automated revocation: hand-pasted secrets (`GH_TOKEN`, `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, and any other `AgentEnv` row with `secret: true`), plus a Slack-app entry when `SLACK_APP_ID` is set but no `xoxpToken` was supplied. Always populated when applicable; never blocks the delete.
+
+**Retry semantics:** `agentDeleted: false` means the call is safe to retry — every underlying step is individually idempotent (K8s deprovision tolerates an already-absent workload, token revocation tolerates an already-revoked token, thread deletion tolerates no threads), so re-issuing `DELETE /agents/:id` once the failing dependency is healthy again only re-attempts what didn't finish. The Agent row stays reachable via `GET /agents/:id` until `agentDeleted` is `true`.
+
+`404` if the agent doesn't exist. `403` if the caller isn't an admin.
 
 ### Provision agent
 

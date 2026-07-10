@@ -12,6 +12,7 @@ import {
   escapeHtml,
   renderAdminToolbar,
 } from "./admin-ui-styles.ts";
+import type { ManualStep } from "./agent-deletion-checklist.ts";
 import { parseChatMarkers } from "./chat-markers.ts";
 import type {
   ChatMessage,
@@ -410,7 +411,24 @@ export function renderAgentsPage(
   userName: string,
   isAdmin: boolean,
   timezone: string,
+  opts?: { successMsg?: string; manualSteps?: ManualStep[] },
 ): string {
+  const successHtml = opts?.successMsg
+    ? `<div class="alert alert-success">${escapeHtml(opts.successMsg)}</div>`
+    : "";
+
+  const manualStepsHtml =
+    opts?.manualSteps && opts.manualSteps.length > 0
+      ? `<div class="alert alert-warning" id="manual-steps-panel" style="position:relative;padding-right:32px">
+      <button type="button" onclick="document.getElementById('manual-steps-panel').style.display='none'"
+              style="position:absolute;top:8px;right:10px;background:none;border:none;cursor:pointer;font-size:14px;color:inherit" aria-label="Dismiss">×</button>
+      <strong>Manual cleanup required:</strong>
+      <ul style="margin:8px 0 0 20px">
+        ${opts.manualSteps.map((s) => `<li>${escapeHtml(s.message)}</li>`).join("\n        ")}
+      </ul>
+    </div>`
+      : "";
+
   const rows =
     agents.length === 0
       ? `<tr><td colspan="4" class="empty-state">${isAdmin ? 'No agents yet. <a href="/admin/provision">Provision one →</a>' : "No agents."}</td></tr>`
@@ -445,6 +463,8 @@ export function renderAgentsPage(
       <h1 class="page-title">Agents</h1>
       ${provisionButton}
     </div>
+    ${successHtml}
+    ${manualStepsHtml}
     <div class="card">
       <table class="data-table">
         <thead>
@@ -1401,6 +1421,35 @@ export function renderTasksPage(
       .join("");
   };
 
+  // Pagination (hoisted above the row loop so row links can carry the current
+  // list view as a `from` back-link param — see makePageUrl usage below).
+  const totalPages = Math.max(
+    1,
+    Math.ceil(pagination.total / pagination.limit),
+  );
+  const page = pagination.page;
+  const makePageUrl = (p: number) => {
+    const params = new URLSearchParams();
+    if (filters.status) params.set("status", filters.status);
+    else if (filters.state) params.set("state", filters.state);
+    if (filters.session) params.set("session", filters.session);
+    if (filters.repo) params.set("repo", filters.repo);
+    if (filters.agent) params.set("agent", filters.agent);
+    if (p > 1) params.set("page", String(p));
+    const qs = params.toString();
+    return `/admin/tasks${qs ? `?${qs}` : ""}`;
+  };
+
+  // The URL the user is currently viewing. When it differs from the bare
+  // /admin/tasks default (any filter, state, or page > 1 active), row links
+  // into the detail page carry it as `?from=` so the "← Tasks" back link on
+  // the detail page can return here instead of the cleared default view.
+  const currentListUrl = makePageUrl(page);
+  const detailHrefSuffix =
+    currentListUrl === "/admin/tasks"
+      ? ""
+      : `?from=${encodeURIComponent(currentListUrl)}`;
+
   const rows =
     tasks.length === 0
       ? `<tr><td colspan="8" class="empty-state">No tasks found.</td></tr>`
@@ -1417,9 +1466,10 @@ export function renderTasksPage(
                 : t.prUrl
                   ? `<a href="${escapeHtml(t.prUrl)}" style="color:#6366f1;text-decoration:none" title="View PR">#${t.pr ?? "PR"}</a>`
                   : '<span style="color:#9ca3af">—</span>';
-            return `<tr${readOnly ? "" : ` data-href="/admin/tasks/${escapeHtml(t.id)}" style="cursor:pointer"`}>
-    <td class="mono" style="font-size:11px">${readOnly ? escapeHtml(t.id) : `<a href="/admin/tasks/${escapeHtml(t.id)}" style="color:#6366f1;text-decoration:none" title="View details">${escapeHtml(t.id)}</a>`}</td>
-    <td>${readOnly ? escapeHtml(t.title) : `<a href="/admin/tasks/${escapeHtml(t.id)}" style="color:inherit;text-decoration:none">${escapeHtml(t.title)}</a>`}${blockerBadges}</td>
+            const detailHref = `/admin/tasks/${escapeHtml(t.id)}${detailHrefSuffix}`;
+            return `<tr${readOnly ? "" : ` data-href="${detailHref}" style="cursor:pointer"`}>
+    <td class="mono" style="font-size:11px">${readOnly ? escapeHtml(t.id) : `<a href="${detailHref}" style="color:#6366f1;text-decoration:none" title="View details">${escapeHtml(t.id)}</a>`}</td>
+    <td>${readOnly ? escapeHtml(t.title) : `<a href="${detailHref}" style="color:inherit;text-decoration:none">${escapeHtml(t.title)}</a>`}${blockerBadges}</td>
     <td><span class="badge ${statusBadgeClass(t.status)}">${escapeHtml(t.status)}</span></td>
     <td style="font-size:12px">${agentCell}</td>
     <td class="col-session mono" style="font-size:11px">${t.session ? escapeHtml(t.session) : '<span style="color:#9ca3af">—</span>'}</td>
@@ -1486,24 +1536,6 @@ export function renderTasksPage(
         `<option value="${escapeHtml(s)}" ${filters.status === s ? "selected" : ""}>${s === "" ? "Any status" : escapeHtml(s)}</option>`,
     )
     .join("");
-
-  // Pagination
-  const totalPages = Math.max(
-    1,
-    Math.ceil(pagination.total / pagination.limit),
-  );
-  const page = pagination.page;
-  const makePageUrl = (p: number) => {
-    const params = new URLSearchParams();
-    if (filters.status) params.set("status", filters.status);
-    else if (filters.state) params.set("state", filters.state);
-    if (filters.session) params.set("session", filters.session);
-    if (filters.repo) params.set("repo", filters.repo);
-    if (filters.agent) params.set("agent", filters.agent);
-    if (p > 1) params.set("page", String(p));
-    const qs = params.toString();
-    return `/admin/tasks${qs ? `?${qs}` : ""}`;
-  };
 
   const from = pagination.total === 0 ? 0 : (page - 1) * pagination.limit + 1;
   const to = Math.min(page * pagination.limit, pagination.total);
@@ -1627,6 +1659,7 @@ export function renderTaskDetailPage(
   agentNames: Record<string, string> = {},
   timezone = "America/Los_Angeles",
   pullRequest?: PullRequestItem,
+  backHref = "/admin/tasks",
 ): string {
   const statusClass =
     task.status === "in_progress"
@@ -1876,7 +1909,7 @@ export function renderTaskDetailPage(
   ${renderAdminToolbar(userName, "/admin/tasks")}
   <div class="vos-page">
     <div class="page-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-      <a href="/admin/tasks" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>
+      <a href="${escapeHtml(backHref)}" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>
       <h1 class="page-title" style="margin:0;flex:1">${escapeHtml(task.title)}</h1>
       <span class="badge ${statusClass}">${escapeHtml(task.status)}</span>
       ${releaseButton}
