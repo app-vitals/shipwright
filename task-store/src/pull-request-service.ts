@@ -124,6 +124,18 @@ export class PullRequestService implements PullRequestServiceLike {
         }
       }
 
+      // deploy.md's merge-completion PATCH transitions state to 'merged' —
+      // explicitly release the claim in the same call, mirroring patch()'s
+      // always-release behavior. Defense-in-depth: claimNext()'s WHERE clause
+      // already excludes state:'merged' records, so this is currently
+      // harmless if omitted, but keeps claim state consistent regardless.
+      if (data.state === "merged") {
+        updateData.claimedBy = null;
+        updateData.claimedAt = null;
+        updateData.heartbeatAt = null;
+        updateData.phase = null;
+      }
+
       return await this.prisma.pullRequest.update({
         where: { id },
         data: updateData,

@@ -134,3 +134,46 @@ describe("PullRequestService.patch()", () => {
     expect(prisma._updateCalls).toHaveLength(0);
   });
 });
+
+describe("PullRequestService.update() merge completion", () => {
+  const NOW = new Date("2026-07-10T12:00:00.000Z");
+  const clock = FixedClock(NOW);
+
+  test("state:merged clears claimedBy/claimedAt/heartbeatAt/phase", async () => {
+    const prisma = makePrismaDouble({
+      id: "pr-1",
+      readyForDeployAt: NOW.toISOString(),
+    } as Partial<PullRequest>);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.update("pr-1", {
+      state: "merged",
+      mergedAt: NOW.toISOString(),
+      reviewState: "approved",
+      commitSha: "sha-merged",
+    });
+
+    expect(prisma._updateCalls).toHaveLength(1);
+    const { data } = prisma._updateCalls[0];
+    expect(data.state).toBe("merged");
+    expect(data.commitSha).toBe("sha-merged");
+    expect(data.claimedBy).toBeNull();
+    expect(data.claimedAt).toBeNull();
+    expect(data.heartbeatAt).toBeNull();
+    expect(data.phase).toBeNull();
+  });
+
+  test("non-merge update does not touch claim fields", async () => {
+    const prisma = makePrismaDouble({ id: "pr-1" } as Partial<PullRequest>);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.update("pr-1", { commitSha: "sha-unrelated" });
+
+    expect(prisma._updateCalls).toHaveLength(1);
+    const { data } = prisma._updateCalls[0];
+    expect("claimedBy" in data).toBe(false);
+    expect("claimedAt" in data).toBe(false);
+    expect("heartbeatAt" in data).toBe(false);
+    expect("phase" in data).toBe(false);
+  });
+});
