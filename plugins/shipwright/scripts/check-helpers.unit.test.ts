@@ -20,6 +20,7 @@ import {
   getCurrentUser,
   isCleanApproveBody,
   resolveAllRepos,
+  resolveRepoDirs,
   resolveRepos,
 } from "./check-helpers.ts";
 import * as checkHelpers from "./check-helpers.ts";
@@ -263,6 +264,107 @@ describe("resolveAllRepos", () => {
       "https://github.com/acme/other-repo.git",
     );
     expect(resolveAllRepos(tmpDir)).toEqual(["acme/other-repo"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveRepoDirs
+// ---------------------------------------------------------------------------
+
+describe("resolveRepoDirs", () => {
+  let tmpDir: string;
+  let savedEnv: string | undefined;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "resolve-repo-dirs-test-"));
+    savedEnv = process.env.SHIPWRIGHT_REPOS_DIR;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SHIPWRIGHT_REPOS_DIR;
+  });
+
+  afterEach(() => {
+    if (savedEnv !== undefined) {
+      process.env.SHIPWRIGHT_REPOS_DIR = savedEnv;
+    } else {
+      // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+      delete process.env.SHIPWRIGHT_REPOS_DIR;
+    }
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test("returns empty array when workspace has no repos/ dir and no env var", () => {
+    expect(resolveRepoDirs(tmpDir)).toEqual([]);
+  });
+
+  test("returns repo + absolute local dir path for each clone", () => {
+    const reposDir = join(tmpDir, "repos");
+    mkdirSync(reposDir, { recursive: true });
+    makeGitClone(
+      reposDir,
+      "example-repo",
+      "https://github.com/acme/example-repo.git",
+    );
+    const result = resolveRepoDirs(tmpDir);
+    expect(result).toEqual([
+      { repo: "acme/example-repo", dir: join(reposDir, "example-repo") },
+    ]);
+  });
+
+  test("returns multiple repo dirs when multiple git clones exist", () => {
+    const reposDir = join(tmpDir, "repos");
+    mkdirSync(reposDir, { recursive: true });
+    makeGitClone(
+      reposDir,
+      "example-repo",
+      "https://github.com/acme/example-repo.git",
+    );
+    makeGitClone(
+      reposDir,
+      "other-repo",
+      "https://github.com/acme/other-repo.git",
+    );
+    const result = resolveRepoDirs(tmpDir);
+    expect(result).toHaveLength(2);
+    expect(result).toContainEqual({
+      repo: "acme/example-repo",
+      dir: join(reposDir, "example-repo"),
+    });
+    expect(result).toContainEqual({
+      repo: "acme/other-repo",
+      dir: join(reposDir, "other-repo"),
+    });
+  });
+
+  test("skips subdirs without .git directory", () => {
+    const reposDir = join(tmpDir, "repos");
+    mkdirSync(reposDir, { recursive: true });
+    mkdirSync(join(reposDir, "not-a-repo"));
+    makeGitClone(
+      reposDir,
+      "example-repo",
+      "https://github.com/acme/example-repo.git",
+    );
+    const result = resolveRepoDirs(tmpDir);
+    expect(result).toHaveLength(1);
+  });
+
+  test("falls back to SHIPWRIGHT_REPOS_DIR when repos/ is empty", () => {
+    const reposDir = join(tmpDir, "repos");
+    mkdirSync(reposDir, { recursive: true });
+
+    const envReposDir = join(tmpDir, "env-repos");
+    mkdirSync(envReposDir, { recursive: true });
+    makeGitClone(
+      envReposDir,
+      "example-repo",
+      "https://github.com/acme/example-repo.git",
+    );
+
+    process.env.SHIPWRIGHT_REPOS_DIR = envReposDir;
+    const result = resolveRepoDirs(tmpDir);
+    expect(result).toEqual([
+      { repo: "acme/example-repo", dir: join(envReposDir, "example-repo") },
+    ]);
   });
 });
 

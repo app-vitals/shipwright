@@ -4,14 +4,26 @@
  *
  * Pre-check for the docs-freshness cron.
  *
- * Reads state/docs-last-synced.json to get the last-synced SHA.
- * - If absent → exit 0 (first run, always worth running)
- * - If no commits since SHA → exit 1 (nothing to check)
- * - If commits exist but only docs/state/.github changes → exit 1 (no source changes)
- * - If source files changed → exit 0 with changed-file summary as stdout
+ * Iterates every repo under repos/ (via resolveRepoDirs — see
+ * check-helpers.ts) rather than assuming cwd is a single target repo. This
+ * cron's agent-level cwd is the workspace root (not a git repo), so a
+ * process.cwd()-based single-repo implementation would silently no-op for
+ * every configured repo.
  *
- * Exit 0 + file list → source files changed, run the docs check
- * Exit 1 + no output  → nothing to do
+ * For each repo:
+ * - No docs/ directory → skip cleanly, no anchor read/write, no output
+ * - Reads that repo's own state/docs-last-synced.json to get the
+ *   last-synced SHA
+ *   - If absent → repo qualifies (first run, always worth running)
+ *   - If no commits since SHA → repo does not qualify
+ *   - If commits exist but only docs/state/.github changes → does not qualify
+ *   - If source files changed → repo qualifies, changed-file summary recorded
+ *
+ * One repo's git failure is isolated (permissive — treated as qualifying)
+ * and does not block or suppress findings in other repos.
+ *
+ * Exit 0 + repo-scoped summary → at least one repo has source changes worth checking
+ * Exit 1 + no output            → nothing to do in any repo
  *
  * Usage:
  *   bun plugins/shipwright/scripts/check-docs-freshness.ts
@@ -20,18 +32,27 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { resolveRepoDirs, resolveWorkspacePath } from "./check-helpers.ts";
+import type { RepoDir } from "./check-helpers.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Deps {
-  readSyncAnchor: () => string | null;
-  getCommitsSince: (sha: string) => string[] | null;
-  getChangedFilesSince: (sha: string) => string[] | null;
+  repos: RepoDir[];
+  hasDocsDir: (dir: string) => boolean;
+  readSyncAnchor: (dir: string) => string | null;
+  getCommitsSince: (dir: string, sha: string) => string[] | null;
+  getChangedFilesSince: (dir: string, sha: string) => string[] | null;
 }
 
 interface RunResult {
   exit: 0 | 1;
   output: string;
+}
+
+interface RepoFinding {
+  repo: string;
+  sourceFiles: string[];
 }
 
 // ─── Filter logic ─────────────────────────────────────────────────────────────
@@ -47,57 +68,99 @@ function isSourceFile(path: string): boolean {
   return true;
 }
 
-// ─── Core logic ───────────────────────────────────────────────────────────────
+// ─── Per-repo evaluation ───────────────────────────────────────────────────────
 
-export async function run(deps: Deps): Promise<RunResult> {
-  const sha = deps.readSyncAnchor();
+/**
+ * Evaluate a single repo. Returns:
+ * - "no-docs"    → repo has no docs/ directory, skip cleanly
+ * - "no-change"  → repo has an anchor but nothing worth checking since it
+ * - a RepoFinding → repo qualifies (first run, or source files changed)
+ */
+function evaluateRepo(
+  repoDir: RepoDir,
+  deps: Deps,
+): "no-docs" | "no-change" | RepoFinding {
+  if (!deps.hasDocsDir(repoDir.dir)) return "no-docs";
+
+  const sha = deps.readSyncAnchor(repoDir.dir);
 
   // First run — no anchor, always worth checking
   if (sha === null) {
-    return {
-      exit: 0,
-      output: "No sync anchor found — running full docs check.",
-    };
+    return { repo: repoDir.repo, sourceFiles: [] };
   }
 
-  const commits = deps.getCommitsSince(sha);
+  const commits = deps.getCommitsSince(repoDir.dir, sha);
 
-  // Git failure — unknown state, exit permissively
+  // Git failure — unknown state, treat as qualifying (permissive)
   if (commits === null) {
-    return { exit: 0, output: "" };
+    return { repo: repoDir.repo, sourceFiles: [] };
   }
 
   // No commits since last sync — nothing to check
-  if (commits.length === 0) {
-    return { exit: 1, output: "" };
-  }
+  if (commits.length === 0) return "no-change";
 
-  const changedFiles = deps.getChangedFilesSince(sha);
+  const changedFiles = deps.getChangedFilesSince(repoDir.dir, sha);
 
-  // Git failure — unknown state, exit permissively
+  // Git failure — unknown state, treat as qualifying (permissive)
   if (changedFiles === null) {
-    return { exit: 0, output: "" };
+    return { repo: repoDir.repo, sourceFiles: [] };
   }
+
   const sourceFiles = changedFiles.filter(isSourceFile);
 
   // Only non-source files changed (docs, state, .github) — skip
-  if (sourceFiles.length === 0) {
-    return { exit: 1, output: "" };
+  if (sourceFiles.length === 0) return "no-change";
+
+  return { repo: repoDir.repo, sourceFiles };
+}
+
+// ─── Core logic ───────────────────────────────────────────────────────────────
+
+export async function run(deps: Deps): Promise<RunResult> {
+  const findings: RepoFinding[] = [];
+
+  for (const repoDir of deps.repos) {
+    try {
+      const result = evaluateRepo(repoDir, deps);
+      if (result === "no-docs" || result === "no-change") continue;
+      findings.push(result);
+    } catch (err) {
+      process.stderr.write(
+        `check-docs-freshness: evaluation failed for ${repoDir.repo}: ${String(err)}\n`,
+      );
+      // Permissive on unexpected failure — one repo's error must not
+      // suppress a real finding in another repo, so still flag it.
+      findings.push({ repo: repoDir.repo, sourceFiles: [] });
+    }
   }
 
-  // Source files changed — run the docs check
-  const output = `Source files changed since last sync:\n${sourceFiles.join("\n")}`;
-  return { exit: 0, output };
+  if (findings.length === 0) return { exit: 1, output: "" };
+
+  const lines = findings.map((f) =>
+    f.sourceFiles.length > 0
+      ? `${f.repo}:\n${f.sourceFiles.join("\n")}`
+      : `${f.repo}: no sync anchor found — run full docs check`,
+  );
+
+  return {
+    exit: 0,
+    output: `Repos with docs check needed:\n${lines.join("\n\n")}`,
+  };
 }
 
 // ─── Production deps ──────────────────────────────────────────────────────────
 
 function buildProductionDeps(): Deps {
-  const cwd = process.cwd();
+  const workspacePath = resolveWorkspacePath();
+  const repos = resolveRepoDirs(workspacePath);
 
   return {
-    readSyncAnchor: (): string | null => {
-      const anchorPath = join(cwd, "state", "docs-last-synced.json");
+    repos,
+
+    hasDocsDir: (dir: string): boolean => existsSync(join(dir, "docs")),
+
+    readSyncAnchor: (dir: string): string | null => {
+      const anchorPath = join(dir, "state", "docs-last-synced.json");
       if (!existsSync(anchorPath)) return null;
       try {
         const data = JSON.parse(readFileSync(anchorPath, "utf-8")) as {
@@ -109,14 +172,14 @@ function buildProductionDeps(): Deps {
       }
     },
 
-    getCommitsSince: (sha: string): string[] | null => {
+    getCommitsSince: (dir: string, sha: string): string[] | null => {
       const result = spawnSync("git", ["log", `${sha}...HEAD`, "--oneline"], {
-        cwd,
+        cwd: dir,
         encoding: "utf-8",
       });
       if (result.error || result.status !== 0) {
         process.stderr.write(
-          "check-docs-freshness: git log failed — skipping permissively\n",
+          `check-docs-freshness: git log failed for ${dir} — skipping permissively\n`,
         );
         return null;
       }
@@ -126,15 +189,15 @@ function buildProductionDeps(): Deps {
         .filter((l) => l.length > 0);
     },
 
-    getChangedFilesSince: (sha: string): string[] | null => {
+    getChangedFilesSince: (dir: string, sha: string): string[] | null => {
       const result = spawnSync(
         "git",
         ["diff", `${sha}...HEAD`, "--name-only"],
-        { cwd, encoding: "utf-8" },
+        { cwd: dir, encoding: "utf-8" },
       );
       if (result.error || result.status !== 0) {
         process.stderr.write(
-          "check-docs-freshness: git diff failed — skipping permissively\n",
+          `check-docs-freshness: git diff failed for ${dir} — skipping permissively\n`,
         );
         return null;
       }
