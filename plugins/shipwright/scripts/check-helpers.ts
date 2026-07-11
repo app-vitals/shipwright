@@ -166,11 +166,20 @@ function parseRemoteUrl(url: string): string | null {
 }
 
 /**
- * Scan a directory for git clones and return ["org/repo", ...] strings
- * by reading each clone's .git/config for the remote origin URL.
+ * A resolved repo clone: the "org/repo" string parsed from its remote origin
+ * URL, plus the absolute local directory path of the clone.
  */
-function scanReposDir(dir: string): string[] {
-  const repos: string[] = [];
+export interface RepoDir {
+  repo: string;
+  dir: string;
+}
+
+/**
+ * Scan a directory for git clones and return { repo, dir } entries by
+ * reading each clone's .git/config for the remote origin URL.
+ */
+function scanReposDirWithPaths(dir: string): RepoDir[] {
+  const repos: RepoDir[] = [];
   let entries: string[];
   try {
     entries = readdirSync(dir);
@@ -179,7 +188,8 @@ function scanReposDir(dir: string): string[] {
   }
 
   for (const entry of entries) {
-    const gitConfigPath = join(dir, entry, ".git", "config");
+    const cloneDir = join(dir, entry);
+    const gitConfigPath = join(cloneDir, ".git", "config");
     if (!existsSync(gitConfigPath)) continue;
     try {
       const content = readFileSync(gitConfigPath, "utf-8");
@@ -190,13 +200,21 @@ function scanReposDir(dir: string): string[] {
       if (!urlMatch) continue;
       const remoteUrl = urlMatch[1].trim();
       const orgRepo = parseRemoteUrl(remoteUrl);
-      if (orgRepo) repos.push(orgRepo);
+      if (orgRepo) repos.push({ repo: orgRepo, dir: cloneDir });
     } catch {
       // Skip unreadable configs
     }
   }
 
   return repos;
+}
+
+/**
+ * Scan a directory for git clones and return ["org/repo", ...] strings
+ * by reading each clone's .git/config for the remote origin URL.
+ */
+function scanReposDir(dir: string): string[] {
+  return scanReposDirWithPaths(dir).map((r) => r.repo);
 }
 
 /**
@@ -219,6 +237,40 @@ export function resolveRepos(workspacePath: string): string[] {
   const envReposDir = (process.env.SHIPWRIGHT_REPOS_DIR ?? "").trim();
   if (envReposDir && existsSync(envReposDir)) {
     const repos = scanReposDir(envReposDir);
+    if (repos.length > 0) return repos;
+  }
+
+  return [];
+}
+
+/**
+ * Resolve { repo, dir } pairs for this workspace — the "org/repo" string
+ * AND the absolute local clone directory path for each configured repo.
+ *
+ * Same priority/fallback as resolveRepos(), but preserves the local
+ * directory path that resolveRepos()/resolveAllRepos() discard. Needed by
+ * callers that must run local git operations (git log, git diff) or read
+ * repo-local files (state/docs-last-synced.json) against each repo's own
+ * clone — unlike the GitHub-API-only precheck scripts, which only ever
+ * needed the "org/repo" string form.
+ *
+ * Priority:
+ * 1. workspace/repos/ — scans for git clones, reads remote origin URLs
+ * 2. SHIPWRIGHT_REPOS_DIR env var — same scan on an external directory
+ * 3. Returns [] if nothing found
+ */
+export function resolveRepoDirs(workspacePath: string): RepoDir[] {
+  // 1. Try workspace/repos/ directory
+  const reposDir = join(workspacePath, "repos");
+  if (existsSync(reposDir)) {
+    const repos = scanReposDirWithPaths(reposDir);
+    if (repos.length > 0) return repos;
+  }
+
+  // 2. Fall back to SHIPWRIGHT_REPOS_DIR env var
+  const envReposDir = (process.env.SHIPWRIGHT_REPOS_DIR ?? "").trim();
+  if (envReposDir && existsSync(envReposDir)) {
+    const repos = scanReposDirWithPaths(envReposDir);
     if (repos.length > 0) return repos;
   }
 

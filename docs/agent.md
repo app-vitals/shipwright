@@ -133,7 +133,7 @@ Every new agent is seeded with twelve system crons (the canonical definitions li
 | `shipwright-deploy` | `20,50 * * * *` (min 20, 50) | off | Merges approved PRs and deploys them. |
 | `shipwright-loop` | `* * * * *` (every minute) | off | Internal: dispatches enabled pipeline phases (dev-task, review, patch, deploy) in a single multi-step drain-until-dry run. Orchestrates phase toggling and claim/retry logic; requires explicit enablement alongside per-phase cron toggling. Implemented by the `loop-orchestrator.ts` module — drain-until-dry through all phases on every tick, strict age-based FIFO work selection, per-dispatch run reporting. |
 | `shipwright-test-readiness` | `0 6 * * *` (daily, 06:00) | off | Runs the full test-readiness audit (`--full --publish`). |
-| `shipwright-docs-freshness` | `0 7 * * *` (daily, 07:00) | off | Refreshes docs that drifted from the code (`research-docs --auto`). |
+| `shipwright-docs-freshness` | `0 7 * * *` (daily, 07:00) | off | Scans all repos in `repos/` for source changes and refreshes docs that drifted from the code via the docs-freshness agent (`research-docs --auto`). Iterates per-repo, checking each against its `state/docs-last-synced.json` anchor — skips repos without `docs/` directories. |
 | `learn-dream` | `0 3 * * *` (daily, 03:00) | off | Mines the last day of merged PRs for durable learnings. |
 | `dependabot-triage` | `0 8 * * *` (daily, 08:00) | off | Reviews and triages open Dependabot PRs. |
 | `entropy-patrol-maintenance` | `0 4 * * 1` (weekly, Mon 04:00) | off | Scans for code entropy and fixes what's PR-worthy. |

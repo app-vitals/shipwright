@@ -124,6 +124,62 @@ describe("research-docs.md — auto mode no prompts", () => {
   });
 });
 
+describe("research-docs.md — auto mode per-repo iteration", () => {
+  it("references resolveRepoDirs / check-helpers.ts as the repo resolution mechanism", () => {
+    expect(content).toContain("resolveRepoDirs");
+    expect(content).toContain("check-helpers.ts");
+  });
+
+  it("documents parsing the repo list from the precheck-driven invoking prompt", () => {
+    expect(content).toContain("check-docs-freshness.ts");
+    const hasPrecheckLanguage =
+      content.includes("preCheck") || content.includes("precheck");
+    expect(hasPrecheckLanguage).toBe(true);
+    const hasPromptParsing =
+      content.includes("Parse the repo names") ||
+      content.includes("invoking prompt");
+    expect(hasPromptParsing).toBe(true);
+  });
+
+  it("documents a fallback that iterates repos/* directly when run manually", () => {
+    const hasFallback =
+      content.includes("Fallback") || content.includes("fallback");
+    expect(hasFallback).toBe(true);
+    expect(content).toContain("repos/*");
+  });
+
+  it("documents cd-ing into repos/{dirname} to scope Steps A1-A8 per repo", () => {
+    const hasCdStep =
+      content.includes("cd") && content.includes("repos/{dirname}");
+    expect(hasCdStep).toBe(true);
+    expect(content).toContain("Steps A1-A8");
+  });
+
+  it("documents skipping a repo with no docs/ directory cleanly (no anchor read/write)", () => {
+    const hasSkipLanguage =
+      content.includes("skipped cleanly") ||
+      content.includes("is skipped cleanly") ||
+      content.includes("skip cleanly");
+    expect(hasSkipLanguage).toBe(true);
+    expect(content).toContain("do not create `docs/`");
+  });
+
+  it("documents each repo's sync anchor being written independently", () => {
+    const hasIndependentAnchor =
+      content.includes("independently") &&
+      content.includes("state/docs-last-synced.json");
+    expect(hasIndependentAnchor).toBe(true);
+  });
+
+  it("Step A9 aggregates a per-repo summary across all processed repos", () => {
+    const stepA9Idx = content.indexOf("### Step A9");
+    expect(stepA9Idx).toBeGreaterThan(-1);
+    const stepA9Section = content.slice(stepA9Idx, stepA9Idx + 1500);
+    expect(stepA9Section).toContain("Repos processed");
+    expect(stepA9Section.toLowerCase()).toContain("aggregat");
+  });
+});
+
 describe("research-docs.md — interactive mode preservation", () => {
   it("interactive flow still has Wait for user confirmation gate", () => {
     const hasGate =

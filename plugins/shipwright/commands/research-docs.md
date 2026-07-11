@@ -17,7 +17,9 @@ If `$ARGUMENTS` is provided without `--auto`, focus on just that module or topic
 
 When `$ARGUMENTS` includes `--auto`, skip all interactive steps. Run the following steps in sequence, then stop. Do NOT enter the Interactive Mode steps.
 
-### Step A0: Confirm Auto Mode
+This agent's workspace can have multiple repos checked out under `repos/` (see `plugins/shipwright/scripts/check-helpers.ts`'s `resolveRepoDirs`). Auto mode is repo-aware: Steps A1-A8 run once **per repo**, scoped to that repo's own `state/docs-last-synced.json` and git history, and Step A9 prints one aggregated summary across every repo processed.
+
+### Step A0: Confirm Auto Mode and Resolve Repo List
 
 Check that `--auto` is present in `$ARGUMENTS`. Print:
 
@@ -28,9 +30,24 @@ RESEARCH-DOCS AUTO RUN
 Mode: auto (unattended)
 ```
 
+Determine the list of repos to process, in this priority order:
+
+1. **Precheck-driven (preferred).** This cron's `preCheck` (`shipwright:check-docs-freshness.ts`) already iterated every repo under `repos/` and its stdout — which became this prompt (see `agent/src/system-crons.ts`'s header comment: "When a preCheck script is set, its stdout becomes the actual prompt sent to Claude") — lists exactly which repo(s) have qualifying changes, one repo name (`org/repo`) per section. Parse the repo names out of the invoking prompt and use that as the repo list. Skip any repo not named in the precheck output — it had nothing to check.
+2. **Fallback (manual invocation, or no repo list available in the prompt).** Iterate `repos/*` directly:
+   ```bash
+   for dir in repos/*/; do
+     [ -d "$dir/.git" ] && basename "$dir"
+   done
+   ```
+   Process every git clone found this way.
+
+For each resolved repo, the local clone directory is `repos/{dirname}` (the directory name from the `repos/` scan — not necessarily the `org/repo` string, since the precheck output identifies repos by their parsed `org/repo` remote but the local clone folder name may differ). Match the precheck's `org/repo` name back to its local directory by checking each `repos/*/`'s `git remote get-url origin` (or `.git/config`) for that owner/repo.
+
+For each repo in the resolved list, `cd` into `repos/{dirname}` and run Steps A1-A8 below scoped to that repo (all relative paths in A1-A8 — `state/docs-last-synced.json`, `docs/*.md`, `git diff`, etc. — resolve against that repo's working directory). A repo with no `docs/` directory is skipped cleanly: do not create `docs/`, do not read or write a sync anchor, do not emit a per-repo section for it in Step A9 beyond a one-line "skipped (no docs/)" note. After the last repo, `cd` back and print the aggregated Step A9 summary once.
+
 ### Step A1: Read Sync Anchor
 
-Read `state/docs-last-synced.json` to get the last-synced SHA:
+Read `state/docs-last-synced.json` (relative to the current repo's working directory — see Step A0) to get the last-synced SHA:
 
 ```bash
 cat state/docs-last-synced.json 2>/dev/null
@@ -104,29 +121,36 @@ Each missing module produces one task with: `title: "Document {module} module"`,
 
 ### Step A8: Write Sync Anchor
 
-After all updates complete, write the sync anchor:
+After all updates complete for this repo, write that repo's own sync anchor (relative to its working directory — see Step A0):
 
 ```bash
 echo '{"sha":"'$(git rev-parse HEAD)'","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' > state/docs-last-synced.json
 ```
 
-The `"sha"` and `"timestamp"` fields are required. Any future auto run will diff against this SHA.
+The `"sha"` and `"timestamp"` fields are required. Any future auto run for this repo will diff against this SHA. Each repo's anchor is written independently — writing repo A's anchor does not touch repo B's `state/docs-last-synced.json`.
+
+After Step A8, return to Step A1 for the next repo in the resolved list (Step A0). Once every repo in the list has completed Steps A1-A8 (or been skipped for having no `docs/` directory), proceed to Step A9.
 
 ### Step A9: Auto Run Summary
 
-Print a non-interactive summary:
+Print one non-interactive summary aggregated across every repo processed, with a per-repo section:
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 AUTO RUN COMPLETE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Candidates checked: {N docs}
-Updated: {list of updated docs, or "none"}
-Skipped (current): {list, or "none"}
-CLAUDE.md: {updated | unchanged}
-Tasks created: {N missing-doc tasks, or "none"}
-Sync anchor: {HEAD SHA} → state/docs-last-synced.json
+Repos processed: {N}
+
+{org/repo}:
+  Candidates checked: {N docs}
+  Updated: {list of updated docs, or "none"}
+  Skipped (current): {list, or "none"}
+  CLAUDE.md: {updated | unchanged}
+  Tasks created: {N missing-doc tasks, or "none"}
+  Sync anchor: {HEAD SHA} → state/docs-last-synced.json
+
+{org/repo-2}: skipped (no docs/ directory)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
