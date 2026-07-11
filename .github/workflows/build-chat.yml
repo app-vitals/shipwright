@@ -7,7 +7,7 @@ on:
 
 permissions:
   contents: write
-  id-token: write
+  packages: write
 
 jobs:
   filter:
@@ -61,25 +61,24 @@ jobs:
           fetch_all_tags: true
           dry_run: true
 
-      - name: Authenticate to GCP
-        uses: google-github-actions/auth@v2
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
         with:
-          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
-          service_account: ${{ secrets.GCP_SA_EMAIL }}
-
-      - name: Configure Docker for Artifact Registry
-        run: gcloud auth configure-docker ${{ secrets.ARTIFACT_REGISTRY_HOST }} --quiet
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Docker image
         run: |
           docker build \
             -f chat/Dockerfile \
-            -t ${{ secrets.ARTIFACT_REGISTRY_REPO }}/shipwright-chat:${{ steps.tag.outputs.new_tag }} \
+            --label org.opencontainers.image.source=https://github.com/app-vitals/shipwright \
+            -t ghcr.io/app-vitals/shipwright-chat:${{ steps.tag.outputs.new_tag }} \
             .
 
       - name: Push Docker image
         run: |
-          docker push ${{ secrets.ARTIFACT_REGISTRY_REPO }}/shipwright-chat:${{ steps.tag.outputs.new_tag }}
+          docker push ghcr.io/app-vitals/shipwright-chat:${{ steps.tag.outputs.new_tag }}
 
       - name: Tag release
         # Only create the git tag once the image has actually pushed. A tag with
