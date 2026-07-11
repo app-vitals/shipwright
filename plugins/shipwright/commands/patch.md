@@ -144,12 +144,13 @@ A PR has **unaddressed findings** when ANY of the following are true:
 - At least one inline thread has `isResolved == false`
 - At least one review with `state == "COMMENTED"` or `state == "CHANGES_REQUESTED"` has a
   non-empty `body` (a review body without matching inline threads is itself a finding),
-  excluding clean-APPROVE reviews (see below)
+  excluding clean-APPROVE reviews (see below) and reviews addressed via a subsequent author
+  reply (see below)
 
 A PR has **no findings** (skip it) when ALL of the following are true:
 - All inline threads are resolved (`isResolved == true` for every thread)
 - No COMMENTED or CHANGES_REQUESTED review has a non-empty body, other than clean-APPROVE
-  reviews (see below)
+  reviews (see below) and reviews addressed via a subsequent author reply (see below)
 
 **Clean-APPROVE exclusion**: A review is excluded from the body check above when its body is
 a clean APPROVE verdict, matched either by:
@@ -174,8 +175,28 @@ exclusion is scoped to clean APPROVE verdicts only — a review whose body neith
 CHANGES_REQUESTED`, meaning the reviewer found a real issue) still counts as a finding,
 regardless of who posted it.
 
+**Third-party review body addressed via reply (CPF-2.3)**: A review's non-empty body is
+excluded from the finding check when the PR author has posted a PR-level comment (from
+`comments.nodes`, already fetched by this same query) with `createdAt` after that review's
+`submittedAt`. This exclusion is distinct from and independent of the clean-APPROVE
+exclusion above — a review can be excluded by either one on its own.
+
+The self-review "Verdict: APPROVE" rewrite (via the `updatePullRequestReview` mutation)
+only works because `updatePullRequestReview` can only edit a review's OWN author's body —
+it cannot be used on a third-party reviewer's review (e.g. a review posted by a distinct
+GitHub identity like `dodizzle`). When a third-party review flags a real finding, the fix
+subagent replies with a rebuttal or fix explanation and resolves the inline thread, but the
+review's own body text remains exactly as the third party wrote it — it can never be
+rewritten to signal the finding was addressed. A subsequent PR-author reply is therefore
+the only available signal that a third-party review's finding was addressed (fixed or
+rejected with a rebuttal), so it is treated the same as a body rewrite would be for a
+self-authored review. This exclusion still requires all inline threads to be resolved
+(`isResolved == true`) — an unresolved thread on the same review continues to count as a
+finding regardless of any reply.
+
 If neither condition applies (e.g., no reviews at all, only approved reviews, or only an
-excluded clean-APPROVE review), skip the PR — it does not belong in List A.
+excluded clean-APPROVE or reply-addressed review), skip the PR — it does not belong in
+List A.
 
 If a PR has unaddressed findings, add it to **List A**. Store the unresolved threads (with their
 `id` — needed for the `resolveReviewThread` mutation in Step 5) and review bodies for use in

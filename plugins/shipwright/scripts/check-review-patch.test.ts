@@ -95,6 +95,7 @@ function makePatchDepsTriggering() {
       headRefOid: "sha-xyz",
       reviews: { nodes: [] },
       reviewThreads: { nodes: [] },
+      comments: { nodes: [] },
     }),
     fetchCiStatus: async (
       _org: string,
@@ -128,6 +129,7 @@ function makePatchDepsIdle() {
       headRefOid: "sha-xyz",
       reviews: { nodes: [] },
       reviewThreads: { nodes: [] },
+      comments: { nodes: [] },
     }),
     fetchCiStatus: async (
       _org: string,
