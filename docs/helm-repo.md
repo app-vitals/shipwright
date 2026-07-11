@@ -44,9 +44,18 @@ Chart version bumps are **automated** by the
 Whenever a release tag is pushed matching `agent-v*`, `admin-v*`, `metrics-v*`,
 `task-store-v*`, or `chat-v*` (created by the service build workflows on
 successful image push), the automation detects the tag, increments the chart
-patch version in `Chart.yaml`, opens a PR (targeting `main`), and merges it
+patch version in `Chart.yaml`, pins each released tag into the matching
+`values.yaml` image defaults, opens a PR (targeting `main`), and merges it
 once checks pass. Once the PR merges, `chart-release.yml` fires and publishes
 the new chart version. No manual version bump is required.
+
+The `values.yaml` pinning ensures the chart's GHCR image defaults (in the
+`admin`, `metrics`, `agent`, `taskStore`, and `chat` blocks) track the same
+releases the chart version is crediting — preventing a scenario where the
+bumped chart would be deployed with stale image tags. Each batched release
+tag is pinned into its corresponding `values.yaml` path(s); for example,
+`admin-v0.156.2` pins into `admin.image.tag`, and `agent-v1.5.0` pins into
+both `agent.image.tag` and `agent.provisioning.image.tag`.
 
 Services release independently, so it's common for two or three tags to land
 within seconds or minutes of each other. Rather than bumping the chart once
@@ -55,7 +64,8 @@ event), the workflow **debounces**: a 90-second quiet period absorbs bursts,
 and only the last tag in a burst triggers the actual bump. The resulting PR
 credits every release tag that landed since the previous chart-bump commit,
 so the batch stays fully traceable even though it's collapsed into a single
-version bump.
+version bump. The PR body lists exactly which `values.yaml` path(s) were
+pinned and to which tag(s).
 
 ## First-time setup (one-time)
 
