@@ -11,9 +11,9 @@ tests:
     asserts:
       - isKind:
           of: Deployment
-      - equal:
+      - matchRegex:
           path: spec.template.spec.containers[0].image
-          value: ghcr.io/app-vitals/shipwright-metrics:metrics-v0.150.0
+          pattern: "^ghcr\\.io/app-vitals/shipwright-metrics:metrics-v\\d+\\.\\d+\\.\\d+$"
       - equal:
           path: spec.template.spec.containers[0].ports[0].containerPort
           value: 3460

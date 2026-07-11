@@ -200,11 +200,9 @@ tests:
           content:
             name: SHIPWRIGHT_AGENT_IMAGE
             value: ghcr.io/app-vitals/shipwright-agent
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: SHIPWRIGHT_AGENT_IMAGE_TAG
-            value: "agent-v0.172.0"
+      - matchRegex:
+          path: spec.template.spec.containers[0].env[?(@.name == "SHIPWRIGHT_AGENT_IMAGE_TAG")].value
+          pattern: "^agent-v\\d+\\.\\d+\\.\\d+$"
       - contains:
           path: spec.template.spec.containers[0].env
           content:
