@@ -1,19 +1,19 @@
 suite: metrics Deployment / Service / ServiceAccount workloads
 # HD-3.2 adds the metrics workload templates (mirrors the admin pattern). These
-# assert the structural facts: image (tag defaults to appVersion), container port
+# assert the structural facts: image (pinned to the GHCR default), container port
 # 3460, /health liveness + readiness probes, ServiceAccount wiring, Service shape,
 # the postgres-mode env (METRICS_API_PORT), and the
 # METRICS_DATABASE_URL wiring to the bundled PostgreSQL subchart (assembled in the
 # metrics Secret).
 tests:
-  - it: renders the metrics Deployment with the appVersion-defaulted image and port 3460
+  - it: renders the metrics Deployment with the GHCR-pinned image and port 3460
     template: templates/metrics-deployment.yaml
     asserts:
       - isKind:
           of: Deployment
       - equal:
           path: spec.template.spec.containers[0].image
-          value: shipwright-metrics:0.1.0
+          value: ghcr.io/app-vitals/shipwright-metrics:metrics-v0.150.0
       - equal:
           path: spec.template.spec.containers[0].ports[0].containerPort
           value: 3460
