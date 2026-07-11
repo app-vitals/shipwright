@@ -109,6 +109,146 @@ format_changelog_tags() {
   echo "$tags_csv" | tr ',' '\n' | sed 's/^/`/; s/$/`/' | paste -sd, - | sed 's/,/, /g'
 }
 
+# Maps a release tag prefix to its service key, used to key both the
+# values.yaml path table below and the highest-semver grouping in
+# select_pinned_tags(). Mirrors the "Pin released tags into values.yaml"
+# step's SERVICE_FOR_PREFIX lookup — must stay in sync with the tag prefixes
+# in this workflow's `on.push.tags` list.
+service_for_tag() {
+  local tag="$1"
+  case "$tag" in
+    admin-v*) echo "admin" ;;
+    metrics-v*) echo "metrics" ;;
+    agent-v*) echo "agent" ;;
+    task-store-v*) echo "task-store" ;;
+    chat-v*) echo "chat" ;;
+    *) echo "" ;;
+  esac
+}
+
+# Maps a service key to the values.yaml dot-paths that must be pinned to its
+# released tag, one path per line. The agent service pins two paths from the
+# same agent-v* tag: the top-level agent image and the admin-provisioned
+# agent image nested under agent.provisioning. Mirrors the "Pin released
+# tags into values.yaml" step's VALUES_PATHS_FOR_SERVICE lookup.
+values_paths_for_service() {
+  local service="$1"
+  case "$service" in
+    admin) printf '%s\n' "admin.image.tag" ;;
+    metrics) printf '%s\n' "metrics.image.tag" ;;
+    agent) printf '%s\n' "agent.image.tag" "agent.provisioning.image.tag" ;;
+    task-store) printf '%s\n' "taskStore.image.tag" ;;
+    chat) printf '%s\n' "chat.image.tag" ;;
+    *) return 1 ;;
+  esac
+}
+
+# Returns the highest-semver tag among the given tags (space-separated, all
+# sharing the same prefix). Strips the non-numeric prefix so `sort -V`
+# compares the bare X.Y.Z portion, then re-attaches the winning original tag.
+# A single-tag input is a no-op — the sole tag always "wins". Mirrors the
+# "Pin released tags into values.yaml" step's highest_semver_tag().
+highest_semver_tag() {
+  local tag
+  for tag in "$@"; do
+    printf '%s %s\n' "${tag##*-v}" "$tag"
+  done | sort -V | tail -n1 | cut -d' ' -f2-
+}
+
+# Given a batch of tags (comma-separated, possibly mixed services and
+# possibly multiple tags per service), groups by service and picks the
+# highest-semver tag per service. Returns "service=tag" pairs, one per line,
+# sorted by service name for deterministic output. Mirrors the "Pin released
+# tags into values.yaml" step's own grouping loop.
+select_pinned_tags() {
+  local tags_csv="$1"
+  local tag service
+  declare -A best
+
+  IFS=',' read -ra all_tags <<< "$tags_csv"
+  for tag in "${all_tags[@]}"; do
+    [ -z "$tag" ] && continue
+    service=$(service_for_tag "$tag")
+    [ -z "$service" ] && continue
+    if [ -z "${best[$service]:-}" ]; then
+      best[$service]="$tag"
+    else
+      best[$service]=$(highest_semver_tag "${best[$service]}" "$tag")
+    fi
+  done
+
+  for service in "${!best[@]}"; do
+    printf '%s=%s\n' "$service" "${best[$service]}"
+  done | sort
+}
+
+# Writes `tag` into the value at `dot_path` (e.g. "agent.provisioning.image.tag")
+# inside `values_yaml`, matching only the `tag:` line nested under the exact
+# chain of parent keys (indentation-scoped) — never a blind global regex, so
+# agent.image.tag and agent.provisioning.image.tag can be updated
+# independently even though both lines read "tag: agent-v...". Mirrors the
+# "Pin released tags into values.yaml" step's update_values_tag() (uses
+# python3 — same tool the workflow already uses for Chart.yaml edits).
+update_values_tag() {
+  local values_yaml="$1"
+  local dot_path="$2"
+  local new_tag="$3"
+  python3 - "$values_yaml" "$dot_path" "$new_tag" <<'PYEOF'
+import sys
+
+path, dot_path, new_tag = sys.argv[1], sys.argv[2], sys.argv[3]
+keys = dot_path.split('.')
+
+with open(path, 'r') as f:
+    lines = f.readlines()
+
+# Walk the key chain top-down. Each key must be found at exactly one
+# indentation level deeper than the previous key, searching only within the
+# span of lines that belongs to the previous key's block (up to the next
+# line at the same-or-shallower indentation).
+search_start, search_end = 0, len(lines)
+indent = -1
+for depth, key in enumerate(keys):
+    is_last = depth == len(keys) - 1
+    target_indent = indent + 2 if indent >= 0 else 0
+    found_at = None
+    for i in range(search_start, search_end):
+        line = lines[i]
+        stripped = line.lstrip(' ')
+        this_indent = len(line) - len(stripped)
+        if this_indent < target_indent:
+            break
+        if this_indent != target_indent:
+            continue
+        key_match = stripped.rstrip('\n') == f'{key}:' or stripped.startswith(f'{key}:')
+        if key_match:
+            found_at = i
+            break
+    if found_at is None:
+        raise SystemExit(f'path segment {key!r} not found for dot_path {dot_path!r}')
+    if is_last:
+        lines[found_at] = f'{" " * target_indent}{key}: {new_tag}\n'
+    else:
+        # Narrow the search window to this key's own block: from the next
+        # line up to (not including) the next line at <= this indentation.
+        block_start = found_at + 1
+        block_end = search_end
+        for j in range(block_start, search_end):
+            j_stripped = lines[j].lstrip(' ')
+            if j_stripped.strip() == '':
+                continue
+            j_indent = len(lines[j]) - len(j_stripped)
+            if j_indent <= target_indent:
+                block_end = j
+                break
+        search_start, search_end = block_start, block_end
+        indent = target_indent
+
+with open(path, 'w') as f:
+    f.writelines(lines)
+PYEOF
+}
+
 # Collects every release tag pushed since the last chart-bump commit, falling
 # back to the triggering tag alone if no prior bump commit exists. Mirrors
 # the "Collect release tags in this batch" step — must be run inside a git
@@ -225,6 +365,57 @@ EOF
   echo "$path"
 }
 
+# Fixture mirroring the shape of charts/shipwright/values.yaml's five
+# image-tag-bearing service blocks (admin, metrics, agent + nested
+# provisioning.image, taskStore, chat) — trimmed to just the keys
+# update_values_tag() needs to walk, plus decoy sibling keys at each level to
+# catch over-broad matching (e.g. a global "tag:" regex would wrongly hit
+# every one of these).
+make_values_yaml() {
+  local path="$TMPDIR_TEST/values-$$-${RANDOM}.yaml"
+  cat > "$path" <<'EOF'
+admin:
+  enabled: true
+  image:
+    repository: ghcr.io/app-vitals/shipwright-admin
+    tag: admin-v0.188.0
+    pullPolicy: ""
+  replicas: 1
+metrics:
+  enabled: true
+  image:
+    repository: ghcr.io/app-vitals/shipwright-metrics
+    tag: metrics-v0.150.0
+    pullPolicy: ""
+agent:
+  enabled: true
+  image:
+    repository: ghcr.io/app-vitals/shipwright-agent
+    tag: agent-v0.172.0
+    pullPolicy: ""
+  provisioning:
+    enabled: false
+    namespace: ""
+    image:
+      repository: ghcr.io/app-vitals/shipwright-agent
+      tag: agent-v0.172.0
+    replicas: 1
+taskStore:
+  enabled: false
+  image:
+    repository: ghcr.io/app-vitals/shipwright-task-store
+    tag: task-store-v0.86.0
+    pullPolicy: ""
+chat:
+  enabled: false
+  image:
+    repository: ghcr.io/app-vitals/shipwright-chat
+    tag: chat-v0.38.0
+    pullPolicy: ""
+EOF
+  echo "$path"
+}
+
 # ---------------------------------------------------------------------------
 # Tests: bump_patch
 # ---------------------------------------------------------------------------
@@ -311,6 +502,128 @@ echo "=== format_changelog_tags tests ==="
 
 assert_eq "single tag" '`agent-v1.2.3`' "$(format_changelog_tags 'agent-v1.2.3')"
 assert_eq "two tags" '`admin-v0.156.0`, `agent-v0.144.0`' "$(format_changelog_tags 'admin-v0.156.0,agent-v0.144.0')"
+
+# ---------------------------------------------------------------------------
+# Tests: service_for_tag
+# ---------------------------------------------------------------------------
+
+echo ""
+echo "=== service_for_tag tests ==="
+
+assert_eq "admin-v0.188.0 → admin" "admin" "$(service_for_tag 'admin-v0.188.0')"
+assert_eq "metrics-v0.150.0 → metrics" "metrics" "$(service_for_tag 'metrics-v0.150.0')"
+assert_eq "agent-v0.172.0 → agent" "agent" "$(service_for_tag 'agent-v0.172.0')"
+assert_eq "task-store-v0.86.0 → task-store" "task-store" "$(service_for_tag 'task-store-v0.86.0')"
+assert_eq "chat-v0.38.0 → chat" "chat" "$(service_for_tag 'chat-v0.38.0')"
+assert_eq "unrecognized prefix → empty" "" "$(service_for_tag 'unknown-v1.0.0')"
+
+# ---------------------------------------------------------------------------
+# Tests: values_paths_for_service
+# ---------------------------------------------------------------------------
+
+echo ""
+echo "=== values_paths_for_service tests ==="
+
+assert_eq "admin → single path" "admin.image.tag" "$(values_paths_for_service 'admin' | paste -sd, -)"
+assert_eq "metrics → single path" "metrics.image.tag" "$(values_paths_for_service 'metrics' | paste -sd, -)"
+assert_eq "task-store → taskStore.image.tag" "taskStore.image.tag" "$(values_paths_for_service 'task-store' | paste -sd, -)"
+assert_eq "chat → single path" "chat.image.tag" "$(values_paths_for_service 'chat' | paste -sd, -)"
+assert_eq "agent → dual path (image.tag AND provisioning.image.tag)" \
+  "agent.image.tag,agent.provisioning.image.tag" \
+  "$(values_paths_for_service 'agent' | paste -sd, -)"
+
+# ---------------------------------------------------------------------------
+# Tests: highest_semver_tag
+# ---------------------------------------------------------------------------
+
+echo ""
+echo "=== highest_semver_tag tests ==="
+
+assert_eq "single tag is a no-op" "agent-v0.144.0" "$(highest_semver_tag 'agent-v0.144.0')"
+assert_eq "picks higher patch" "admin-v0.156.1" "$(highest_semver_tag 'admin-v0.156.0' 'admin-v0.156.1')"
+assert_eq "picks higher patch regardless of arg order" "admin-v0.156.1" "$(highest_semver_tag 'admin-v0.156.1' 'admin-v0.156.0')"
+assert_eq "picks higher minor" "metrics-v0.151.0" "$(highest_semver_tag 'metrics-v0.150.9' 'metrics-v0.151.0')"
+assert_eq "picks higher major" "chat-v1.0.0" "$(highest_semver_tag 'chat-v0.99.9' 'chat-v1.0.0')"
+assert_eq "double-digit patch beats single-digit (not lexicographic)" "agent-v0.172.10" "$(highest_semver_tag 'agent-v0.172.2' 'agent-v0.172.10')"
+assert_eq "three-way batch picks the max" "task-store-v0.86.2" "$(highest_semver_tag 'task-store-v0.86.0' 'task-store-v0.86.2' 'task-store-v0.86.1')"
+
+# ---------------------------------------------------------------------------
+# Tests: select_pinned_tags
+# ---------------------------------------------------------------------------
+
+echo ""
+echo "=== select_pinned_tags tests ==="
+
+assert_eq "single-service batch" "agent=agent-v0.144.0" "$(select_pinned_tags 'agent-v0.144.0')"
+
+assert_eq "multi-service batch, one tag each" \
+  "admin=admin-v0.156.0
+agent=agent-v0.144.0" \
+  "$(select_pinned_tags 'admin-v0.156.0,agent-v0.144.0')"
+
+assert_eq "same-service batch picks highest semver, not last-seen" \
+  "admin=admin-v0.156.2" \
+  "$(select_pinned_tags 'admin-v0.156.0,admin-v0.156.2,admin-v0.156.1')"
+
+assert_eq "mixed batch: multi-tag service resolved to highest, single-tag services pass through" \
+  "admin=admin-v0.156.2
+agent=agent-v0.144.0
+chat=chat-v0.38.0" \
+  "$(select_pinned_tags 'admin-v0.156.0,agent-v0.144.0,admin-v0.156.2,chat-v0.38.0')"
+
+# ---------------------------------------------------------------------------
+# Tests: update_values_tag
+# ---------------------------------------------------------------------------
+
+echo ""
+echo "=== update_values_tag tests ==="
+
+v1=$(make_values_yaml)
+update_values_tag "$v1" "admin.image.tag" "admin-v9.9.9"
+ADMIN_TAG=$(sed -n '/^admin:/,/^metrics:/p' "$v1" | grep 'tag:' | sed 's/^\s*tag: //')
+assert_eq "admin.image.tag updated" "admin-v9.9.9" "$ADMIN_TAG"
+METRICS_TAG_UNCHANGED=$(sed -n '/^metrics:/,/^agent:/p' "$v1" | grep 'tag:' | sed 's/^\s*tag: //')
+assert_eq "sibling service (metrics) untouched by admin update" "metrics-v0.150.0" "$METRICS_TAG_UNCHANGED"
+
+v2=$(make_values_yaml)
+update_values_tag "$v2" "agent.image.tag" "agent-v9.9.8"
+update_values_tag "$v2" "agent.provisioning.image.tag" "agent-v9.9.8"
+AGENT_TOP_TAG=$(sed -n '/^agent:/,/^provisioning:/p' "$v2" | grep 'tag:' | head -1 | sed 's/^\s*tag: //')
+AGENT_PROV_TAG=$(sed -n '/provisioning:/,/^taskStore:/p' "$v2" | grep 'tag:' | head -1 | sed 's/^\s*tag: //')
+assert_eq "agent.image.tag updated (dual-path write, top-level)" "agent-v9.9.8" "$AGENT_TOP_TAG"
+assert_eq "agent.provisioning.image.tag updated (dual-path write, nested)" "agent-v9.9.8" "$AGENT_PROV_TAG"
+
+v3=$(make_values_yaml)
+update_values_tag "$v3" "taskStore.image.tag" "task-store-v9.0.0"
+TASKSTORE_TAG=$(sed -n '/^taskStore:/,/^chat:/p' "$v3" | grep 'tag:' | sed 's/^\s*tag: //')
+assert_eq "taskStore.image.tag updated" "task-store-v9.0.0" "$TASKSTORE_TAG"
+CHAT_TAG_UNCHANGED=$(sed -n '/^chat:/,$p' "$v3" | grep 'tag:' | sed 's/^\s*tag: //')
+assert_eq "sibling service (chat) untouched by taskStore update" "chat-v0.38.0" "$CHAT_TAG_UNCHANGED"
+
+# Full multi-service batch pin: exercises select_pinned_tags() output feeding
+# straight into update_values_tag() for every path, mirroring how the
+# workflow step chains the two.
+v4=$(make_values_yaml)
+PINNED=$(select_pinned_tags 'admin-v0.156.0,agent-v0.144.0,admin-v0.156.2,chat-v0.38.1')
+while IFS='=' read -r service tag; do
+  while IFS= read -r path; do
+    update_values_tag "$v4" "$path" "$tag"
+  done < <(values_paths_for_service "$service")
+done <<< "$PINNED"
+
+ADMIN_FINAL=$(sed -n '/^admin:/,/^metrics:/p' "$v4" | grep 'tag:' | sed 's/^\s*tag: //')
+AGENT_TOP_FINAL=$(sed -n '/^agent:/,/^  provisioning:/p' "$v4" | grep 'tag:' | head -1 | sed 's/^\s*tag: //')
+AGENT_PROV_FINAL=$(sed -n '/provisioning:/,/^taskStore:/p' "$v4" | grep 'tag:' | head -1 | sed 's/^\s*tag: //')
+CHAT_FINAL=$(sed -n '/^chat:/,$p' "$v4" | grep 'tag:' | sed 's/^\s*tag: //')
+METRICS_FINAL=$(sed -n '/^metrics:/,/^agent:/p' "$v4" | grep 'tag:' | sed 's/^\s*tag: //')
+TASKSTORE_FINAL=$(sed -n '/^taskStore:/,/^chat:/p' "$v4" | grep 'tag:' | sed 's/^\s*tag: //')
+
+assert_eq "batch pin: admin resolved to highest semver" "admin-v0.156.2" "$ADMIN_FINAL"
+assert_eq "batch pin: agent.image.tag pinned" "agent-v0.144.0" "$AGENT_TOP_FINAL"
+assert_eq "batch pin: agent.provisioning.image.tag pinned" "agent-v0.144.0" "$AGENT_PROV_FINAL"
+assert_eq "batch pin: chat pinned" "chat-v0.38.1" "$CHAT_FINAL"
+assert_eq "batch pin: metrics untouched (not in this batch)" "metrics-v0.150.0" "$METRICS_FINAL"
+assert_eq "batch pin: taskStore untouched (not in this batch)" "task-store-v0.86.0" "$TASKSTORE_FINAL"
 
 # ---------------------------------------------------------------------------
 # Tests: collect_batch_tags

@@ -1,19 +1,19 @@
 suite: task-store Deployment / Service workloads
 # TSS-4.1 adds the task-store workload templates. These assert the structural
-# facts: image (tag defaults to appVersion), container port 3000, /health
+# facts: image (pinned to the GHCR default), container port 3000, /health
 # liveness + readiness probes, Service shape, and the DATABASE_URL wiring
 # from an existingSecret (shipwright-secrets by default).
 tests:
-  - it: renders the task-store Deployment with the appVersion-defaulted image and port 3000
+  - it: renders the task-store Deployment with the GHCR-pinned image and port 3000
     template: templates/task-store-deployment.yaml
     set:
       taskStore.enabled: true
     asserts:
       - isKind:
           of: Deployment
-      - equal:
+      - matchRegex:
           path: spec.template.spec.containers[0].image
-          value: shipwright-task-store:0.1.0
+          pattern: "^ghcr\\.io/app-vitals/shipwright-task-store:task-store-v\\d+\\.\\d+\\.\\d+$"
       - equal:
           path: spec.template.spec.containers[0].ports[0].containerPort
           value: 3000

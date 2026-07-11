@@ -4,8 +4,10 @@ name: Auto-Bump Chart Version
 # services. Each build workflow (build-agent.yml, build-admin.yml,
 # build-metrics.yml, build-task-store.yml, build-chat.yml) creates a tag like
 # agent-v*, admin-v*, metrics-v*, task-store-v*, or chat-v* on main after a
-# successful image push. This workflow detects those tags and
-# opens a chart-version bump PR so no manual bump-chart.sh invocation is needed.
+# successful image push. This workflow detects those tags, pins each
+# released tag into the matching charts/shipwright/values.yaml image
+# default(s), and opens a chart-version bump PR so no manual bump-chart.sh
+# invocation is needed.
 #
 # Debounce: services release independently, so it's common for two or three
 # tags to land within seconds/minutes of each other (e.g. admin-v0.156.0
@@ -34,7 +36,10 @@ name: Auto-Bump Chart Version
 #     → bump-chart job
 #       → collect every release tag pushed since the last chart-bump commit
 #       → bump patch version in Chart.yaml once for the whole batch
-#       → open PR (chore/chart-v{new_version}) crediting all batched tags
+#       → pin each batched tag's highest semver into its values.yaml
+#         image.tag path(s) (admin/metrics/agent+provisioning/taskStore/chat)
+#       → open PR (chore/chart-v{new_version}) crediting all batched tags and
+#         listing exactly which values.yaml path(s) were pinned
 #       → wait for required checks, then merge (squash)
 #     → PR merges to main
 #       → chart-release.yml triggers (paths: charts/shipwright/**)
@@ -278,7 +283,180 @@ jobs:
               f.write(content)
           PYEOF
 
-      # Create a dedicated branch, commit the Chart.yaml + CHANGELOG.md changes, and push.
+      # Pin every batched release tag into its values.yaml default(s) — the
+      # chart's GHCR image defaults (values.yaml's admin/metrics/agent/
+      # taskStore/chat blocks, added by DCC-2.1) must track the same releases
+      # this bump is crediting, not silently lag behind Chart.yaml/CHANGELOG.
+      # Same logic as .github/workflows/test-auto-bump-chart.sh's
+      # service_for_tag / values_paths_for_service / highest_semver_tag /
+      # select_pinned_tags / update_values_tag — keep both copies in sync.
+      - name: Pin released tags into values.yaml
+        id: pin
+        if: steps.idempotency.outputs.skip != 'true'
+        run: |
+          # Maps a release tag prefix to its service key.
+          service_for_tag() {
+            local tag="$1"
+            case "$tag" in
+              admin-v*) echo "admin" ;;
+              metrics-v*) echo "metrics" ;;
+              agent-v*) echo "agent" ;;
+              task-store-v*) echo "task-store" ;;
+              chat-v*) echo "chat" ;;
+              *) echo "" ;;
+            esac
+          }
+
+          # Maps a service key to the values.yaml dot-paths that must be
+          # pinned to its released tag. agent pins two paths from the same
+          # tag: the top-level agent image and the admin-provisioned agent
+          # image nested under agent.provisioning.
+          values_paths_for_service() {
+            local service="$1"
+            case "$service" in
+              admin) printf '%s\n' "admin.image.tag" ;;
+              metrics) printf '%s\n' "metrics.image.tag" ;;
+              agent) printf '%s\n' "agent.image.tag" "agent.provisioning.image.tag" ;;
+              task-store) printf '%s\n' "taskStore.image.tag" ;;
+              chat) printf '%s\n' "chat.image.tag" ;;
+              *) return 1 ;;
+            esac
+          }
+
+          # Highest-semver tag among the given tags (space-separated, same
+          # prefix). Strips the non-numeric prefix so `sort -V` compares the
+          # bare X.Y.Z portion, then re-attaches the winning original tag.
+          highest_semver_tag() {
+            local tag
+            for tag in "$@"; do
+              printf '%s %s\n' "${tag##*-v}" "$tag"
+            done | sort -V | tail -n1 | cut -d' ' -f2-
+          }
+
+          # Groups a comma-separated tag batch by service and picks the
+          # highest-semver tag per service. Emits "service=tag" pairs, one
+          # per line, sorted by service name for deterministic output.
+          select_pinned_tags() {
+            local tags_csv="$1"
+            local tag service
+            declare -A best
+
+            IFS=',' read -ra all_tags <<< "$tags_csv"
+            for tag in "${all_tags[@]}"; do
+              [ -z "$tag" ] && continue
+              service=$(service_for_tag "$tag")
+              [ -z "$service" ] && continue
+              if [ -z "${best[$service]:-}" ]; then
+                best[$service]="$tag"
+              else
+                best[$service]=$(highest_semver_tag "${best[$service]}" "$tag")
+              fi
+            done
+
+            for service in "${!best[@]}"; do
+              printf '%s=%s\n' "$service" "${best[$service]}"
+            done | sort
+          }
+
+          # Writes `tag` into the value at `dot_path` (e.g.
+          # "agent.provisioning.image.tag") inside values.yaml, matching only
+          # the `tag:` line nested under the exact chain of parent keys
+          # (indentation-scoped) — never a blind global regex, so
+          # agent.image.tag and agent.provisioning.image.tag can be updated
+          # independently even though both lines read "tag: agent-v...".
+          update_values_tag() {
+            local values_yaml="$1"
+            local dot_path="$2"
+            local new_tag="$3"
+            python3 - "$values_yaml" "$dot_path" "$new_tag" <<'PYEOF'
+          import sys
+
+          path, dot_path, new_tag = sys.argv[1], sys.argv[2], sys.argv[3]
+          keys = dot_path.split('.')
+
+          with open(path, 'r') as f:
+              lines = f.readlines()
+
+          # Walk the key chain top-down. Each key must be found at exactly
+          # one indentation level deeper than the previous key, searching
+          # only within the span of lines belonging to the previous key's
+          # block (up to the next line at the same-or-shallower indentation).
+          search_start, search_end = 0, len(lines)
+          indent = -1
+          for depth, key in enumerate(keys):
+              is_last = depth == len(keys) - 1
+              target_indent = indent + 2 if indent >= 0 else 0
+              found_at = None
+              for i in range(search_start, search_end):
+                  line = lines[i]
+                  stripped = line.lstrip(' ')
+                  this_indent = len(line) - len(stripped)
+                  if this_indent < target_indent:
+                      break
+                  if this_indent != target_indent:
+                      continue
+                  key_match = stripped.rstrip('\n') == f'{key}:' or stripped.startswith(f'{key}:')
+                  if key_match:
+                      found_at = i
+                      break
+              if found_at is None:
+                  raise SystemExit(f'path segment {key!r} not found for dot_path {dot_path!r}')
+              if is_last:
+                  lines[found_at] = f'{" " * target_indent}{key}: {new_tag}\n'
+              else:
+                  block_start = found_at + 1
+                  block_end = search_end
+                  for j in range(block_start, search_end):
+                      j_stripped = lines[j].lstrip(' ')
+                      if j_stripped.strip() == '':
+                          continue
+                      j_indent = len(lines[j]) - len(j_stripped)
+                      if j_indent <= target_indent:
+                          block_end = j
+                          break
+                  search_start, search_end = block_start, block_end
+                  indent = target_indent
+
+          with open(path, 'w') as f:
+              f.writelines(lines)
+          PYEOF
+          }
+
+          TAGS_CSV="${{ steps.batch.outputs.tags }}"
+          PINNED=$(select_pinned_tags "$TAGS_CSV")
+
+          # Rendered alongside the values.yaml writes below (same
+          # service/path loop) as "- `admin.image.tag`: `admin-v0.156.2`"
+          # markdown lines, so the "Open bump PR" step can drop them
+          # straight into the PR body without re-deriving the
+          # service→path mapping itself.
+          PINNED_LINES=""
+          while IFS='=' read -r service tag; do
+            [ -z "$service" ] && continue
+            while IFS= read -r path; do
+              update_values_tag charts/shipwright/values.yaml "$path" "$tag"
+              echo "Pinned ${path} = ${tag}"
+              PINNED_LINES="${PINNED_LINES}- \`${path}\`: \`${tag}\`
+          "
+            done < <(values_paths_for_service "$service")
+          done <<< "$PINNED"
+
+          # Thread the pinned tags into later steps via multi-line
+          # GITHUB_OUTPUT (heredoc form, EOF delimiter is safe — tag values
+          # never contain newlines).
+          {
+            echo "pinned<<PINEOF"
+            echo "$PINNED"
+            echo "PINEOF"
+            echo "pinned_lines<<PINLINESEOF"
+            echo "$PINNED_LINES"
+            echo "PINLINESEOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "Pinned tags for this bump:"
+          echo "$PINNED"
+
+      # Create a dedicated branch, commit the Chart.yaml + CHANGELOG.md +
+      # values.yaml changes, and push.
       - name: Commit and push bump branch
         id: commit-push
         if: steps.idempotency.outputs.skip != 'true'
@@ -289,7 +467,7 @@ jobs:
           TAGS_LINES=$(echo "$TAGS_CSV" | tr ',' '\n' | sed 's/^/  - /')
 
           git checkout -b "$BRANCH"
-          git add charts/shipwright/Chart.yaml charts/shipwright/CHANGELOG.md
+          git add charts/shipwright/Chart.yaml charts/shipwright/CHANGELOG.md charts/shipwright/values.yaml
           git commit -m "chore(chart): bump chart version to ${NEW_VERSION}
 
           Auto-bump triggered by release tag(s):
@@ -321,6 +499,11 @@ jobs:
           TAGS_LINES=$(echo "$TAGS_CSV" | tr ',' '\n' | sed 's/^/- `/; s/$/`/')
           BRANCH="${{ steps.new.outputs.branch }}"
 
+          # Pre-rendered "- `admin.image.tag`: `admin-v0.156.2`" lines from
+          # the "Pin released tags into values.yaml" step, so the PR body
+          # lists exactly which tag(s) were pinned and where.
+          PINNED_LINES="${{ steps.pin.outputs.pinned_lines }}"
+
           PR_URL=$(gh pr create \
             --base main \
             --head "$BRANCH" \
@@ -333,6 +516,9 @@ jobs:
           ${TAGS_LINES}
 
           **New chart version:** \`${NEW_VERSION}\`
+
+          **Pinned in values.yaml:**
+          ${PINNED_LINES}
 
           ### What happens next
 

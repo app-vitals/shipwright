@@ -9,8 +9,12 @@
 # -- Global values shared with subcharts (including Bitnami PostgreSQL).
 global:
   # -- Override the registry for ALL images (chart + subcharts) in one place.
-  # Set this to a mirror (e.g. your registry, or a `bitnamilegacy` mirror) if the
-  # default Bitnami registry tags become unavailable. See README "Bitnami registry risk".
+  # Shipwright service images (admin, metrics, agent, taskStore, chat) default to
+  # fully-qualified ghcr.io/app-vitals/shipwright-<svc> repositories, so this is
+  # mainly relevant for the Bitnami PostgreSQL subchart and the whisper/cloud-sql
+  # sidecar images. Set this to a mirror (e.g. your registry, or a `bitnamilegacy`
+  # mirror) if the default Bitnami registry tags become unavailable. See README
+  # "Bitnami registry risk".
   imageRegistry: ""
   # -- Global image pull secrets (list of secret names) applied to all pods.
   imagePullSecrets: []
@@ -101,8 +105,8 @@ serviceAccount:
 admin:
   enabled: true
   image:
-    repository: shipwright-admin
-    tag: ""           # defaults to .Chart.AppVersion when empty
+    repository: ghcr.io/app-vitals/shipwright-admin
+    tag: admin-v0.188.0
     pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
     # -- Service type for the admin service. ClusterIP is Minikube-friendly.
@@ -169,8 +173,8 @@ admin:
 metrics:
   enabled: true
   image:
-    repository: shipwright-metrics
-    tag: ""           # defaults to .Chart.AppVersion when empty
+    repository: ghcr.io/app-vitals/shipwright-metrics
+    tag: metrics-v0.150.0
     pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
     # -- Service type for the metrics service. ClusterIP is Minikube-friendly.
@@ -285,8 +289,8 @@ metrics:
 agent:
   enabled: true
   image:
-    repository: shipwright-agent
-    tag: ""
+    repository: ghcr.io/app-vitals/shipwright-agent
+    tag: agent-v0.172.0
     pullPolicy: ""
   service:
     port: 3000
@@ -308,8 +312,8 @@ agent:
     namespace: ""
     # -- Image the admin provisioner stamps onto agent Deployments.
     image:
-      repository: shipwright-agent
-      tag: ""           # defaults to .Chart.AppVersion when empty
+      repository: ghcr.io/app-vitals/shipwright-agent
+      tag: agent-v0.172.0
     # -- Replica count for provisioned agent Deployments.
     replicas: 1
     # -- ServiceAccount provisioned agent pods run as (SEPARATE from the admin SA).
@@ -507,8 +511,8 @@ taskStore:
   # -- Whether to render the task-store Deployment and Service.
   enabled: false
   image:
-    repository: shipwright-task-store
-    tag: ""           # defaults to .Chart.AppVersion when empty
+    repository: ghcr.io/app-vitals/shipwright-task-store
+    tag: task-store-v0.86.0
     pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
     # -- Service type for the task-store service. ClusterIP is Minikube-friendly.
@@ -569,8 +573,8 @@ chat:
   # -- Whether to render the chat Deployment and Service.
   enabled: false
   image:
-    repository: shipwright-chat
-    tag: ""           # defaults to .Chart.AppVersion when empty
+    repository: ghcr.io/app-vitals/shipwright-chat
+    tag: chat-v0.38.0
     pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
     # -- Service type for the chat service. ClusterIP is Minikube-friendly.

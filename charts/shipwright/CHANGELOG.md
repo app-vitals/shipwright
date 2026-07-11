@@ -10,6 +10,29 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.6.339] - 2026-07-11
+
+### Changed
+
+- Default image values are now fully-qualified, pinned GHCR references
+  (`ghcr.io/app-vitals/<service>:<tag>`) for all six shipwright service image
+  blocks (admin, metrics, agent, agent provisioning, taskStore, chat),
+  replacing the bare repository name + `appVersion`-fallback `tag: ""`
+  defaults.
+- `auto-bump-chart.yml` now pins each batch's released tag(s) directly into
+  the matching `values.yaml` `image.tag` path(s) on every auto-bump, keeping
+  chart defaults in sync with the services they package instead of only
+  bumping the chart version.
+
+## [1.6.338] - 2026-07-11
+
+### Changed
+
+- Pin exact GHCR image tags in `values.yaml` defaults for all six shipwright
+  service image blocks (admin, metrics, agent, agent provisioning, taskStore,
+  chat), replacing the bare repository name + `appVersion`-fallback `tag: ""`
+  defaults.
+
 ## [1.6.337] - 2026-07-11
 
 ### Changed

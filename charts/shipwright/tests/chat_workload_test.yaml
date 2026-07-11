@@ -1,20 +1,20 @@
 suite: chat Deployment / Service workloads
 # CHT-2.1 adds the chat workload templates. These assert the structural
-# facts: image (tag defaults to appVersion), container port 3000, /health
+# facts: image (pinned to the GHCR default), container port 3000, /health
 # liveness + readiness probes, DATABASE_URL_SHIPWRIGHT_CHAT secret wiring
 # (default and custom existingSecret), extraEnv appended, Service shape,
 # and that no resources render when chat.enabled=false.
 tests:
-  - it: renders the chat Deployment with the appVersion-defaulted image and port 3000
+  - it: renders the chat Deployment with the GHCR-pinned image and port 3000
     template: templates/chat-deployment.yaml
     set:
       chat.enabled: true
     asserts:
       - isKind:
           of: Deployment
-      - equal:
+      - matchRegex:
           path: spec.template.spec.containers[0].image
-          value: shipwright-chat:0.1.0
+          pattern: "^ghcr\\.io/app-vitals/shipwright-chat:chat-v\\d+\\.\\d+\\.\\d+$"
       - equal:
           path: spec.template.spec.containers[0].ports[0].containerPort
           value: 3000

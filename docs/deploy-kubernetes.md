@@ -429,8 +429,8 @@ agent:
     enabled: true
     namespace: ""                  # target namespace for provisioned agent resources; defaults to the admin pod's release namespace
     image:
-      repository: shipwright-agent
-      tag: ""                      # defaults to the chart appVersion
+      repository: ghcr.io/app-vitals/shipwright-agent
+      tag: agent-v0.172.0
     replicas: 1                    # replicas for each provisioned agent Deployment
     serviceAccount:
       create: true

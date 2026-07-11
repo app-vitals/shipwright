@@ -1,17 +1,17 @@
 suite: admin Deployment / Service / ServiceAccount workloads
 # HD-3.1 adds the admin workload templates. These assert the structural facts:
-# image (tag defaults to appVersion), container port 3001, /health liveness +
+# image (pinned to the GHCR default), container port 3001, /health liveness +
 # readiness probes, ServiceAccount wiring, Service shape, and the DATABASE_URL
 # wiring to the bundled PostgreSQL subchart (assembled in the admin Secret).
 tests:
-  - it: renders the admin Deployment with the appVersion-defaulted image and port 3001
+  - it: renders the admin Deployment with the GHCR-pinned image and port 3001
     template: templates/admin-deployment.yaml
     asserts:
       - isKind:
           of: Deployment
-      - equal:
+      - matchRegex:
           path: spec.template.spec.containers[0].image
-          value: shipwright-admin:0.1.0
+          pattern: "^ghcr\\.io/app-vitals/shipwright-admin:admin-v\\d+\\.\\d+\\.\\d+$"
       - equal:
           path: spec.template.spec.containers[0].ports[0].containerPort
           value: 3001
