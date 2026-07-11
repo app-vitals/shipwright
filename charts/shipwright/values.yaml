@@ -9,12 +9,20 @@
 # -- Global values shared with subcharts (including Bitnami PostgreSQL).
 global:
   # -- Override the registry for ALL images (chart + subcharts) in one place.
-  # Shipwright service images (admin, metrics, agent, taskStore, chat) default to
+  # Shipwright service images (admin, metrics, taskStore, chat) default to
   # fully-qualified ghcr.io/app-vitals/shipwright-<svc> repositories, so this is
   # mainly relevant for the Bitnami PostgreSQL subchart and the whisper/cloud-sql
   # sidecar images. Set this to a mirror (e.g. your registry, or a `bitnamilegacy`
   # mirror) if the default Bitnami registry tags become unavailable. See README
   # "Bitnami registry risk".
+  #
+  # Fully-qualified-repository detection (DCC-3.1): setting this does NOT
+  # re-prefix a service image whose repository already names a registry host —
+  # i.e. its first "/"-delimited segment contains a "." or ":" (e.g. "ghcr.io",
+  # "docker.io", "localhost:5000"). This avoids double-prefixing the
+  # ghcr.io/app-vitals defaults (which would render registry/ghcr.io/...). Only
+  # BARE repository names (no registry host, e.g. an override like
+  # "shipwright-admin", or the whisper "onerahmet/..." image) receive the prefix.
   imageRegistry: ""
   # -- Global image pull secrets (list of secret names) applied to all pods.
   imagePullSecrets: []

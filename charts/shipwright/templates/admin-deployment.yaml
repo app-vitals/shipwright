@@ -30,7 +30,7 @@ spec:
       {{- end }}
       containers:
         - name: admin
-          image: "{{ with .Values.global.imageRegistry }}{{ . }}/{{ end }}{{ .Values.admin.image.repository }}:{{ .Values.admin.image.tag | default .Chart.AppVersion }}"
+          image: {{ include "shipwright.imageRef" (dict "context" $ "repository" .Values.admin.image.repository "tag" (.Values.admin.image.tag | default .Chart.AppVersion)) | quote }}
           imagePullPolicy: {{ .Values.admin.image.pullPolicy | default .Values.imagePullPolicy }}
           ports:
             - name: http

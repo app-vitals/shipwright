@@ -30,7 +30,7 @@ spec:
       {{- end }}
       containers:
         - name: metrics
-          image: "{{ with .Values.global.imageRegistry }}{{ . }}/{{ end }}{{ .Values.metrics.image.repository }}:{{ .Values.metrics.image.tag | default .Chart.AppVersion }}"
+          image: {{ include "shipwright.imageRef" (dict "context" $ "repository" .Values.metrics.image.repository "tag" (.Values.metrics.image.tag | default .Chart.AppVersion)) | quote }}
           imagePullPolicy: {{ .Values.metrics.image.pullPolicy | default .Values.imagePullPolicy }}
           ports:
             - name: http
