@@ -1263,10 +1263,18 @@ Imported from the former `test-readiness` plugin. These exercise the six `/test-
 
 ## Versioning Checklist (for every PR to this repo)
 
+**Version is owned by automation — do not manually bump it in a feature PR.**
+`plugins/shipwright/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, and
+`version.txt` are synced exclusively by `.github/workflows/sync-plugin-version.yml`,
+triggered off `agent-v*` tags (which `scripts/sync-version.ts` derives from
+semantic-release's conventional-commit analysis). See the `marketplace-dev` skill's
+"Version Ownership" section for the full mechanism.
+
 - [ ] Does this PR change any file under `commands/`, `skills/`, `agents/`, or `hooks/`?
-  - **Yes** → bump `plugins/shipwright/.claude-plugin/plugin.json` version (patch for fixes, minor for features)
-  - **No** (docs-only, like ADOPTION-ROADMAP.md) → no version bump needed
-- [ ] Bump `plugins/shipwright/README.md` version in heading (if present)
-- [ ] Bump `.claude-plugin/marketplace.json` version whenever any plugin version changes
-- [ ] Version bump is in the **same PR** as command changes — never separate
-- [ ] After merging: verify `/plugin marketplace update` + `/plugin update shipwright` picks up the new version
+  - **Yes** → write a `fix:`/`feat:`/`feat!:` commit so semantic-release derives the
+    correct bump automatically — do **not** hand-edit `plugin.json`, `README.md`'s
+    version heading, `marketplace.json`, or `version.txt` in this PR
+  - **No** (docs-only, like ADOPTION-ROADMAP.md) → no commit-prefix action needed beyond
+    normal Conventional Commits hygiene
+- [ ] After merging: verify `/plugin marketplace update` + `/plugin update shipwright`
+  picks up the new version once the sync-plugin-version PR has landed on `main`
