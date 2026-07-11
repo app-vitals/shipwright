@@ -9,13 +9,24 @@ auth:
   mode: open
 
 admin:
+  # Pin repository/tag to the image `helm.yml` builds and side-loads via
+  # `kind load docker-image` (tag 0.1.0 = Chart.yaml appVersion) — pullPolicy
+  # Never means kind uses ONLY this local image, so the reference here must be
+  # an exact match or the pod fails to schedule (ErrImageNeverPull). Overrides
+  # values.yaml's GHCR default (DCC-2.1), which is unpublished at PR time.
   image:
+    repository: shipwright-admin
+    tag: "0.1.0"
     pullPolicy: Never
 
 metrics:
   # pullPolicy Never so kind uses the side-loaded shipwright-metrics image and
   # never reaches a registry. Postgres mode is exercised via the bundled subchart.
+  # repository/tag pinned to match the image `helm.yml` side-loads (tag 0.1.0 =
+  # Chart.yaml appVersion) — overrides values.yaml's GHCR default (DCC-2.1).
   image:
+    repository: shipwright-metrics
+    tag: "0.1.0"
     pullPolicy: Never
   provider:
     # Run in offline (fixture) mode — no task-store or admin service available in CI.
