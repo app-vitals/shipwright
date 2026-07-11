@@ -9,7 +9,9 @@ published to a Helm repo on every chart version bump (see
 [`helm-repo.md`](./helm-repo.md)). It packages the admin (port **3001**), metrics
 (port **3460**), agent (port **3000**), task-store (port **3000**), and optional chat
 (port **3000**) services plus an optional bundled PostgreSQL dependency,
-with Minikube-friendly defaults throughout. Task-store and chat are disabled by default.
+with Minikube-friendly defaults throughout. Task-store and chat are disabled by
+default; the agent is provisioned dynamically when `agent.provisioning.enabled=true`
+is set.
 
 This guide covers three deployment targets end-to-end, then the cross-cutting
 concerns shared by all of them:
@@ -570,7 +572,18 @@ default registry tags become unavailable you can repoint the images without
 changing the chart, or bring your own database:
 
 - **Mirror the whole stack:** set `global.imageRegistry: <your-mirror>`.
+  When set, this prefix is applied **only** to bare repository names (those not
+  already naming a registry host). Shipwright's service images default to
+  fully-qualified GHCR paths (e.g., `ghcr.io/app-vitals/shipwright-admin`),
+  which are **not** prefixed — avoiding double-prefixing
+  (e.g., `registry/ghcr.io/...`). A repository's first `/`-delimited segment is
+  checked: if it contains a `.` or `:` (e.g., `ghcr.io`, `docker.io`,
+  `localhost:5000`), it's treated as a fully-qualified registry host and left
+  alone. Only bare names (e.g., `shipwright-admin` or the whisper image
+  `onerahmet/openai-whisper-asr-webservice`) receive the prefix.
+
 - **Use the `bitnamilegacy` mirror** for PostgreSQL specifically.
+
 - **Bring your own PostgreSQL:** set `postgresql.enabled=false` and point
   `externalDatabase.existingSecret` at a pre-created Kubernetes Secret holding
   `DATABASE_URL_SHIPWRIGHT_ADMIN`. The chart injects the value into the admin

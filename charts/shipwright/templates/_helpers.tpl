@@ -63,6 +63,37 @@ Create the name of the service account to use.
 {{- end }}
 
 {{/*
+Assemble a container image reference, applying global.imageRegistry only when it
+is safe to do so.
+
+Args: a dict with keys
+  - context:    the root "." context (to reach .Values.global.imageRegistry)
+  - repository: the image repository (may be bare or fully-qualified)
+  - tag:        the image tag
+
+DCC-3.1: the shipwright service repositories default to fully-qualified GHCR
+paths (e.g. ghcr.io/app-vitals/shipwright-admin). Blindly prefixing
+global.imageRegistry onto those would DOUBLE-prefix them
+(registry/ghcr.io/app-vitals/...). Following the standard Helm/OCI community
+convention, a repository is treated as already naming a registry host when its
+first "/"-delimited segment contains a "." or ":" (e.g. "ghcr.io",
+"docker.io", "localhost:5000"). Such fully-qualified repositories are rendered
+verbatim; only BARE repository names (e.g. a user-overridden "shipwright-admin")
+receive the global.imageRegistry prefix.
+*/}}
+{{- define "shipwright.imageRef" -}}
+{{- $registry := .context.Values.global.imageRegistry -}}
+{{- $repository := .repository -}}
+{{- $tag := .tag -}}
+{{- $firstSegment := $repository | splitList "/" | first -}}
+{{- if and $registry (not (or (contains "." $firstSegment) (contains ":" $firstSegment))) -}}
+{{- printf "%s/%s:%s" $registry $repository $tag -}}
+{{- else -}}
+{{- printf "%s:%s" $repository $tag -}}
+{{- end -}}
+{{- end }}
+
+{{/*
 Admin component fullname: "<fullname>-admin".
 */}}
 {{- define "shipwright.admin.fullname" -}}

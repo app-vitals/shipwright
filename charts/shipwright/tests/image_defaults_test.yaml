@@ -2,15 +2,24 @@ suite: default image repositories and pull policy
 # HD-2.1 set the PostgreSQL image coordinates (docker.io/bitnami/postgresql,
 # concrete tag — never `latest`) and the IfNotPresent default pull policy.
 # The shipwright service image repositories (shipwright-admin / -metrics /
-# -agent) live in values.yaml but have no consuming workload template until
-# HD-3.x, so they are guarded by values.schema.json `required: [repository]`
-# (see values_schema_test.yaml) rather than asserted on a rendered Deployment.
-# Here we assert the image facts that actually render today: the PostgreSQL
-# subchart's concrete image and pull policy.
+# -task-store / -chat) now DO have consuming workload templates (admin/metrics/
+# task-store/chat Deployments), so their image + registry-prefix behavior is
+# asserted on the rendered Deployments below (in addition to the schema guard in
+# values_schema_test.yaml). Per DCC-3.1, service images default to fully-qualified
+# ghcr.io/app-vitals repositories and are therefore NOT re-prefixed by
+# global.imageRegistry (which would otherwise double-prefix); only bare
+# repository names (e.g. the whisper image) get the registry prefix.
+# The PostgreSQL subchart assertions below cover the concrete image + pull policy.
 templates:
   - charts/postgresql/templates/primary/statefulset.yaml
+  - templates/admin-deployment.yaml
+  - templates/metrics-deployment.yaml
+  - templates/task-store-deployment.yaml
+  - templates/chat-deployment.yaml
+  - templates/whisper-deployment.yaml
 tests:
   - it: renders the bitnami/postgresql image from the docker.io registry
+    template: charts/postgresql/templates/primary/statefulset.yaml
     set:
       postgresql.enabled: true
     asserts:
@@ -19,6 +28,7 @@ tests:
           pattern: "^docker\\.io/bitnami/postgresql:"
 
   - it: pins a concrete PostgreSQL image tag (never `latest`)
+    template: charts/postgresql/templates/primary/statefulset.yaml
     set:
       postgresql.enabled: true
     asserts:
@@ -27,6 +37,7 @@ tests:
           pattern: ":latest$"
 
   - it: defaults the PostgreSQL pull policy to IfNotPresent
+    template: charts/postgresql/templates/primary/statefulset.yaml
     set:
       postgresql.enabled: true
     asserts:
@@ -35,6 +46,7 @@ tests:
           value: IfNotPresent
 
   - it: repoints the image when global.imageRegistry overrides the registry
+    template: charts/postgresql/templates/primary/statefulset.yaml
     set:
       postgresql.enabled: true
       global.imageRegistry: my-mirror.example.com
@@ -42,3 +54,73 @@ tests:
       - matchRegex:
           path: spec.template.spec.containers[0].image
           pattern: "^my-mirror\\.example\\.com/bitnami/postgresql:"
+
+  # ── DCC-3.1: global.imageRegistry must NOT double-prefix fully-qualified
+  # service repositories, but SHOULD still prefix bare repository names. The
+  # shared shipwright.imageRef helper detects a registry host (a "." or ":" in
+  # the first "/"-delimited segment) and skips the prefix for those. ──────────
+
+  - it: does not double-prefix the fully-qualified admin image when global.imageRegistry is set
+    template: templates/admin-deployment.yaml
+    set:
+      global.imageRegistry: mirror.example.com
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].image
+          pattern: "^ghcr\\.io/app-vitals/shipwright-admin:admin-v\\d+\\.\\d+\\.\\d+$"
+
+  - it: does not double-prefix the fully-qualified metrics image when global.imageRegistry is set
+    template: templates/metrics-deployment.yaml
+    set:
+      global.imageRegistry: mirror.example.com
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].image
+          pattern: "^ghcr\\.io/app-vitals/shipwright-metrics:"
+
+  - it: does not double-prefix the fully-qualified task-store image when global.imageRegistry is set
+    template: templates/task-store-deployment.yaml
+    set:
+      taskStore.enabled: true
+      global.imageRegistry: mirror.example.com
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].image
+          pattern: "^ghcr\\.io/app-vitals/shipwright-task-store:"
+
+  - it: does not double-prefix the fully-qualified chat image when global.imageRegistry is set
+    template: templates/chat-deployment.yaml
+    set:
+      chat.enabled: true
+      global.imageRegistry: mirror.example.com
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].image
+          pattern: "^ghcr\\.io/app-vitals/shipwright-chat:"
+
+  - it: still prefixes a bare (user-overridden) admin repository with global.imageRegistry
+    template: templates/admin-deployment.yaml
+    set:
+      global.imageRegistry: mirror.example.com
+      admin.image.repository: shipwright-admin
+      admin.image.tag: local
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: mirror.example.com/shipwright-admin:local
+
+  # ── whisper: bare-ish repo (onerahmet — no "." or ":" before first "/"), so
+  # global.imageRegistry STILL prefixes it (unchanged existing behavior). The
+  # whisper image is a single combined string and does NOT use the helper, but
+  # its prefix behavior is asserted here as the bare-repo regression guard. ───
+
+  - it: still prefixes the bare whisper image with global.imageRegistry
+    template: templates/whisper-deployment.yaml
+    set:
+      agent.voice.enabled: true
+      agent.voice.provider: whisper
+      global.imageRegistry: mirror.example.com
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: mirror.example.com/onerahmet/openai-whisper-asr-webservice:v1.3.0

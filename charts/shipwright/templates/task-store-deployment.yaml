@@ -24,7 +24,7 @@ spec:
       {{- end }}
       containers:
         - name: task-store
-          image: "{{ with .Values.global.imageRegistry }}{{ . }}/{{ end }}{{ .Values.taskStore.image.repository }}:{{ .Values.taskStore.image.tag | default .Chart.AppVersion }}"
+          image: {{ include "shipwright.imageRef" (dict "context" $ "repository" .Values.taskStore.image.repository "tag" (.Values.taskStore.image.tag | default .Chart.AppVersion)) | quote }}
           imagePullPolicy: {{ .Values.taskStore.image.pullPolicy | default .Values.imagePullPolicy }}
           ports:
             - name: http

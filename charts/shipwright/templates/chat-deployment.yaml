@@ -24,7 +24,7 @@ spec:
       {{- end }}
       containers:
         - name: chat
-          image: "{{ with .Values.global.imageRegistry }}{{ . }}/{{ end }}{{ .Values.chat.image.repository }}:{{ .Values.chat.image.tag | default .Chart.AppVersion }}"
+          image: {{ include "shipwright.imageRef" (dict "context" $ "repository" .Values.chat.image.repository "tag" (.Values.chat.image.tag | default .Chart.AppVersion)) | quote }}
           imagePullPolicy: {{ .Values.chat.image.pullPolicy | default .Values.imagePullPolicy }}
           ports:
             - name: http
