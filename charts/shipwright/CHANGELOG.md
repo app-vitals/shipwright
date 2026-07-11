@@ -10,6 +10,15 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.6.338] - 2026-07-11
+
+### Changed
+
+- Pin exact GHCR image tags in `values.yaml` defaults for all six shipwright
+  service image blocks (admin, metrics, agent, agent provisioning, taskStore,
+  chat), replacing the bare repository name + `appVersion`-fallback `tag: ""`
+  defaults.
+
 ## [1.6.337] - 2026-07-11
 
 ### Changed
