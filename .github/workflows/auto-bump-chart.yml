@@ -425,21 +425,32 @@ jobs:
           TAGS_CSV="${{ steps.batch.outputs.tags }}"
           PINNED=$(select_pinned_tags "$TAGS_CSV")
 
+          # Rendered alongside the values.yaml writes below (same
+          # service/path loop) as "- `admin.image.tag`: `admin-v0.156.2`"
+          # markdown lines, so the "Open bump PR" step can drop them
+          # straight into the PR body without re-deriving the
+          # service→path mapping itself.
+          PINNED_LINES=""
           while IFS='=' read -r service tag; do
             [ -z "$service" ] && continue
             while IFS= read -r path; do
               update_values_tag charts/shipwright/values.yaml "$path" "$tag"
               echo "Pinned ${path} = ${tag}"
+              PINNED_LINES="${PINNED_LINES}- \`${path}\`: \`${tag}\`
+          "
             done < <(values_paths_for_service "$service")
           done <<< "$PINNED"
 
-          # Thread the pinned "service=tag" list into the PR body via a
-          # multi-line GITHUB_OUTPUT (heredoc form, EOF delimiter is safe —
-          # tag values never contain newlines).
+          # Thread the pinned tags into later steps via multi-line
+          # GITHUB_OUTPUT (heredoc form, EOF delimiter is safe — tag values
+          # never contain newlines).
           {
             echo "pinned<<PINEOF"
             echo "$PINNED"
             echo "PINEOF"
+            echo "pinned_lines<<PINLINESEOF"
+            echo "$PINNED_LINES"
+            echo "PINLINESEOF"
           } >> "$GITHUB_OUTPUT"
           echo "Pinned tags for this bump:"
           echo "$PINNED"
@@ -488,25 +499,10 @@ jobs:
           TAGS_LINES=$(echo "$TAGS_CSV" | tr ',' '\n' | sed 's/^/- `/; s/$/`/')
           BRANCH="${{ steps.new.outputs.branch }}"
 
-          # "service=tag" pairs from the "Pin released tags into values.yaml"
-          # step, rendered as "- \`admin.image.tag\`: \`admin-v0.156.2\`" lines
-          # so the PR body lists exactly which tag(s) were pinned and where.
-          PINNED="${{ steps.pin.outputs.pinned }}"
-          PINNED_LINES=$(echo "$PINNED" | while IFS='=' read -r service tag; do
-            [ -z "$service" ] && continue
-            values_paths_for_service() {
-              case "$1" in
-                admin) printf '%s\n' "admin.image.tag" ;;
-                metrics) printf '%s\n' "metrics.image.tag" ;;
-                agent) printf '%s\n' "agent.image.tag" "agent.provisioning.image.tag" ;;
-                task-store) printf '%s\n' "taskStore.image.tag" ;;
-                chat) printf '%s\n' "chat.image.tag" ;;
-              esac
-            }
-            while IFS= read -r path; do
-              echo "- \`${path}\`: \`${tag}\`"
-            done < <(values_paths_for_service "$service")
-          done)
+          # Pre-rendered "- `admin.image.tag`: `admin-v0.156.2`" lines from
+          # the "Pin released tags into values.yaml" step, so the PR body
+          # lists exactly which tag(s) were pinned and where.
+          PINNED_LINES="${{ steps.pin.outputs.pinned_lines }}"
 
           PR_URL=$(gh pr create \
             --base main \
