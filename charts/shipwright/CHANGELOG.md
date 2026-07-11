@@ -10,6 +10,16 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.6.340] - 2026-07-11
+
+### Fixed
+
+- `global.imageRegistry` no longer double-prefixes the fully-qualified
+  `ghcr.io/app-vitals` service image repositories (admin, metrics, taskStore,
+  chat). A shared `shipwright.imageRef` helper detects a fully-qualified
+  repository (a registry host in the first `/`-delimited segment) and only
+  applies the `global.imageRegistry` prefix to bare repository names.
+
 ## [1.6.339] - 2026-07-11
 
 ### Changed
