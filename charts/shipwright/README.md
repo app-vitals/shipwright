@@ -87,19 +87,19 @@ environment, set `postgresql.auth.existingSecret` to a pre-created Secret (or se
 | `serviceAccount.name` | `""` | ServiceAccount name (generated if empty). |
 | `serviceAccount.annotations` | `{}` | Annotations for the ServiceAccount. |
 | `admin.enabled` | `true` | Toggle the admin service (port **3001**). |
-| `admin.image.repository` | `shipwright-admin` | Admin image repo. |
-| `admin.image.tag` | `""` | Admin image tag (defaults to chart `appVersion`). |
+| `admin.image.repository` | `ghcr.io/app-vitals/shipwright-admin` | Admin image repo (fully-qualified GHCR default). |
+| `admin.image.tag` | pinned per release | Admin image tag, rewritten on every chart release. |
 | `admin.service.port` | `3001` | Admin service port. |
 | `admin.replicas` | `1` | Admin replica count. |
 | `metrics.enabled` | `true` | Toggle the metrics dashboard (port **3460**). |
-| `metrics.image.repository` | `shipwright-metrics` | Metrics image repo. |
-| `metrics.image.tag` | `""` | Metrics image tag (defaults to chart `appVersion`). |
+| `metrics.image.repository` | `ghcr.io/app-vitals/shipwright-metrics` | Metrics image repo (fully-qualified GHCR default). |
+| `metrics.image.tag` | pinned per release | Metrics image tag, rewritten on every chart release. |
 | `metrics.service.port` | `3460` | Metrics service port. |
 | `metrics.replicas` | `1` | Metrics replica count. |
 | `metrics.sessionSecret.existingSecret` | `""` | Source the metrics `SHIPWRIGHT_SESSION_SECRET` from a pre-created Secret. Point at the admin's Secret so admin-minted dashboard JWTs validate (a mismatch 401s the dashboard). Empty = chart-generated. |
 | `agent.enabled` | `true` | Toggle the agent service (port **3000**). |
-| `agent.image.repository` | `shipwright-agent` | Agent image repo. |
-| `agent.image.tag` | `""` | Agent image tag (defaults to chart `appVersion`). |
+| `agent.image.repository` | `ghcr.io/app-vitals/shipwright-agent` | Agent image repo (fully-qualified GHCR default). |
+| `agent.image.tag` | pinned per release | Agent image tag, rewritten on every chart release. |
 | `agent.service.port` | `3000` | Agent service port. |
 | `agent.replicas` | `1` | Agent replica count. |
 | `agent.provisioning.persistence.enabled` | `true` | Create a PVC for the agent home (`AGENT_HOME`). |
