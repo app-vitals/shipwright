@@ -61,8 +61,8 @@ re-published after any update.
 This agent's workspace can have multiple repos checked out under `repos/`
 (see `plugins/shipwright/scripts/check-helpers.ts`'s `resolveRepoDirs`).
 Step 1 below is repo-aware: it resolves a list of qualifying repos and Steps
-2-4 run once **per repo**, each in its own worktree + branch, independent of
-every other repo. Step 5 (Report) prints one aggregated summary across every
+2-3 run once **per repo**, each in its own worktree + branch, independent of
+every other repo. Step 4 (Report) prints one aggregated summary across every
 repo processed.
 
 ### Step 1: Resolve the repo list
