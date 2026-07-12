@@ -215,11 +215,11 @@ describe("SYSTEM_CRONS", () => {
     expect(cron?.schedule).toBe("0 6 * * *");
   });
 
-  test("shipwright-test-readiness has no preCheck", () => {
+  test("shipwright-test-readiness has correct preCheck", () => {
     const cron = SYSTEM_CRONS.find(
       (c) => c.name === "shipwright-test-readiness",
     );
-    expect(cron?.preCheck).toBeUndefined();
+    expect(cron?.preCheck).toBe("shipwright:check-test-readiness.ts");
   });
 
   test("shipwright-test-readiness prompt includes /shipwright:test-readiness skill invocation", () => {
