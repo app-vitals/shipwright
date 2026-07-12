@@ -1,11 +1,12 @@
 ---
 name: test-readiness
 description: >
-  Orchestrates the full test-readiness pipeline (phases 1–5) for the active
-  worktree. Runs test-inventory → test-design → test-migration → test-roadmap →
-  test-publish in sequence, starting from the first stale artifact. Invoked by
-  the `shipwright-test-readiness` cron on a daily schedule; exits early if all
-  phase artifacts are fresh.
+  Orchestrates the full test-readiness pipeline (phases 1–5), once per
+  qualifying repo under repos/, each in its own worktree + branch. Runs
+  test-inventory → test-design → test-migration → test-roadmap →
+  test-publish in sequence per repo, starting from the first stale artifact.
+  Invoked by the `shipwright-test-readiness` cron on a daily schedule; exits
+  early for a repo when all of its phase artifacts are fresh.
 ---
 
 # test-readiness skill
@@ -39,8 +40,9 @@ keep working unchanged.
 **Skipped entirely when `--full` is passed** (the cron's default) — all phases
 1→5 run. The check below only applies when `--full` is absent.
 
-Before running any phase, re-read the phase artifacts to determine the earliest
-stale phase. The artifacts and their canonical paths (relative to the repo root):
+Before running any phase, re-read the phase artifacts (scoped to the current
+repo/worktree — see Step 1) to determine the earliest stale phase. The
+artifacts and their canonical paths (relative to the repo root):
 
 | Phase | Artifact path |
 |-------|--------------|
@@ -56,30 +58,103 @@ re-published after any update.
 
 ## Process
 
-1. **Locate the active worktree.** Look for a worktree directory under
-   `$SHIPWRIGHT_WORKTREE_DIR` (default: `$HOME/worktrees`) that matches the
-   configured repo name. If none found, stop — nothing to run.
+This agent's workspace can have multiple repos checked out under `repos/`
+(see `plugins/shipwright/scripts/check-helpers.ts`'s `resolveRepoDirs`).
+Step 1 below is repo-aware: it resolves a list of qualifying repos and Steps
+2-4 run once **per repo**, each in its own worktree + branch, independent of
+every other repo. Step 5 (Report) prints one aggregated summary across every
+repo processed.
 
-2. **Determine the starting phase.** If `--full` is set, start at phase 1.
-   Otherwise check mtime of each phase artifact in order (1 → 4); the first
-   artifact that is missing or older than 24 hours marks the starting phase,
-   and if all are fresh, stop.
+### Step 1: Resolve the repo list
 
-3. **Run phases sequentially** from the starting phase through phase 5:
-   - Phase 1: `/shipwright:test-inventory`
-   - Phase 2: `/shipwright:test-design`
-   - Phase 3: `/shipwright:test-migration`
-   - Phase 4: `/shipwright:test-roadmap`
-   - Phase 5: `/shipwright:test-publish` — pass `--yes` when this skill was
-     invoked with `--publish` (real publish, no confirmation prompt);
-     otherwise pass `--dry-run` (preview only).
+Determine which repos to process, in this priority order:
 
-   Run each skill using the Skill tool. If any phase fails, report the failure
-   and stop — do not run subsequent phases, as each depends on the previous
-   artifact.
+1. **Precheck-driven (preferred).** This cron's `preCheck`
+   (`shipwright:check-test-readiness.ts`) already iterated every repo under
+   `repos/`, applied the opt-in qualification (a repo qualifies only if it has
+   a `docs/test-readiness/` directory — a repo without one is not the implicit
+   target and is skipped), and its stdout — which became this prompt (see
+   `admin/src/system-crons.ts`'s header comment: "When a preCheck script is
+   set, its stdout becomes the actual prompt sent to Claude") — lists exactly
+   which repo(s) have a stale or missing phase artifact, one repo name
+   (`org/repo`) per section. Parse the repo names out of the invoking prompt
+   and use that as the repo list. Skip any repo not named in the precheck
+   output — it had nothing to run.
+2. **Fallback (manual invocation, or no repo list available in the prompt).**
+   Iterate `repos/*` directly and keep only repos with a `docs/test-readiness/`
+   directory (the same opt-in signal the precheck uses):
+   ```bash
+   for dir in repos/*/; do
+     [ -d "$dir/.git" ] && [ -d "$dir/docs/test-readiness" ] && basename "$dir"
+   done
+   ```
+   A repo under `repos/` with no `docs/test-readiness/` directory is skipped
+   cleanly — it is never silently treated as the implicit single target.
 
-4. **Report.** After all phases complete, summarize which phases ran and the
-   number of GitHub issues created or updated (from phase 5 output).
+For each resolved repo, match the precheck's `org/repo` name back to its local
+clone directory `repos/{dirname}` by checking each `repos/*/`'s
+`git remote get-url origin` (or `.git/config`) for that owner/repo — same
+matching approach as `research-docs.md` Step A0.
+
+**For each repo in the resolved list, set up (or reuse) a worktree + branch
+and run Steps 2-4 there** — never edit `repos/{dirname}` directly (see this
+repo's own root `CLAUDE.md` for the worktree convention):
+
+```bash
+git -C repos/{dirname} pull
+git -C repos/{dirname} worktree add \
+  $SHIPWRIGHT_WORKTREE_DIR/{dirname}-docs-test-readiness-refresh-{YYYYMMDD} \
+  origin/main -b docs/test-readiness-refresh-{YYYYMMDD}
+```
+
+Branch naming: `docs/test-readiness-refresh-<YYYYMMDD>` (today's date). If a
+worktree/branch with that name already exists (e.g. a same-day rerun), reuse
+it rather than recreating — check `$SHIPWRIGHT_WORKTREE_DIR` for an existing
+`{dirname}-docs-test-readiness-refresh-{YYYYMMDD}` directory first.
+
+All relative paths in Steps 2-4 (`docs/test-readiness/*.md`, phase artifact
+mtimes, git history, etc.) resolve against that repo's worktree, not the bare
+clone under `repos/`. Commit each repo's phase results (in its own worktree,
+on its own branch) before moving to the next repo — one repo's work must not
+block or be blocked by another's.
+
+### Step 2: Determine the starting phase
+
+If `--full` is set, start at phase 1. Otherwise check mtime of each phase
+artifact in order (1 → 4), scoped to the current repo's worktree; the first
+artifact that is missing or older than 24 hours marks the starting phase, and
+if all are fresh for this repo, skip straight to the next repo in the
+resolved list (no phases run for this repo).
+
+### Step 3: Run phases sequentially
+
+From the starting phase through phase 5, in the current repo's worktree:
+- Phase 1: `/shipwright:test-inventory`
+- Phase 2: `/shipwright:test-design`
+- Phase 3: `/shipwright:test-migration`
+- Phase 4: `/shipwright:test-roadmap`
+- Phase 5: `/shipwright:test-publish` — pass `--yes` when this skill was
+  invoked with `--publish` (real publish, no confirmation prompt);
+  otherwise pass `--dry-run` (preview only).
+
+Run each skill using the Skill tool. If any phase fails for this repo, report
+the failure for that repo and stop running further phases **for that repo
+only** — do not run subsequent phases for it, as each depends on the previous
+artifact. A failure in one repo does not stop the remaining repos in the
+resolved list; move on to the next repo after logging the failure.
+
+After phase 5 (or an early stop due to failure) completes for the current
+repo, return to Step 1's per-repo loop for the next repo in the resolved
+list. Once every repo has been processed (run or skipped for being fresh),
+proceed to Step 4.
+
+### Step 4: Report
+
+After every repo in the resolved list has been processed, print one
+aggregated summary across all repos, with a per-repo section: which phases
+ran (or "skipped — all artifacts fresh" / "skipped — precheck did not flag
+this repo"), and the number of GitHub issues created or updated (from phase 5
+output) for that repo.
 
 ## Failure handling
 

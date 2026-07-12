@@ -70,6 +70,7 @@ export const SYSTEM_CRONS: readonly SystemCron[] = [
     schedule: "0 6 * * *",
     prompt: "/shipwright:test-readiness --full --publish",
     silent: true,
+    preCheck: "shipwright:check-test-readiness.ts",
     enabled: false,
   },
   {
