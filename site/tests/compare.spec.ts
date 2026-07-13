@@ -175,7 +175,7 @@ test("CTA repeats the install command and links GitHub + discovery call", async 
   ).toHaveAttribute("href", /github\.com\/app-vitals\/shipwright/);
   await expect(
     page.getByRole("link", { name: /discovery call/i }),
-  ).toHaveAttribute("href", "https://cal.com/app-vitals/discovery");
+  ).toHaveAttribute("href", "https://cal.com/team/app-vitals/discovery-call");
 });
 
 test("compare page markets no pricing", async ({ page }) => {

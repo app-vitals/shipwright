@@ -401,7 +401,7 @@ test("services bridge links to the discovery call", async ({ page }) => {
   await expect(section).toBeVisible();
   await expect(
     section.getByRole("link", { name: /discovery call/i }),
-  ).toHaveAttribute("href", "https://cal.com/app-vitals/discovery");
+  ).toHaveAttribute("href", "https://cal.com/team/app-vitals/discovery-call");
 });
 
 test("services bridge stays soft — no email-capture form", async ({ page }) => {
