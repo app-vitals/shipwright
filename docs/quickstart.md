@@ -105,24 +105,18 @@ cd shipwright
 task setup
 ```
 
-### Step 2 — Add your auth token
-
-```bash
-cp state/dev-agent.env.example state/dev-agent.env
-```
-
-Open `state/dev-agent.env` and fill in **one** of:
-
-- **`CLAUDE_CODE_OAUTH_TOKEN`** — get it by running `claude /oauth-token` in Claude Code (recommended for personal development)
-- **`ANTHROPIC_API_KEY`** — from <https://console.anthropic.com/> → API Keys
-
-`state/dev-agent.env` is git-ignored — it never leaves your machine.
-
-### Step 3 — Launch the stack
+### Step 2 — Launch the stack
 
 ```bash
 task stack
 ```
+
+First run: `task stack` finds no `state/dev-agent.env`, auto-creates it from `state/dev-agent.env.example`, and exits with a reminder to fill in your auth token. Open `state/dev-agent.env` and set **one** of:
+
+- **`CLAUDE_CODE_OAUTH_TOKEN`** — get it by running `claude /oauth-token` in Claude Code (recommended for personal development)
+- **`ANTHROPIC_API_KEY`** — from <https://console.anthropic.com/> → API Keys
+
+`state/dev-agent.env` is git-ignored — it never leaves your machine. Then re-run `task stack`.
 
 This opens a tmux session (`shipwright`) with 6 panes:
 
@@ -137,7 +131,7 @@ This opens a tmux session (`shipwright`) with 6 panes:
 
 A browser window opens automatically to the admin dev-login page.
 
-### Step 4 — Send a chat turn (plugin install coming soon)
+### Step 3 — Send a chat turn (plugin install coming soon)
 
 > 🚧 The `/plugin install` step (Phase A) is not yet ready for general use. Once it ships, you'll run this inside a Claude Code session pointed at this repo:
 >

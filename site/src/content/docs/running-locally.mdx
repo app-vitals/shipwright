@@ -94,13 +94,15 @@ schema is current.
 
 - **tmux** installed (`brew install tmux` / `apt install tmux`)
 - **Docker** running locally
-- **`state/dev-agent.env`** — copy from the example and fill in credentials:
+- **`state/dev-agent.env`** — credentials for the agent pane. On the first `task stack` run, if
+  this file is missing it is auto-created from `state/dev-agent.env.example` and the command
+  exits so you can fill it in:
 
 ```bash
-cp state/dev-agent.env.example state/dev-agent.env
 # Edit state/dev-agent.env and set one of:
 #   CLAUDE_CODE_OAUTH_TOKEN=<your token>
 #   ANTHROPIC_API_KEY=<your key>
+# Then re-run: task stack
 ```
 
 The agent pane reads secrets from `state/dev-agent.env` at runtime — they are never baked into

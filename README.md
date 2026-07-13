@@ -37,9 +37,16 @@ helm install my-release shipwright/shipwright --namespace shipwright --create-na
 
 See [`docs/deploy-kubernetes.md`](./docs/deploy-kubernetes.md) for end-to-end deployment guides (Minikube / GKE / EKS), and [`docs/helm-repo.md`](./docs/helm-repo.md) for the published-repo flow and how publishing is triggered.
 
+## Get Shipwright in your Slack
+
+The Shipwright agent runs as a Slack app — DMs, `@mentions`, and cron notifications, all in Socket Mode. Two ways to get there:
+
+- **Self-host it.** Deploy the admin service with the Helm chart (see [`docs/deploy-kubernetes.md`](./docs/deploy-kubernetes.md) above), then connect Slack from the admin UI's `/admin/provision` wizard. Full step-by-step: [Slack Integration](https://shipwrightharness.com/docs/slack-integration).
+- **Want us to run it for you?** [Book a discovery call](https://cal.com/team/app-vitals/discovery-call) — no commitment, just a conversation about your pipeline.
+
 ## Quickstart
 
-You can run the **metrics dashboard locally today** — **offline by default**, with **no PostHog key, no accounts, and no database**. One copy-paste prompt sequences the two execution contexts (terminal shell + an in-session slash command) and opens the dashboard.
+Run the **metrics dashboard locally today** — **offline by default**: no PostHog key, no accounts, no database. One copy-paste prompt covers both steps (terminal + an in-session slash command) and opens the dashboard.
 
 Paste this into a **Claude Code** session:
 
@@ -48,8 +55,8 @@ Set up Shipwright Harness locally and open the metrics dashboard.
 
 1. In a terminal, run:
      git clone https://github.com/app-vitals/shipwright.git && cd shipwright && ./scripts/quickstart.sh
-   This checks prerequisites, installs dependencies (task setup), and starts the
-   metrics dashboard in offline mode (no accounts or secrets needed). Leave it running.
+   Checks prerequisites, installs dependencies (task setup), and starts the
+   metrics dashboard offline (no accounts or secrets needed). Leave it running.
 
 2. Inside this Claude Code session, install the plugin:
      /plugin install shipwright@app-vitals/shipwright
@@ -58,13 +65,13 @@ Set up Shipwright Harness locally and open the metrics dashboard.
      http://localhost:3460/dashboard
 ```
 
-Step 1 runs in your **terminal**; step 2 is a slash command that runs **inside the Claude Code session**. The dashboard comes up at <http://localhost:3460/dashboard>.
+Step 1 runs in your **terminal**; step 2 runs **inside the Claude Code session**.
 
 Prerequisites: [Claude Code](https://www.anthropic.com/claude-code), [git](https://git-scm.com/downloads), [Bun](https://bun.sh), and [go-task](https://taskfile.dev/installation/). Full details, the `QUICKSTART_SKIP_SERVE` CI guard, and the offline-default explanation live in [`docs/quickstart.md`](./docs/quickstart.md).
 
 **Full dev stack**
 
-Want the complete local stack — metrics dashboard, admin UI, task-store, and the Shipwright agent running in Docker? This requires [tmux](https://github.com/tmux/tmux), [Docker](https://docs.docker.com/get-docker/), and a local [PostgreSQL](https://www.postgresql.org/) instance (port 5432). Paste this into a **Claude Code** session:
+The complete local stack — metrics dashboard, admin UI, task-store, and the Shipwright agent in Docker — needs [tmux](https://github.com/tmux/tmux), [Docker](https://docs.docker.com/get-docker/), and a local [PostgreSQL](https://www.postgresql.org/) instance (port 5432). Paste this into a **Claude Code** session:
 
 ```text
 Set up the full Shipwright Harness dev stack locally.
@@ -74,22 +81,21 @@ Prerequisites: tmux, Docker, PostgreSQL running on localhost:5432, Bun, go-task.
 1. In a terminal, clone and set up:
      git clone https://github.com/app-vitals/shipwright.git && cd shipwright && task setup
 
-2. Copy the env example and add your auth token:
-     cp state/dev-agent.env.example state/dev-agent.env
-   Open state/dev-agent.env and set one of:
+2. Launch the full stack (6-pane tmux session):
+     task stack
+
+   First run: task stack auto-creates state/dev-agent.env from the example
+   and exits — open it and set one of these, then re-run task stack:
      CLAUDE_CODE_OAUTH_TOKEN=<your token>   (run: claude /oauth-token)
      ANTHROPIC_API_KEY=<your key>           (https://console.anthropic.com/ → API Keys)
 
-3. Launch the full stack (6-pane tmux session):
-     task stack
-
-   This opens a tmux session named "shipwright" with 6 panes:
+   Opens a tmux session named "shipwright" with 6 panes:
      metrics (:3460)  admin (:3001)  task-store (:3002)  chat-svc (:3003)  agent  logs
 
-4. Open the dashboard in your browser:
+3. Open the dashboard in your browser:
      http://localhost:3460/dashboard
 
-5. Inside a Claude Code session:
+4. Inside a Claude Code session:
      /plugin install shipwright@app-vitals/shipwright
 
 To stop: tmux kill-session -t shipwright

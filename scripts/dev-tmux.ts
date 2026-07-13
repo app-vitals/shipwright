@@ -33,7 +33,7 @@
  * would be slow and environment-dependent for no added confidence.
  */
 
-import { existsSync } from "node:fs";
+import { copyFileSync, existsSync } from "node:fs";
 import { connect } from "node:net";
 
 // ---------------------------------------------------------------------------
@@ -618,6 +618,50 @@ export function sessionExistsMessage(name: string): string {
   ].join("\n");
 }
 
+/** What the entrypoint should do about state/dev-agent.env, per devAgentEnvPreflight(). */
+export type DevAgentEnvDecision =
+  | { action: "proceed" }
+  | { action: "copy_and_exit"; message: string }
+  | { action: "fail"; message: string };
+
+/**
+ * Decide what to do about the missing-secrets file `state/dev-agent.env`
+ * before `task stack` launches the agent pane (which loads it via
+ * `--env-file`). Pure — the two existsSync() results are passed in — so the
+ * branching is unit-testable without real filesystem I/O. The entrypoint owns
+ * the actual existsSync/copyFileSync calls and acts on the returned decision:
+ *
+ *   - env present            → "proceed" (never overwritten, no message).
+ *   - env missing, example present → "copy_and_exit": the entrypoint copies
+ *     the example to state/dev-agent.env, then exits — the copy only has
+ *     placeholder values, so it must not proceed to ensureDepsInstalled()/
+ *     ensurePostgresReady() on this pass.
+ *   - neither present        → "fail": identical to the pre-auto-copy
+ *     behavior (nothing to copy from).
+ */
+export function devAgentEnvPreflight(
+  envExists: boolean,
+  exampleExists: boolean,
+): DevAgentEnvDecision {
+  if (envExists) {
+    return { action: "proceed" };
+  }
+  if (exampleExists) {
+    return {
+      action: "copy_and_exit",
+      message: [
+        "[stack] state/dev-agent.env not found — created it from state/dev-agent.env.example.",
+        "[stack] Fill in CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY in state/dev-agent.env, then re-run: task stack",
+      ].join("\n"),
+    };
+  }
+  return {
+    action: "fail",
+    message:
+      "[stack] state/dev-agent.env not found — copy state/dev-agent.env.example and fill in CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY",
+  };
+}
+
 /**
  * Teardown commands for `task stack:down`: kill the tmux session, then stop and
  * remove the agent Docker container. The container is started by `docker run`
@@ -932,10 +976,17 @@ if (import.meta.main) {
     process.exit(1);
   }
 
-  if (!existsSync("state/dev-agent.env")) {
-    console.error(
-      "[stack] state/dev-agent.env not found — copy state/dev-agent.env.example and fill in CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY",
-    );
+  const envDecision = devAgentEnvPreflight(
+    existsSync("state/dev-agent.env"),
+    existsSync("state/dev-agent.env.example"),
+  );
+  if (envDecision.action === "copy_and_exit") {
+    copyFileSync("state/dev-agent.env.example", "state/dev-agent.env");
+    console.error(envDecision.message);
+    process.exit(1);
+  }
+  if (envDecision.action === "fail") {
+    console.error(envDecision.message);
     process.exit(1);
   }
 
