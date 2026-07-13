@@ -44,15 +44,16 @@ import {
   renderProvisionStartPage,
   renderProvisionXappTokenPage,
   renderPrsPage,
+  renderSessionDetailPage,
   renderTaskDetailPage,
   renderTasksPage,
   renderTokensPage,
 } from "./admin-ui-pages.ts";
+import type { AgentCronJobService } from "./agent-cron-jobs.ts";
+import type { AgentCronRunService } from "./agent-cron-runs.ts";
 import type { ManualStep } from "./agent-deletion-checklist.ts";
 import type { DeleteAgentFullyDeps } from "./agent-deletion.ts";
 import { deleteAgentFully } from "./agent-deletion.ts";
-import type { AgentCronJobService } from "./agent-cron-jobs.ts";
-import type { AgentCronRunService } from "./agent-cron-runs.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
 import type { AgentPluginService } from "./agent-plugins.ts";
 import type { AgentProvisioner } from "./agent-provisioner.ts";
@@ -2075,6 +2076,37 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     return c.redirect(
       fetchTaskStoreTask ? `/admin/tasks/${taskId}` : "/admin/tasks",
       302,
+    );
+  });
+
+  // ─── Session detail ───────────────────────────────────────────────────────
+
+  app.get("/admin/sessions/:id", requireAuth, async (c) => {
+    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+    const sessionId = c.req.param("id");
+
+    let tasks: TaskItem[] = [];
+    let degraded = false;
+
+    if (!fetchTaskStoreTasks) {
+      degraded = true;
+    } else {
+      const params = new URLSearchParams();
+      params.set("session", sessionId);
+      // Fetch ALL tasks for the session, not one page — sessions are typically
+      // a handful of tasks, well under this ceiling.
+      params.set("limit", "500");
+      params.set("offset", "0");
+      try {
+        const result = await fetchTaskStoreTasks(params);
+        tasks = result.tasks;
+      } catch {
+        degraded = true;
+      }
+    }
+
+    return html(
+      renderSessionDetailPage(sessionId, tasks, c.var.userEmail, degraded),
     );
   });
 

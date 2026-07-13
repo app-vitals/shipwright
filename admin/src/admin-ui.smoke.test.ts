@@ -2967,9 +2967,7 @@ describe("admin UI — agent delete route", () => {
     const location = res.headers.get("Location") ?? "";
     // Redirects back to the agent's OWN page — NOT the agents list — so the
     // row doesn't appear deleted from the operator's perspective.
-    expect(location.startsWith(`/admin/agents/${AGENT_ID}?error=`)).toBe(
-      true,
-    );
+    expect(location.startsWith(`/admin/agents/${AGENT_ID}?error=`)).toBe(true);
     const errorMsg = decodeURIComponent(location.split("error=")[1] ?? "");
     expect(errorMsg).toContain("k8s");
     expect(deleted).toBeNull();
@@ -3061,9 +3059,9 @@ describe("admin UI — agent delete route", () => {
     });
     expect(res.status).toBe(302);
     const location = res.headers.get("Location") ?? "";
-    expect(location.startsWith("/admin/agents?success=deleted&manualSteps=")).toBe(
-      true,
-    );
+    expect(
+      location.startsWith("/admin/agents?success=deleted&manualSteps="),
+    ).toBe(true);
     const manualStepsRaw = new URLSearchParams(location.split("?")[1]).get(
       "manualSteps",
     );
@@ -3074,9 +3072,12 @@ describe("admin UI — agent delete route", () => {
 
     // A subsequent GET /admin/agents with that manualSteps query param renders
     // the dismissible panel (renderAgentsPage's opts wiring).
-    const getRes = await app.request(`/admin/agents?${location.split("?")[1]}`, {
-      headers: { Cookie: `admin_session=${adminCookie}` },
-    });
+    const getRes = await app.request(
+      `/admin/agents?${location.split("?")[1]}`,
+      {
+        headers: { Cookie: `admin_session=${adminCookie}` },
+      },
+    );
     expect(getRes.status).toBe(200);
     const html = await getRes.text();
     expect(html).toContain("Manual cleanup required");
@@ -4130,6 +4131,104 @@ describe("admin UI — tasks page", () => {
     expect((capturedParams as unknown as URLSearchParams).get("state")).toBe(
       "blocked",
     );
+  });
+});
+
+// ─── Session detail page (ASV-1.1) ──────────────────────────────────────────
+
+describe("admin UI — session detail page", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  it("GET /admin/sessions/:id renders stat cards + task table with a mix of open/closed tasks", async () => {
+    const mockTasks = [
+      {
+        id: "task-1",
+        title: "Build auth module",
+        status: "pending",
+        session: "session-abc",
+        repo: "example-org/example-repo",
+        layer: "Backend",
+        hours: 2,
+        assignee: null,
+        claimedBy: null,
+      },
+      {
+        id: "task-2",
+        title: "Ship the feature",
+        status: "done",
+        session: "session-abc",
+        repo: "example-org/example-repo",
+        layer: "Frontend",
+        hours: 3,
+        assignee: null,
+        claimedBy: null,
+      },
+    ];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async (params) => {
+          expect(params.get("session")).toBe("session-abc");
+          return {
+            tasks: mockTasks,
+            total: mockTasks.length,
+            limit: 500,
+            offset: 0,
+          };
+        },
+      }),
+    );
+    const res = await app.request("/admin/sessions/session-abc", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Build auth module");
+    expect(html).toContain("Ship the feature");
+    // Open/closed grouping present
+    expect(html).toMatch(/1[^0-9]*open/i);
+    expect(html).toMatch(/1[^0-9]*closed/i);
+    // Status column
+    expect(html).toContain("Status");
+  });
+
+  it("GET /admin/sessions/:id renders a sensible empty state for a session with no tasks", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async () => ({
+          tasks: [],
+          total: 0,
+          limit: 500,
+          offset: 0,
+        }),
+      }),
+    );
+    const res = await app.request("/admin/sessions/empty-session", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html.toLowerCase()).toContain("no tasks");
+  });
+
+  it("GET /admin/sessions/:id unauthenticated redirects to /admin/login", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request("/admin/sessions/session-abc");
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/admin/login");
+  });
+
+  it("GET /admin/sessions/:id degrades gracefully when fetchTaskStoreTasks is not configured", async () => {
+    const app = createAdminUIApp(makeMockDeps({}));
+    const res = await app.request("/admin/sessions/session-abc", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Task store unavailable");
   });
 });
 
