@@ -3,12 +3,12 @@
 A genuinely separate, one-time migration path — it does not run Steps 1–7 of the main
 `SKILL.md` (the regular plan-parsing flow). It operates purely off existing GitHub issue
 state, since a fresh `test-readiness-plan.md` may not exist in the target repo, or may have
-since diverged from what was originally published by `test-publish`.
+since diverged from what was originally published by the former GitHub-issue publish skill.
 
-Use this once, per repo, to migrate issues `test-publish` already created into task-store
-tasks, then retire the GitHub side of those specific issues (closing them with a link back to
-the task store). Ordinary tasks going forward come from the regular flow (Steps 1–7 in
-`SKILL.md`) against a current `test-readiness-plan.md`.
+Use this once, per repo, to migrate issues the former GitHub-issue publish skill already
+created into task-store tasks, then retire the GitHub side of those specific issues (closing
+them with a link back to the task store). Ordinary tasks going forward come from the regular
+flow (Steps 1–7 in `SKILL.md`) against a current `test-readiness-plan.md`.
 
 ### B1: Detect Target Repo
 

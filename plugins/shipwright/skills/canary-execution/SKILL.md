@@ -90,7 +90,7 @@ For each match, classify as one of:
 ### Where this runs
 
 - **test-migration (Phase 3)** runs the lint against every test the inventory marked `canary-eligible` to validate or override the tag.
-- **test-publish (Phase 5)** includes the lint result as an acceptance criterion in the issue body for any task that promotes a test to the canary suite (see `issue.md.tmpl`).
+- **test-fix (Phase 5)** includes the lint result as an acceptance criterion for any task that promotes a test to the canary suite.
 - **CI** should run the grep as a canary-suite pre-check job. A match that is not classified Safe fails the job.
 
 ## How other skills reference this

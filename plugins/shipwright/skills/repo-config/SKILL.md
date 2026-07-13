@@ -14,7 +14,7 @@ Capture the repository-level configuration that turns CI into an actual gate. Th
 
 - By `test-design` (Phase 2) — emits the **Repo Configuration** section of the blueprint
 - By `test-roadmap` (Phase 4) — applies the **pairing rule** (every CI-workflow task gets a paired branch-protection task)
-- By `test-publish` (Phase 5) — emits the **Closing Checklist** at the end of every task issue body
+- By `test-fix` (Phase 5) — the task's `acceptanceCriteria` array is the task-store equivalent of a Closing Checklist
 
 ## The repo-config plan
 
@@ -80,19 +80,19 @@ Pattern:
 
 The branch-protection task `depends_on` the workflow task. Land workflow first; verify green on main for a few days; then enable protection. Sequencing is in this order to avoid the chicken-and-egg block.
 
-## The closing checklist (Phase 5 — test-publish)
+## The closing checklist (Phase 5 — test-fix)
 
-Every published task issue must include a **Closing Checklist** at the end of its body. This converts the verification command from a suggestion into a mergeable gate:
+Every task-store task `test-fix` queues must carry closing-checklist concerns in its
+`acceptanceCriteria` array (a flat list of strings — see `test-fix/SKILL.md`'s field-building
+section). This converts the verification command from a suggestion into a mergeable gate:
 
-```markdown
-## Closing checklist
-
-Before closing this issue (or merging the PR that closes it):
-
-- [ ] All acceptance-criteria checkboxes above are ticked
-- [ ] `Verification command` run; output pasted in the closing PR description
-- [ ] CI is green on the PR (assuming T-042 / branch protection is enabled)
-- [ ] No source files outside `Files to touch` were modified, or the deviation is justified in the PR description
+```json
+"acceptanceCriteria": [
+  "All acceptance-criteria items above are satisfied",
+  "Verification command `{verify}` run; output captured in the closing PR description",
+  "CI is green on the PR (assuming branch protection is enabled)",
+  "No source files outside `Files to touch` were modified, or the deviation is justified in the PR description"
+]
 ```
 
 The third item only becomes a hard gate once branch protection is on. Until then, it's still good hygiene.

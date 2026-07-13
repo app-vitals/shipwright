@@ -1,6 +1,6 @@
 ---
 name: test-fix
-description: Read docs/test-readiness/test-readiness-plan.md and queue its flat T-NNN task list as task-store tasks, one task per row, with dependency edges (predecessor/fan-out) and per-task HITL classification. Requires test-roadmap to have run first. Replaces test-publish's GitHub-issue-based dashboard with a task-store queue; the two coexist during migration. Includes a one-time --backfill-from-github mode that migrates already-published GitHub issues into task-store tasks and closes them.
+description: Read docs/test-readiness/test-readiness-plan.md and queue its flat T-NNN task list as task-store tasks, one task per row, with dependency edges (predecessor/fan-out) and per-task HITL classification. Requires test-roadmap to have run first. Replaces the former GitHub-issue publish skill's dashboard with a task-store queue. Includes a one-time --backfill-from-github mode that migrates already-published GitHub issues into task-store tasks and closes them.
 ---
 
 # Test Fix
@@ -12,8 +12,7 @@ fan-out parents) are written as task-store `dependencies` arrays, so task-store'
 they always become task-store tasks that `dev-task` (or a human, for HITL tasks) picks up
 later.
 
-This is the **Phase 5** replacement for `test-publish` (GitHub Issues). Both skills coexist
-for now — `test-publish` is not being removed by this change.
+This is the **Phase 5** replacement for the former GitHub-issue publish skill.
 
 **Prerequisites:** Run `/test-roadmap` first to produce `test-readiness-plan.md`.
 
@@ -237,10 +236,10 @@ Verification command: {verify}
 Task: {T-NNN} | HITL: {hitl}
 ```
 
-Resolve the three context anchors the same way `test-publish`'s Step 5.4 resolves context
-links — by matching the row's task ID / outcome against the corresponding section headers in
-each artifact file. If an anchor can't be confidently resolved, omit that line rather than
-guessing a broken link.
+Resolve the three context anchors the same way the former GitHub-issue publish skill's Step
+5.4 resolved context links — by matching the row's task ID / outcome against the corresponding
+section headers in each artifact file. If an anchor can't be confidently resolved, omit that
+line rather than guessing a broken link.
 
 ### 5.4 Compute `dependencies`
 
@@ -250,10 +249,10 @@ names (parsed in Step 2.4). Map each predecessor `T-NNN` to its task-store ID us
 `{t-nnn}-{repo-slug}` derivation used for this task's own `id`.
 
 This is what makes task-store's own `ready:true` query correctly compute readiness for these
-tasks — it fully replaces the old `ready` / `blocked` label toggling `test-publish --refresh`
-used to do. **Do not implement any separate ready/blocked computation in this skill** — no
-local label state, no re-evaluation step. A task is ready exactly when the task store says
-it is, by walking `dependencies`.
+tasks — it fully replaces the old `ready` / `blocked` label toggling the former GitHub-issue
+publish skill's `--refresh` flag used to do. **Do not implement any separate ready/blocked
+computation in this skill** — no local label state, no re-evaluation step. A task is ready
+exactly when the task store says it is, by walking `dependencies`.
 
 If a row has no predecessors, `dependencies` is an empty array.
 
@@ -339,12 +338,12 @@ Stop after printing — this is the sole final output for the regular flow.
 A genuinely separate, one-time migration path — it does not run Steps 1–7 above (the regular
 plan-parsing flow). It operates purely off existing GitHub issue state, since a fresh
 `test-readiness-plan.md` may not exist in the target repo, or may have since diverged from
-what was originally published by `test-publish`.
+what was originally published by the former GitHub-issue publish skill.
 
-Use this once, per repo, to migrate issues `test-publish` already created into task-store
-tasks, then retire the GitHub side of those specific issues (closing them with a link back to
-the task store). Ordinary tasks going forward come from the regular flow (Steps 1–7) against
-a current `test-readiness-plan.md`.
+Use this once, per repo, to migrate issues the former GitHub-issue publish skill already
+created into task-store tasks, then retire the GitHub side of those specific issues (closing
+them with a link back to the task store). Ordinary tasks going forward come from the regular
+flow (Steps 1–7) against a current `test-readiness-plan.md`.
 
 Full procedure (repo detection, issue parsing, predecessor-ordering, task creation, closing,
 and the summary block): see `references/backfill-from-github.md`.
@@ -374,8 +373,8 @@ and the summary block): see `references/backfill-from-github.md`.
   `/shipwright:hitl`.
 - **No separate ready/blocked computation** — task-store's `dependencies` array and its own
   `ready:true` query are the sole readiness mechanism (Step 5.4). This skill never writes,
-  toggles, or reads a local `ready` / `blocked` label the way `test-publish --refresh` did;
-  that mechanism is fully replaced, not duplicated.
+  toggles, or reads a local `ready` / `blocked` label the way the former GitHub-issue publish
+  skill's `--refresh` flag did; that mechanism is fully replaced, not duplicated.
 - **Dedup before queueing** — never skip Step 4 in the regular flow (outside `--dry-run`,
   which explicitly skips it by design and queues nothing for real).
 - **No numeric/count backstop on `hitl`** — the only paths to `hitl: true` are the three
