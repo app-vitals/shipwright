@@ -105,12 +105,14 @@ schema is current.</p>
 <ul>
 <li><strong>tmux</strong> installed (<code>brew install tmux</code> / <code>apt install tmux</code>)</li>
 <li><strong>Docker</strong> running locally</li>
-<li><strong><code>state/dev-agent.env</code></strong> — copy from the example and fill in credentials:</li>
+<li><strong><code>state/dev-agent.env</code></strong> — credentials for the agent pane. On the first <code>task stack</code> run, if
+this file is missing it is auto-created from <code>state/dev-agent.env.example</code> and the command
+exits so you can fill it in:</li>
 </ul>
-<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-function)">cp</span><span style="color:var(--astro-code-token-string)"> state/dev-agent.env.example</span><span style="color:var(--astro-code-token-string)"> state/dev-agent.env</span></span>
-<span class="line"><span style="color:var(--astro-code-token-comment)"># Edit state/dev-agent.env and set one of:</span></span>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-comment)"># Edit state/dev-agent.env and set one of:</span></span>
 <span class="line"><span style="color:var(--astro-code-token-comment)">#   CLAUDE_CODE_OAUTH_TOKEN=&lt;your token&gt;</span></span>
-<span class="line"><span style="color:var(--astro-code-token-comment)">#   ANTHROPIC_API_KEY=&lt;your key&gt;</span></span></code></pre>
+<span class="line"><span style="color:var(--astro-code-token-comment)">#   ANTHROPIC_API_KEY=&lt;your key&gt;</span></span>
+<span class="line"><span style="color:var(--astro-code-token-comment)"># Then re-run: task stack</span></span></code></pre>
 <p>The agent pane reads secrets from <code>state/dev-agent.env</code> at runtime — they are never baked into
 the Docker image or printed in the command line.</p>
 <blockquote>
