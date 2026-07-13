@@ -51,7 +51,7 @@ brand system — never by hand-picking colors, fonts, or copy. The system lives 
 
 - **No client / customer / partner names.** Anonymize by role or industry.
 - **No pricing, rates, or tiers.** The tool is free/MIT; services are discussed in conversation, never published.
-- **No email-capture forms.** The only off-page CTA is the discovery call: `https://cal.com/app-vitals/discovery`.
+- **No email-capture forms.** The only off-page CTA is the discovery call: `https://cal.com/team/app-vitals/discovery-call`.
 - **No secrets, internal infra identifiers, or local file paths** — this repo is public.
 - **Naming:** brand = **Shipwright Harness**; package/install = **`shipwright`** (`/plugin install shipwright@app-vitals/shipwright`). Never headline "shipwright" lowercase; never write the brand name as a command.
 - **Voice:** honest, direct, engineer-to-engineer, metric-first. No hype, no emoji-laden superlatives.

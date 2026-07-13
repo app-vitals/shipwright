@@ -169,7 +169,7 @@ Honest, direct, engineer-to-engineer, metric-first. No hype, no client names, no
 - **No client / customer / partner names.** Anonymize by role or industry if a story is needed.
 - **No competitor names** — position generically as the free, open-source, own-it alternative to closed, hosted agents; never name a competing product. **Exception: Claude Code** is the *platform* Shipwright is built on and for, **not** a competitor — feature it prominently and proudly (it's also a major discovery/SEO driver).
 - **No pricing, rates, or tiers.** The tool is free/MIT; services are discussed in conversation, not published.
-- **No email-capture forms.** The only CTA off the page is the discovery call: `https://cal.com/app-vitals/discovery`.
+- **No email-capture forms.** The only CTA off the page is the discovery call: `https://cal.com/team/app-vitals/discovery-call`.
 - **No secrets, internal infra identifiers, or local file paths** in anything committed (the repo is public).
 - Co-founders, when named: **Dan McAulay** and **Dave O'Dell**.
 - The COSS posture is the quiet bridge: give the tool away; "work with the people who built it" is a soft, no-pressure path — never a hard upsell.
