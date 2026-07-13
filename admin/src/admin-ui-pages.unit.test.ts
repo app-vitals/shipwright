@@ -30,6 +30,7 @@ import {
   renderProvisionPasteForm,
   renderProvisionStartPage,
   renderPrsPage,
+  renderSessionDetailPage,
   renderTaskDetailPage,
   renderTasksPage,
 } from "./admin-ui-pages.ts";
@@ -3257,6 +3258,59 @@ describe("renderTasksPage — mobile column hiding", () => {
   });
 });
 
+// ─── Session value links to /admin/sessions/{session} (ASV-1.1) ─────────────
+
+describe("renderTasksPage — session links to /admin/sessions/{session}", () => {
+  test("session cell links to /admin/sessions/{session}", () => {
+    const html = renderTasksPage(
+      [TASK_ITEM],
+      {},
+      false,
+      USER_NAME,
+      {},
+      { total: 1, limit: 50, page: 1 },
+    );
+    expect(html).toContain(
+      `<a href="/admin/sessions/${encodeURIComponent(TASK_ITEM.session as string)}"`,
+    );
+  });
+
+  test("session cell with no session value renders the placeholder, not a link", () => {
+    const html = renderTasksPage(
+      [TASK_ITEM_PENDING],
+      {},
+      false,
+      USER_NAME,
+      {},
+      { total: 1, limit: 50, page: 1 },
+    );
+    expect(html).not.toContain("/admin/sessions/undefined");
+    expect(html).not.toContain("/admin/sessions/null");
+  });
+});
+
+describe("renderTaskDetailPage — session link to /admin/sessions/{session}", () => {
+  test("Session field links to /admin/sessions/{session}", () => {
+    const task: TaskItem = { ...TASK_ITEM, session: "session-xyz" };
+    const html = renderTaskDetailPage(task, USER_NAME);
+    expect(html).toContain(`<a href="/admin/sessions/session-xyz"`);
+  });
+
+  test("session value with special characters is URL-encoded in the link", () => {
+    const task: TaskItem = { ...TASK_ITEM, session: "session/with slash" };
+    const html = renderTaskDetailPage(task, USER_NAME);
+    expect(html).toContain(
+      `<a href="/admin/sessions/${encodeURIComponent("session/with slash")}"`,
+    );
+  });
+
+  test("no Session row rendered when session is absent", () => {
+    const task: TaskItem = { ...TASK_ITEM, session: null };
+    const html = renderTaskDetailPage(task, USER_NAME);
+    expect(html).not.toContain("/admin/sessions/");
+  });
+});
+
 // ─── renderPrsPage — mobile column hiding (AMB-1.4) ──────────────────────────
 
 describe("renderPrsPage — mobile column hiding", () => {
@@ -3744,5 +3798,139 @@ describe("renderChatThreadPage", () => {
   test("responsive: main content wrapper has chat-thread-layout class for mobile reflow", () => {
     const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
     expect(html).toContain("chat-thread-layout");
+  });
+});
+
+// ─── renderSessionDetailPage (ASV-1.1) ───────────────────────────────────────
+
+describe("renderSessionDetailPage", () => {
+  const SESSION_ID = "session-abc";
+
+  const OPEN_TASK_1: TaskItem = {
+    id: "TASK-1",
+    title: "Build the thing",
+    status: "pending",
+    session: SESSION_ID,
+    repo: "org/repo",
+    layer: "Backend",
+    hours: 2,
+    dependencies: ["TASK-0"],
+  };
+
+  const OPEN_TASK_2: TaskItem = {
+    id: "TASK-2",
+    title: "Wire up the UI",
+    status: "in_progress",
+    session: SESSION_ID,
+    repo: "org/repo",
+    layer: "Frontend",
+    hours: 3.5,
+  };
+
+  const CLOSED_TASK_1: TaskItem = {
+    id: "TASK-3",
+    title: "Ship it",
+    status: "done",
+    session: SESSION_ID,
+    repo: "org/repo",
+    layer: "Backend",
+    hours: 1,
+  };
+
+  const CLOSED_TASK_2: TaskItem = {
+    id: "TASK-4",
+    title: "Deploy it",
+    status: "merged",
+    session: SESSION_ID,
+    repo: "org/repo",
+    layer: "Ops",
+    hours: 0.5,
+  };
+
+  const MIXED_TASKS = [OPEN_TASK_1, OPEN_TASK_2, CLOSED_TASK_1, CLOSED_TASK_2];
+
+  test("stat cards: total tasks, est. hours sum, distinct layers", () => {
+    const html = renderSessionDetailPage(SESSION_ID, MIXED_TASKS, USER_NAME);
+    // total tasks = 4
+    expect(html).toContain(">4<");
+    // est hours sum = 2 + 3.5 + 1 + 0.5 = 7
+    expect(html).toContain(">7<");
+    // distinct layers = Backend, Frontend, Ops = 3
+    expect(html).toContain(">3<");
+  });
+
+  test("task table includes a Status column and renders every task", () => {
+    const html = renderSessionDetailPage(SESSION_ID, MIXED_TASKS, USER_NAME);
+    expect(html).toContain("<th>Status</th>");
+    expect(html).toContain("Build the thing");
+    expect(html).toContain("Wire up the UI");
+    expect(html).toContain("Ship it");
+    expect(html).toContain("Deploy it");
+    expect(html).toContain("pending");
+    expect(html).toContain("in_progress");
+    expect(html).toContain("done");
+    expect(html).toContain("merged");
+  });
+
+  test("distinguishes open vs. closed tasks — 'X open / Y closed' summary", () => {
+    const html = renderSessionDetailPage(SESSION_ID, MIXED_TASKS, USER_NAME);
+    // 2 open (pending, in_progress), 2 closed (done, merged)
+    expect(html).toMatch(/2[^0-9]*open/i);
+    expect(html).toMatch(/2[^0-9]*closed/i);
+  });
+
+  test("all-open session: 4 open / 0 closed", () => {
+    const html = renderSessionDetailPage(
+      SESSION_ID,
+      [OPEN_TASK_1, OPEN_TASK_2],
+      USER_NAME,
+    );
+    expect(html).toMatch(/2[^0-9]*open/i);
+    expect(html).toMatch(/0[^0-9]*closed/i);
+  });
+
+  test("all-closed session: 0 open / 2 closed", () => {
+    const html = renderSessionDetailPage(
+      SESSION_ID,
+      [CLOSED_TASK_1, CLOSED_TASK_2],
+      USER_NAME,
+    );
+    expect(html).toMatch(/0[^0-9]*open/i);
+    expect(html).toMatch(/2[^0-9]*closed/i);
+  });
+
+  test("dependency list rendering: distinct dependency ids collected across tasks", () => {
+    const html = renderSessionDetailPage(SESSION_ID, MIXED_TASKS, USER_NAME);
+    expect(html).toContain("TASK-0");
+  });
+
+  test("empty-session case: sensible empty state, zero stats", () => {
+    const html = renderSessionDetailPage(SESSION_ID, [], USER_NAME);
+    expect(html).toContain(">0<");
+    expect(html.toLowerCase()).toContain("no tasks");
+  });
+
+  test("renders the session id in the page", () => {
+    const html = renderSessionDetailPage(SESSION_ID, MIXED_TASKS, USER_NAME);
+    expect(html).toContain(SESSION_ID);
+  });
+
+  test("escapes the session id to avoid XSS", () => {
+    const xssSession = "<script>alert(1)</script>";
+    const html = renderSessionDetailPage(xssSession, [], USER_NAME);
+    expect(html).not.toContain("<script>alert(1)</script>");
+  });
+
+  test("tasks with missing hours/layer don't break stat computation", () => {
+    const sparseTask: TaskItem = {
+      id: "TASK-5",
+      title: "Sparse task",
+      status: "pending",
+      session: SESSION_ID,
+      repo: null,
+    };
+    const html = renderSessionDetailPage(SESSION_ID, [sparseTask], USER_NAME);
+    expect(html).toContain("Sparse task");
+    expect(html).toContain(">1<"); // 1 total task
   });
 });

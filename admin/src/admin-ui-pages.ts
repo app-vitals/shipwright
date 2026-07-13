@@ -1472,7 +1472,13 @@ export function renderTasksPage(
     <td>${readOnly ? escapeHtml(t.title) : `<a href="${detailHref}" style="color:inherit;text-decoration:none">${escapeHtml(t.title)}</a>`}${blockerBadges}</td>
     <td><span class="badge ${statusBadgeClass(t.status)}">${escapeHtml(t.status)}</span></td>
     <td style="font-size:12px">${agentCell}</td>
-    <td class="col-session mono" style="font-size:11px">${t.session ? escapeHtml(t.session) : '<span style="color:#9ca3af">—</span>'}</td>
+    <td class="col-session mono" style="font-size:11px">${
+      t.session
+        ? readOnly
+          ? escapeHtml(t.session)
+          : `<a href="/admin/sessions/${encodeURIComponent(t.session)}" style="color:#6366f1;text-decoration:none">${escapeHtml(t.session)}</a>`
+        : '<span style="color:#9ca3af">—</span>'
+    }</td>
     <td class="col-repo mono" style="font-size:11px">${t.repo ? escapeHtml(t.repo) : '<span style="color:#9ca3af">—</span>'}</td>
     <td class="mono" style="font-size:11px">${prCell}</td>
     ${
@@ -1838,7 +1844,12 @@ export function renderTaskDetailPage(
         : null,
       true,
     ),
-    field("Session", task.session, true),
+    task.session
+      ? `<tr>
+      <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top;white-space:nowrap">Session</td>
+      <td style="padding:8px 12px;font-size:13px;font-family:monospace;font-size:12px"><a href="/admin/sessions/${encodeURIComponent(task.session)}" style="color:#6366f1">${escapeHtml(task.session)}</a></td>
+    </tr>`
+      : "",
     field("Repo", task.repo, true),
     field("Branch", task.branch, true),
     task.pr
@@ -1938,6 +1949,154 @@ export function renderTaskDetailPage(
         : ""
     }
     ${prSection}
+  </div>
+</body>
+</html>`;
+}
+
+// ─── Session detail page ─────────────────────────────────────────────────────
+
+// Inline mirror of task-store/src/statuses.ts's CLOSED_STATUSES — avoids
+// cross-package coupling to @shipwright/task-store (same convention as the
+// other inline type mirrors in this file). Keep in sync with that file.
+const SESSION_CLOSED_STATUSES = new Set([
+  "merged",
+  "done",
+  "deploying",
+  "deployed",
+  "cancelled",
+]);
+
+/**
+ * Renders the session detail page: stat cards (total tasks, est. hours,
+ * distinct layers), an open/closed summary, a task table with a Status
+ * column, and a distinct dependency list — sourced from a live
+ * `/tasks?session=` fetch (no plan-time snapshot).
+ */
+export function renderSessionDetailPage(
+  sessionId: string,
+  tasks: TaskItem[],
+  userName: string,
+  degraded = false,
+): string {
+  const degradedHtml = degraded
+    ? `<div class="alert alert-warning">Task store unavailable — data shown may be stale or empty.</div>`
+    : "";
+
+  const totalTasks = tasks.length;
+  const totalHours = tasks.reduce((sum, t) => sum + (t.hours ?? 0), 0);
+  const distinctLayers = new Set(
+    tasks.map((t) => t.layer).filter((l): l is string => !!l),
+  ).size;
+
+  const openTasks = tasks.filter((t) => !SESSION_CLOSED_STATUSES.has(t.status));
+  const closedTasks = tasks.filter((t) =>
+    SESSION_CLOSED_STATUSES.has(t.status),
+  );
+
+  const dependencyIds = [
+    ...new Set(tasks.flatMap((t) => t.dependencies ?? [])),
+  ];
+
+  const statusBadgeClass = (s: string) => {
+    if (s === "in_progress" || s === "pr_open" || s === "approved")
+      return "badge-blue";
+    if (s === "done" || s === "deployed" || s === "merged")
+      return "badge-green";
+    if (s === "blocked" || s === "cancelled") return "badge-red";
+    return "badge-gray";
+  };
+
+  function taskRow(t: TaskItem): string {
+    return `<tr>
+    <td class="mono" style="font-size:11px"><a href="/admin/tasks/${escapeHtml(t.id)}" style="color:#6366f1;text-decoration:none">${escapeHtml(t.id)}</a></td>
+    <td>${escapeHtml(t.title)}</td>
+    <td><span class="badge ${statusBadgeClass(t.status)}">${escapeHtml(t.status)}</span></td>
+    <td style="font-size:12px">${t.layer ? escapeHtml(t.layer) : '<span style="color:#9ca3af">—</span>'}</td>
+    <td style="font-size:12px">${t.hours !== null && t.hours !== undefined ? escapeHtml(String(t.hours)) : '<span style="color:#9ca3af">—</span>'}</td>
+    <td class="mono" style="font-size:11px">${t.repo ? escapeHtml(t.repo) : '<span style="color:#9ca3af">—</span>'}</td>
+  </tr>`;
+  }
+
+  const tableRows =
+    tasks.length === 0
+      ? `<tr><td colspan="6" class="empty-state">No tasks found for this session.</td></tr>`
+      : [
+          openTasks.length > 0
+            ? `<tr><td colspan="6" style="background:#f9fafb;font-size:11px;font-weight:600;color:#374151;padding:6px 12px;text-transform:uppercase;letter-spacing:.05em">Open (${openTasks.length})</td></tr>${openTasks.map(taskRow).join("\n")}`
+            : "",
+          closedTasks.length > 0
+            ? `<tr><td colspan="6" style="background:#f9fafb;font-size:11px;font-weight:600;color:#374151;padding:6px 12px;text-transform:uppercase;letter-spacing:.05em">Closed (${closedTasks.length})</td></tr>${closedTasks.map(taskRow).join("\n")}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join("\n");
+
+  const depsSection =
+    dependencyIds.length > 0
+      ? `<div class="card" style="margin-bottom:16px">
+      <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Dependencies</div>
+      <ul style="margin:0;padding-left:16px">
+        ${dependencyIds.map((id) => `<li style="font-size:13px;margin-bottom:4px" class="mono">${escapeHtml(id)}</li>`).join("")}
+      </ul>
+    </div>`
+      : "";
+
+  const statCard = (label: string, value: string) => `
+    <div class="card" style="flex:1;min-width:120px;text-align:center">
+      <div style="font-size:24px;font-weight:700;color:#111827">${value}</div>
+      <div style="font-size:12px;color:#6b7280;margin-top:4px">${escapeHtml(label)}</div>
+    </div>`;
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Session ${escapeHtml(sessionId)} — Shipwright Admin</title>
+  <style>${baseStyles()}
+    .badge-blue { background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe; }
+    .badge-green { background:#dcfce7;color:#166534;border:1px solid #bbf7d0; }
+    .badge-red { background:#fee2e2;color:#991b1b;border:1px solid #fecaca; }
+    .alert-warning { background:#fefce8;color:#854d0e;border:1px solid #fde047;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:13px; }
+  </style>
+</head>
+<body>
+  ${renderAdminToolbar(userName, "/admin/tasks")}
+  <div class="vos-page">
+    <div class="page-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <a href="/admin/tasks" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>
+      <h1 class="page-title" style="margin:0;flex:1">Session <span class="mono">${escapeHtml(sessionId)}</span></h1>
+    </div>
+    ${degradedHtml}
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+      ${statCard("Total Tasks", String(totalTasks))}
+      ${statCard("Est. Hours", String(totalHours))}
+      ${statCard("Layers", String(distinctLayers))}
+    </div>
+    <div style="font-size:13px;color:#374151;margin-bottom:12px">
+      <strong>${openTasks.length}</strong> open / <strong>${closedTasks.length}</strong> closed
+    </div>
+    <div class="card">
+      <div class="data-table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Title</th>
+              <th>Status</th>
+              <th>Layer</th>
+              <th>Hours</th>
+              <th>Repo</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${tableRows}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    ${depsSection}
   </div>
 </body>
 </html>`;
