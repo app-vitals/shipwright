@@ -10,8 +10,8 @@ Read `docs/test-readiness/test-readiness-plan.md`, parse its flat `T-NNN` task l
 (milestones, layers, buckets, criticality, audit-decision rows, and predecessor/fan-out
 dependency links), and queue each row as a task-store task via `/tasks/bulk` — with
 `dependencies` set from the plan's own dependency edges so task-store's `ready:true` query
-computes readiness directly. This is the Phase 5 task-store based dashboard, replacing the
-former GitHub-issue publish skill's dashboard.
+computes readiness directly. This is the Phase 5 task-store based replacement for the former
+GitHub-issue publish skill's dashboard.
 
 **Flags:**
 - `--dry-run` — print what would be queued (including hitl classification) without querying
