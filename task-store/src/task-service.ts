@@ -70,7 +70,7 @@ export interface TaskServiceLike {
   create(data: Prisma.TaskCreateInput): Promise<Task>;
   bulk(
     tasks: Prisma.TaskCreateInput[],
-  ): Promise<{ inserted: number; updated: number }>;
+  ): Promise<{ inserted: number; updated: number; skipped: string[] }>;
   update(id: string, data: Prisma.TaskUpdateInput): Promise<Task>;
   remove(id: string): Promise<void>;
   claim(id: string, claimedBy: string): Promise<Task>;
@@ -258,26 +258,30 @@ export class TaskService implements TaskServiceLike {
 
   async bulk(
     tasks: Prisma.TaskCreateInput[],
-  ): Promise<{ inserted: number; updated: number }> {
+  ): Promise<{ inserted: number; updated: number; skipped: string[] }> {
     let inserted = 0;
+    const skipped: string[] = [];
     for (const task of tasks) {
       try {
         await this.prisma.task.create({ data: task });
         inserted++;
       } catch (err: unknown) {
-        // P2002 = unique constraint violation (id already exists) — skip silently
+        // P2002 = unique constraint violation (id already exists) — skip, but
+        // record the id so callers can see which tasks collided instead of
+        // this being silently swallowed.
         if (
           typeof err === "object" &&
           err !== null &&
           "code" in err &&
           (err as { code: string }).code === "P2002"
         ) {
+          if (typeof task.id === "string") skipped.push(task.id);
           continue;
         }
         throw err;
       }
     }
-    return { inserted, updated: 0 };
+    return { inserted, updated: 0, skipped };
   }
 
   async update(id: string, data: Prisma.TaskUpdateInput): Promise<Task> {

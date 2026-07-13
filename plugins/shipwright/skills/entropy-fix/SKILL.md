@@ -86,7 +86,7 @@ ENTROPY FIX — DRY RUN
 
 Would queue {N} tasks:
 
-  1. entropy-{rule-id}-{YYYY-Www}
+  1. entropy-{rule-id}-{repo-slug}-{YYYY-Www}
      Rule: {rule.description} ({severity})
      Findings: {count} instances
      Files: {list of unique file paths}
@@ -122,19 +122,34 @@ Queueing is the only mode. Run this workflow for every run.
 
 ### 6q.1 Dedup Check
 
-Run:
+First, detect the current repo from git: run `git remote get-url origin` and strip the
+`https://github.com/` (or `git@github.com:`, stripping the `.git` suffix) prefix to get the
+`org/repo` value — e.g. `app-vitals/shipwright`. This is the `repo` value used both to scope
+the dedup queries below and, unchanged, as the task JSON's `repo` field in 6q.3 — compute it
+once here and reuse it there.
+
+Derive `repo-slug` from it too: the last path segment, lowercased — e.g. `app-vitals/shipwright`
+→ `shipwright`. This slug is used in task IDs throughout this skill (6q.3, 6q.6) to keep IDs
+unique per repo.
+
+Run (URL-encode the detected repo, e.g. `app-vitals%2Fshipwright`):
 ```bash
 curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=pending" | jq '.tasks'
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=pending&repo={url-encoded-repo}" | jq '.tasks'
 curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=in_progress" | jq '.tasks'
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=in_progress&repo={url-encoded-repo}" | jq '.tasks'
 ```
+
+The `&repo=` filter scopes dedup to tasks for the repo currently being scanned — without it, a
+rule active for one repo would incorrectly block or interfere with dedup for a different repo.
 
 Parse both `.tasks` arrays. From the combined results, collect tasks where:
 - `source == "shipwright"`, OR
 - `title` starts with `"Entropy fix:"`
 
-Extract the rule IDs from existing tasks by parsing the `id` field (format: `entropy-{rule-id}-{YYYY-Www}`) or from the `branch` field (format: `fix/entropy-{rule-id}-...`). Build a set of "already active" rule IDs.
+Extract the rule IDs from existing tasks by parsing the `id` field (format:
+`entropy-{rule-id}-{repo-slug}-{YYYY-Www}`) or from the `branch` field (format:
+`fix/entropy-{rule-id}-...`). Build a set of "already active" rule IDs.
 
 For each rule group: if its `rule_id` is in the "already active" set, skip it. Print: `Skipping {rule_id} — task already active`.
 
@@ -165,14 +180,15 @@ deletion rules are not cross-checked — they pass through unchanged.
 
 ### 6q.3 Build Task JSON
 
-For each remaining rule group, build a task object:
+For each remaining rule group, build a task object. Reuse the `repo` and `repo-slug` values
+detected in 6q.1 — do not re-derive them:
 
 ```json
 {
-  "id": "entropy-{rule-id}-{YYYY-Www}",
+  "id": "entropy-{rule-id}-{repo-slug}-{YYYY-Www}",
   "title": "Entropy fix: {rule.description}",
   "source": "shipwright",
-  "repo": "<detected from git remote get-url origin — strip https://github.com/ prefix>",
+  "repo": "<repo, as detected in 6q.1>",
   "branch": "fix/entropy-{rule-id}-{short-description}",
   "layer": "Shared",
   "status": "pending",
@@ -195,11 +211,15 @@ Fix guidance: {entry's **Detection:** field, or remediation guidance from the pr
 Rule: {rule.id} | Severity: {rule.severity} | Domain: {rule.domain} | HITL: {hitl}
 ```
 
+The `{repo-slug}` segment is the last path segment of the detected `repo` value (from 6q.1),
+lowercased — e.g. `app-vitals/shipwright` → `shipwright`. It namespaces the task ID per repo so
+the same rule scanned in two different repos in the same week never collides.
+
 The `{YYYY-Www}` suffix in the task ID uses ISO week format. Compute from the current date:
 - Year: 4-digit year
 - `W`: literal `W`
 - Week number: 2-digit zero-padded ISO week number (01–53)
-- Example: `entropy-dead_exports-2026-W23`
+- Example: `entropy-dead_exports-shipwright-2026-W23`
 
 `short-description`: lowercase, hyphens, max 5 words from rule.description.
 
@@ -258,7 +278,7 @@ ENTROPY FIX — QUEUED
   DEFERRED  {N} findings (referenced by pending/in-progress tasks)
 
 Tasks queued:
-  entropy-{rule-id}-{YYYY-Www} — {rule.description}  [hitl: {true|false}]
+  entropy-{rule-id}-{repo-slug}-{YYYY-Www} — {rule.description}  [hitl: {true|false}]
   ...
 
 {If any skipped:}

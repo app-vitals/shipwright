@@ -180,7 +180,7 @@ function fakeTaskService(storedTasks: Map<string, Task> = new Map()): TaskServic
       return updated;
     },
     async bulk(_tasks) {
-      return { inserted: 0, updated: 0 };
+      return { inserted: 0, updated: 0, skipped: [] };
     },
     async distinct(): Promise<{ sessions: string[]; repos: string[] }> {
       return Promise.resolve({ sessions: [], repos: [] });

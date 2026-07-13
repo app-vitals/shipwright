@@ -71,7 +71,7 @@ Body (JSON): task fields. `title`, `status`, and `repo` are required. The `repo`
 POST /tasks/bulk
 ```
 
-Body: JSON array of task objects. Each task must have `title`, `status`, and `repo` fields. The `repo` key must be present on every task; `null` is accepted as a valid value for tasks that are not scoped to a specific repository. Skips conflicts (existing ID) rather than failing. Returns `{ inserted: number, updated: number }`.
+Body: JSON array of task objects. Each task must have `title`, `status`, and `repo` fields. The `repo` key must be present on every task; `null` is accepted as a valid value for tasks that are not scoped to a specific repository. Skips conflicts (existing ID) rather than failing. Returns `{ inserted: number, updated: number, skipped: string[] }`, where `skipped` lists the IDs of tasks that collided with an existing task.
 
 #### Distinct values
 

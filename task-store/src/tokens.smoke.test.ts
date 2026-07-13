@@ -160,7 +160,7 @@ function fakeTaskService(): TaskServiceLike {
       return data as never;
     },
     async bulk() {
-      return { inserted: 0, updated: 0 };
+      return { inserted: 0, updated: 0, skipped: [] };
     },
     async update(_id, data) {
       return data as never;

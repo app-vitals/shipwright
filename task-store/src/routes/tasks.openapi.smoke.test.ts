@@ -126,7 +126,7 @@ function fakeTaskService(opts: { tasks?: Task[] } = {}): TaskServiceLike {
       return makeTask({ id, status: "pending" });
     },
     async bulk() {
-      return { inserted: 0, updated: 0 };
+      return { inserted: 0, updated: 0, skipped: [] };
     },
     async distinct() {
       return { sessions: [], repos: [] };
