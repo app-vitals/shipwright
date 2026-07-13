@@ -8,15 +8,9 @@
  *
  * Mount order:
  *   GET /health        — unauthenticated liveness probe
- *   GET /docs/:id      — unauthenticated capability URL (ephemeral HTML doc)
  *   * /*               — bearer auth middleware (everything else)
- *   POST /docs         — store an ephemeral HTML doc (bearer auth)
  *   * /tasks/*         — task CRUD + claim/heartbeat/complete/fail/release
  *   * /tokens/*        — token create/list/revoke
- *
- * The /docs GET is registered BEFORE the bearer middleware (like /health) so the
- * capability URL is publicly fetchable; POST /docs is registered after, so it
- * requires a valid bearer token.
  *
  * Thrown ApiError subclasses are mapped to HTTP responses by the onError hook.
  */
@@ -29,8 +23,7 @@ import {
 } from "@shipwright/lib/sentry";
 import { Hono } from "hono";
 import { type TaskStoreAuthEnv, createBearerAuthMiddleware } from "./auth.ts";
-import { type DocStoreLike, createDocStore } from "./doc-store.ts";
-import { ApiError, BadRequestError, NotFoundError } from "./errors.ts";
+import { ApiError } from "./errors.ts";
 import type { PullRequestServiceLike } from "./pull-request-service.ts";
 import { createPrsRoutes } from "./routes/prs.ts";
 import { createTasksRoutes } from "./routes/tasks.ts";
@@ -75,13 +68,6 @@ export interface TaskStoreDeps {
   pullRequestService?: PullRequestServiceLike;
   /** Optional scope resolver for agent tokens — returns repos from agents service. */
   scopeResolver?: (agentId: string) => Promise<string[]>;
-  /** Ephemeral HTML doc store. Defaults to an in-memory system-clock store. */
-  docStore?: DocStoreLike;
-  /**
-   * Externally-reachable base URL used to build the capability URL returned by
-   * POST /docs. Falls back to the request's own origin when unset.
-   */
-  docPublicBaseUrl?: string;
   /**
    * Optional Sentry client for reporting unhandled errors. Undefined means
    * Sentry is not initialized (SENTRY_DSN unset) — onError simply skips the
@@ -95,7 +81,6 @@ export function createTaskStoreApp(
   deps: TaskStoreDeps,
 ): Hono<TaskStoreAuthEnv> {
   const app = new Hono<TaskStoreAuthEnv>();
-  const docStore = deps.docStore ?? createDocStore();
 
   // Only mounted when SENTRY_DSN is set — a complete no-op otherwise, matching
   // the app's behavior with Sentry absent. `@sentry/hono`'s `sentry()`
@@ -128,16 +113,6 @@ export function createTaskStoreApp(
     c.json({ status: "ok", service: "task-store" }, 200),
   );
 
-  // Capability URL — no auth. The unguessable id IS the credential. Serves the
-  // stored HTML, or 404 on miss/expiry. Registered before the bearer middleware.
-  app.get("/docs/:id", (c) => {
-    const html = docStore.get(c.req.param("id"));
-    if (html === undefined) {
-      throw new NotFoundError("document not found or expired");
-    }
-    return c.body(html, 200, { "Content-Type": "text/html; charset=utf-8" });
-  });
-
   // Everything below requires a valid bearer token.
   app.use(
     "*",
@@ -146,24 +121,6 @@ export function createTaskStoreApp(
       scopeResolver: deps.scopeResolver,
     }),
   );
-
-  // Store an ephemeral HTML document (bearer auth). Body is the raw HTML string.
-  app.post("/docs", async (c) => {
-    const html = await c.req.text();
-    if (html.length === 0) {
-      throw new BadRequestError("empty document body");
-    }
-    // May throw PayloadTooLargeError (413) — mapped by onError.
-    const { id } = docStore.put(html);
-    const base = (deps.docPublicBaseUrl ?? new URL(c.req.url).origin).replace(
-      /\/$/,
-      "",
-    );
-    return c.json(
-      { id, url: `${base}/docs/${id}`, expiresIn: docStore.ttlSeconds },
-      201,
-    );
-  });
 
   app.route("/tasks", createTasksRoutes(deps.taskService));
   app.route("/tokens", createTokensRoutes(deps.tokenService));

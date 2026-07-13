@@ -12,7 +12,7 @@ The task store ships as a standalone Hono service backed by PostgreSQL. Agents c
 
 ### Authentication
 
-All endpoints except `GET /health` and `GET /docs/:id` require a `Bearer` token:
+All endpoints except `GET /health` require a `Bearer` token:
 
 ```
 Authorization: Bearer <token>
@@ -304,32 +304,6 @@ DELETE /tokens/:id
 ```
 
 Soft-deletes the token (sets `revokedAt`). Returns the revoked token record.
-
-### Ephemeral document store
-
-The task store can host short-lived HTML documents — used by the plan skill to publish planning docs for agent reference.
-
-#### Store document
-
-```
-POST /docs
-```
-
-Body: raw HTML string (not JSON). Requires bearer auth. Returns:
-
-```json
-{ "id": "<uuid>", "url": "https://…/docs/<uuid>", "expiresIn": 3600 }
-```
-
-The `url` uses `SHIPWRIGHT_TASK_STORE_DOC_TTL_SECONDS` for TTL (default 3600 seconds). Storage is in-memory — a single replica or sticky routing is required.
-
-#### Fetch document
-
-```
-GET /docs/:id
-```
-
-**No authentication required** — the unguessable `id` is the credential. Returns the HTML with `Content-Type: text/html`. Returns `404` on miss or after expiry.
 
 ### Health
 

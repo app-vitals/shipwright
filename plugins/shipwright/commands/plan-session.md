@@ -335,34 +335,27 @@ Write the full plan markdown (session name, technical design, and task table fro
 
 This mirrors the PRD pattern (`planning/{session}/PRODUCT-SPEC.md`) and keeps the plan co-located with the spec that produced it.
 
-**Render the plan visualization (additive — never blocks the plan).** The
+**Link to the plan visualization (additive — never blocks the plan).** The
 `PLAN.md` write above is complete and unchanged; this step only surfaces a
-shareable visual of what was just written. Skip cleanly when the hosted task
-store is not configured.
+shareable link to the session view for what was just written. Skip cleanly
+when the admin app base URL is not configured.
 
 ```bash
-if [ -z "$SHIPWRIGHT_TASK_STORE_URL" ] || [ -z "$SHIPWRIGHT_TASK_STORE_TOKEN" ]; then
-  echo "⏭ Plan viz skipped — SHIPWRIGHT_TASK_STORE_URL/TOKEN unset."
+if [ -z "$SHIPWRIGHT_ADMIN_APP_BASE_URL" ]; then
+  echo "⏭ Plan viz skipped — SHIPWRIGHT_ADMIN_APP_BASE_URL unset."
 else
-  RENDER=$(find ~/.claude/plugins/cache -maxdepth 5 -name "render-plan.ts" -path "*/shipwright/*" 2>/dev/null | awk -F/ '{print $(NF-2), $0}' | sort -V | tail -1 | cut -d' ' -f2-)
-  if [ -z "$RENDER" ]; then
-    echo "⏭ Plan viz skipped — render-plan.ts not found in plugin cache."
-  else
-    bun "$RENDER" --file "planning/{session}/PLAN.md" --type plan --session "{session}"
-  fi
+  PLAN_VIZ_URL="${SHIPWRIGHT_ADMIN_APP_BASE_URL%/}/admin/sessions/{session}"
 fi
 ```
 
-`render-plan.ts` prints the shareable hosted URL (or a local file path when it
-falls back) to stdout; human-facing notices go to stderr. Capture the stdout URL
-and surface it in the Step 6 `QUEUED` confirmation as `Plan viz: {url}`. If the
-step printed a skip notice instead, omit that line and proceed — the plan and
-its tasks are already written and the command must never block on visualization.
+When `SHIPWRIGHT_ADMIN_APP_BASE_URL` is set, surface the constructed URL in the
+Step 6 `QUEUED` confirmation as `Plan viz: {url}`. If the step printed a skip
+notice instead, omit that line and proceed — the plan and its tasks are already
+written and the command must never block on visualization.
 
-When (and only when) a hosted URL was produced, also emit `[plan:{url}]` on its
-own line — the agent strips this marker and posts a "View plan" link to the
-bound Slack channel/thread. Omit it if the render step was skipped or produced a
-local file path.
+When (and only when) a URL was produced, also emit `[plan:{url}]` on its own
+line — the agent strips this marker and posts a "View plan" link to the bound
+Slack channel/thread. Omit it if the step was skipped.
 
 **Step 6b — Write tasks to the store:**
 

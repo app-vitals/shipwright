@@ -40,27 +40,7 @@ A thin autonomous runner with a Prisma-backed store (PostgreSQL) and four HTTP s
 
 ## D — Task store service
 
-Postgres-backed task queue, PR tracking, and scoped tokens (`@shipwright/task-store`). The Hono app is composed from injected services by `createTaskStoreApp` (`task-store/src/app.ts`); `/health` and the `/docs/:id` capability URL are unauthenticated, everything else requires a bearer token.
-
-### Ephemeral document store (`/docs`)
-
-A small in-memory HTML store for short-lived, regenerable artifacts (one-pagers, reports, rendered plans) shared via capability URL. The `render-plan.ts` script uses this endpoint to upload rendered HTML and return a shareable URL to callers.
-
-**API:**
-
-- `POST /docs` — bearer auth; body is the raw HTML string; returns `201 { id, url, expiresIn }`.
-- `GET /docs/:id` — **no auth** (the unguessable id is the credential); serves the HTML as `text/html; charset=utf-8`; `404` on miss or expiry.
-
-**Configuration:**
-
-- `SHIPWRIGHT_TASK_STORE_DOC_TTL_SECONDS` (default `3600`) — TTL for documents in seconds; expiry is driven by an injected `Clock`.
-- `SHIPWRIGHT_TASK_STORE_PUBLIC_URL` (optional) — public base URL for capability URLs. When unset, the request origin is used. For example, `https://shipwright.example.com` produces capability URLs like `https://shipwright.example.com/docs/id-123`.
-
-**Clients:**
-
-- `render-plan.ts` (plugin script) — uploads rendered planning HTML when `SHIPWRIGHT_TASK_STORE_URL` and `SHIPWRIGHT_TASK_STORE_TOKEN` are set; falls back to writing a local temp file on upload failure.
-
-> ⚠️ **Single-replica caveat.** Storage is process-local (a plain `Map` in `task-store/src/doc-store.ts`) — a document POSTed to one replica is **not** visible from another, and all documents are lost on restart. Acceptable for the ephemeral MVP; it requires a single replica or sticky routing, and is flagged for a future durable backend (object storage / DB-backed blob).
+Postgres-backed task queue, PR tracking, and scoped tokens (`@shipwright/task-store`). The Hono app is composed from injected services by `createTaskStoreApp` (`task-store/src/app.ts`); `/health` is unauthenticated, everything else requires a bearer token.
 
 ## MCP Server
 
