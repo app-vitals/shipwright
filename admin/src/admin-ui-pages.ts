@@ -1363,6 +1363,14 @@ export function renderProvisionPasteForm(
 </html>`;
 }
 
+function statusBadgeClass(s: string): string {
+  if (s === "in_progress" || s === "pr_open" || s === "approved")
+    return "badge-blue";
+  if (s === "done" || s === "deployed" || s === "merged") return "badge-green";
+  if (s === "blocked" || s === "cancelled") return "badge-red";
+  return "badge-gray";
+}
+
 // ─── Tasks page ──────────────────────────────────────────────────────────────
 
 export function renderTasksPage(
@@ -1397,15 +1405,6 @@ export function renderTasksPage(
   const agentFilterHtml = opts?.agentFilterActive
     ? `<div class="alert alert-warning">Showing up to 500 results — agent name filter is applied client-side and may not reflect all matching tasks.</div>`
     : "";
-
-  const statusBadgeClass = (s: string) => {
-    if (s === "in_progress" || s === "pr_open" || s === "approved")
-      return "badge-blue";
-    if (s === "done" || s === "deployed" || s === "merged")
-      return "badge-green";
-    if (s === "blocked" || s === "cancelled") return "badge-red";
-    return "badge-gray";
-  };
 
   const renderBlockerBadges = (
     blockedBy: BlockedByEntry[] | null | undefined,
@@ -1997,15 +1996,6 @@ export function renderSessionDetailPage(
   const dependencyIds = [
     ...new Set(tasks.flatMap((t) => t.dependencies ?? [])),
   ];
-
-  const statusBadgeClass = (s: string) => {
-    if (s === "in_progress" || s === "pr_open" || s === "approved")
-      return "badge-blue";
-    if (s === "done" || s === "deployed" || s === "merged")
-      return "badge-green";
-    if (s === "blocked" || s === "cancelled") return "badge-red";
-    return "badge-gray";
-  };
 
   function taskRow(t: TaskItem): string {
     return `<tr>
