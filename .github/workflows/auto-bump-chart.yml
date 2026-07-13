@@ -492,17 +492,25 @@ jobs:
         id: pr
         env:
           GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+          # Pre-rendered "- `admin.image.tag`: `admin-v0.156.2`" lines from
+          # the "Pin released tags into values.yaml" step, so the PR body
+          # lists exactly which tag(s) were pinned and where. Passed via env
+          # (not spliced into the script body as a GHA expression) because
+          # this content contains backticks — interpolating it directly into
+          # a double-quoted bash string below would splice raw backticks into
+          # the script source itself, which bash then parses as command
+          # substitution (crashing with "command not found" before `gh pr
+          # create` ever runs). Routing it through env keeps the backticks
+          # inside a runtime variable's value, where `${PINNED_LINES}` below
+          # is a single parameter expansion — bash does not re-scan an
+          # expanded value for further substitution.
+          PINNED_LINES: ${{ steps.pin.outputs.pinned_lines }}
         run: |
           NEW_VERSION="${{ steps.new.outputs.version }}"
           CURRENT_VERSION="${{ steps.current.outputs.version }}"
           TAGS_CSV="${{ steps.batch.outputs.tags }}"
           TAGS_LINES=$(echo "$TAGS_CSV" | tr ',' '\n' | sed 's/^/- `/; s/$/`/')
           BRANCH="${{ steps.new.outputs.branch }}"
-
-          # Pre-rendered "- `admin.image.tag`: `admin-v0.156.2`" lines from
-          # the "Pin released tags into values.yaml" step, so the PR body
-          # lists exactly which tag(s) were pinned and where.
-          PINNED_LINES="${{ steps.pin.outputs.pinned_lines }}"
 
           PR_URL=$(gh pr create \
             --base main \
