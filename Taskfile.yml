@@ -24,12 +24,12 @@ tasks:
   test:
     desc: Run all tests
     cmds:
-      - bun test
+      - NODE_ENV=test bun test
 
   test:coverage:
     desc: Run all tests with coverage, then gate on aggregate 80/80 lines/functions (scripts/check-coverage.ts)
     cmds:
-      - bun test --coverage --coverage-reporter=lcov
+      - NODE_ENV=test bun test --coverage --coverage-reporter=lcov
       - bun run scripts/check-coverage.ts
 
   check-strings:
