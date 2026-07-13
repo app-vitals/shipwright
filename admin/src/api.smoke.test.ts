@@ -73,13 +73,20 @@ function makeMockAgentCronJobService(crons: Map<string, AgentCronJob[]>): {
   };
 }
 
-function makeMockPrisma(
-  agents: Map<string, MockAgent>,
-  plugins: Map<string, MockPlugin[]>,
-): {
-  agent: {
-    findUnique: (args: { where: { id: string } }) => Promise<MockAgent | null>;
+function makeMockAgentService(agents: Map<string, MockAgent>): {
+  getById: (agentId: string) => Promise<{ id: string; repos: string[] } | null>;
+} {
+  return {
+    async getById(
+      agentId: string,
+    ): Promise<{ id: string; repos: string[] } | null> {
+      const agent = agents.get(agentId);
+      return agent ? { id: agent.id, repos: agent.repos } : null;
+    },
   };
+}
+
+function makeMockPrisma(plugins: Map<string, MockPlugin[]>): {
   agentPlugin: {
     findMany: (args: {
       where: { agentId: string; enabled: boolean };
@@ -87,13 +94,6 @@ function makeMockPrisma(
   };
 } {
   return {
-    agent: {
-      async findUnique({
-        where,
-      }: { where: { id: string } }): Promise<MockAgent | null> {
-        return agents.get(where.id) ?? null;
-      },
-    },
     agentPlugin: {
       async findMany({
         where,
@@ -191,7 +191,8 @@ function buildApp(opts?: {
   return createAgentRuntimeApp({
     agentEnvService: makeMockAgentEnvService(bundles),
     agentCronJobService: makeMockAgentCronJobService(cronMap),
-    prisma: makeMockPrisma(agents, pluginMap) as never,
+    agentService: makeMockAgentService(agents),
+    prisma: makeMockPrisma(pluginMap) as never,
     adminApiKeys: parseAdminApiKeys(`admin:${VALID_ADMIN_KEY}:*`),
     agentTokenService: { validate: async () => null },
     sessionSecret: SESSION_SECRET,
@@ -379,12 +380,12 @@ function buildCombinedApp() {
         return [];
       },
     },
-    prisma: {
-      agent: {
-        async findUnique() {
-          return { id: COMBINED_AGENT_ID, repos: [] };
-        },
+    agentService: {
+      async getById() {
+        return { id: COMBINED_AGENT_ID, repos: [] };
       },
+    },
+    prisma: {
       agentPlugin: {
         async findMany() {
           return [];
@@ -397,6 +398,30 @@ function buildCombinedApp() {
   });
 
   const adminApp = createAdminApp({
+    agentService: {
+      create: async () => ({
+        id: "a1",
+        name: "",
+        slackId: null,
+        selfHosted: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+      delete: async () => {},
+      list: async () => [],
+      getSummary: async () => null,
+      getDetail: async () => null,
+      exists: async () => false,
+      updateSelfHosted: async () => ({
+        id: "a1",
+        name: "",
+        slackId: null,
+        selfHosted: false,
+        repos: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    },
     agentEnvService: {
       upsert: async () => {},
       patch: async () => {},

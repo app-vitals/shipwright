@@ -109,6 +109,54 @@ const MOCK_CRON = {
 
 function makeMockDeps(): AdminDeps {
   return {
+    agentService: {
+      create: async (input: {
+        name: string;
+        slackId?: string | null;
+        selfHosted?: boolean;
+      }) => ({
+        id: "agent-new-id",
+        name: input.name,
+        slackId: input.slackId ?? null,
+        selfHosted: input.selfHosted ?? false,
+        createdAt: new Date("2024-01-01"),
+        updatedAt: new Date("2024-01-01"),
+      }),
+      delete: async (_id: string) => {},
+      list: async () => [
+        { id: AGENT_ID, name: "Existing Agent", selfHosted: false },
+        { id: "agent-other-id", name: "Other Agent", selfHosted: false },
+      ],
+      getSummary: async (id: string) =>
+        id === AGENT_ID
+          ? { id: AGENT_ID, name: "Existing Agent", selfHosted: false }
+          : null,
+      getDetail: async (id: string) =>
+        id === AGENT_ID
+          ? {
+              id: AGENT_ID,
+              name: "Existing Agent",
+              slackId: null,
+              selfHosted: false,
+              repos: [],
+              createdAt: new Date("2024-01-01"),
+              updatedAt: new Date("2024-01-01"),
+            }
+          : null,
+      exists: async (id: string) => id === AGENT_ID,
+      updateSelfHosted: async (
+        id: string,
+        input: { selfHosted?: boolean; repos?: string[] },
+      ) => ({
+        id,
+        name: "Existing Agent",
+        slackId: null,
+        selfHosted: input.selfHosted ?? false,
+        repos: input.repos ?? [],
+        createdAt: new Date("2024-01-01"),
+        updatedAt: new Date("2024-01-01"),
+      }),
+    },
     agentEnvService: {
       upsert: async () => {},
       patch: async () => {},
@@ -1038,29 +1086,20 @@ describe("admin API — create agent", () => {
     const deps: AdminDeps = {
       ...base,
       provisioner,
-      prisma: {
-        agent: {
-          create: async (args: {
-            data: { name: string; slackId: string | null };
-          }) => ({
-            id: "agent-new-id",
-            name: args.data.name,
-            slackId: args.data.slackId,
-            createdAt: new Date("2024-01-01"),
-            updatedAt: new Date("2024-01-01"),
-          }),
-          delete: async (args: { where: { id: string } }) => {
-            deleted.push(args.where.id);
-            return {
-              id: args.where.id,
-              name: "rolled-back",
-              slackId: null,
-              createdAt: new Date("2024-01-01"),
-              updatedAt: new Date("2024-01-01"),
-            };
-          },
+      agentService: {
+        ...base.agentService,
+        create: async (input: { name: string; slackId?: string | null }) => ({
+          id: "agent-new-id",
+          name: input.name,
+          slackId: input.slackId ?? null,
+          selfHosted: false,
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+        }),
+        delete: async (id: string) => {
+          deleted.push(id);
         },
-      } as unknown as AdminDeps["prisma"],
+      },
     };
     const app = createAdminApp(deps);
     const res = await app.request("/agents", {
@@ -1200,6 +1239,24 @@ describe("admin API — delete agent", () => {
     const deps: AdminDeps = {
       ...base,
       provisioner,
+      // agentService.getDetail() backs the follow-up GET below.
+      agentService: {
+        ...base.agentService,
+        getDetail: async (id: string) =>
+          id === AGENT_ID
+            ? {
+                id: AGENT_ID,
+                name: "Existing Agent",
+                slackId: null,
+                selfHosted: false,
+                repos: [],
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+              }
+            : null,
+      },
+      // deleteAgentFully() (agent-deletion.ts) still reads/deletes via
+      // prisma.agent directly — out of scope for this migration.
       prisma: {
         agent: {
           findUnique: async (args: { where: { id: string } }) =>
@@ -1604,19 +1661,13 @@ describe("admin API — provision agent", () => {
     const deps: AdminDeps = {
       ...base,
       provisioner,
-      prisma: {
-        agent: {
-          ...base.prisma.agent,
-          findUnique: async (args: { where: { id: string } }) =>
-            args.where.id === AGENT_ID
-              ? {
-                  id: AGENT_ID,
-                  name: "Self-Hosted Agent",
-                  selfHosted: true,
-                }
-              : null,
-        },
-      } as unknown as AdminDeps["prisma"],
+      agentService: {
+        ...base.agentService,
+        getSummary: async (id: string) =>
+          id === AGENT_ID
+            ? { id: AGENT_ID, name: "Self-Hosted Agent", selfHosted: true }
+            : null,
+      },
     };
     const app = createAdminApp(deps);
     const res = await app.request(`/agents/${AGENT_ID}/provision`, {
@@ -1643,21 +1694,21 @@ describe("admin API — selfHosted field", () => {
     const base = makeMockDeps();
     const deps: AdminDeps = {
       ...base,
-      prisma: {
-        agent: {
-          ...base.prisma.agent,
-          create: async (args: {
-            data: { name: string; slackId: string | null; selfHosted: boolean };
-          }) => ({
-            id: "agent-new-id",
-            name: args.data.name,
-            slackId: args.data.slackId,
-            selfHosted: args.data.selfHosted,
-            createdAt: new Date("2024-01-01"),
-            updatedAt: new Date("2024-01-01"),
-          }),
-        },
-      } as unknown as AdminDeps["prisma"],
+      agentService: {
+        ...base.agentService,
+        create: async (input: {
+          name: string;
+          slackId?: string | null;
+          selfHosted?: boolean;
+        }) => ({
+          id: "agent-new-id",
+          name: input.name,
+          slackId: input.slackId ?? null,
+          selfHosted: input.selfHosted ?? false,
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+        }),
+      },
     };
     const app = createAdminApp(deps);
     const res = await app.request("/agents", {
@@ -1674,26 +1725,7 @@ describe("admin API — selfHosted field", () => {
   });
 
   it("POST /agents without selfHosted defaults to false (201)", async () => {
-    const base = makeMockDeps();
-    const deps: AdminDeps = {
-      ...base,
-      prisma: {
-        agent: {
-          ...base.prisma.agent,
-          create: async (args: {
-            data: { name: string; slackId: string | null; selfHosted: boolean };
-          }) => ({
-            id: "agent-new-id",
-            name: args.data.name,
-            slackId: args.data.slackId,
-            selfHosted: args.data.selfHosted ?? false,
-            createdAt: new Date("2024-01-01"),
-            updatedAt: new Date("2024-01-01"),
-          }),
-        },
-      } as unknown as AdminDeps["prisma"],
-    };
-    const app = createAdminApp(deps);
+    const app = createAdminApp(makeMockDeps());
     const res = await app.request("/agents", {
       method: "POST",
       body: JSON.stringify({ name: "Regular Agent" }),
@@ -1711,15 +1743,13 @@ describe("admin API — selfHosted field", () => {
     const base = makeMockDeps();
     const deps: AdminDeps = {
       ...base,
-      prisma: {
-        agent: {
-          ...base.prisma.agent,
-          findMany: async () => [
-            { id: AGENT_ID, name: "Existing Agent", selfHosted: false },
-            { id: "agent-other-id", name: "Other Agent", selfHosted: true },
-          ],
-        },
-      } as unknown as AdminDeps["prisma"],
+      agentService: {
+        ...base.agentService,
+        list: async () => [
+          { id: AGENT_ID, name: "Existing Agent", selfHosted: false },
+          { id: "agent-other-id", name: "Other Agent", selfHosted: true },
+        ],
+      },
     };
     const app = createAdminApp(deps);
     const res = await app.request("/agents", {
@@ -1733,27 +1763,7 @@ describe("admin API — selfHosted field", () => {
   });
 
   it("GET /agents/:id returns full agent record with selfHosted", async () => {
-    const base = makeMockDeps();
-    const deps: AdminDeps = {
-      ...base,
-      prisma: {
-        agent: {
-          ...base.prisma.agent,
-          findUnique: async (args: { where: { id: string } }) =>
-            args.where.id === AGENT_ID
-              ? {
-                  id: AGENT_ID,
-                  name: "Existing Agent",
-                  slackId: null,
-                  selfHosted: false,
-                  createdAt: new Date("2024-01-01"),
-                  updatedAt: new Date("2024-01-01"),
-                }
-              : null,
-        },
-      } as unknown as AdminDeps["prisma"],
-    };
-    const app = createAdminApp(deps);
+    const app = createAdminApp(makeMockDeps());
     const res = await app.request(`/agents/${AGENT_ID}`, {
       headers: { Cookie: `admin_session=${cookie}` },
     });
@@ -1772,38 +1782,7 @@ describe("admin API — selfHosted field", () => {
   });
 
   it("PATCH /agents/:id with {selfHosted: true} updates flag and returns 200", async () => {
-    const base = makeMockDeps();
-    const deps: AdminDeps = {
-      ...base,
-      prisma: {
-        agent: {
-          ...base.prisma.agent,
-          findUnique: async (args: { where: { id: string } }) =>
-            args.where.id === AGENT_ID
-              ? {
-                  id: AGENT_ID,
-                  name: "Existing Agent",
-                  slackId: null,
-                  selfHosted: false,
-                  createdAt: new Date("2024-01-01"),
-                  updatedAt: new Date("2024-01-01"),
-                }
-              : null,
-          update: async (args: {
-            where: { id: string };
-            data: { selfHosted?: boolean };
-          }) => ({
-            id: args.where.id,
-            name: "Existing Agent",
-            slackId: null,
-            selfHosted: args.data.selfHosted ?? false,
-            createdAt: new Date("2024-01-01"),
-            updatedAt: new Date("2024-01-01"),
-          }),
-        },
-      } as unknown as AdminDeps["prisma"],
-    };
-    const app = createAdminApp(deps);
+    const app = createAdminApp(makeMockDeps());
     const res = await app.request(`/agents/${AGENT_ID}`, {
       method: "PATCH",
       body: JSON.stringify({ selfHosted: true }),
@@ -1858,19 +1837,17 @@ describe("admin API — selfHosted field", () => {
     const deps: AdminDeps = {
       ...base,
       provisioner: trackingProvisioner,
-      prisma: {
-        agent: {
-          ...base.prisma.agent,
-          findMany: async () => [
-            { id: AGENT_ID, name: "Regular Agent", selfHosted: false },
-            {
-              id: "self-hosted-id",
-              name: "Self-Hosted Agent",
-              selfHosted: true,
-            },
-          ],
-        },
-      } as unknown as AdminDeps["prisma"],
+      agentService: {
+        ...base.agentService,
+        list: async () => [
+          { id: AGENT_ID, name: "Regular Agent", selfHosted: false },
+          {
+            id: "self-hosted-id",
+            name: "Self-Hosted Agent",
+            selfHosted: true,
+          },
+        ],
+      },
     };
     const app = createAdminApp(deps);
     const res = await app.request("/agents/reconcile", {
@@ -1917,35 +1894,33 @@ describe("admin API — repos field", () => {
     const base = makeMockDeps();
     const deps: AdminDeps = {
       ...base,
-      prisma: {
-        agent: {
-          ...base.prisma.agent,
-          findUnique: async (args: { where: { id: string } }) =>
-            args.where.id === AGENT_ID
-              ? {
-                  id: AGENT_ID,
-                  name: "Existing Agent",
-                  slackId: null,
-                  selfHosted: false,
-                  repos: [],
-                  createdAt: new Date("2024-01-01"),
-                  updatedAt: new Date("2024-01-01"),
-                }
-              : null,
-          update: async (args: {
-            where: { id: string };
-            data: { selfHosted?: boolean; repos?: string[] };
-          }) => ({
-            id: args.where.id,
-            name: "Existing Agent",
-            slackId: null,
-            selfHosted: args.data.selfHosted ?? false,
-            repos: args.data.repos ?? [],
-            createdAt: new Date("2024-01-01"),
-            updatedAt: new Date("2024-01-01"),
-          }),
-        },
-      } as unknown as AdminDeps["prisma"],
+      agentService: {
+        ...base.agentService,
+        getDetail: async (id: string) =>
+          id === AGENT_ID
+            ? {
+                id: AGENT_ID,
+                name: "Existing Agent",
+                slackId: null,
+                selfHosted: false,
+                repos: [],
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+              }
+            : null,
+        updateSelfHosted: async (
+          id: string,
+          input: { selfHosted?: boolean; repos?: string[] },
+        ) => ({
+          id,
+          name: "Existing Agent",
+          slackId: null,
+          selfHosted: input.selfHosted ?? false,
+          repos: input.repos ?? [],
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+        }),
+      },
     };
     const app = createAdminApp(deps);
     const res = await app.request(`/agents/${AGENT_ID}`, {
@@ -1965,35 +1940,33 @@ describe("admin API — repos field", () => {
     const base = makeMockDeps();
     const deps: AdminDeps = {
       ...base,
-      prisma: {
-        agent: {
-          ...base.prisma.agent,
-          findUnique: async (args: { where: { id: string } }) =>
-            args.where.id === AGENT_ID
-              ? {
-                  id: AGENT_ID,
-                  name: "Existing Agent",
-                  slackId: null,
-                  selfHosted: false,
-                  repos: ["my-org/my-repo"],
-                  createdAt: new Date("2024-01-01"),
-                  updatedAt: new Date("2024-01-01"),
-                }
-              : null,
-          update: async (args: {
-            where: { id: string };
-            data: { selfHosted?: boolean; repos?: string[] };
-          }) => ({
-            id: args.where.id,
-            name: "Existing Agent",
-            slackId: null,
-            selfHosted: args.data.selfHosted ?? false,
-            repos: args.data.repos ?? [],
-            createdAt: new Date("2024-01-01"),
-            updatedAt: new Date("2024-01-01"),
-          }),
-        },
-      } as unknown as AdminDeps["prisma"],
+      agentService: {
+        ...base.agentService,
+        getDetail: async (id: string) =>
+          id === AGENT_ID
+            ? {
+                id: AGENT_ID,
+                name: "Existing Agent",
+                slackId: null,
+                selfHosted: false,
+                repos: ["my-org/my-repo"],
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+              }
+            : null,
+        updateSelfHosted: async (
+          id: string,
+          input: { selfHosted?: boolean; repos?: string[] },
+        ) => ({
+          id,
+          name: "Existing Agent",
+          slackId: null,
+          selfHosted: input.selfHosted ?? false,
+          repos: input.repos ?? [],
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+        }),
+      },
     };
     const app = createAdminApp(deps);
     const res = await app.request(`/agents/${AGENT_ID}`, {
@@ -2010,28 +1983,7 @@ describe("admin API — repos field", () => {
   });
 
   it("GET /agents/:id returns repos field (empty array for existing agents)", async () => {
-    const base = makeMockDeps();
-    const deps: AdminDeps = {
-      ...base,
-      prisma: {
-        agent: {
-          ...base.prisma.agent,
-          findUnique: async (args: { where: { id: string } }) =>
-            args.where.id === AGENT_ID
-              ? {
-                  id: AGENT_ID,
-                  name: "Existing Agent",
-                  slackId: null,
-                  selfHosted: false,
-                  repos: [],
-                  createdAt: new Date("2024-01-01"),
-                  updatedAt: new Date("2024-01-01"),
-                }
-              : null,
-        },
-      } as unknown as AdminDeps["prisma"],
-    };
-    const app = createAdminApp(deps);
+    const app = createAdminApp(makeMockDeps());
     const res = await app.request(`/agents/${AGENT_ID}`, {
       headers: { Cookie: `admin_session=${cookie}` },
     });

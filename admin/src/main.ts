@@ -39,6 +39,7 @@ import {
 import { AgentTokenService } from "./agent-tokens.ts";
 import { AgentToolService } from "./agent-tools.ts";
 import { createAdminApp, parseAdminApiKeys } from "./agents-api.ts";
+import { AgentService } from "./agents.ts";
 import { createAgentRuntimeApp } from "./api.ts";
 import type { ChatServiceProvisioningClient } from "./chat-service-provisioning-client.ts";
 import {
@@ -316,6 +317,7 @@ async function startServer(): Promise<void> {
   const crypto = makeTokenCrypto();
 
   // Construct all services with injected deps
+  const agentService = new AgentService(prisma);
   const agentEnvService = new AgentEnvService(prisma, crypto);
   const agentCronJobService = new AgentCronJobService(prisma);
   const agentCronRunService = new AgentCronRunService(prisma);
@@ -381,6 +383,7 @@ async function startServer(): Promise<void> {
   const runtimeApp = createAgentRuntimeApp({
     agentEnvService,
     agentCronJobService,
+    agentService,
     prisma: prisma as never,
     sessionSecret,
     adminApiKeys,
@@ -393,6 +396,7 @@ async function startServer(): Promise<void> {
   //    Routes are now at /agents/:id/* (same prefix as runtime, different sub-paths).
   //    MUST be mounted before admin-ui (/admin/*) to avoid shadowing.
   const adminApiApp = createAdminApp({
+    agentService,
     agentEnvService,
     agentCronJobService,
     agentCronRunService,
