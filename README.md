@@ -37,6 +37,13 @@ helm install my-release shipwright/shipwright --namespace shipwright --create-na
 
 See [`docs/deploy-kubernetes.md`](./docs/deploy-kubernetes.md) for end-to-end deployment guides (Minikube / GKE / EKS), and [`docs/helm-repo.md`](./docs/helm-repo.md) for the published-repo flow and how publishing is triggered.
 
+## Get Shipwright in your Slack
+
+The Shipwright agent runs as a Slack app — DMs, `@mentions`, and cron notifications, all in Socket Mode. Two ways to get there:
+
+- **Self-host it.** Deploy the admin service with the Helm chart (see [`docs/deploy-kubernetes.md`](./docs/deploy-kubernetes.md) above), then connect Slack from the admin UI's `/admin/provision` wizard. Full step-by-step: [Slack Integration](https://shipwrightharness.com/docs/slack-integration).
+- **Want us to run it for you?** [Book a discovery call](https://cal.com/team/app-vitals/discovery-call) — no commitment, just a conversation about your pipeline.
+
 ## Quickstart
 
 Run the **metrics dashboard locally today** — **offline by default**: no PostHog key, no accounts, no database. One copy-paste prompt covers both steps (terminal + an in-session slash command) and opens the dashboard.
