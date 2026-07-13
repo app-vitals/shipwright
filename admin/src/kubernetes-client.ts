@@ -325,39 +325,7 @@ export function pvcBody(namespace: string, spec: PvcSpec): KubernetesPvc {
   return body;
 }
 
-// ─── In-cluster config loading ────────────────────────────────────────────────
-
 const SA_DIR = "/var/run/secrets/kubernetes.io/serviceaccount";
-
-export interface InClusterConfig {
-  apiServer: string;
-  token: string;
-  caCert?: string;
-}
-
-/**
- * Read in-cluster config from the mounted ServiceAccount. Paths are overridable
- * so tests can point at temp files (or skip this entirely and inject directly).
- */
-export function loadInClusterConfig(opts?: {
-  tokenPath?: string;
-  caPath?: string;
-  apiServer?: string;
-}): InClusterConfig {
-  const tokenPath = opts?.tokenPath ?? `${SA_DIR}/token`;
-  const caPath = opts?.caPath ?? `${SA_DIR}/ca.crt`;
-  const apiServer = opts?.apiServer ?? defaultApiServer();
-
-  const token = readFileSync(tokenPath, "utf-8").trim();
-  let caCert: string | undefined;
-  try {
-    caCert = readFileSync(caPath, "utf-8");
-  } catch {
-    caCert = undefined;
-  }
-
-  return { apiServer, token, caCert };
-}
 
 /**
  * Read the in-cluster CA cert (PEM). When the caller passed an EXPLICIT
@@ -640,7 +608,7 @@ export class HttpKubernetesClient implements KubernetesClient {
 
 // ─── RecordedKubernetesClient (in-memory double) ──────────────────────────────
 
-export interface KubernetesCassette {
+interface KubernetesCassette {
   /** Pre-seeded deployments keyed by `${namespace}/${name}`. */
   deployments: Record<string, KubernetesDeployment>;
   /** Pre-seeded secrets keyed by `${namespace}/${name}`. */
