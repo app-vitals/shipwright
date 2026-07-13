@@ -30,6 +30,7 @@ import {
   buildStackCommands,
   buildTeardownCommands,
   dbReachable,
+  devAgentEnvPreflight,
   missingWorkspaceDeps,
   planPostgresSetup,
   runStack,
@@ -421,6 +422,29 @@ describe("sessionExists — pre-flight guard against duplicate sessions", () => 
     const msg = sessionExistsMessage(SESSION_NAME);
     expect(msg).toContain(`tmux attach -t ${SESSION_NAME}`);
     expect(msg).toContain(`tmux kill-session -t ${SESSION_NAME}`);
+  });
+});
+
+describe("devAgentEnvPreflight — auto-copy state/dev-agent.env decision", () => {
+  test("env present: proceed, regardless of whether the example exists", () => {
+    expect(devAgentEnvPreflight(true, true)).toEqual({ action: "proceed" });
+    expect(devAgentEnvPreflight(true, false)).toEqual({ action: "proceed" });
+  });
+
+  test("env missing, example present: copy then exit, with guidance to fill in the token and re-run", () => {
+    const decision = devAgentEnvPreflight(false, true);
+    expect(decision.action).toBe("copy_and_exit");
+    expect(decision.message).toContain("state/dev-agent.env");
+    expect(decision.message).toContain("CLAUDE_CODE_OAUTH_TOKEN");
+    expect(decision.message).toContain("ANTHROPIC_API_KEY");
+    expect(decision.message).toContain("task stack");
+  });
+
+  test("env missing, example missing: fail with the current-style nothing-to-copy-from message", () => {
+    const decision = devAgentEnvPreflight(false, false);
+    expect(decision.action).toBe("fail");
+    expect(decision.message).toContain("state/dev-agent.env");
+    expect(decision.message).toContain("state/dev-agent.env.example");
   });
 });
 

@@ -74,22 +74,21 @@ Prerequisites: tmux, Docker, PostgreSQL running on localhost:5432, Bun, go-task.
 1. In a terminal, clone and set up:
      git clone https://github.com/app-vitals/shipwright.git && cd shipwright && task setup
 
-2. Copy the env example and add your auth token:
-     cp state/dev-agent.env.example state/dev-agent.env
-   Set one of these in state/dev-agent.env:
+2. Launch the full stack (6-pane tmux session):
+     task stack
+
+   First run: task stack auto-creates state/dev-agent.env from the example
+   and exits — open it and set one of these, then re-run task stack:
      CLAUDE_CODE_OAUTH_TOKEN=<your token>   (run: claude /oauth-token)
      ANTHROPIC_API_KEY=<your key>           (https://console.anthropic.com/ → API Keys)
-
-3. Launch the full stack (6-pane tmux session):
-     task stack
 
    Opens a tmux session named "shipwright" with 6 panes:
      metrics (:3460)  admin (:3001)  task-store (:3002)  chat-svc (:3003)  agent  logs
 
-4. Open the dashboard in your browser:
+3. Open the dashboard in your browser:
      http://localhost:3460/dashboard
 
-5. Inside a Claude Code session:
+4. Inside a Claude Code session:
      /plugin install shipwright@app-vitals/shipwright
 
 To stop: tmux kill-session -t shipwright
