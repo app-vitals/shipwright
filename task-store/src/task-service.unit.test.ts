@@ -1,8 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import { computeBlockedBy } from "./blocked-by.ts";
+import type { PrismaClient } from "./index.ts";
 import type { ReadyTaskLike } from "./ready.ts";
 import { CLOSED_STATUSES, OPEN_STATUSES } from "./statuses.ts";
-import type { TaskListFilters } from "./task-service.ts";
+import { type TaskListFilters, TaskService } from "./task-service.ts";
 
 // ─── Minimal in-memory stub matching only the logic under test ────────────────
 
@@ -296,5 +297,38 @@ describe("listBlocked logic (unit)", () => {
     expect(result[0].blockedBy).toEqual([
       { type: "dependency", id: "dep-1", status: "in_progress" },
     ]);
+  });
+});
+
+// ─── TaskService.bulk() ─────────────────────────────────────────────────────
+
+describe("TaskService.bulk (unit)", () => {
+  it("collects skipped IDs for tasks that collide with a P2002 unique constraint error", async () => {
+    const created: string[] = [];
+    const fakePrisma = {
+      task: {
+        create: async ({
+          data,
+        }: {
+          data: { id?: string };
+        }) => {
+          if (data.id === "dup-task") {
+            throw { code: "P2002" };
+          }
+          created.push(data.id as string);
+          return { ...data };
+        },
+      },
+    } as unknown as PrismaClient;
+
+    const service = new TaskService(fakePrisma);
+    const result = await service.bulk([
+      { id: "dup-task", title: "Duplicate", status: "pending" } as never,
+      { id: "new-task", title: "New task", status: "pending" } as never,
+    ]);
+
+    expect(result.inserted).toBe(1);
+    expect(result.skipped).toEqual(["dup-task"]);
+    expect(created).toEqual(["new-task"]);
   });
 });

@@ -16,7 +16,8 @@
  *   GET    /tasks               list (?status, ?state=open|closed, ?session, ?assignee, ?pr, ?branch, ?limit, ?offset, ?ready=true)
  *                              returns { tasks, total }
  *   POST   /tasks               create one (409 if id exists)
- *   POST   /tasks/bulk          insert array, skip 409s → { inserted, updated }
+ *   POST   /tasks/bulk          insert array, skip 409s → { inserted, updated, skipped }
+ *                              (skipped lists the IDs that collided with an existing task)
  *   GET    /tasks/:id           fetch one (404 when missing)
  *   PATCH  /tasks/:id           update
  *   DELETE /tasks/:id           delete

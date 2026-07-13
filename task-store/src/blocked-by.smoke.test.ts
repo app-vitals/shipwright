@@ -167,7 +167,7 @@ function fakeTaskService(
       return makeTask({ id, status: "pending" });
     },
     async bulk(_tasks) {
-      return { inserted: 0, updated: 0 };
+      return { inserted: 0, updated: 0, skipped: [] };
     },
     async distinct(_agentId?) {
       return { sessions: [], repos: [] };

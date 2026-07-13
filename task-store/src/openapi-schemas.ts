@@ -460,6 +460,11 @@ export const BulkInsertResponseSchema = z
   .object({
     inserted: z.number().int().openapi({ example: 3 }),
     updated: z.number().int().openapi({ example: 1 }),
+    skipped: z.array(z.string()).openapi({
+      example: ["entropy-dead_exports-vitals-os-2026-W29"],
+      description:
+        "IDs of tasks skipped because they already exist (Prisma P2002 unique constraint collision).",
+    }),
   })
   .openapi("BulkInsertResponse");
 
