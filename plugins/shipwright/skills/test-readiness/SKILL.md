@@ -32,7 +32,7 @@ keep working unchanged.
 | Flag | Effect |
 |------|--------|
 | `--full` | Skip the staleness check entirely and run all phases 1→5 regardless of artifact freshness. Without it, the staleness gate decides the starting phase and exits early when everything is fresh. |
-| `--publish` | Run phase 5 as a **real publish** — forward `--yes` to `/shipwright:test-publish` so it creates/updates GitHub issues unattended (no interactive confirmation). Without it, phase 5 runs `--dry-run` (preview only, no GitHub writes). |
+| `--publish` | Run phase 5 as a **real publish** — forward real-queue mode to `/shipwright:test-fix` so it writes task-store tasks unattended (no confirmation gate — test-fix never has one, matching entropy-fix/error-fix). Without it, phase 5 runs `--dry-run` (preview only, no task-store writes). |
 | `--dry-run` | Explicit preview: phase 5 runs `--dry-run`. This is the default when `--publish` is absent. |
 
 ## Staleness check
@@ -133,9 +133,9 @@ From the starting phase through phase 5, in the current repo's worktree:
 - Phase 2: `/shipwright:test-design`
 - Phase 3: `/shipwright:test-migration`
 - Phase 4: `/shipwright:test-roadmap`
-- Phase 5: `/shipwright:test-publish` — pass `--yes` when this skill was
-  invoked with `--publish` (real publish, no confirmation prompt);
-  otherwise pass `--dry-run` (preview only).
+- Phase 5: `/shipwright:test-fix` — pass no extra flag (real queue) when
+  this skill was invoked with `--publish`; otherwise pass `--dry-run`
+  (preview only, no task-store writes).
 
 Run each skill using the Skill tool. If any phase fails for this repo, report
 the failure for that repo and stop running further phases **for that repo
@@ -153,8 +153,8 @@ proceed to Step 4.
 After every repo in the resolved list has been processed, print one
 aggregated summary across all repos, with a per-repo section: which phases
 ran (or "skipped — all artifacts fresh" / "skipped — precheck did not flag
-this repo"), and the number of GitHub issues created or updated (from phase 5
-output) for that repo.
+this repo"), and the number of task-store tasks created or updated (from
+phase 5 output) for that repo.
 
 ## Failure handling
 
@@ -169,9 +169,8 @@ If a phase fails:
 - This skill handles its own staleness check (step 2) **unless `--full` is
   passed**. With `--full` (the cron default) every phase runs; without it, a
   fresh set of artifacts makes the skill exit early.
-- Phase 5 (`test-publish`) normally requires explicit user confirmation before
-  creating GitHub issues. The cron passes `--publish`, which forwards `--yes`
-  to `test-publish` so it publishes unattended. The publish step is idempotent
-  (it dedupes on the hidden `<!-- task-id -->` marker), so a daily real publish
-  files issues for new tasks — including doc-layer tasks — without creating
-  duplicates.
+- Phase 5 (`test-fix`) has no confirmation gate — the cron passes `--publish`,
+  which forwards real-queue mode so it writes task-store tasks unattended.
+  The publish step is idempotent (it dedupes on already-active T-NNN
+  task-store IDs per repo), so a daily real run queues tasks for new work —
+  including doc-layer tasks — without creating duplicates.
