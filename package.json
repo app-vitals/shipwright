@@ -13,7 +13,7 @@
     "mcp-server"
   ],
   "scripts": {
-    "test": "bun test",
+    "test": "NODE_ENV=test bun test",
     "lint": "bunx biome lint .",
     "format": "bunx biome format --write .",
     "typecheck": "bun run --filter='*' --sequential typecheck",
