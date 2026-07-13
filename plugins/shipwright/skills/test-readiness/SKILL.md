@@ -4,7 +4,7 @@ description: >
   Orchestrates the full test-readiness pipeline (phases 1–5), once per
   qualifying repo under repos/, each in its own worktree + branch. Runs
   test-inventory → test-design → test-migration → test-roadmap →
-  test-publish in sequence per repo, starting from the first stale artifact.
+  test-fix in sequence per repo, starting from the first stale artifact.
   Invoked by the `shipwright-test-readiness` cron on a daily schedule; exits
   early for a repo when all of its phase artifacts are fresh.
 ---
