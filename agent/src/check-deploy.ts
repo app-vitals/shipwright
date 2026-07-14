@@ -41,6 +41,7 @@ export interface GhPr {
   author: { login: string };
   reviewDecision: string | null;
   createdAt?: string;
+  mergeStateStatus: string | null;
 }
 
 export interface GhReview {
@@ -84,6 +85,9 @@ export interface CheckDeployDeps {
   isBundleComplete?: (branch: string) => Promise<boolean>;
   // Task-store PR record lookup, used only to source the age field.
   queryPrRecord?: (repo: string, prNumber: number) => Promise<PrRecord | null>;
+  // Task status lookup for the linked task (if any). Returns the task's status
+  // or null if no task is found or lookup fails. Used to exclude blocked PRs.
+  queryTaskStatus?: (repo: string, prNumber: number) => Promise<string | null>;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -185,6 +189,19 @@ export async function getDeployCandidates(
         const ciRuns = await deps.fetchCiRuns(org, repoName, pr.headRefOid);
         if (!isCiGreen(ciRuns)) continue;
 
+        // Skip DIRTY (merge-conflicted, unmergeable) PRs
+        if (pr.mergeStateStatus === "DIRTY") continue;
+
+        // Skip PRs whose linked task is blocked
+        if (deps.queryTaskStatus) {
+          try {
+            const taskStatus = await deps.queryTaskStatus(repo, pr.number);
+            if (taskStatus === "blocked") continue;
+          } catch {
+            // Query failed → fail open (do not disqualify the PR)
+          }
+        }
+
         if (deps.isBundleComplete) {
           const bundleComplete = await deps
             .isBundleComplete(pr.headRefName)
@@ -227,6 +244,7 @@ interface GhPrListJson {
   author: { login: string };
   reviewDecision: string | null;
   createdAt?: string;
+  mergeStateStatus: string | null;
 }
 
 interface GhPrReviewsJson {
@@ -286,7 +304,7 @@ export async function buildProductionDeps(opts: {
         "--repo",
         repo,
         "--json",
-        "number,headRefOid,headRefName,author,reviewDecision,createdAt",
+        "number,headRefOid,headRefName,author,reviewDecision,createdAt,mergeStateStatus",
       ]);
     },
     fetchPrReviews: async (org: string, repo: string, pr: number) => {
@@ -312,5 +330,54 @@ export async function buildProductionDeps(opts: {
     },
     isBundleComplete: undefined,
     queryPrRecord: createPrRecordQuery<PrRecord>({ fetchFn: opts.fetchFn }),
+    queryTaskStatus: createTaskStatusQuery({ fetchFn: opts.fetchFn }),
+  };
+}
+
+/**
+ * Build a `(repo, prNumber) => status | null` query function against the
+ * task-store `/tasks` endpoint with `?repo=&pr=` filters. Returns null on
+ * missing config, a non-ok response, no matching task, or any fetch error —
+ * a missing task-store task record must not throw.
+ *
+ * Accepts an optional `fetchFn` for dependency injection in tests, matching
+ * createPrRecordQuery's pattern.
+ */
+function createTaskStatusQuery(opts?: {
+  fetchFn?: typeof fetch;
+}): (repo: string, prNumber: number) => Promise<string | null> {
+  const taskStoreUrl = (process.env.SHIPWRIGHT_TASK_STORE_URL ?? "").trim();
+  const taskStoreToken = (process.env.SHIPWRIGHT_TASK_STORE_TOKEN ?? "").trim();
+  const doFetch = opts?.fetchFn ?? fetch;
+
+  return async (repo: string, prNumber: number): Promise<string | null> => {
+    if (!taskStoreUrl || !taskStoreToken) return null;
+    try {
+      const baseUrl = taskStoreUrl.replace(/\/$/, "");
+      const params = new URLSearchParams({ repo, pr: String(prNumber) });
+      const res = await doFetch(`${baseUrl}/tasks?${params}`, {
+        headers: {
+          Authorization: `Bearer ${taskStoreToken}`,
+          "Content-Type": "application/json",
+        },
+      });
+      if (!res.ok) return null;
+      const data = (await res.json()) as unknown;
+      let tasks: Array<{ status: string }> = [];
+      if (Array.isArray(data)) {
+        tasks = data as Array<{ status: string }>;
+      } else if (
+        data !== null &&
+        typeof data === "object" &&
+        Array.isArray((data as Record<string, unknown>).tasks)
+      ) {
+        tasks = (data as Record<string, unknown>).tasks as Array<{
+          status: string;
+        }>;
+      }
+      return tasks[0]?.status ?? null;
+    } catch {
+      return null;
+    }
   };
 }

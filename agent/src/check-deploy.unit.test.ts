@@ -27,6 +27,7 @@ function makeGhPr(overrides: Partial<GhPr> = {}): GhPr {
     author: { login: "bodhi-agent" },
     reviewDecision: null,
     createdAt: "2026-05-01T00:00:00.000Z",
+    mergeStateStatus: null,
     ...overrides,
   };
 }
@@ -38,6 +39,7 @@ interface MakeDepsOptions {
   ciRuns?: Record<string, CiRun[]>;
   currentUser?: string;
   isSelfReviewAllowed?: boolean;
+  taskStatus?: Record<string, string | null>;
 }
 
 function makeDeps({
@@ -47,6 +49,7 @@ function makeDeps({
   ciRuns = {},
   currentUser = "bodhi-agent",
   isSelfReviewAllowed = true,
+  taskStatus = {},
 }: MakeDepsOptions = {}): CheckDeployDeps {
   return {
     getCurrentUser: () => currentUser,
@@ -64,6 +67,10 @@ function makeDeps({
       _repo: string,
       pr: number,
     ): Promise<GhReview[]> => reviews[pr] ?? [],
+    queryTaskStatus: async (repo: string, prNumber: number) => {
+      const key = `${repo}#${prNumber}`;
+      return taskStatus[key] ?? null;
+    },
   };
 }
 
@@ -457,5 +464,37 @@ describe("getDeployCandidates", () => {
       }),
     );
     expect(result[0].age).toBe("2026-06-01T00:00:00.000Z");
+  });
+
+  // ─── mergeStateStatus DIRTY exclusion ──────────────────────────────────
+
+  test("APPROVED + green CI + mergeStateStatus DIRTY is excluded from candidates", async () => {
+    const pr = makeGhPr({
+      reviewDecision: "APPROVED",
+      mergeStateStatus: "DIRTY",
+    });
+    const result = await getDeployCandidates(
+      makeDeps({
+        prs: { "acme/example-repo": [pr] },
+        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
+      }),
+    );
+    expect(result).toEqual([]);
+  });
+
+  // ─── task-blocked status exclusion ────────────────────────────────────
+
+  test("APPROVED + green CI + clean merge state but linked task status blocked is excluded from candidates", async () => {
+    const pr = makeGhPr({
+      reviewDecision: "APPROVED",
+      mergeStateStatus: "CLEAN",
+    });
+    const deps = makeDeps({
+      prs: { "acme/example-repo": [pr] },
+      ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
+    });
+    deps.queryTaskStatus = async () => "blocked";
+    const result = await getDeployCandidates(deps);
+    expect(result).toEqual([]);
   });
 });
