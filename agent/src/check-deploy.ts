@@ -87,8 +87,13 @@ export interface CheckDeployDeps {
   isBundleComplete?: (branch: string) => Promise<boolean>;
   // Task-store PR record lookup, used only to source the age field.
   queryPrRecord?: (repo: string, prNumber: number) => Promise<PrRecord | null>;
-  // Task status lookup for the linked task (if any). Returns the task's status
-  // or null if no task is found or lookup fails. Used to exclude blocked PRs.
+  // Task status lookup for the linked task (if any). Returns the task's
+  // status, or null if no linked task is found (fail-open — a PR with no
+  // task yet is not disqualified). Throws on lookup failure (network error,
+  // non-2xx, malformed response) — deploy candidacy fails CLOSED on that
+  // signal, since "unknown" must not be treated as "confirmed ready". This
+  // deliberately does NOT mirror queryPrRecord's fail-open posture, which
+  // only affects a non-gating ordering field.
   queryTaskStatus?: (repo: string, prNumber: number) => Promise<TaskStatus | null>;
 }
 
@@ -194,14 +199,21 @@ export async function getDeployCandidates(
         // Skip DIRTY (merge-conflicted, unmergeable) PRs
         if (pr.mergeStateStatus === "DIRTY") continue;
 
-        // Skip PRs whose linked task is blocked
+        // Skip PRs whose linked task is blocked. A confirmed empty result (no
+        // linked task) is not disqualifying, but a lookup FAILURE fails
+        // CLOSED — deploy is consequential enough that "unknown" must not be
+        // treated as "confirmed ready".
         if (deps.queryTaskStatus) {
+          let taskStatus: TaskStatus | null;
           try {
-            const taskStatus = await deps.queryTaskStatus(repo, pr.number);
-            if (taskStatus === "blocked") continue;
-          } catch {
-            // Query failed → fail open (do not disqualify the PR)
+            taskStatus = await deps.queryTaskStatus(repo, pr.number);
+          } catch (err) {
+            process.stderr.write(
+              `check-deploy: task-status lookup failed for PR ${pr.number}: ${err instanceof Error ? err.message : String(err)}\n`,
+            );
+            continue;
           }
+          if (taskStatus === "blocked") continue;
         }
 
         if (deps.isBundleComplete) {

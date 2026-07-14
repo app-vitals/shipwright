@@ -498,4 +498,52 @@ describe("getDeployCandidates", () => {
     const result = await getDeployCandidates(deps);
     expect(result).toEqual([]);
   });
+
+  test("APPROVED + green CI + no linked task found (null) does not exclude the PR", async () => {
+    const pr = makeGhPr({
+      reviewDecision: "APPROVED",
+      mergeStateStatus: "CLEAN",
+    });
+    const deps = makeDeps({
+      prs: { "acme/example-repo": [pr] },
+      ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
+    });
+    deps.queryTaskStatus = async () => null;
+    const result = await getDeployCandidates(deps);
+    expect(result).toHaveLength(1);
+  });
+
+  test("APPROVED + green CI + task-status lookup throws excludes the PR (fail-closed) and logs to stderr", async () => {
+    const pr = makeGhPr({
+      reviewDecision: "APPROVED",
+      mergeStateStatus: "CLEAN",
+    });
+    const deps = makeDeps({
+      prs: { "acme/example-repo": [pr] },
+      ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
+    });
+    deps.queryTaskStatus = async () => {
+      throw new Error("task-store unreachable");
+    };
+
+    const stderrLines: string[] = [];
+    const origStderr = process.stderr.write.bind(process.stderr);
+    // biome-ignore lint/suspicious/noExplicitAny: patching write for test capture
+    process.stderr.write = (chunk: any, ...rest: any[]) => {
+      stderrLines.push(String(chunk));
+      return origStderr(chunk, ...rest);
+    };
+
+    const result = await getDeployCandidates(deps);
+    process.stderr.write = origStderr;
+
+    expect(result).toEqual([]);
+    expect(
+      stderrLines.some(
+        (l) =>
+          l.includes("task-status lookup failed") &&
+          l.includes("task-store unreachable"),
+      ),
+    ).toBe(true);
+  });
 });
