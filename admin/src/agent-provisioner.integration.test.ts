@@ -13,15 +13,21 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { PrismaClient } from "../prisma/client/index.js";
 import {
+  type DeleteAgentFullyDeps,
+  deleteAgentFully,
+} from "./agent-deletion.ts";
+import {
   buildAgentSecretManifest,
   sanitizeAgentName,
 } from "./agent-manifest.ts";
 import {
+  type AgentProvisioner,
   KubernetesAgentProvisioner,
   type KubernetesAgentProvisionerConfig,
   NoopAgentProvisioner,
 } from "./agent-provisioner.ts";
 import { AgentTokenService } from "./agent-tokens.ts";
+import type { ChatServiceProvisioningClient } from "./chat-service-provisioning-client.ts";
 import { ConflictError } from "./errors.ts";
 import {
   type DeploymentSpec,
@@ -33,6 +39,7 @@ import {
   RecordedKubernetesClient,
   type SecretSpec,
 } from "./kubernetes-client.ts";
+import type { SlackProvisioningClient } from "./slack-provisioning-client.ts";
 import type { TaskStoreProvisioningClient } from "./task-store-provisioning-client.ts";
 
 const TEST_DB = process.env.DATABASE_URL_ADMIN_TEST;
@@ -567,6 +574,355 @@ describeOrSkip("KubernetesAgentProvisioner (integration)", () => {
     expect(decoded).toBe(EXPECTED_RAW_TOKEN);
   });
 });
+
+// ─── Composed provisioning → deletion journey (T-006) ──────────────────────────
+//
+// Exercises KubernetesAgentProvisioner.provision() and deleteAgentFully() TOGETHER
+// in one run, across all 5 injected external clients (K8s, task-store, chat
+// service, Slack, DB/Prisma). A single shared `order: string[]` array is wired
+// into every fake so the whole journey's call order can be asserted in one
+// place, proving both documented invariants:
+//   - provision(): token → Secret → Deployment (module docstring above).
+//   - deleteAgentFully(): the Agent DB row is deleted LAST (agent-deletion.ts).
+
+describeOrSkip(
+  "agent provisioning journey (provision → delete, integration)",
+  () => {
+    let prisma: PrismaClient;
+    let tokens: AgentTokenService;
+
+    beforeEach(async () => {
+      prisma = makePrisma();
+      await prisma.agentToken.deleteMany();
+      await prisma.agentCronJob.deleteMany();
+      await prisma.agentTool.deleteMany();
+      await prisma.agentEnv.deleteMany();
+      await prisma.agent.deleteMany();
+      tokens = new AgentTokenService(prisma);
+    });
+
+    afterEach(async () => {
+      await prisma.$disconnect();
+    });
+
+    async function createAgentWithSlackEnv(
+      name = "Journey Agent",
+    ): Promise<string> {
+      const agent = await prisma.agent.create({ data: { name } });
+      // Plaintext SLACK_APP_ID — identity `decrypt` below treats env values as
+      // unencrypted in this test, matching agent-deletion.unit.test.ts's FakePrisma
+      // convention, so the Slack deletion branch is exercised end-to-end.
+      await prisma.agentEnv.create({
+        data: {
+          agentId: agent.id,
+          key: "SLACK_APP_ID",
+          value: "A-JOURNEY-APP",
+          secret: true,
+        },
+      });
+      return agent.id;
+    }
+
+    /**
+     * Wrap a RecordedKubernetesClient so createSecret / createDeploymentManifest
+     * push into the shared `order` array — same pattern as the standalone
+     * "provision() creates the Secret BEFORE the Deployment (order)" test above,
+     * but this instance is reused for BOTH provision() (via the full
+     * KubernetesClient interface) and deprovision() (via the narrower
+     * Pick<AgentProvisioner, "deprovision"> deps.provisioner in deleteAgentFully).
+     */
+    function orderedK8s(
+      order: string[],
+      recorded: RecordedKubernetesClient,
+    ): KubernetesClient {
+      return {
+        createPvc: (ns: string, spec: PvcSpec) => recorded.createPvc(ns, spec),
+        createSecret: (ns: string, spec: SecretSpec) => {
+          order.push("k8s:secret");
+          return recorded.createSecret(ns, spec);
+        },
+        createDeployment: (ns: string, spec: DeploymentSpec) =>
+          recorded.createDeployment(ns, spec),
+        createDeploymentManifest: (
+          ns: string,
+          manifest: KubernetesDeployment,
+        ) => {
+          order.push("k8s:deployment");
+          return recorded.createDeploymentManifest(ns, manifest);
+        },
+        getSecret: (ns, n) => recorded.getSecret(ns, n),
+        getDeployment: (ns, n) => recorded.getDeployment(ns, n),
+        getPvc: (ns, n) => recorded.getPvc(ns, n),
+        deleteSecret: (ns, n) => recorded.deleteSecret(ns, n),
+        deleteDeployment: (ns, n) => recorded.deleteDeployment(ns, n),
+        deletePvc: (ns, n) => recorded.deletePvc(ns, n),
+        deploymentExists: (ns, n) => recorded.deploymentExists(ns, n),
+        listDeployments: (ns, sel) => recorded.listDeployments(ns, sel),
+        patchDeployment: (ns, n, p) => recorded.patchDeployment(ns, n, p),
+      };
+    }
+
+    /** Fake TaskStoreProvisioningClient that records into the shared order array. */
+    function orderedTaskStore(
+      order: string[],
+      opts: { revokeError?: Error } = {},
+    ): TaskStoreProvisioningClient {
+      return {
+        async mintToken(_label: string, _agentId?: string) {
+          order.push("task-store:mintToken");
+          return { id: "ts-journey-id", rawToken: "ts-journey-raw" };
+        },
+        async revokeToken(_id: string) {
+          order.push("task-store:revoke");
+          if (opts.revokeError) throw opts.revokeError;
+        },
+        async listTokensForAgent(_agentId: string) {
+          return [{ id: "ts-journey-id" }];
+        },
+      };
+    }
+
+    /** Fake ChatServiceProvisioningClient that records into the shared order array. */
+    function orderedChatService(
+      order: string[],
+      opts: { revokeError?: Error; deleteThreadsError?: Error } = {},
+    ): ChatServiceProvisioningClient {
+      return {
+        async mintToken(_label: string, _agentId?: string) {
+          order.push("chat:mintToken");
+          return { id: "cs-journey-id", rawToken: "cs-journey-raw" };
+        },
+        async revokeToken(_id: string) {
+          order.push("chat:revoke");
+          if (opts.revokeError) throw opts.revokeError;
+        },
+        async listTokensForAgent(_agentId: string) {
+          return [{ id: "cs-journey-id" }];
+        },
+        async deleteThreadsForAgent(_agentId: string) {
+          order.push("chat:deleteThreads");
+          if (opts.deleteThreadsError) throw opts.deleteThreadsError;
+          return { deleted: 0 };
+        },
+      };
+    }
+
+    /** Fake SlackProvisioningClient (only deleteApp is used) recording into order. */
+    function orderedSlack(
+      order: string[],
+      opts: { deleteAppError?: Error } = {},
+    ): Pick<SlackProvisioningClient, "deleteApp"> {
+      return {
+        async deleteApp(_xoxpToken: string, _appId: string) {
+          order.push("slack:deleteApp");
+          if (opts.deleteAppError) throw opts.deleteAppError;
+        },
+      };
+    }
+
+    /** Build DeleteAgentFullyDeps around a shared order array + real Prisma. */
+    function makeDeleteDeps(
+      order: string[],
+      provisioner: Pick<AgentProvisioner, "deprovision">,
+      overrides: {
+        taskStore?: Pick<
+          TaskStoreProvisioningClient,
+          "listTokensForAgent" | "revokeToken"
+        >;
+        chatService?: Pick<
+          ChatServiceProvisioningClient,
+          "listTokensForAgent" | "revokeToken" | "deleteThreadsForAgent"
+        >;
+        slack?: Pick<SlackProvisioningClient, "deleteApp">;
+      } = {},
+    ): DeleteAgentFullyDeps {
+      return {
+        prisma: {
+          agent: {
+            findUnique: async (args) => {
+              const row = await prisma.agent.findUnique({
+                where: args.where,
+                select: { id: true, name: true },
+              });
+              return row;
+            },
+            delete: async (args) => {
+              order.push("db:agent-delete");
+              return prisma.agent.delete({ where: args.where });
+            },
+          },
+          agentEnv: {
+            findMany: async (args) =>
+              prisma.agentEnv.findMany({
+                where: args.where,
+                select: { key: true, value: true, secret: true },
+              }),
+          },
+        },
+        provisioner: {
+          deprovision: async (agentId, opts) => {
+            order.push("k8s:deprovision");
+            await provisioner.deprovision(agentId, opts);
+          },
+        },
+        taskStore: overrides.taskStore ?? orderedTaskStore(order),
+        chatService: overrides.chatService ?? orderedChatService(order),
+        slack: overrides.slack ?? orderedSlack(order),
+        // Identity decrypt — SLACK_APP_ID is stored plaintext in this test.
+        decrypt: (value) => value,
+      };
+    }
+
+    it(
+      "composes provision() → deleteAgentFully() across all 5 external clients " +
+        "in documented order (token→Secret→Deployment, then DB row deleted LAST)",
+      async () => {
+        const order: string[] = [];
+        const agentId = await createAgentWithSlackEnv();
+        const recorded = emptyClient();
+        const k8s = orderedK8s(order, recorded);
+
+        // Wrap AgentTokenService.create so the real DB-backed token mint is
+        // captured in the shared order array too (positioned before k8s:secret).
+        const orderedTokens = {
+          create: async (id: string, label?: string) => {
+            const result = await tokens.create(id, label);
+            order.push("db:token");
+            return result;
+          },
+        } as AgentTokenService;
+
+        const provisioner = new KubernetesAgentProvisioner(
+          k8s,
+          orderedTokens,
+          {
+            ...CONFIG,
+            taskStore: orderedTaskStore(order),
+            chatService: orderedChatService(order),
+          },
+        );
+
+        // ── Provision ────────────────────────────────────────────────────────
+        const provisionResult = await provisioner.provision(agentId);
+        expect(provisionResult.rawToken).toBeDefined();
+
+        // Documented order: token minting (task-store, chat, then the agent's
+        // own DB-backed token) happens BEFORE the Secret, which happens BEFORE
+        // the Deployment.
+        expect(order).toEqual([
+          "task-store:mintToken",
+          "chat:mintToken",
+          "db:token",
+          "k8s:secret",
+          "k8s:deployment",
+        ]);
+        const tokenIdx = order.indexOf("db:token");
+        const secretIdx = order.indexOf("k8s:secret");
+        const deploymentIdx = order.indexOf("k8s:deployment");
+        expect(tokenIdx).toBeLessThan(secretIdx);
+        expect(secretIdx).toBeLessThan(deploymentIdx);
+
+        // ── Delete ───────────────────────────────────────────────────────────
+        const deleteDeps = makeDeleteDeps(order, provisioner);
+        const deleteResult = await deleteAgentFully(agentId, deleteDeps, {
+          xoxpToken: "xoxp-journey-token",
+        });
+
+        expect(deleteResult.agentDeleted).toBe(true);
+        expect(deleteResult.failed).toEqual([]);
+
+        // The DB row delete is the LAST entry in the shared order array — proving
+        // "DB row deleted LAST" across the whole composed journey, not just
+        // within deleteAgentFully() in isolation.
+        expect(order[order.length - 1]).toBe("db:agent-delete");
+        expect(order).toContain("k8s:deprovision");
+        expect(order).toContain("task-store:revoke");
+        expect(order).toContain("chat:revoke");
+        expect(order).toContain("chat:deleteThreads");
+        expect(order).toContain("slack:deleteApp");
+
+        // The Agent row is actually gone from Postgres.
+        const remaining = await prisma.agent.findUnique({
+          where: { id: agentId },
+        });
+        expect(remaining).toBeNull();
+      },
+    );
+
+    it(
+      "retries deleteAgentFully() after a partial failure: row is preserved on " +
+        "failure, then deleted on a healthy re-run",
+      async () => {
+        const order: string[] = [];
+        const agentId = await createAgentWithSlackEnv("Retry Journey Agent");
+        const recorded = emptyClient();
+        const k8s = orderedK8s(order, recorded);
+        const provisioner = new KubernetesAgentProvisioner(k8s, tokens, {
+          ...CONFIG,
+          taskStore: orderedTaskStore(order),
+          chatService: orderedChatService(order),
+        });
+
+        await provisioner.provision(agentId);
+
+        // First delete call: chat-service revoke fails. The step is recorded as
+        // failed but every other step (k8s deprovision, task-store revoke, and
+        // the Slack app delete) still runs — only the DB row delete is gated.
+        const firstOrder = order; // continue accumulating into the same array
+        const failingChatService = orderedChatService(firstOrder, {
+          revokeError: new Error("chat-service unavailable"),
+        });
+        const firstDeleteDeps = makeDeleteDeps(firstOrder, provisioner, {
+          chatService: failingChatService,
+        });
+
+        const firstResult = await deleteAgentFully(agentId, firstDeleteDeps, {
+          xoxpToken: "xoxp-journey-token",
+        });
+
+        expect(firstResult.agentDeleted).toBe(false);
+        expect(firstResult.failed).toEqual([
+          {
+            step: "chat-service-tokens-and-threads",
+            error: "chat-service unavailable",
+          },
+        ]);
+        expect(firstResult.completed).toContain("k8s");
+        expect(firstResult.completed).toContain("task-store-tokens");
+        expect(firstResult.completed).toContain("slack-app");
+        expect(order).not.toContain("db:agent-delete");
+
+        // Agent row still present in Postgres after the partial failure.
+        const stillThere = await prisma.agent.findUnique({
+          where: { id: agentId },
+        });
+        expect(stillThere).not.toBeNull();
+
+        // Second call: healthy chat-service this time. Underlying steps are all
+        // individually idempotent (k8s deprovision swallows 404, revoke on an
+        // already-revoked token is a no-op, thread delete tolerates 404), so the
+        // retry completes cleanly and the row is deleted last.
+        const healthyChatService = orderedChatService(order);
+        const secondDeleteDeps = makeDeleteDeps(order, provisioner, {
+          chatService: healthyChatService,
+        });
+
+        const secondResult = await deleteAgentFully(
+          agentId,
+          secondDeleteDeps,
+          { xoxpToken: "xoxp-journey-token" },
+        );
+
+        expect(secondResult.agentDeleted).toBe(true);
+        expect(secondResult.failed).toEqual([]);
+        expect(order[order.length - 1]).toBe("db:agent-delete");
+
+        const gone = await prisma.agent.findUnique({ where: { id: agentId } });
+        expect(gone).toBeNull();
+      },
+    );
+  },
+);
 
 // ─── NoopAgentProvisioner (no DB required) ────────────────────────────────────
 
