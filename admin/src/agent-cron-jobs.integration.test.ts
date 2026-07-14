@@ -435,6 +435,37 @@ describeOrSkip("AgentCronJobService (integration)", () => {
     expect(devTaskCron?.enabled).toBe(false);
   });
 
+  it("reconcileSystemCrons() creates legacy crons disabled on a fresh agent's first-ever reconcile when shipwright-loop is already enabled", async () => {
+    const agentId = await createAgent(prisma);
+    // No reconcile has ever run for this agent — pre-seed only the
+    // shipwright-loop row as enabled, exactly as if a caller flipped it on
+    // before the agent's first boot-time reconcile. Every other system cron,
+    // including all five legacy ones, does not exist yet.
+    await prisma.agentCronJob.create({
+      data: {
+        agentId,
+        name: "shipwright-loop",
+        system: true,
+        schedule: "* * * * *",
+        prompt: "internal",
+        silent: true,
+        channel: null,
+        user: null,
+        enabled: true,
+      },
+    });
+
+    const result = await service.reconcileSystemCrons(agentId);
+    expect(result.created).toBeGreaterThan(0);
+
+    const jobs = await service.list(agentId);
+    for (const name of LEGACY_PHASE_CRON_NAMES) {
+      const cron = jobs.find((j) => j.name === name);
+      expect(cron).toBeDefined();
+      expect(cron?.enabled).toBe(false);
+    }
+  });
+
   it("reconcileSystemCrons() is idempotent when re-run with shipwright-loop enabled", async () => {
     const agentId = await createAgent(prisma);
     await service.reconcileSystemCrons(agentId);
