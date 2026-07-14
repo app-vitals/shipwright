@@ -407,25 +407,37 @@ export function createPrRecordQuery<T>(opts?: {
 }
 
 /**
- * Build a `(repo, prNumber) => status | null` query function against the
- * task-store `/tasks` endpoint's `?repo=&pr=` filters. Returns null ONLY on a
- * confirmed empty result (no linked task) — a PR simply has no task yet.
- * Throws on missing config, a non-ok response, or a malformed/unreachable
- * response, so a caller who needs a go/no-go decision (unlike
- * createPrRecordQuery's non-gating age field) can distinguish "no task" from
- * "couldn't tell" and fail closed on the latter.
+ * Build a `(repo, prNumber) => { status, addedAt } | null` query function
+ * against the task-store `/tasks` endpoint's `?repo=&pr=` filters. Returns
+ * null ONLY on a confirmed empty result (no linked task) — a PR simply has no
+ * task yet. Throws on missing config, a non-ok response, or a
+ * malformed/unreachable response, so a caller who needs a go/no-go decision
+ * (unlike createPrRecordQuery's non-gating age field) can distinguish "no
+ * task" from "couldn't tell" and fail closed on the latter.
+ *
+ * `addedAt` is included alongside `status` so callers can source a
+ * cross-phase age comparison from the SAME clock dev-task's backlog
+ * candidates already use (task.addedAt), instead of a phase-recent
+ * timestamp. It may be undefined if the matched task record doesn't carry
+ * one.
  *
  * Accepts an optional `fetchFn` for dependency injection in tests, matching
  * createPrRecordQuery's pattern.
  */
 export function createTaskStatusQuery(opts?: {
   fetchFn?: FetchFn;
-}): (repo: string, prNumber: number) => Promise<TaskStatus | null> {
+}): (
+  repo: string,
+  prNumber: number,
+) => Promise<{ status: TaskStatus; addedAt?: string } | null> {
   const taskStoreUrl = (process.env.SHIPWRIGHT_TASK_STORE_URL ?? "").trim();
   const taskStoreToken = (process.env.SHIPWRIGHT_TASK_STORE_TOKEN ?? "").trim();
   const doFetch: FetchFn = opts?.fetchFn ?? fetch;
 
-  return async (repo: string, prNumber: number): Promise<TaskStatus | null> => {
+  return async (
+    repo: string,
+    prNumber: number,
+  ): Promise<{ status: TaskStatus; addedAt?: string } | null> => {
     if (!taskStoreUrl || !taskStoreToken) {
       throw new Error(
         "SHIPWRIGHT_TASK_STORE_URL/SHIPWRIGHT_TASK_STORE_TOKEN not configured",
@@ -455,7 +467,9 @@ export function createTaskStatusQuery(opts?: {
     } else {
       throw new Error(`Unexpected task-store response format: ${JSON.stringify(data)}`);
     }
-    return tasks[0]?.status ?? null;
+    const task = tasks[0];
+    if (!task) return null;
+    return { status: task.status, addedAt: task.addedAt };
   };
 }
 
