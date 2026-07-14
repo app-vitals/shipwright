@@ -868,11 +868,10 @@ describeOrSkip(
         // First delete call: chat-service revoke fails. The step is recorded as
         // failed but every other step (k8s deprovision, task-store revoke, and
         // the Slack app delete) still runs — only the DB row delete is gated.
-        const firstOrder = order; // continue accumulating into the same array
-        const failingChatService = orderedChatService(firstOrder, {
+        const failingChatService = orderedChatService(order, {
           revokeError: new Error("chat-service unavailable"),
         });
-        const firstDeleteDeps = makeDeleteDeps(firstOrder, provisioner, {
+        const firstDeleteDeps = makeDeleteDeps(order, provisioner, {
           chatService: failingChatService,
         });
 
