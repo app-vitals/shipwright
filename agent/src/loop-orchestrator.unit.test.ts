@@ -14,10 +14,10 @@ import { FixedClock } from "./clock.ts";
 import type { CronRunReporter } from "./cron-run-reporter.ts";
 import type { CronJobLike } from "./loop-cron-classifier.ts";
 import {
-  createLoopOrchestrator,
-  createLoopOrchestratorGetter,
   type LoopOrchestratorDeps,
   type LoopOrchestratorProductionOptions,
+  createLoopOrchestrator,
+  createLoopOrchestratorGetter,
 } from "./loop-orchestrator.ts";
 import type { WorkPrCandidate, WorkTaskCandidate } from "./work-selector.ts";
 
@@ -130,11 +130,17 @@ function makeDrainingRunner(
   let idx = 0;
   const runner = async (message: string): Promise<ClaudeRunResult> => {
     messages.push(message);
+    // The message is "<command> <itemId>" — match by command prefix since
+    // the trailing item id varies per dispatch.
+    const command = Object.keys(commandToPool).find(
+      (c) => message === c || message.startsWith(`${c} `),
+    );
     // Consume the oldest unconsumed candidate of this command's phase.
-    const candidates = (commandToPool[message] ?? [])
+    const candidates = (command ? commandToPool[command] : []) ?? [];
+    const sorted = candidates
       .filter((c) => !consumed.has(c.id))
       .sort((a, b) => (a.age < b.age ? -1 : 1));
-    if (candidates[0]) consumed.add(candidates[0].id);
+    if (sorted[0]) consumed.add(sorted[0].id);
 
     const scripted = results[idx];
     idx += 1;
@@ -422,7 +428,7 @@ describe("createLoopOrchestrator", () => {
 
     await loop([job("shipwright-dev-task", true)]);
 
-    expect(messages).toEqual(["/shipwright:dev-task"]);
+    expect(messages).toEqual(["/shipwright:dev-task SWC-1.1"]);
   });
 
   test("dispatches /shipwright:review for a winning review PR", async () => {
@@ -437,7 +443,7 @@ describe("createLoopOrchestrator", () => {
 
     await loop([job("shipwright-review", true)]);
 
-    expect(messages).toEqual(["/shipwright:review"]);
+    expect(messages).toEqual(["/shipwright:review acme/x#1"]);
   });
 
   test("dispatches /shipwright:patch for a winning patch PR", async () => {
@@ -452,7 +458,7 @@ describe("createLoopOrchestrator", () => {
 
     await loop([job("shipwright-patch", true)]);
 
-    expect(messages).toEqual(["/shipwright:patch"]);
+    expect(messages).toEqual(["/shipwright:patch acme/x#2"]);
   });
 
   test("dispatches /shipwright:deploy for a winning deploy PR", async () => {
@@ -467,7 +473,7 @@ describe("createLoopOrchestrator", () => {
 
     await loop([job("shipwright-deploy", true)]);
 
-    expect(messages).toEqual(["/shipwright:deploy"]);
+    expect(messages).toEqual(["/shipwright:deploy acme/x#3"]);
   });
 
   test("selects the globally-oldest item across phases and drains in age order", async () => {
@@ -499,9 +505,9 @@ describe("createLoopOrchestrator", () => {
     await loop(ALL_PHASES_ON);
 
     expect(messages).toEqual([
-      "/shipwright:patch",
-      "/shipwright:dev-task",
-      "/shipwright:review",
+      "/shipwright:patch acme/x#5",
+      "/shipwright:dev-task SWC-1.1",
+      "/shipwright:review acme/x#9",
     ]);
   });
 
@@ -521,7 +527,7 @@ describe("createLoopOrchestrator", () => {
       job("shipwright-review-patch", true),
     ]);
 
-    expect(messages).toEqual(["/shipwright:review"]);
+    expect(messages).toEqual(["/shipwright:review acme/x#1"]);
     expect(messages).not.toContain("/shipwright:review-patch");
   });
 
@@ -540,7 +546,7 @@ describe("createLoopOrchestrator", () => {
       job("shipwright-review-patch", false),
     ]);
 
-    expect(messages).toEqual(["/shipwright:review"]);
+    expect(messages).toEqual(["/shipwright:review acme/x#1"]);
   });
 
   test("reports a tagged createRun/completeRun pair per dispatch", async () => {
@@ -631,7 +637,12 @@ describe("createLoopOrchestrator", () => {
     // silently dropped — and the error propagated instead of being swallowed.
     expect(creates.map((c) => c.phase)).toEqual(["dev-task"]);
     expect(completes).toEqual([
-      { cronId: "shipwright-loop", runId: "run-1", outcome: "failed", phase: "dev-task" },
+      {
+        cronId: "shipwright-loop",
+        runId: "run-1",
+        outcome: "failed",
+        phase: "dev-task",
+      },
     ]);
     expect(skips).toEqual([]);
 

@@ -68,9 +68,9 @@ import {
 } from "./loop-cron-classifier.ts";
 import { parseMarkers } from "./markers.ts";
 import {
-  selectNextWorkItem,
   type WorkPrCandidate,
   type WorkTaskCandidate,
+  selectNextWorkItem,
 } from "./work-selector.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -137,14 +137,15 @@ export function createLoopOrchestrator(
   let busy = false;
 
   /**
-   * Dispatch one selected phase's one-shot command and report its own tagged
-   * run. A command that returns a trailing [silent] marker signals "nothing to
-   * do once it actually ran" — the precheck contract's narrow skip case — so
-   * it is recorded via skipRun rather than completeRun. Every other outcome
-   * completes normally.
+   * Dispatch one selected phase's one-shot command (with the winning item's
+   * id appended, e.g. "/shipwright:review acme/x#1") and report its own
+   * tagged run. A command that returns a trailing [silent] marker signals
+   * "nothing to do once it actually ran" — the precheck contract's narrow
+   * skip case — so it is recorded via skipRun rather than completeRun. Every
+   * other outcome completes normally.
    */
-  async function dispatch(phase: LoopPhase): Promise<void> {
-    const command = PHASE_COMMANDS[phase];
+  async function dispatch(phase: LoopPhase, itemId: string): Promise<void> {
+    const command = `${PHASE_COMMANDS[phase]} ${itemId}`;
     const runId = await cronRunReporter.createRun(
       loopCronId,
       clock.now(),
@@ -221,7 +222,8 @@ export function createLoopOrchestrator(
         // candidates never logged a row (noise guard).
         const phase: LoopPhase =
           item.type === "task" ? "dev-task" : (item.pr.phase ?? "review");
-        await dispatch(phase);
+        const itemId = item.type === "task" ? item.task.id : item.pr.id;
+        await dispatch(phase, itemId);
       }
     } finally {
       busy = false;
@@ -256,9 +258,8 @@ export function createLoopOrchestratorGetter(
   const createOrchestrator =
     deps.createOrchestrator ?? createProductionLoopOrchestrator;
   let orchestrator: ((jobs: CronJobLike[]) => Promise<void>) | undefined;
-  let orchestratorInit: Promise<
-    (jobs: CronJobLike[]) => Promise<void>
-  > | null = null;
+  let orchestratorInit: Promise<(jobs: CronJobLike[]) => Promise<void>> | null =
+    null;
 
   return async function getLoopOrchestrator(
     loopCronId: string,
