@@ -55,8 +55,8 @@ Manual test scenarios for each command across different project types.
 | 38 | `/metrics` | Any (multi-task session) | Auto-docs aggregation across session | New "Auto-docs maintenance" section appears with update rate, mean lines/task, and skip breakdown; recommendation #12 fires when rate is low |
 | 39 | `/dev-task` Step 8.5 | Any (with docs/, failing pre-commit hook) | Commit failure does not produce false success | No `✓ Docs refreshed`; `skipped_reason:"commit_failed"`, `commit_sha:null`, `updated:false`; no fabricated metrics; pipeline still continues to Step 9 |
 | 40 | `/dev-task` Step 8.5 | Any | Unparseable agent result is recorded, not silent | Agent returns no/garbled `AUTO_DOCS_METRICS` block; `⚠ ... agent_error` printed; metrics record has `skipped_reason:"agent_error"`, `updated:false`; pipeline continues |
-| 41 | `/plan-session` Step 6a / `/prd` Phase 4 | Any (hosted store configured) | Plan viz render after markdown write | `PLAN.md`/`PRODUCT-SPEC.md` written unchanged, then `render-plan.ts` runs and a `Plan viz: {url}` line is surfaced in the confirmation block |
-| 42 | `/plan-session` Step 6a / `/prd` Phase 4 | Any (hosted store unset) | Plan viz graceful skip | `⏭ Plan viz skipped — SHIPWRIGHT_TASK_STORE_URL/TOKEN unset.` printed; markdown still written; no `Plan viz:` line; command never blocks |
+| 41 | `/plan-session` Step 6a / `/prd` Phase 4 | Any (admin app base URL configured) | Plan viz link after markdown write | `PLAN.md`/`PRODUCT-SPEC.md` written unchanged, then a `${SHIPWRIGHT_ADMIN_APP_BASE_URL}/admin/sessions/{session}` link is constructed and a `Plan viz: {url}` line is surfaced in the confirmation block |
+| 42 | `/plan-session` Step 6a / `/prd` Phase 4 | Any (admin app base URL unset) | Plan viz graceful skip | `⏭ Plan viz skipped — SHIPWRIGHT_ADMIN_APP_BASE_URL unset.` printed; markdown still written; no `Plan viz:` line; command never blocks |
 | 43 | `/deploy` | Any | Scan mode — bundle-blocked candidate falls back to next ready PR | Bundle-incomplete PR excluded from `CANDIDATE_LIST` in Step 1a; if a candidate is bundle-blocked at Step 2b, scan mode logs the skip and retries the next candidate instead of stopping; explicit-target mode still stops on bundle-block |
 
 ---
@@ -1079,16 +1079,15 @@ Run these across ALL scenarios to verify genericization:
 
 ---
 
-## Scenario 41: Plan Viz Render — Hosted Store Configured
+## Scenario 41: Plan Viz Link — Admin App Base URL Configured
 
-Covers the additive render step in `/plan-session` Step 6a and `/prd` Phase 4.
-The underlying parse/render/upload logic is already unit- and integration-tested
-(`render-plan*.test.ts`); this scenario verifies the command-body wiring only.
+Covers the additive link step in `/plan-session` Step 6a and `/prd` Phase 4.
+This is pure string construction — no script invocation, no plugin-cache
+lookup — so this scenario verifies the command-body wiring only.
 
 ### Setup
-1. Install the plugin so `render-plan.ts` resolves under `~/.claude/plugins/cache/*/shipwright/`
-2. Export a reachable hosted task store: `SHIPWRIGHT_TASK_STORE_URL` and `SHIPWRIGHT_TASK_STORE_TOKEN`
-3. Have a session ready to plan (any repo)
+1. Export a reachable admin app base URL: `SHIPWRIGHT_ADMIN_APP_BASE_URL`
+2. Have a session ready to plan (any repo)
 
 ### Run
 ```
@@ -1098,20 +1097,19 @@ The underlying parse/render/upload logic is already unit- and integration-tested
 
 ### Verify
 - [ ] `planning/{session}/PLAN.md` (or `PRODUCT-SPEC.md`) is written exactly as before — the markdown step is unchanged
-- [ ] After the write, the render block runs `render-plan.ts` resolved via the `find … | sort -V | tail -1` idiom
-- [ ] `--type plan` is used for `PLAN.md`, `--type spec` for `PRODUCT-SPEC.md`
-- [ ] The shareable URL printed to stdout is surfaced as a `Plan viz: {url}` line in the `QUEUED` / `PRD COMPLETE` confirmation block
-- [ ] No error from the render step changes the command's exit behavior — the plan/spec is committed regardless
+- [ ] After the write, the link step constructs `${SHIPWRIGHT_ADMIN_APP_BASE_URL}/admin/sessions/{session}` (no trailing slash duplication, no script invocation)
+- [ ] The constructed URL is surfaced as a `Plan viz: {url}` line in the `QUEUED` / `PRD COMPLETE` confirmation block
+- [ ] The URL points at the ASV-1.1 admin session view (`/admin/sessions/:id`) and resolves for the session just written
 
 ---
 
-## Scenario 42: Plan Viz Render — Hosted Store Unset (Graceful Skip)
+## Scenario 42: Plan Viz Link — Admin App Base URL Unset (Graceful Skip)
 
 The required negative path: the viz must degrade to a one-line notice and never
-block the plan when the hosted env is absent.
+block the plan when `SHIPWRIGHT_ADMIN_APP_BASE_URL` is absent.
 
 ### Setup
-1. `unset SHIPWRIGHT_TASK_STORE_URL SHIPWRIGHT_TASK_STORE_TOKEN` (or run where they were never set)
+1. `unset SHIPWRIGHT_ADMIN_APP_BASE_URL` (or run where it was never set)
 2. Have a session ready to plan (any repo)
 
 ### Run
@@ -1122,10 +1120,9 @@ block the plan when the hosted env is absent.
 
 ### Verify
 - [ ] `planning/{session}/PLAN.md` (or `PRODUCT-SPEC.md`) is still written normally
-- [ ] The render block prints `⏭ Plan viz skipped — SHIPWRIGHT_TASK_STORE_URL/TOKEN unset.` and runs nothing else
+- [ ] The link step prints `⏭ Plan viz skipped — SHIPWRIGHT_ADMIN_APP_BASE_URL unset.` and constructs nothing else
 - [ ] No `Plan viz:` line appears in the confirmation block
 - [ ] The command completes successfully — the plan is never blocked on visualization
-- [ ] (Optional, same skip notice) If the env is set but `render-plan.ts` is not found in the plugin cache, the block prints `⏭ Plan viz skipped — render-plan.ts not found in plugin cache.` and proceeds
 
 ---
 
