@@ -44,7 +44,7 @@ import { HttpChatServiceClient } from "./http-chat-service-client.ts";
 import { buildLogPrefix } from "./log-prefix.ts";
 import { classifyCronJobsForScheduling } from "./loop-cron-classifier.ts";
 import type { CronJobLike } from "./loop-cron-classifier.ts";
-import { createProductionLoopOrchestrator } from "./loop-orchestrator.ts";
+import { createLoopOrchestratorGetter } from "./loop-orchestrator.ts";
 import { createFileSessionStore, threadKey } from "./sessions.ts";
 import { ensureAgentHome, installPlugins, runMiseStartup } from "./setup.ts";
 import { HttpShipwrightRuntimeClient } from "./shipwright-runtime-client.ts";
@@ -262,33 +262,10 @@ const cronTasks = new Map<string, ReturnType<typeof nodeCron.schedule>>();
 // agents without a shipwright-loop cron never pay its GitHub/workspace dep
 // wiring cost, and its construction errors surface at fire time (logged by the
 // cron callback's try/catch) rather than crashing agent startup.
-let loopOrchestrator: ((jobs: CronJobLike[]) => Promise<void>) | undefined;
-let loopOrchestratorInit: Promise<
-  (jobs: CronJobLike[]) => Promise<void>
-> | null = null;
-
-async function getLoopOrchestrator(): Promise<
-  (jobs: CronJobLike[]) => Promise<void>
-> {
-  if (loopOrchestrator) return loopOrchestrator;
-  if (!loopOrchestratorInit) {
-    loopOrchestratorInit = createProductionLoopOrchestrator({
-      runner,
-      cronRunReporter: cronRunReporter ?? new NoopCronRunReporter(),
-    })
-      .then((orch) => {
-        loopOrchestrator = orch;
-        return orch;
-      })
-      .catch((err) => {
-        // Reset so a transient dep-wiring failure (e.g. gh unavailable) can be
-        // retried on the next loop tick rather than caching the rejection.
-        loopOrchestratorInit = null;
-        throw err;
-      });
-  }
-  return loopOrchestratorInit;
-}
+const getLoopOrchestrator = createLoopOrchestratorGetter({
+  runner,
+  cronRunReporter: cronRunReporter ?? new NoopCronRunReporter(),
+});
 
 if (runtimeClient && agentId) {
   async function syncCrons() {
@@ -329,7 +306,7 @@ if (runtimeClient && agentId) {
           console.log(`[cron] firing job ${id}`);
           try {
             if (dispatch === "loop") {
-              const orchestrator = await getLoopOrchestrator();
+              const orchestrator = await getLoopOrchestrator(id);
               await orchestrator(jobs);
             } else {
               await handleCronRequest(
