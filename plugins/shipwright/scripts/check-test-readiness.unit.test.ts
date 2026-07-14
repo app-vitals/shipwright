@@ -1,5 +1,5 @@
 /**
- * plugins/shipwright/scripts/check-test-readiness.test.ts
+ * plugins/shipwright/scripts/check-test-readiness.unit.test.ts
  *
  * Unit tests for check-test-readiness.ts
  *

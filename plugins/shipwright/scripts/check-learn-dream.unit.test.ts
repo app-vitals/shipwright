@@ -1,5 +1,5 @@
 /**
- * plugins/shipwright/scripts/check-learn-dream.test.ts
+ * plugins/shipwright/scripts/check-learn-dream.unit.test.ts
  *
  * Unit tests for check-learn-dream.ts
  *
