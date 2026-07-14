@@ -406,6 +406,59 @@ export function createPrRecordQuery<T>(opts?: {
   };
 }
 
+/**
+ * Build a `(repo, prNumber) => status | null` query function against the
+ * task-store `/tasks` endpoint's `?repo=&pr=` filters. Returns null ONLY on a
+ * confirmed empty result (no linked task) — a PR simply has no task yet.
+ * Throws on missing config, a non-ok response, or a malformed/unreachable
+ * response, so a caller who needs a go/no-go decision (unlike
+ * createPrRecordQuery's non-gating age field) can distinguish "no task" from
+ * "couldn't tell" and fail closed on the latter.
+ *
+ * Accepts an optional `fetchFn` for dependency injection in tests, matching
+ * createPrRecordQuery's pattern.
+ */
+export function createTaskStatusQuery(opts?: {
+  fetchFn?: FetchFn;
+}): (repo: string, prNumber: number) => Promise<TaskStatus | null> {
+  const taskStoreUrl = (process.env.SHIPWRIGHT_TASK_STORE_URL ?? "").trim();
+  const taskStoreToken = (process.env.SHIPWRIGHT_TASK_STORE_TOKEN ?? "").trim();
+  const doFetch: FetchFn = opts?.fetchFn ?? fetch;
+
+  return async (repo: string, prNumber: number): Promise<TaskStatus | null> => {
+    if (!taskStoreUrl || !taskStoreToken) {
+      throw new Error(
+        "SHIPWRIGHT_TASK_STORE_URL/SHIPWRIGHT_TASK_STORE_TOKEN not configured",
+      );
+    }
+    const baseUrl = taskStoreUrl.replace(/\/$/, "");
+    const params = new URLSearchParams({ repo, pr: String(prNumber) });
+    const res = await doFetch(`${baseUrl}/tasks?${params}`, {
+      headers: {
+        Authorization: `Bearer ${taskStoreToken}`,
+        "Content-Type": "application/json",
+      },
+    });
+    if (!res.ok) {
+      throw new Error(`task-store GET /tasks?${params} → ${res.status}`);
+    }
+    const data = (await res.json()) as unknown;
+    let tasks: Task[];
+    if (Array.isArray(data)) {
+      tasks = data as Task[];
+    } else if (
+      data !== null &&
+      typeof data === "object" &&
+      Array.isArray((data as Record<string, unknown>).tasks)
+    ) {
+      tasks = (data as Record<string, unknown>).tasks as Task[];
+    } else {
+      throw new Error(`Unexpected task-store response format: ${JSON.stringify(data)}`);
+    }
+    return tasks[0]?.status ?? null;
+  };
+}
+
 // ─── gh CLI helper ────────────────────────────────────────────────────────────
 
 /**
