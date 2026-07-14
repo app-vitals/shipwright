@@ -177,7 +177,7 @@ Key metrics:
 - **CI first-pass rate** and common failure patterns
 - **Estimation accuracy** by complexity tier (1–2 / 3 / 4–5)
 
-PostHog events are fired automatically by `/dev-task` at each checkpoint — `/metrics` is pure local analysis.
+`/metrics` reads task-store timestamps directly — no event-firing pipeline required.
 
 ### 7. Research
 
@@ -232,7 +232,6 @@ Shipwright is self-contained. It uses Claude Code's built-in `general-purpose` a
 | Plugin | Source | Used By | What It Enables |
 |--------|--------|---------|-----------------|
 | `frontend-design` | [Claude Code plugins](https://github.com/anthropics/claude-code/tree/main/plugins/frontend-design) | `/dev-task` | When a task is tagged with `Design Skill: frontend-design` in the planning doc, produces distinctive, high-quality UI instead of generic AI-generated interfaces |
-| `posthog` (optional) | [PostHog plugin](https://github.com/PostHog/posthog-mcp) | `/metrics` | Enables querying PostHog pipeline data via MCP. Optional — the MCP server is only needed for ad-hoc querying |
 
 ### What Happens Without Them
 
