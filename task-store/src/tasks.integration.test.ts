@@ -502,6 +502,55 @@ describeOrSkip("Task store schema (integration)", () => {
     expect(titles).not.toContain("Warchild pending in scope");
   });
 
+  it("listReady() returns multiple ready tasks in ascending createdAt order regardless of insertion order", async () => {
+    const taskService = new TaskService(prisma);
+
+    // Insert tasks in scrambled order (not ascending by timestamp)
+    // Task 3: middle timestamp
+    const task3 = await prisma.task.create({
+      data: {
+        title: "Task 3 - middle",
+        status: "pending",
+        assignee: "agent-1",
+        repo: "acme-inc/backend-api",
+      },
+    });
+
+    // Task 1: earliest timestamp
+    const task1 = await prisma.task.create({
+      data: {
+        title: "Task 1 - earliest",
+        status: "pending",
+        assignee: "agent-1",
+        repo: "acme-inc/backend-api",
+      },
+    });
+
+    // Task 2: latest timestamp
+    const task2 = await prisma.task.create({
+      data: {
+        title: "Task 2 - latest",
+        status: "pending",
+        assignee: "agent-1",
+        repo: "acme-inc/backend-api",
+      },
+    });
+
+    const result = await taskService.listReady("agent-1", [
+      "acme-inc/backend-api",
+    ]);
+
+    // Verify all three tasks are included
+    expect(result).toHaveLength(3);
+
+    // Verify they are returned in ascending createdAt order
+    // (not in insertion order, which was: task3, task1, task2)
+    const resultIds = result.map((t) => t.id);
+    const expectedOrder = [task1.id, task3.id, task2.id]; // Sorted by createdAt asc
+
+    expect(resultIds).toEqual(expectedOrder);
+  });
+
   it("list() with agentScope AND repo filter applies repo as additional AND condition", async () => {
     const taskService = new TaskService(prisma);
 
