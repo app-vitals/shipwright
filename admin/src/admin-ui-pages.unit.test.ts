@@ -3181,6 +3181,54 @@ describe("renderCronRunsPage", () => {
     const html = render([makeRun()]);
     expect(html).toContain('href="/admin/agents" class="vos-nav-link active"');
   });
+
+  test("renders error message in the title tooltip for a failed non-skipped run", () => {
+    const html = render([
+      makeRun({
+        outcome: "error",
+        skipped: false,
+        error: "Database connection timeout",
+      }),
+    ]);
+    expect(html).toContain('title="Database connection timeout"');
+  });
+
+  test("renders outcome label in the title tooltip for a failed run with no error message", () => {
+    const html = render([
+      makeRun({
+        outcome: "error",
+        skipped: false,
+        error: null,
+      }),
+    ]);
+    expect(html).toContain('title="error"');
+  });
+
+  test("renders skipReason in the title tooltip for a skipped run, even if error is set", () => {
+    const html = render([
+      makeRun({
+        outcome: "error",
+        skipped: true,
+        skipReason: "Rate limit exceeded",
+        error: "Database connection timeout",
+      }),
+    ]);
+    expect(html).toContain('title="Rate limit exceeded"');
+    expect(html).not.toContain('title="Database connection timeout"');
+  });
+
+  test("escapes XSS in the error field within the title attribute", () => {
+    const html = render([
+      makeRun({
+        outcome: "error",
+        skipped: false,
+        error: '"><script>alert(4)</script>',
+      }),
+    ]);
+    expect(html).not.toContain("<script>alert(4)</script>");
+    expect(html).toContain("&lt;script&gt;");
+    expect(html).toContain('title="');
+  });
 });
 
 // ─── renderTasksPage — mobile column hiding ───────────────────────────────────
