@@ -44,6 +44,7 @@ import { HttpChatServiceClient } from "./http-chat-service-client.ts";
 import { buildLogPrefix } from "./log-prefix.ts";
 import { classifyCronJobsForScheduling } from "./loop-cron-classifier.ts";
 import type { CronJobLike } from "./loop-cron-classifier.ts";
+import { createJobsRef } from "./loop-jobs-ref.ts";
 import { createLoopOrchestratorGetter } from "./loop-orchestrator.ts";
 import { createFileSessionStore, threadKey } from "./sessions.ts";
 import { ensureAgentHome, installPlugins, runMiseStartup } from "./setup.ts";
@@ -256,6 +257,15 @@ if (runtimeClient && agentId) {
 
 const cronTasks = new Map<string, ReturnType<typeof nodeCron.schedule>>();
 
+// Live view of the most recently fetched cron job list. The shipwright-loop
+// job is only ever nodeCron.schedule()'d once (see the `if (!cronTasks.has(id))`
+// guard below), so its dispatch callback must read this ref at fire-time
+// rather than close over a single syncCrons() tick's `jobs` array — otherwise
+// its phase-toggle view (resolveLoopPhaseToggles, read inside runLoopTick)
+// freezes at whatever dev-task/review/patch/deploy's enabled flags were at
+// first-schedule time. See loop-jobs-ref.ts for the full rationale.
+const loopJobsRef = createJobsRef<CronJobLike>();
+
 // The shipwright-loop orchestrator is a single stateful closure (it owns the
 // cross-tick busy flag), so it must be constructed once and reused across
 // ticks — not rebuilt per fire. Built lazily on the first loop dispatch so
@@ -280,6 +290,11 @@ if (runtimeClient && agentId) {
       );
       return;
     }
+
+    // Keep the live jobs ref current every tick, regardless of whether any
+    // job actually gets (re)scheduled below — this is what the already-
+    // scheduled shipwright-loop callback reads at fire-time.
+    loopJobsRef.set(jobs);
 
     // Classify this agent's own job list: which jobs get an independent
     // schedule, and with which dispatch kind (loop vs. generic). See
@@ -307,7 +322,7 @@ if (runtimeClient && agentId) {
           try {
             if (dispatch === "loop") {
               const orchestrator = await getLoopOrchestrator(id);
-              await orchestrator(jobs);
+              await orchestrator(loopJobsRef.get());
             } else {
               await handleCronRequest(
                 {
