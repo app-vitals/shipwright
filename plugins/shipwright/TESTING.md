@@ -57,7 +57,6 @@ Manual test scenarios for each command across different project types.
 | 40 | `/dev-task` Step 8.5 | Any | Unparseable agent result is recorded, not silent | Agent returns no/garbled `AUTO_DOCS_METRICS` block; `⚠ ... agent_error` printed; metrics record has `skipped_reason:"agent_error"`, `updated:false`; pipeline continues |
 | 41 | `/plan-session` Step 6a / `/prd` Phase 4 | Any (admin app base URL configured) | Plan viz link after markdown write | `PLAN.md`/`PRODUCT-SPEC.md` written unchanged, then a `${SHIPWRIGHT_ADMIN_APP_BASE_URL}/admin/sessions/{session}` link is constructed and a `Plan viz: {url}` line is surfaced in the confirmation block |
 | 42 | `/plan-session` Step 6a / `/prd` Phase 4 | Any (admin app base URL unset) | Plan viz graceful skip | `⏭ Plan viz skipped — SHIPWRIGHT_ADMIN_APP_BASE_URL unset.` printed; markdown still written; no `Plan viz:` line; command never blocks |
-| 43 | `/deploy` | Any | Scan mode — bundle-blocked candidate falls back to next ready PR | Bundle-incomplete PR excluded from `CANDIDATE_LIST` in Step 1a; if a candidate is bundle-blocked at Step 2b, scan mode logs the skip and retries the next candidate instead of stopping; explicit-target mode still stops on bundle-block |
 
 ---
 
