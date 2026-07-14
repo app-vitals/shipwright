@@ -10,11 +10,12 @@
 
 import { describe, expect, test } from "bun:test";
 import type { ClaudeRunResult } from "./claude.ts";
-import { type Clock, FixedClock } from "./clock.ts";
+import { FixedClock } from "./clock.ts";
 import type { CronRunReporter } from "./cron-run-reporter.ts";
 import type { CronJobLike } from "./loop-cron-classifier.ts";
 import {
   createLoopOrchestrator,
+  createLoopOrchestratorGetter,
   type LoopOrchestratorDeps,
   type LoopOrchestratorProductionOptions,
 } from "./loop-orchestrator.ts";
@@ -273,10 +274,6 @@ describe("createLoopOrchestratorGetter", () => {
       };
     };
 
-    const { createLoopOrchestratorGetter } = await import(
-      "./loop-orchestrator.ts"
-    );
-
     const getter = createLoopOrchestratorGetter({
       runner,
       cronRunReporter: reporter,
@@ -302,10 +299,6 @@ describe("createLoopOrchestratorGetter", () => {
       };
     };
 
-    const { createLoopOrchestratorGetter } = await import(
-      "./loop-orchestrator.ts"
-    );
-
     const getter = createLoopOrchestratorGetter({
       runner,
       cronRunReporter: reporter,
@@ -319,33 +312,6 @@ describe("createLoopOrchestratorGetter", () => {
     // should return the same orchestrator
     expect(calls).toEqual([{ loopCronId: "real-cron-id-123" }]);
     expect(orch1).toBe(orch2);
-  });
-
-  test("uses createProductionLoopOrchestrator by default when createOrchestrator is not provided", async () => {
-    const { reporter } = makeRecordingReporter();
-    const { runner } = makeRunner();
-
-    const { createLoopOrchestratorGetter } = await import(
-      "./loop-orchestrator.ts"
-    );
-
-    const getter = createLoopOrchestratorGetter({
-      runner,
-      cronRunReporter: reporter,
-    });
-
-    // This would normally build real deps, but we're just checking that it
-    // attempts to use the default factory. We can't easily test the full
-    // production wiring in unit tests without mocking real dependencies, so
-    // we verify that calling getter() doesn't throw when the default factory
-    // is used, and that it returns an orchestrator function.
-    try {
-      const orch = await getter("real-cron-id-789");
-      expect(typeof orch).toBe("function");
-    } catch {
-      // Expected: real deps may not be available in test, but the getter
-      // tried to use the default factory as intended
-    }
   });
 
   test("resets memoization on rejection and retries on next call", async () => {
@@ -367,10 +333,6 @@ describe("createLoopOrchestratorGetter", () => {
         // stub orchestrator
       };
     };
-
-    const { createLoopOrchestratorGetter } = await import(
-      "./loop-orchestrator.ts"
-    );
 
     const getter = createLoopOrchestratorGetter({
       runner,
