@@ -1,6 +1,6 @@
 # Testing
 
-> Shipwright uses a four-layer test model (unit / integration / smoke / e2e). Tests land **with** the code, at the correct layer, in the same PR — there are no "add tests later" tasks. This doc is a digest of the authoritative blueprint at [`test-readiness/test-system.md`](./test-readiness/test-system.md).
+> Shipwright uses a five-layer test model (unit / integration / smoke / e2e / content). Tests land **with** the code, at the correct layer, in the same PR — there are no "add tests later" tasks. This doc is a digest of the authoritative blueprint at [`test-readiness/test-system.md`](./test-readiness/test-system.md).
 
 ## Layers
 
@@ -10,8 +10,9 @@
 | **Integration** | `bun test` + injected recorded doubles | Real dependency behavior via recorded fixtures / injected doubles — exercises the seam without a live external service. | `*.integration.test.ts` |
 | **Smoke** | `bun test` + Hono `app.request()` | HTTP route contracts (status, shape, auth, errors) via in-process `app.request()` — no real socket. | `*.smoke.test.ts` |
 | **E2E** | `@playwright/test` | Full browser-driven flows against a real running server. Marketing site home page (`site/*.spec.ts`); metrics dashboard (`metrics/e2e/*.e2e.ts`); admin UI (`admin/e2e/*.e2e.ts`). | `*.spec.ts` (in `site/`), `*.e2e.ts` (in `metrics/e2e/`, `admin/e2e/`) |
+| **Content** | `bun test` | Markdown/prompt-content-assertion tests — e.g. checking that a command's or skill's Markdown body contains expected sections/instructions/wording. Distinct from unit/integration/smoke: no real I/O boundary, just asserting on static content. | `*.content.test.ts` |
 
-The layer is encoded in the filename suffix. When adding a test, classify in order: no I/O → **unit**; calls an external service → **integration** (inject a recorded double); tests an HTTP route → **smoke** (`app.request()`); multi-step browser flow → **e2e**. If none fit, escalate — don't invent a fifth layer.
+The layer is encoded in the filename suffix. When adding a test, classify in order: no I/O → **unit**; calls an external service → **integration** (inject a recorded double); tests an HTTP route → **smoke** (`app.request()`); multi-step browser flow → **e2e**; static content assertions → **content**. If none fit, escalate — don't invent a sixth layer.
 
 ## Running tests
 
@@ -45,7 +46,7 @@ cd site && npm test                  # playwright (*.spec.ts)
 
 | Component | Layers in use | Run command |
 |---|---|---|
-| Plugin (`plugins/shipwright`) | unit, integration | `bun test --filter plugins/shipwright` |
+| Plugin (`plugins/shipwright`) | unit, integration, content | `bun test --filter plugins/shipwright` |
 | Metrics (`metrics`) | unit, integration, smoke, e2e | `bun test --filter metrics` (unit/integration/smoke); `task e2e` (e2e) |
 | Agent (`agent`) | unit, integration, smoke | `bun test --filter agent` |
 | Admin (`admin`) | unit, integration, smoke, e2e | `bun test --filter admin` (unit/integration/smoke); `cd admin && bunx playwright test` (e2e) |
