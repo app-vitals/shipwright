@@ -505,34 +505,34 @@ describeOrSkip("Task store schema (integration)", () => {
   it("listReady() returns multiple ready tasks in ascending createdAt order regardless of insertion order", async () => {
     const taskService = new TaskService(prisma);
 
-    // Insert tasks in scrambled order (not ascending by timestamp)
-    // Task 3: middle timestamp
+    // Explicitly set createdAt so timestamp order is scrambled relative to
+    // insertion order — proves the result is sorted by createdAt, not by
+    // insertion/default DB order.
     const task3 = await prisma.task.create({
       data: {
         title: "Task 3 - middle",
         status: "pending",
         assignee: "agent-1",
         repo: "acme-inc/backend-api",
+        createdAt: new Date("2026-01-02T00:00:00Z"),
       },
     });
-
-    // Task 1: earliest timestamp
     const task1 = await prisma.task.create({
       data: {
         title: "Task 1 - earliest",
         status: "pending",
         assignee: "agent-1",
         repo: "acme-inc/backend-api",
+        createdAt: new Date("2026-01-01T00:00:00Z"),
       },
     });
-
-    // Task 2: latest timestamp
     const task2 = await prisma.task.create({
       data: {
         title: "Task 2 - latest",
         status: "pending",
         assignee: "agent-1",
         repo: "acme-inc/backend-api",
+        createdAt: new Date("2026-01-03T00:00:00Z"),
       },
     });
 
@@ -544,7 +544,7 @@ describeOrSkip("Task store schema (integration)", () => {
     expect(result).toHaveLength(3);
 
     // Verify they are returned in ascending createdAt order
-    // (not in insertion order, which was: task3, task1, task2)
+    // (insertion order was task3, task1, task2 — a different sequence)
     const resultIds = result.map((t) => t.id);
     const expectedOrder = [task1.id, task3.id, task2.id]; // Sorted by createdAt asc
 
