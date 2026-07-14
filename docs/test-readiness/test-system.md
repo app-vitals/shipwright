@@ -1,6 +1,6 @@
 # Shipwright Test System Design
 
-> Gating deliverable for the test-readiness pipeline. Defines the four test layers,
+> Gating deliverable for the test-readiness pipeline. Defines the five test layers,
 > per-component run commands, and speed budgets that `plan-session` and `dev-task`
 > Step 2 enforce across Phases B and C.
 
@@ -15,12 +15,13 @@ boundary determines which dependencies are permitted in that test.
 | **integration** | Real dependency behavior via recorded fixtures or injected doubles. Exercises the integration seam without a live external service. | `bun test` + recorded-fixture clients injected via DI | Service classes, client wrappers, anything that reads/writes to an external system — tested via recorded fixture doubles (`RecordedXClient`) instead of the real service. |
 | **smoke** | Hono endpoints exercised via in-process `app.request()`. No real socket, no port allocation. | `bun test` + Hono `app.request()` | HTTP route contracts: status codes, response shapes, auth checks, error handling. Full middleware + routing pipeline without spinning up a server. |
 | **e2e** | Full browser-driven flows against a real running server. | `@playwright/test` | Multi-step user journeys through the metrics dashboard UI: navigation, rendering, data display, interaction flows. Phase B only. |
+| **content** | Markdown/prompt-content-assertion tests — no real I/O boundary, just asserting on static content (e.g. `existsSync`/`readFileSync` against a command's or skill's Markdown body). | `bun test` | Verifying a command's, skill's, or reference doc's Markdown body contains expected sections/instructions/wording, or that plugin directory structure matches an expected layout. Distinct from unit: the assertion target is prose/structure, not executable logic. |
 
 ### Boundary violations
 
 These patterns indicate a test is in the wrong layer:
 
-- A unit test that reads a file, opens a socket, or spawns a subprocess → move to integration.
+- A unit test that reads a file, opens a socket, or spawns a subprocess → move to integration, or to content if the file read is a static Markdown/prompt-content assertion with no logic under test.
 - An integration test that boots a real HTTP server → move to smoke.
 - A smoke test that opens a real browser → move to e2e.
 - A unit test that takes >200 ms → likely a hidden integration test; investigate.
@@ -37,15 +38,17 @@ These patterns indicate a test is in the wrong layer:
 
 ### Plugin (`@shipwright/plugin`) — Phase A
 
-The plugin is pure TypeScript — no server, no database, no external HTTP in production code. Tests are unit and integration only.
+The plugin is pure TypeScript — no server, no database, no external HTTP in production code. Tests are unit, integration, and content.
 
 | Layer | Local run command | Per-test 95p | Per-test hard cap | Suite target |
 |---|---|---|---|---|
 | unit | `bun test --filter plugins/shipwright` | <50 ms | <200 ms | <15 s |
 | integration | `bun test --filter plugins/shipwright` | <500 ms | <2 s | <30 s |
+| content | `bun test --filter plugins/shipwright` | <50 ms | <200 ms | <15 s |
 
 **Notes:**
 - Integration tests inject `RecordedGithubClient` (a recorded fixture double) for any GitHub API calls (issue reads/writes, label operations).
+- Content tests assert on static Markdown bodies (commands, skills, reference docs) via `existsSync`/`readFileSync` — no I/O boundary beyond local file reads, no logic under test.
 - No smoke or e2e layer — the plugin has no HTTP surface.
 - Plugin code must remain repo-agnostic; tests must not hardcode paths to any external repository.
 
@@ -128,8 +131,8 @@ The agent is a thin runner with a Prisma-backed PostgreSQL database and a Hono H
               merge → main
 ```
 
-- **Layer order:** unit → integration → smoke → e2e. A lower-layer failure skips higher layers (fail-fast).
-- **Parallelism:** unit and integration run in parallel across packages. Smoke layers (metrics + agent) run in parallel with each other, sequentially after all integration jobs pass.
+- **Layer order:** unit → integration → smoke → e2e. A lower-layer failure skips higher layers (fail-fast). Content tests run alongside unit tests in the same `bun test` package job — no separate CI stage.
+- **Parallelism:** unit, content, and integration run in parallel across packages. Smoke layers (metrics + agent) run in parallel with each other, sequentially after all integration jobs pass.
 - **Test-DB service container:** CI provisions a real `postgres:16` service container (see `.github/workflows/ci.yml`) for any DB-backed integration/smoke test (e.g., the agent's DB integration suite) — never a mocked or in-memory Postgres substitute.
 
 ## Speed budgets (consolidated)
@@ -140,6 +143,7 @@ The agent is a thin runner with a Prisma-backed PostgreSQL database and a Hono H
 | Integration | <500 ms | <2 s | <60 s |
 | Smoke | <2 s | <10 s | <30 s |
 | E2E | <30 s | <90 s | <5 min |
+| Content | <50 ms | <200 ms | <15 s |
 | **Full CI pipeline** | — | — | **<5 min wall** |
 
 **Speed-violation handling:**
@@ -163,5 +167,6 @@ When `dev-task` Step 2 asks "which layer does this test belong in?", apply in or
 2. Does it call an external service (Slack, GitHub, etc.)? → **integration** (inject a recorded double).
 3. Does it test an HTTP route contract? → **smoke** (use `app.request()`).
 4. Does it test a multi-step browser flow? → **e2e** (Playwright).
+5. Is it a static Markdown/prompt-content assertion (a command's or skill's body, plugin directory structure) with no logic under test? → **content**.
 
-If none of these fit, escalate — do not invent a fifth layer.
+If none of these fit, escalate — do not invent a sixth layer.
