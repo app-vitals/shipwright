@@ -244,7 +244,7 @@ The constant `BAKED_MARKETPLACES_ROOT` and function `discoverBakedMarketplaces()
 
 ## Testing
 
-Unit + integration + smoke layers (`bun test --filter agent`). DB integration tests run against a real Postgres database (set via `DATABASE_URL_ADMIN_TEST`), provisioning the schema via `prisma migrate deploy` per suite — **no Prisma mocking**. Smoke tests drive the Hono apps via `app.request()`. See [testing.md](./testing.md).
+Unit + integration + smoke layers (`bun test --filter agent`). DB integration tests run against a real Postgres database (set via `DATABASE_URL_ADMIN_TEST`), provisioning the schema via `prisma migrate deploy` per suite — **no Prisma mocking**. Smoke tests drive the Hono apps via `app.request()`, except `health.smoke.test.ts` which boots the bare-`Bun.serve()` health server (`agent/src/health.ts`, no Hono app factory) and drives it via real `fetch()` to `localhost`. See [testing.md](./testing.md).
 
 ## See also
 
