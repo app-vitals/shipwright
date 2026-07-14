@@ -1160,11 +1160,11 @@ As `agent-A`, invoke `/shipwright:dev-task`
 
 ## Test Readiness Pipeline scenarios
 
-Imported from the former `test-readiness` plugin. These exercise the six `/test-*` commands and the three cross-cutting contracts (canary-execution, speed-budgets, repo-config). Numbered `TR-N` to stay clear of the shipwright scenario numbering above. Phases 1–4 are read-only on source; Phase 5 writes to GitHub.
+Imported from the former `test-readiness` plugin. These exercise the six `/test-*` commands and the three cross-cutting contracts (canary-execution, speed-budgets, repo-config). Numbered `TR-N` to stay clear of the shipwright scenario numbering above. Phases 1–4 are read-only on source; Phase 5 queues task-store tasks.
 
 ### TR-1 — Commands load
 **Steps:** Install/refresh the plugin, run `/help`.
-**Expected:** All six commands listed: `/test-inventory`, `/test-design`, `/test-migration`, `/test-roadmap`, `/test-publish`, `/test-debt`. No collision with the existing `/metrics` command.
+**Expected:** All six commands listed: `/test-inventory`, `/test-design`, `/test-migration`, `/test-roadmap`, `/test-fix`, `/test-debt`. No collision with the existing `/metrics` command.
 
 ### TR-2 — Phase 1 against a small TypeScript repo
 **Steps:** `cd` into a small TS repo (e.g. a Hono service); run `/test-inventory`.
@@ -1199,20 +1199,20 @@ Imported from the former `test-readiness` plugin. These exercise the six `/test-
 **Expected:** Only files under `docs/test-readiness/` added/modified. No source or existing test files touched.
 
 ### TR-10 — Phase 5 dry-run
-**Steps:** After Phases 1–4 produce artifacts, run `/test-publish --dry-run`.
-**Expected:** Prints planned milestones, labels, per-issue summaries; no GitHub writes; lists target repo (from `origin` or `--repo`).
+**Steps:** After Phases 1–4 produce artifacts, run `/test-fix --dry-run`.
+**Expected:** Prints a preview listing each task-store ID (`test-{t-nnn}-{repo-slug}`), outcome, layer, priority, computed dependencies, and hitl classification — no task-store queries made (no dedup check), nothing written.
 
-### TR-11 — Phase 5 publish (sandbox repo)
-**Steps:** In a sandbox GitHub repo with `gh` authenticated, run `/test-publish` after Phases 1–4; confirm at the prompt.
-**Expected:** Labels created (`test-readiness`, `milestone:m1`–`m5`, `layer:*`, `bucket:*`, `criticality:*`, `ready`, `blocked`); milestones M1–M5 created/matched; one self-contained issue per task; tracking issue `Test Readiness Roadmap` with per-milestone checkboxes; `docs/test-readiness/test-readiness-issues.md` written; `gh issue list --search "label:test-readiness label:ready sort:created-asc" --limit 1` returns an M1 issue.
+### TR-11 — Phase 5 backfill from GitHub (one-time migration)
+**Steps:** In a sandbox repo with existing `test-readiness`-labeled GitHub issues from the old publish flow, run `/test-fix --backfill-from-github [--repo o/n]`.
+**Expected:** Each open issue becomes an equivalent task-store task preserving dependency edges, then each migrated issue is closed with a comment linking to its new task-store ID; does not run the regular plan-parsing flow (Steps 1-7 of the skill).
 
-### TR-12 — Phase 5 idempotency
-**Steps:** Run `/test-publish` again without changing the roadmap.
-**Expected:** No duplicate issues (matched by `<!-- task-id: T-NNN -->`); summary reports "K issues already existed (skipped)."
+### TR-12 — Phase 5 dedup-on-rerun
+**Steps:** Run `/test-fix` twice without changing the roadmap.
+**Expected:** The second run's dedup check (Step 4) finds the already-active `T-NNN` tasks (matched by `source == "shipwright"` and title starting with "Test readiness:"), skips them ("Skipping {T-NNN} — task already active"), and no duplicate tasks are created in the task store.
 
-### TR-13 — Phase 5 refresh
-**Steps:** Close predecessor issues via `gh issue close <n>`, then run `/test-publish --refresh`.
-**Expected:** Issues whose predecessors are all closed gain `ready` and lose `blocked`; tracking-issue checkboxes updated; no new issues created.
+### TR-13 — Phase 5 dependencies-array / ready computation
+**Steps:** Queue a task graph with predecessor edges via `/test-fix` (e.g. a fan-out `P-NNN` parent with `T-NNNa`/`T-NNNb` children), then mark/complete a predecessor task in the task store.
+**Expected:** Task-store's own `ready:true` query correctly reflects the completed predecessor's dependents becoming ready — there is no separate ready/blocked label toggle or `--refresh` flag; `dependencies` (task-store's own field) is the sole readiness mechanism.
 
 ### TR-14 — Idempotency (Phases 1–4)
 **Steps:** Run all four phases, capture artifact hashes, re-run without source changes, compare.
@@ -1223,16 +1223,16 @@ Imported from the former `test-readiness` plugin. These exercise the six `/test-
 **Expected:** No single task touches all service files; instead one parent task (P-NNN, no verify) and one child task per service (T-NNN a/b/c…) each with its own verify. Open-risks lists no "oversized task" entries for split tasks.
 
 ### TR-16 — Audit decision rows
-**Steps:** Run `/test-roadmap` where Phase 3 has a bucket with 5+ `delete (redundant)`/`rebuild` tests, then `/test-publish --dry-run`.
-**Expected:** Plan template includes an "Audit task decision rows" section (item/decision/criterion table); dry-run issue body for audit tasks includes an "## Audit decisions" section with one row per item.
+**Steps:** Run `/test-roadmap` where Phase 3 has a bucket with 5+ `delete (redundant)`/`rebuild` tests, then `/test-fix --dry-run`.
+**Expected:** Plan template includes an "Audit task decision rows" section (item/decision/criterion table); dry-run preview for audit tasks includes the audit-decision-rows table from the description field.
 
 ### TR-17 — Separate canary entry point
 **Steps:** Run `/test-design` in any TypeScript repo.
 **Expected:** `test-system.md` prescribes a dedicated canary entry point (`test:canary` or `playwright.canary.config.ts`); contract states it must not reuse `test:smoke`; two CI jobs documented (`smoke` pre-merge, `canary` post-deploy with `TEST_TARGET_URL`).
 
 ### TR-18 — Canary safety lint
-**Steps:** In a repo where Phase 3 marks ≥1 test canary-eligible, run `/test-migration`, then `/test-publish --dry-run`.
-**Expected:** Migration shows canary safety-lint result per eligible test; tests with unclassified write patterns reclassified `promote/rebuild` not `reuse`; issue body for canary-promoting tasks includes the "No prod-write paths" criterion + grep command.
+**Steps:** In a repo where Phase 3 marks ≥1 test canary-eligible, run `/test-migration`, then `/test-fix --dry-run`.
+**Expected:** Migration shows canary safety-lint result per eligible test; tests with unclassified write patterns reclassified `promote/rebuild` not `reuse`; dry-run preview for canary-promoting tasks includes the "No prod-write paths" criterion in the description.
 
 ### TR-19 — Runner-discovery M1 task
 **Steps:** Run `/test-roadmap` against any repo.
