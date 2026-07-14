@@ -46,7 +46,7 @@ The Shipwright agent runs as a Slack app — DMs, `@mentions`, and cron notifica
 
 ## Quickstart
 
-Run the **metrics dashboard locally today** — **offline by default**: no PostHog key, no accounts, no database. One copy-paste prompt covers both steps (terminal + an in-session slash command) and opens the dashboard.
+Run the **metrics dashboard locally today** — **offline by default**: fixtures-backed, no accounts, no database. One copy-paste prompt covers both steps (terminal + an in-session slash command) and opens the dashboard.
 
 Paste this into a **Claude Code** session:
 
