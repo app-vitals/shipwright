@@ -24,6 +24,7 @@ import { AgentTokenService } from "./agent-tokens.ts";
 import { AgentToolService } from "./agent-tools.ts";
 import { createAdminApp } from "./agents-api.ts";
 import type { AdminDeps } from "./agents-api.ts";
+import { AgentService } from "./agents.ts";
 import { NoopChatServiceProvisioningClient } from "./chat-service-provisioning-client.ts";
 import { NoopTaskStoreProvisioningClient } from "./task-store-provisioning-client.ts";
 import { makeTokenCrypto } from "./token-crypto.ts";
@@ -90,6 +91,7 @@ describeOrSkip("admin CRUD API (integration)", () => {
     process.env.SHIPWRIGHT_ENCRYPTION_KEY = savedKey;
 
     const deps: AdminDeps = {
+      agentService: new AgentService(prisma),
       agentEnvService: new AgentEnvService(prisma, crypto),
       agentCronJobService: new AgentCronJobService(prisma),
       agentCronRunService: new AgentCronRunService(prisma),

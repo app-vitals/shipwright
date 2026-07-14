@@ -120,6 +120,19 @@ function makeMockDeps(opts?: {
   agentChatTokenServiceThrows?: boolean;
 }): AdminDeps {
   return {
+    agentService: {
+      create: async () => {
+        throw new Error("not implemented");
+      },
+      delete: async () => {},
+      list: async () => [],
+      getSummary: async () => null,
+      getDetail: async () => null,
+      exists: async () => false,
+      updateSelfHosted: async () => {
+        throw new Error("not implemented");
+      },
+    },
     agentEnvService: {
       upsert: async () => {},
       patch: async () => {},

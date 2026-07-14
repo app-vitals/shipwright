@@ -37,6 +37,7 @@ import type { AgentPluginService } from "./agent-plugins.ts";
 import type { AgentProvisioner } from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 import type { AgentToolService } from "./agent-tools.ts";
+import type { AgentService } from "./agents.ts";
 import { createAdminAuthMiddleware, parseAdminApiKeys } from "./api-auth.ts";
 import type { AdminApiKey, AdminAuthEnv } from "./api-auth.ts";
 import {
@@ -92,6 +93,16 @@ import {
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface AdminDeps {
+  agentService: Pick<
+    AgentService,
+    | "create"
+    | "delete"
+    | "list"
+    | "getSummary"
+    | "getDetail"
+    | "exists"
+    | "updateSelfHosted"
+  >;
   agentEnvService: Pick<
     AgentEnvService,
     "upsert" | "patch" | "getByAgentId" | "deleteKey"
@@ -126,6 +137,13 @@ export interface AdminDeps {
     AgentChatTokenService,
     "upsertDailyByModel" | "queryStats"
   >;
+  /**
+   * Retained solely as a pass-through to deleteAgentFully() (DELETE /agents/:id),
+   * which has its own internal prisma.agent/prisma.agentEnv access — out of
+   * scope for the AgentService migration. All other route handlers in this
+   * file go through `agentService` instead of touching `prisma.agent.*`
+   * directly.
+   */
   prisma: Pick<PrismaClient, "agent" | "agentEnv">;
   /**
    * Provisions (and tears down) the workload backing an agent. Defaults to a
@@ -804,6 +822,7 @@ const chatTokenDailyStatsRoute = createRoute({
 
 export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
   const {
+    agentService,
     agentEnvService,
     agentCronJobService,
     agentCronRunService,
@@ -883,12 +902,10 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
       );
     }
     const body = c.req.valid("json");
-    const agent = await prisma.agent.create({
-      data: {
-        name: body.name,
-        slackId: body.slackId ?? null,
-        selfHosted: body.selfHosted ?? false,
-      },
+    const agent = await agentService.create({
+      name: body.name,
+      slackId: body.slackId ?? null,
+      selfHosted: body.selfHosted ?? false,
     });
 
     // Provision the backing workload AFTER the row exists (the provisioner
@@ -901,14 +918,12 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
       try {
         await provisioner.provision(agent.id, { slug: agent.name });
       } catch (err) {
-        await prisma.agent
-          .delete({ where: { id: agent.id } })
-          .catch((cleanupErr) => {
-            console.error(
-              "[agents-api] failed to roll back agent after provision error:",
-              cleanupErr,
-            );
-          });
+        await agentService.delete(agent.id).catch((cleanupErr) => {
+          console.error(
+            "[agents-api] failed to roll back agent after provision error:",
+            cleanupErr,
+          );
+        });
         throw err;
       }
     }
@@ -923,9 +938,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
         "Only admin bearers and session users can reconcile agents",
       );
     }
-    const agents = await prisma.agent.findMany({
-      select: { id: true, name: true, selfHosted: true },
-    });
+    const agents = await agentService.list();
     // Self-hosted agents manage their own workloads — exclude them from K8s reconciliation.
     const managedAgents = agents.filter((a) => !a.selfHosted);
     const result = await provisioner.reconcile(
@@ -944,10 +957,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     }
     const { id: agentId } = c.req.valid("param");
 
-    const agent = await prisma.agent.findUnique({
-      where: { id: agentId },
-      select: { id: true, name: true, selfHosted: true },
-    });
+    const agent = await agentService.getSummary(agentId);
     if (!agent) {
       throw new NotFoundError(`agent ${agentId} not found`);
     }
@@ -967,18 +977,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
       throw new ForbiddenError("Admin access required to get agent");
     }
     const { id: agentId } = c.req.valid("param");
-    const agent = await prisma.agent.findUnique({
-      where: { id: agentId },
-      select: {
-        id: true,
-        name: true,
-        slackId: true,
-        selfHosted: true,
-        repos: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
+    const agent = await agentService.getDetail(agentId);
     if (!agent) {
       throw new NotFoundError(`agent ${agentId} not found`);
     }
@@ -993,28 +992,13 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     const { id: agentId } = c.req.valid("param");
     const body = c.req.valid("json");
 
-    const existing = await prisma.agent.findUnique({
-      where: { id: agentId },
-      select: { id: true },
-    });
+    const existing = await agentService.exists(agentId);
     if (!existing) {
       throw new NotFoundError(`agent ${agentId} not found`);
     }
-    const agent = await prisma.agent.update({
-      where: { id: agentId },
-      data: {
-        selfHosted: body.selfHosted,
-        ...(body.repos !== undefined ? { repos: body.repos } : {}),
-      },
-      select: {
-        id: true,
-        name: true,
-        slackId: true,
-        selfHosted: true,
-        repos: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+    const agent = await agentService.updateSelfHosted(agentId, {
+      selfHosted: body.selfHosted,
+      ...(body.repos !== undefined ? { repos: body.repos } : {}),
     });
     return c.json(serializeAgent(agent), 200);
   });
@@ -1055,10 +1039,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     if (c.get("isAdmin") !== true) {
       throw new ForbiddenError("Admin access required to list agents");
     }
-    const agents = await prisma.agent.findMany({
-      select: { id: true, name: true, selfHosted: true },
-      orderBy: { name: "asc" },
-    });
+    const agents = await agentService.list();
     return c.json(agents, 200);
   });
 

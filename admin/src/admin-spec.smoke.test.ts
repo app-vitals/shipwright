@@ -32,12 +32,12 @@ function buildSpecApp() {
         return [];
       },
     },
-    prisma: {
-      agent: {
-        async findUnique() {
-          return null;
-        },
+    agentService: {
+      async getById() {
+        return null;
       },
+    },
+    prisma: {
       agentPlugin: {
         async findMany() {
           return [];
@@ -50,6 +50,30 @@ function buildSpecApp() {
   });
 
   const adminApp = createAdminApp({
+    agentService: {
+      create: async () => ({
+        id: "a1",
+        name: "",
+        slackId: null,
+        selfHosted: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+      delete: async () => {},
+      list: async () => [],
+      getSummary: async () => null,
+      getDetail: async () => null,
+      exists: async () => false,
+      updateSelfHosted: async () => ({
+        id: "a1",
+        name: "",
+        slackId: null,
+        selfHosted: false,
+        repos: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    },
     agentEnvService: {
       upsert: async () => {},
       patch: async () => {},
