@@ -7,6 +7,13 @@
 import { describe, expect, it } from "bun:test";
 import { discoverBakedMarketplaces, installPlugins } from "./setup.ts";
 
+// Explicit empty extra-marketplace list — every call in this describe block
+// must pass this (or an intentional array) instead of omitting the arg.
+// Omitting it falls through to discoverBakedMarketplaces(BAKED_MARKETPLACES_ROOT),
+// which reads the REAL /opt/shipwright/marketplaces directory on disk and makes
+// these tests depend on ambient sandbox/image state.
+const NO_EXTRA_MARKETPLACES: string[] = [];
+
 describe("installPlugins — local marketplace", () => {
   it("registers the marketplace before installing plugins", async () => {
     const calls: Array<{ cmd: string; args: string[] }> = [];
@@ -25,6 +32,7 @@ describe("installPlugins — local marketplace", () => {
       [],
       "/repo/root",
       "/tmp/nonexistent-manifest.json",
+      NO_EXTRA_MARKETPLACES,
     );
 
     // First call must be marketplace add
@@ -53,6 +61,7 @@ describe("installPlugins — local marketplace", () => {
       [],
       "/repo/root",
       "/tmp/nonexistent-manifest.json",
+      NO_EXTRA_MARKETPLACES,
     );
 
     // marketplace add + install + update = 3 calls
@@ -86,6 +95,7 @@ describe("installPlugins — local marketplace", () => {
       [{ plugin: "my-plugin", marketplace: "org/my-marketplace" }],
       "/repo/root",
       "/tmp/nonexistent-manifest.json",
+      NO_EXTRA_MARKETPLACES,
     );
 
     // marketplace add + 2 installs + 2 updates = 5 calls
@@ -116,6 +126,7 @@ describe("installPlugins — local marketplace", () => {
       [],
       "/custom/repo/root",
       "/tmp/nonexistent-manifest.json",
+      NO_EXTRA_MARKETPLACES,
     );
 
     expect(calls[0].args).toEqual([
@@ -173,13 +184,54 @@ describe("installPlugins — local marketplace", () => {
       [],
       "/repo/root",
       "/tmp/nonexistent-manifest.json",
-      [], // empty extra dirs
+      NO_EXTRA_MARKETPLACES,
     );
 
     // Only the /repo/root marketplace add — no extra adds
     const addCalls = calls.filter((c) => c.args[1] === "marketplace");
     expect(addCalls).toHaveLength(1);
     expect(addCalls[0].args[3]).toBe("/repo/root");
+  });
+
+  it("never reads the real BAKED_MARKETPLACES_ROOT when extraMarketplaceDirs is injected (isolation regression)", async () => {
+    // Regression test for T-002: previously, tests that omitted the
+    // extraMarketplaceDirs arg silently fell through to
+    // discoverBakedMarketplaces(BAKED_MARKETPLACES_ROOT), which performs a
+    // real existsSync/readdirSync against /opt/shipwright/marketplaces. On any
+    // image/sandbox that bakes a marketplace there (this sandbox does), that
+    // extra ambient `marketplace add` call would silently appear before the
+    // expected calls and break exact-match assertions below.
+    //
+    // This test asserts the injected empty array wins deterministically,
+    // regardless of what (if anything) actually exists on disk at
+    // /opt/shipwright/marketplaces in the environment running the suite.
+    const calls: Array<{ cmd: string; args: string[] }> = [];
+    const mockExec = async (
+      cmd: string,
+      args: string[],
+      _opts: { cwd: string },
+    ) => {
+      calls.push({ cmd, args });
+      return { stdout: "", exitCode: 0 };
+    };
+
+    await installPlugins(
+      mockExec,
+      "/tmp/cwd",
+      [],
+      "/repo/root",
+      "/tmp/nonexistent-manifest.json",
+      NO_EXTRA_MARKETPLACES,
+    );
+
+    // Exactly one marketplace add (the built-in shipwright one) — no extra
+    // marketplace add sneaks in from real fs discovery, no matter what's
+    // actually present on disk at BAKED_MARKETPLACES_ROOT in this environment.
+    const addCalls = calls.filter((c) => c.args[1] === "marketplace");
+    expect(addCalls).toHaveLength(1);
+    expect(addCalls[0].args[3]).toBe("/repo/root");
+    // Full call count is deterministic: marketplace add + install + update = 3.
+    expect(calls).toHaveLength(3);
   });
 });
 
