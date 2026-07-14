@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { BOOKING_URL } from "../src/consts";
 import { expectNoRuntimeJsBeyondAnalytics } from "./helpers";
 
 // Fulfill external font CDN requests immediately so the page's 'load' event
@@ -401,7 +402,7 @@ test("services bridge links to the discovery call", async ({ page }) => {
   await expect(section).toBeVisible();
   await expect(
     section.getByRole("link", { name: /discovery call/i }),
-  ).toHaveAttribute("href", "https://cal.com/team/app-vitals/discovery-call");
+  ).toHaveAttribute("href", BOOKING_URL);
 });
 
 test("services bridge stays soft — no email-capture form", async ({ page }) => {
