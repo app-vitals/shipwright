@@ -321,13 +321,20 @@ describe("HttpKubernetesClient — in-cluster CA", () => {
   });
 
   it("omits the tls key (system-CA fallback) without throwing when the DEFAULT CA path is missing", async () => {
-    // No caPath/caCert → the default in-cluster SA path is used, which does not
-    // exist in the test environment. Best-effort: degrade to system CAs (warns
-    // to stderr) rather than throwing, so construction succeeds.
+    // No caPath/caCert → the default in-cluster SA path is derived from an
+    // injected `saDir` pointing at a freshly-created, guaranteed-empty temp
+    // dir (never populated with a ca.crt) — deterministic regardless of what
+    // the sandbox's real filesystem happens to have mounted at the actual
+    // in-cluster SA path. Best-effort: degrade to system CAs (warns to
+    // stderr) rather than throwing, so construction succeeds.
+    const emptyDir = mkdtempSync(join(tmpdir(), "k8s-no-default-ca-"));
+    tempDirs.push(emptyDir);
+
     const { fetchFn, lastRequest } = cassetteFetch("getDeployment_success");
     const client = new HttpKubernetesClient({
       apiServer: "https://kubernetes.default.svc",
       token: "test-sa-token",
+      saDir: emptyDir,
       fetchFn,
     });
 

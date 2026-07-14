@@ -7,9 +7,9 @@
 // Claude-native. Zero runtime JS; all static HTML inlined at build time.
 // Brand tokens only.
 import BaseLayout from "../layouts/BaseLayout.astro";
+import { BOOKING_URL } from "../consts";
 
 const repoUrl = "https://github.com/app-vitals/shipwright";
-const discoveryUrl = "https://cal.com/team/app-vitals/discovery-call";
 const installCmd = "/plugin install shipwright@app-vitals/shipwright";
 
 // Market structure: 3-pole framing of the AI coding agent space.
@@ -500,7 +500,7 @@ helm install shipwright shipwright/shipwright</code></pre>
   </section>
 
   <!-- CTA / COSS bridge -->
-  <section class="relative z-10 py-20 pb-24" style="border-top: 1px solid var(--sw-color-border-subtle);">
+  <section id="cta" class="relative z-10 py-20 pb-24" style="border-top: 1px solid var(--sw-color-border-subtle);">
     <h2>Try it</h2>
     <p class="mt-3 max-w-2xl">
       Install the plugin into Claude Code and run a task end to end. Free, MIT,
@@ -509,7 +509,7 @@ helm install shipwright shipwright/shipwright</code></pre>
     <pre class="sw-code mt-4 w-fit"><code>{installCmd}</code></pre>
     <div class="mt-6 flex flex-wrap items-center gap-4">
       <a href={repoUrl} class="sw-btn">View on GitHub ↗</a>
-      <a href={discoveryUrl} class="sw-btn sw-btn-secondary">Book a discovery call</a>
+      <a href={BOOKING_URL} class="sw-btn sw-btn-secondary">Book a discovery call</a>
     </div>
   </section>
 </BaseLayout>
