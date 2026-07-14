@@ -4,7 +4,7 @@
  * Unit tests for getDevTaskCandidates() — native port of
  * plugins/shipwright/scripts/check-dev-task.ts's qualification logic.
  *
- * Ported from plugins/shipwright/scripts/check-dev-task.test.ts, adjusted to
+ * Ported from plugins/shipwright/scripts/check-dev-task.unit.test.ts, adjusted to
  * assert on the returned WorkTaskCandidate[] array instead of {exit, output}.
  * HITL-notification cases from the plugin test are intentionally not ported —
  * HITL notification isn't a work candidate for the selector and is out of

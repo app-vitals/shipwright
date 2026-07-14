@@ -8,7 +8,7 @@ Shipwright Harness is the open-source autonomous delivery system in your own env
 
 - **[Quickstart](./quickstart.md)** — prerequisites, step-by-step setup (clone → quickstart.sh → plugin install → task dev), and the copy-paste session prompt.
 - **[Architecture](./architecture.md)** — the four-artifact design (plugin → metrics → agent → task-store), supporting surfaces, and workspace layout.
-- **[Testing](./testing.md)** — the four-layer test model (unit / integration / smoke / e2e), run commands, speed budgets, and the isolation contract.
+- **[Testing](./testing.md)** — the five-layer test model (unit / integration / smoke / e2e / content), run commands, speed budgets, and the isolation contract.
 - **[Metrics dashboard](./metrics.md)** — the provider-agnostic metrics service (fixtures / task-store): JSON endpoints, dashboard, auth, and environment.
 - **[Shipwright agent](./agent.md)** — the autonomous runner: runtime + admin APIs, data model, and environment.
 - **[Deploying to Kubernetes](./deploy-kubernetes.md)** — Helm chart deployment guides for Minikube, GKE (Gateway API + cert-manager), and EKS (ALB), plus the agent provisioning model and auth modes.

@@ -1,5 +1,5 @@
 /**
- * plugins/shipwright/scripts/check-docs-freshness.test.ts
+ * plugins/shipwright/scripts/check-docs-freshness.unit.test.ts
  *
  * Unit tests for check-docs-freshness.ts
  *

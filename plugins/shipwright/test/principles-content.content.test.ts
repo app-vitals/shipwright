@@ -7,7 +7,7 @@
  * entry, and none of the three removed rule IDs.
  *
  * Content-assertion only: existsSync/readFileSync, no I/O beyond local file
- * reads (mirrors plugin-absorption.test.ts).
+ * reads (mirrors plugin-absorption.content.test.ts).
  */
 import { describe, expect, it } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";

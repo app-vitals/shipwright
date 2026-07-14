@@ -4,7 +4,7 @@
  * Verifies docs/testing.md, docs/test-readiness/test-system.md,
  * skills/test-design/SKILL.md, and skills/repo-config/SKILL.md use
  * "recorded fixture doubles" terminology instead of "VCR"/"cassette"
- * (mirrors plugins/shipwright/test/principles-content.unit.test.ts, PRN-1.1).
+ * (mirrors plugins/shipwright/test/principles-content.content.test.ts, PRN-1.1).
  *
  * Content-assertion only: readFileSync, no I/O beyond local file reads.
  */

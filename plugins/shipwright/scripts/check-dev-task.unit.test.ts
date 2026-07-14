@@ -1,5 +1,5 @@
 /**
- * plugins/shipwright/scripts/check-dev-task.test.ts
+ * plugins/shipwright/scripts/check-dev-task.unit.test.ts
  *
  * Unit tests for check-dev-task.ts
  *

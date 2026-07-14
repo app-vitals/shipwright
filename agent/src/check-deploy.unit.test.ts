@@ -4,7 +4,7 @@
  * Unit tests for getDeployCandidates() — native port of
  * plugins/shipwright/scripts/check-deploy.ts's qualification logic.
  *
- * Ported from plugins/shipwright/scripts/check-deploy.test.ts, adjusted to
+ * Ported from plugins/shipwright/scripts/check-deploy.unit.test.ts, adjusted to
  * assert on the returned WorkPrCandidate[] array instead of {exit, output}.
  */
 
