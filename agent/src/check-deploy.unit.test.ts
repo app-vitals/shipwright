@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { TaskStatus } from "./check-helpers.ts";
+import type { LinkedTaskInfo } from "./check-helpers.ts";
 import {
   type CheckDeployDeps,
   type CiRun,
@@ -40,7 +40,7 @@ interface MakeDepsOptions {
   ciRuns?: Record<string, CiRun[]>;
   currentUser?: string;
   isSelfReviewAllowed?: boolean;
-  taskStatus?: Record<string, { status: TaskStatus; addedAt?: string } | null>;
+  taskStatus?: Record<string, LinkedTaskInfo | null>;
 }
 
 function makeDeps({
@@ -74,7 +74,6 @@ function makeDeps({
     },
   };
 }
-
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 

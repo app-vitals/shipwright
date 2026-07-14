@@ -31,7 +31,7 @@ import {
   resolveWorkspacePath,
   splitOrgRepo,
 } from "./check-helpers.ts";
-import type { TaskStatus } from "./check-helpers.ts";
+import type { LinkedTaskInfo } from "./check-helpers.ts";
 import type { WorkPrCandidate } from "./work-selector.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -97,7 +97,7 @@ export interface CheckDeployDeps {
   queryTaskStatus?: (
     repo: string,
     prNumber: number,
-  ) => Promise<{ status: TaskStatus; addedAt?: string } | null>;
+  ) => Promise<LinkedTaskInfo | null>;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -206,7 +206,7 @@ export async function getDeployCandidates(
         // linked task) is not disqualifying, but a lookup FAILURE fails
         // CLOSED — deploy is consequential enough that "unknown" must not be
         // treated as "confirmed ready".
-        let linkedTask: { status: TaskStatus; addedAt?: string } | null = null;
+        let linkedTask: LinkedTaskInfo | null = null;
         if (deps.queryTaskStatus) {
           try {
             linkedTask = await deps.queryTaskStatus(repo, pr.number);
