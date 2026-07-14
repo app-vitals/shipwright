@@ -17,7 +17,7 @@ Pick the next ready task from the task store, build the feature, simplify, verif
 
 Parse `$ARGUMENTS`:
 - `task-id` (e.g. `SWC-1.1`): target a specific task. Skips the interrupted-task resume
-  check and the `ready=true` scan in Step 1 — fetch this task directly instead and use it
+  check and the ready-queue scan in Step 1 — fetch this task directly instead and use it
   as the selected task for the rest of this command.
 - _(no arguments)_: normal flow — resume an interrupted task if one exists, otherwise pick
   the next ready task from the queue (see Step 1).
@@ -30,24 +30,10 @@ Auto-detect the project toolchain (run once, reuse throughout). Skip this step u
 
 ## Step 1: Pick Task
 
-**If invoked with a `task-id` argument**, fetch that task directly instead of scanning:
-
-```bash
-curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}" | jq '.'
-```
-
-- **404**: the task doesn't exist. Print `⚠ Task {task-id} not found.` and stop.
-- **Found, `status == "in_progress"`**: treat the same as the resume path below — proceed
-  straight to Step 2's Orphan Check with this task.
-- **Found, `status == "pending"`**: proceed straight to Step 2's Mark In-Progress with this
-  task (skip the dependency/`ready` check — an explicit id is an explicit instruction to
-  work this task now).
-- **Found, any other status** (e.g. `pr_open`, `blocked`, `merged`): not workable. Print
-  `⚠ Task {task-id} has status "{status}" — nothing to do.` and stop.
-
-Skip the rest of Step 1 (the resume check and the `ready=true` scan) when this path is
-taken — go directly to Step 2.
+**If invoked with a `task-id` argument**, skip the interrupted-task resume check and the
+ready-queue scan below — fetch that task directly instead and use it as the selected task
+for the rest of this command. See "Task-Id Argument Path" at the end of this step for the
+exact procedure.
 
 **Otherwise (no arguments), first check for an interrupted task** — if a prior session left a task `in_progress`, resume it. Pass `?assignee=` to narrow the task-store's repo-pool visibility down to this agent's own tasks, and filter again client-side as a backstop — otherwise this can pick up (and start committing to) a task assigned to a completely different agent:
 
@@ -141,6 +127,26 @@ Auto-detect the project toolchain (run once, reuse throughout):
 
 Refer to `references/toolchain-patterns.md` for the full detection lookup table.
 
+### Task-Id Argument Path
+
+**If invoked with a `task-id` argument**, fetch that task directly instead of scanning:
+
+```bash
+curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}" | jq '.'
+```
+
+- **404**: the task doesn't exist. Print `⚠ Task {task-id} not found.` and stop.
+- **Found, `status == "in_progress"`**: treat the same as the resume path above — proceed
+  straight to Step 2's Orphan Check with this task.
+- **Found, `status == "pending"`**: proceed straight to Step 2's Mark In-Progress with this
+  task (skip the dependency/`ready` check — an explicit id is an explicit instruction to
+  work this task now).
+- **Found, any other status** (e.g. `pr_open`, `blocked`, `merged`): not workable. Print
+  `⚠ Task {task-id} has status "{status}" — nothing to do.` and stop.
+
+This path skips the rest of Step 1 (the resume check and the `ready=true` scan above) — go
+directly to Step 2.
 
 ## Step 2: Mark In-Progress
 
