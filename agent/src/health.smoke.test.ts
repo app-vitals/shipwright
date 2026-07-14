@@ -1,9 +1,11 @@
 /**
- * Integration tests for startHealthServer() in agent/src/health.ts
+ * Smoke tests for startHealthServer() in agent/src/health.ts
  *
- * These tests spin up real Bun.serve() instances on localhost ports and make
- * live fetch() calls — they require a real network stack and belong in
- * *.integration.test.ts per docs/test-readiness/test-system.md.
+ * These tests boot real Bun.serve() instances on localhost ports and make
+ * live fetch() calls to exercise HTTP route contracts (status codes,
+ * response shapes) — an HTTP-server-booting test belongs in smoke per
+ * docs/test-readiness/test-system.md, even though it uses a real socket
+ * rather than Hono's app.request().
  */
 
 import { afterEach, describe, expect, it } from "bun:test";
