@@ -3,10 +3,10 @@
 # Build from repo root:
 #   docker build -f metrics/Dockerfile -t shipwright-metrics .
 #
-# Run (PostHog mode):
+# Run (taskstore mode):
 #   docker run \
-#     -e POSTHOG_PERSONAL_API_KEY=phx_... \
-#     -e POSTHOG_PROJECT_ID=<project-id> \
+#     -e METRICS_TASK_STORE_URL=http://task-store:3002 \
+#     -e METRICS_ADMIN_URL=http://admin:3001 \
 #     -e SHIPWRIGHT_SESSION_SECRET=... \
 #     -p 3460:3460 \
 #     shipwright-metrics

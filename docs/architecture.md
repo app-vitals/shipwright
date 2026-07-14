@@ -21,7 +21,7 @@ The plugin drives the delivery loop: **spec → plan → execute → review → 
 
 Key surfaces (see `plugins/shipwright/README.md` and `plugins/shipwright/CLAUDE.md` for the full command/skill catalog):
 
-- **Commands** (`commands/`) — `prd`, `plan-session`, `dev-task`, `review`, `patch`, `deploy`, the five-phase test-readiness pipeline (`test-inventory` → `test-design` → `test-migration` → `test-roadmap` → `test-publish`), `metrics`, `research`, `research-docs`, and more.
+- **Commands** (`commands/`) — `prd`, `plan-session`, `dev-task`, `review`, `patch`, `deploy`, the five-phase test-readiness pipeline (`test-inventory` → `test-design` → `test-migration` → `test-roadmap` → `test-fix`), `metrics`, `research`, `research-docs`, and more.
 - **Skills** (`skills/`) — autonomous behaviors including `pull-requests`, `review-staged`, `entropy-scan`, `entropy-fix`, `agent-admin`, `investigate-cron`, `learning-capture`, `task-store`, `test-readiness`, `test-debt`, `triage-dependabot-pr`, and `triage-dependabot-prs`.
 - **Scripts** (`scripts/`) — the task-store adapters, precheck scripts for each cron (`check-dev-task.ts`, `check-learn-dream.ts`, etc.), and supporting tooling.
 - **References** (`references/`) — schemas and recipes (`metrics-schema.md`, `task-store.md`, `doc-refresh-recipe.md`, `reviews-schema.md`, …).
@@ -40,27 +40,7 @@ A thin autonomous runner with a Prisma-backed store (PostgreSQL) and four HTTP s
 
 ## D — Task store service
 
-Postgres-backed task queue, PR tracking, and scoped tokens (`@shipwright/task-store`). The Hono app is composed from injected services by `createTaskStoreApp` (`task-store/src/app.ts`); `/health` and the `/docs/:id` capability URL are unauthenticated, everything else requires a bearer token.
-
-### Ephemeral document store (`/docs`)
-
-A small in-memory HTML store for short-lived, regenerable artifacts (one-pagers, reports, rendered plans) shared via capability URL. The `render-plan.ts` script uses this endpoint to upload rendered HTML and return a shareable URL to callers.
-
-**API:**
-
-- `POST /docs` — bearer auth; body is the raw HTML string; returns `201 { id, url, expiresIn }`.
-- `GET /docs/:id` — **no auth** (the unguessable id is the credential); serves the HTML as `text/html; charset=utf-8`; `404` on miss or expiry.
-
-**Configuration:**
-
-- `SHIPWRIGHT_TASK_STORE_DOC_TTL_SECONDS` (default `3600`) — TTL for documents in seconds; expiry is driven by an injected `Clock`.
-- `SHIPWRIGHT_TASK_STORE_PUBLIC_URL` (optional) — public base URL for capability URLs. When unset, the request origin is used. For example, `https://shipwright.example.com` produces capability URLs like `https://shipwright.example.com/docs/id-123`.
-
-**Clients:**
-
-- `render-plan.ts` (plugin script) — uploads rendered planning HTML when `SHIPWRIGHT_TASK_STORE_URL` and `SHIPWRIGHT_TASK_STORE_TOKEN` are set; falls back to writing a local temp file on upload failure.
-
-> ⚠️ **Single-replica caveat.** Storage is process-local (a plain `Map` in `task-store/src/doc-store.ts`) — a document POSTed to one replica is **not** visible from another, and all documents are lost on restart. Acceptable for the ephemeral MVP; it requires a single replica or sticky routing, and is flagged for a future durable backend (object storage / DB-backed blob).
+Postgres-backed task queue, PR tracking, and scoped tokens (`@shipwright/task-store`). The Hono app is composed from injected services by `createTaskStoreApp` (`task-store/src/app.ts`); `/health` is unauthenticated, everything else requires a bearer token.
 
 ## MCP Server
 

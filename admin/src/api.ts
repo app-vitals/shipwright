@@ -66,10 +66,11 @@ interface AgentCronJobServiceLike {
   >;
 }
 
+interface AgentServiceLike {
+  getById(agentId: string): Promise<{ id: string; repos: string[] } | null>;
+}
+
 interface PrismaLike {
-  agent: {
-    findUnique(args: { where: { id: string } }): Promise<{ id: string; repos: string[] } | null>;
-  };
   agentPlugin: {
     findMany(args: {
       where: { agentId: string; enabled: boolean };
@@ -80,6 +81,7 @@ interface PrismaLike {
 export interface AgentRuntimeDeps {
   agentEnvService: AgentEnvServiceLike;
   agentCronJobService: AgentCronJobServiceLike;
+  agentService: AgentServiceLike;
   prisma: PrismaLike;
   /** Session secret for cookie auth (SHIPWRIGHT_SESSION_SECRET). */
   sessionSecret: string;
@@ -151,7 +153,7 @@ const getCronsRoute = createRoute({
  * Inject real services for production; inject mocks for tests.
  */
 export function createAgentRuntimeApp(deps: AgentRuntimeDeps): OpenAPIHono {
-  const { agentEnvService, agentCronJobService, prisma } = deps;
+  const { agentEnvService, agentCronJobService, agentService, prisma } = deps;
 
   const app = new OpenAPIHono();
 
@@ -172,7 +174,7 @@ export function createAgentRuntimeApp(deps: AgentRuntimeDeps): OpenAPIHono {
     const { id } = c.req.valid("param");
 
     // Check agent existence
-    const agent = await prisma.agent.findUnique({ where: { id } });
+    const agent = await agentService.getById(id);
     if (!agent) {
       return c.json({ error: "Not found" }, 404);
     }
@@ -212,7 +214,7 @@ export function createAgentRuntimeApp(deps: AgentRuntimeDeps): OpenAPIHono {
     const { id } = c.req.valid("param");
 
     // Check agent existence
-    const agent = await prisma.agent.findUnique({ where: { id } });
+    const agent = await agentService.getById(id);
     if (!agent) {
       return c.json({ error: "Not found" }, 404);
     }

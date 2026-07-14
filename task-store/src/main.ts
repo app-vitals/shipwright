@@ -16,8 +16,6 @@ import * as Sentry from "@sentry/bun";
 import { initSentry } from "@shipwright/lib/sentry";
 import { createTaskStoreApp } from "./app.ts";
 import { createScopeResolver } from "./auth.ts";
-import { SystemClock } from "./clock.ts";
-import { EphemeralDocStore, resolveDocTtlSeconds } from "./doc-store.ts";
 import { PrismaClient } from "./index.ts";
 import { PullRequestService } from "./pull-request-service.ts";
 import { StaleClaimReaper } from "./stale-claim-reaper.ts";
@@ -118,28 +116,11 @@ async function startServer(): Promise<void> {
     );
   }
 
-  // Ephemeral HTML doc store (single-replica — see doc-store.ts caveat).
-  const docTtlSeconds = resolveDocTtlSeconds(
-    process.env.SHIPWRIGHT_TASK_STORE_DOC_TTL_SECONDS,
-  );
-  const docStore = new EphemeralDocStore({
-    clock: SystemClock(),
-    ttlSeconds: docTtlSeconds,
-  });
-  // Capability URLs are advertised at the externally-reachable base URL when set,
-  // otherwise built from each request's own origin.
-  const docPublicBaseUrl = process.env.SHIPWRIGHT_TASK_STORE_PUBLIC_URL;
-  console.log(
-    `[task-store] ephemeral doc store ready (ttl: ${docTtlSeconds}s, single-replica)`,
-  );
-
   const app = createTaskStoreApp({
     taskService,
     tokenService,
     pullRequestService,
     scopeResolver,
-    docStore,
-    docPublicBaseUrl,
     sentryClient: process.env.SENTRY_DSN ? Sentry : undefined,
   });
 

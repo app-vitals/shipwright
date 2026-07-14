@@ -153,11 +153,16 @@ export class TaskService implements TaskServiceLike {
    *
    * When `repos` is provided (repo-scoped agent token), unassigned pool tasks
    * whose repo is in the repos list are also included.
+   *
+   * Tasks are returned in ascending createdAt order (oldest first) to ensure
+   * deterministic selection regardless of insertion order.
    */
   async listReady(agentId?: string, repos?: string[]): Promise<Task[]> {
     // Load all tasks so dependency resolution sees the full graph, then filter
     // the result set to the caller's agent if one is specified.
-    const tasks = await this.prisma.task.findMany();
+    const tasks = await this.prisma.task.findMany({
+      orderBy: { createdAt: "asc" },
+    });
     const ready = await resolveReadyTasks(tasks, async () => false);
     if (agentId) {
       return ready.filter(

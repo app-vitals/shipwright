@@ -229,6 +229,62 @@ export function createLoopOrchestrator(
   };
 }
 
+// ─── Getter factory ────────────────────────────────────────────────────────────
+
+export interface LoopOrchestratorGetterDeps {
+  runner: (message: string) => Promise<ClaudeRunResult>;
+  cronRunReporter: CronRunReporter;
+  createOrchestrator?: typeof createProductionLoopOrchestrator;
+}
+
+/**
+ * Creates a getter function that constructs a LoopOrchestrator once and memoizes it,
+ * parameterized with the real loopCronId passed at call time.
+ *
+ * Usage:
+ *   const getter = createLoopOrchestratorGetter({ runner, cronRunReporter });
+ *   const orch = await getter(realLoopCronId);
+ *
+ * The orchestrator is constructed only on the first call; subsequent calls return
+ * the cached instance regardless of the loopCronId passed. On rejection, the
+ * memoization is reset so transient failures (e.g., gh unavailable) can be retried
+ * on the next call.
+ */
+export function createLoopOrchestratorGetter(
+  deps: LoopOrchestratorGetterDeps,
+): (loopCronId: string) => Promise<(jobs: CronJobLike[]) => Promise<void>> {
+  const createOrchestrator =
+    deps.createOrchestrator ?? createProductionLoopOrchestrator;
+  let orchestrator: ((jobs: CronJobLike[]) => Promise<void>) | undefined;
+  let orchestratorInit: Promise<
+    (jobs: CronJobLike[]) => Promise<void>
+  > | null = null;
+
+  return async function getLoopOrchestrator(
+    loopCronId: string,
+  ): Promise<(jobs: CronJobLike[]) => Promise<void>> {
+    if (orchestrator) return orchestrator;
+    if (!orchestratorInit) {
+      orchestratorInit = createOrchestrator({
+        runner: deps.runner,
+        cronRunReporter: deps.cronRunReporter,
+        loopCronId,
+      })
+        .then((orch) => {
+          orchestrator = orch;
+          return orch;
+        })
+        .catch((err) => {
+          // Reset so a transient dep-wiring failure (e.g. gh unavailable) can be
+          // retried on the next loop tick rather than caching the rejection.
+          orchestratorInit = null;
+          throw err;
+        });
+    }
+    return orchestratorInit;
+  };
+}
+
 // ─── Production wiring ────────────────────────────────────────────────────────
 
 export interface LoopOrchestratorProductionOptions {

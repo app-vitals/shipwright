@@ -104,6 +104,19 @@ function makeBaseDeps(
   agentEnvService: AdminDeps["agentEnvService"],
 ): Omit<AdminDeps, "sentryClient"> {
   return {
+    agentService: {
+      create: async () => {
+        throw new Error("not implemented");
+      },
+      delete: async () => {},
+      list: async () => [],
+      getSummary: async () => null,
+      getDetail: async () => null,
+      exists: async () => false,
+      updateSelfHosted: async () => {
+        throw new Error("not implemented");
+      },
+    },
     agentEnvService,
     agentCronJobService: {
       list: async () => [],

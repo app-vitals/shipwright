@@ -12,7 +12,7 @@ The task store ships as a standalone Hono service backed by PostgreSQL. Agents c
 
 ### Authentication
 
-All endpoints except `GET /health` and `GET /docs/:id` require a `Bearer` token:
+All endpoints except `GET /health` require a `Bearer` token:
 
 ```
 Authorization: Bearer <token>
@@ -43,7 +43,7 @@ Query params:
 |-------|------|-------------|
 | `status` | string | Filter by exact status (e.g. `pending`, `in_progress`, `pr_open`) |
 | `state` | string | `open` (all non-terminal), `closed` (terminal), `in_progress`, `ready`, `blocked` |
-| `ready` | `true` | Alias for `state=ready` — returns only tasks with `status=pending`, no `hitl`, and all dependencies satisfied |
+| `ready` | `true` | Alias for `state=ready` — returns only tasks with `status=pending`, no `hitl`, and all dependencies satisfied. Tasks are returned in ascending `createdAt` order (oldest first) to ensure deterministic selection regardless of insertion order. |
 | `session` | string | Filter by planning session slug |
 | `repo` | string | Filter by repo (`org/repo` format) |
 | `assignee` | string | Filter by assignee (admin tokens only; agent tokens see only their own tasks) |
@@ -304,32 +304,6 @@ DELETE /tokens/:id
 ```
 
 Soft-deletes the token (sets `revokedAt`). Returns the revoked token record.
-
-### Ephemeral document store
-
-The task store can host short-lived HTML documents — used by the plan skill to publish planning docs for agent reference.
-
-#### Store document
-
-```
-POST /docs
-```
-
-Body: raw HTML string (not JSON). Requires bearer auth. Returns:
-
-```json
-{ "id": "<uuid>", "url": "https://…/docs/<uuid>", "expiresIn": 3600 }
-```
-
-The `url` uses `SHIPWRIGHT_TASK_STORE_DOC_TTL_SECONDS` for TTL (default 3600 seconds). Storage is in-memory — a single replica or sticky routing is required.
-
-#### Fetch document
-
-```
-GET /docs/:id
-```
-
-**No authentication required** — the unguessable `id` is the credential. Returns the HTML with `Content-Type: text/html`. Returns `404` on miss or after expiry.
 
 ### Health
 
