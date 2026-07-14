@@ -343,4 +343,118 @@ describeOrSkip("AgentCronJobService (integration)", () => {
     expect(survivingRun).not.toBeNull();
     expect(survivingRun?.cronId).toBe(originalId);
   });
+
+  // ─── reconcileSystemCrons: shipwright-loop supersedes legacy phase crons ────
+
+  const LEGACY_PHASE_CRON_NAMES = [
+    "shipwright-dev-task",
+    "shipwright-patch",
+    "shipwright-review-patch",
+    "shipwright-review",
+    "shipwright-deploy",
+  ];
+
+  async function enableCronByName(
+    agentId: string,
+    name: string,
+  ): Promise<void> {
+    const jobs = await service.list(agentId);
+    const target = jobs.find((j) => j.name === name);
+    if (!target) throw new Error(`expected system cron "${name}" to exist`);
+    await service.setEnabled(agentId, target.id, true);
+  }
+
+  it("reconcileSystemCrons() forces legacy phase crons off once shipwright-loop is enabled (update branch)", async () => {
+    const agentId = await createAgent(prisma);
+    await service.reconcileSystemCrons(agentId);
+
+    // shipwright-dev-task defaults to enabled:true — force it off despite
+    // never touching it directly, proving the override runs unconditionally.
+    // shipwright-patch defaults to enabled:false — enable it by hand so the
+    // override also has to flip an explicitly-set true back to false.
+    await enableCronByName(agentId, "shipwright-loop");
+    await enableCronByName(agentId, "shipwright-patch");
+
+    await service.reconcileSystemCrons(agentId);
+
+    const jobs = await service.list(agentId);
+    for (const name of LEGACY_PHASE_CRON_NAMES) {
+      const cron = jobs.find((j) => j.name === name);
+      expect(cron?.enabled).toBe(false);
+    }
+  });
+
+  it("reconcileSystemCrons() leaves legacy phase crons' enabled state untouched when shipwright-loop is disabled", async () => {
+    const agentId = await createAgent(prisma);
+    await service.reconcileSystemCrons(agentId);
+
+    // shipwright-loop stays at its default (disabled) — manually enabling a
+    // legacy cron here must survive the reconcile unchanged.
+    await enableCronByName(agentId, "shipwright-patch");
+
+    await service.reconcileSystemCrons(agentId);
+
+    const jobs = await service.list(agentId);
+    const patchCron = jobs.find((j) => j.name === "shipwright-patch");
+    expect(patchCron?.enabled).toBe(true);
+  });
+
+  it("reconcileSystemCrons() does not force off system crons outside the legacy phase list", async () => {
+    const agentId = await createAgent(prisma);
+    await service.reconcileSystemCrons(agentId);
+
+    await enableCronByName(agentId, "shipwright-loop");
+    await enableCronByName(agentId, "shipwright-test-readiness");
+
+    await service.reconcileSystemCrons(agentId);
+
+    const jobs = await service.list(agentId);
+    const unrelated = jobs.find((j) => j.name === "shipwright-test-readiness");
+    expect(unrelated?.enabled).toBe(true);
+  });
+
+  it("reconcileSystemCrons() creates a legacy phase cron as disabled when shipwright-loop is already enabled (create branch)", async () => {
+    const agentId = await createAgent(prisma);
+    await service.reconcileSystemCrons(agentId);
+    await enableCronByName(agentId, "shipwright-loop");
+
+    // Simulate a legacy cron that doesn't exist yet for this agent (e.g. it
+    // was deleted) so the next reconcile exercises the create path rather
+    // than the update path. shipwright-dev-task's own SYSTEM_CRONS default
+    // is enabled:true, so this only passes if the override applies at
+    // creation time too, not just when updating an existing row.
+    await prisma.agentCronJob.deleteMany({
+      where: { agentId, name: "shipwright-dev-task" },
+    });
+
+    const result = await service.reconcileSystemCrons(agentId);
+    expect(result.created).toBe(1);
+
+    const jobs = await service.list(agentId);
+    const devTaskCron = jobs.find((j) => j.name === "shipwright-dev-task");
+    expect(devTaskCron?.enabled).toBe(false);
+  });
+
+  it("reconcileSystemCrons() is idempotent when re-run with shipwright-loop enabled", async () => {
+    const agentId = await createAgent(prisma);
+    await service.reconcileSystemCrons(agentId);
+    await enableCronByName(agentId, "shipwright-loop");
+
+    const first = await service.reconcileSystemCrons(agentId);
+    const stateAfterFirst = (await service.list(agentId))
+      .filter((j) => j.name)
+      .map((j) => ({ name: j.name, enabled: j.enabled }))
+      .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+
+    const second = await service.reconcileSystemCrons(agentId);
+    const stateAfterSecond = (await service.list(agentId))
+      .filter((j) => j.name)
+      .map((j) => ({ name: j.name, enabled: j.enabled }))
+      .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+
+    expect(stateAfterSecond).toEqual(stateAfterFirst);
+    expect(second.created).toBe(0);
+    expect(second.deleted).toBe(0);
+    expect(second.updated).toBe(first.updated);
+  });
 });

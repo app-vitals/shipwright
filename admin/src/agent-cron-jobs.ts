@@ -51,6 +51,18 @@ export function isValidCron(schedule: string): boolean {
   return fields.every((f) => fieldPattern.test(f));
 }
 
+// Legacy per-phase crons that shipwright-loop's unified dispatcher supersedes.
+// Once shipwright-loop is enabled for an agent, these must not also run —
+// two independent dispatch systems racing for the same task-store/PR claims
+// produces spurious 409 conflicts and wasted/crashed sessions.
+const LOOP_SUPERSEDED_CRON_NAMES = new Set([
+  "shipwright-dev-task",
+  "shipwright-patch",
+  "shipwright-review-patch",
+  "shipwright-review",
+  "shipwright-deploy",
+]);
+
 function validateDeliveryTarget(
   channel: string | null,
   user: string | null,
@@ -387,6 +399,17 @@ export class AgentCronJobService {
     // Build set of valid SYSTEM_CRONS names for orphan detection
     const systemCronNames = new Set(SYSTEM_CRONS.map((c) => c.name));
 
+    // Resolve shipwright-loop's enabled state for this agent up front — its
+    // own SYSTEM_CRONS entry is processed in the same loop below, possibly
+    // after the legacy crons it supersedes, so this can't be read mid-loop.
+    const existingLoopCron = existingByName.get("shipwright-loop");
+    const loopSystemCron = SYSTEM_CRONS.find(
+      (c) => c.name === "shipwright-loop",
+    );
+    const loopEnabled = existingLoopCron
+      ? existingLoopCron.enabled
+      : (loopSystemCron?.enabled ?? false);
+
     let created = 0;
     let updated = 0;
     let deleted = 0;
@@ -397,11 +420,14 @@ export class AgentCronJobService {
       // Reconcile each SYSTEM_CRON entry
       for (const systemCron of SYSTEM_CRONS) {
         const existing = existingByName.get(systemCron.name);
+        const forceDisabled =
+          loopEnabled && LOOP_SUPERSEDED_CRON_NAMES.has(systemCron.name);
 
         if (existing) {
           // Update in place — preserves id (and thus AgentCronRun history,
           // which cascade-deletes when its AgentCronJob is deleted) and the
-          // existing enabled state.
+          // existing enabled state, except for legacy crons shipwright-loop
+          // now supersedes, which are forced off.
           await tx.agentCronJob.update({
             where: { id: existing.id },
             data: {
@@ -409,6 +435,7 @@ export class AgentCronJobService {
               prompt: systemCron.prompt,
               silent: systemCron.silent ?? false,
               preCheck: systemCron.preCheck ?? null,
+              ...(forceDisabled ? { enabled: false } : {}),
             },
           });
           updated++;
@@ -424,7 +451,7 @@ export class AgentCronJobService {
               preCheck: systemCron.preCheck ?? null,
               channel: null,
               user: null,
-              enabled: systemCron.enabled,
+              enabled: forceDisabled ? false : systemCron.enabled,
             },
           });
           created++;
