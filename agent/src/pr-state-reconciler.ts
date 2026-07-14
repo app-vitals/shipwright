@@ -163,11 +163,6 @@ export async function reconcilePrState(deps: PrStateReconcilerDeps): Promise<voi
 
 // ─── Production deps ──────────────────────────────────────────────────────────
 
-interface GhPrViewJson {
-  state: "OPEN" | "MERGED" | "CLOSED";
-  mergedAt: string | null;
-}
-
 interface PrListResponseJson {
   prs: PrStateRecord[];
   total: number;
@@ -219,7 +214,7 @@ export function buildProductionDeps(opts: {
       }
     },
     ghViewPr: async (repo: string, prNumber: number) => {
-      return ghJson<GhPrViewJson>([
+      return ghJson<GhPrView>([
         "pr",
         "view",
         String(prNumber),
