@@ -648,11 +648,6 @@ Run these across ALL scenarios to verify genericization:
 - [ ] Generates 1-3 actionable recommendations based on threshold rules
 - [ ] When all metrics are healthy: prints "All metrics are within healthy ranges"
 
-#### Verify: PostHog export
-- [ ] With POSTHOG_PROJECT_API_KEY set: sends batch events via curl
-- [ ] Without API key: prints setup instructions and skips export gracefully
-- [ ] Reports event counts per event type after export
-
 ---
 
 ## Scenario 21: /research — Project With Docs
@@ -964,7 +959,6 @@ Run these across ALL scenarios to verify genericization:
 - [ ] At least one `docs/*.md` file is modified by the agent
 - [ ] A separate commit `docs: refresh {scope}` appears on the branch (verify via `git log --oneline`)
 - [ ] Step 8.5c prints `✓ Docs refreshed: N file(s), M lines ({sha})`
-- [ ] Step 8.5d fires `shipwright_auto_docs` PostHog event with `updated=true`
 - [ ] Step 9 pushes BOTH the implementation commit AND the docs commit
 - [ ] The opened PR contains the doc edits in its diff
 - [ ] `planning/{session}/metrics.jsonl` record for this task contains `"auto_docs":{"updated":true,"files_changed":N,"lines_changed":M,"skipped_reason":null}`
@@ -986,7 +980,6 @@ Run these across ALL scenarios to verify genericization:
 - [ ] Agent runs but finds no candidate docs (pre-filter returns empty) OR finds candidates but all references still resolve
 - [ ] No `docs: refresh` commit on the branch
 - [ ] Step 8.5c prints `⏭ Docs refresh skipped (no_stale_refs)`
-- [ ] PostHog event fires with `updated=false`, `skipped_reason="no_stale_refs"`
 - [ ] Metrics record has `"auto_docs":{"updated":false,"files_changed":0,"lines_changed":0,"skipped_reason":"no_stale_refs"}`
 - [ ] Pipeline proceeds normally to Step 9
 
@@ -1060,7 +1053,7 @@ Run these across ALL scenarios to verify genericization:
 - [ ] Step 8.5c prints `⏭ Docs refresh skipped (commit_failed)` — NOT `✓ Docs refreshed`
 - [ ] No `docs: refresh` commit exists on the branch (`git log --oneline`)
 - [ ] `files_changed`/`lines_changed` are `0` — no metrics fabricated from the implementation commit
-- [ ] PostHog event + metrics.jsonl record `skipped_reason:"commit_failed"`
+- [ ] metrics.jsonl record has `skipped_reason:"commit_failed"`
 - [ ] Pipeline does NOT stall — proceeds to Step 9 (a docs-refresh failure never blocks the ship)
 
 ---
@@ -1080,7 +1073,6 @@ Run these across ALL scenarios to verify genericization:
 - [ ] Step 8.5b finds no parseable `AUTO_DOCS_METRICS` block
 - [ ] Prints `⚠ Docs refresh result unparseable — recording agent_error and continuing`
 - [ ] `auto_docs_updated=false`, `auto_docs_skipped_reason="agent_error"`, `commit_sha=null`
-- [ ] PostHog `shipwright_auto_docs` event still fires with `updated=false skipped_reason=agent_error`
 - [ ] metrics.jsonl record has `"auto_docs":{"updated":false,"files_changed":0,"lines_changed":0,"skipped_reason":"agent_error"}`
 - [ ] `/metrics` later buckets this as `agent_error` (a failure), NOT `legacy_record`
 - [ ] Pipeline continues to Step 9 without stalling
