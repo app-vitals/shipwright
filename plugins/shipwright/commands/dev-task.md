@@ -41,7 +41,7 @@ curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   "$SHIPWRIGHT_TASK_STORE_URL/tasks?ready=true" | jq '.tasks'
 ```
 
-The command returns `pending` shipwright tasks whose dependencies are all satisfied, sorted by `addedAt`. Pick the first result from `.tasks`.
+The command returns `pending` shipwright tasks whose dependencies are all satisfied, sorted by `createdAt` ascending (oldest first). Pick the first result from `.tasks`.
 
 If the output is an empty JSON array (`[]`), respond `[silent]` and stop.
 
