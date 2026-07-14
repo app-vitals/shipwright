@@ -71,53 +71,13 @@ describe("selectNextWorkItem", () => {
     expect(result).toEqual({ type: "task", task: olderTask });
   });
 
-  it("excludes a task blocked by an unsatisfied dependency", () => {
-    const dep = makeTask({ id: "dep-1", status: "in_progress" });
-    const blocked = makeTask({
-      id: "t-blocked",
-      createdAt: "2026-01-01T00:00:00.000Z",
-      dependencies: ["dep-1"],
-    });
-    const unblocked = makeTask({
-      id: "t-unblocked",
-      createdAt: "2026-01-02T00:00:00.000Z",
-    });
-    const result = selectNextWorkItem([dep, blocked, unblocked], []);
-    expect(result).toEqual({ type: "task", task: unblocked });
-  });
-
-  it("treats a task with a dependency in a terminal status as unblocked", () => {
-    const dep = makeTask({ id: "dep-1", status: "merged" });
-    const task = makeTask({ id: "t1", dependencies: ["dep-1"] });
-    const result = selectNextWorkItem([dep, task], []);
-    expect(result).toEqual({ type: "task", task });
-  });
-
-  it("treats a same-branch pr_open dependency as unblocked (bundled)", () => {
-    const dep = makeTask({ id: "dep-1", status: "pr_open", branch: "feat/shared" });
-    const task = makeTask({ id: "t1", dependencies: ["dep-1"], branch: "feat/shared" });
-    const result = selectNextWorkItem([dep, task], []);
-    expect(result).toEqual({ type: "task", task });
-  });
-
-  it("treats a same-branch approved dependency as unblocked (bundled)", () => {
-    const dep = makeTask({ id: "dep-1", status: "approved", branch: "feat/shared" });
-    const task = makeTask({ id: "t1", dependencies: ["dep-1"], branch: "feat/shared" });
-    const result = selectNextWorkItem([dep, task], []);
-    expect(result).toEqual({ type: "task", task });
-  });
-
-  it("treats a cross-branch pr_open dependency as still blocked", () => {
-    const dep = makeTask({ id: "dep-1", status: "pr_open", branch: "feat/other" });
-    const task = makeTask({ id: "t1", dependencies: ["dep-1"], branch: "feat/main" });
-    const result = selectNextWorkItem([dep, task], []);
-    expect(result).toBeNull();
-  });
-
-  it("excludes a task whose dependency is missing from the candidate list", () => {
-    const task = makeTask({ id: "t1", dependencies: ["missing-dep"] });
+  it("selects a ready task with dependencies whose satisfied dep is absent from the candidate list", () => {
+    // Regression guard: getDevTaskCandidates() only returns ready=true tasks, so a
+    // satisfied (terminal-status) dependency is never present in `tasks`. The task
+    // must still be selected on age alone — no local re-derivation of dependency state.
+    const task = makeTask({ id: "t1", dependencies: ["some-deployed-task-not-in-list"] });
     const result = selectNextWorkItem([task], []);
-    expect(result).toBeNull();
+    expect(result).toEqual({ type: "task", task });
   });
 
   it("excludes an already-claimed PR", () => {
@@ -135,11 +95,10 @@ describe("selectNextWorkItem", () => {
     expect(result).toEqual({ type: "pr", pr: unclaimed });
   });
 
-  it("returns null when every candidate is blocked or claimed", () => {
-    const dep = makeTask({ id: "dep-1", status: "in_progress" });
-    const blockedTask = makeTask({ id: "t1", dependencies: ["dep-1"] });
+  it("returns null when every candidate is non-pending or claimed", () => {
+    const nonPendingTask = makeTask({ id: "t1", status: "in_progress" });
     const claimedPr = makePr({ id: "pr1", claimedBy: "agent-x" });
-    const result = selectNextWorkItem([dep, blockedTask], [claimedPr]);
+    const result = selectNextWorkItem([nonPendingTask], [claimedPr]);
     expect(result).toBeNull();
   });
 
