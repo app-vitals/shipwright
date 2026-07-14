@@ -128,7 +128,7 @@ The agent is a thin runner with a Prisma-backed PostgreSQL database and a Hono H
         ┌──────────────────┼──────────────────┐
         │                  │                  │  (6 parallel legs)
    ┌────▼────────┐   ┌─────▼────────┐   ┌────▼──────────────┐
-   │ smoke: lib  │   │ smoke: admin │   │ smoke: metrics... │
+   │ smoke: chat │   │ smoke: admin │   │ smoke: metrics... │
    └────┬────────┘   └─────┬────────┘   └────┬──────────────┘
         │                  │                  │
         │                  │  (6 parallel: metrics, admin, task-store,
