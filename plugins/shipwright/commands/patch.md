@@ -1,5 +1,6 @@
 ---
 description: Address unresolved review findings, merge conflicts, and failing CI on own open PRs — queries GitHub directly, fixes in worktree, pushes
+argument-hint: "[org/repo#number]"
 ---
 
 # Patch
@@ -18,6 +19,18 @@ nothing needs addressing.
 
 ---
 
+## Arguments
+
+Parse `$ARGUMENTS`:
+- `org/repo#number` (e.g. `app-vitals/shipwright#123`): target a specific PR. Skips the
+  multi-repo discovery in Step 2 — fetch just this PR (still scoped to `CURRENT_USER` as
+  author, per the Independence Principles' "own PRs only" rule for patch) and classify it
+  into Lists A/C/D as usual from Step 3 onward.
+- _(no arguments)_: normal flow — discover all own open PRs across all configured repos
+  (see Step 2).
+
+---
+
 ## Step 1: Get Own GH Login
 
 Resolve the current GitHub CLI user once and remember the value — substitute it directly
@@ -31,7 +44,21 @@ CURRENT_USER=$(gh api /user -q '.login')
 
 ## Step 2: Discover Own Open PRs
 
-Resolve the list of repos to scan. Use the same resolver as other shipwright commands:
+**If invoked with an `org/repo#number` argument**, skip the multi-repo scan below — fetch
+just that one PR instead:
+
+```bash
+gh pr view {number} --repo {org}/{repo} \
+  --json number,title,headRefName,headRefOid,additions,deletions,mergeStateStatus,state,author
+```
+
+- **Not found, or `state != "OPEN"`, or `author.login != CURRENT_USER`**: this PR is not
+  workable by patch (per the Independence Principles' "own PRs only" scope). Print
+  `⚠ PR {org}/{repo}#{number} not found among own open PRs.` and stop.
+- **Match found**: use it as the sole entry in the unified PR list and proceed directly to
+  Step 2.5.
+
+**Otherwise (no arguments)**, resolve the list of repos to scan. Use the same resolver as other shipwright commands:
 
 ```bash
 REPOS=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
