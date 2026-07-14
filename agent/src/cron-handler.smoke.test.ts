@@ -1,12 +1,17 @@
 /**
- * Integration tests for cron-handler.ts and POST /cron endpoint in health.ts.
+ * Smoke tests for cron-handler.ts and the POST /cron endpoint in health.ts.
  *
  * Strategy: inject all deps. No real Slack or Claude calls.
  *
  * - runner: mock function
  * - slack: mock WebClient with chat.postMessage and conversations.open
  * - formatter: identity function (no markdown conversion)
- * - HTTP tests: real Bun.serve via startHealthServer
+ * - CronRunReporter tests spin up their own local Bun.serve() reporter mock
+ * - HTTP tests: real Bun.serve() via startHealthServer, hit with fetch() —
+ *   createHealthApp() only owns GET /health today, not /cron or /stats, so
+ *   there's no in-process app.request() seam for this route yet. This is the
+ *   real-socket exception documented for smoke tests; once createHealthApp()
+ *   is expanded to own /cron, these HTTP assertions can move to app.request().
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
