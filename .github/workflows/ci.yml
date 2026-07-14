@@ -63,52 +63,17 @@ jobs:
             echo "Only automated chart/plugin-version-bump files changed — skipping app-level CI jobs."
           fi
 
-  ci:
-    name: lint / typecheck / test
+  # Non-test CI gates: lint, banned-strings scan, typecheck, config-docs and
+  # version-sync checks. No database, no test execution — those are handled
+  # by the unit/integration/smoke matrix jobs below plus the coverage-gate
+  # safety net.
+  checks:
+    name: lint / typecheck / config checks
     runs-on: ubuntu-latest
     needs: changes
     # always() so this still runs (fail-open) if the changes job itself
     # errored rather than auto-skipping every job in the suite.
     if: always() && (needs.changes.result != 'success' || needs.changes.outputs.app == 'true')
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: shipwright
-          POSTGRES_PASSWORD: shipwright
-          POSTGRES_DB: shipwright_admin_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    env:
-      # Admin and task-store integration tests (admin/src/*.integration.test.ts,
-      # task-store/src/*.integration.test.ts) gate on the *_TEST vars below and
-      # skip silently when absent.
-      #
-      # Every integration test's beforeEach spins up a brand-new PrismaClient
-      # (its own pooled connection) and each afterEach disconnects it, so
-      # connections don't accumulate across the suite. connection_limit still
-      # bounds each client's own pool as a safety margin — Postgres's default
-      # max_connections=100 comfortably covers that.
-      #
-      # Note: raising max_connections on the service container itself isn't
-      # possible here — GitHub Actions' service `options:` are inserted into
-      # `docker create` *before* the image name, so they can't carry postgres's
-      # own `-c max_connections=...` server flag (and `-c` collides with
-      # docker's `--cpu-shares` shorthand there anyway).
-      DATABASE_URL_ADMIN_TEST: postgres://shipwright:shipwright@localhost:5432/shipwright_admin_test?connection_limit=5&pool_timeout=20
-      DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST: postgres://shipwright:shipwright@localhost:5432/shipwright_task_store_test?connection_limit=5&pool_timeout=20
-      # The schema.prisma files read the non-_TEST var names below (per their
-      # own `datasource db { url = env(...) }` declarations), so `prisma migrate
-      # deploy` needs these set to the same connection strings as the _TEST vars
-      # above to sync schema against the right databases. Nothing else in this
-      # job reads these two vars at runtime.
-      DATABASE_URL_SHIPWRIGHT_ADMIN: postgres://shipwright:shipwright@localhost:5432/shipwright_admin_test
-      DATABASE_URL_SHIPWRIGHT_TASK_STORE: postgres://shipwright:shipwright@localhost:5432/shipwright_task_store_test
     steps:
       - uses: actions/checkout@v4
 
@@ -136,6 +101,211 @@ jobs:
       - name: Check config docs
         run: task check-config-docs
 
+      - name: Check version sync
+        run: task check-version-sync
+
+  # 8-way unit-layer matrix — one leg per workspace. Pure logic, no I/O, no
+  # database. GH Actions' default fail-fast strategy means a single failing
+  # leg fails the whole `unit` job, which skips `integration` (and
+  # transitively `smoke`) via `needs:` below.
+  unit:
+    name: "unit (${{ matrix.workspace }})"
+    runs-on: ubuntu-latest
+    needs: checks
+    strategy:
+      matrix:
+        workspace:
+          - lib
+          - plugins/shipwright
+          - metrics
+          - agent
+          - admin
+          - task-store
+          - chat
+          - mcp-server
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.x"
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Run unit tests
+        run: |
+          FILES=$(find "${{ matrix.workspace }}" -name '*.unit.test.ts')
+          if [ -z "$FILES" ]; then
+            echo "No *.unit.test.ts files in ${{ matrix.workspace }} — skipping."
+            exit 0
+          fi
+          NODE_ENV=test bun test $FILES
+
+  # 6-way integration-layer matrix — workspaces with *.integration.test.ts
+  # files today (chat and mcp-server have none, so they're excluded). Most
+  # legs use recorded-fixture doubles and never touch the database; only
+  # admin and task-store integration suites read DATABASE_URL_* and hit the
+  # real Postgres service container below. Declaring `services:` on the job
+  # gives every matrix leg its own fresh container — harmless for the four
+  # legs that don't use it.
+  integration:
+    name: "integration (${{ matrix.workspace }})"
+    runs-on: ubuntu-latest
+    needs: [checks, unit]
+    strategy:
+      matrix:
+        workspace:
+          - lib
+          - plugins/shipwright
+          - metrics
+          - agent
+          - admin
+          - task-store
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: shipwright
+          POSTGRES_PASSWORD: shipwright
+          POSTGRES_DB: shipwright_admin_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # Admin and task-store integration tests (admin/src/*.integration.test.ts,
+      # task-store/src/*.integration.test.ts) gate on the *_TEST vars below and
+      # skip silently when absent. Every other matrix leg ignores these.
+      #
+      # Every integration test's beforeEach spins up a brand-new PrismaClient
+      # (its own pooled connection) and each afterEach disconnects it, so
+      # connections don't accumulate across the suite. connection_limit still
+      # bounds each client's own pool as a safety margin — Postgres's default
+      # max_connections=100 comfortably covers that.
+      DATABASE_URL_ADMIN_TEST: postgres://shipwright:shipwright@localhost:5432/shipwright_admin_test?connection_limit=5&pool_timeout=20
+      DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST: postgres://shipwright:shipwright@localhost:5432/shipwright_task_store_test?connection_limit=5&pool_timeout=20
+      # The schema.prisma files read the non-_TEST var names below (per their
+      # own `datasource db { url = env(...) }` declarations), so `prisma migrate
+      # deploy` needs these set to the same connection strings as the _TEST vars
+      # above to sync schema against the right databases.
+      DATABASE_URL_SHIPWRIGHT_ADMIN: postgres://shipwright:shipwright@localhost:5432/shipwright_admin_test
+      DATABASE_URL_SHIPWRIGHT_TASK_STORE: postgres://shipwright:shipwright@localhost:5432/shipwright_task_store_test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.x"
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Create task-store test database
+        if: matrix.workspace == 'task-store'
+        run: PGPASSWORD=shipwright psql -h localhost -U shipwright -d shipwright_admin_test -c "CREATE DATABASE shipwright_task_store_test;"
+
+      - name: Sync admin test DB schema
+        if: matrix.workspace == 'admin'
+        run: bunx prisma migrate deploy --schema=admin/prisma/schema.prisma
+
+      - name: Sync task-store test DB schema
+        if: matrix.workspace == 'task-store'
+        run: bunx prisma migrate deploy --schema=task-store/prisma/schema.prisma
+
+      - name: Run integration tests
+        run: |
+          FILES=$(find "${{ matrix.workspace }}" -name '*.integration.test.ts')
+          if [ -z "$FILES" ]; then
+            echo "No *.integration.test.ts files in ${{ matrix.workspace }} — skipping."
+            exit 0
+          fi
+          NODE_ENV=test bun test $FILES
+
+  # 6-way smoke-layer matrix — workspaces with (or about to have) HTTP route
+  # contract tests driven via Hono's in-process app.request(). `agent` has no
+  # *.smoke.test.ts files yet (pending an unmerged rename of an existing
+  # integration test) but is included per the target matrix shape; its leg
+  # no-ops cleanly via the zero-files guard below until that lands.
+  smoke:
+    name: "smoke (${{ matrix.workspace }})"
+    runs-on: ubuntu-latest
+    needs: [checks, integration]
+    strategy:
+      matrix:
+        workspace:
+          - metrics
+          - admin
+          - task-store
+          - chat
+          - mcp-server
+          - agent
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.x"
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Run smoke tests
+        run: |
+          FILES=$(find "${{ matrix.workspace }}" -name '*.smoke.test.ts')
+          if [ -z "$FILES" ]; then
+            echo "No *.smoke.test.ts files in ${{ matrix.workspace }} — skipping."
+            exit 0
+          fi
+          NODE_ENV=test bun test $FILES
+
+  # Final safety net: reruns the existing, unchanged full-suite coverage gate
+  # (task test:coverage = bun test --coverage + scripts/check-coverage.ts) so
+  # the aggregate 80/80 lines/functions gate is never silently dropped by the
+  # per-layer matrix split above. Deliberately duplicates test execution
+  # (full suite runs in ~24s per docs/test-readiness/test-system.md) rather
+  # than merging per-leg lcov artifacts, which is out of scope here.
+  coverage-gate:
+    name: coverage gate / secret scan
+    runs-on: ubuntu-latest
+    needs: [checks, unit, integration, smoke]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: shipwright
+          POSTGRES_PASSWORD: shipwright
+          POSTGRES_DB: shipwright_admin_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL_ADMIN_TEST: postgres://shipwright:shipwright@localhost:5432/shipwright_admin_test?connection_limit=5&pool_timeout=20
+      DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST: postgres://shipwright:shipwright@localhost:5432/shipwright_task_store_test?connection_limit=5&pool_timeout=20
+      DATABASE_URL_SHIPWRIGHT_ADMIN: postgres://shipwright:shipwright@localhost:5432/shipwright_admin_test
+      DATABASE_URL_SHIPWRIGHT_TASK_STORE: postgres://shipwright:shipwright@localhost:5432/shipwright_task_store_test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.x"
+
+      - name: Install go-task
+        uses: arduino/setup-task@v2
+        with:
+          version: 3.51.1
+
+      - name: Install dependencies
+        run: task setup
+
       - name: Create task-store test database
         run: PGPASSWORD=shipwright psql -h localhost -U shipwright -d shipwright_admin_test -c "CREATE DATABASE shipwright_task_store_test;"
 
@@ -153,7 +323,6 @@ jobs:
           echo "141c3b2dede46d8b3a53b47116da756bd223decc0374797559a6b50ecba5590c  gitleaks.tar.gz" | sha256sum -c
           tar -xz -f gitleaks.tar.gz gitleaks
           ./gitleaks detect --source . --no-git --redact
-
 
   site:
     name: site build / brand-lint / smoke
@@ -218,7 +387,7 @@ jobs:
   e2e:
     name: e2e (metrics dashboard)
     runs-on: ubuntu-latest
-    needs: ci
+    needs: coverage-gate
     steps:
       - uses: actions/checkout@v4
 
