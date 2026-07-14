@@ -128,8 +128,8 @@ curl -X POST -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   cleanup). `state` is independent of `reviewState` — a record can have `state: merged` while
   `reviewState: posted` (the review was posted before merge).
 
-- `taskId` is nullable — PRs not from shipwright tasks still get reviewed when
-  `review_external_prs` is enabled in agent-policy.md.
+- `taskId` is nullable — a PR not opened by a shipwright task (e.g. opened by hand) still
+  gets reviewed when explicitly targeted; it just has no linked task record.
 
 - **Multi-agent coordination**: the atomic claim + heartbeat mechanism allows multiple agents
   to review different PRs in parallel without coordination overhead.

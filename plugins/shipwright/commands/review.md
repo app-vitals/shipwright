@@ -44,7 +44,6 @@ Read `state/agent-policy.md`. If the file doesn't exist, use these conservative 
 |---------|---------|
 | `auto_post_reviews` | false |
 | `allowed_events` | [COMMENT, APPROVE] |
-| `review_external_prs` | true |
 | `allow_self_review` | true |
 | `min_confidence` | 75 |
 | `max_findings` | 5 |

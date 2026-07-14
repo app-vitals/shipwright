@@ -198,8 +198,8 @@ Agent behavior is controlled by `state/agent-policy.md`. This is a Markdown file
 |---|---|---|---|
 | `auto_post_reviews` | `bool` | `false` | Post review comments to GitHub automatically without manual approval. |
 | `allowed_events` | `string[]` | `["COMMENT", "APPROVE"]` | GitHub review event types the agent may emit. |
-| `review_external_prs` | `bool` | `true` | Apply only to review orchestrators (e.g. `/shipwright:review-staged`, loop): review PRs opened by users other than the agent. The `/shipwright:review` command itself always targets a single explicit PR, regardless of this setting. |
-| `allow_self_review` | `bool` | `true` | Apply only to review orchestrators (e.g. `/shipwright:review-staged`, loop): allow the agent to review its own PRs. Set to `false` to require a human reviewer on agent-authored PRs. The `/shipwright:review` command itself always targets a single explicit PR, regardless of this setting. |
+| `review_external_prs` | `bool` | `true` | Currently unused — `/shipwright:review` always targets a single explicit PR (no repo-wide scan to filter), and no other command reads this field. |
+| `allow_self_review` | `bool` | `true` | Read by `check-review.ts` (the `shipwright-review`/`shipwright-loop` cron precheck) to decide whether the agent's own open PRs are review candidates. Set to `false` to require a human reviewer on agent-authored PRs. |
 | `min_confidence` | `number` | `75` | Minimum confidence score (0–100) for a finding to be included in a review. |
 | `max_findings` | `number` | `5` | Maximum number of findings to include in a single review. |
 | `cleanup_merged_worktrees` | `bool` | `true` | Automatically remove worktrees for merged branches. |
