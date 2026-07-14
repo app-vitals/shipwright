@@ -117,6 +117,7 @@ Tests land **with** the code, at the correct layer — same PR, no "add tests la
 | `*.integration.test.ts` | integration | real dependency behavior via recorded fixtures / injected doubles |
 | `*.smoke.test.ts` | smoke | Hono endpoints via in-process `app.request()` (no real socket) |
 | `*.spec.ts` (in `site/`) | e2e | the site in a real browser via Playwright |
+| `*.content.test.ts` | content | markdown/prompt-content-assertion tests — e.g. checking that a command's or skill's Markdown body contains expected sections/instructions/wording. Distinct from unit/integration/smoke: no real I/O boundary, just asserting on static content. |
 
 **Test isolation (hard rule):** inject time via a `Clock`; test external clients (task store, GitHub) with recorded fixtures. **No `mock.module()`, no `global.fetch`/`global.*` overrides** — Bun shares the test process, so leaked globals break sibling suites.
 
