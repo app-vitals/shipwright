@@ -331,13 +331,13 @@ const SA_DIR = "/var/run/secrets/kubernetes.io/serviceaccount";
  * Read the in-cluster CA cert (PEM). When the caller passed an EXPLICIT
  * `caPath`, a read failure THROWS — a caller who named a path expects it to
  * exist, and silently falling back to system CAs would surface as an opaque
- * TLS verification error later. For the default SA path, reading is
- * best-effort: a missing file warns and yields `undefined` rather than
- * crashing client construction.
+ * TLS verification error later. For the default SA path (derived from
+ * `saDir`, injectable for tests), reading is best-effort: a missing file
+ * warns and yields `undefined` rather than crashing client construction.
  */
-function readCa(caPath?: string): string | undefined {
+function readCa(caPath?: string, saDir: string = SA_DIR): string | undefined {
   const explicit = caPath !== undefined;
-  const path = caPath ?? `${SA_DIR}/ca.crt`;
+  const path = caPath ?? `${saDir}/ca.crt`;
   try {
     return readFileSync(path, "utf-8");
   } catch (err) {
@@ -408,6 +408,15 @@ export interface HttpKubernetesClientOpts {
    * is best-effort and warns + degrades to system CAs on failure.
    */
   caPath?: string;
+  /**
+   * Directory the DEFAULT `caPath` (`${saDir}/ca.crt`) is derived from when
+   * neither `caCert` nor `caPath` is provided. Defaults to the real in-cluster
+   * ServiceAccount mount (`/var/run/secrets/kubernetes.io/serviceaccount`).
+   * Injectable so tests can point the implicit default at a guaranteed-empty
+   * directory instead of depending on whatever happens to be mounted in the
+   * sandbox's filesystem.
+   */
+  saDir?: string;
   /** Injected fetch — defaults to the global `fetch`. Never overrides the global. */
   fetchFn?: typeof fetch;
 }
@@ -427,7 +436,8 @@ export class HttpKubernetesClient implements KubernetesClient {
     this.apiServer = opts?.apiServer ?? defaultApiServer();
     this.token = opts?.token;
     this.tokenPath = opts?.tokenPath ?? `${SA_DIR}/token`;
-    this.caCert = opts?.caCert ?? readCa(opts?.caPath);
+    this.caCert =
+      opts?.caCert ?? readCa(opts?.caPath, opts?.saDir ?? SA_DIR);
     this.fetchFn = opts?.fetchFn ?? fetch;
   }
 

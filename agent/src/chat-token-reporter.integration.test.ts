@@ -12,7 +12,12 @@ import {
   NoopChatTokenReporter,
   formatDailyDate,
 } from "./chat-token-reporter.ts";
-import type { ModelUsage, TokenUsage } from "./claude.ts";
+import {
+  liveClaudeConfig,
+  setLiveClaudeConfig,
+  type ModelUsage,
+  type TokenUsage,
+} from "./claude.ts";
 import { FixedClock } from "./clock.ts";
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
@@ -95,14 +100,24 @@ describe("HttpChatTokenReporter", () => {
   const AGENT_ID = "agent-abc";
   const API_KEY = "test-api-key";
   const CLOCK = FixedClock(new Date("2026-01-15T12:00:00.000Z"));
+  let originalModel: string;
 
   beforeEach(() => {
     state = { captured: [], statusToReturn: 200 };
     server = startStubServer(PORT, state);
+    // liveClaudeConfig is a shared mutable module singleton (see claude.ts) —
+    // tests must not depend on the ambient ANTHROPIC_MODEL env var. Inject a
+    // model guaranteed to be present in pricing.ts's RATES table with a
+    // non-zero rate, and restore the original value in afterEach so this
+    // override doesn't leak into sibling test files sharing the same Bun
+    // test process.
+    originalModel = liveClaudeConfig.model;
+    setLiveClaudeConfig({ model: "claude-sonnet-4-6" });
   });
 
   afterEach(() => {
     server.stop(true);
+    setLiveClaudeConfig({ model: originalModel });
   });
 
   function makeReporter() {
