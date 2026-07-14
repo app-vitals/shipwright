@@ -73,7 +73,7 @@ curl -X POST -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
 
 | Value | Set by | Meaning |
 |-------|--------|---------|
-| `pending` | review.md Step 3 | PR discovered, not yet reviewed |
+| `pending` | task store (no record yet) or `/prs/{id}/release` | PR not yet reviewed, or a claim was abandoned |
 | `in_progress` | review.md Step 4 (claim) | Review in progress — claim acquired |
 | `posted` | review.md Step 11 (staged COMMENT) or Step 11b (posted) | Review written (staged) or posted to GitHub — see `staged` to distinguish |
 | `approved` | review.md Step 11b (APPROVE verdict) | Review posted with APPROVE verdict |
@@ -116,10 +116,13 @@ curl -X POST -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   on Step 11 (before posting). Explicit `/shipwright:review {org}/{repo}#{pr}` invocation
   posts a staged review (owner confirmation).
 
-- **Workflow phases**: `reviewState` drives the queue prioritization (review.md Step 3):
-  - `in_progress` = another agent is working; skip
-  - `posted` / `approved` + new commits = Tier 1 (re-review, highest priority)
-  - `pending` or no record = Tier 2 (first review)
+- **Workflow phases**: `review.md` is explicit-target-only — it always operates on the one
+  PR named in `$ARGUMENTS`, not a self-scanned/ranked queue. `reviewState` still governs
+  the dedup decision for that single target PR (review.md Step 14):
+  - `in_progress` = another agent is working; the claim attempt 409s and the command stops
+  - `posted` / `approved` + unchanged `headRefOid` = already reviewed at this commit; skip
+  - `posted` / `approved` + new `headRefOid` = re-review (author pushed real changes)
+  - `pending` or no record = first review
 
 - **Terminal states**: when a PR is merged or closed, mark `state: merged` or `closed` (Step 2
   cleanup). `state` is independent of `reviewState` — a record can have `state: merged` while

@@ -71,3 +71,60 @@ describe("review.md — CPF-2.2 verdict phrase requirement", () => {
     expect(slackVerdictLine).toBe(true);
   });
 });
+
+describe("review.md — WLS-3.2 explicit-target-only", () => {
+  it("Arguments section requires an explicit target and documents the no-argument [silent] stop", () => {
+    const startIdx = content.indexOf("## Arguments");
+    const endIdx = content.indexOf("## Step 1: Load Policy");
+    expect(startIdx).toBeGreaterThan(-1);
+    expect(endIdx).toBeGreaterThan(startIdx);
+    const argsSection = content.slice(startIdx, endIdx);
+
+    // The old self-scan mode description must be gone.
+    expect(argsSection.includes("No arguments: normal review flow")).toBe(false);
+
+    // The section must document that a missing argument stops silently.
+    expect(argsSection.toLowerCase().includes("required")).toBe(true);
+    expect(argsSection.includes("[silent]")).toBe(true);
+  });
+
+  it("does not contain the Tier 1 / Tier 2 ranking language", () => {
+    expect(content.includes("Tier 1")).toBe(false);
+    expect(content.includes("Tier 2")).toBe(false);
+  });
+
+  it("does not contain the 'Pick Next PR' self-scan ranking section", () => {
+    expect(content.includes("### Pick Next PR")).toBe(false);
+  });
+
+  it("does not build a repo-wide open-PR queue via `gh pr list --state open`", () => {
+    expect(content.includes("gh pr list --state open")).toBe(false);
+  });
+
+  it("still contains the commitSha/headRefOid dedup check for the explicit target PR", () => {
+    const dedupIdx = content.indexOf(
+      "Check if the PR was already reviewed at the current commit",
+    );
+    expect(dedupIdx).toBeGreaterThan(-1);
+    const dedupSection = content.slice(dedupIdx, dedupIdx + 1500);
+    expect(dedupSection.includes("record.commitSha")).toBe(true);
+    expect(dedupSection.includes("headRefOid")).toBe(true);
+  });
+
+  it("claim 409 responds [silent] and stops, with no retry against a different PR", () => {
+    const claimIdx = content.indexOf("### Claim using pre-captured commit SHA");
+    expect(claimIdx).toBeGreaterThan(-1);
+    const claimSection = content.slice(claimIdx, claimIdx + 1500);
+    expect(claimSection.includes("409")).toBe(true);
+    expect(claimSection.includes("[silent]")).toBe(true);
+    expect(claimSection.includes("return to Step 3")).toBe(false);
+  });
+
+  it("contains no remaining 'return to Step 3' retry-against-next-candidate language anywhere", () => {
+    expect(content.includes("return to Step 3")).toBe(false);
+  });
+
+  it("does not reference Step 3 as a queue-building step to skip from Step 14", () => {
+    expect(content.includes("Skip Step 3 (queue building)")).toBe(false);
+  });
+});
