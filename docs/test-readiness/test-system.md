@@ -88,49 +88,85 @@ The agent is a thin runner with a Prisma-backed PostgreSQL database and a Hono H
 |---|---|---|
 | All layers, all packages | `bun test` | <2 min |
 | Single package | `bun test --filter <package-name>` | see per-component above |
-| CI gates (lint → check-strings → typecheck → check-config-docs → check-version-sync → test → secret-scan) | `task ci` | <5 min |
+| CI gates (lint → check-strings → typecheck → check-config-docs → check-version-sync → test:coverage → secret-scan) | `task ci` | <5 min |
 
 ## CI pipeline shape
 
 ```
-┌─────────┐
-│  Lint   │  bunx biome lint .
-└────┬────┘
-     │
-┌────▼──────┐
-│ Typecheck │  bun run --filter="*" --sequential typecheck
-└────┬──────┘
-     │
-     ├──────────────┬──────────────┐
-     │              │              │
-┌────▼──────┐ ┌─────▼─────┐ ┌─────▼─────┐   ← parallel, per-package
-│ plugin    │ │ metrics   │ │ agent     │
-│ unit+intg │ │ unit+intg │ │ unit+intg │
-└────┬──────┘ └─────┬─────┘ └─────┬─────┘
-     │              │              │
-     └──────────────┼──────────────┘
-                    │
-         ┌──────────┴──────────┐
-         │                     │
-   ┌─────▼─────┐         ┌─────▼─────┐   ← parallel, per-package
-   │  Smoke    │         │  Smoke    │
-   │ (metrics) │         │  (agent)  │   Phase C+
-   │ app.req() │         │ app.req() │
-   └─────┬─────┘         └─────┬─────┘
-         │                     │
-         └──────────┬──────────┘
-                    │
-              ┌─────▼─────┐
-              │   E2E     │  Playwright; Phase B+ only
-              │(dashboard)│  <5 min
-              └─────┬─────┘
-                    │
-              merge → main
+┌─────────────────────────────────────────────────────────────────┐
+│  changes: detect app-level changes (skip auto-bump-only runs)  │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │
+┌──────────────────────────▼──────────────────────────────────────┐
+│  checks: lint → check-strings → typecheck → check-config-docs  │
+│           → check-version-sync                                 │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │
+        ┌──────────────────┼──────────────────┐
+        │                  │                  │  (8 parallel legs)
+   ┌────▼─────┐   ┌────────▼────────┐   ┌────▼──────────────┐
+   │ unit: lib │   │ unit: plugins/* │   │ unit: metrics...  │
+   └────┬─────┘   └────────┬────────┘   └────┬──────────────┘
+        │                  │                  │
+        │                  ├──────────────────┤  (8 parallel: lib, plugins/shipwright,
+        │                  │                  │   metrics, agent, admin, task-store,
+        │  (all 8 legs)    │  (all 8 legs)    │   chat, mcp-server)
+        └──────────────────┼──────────────────┘
+                           │
+        ┌──────────────────┼──────────────────┐
+        │                  │                  │  (6 parallel legs)
+   ┌────▼──────────┐   ┌───▼────────┐   ┌─────▼────────────┐
+   │ integration:  │   │ integration:│   │ integration:     │
+   │ lib           │   │ plugins/*   │   │ metrics, agent...│
+   └────┬──────────┘   └───┬────────┘   └─────┬────────────┘
+        │                  │                  │
+        │                  │  (6 parallel: lib, plugins/shipwright,
+        │                  │   metrics, agent, admin, task-store;
+        │                  │   postgres:16 service for each leg)
+        └──────────────────┼──────────────────┘
+                           │
+        ┌──────────────────┼──────────────────┐
+        │                  │                  │  (6 parallel legs)
+   ┌────▼────────┐   ┌─────▼────────┐   ┌────▼──────────────┐
+   │ smoke: lib  │   │ smoke: admin │   │ smoke: metrics... │
+   └────┬────────┘   └─────┬────────┘   └────┬──────────────┘
+        │                  │                  │
+        │                  │  (6 parallel: metrics, admin, task-store,
+        │                  │   chat, mcp-server, agent)
+        │                  │
+        └──────────────────┼──────────────────┘
+                           │
+              ┌────────────▼─────────────┐
+              │ coverage-gate: reruns    │
+              │ full test suite with     │
+              │ --coverage; gates on     │
+              │ 80/80 lines/functions    │
+              │ (+ secret-scan)          │
+              └────────────┬─────────────┘
+                           │
+        ┌──────────────────┼──────────────────┐
+        │                  │                  │  (3 parallel)
+   ┌────▼──────┐   ┌──────▼────────┐   ┌────▼──────────────┐
+   │  site     │   │ docker-builds │   │     e2e          │
+   │ build /   │   │ (agent image) │   │   (metrics       │
+   │ brand-lint│   │               │   │    dashboard)    │
+   └────┬──────┘   └──────┬────────┘   └────┬──────────────┘
+        │                 │                  │
+        │                 │  (all in parallel, skip if not needed)
+        │                 │
+        └─────────────────┼──────────────────┘
+                          │
+                    ✓ merge → main
 ```
 
-- **Layer order:** unit → integration → smoke → e2e. A lower-layer failure skips higher layers (fail-fast).
-- **Parallelism:** unit and integration run in parallel across packages. Smoke layers (metrics + agent) run in parallel with each other, sequentially after all integration jobs pass.
-- **Test-DB service container:** CI provisions a real `postgres:16` service container (see `.github/workflows/ci.yml`) for any DB-backed integration/smoke test (e.g., the agent's DB integration suite) — never a mocked or in-memory Postgres substitute.
+- **Layer order & fail-fast:** unit → integration → smoke → coverage-gate → (parallel site/e2e/docker-builds). A failure in any serial stage skips all later stages.
+- **Parallelism:**
+  - **Unit:** 8-way matrix (one leg per workspace: lib, plugins/shipwright, metrics, agent, admin, task-store, chat, mcp-server). Pure logic, no I/O, no database.
+  - **Integration:** 6-way matrix (workspaces with `*.integration.test.ts` files: lib, plugins/shipwright, metrics, agent, admin, task-store). Postgres service container provided to each leg; only admin and task-store read `DATABASE_URL_*`, others skip silently.
+  - **Smoke:** 6-way matrix (metrics, admin, task-store, chat, mcp-server, agent). Driven via Hono `app.request()` — no real socket.
+  - **Coverage-gate:** single job that reruns the full suite with `--coverage` as a final safety net, gates on 80% lines + 80% functions aggregate, and also runs secret-scan.
+  - **Site / E2E / Docker:** 3 jobs in parallel after coverage-gate, independent of each other.
+- **Test-DB service container:** Postgres `postgres:16` is provisioned as a `services:` entry for the integration job (shared across all 6 matrix legs, each gets its own fresh connection pool). The coverage-gate job also provisions Postgres for the full suite re-run. See `.github/workflows/ci.yml` for the exact service container config and connection-limit tuning.
 
 ## Speed budgets (consolidated)
 
