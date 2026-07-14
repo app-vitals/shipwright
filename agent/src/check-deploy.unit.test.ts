@@ -9,6 +9,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import type { TaskStatus } from "./check-helpers.ts";
 import {
   type CheckDeployDeps,
   type CiRun,
@@ -39,7 +40,7 @@ interface MakeDepsOptions {
   ciRuns?: Record<string, CiRun[]>;
   currentUser?: string;
   isSelfReviewAllowed?: boolean;
-  taskStatus?: Record<string, string | null>;
+  taskStatus?: Record<string, TaskStatus | null>;
 }
 
 function makeDeps({

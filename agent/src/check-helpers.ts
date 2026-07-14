@@ -406,6 +406,52 @@ export function createPrRecordQuery<T>(opts?: {
   };
 }
 
+/**
+ * Build a `(repo, prNumber) => status | null` query function against the
+ * task-store `/tasks` endpoint's `?repo=&pr=` filters. Returns null on
+ * missing config, a non-ok response, no matching task, or any fetch error —
+ * a missing linked task must not throw or disqualify the caller's PR.
+ *
+ * Accepts an optional `fetchFn` for dependency injection in tests, matching
+ * createPrRecordQuery's pattern.
+ */
+export function createTaskStatusQuery(opts?: {
+  fetchFn?: FetchFn;
+}): (repo: string, prNumber: number) => Promise<TaskStatus | null> {
+  const taskStoreUrl = (process.env.SHIPWRIGHT_TASK_STORE_URL ?? "").trim();
+  const taskStoreToken = (process.env.SHIPWRIGHT_TASK_STORE_TOKEN ?? "").trim();
+  const doFetch: FetchFn = opts?.fetchFn ?? fetch;
+
+  return async (repo: string, prNumber: number): Promise<TaskStatus | null> => {
+    if (!taskStoreUrl || !taskStoreToken) return null;
+    try {
+      const baseUrl = taskStoreUrl.replace(/\/$/, "");
+      const params = new URLSearchParams({ repo, pr: String(prNumber) });
+      const res = await doFetch(`${baseUrl}/tasks?${params}`, {
+        headers: {
+          Authorization: `Bearer ${taskStoreToken}`,
+          "Content-Type": "application/json",
+        },
+      });
+      if (!res.ok) return null;
+      const data = (await res.json()) as unknown;
+      let tasks: Task[] = [];
+      if (Array.isArray(data)) {
+        tasks = data as Task[];
+      } else if (
+        data !== null &&
+        typeof data === "object" &&
+        Array.isArray((data as Record<string, unknown>).tasks)
+      ) {
+        tasks = (data as Record<string, unknown>).tasks as Task[];
+      }
+      return tasks[0]?.status ?? null;
+    } catch {
+      return null;
+    }
+  };
+}
+
 // ─── gh CLI helper ────────────────────────────────────────────────────────────
 
 /**
