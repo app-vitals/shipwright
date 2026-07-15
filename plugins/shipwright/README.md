@@ -59,7 +59,7 @@ A five-phase pipeline that audits whether a codebase's tests can be trusted by a
 | `/test-design [path]` | 2 | Design the ideal test system greenfield — frameworks, local substitutes, canary contract, CI shape, coverage targets, speed budgets |
 | `/test-migration [path]` | 3 | Reconcile existing tests against the blueprint, bucketing each into reuse / promote / rebuild / trim / net-new |
 | `/test-roadmap [path]` | 4 | Synthesize the prior artifacts into a single executable roadmap with five sequenced milestones and an agent-runnable task list |
-| `/test-fix [--dry-run] [--backfill-from-github [--repo o/n]]` | 5 | Queue the roadmap's tasks to the Shipwright Task Store, one task per `T-NNN` row with dependency edges; `dev-task` (or `/shipwright:hitl` for HITL tasks) picks them up automatically |
+| `/test-fix [--dry-run]` | 5 | Queue the roadmap's tasks to the Shipwright Task Store, one task per `T-NNN` row with dependency edges; `dev-task` (or `/shipwright:hitl` for HITL tasks) picks them up automatically |
 | `/test-debt [path]` | post | Compute the corrective-commit ratio per milestone from git history and flag under-specified milestones as planning debt |
 
 Three cross-cutting contracts back the pipeline: **canary-execution** (dual-mode local/`TEST_TARGET_URL` runner), **speed-budgets** (per-layer 95p targets and hard caps), and **repo-config** (branch protection that makes "tests pass" a real gate). `/test-debt` is named to avoid colliding with `/metrics`, which covers shipwright's own dev-pipeline metrics.

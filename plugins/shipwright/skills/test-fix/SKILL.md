@@ -1,6 +1,6 @@
 ---
 name: test-fix
-description: Read docs/test-readiness/test-readiness-plan.md and queue its flat T-NNN task list as task-store tasks, one task per row, with dependency edges (predecessor/fan-out) and per-task HITL classification. Requires test-roadmap to have run first. Replaces the former GitHub-issue publish skill's dashboard with a task-store queue. Includes a one-time --backfill-from-github mode that migrates already-published GitHub issues into task-store tasks and closes them.
+description: Read docs/test-readiness/test-readiness-plan.md and queue its flat T-NNN task list as task-store tasks, one task per row, with dependency edges (predecessor/fan-out) and per-task HITL classification. Requires test-roadmap to have run first. Replaces the former GitHub-issue publish skill's dashboard with a task-store queue.
 ---
 
 # Test Fix
@@ -28,8 +28,6 @@ Before starting, check for flags:
 
 - `--dry-run` — print what would be queued (including hitl classification) without querying
   the task store for dedup and without writing anything.
-- `--backfill-from-github [--repo owner/name]` — a separate, one-time migration mode. See the
-  dedicated **Backfill Mode** section below. It does not run the regular flow (Steps 1–7).
 
 > **Note:** Queueing is the only mode for the regular flow. There is no PR mode and no
 > `--queue` flag — every regular run queues tasks. `--dry-run` shows a preview and stops
@@ -333,23 +331,6 @@ Stop after printing — this is the sole final output for the regular flow.
 
 ---
 
-## Backfill Mode (`--backfill-from-github [--repo owner/name]`)
-
-A genuinely separate, one-time migration path — it does not run Steps 1–7 above (the regular
-plan-parsing flow). It operates purely off existing GitHub issue state, since a fresh
-`test-readiness-plan.md` may not exist in the target repo, or may have since diverged from
-what was originally published by the former GitHub-issue publish skill.
-
-Use this once, per repo, to migrate issues the former GitHub-issue publish skill already
-created into task-store tasks, then retire the GitHub side of those specific issues (closing
-them with a link back to the task store). Ordinary tasks going forward come from the regular
-flow (Steps 1–7) against a current `test-readiness-plan.md`.
-
-Full procedure (repo detection, issue parsing, predecessor-ordering, task creation, closing,
-and the summary block): see `references/backfill-from-github.md`.
-
----
-
 ## Error Handling
 
 - **`test-readiness-plan.md` missing** (regular flow): handled in Step 1 — print the message
@@ -360,9 +341,6 @@ and the summary block): see `references/backfill-from-github.md`.
 - **Bulk append fails** (`/tasks/bulk` non-2xx, Step 7.1): log the response body and
   stop. Do not retry blindly; re-running the regular flow is idempotent because the dedup
   check (Step 4) skips already-queued rows.
-- **Backfill-specific failures** (auth, unreachable repo, missing task-id marker, partial
-  bulk-append reruns): see `references/backfill-from-github.md`'s "Error Handling
-  (Backfill-Specific)" section.
 
 ---
 
@@ -381,10 +359,6 @@ and the summary block): see `references/backfill-from-github.md`.
   explicit rules in Step 5.2 (CI workflow secrets, branch protection, untested M5 deletion
   owner). No file-count, line-count, or milestone-number threshold ever forces the
   classification on its own.
-- **Backfill is one-time and separate** — `--backfill-from-github` never runs the regular
-  Steps 1–7, and the regular flow never reads GitHub issue state. The two modes do not share
-  logic beyond the field-mapping conventions of Step 5 (which backfill explicitly reuses,
-  per B5).
 - **Repo-scoped task IDs** — every task ID carries the `{repo-slug}` suffix (Step 3 / B1) so
   the same `T-NNN` scanned in two different repos never collides.
 - **`test-readiness-plan.md` is not modified here** — a queued task only means a fix is
@@ -392,6 +366,4 @@ and the summary block): see `references/backfill-from-github.md`.
   rewritten by this skill.
 - **No interactive confirmation** — matches entropy-fix/error-fix: queue-only skills don't
   gate on user confirmation for regular-flow task-store writes, since they're internal and
-  correctable. Backfill mode's `gh issue close` calls are the one externally-visible action
-  in this skill, and they only happen after the corresponding task-store task already exists
-  (B5 before B6) — never the reverse.
+  correctable.
