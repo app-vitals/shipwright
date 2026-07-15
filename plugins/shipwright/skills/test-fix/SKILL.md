@@ -117,6 +117,77 @@ of "already active" T-NNN IDs.
 For each row from Step 2: if its `T-NNN` is in the "already active" set, skip it. Print:
 `Skipping {T-NNN} — task already active`.
 
+### 4.1 Fuzzy Near-Duplicate Check
+
+The exact-ID check above only catches literal `T-NNN` reuse, scoped to `source ==
+"shipwright"` tasks whose title starts with `"Test readiness:"`. It cannot catch a
+differently-numbered task that semantically duplicates existing active work — e.g. a
+finding that gets re-scoped and re-queued under a new `T-NNN` after the original active task
+was created by a different source or with a different title convention. That gap is exactly
+what let one duplicate issue slip past dedup once the original had no task-store footprint
+matching the narrow `source`/prefix filter.
+
+To close it, run a second, wider comparison — no new API calls, no `--repo=`-scope change:
+reuse the **same combined `.tasks` array** already fetched above (the `status=pending` and
+`status=in_progress` results, both `&repo=`-scoped), but this time **do not** filter by
+`source == "shipwright"` or by the `"Test readiness:"` title prefix. Consider literally every
+active (pending + in_progress) task title for the repo, regardless of source or naming
+convention.
+
+For each row surviving the exact-ID check (i.e. not already skipped), compute its would-be
+title exactly as Step 5 will build it — `"Test readiness: {outcome} (T-NNN)"` — and compare it
+against every title in that unfiltered active-task set using **normalized word-overlap
+(Jaccard similarity)**:
+
+1. Lowercase both titles and strip punctuation.
+2. Split each into a set of words (tokens).
+3. `similarity = |intersection| / |union|` of the two word sets.
+
+Flag any pair where `similarity >= 0.6`. This threshold is a deliberate middle ground:
+
+- **Too strict (e.g. 0.9)** would miss genuine rewordings — the entire point of this check is
+  to catch titles that got re-scoped or rephrased under a different `T-NNN`, which by
+  definition won't be a near-exact string match.
+- **Too loose (e.g. 0.3)** would flag unrelated tasks that merely share generic vocabulary
+  ("test", "fix", "add"), producing enough noise that humans learn to ignore the flag.
+- **0.6** is biased toward not missing a real duplicate, which is the safer failure mode —
+  consistent with the "flag, don't skip" philosophy below.
+
+**Worked example.** Suppose an existing active task (any source) is titled:
+
+```
+Test readiness: add integration coverage for auth middleware (T-041)
+```
+
+And a new candidate row from Step 2 would build the title:
+
+```
+Test readiness: add integration coverage for the auth middleware (T-058)
+```
+
+Lowercase, strip punctuation, and tokenize (dropping the parenthetical `T-NNN`, which is
+excluded from the token comparison since it's expected to differ):
+
+- Title A words: `{test, readiness, add, integration, coverage, for, auth, middleware}` (8)
+- Title B words: `{test, readiness, add, integration, coverage, for, the, auth, middleware}` (9)
+- Intersection: `{test, readiness, add, integration, coverage, for, auth, middleware}` (8)
+- Union: `{test, readiness, add, integration, coverage, for, the, auth, middleware}` (9)
+- `similarity = 8 / 9 ≈ 0.89`
+
+`0.89 >= 0.6`, so this pair is flagged — even though `T-041` and `T-058` are different IDs and
+the exact-ID check alone would have missed this duplicate entirely.
+
+**This never causes a skip.** A fuzzy match is not removed from the Step 5 build list and is
+never excluded from the Step 7.1 bulk POST — it still gets created. Fuzzy-match false
+positives are common (shared vocabulary, generic verbs like "fix"/"add"/"update"), and
+silently dropping genuinely new work because of a coincidental title overlap is a worse
+failure mode than one extra line a human has to glance at. This mirrors the same philosophy
+already applied to the `hitl` field (Step 5.2): no auto-decision on a fuzzy or judgment-based
+signal where the cost of a wrong auto-decision is asymmetric — surface it for a human instead.
+
+For each flagged pair, print:
+`Flagging {T-NNN} — {similarity}% title-similar to active task {other-id}: "{other-title}" — not skipped, review after queueing`
+
 ---
 
 ## Step 5: Build Task JSON
@@ -261,7 +332,12 @@ If a row has no predecessors, `dependencies` is an empty array.
 ## Step 6: Dry-Run Output (if --dry-run)
 
 If `--dry-run` was passed, run Steps 1–3 and 2's parsing as normal, but skip Step 4 (dedup)
-entirely — do not query the task store. For each parsed row, compute `priority` (5.1), `hitl`
+entirely — do not query the task store. This includes the Step 4.1 fuzzy near-duplicate
+check: it reuses Step 4's same two task-store queries, and `--dry-run`'s whole contract is
+"no task-store queries made" (see Setup: Parse Arguments). Extending the fuzzy check into
+dry-run would require querying the task store, which would break that contract — so dry-run
+previews never surface fuzzy-duplicate flags; they only appear on a real (non-dry-run) run's
+Step 4/7.2 output. For each parsed row, compute `priority` (5.1), `hitl`
 (5.2), and `dependencies` (5.4) in-memory, then print a preview:
 
 ```
@@ -315,6 +391,7 @@ TEST FIX — QUEUED
 
   QUEUED    {N} tasks   ({A} autonomous, {H} HITL)
   SKIPPED   {K} tasks (already active)
+  FLAGGED   {F} tasks (possible near-duplicate, not skipped)
 
 Tasks queued:
   test-{t-nnn}-{repo-slug} — {outcome}  [layer: {test-layer}, priority: {priority}, hitl: {true|false}]
@@ -323,6 +400,10 @@ Tasks queued:
 {If any skipped:}
 Skipped (already active):
   {T-NNN} — task already in queue or in progress
+
+{If any flagged:}
+Flagged for review (possible near-duplicate, not skipped):
+  {T-NNN} — {similarity}% title-similar to active task {other-id}: "{other-title}"
 
 Run /shipwright:dev-task to execute autonomous tasks. HITL tasks are picked up via
 /shipwright:hitl.
@@ -377,6 +458,10 @@ and the summary block): see `references/backfill-from-github.md`.
   skill's `--refresh` flag did; that mechanism is fully replaced, not duplicated.
 - **Dedup before queueing** — never skip Step 4 in the regular flow (outside `--dry-run`,
   which explicitly skips it by design and queues nothing for real).
+- **Fuzzy near-duplicate check (Step 4.1) never skips** — it only ever flags for human review
+  (printed in Step 4's output and again in Step 7.2's summary). Only the exact-ID check can
+  remove a row from the Step 5 build list; a fuzzy title match is never, on its own, a reason
+  to withhold a task from the bulk POST.
 - **No numeric/count backstop on `hitl`** — the only paths to `hitl: true` are the three
   explicit rules in Step 5.2 (CI workflow secrets, branch protection, untested M5 deletion
   owner). No file-count, line-count, or milestone-number threshold ever forces the
