@@ -152,6 +152,7 @@ Also include:
 - **Per-layer test reasoning** — if the spec has a Testing Strategy section, adopt it directly rather than re-deriving: confirm the layer assignments make sense given the codebase findings in Step 2, note any disagreements, and proceed with the spec's strategy unless a concrete technical reason overrides it. If Testing Strategy is absent, derive it from scratch using the layer definitions loaded in Step 2.
 
 Keep it simple. If two approaches exist, recommend one and explain why.
+If the spec is ambiguous or silent on a decision that affects the design, state the assumption you're making and flag it explicitly for confirmation during this feedback loop — don't pick an interpretation silently.
 
 Iterate on feedback. Do not move to task breakdown until the design is approved.
 
