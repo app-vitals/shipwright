@@ -1,7 +1,24 @@
 import { join } from "node:path";
 
+// Default hard timeout for a single `claude -p` session — mirrors the default
+// in createRunClaude (agent/src/claude.ts). Kept in sync so behavior is
+// unchanged when SHIPWRIGHT_CLAUDE_TIMEOUT_MS is unset.
+const DEFAULT_CLAUDE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+
 function optional(key: string): string | undefined {
   return process.env[key];
+}
+
+/**
+ * Reads a positive-integer millisecond env var, falling back to `fallback`
+ * when the value is unset, non-numeric, non-integer, zero, or negative — so a
+ * malformed override never silently disables or shortens the timeout.
+ */
+function positiveIntMs(key: string, fallback: number): number {
+  const raw = optional(key);
+  if (raw === undefined) return fallback;
+  const parsed = Number(raw);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function buildConfig(agentHome: string) {
@@ -10,6 +27,10 @@ function buildConfig(agentHome: string) {
       model: optional("ANTHROPIC_MODEL") ?? "claude-sonnet-4-6",
       fallbackModel: optional("ANTHROPIC_FALLBACK_MODEL"),
       effortLevel: optional("ANTHROPIC_EFFORT_LEVEL"),
+      timeoutMs: positiveIntMs(
+        "SHIPWRIGHT_CLAUDE_TIMEOUT_MS",
+        DEFAULT_CLAUDE_TIMEOUT_MS,
+      ),
       anthropicApiKey: optional("ANTHROPIC_API_KEY"),
       oauthToken: optional("CLAUDE_CODE_OAUTH_TOKEN"),
     },
