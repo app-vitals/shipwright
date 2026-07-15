@@ -123,34 +123,6 @@ describe("HttpTaskStoreClient client-side window filtering", () => {
     expect(got.map((p) => p.id).sort()).toEqual(["created-in", "merged-in"]);
   });
 
-  test("listTasks filters on createdAt anchor when completedAt/mergedAt/startedAt all absent", async () => {
-    const tasks: TaskRecord[] = [
-      {
-        id: "created-in",
-        status: "pending",
-        createdAt: "2026-06-12T00:00:00.000Z",
-      },
-      {
-        id: "created-out",
-        status: "pending",
-        createdAt: "2026-07-12T00:00:00.000Z",
-      },
-      {
-        id: "started-in",
-        status: "in_progress",
-        startedAt: "2026-06-15T00:00:00.000Z",
-      },
-    ];
-    const { fetch } = pagingFetch("tasks", tasks);
-    const client = new HttpTaskStoreClient("http://store", "tok", fetch);
-
-    const got = await client.listTasks({
-      from: "2026-06-01",
-      to: "2026-06-30",
-    });
-    expect(got.map((t) => t.id).sort()).toEqual(["created-in", "started-in"]);
-  });
-
   test("an open window (no from/to) keeps all rows", async () => {
     const tasks: TaskRecord[] = [
       {

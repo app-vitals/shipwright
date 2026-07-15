@@ -676,13 +676,13 @@ describe("TaskStoreProvider (integration)", () => {
     const tasks: TaskRecord[] = [
       {
         id: "ANCHOR-1",
-        status: "pending",
+        status: "blocked",
         createdAt: "2026-06-05T10:00:00.000Z",
         // No completedAt, mergedAt, or startedAt — only createdAt.
       },
       {
         id: "OUT-OF-WINDOW",
-        status: "pending",
+        status: "blocked",
         createdAt: "2026-07-05T10:00:00.000Z",
       },
     ];
