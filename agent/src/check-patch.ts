@@ -53,10 +53,17 @@ export interface ReviewThread {
   comments: { nodes: Array<{ author: { login: string }; body: string }> };
 }
 
+export interface IssueCommentNode {
+  author: { login: string };
+  body: string;
+  createdAt: string;
+}
+
 export interface PrReviewData {
   headRefOid: string;
   reviews: { nodes: ReviewNode[] };
   reviewThreads: { nodes: ReviewThread[] };
+  comments: { nodes: IssueCommentNode[] };
 }
 
 export interface CiCheckStatus {
@@ -155,6 +162,33 @@ function isSelfCleanApprove(
 }
 
 /**
+ * Returns true when a review's non-empty body has been addressed by a
+ * subsequent PR-author reply (CPF-2.3).
+ *
+ * The self-review "Verdict: APPROVE" rewrite workaround (CPF-2.1, CPF-2.2)
+ * relies on `updatePullRequestReview`, which only permits editing a review's
+ * OWN author's body. For a third-party review (e.g. posted by a distinct
+ * GitHub identity), the PR author cannot rewrite the review body to signal
+ * the finding was addressed or rejected — the review text stays exactly as
+ * the third party wrote it forever. A subsequent PR-author reply (a
+ * top-level PR comment posted after the review) is the only available
+ * signal in that case, so we treat it as evidence the finding was addressed
+ * (fixed or rebutted) even though the review body itself never changes.
+ */
+function isAddressedByAuthorReply(
+  review: Pick<ReviewNode, "submittedAt">,
+  comments: IssueCommentNode[],
+  currentUser: string,
+): boolean {
+  const reviewedAt = new Date(review.submittedAt).getTime();
+  return comments.some(
+    (c) =>
+      c.author.login === currentUser &&
+      new Date(c.createdAt).getTime() > reviewedAt,
+  );
+}
+
+/**
  * Returns true if the PR has unaddressed findings:
  * - At least one COMMENTED or CHANGES_REQUESTED review posted at the current HEAD
  * - AND (has a non-empty review body OR has at least one unresolved inline thread)
@@ -162,12 +196,18 @@ function isSelfCleanApprove(
  * A self-authored review is excluded only when it is a clean APPROVE verdict
  * (see isSelfCleanApprove) — a self-review with a real (non-APPROVE) verdict
  * still counts as an unaddressed finding, same as any other reviewer's.
+ *
+ * A review's non-empty body is also excluded when there are no unresolved
+ * threads AND the PR author has replied after the review (see
+ * isAddressedByAuthorReply, CPF-2.3) — the only way to mark a third-party
+ * review's finding as addressed, since only the review's own author can edit
+ * its body.
  */
 function hasUnaddressedFindings(
   data: PrReviewData,
   currentUser: string,
 ): boolean {
-  const { headRefOid, reviews, reviewThreads } = data;
+  const { headRefOid, reviews, reviewThreads, comments } = data;
 
   // Find qualifying reviews: state COMMENTED or CHANGES_REQUESTED at current HEAD,
   // excluding self-authored clean-APPROVE reviews.
@@ -185,8 +225,13 @@ function hasUnaddressedFindings(
 
   if (unresolvedThreads.length > 0) return true;
 
-  // No unresolved threads — check if any qualifying review has a non-empty body
-  return qualifyingReviews.some((r) => r.body.trim().length > 0);
+  // No unresolved threads — check if any qualifying review has a non-empty
+  // body that hasn't been addressed by a subsequent author reply.
+  return qualifyingReviews.some(
+    (r) =>
+      r.body.trim().length > 0 &&
+      !isAddressedByAuthorReply(r, comments.nodes, currentUser),
+  );
 }
 
 // ─── Merge-only stale findings ────────────────────────────────────────────────
@@ -200,6 +245,10 @@ function hasUnaddressedFindings(
  * A self-authored review is excluded only when it is a clean APPROVE verdict
  * (see isSelfCleanApprove) — a self-review with a real (non-APPROVE) verdict
  * still counts as a stale finding.
+ *
+ * A stale review's non-empty body is also excluded when there are no
+ * unresolved threads AND the PR author has replied after the review (see
+ * isAddressedByAuthorReply, CPF-2.3).
  */
 async function hasMergeOnlyStaleFindings(
   prNumber: number,
@@ -208,7 +257,7 @@ async function hasMergeOnlyStaleFindings(
   repo: string | undefined,
   currentUser: string,
 ): Promise<boolean> {
-  const { headRefOid, reviews, reviewThreads } = data;
+  const { headRefOid, reviews, reviewThreads, comments } = data;
 
   const staleReviews = reviews.nodes.filter(
     (r) =>
@@ -222,7 +271,11 @@ async function hasMergeOnlyStaleFindings(
   const unresolvedThreads = reviewThreads.nodes.filter((t) => !t.isResolved);
   const hasFindings =
     unresolvedThreads.length > 0 ||
-    staleReviews.some((r) => r.body.trim().length > 0);
+    staleReviews.some(
+      (r) =>
+        r.body.trim().length > 0 &&
+        !isAddressedByAuthorReply(r, comments.nodes, currentUser),
+    );
 
   if (!hasFindings) return false;
 
@@ -334,6 +387,7 @@ interface GraphqlResponse {
         headRefOid: string;
         reviews: { nodes: ReviewNode[] };
         reviewThreads: { nodes: ReviewThread[] };
+        comments: { nodes: IssueCommentNode[] };
       };
     };
   };
@@ -393,6 +447,13 @@ export async function buildProductionDeps(opts: {
               body
             }
           }
+        }
+      }
+      comments(last: 50) {
+        nodes {
+          author { login }
+          body
+          createdAt
         }
       }
     }

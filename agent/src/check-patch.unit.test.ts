@@ -42,6 +42,7 @@ function makePrReviewData(overrides: Partial<PrReviewData> = {}): PrReviewData {
     headRefOid: "current-head-sha",
     reviews: { nodes: [] },
     reviewThreads: { nodes: [] },
+    comments: { nodes: [] },
     ...overrides,
   };
 }
@@ -157,7 +158,10 @@ describe("getPatchCandidates", () => {
       makeDeps({ ownPrs: [pr], reviewDataByPr: { 10: reviewData } }),
     );
     expect(result).toHaveLength(1);
-    expect(result[0]).toMatchObject({ id: "acme/example-repo#10", phase: "patch" });
+    expect(result[0]).toMatchObject({
+      id: "acme/example-repo#10",
+      phase: "patch",
+    });
   });
 
   test("returns a candidate when own PR has CHANGES_REQUESTED review with non-empty body at current HEAD", async () => {
@@ -948,6 +952,286 @@ describe("getPatchCandidates", () => {
         ciStatusByPr: {},
         mergeStatusByPr: {},
         listPrCommits: async () => [],
+        getCurrentUser: () => "the-agent",
+      }),
+    );
+    expect(result).toHaveLength(1);
+  });
+
+  // ─── Third-party review addressed via author reply (CPF-2.3) ──────────────
+
+  test("returns empty array when a third-party COMMENTED review's non-empty body is followed by a PR-author reply (mirrors PR #1432)", async () => {
+    const pr = makeOwnPr();
+    const reviewData = makePrReviewData({
+      headRefOid: "current-head-sha",
+      reviews: {
+        nodes: [
+          {
+            author: { login: "dodizzle" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-26T10:00:00Z",
+            commit: { oid: "current-head-sha" },
+            body: "Missing plugin.json/marketplace.json version bump.",
+          },
+        ],
+      },
+      reviewThreads: { nodes: [] }, // all inline threads resolved (none outstanding)
+      comments: {
+        nodes: [
+          {
+            author: { login: "the-agent" },
+            body: "Verified this is a false positive — no version bump needed here; resolved the thread.",
+            createdAt: "2026-05-26T11:00:00Z", // after the review's submittedAt
+          },
+        ],
+      },
+    });
+    const result = await getPatchCandidates(
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: { 10: reviewData },
+        ciStatusByPr: {},
+        mergeStatusByPr: {},
+        listPrCommits: async () => [],
+        getCurrentUser: () => "the-agent",
+      }),
+    );
+    expect(result).toEqual([]);
+  });
+
+  test("returns a candidate when the PR-author's reply predates the review (stale reply doesn't address a later review)", async () => {
+    const pr = makeOwnPr();
+    const reviewData = makePrReviewData({
+      headRefOid: "current-head-sha",
+      reviews: {
+        nodes: [
+          {
+            author: { login: "dodizzle" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-26T10:00:00Z",
+            commit: { oid: "current-head-sha" },
+            body: "Missing plugin.json/marketplace.json version bump.",
+          },
+        ],
+      },
+      reviewThreads: { nodes: [] },
+      comments: {
+        nodes: [
+          {
+            author: { login: "the-agent" },
+            body: "Unrelated earlier comment.",
+            createdAt: "2026-05-26T09:00:00Z", // before the review's submittedAt
+          },
+        ],
+      },
+    });
+    const result = await getPatchCandidates(
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: { 10: reviewData },
+        ciStatusByPr: {},
+        mergeStatusByPr: {},
+        listPrCommits: async () => [],
+        getCurrentUser: () => "the-agent",
+      }),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      id: "acme/example-repo#10",
+      phase: "patch",
+    });
+  });
+
+  test("returns a candidate when a third-party review has a non-empty body, no unresolved threads, and no PR-author reply at all", async () => {
+    const pr = makeOwnPr();
+    const reviewData = makePrReviewData({
+      headRefOid: "current-head-sha",
+      reviews: {
+        nodes: [
+          {
+            author: { login: "dodizzle" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-26T10:00:00Z",
+            commit: { oid: "current-head-sha" },
+            body: "Missing plugin.json/marketplace.json version bump.",
+          },
+        ],
+      },
+      reviewThreads: { nodes: [] },
+      comments: { nodes: [] }, // no reply at all — regression guard for current behavior
+    });
+    const result = await getPatchCandidates(
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: { 10: reviewData },
+        ciStatusByPr: {},
+        mergeStatusByPr: {},
+        listPrCommits: async () => [],
+        getCurrentUser: () => "the-agent",
+      }),
+    );
+    expect(result).toHaveLength(1);
+  });
+
+  test("returns a candidate when a third-party review's body is followed by an author reply BUT an inline thread is still unresolved", async () => {
+    const pr = makeOwnPr();
+    const reviewData = makePrReviewData({
+      headRefOid: "current-head-sha",
+      reviews: {
+        nodes: [
+          {
+            author: { login: "dodizzle" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-26T10:00:00Z",
+            commit: { oid: "current-head-sha" },
+            body: "Missing plugin.json/marketplace.json version bump.",
+          },
+        ],
+      },
+      reviewThreads: {
+        nodes: [
+          {
+            isResolved: false,
+            comments: {
+              nodes: [{ author: { login: "dodizzle" }, body: "Still open" }],
+            },
+          },
+        ],
+      },
+      comments: {
+        nodes: [
+          {
+            author: { login: "the-agent" },
+            body: "Replied, but forgot to resolve the thread.",
+            createdAt: "2026-05-26T11:00:00Z",
+          },
+        ],
+      },
+    });
+    const result = await getPatchCandidates(
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: { 10: reviewData },
+        ciStatusByPr: {},
+        mergeStatusByPr: {},
+        listPrCommits: async () => [],
+        getCurrentUser: () => "the-agent",
+      }),
+    );
+    expect(result).toHaveLength(1);
+  });
+
+  test("returns a candidate when the PR-level reply is from someone other than the PR author", async () => {
+    const pr = makeOwnPr();
+    const reviewData = makePrReviewData({
+      headRefOid: "current-head-sha",
+      reviews: {
+        nodes: [
+          {
+            author: { login: "dodizzle" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-26T10:00:00Z",
+            commit: { oid: "current-head-sha" },
+            body: "Missing plugin.json/marketplace.json version bump.",
+          },
+        ],
+      },
+      reviewThreads: { nodes: [] },
+      comments: {
+        nodes: [
+          {
+            author: { login: "some-other-reviewer" },
+            body: "I agree with dodizzle's point, though I'm not the PR author.",
+            createdAt: "2026-05-26T11:00:00Z",
+          },
+        ],
+      },
+    });
+    const result = await getPatchCandidates(
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: { 10: reviewData },
+        ciStatusByPr: {},
+        mergeStatusByPr: {},
+        listPrCommits: async () => [],
+        getCurrentUser: () => "the-agent",
+      }),
+    );
+    expect(result).toHaveLength(1);
+  });
+
+  test("returns empty array for hasMergeOnlyStaleFindings when a stale third-party review's body is followed by a PR-author reply after it", async () => {
+    const pr = makeOwnPr({ headRefOid: "merge-sha" });
+    const reviewData = makePrReviewData({
+      headRefOid: "merge-sha",
+      reviews: {
+        nodes: [
+          {
+            author: { login: "dodizzle" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-26T10:00:00Z",
+            commit: { oid: "review-sha" }, // posted before the merge commit
+            body: "Missing plugin.json/marketplace.json version bump.",
+          },
+        ],
+      },
+      reviewThreads: { nodes: [] },
+      comments: {
+        nodes: [
+          {
+            author: { login: "the-agent" },
+            body: "Verified false positive, resolved.",
+            createdAt: "2026-05-26T10:30:00Z", // after the stale review's submittedAt
+          },
+        ],
+      },
+    });
+    const commits: CommitInfo[] = [
+      { sha: "review-sha", parents: [{ sha: "p0" }] },
+      { sha: "merge-sha", parents: [{ sha: "a" }, { sha: "b" }] }, // merge commit
+    ];
+    const result = await getPatchCandidates(
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: { 10: reviewData },
+        ciStatusByPr: {},
+        mergeStatusByPr: {},
+        listPrCommits: async () => commits,
+        getCurrentUser: () => "the-agent",
+      }),
+    );
+    expect(result).toEqual([]);
+  });
+
+  test("returns a candidate for hasMergeOnlyStaleFindings when a stale third-party review's body has no PR-author reply", async () => {
+    const pr = makeOwnPr({ headRefOid: "merge-sha" });
+    const reviewData = makePrReviewData({
+      headRefOid: "merge-sha",
+      reviews: {
+        nodes: [
+          {
+            author: { login: "dodizzle" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-26T10:00:00Z",
+            commit: { oid: "review-sha" },
+            body: "Missing plugin.json/marketplace.json version bump.",
+          },
+        ],
+      },
+      reviewThreads: { nodes: [] },
+      comments: { nodes: [] },
+    });
+    const commits: CommitInfo[] = [
+      { sha: "review-sha", parents: [{ sha: "p0" }] },
+      { sha: "merge-sha", parents: [{ sha: "a" }, { sha: "b" }] },
+    ];
+    const result = await getPatchCandidates(
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: { 10: reviewData },
+        ciStatusByPr: {},
+        mergeStatusByPr: {},
+        listPrCommits: async () => commits,
         getCurrentUser: () => "the-agent",
       }),
     );
