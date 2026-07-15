@@ -81,6 +81,16 @@ Document:
 - **Parallelism**: per-layer worker count.
 - **Budget**: <15min total per PR (agent-readiness checklist Condition 4).
 
+**Per-workspace matrix sharding — explicit override, not the default.** The default CI shape is **one job per layer** — `unit-all`, `integration-all`, `smoke-all` — each running its layer's full suite across every workspace in a single combined job. Splitting a layer into a per-workspace matrix (one job per workspace, per layer) is an **explicit override** that must be justified against the conditions below, not a default granularity choice. Per-job overhead — checkout, dependency install, environment setup, and (for integration jobs) container init for dependencies like Postgres — is fixed cost paid by every job in the matrix regardless of how little work that job actually does; at low per-workspace test volume this overhead routinely dwarfs the real test execution time, and job-level CI queuing delays are multiplied by every extra job added to a PR.
+
+Shard a layer into a per-workspace matrix only when at least one of these holds:
+
+1. **(a) Budget miss:** the combined layer's suite wall time can't hit its speed budget (see `speed-budgets/SKILL.md`) running as a single job.
+2. **(b) Documented flake/slowness history:** a specific workspace has a documented history of flakiness or slowness that's worth isolating from the rest of the layer (e.g., to unblock the layer without quarantining unrelated workspaces).
+3. **(c) Overhead-justified parallel savings:** the projected wall-clock savings from running workspaces in parallel exceed roughly **2x** the added fixed per-job overhead (checkout+setup+install, plus container init where applicable) — i.e., the matrix must pay for itself at least twice over, not just break even.
+
+If none of these conditions hold, keep the layer as a single combined job. Default to the cheaper shape.
+
 **Naming convention and runner-exclusion config (required):** The artifact must specify both a file-naming convention and the runner-exclusion config that enforces it. These two items are inseparable — a naming convention without matching exclusion config is not enforced, and exclusion config without a naming convention is unauditable. Document:
 
 1. **File-naming convention** — one suffix rule per entry point:
