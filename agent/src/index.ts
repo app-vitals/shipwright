@@ -19,7 +19,7 @@ import { initSentry } from "@shipwright/lib/sentry";
 import { WebClient } from "@slack/web-api";
 import nodeCron from "node-cron";
 import { createAnalyticsStore } from "./analytics.ts";
-import { ghJson } from "./check-helpers.ts";
+import { ghGraphql, ghJson } from "./check-helpers.ts";
 import { createChatPoller } from "./chat-poller.ts";
 import {
   HttpChatTokenReporter,
@@ -37,7 +37,9 @@ import {
 import { markdownToSlack } from "./format.ts";
 import {
   buildProductionDeps as buildPrStateReconcilerDeps,
+  buildReviewStateProductionDeps as buildReviewStateReconcilerDeps,
   reconcilePrState,
+  reconcileReviewState,
 } from "./pr-state-reconciler.ts";
 import {
   DEFAULT_HEALTH_PORT,
@@ -267,8 +269,16 @@ if (runtimeClient && agentId) {
 // the bounded state:"open" set and a record naturally drops out of future
 // scans once reconciled. Deps are built lazily on first tick so a
 // not-yet-ready workspace/GH auth at boot can't crash agent startup.
+//
+// CHU-2.2 adds a second, independent reconciliation pass on this SAME tick
+// (not a second timer): reviewState drift from an out-of-band GitHub
+// reviewer. Its own try/catch means one pass failing never prevents the
+// other from running — see reconcileReviewState() in pr-state-reconciler.ts.
 if (runtimeClient && agentId) {
   let reconcilerDeps: ReturnType<typeof buildPrStateReconcilerDeps> | undefined;
+  let reviewStateReconcilerDeps:
+    | ReturnType<typeof buildReviewStateReconcilerDeps>
+    | undefined;
 
   async function runPrStateReconciler() {
     try {
@@ -277,6 +287,18 @@ if (runtimeClient && agentId) {
     } catch (err) {
       console.error(
         "[pr-state-reconciler] tick failed (non-fatal):",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+
+    try {
+      reviewStateReconcilerDeps ??= buildReviewStateReconcilerDeps({
+        ghGraphql,
+      });
+      await reconcileReviewState(reviewStateReconcilerDeps);
+    } catch (err) {
+      console.error(
+        "[pr-state-reconciler:review] tick failed (non-fatal):",
         err instanceof Error ? err.message : String(err),
       );
     }
