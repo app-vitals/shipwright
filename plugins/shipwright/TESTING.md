@@ -1246,6 +1246,16 @@ Imported from the former `test-readiness` plugin. These exercise the six `/test-
 **Steps:** In a repo with git history referencing task IDs (`T-001`, `fix(T-042)`) across ≥2 milestones, run `/test-debt`.
 **Expected:** `docs/test-readiness/test-debt.md` created with a per-milestone table (Milestone, Total commits, Corrective, Ratio, Flag); ratio > 0.25 flagged red; milestones with <5 commits reported but not flagged; planning-debt notes present for red-flag milestones.
 
+### TR-22 — T-NNN numbering continues across cycles
+**Steps:** No automated test covers this — the ID-offset logic is prompt-only generation
+logic (a task-store query and arithmetic performed by the skill at run time, not code).
+Verify via dry run: seed task-store with an existing task `test-t-047-shipwright` for the
+target repo (any status), then run `/test-roadmap` against that repo.
+**Expected:** The step 4 task-store query (`GET /tasks?repo={repo}&limit=500`) finds
+`test-t-047-shipwright`, extracts `047`, and the generated task list's `T-NNN` IDs start at
+`T-048` (mapping to `test-t-048-shipwright` once `test-fix` runs) — not `T-001`. A repo with
+no prior `test-t-*-{repo}` tasks still starts at `T-001`.
+
 **Known gap (carried over):** Phase 3 speed measurement is inspection-based unless the runner is installed/configured; a "speed not measured" flag in the artifact is documented behavior, not a bug.
 
 ---
