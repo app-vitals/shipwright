@@ -124,6 +124,21 @@ test("hero features the intro video as its centerpiece", async ({ page }) => {
   ).toBeVisible();
 });
 
+// DVN-4.1: the "Own it" section links prominently to the two comparison
+// pages once they exist (avoids a dead-link window in production).
+test("'Own it' section links to /vs/devin and /self-hosted", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const section = page.locator("#own-it");
+  await expect(
+    section.getByRole("link", { name: /Shipwright vs Devin comparison/i }),
+  ).toHaveAttribute("href", "/vs/devin");
+  await expect(
+    section.getByRole("link", { name: /self-hosted.*actually means/i }),
+  ).toHaveAttribute("href", "/self-hosted");
+});
+
 test("page does NOT contain the string 'Autonomous programming, installed'", async ({
   page,
 }) => {
