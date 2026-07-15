@@ -395,6 +395,7 @@ export const TaskListQuerySchema = z.object({
   limit: z.string().optional().openapi({ example: "50" }),
   offset: z.string().optional().openapi({ example: "0" }),
   ready: z.enum(["true", "false"]).optional().openapi({ example: "true" }),
+  sort: z.enum(["asc", "desc"]).optional().openapi({ example: "asc" }),
 });
 
 /** Response for GET /tasks */

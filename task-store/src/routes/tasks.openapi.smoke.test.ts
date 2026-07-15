@@ -80,10 +80,13 @@ function withBlockedBy(task: Task) {
   return { ...task, blockedBy: [] };
 }
 
-function fakeTaskService(opts: { tasks?: Task[] } = {}): TaskServiceLike {
+function fakeTaskService(
+  opts: { tasks?: Task[]; onList?: (filters: unknown) => void } = {},
+): TaskServiceLike {
   const tasks = opts.tasks ?? [];
   return {
-    async list() {
+    async list(filters) {
+      opts.onList?.(filters);
       return {
         tasks: tasks.map(withBlockedBy),
         total: tasks.length,
@@ -187,6 +190,60 @@ describe("createTasksRoutes — OpenAPIHono migration (TSM-1.2)", () => {
 
     const res = await parent.request("/nonexistent");
     expect(res.status).toBe(404);
+  });
+
+  it("GET /?sort=desc passes sort: 'desc' through to taskService.list()", async () => {
+    const task = makeTask({ id: "t-1" });
+    let receivedFilters: unknown;
+    const app = createTasksRoutes(
+      fakeTaskService({
+        tasks: [task],
+        onList: (filters) => {
+          receivedFilters = filters;
+        },
+      }),
+    );
+    const parent = makeAdminParent(app);
+
+    const res = await parent.request("/?sort=desc");
+    expect(res.status).toBe(200);
+    expect((receivedFilters as { sort?: string }).sort).toBe("desc");
+  });
+
+  it("GET / with no sort param passes sort: undefined through to taskService.list() (existing behavior)", async () => {
+    const task = makeTask({ id: "t-1" });
+    let receivedFilters: unknown;
+    const app = createTasksRoutes(
+      fakeTaskService({
+        tasks: [task],
+        onList: (filters) => {
+          receivedFilters = filters;
+        },
+      }),
+    );
+    const parent = makeAdminParent(app);
+
+    const res = await parent.request("/");
+    expect(res.status).toBe(200);
+    expect((receivedFilters as { sort?: string }).sort).toBeUndefined();
+  });
+
+  it("GET /?sort=asc passes sort: undefined through to taskService.list() (falls through to default ascending)", async () => {
+    const task = makeTask({ id: "t-1" });
+    let receivedFilters: unknown;
+    const app = createTasksRoutes(
+      fakeTaskService({
+        tasks: [task],
+        onList: (filters) => {
+          receivedFilters = filters;
+        },
+      }),
+    );
+    const parent = makeAdminParent(app);
+
+    const res = await parent.request("/?sort=asc");
+    expect(res.status).toBe(200);
+    expect((receivedFilters as { sort?: string }).sort).toBeUndefined();
   });
 
   it("GET /distinct returns 200 with { sessions, repos } shape", async () => {

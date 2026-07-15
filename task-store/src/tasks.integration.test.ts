@@ -597,6 +597,107 @@ describeOrSkip("Task store schema (integration)", () => {
     expect(result.total).toBe(2);
   });
 
+  // ─── TaskService.list() sort param ────────────────────────────────────────
+
+  it("list() with no sort param returns tasks in ascending createdAt order (existing behavior)", async () => {
+    const taskService = new TaskService(prisma);
+
+    const task3 = await prisma.task.create({
+      data: {
+        title: "Task 3 - middle",
+        status: "pending",
+        createdAt: new Date("2026-01-02T00:00:00Z"),
+      },
+    });
+    const task1 = await prisma.task.create({
+      data: {
+        title: "Task 1 - earliest",
+        status: "pending",
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+      },
+    });
+    const task2 = await prisma.task.create({
+      data: {
+        title: "Task 2 - latest",
+        status: "pending",
+        createdAt: new Date("2026-01-03T00:00:00Z"),
+      },
+    });
+
+    const result = await taskService.list({});
+    expect(result.tasks.map((t) => t.id)).toEqual([
+      task1.id,
+      task3.id,
+      task2.id,
+    ]);
+  });
+
+  it("list() with sort: 'asc' returns tasks in ascending createdAt order (existing behavior)", async () => {
+    const taskService = new TaskService(prisma);
+
+    const task3 = await prisma.task.create({
+      data: {
+        title: "Task 3 - middle",
+        status: "pending",
+        createdAt: new Date("2026-01-02T00:00:00Z"),
+      },
+    });
+    const task1 = await prisma.task.create({
+      data: {
+        title: "Task 1 - earliest",
+        status: "pending",
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+      },
+    });
+    const task2 = await prisma.task.create({
+      data: {
+        title: "Task 2 - latest",
+        status: "pending",
+        createdAt: new Date("2026-01-03T00:00:00Z"),
+      },
+    });
+
+    const result = await taskService.list({ sort: "asc" });
+    expect(result.tasks.map((t) => t.id)).toEqual([
+      task1.id,
+      task3.id,
+      task2.id,
+    ]);
+  });
+
+  it("list() with sort: 'desc' returns tasks in descending createdAt order (newest first)", async () => {
+    const taskService = new TaskService(prisma);
+
+    const task3 = await prisma.task.create({
+      data: {
+        title: "Task 3 - middle",
+        status: "pending",
+        createdAt: new Date("2026-01-02T00:00:00Z"),
+      },
+    });
+    const task1 = await prisma.task.create({
+      data: {
+        title: "Task 1 - earliest",
+        status: "pending",
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+      },
+    });
+    const task2 = await prisma.task.create({
+      data: {
+        title: "Task 2 - latest",
+        status: "pending",
+        createdAt: new Date("2026-01-03T00:00:00Z"),
+      },
+    });
+
+    const result = await taskService.list({ sort: "desc" });
+    expect(result.tasks.map((t) => t.id)).toEqual([
+      task2.id,
+      task3.id,
+      task1.id,
+    ]);
+  });
+
   it("list() with agentScope AND assignee filter narrows the pool to just that assignee", async () => {
     const taskService = new TaskService(prisma);
 

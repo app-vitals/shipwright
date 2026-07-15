@@ -52,6 +52,7 @@ Query params:
 | `branch` | string | Filter by branch name |
 | `limit` | number | Page size |
 | `offset` | number | Page offset |
+| `sort` | string | `asc` (default) or `desc` — orders results by `createdAt`. Default preserves existing ascending order for all callers. |
 
 Returns `{ tasks: Task[], total: number }`.
 
