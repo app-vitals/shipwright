@@ -257,7 +257,6 @@ For each issue with a primary fix task to queue:
   "layer": "Background",
   "status": "pending",
   "hitl": <true | false — computed per Step 6>,
-  "addedAt": "<current ISO timestamp>",
   "description": "<see below>"
 }
 ```
@@ -275,7 +274,6 @@ For each companion observability-fix task to queue:
   "status": "pending",
   "hitl": <true | false — computed per Step 7>,
   "dependencies": [],
-  "addedAt": "<current ISO timestamp>",
   "description": "<see below>"
 }
 ```

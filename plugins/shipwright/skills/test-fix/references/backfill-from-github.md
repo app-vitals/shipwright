@@ -76,7 +76,6 @@ plan row:
   "status": "pending",
   "hitl": <true | false — same classification rules as 5.2, applied to the issue's content>,
   "dependencies": ["test-{predecessor-t-nnn}-{repo-slug}", "..."],
-  "addedAt": "<current ISO timestamp>",
   "acceptanceCriteria": ["<parsed from the issue's Acceptance criteria checklist>", "Verification command `{verify}` passes"],
   "description": "<same shape as 5.3, sourced from the issue body's Expected outcome / Files to touch / Audit decisions / Context sections>"
 }

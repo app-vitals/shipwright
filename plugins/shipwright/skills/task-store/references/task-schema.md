@@ -36,7 +36,6 @@ contract: the same shape whether the backend is GitHub Issues, Jira, or the loca
 ### Lifecycle timestamps & PR linkage
 | field | type | set when |
 |---|---|---|
-| `addedAt` | ISO string | task created |
 | `startedAt` | ISO string | → `in_progress` |
 | `pr` | number | → `pr_open` (PR number) |
 | `prUrl` | string | → `pr_open` (alternative to `pr`) |

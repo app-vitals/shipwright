@@ -377,7 +377,6 @@ Write the tasks to `/tmp/new-tasks-{session}.json`. Set `source` to `"planning/{
     "status": "pending",
     "hitl": false,
     "pr": null,
-    "addedAt": "{ISO timestamp}",
     "hours": 2,
     "complexity": {complexity},
     "model": "{model}"
