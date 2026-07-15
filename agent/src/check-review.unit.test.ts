@@ -305,4 +305,22 @@ describe("getReviewCandidates", () => {
     const result = await getReviewCandidates(makeDeps([pr], async () => null));
     expect(result[0].age).toBe("2026-06-01T00:00:00.000Z");
   });
+
+  // ─── claim gating (LPF-2.2) ───────────────────────────────────────────────
+
+  test("excludes a PR whose task-store record has claimedBy set, even when otherwise eligible (pending reviewState, no commitSha match)", async () => {
+    // Regression guard for the LPF-2.2 trap: a claimed-but-not-yet-reviewed
+    // record (reviewState: "pending", no commitSha match — which would
+    // otherwise fall into the "eligible" branch) must still be excluded when
+    // claimedBy is set, since another agent is currently mid-review on it.
+    const pr = makePr({ headRefOid: "sha111" });
+    const result = await getReviewCandidates(
+      makeDeps([pr], async () => ({
+        commitSha: null,
+        reviewState: "pending",
+        claimedBy: "agent-other",
+      })),
+    );
+    expect(result).toEqual([]);
+  });
 });

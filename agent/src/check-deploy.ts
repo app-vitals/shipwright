@@ -85,7 +85,17 @@ export interface CheckDeployDeps {
   // Bundle completeness gate: returns false if any bundle-mate task on the branch
   // is still pending/in_progress/blocked. PR is skipped when it returns false.
   isBundleComplete?: (branch: string) => Promise<boolean>;
-  // Task-store PR record lookup, used only to source the age field.
+  // Task-store PR record lookup, used both to gate qualification (a record
+  // with claimedBy set means another agent currently holds the claim on this
+  // PR — see the explicit claimedBy check below, mirroring check-review.ts)
+  // and to source the age field, though `age` below is actually sourced from
+  // queryTaskStatus's linkedTask.addedAt instead — readyForDeployAt is not
+  // used for age ordering. Queried WITHOUT `ready=true` so a `null` result
+  // unambiguously means "no record exists yet" (e.g. review skipped claim()
+  // for a self-authored PR under allow_self_review: false) rather than
+  // conflating it with "claimed" — the task-store's `ready=true` filter maps
+  // to `claimedBy IS NULL` server-side, which would collapse both cases into
+  // the same empty result.
   queryPrRecord?: (repo: string, prNumber: number) => Promise<PrRecord | null>;
   // Task status lookup for the linked task (if any). Returns the task's
   // status, or null if no linked task is found (fail-open — a PR with no
@@ -231,14 +241,22 @@ export async function getDeployCandidates(
           try {
             record = await deps.queryPrRecord(repo, pr.number);
           } catch {
-            // Query failed → fall back to PR createdAt below.
+            // Query failed → fall back to PR createdAt below (fail open — a
+            // transient task-store error must not silently exclude an
+            // otherwise-qualifying PR from deploy candidacy).
           }
+          // A record with claimedBy set means another agent currently holds
+          // the claim on this PR — skip. A null record (no record was ever
+          // created, e.g. review skipped claim() for a self-authored PR
+          // under allow_self_review: false, or the query failed above) must
+          // NOT be treated as claimed — only an explicit claimedBy gates
+          // candidacy, mirroring check-review.ts.
+          if (record?.claimedBy != null) continue;
         }
 
         candidates.push({
           id: candidateId(repo, pr.number),
           age: linkedTask?.addedAt ?? pr.createdAt ?? "",
-          claimedBy: record?.claimedBy ?? null,
           phase: "deploy",
         });
       } catch (err) {

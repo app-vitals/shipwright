@@ -368,9 +368,17 @@ export function splitOrgRepo(repo: string): [string, string] {
  *
  * Accepts an optional `fetchFn` for dependency injection in tests, matching
  * createTaskStoreClient's pattern.
+ *
+ * Accepts an optional `ready: true` to request only unclaimed PR records via
+ * LPF-2.1's `?ready=true` filter (mirrors `/tasks?ready=true`). When set,
+ * a `null` result becomes ambiguous between "no record exists yet" and
+ * "a record exists but is currently claimed" — callers that need to
+ * distinguish those two cases (e.g. check-review.ts) must NOT pass `ready`
+ * and should check `record.claimedBy` themselves instead.
  */
 export function createPrRecordQuery<T>(opts?: {
   fetchFn?: FetchFn;
+  ready?: boolean;
 }): (repo: string, prNumber: number) => Promise<T | null> {
   const taskStoreUrl = (process.env.SHIPWRIGHT_TASK_STORE_URL ?? "").trim();
   const taskStoreToken = (process.env.SHIPWRIGHT_TASK_STORE_TOKEN ?? "").trim();
@@ -381,6 +389,7 @@ export function createPrRecordQuery<T>(opts?: {
     try {
       const baseUrl = taskStoreUrl.replace(/\/$/, "");
       const params = new URLSearchParams({ repo, prNumber: String(prNumber) });
+      if (opts?.ready) params.set("ready", "true");
       const res = await doFetch(`${baseUrl}/prs?${params}`, {
         headers: {
           Authorization: `Bearer ${taskStoreToken}`,

@@ -965,7 +965,6 @@ describe("getPatchCandidates", () => {
     });
     deps.queryPrRecord = async () => ({
       readyForPatchAt: "2026-05-20T00:00:00.000Z",
-      claimedBy: null,
     });
     const result = await getPatchCandidates(deps);
     expect(result[0].age).toBe("2026-05-20T00:00:00.000Z");
@@ -981,6 +980,49 @@ describe("getPatchCandidates", () => {
       }),
     );
     expect(result[0].age).toBe("2026-06-01T00:00:00.000Z");
+  });
+
+  // ─── claim gating (LPF-2.2) ────────────────────────────────────────────────
+
+  test("excludes a PR whose task-store record has claimedBy set, even though it otherwise needs patch attention", async () => {
+    // Regression guard for the LPF-2.2 trap: a record with claimedBy set
+    // means another agent currently holds the claim on this PR — excluded,
+    // mirroring check-review.ts.
+    const pr = makeOwnPr({ number: 10, createdAt: "2026-06-01T00:00:00.000Z" });
+    const deps = makeDeps({
+      ownPrs: [pr],
+      reviewDataByPr: {},
+      ciStatusByPr: { 10: { hasFailing: true } },
+    });
+    deps.queryPrRecord = async () => ({ claimedBy: "agent-other" });
+    const result = await getPatchCandidates(deps);
+    expect(result).toEqual([]);
+  });
+
+  test("does NOT exclude a PR when queryPrRecord resolves null (no record yet — e.g. self-authored PR skipped by claim() under allow_self_review: false)", async () => {
+    const pr = makeOwnPr({ number: 10, createdAt: "2026-06-01T00:00:00.000Z" });
+    const deps = makeDeps({
+      ownPrs: [pr],
+      reviewDataByPr: {},
+      ciStatusByPr: { 10: { hasFailing: true } },
+    });
+    deps.queryPrRecord = async () => null;
+    const result = await getPatchCandidates(deps);
+    expect(result).toHaveLength(1);
+  });
+
+  test("does NOT exclude a PR when queryPrRecord throws (transient task-store error) — falls back to createdAt", async () => {
+    const pr = makeOwnPr({ number: 10, createdAt: "2026-06-01T00:00:00.000Z" });
+    const deps = makeDeps({
+      ownPrs: [pr],
+      reviewDataByPr: {},
+      ciStatusByPr: { 10: { hasFailing: true } },
+    });
+    deps.queryPrRecord = async () => {
+      throw new Error("task-store unavailable");
+    };
+    const result = await getPatchCandidates(deps);
+    expect(result).toHaveLength(1);
   });
 });
 
