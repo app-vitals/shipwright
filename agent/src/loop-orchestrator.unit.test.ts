@@ -158,7 +158,7 @@ function task(
   createdAt: string,
   overrides: Partial<WorkTaskCandidate> = {},
 ): WorkTaskCandidate {
-  return { id, status: "pending", createdAt, ...overrides };
+  return { id, createdAt, ...overrides };
 }
 
 function pr(

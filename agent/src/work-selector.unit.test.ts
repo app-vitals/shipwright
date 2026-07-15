@@ -17,10 +17,7 @@ import {
 function makeTask(overrides: Partial<WorkTaskCandidate> = {}): WorkTaskCandidate {
   return {
     id: "task-1",
-    status: "pending",
     createdAt: "2026-01-01T00:00:00.000Z",
-    branch: null,
-    dependencies: [],
     ...overrides,
   };
 }
@@ -70,15 +67,6 @@ describe("selectNextWorkItem", () => {
     expect(result).toEqual({ type: "task", task: olderTask });
   });
 
-  it("selects a ready task with dependencies whose satisfied dep is absent from the candidate list", () => {
-    // Regression guard: getDevTaskCandidates() only returns ready=true tasks, so a
-    // satisfied (terminal-status) dependency is never present in `tasks`. The task
-    // must still be selected on age alone — no local re-derivation of dependency state.
-    const task = makeTask({ id: "t1", dependencies: ["some-deployed-task-not-in-list"] });
-    const result = selectNextWorkItem([task], []);
-    expect(result).toEqual({ type: "task", task });
-  });
-
   it("selects a PR candidate purely on age, with no local claim re-validation", () => {
     // Regression guard: getReviewCandidates/getPatchCandidates/getDeployCandidates
     // (LPF-2.2) now only ever return unclaimed PRs (server-side ?ready=true
@@ -90,12 +78,6 @@ describe("selectNextWorkItem", () => {
     const newer = makePr({ id: "pr-newer", age: "2026-01-02T00:00:00.000Z" });
     const result = selectNextWorkItem([], [newer, older]);
     expect(result).toEqual({ type: "pr", pr: older });
-  });
-
-  it("returns null when every candidate task is non-pending and there are no PR candidates", () => {
-    const nonPendingTask = makeTask({ id: "t1", status: "in_progress" });
-    const result = selectNextWorkItem([nonPendingTask], []);
-    expect(result).toBeNull();
   });
 
   it("selects strictly by age across a larger mixed fixture set", () => {

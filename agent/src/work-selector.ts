@@ -32,10 +32,7 @@
 
 export interface WorkTaskCandidate {
   id: string;
-  status: string;
   createdAt: string;
-  branch?: string | null;
-  dependencies?: string[];
 }
 
 export interface WorkPrCandidate {
@@ -51,6 +48,10 @@ export type WorkItem =
 /**
  * Select the single oldest ready item across tasks and PRs.
  * Returns null when nothing is ready.
+ *
+ * `tasks` is trusted as already-ready (status === "pending" and dependency
+ * satisfaction both guaranteed by task-store's ?ready=true endpoint), so
+ * selection here is purely age-based — no local status re-check.
  */
 export function selectNextWorkItem(
   tasks: WorkTaskCandidate[],
@@ -59,7 +60,6 @@ export function selectNextWorkItem(
   let best: { age: string; item: WorkItem } | null = null;
 
   for (const task of tasks) {
-    if (task.status !== "pending") continue;
     if (!best || task.createdAt < best.age) {
       best = { age: task.createdAt, item: { type: "task", task } };
     }
