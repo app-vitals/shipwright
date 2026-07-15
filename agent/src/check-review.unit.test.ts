@@ -4,7 +4,7 @@
  * Unit tests for getReviewCandidates() — native port of
  * plugins/shipwright/scripts/check-review.ts's qualification logic.
  *
- * Ported from plugins/shipwright/scripts/check-review.test.ts, adjusted to
+ * Ported from plugins/shipwright/scripts/check-review.unit.test.ts, adjusted to
  * assert on the returned WorkPrCandidate[] array instead of {exit, output}.
  * parseAllowSelfReview tests already exist in check-helpers.unit.test.ts (the
  * function was ported there in WL-2.1) and are not duplicated here.
@@ -304,5 +304,23 @@ describe("getReviewCandidates", () => {
     const pr = makePr({ createdAt: "2026-06-01T00:00:00.000Z" });
     const result = await getReviewCandidates(makeDeps([pr], async () => null));
     expect(result[0].age).toBe("2026-06-01T00:00:00.000Z");
+  });
+
+  // ─── claim gating (LPF-2.2) ───────────────────────────────────────────────
+
+  test("excludes a PR whose task-store record has claimedBy set, even when otherwise eligible (pending reviewState, no commitSha match)", async () => {
+    // Regression guard for the LPF-2.2 trap: a claimed-but-not-yet-reviewed
+    // record (reviewState: "pending", no commitSha match — which would
+    // otherwise fall into the "eligible" branch) must still be excluded when
+    // claimedBy is set, since another agent is currently mid-review on it.
+    const pr = makePr({ headRefOid: "sha111" });
+    const result = await getReviewCandidates(
+      makeDeps([pr], async () => ({
+        commitSha: null,
+        reviewState: "pending",
+        claimedBy: "agent-other",
+      })),
+    );
+    expect(result).toEqual([]);
   });
 });

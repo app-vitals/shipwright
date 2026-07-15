@@ -140,7 +140,6 @@ and `repo-slug` values detected in Step 3 — do not re-derive them:
   "status": "pending",
   "hitl": <true | false — computed per 5.2>,
   "dependencies": ["test-{predecessor-t-nnn}-{repo-slug}", "..."],
-  "addedAt": "<current ISO timestamp>",
   "acceptanceCriteria": ["...", "Verification command `{verify}` passes"],
   "description": "<see 5.3>"
 }

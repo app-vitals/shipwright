@@ -46,6 +46,7 @@ Configuration for the Shipwright agent runtime (`agent/` and `admin/`). All opti
 | `ANTHROPIC_MODEL` | `string` | `claude-sonnet-4-6` | Claude model used for each agent invocation. |
 | `ANTHROPIC_FALLBACK_MODEL` | `string` | — | Fallback model if the primary is unavailable. |
 | `ANTHROPIC_EFFORT_LEVEL` | `string` | — | Effort/thinking level passed to Claude (e.g. `extended`, `auto`, `none`). |
+| `SHIPWRIGHT_CLAUDE_TIMEOUT_MS` | `number` | `1800000` | Hard timeout in milliseconds for a single `claude -p` session spawned by the agent runner (`agent/src/claude.ts`). When a session exceeds it the process is killed and a `ClaudeTimeoutError` is raised. Defaults to 1 800 000 ms (30 min) — the `claude -p` hard-timeout figure that `SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS` (35 min = 30 min + 5 min buffer) is derived from. Falls back to the default when unset or not a positive integer. Raise it for long sessions that keep polling CI after implementing so the worker can mark its task complete instead of being SIGKILLed mid-poll. **When raising this, raise `SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS` in step** (keep the ~5 min buffer above this value); otherwise the stale-claim reaper abandons the claim and re-dispatches a duplicate run before the longer session finishes. |
 | `ANTHROPIC_API_KEY` | `string` | — | Anthropic API key. Env-var-only (secret). |
 | `CLAUDE_CODE_OAUTH_TOKEN` | `string` | — | Claude Code OAuth token (alternative to `ANTHROPIC_API_KEY`). Env-var-only (secret). |
 
@@ -80,6 +81,7 @@ Provide either the GitHub App vars (recommended) or `GH_TOKEN` (PAT). App auth i
 | `SHIPWRIGHT_API_URL` | `string` | — | Base URL of the Shipwright admin service, used by the agent entrypoint to fetch config at startup. |
 | `SHIPWRIGHT_AGENT_ID` | `string` | — | The agent's ID in the Shipwright platform. Also settable via `--agent-id` CLI flag. |
 | `SHIPWRIGHT_AGENT_API_KEY` | `string` | — | Bearer token for the config fetch at startup (`/agents/:id/config` and `/agents/:id/crons`). Also settable via `--api-key`. |
+| `SHIPWRIGHT_PR_STATE_RECONCILER_INTERVAL_MS` | `number` | `2700000` (45 min) | Interval in milliseconds for the PR state reconciler (`agent/src/pr-state-reconciler.ts`), started in `agent/src/index.ts` alongside the config-sync and cron-sync intervals. On each tick it lists every task-store PR record still `state:"open"` per repo, checks each against live GitHub state via `gh pr view`, and PATCHes the record's `state`/`mergedAt` (plus defensively clearing claim fields) when GitHub reports the PR as merged or closed — a crash backstop for the *business state* fields, distinct from `SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS`'s *claim* fields. Deliberately a longer interval than the 60s config/cron syncs since it only needs to run every 30-60 minutes. Only started when `runtimeClient` and `SHIPWRIGHT_AGENT_ID` are configured. |
 
 ### Server
 

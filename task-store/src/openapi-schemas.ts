@@ -395,6 +395,7 @@ export const TaskListQuerySchema = z.object({
   limit: z.string().optional().openapi({ example: "50" }),
   offset: z.string().optional().openapi({ example: "0" }),
   ready: z.enum(["true", "false"]).optional().openapi({ example: "true" }),
+  sort: z.enum(["asc", "desc"]).optional().openapi({ example: "asc" }),
 });
 
 /** Response for GET /tasks */
@@ -526,6 +527,11 @@ export const PrListQuerySchema = z
       .string()
       .optional()
       .openapi({ example: "0", description: "Pagination offset" }),
+    ready: z.enum(["true", "false"]).optional().openapi({
+      example: "true",
+      description:
+        "When true, return only unclaimed PRs (claimedBy IS NULL) — mirrors /tasks?ready=true. Composable with other filters (repo, state, reviewState); does not itself apply state/reviewState eligibility rules the way claim-next does.",
+    }),
   })
   .openapi("PrListQuery");
 

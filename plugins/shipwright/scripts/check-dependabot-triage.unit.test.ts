@@ -1,5 +1,5 @@
 /**
- * plugins/shipwright/scripts/check-dependabot-triage.test.ts
+ * plugins/shipwright/scripts/check-dependabot-triage.unit.test.ts
  *
  * Unit tests for check-dependabot-triage.ts
  *

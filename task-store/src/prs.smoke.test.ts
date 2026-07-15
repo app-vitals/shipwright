@@ -730,6 +730,46 @@ describe("/prs routes (smoke)", () => {
     expect(body.prs.every((p: PullRequest) => p.staged === true)).toBe(true);
   });
 
+  it("GET /prs?ready=true wires the ready filter through to the service", async () => {
+    let capturedFilters: PullRequestListFilters | undefined;
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1", claimedBy: null }));
+    const baseFake = fakePrService({ store });
+    const prServiceWithCapture: PullRequestServiceLike = {
+      ...baseFake,
+      async list(filters?: PullRequestListFilters): Promise<PullRequestListResult> {
+        capturedFilters = filters;
+        return baseFake.list(filters);
+      },
+    };
+    const app = makeApp({ prService: prServiceWithCapture });
+
+    const res = await app.request("/prs?ready=true", {
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(200);
+    expect(capturedFilters?.ready).toBe(true);
+  });
+
+  it("GET /prs without ready leaves the ready filter undefined", async () => {
+    let capturedFilters: PullRequestListFilters | undefined;
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1" }));
+    const baseFake = fakePrService({ store });
+    const prServiceWithCapture: PullRequestServiceLike = {
+      ...baseFake,
+      async list(filters?: PullRequestListFilters): Promise<PullRequestListResult> {
+        capturedFilters = filters;
+        return baseFake.list(filters);
+      },
+    };
+    const app = makeApp({ prService: prServiceWithCapture });
+
+    const res = await app.request("/prs", { headers: adminAuth() });
+    expect(res.status).toBe(200);
+    expect(capturedFilters?.ready).toBeUndefined();
+  });
+
   it("GET /prs?staged=false returns unstaged records only", async () => {
     const store = new Map<string, PullRequest>();
     store.set("pr-1", makePr({ id: "pr-1", staged: true }));
