@@ -13,7 +13,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 // The monorepo root is three levels up from this test file:
-// plugins/shipwright/test/workspace.test.ts → root
+// plugins/shipwright/test/workspace.content.test.ts → root
 const root = resolve(import.meta.dir, "../../..");
 
 interface PackageJson {

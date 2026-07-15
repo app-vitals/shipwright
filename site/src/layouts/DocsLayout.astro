@@ -8,6 +8,7 @@
 import { getCollection } from "astro:content";
 import "../styles/brand.css";
 import Analytics from "../components/Analytics.astro";
+import { BOOKING_URL } from "../consts";
 
 interface Heading {
   depth: number;
@@ -309,6 +310,7 @@ const discussionsUrl = "https://github.com/app-vitals/shipwright/discussions";
         <a href="/docs" class="sw-label">Docs</a>
         <a href="/compare" class="sw-label">Compare</a>
         <a href={repoUrl} class="sw-label">GitHub ↗</a>
+        <a href={BOOKING_URL} class="sw-btn sw-btn-secondary">Book a call</a>
       </nav>
     </header>
 
@@ -340,6 +342,7 @@ const discussionsUrl = "https://github.com/app-vitals/shipwright/discussions";
               <li><a href="/docs" class="docs-sidebar-link">Docs</a></li>
               <li><a href="/compare" class="docs-sidebar-link">Compare</a></li>
               <li><a href={repoUrl} class="docs-sidebar-link">GitHub ↗</a></li>
+              <li><a href={BOOKING_URL} class="docs-sidebar-link">Book a call</a></li>
             </ul>
           </nav>
 
@@ -471,6 +474,7 @@ const discussionsUrl = "https://github.com/app-vitals/shipwright/discussions";
           <a href={licenseUrl}>MIT License</a>
           <a href={claudeCodeUrl}>Claude Code</a>
           <a href={discussionsUrl}>GitHub Discussions</a>
+          <a href={BOOKING_URL}>Book a call</a>
         </nav>
       </div>
     </footer>

@@ -117,6 +117,7 @@ Tests land **with** the code, at the correct layer — same PR, no "add tests la
 | `*.integration.test.ts` | integration | real dependency behavior via recorded fixtures / injected doubles |
 | `*.smoke.test.ts` | smoke | Hono endpoints via in-process `app.request()` (no real socket) |
 | `*.spec.ts` (in `site/`) | e2e | the site in a real browser via Playwright |
+| `*.content.test.ts` | content | markdown/prompt-content-assertion tests — e.g. checking that a command's or skill's Markdown body contains expected sections/instructions/wording. Distinct from unit/integration/smoke: no real I/O boundary, just asserting on static content. |
 
 **Test isolation (hard rule):** inject time via a `Clock`; test external clients (task store, GitHub) with recorded fixtures. **No `mock.module()`, no `global.fetch`/`global.*` overrides** — Bun shares the test process, so leaked globals break sibling suites.
 
@@ -161,7 +162,7 @@ For the full configuration reference (all env vars, agent config, policy config)
 To load additional context into a session, add `@docs/filename.md` entries here — don't create separate `CLAUDE-REFERENCE.md` or similar files.
 
 - **docs/architecture.md** — the four-artifact A→B→C→D design (plugin / metrics / agent / task-store), supporting surfaces, and workspace layout
-- **docs/testing.md** — the four-layer test model (unit / integration / smoke / e2e), run commands, speed budgets, and the isolation contract
+- **docs/testing.md** — the five-layer test model (unit / integration / smoke / e2e / content), run commands, speed budgets, and the isolation contract
 - **docs/metrics.md** — metrics service (B): JSON endpoints, server-rendered dashboard, dual auth (Bearer / session), and environment
 - **docs/agent.md** — Shipwright agent (C): runtime + admin CRUD APIs, the ten-model Prisma store, and encryption/env notes
 - **docs/agent-api.md** — the admin CRUD API (D): agents, envs, crons, cron runs, tools, tokens, plugins, and chat-token-usage endpoints, plus auth paths

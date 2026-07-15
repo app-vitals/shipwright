@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { BOOKING_URL } from "../src/consts";
 import { expectNoRuntimeJsBeyondAnalytics } from "./helpers";
 
 // Fulfill external font CDN requests immediately so the page's 'load' event
@@ -174,8 +175,8 @@ test("CTA repeats the install command and links GitHub + discovery call", async 
     page.getByRole("link", { name: /github/i }).first(),
   ).toHaveAttribute("href", /github\.com\/app-vitals\/shipwright/);
   await expect(
-    page.getByRole("link", { name: /discovery call/i }),
-  ).toHaveAttribute("href", "https://cal.com/team/app-vitals/discovery-call");
+    page.locator("#cta").getByRole("link", { name: /discovery call/i }),
+  ).toHaveAttribute("href", BOOKING_URL);
 });
 
 test("compare page markets no pricing", async ({ page }) => {

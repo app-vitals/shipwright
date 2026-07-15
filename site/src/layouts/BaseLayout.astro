@@ -4,6 +4,7 @@
 // fonts load via plain <link rel="stylesheet"> and the glow orb is pure CSS.
 import "../styles/brand.css";
 import Analytics from "../components/Analytics.astro";
+import { BOOKING_URL } from "../consts";
 
 interface Props {
   title?: string;
@@ -181,6 +182,7 @@ const year = new Date().getFullYear();
         <a href={compareUrl} class="sw-label">Compare</a>
         <a href={architectureUrl} class="sw-label">Architecture</a>
         <a href={repoUrl} class="sw-label">GitHub ↗</a>
+        <a href={BOOKING_URL} class="sw-btn sw-btn-secondary">Book a call</a>
       </nav>
 
       <!-- Mobile hamburger button (CSS-only) -->
@@ -212,6 +214,9 @@ const year = new Date().getFullYear();
         </li>
         <li>
           <a href={repoUrl} class="sw-label">GitHub ↗</a>
+        </li>
+        <li>
+          <a href={BOOKING_URL} class="sw-label">Book a call</a>
         </li>
       </ul>
     </nav>
@@ -300,6 +305,7 @@ const year = new Date().getFullYear();
           <a href={discussionsUrl}>GitHub Discussions</a>
           <a href={compareUrl}>Compare</a>
           <a href={docsUrl}>Docs</a>
+          <a href={BOOKING_URL}>Book a call</a>
         </nav>
       </div>
     </footer>

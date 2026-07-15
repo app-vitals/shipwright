@@ -794,6 +794,13 @@ describe("findStalePluginSpecs", () => {
 // installPlugins
 // ---------------------------------------------------------------------------
 
+// Explicit empty extra-marketplace list — every call in this describe block
+// must pass this (or an intentional array) instead of omitting the arg.
+// Omitting it falls through to discoverBakedMarketplaces(BAKED_MARKETPLACES_ROOT),
+// which reads the REAL /opt/shipwright/marketplaces directory on disk and makes
+// these tests depend on ambient sandbox/image state.
+const NO_EXTRA_MARKETPLACES: string[] = [];
+
 describe("installPlugins", () => {
   it("registers local marketplace then installs shipwright@shipwright using the shipwright marketplace", async () => {
     const calls: Array<{ cmd: string; args: string[] }> = [];
@@ -812,6 +819,7 @@ describe("installPlugins", () => {
       [],
       "/repo/root",
       join(testHome, "nonexistent.json"),
+      NO_EXTRA_MARKETPLACES,
     );
 
     // marketplace add + 1 install + 1 update = 3 calls (no stale paths)
@@ -856,6 +864,7 @@ describe("installPlugins", () => {
       agentPlugins,
       "/repo/root",
       join(testHome, "nonexistent.json"),
+      NO_EXTRA_MARKETPLACES,
     );
 
     // 1 marketplace add + 3 installs + 3 updates = 7 calls
@@ -920,6 +929,7 @@ describe("installPlugins", () => {
       [],
       "/repo/root",
       join(testHome, "nonexistent.json"),
+      NO_EXTRA_MARKETPLACES,
     );
 
     // marketplace add + 1 install + 1 update = 3 calls
@@ -940,6 +950,7 @@ describe("installPlugins", () => {
         [],
         "/repo/root",
         join(testHome, "nonexistent.json"),
+        NO_EXTRA_MARKETPLACES,
       ),
     ).resolves.toBeUndefined();
   });
@@ -966,6 +977,7 @@ describe("installPlugins", () => {
         [],
         "/repo/root",
         join(testHome, "nonexistent.json"),
+        NO_EXTRA_MARKETPLACES,
       ),
     ).resolves.toBeUndefined();
 
@@ -995,6 +1007,7 @@ describe("installPlugins", () => {
         [],
         "/repo/root",
         join(testHome, "nonexistent.json"),
+        NO_EXTRA_MARKETPLACES,
       ),
     ).resolves.toBeUndefined();
 
@@ -1020,6 +1033,7 @@ describe("installPlugins", () => {
         [],
         "/repo/root",
         join(testHome, "nonexistent.json"),
+        NO_EXTRA_MARKETPLACES,
       ),
     ).resolves.toBeUndefined();
     expect(calls).toHaveLength(3);
@@ -1053,7 +1067,14 @@ describe("installPlugins", () => {
       return { stdout: "", exitCode: 0 };
     };
 
-    await installPlugins(mockExec, testHome, [], "/repo/root", manifestPath);
+    await installPlugins(
+      mockExec,
+      testHome,
+      [],
+      "/repo/root",
+      manifestPath,
+      NO_EXTRA_MARKETPLACES,
+    );
 
     // marketplace add + uninstall (stale) + install + update = 4 calls
     expect(calls).toHaveLength(4);
@@ -1107,7 +1128,14 @@ describe("installPlugins", () => {
       };
     };
 
-    await installPlugins(mockExec, testHome, [], "/repo/root", manifestPath);
+    await installPlugins(
+      mockExec,
+      testHome,
+      [],
+      "/repo/root",
+      manifestPath,
+      NO_EXTRA_MARKETPLACES,
+    );
 
     // marketplace add + uninstall (failed) = 2 calls; install and update are skipped
     expect(calls).toHaveLength(2);
@@ -1153,7 +1181,14 @@ describe("installPlugins", () => {
       return { stdout: "", exitCode: 0 };
     };
 
-    await installPlugins(mockExec, testHome, [], "/repo/root", manifestPath);
+    await installPlugins(
+      mockExec,
+      testHome,
+      [],
+      "/repo/root",
+      manifestPath,
+      NO_EXTRA_MARKETPLACES,
+    );
 
     // marketplace add + install + update = 3 calls (no uninstall)
     expect(calls).toHaveLength(3);

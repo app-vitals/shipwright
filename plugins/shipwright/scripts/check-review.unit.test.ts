@@ -1,5 +1,5 @@
 /**
- * plugins/shipwright/scripts/check-review.test.ts
+ * plugins/shipwright/scripts/check-review.unit.test.ts
  *
  * Unit tests for check-review.ts
  *

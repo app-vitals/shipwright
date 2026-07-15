@@ -1,5 +1,5 @@
 /**
- * plugins/shipwright/scripts/check-patch.test.ts
+ * plugins/shipwright/scripts/check-patch.unit.test.ts
  *
  * Unit tests for check-patch.ts
  *

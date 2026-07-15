@@ -97,7 +97,7 @@ shipwright/
 
 ## See also
 
-- **[testing.md](./testing.md)** — the four-layer test architecture and isolation contract.
+- **[testing.md](./testing.md)** — the five-layer test architecture and isolation contract.
 - **[metrics.md](./metrics.md)** — metrics service API and dashboard.
 - **[agent.md](./agent.md)** — Shipwright agent runtime + admin APIs and data model.
 - **[mcp-tools.md](./mcp-tools.md)** — generated MCP server tool reference (name, method, path, params, body).

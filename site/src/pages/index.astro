@@ -3,13 +3,13 @@
 // social proof (SWW-2.1 + SWW-2.2).
 // No runtime JS, no hardcoded hex colors, no competitor names.
 import BaseLayout from "../layouts/BaseLayout.astro";
+import { BOOKING_URL } from "../consts";
 
 const taglinePrefix = "The open-source autonomous delivery system ";
 const taglineGradient = "in your own environment";
 const tagline = `${taglinePrefix}${taglineGradient}.`;
 const install = "/plugin install shipwright@app-vitals/shipwright";
 const githubUrl = "https://github.com/app-vitals/shipwright";
-const discoveryUrl = "https://cal.com/team/app-vitals/discovery-call";
 const proofUrl = "https://proof.shipwrightharness.com/public/dashboard";
 const proofTasksUrl = "https://proof.shipwrightharness.com/public/tasks";
 
@@ -1027,7 +1027,7 @@ const differentiators = [
 
     <p class="mt-8 max-w-2xl">
       Want a walkthrough on your own codebase?{" "}
-      <a href={discoveryUrl}>Book a discovery call</a>.
+      <a href={BOOKING_URL}>Book a discovery call</a>.
     </p>
 
     <p class="mt-4 max-w-2xl">
@@ -1051,7 +1051,7 @@ const differentiators = [
     </p>
 
     <div class="mt-8">
-      <a class="sw-btn" href={discoveryUrl}>Book a discovery call</a>
+      <a class="sw-btn" href={BOOKING_URL}>Book a discovery call</a>
     </div>
   </section>
 </BaseLayout>
