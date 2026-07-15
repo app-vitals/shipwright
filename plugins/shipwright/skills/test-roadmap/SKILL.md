@@ -133,40 +133,37 @@ Emit 6 flat, independently-titled tasks — one per service, no parent/P-NNN row
 T-042a | M2 | services/payments/src/middleware/auth.ts      | infra | rebuild
        | Migrate auth middleware — payments (introduces shared validateToken() helper)
        | bun test --filter payments/auth
-       | dependencies: []
 
 T-042b | M2 | services/users/src/middleware/auth.ts         | infra | rebuild
        | Migrate auth middleware — users (imports validateToken() from payments)
        | bun test --filter users/auth
-       | dependencies: [T-042a]
+       | depends_on: T-042a
 
 T-042c | M2 | services/notifications/src/middleware/auth.ts | infra | rebuild
        | Migrate auth middleware — notifications
        | bun test --filter notifications/auth
-       | dependencies: []
 
 T-042d | M2 | services/billing/src/middleware/auth.ts       | infra | rebuild
        | Migrate auth middleware — billing
        | bun test --filter billing/auth
-       | dependencies: []
 
 T-042e | M2 | services/catalog/src/middleware/auth.ts       | infra | rebuild
        | Migrate auth middleware — catalog
        | bun test --filter catalog/auth
-       | dependencies: []
 
 T-042f | M2 | services/search/src/middleware/auth.ts        | infra | rebuild
        | Migrate auth middleware — search
        | bun test --filter search/auth
-       | dependencies: []
 ```
 
 Here, `payments` is the first service migrated and introduces a shared `validateToken()`
-helper that `users`' middleware genuinely imports — so `T-042b` lists `T-042a` in its
-`dependencies`. The remaining four services (`notifications`, `billing`, `catalog`, `search`)
-have no real ordering dependency on any other service's migration, so they carry empty
-`dependencies` and can run in parallel. This is not advisory — do not emit the oversized task
-and place it in Open risks. Apply the split during task generation. Open risks is for
+helper that `users`' middleware genuinely imports — so `T-042b`'s row carries a
+`depends_on: T-042a` annotation (test-fix's Step 2.3 parses this and Step 5.4 computes the
+task-store `dependencies` array from it). The remaining four services (`notifications`,
+`billing`, `catalog`, `search`) have no real ordering dependency on any other service's
+migration, so their rows carry no `depends_on:` annotation and they end up with an empty
+`dependencies` array, running in parallel. This is not advisory — do not emit the oversized
+task and place it in Open risks. Apply the split during task generation. Open risks is for
 genuinely ambiguous human calls, not for tasks the sizing algorithm knows are too large.
 
 ### 6. Open risks
