@@ -2444,7 +2444,7 @@ describe("renderTaskDetailPage — timezone formatting", () => {
         id: "TZ-1",
         title: "Timezone test",
         status: "pending",
-        addedAt: "2025-01-16T05:00:00Z", // Jan 16 UTC, Jan 15 Pacific
+        createdAt: "2025-01-16T05:00:00Z", // Jan 16 UTC, Jan 15 Pacific
       },
       "user@example.com",
       {},
@@ -2463,7 +2463,7 @@ describe("renderTaskDetailPage — timezone formatting", () => {
         id: "TZ-2",
         title: "Timezone test UTC",
         status: "pending",
-        addedAt: "2025-01-16T05:00:00Z",
+        createdAt: "2025-01-16T05:00:00Z",
       },
       "user@example.com",
       {},
