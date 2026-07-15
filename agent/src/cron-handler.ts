@@ -53,6 +53,21 @@ export function buildTokenPayload(
 
 type ClaudeRunner = (message: string) => Promise<ClaudeRunResult>;
 
+/**
+ * Format a cron-dispatched message with a `[Cron job: <jobId>]` tag and the
+ * current time. The tag is what vitals-os's time-tracking session-merging
+ * logic (time/src/lib/sessions.ts) keys off of to exclude unattended/
+ * automated cron work from a user's continuous work session view — so every
+ * runner() call originating from a cron dispatch (including shipwright-loop's
+ * per-phase dispatches) must be wrapped through this helper.
+ */
+export function formatCronMessage(jobId: string, prompt: string): string {
+  const now = new Date().toLocaleString("en-US", {
+    timeZone: "America/Los_Angeles",
+  });
+  return `[Cron job: ${jobId}] Current time: ${now}\n\n${prompt}`;
+}
+
 interface CronRequest {
   jobId: string;
   prompt: string;
@@ -267,10 +282,7 @@ export async function handleCronRequest(
     prompt = output;
   }
 
-  const now = new Date().toLocaleString("en-US", {
-    timeZone: "America/Los_Angeles",
-  });
-  const message = `[Cron job: ${jobId}] Current time: ${now}\n\n${prompt}`;
+  const message = formatCronMessage(jobId, prompt);
 
   console.log(`[agent:cron] running job "${jobId}"`);
 

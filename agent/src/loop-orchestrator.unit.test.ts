@@ -130,10 +130,13 @@ function makeDrainingRunner(
   let idx = 0;
   const runner = async (message: string): Promise<ClaudeRunResult> => {
     messages.push(message);
-    // The message is "<command> <itemId>" — match by command prefix since
-    // the trailing item id varies per dispatch.
+    // The message is formatCronMessage(loopCronId, "<command> <itemId>") —
+    // i.e. "[Cron job: ...] Current time: ...\n\n<command> <itemId>". Match
+    // by scanning for the command anywhere in the message (not just as a
+    // prefix) since the trailing item id varies per dispatch and the tag
+    // prefix now precedes the command.
     const command = Object.keys(commandToPool).find(
-      (c) => message === c || message.startsWith(`${c} `),
+      (c) => message.includes(c),
     );
     // Consume the oldest unconsumed candidate of this command's phase.
     const candidates = (command ? commandToPool[command] : []) ?? [];
@@ -167,6 +170,25 @@ function pr(
   phase: "review" | "patch" | "deploy",
 ): WorkPrCandidate {
   return { id, age, claimedBy: null, phase };
+}
+
+/**
+ * Asserts that each dispatched message is the given command string wrapped
+ * via formatCronMessage("shipwright-loop", command) — i.e. tagged with
+ * `[Cron job: shipwright-loop] Current time: ...` so it's excluded from
+ * vitals-os session-merging (LCT-1.1). Timestamp-agnostic by design: only the
+ * tag prefix and the trailing command are checked.
+ */
+function expectDispatchedCommands(
+  messages: string[],
+  commands: string[],
+  loopCronId = "shipwright-loop",
+): void {
+  expect(messages).toHaveLength(commands.length);
+  messages.forEach((message, i) => {
+    expect(message).toStartWith(`[Cron job: ${loopCronId}] Current time:`);
+    expect(message).toEndWith(`\n\n${commands[i]}`);
+  });
 }
 
 // ─── Deps builder ────────────────────────────────────────────────────────────
@@ -428,7 +450,7 @@ describe("createLoopOrchestrator", () => {
 
     await loop([job("shipwright-dev-task", true)]);
 
-    expect(messages).toEqual(["/shipwright:dev-task SWC-1.1"]);
+    expectDispatchedCommands(messages, ["/shipwright:dev-task SWC-1.1"]);
   });
 
   test("dispatches /shipwright:review for a winning review PR", async () => {
@@ -443,7 +465,7 @@ describe("createLoopOrchestrator", () => {
 
     await loop([job("shipwright-review", true)]);
 
-    expect(messages).toEqual(["/shipwright:review acme/x#1"]);
+    expectDispatchedCommands(messages, ["/shipwright:review acme/x#1"]);
   });
 
   test("dispatches /shipwright:patch for a winning patch PR", async () => {
@@ -458,7 +480,7 @@ describe("createLoopOrchestrator", () => {
 
     await loop([job("shipwright-patch", true)]);
 
-    expect(messages).toEqual(["/shipwright:patch acme/x#2"]);
+    expectDispatchedCommands(messages, ["/shipwright:patch acme/x#2"]);
   });
 
   test("dispatches /shipwright:deploy for a winning deploy PR", async () => {
@@ -473,7 +495,7 @@ describe("createLoopOrchestrator", () => {
 
     await loop([job("shipwright-deploy", true)]);
 
-    expect(messages).toEqual(["/shipwright:deploy acme/x#3"]);
+    expectDispatchedCommands(messages, ["/shipwright:deploy acme/x#3"]);
   });
 
   test("selects the globally-oldest item across phases and drains in age order", async () => {
@@ -504,7 +526,7 @@ describe("createLoopOrchestrator", () => {
 
     await loop(ALL_PHASES_ON);
 
-    expect(messages).toEqual([
+    expectDispatchedCommands(messages, [
       "/shipwright:patch acme/x#5",
       "/shipwright:dev-task SWC-1.1",
       "/shipwright:review acme/x#9",
@@ -527,8 +549,10 @@ describe("createLoopOrchestrator", () => {
       job("shipwright-review-patch", true),
     ]);
 
-    expect(messages).toEqual(["/shipwright:review acme/x#1"]);
-    expect(messages).not.toContain("/shipwright:review-patch");
+    expectDispatchedCommands(messages, ["/shipwright:review acme/x#1"]);
+    expect(messages.some((m) => m.includes("/shipwright:review-patch"))).toBe(
+      false,
+    );
   });
 
   test("review-patch enabled state does not change dispatch when disabled either", async () => {
@@ -546,7 +570,7 @@ describe("createLoopOrchestrator", () => {
       job("shipwright-review-patch", false),
     ]);
 
-    expect(messages).toEqual(["/shipwright:review acme/x#1"]);
+    expectDispatchedCommands(messages, ["/shipwright:review acme/x#1"]);
   });
 
   test("reports a tagged createRun/completeRun pair per dispatch", async () => {
@@ -630,7 +654,7 @@ describe("createLoopOrchestrator", () => {
     const loop = createLoopOrchestrator(deps);
 
     await expect(loop([job("shipwright-dev-task", true)])).rejects.toThrow(
-      "claude run failed for /shipwright:dev-task",
+      "claude run failed for [Cron job: shipwright-loop] Current time:",
     );
 
     // The run was created and then completed with outcome "failed" — never
@@ -686,5 +710,27 @@ describe("createLoopOrchestrator", () => {
 
     expect(messages).toEqual([]);
     expect(creates).toEqual([]);
+  });
+
+  test("tags dispatched messages with [Cron job: <loopCronId>] Current time: ... so they're excluded from session-merging", async () => {
+    const consumed = new Set<string>();
+    const devTaskCandidates = [task("T-123", "2026-01-01T00:00:00Z")];
+    const { runner, messages } = makeDrainingRunner(
+      { devTask: devTaskCandidates },
+      consumed,
+    );
+    const deps = makeDeps({
+      devTaskCandidates,
+      runner,
+      consumed,
+      loopCronId: "shipwright-loop",
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toStartWith("[Cron job: shipwright-loop] Current time:");
+    expect(messages[0]).toContain("/shipwright:dev-task T-123");
   });
 });
