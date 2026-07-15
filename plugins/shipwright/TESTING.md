@@ -1211,16 +1211,16 @@ Imported from the former `test-readiness` plugin. These exercise the six `/test-
 **Expected:** The second run's dedup check (Step 4) finds the already-active `T-NNN` tasks (matched by `source == "shipwright"` and title starting with "Test readiness:"), skips them ("Skipping {T-NNN} — task already active"), and no duplicate tasks are created in the task store.
 
 ### TR-13 — Phase 5 dependencies-array / ready computation
-**Steps:** Queue a task graph with predecessor edges via `/test-fix` (e.g. a fan-out `P-NNN` parent with `T-NNNa`/`T-NNNb` children), then mark/complete a predecessor task in the task store.
+**Steps:** Queue a task graph with predecessor edges via `/test-fix` (e.g. two independent flat tasks, `T-042a` and `T-042b`, where `T-042b` genuinely depends on `T-042a`'s output via an explicit `depends_on: T-042a` annotation — unrelated to any service-count splitting), then mark/complete the predecessor task (`T-042a`) in the task store.
 **Expected:** Task-store's own `ready:true` query correctly reflects the completed predecessor's dependents becoming ready — there is no separate ready/blocked label toggle or `--refresh` flag; `dependencies` (task-store's own field) is the sole readiness mechanism.
 
 ### TR-14 — Idempotency (Phases 1–4)
 **Steps:** Run all four phases, capture artifact hashes, re-run without source changes, compare.
 **Expected:** Outputs stable (differ only in minor metadata like timestamps). Deterministic given the same source.
 
-### TR-15 — Sizing fan-out rule
+### TR-15 — N-service refactor sizing
 **Steps:** In a repo where Phase 3 yields a task touching 3+ services, run `/test-roadmap`.
-**Expected:** No single task touches all service files; instead one parent task (P-NNN, no verify) and one child task per service (T-NNN a/b/c…) each with its own verify. Open-risks lists no "oversized task" entries for split tasks.
+**Expected:** No single task touches all service files; instead N independently-titled flat tasks are emitted, one per service (T-NNN a/b/c…), each with its own verify command — no parent/P-NNN row. `dependencies` is populated only where genuine technical ordering exists between two services' tasks; otherwise it's an empty array. Open-risks lists no "oversized task" entries for split tasks.
 
 ### TR-16 — Audit decision rows
 **Steps:** Run `/test-roadmap` where Phase 3 has a bucket with 5+ `delete (redundant)`/`rebuild` tests, then `/test-fix --dry-run`.
@@ -1245,6 +1245,10 @@ Imported from the former `test-readiness` plugin. These exercise the six `/test-
 ### TR-21 — Planning-debt metric command
 **Steps:** In a repo with git history referencing task IDs (`T-001`, `fix(T-042)`) across ≥2 milestones, run `/test-debt`.
 **Expected:** `docs/test-readiness/test-debt.md` created with a per-milestone table (Milestone, Total commits, Corrective, Ratio, Flag); ratio > 0.25 flagged red; milestones with <5 commits reported but not flagged; planning-debt notes present for red-flag milestones.
+
+### TR-22 — N-service refactor emitted as flat tasks end-to-end
+**Steps:** In a repo where Phase 3 yields a 6-service auth-middleware migration touching `services/{payments,users,notifications,billing,catalog,search}/src/middleware/auth.ts` (the former P-042 example), run `/test-roadmap` then `/test-fix`.
+**Expected:** `/test-roadmap` emits 6 independently-titled flat tasks (`T-042a`..`T-042f`, one per service) in the task list — no parent/P-042 row — each with its own files and its own verify command (e.g. `bun test --filter payments/auth`); `T-042b` (users) carries a `dependencies` entry pointing at `T-042a` (payments) because it genuinely imports the shared `validateToken()` helper payments introduces, while the remaining four tasks carry empty `dependencies`. `/test-fix` then queues all 6 as task-store tasks (`test-t-042a-{repo-slug}`..`test-t-042f-{repo-slug}`), with `test-t-042b-{repo-slug}`'s `dependencies` array containing `test-t-042a-{repo-slug}` and the other four tasks' `dependencies` arrays empty — task-store's `ready:true` query reflects `T-042b` as blocked only until `T-042a` completes.
 
 **Known gap (carried over):** Phase 3 speed measurement is inspection-based unless the runner is installed/configured; a "speed not measured" flag in the artifact is documented behavior, not a bug.
 

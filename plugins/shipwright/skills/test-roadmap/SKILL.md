@@ -107,11 +107,17 @@ This format is designed to be consumed by `shipwright /dev-task` as a queue.
 2. **Single concern** — one functional unit per task. A task touching auth middleware AND a user factory AND two smoke tests is three tasks. **Single concern ≠ one operation repeated across N services.** Applying the same change to N services is N tasks — each service has its own files, its own verification command, and its own PR surface area.
 3. **Hard cap: ~1000 lines changed.** Larger PRs slow review, increase merge conflict risk, and reduce the agent's confidence in its own output. If a task exceeds this, break it at a natural seam — usually by layer (infra task, then unit task, then integration task) or by feature area.
 
-**Fan-out rule for refactor and migration tasks (non-negotiable):** Never emit a single task that touches more than one service or primary file as a refactor or migration. Apply deterministically:
-
-- **One service/file per refactor or migration task** — hard cap, no exceptions.
-- **N-service refactors become N child tasks** under a single parent summary task. The parent (`P-NNN`) carries the title (e.g., "Migrate auth middleware across all services") with no verification command of its own — it closes when all N children close. Each child (`T-NNN`) targets one service, lists its own files, and has its own verification command.
-- Emit the parent task first, then its children in sequence, each marked `depends_on: P-NNN`.
+**N-service refactors are N flat tasks, wired with real dependencies (non-negotiable):**
+Building on rule 2 above — one operation repeated across N services is N tasks, not one — each
+of those N tasks is emitted as its own independently-titled row in the task list (section 5),
+with its own files, its own verification command, and its own PR surface area. There is no
+parent/summary task and no synthetic "closes when its children close" row: task-store has no
+structural parent/child field, only `dependencies`, and encoding "parent closes when children
+close" as free text has broken in production. Wire the N tasks together with real
+`dependencies` entries only where genuine technical ordering exists between them (e.g. one
+task's output is literally imported by another) — never merely because they touch "the same"
+logical refactor. If no such ordering exists, the tasks are fully independent and each carries
+an empty `dependencies` array; do not invent a dependency just to show the field is used.
 
 **Example — 6-service auth middleware refactor:**
 
@@ -122,38 +128,46 @@ T-042 | M2 | services/*/src/middleware/auth.ts (6 files) | infra | rebuild
       | bun test --filter auth
 ```
 
-Emit a parent and 6 children:
+Emit 6 flat, independently-titled tasks — one per service, no parent/P-NNN row:
 ```
-P-042 | M2 | —                                              | infra | rebuild
-      | Migrate auth middleware to new token format (6 services)
-      | (closes when T-042a–T-042f all close)
-
 T-042a | M2 | services/payments/src/middleware/auth.ts      | infra | rebuild
-       | Migrate auth middleware — payments
+       | Migrate auth middleware — payments (introduces shared validateToken() helper)
        | bun test --filter payments/auth
+       | dependencies: []
 
 T-042b | M2 | services/users/src/middleware/auth.ts         | infra | rebuild
-       | Migrate auth middleware — users
+       | Migrate auth middleware — users (imports validateToken() from payments)
        | bun test --filter users/auth
+       | dependencies: [T-042a]
 
 T-042c | M2 | services/notifications/src/middleware/auth.ts | infra | rebuild
        | Migrate auth middleware — notifications
        | bun test --filter notifications/auth
+       | dependencies: []
 
 T-042d | M2 | services/billing/src/middleware/auth.ts       | infra | rebuild
        | Migrate auth middleware — billing
        | bun test --filter billing/auth
+       | dependencies: []
 
 T-042e | M2 | services/catalog/src/middleware/auth.ts       | infra | rebuild
        | Migrate auth middleware — catalog
        | bun test --filter catalog/auth
+       | dependencies: []
 
 T-042f | M2 | services/search/src/middleware/auth.ts        | infra | rebuild
        | Migrate auth middleware — search
        | bun test --filter search/auth
+       | dependencies: []
 ```
 
-The fan-out rule is not advisory — do not emit the oversized task and place it in Open risks. Apply the split during task generation. Open risks is for genuinely ambiguous human calls, not for tasks the sizing algorithm knows are too large.
+Here, `payments` is the first service migrated and introduces a shared `validateToken()`
+helper that `users`' middleware genuinely imports — so `T-042b` lists `T-042a` in its
+`dependencies`. The remaining four services (`notifications`, `billing`, `catalog`, `search`)
+have no real ordering dependency on any other service's migration, so they carry empty
+`dependencies` and can run in parallel. This is not advisory — do not emit the oversized task
+and place it in Open risks. Apply the split during task generation. Open risks is for
+genuinely ambiguous human calls, not for tasks the sizing algorithm knows are too large.
 
 ### 6. Open risks
 

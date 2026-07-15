@@ -1,14 +1,14 @@
 ---
 name: test-fix
-description: Read docs/test-readiness/test-readiness-plan.md and queue its flat T-NNN task list as task-store tasks, one task per row, with dependency edges (predecessor/fan-out) and per-task HITL classification. Requires test-roadmap to have run first. Replaces the former GitHub-issue publish skill's dashboard with a task-store queue. Includes a one-time --backfill-from-github mode that migrates already-published GitHub issues into task-store tasks and closes them.
+description: Read docs/test-readiness/test-readiness-plan.md and queue its flat T-NNN task list as task-store tasks, one task per row, with dependency edges (predecessor) and per-task HITL classification. Requires test-roadmap to have run first. Replaces the former GitHub-issue publish skill's dashboard with a task-store queue. Includes a one-time --backfill-from-github mode that migrates already-published GitHub issues into task-store tasks and closes them.
 ---
 
 # Test Fix
 
 Read the latest `docs/test-readiness/test-readiness-plan.md` and queue its flat task list as
-task-store tasks — one task per `T-NNN` row. Dependency edges (predecessor links, `P-NNN`
-fan-out parents) are written as task-store `dependencies` arrays, so task-store's own
-`ready:true` query computes readiness directly. Findings are never turned into direct PRs;
+task-store tasks — one task per `T-NNN` row. Dependency edges (predecessor links) are written
+as task-store `dependencies` arrays, so task-store's own `ready:true` query computes readiness
+directly. Findings are never turned into direct PRs;
 they always become task-store tasks that `dev-task` (or a human, for HITL tasks) picks up
 later.
 
@@ -53,19 +53,14 @@ Before starting, check for flags:
 
 1. Parse the `## 5. Task list` section's flat rows, format `T-NNN | M# | files | layer |
    bucket | outcome | verify` (per `test-roadmap/SKILL.md` section 5).
-2. Parse `P-NNN` parent / `T-NNNa`..`T-NNNf`-style child fan-out groups per the same section's
-   fan-out rule. A parent row carries no verification command of its own — record it anyway
-   (it becomes a dependency target for its children) but note it closes only when every child
-   closes.
-3. Parse any **audit-decision-row** tables (`## 5. Task list` → "Audit task decision rows",
+2. Parse any **audit-decision-row** tables (`## 5. Task list` → "Audit task decision rows",
    also rendered per-task in `issue.md.tmpl`'s "Audit decisions" section) attached to tasks
    marked `[audit: N items]` in the expected-outcome column. Keep each table's rows verbatim —
    they're needed for Step 5's description field and for the M5 HITL rule (rule c below).
-4. Parse `depends_on` / predecessor links: a child's `depends_on: P-NNN` per the fan-out
-   convention, and any other explicit predecessor references in a row's outcome or the
-   Repo Configuration tasks' pairing (`depends_on` the paired workflow task, per
+3. Parse `depends_on` / predecessor links: any explicit `depends_on:` annotation on a row, and
+   the Repo Configuration tasks' pairing (`depends_on` the paired workflow task, per
    `repo-config/SKILL.md`'s pairing rule).
-5. If the task list is empty or malformed (rows don't match the `T-NNN | M# | ...` shape),
+4. If the task list is empty or malformed (rows don't match the `T-NNN | M# | ...` shape),
    print:
    ```
    No parseable T-NNN task rows found in test-readiness-plan.md. Nothing to queue.
@@ -244,8 +239,8 @@ line rather than guessing a broken link.
 ### 5.4 Compute `dependencies`
 
 `dependencies` is an array of task-store IDs (`test-{t-nnn}-{repo-slug}` form) — one entry
-per predecessor `T-NNN` this row's `depends_on` / fan-out-parent / pairing-rule reference
-names (parsed in Step 2.4). Map each predecessor `T-NNN` to its task-store ID using the same
+per predecessor `T-NNN` this row's `depends_on` / pairing-rule reference names (parsed in
+Step 2.3). Map each predecessor `T-NNN` to its task-store ID using the same
 `{t-nnn}-{repo-slug}` derivation used for this task's own `id`.
 
 This is what makes task-store's own `ready:true` query correctly compute readiness for these
