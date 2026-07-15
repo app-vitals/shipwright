@@ -27,3 +27,25 @@ export async function expectNoRuntimeJsBeyondAnalytics(
     ).toBe(true);
   }
 }
+
+// Assert no real dollar-amount price tag ("$" immediately followed by a
+// digit) appears in the page body. Demo transcripts use "$ " shell prompts
+// (dollar + space), which do not match, so this only catches actual prices.
+export async function expectNoDollarFigures(page: Page): Promise<void> {
+  const text = (await page.locator("body").textContent()) ?? "";
+  expect(text).not.toMatch(/\$\d/);
+}
+
+// Assert none of the given phrases appear anywhere in the page body,
+// case-insensitively. Used to enforce copy-policy bans (e.g. no pricing
+// language) across multiple pages without duplicating the phrase-scan logic.
+export async function expectBannedPhrasesAbsent(
+  page: Page,
+  phrases: string[],
+): Promise<void> {
+  const text = (await page.locator("body").textContent()) ?? "";
+  const lower = text.toLowerCase();
+  for (const phrase of phrases) {
+    expect(lower).not.toContain(phrase.toLowerCase());
+  }
+}
