@@ -17,10 +17,7 @@ import {
 function makeTask(overrides: Partial<WorkTaskCandidate> = {}): WorkTaskCandidate {
   return {
     id: "task-1",
-    status: "pending",
     createdAt: "2026-01-01T00:00:00.000Z",
-    branch: null,
-    dependencies: [],
     ...overrides,
   };
 }
@@ -71,15 +68,6 @@ describe("selectNextWorkItem", () => {
     expect(result).toEqual({ type: "task", task: olderTask });
   });
 
-  it("selects a ready task with dependencies whose satisfied dep is absent from the candidate list", () => {
-    // Regression guard: getDevTaskCandidates() only returns ready=true tasks, so a
-    // satisfied (terminal-status) dependency is never present in `tasks`. The task
-    // must still be selected on age alone — no local re-derivation of dependency state.
-    const task = makeTask({ id: "t1", dependencies: ["some-deployed-task-not-in-list"] });
-    const result = selectNextWorkItem([task], []);
-    expect(result).toEqual({ type: "task", task });
-  });
-
   it("excludes an already-claimed PR", () => {
     const claimed = makePr({
       id: "pr-claimed",
@@ -95,10 +83,9 @@ describe("selectNextWorkItem", () => {
     expect(result).toEqual({ type: "pr", pr: unclaimed });
   });
 
-  it("returns null when every candidate is non-pending or claimed", () => {
-    const nonPendingTask = makeTask({ id: "t1", status: "in_progress" });
+  it("returns null when the only PR candidate is claimed and there are no tasks", () => {
     const claimedPr = makePr({ id: "pr1", claimedBy: "agent-x" });
-    const result = selectNextWorkItem([nonPendingTask], [claimedPr]);
+    const result = selectNextWorkItem([], [claimedPr]);
     expect(result).toBeNull();
   });
 
