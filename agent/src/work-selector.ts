@@ -16,24 +16,28 @@
  * `tasks` is already the ready-only candidate set (task-store's ?ready=true
  * query), so dependency satisfaction is computed server-side before this
  * function ever sees the list — a task is selectable purely on
- * status === "pending" and createdAt age, the same trust level PR candidates
- * already get below.
+ * status === "pending" and createdAt age.
+ *
+ * `prs` is, likewise, already an unclaimed-only candidate set — the
+ * check-review/check-patch/check-deploy collectors (LPF-2.2) request only
+ * unclaimed PR records from the task-store via its `?ready=true` filter (or,
+ * for check-review's specific need to distinguish "no record" from "claimed
+ * record", perform an equivalent claim check inline before ever returning a
+ * candidate). No local claim-filtering happens in this function — a PR
+ * candidate is selectable purely on age, the same trust level task
+ * candidates get above.
  */
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface WorkTaskCandidate {
   id: string;
-  status: string;
   createdAt: string;
-  branch?: string | null;
-  dependencies?: string[];
 }
 
 export interface WorkPrCandidate {
   id: string;
   age: string;
-  claimedBy?: string | null;
   phase?: "review" | "patch" | "deploy";
 }
 
@@ -44,6 +48,10 @@ export type WorkItem =
 /**
  * Select the single oldest ready item across tasks and PRs.
  * Returns null when nothing is ready.
+ *
+ * `tasks` is trusted as already-ready (status === "pending" and dependency
+ * satisfaction both guaranteed by task-store's ?ready=true endpoint), so
+ * selection here is purely age-based — no local status re-check.
  */
 export function selectNextWorkItem(
   tasks: WorkTaskCandidate[],
@@ -52,14 +60,12 @@ export function selectNextWorkItem(
   let best: { age: string; item: WorkItem } | null = null;
 
   for (const task of tasks) {
-    if (task.status !== "pending") continue;
     if (!best || task.createdAt < best.age) {
       best = { age: task.createdAt, item: { type: "task", task } };
     }
   }
 
   for (const pr of prs) {
-    if (pr.claimedBy != null) continue;
     if (!best || pr.age < best.age) {
       best = { age: pr.age, item: { type: "pr", pr } };
     }

@@ -115,7 +115,7 @@ Tests land **with** the code, at the correct layer — same PR, no "add tests la
 |---|---|---|
 | `*.unit.test.ts` | unit | pure logic, no I/O |
 | `*.integration.test.ts` | integration | real dependency behavior via recorded fixtures / injected doubles |
-| `*.smoke.test.ts` | smoke | Hono endpoints via in-process `app.request()` (no real socket) |
+| `*.smoke.test.ts` | smoke | HTTP route contracts — Hono endpoints via in-process `app.request()` (no real socket); a real `Bun.serve()` boot is permitted only when there's no in-process request seam (e.g. a bare-`Bun.serve()` server with no Hono app factory) |
 | `*.spec.ts` (in `site/`) | e2e | the site in a real browser via Playwright |
 | `*.content.test.ts` | content | markdown/prompt-content-assertion tests — e.g. checking that a command's or skill's Markdown body contains expected sections/instructions/wording. Distinct from unit/integration/smoke: no real I/O boundary, just asserting on static content. |
 

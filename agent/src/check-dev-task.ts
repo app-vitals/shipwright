@@ -56,10 +56,7 @@ export interface CheckDevTaskDeps {
 function toWorkTaskCandidate(task: Task): WorkTaskCandidate {
   return {
     id: task.id,
-    status: task.status,
     createdAt: task.addedAt ?? "",
-    branch: task.branch,
-    dependencies: task.dependencies,
   };
 }
 
