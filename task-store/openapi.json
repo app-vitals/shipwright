@@ -128,6 +128,19 @@
             "required": false,
             "name": "ready",
             "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "example": "asc"
+            },
+            "required": false,
+            "name": "sort",
+            "in": "query"
           }
         ],
         "responses": {
