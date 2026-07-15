@@ -193,7 +193,6 @@ detected in 6q.1 — do not re-derive them:
   "layer": "Shared",
   "status": "pending",
   "hitl": <true | false — computed per Step 6q.4>,
-  "addedAt": "<current ISO timestamp>",
   "description": "<findings summary — see below>"
 }
 ```

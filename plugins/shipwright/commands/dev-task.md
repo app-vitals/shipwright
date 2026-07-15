@@ -1,11 +1,11 @@
 ---
-description: Execute the next ready task from the queue — build feature, simplify, verify, ship PR
-argument-hint: "[task-id]"
+description: Execute a specific task from the task store by id — build feature, simplify, verify, ship PR
+argument-hint: "<task-id>"
 ---
 
 # Dev Task
 
-Pick the next ready task from the task store, build the feature, simplify, verify requirements, and ship a PR. Follow all steps in order.
+Given a task id, fetch that task from the task store, build the feature, simplify, verify requirements, and ship a PR. Follow all steps in order.
 
 **This command runs autonomously. Do not pause for user input unless a build or test failure cannot be auto-resolved.**
 
@@ -16,11 +16,12 @@ Pick the next ready task from the task store, build the feature, simplify, verif
 ## Arguments
 
 Parse `$ARGUMENTS`:
-- `task-id` (e.g. `SWC-1.1`): target a specific task. Skips the interrupted-task resume
-  check and the ready-queue scan in Step 1 — fetch this task directly instead and use it
-  as the selected task for the rest of this command.
-- _(no arguments)_: normal flow — resume an interrupted task if one exists, otherwise pick
-  the next ready task from the queue (see Step 1).
+- `task-id` (e.g. `SWC-1.1`) — **required**. Fetch this task directly from the task store
+  and use it as the selected task for the rest of this command. See Step 1 for the exact
+  fetch/validate/claim procedure.
+- _(no arguments)_: respond `[silent]` and stop immediately — no task-store queries are
+  made. This command no longer self-selects a task; the caller (e.g. the loop-orchestrator)
+  must supply the task id explicitly.
 
 ---
 
@@ -28,39 +29,43 @@ Parse `$ARGUMENTS`:
 
 Auto-detect the project toolchain (run once, reuse throughout). Skip this step until the repo is known (Step 1 sets the repo).
 
-## Step 1: Pick Task
+## Step 1: Fetch & Validate Task
 
-**If invoked with a `task-id` argument**, skip the interrupted-task resume check and the
-ready-queue scan below — fetch that task directly instead and use it as the selected task
-for the rest of this command. See "Task-Id Argument Path" at the end of this step for the
-exact procedure.
+**A `task-id` argument is required.** If `$ARGUMENTS` is empty, respond `[silent]` and stop
+immediately — do not query the task store at all. This command targets exactly one
+explicitly-named task; it does not self-select from the queue.
 
-**Otherwise (no arguments), first check for an interrupted task** — if a prior session left a task `in_progress`, resume it. Pass `?assignee=` to narrow the task-store's repo-pool visibility down to this agent's own tasks, and filter again client-side as a backstop — otherwise this can pick up (and start committing to) a task assigned to a completely different agent:
-
-```bash
-curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=in_progress&assignee=$SHIPWRIGHT_AGENT_ID" \
-  | jq --arg me "$SHIPWRIGHT_AGENT_ID" '.tasks | map(select(.assignee == $me))'
-```
-
-If the filtered result is non-empty, use the first task (`result[0]`). The Step 2 orphan check will clean up any stale branch/PR from the prior session before restarting. Print:
-
-```
-↩ Resuming interrupted task: {id} — {title}
-```
-
-Record `task_started_at` (current ISO timestamp) for metrics.
-
-**If no in_progress task**, pick the next ready pending task:
+Fetch the task directly by id:
 
 ```bash
 curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks?ready=true" | jq '.tasks'
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}" | jq '.'
 ```
 
-The command returns `pending` shipwright tasks whose dependencies are all satisfied, sorted by `createdAt` ascending (oldest first). Pick the first result from `.tasks`.
+- **404**: the task doesn't exist. Print `⚠ Task {task-id} not found.` and stop.
+- **Found, `status == "in_progress"`**: a prior session left this task in progress — proceed
+  straight to Step 2's Orphan Check with this task (which cleans up any stale branch/PR
+  before restarting). Record `task_started_at` (current ISO timestamp) for metrics.
+- **Found, `status == "pending"`**: check dependency satisfaction before claiming (see
+  "Dependency Check" below). If satisfied, proceed to Step 2's Mark In-Progress with this
+  task.
+- **Found, any other status** (e.g. `pr_open`, `blocked`, `merged`): not workable. Print
+  `⚠ Task {task-id} has status "{status}" — nothing to do.` and stop.
 
-If the output is an empty JSON array (`[]`), respond `[silent]` and stop.
+### Dependency Check (pending tasks only)
+
+An explicit task id is an instruction to work this task now, but it must still be
+workable — verify every entry in the task's `dependencies` array is satisfied using the
+same rules as the task store's `?ready=true` filter (see the `task-store` skill):
+
+1. `dep.status ∈ { merged, done, deploying, deployed, cancelled }` → satisfied
+2. Same-branch dep with `status ∈ { pr_open, approved }` → satisfied (bundled PR)
+3. `pr_open` dep with a PR number, GitHub reports the PR as merged → satisfied
+4. Anything else → **not satisfied**
+
+Fetch each dependency (`GET /tasks/{dep-id}`) and evaluate the rules above. If any
+dependency is not satisfied, respond `[silent]` and stop — do not claim the task. (No
+empty-`dependencies` array means there is nothing to check — proceed.)
 
 **Validate required fields.** If the selected task has no `branch` field (null, undefined, or empty string), do not proceed. Post:
 
@@ -96,7 +101,7 @@ Deps:    {dependencies or "none"}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-Record `task_started_at` (current ISO timestamp) for metrics.
+Record `task_started_at` (current ISO timestamp) for metrics, if not already recorded above.
 
 Now detect the project toolchain for `{repo}` (used throughout):
 
@@ -127,27 +132,6 @@ Auto-detect the project toolchain (run once, reuse throughout):
 
 Refer to `references/toolchain-patterns.md` for the full detection lookup table.
 
-### Task-Id Argument Path
-
-**If invoked with a `task-id` argument**, fetch that task directly instead of scanning:
-
-```bash
-curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}" | jq '.'
-```
-
-- **404**: the task doesn't exist. Print `⚠ Task {task-id} not found.` and stop.
-- **Found, `status == "in_progress"`**: treat the same as the resume path above — proceed
-  straight to Step 2's Orphan Check with this task.
-- **Found, `status == "pending"`**: proceed straight to Step 2's Mark In-Progress with this
-  task (skip the dependency/`ready` check — an explicit id is an explicit instruction to
-  work this task now).
-- **Found, any other status** (e.g. `pr_open`, `blocked`, `merged`): not workable. Print
-  `⚠ Task {task-id} has status "{status}" — nothing to do.` and stop.
-
-This path skips the rest of Step 1 (the resume check and the `ready=true` scan above) — go
-directly to Step 2.
-
 ## Step 2: Mark In-Progress
 
 ### Orphan Check (prior session recovery)
@@ -168,13 +152,12 @@ If the task's current status is already `in_progress`:
 
 ### Mark In-Progress
 
-This path is for the fresh-pending-task pick from Step 1 (the resume/orphan path above
+This path is for the fresh-pending-task fetched in Step 1 (the resume/orphan path above
 already owns an `in_progress` task and does not need to claim it). Claim the task
 atomically instead of a plain PATCH — a plain read-modify-write PATCH here would race
-against any other concurrent `dev-task` run that read the same `ready=true` list. The
-claim is a single conditional `UPDATE ... WHERE status='pending'`; it also sets
-`claimedAt`, `heartbeatAt`, and `startedAt` atomically, so no separate PATCH of
-`startedAt` is needed afterward:
+against any other concurrent run targeting the same task id. The claim is a single
+conditional `UPDATE ... WHERE status='pending'`; it also sets `claimedAt`, `heartbeatAt`,
+and `startedAt` atomically, so no separate PATCH of `startedAt` is needed afterward:
 
 ```bash
 CLAIM_CODE=$(curl -s -o /tmp/task_claim.json -w '%{http_code}' -X POST \
@@ -187,12 +170,12 @@ this deployment), the task-store pins `claimedBy` to the calling agent's own ID
 server-side and ignores the body.
 
 - **200**: claimed successfully. Print the updated task: `jq . /tmp/task_claim.json`.
-- **409**: another agent already claimed this task since it was read as `ready` in
-  Step 1. Print:
+- **409**: another agent already claimed this task since it was fetched in Step 1. Print:
   ```
-  ⚠ Task {id} was claimed by another agent — picking next ready task.
+  ⚠ Task {id} was claimed by another agent.
   ```
-  Do NOT proceed with this task. Loop back to Step 1 and pick the next ready task instead.
+  Do NOT proceed with this task. Respond `[silent]` and stop — this command targets one
+  explicit task id and does not retry against a different task.
 - **404**: task not found (should not normally happen since Step 1 just fetched it).
   Treat as a hard stop for this task — do not proceed to Step 3.
 
