@@ -39,7 +39,7 @@ const TASKS: TaskRecord[] = [
     prCreatedAt: "2026-06-02T11:00:00.000Z",
     ciFixAttempts: 0,
     simplifyTotal: 2,
-    addedAt: "2026-06-01T08:00:00.000Z",
+    createdAt: "2026-06-01T08:00:00.000Z",
     coverageDelta: 2.5,
     simplifyDry: 4,
     simplifyDeadCode: 2,
@@ -59,7 +59,7 @@ const TASKS: TaskRecord[] = [
     prCreatedAt: "2026-06-03T14:00:00.000Z",
     ciFixAttempts: 2,
     simplifyTotal: 1,
-    addedAt: "2026-06-02T08:00:00.000Z",
+    createdAt: "2026-06-02T08:00:00.000Z",
     coverageDelta: null,
     simplifyDry: 2,
     simplifyDeadCode: 0,
@@ -74,7 +74,7 @@ const TASKS: TaskRecord[] = [
     hours: 4,
     complexity: 5,
     startedAt: "2026-06-04T08:00:00.000Z",
-    addedAt: "2026-06-04T07:00:00.000Z",
+    createdAt: "2026-06-04T07:00:00.000Z",
   },
   {
     id: "PV-9.9",
@@ -87,7 +87,7 @@ const TASKS: TaskRecord[] = [
     mergedAt: "2026-07-10T16:00:00.000Z",
     ciFixAttempts: 0,
     simplifyTotal: 0,
-    addedAt: "2026-07-09T08:00:00.000Z",
+    createdAt: "2026-07-09T08:00:00.000Z",
   },
 ];
 
@@ -290,7 +290,7 @@ describe("TaskStoreProvider (integration)", () => {
         startedAt: "2026-06-02T08:00:00.000Z",
         completedAt: "2026-06-02T12:00:00.000Z",
         mergedAt: "2026-06-02T12:00:00.000Z",
-        addedAt: "2026-06-01T08:00:00.000Z",
+        createdAt: "2026-06-01T08:00:00.000Z",
         coverageDelta: 4,
       },
       {
@@ -299,7 +299,7 @@ describe("TaskStoreProvider (integration)", () => {
         startedAt: "2026-06-03T08:00:00.000Z",
         completedAt: "2026-06-03T12:00:00.000Z",
         mergedAt: "2026-06-03T12:00:00.000Z",
-        addedAt: "2026-06-02T08:00:00.000Z",
+        createdAt: "2026-06-02T08:00:00.000Z",
         coverageDelta: -2,
       },
       {
@@ -308,7 +308,7 @@ describe("TaskStoreProvider (integration)", () => {
         startedAt: "2026-06-04T08:00:00.000Z",
         completedAt: "2026-06-04T12:00:00.000Z",
         mergedAt: "2026-06-04T12:00:00.000Z",
-        addedAt: "2026-06-03T08:00:00.000Z",
+        createdAt: "2026-06-03T08:00:00.000Z",
         coverageDelta: null,
       },
       {
@@ -317,7 +317,7 @@ describe("TaskStoreProvider (integration)", () => {
         startedAt: "2026-06-05T08:00:00.000Z",
         completedAt: "2026-06-05T12:00:00.000Z",
         mergedAt: "2026-06-05T12:00:00.000Z",
-        addedAt: "2026-06-04T08:00:00.000Z",
+        createdAt: "2026-06-04T08:00:00.000Z",
         // coverageDelta intentionally omitted (undefined)
       },
     ];
@@ -342,7 +342,7 @@ describe("TaskStoreProvider (integration)", () => {
         startedAt: "2026-06-02T08:00:00.000Z",
         completedAt: "2026-06-02T12:00:00.000Z",
         mergedAt: "2026-06-02T12:00:00.000Z",
-        addedAt: "2026-06-01T08:00:00.000Z",
+        createdAt: "2026-06-01T08:00:00.000Z",
         simplifyDry: 6,
         simplifyDeadCode: 4,
         simplifyNaming: 8,
@@ -355,7 +355,7 @@ describe("TaskStoreProvider (integration)", () => {
         startedAt: "2026-06-03T08:00:00.000Z",
         completedAt: "2026-06-03T12:00:00.000Z",
         mergedAt: "2026-06-03T12:00:00.000Z",
-        addedAt: "2026-06-02T08:00:00.000Z",
+        createdAt: "2026-06-02T08:00:00.000Z",
         simplifyDry: null,
         simplifyDeadCode: null,
         simplifyNaming: null,
@@ -368,7 +368,7 @@ describe("TaskStoreProvider (integration)", () => {
         startedAt: "2026-06-04T08:00:00.000Z",
         completedAt: "2026-06-04T12:00:00.000Z",
         mergedAt: "2026-06-04T12:00:00.000Z",
-        addedAt: "2026-06-03T08:00:00.000Z",
+        createdAt: "2026-06-03T08:00:00.000Z",
         // simplify* fields intentionally omitted (undefined)
       },
     ];
@@ -395,7 +395,7 @@ describe("TaskStoreProvider (integration)", () => {
         startedAt: "2026-06-02T08:00:00.000Z",
         completedAt: "2026-06-02T12:00:00.000Z",
         mergedAt: "2026-06-02T12:00:00.000Z",
-        addedAt: "2026-06-01T08:00:00.000Z",
+        createdAt: "2026-06-01T08:00:00.000Z",
       },
     ];
     const taskStore = new RecordedTaskStoreClient(tasks, []);
@@ -419,7 +419,7 @@ describe("TaskStoreProvider (integration)", () => {
         startedAt: "2026-06-02T08:00:00.000Z",
         completedAt: "2026-06-02T12:00:00.000Z",
         mergedAt: "2026-06-02T12:00:00.000Z",
-        addedAt: "2026-06-01T08:00:00.000Z",
+        createdAt: "2026-06-01T08:00:00.000Z",
       },
     ];
     const taskStore = new RecordedTaskStoreClient(tasks, []);
@@ -670,6 +670,36 @@ describe("TaskStoreProvider (integration)", () => {
     expect(row[colIndex(t, "tasks_blocked")]).toBe(0);
   });
 
+  test("task with only createdAt (no completedAt/mergedAt/startedAt) anchors on createdAt for window filtering", async () => {
+    // A task that was created but never started should still be filterable
+    // by its createdAt timestamp, which becomes the anchor point.
+    const tasks: TaskRecord[] = [
+      {
+        id: "ANCHOR-1",
+        status: "pending",
+        createdAt: "2026-06-05T10:00:00.000Z",
+        // No completedAt, mergedAt, or startedAt — only createdAt.
+      },
+      {
+        id: "OUT-OF-WINDOW",
+        status: "pending",
+        createdAt: "2026-07-05T10:00:00.000Z",
+      },
+    ];
+    const taskStore = new RecordedTaskStoreClient(tasks, []);
+    const admin = new RecordedAdminMetricsClient(CRON_STATS, CHAT_STATS);
+    const provider = new TaskStoreProvider(taskStore, admin, CLOCK);
+
+    const t = await provider.query({
+      kind: "summary",
+      range: { from: "2026-06-01", to: "2026-06-07" },
+    });
+    // Only ANCHOR-1 should be included because its createdAt is in the window;
+    // OUT-OF-WINDOW has createdAt in July, outside the June 1-7 window.
+    const row = t.results[0];
+    expect(row[colIndex(t, "tasks_blocked")]).toBe(1);
+  });
+
   test("all 17 kinds return a non-throwing MetricTable", async () => {
     const provider = buildProvider();
     const kinds: MetricQuery[] = [
@@ -713,7 +743,7 @@ describe("TaskStoreProvider (integration)", () => {
         startedAt: "2026-06-02T08:00:00.000Z",
         completedAt: "2026-06-02T12:00:00.000Z",
         mergedAt: "2026-06-02T12:00:00.000Z",
-        addedAt: "2026-06-01T08:00:00.000Z",
+        createdAt: "2026-06-01T08:00:00.000Z",
         ciFixAttempts: 0,
         repo: "org/alpha",
       },
@@ -723,7 +753,7 @@ describe("TaskStoreProvider (integration)", () => {
         startedAt: "2026-06-03T08:00:00.000Z",
         completedAt: "2026-06-03T12:00:00.000Z",
         mergedAt: "2026-06-03T12:00:00.000Z",
-        addedAt: "2026-06-02T08:00:00.000Z",
+        createdAt: "2026-06-02T08:00:00.000Z",
         ciFixAttempts: 0,
         repo: "org/beta",
       },
@@ -769,7 +799,7 @@ describe("TaskStoreProvider (integration)", () => {
         startedAt: "2026-06-02T08:00:00.000Z",
         completedAt: "2026-06-02T12:00:00.000Z",
         mergedAt: "2026-06-02T12:00:00.000Z",
-        addedAt: "2026-06-01T08:00:00.000Z",
+        createdAt: "2026-06-01T08:00:00.000Z",
         repo: "org/alpha",
       },
       {
@@ -778,7 +808,7 @@ describe("TaskStoreProvider (integration)", () => {
         startedAt: "2026-06-03T08:00:00.000Z",
         completedAt: "2026-06-03T12:00:00.000Z",
         mergedAt: "2026-06-03T12:00:00.000Z",
-        addedAt: "2026-06-02T08:00:00.000Z",
+        createdAt: "2026-06-02T08:00:00.000Z",
         repo: "org/beta",
       },
     ];

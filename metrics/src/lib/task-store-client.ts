@@ -36,7 +36,7 @@ export interface TaskRecord {
   prCreatedAt?: string | null;
   ciFixAttempts?: number | null;
   simplifyTotal?: number | null;
-  addedAt?: string | null;
+  createdAt?: string | null;
   /** Model used to execute this task (e.g. "opus", "claude-opus-4-8", "sonnet"). */
   model?: string | null;
   /** Effort level passed to Claude CLI via --effort: "low" | "medium" | "high" | "xhigh" | "max" */
@@ -112,7 +112,7 @@ export interface TaskStoreClient {
 
 /** Pick the timestamp a task is "anchored" to for window filtering. */
 export function taskAnchor(t: TaskRecord): string | null {
-  return t.completedAt ?? t.mergedAt ?? t.startedAt ?? t.addedAt ?? null;
+  return t.completedAt ?? t.mergedAt ?? t.startedAt ?? t.createdAt ?? null;
 }
 
 /** Pick the timestamp a PR is "anchored" to for window filtering. */
