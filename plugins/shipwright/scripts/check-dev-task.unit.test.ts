@@ -108,6 +108,34 @@ describe("check-dev-task", () => {
     expect(result.output.toLowerCase()).toContain("dev-task");
   });
 
+  // ─── Explicit task id (WLS-3.1) ────────────────────────────────────────────
+  //
+  // dev-task.md is explicit-target-only — a bare `/shipwright:dev-task` with
+  // no argument now silently no-ops (AC #1). The precheck must supply an
+  // explicit task id in its handoff prompt or the cron loop silently stalls.
+
+  test("prompt includes the ready task's id explicitly", async () => {
+    const result = await run(makeDeps([makeTask({ id: "SWC-9.1" })]));
+    expect(result.exit).toBe(0);
+    expect(result.output).toContain("/shipwright:dev-task SWC-9.1");
+  });
+
+  test("prompt selects the oldest ready task by addedAt when multiple exist", async () => {
+    const newer = makeTask({
+      id: "SWC-9.2",
+      addedAt: "2026-06-01T00:00:00Z",
+    });
+    const older = makeTask({
+      id: "SWC-9.3",
+      addedAt: "2026-05-01T00:00:00Z",
+    });
+
+    const result = await run(makeDeps([newer, older]));
+
+    expect(result.output).toContain("/shipwright:dev-task SWC-9.3");
+    expect(result.output).not.toContain("SWC-9.2");
+  });
+
   test("prompt does not reference state/todos.json", async () => {
     const result = await run(makeDeps([makeTask()]));
     expect(result.exit).toBe(0);

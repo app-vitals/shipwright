@@ -57,6 +57,8 @@ A suite that hits its target only with 16-way parallelism but fails serially is 
 
 Phase 2 must output the parallelization plan (worker count, sharding strategy). Per-test budgets stay tight so the suite hits its target without requiring heroic parallelism.
 
+See `test-design/SKILL.md` Step 6 for the explicit threshold on when per-workspace matrix sharding (vs. one combined job per layer) is justified — the same proportionality question applies here: parallelism only pays off once its fixed overhead is outweighed by the wall-clock it saves.
+
 ## How other skills reference this
 
 - **`test-inventory`** does not measure speed (no tests exist for some items). It only assigns layer.

@@ -89,8 +89,10 @@ function buildMockDeps(): AdminUIDeps {
           id: ADMIN_E2E_AGENT.id,
           name: ADMIN_E2E_AGENT.name,
           slackId: ADMIN_E2E_AGENT.slackId,
+          selfHosted: false,
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
+          repos: [],
         }),
         create: async () => ({
           id: ADMIN_E2E_AGENT.id,
@@ -98,10 +100,26 @@ function buildMockDeps(): AdminUIDeps {
           slackId: ADMIN_E2E_AGENT.slackId,
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
+          repos: [],
         }),
       },
       agentPlugin: {
         findMany: async () => [],
+      },
+      // Referenced by the agent detail page's admin-only member list and by
+      // assertAgentAccess's non-admin membership check. Sessions minted for
+      // these e2e tests omit an `isAdmin` claim, and getSessionUser treats a
+      // missing claim as admin (isAdmin !== false) — so the render path always
+      // takes the admin branch (prisma.agentMember.findMany), never the
+      // non-admin findUnique branch. No members fixture exists, so both
+      // resolve to empty/not-found.
+      agentMember: {
+        findMany: async () => [],
+        findUnique: async () => null,
+        create: async () => {
+          throw new Error("not used in e2e tests");
+        },
+        deleteMany: async () => ({ count: 0 }),
       },
     },
     agentEnvService: {
@@ -115,10 +133,25 @@ function buildMockDeps(): AdminUIDeps {
     },
     agentCronJobService: {
       list: async () => [MOCK_CRON],
+      // Mirrors AgentCronJobService.listWithRunSummary: same rows as list(),
+      // plus a per-cron lastRun summary (null = "never run") and a
+      // runCountToday count. MOCK_CRON has never run, so both are the
+      // "no runs yet" defaults — the agent detail page renders that as
+      // "never" in the cron table, which doesn't affect the schedule/prompt
+      // assertions the existing e2e tests make.
+      listWithRunSummary: async () => [
+        { ...MOCK_CRON, lastRun: null, runCountToday: 0 },
+      ],
       get: async () => MOCK_CRON,
       create: async () => MOCK_CRON,
+      update: async () => MOCK_CRON,
       setEnabled: async () => MOCK_CRON,
       delete: async () => {},
+      reconcileSystemCrons: async () => ({
+        created: 0,
+        updated: 0,
+        deleted: 0,
+      }),
     },
     agentToolService: {
       list: async () => [MOCK_TOOL],
