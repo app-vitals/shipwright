@@ -1,13 +1,22 @@
 ---
-// Home page — hero, two-ways, problem, how-it-works, differentiators, demo,
-// social proof (SWW-2.1 + SWW-2.2).
-// No runtime JS, no hardcoded hex colors, no competitor names.
+// Home page — hero, own-it, two-ways, problem, how-it-works, differentiators,
+// demo, social proof (SWW-2.1 + SWW-2.2).
+// No runtime JS, no hardcoded hex colors. Competitor names are surface-scoped
+// (see brand/MESSAGING.md D10) — only the H1/meta phrase and one linked
+// sentence may name a competitor here.
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { BOOKING_URL } from "../consts";
 
-const taglinePrefix = "The open-source autonomous delivery system ";
-const taglineGradient = "in your own environment";
-const tagline = `${taglinePrefix}${taglineGradient}.`;
+// Devin-alternative repositioning (D1): the new canonical H1/tagline
+// hierarchy. See brand/MESSAGING.md §1.
+const heroH1 = "The open source alternative to Devin.";
+const heroSubhead =
+  "The only MIT-throughout, spec-to-deploy autonomous delivery agent that runs entirely in your own cloud.";
+// Prior canonical tagline — demoted, not deleted (brand/MESSAGING.md §1).
+const priorTagline =
+  "The open-source autonomous delivery agent for Claude Code.";
+const pageTitle = "Shipwright -- The open source alternative to Devin";
+const pageDescription = `${heroH1} ${heroSubhead}`;
 const install = "/plugin install shipwright@app-vitals/shipwright";
 const githubUrl = "https://github.com/app-vitals/shipwright";
 const proofUrl = "https://proof.shipwrightharness.com/public/dashboard";
@@ -326,15 +335,22 @@ const differentiators = [
 ---
 
 <BaseLayout
-  description={tagline}
+  title={pageTitle}
+  description={pageDescription}
   pagefindIgnore={true}
 >
   <!-- ── Hero ── (tagline + intro video) -->
   <section class="relative z-10 pt-12 pb-12 text-center">
     <p class="sw-label">Built on Claude Code</p>
     <h1 class="sw-display mt-4 max-w-3xl mx-auto">
-      {taglinePrefix}<span class="sw-gradient-text">{taglineGradient}</span>.
+      The open source alternative to <span class="sw-gradient-text">Devin</span>.
     </h1>
+    <p class="mt-6 max-w-2xl mx-auto text-lg" style="color: var(--sw-color-text-muted);">
+      {heroSubhead}
+    </p>
+    <p class="mt-2 max-w-2xl mx-auto text-sm" style="color: var(--sw-color-text-muted);">
+      {priorTagline}
+    </p>
 
     <!-- Intro video — hero centerpiece. -->
     <div class="mt-10 w-full max-w-5xl mx-auto">
@@ -354,6 +370,19 @@ const differentiators = [
         aria-label="Shipwright Harness intro: the open-source autonomous delivery agent for Claude Code."
       ></video>
     </div>
+  </section>
+
+  <!-- Own it (exec-first): ownership/economics, ahead of developer mechanics. -->
+  <section id="own-it" class="relative z-10 pb-16 text-center">
+    <p class="sw-label">Own it</p>
+    <h2 class="sw-h1 mt-3 max-w-2xl mx-auto">
+      Free. MIT. No tiers, no seats. Your cloud.
+    </h2>
+    <p class="mt-5 max-w-2xl mx-auto text-lg">
+      No data leaves your control. Clone it, run it on your own
+      infrastructure, fork it if you want to — the wedge is price,
+      ownership, and control.
+    </p>
   </section>
 
   <!-- Showcase: four tabbed panels (Two ways · Crons · Metrics · Demo).
