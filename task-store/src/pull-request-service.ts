@@ -27,6 +27,19 @@ export interface PullRequestListFilters {
   staged?: boolean;
   limit?: number;
   offset?: number;
+  /**
+   * When true, only return unclaimed PRs (claimedBy IS NULL) — mirrors
+   * /tasks?ready=true's semantics for tasks. Deliberately kept to the literal
+   * "unclaimed" interpretation from the acceptance criteria rather than also
+   * hardcoding claimNext()'s state='open' AND reviewState IN
+   * ('pending','posted','approved') eligibility rules: GET /prs is a general
+   * list endpoint used by multiple callers (not just the claim-next code
+   * path), and those additional rules are already composable via the
+   * existing `state`/`reviewState` filters when a caller needs them. Claim
+   * staleness is handled entirely by StaleClaimReaper — this filter does not
+   * duplicate that logic, it just reads the current claimedBy column.
+   */
+  ready?: boolean;
 }
 
 /** Paginated list result from PullRequestService.list. */
@@ -81,6 +94,7 @@ export class PullRequestService implements PullRequestServiceLike {
     if (filters.reviewState)
       where.reviewState = filters.reviewState as PullRequest["reviewState"];
     if (filters.staged !== undefined) where.staged = filters.staged;
+    if (filters.ready) where.claimedBy = null;
 
     const limit = filters.limit ?? 50;
     const offset = filters.offset ?? 0;
@@ -129,7 +143,11 @@ export class PullRequestService implements PullRequestServiceLike {
       // always-release behavior. Defense-in-depth: claimNext()'s WHERE clause
       // already excludes state:'merged' records, so this is currently
       // harmless if omitted, but keeps claim state consistent regardless.
-      if (data.state === "merged") {
+      // 'closed' gets the same treatment (CHU-2.1's PR state reconciler PATCHes
+      // both merged and closed records and relies on this to clear claim
+      // fields without having to send them explicitly, since claimedBy/
+      // claimedAt/heartbeatAt are not in the PATCH allowlist in routes/prs.ts).
+      if (data.state === "merged" || data.state === "closed") {
         updateData.claimedBy = null;
         updateData.claimedAt = null;
         updateData.heartbeatAt = null;

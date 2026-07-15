@@ -158,7 +158,7 @@ function task(
   createdAt: string,
   overrides: Partial<WorkTaskCandidate> = {},
 ): WorkTaskCandidate {
-  return { id, status: "pending", createdAt, ...overrides };
+  return { id, createdAt, ...overrides };
 }
 
 function pr(
@@ -166,7 +166,7 @@ function pr(
   age: string,
   phase: "review" | "patch" | "deploy",
 ): WorkPrCandidate {
-  return { id, age, claimedBy: null, phase };
+  return { id, age, phase };
 }
 
 // ─── Deps builder ────────────────────────────────────────────────────────────

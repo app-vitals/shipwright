@@ -7,7 +7,7 @@
  * defined there.
  *
  * Content-assertion only: existsSync/readFileSync, no I/O beyond local file
- * reads (mirrors principles-content.unit.test.ts).
+ * reads (mirrors principles-content.content.test.ts).
  */
 import { describe, expect, it } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";

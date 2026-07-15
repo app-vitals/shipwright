@@ -388,12 +388,17 @@ export function buildAgentDeploymentManifest(
                 httpGet: { path: "/health", port: AGENT_HEALTH_PORT },
                 initialDelaySeconds: 15,
                 periodSeconds: 30,
+                // Explicit, not the 1s k8s default — the health server shares
+                // its process with claude -p child spawns and GitHub API
+                // calls, which can transiently delay a response past 1s.
+                timeoutSeconds: 5,
                 failureThreshold: 3,
               },
               readinessProbe: {
                 httpGet: { path: "/health", port: AGENT_HEALTH_PORT },
                 initialDelaySeconds: 10,
                 periodSeconds: 10,
+                timeoutSeconds: 5,
                 failureThreshold: 3,
               },
               securityContext: {

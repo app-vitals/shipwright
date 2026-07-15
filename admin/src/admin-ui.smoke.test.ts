@@ -221,7 +221,7 @@ function makeMockDeps(
       }),
     },
     agentCronRunService: {
-      list: async () => ({ items: [], total: 0, limit: 50, offset: 0 }),
+      listForAgent: async () => ({ items: [], total: 0, limit: 20, offset: 0 }),
     },
     agentToolService: {
       list: async () => [MOCK_TOOL],
@@ -292,11 +292,9 @@ describe("admin UI — unauthenticated redirects", () => {
     expect(res.headers.get("Location")).toBe("/admin/login");
   });
 
-  it("unauthenticated GET /admin/agents/:id/crons/:cronId/runs redirects to /admin/login", async () => {
+  it("unauthenticated GET /admin/agents/:id/cron-logs redirects to /admin/login", async () => {
     const app = createAdminUIApp(makeMockDeps());
-    const res = await app.request(
-      `/admin/agents/${AGENT_ID}/crons/${CRON_ID}/runs`,
-    );
+    const res = await app.request(`/admin/agents/${AGENT_ID}/cron-logs`);
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe("/admin/login");
   });
@@ -532,65 +530,226 @@ describe("admin UI — authenticated pages", () => {
     expect(html).toContain("admin@example.com");
   });
 
-  it("authenticated GET /admin/agents/:id/crons/:cronId/runs returns 200 with run history", async () => {
+  it("authenticated GET /admin/agents/:id/cron-logs returns 200 with empty state", async () => {
     const app = createAdminUIApp(makeMockDeps());
-    const res = await app.request(
-      `/admin/agents/${AGENT_ID}/crons/${CRON_ID}/runs`,
-      {
-        headers: { Cookie: `admin_session=${cookie}` },
-      },
-    );
+    const res = await app.request(`/admin/agents/${AGENT_ID}/cron-logs`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain("Outcome");
     expect(html).toContain("Started");
     expect(html).toContain("Duration");
     // empty state by default in the base mock
-    expect(html).toContain("No runs recorded yet.");
+    expect(html).toContain("No runs");
   });
 
-  it("authenticated GET /admin/agents/:id/crons/:cronId/runs renders populated runs", async () => {
+  function makeCronRun(
+    overrides?: Partial<{
+      id: string;
+      cronId: string;
+      startedAt: Date;
+      completedAt: Date | null;
+      skipped: boolean;
+      skipReason: string | null;
+      outcome: string | null;
+      error: string | null;
+      phase: string | null;
+      modelBreakdown: {
+        id: string;
+        cronRunId: string;
+        model: string;
+        inputTokens: number;
+        outputTokens: number;
+        cacheReadTokens: number;
+        cacheCreationTokens: number;
+        costUsd: number;
+      }[];
+    }>,
+  ) {
+    return {
+      id: "run-1",
+      cronId: CRON_ID,
+      agentId: AGENT_ID,
+      startedAt: new Date("2026-06-01T10:00:00Z"),
+      completedAt: new Date("2026-06-01T10:00:03Z"),
+      skipped: false,
+      skipReason: null,
+      outcome: "posted",
+      error: null,
+      phase: null,
+      createdAt: new Date("2026-06-01T10:00:00Z"),
+      modelBreakdown: [] as {
+        id: string;
+        cronRunId: string;
+        model: string;
+        inputTokens: number;
+        outputTokens: number;
+        cacheReadTokens: number;
+        cacheCreationTokens: number;
+        costUsd: number;
+      }[],
+      cron: MOCK_CRON,
+      ...overrides,
+    };
+  }
+
+  it("authenticated GET /admin/agents/:id/cron-logs renders populated runs", async () => {
     const app = createAdminUIApp(
       makeMockDeps({
         agentCronRunService: {
-          list: async () => ({
-            items: [
-              {
-                id: "run-1",
-                cronId: CRON_ID,
-                agentId: AGENT_ID,
-                startedAt: new Date("2026-06-01T10:00:00Z"),
-                completedAt: new Date("2026-06-01T10:00:03Z"),
-                skipped: false,
-                skipReason: null,
-                outcome: "posted",
-                error: null,
-                phase: null,
-                inputTokens: 999,
-                outputTokens: 111,
-                cacheReadTokens: null,
-                cacheCreationTokens: null,
-                createdAt: new Date("2026-06-01T10:00:00Z"),
-                modelBreakdown: [],
-              },
-            ],
+          listForAgent: async () => ({
+            items: [makeCronRun()],
             total: 1,
-            limit: 50,
+            limit: 20,
             offset: 0,
           }),
         },
       }),
     );
-    const res = await app.request(
-      `/admin/agents/${AGENT_ID}/crons/${CRON_ID}/runs`,
-      {
-        headers: { Cookie: `admin_session=${cookie}` },
-      },
-    );
+    const res = await app.request(`/admin/agents/${AGENT_ID}/cron-logs`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain("posted");
-    expect(html).not.toContain("No runs recorded yet.");
+    expect(html).not.toContain("No runs");
+  });
+
+  it("authenticated GET /admin/agents/:id/cron-logs?cronId=... filters by cronId", async () => {
+    let capturedOpts: unknown;
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentCronRunService: {
+          listForAgent: async (_agentId: string, opts?: unknown) => {
+            capturedOpts = opts;
+            return {
+              items: [makeCronRun()],
+              total: 1,
+              limit: 20,
+              offset: 0,
+            };
+          },
+        },
+      }),
+    );
+    const res = await app.request(
+      `/admin/agents/${AGENT_ID}/cron-logs?cronId=${CRON_ID}`,
+      { headers: { Cookie: `admin_session=${cookie}` } },
+    );
+    expect(res.status).toBe(200);
+    expect(capturedOpts).toMatchObject({ cronId: CRON_ID });
+    const html = await res.text();
+    // Selected cron option should carry `selected`.
+    const optionMatch = html.match(new RegExp(`<option value="${CRON_ID}"[^>]*>`));
+    expect(optionMatch).not.toBeNull();
+    expect(optionMatch?.[0]).toContain("selected");
+  });
+
+  it("authenticated GET /admin/agents/:id/cron-logs?outcome=... filters by outcome", async () => {
+    let capturedOpts: unknown;
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentCronRunService: {
+          listForAgent: async (_agentId: string, opts?: unknown) => {
+            capturedOpts = opts;
+            return {
+              items: [makeCronRun({ outcome: "error" })],
+              total: 1,
+              limit: 20,
+              offset: 0,
+            };
+          },
+        },
+      }),
+    );
+    const res = await app.request(
+      `/admin/agents/${AGENT_ID}/cron-logs?outcome=error`,
+      { headers: { Cookie: `admin_session=${cookie}` } },
+    );
+    expect(res.status).toBe(200);
+    expect(capturedOpts).toMatchObject({ outcome: "error" });
+  });
+
+  it("authenticated GET /admin/agents/:id/cron-logs?outcome=skipped passes the skipped special-case outcome through", async () => {
+    let capturedOpts: unknown;
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentCronRunService: {
+          listForAgent: async (_agentId: string, opts?: unknown) => {
+            capturedOpts = opts;
+            return {
+              items: [
+                makeCronRun({ skipped: true, outcome: null, skipReason: "pre-check failed" }),
+              ],
+              total: 1,
+              limit: 20,
+              offset: 0,
+            };
+          },
+        },
+      }),
+    );
+    const res = await app.request(
+      `/admin/agents/${AGENT_ID}/cron-logs?outcome=skipped`,
+      { headers: { Cookie: `admin_session=${cookie}` } },
+    );
+    expect(res.status).toBe(200);
+    expect(capturedOpts).toMatchObject({ outcome: "skipped" });
+    const html = await res.text();
+    expect(html).toContain("skipped");
+  });
+
+  it("non-admin non-member gets 403 on GET /admin/agents/:id/cron-logs", async () => {
+    const outsiderCookie = await makeSessionCookie(
+      SESSION_SECRET,
+      "google-sub-outsider",
+      "outsider@example.com",
+      false,
+    );
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request(`/admin/agents/${AGENT_ID}/cron-logs`, {
+      headers: { Cookie: `admin_session=${outsiderCookie}` },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("GET /admin/agents/:id/cron-logs returns 404 when agent not found", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        prisma: {
+          agent: {
+            findMany: async () => [],
+            findUnique: async () => null,
+            create: async () => {
+              throw new Error("not implemented");
+            },
+            update: async () => {
+              throw new Error("not implemented");
+            },
+            delete: async () => {
+              throw new Error("not implemented");
+            },
+          },
+          agentEnv: { findMany: async () => [] },
+          agentPlugin: { findMany: async () => [] },
+          agentMember: {
+            findMany: async () => [],
+            findUnique: async () => null,
+            create: async () => ({
+              id: "m1",
+              agentId: AGENT_ID,
+              email: "member@example.com",
+            }),
+            deleteMany: async () => ({ count: 0 }),
+          },
+        },
+      }),
+    );
+    const res = await app.request(`/admin/agents/${AGENT_ID}/cron-logs`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(404);
   });
 
   it("authenticated GET /admin/provision shows the session user's email in the navbar", async () => {

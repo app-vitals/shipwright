@@ -4,7 +4,7 @@
  * Unit tests for getDevTaskCandidates() — native port of
  * plugins/shipwright/scripts/check-dev-task.ts's qualification logic.
  *
- * Ported from plugins/shipwright/scripts/check-dev-task.test.ts, adjusted to
+ * Ported from plugins/shipwright/scripts/check-dev-task.unit.test.ts, adjusted to
  * assert on the returned WorkTaskCandidate[] array instead of {exit, output}.
  * HITL-notification cases from the plugin test are intentionally not ported —
  * HITL notification isn't a work candidate for the selector and is out of
@@ -82,10 +82,7 @@ describe("getDevTaskCandidates", () => {
     expect(result).toHaveLength(1);
     expect(result[0]).toEqual({
       id: "SWC-1.1",
-      status: "pending",
       createdAt: "2026-05-01T00:00:00.000Z",
-      branch: undefined,
-      dependencies: undefined,
     });
   });
 
@@ -97,19 +94,6 @@ describe("getDevTaskCandidates", () => {
     );
     expect(result).toHaveLength(2);
     expect(result.map((t) => t.id)).toEqual(["SWC-1.1", "SWC-1.2"]);
-  });
-
-  test("candidate carries branch and dependencies through", async () => {
-    const task = makeTask({
-      id: "SWC-1.3",
-      branch: "feat/x",
-      dependencies: ["SWC-1.0"],
-    });
-    const result = await getDevTaskCandidates(makeDeps({ readyTasks: [task] }));
-    expect(result[0]).toMatchObject({
-      branch: "feat/x",
-      dependencies: ["SWC-1.0"],
-    });
   });
 
   // ─── Stale in_progress guard ──────────────────────────────────────────────

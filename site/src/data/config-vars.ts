@@ -17,6 +17,7 @@ export const agentClaudeVars: ConfigVar[] = [
   { name: "ANTHROPIC_MODEL", type: "string", def: "claude-sonnet-4-6", desc: "Claude model used for each agent invocation." },
   { name: "ANTHROPIC_FALLBACK_MODEL", type: "string", def: "—", desc: "Fallback model if the primary is unavailable." },
   { name: "ANTHROPIC_EFFORT_LEVEL", type: "string", def: "—", desc: "Effort/thinking level passed to Claude (e.g. extended, auto, none)." },
+  { name: "SHIPWRIGHT_CLAUDE_TIMEOUT_MS", type: "number", def: "1800000", desc: "Hard timeout in milliseconds for a single claude -p session spawned by the agent runner. When a session exceeds it the process is killed and a ClaudeTimeoutError is raised. Falls back to the default when unset or not a positive integer. When raising this, raise SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS in step (keep the ~5 min buffer) or the stale-claim reaper re-dispatches a duplicate run." },
   { name: "ANTHROPIC_API_KEY", type: "string", def: "—", desc: "Anthropic API key. Env-var-only (secret)." },
   { name: "CLAUDE_CODE_OAUTH_TOKEN", type: "string", def: "—", desc: "Claude Code OAuth token (alternative to ANTHROPIC_API_KEY). Env-var-only (secret)." },
 ];

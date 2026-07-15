@@ -537,6 +537,13 @@ export const generatedTools: GeneratedTool[] = [
           description: "Pagination offset",
           example: "0",
         },
+        ready: {
+          type: "string",
+          enum: ["true", "false"],
+          description:
+            "When true, return only unclaimed PRs (claimedBy IS NULL) — mirrors /tasks?ready=true. Composable with other filters (repo, state, reviewState); does not itself apply state/reviewState eligibility rules the way claim-next does.",
+          example: "true",
+        },
       },
       required: [],
       additionalProperties: false,
@@ -552,6 +559,7 @@ export const generatedTools: GeneratedTool[] = [
       "staged",
       "limit",
       "offset",
+      "ready",
     ],
     pathParams: [],
     hasBody: false,
@@ -586,6 +594,19 @@ export const generatedTools: GeneratedTool[] = [
           type: "string",
           description: "Associated task ID",
           example: "clx1234567890",
+        },
+        phase: {
+          type: "string",
+          enum: ["review", "patch", "deploy"],
+          description:
+            "Pipeline phase this claim is for (defaults to 'review' when omitted)",
+          example: "patch",
+        },
+        prCreatedAt: {
+          type: "string",
+          description:
+            "ISO timestamp of the GitHub PR's actual creation time. Only applied on first claim (record creation); ignored on subsequent claims since the field is immutable once set.",
+          example: "2026-01-01T00:00:00.000Z",
         },
       },
       required: ["repo", "prNumber", "commitSha"],
@@ -706,13 +727,20 @@ export const generatedTools: GeneratedTool[] = [
   },
   {
     name: "prs_patch",
-    description: "Increment patchCycles and reset reviewState=pending",
+    description:
+      "Increment patchCycles and conditionally reset reviewState=pending",
     inputSchema: {
       type: "object",
       properties: {
         id: {
           type: "string",
           example: "clx0987654321",
+        },
+        commitSha: {
+          type: "string",
+          description:
+            "Current head commit SHA. When provided and it differs from the record's stored commitSha, reviewState resets to pending and commitSha is updated. When it matches, reviewState is left untouched (no-op patch cycle). When omitted, reviewState unconditionally resets to pending (legacy behavior).",
+          example: "abc123def456",
         },
       },
       required: ["id"],
@@ -722,7 +750,7 @@ export const generatedTools: GeneratedTool[] = [
     pathTemplate: "/prs/{id}/patch",
     queryParams: [],
     pathParams: ["id"],
-    hasBody: false,
+    hasBody: true,
   },
   {
     name: "prs_release",

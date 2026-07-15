@@ -12,7 +12,9 @@ name: Chart Release
 #     `gh-pages` branch root. It creates NO GitHub Releases. The publish is keyed
 #     off `Chart.yaml`'s `version`: a re-run with an unchanged version repackages
 #     an identical `.tgz` (same digest) and produces no committable diff, so the
-#     effective trigger is "a chart version bump landed on main".
+#     effective trigger is "a chart version bump landed on main". Consumption is
+#     PULL-based: downstream consumers (e.g. Renovate) detect the new version on
+#     gh-pages on their own schedule — this workflow sends no push notification.
 #
 #   dry-run (pull_request) — validates that the chart packages and the index
 #     merges, WITHOUT publishing anything. This is the PR-time test for the
@@ -110,20 +112,6 @@ jobs:
           fi
           git commit -m "chart: publish shipwright ${{ steps.chart-version.outputs.version }}"
           git push origin gh-pages
-
-      - name: Notify downstream of chart release
-        # Guarded: exits 0 when DISPATCH_TOKEN / CHART_DISPATCH_REPO are unset, and
-        # continue-on-error keeps a notification failure from failing the publish.
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
-          DISPATCH_REPO: ${{ vars.CHART_DISPATCH_REPO }}
-          CHART_VERSION: ${{ steps.chart-version.outputs.version }}
-        run: |
-          [ -z "$GH_TOKEN" ] && echo "DISPATCH_TOKEN not configured, skipping" && exit 0
-          [ -z "$DISPATCH_REPO" ] && echo "CHART_DISPATCH_REPO not configured, skipping" && exit 0
-          printf '{"event_type":"shipwright-chart-released","client_payload":{"chart_version":"%s"}}' "$CHART_VERSION" \
-            | gh api "repos/$DISPATCH_REPO/dispatches" --method POST --input -
 
   # Dry-run validation — runs ONLY on pull_request. Proves the chart packages and
   # the index merges with the production --url; publishes nothing (no gh-pages
