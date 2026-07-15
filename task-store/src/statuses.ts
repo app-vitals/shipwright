@@ -47,9 +47,16 @@ export const STATUS_ALIASES: Record<string, TaskStatusValue> = {
   completed: "done",
 };
 
-/** Resolve a status alias to its canonical value; pass non-aliases through. */
+/**
+ * Resolve a status to its canonical value: trim, lowercase, then apply the
+ * alias table, so case/whitespace variants like "Completed" or " Done "
+ * normalize the same way as their lowercase forms (improvised statuses come
+ * with improvised casing). Unknown values pass through trimmed/lowercased for
+ * the caller to reject via isValidStatus.
+ */
 export function normalizeStatus(status: string): string {
-  return STATUS_ALIASES[status] ?? status;
+  const canonical = status.trim().toLowerCase();
+  return STATUS_ALIASES[canonical] ?? canonical;
 }
 
 /** True when `status` is a canonical (post-normalization) TaskStatus value. */

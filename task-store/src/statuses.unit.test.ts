@@ -52,8 +52,21 @@ describe("normalizeStatus (unit)", () => {
     }
   });
 
-  it("passes unknown values through unchanged (validity is checked separately)", () => {
+  it("maps case and whitespace variants of the alias to 'done'", () => {
+    expect(normalizeStatus("Completed")).toBe("done");
+    expect(normalizeStatus("COMPLETED")).toBe("done");
+    expect(normalizeStatus(" completed ")).toBe("done");
+  });
+
+  it("canonicalizes case and whitespace variants of canonical statuses", () => {
+    expect(normalizeStatus("Done")).toBe("done");
+    expect(normalizeStatus("IN_PROGRESS")).toBe("in_progress");
+    expect(normalizeStatus(" pending ")).toBe("pending");
+  });
+
+  it("passes unknown values through trimmed/lowercased (validity is checked separately)", () => {
     expect(normalizeStatus("bogus")).toBe("bogus");
+    expect(normalizeStatus(" BoGuS ")).toBe("bogus");
   });
 });
 
@@ -67,6 +80,10 @@ describe("isValidStatus (unit)", () => {
   it("rejects unknown and empty values", () => {
     expect(isValidStatus("bogus")).toBe(false);
     expect(isValidStatus("")).toBe(false);
+  });
+
+  it("rejects genuinely-unknown values even after normalization", () => {
+    expect(isValidStatus(normalizeStatus("Totally-Bogus"))).toBe(false);
   });
 
   it("rejects the raw 'completed' alias — it must be normalized first", () => {

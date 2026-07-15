@@ -616,6 +616,27 @@ describe("task-store API (smoke)", () => {
     expect(capturedUpdates[0]?.status).toBe("done");
   });
 
+  it("PATCH /tasks/:id normalizes a case variant ('Completed') to 'done' (200)", async () => {
+    const capturedUpdates: Array<Record<string, unknown>> = [];
+    const spyTaskService: TaskServiceLike = {
+      ...fakeTaskService({ getResult: makeTask({ id: "task-1" }) }),
+      async update(id, data) {
+        capturedUpdates.push(data as Record<string, unknown>);
+        return makeTask({ ...(data as Partial<Task>), id });
+      },
+    };
+    const app = makeApp({ taskService: spyTaskService });
+    const res = await app.request("/tasks/task-1", {
+      method: "PATCH",
+      headers: { ...auth(), "content-type": "application/json" },
+      body: JSON.stringify({ status: "Completed" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Task;
+    expect(body.status).toBe("done");
+    expect(capturedUpdates[0]?.status).toBe("done");
+  });
+
   it("PATCH /tasks/:id rejects an unknown status with 400, not 500", async () => {
     const app = makeApp({
       taskService: fakeTaskService({ getResult: makeTask({ id: "task-1" }) }),
