@@ -298,7 +298,7 @@ agent:
   enabled: true
   image:
     repository: ghcr.io/app-vitals/shipwright-agent
-    tag: agent-v0.181.5
+    tag: agent-v0.182.0
     pullPolicy: ""
   service:
     port: 3000
@@ -321,7 +321,7 @@ agent:
     # -- Image the admin provisioner stamps onto agent Deployments.
     image:
       repository: ghcr.io/app-vitals/shipwright-agent
-      tag: agent-v0.181.5
+      tag: agent-v0.182.0
     # -- Replica count for provisioned agent Deployments.
     replicas: 1
     # -- ServiceAccount provisioned agent pods run as (SEPARATE from the admin SA).
