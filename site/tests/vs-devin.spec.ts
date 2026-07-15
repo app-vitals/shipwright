@@ -136,3 +136,10 @@ test("/compare links to the full /vs/devin comparison", async ({ page }) => {
     page.getByRole("link", { name: /full.*Shipwright vs Devin comparison/i }),
   ).toHaveAttribute("href", "/vs/devin");
 });
+
+test("page links back to /self-hosted", async ({ page }) => {
+  await page.goto("/vs/devin");
+  await expect(
+    page.getByRole("link", { name: /self-hosted.*actually means/i }),
+  ).toHaveAttribute("href", "/self-hosted");
+});
