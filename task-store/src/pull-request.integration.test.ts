@@ -986,6 +986,35 @@ describeOrSkip("PullRequestService.list() and get() (integration)", () => {
     expect(readyResult.prs.some((p) => p.id === claimed.id)).toBe(false);
   });
 
+  it("list({ sort: 'desc' }) orders by createdAt descending; default/asc preserves current order", async () => {
+    const first = await prisma.pullRequest.create({
+      data: { repo: "app-vitals/shipwright", prNumber: 1060 },
+    });
+    const second = await prisma.pullRequest.create({
+      data: { repo: "app-vitals/shipwright", prNumber: 1061 },
+    });
+    const third = await prisma.pullRequest.create({
+      data: { repo: "app-vitals/shipwright", prNumber: 1062 },
+    });
+
+    const ascDefault = await service.list();
+    expect(ascDefault.prs.map((p) => p.id)).toEqual([
+      first.id,
+      second.id,
+      third.id,
+    ]);
+
+    const ascExplicit = await service.list({ sort: "asc" });
+    expect(ascExplicit.prs.map((p) => p.id)).toEqual([
+      first.id,
+      second.id,
+      third.id,
+    ]);
+
+    const desc = await service.list({ sort: "desc" });
+    expect(desc.prs.map((p) => p.id)).toEqual([third.id, second.id, first.id]);
+  });
+
   it("list() without ready returns both claimed and unclaimed PRs (backward compatible)", async () => {
     await prisma.pullRequest.create({
       data: {

@@ -531,6 +531,11 @@ export const PrListQuerySchema = z
       description:
         "When true, return only unclaimed PRs (claimedBy IS NULL) — mirrors /tasks?ready=true. Composable with other filters (repo, state, reviewState); does not itself apply state/reviewState eligibility rules the way claim-next does.",
     }),
+    sort: z.enum(["asc", "desc"]).optional().openapi({
+      example: "asc",
+      description:
+        "Order results by createdAt. Default is ascending (asc), preserving current behavior for existing callers. Unrelated to claim-next's own deterministic ordering.",
+    }),
   })
   .openapi("PrListQuery");
 

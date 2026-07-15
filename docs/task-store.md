@@ -165,9 +165,11 @@ The `/prs` surface tracks GitHub PRs through the review → patch → deploy pip
 GET /prs
 ```
 
-Query params: `repo`, `prNumber`, `taskId`, `state`, `reviewState`, `staged`, `limit`, `offset`, `ready`.
+Query params: `repo`, `prNumber`, `taskId`, `state`, `reviewState`, `staged`, `limit`, `offset`, `ready`, `sort`.
 
 `ready=true` returns only unclaimed PRs (`claimedBy IS NULL`) — mirrors `/tasks?ready=true`'s semantics for tasks. It composes with the other filters (e.g. `?ready=true&repo=org/repo`) rather than hardcoding `claim-next`'s `state=open AND reviewState IN (pending, posted, approved)` eligibility rules; claim staleness itself is handled entirely by the `StaleClaimReaper` background job, not by this filter.
+
+`sort` orders results by `createdAt`: `asc` (default, oldest first — current behavior for every existing caller) or `desc` (newest first). Unrelated to `claim-next`'s own deterministic ordering, which is a separate, non-configurable `ORDER BY` used for phase-ready claiming.
 
 Returns `{ prs: PullRequest[], total: number, limit: number, offset: number }`.
 

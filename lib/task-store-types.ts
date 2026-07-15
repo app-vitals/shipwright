@@ -937,6 +937,8 @@ export interface paths {
                     staged?: "true" | "false";
                     limit?: string;
                     offset?: string;
+                    ready?: "true" | "false";
+                    sort?: "asc" | "desc";
                 };
                 header?: never;
                 path?: never;
@@ -1543,6 +1545,13 @@ export interface components {
             inserted: number;
             /** @example 1 */
             updated: number;
+            /**
+             * @description IDs of tasks skipped because they already exist (Prisma P2002 unique constraint collision).
+             * @example [
+             *       "entropy-dead_exports-other-repo-2026-W29"
+             *     ]
+             */
+            skipped: string[];
         };
         BulkInsertBody: {
             /** @example Implement feature X */

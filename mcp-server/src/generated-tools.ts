@@ -544,6 +544,13 @@ export const generatedTools: GeneratedTool[] = [
             "When true, return only unclaimed PRs (claimedBy IS NULL) — mirrors /tasks?ready=true. Composable with other filters (repo, state, reviewState); does not itself apply state/reviewState eligibility rules the way claim-next does.",
           example: "true",
         },
+        sort: {
+          type: "string",
+          enum: ["asc", "desc"],
+          description:
+            "Order results by createdAt. Default is ascending (asc), preserving current behavior for existing callers. Unrelated to claim-next's own deterministic ordering.",
+          example: "asc",
+        },
       },
       required: [],
       additionalProperties: false,
@@ -560,6 +567,7 @@ export const generatedTools: GeneratedTool[] = [
       "limit",
       "offset",
       "ready",
+      "sort",
     ],
     pathParams: [],
     hasBody: false,
