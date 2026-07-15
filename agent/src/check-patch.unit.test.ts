@@ -965,7 +965,6 @@ describe("getPatchCandidates", () => {
     });
     deps.queryPrRecord = async () => ({
       readyForPatchAt: "2026-05-20T00:00:00.000Z",
-      claimedBy: null,
     });
     const result = await getPatchCandidates(deps);
     expect(result[0].age).toBe("2026-05-20T00:00:00.000Z");
@@ -981,6 +980,23 @@ describe("getPatchCandidates", () => {
       }),
     );
     expect(result[0].age).toBe("2026-06-01T00:00:00.000Z");
+  });
+
+  // ─── claim gating via ready=true (LPF-2.2) ────────────────────────────────
+
+  test("excludes a PR when queryPrRecord is provided and resolves null (ready=true-filtered claimed record), even though it otherwise needs patch attention", async () => {
+    // By patch phase a task-store record should always exist (review always
+    // claims first), so a null result from a ready=true-filtered query means
+    // "currently claimed" — must be treated as excluded, not "no record yet".
+    const pr = makeOwnPr({ number: 10, createdAt: "2026-06-01T00:00:00.000Z" });
+    const deps = makeDeps({
+      ownPrs: [pr],
+      reviewDataByPr: {},
+      ciStatusByPr: { 10: { hasFailing: true } },
+    });
+    deps.queryPrRecord = async () => null;
+    const result = await getPatchCandidates(deps);
+    expect(result).toEqual([]);
   });
 });
 

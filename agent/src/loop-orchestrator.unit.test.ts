@@ -166,7 +166,7 @@ function pr(
   age: string,
   phase: "review" | "patch" | "deploy",
 ): WorkPrCandidate {
-  return { id, age, claimedBy: null, phase };
+  return { id, age, phase };
 }
 
 // ─── Deps builder ────────────────────────────────────────────────────────────

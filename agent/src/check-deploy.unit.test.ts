@@ -479,11 +479,26 @@ describe("getDeployCandidates", () => {
     });
     deps.queryPrRecord = async () => ({
       readyForDeployAt: "2026-05-20T00:00:00.000Z",
-      claimedBy: null,
     });
     const result = await getDeployCandidates(deps);
     expect(result[0].age).not.toBe("2026-05-20T00:00:00.000Z");
     expect(result[0].age).toBe("2026-05-01T00:00:00.000Z");
+  });
+
+  // ─── claim gating via ready=true (LPF-2.2) ────────────────────────────────
+
+  test("excludes a PR when queryPrRecord is provided and resolves null (ready=true-filtered claimed record), even though it is otherwise approved with green CI", async () => {
+    // By deploy phase a task-store record should always exist (review always
+    // claims first), so a null result from a ready=true-filtered query means
+    // "currently claimed" — must be treated as excluded, not "no record yet".
+    const pr = makeGhPr({ reviewDecision: "APPROVED", createdAt: "2026-06-01T00:00:00.000Z" });
+    const deps = makeDeps({
+      prs: { "acme/example-repo": [pr] },
+      ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
+    });
+    deps.queryPrRecord = async () => null;
+    const result = await getDeployCandidates(deps);
+    expect(result).toEqual([]);
   });
 
   // ─── mergeStateStatus DIRTY exclusion ──────────────────────────────────

@@ -69,7 +69,6 @@ export interface MergeStatusInfo {
 
 export interface PrRecord {
   readyForPatchAt?: string | null;
-  claimedBy?: string | null;
 }
 
 export interface CheckPatchDeps {
@@ -92,7 +91,12 @@ export interface CheckPatchDeps {
   ) => Promise<MergeStatusInfo>;
   listPrCommits: (prNumber: number, repo?: string) => Promise<CommitInfo[]>;
   getCurrentUser: () => string;
-  /** Task-store PR record lookup, used only to source the age field. */
+  /**
+   * Task-store PR record lookup, queried with `ready=true` in production
+   * (LPF-2.2) so a resolved `null` doubles as a claim gate — by patch phase a
+   * record should always exist, so `null` means "currently claimed", not "no
+   * record yet". Also sources the age field (readyForPatchAt) when present.
+   */
   queryPrRecord?: (repo: string, prNumber: number) => Promise<PrRecord | null>;
 }
 
@@ -302,14 +306,20 @@ export async function getPatchCandidates(
       try {
         record = await deps.queryPrRecord(pr.repo, pr.number);
       } catch {
-        // Query failed → fall back to PR createdAt below.
+        // Query failed → treated the same as a ready=true-filtered "claimed"
+        // result below (createPrRecordQuery's production implementation
+        // never actually throws, but a caught error here must not silently
+        // add a possibly-claimed PR as a candidate).
       }
+      // queryPrRecord IS configured but returned null — by patch phase a
+      // task-store record should always exist (review always claims first),
+      // so a ready=true-filtered null means "currently claimed". Skip.
+      if (!record) continue;
     }
 
     candidates.push({
       id: candidateId(pr.repo, pr.number),
       age: record?.readyForPatchAt ?? pr.createdAt ?? "",
-      claimedBy: record?.claimedBy ?? null,
       phase: "patch",
     });
   }
@@ -459,6 +469,9 @@ export async function buildProductionDeps(opts: {
       ]);
     },
     getCurrentUser: getUser,
-    queryPrRecord: createPrRecordQuery<PrRecord>({ fetchFn: opts.fetchFn }),
+    queryPrRecord: createPrRecordQuery<PrRecord>({
+      fetchFn: opts.fetchFn,
+      ready: true,
+    }),
   };
 }

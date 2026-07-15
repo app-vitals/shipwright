@@ -16,8 +16,16 @@
  * `tasks` is already the ready-only candidate set (task-store's ?ready=true
  * query), so dependency satisfaction is computed server-side before this
  * function ever sees the list — a task is selectable purely on
- * status === "pending" and createdAt age, the same trust level PR candidates
- * already get below.
+ * status === "pending" and createdAt age.
+ *
+ * `prs` is, likewise, already an unclaimed-only candidate set — the
+ * check-review/check-patch/check-deploy collectors (LPF-2.2) request only
+ * unclaimed PR records from the task-store via its `?ready=true` filter (or,
+ * for check-review's specific need to distinguish "no record" from "claimed
+ * record", perform an equivalent claim check inline before ever returning a
+ * candidate). No local claim-filtering happens in this function — a PR
+ * candidate is selectable purely on age, the same trust level task
+ * candidates get above.
  */
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -33,7 +41,6 @@ export interface WorkTaskCandidate {
 export interface WorkPrCandidate {
   id: string;
   age: string;
-  claimedBy?: string | null;
   phase?: "review" | "patch" | "deploy";
 }
 
@@ -59,7 +66,6 @@ export function selectNextWorkItem(
   }
 
   for (const pr of prs) {
-    if (pr.claimedBy != null) continue;
     if (!best || pr.age < best.age) {
       best = { age: pr.age, item: { type: "pr", pr } };
     }
