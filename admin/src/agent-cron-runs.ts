@@ -20,6 +20,18 @@ export type AgentCronRunWithModelBreakdown = Prisma.AgentCronRunGetPayload<{
   include: { modelBreakdown: true };
 }>;
 
+/**
+ * An AgentCronRun with its per-model token/cost breakdown rows and its
+ * owning cron's id/name/schedule attached — used by cross-cron listings
+ * (e.g. listForAgent) so callers don't need N+1 cron lookups.
+ */
+export type AgentCronRunWithCron = Prisma.AgentCronRunGetPayload<{
+  include: {
+    modelBreakdown: true;
+    cron: { select: { id: true; name: true; schedule: true } };
+  };
+}>;
+
 export interface CreateAgentCronRunInput {
   startedAt: Date;
   completedAt?: Date | null;
@@ -60,6 +72,28 @@ export interface ListAgentCronRunsOptions {
 
 export interface AgentCronRunList {
   items: AgentCronRunWithModelBreakdown[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface ListForAgentOptions {
+  /** Narrow to a single cron. Still scoped to agentId — a cronId belonging
+   * to a different agent yields an empty result, not an error. */
+  cronId?: string;
+  /**
+   * "skipped" filters WHERE skipped = true regardless of the outcome column
+   * (mirrors the cronRunOutcomeLabel display convention: skipped is a
+   * boolean flag, not an outcome column value). Any other value filters
+   * WHERE skipped = false AND outcome = value. Omitted means no filter.
+   */
+  outcome?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface AgentCronRunListForAgent {
+  items: AgentCronRunWithCron[];
   total: number;
   limit: number;
   offset: number;
@@ -224,6 +258,49 @@ export class AgentCronRunService {
       this.prisma.agentCronRun.count({
         where: { cronId, agentId },
       }),
+    ]);
+
+    return { items, total, limit, offset };
+  }
+
+  /**
+   * List all runs for an agent across every cron it owns, sorted descending
+   * by startedAt. Unlike `.list()`, this method is agent-scoped by
+   * construction and does not validate a specific cronId's ownership — if
+   * opts.cronId is given but belongs to a different agent, the WHERE clause
+   * (agentId AND cronId) simply matches no rows.
+   * Defaults to limit=20, offset=0.
+   */
+  async listForAgent(
+    agentId: string,
+    opts?: ListForAgentOptions,
+  ): Promise<AgentCronRunListForAgent> {
+    const limit = opts?.limit ?? 20;
+    const offset = opts?.offset ?? 0;
+
+    const where: Prisma.AgentCronRunWhereInput = { agentId };
+    if (opts?.cronId) {
+      where.cronId = opts.cronId;
+    }
+    if (opts?.outcome === "skipped") {
+      where.skipped = true;
+    } else if (opts?.outcome !== undefined) {
+      where.skipped = false;
+      where.outcome = opts.outcome;
+    }
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.agentCronRun.findMany({
+        where,
+        orderBy: { startedAt: "desc" },
+        take: limit,
+        skip: offset,
+        include: {
+          modelBreakdown: true,
+          cron: { select: { id: true, name: true, schedule: true } },
+        },
+      }),
+      this.prisma.agentCronRun.count({ where }),
     ]);
 
     return { items, total, limit, offset };
