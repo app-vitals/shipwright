@@ -180,6 +180,13 @@ describe("check-review", () => {
     expect(result.output.toLowerCase()).toContain("review");
   });
 
+  test("prompt includes the specific eligible PR as org/repo#number (explicit-target-only /shipwright:review requires a target)", async () => {
+    const pr = makePr({ number: 42, repo: "example-org/example-repo" });
+    const result = await run(makeDeps([pr], async () => null));
+    expect(result.exit).toBe(0);
+    expect(result.output).toContain("example-org/example-repo#42");
+  });
+
   // ─── multi-repo: dedup keyed on repo+prNumber via queryPrRecord ──────────────
 
   test("multi-repo: two repos with the same PR number are deduped independently", async () => {

@@ -211,7 +211,6 @@ Agent behavior is controlled by `state/agent-policy.md`. This is a Markdown file
 ---
 auto_post_reviews: false
 allowed_events: [COMMENT, APPROVE]
-review_external_prs: true
 allow_self_review: true
 min_confidence: 75
 max_findings: 5
@@ -219,6 +218,8 @@ cleanup_merged_worktrees: true
 cleanup_after_days: 14
 ---
 ```
+
+(`review_external_prs` is omitted above — see the table row: currently unused.)
 
 ---
 
