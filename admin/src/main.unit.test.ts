@@ -10,6 +10,7 @@ import {
 import type { AgentTokenService } from "./agent-tokens.ts";
 import {
   buildProvisioner,
+  checkDbReady,
   resolvePublicRepo,
   resolveTaskStoreBaseUrl,
   runMigrations,
@@ -24,8 +25,9 @@ function stubAgentTokenService(): AgentTokenService {
 function configOf(
   provisioner: AgentProvisioner,
 ): KubernetesAgentProvisionerConfig {
-  return (provisioner as unknown as { config: KubernetesAgentProvisionerConfig })
-    .config;
+  return (
+    provisioner as unknown as { config: KubernetesAgentProvisionerConfig }
+  ).config;
 }
 
 // resolvePublicRepo is the pure env rule wired into main.ts startServer():
@@ -274,5 +276,25 @@ describe("runMigrations", () => {
   it("returns early without spawning a process when DATABASE_URL_SHIPWRIGHT_ADMIN is unset", async () => {
     process.env.DATABASE_URL_SHIPWRIGHT_ADMIN = undefined;
     await expect(runMigrations()).resolves.toBeUndefined();
+  });
+});
+
+// ─── checkDbReady ────────────────────────────────────────────────────────────
+
+// Backs GET /health/ready. Exercised here with a mocked $queryRaw (no real
+// Postgres) — the real query is a plain `SELECT 1` ping.
+describe("checkDbReady", () => {
+  it("returns true when the DB is reachable", async () => {
+    const prisma = { $queryRaw: async () => [{ "?column?": 1 }] };
+    await expect(checkDbReady(prisma)).resolves.toBe(true);
+  });
+
+  it("returns false when the DB is unreachable", async () => {
+    const prisma = {
+      $queryRaw: async () => {
+        throw new Error("Can't reach database server at 127.0.0.1:5432");
+      },
+    };
+    await expect(checkDbReady(prisma)).resolves.toBe(false);
   });
 });

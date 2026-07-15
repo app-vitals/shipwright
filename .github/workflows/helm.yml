@@ -106,10 +106,11 @@ jobs:
       # is NOT published to any registry at PR time. Build the REAL image and
       # side-load it into the kind cluster so `ct install` schedules the actual
       # workload (not a stub): the admin pod boots, runs `prisma migrate deploy`
-      # against the bundled PostgreSQL subchart, and serves its DB-independent
-      # /health probe — so `ct install --wait` sees it reach Ready. The ci/ values
-      # set admin.image.pullPolicy: Never, so kind uses this loaded image and
-      # never reaches a registry. Tag 0.1.0 = Chart.yaml appVersion.
+      # against the bundled PostgreSQL subchart, and its DB-aware /health/ready
+      # readiness probe reports Ready once the DB is reachable — so `ct install
+      # --wait` sees it reach Ready. The ci/ values set admin.image.pullPolicy:
+      # Never, so kind uses this loaded image and never reaches a registry.
+      # Tag 0.1.0 = Chart.yaml appVersion.
       - name: Build admin image
         run: docker build -t shipwright-admin:0.1.0 -f admin/Dockerfile .
 

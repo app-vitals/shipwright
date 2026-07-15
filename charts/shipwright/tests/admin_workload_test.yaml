@@ -1,8 +1,9 @@
 suite: admin Deployment / Service / ServiceAccount workloads
 # HD-3.1 adds the admin workload templates. These assert the structural facts:
-# image (pinned to the GHCR default), container port 3001, /health liveness +
-# readiness probes, ServiceAccount wiring, Service shape, and the DATABASE_URL
-# wiring to the bundled PostgreSQL subchart (assembled in the admin Secret).
+# image (pinned to the GHCR default), container port 3001, liveness (/health)
+# + readiness (/health/ready) probes, ServiceAccount wiring, Service shape, and
+# the DATABASE_URL wiring to the bundled PostgreSQL subchart (assembled in the
+# admin Secret).
 tests:
   - it: renders the admin Deployment with the GHCR-pinned image and port 3001
     template: templates/admin-deployment.yaml
@@ -16,7 +17,10 @@ tests:
           path: spec.template.spec.containers[0].ports[0].containerPort
           value: 3001
 
-  - it: sets liveness and readiness probes against /health on port 3001
+  # LCT-3.1: readinessProbe is DB-aware (/health/ready) while livenessProbe
+  # stays DB-independent (/health) — a transient DB blip must never trigger a
+  # liveness-driven restart.
+  - it: sets a DB-independent liveness probe against /health and a DB-aware readiness probe against /health/ready, both on port 3001
     template: templates/admin-deployment.yaml
     asserts:
       - equal:
@@ -27,7 +31,7 @@ tests:
           value: 3001
       - equal:
           path: spec.template.spec.containers[0].readinessProbe.httpGet.path
-          value: /health
+          value: /health/ready
       - equal:
           path: spec.template.spec.containers[0].readinessProbe.httpGet.port
           value: 3001
