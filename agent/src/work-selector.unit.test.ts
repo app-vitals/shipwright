@@ -17,10 +17,7 @@ import {
 function makeTask(overrides: Partial<WorkTaskCandidate> = {}): WorkTaskCandidate {
   return {
     id: "task-1",
-    status: "pending",
     createdAt: "2026-01-01T00:00:00.000Z",
-    branch: null,
-    dependencies: [],
     ...overrides,
   };
 }
@@ -31,7 +28,6 @@ function makePr(
   return {
     id: "pr-1",
     age: "2026-01-01T00:00:00.000Z",
-    claimedBy: null,
     ...overrides,
   };
 }
@@ -71,44 +67,29 @@ describe("selectNextWorkItem", () => {
     expect(result).toEqual({ type: "task", task: olderTask });
   });
 
-  it("selects a ready task with dependencies whose satisfied dep is absent from the candidate list", () => {
-    // Regression guard: getDevTaskCandidates() only returns ready=true tasks, so a
-    // satisfied (terminal-status) dependency is never present in `tasks`. The task
-    // must still be selected on age alone — no local re-derivation of dependency state.
-    const task = makeTask({ id: "t1", dependencies: ["some-deployed-task-not-in-list"] });
-    const result = selectNextWorkItem([task], []);
-    expect(result).toEqual({ type: "task", task });
-  });
-
-  it("excludes an already-claimed PR", () => {
-    const claimed = makePr({
-      id: "pr-claimed",
-      age: "2026-01-01T00:00:00.000Z",
-      claimedBy: "agent-x",
-    });
-    const unclaimed = makePr({
-      id: "pr-unclaimed",
-      age: "2026-01-02T00:00:00.000Z",
-      claimedBy: null,
-    });
-    const result = selectNextWorkItem([], [claimed, unclaimed]);
-    expect(result).toEqual({ type: "pr", pr: unclaimed });
-  });
-
-  it("returns null when every candidate is non-pending or claimed", () => {
-    const nonPendingTask = makeTask({ id: "t1", status: "in_progress" });
-    const claimedPr = makePr({ id: "pr1", claimedBy: "agent-x" });
-    const result = selectNextWorkItem([nonPendingTask], [claimedPr]);
-    expect(result).toBeNull();
+  it("selects a PR candidate purely on age, with no local claim re-validation", () => {
+    // Regression guard: getReviewCandidates/getPatchCandidates/getDeployCandidates
+    // (LPF-2.2) now only ever return unclaimed PRs (server-side ?ready=true
+    // filtering), so a WorkPrCandidate no longer carries a claimedBy field at
+    // all. The selector must not re-derive or check claim status locally — a
+    // PR candidate is selectable purely on age, the same trust level task
+    // candidates already get.
+    const older = makePr({ id: "pr-older", age: "2026-01-01T00:00:00.000Z" });
+    const newer = makePr({ id: "pr-newer", age: "2026-01-02T00:00:00.000Z" });
+    const result = selectNextWorkItem([], [newer, older]);
+    expect(result).toEqual({ type: "pr", pr: older });
   });
 
   it("selects strictly by age across a larger mixed fixture set", () => {
     const t1 = makeTask({ id: "t1", createdAt: "2026-03-01T00:00:00.000Z" });
     const t2 = makeTask({ id: "t2", createdAt: "2026-01-15T00:00:00.000Z" });
     const pr1 = makePr({ id: "pr1", age: "2026-02-01T00:00:00.000Z" });
-    const pr2 = makePr({ id: "pr2", age: "2026-01-10T00:00:00.000Z", claimedBy: "agent-y" });
+    const pr2 = makePr({ id: "pr2", age: "2026-01-10T00:00:00.000Z" });
     const result = selectNextWorkItem([t1, t2], [pr1, pr2]);
-    expect(result).toEqual({ type: "task", task: t2 });
+    // pr2 (2026-01-10) is the oldest overall now that claim-filtering is
+    // removed — previously this fixture set claimedBy'd pr2 to force t2 to
+    // win; that's no longer a thing the selector does.
+    expect(result).toEqual({ type: "pr", pr: pr2 });
   });
 
   it("carries the phase field through unchanged to the winning PR", () => {

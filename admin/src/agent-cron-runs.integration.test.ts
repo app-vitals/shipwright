@@ -467,4 +467,231 @@ describeOrSkip("AgentCronRunService (integration)", () => {
     const jobs = await cronJobService.listWithRunSummary(agentId);
     expect(jobs[0].runCountToday).toBe(2);
   });
+
+  // ─── listForAgent ───────────────────────────────────────────────────────────
+
+  it("listForAgent() returns runs from multiple crons under one agent, sorted descending by startedAt", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId1 = await createCron(cronJobService, agentId);
+    const cronId2 = await createCron(cronJobService, agentId);
+
+    const t1 = new Date("2026-01-01T08:00:00Z");
+    const t2 = new Date("2026-01-02T08:00:00Z");
+    const t3 = new Date("2026-01-03T08:00:00Z");
+
+    await runService.create(cronId1, agentId, {
+      startedAt: t1,
+      skipped: false,
+    });
+    await runService.create(cronId2, agentId, {
+      startedAt: t2,
+      skipped: false,
+    });
+    await runService.create(cronId1, agentId, {
+      startedAt: t3,
+      skipped: false,
+    });
+
+    const { items, total, limit, offset } =
+      await runService.listForAgent(agentId);
+
+    expect(total).toBe(3);
+    expect(items).toHaveLength(3);
+    expect(limit).toBe(20);
+    expect(offset).toBe(0);
+    // Descending: t3, t2, t1
+    expect(items[0].startedAt).toEqual(t3);
+    expect(items[1].startedAt).toEqual(t2);
+    expect(items[2].startedAt).toEqual(t1);
+    // Cron relation is included with id/name/schedule
+    expect(items[0].cron.id).toBe(cronId1);
+    expect(items[0].cron.schedule).toBe("0 9 * * *");
+    expect(items[1].cron.id).toBe(cronId2);
+  });
+
+  it("listForAgent() opts.cronId narrows to a single cron, still scoped to agentId", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId1 = await createCron(cronJobService, agentId);
+    const cronId2 = await createCron(cronJobService, agentId);
+
+    await runService.create(cronId1, agentId, {
+      startedAt: new Date("2026-01-01T08:00:00Z"),
+      skipped: false,
+    });
+    await runService.create(cronId2, agentId, {
+      startedAt: new Date("2026-01-02T08:00:00Z"),
+      skipped: false,
+    });
+
+    const { items, total } = await runService.listForAgent(agentId, {
+      cronId: cronId1,
+    });
+
+    expect(total).toBe(1);
+    expect(items).toHaveLength(1);
+    expect(items[0].cronId).toBe(cronId1);
+  });
+
+  it("listForAgent() opts.cronId belonging to a different agent yields an empty result, not an error", async () => {
+    const agentId1 = await createAgent(prisma, "Agent 1");
+    const agentId2 = await createAgent(prisma, "Agent 2");
+    const cronId1 = await createCron(cronJobService, agentId1);
+
+    await runService.create(cronId1, agentId1, {
+      startedAt: new Date(),
+      skipped: false,
+    });
+
+    const { items, total } = await runService.listForAgent(agentId2, {
+      cronId: cronId1,
+    });
+
+    expect(total).toBe(0);
+    expect(items).toHaveLength(0);
+  });
+
+  it("listForAgent() filters by a normal outcome value (skipped = false, outcome = value)", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId);
+
+    await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-01T08:00:00Z"),
+      skipped: false,
+      outcome: "success",
+    });
+    await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-02T08:00:00Z"),
+      skipped: false,
+      outcome: "error",
+    });
+    await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-03T08:00:00Z"),
+      skipped: true,
+      skipReason: "pre-check returned false",
+    });
+
+    const { items, total } = await runService.listForAgent(agentId, {
+      outcome: "success",
+    });
+
+    expect(total).toBe(1);
+    expect(items).toHaveLength(1);
+    expect(items[0].outcome).toBe("success");
+    expect(items[0].skipped).toBe(false);
+  });
+
+  it("listForAgent() opts.outcome === 'skipped' matches skipped rows regardless of their outcome column", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId);
+
+    await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-01T08:00:00Z"),
+      skipped: true,
+      skipReason: "pre-check returned false",
+      outcome: null,
+    });
+    // A skipped run that (unusually) still carries a non-null outcome column
+    // must still match — "skipped" is driven purely by the boolean flag.
+    const skippedWithOutcome = await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-02T08:00:00Z"),
+      skipped: true,
+      outcome: "success",
+    });
+    await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-03T08:00:00Z"),
+      skipped: false,
+      outcome: "success",
+    });
+
+    const { items, total } = await runService.listForAgent(agentId, {
+      outcome: "skipped",
+    });
+
+    expect(total).toBe(2);
+    expect(items).toHaveLength(2);
+    expect(items.every((r) => r.skipped)).toBe(true);
+    expect(items.some((r) => r.id === skippedWithOutcome.id)).toBe(true);
+  });
+
+  it("listForAgent() never returns a second agent's runs", async () => {
+    const agentId1 = await createAgent(prisma, "Agent 1");
+    const agentId2 = await createAgent(prisma, "Agent 2");
+    const cronId1 = await createCron(cronJobService, agentId1);
+    const cronId2 = await createCron(cronJobService, agentId2);
+
+    await runService.create(cronId1, agentId1, {
+      startedAt: new Date("2026-01-01T08:00:00Z"),
+      skipped: false,
+    });
+    await runService.create(cronId2, agentId2, {
+      startedAt: new Date("2026-01-02T08:00:00Z"),
+      skipped: false,
+    });
+
+    const { items, total } = await runService.listForAgent(agentId1);
+
+    expect(total).toBe(1);
+    expect(items).toHaveLength(1);
+    expect(items[0].agentId).toBe(agentId1);
+  });
+
+  it("listForAgent() supports custom limit and offset", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId);
+
+    for (let i = 0; i < 5; i++) {
+      await runService.create(cronId, agentId, {
+        startedAt: new Date(Date.now() + i * 1000),
+        skipped: false,
+      });
+    }
+
+    const { items, total } = await runService.listForAgent(agentId, {
+      limit: 2,
+      offset: 1,
+    });
+    expect(items).toHaveLength(2);
+    expect(total).toBe(5);
+  });
+
+  it("listForAgent() returns modelBreakdown rows alongside the cron relation", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId);
+
+    const run = await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-15T10:00:00Z"),
+      skipped: false,
+    });
+
+    await runService.patch(run.id, agentId, cronId, {
+      outcome: "success",
+      modelBreakdown: [
+        {
+          model: "claude-sonnet-4-5",
+          inputTokens: 200,
+          outputTokens: 100,
+          cacheReadTokens: 8,
+          cacheCreationTokens: 4,
+          costUsd: 0.002,
+        },
+      ],
+    });
+
+    const { items } = await runService.listForAgent(agentId);
+
+    expect(items).toHaveLength(1);
+    expect(items[0].modelBreakdown).toHaveLength(1);
+    expect(items[0].modelBreakdown[0].model).toBe("claude-sonnet-4-5");
+    expect(items[0].cron.id).toBe(cronId);
+  });
+
+  it("listForAgent() returns an empty result when the agent has no runs", async () => {
+    const agentId = await createAgent(prisma);
+    await createCron(cronJobService, agentId);
+
+    const { items, total } = await runService.listForAgent(agentId);
+
+    expect(total).toBe(0);
+    expect(items).toHaveLength(0);
+  });
 });

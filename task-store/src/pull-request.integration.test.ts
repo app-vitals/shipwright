@@ -960,6 +960,83 @@ describeOrSkip("PullRequestService.list() and get() (integration)", () => {
     const found = await service.get("00000000-0000-0000-0000-000000000000");
     expect(found).toBeNull();
   });
+
+  it("list({ ready: true }) returns only unclaimed PRs, excluding claimed ones", async () => {
+    const claimed = await prisma.pullRequest.create({
+      data: {
+        repo: "app-vitals/shipwright",
+        prNumber: 1040,
+        claimedBy: "agent-a",
+        claimedAt: new Date().toISOString(),
+        heartbeatAt: new Date().toISOString(),
+      },
+    });
+    const unclaimed = await prisma.pullRequest.create({
+      data: {
+        repo: "app-vitals/shipwright",
+        prNumber: 1041,
+        claimedBy: null,
+      },
+    });
+
+    const readyResult = await service.list({ ready: true });
+    expect(readyResult.total).toBe(1);
+    expect(readyResult.prs).toHaveLength(1);
+    expect(readyResult.prs[0].id).toBe(unclaimed.id);
+    expect(readyResult.prs.some((p) => p.id === claimed.id)).toBe(false);
+  });
+
+  it("list({ sort: 'desc' }) orders by createdAt descending; default/asc preserves current order", async () => {
+    const first = await prisma.pullRequest.create({
+      data: { repo: "app-vitals/shipwright", prNumber: 1060 },
+    });
+    const second = await prisma.pullRequest.create({
+      data: { repo: "app-vitals/shipwright", prNumber: 1061 },
+    });
+    const third = await prisma.pullRequest.create({
+      data: { repo: "app-vitals/shipwright", prNumber: 1062 },
+    });
+
+    const ascDefault = await service.list();
+    expect(ascDefault.prs.map((p) => p.id)).toEqual([
+      first.id,
+      second.id,
+      third.id,
+    ]);
+
+    const ascExplicit = await service.list({ sort: "asc" });
+    expect(ascExplicit.prs.map((p) => p.id)).toEqual([
+      first.id,
+      second.id,
+      third.id,
+    ]);
+
+    const desc = await service.list({ sort: "desc" });
+    expect(desc.prs.map((p) => p.id)).toEqual([third.id, second.id, first.id]);
+  });
+
+  it("list() without ready returns both claimed and unclaimed PRs (backward compatible)", async () => {
+    await prisma.pullRequest.create({
+      data: {
+        repo: "app-vitals/shipwright",
+        prNumber: 1050,
+        claimedBy: "agent-a",
+        claimedAt: new Date().toISOString(),
+        heartbeatAt: new Date().toISOString(),
+      },
+    });
+    await prisma.pullRequest.create({
+      data: {
+        repo: "app-vitals/shipwright",
+        prNumber: 1051,
+        claimedBy: null,
+      },
+    });
+
+    const result = await service.list();
+    expect(result.total).toBe(2);
+    expect(result.prs).toHaveLength(2);
+  });
 });
 
 // ─── heartbeat() / release() / patch() (liveness + lifecycle) ────────────────

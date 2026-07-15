@@ -135,6 +135,75 @@ describe("PullRequestService.patch()", () => {
   });
 });
 
+describe("PullRequestService.list() sort", () => {
+  const NOW = new Date("2026-07-10T12:00:00.000Z");
+  const clock = FixedClock(NOW);
+
+  /**
+   * Prisma double for list(): captures the findMany args (in particular
+   * orderBy) passed by the service, mirroring the $transaction([findMany,
+   * count]) shape list() actually issues.
+   */
+  function makeListPrismaDouble() {
+    const findManyCalls: Array<{ orderBy?: unknown }> = [];
+
+    const prisma = {
+      pullRequest: {
+        findMany(args: { orderBy?: unknown }) {
+          findManyCalls.push(args);
+          return Promise.resolve([]);
+        },
+        count() {
+          return Promise.resolve(0);
+        },
+      },
+      $transaction(ops: Promise<unknown>[]) {
+        return Promise.all(ops);
+      },
+      _findManyCalls: findManyCalls,
+    };
+
+    return prisma as unknown as {
+      pullRequest: {
+        findMany: (args: { orderBy?: unknown }) => Promise<unknown[]>;
+        count: () => Promise<number>;
+      };
+      $transaction: (ops: Promise<unknown>[]) => Promise<unknown[]>;
+      _findManyCalls: Array<{ orderBy?: unknown }>;
+    };
+  }
+
+  test("list({ sort: 'desc' }) orders by createdAt descending", async () => {
+    const prisma = makeListPrismaDouble();
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.list({ sort: "desc" });
+
+    expect(prisma._findManyCalls).toHaveLength(1);
+    expect(prisma._findManyCalls[0].orderBy).toEqual({ createdAt: "desc" });
+  });
+
+  test("list({}) orders by createdAt ascending (current/default behavior)", async () => {
+    const prisma = makeListPrismaDouble();
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.list({});
+
+    expect(prisma._findManyCalls).toHaveLength(1);
+    expect(prisma._findManyCalls[0].orderBy).toEqual({ createdAt: "asc" });
+  });
+
+  test("list({ sort: 'asc' }) orders by createdAt ascending (explicit)", async () => {
+    const prisma = makeListPrismaDouble();
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.list({ sort: "asc" });
+
+    expect(prisma._findManyCalls).toHaveLength(1);
+    expect(prisma._findManyCalls[0].orderBy).toEqual({ createdAt: "asc" });
+  });
+});
+
 describe("PullRequestService.update() merge completion", () => {
   const NOW = new Date("2026-07-10T12:00:00.000Z");
   const clock = FixedClock(NOW);
@@ -157,6 +226,24 @@ describe("PullRequestService.update() merge completion", () => {
     const { data } = prisma._updateCalls[0];
     expect(data.state).toBe("merged");
     expect(data.commitSha).toBe("sha-merged");
+    expect(data.claimedBy).toBeNull();
+    expect(data.claimedAt).toBeNull();
+    expect(data.heartbeatAt).toBeNull();
+    expect(data.phase).toBeNull();
+  });
+
+  test("state:closed clears claimedBy/claimedAt/heartbeatAt/phase", async () => {
+    const prisma = makePrismaDouble({
+      id: "pr-1",
+      readyForDeployAt: NOW.toISOString(),
+    } as Partial<PullRequest>);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.update("pr-1", { state: "closed" });
+
+    expect(prisma._updateCalls).toHaveLength(1);
+    const { data } = prisma._updateCalls[0];
+    expect(data.state).toBe("closed");
     expect(data.claimedBy).toBeNull();
     expect(data.claimedAt).toBeNull();
     expect(data.heartbeatAt).toBeNull();
