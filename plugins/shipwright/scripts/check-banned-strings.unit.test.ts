@@ -30,6 +30,10 @@ const BANNED = {
   envVar: "VITALS_" + "OS",
 } as const;
 
+/** The public booking endpoint — exempt from the scan by design. */
+const ALLOWED_BOOKING_URL =
+  "https://" + "vitals-" + "os" + ".com/cal/book/discovery";
+
 function writeFile(dir: string, relativePath: string, content: string): void {
   const fullPath = join(dir, relativePath);
   mkdirSync(join(dir, relativePath, ".."), { recursive: true });
@@ -301,5 +305,33 @@ describe("scanForBannedStrings", () => {
     const hits = scanForBannedStrings(tmpDir);
     expect(hits).toHaveLength(1);
     expect(hits[0].pattern).toBe(BANNED.prod);
+  });
+
+  test("allows the public booking URL", () => {
+    writeFile(
+      tmpDir,
+      "consts.ts",
+      `export const BOOKING_URL = "${ALLOWED_BOOKING_URL}";\n`,
+    );
+    const hits = scanForBannedStrings(tmpDir);
+    expect(hits).toEqual([]);
+  });
+
+  test("the allowed booking URL does not shield a banned token on the same line", () => {
+    writeFile(
+      tmpDir,
+      "config.ts",
+      `const url = "${ALLOWED_BOOKING_URL}"; const env = "${BANNED.prod}";\n`,
+    );
+    const hits = scanForBannedStrings(tmpDir);
+    expect(hits).toHaveLength(1);
+    expect(hits[0].pattern).toBe(BANNED.prod);
+  });
+
+  test("the allowed prefix does not exempt other hosts on the same identifier", () => {
+    writeFile(tmpDir, "config.ts", `const host = "${BANNED.bare}.internal";\n`);
+    const hits = scanForBannedStrings(tmpDir);
+    expect(hits).toHaveLength(1);
+    expect(hits[0].pattern).toBe(BANNED.bare);
   });
 });

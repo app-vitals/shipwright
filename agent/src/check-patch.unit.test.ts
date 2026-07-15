@@ -4,7 +4,7 @@
  * Unit tests for getPatchCandidates() — native port of
  * plugins/shipwright/scripts/check-patch.ts's qualification logic.
  *
- * Ported from plugins/shipwright/scripts/check-patch.test.ts, adjusted to
+ * Ported from plugins/shipwright/scripts/check-patch.unit.test.ts, adjusted to
  * assert on the returned WorkPrCandidate[] array instead of {exit, output}.
  * The "no early return" tests are adjusted to assert ALL qualifying PRs are
  * collected (the WL-2.2 architectural difference from the plugin's

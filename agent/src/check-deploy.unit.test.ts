@@ -4,12 +4,12 @@
  * Unit tests for getDeployCandidates() — native port of
  * plugins/shipwright/scripts/check-deploy.ts's qualification logic.
  *
- * Ported from plugins/shipwright/scripts/check-deploy.test.ts, adjusted to
+ * Ported from plugins/shipwright/scripts/check-deploy.unit.test.ts, adjusted to
  * assert on the returned WorkPrCandidate[] array instead of {exit, output}.
  */
 
 import { describe, expect, test } from "bun:test";
-import type { TaskStatus } from "./check-helpers.ts";
+import type { LinkedTaskInfo } from "./check-helpers.ts";
 import {
   type CheckDeployDeps,
   type CiRun,
@@ -40,7 +40,7 @@ interface MakeDepsOptions {
   ciRuns?: Record<string, CiRun[]>;
   currentUser?: string;
   isSelfReviewAllowed?: boolean;
-  taskStatus?: Record<string, TaskStatus | null>;
+  taskStatus?: Record<string, LinkedTaskInfo | null>;
 }
 
 function makeDeps({
@@ -442,29 +442,48 @@ describe("getDeployCandidates", () => {
 
   // ─── age field sourcing ────────────────────────────────────────────────────
 
-  test("age is sourced from queryPrRecord's readyForDeployAt when available", async () => {
+  test("age is sourced from the linked task's addedAt when a task is linked", async () => {
     const pr = makeGhPr({ reviewDecision: "APPROVED", createdAt: "2026-06-01T00:00:00.000Z" });
     const deps = makeDeps({
       prs: { "acme/example-repo": [pr] },
       ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
+    });
+    deps.queryTaskStatus = async () => ({
+      status: "in_progress",
+      addedAt: "2026-05-01T00:00:00.000Z",
+    });
+    const result = await getDeployCandidates(deps);
+    expect(result[0].age).toBe("2026-05-01T00:00:00.000Z");
+  });
+
+  test("age falls back to PR createdAt when no task is linked (queryTaskStatus resolves null)", async () => {
+    const pr = makeGhPr({ reviewDecision: "APPROVED", createdAt: "2026-06-01T00:00:00.000Z" });
+    const deps = makeDeps({
+      prs: { "acme/example-repo": [pr] },
+      ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
+    });
+    deps.queryTaskStatus = async () => null;
+    const result = await getDeployCandidates(deps);
+    expect(result[0].age).toBe("2026-06-01T00:00:00.000Z");
+  });
+
+  test("queryPrRecord's readyForDeployAt is never used for age sourcing", async () => {
+    const pr = makeGhPr({ reviewDecision: "APPROVED", createdAt: "2026-06-01T00:00:00.000Z" });
+    const deps = makeDeps({
+      prs: { "acme/example-repo": [pr] },
+      ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
+    });
+    deps.queryTaskStatus = async () => ({
+      status: "in_progress",
+      addedAt: "2026-05-01T00:00:00.000Z",
     });
     deps.queryPrRecord = async () => ({
       readyForDeployAt: "2026-05-20T00:00:00.000Z",
       claimedBy: null,
     });
     const result = await getDeployCandidates(deps);
-    expect(result[0].age).toBe("2026-05-20T00:00:00.000Z");
-  });
-
-  test("age falls back to PR createdAt when queryPrRecord is not provided", async () => {
-    const pr = makeGhPr({ reviewDecision: "APPROVED", createdAt: "2026-06-01T00:00:00.000Z" });
-    const result = await getDeployCandidates(
-      makeDeps({
-        prs: { "acme/example-repo": [pr] },
-        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
-      }),
-    );
-    expect(result[0].age).toBe("2026-06-01T00:00:00.000Z");
+    expect(result[0].age).not.toBe("2026-05-20T00:00:00.000Z");
+    expect(result[0].age).toBe("2026-05-01T00:00:00.000Z");
   });
 
   // ─── mergeStateStatus DIRTY exclusion ──────────────────────────────────
@@ -494,7 +513,7 @@ describe("getDeployCandidates", () => {
       prs: { "acme/example-repo": [pr] },
       ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
     });
-    deps.queryTaskStatus = async () => "blocked";
+    deps.queryTaskStatus = async () => ({ status: "blocked" });
     const result = await getDeployCandidates(deps);
     expect(result).toEqual([]);
   });

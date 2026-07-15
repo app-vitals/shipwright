@@ -31,7 +31,7 @@ import {
   resolveWorkspacePath,
   splitOrgRepo,
 } from "./check-helpers.ts";
-import type { TaskStatus } from "./check-helpers.ts";
+import type { LinkedTaskInfo } from "./check-helpers.ts";
 import type { WorkPrCandidate } from "./work-selector.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -94,7 +94,10 @@ export interface CheckDeployDeps {
   // signal, since "unknown" must not be treated as "confirmed ready". This
   // deliberately does NOT mirror queryPrRecord's fail-open posture, which
   // only affects a non-gating ordering field.
-  queryTaskStatus?: (repo: string, prNumber: number) => Promise<TaskStatus | null>;
+  queryTaskStatus?: (
+    repo: string,
+    prNumber: number,
+  ) => Promise<LinkedTaskInfo | null>;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -203,17 +206,17 @@ export async function getDeployCandidates(
         // linked task) is not disqualifying, but a lookup FAILURE fails
         // CLOSED — deploy is consequential enough that "unknown" must not be
         // treated as "confirmed ready".
+        let linkedTask: LinkedTaskInfo | null = null;
         if (deps.queryTaskStatus) {
-          let taskStatus: TaskStatus | null;
           try {
-            taskStatus = await deps.queryTaskStatus(repo, pr.number);
+            linkedTask = await deps.queryTaskStatus(repo, pr.number);
           } catch (err) {
             process.stderr.write(
               `check-deploy: task-status lookup failed for PR ${pr.number}: ${err instanceof Error ? err.message : String(err)}\n`,
             );
             continue;
           }
-          if (taskStatus === "blocked") continue;
+          if (linkedTask?.status === "blocked") continue;
         }
 
         if (deps.isBundleComplete) {
@@ -234,7 +237,7 @@ export async function getDeployCandidates(
 
         candidates.push({
           id: candidateId(repo, pr.number),
-          age: record?.readyForDeployAt ?? pr.createdAt ?? "",
+          age: linkedTask?.addedAt ?? pr.createdAt ?? "",
           claimedBy: record?.claimedBy ?? null,
           phase: "deploy",
         });

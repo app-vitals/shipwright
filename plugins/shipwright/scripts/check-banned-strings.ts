@@ -51,6 +51,18 @@ const BANNED_PATTERNS: string[] = [
 ];
 
 /**
+ * Prefixes that are exempt from the banned-string scan.
+ *
+ * The public booking endpoint is a deliberately-public marketing surface (the
+ * product it belongs to has its own public page on the company site), not an
+ * internal infrastructure identifier. Every other pattern above stays banned —
+ * a line is only exempted for the exact allowed prefix, so a line carrying both
+ * the booking URL and a real banned token (e.g. an env var or a `-prod` host)
+ * still fails.
+ */
+const ALLOWED_PREFIXES: string[] = ["https://" + "vitals-" + "os" + ".com/cal/"];
+
+/**
  * Filenames (basename only) that are excluded from scanning because they
  * contain the canonical pattern definitions or test fixtures for this script.
  * These files are self-referential by design and must not be flagged.
@@ -146,9 +158,16 @@ function scanFile(root: string, filePath: string, hits: Hit[]): void {
     // Collect all matching patterns for this line, then report only the longest
     // (most specific) match to avoid double-counting when a pattern is a substring
     // of another (e.g., a bare identifier is a substring of its "-prod" variant).
+    // Match against a copy with allowed prefixes removed, so an exempt URL does
+    // not shield a real banned token elsewhere on the same line. Hits still
+    // report the original line.
+    let probe = line;
+    for (const allowed of ALLOWED_PREFIXES) {
+      probe = probe.split(allowed).join("");
+    }
     const matchedPatterns: string[] = [];
     for (const pattern of BANNED_PATTERNS) {
-      if (line.includes(pattern)) {
+      if (probe.includes(pattern)) {
         matchedPatterns.push(pattern);
       }
     }

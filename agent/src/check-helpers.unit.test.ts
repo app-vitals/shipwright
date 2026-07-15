@@ -20,6 +20,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  createTaskStatusQuery,
   createTaskStoreClient,
   getCurrentUser,
   isCleanApproveBody,
@@ -677,6 +678,109 @@ describe("createTaskStoreClient query()", () => {
     await expect(
       client.update("T-1", { status: "in_progress" }),
     ).rejects.toThrow("task-store PATCH /tasks/T-1");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createTaskStatusQuery
+// ---------------------------------------------------------------------------
+
+describe("createTaskStatusQuery", () => {
+  let savedEnv: { url?: string; token?: string };
+
+  beforeEach(() => {
+    savedEnv = {
+      url: process.env.SHIPWRIGHT_TASK_STORE_URL,
+      token: process.env.SHIPWRIGHT_TASK_STORE_TOKEN,
+    };
+    process.env.SHIPWRIGHT_TASK_STORE_URL = "https://task-store.example.com";
+    process.env.SHIPWRIGHT_TASK_STORE_TOKEN = "test-token";
+  });
+
+  afterEach(() => {
+    if (savedEnv.url !== undefined) {
+      process.env.SHIPWRIGHT_TASK_STORE_URL = savedEnv.url;
+    } else {
+      // biome-ignore lint/performance/noDelete: intentional env cleanup
+      delete process.env.SHIPWRIGHT_TASK_STORE_URL;
+    }
+    if (savedEnv.token !== undefined) {
+      process.env.SHIPWRIGHT_TASK_STORE_TOKEN = savedEnv.token;
+    } else {
+      // biome-ignore lint/performance/noDelete: intentional env cleanup
+      delete process.env.SHIPWRIGHT_TASK_STORE_TOKEN;
+    }
+  });
+
+  test("returns { status, addedAt } when a linked task is found with both fields present", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: true,
+        json: async () => ({
+          tasks: [
+            { id: "T-1", title: "Do the thing", status: "in_progress", addedAt: "2026-05-01T00:00:00.000Z" },
+          ],
+        }),
+      }) as Response) as unknown as typeof fetch;
+
+    const query = createTaskStatusQuery({ fetchFn: fakeFetch });
+    const result = await query("acme/example-repo", 42);
+    expect(result).toEqual({
+      status: "in_progress",
+      addedAt: "2026-05-01T00:00:00.000Z",
+    });
+  });
+
+  test("returns { status, addedAt: undefined } when the matched task has no addedAt", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: true,
+        json: async () => ({
+          tasks: [{ id: "T-1", title: "Do the thing", status: "pending" }],
+        }),
+      }) as Response) as unknown as typeof fetch;
+
+    const query = createTaskStatusQuery({ fetchFn: fakeFetch });
+    const result = await query("acme/example-repo", 42);
+    expect(result).toEqual({ status: "pending", addedAt: undefined });
+  });
+
+  test("returns null when no linked task is found (empty tasks array)", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: true,
+        json: async () => ({ tasks: [] }),
+      }) as Response) as unknown as typeof fetch;
+
+    const query = createTaskStatusQuery({ fetchFn: fakeFetch });
+    const result = await query("acme/example-repo", 42);
+    expect(result).toBeNull();
+  });
+
+  test("throws when the lookup response is not ok (fail-closed)", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: false,
+        status: 500,
+        json: async () => ({}),
+      }) as Response) as unknown as typeof fetch;
+
+    const query = createTaskStatusQuery({ fetchFn: fakeFetch });
+    await expect(query("acme/example-repo", 42)).rejects.toThrow(
+      "task-store GET /tasks",
+    );
+  });
+
+  test("throws when SHIPWRIGHT_TASK_STORE_URL/TOKEN are not configured", async () => {
+    // biome-ignore lint/performance/noDelete: intentional env cleanup
+    delete process.env.SHIPWRIGHT_TASK_STORE_URL;
+    // biome-ignore lint/performance/noDelete: intentional env cleanup
+    delete process.env.SHIPWRIGHT_TASK_STORE_TOKEN;
+
+    const query = createTaskStatusQuery();
+    await expect(query("acme/example-repo", 42)).rejects.toThrow(
+      "SHIPWRIGHT_TASK_STORE_URL/SHIPWRIGHT_TASK_STORE_TOKEN not configured",
+    );
   });
 });
 

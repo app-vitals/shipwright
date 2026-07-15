@@ -4,7 +4,7 @@
  * Unit tests for getReviewCandidates() — native port of
  * plugins/shipwright/scripts/check-review.ts's qualification logic.
  *
- * Ported from plugins/shipwright/scripts/check-review.test.ts, adjusted to
+ * Ported from plugins/shipwright/scripts/check-review.unit.test.ts, adjusted to
  * assert on the returned WorkPrCandidate[] array instead of {exit, output}.
  * parseAllowSelfReview tests already exist in check-helpers.unit.test.ts (the
  * function was ported there in WL-2.1) and are not duplicated here.

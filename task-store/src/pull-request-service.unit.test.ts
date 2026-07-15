@@ -163,6 +163,24 @@ describe("PullRequestService.update() merge completion", () => {
     expect(data.phase).toBeNull();
   });
 
+  test("state:closed clears claimedBy/claimedAt/heartbeatAt/phase", async () => {
+    const prisma = makePrismaDouble({
+      id: "pr-1",
+      readyForDeployAt: NOW.toISOString(),
+    } as Partial<PullRequest>);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.update("pr-1", { state: "closed" });
+
+    expect(prisma._updateCalls).toHaveLength(1);
+    const { data } = prisma._updateCalls[0];
+    expect(data.state).toBe("closed");
+    expect(data.claimedBy).toBeNull();
+    expect(data.claimedAt).toBeNull();
+    expect(data.heartbeatAt).toBeNull();
+    expect(data.phase).toBeNull();
+  });
+
   test("non-merge update does not touch claim fields", async () => {
     const prisma = makePrismaDouble({ id: "pr-1" } as Partial<PullRequest>);
     const svc = new PullRequestService(prisma as never, clock);
