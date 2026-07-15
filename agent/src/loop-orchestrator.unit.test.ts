@@ -176,8 +176,8 @@ function pr(
  * Asserts that each dispatched message is the given command string wrapped
  * via formatCronMessage("shipwright-loop", command) — i.e. tagged with
  * `[Cron job: shipwright-loop] Current time: ...` so it's excluded from
- * vitals-os session-merging (LCT-1.1). Timestamp-agnostic by design: only the
- * tag prefix and the trailing command are checked.
+ * downstream time-tracking session-merging (LCT-1.1). Timestamp-agnostic by
+ * design: only the tag prefix and the trailing command are checked.
  */
 function expectDispatchedCommands(
   messages: string[],
