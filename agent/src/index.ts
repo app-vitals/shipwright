@@ -18,6 +18,7 @@ import * as Sentry from "@sentry/bun";
 import { initSentry } from "@shipwright/lib/sentry";
 import { WebClient } from "@slack/web-api";
 import nodeCron from "node-cron";
+import { createAgentReposRef } from "./agent-repos-ref.ts";
 import { createAnalyticsStore } from "./analytics.ts";
 import { ghJson } from "./check-helpers.ts";
 import { createChatPoller } from "./chat-poller.ts";
@@ -177,6 +178,10 @@ const runtimeClient =
       })
     : null;
 
+// Live view of the agent's scoped repos, populated from every config sync
+// tick's bundle.repos. See agent-repos-ref.ts.
+const agentReposRef = createAgentReposRef();
+
 // ─── Step 4: Config sync ──────────────────────────────────────────────────────
 
 if (runtimeClient && agentId) {
@@ -222,6 +227,9 @@ if (runtimeClient && agentId) {
             ),
         );
       }
+
+      // Sync the agent's scoped repos live ref
+      agentReposRef.set(bundle.repos);
     } catch (err) {
       if (
         (err as { statusCode?: number }).statusCode === 404 &&
