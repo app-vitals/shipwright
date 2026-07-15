@@ -189,118 +189,26 @@ function auth(): Record<string, string> {
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe("blockedBy field on API responses (smoke)", () => {
-  // ─── GET /tasks/:id ─────────────────────────────────────────────────────────
+  // Fine-grained hitl/dependency permutations are covered by
+  // blocked-by.unit.test.ts against computeBlockedBy directly. These smoke
+  // tests only confirm the field is wired through each HTTP route.
 
-  it("GET /tasks/:id includes blockedBy array on a simple pending task", async () => {
-    const task = makeTask({ id: "t1", status: "pending" });
+  it("GET /tasks/:id includes blockedBy on the response", async () => {
+    const task = makeTask({
+      id: "t1",
+      status: "pending",
+      hitl: true,
+      hitlNotifiedAt: null,
+    });
     const app = makeApp(fakeTaskService({ getResult: task }));
     const res = await app.request("/tasks/t1", { headers: auth() });
     expect(res.status).toBe(200);
     const body = (await res.json()) as TaskWithBlockedBy;
     expect(Array.isArray(body.blockedBy)).toBe(true);
-    expect(body.blockedBy).toEqual([]);
-  });
-
-  it("GET /tasks/:id includes { type: 'hitl' } when hitl=true and hitlNotifiedAt=null", async () => {
-    const task = makeTask({
-      id: "t1",
-      status: "pending",
-      hitl: true,
-      hitlNotifiedAt: null,
-    });
-    const app = makeApp(fakeTaskService({ getResult: task }));
-    const res = await app.request("/tasks/t1", { headers: auth() });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as TaskWithBlockedBy;
     expect(body.blockedBy).toContainEqual({ type: "hitl" });
   });
 
-  it("GET /tasks/:id includes { type: 'hitl', notified: true } when hitl=true and hitlNotifiedAt is set", async () => {
-    const task = makeTask({
-      id: "t1",
-      status: "pending",
-      hitl: true,
-      hitlNotifiedAt: "2026-06-24T10:00:00.000Z",
-    });
-    const app = makeApp(fakeTaskService({ getResult: task }));
-    const res = await app.request("/tasks/t1", { headers: auth() });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as TaskWithBlockedBy;
-    expect(body.blockedBy).toEqual([{ type: "hitl", notified: true }]);
-  });
-
-  it("GET /tasks/:id includes dep block when dep is in non-terminal status", async () => {
-    const dep = makeTask({ id: "dep-1", status: "in_progress" });
-    const task = makeTask({
-      id: "t1",
-      status: "pending",
-      dependencies: ["dep-1"],
-    });
-    // allTasks includes both so get() can look up the dep
-    const app = makeApp(
-      fakeTaskService({ getResult: task, allTasks: [task, dep] }),
-    );
-    const res = await app.request("/tasks/t1", { headers: auth() });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as TaskWithBlockedBy;
-    expect(body.blockedBy).toContainEqual({
-      type: "dependency",
-      id: "dep-1",
-      status: "in_progress",
-    });
-  });
-
-  it("GET /tasks/:id blockedBy is empty when all deps are satisfied (done)", async () => {
-    const dep = makeTask({ id: "dep-1", status: "done" });
-    const task = makeTask({
-      id: "t1",
-      status: "pending",
-      dependencies: ["dep-1"],
-    });
-    const app = makeApp(
-      fakeTaskService({ getResult: task, allTasks: [task, dep] }),
-    );
-    const res = await app.request("/tasks/t1", { headers: auth() });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as TaskWithBlockedBy;
-    expect(body.blockedBy).toEqual([]);
-  });
-
-  // ─── GET /tasks (list) ──────────────────────────────────────────────────────
-
   it("GET /tasks list response includes blockedBy on each task", async () => {
-    const task = makeTask({ id: "t1", status: "pending" });
-    const app = makeApp(fakeTaskService({ listResult: [task] }));
-    const res = await app.request("/tasks", { headers: auth() });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as {
-      tasks: TaskWithBlockedBy[];
-      total: number;
-      limit: number;
-      offset: number;
-    };
-    expect(Array.isArray(body.tasks)).toBe(true);
-    expect(body.tasks).toHaveLength(1);
-    expect(Array.isArray(body.tasks[0].blockedBy)).toBe(true);
-  });
-
-  it("GET /tasks list response shape is { tasks, total, limit, offset }", async () => {
-    const task = makeTask({ id: "t1", status: "pending" });
-    const app = makeApp(fakeTaskService({ listResult: [task] }));
-    const res = await app.request("/tasks", { headers: auth() });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as {
-      tasks: TaskWithBlockedBy[];
-      total: number;
-      limit: number;
-      offset: number;
-    };
-    expect(typeof body.total).toBe("number");
-    expect(typeof body.limit).toBe("number");
-    expect(typeof body.offset).toBe("number");
-  });
-
-  it("GET /tasks list returns hitl block on tasks with hitl=true and hitlNotifiedAt=null", async () => {
     const task = makeTask({
       id: "t1",
       status: "pending",
@@ -311,20 +219,7 @@ describe("blockedBy field on API responses (smoke)", () => {
     const res = await app.request("/tasks", { headers: auth() });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { tasks: TaskWithBlockedBy[] };
+    expect(Array.isArray(body.tasks[0].blockedBy)).toBe(true);
     expect(body.tasks[0].blockedBy).toContainEqual({ type: "hitl" });
-  });
-
-  it("GET /tasks list returns empty blockedBy for tasks with no blocks", async () => {
-    const task = makeTask({
-      id: "t1",
-      status: "pending",
-      hitl: false,
-      dependencies: [],
-    });
-    const app = makeApp(fakeTaskService({ listResult: [task] }));
-    const res = await app.request("/tasks", { headers: auth() });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { tasks: TaskWithBlockedBy[] };
-    expect(body.tasks[0].blockedBy).toEqual([]);
   });
 });
