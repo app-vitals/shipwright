@@ -1,0 +1,230 @@
+---
+// Shipwright vs Devin — the dedicated comparison page for the "open source
+// Devin alternative" query (DVN-2.1). Every Devin-specific claim below is
+// sourced from goals/drafts/devin-alternative-positioning-research.md's
+// safe-to-print register (2026-07-14) and cited inline. Re-verify before any
+// future edit — see brand/MESSAGING.md D10 for the surface-scoped
+// competitor-naming policy this page operates under.
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { BOOKING_URL } from "../../consts";
+
+const repoUrl = "https://github.com/app-vitals/shipwright";
+const installCmd = "/plugin install shipwright@app-vitals/shipwright";
+const licenseUrl = "https://github.com/app-vitals/shipwright/blob/main/LICENSE";
+const verifiedDate = "July 14, 2026";
+
+// Sources (Appendix, devin-alternative-positioning-research.md).
+const src = {
+  deployment: "https://docs.devin.ai/enterprise/deployment/overview",
+  pricing: "https://devin.ai/pricing",
+  trust: "https://trust.cognition.ai",
+  home: "https://devin.ai/",
+};
+
+const comparisonRows = [
+  {
+    dimension: "License",
+    shipwright: "MIT — single root license, no carve-outs.",
+    devin: "Proprietary, commercial vendor product.",
+    citation: null,
+  },
+  {
+    dimension: "Deployment",
+    shipwright: "Runs entirely in your own cloud — control plane included.",
+    devin:
+      "Cognition-hosted at every tier. Even the dedicated single-tenant VPC option is a Cognition-managed environment connected via PrivateLink/IPSec — never inside your own infrastructure.",
+    citation: src.deployment,
+  },
+  {
+    dimension: "Pipeline",
+    shipwright: "spec → plan → build → test → PR → deploy.",
+    devin:
+      "Spec through PR. The deploy step is not part of the agent's scope.",
+    citation: src.home,
+  },
+  {
+    dimension: "Economics",
+    shipwright: "Free, MIT, no tiers or seats.",
+    devin: "Commercial, vendor-hosted — see the vendor's site for current terms.",
+    citation: src.pricing,
+  },
+];
+---
+
+<BaseLayout
+  title="The open source alternative to Devin — Shipwright vs Devin"
+  description="Shipwright vs Devin — the open source alternative to Devin: a license-file comparison, deployment contrast, and honest breakdown of when to choose each."
+  pagefindIgnore={true}
+>
+  <!-- Page header -->
+  <section class="relative z-10 pt-16 pb-8">
+    <p class="sw-label">Comparison</p>
+    <h1 class="sw-h1 mt-4 max-w-3xl">
+      Shipwright vs <span class="sw-gradient-text">Devin</span> — the open
+      source alternative.
+    </h1>
+    <p class="mt-5 max-w-2xl text-lg">
+      Devin is the highest-profile autonomous coding agent — a managed
+      commercial service with a strong benchmark track record. Here is the
+      honest, sourced comparison: where the two genuinely differ, and where
+      each one fits.
+    </p>
+    <p class="mt-4 text-sm" style="color: var(--sw-color-text-muted);">
+      Facts verified as of {verifiedDate}, from Devin's own primary sources
+      (linked below). Re-checked immediately before this page ships — vendor
+      terms change.
+    </p>
+  </section>
+
+  <!-- License-file table (centerpiece) -->
+  <section class="relative z-10 pb-16" style="border-top: 1px solid var(--sw-color-border-subtle); padding-top: 3rem;">
+    <h2>License &amp; deployment, dimension by dimension</h2>
+    <p class="mt-3 max-w-2xl">
+      The defensible claim, in full:{" "}
+      <strong>
+        the only MIT-throughout, spec-to-deploy autonomous delivery agent
+        that runs entirely in your own cloud.
+      </strong>{" "}
+      Each piece of that sentence is a real, cited difference — not a single
+      empty-category claim.
+    </p>
+    <div class="mt-6 overflow-x-auto">
+      <table style="width:100%; border-collapse:collapse;">
+        <thead>
+          <tr style="border-bottom: 1px solid var(--sw-color-border-muted);">
+            <th style="text-align:left; padding:0.6rem 1rem 0.6rem 0; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted); white-space:nowrap;">
+              Dimension
+            </th>
+            <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-brand-default); white-space:nowrap;">
+              Shipwright
+            </th>
+            <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted); white-space:nowrap;">
+              Devin
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {
+            comparisonRows.map((row) => (
+              <tr style="border-bottom: 1px solid var(--sw-color-border-subtle);">
+                <td style="padding:0.9rem 1rem 0.9rem 0; vertical-align:top; font-family:var(--sw-font-display); font-weight:600; color:var(--sw-color-text-heading); white-space:nowrap;">
+                  {row.dimension}
+                </td>
+                <td style="padding:0.9rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">
+                  {row.shipwright}
+                </td>
+                <td style="padding:0.9rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">
+                  {row.devin}
+                  {row.citation && (
+                    <>
+                      {" "}
+                      <a href={row.citation} class="text-sm">
+                        [source]
+                      </a>
+                    </>
+                  )}
+                </td>
+              </tr>
+            ))
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <!-- License quote: the actual MIT license line from this repo. -->
+    <div class="sw-callout mt-8 max-w-3xl">
+      <p class="sw-mono text-sm" style="color: var(--sw-color-text-muted);">
+        From <a href={licenseUrl}>Shipwright's LICENSE</a>:
+      </p>
+      <p class="mt-2">
+        "Permission is hereby granted, free of charge, to any person
+        obtaining a copy of this software and associated documentation files
+        (the "Software"), to deal in the Software without restriction,
+        including without limitation the rights to use, copy, modify, merge,
+        publish, distribute, sublicense, and/or sell copies of the Software…"
+      </p>
+      <p class="mt-2 text-sm" style="color: var(--sw-color-text-muted);">
+        One root MIT license, no per-module carve-outs. Devin ships no
+        license file to compare against — it is not source-available.
+      </p>
+    </div>
+  </section>
+
+  <!-- Deployment contrast — the verified killer framing. -->
+  <section class="relative z-10 pb-16" style="border-top: 1px solid var(--sw-color-border-subtle); padding-top: 3rem;">
+    <h2>The deployment contrast</h2>
+    <p class="mt-3 max-w-2xl">
+      Per Devin's own documentation, both of its Enterprise deployment models
+      are Cognition-hosted. "Customer Dedicated Deployment" runs in a
+      Cognition-managed single-tenant VPC connected via PrivateLink or IPSec
+      — a private network path, not a private environment.{" "}
+      <a href={src.deployment}>Source: docs.devin.ai deployment overview</a>.
+    </p>
+    <div class="sw-callout mt-6 max-w-3xl">
+      <p>
+        <strong>Even Devin's dedicated single-tenant VPC tier is
+        Cognition-hosted — never in your environment.</strong> Shipwright's
+        control plane, agent runtime, and your code all run on infrastructure
+        you own, at every tier, with no managed-service layer in between.
+      </p>
+    </div>
+  </section>
+
+  <!-- Choose Devin when / Choose Shipwright when. -->
+  <section class="relative z-10 pb-16" style="border-top: 1px solid var(--sw-color-border-subtle); padding-top: 3rem;">
+    <h2>Choose Devin when</h2>
+    <div class="mt-8 grid gap-6 sm:grid-cols-2">
+      <div class="sw-card">
+        <p class="sw-label" style="color:var(--sw-color-support-patriot-bright);">Choose Devin when</p>
+        <ul class="mt-3 flex flex-col gap-2" style="color:var(--sw-color-text-body); padding-left:1.1rem; list-style:disc;">
+          <li>You want a fully managed, vendor-hosted service with no infrastructure to run yourself.</li>
+          <li>The task is well-scoped and isolated enough that fire-and-forget autonomy fits.</li>
+          <li>
+            You need off-the-shelf enterprise attestations — Cognition states
+            SOC 2 Type II certification since September 2024 and lists
+            ISO/IEC 27001:2022 on{" "}
+            <a href={src.trust}>trust.cognition.ai</a>.
+          </li>
+          <li>You are not committed to Claude Code and want a proprietary-model agent instead.</li>
+        </ul>
+      </div>
+      <div class="sw-card">
+        <p class="sw-label" style="color:var(--sw-color-brand-default);">Choose Shipwright when</p>
+        <ul class="mt-3 flex flex-col gap-2" style="color:var(--sw-color-text-body); padding-left:1.1rem; list-style:disc;">
+          <li>You want the full pipeline — including the deploy stage — not just an opened PR.</li>
+          <li>The code and the agent that writes it both need to stay entirely inside your own cloud, control plane included.</li>
+          <li>MIT licensing matters to you: audit every line, fork it, no vendor lock-in.</li>
+          <li>You've already committed to Claude Code and want a pipeline built for it, not averaged across providers.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- Economics — price-free framing (D5). -->
+  <section class="relative z-10 pb-16" style="border-top: 1px solid var(--sw-color-border-subtle); padding-top: 3rem;">
+    <h2>Economics</h2>
+    <p class="mt-3 max-w-2xl">
+      Shipwright: free, MIT, no tiers or seats. Devin: a commercial,
+      vendor-hosted service — see{" "}
+      <a href={src.pricing}>the vendor's site</a> for current terms, which
+      change over time.
+    </p>
+  </section>
+
+  <!-- CTA -->
+  <section id="cta" class="relative z-10 py-20 pb-24" style="border-top: 1px solid var(--sw-color-border-subtle);">
+    <h2>Try it</h2>
+    <p class="mt-3 max-w-2xl">
+      Install the plugin into Claude Code and run a task end to end. Free,
+      MIT, runs on your own infra.
+    </p>
+    <pre class="sw-code mt-4 w-fit"><code>{installCmd}</code></pre>
+    <div class="mt-6 flex flex-wrap items-center gap-4">
+      <a href={repoUrl} class="sw-btn">View on GitHub ↗</a>
+      <a href={BOOKING_URL} class="sw-btn sw-btn-secondary">Book a discovery call</a>
+    </div>
+    <p class="mt-8 max-w-2xl">
+      <a href="/compare">See how Shipwright compares to the rest of the field →</a>
+    </p>
+  </section>
+</BaseLayout>
