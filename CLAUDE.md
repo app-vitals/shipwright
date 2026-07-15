@@ -107,6 +107,10 @@ Driven by Shipwright's own commands: `/shipwright:dev-task` → `/shipwright:rev
 
 **Task-store connection** is env-var-only: both `SHIPWRIGHT_TASK_STORE_URL` and `SHIPWRIGHT_TASK_STORE_TOKEN` must be set for task operations to function. There is no GitHub fallback and no file-based config — the provisioner injects these two vars into managed GKE agents, and local installs must set them explicitly. If task operations seem to no-op, check `SHIPWRIGHT_TASK_STORE_URL` first.
 
+## Deploy model
+
+`direct` — ships via Helm chart + GHCR-pinned image tags, with no staging/production GitHub Environments and no deploy-staging→canary→promote-to-production pipeline.
+
 ## Test conventions
 
 Tests land **with** the code, at the correct layer — same PR, no "add tests later" tasks. Layer is encoded in the filename:
