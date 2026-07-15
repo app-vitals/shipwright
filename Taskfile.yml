@@ -134,6 +134,11 @@ tasks:
     cmds:
       - cd metrics && bunx playwright test
 
+  e2e:admin:
+    desc: Run admin UI Playwright e2e tests (requires Playwright chromium installed)
+    cmds:
+      - cd admin && bunx playwright test
+
   secret-scan:
     desc: Scan for accidentally committed secrets (gitleaks)
     cmds:

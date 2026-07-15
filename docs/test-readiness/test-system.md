@@ -14,7 +14,7 @@ boundary determines which dependencies are permitted in that test.
 | **unit** | Pure logic — no I/O of any kind. No filesystem reads, no network calls, no process spawning. | `bun test` | Functions, parsers, validators, data-transformation utilities, any code whose only inputs/outputs are in-memory values. |
 | **integration** | Real dependency behavior via recorded fixtures or injected doubles. Exercises the integration seam without a live external service. | `bun test` + recorded-fixture clients injected via DI | Service classes, client wrappers, anything that reads/writes to an external system — tested via recorded fixture doubles (`RecordedXClient`) instead of the real service. |
 | **smoke** | Hono endpoints exercised via in-process `app.request()`. No real socket, no port allocation. | `bun test` + Hono `app.request()` | HTTP route contracts: status codes, response shapes, auth checks, error handling. Full middleware + routing pipeline without spinning up a server. |
-| **e2e** | Full browser-driven flows against a real running server. | `@playwright/test` | Multi-step user journeys through the metrics dashboard UI: navigation, rendering, data display, interaction flows. Phase B only. |
+| **e2e** | Full browser-driven flows against a real running server. | `@playwright/test` | Multi-step user journeys through the metrics dashboard and admin UIs: navigation, rendering, data display, interaction flows. Phase B+. |
 | **content** | Markdown/prompt-content-assertion tests — no real I/O boundary, just asserting on static content (e.g. `existsSync`/`readFileSync` against a command's or skill's Markdown body). | `bun test` | Verifying a command's, skill's, or reference doc's Markdown body contains expected sections/instructions/wording, or that plugin directory structure matches an expected layout. Distinct from unit: the assertion target is prose/structure, not executable logic. |
 
 ### Boundary violations
@@ -123,10 +123,10 @@ The agent is a thin runner with a Prisma-backed PostgreSQL database and a Hono H
          │                     │
          └──────────┬──────────┘
                     │
-              ┌─────▼─────┐
-              │   E2E     │  Playwright; Phase B+ only
-              │(dashboard)│  <5 min
-              └─────┬─────┘
+              ┌─────▼─────────┐
+              │   E2E         │  Playwright; Phase B+ only
+              │(metrics+admin)│  <5 min
+              └─────┬─────────┘
                     │
               merge → main
 ```
