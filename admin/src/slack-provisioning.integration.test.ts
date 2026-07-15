@@ -162,7 +162,7 @@ function makeMockDeps(
       getConfigBundle: async () => null,
     },
     agentCronRunService: {
-      list: async () => ({ items: [], total: 0, limit: 50, offset: 0 }),
+      listForAgent: async () => ({ items: [], total: 0, limit: 20, offset: 0 }),
     },
     agentCronJobService: {
       list: async () => [],

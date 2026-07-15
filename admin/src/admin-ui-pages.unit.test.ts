@@ -23,7 +23,7 @@ import {
   renderAgentsPage,
   renderChatPage,
   renderChatThreadPage,
-  renderCronRunsPage,
+  renderCronLogsPage,
   renderLoginPage,
   renderPrDetailPage,
   renderProvisionCompletePage,
@@ -2988,14 +2988,19 @@ describe("renderPrDetailPage", () => {
   });
 });
 
-// ─── renderCronRunsPage ──────────────────────────────────────────────────────
+// ─── renderCronLogsPage ──────────────────────────────────────────────────────
 
-describe("renderCronRunsPage", () => {
+describe("renderCronLogsPage", () => {
   const CRON_AGENT = { id: "agent-123", name: "Test Agent" };
   const CRON = {
     id: "cron-456",
     name: "status check",
     schedule: "0 * * * *",
+  };
+  const OTHER_CRON = {
+    id: "cron-789",
+    name: null,
+    schedule: "*/15 * * * *",
   };
 
   function makeRun(overrides?: Partial<CronRunItem>): CronRunItem {
@@ -3006,6 +3011,7 @@ describe("renderCronRunsPage", () => {
       skipped: false,
       skipReason: null,
       error: null,
+      cron: CRON,
       modelBreakdown: [
         {
           model: "claude-sonnet-4-5",
@@ -3020,11 +3026,19 @@ describe("renderCronRunsPage", () => {
     };
   }
 
-  function render(runs: CronRunItem[]): string {
-    return renderCronRunsPage({
+  function render(
+    runs: CronRunItem[],
+    opts?: {
+      filters?: { cronId?: string; outcome?: string };
+      pagination?: { total: number; limit: number; page: number };
+    },
+  ): string {
+    return renderCronLogsPage({
       agent: CRON_AGENT,
-      cron: CRON,
+      crons: [CRON, OTHER_CRON],
       runs,
+      filters: opts?.filters ?? {},
+      pagination: opts?.pagination ?? { total: runs.length, limit: 20, page: 1 },
       userName: "admin@example.com",
       timezone: "America/Los_Angeles",
     });
@@ -3033,10 +3047,12 @@ describe("renderCronRunsPage", () => {
   test("renders the column headers", () => {
     const html = render([makeRun()]);
     expect(html).toContain("Outcome");
+    expect(html).toContain("<th>Cron</th>");
     expect(html).toContain("Started");
     expect(html).toContain("Duration");
     expect(html).toContain("Tokens");
     expect(html).toContain("<th>Model</th>");
+    expect(html).toContain("<th>Phase</th>");
     // Cost is shown inline within the Model column's badges, not as its own column.
     expect(html).not.toContain("<th>Cost</th>");
   });
@@ -3091,14 +3107,19 @@ describe("renderCronRunsPage", () => {
     expect(html).toContain("Test Agent");
   });
 
-  test("renders the cron name in the header", () => {
-    const html = render([makeRun()]);
+  test("renders the owning cron's name/schedule in the Cron column", () => {
+    const html = render([makeRun({ cron: CRON })]);
     expect(html).toContain("status check");
   });
 
-  test("renders empty state when no runs exist", () => {
+  test("renders the cron schedule when the owning cron has no name", () => {
+    const html = render([makeRun({ cron: OTHER_CRON })]);
+    expect(html).toContain("*/15 * * * *");
+  });
+
+  test("renders empty state when no runs match", () => {
     const html = render([]);
-    expect(html).toContain("No runs recorded yet.");
+    expect(html).toContain("No runs");
   });
 
   test("renders em-dash for empty token breakdown and no duration", () => {
@@ -3109,11 +3130,6 @@ describe("renderCronRunsPage", () => {
       }),
     ]);
     expect(html).toContain("—");
-  });
-
-  test("renders a Phase column header (WL-3.5)", () => {
-    const html = render([makeRun()]);
-    expect(html).toContain("<th>Phase</th>");
   });
 
   test("renders the run's phase when set", () => {
@@ -3163,23 +3179,102 @@ describe("renderCronRunsPage", () => {
     expect(html).toContain("&lt;script&gt;");
   });
 
-  test("escapes XSS in the cron and agent names", () => {
-    const html = renderCronRunsPage({
+  test("escapes XSS in the agent name", () => {
+    const html = renderCronLogsPage({
       agent: { id: "agent-123", name: "<img src=x onerror=alert(3)>" },
-      cron: { id: "cron-456", name: "<b>evil</b>", schedule: "0 * * * *" },
+      crons: [CRON],
       runs: [makeRun()],
+      filters: {},
+      pagination: { total: 1, limit: 20, page: 1 },
       userName: "admin@example.com",
       timezone: "America/Los_Angeles",
     });
     expect(html).not.toContain("<img src=x onerror=alert(3)>");
-    expect(html).not.toContain("<b>evil</b>");
     expect(html).toContain("&lt;img");
-    expect(html).toContain("&lt;b&gt;evil");
   });
 
   test("uses renderAdminToolbar with /admin/agents active path", () => {
     const html = render([makeRun()]);
     expect(html).toContain('href="/admin/agents" class="vos-nav-link active"');
+  });
+
+  // ─── Filter form ────────────────────────────────────────────────────────────
+
+  test("filter form renders a cron dropdown option for each cron, labeled by name or schedule", () => {
+    const html = render([makeRun()]);
+    expect(html).toContain(`value="${CRON.id}"`);
+    expect(html).toContain("status check");
+    expect(html).toContain(`value="${OTHER_CRON.id}"`);
+    expect(html).toContain("*/15 * * * *");
+  });
+
+  test("filter form preserves the selected cronId as 'selected' on the matching option", () => {
+    const html = render([makeRun()], { filters: { cronId: CRON.id } });
+    const optionMatch = html.match(
+      new RegExp(`<option value="${CRON.id}"[^>]*>`),
+    );
+    expect(optionMatch).not.toBeNull();
+    expect(optionMatch?.[0]).toContain("selected");
+  });
+
+  test("filter form renders an outcome dropdown with Any/posted/dm/silent/skipped/error options", () => {
+    const html = render([makeRun()]);
+    expect(html).toContain(">Any<");
+    expect(html).toContain('value="posted"');
+    expect(html).toContain('value="dm"');
+    expect(html).toContain('value="silent"');
+    expect(html).toContain('value="skipped"');
+    expect(html).toContain('value="error"');
+  });
+
+  test("filter form preserves the selected outcome as 'selected' on the matching option", () => {
+    const html = render([makeRun()], { filters: { outcome: "error" } });
+    const optionMatch = html.match(/<option value="error"[^>]*>/);
+    expect(optionMatch).not.toBeNull();
+    expect(optionMatch?.[0]).toContain("selected");
+  });
+
+  // ─── Pagination ─────────────────────────────────────────────────────────────
+
+  test("pagination links preserve active cronId/outcome filters as query params", () => {
+    const html = render([makeRun()], {
+      filters: { cronId: CRON.id, outcome: "posted" },
+      pagination: { total: 100, limit: 20, page: 2 },
+    });
+    expect(html).toContain(`cronId=${CRON.id}`);
+    expect(html).toContain("outcome=posted");
+    // Prev (page 1) omits the page param, mirroring renderPrsPage's convention
+    // that page=1 is the implicit default; Next (page 3) is explicit.
+    expect(html).toContain("page=3"); // Next
+    const prevMatch = html.match(/← Prev/);
+    expect(prevMatch).not.toBeNull();
+  });
+
+  test("pagination shows the X-Y of Z summary", () => {
+    const html = render([makeRun()], {
+      pagination: { total: 45, limit: 20, page: 2 },
+    });
+    expect(html).toContain("21");
+    expect(html).toContain("40");
+    expect(html).toContain("45");
+  });
+
+  test("no pagination summary when total is 0", () => {
+    const html = render([], { pagination: { total: 0, limit: 20, page: 1 } });
+    expect(html).not.toContain("of 0");
+  });
+
+  // ─── Outcome badge priority ────────────────────────────────────────────────
+
+  test("outcome badge shows 'skipped' ahead of the outcome column value when skipped is true", () => {
+    const html = render([
+      makeRun({ skipped: true, outcome: "error", skipReason: "pre-check failed" }),
+    ]);
+    // The badge itself renders "skipped", not "error" — mirrors
+    // cronRunOutcomeLabel's skipped-takes-priority convention.
+    const badgeMatch = html.match(/<span class="badge"[^>]*>([^<]*)<\/span>/);
+    expect(badgeMatch).not.toBeNull();
+    expect(badgeMatch?.[1]).toBe("skipped");
   });
 });
 

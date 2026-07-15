@@ -139,6 +139,12 @@ export interface CronRunItem {
   modelBreakdown?: ModelBreakdownEntry[];
   /** Pipeline phase this run served (dev-task/review/patch/deploy). Null for legacy five-job crons. */
   phase?: string | null;
+  /**
+   * The owning cron's id/name/schedule — present on cross-cron listings (e.g.
+   * renderCronLogsPage's per-agent table) so the Cron column can be rendered
+   * without an N+1 lookup. Absent on single-cron listings.
+   */
+  cron?: { id: string; name: string | null; schedule: string };
 }
 
 // Inline CSS for cron-run outcome badges, keyed by outcome string.
@@ -163,6 +169,16 @@ function cronRunOutcomeLabel(run: {
   outcome: string | null;
 }): string {
   return run.skipped ? "skipped" : (run.outcome ?? "unknown");
+}
+
+/** Formats a millisecond duration as a compact human string (e.g. "1.2s", "3m 4s"). */
+function fmtDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const totalSec = ms / 1000;
+  if (totalSec < 60) return `${totalSec.toFixed(1)}s`;
+  const min = Math.floor(totalSec / 60);
+  const sec = Math.round(totalSec % 60);
+  return `${min}m ${sec}s`;
 }
 
 // Inline CSS for per-model cost badges on the cron runs page. A single run can
@@ -438,7 +454,10 @@ export function renderAgentsPage(
     <td><a href="/admin/agents/${escapeHtml(a.id)}" class="agent-link">${escapeHtml(a.name)}</a></td>
     <td class="mono">${a.slackId ? escapeHtml(a.slackId) : '<span style="color:#9ca3af">—</span>'}</td>
     <td>${escapeHtml(new Date(a.createdAt).toLocaleDateString("en-US", { timeZone: timezone }))}</td>
-    <td><a href="/admin/agents/${escapeHtml(a.id)}" class="btn btn-secondary" style="font-size:12px;padding:4px 10px">Manage</a></td>
+    <td>
+      <a href="/admin/agents/${escapeHtml(a.id)}" class="btn btn-secondary" style="font-size:12px;padding:4px 10px">Manage</a>
+      <a href="/admin/agents/${escapeHtml(a.id)}/cron-logs" class="btn btn-secondary" style="font-size:12px;padding:4px 10px;margin-left:4px">Cron Logs</a>
+    </td>
   </tr>`,
           )
           .join("\n");
@@ -618,7 +637,7 @@ export function renderAgentDetailPage(
     const toggleLabel = c.enabled ? "Disable" : "Enable";
     const toggleTarget = c.enabled ? "false" : "true";
     const actions = `
-      <a href="/admin/agents/${escapeHtml(agent.id)}/crons/${escapeHtml(c.id)}/runs" class="btn btn-secondary" style="font-size:11px;padding:3px 8px;margin-right:4px;text-decoration:none">Logs</a>
+      <a href="/admin/agents/${escapeHtml(agent.id)}/cron-logs?cronId=${escapeHtml(c.id)}" class="btn btn-secondary" style="font-size:11px;padding:3px 8px;margin-right:4px;text-decoration:none">Logs</a>
       <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/crons/${escapeHtml(c.id)}/toggle" style="display:inline">
         <input type="hidden" name="enabled" value="${toggleTarget}" />
         <button type="submit" class="btn btn-secondary" style="font-size:11px;padding:3px 8px">${toggleLabel}</button>
@@ -2427,30 +2446,31 @@ export function renderPrDetailPage(
 </html>`;
 }
 
-export function renderCronRunsPage(opts: {
+/**
+ * Renders the unified per-agent cron-logs page: a filter form (cron dropdown +
+ * outcome dropdown) and a table of runs across every cron the agent owns,
+ * paginated consistently with renderPrsPage's pattern.
+ */
+export function renderCronLogsPage(opts: {
   agent: { id: string; name: string };
-  cron: { id: string; name: string | null; schedule: string };
+  crons: { id: string; name: string | null; schedule: string }[];
   runs: CronRunItem[];
+  filters: { cronId?: string; outcome?: string };
+  pagination: { total: number; limit: number; page: number };
   userName: string;
   timezone?: string;
 }): string {
-  const { agent, cron, runs, userName } = opts;
+  const { agent, crons, runs, filters, pagination, userName } = opts;
   const timezone = opts.timezone ?? "America/Los_Angeles";
-
-  function fmtDuration(ms: number): string {
-    if (ms < 1000) return `${ms}ms`;
-    const totalSec = ms / 1000;
-    if (totalSec < 60) return `${totalSec.toFixed(1)}s`;
-    const min = Math.floor(totalSec / 60);
-    const sec = Math.round(totalSec % 60);
-    return `${min}m ${sec}s`;
-  }
 
   function row(r: CronRunItem): string {
     const outcomeLabel = cronRunOutcomeLabel(r);
     const badgeStyle = cronOutcomeStyle(outcomeLabel);
     const badgeTitle = r.skipped && r.skipReason ? r.skipReason : outcomeLabel;
     const outcomeCell = `<span class="badge" style="${badgeStyle}" title="${escapeHtml(badgeTitle)}">${escapeHtml(outcomeLabel)}</span>`;
+
+    const cronLabel = r.cron ? (r.cron.name ?? r.cron.schedule) : "—";
+    const cronCell = escapeHtml(cronLabel);
 
     const startedIso = new Date(r.startedAt).toISOString();
     const startedFmt = new Date(r.startedAt).toLocaleString("en-US", {
@@ -2498,6 +2518,7 @@ export function renderCronRunsPage(opts: {
 
     return `<tr>
       <td>${outcomeCell}</td>
+      <td style="font-size:12px">${cronCell}</td>
       <td style="font-size:12px">${startedCell}</td>
       <td class="mono" style="font-size:12px">${durationCell}</td>
       <td class="mono" style="font-size:12px">${tokensCell}</td>
@@ -2508,17 +2529,55 @@ export function renderCronRunsPage(opts: {
 
   const bodyRows =
     runs.length === 0
-      ? `<tr><td colspan="6" class="empty-state">No runs recorded yet.</td></tr>`
+      ? `<tr><td colspan="7" class="empty-state">No runs match the selected filters.</td></tr>`
       : runs.map(row).join("\n");
 
-  const cronLabel = cron.name ?? cron.schedule;
+  // Filter form
+  const cronOptions = crons
+    .map((c) => {
+      const label = c.name ?? c.schedule;
+      const selected = filters.cronId === c.id ? "selected" : "";
+      return `<option value="${escapeHtml(c.id)}" ${selected}>${escapeHtml(label)}</option>`;
+    })
+    .join("\n");
+
+  const OUTCOME_OPTIONS = ["posted", "dm", "silent", "skipped", "error"];
+  const outcomeOptions = OUTCOME_OPTIONS.map((o) => {
+    const selected = filters.outcome === o ? "selected" : "";
+    return `<option value="${o}" ${selected}>${o}</option>`;
+  }).join("\n");
+
+  // Pagination — mirrors renderPrsPage's pattern.
+  const totalPages = Math.max(1, Math.ceil(pagination.total / pagination.limit));
+  const page = pagination.page;
+  const makePageUrl = (p: number) => {
+    const params = new URLSearchParams();
+    if (filters.cronId) params.set("cronId", filters.cronId);
+    if (filters.outcome) params.set("outcome", filters.outcome);
+    if (p > 1) params.set("page", String(p));
+    const qs = params.toString();
+    return `/admin/agents/${escapeHtml(agent.id)}/cron-logs${qs ? `?${qs}` : ""}`;
+  };
+
+  const from = pagination.total === 0 ? 0 : (page - 1) * pagination.limit + 1;
+  const to = Math.min(page * pagination.limit, pagination.total);
+  const paginationHtml =
+    pagination.total === 0
+      ? ""
+      : `<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0 0;font-size:12px;color:#6b7280">
+      <span>${from}–${to} of ${pagination.total}</span>
+      <div style="display:flex;gap:4px">
+        ${page > 1 ? `<a href="${makePageUrl(page - 1)}" class="btn btn-secondary" style="font-size:11px;padding:3px 10px">← Prev</a>` : ""}
+        ${page < totalPages ? `<a href="${makePageUrl(page + 1)}" class="btn btn-secondary" style="font-size:11px;padding:3px 10px">Next →</a>` : ""}
+      </div>
+    </div>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Cron Runs — ${escapeHtml(cronLabel)} — Shipwright Admin</title>
+  <title>Cron Logs — ${escapeHtml(agent.name)} — Shipwright Admin</title>
   <style>${baseStyles()}
     .runs-table { width:100%;border-collapse:collapse; }
     .runs-table th { text-align:left;padding:8px 12px;font-size:12px;color:#6b7280;font-weight:600;border-bottom:1px solid #e5e7eb;text-transform:uppercase;letter-spacing:.05em; }
@@ -2530,15 +2589,36 @@ export function renderCronRunsPage(opts: {
   <div class="vos-page">
     <div class="page-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <a href="/admin/agents/${escapeHtml(agent.id)}" style="color:#6b7280;font-size:13px;text-decoration:none">← ${escapeHtml(agent.name)}</a>
-      <h1 class="page-title" style="margin:0;flex:1">Cron Runs — ${escapeHtml(cronLabel)}</h1>
+      <h1 class="page-title" style="margin:0;flex:1">Cron Logs — ${escapeHtml(agent.name)}</h1>
     </div>
-    <div style="margin-top:4px;margin-bottom:16px;font-family:monospace;font-size:11px;color:#9ca3af">${escapeHtml(cron.schedule)}</div>
+
+    <div class="card" style="margin-bottom:16px">
+      <form method="GET" action="/admin/agents/${escapeHtml(agent.id)}/cron-logs" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label" style="font-size:11px">Cron</label>
+          <select name="cronId" class="form-input" style="font-size:12px;padding:4px 8px">
+            <option value="">Any</option>
+            ${cronOptions}
+          </select>
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label" style="font-size:11px">Outcome</label>
+          <select name="outcome" class="form-input" style="font-size:12px;padding:4px 8px">
+            <option value="">Any</option>
+            ${outcomeOptions}
+          </select>
+        </div>
+        <button type="submit" class="btn btn-secondary" style="font-size:12px;padding:4px 12px">Filter</button>
+        <a href="/admin/agents/${escapeHtml(agent.id)}/cron-logs" class="btn btn-secondary" style="font-size:12px;padding:4px 12px">Reset</a>
+      </form>
+    </div>
 
     <div class="card">
       <table class="runs-table">
         <thead>
           <tr>
             <th>Outcome</th>
+            <th>Cron</th>
             <th>Started</th>
             <th>Duration</th>
             <th>Tokens</th>
@@ -2550,6 +2630,7 @@ export function renderCronRunsPage(opts: {
           ${bodyRows}
         </tbody>
       </table>
+      ${paginationHtml}
     </div>
   </div>
 </body>

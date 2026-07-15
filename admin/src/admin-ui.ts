@@ -36,7 +36,7 @@ import {
   renderAgentsPage,
   renderChatPage,
   renderChatThreadPage,
-  renderCronRunsPage,
+  renderCronLogsPage,
   renderLoginPage,
   renderNewLocalAgentPage,
   renderPrDetailPage,
@@ -209,7 +209,7 @@ export interface AdminUIDeps {
     | "get"
     | "reconcileSystemCrons"
   >;
-  agentCronRunService: Pick<AgentCronRunService, "list">;
+  agentCronRunService: Pick<AgentCronRunService, "listForAgent">;
   agentToolService: Pick<
     AgentToolService,
     "list" | "add" | "toggle" | "remove"
@@ -825,9 +825,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     );
   });
 
-  app.get("/admin/agents/:id/crons/:cronId/runs", requireAuth, async (c) => {
+  app.get("/admin/agents/:id/cron-logs", requireAuth, async (c) => {
     const agentId = c.req.param("id");
-    const cronId = c.req.param("cronId");
     const agent = await prisma.agent.findUnique({ where: { id: agentId } });
     if (!agent) {
       return new Response("Agent not found", { status: 404 });
@@ -836,22 +835,34 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       return new Response("Forbidden", { status: 403 });
     }
 
-    let cron: Awaited<ReturnType<typeof agentCronJobService.get>>;
-    try {
-      cron = await agentCronJobService.get(agentId, cronId);
-    } catch {
-      return new Response("Cron not found", { status: 404 });
-    }
+    const cronId = c.req.query("cronId") || undefined;
+    const outcome = c.req.query("outcome") || undefined;
+    const pageRaw = c.req.query("page");
+    const page = pageRaw ? Math.max(1, Number.parseInt(pageRaw, 10) || 1) : 1;
+    const limit = 20;
+    const offset = (page - 1) * limit;
 
-    const runs = await agentCronRunService.list(cronId, agentId, {
-      limit: 50,
-    });
+    const [crons, runResult] = await Promise.all([
+      agentCronJobService.list(agentId),
+      agentCronRunService.listForAgent(agentId, {
+        cronId,
+        outcome,
+        limit,
+        offset,
+      }),
+    ]);
 
     return html(
-      renderCronRunsPage({
+      renderCronLogsPage({
         agent: { id: agent.id, name: agent.name },
-        cron: { id: cron.id, name: cron.name, schedule: cron.schedule },
-        runs: runs.items,
+        crons: crons.map((cr) => ({
+          id: cr.id,
+          name: cr.name,
+          schedule: cr.schedule,
+        })),
+        runs: runResult.items,
+        filters: { cronId, outcome },
+        pagination: { total: runResult.total, limit, page },
         userName: c.var.userEmail,
         timezone,
       }),

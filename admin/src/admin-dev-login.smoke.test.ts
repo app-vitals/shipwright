@@ -109,7 +109,7 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
       getConfigBundle: async () => null,
     },
     agentCronRunService: {
-      list: async () => ({ items: [], total: 0, limit: 50, offset: 0 }),
+      listForAgent: async () => ({ items: [], total: 0, limit: 20, offset: 0 }),
     },
     agentCronJobService: {
       list: async () => [],

@@ -285,7 +285,7 @@ function makeBaseDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
       reconcileSystemCrons: async () => ({ created: 0, updated: 0, deleted: 0 }),
     },
     agentCronRunService: {
-      list: async () => ({ items: [], total: 0, limit: 50, offset: 0 }),
+      listForAgent: async () => ({ items: [], total: 0, limit: 20, offset: 0 }),
     },
     agentToolService: {
       list: async () => [MOCK_TOOL],
