@@ -167,17 +167,51 @@ Anything the audit couldn't determine without a human call. Common entries:
 1. Read all three prior artifacts. Abort if any missing.
 2. Extract metrics: layer counts, speed numbers, bucket counts.
 3. Compute the gap (section 3 math).
-4. Generate the task list by walking the migration buckets in this order:
+4. **Determine the starting T-NNN offset (task-store query — run before any ID is
+   assigned).** T-NNN numbering must continue across cycles, not restart at `T-001` every
+   time `/test-roadmap` runs — a restart collides with `test-fix`'s task-store IDs from a
+   prior cycle (`test-fix` maps `T-NNN` → `test-t-{nnn}-{repo-slug}`), which is how a
+   second cycle's roadmap has duplicated a first cycle's already-shipped work under fresh
+   numbering.
+
+   Derive `repo` (`org/repo`, e.g. `app-vitals/shipwright`) from
+   `git remote get-url origin` — strip the `https://github.com/` (or `git@github.com:`)
+   prefix and the `.git` suffix. Derive `repo-slug` as the last path segment, lowercased
+   (e.g. `shipwright`).
+
+   Query task-store for every existing task in this repo, regardless of status — a task
+   from a prior cycle that has since merged still reserved its ID and must not be reused.
+   Pass an explicit high `limit` (task-store defaults to 50 per page, which silently
+   truncates the scan on a repo with a longer test-readiness history):
+   ```bash
+   curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+     "$SHIPWRIGHT_TASK_STORE_URL/tasks?repo={url-encoded-repo}&limit=500" | jq '.tasks'
+   ```
+   If the response's `.total` exceeds the number of tasks returned, repeat with
+   `&offset={n*500}` until every task has been scanned.
+
+   From the combined results, filter to task `id` values matching `test-t-<NNN>-{repo-slug}`
+   (the ID shape `test-fix` writes — see `skills/test-fix/SKILL.md` Step 5). Extract the
+   numeric `<NNN>` from each match and take the max: `max_existing`. Set
+   `starting_offset = max_existing + 1` — or `1` (i.e. `T-001`) if no matching tasks exist,
+   which is the correct behavior for a repo's first test-readiness cycle.
+5. Generate the task list by walking the migration buckets in this order, assigning
+   sequential `T-NNN` IDs starting from `starting_offset` (step 4) rather than always
+   restarting at `T-001`:
    - Milestone 1: all `infra` items + **paired repo-config tasks** (see pairing rule below)
    - Milestone 2: all `critical` tier items (net-new + rebuild + promote)
    - Milestone 3: all canary-eligible items needing canary plumbing
    - Milestone 4: all `high` tier items (net-new + rebuild + promote)
    - Milestone 5: all `delete (redundant)` items + remaining `rebuild` cleanup + plugin feedback collector
-5. **Apply the pairing rule** from `${CLAUDE_PLUGIN_ROOT}/skills/repo-config/SKILL.md`: every task that creates or modifies a CI workflow file MUST emit a paired branch-protection task that `depends_on` the workflow task. Without this, the audit ships as advisory rather than enforced. The pairing rule is non-negotiable; skipping it is the failure mode the user will catch and the plugin will be blamed for.
-6. Load `${CLAUDE_PLUGIN_ROOT}/assets/templates/test-readiness-plan.md.tmpl`. Fill. Write to `docs/test-readiness/test-readiness-plan.md`.
+6. **Apply the pairing rule** from `${CLAUDE_PLUGIN_ROOT}/skills/repo-config/SKILL.md`: every task that creates or modifies a CI workflow file MUST emit a paired branch-protection task that `depends_on` the workflow task. Without this, the audit ships as advisory rather than enforced. The pairing rule is non-negotiable; skipping it is the failure mode the user will catch and the plugin will be blamed for.
+7. Load `${CLAUDE_PLUGIN_ROOT}/assets/templates/test-readiness-plan.md.tmpl`. Fill. Write to `docs/test-readiness/test-readiness-plan.md`.
 
 ## Failure modes to avoid
 
 - **Don't sequence Milestone 5 (cleanup) before Milestone 2 (critical-path).** Deleting a "redundant" test before its canonical owner exists creates a coverage hole. Always build before deleting.
 - **Don't skip the speed delta.** It's the most actionable single number for "are we converging."
 - **Don't write a roadmap that's a copy of the migration table.** The roadmap is sequenced and milestone-gated; the migration is unsorted bucketing. The synthesis is the value.
+- **Don't restart T-NNN numbering at T-001 on a repo with a prior cycle.** Always run the
+  step 4 task-store query first. Skipping it silently collides with `test-fix`'s
+  `test-t-{nnn}-{repo-slug}` IDs from an earlier cycle and produces a roadmap that
+  duplicates already-shipped work under fresh numbering.

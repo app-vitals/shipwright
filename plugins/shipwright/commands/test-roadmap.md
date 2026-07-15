@@ -25,7 +25,7 @@ Synthesize `test-inventory.md` + `test-system.md` + `test-migration.md` into a s
    - Canary suite live (smoke + E2E canary-eligible run green against deployed env)
    - High-tier coverage (fill `high` tier gaps)
    - Cleanup (delete or refactor "rebuild" tests; remove false-confidence coverage)
-5. **Task list** — flat, ordered, agent-executable. Each task: file(s) to touch, layer, expected outcome, verification command.
+5. **Task list** — flat, ordered, agent-executable. Each task: file(s) to touch, layer, expected outcome, verification command. `T-NNN` numbering continues from the highest existing `test-t-*-{repo}` ID in task-store rather than restarting at `T-001` each cycle.
 6. **Open risks** — anything the audit can't determine without a human call.
 
 ## Process
