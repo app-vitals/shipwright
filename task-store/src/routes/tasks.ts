@@ -46,6 +46,7 @@ import {
   TaskSchema,
   UpdateTaskBodySchema,
 } from "../openapi-schemas.ts";
+import { ALL_STATUSES, isValidStatus, normalizeStatus } from "../statuses.ts";
 import type { TaskServiceLike } from "../task-service.ts";
 import { isOrgRepo } from "../validate.ts";
 
@@ -72,6 +73,28 @@ function validateRepo(repo: unknown, repos: string[] | null): void {
   if (repos !== null && !repos.includes(repo)) {
     throw new BadRequestError(`repo '${repo}' is not in this agent's scope`);
   }
+}
+
+/**
+ * Normalize and validate the `status` field on a request body, mutating it in
+ * place. Accepts the canonical TaskStatus values plus documented aliases
+ * (e.g. "completed" → "done"; see STATUS_ALIASES). An unknown status raises a
+ * clean 400 listing the valid values, rather than falling through to Prisma
+ * where an out-of-enum value surfaces as an opaque 500. A body without a
+ * `status` key is left untouched (PATCH bodies need not include one).
+ */
+function normalizeStatusField(body: Record<string, unknown>): void {
+  if (!("status" in body)) return;
+  if (typeof body.status !== "string" || !body.status) {
+    throw new BadRequestError("status must be a non-empty string");
+  }
+  const normalized = normalizeStatus(body.status);
+  if (!isValidStatus(normalized)) {
+    throw new BadRequestError(
+      `invalid status '${body.status}' (valid: ${ALL_STATUSES.join(", ")})`,
+    );
+  }
+  body.status = normalized;
 }
 
 /** Fetch a task and enforce agent ownership. Throws 404 or 403 as appropriate.
@@ -532,6 +555,7 @@ export function createTasksRoutes(
     if (typeof body.status !== "string" || !body.status) {
       throw new BadRequestError("status is required");
     }
+    normalizeStatusField(body);
     if (!("repo" in body)) {
       throw new BadRequestError(
         "repo key is required (null is valid for unscoped tasks)",
@@ -568,6 +592,7 @@ export function createTasksRoutes(
         );
       }
       validateRepo(task.repo, agentId !== null ? repos : null);
+      normalizeStatusField(task);
     }
     const tasks =
       agentId !== null
@@ -622,6 +647,7 @@ export function createTasksRoutes(
     );
     const body = await readJson(c);
     validateRepo(body.repo, agentId !== null ? repos : null);
+    normalizeStatusField(body);
     // Prevent agent tokens from reassigning tasks outside their ownership scope.
     // Only force-assign when the acting agent is the explicit assignee or claimedBy.
     // Skip force-assign when access is purely via repo scope — the task may belong

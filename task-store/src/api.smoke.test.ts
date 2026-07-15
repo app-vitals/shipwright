@@ -592,6 +592,95 @@ describe("task-store API (smoke)", () => {
     expect(capturedUpdates[0]?.assignee).toBeUndefined();
   });
 
+  // ─── Status normalization (completed → done) ────────────────────────────────
+
+  it("PATCH /tasks/:id normalizes the 'completed' alias to 'done' (200)", async () => {
+    const capturedUpdates: Array<Record<string, unknown>> = [];
+    const spyTaskService: TaskServiceLike = {
+      ...fakeTaskService({ getResult: makeTask({ id: "task-1" }) }),
+      async update(id, data) {
+        capturedUpdates.push(data as Record<string, unknown>);
+        return makeTask({ ...(data as Partial<Task>), id });
+      },
+    };
+    const app = makeApp({ taskService: spyTaskService });
+    const res = await app.request("/tasks/task-1", {
+      method: "PATCH",
+      headers: { ...auth(), "content-type": "application/json" },
+      body: JSON.stringify({ status: "completed" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Task;
+    expect(body.status).toBe("done");
+    // The value persisted must be the normalized "done", never "completed".
+    expect(capturedUpdates[0]?.status).toBe("done");
+  });
+
+  it("PATCH /tasks/:id rejects an unknown status with 400, not 500", async () => {
+    const app = makeApp({
+      taskService: fakeTaskService({ getResult: makeTask({ id: "task-1" }) }),
+    });
+    const res = await app.request("/tasks/task-1", {
+      method: "PATCH",
+      headers: { ...auth(), "content-type": "application/json" },
+      body: JSON.stringify({ status: "totally-bogus" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("PATCH /tasks/:id leaves a canonical status unchanged (200)", async () => {
+    const capturedUpdates: Array<Record<string, unknown>> = [];
+    const spyTaskService: TaskServiceLike = {
+      ...fakeTaskService({ getResult: makeTask({ id: "task-1" }) }),
+      async update(id, data) {
+        capturedUpdates.push(data as Record<string, unknown>);
+        return makeTask({ ...(data as Partial<Task>), id });
+      },
+    };
+    const app = makeApp({ taskService: spyTaskService });
+    const res = await app.request("/tasks/task-1", {
+      method: "PATCH",
+      headers: { ...auth(), "content-type": "application/json" },
+      body: JSON.stringify({ status: "done" }),
+    });
+    expect(res.status).toBe(200);
+    expect(capturedUpdates[0]?.status).toBe("done");
+  });
+
+  it("PATCH /tasks/:id without a status field is unaffected (200)", async () => {
+    const app = makeApp({
+      taskService: fakeTaskService({ getResult: makeTask({ id: "task-1" }) }),
+    });
+    const res = await app.request("/tasks/task-1", {
+      method: "PATCH",
+      headers: { ...auth(), "content-type": "application/json" },
+      body: JSON.stringify({ note: "just a note" }),
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("POST /tasks normalizes the 'completed' alias to 'done' (201)", async () => {
+    const app = makeApp();
+    const res = await app.request("/tasks", {
+      method: "POST",
+      headers: { ...auth(), "content-type": "application/json" },
+      body: JSON.stringify({ title: "New", status: "completed", repo: null }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as Task;
+    expect(body.status).toBe("done");
+  });
+
+  it("POST /tasks rejects an unknown status with 400, not 500", async () => {
+    const app = makeApp();
+    const res = await app.request("/tasks", {
+      method: "POST",
+      headers: { ...auth(), "content-type": "application/json" },
+      body: JSON.stringify({ title: "New", status: "nonsense", repo: null }),
+    });
+    expect(res.status).toBe(400);
+  });
+
   it("GET /tasks?ready=true with agent token forwards agentId to listReady", async () => {
     const capturedArgs: Array<string | undefined> = [];
 

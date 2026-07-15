@@ -188,6 +188,55 @@ describeOrSkip("task-store API (integration)", () => {
     expect(released.heartbeatAt).toBeNull();
   });
 
+  // ─── PATCH status normalization (completed → done) ─────────────────────────
+
+  it("PATCH /tasks/:id with status 'completed' persists 'done' (200)", async () => {
+    const id = await createPendingTask();
+
+    const res = await app.request(`/tasks/${id}`, {
+      method: "PATCH",
+      headers: auth(),
+      body: JSON.stringify({ status: "completed" }),
+    });
+    expect(res.status).toBe(200);
+    const updated = (await res.json()) as { status: string };
+    expect(updated.status).toBe("done");
+
+    // The stored row reflects the normalized status.
+    const read = await app.request(`/tasks/${id}`, { headers: auth() });
+    const stored = (await read.json()) as { status: string };
+    expect(stored.status).toBe("done");
+  });
+
+  it("PATCH /tasks/:id with an unknown status returns 400, not 500", async () => {
+    const id = await createPendingTask();
+
+    const res = await app.request(`/tasks/${id}`, {
+      method: "PATCH",
+      headers: auth(),
+      body: JSON.stringify({ status: "totally-bogus" }),
+    });
+    expect(res.status).toBe(400);
+
+    // The task is untouched — still pending.
+    const read = await app.request(`/tasks/${id}`, { headers: auth() });
+    const stored = (await read.json()) as { status: string };
+    expect(stored.status).toBe("pending");
+  });
+
+  it("PATCH /tasks/:id with an existing status is unaffected (200)", async () => {
+    const id = await createPendingTask();
+
+    const res = await app.request(`/tasks/${id}`, {
+      method: "PATCH",
+      headers: auth(),
+      body: JSON.stringify({ status: "in_progress" }),
+    });
+    expect(res.status).toBe(200);
+    const updated = (await res.json()) as { status: string };
+    expect(updated.status).toBe("in_progress");
+  });
+
   // ─── Concurrent claim ──────────────────────────────────────────────────────
 
   it("allows exactly one of two concurrent claims (one 200, one 409)", async () => {
