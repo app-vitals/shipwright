@@ -19,6 +19,7 @@ import { initSentry } from "@shipwright/lib/sentry";
 import { WebClient } from "@slack/web-api";
 import nodeCron from "node-cron";
 import { createAnalyticsStore } from "./analytics.ts";
+import { ghJson } from "./check-helpers.ts";
 import { createChatPoller } from "./chat-poller.ts";
 import {
   HttpChatTokenReporter,
@@ -34,6 +35,10 @@ import {
   NoopCronRunReporter,
 } from "./cron-run-reporter.ts";
 import { markdownToSlack } from "./format.ts";
+import {
+  buildProductionDeps as buildPrStateReconcilerDeps,
+  reconcilePrState,
+} from "./pr-state-reconciler.ts";
 import {
   DEFAULT_HEALTH_PORT,
   markSlackConnected,
@@ -251,6 +256,39 @@ if (runtimeClient && agentId) {
       err instanceof Error ? err.message : String(err),
     );
   }
+}
+
+// ─── Step 5b: PR state reconciler — self-heals stale state:"open" records ─────
+// Crash backstop for the *business state* (state/mergedAt), distinct from
+// StaleClaimReaper's *claim* fields — see pr-state-reconciler.ts for the full
+// rationale. Deliberately its own interval, independent of syncConfig/
+// syncCrons above and the loop-orchestrator's per-tick candidate collection:
+// this only needs to run every 30-60 min, not every minute, since it scans
+// the bounded state:"open" set and a record naturally drops out of future
+// scans once reconciled. Deps are built lazily on first tick so a
+// not-yet-ready workspace/GH auth at boot can't crash agent startup.
+if (runtimeClient && agentId) {
+  let reconcilerDeps: ReturnType<typeof buildPrStateReconcilerDeps> | undefined;
+
+  async function runPrStateReconciler() {
+    try {
+      reconcilerDeps ??= buildPrStateReconcilerDeps({ ghJson });
+      await reconcilePrState(reconcilerDeps);
+    } catch (err) {
+      console.error(
+        "[pr-state-reconciler] tick failed (non-fatal):",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
+
+  const reconcilerIntervalMs = Number(
+    process.env.SHIPWRIGHT_PR_STATE_RECONCILER_INTERVAL_MS ?? 45 * 60_000,
+  );
+  setInterval(() => void runPrStateReconciler(), reconcilerIntervalMs);
+  console.log(
+    `[agent] PR state reconciler started (${reconcilerIntervalMs}ms interval)`,
+  );
 }
 
 // ─── Step 6: Cron sync loop ───────────────────────────────────────────────────

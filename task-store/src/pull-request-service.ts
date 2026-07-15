@@ -143,7 +143,11 @@ export class PullRequestService implements PullRequestServiceLike {
       // always-release behavior. Defense-in-depth: claimNext()'s WHERE clause
       // already excludes state:'merged' records, so this is currently
       // harmless if omitted, but keeps claim state consistent regardless.
-      if (data.state === "merged") {
+      // 'closed' gets the same treatment (CHU-2.1's PR state reconciler PATCHes
+      // both merged and closed records and relies on this to clear claim
+      // fields without having to send them explicitly, since claimedBy/
+      // claimedAt/heartbeatAt are not in the PATCH allowlist in routes/prs.ts).
+      if (data.state === "merged" || data.state === "closed") {
         updateData.claimedBy = null;
         updateData.claimedAt = null;
         updateData.heartbeatAt = null;
