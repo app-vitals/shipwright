@@ -12,9 +12,11 @@
  * the first match — the selector needs the whole candidate set to pick the
  * globally-oldest ready item.
  *
- * Does NOT read state/reviews.json — all data comes from GitHub directly, and
- * the task-store /prs record is only consulted for the age (readyForPatchAt)
- * field, not for qualification.
+ * Does NOT read state/reviews.json — all data comes from GitHub directly. The
+ * task-store /prs record is consulted both for the age (readyForPatchAt)
+ * field and for qualification — a record with claimedBy set means another
+ * agent currently holds the claim on this PR and it is excluded (see the
+ * explicit claimedBy check below, mirroring check-review.ts).
  */
 
 import type { CommitInfo } from "./check-helpers.ts";
@@ -69,6 +71,7 @@ export interface MergeStatusInfo {
 
 export interface PrRecord {
   readyForPatchAt?: string | null;
+  claimedBy?: string | null;
 }
 
 export interface CheckPatchDeps {
@@ -92,10 +95,15 @@ export interface CheckPatchDeps {
   listPrCommits: (prNumber: number, repo?: string) => Promise<CommitInfo[]>;
   getCurrentUser: () => string;
   /**
-   * Task-store PR record lookup, queried with `ready=true` in production
-   * (LPF-2.2) so a resolved `null` doubles as a claim gate — by patch phase a
-   * record should always exist, so `null` means "currently claimed", not "no
-   * record yet". Also sources the age field (readyForPatchAt) when present.
+   * Task-store PR record lookup, used both to gate qualification (a record
+   * with claimedBy set means another agent currently holds the claim on this
+   * PR — see the explicit claimedBy check below, mirroring check-review.ts)
+   * and to source the age field (readyForPatchAt) when present. Queried
+   * WITHOUT `ready=true` so a `null` result unambiguously means "no record
+   * exists yet" (e.g. review skipped claim() for a self-authored PR under
+   * allow_self_review: false) rather than conflating it with "claimed" — the
+   * task-store's `ready=true` filter maps to `claimedBy IS NULL` server-side,
+   * which would collapse both cases into the same empty result.
    */
   queryPrRecord?: (repo: string, prNumber: number) => Promise<PrRecord | null>;
 }
@@ -306,15 +314,17 @@ export async function getPatchCandidates(
       try {
         record = await deps.queryPrRecord(pr.repo, pr.number);
       } catch {
-        // Query failed → treated the same as a ready=true-filtered "claimed"
-        // result below (createPrRecordQuery's production implementation
-        // never actually throws, but a caught error here must not silently
-        // add a possibly-claimed PR as a candidate).
+        // Query failed → fall back to PR createdAt below (fail open — a
+        // transient task-store error must not silently exclude an
+        // otherwise-qualifying PR from patch candidacy).
       }
-      // queryPrRecord IS configured but returned null — by patch phase a
-      // task-store record should always exist (review always claims first),
-      // so a ready=true-filtered null means "currently claimed". Skip.
-      if (!record) continue;
+      // A record with claimedBy set means another agent currently holds the
+      // claim on this PR — skip. A null record (no record was ever created,
+      // e.g. review skipped claim() for a self-authored PR under
+      // allow_self_review: false, or the query failed above) must NOT be
+      // treated as claimed — only an explicit claimedBy gates candidacy,
+      // mirroring check-review.ts.
+      if (record?.claimedBy != null) continue;
     }
 
     candidates.push({
@@ -469,9 +479,6 @@ export async function buildProductionDeps(opts: {
       ]);
     },
     getCurrentUser: getUser,
-    queryPrRecord: createPrRecordQuery<PrRecord>({
-      fetchFn: opts.fetchFn,
-      ready: true,
-    }),
+    queryPrRecord: createPrRecordQuery<PrRecord>({ fetchFn: opts.fetchFn }),
   };
 }
