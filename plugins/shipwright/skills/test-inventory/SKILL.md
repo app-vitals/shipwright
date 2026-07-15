@@ -30,6 +30,8 @@ Record stack profile (language, package manager, primary framework if obvious �
 
 **CLAUDE.md layer-declaration convention:** also check the target repo's root `CLAUDE.md` for a section declaring its concrete layer structure (e.g. "handler → service → data", or whatever naming that repo uses — `architecture_layering` in `references/principles.md` is explicit that the layering principle concerns the *relationship* between layers, not literal names, and each repo's own `CLAUDE.md` should declare its concrete layer names). This mirrors the existing "## Testing" section pattern: `commands/review.md` extracts a repo's CLAUDE.md Testing section into `testReadinessContext` for `code-reviewer.md`'s test-readiness rule to consume, falling back to the universal baseline in `references/principles.md` when no such section exists. Apply the same fallback here — if the repo's CLAUDE.md declares a layer structure, use its concrete names when classifying and reporting; if it doesn't, fall back to the generic handler/service/data naming from `code-classifier.md`/`layer-criteria.md`. Like the Testing section, a CLAUDE.md layer-structure declaration is kept accurate as the repo evolves via the existing docs-refresher (`agents/docs-refresher.md`, invoked from `/shipwright:dev-task` Step 8.5) and `research-docs` mechanisms — no new tooling is required; it is simply another doc surface those mechanisms already watch.
 
+**CLAUDE.md deploy-model declaration:** also check the target repo's root `CLAUDE.md` for a section declaring its deploy model with `## Deploy model` and one of three allowed values: `staged` (the repo has a deploy-staging environment and follows the canary-execution contract), `direct` (the repo deploys directly to production with no staging environment), or `none` (the repo has no automation deploy model yet, or canary eligibility is not applicable). If the repo's CLAUDE.md declares a deploy model, use that value when evaluating canary eligibility in Step 5; if it doesn't, treat it as NOT staged (default). Like the layer-structure declaration, this uses the same read-with-fallback mechanism — check the target repo's root CLAUDE.md first, and when the section is absent, fall back to a safe default (treat as not staged, i.e., `direct` or `none`).
+
 ### Step 2 — discover code surfaces
 
 Use Glob + Grep to enumerate code areas. Source dirs vary; default to common conventions (`src/`, `app/`, `lib/`, `internal/`, language-specific). Exclude vendored deps, generated code, and existing test files.
@@ -71,7 +73,12 @@ The inventory decays as soon as new code ships. Prescribe a lightweight process 
 
 ### Step 5 — tag canary eligibility
 
-A test is canary-eligible iff **all** of:
+Canary-eligibility tagging only applies when `deploy_model == 'staged'` (read from Step 1). If the repo's CLAUDE.md declares `deploy_model` as `direct` or `none`, or if the declaration is entirely absent, skip all canary-eligibility tagging for every item in the inventory (no items get `canary-eligible: true`) and emit a visible note into the generated inventory doc's **Notes** section with one of these messages:
+- If `deploy_model` is undeclared: "deploy_model undeclared — canary eligibility skipped; declare ## Deploy model in CLAUDE.md to enable."
+- If declared as `direct`: "deploy_model: direct — canary eligibility not applicable (no staging environment)."
+- If declared as `none`: "deploy_model: none — canary eligibility not applicable (no deploy automation)."
+
+When `deploy_model == 'staged'`, proceed with the existing canary-eligibility rules: a test is canary-eligible iff **all** of:
 - Layer ∈ {smoke, E2E}
 - Criticality ∈ {critical, high}
 - Read-only OR self-cleaning (per `canary-execution` skill)

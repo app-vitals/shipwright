@@ -1246,6 +1246,10 @@ Imported from the former `test-readiness` plugin. These exercise the six `/test-
 **Steps:** In a repo with git history referencing task IDs (`T-001`, `fix(T-042)`) across ≥2 milestones, run `/test-debt`.
 **Expected:** `docs/test-readiness/test-debt.md` created with a per-milestone table (Milestone, Total commits, Corrective, Ratio, Flag); ratio > 0.25 flagged red; milestones with <5 commits reported but not flagged; planning-debt notes present for red-flag milestones.
 
+### TR-22 — Deploy model gates canary eligibility
+**Steps:** (a) Run `/test-inventory` against a repo with no `## Deploy model` declaration in CLAUDE.md. (b) Run `/test-inventory` against a repo whose CLAUDE.md declares `## Deploy model: staged`.
+**Expected:** (a) Generated inventory artifact's Notes section contains the message "deploy_model undeclared — canary eligibility skipped; declare ## Deploy model in CLAUDE.md to enable." and zero items are tagged as canary-eligible, regardless of layer/criticality. (b) Generated inventory artifact follows the existing canary-eligibility logic (tags smoke/E2E critical/high items as canary-eligible per the `canary-execution` contract).
+
 **Known gap (carried over):** Phase 3 speed measurement is inspection-based unless the runner is installed/configured; a "speed not measured" flag in the artifact is documented behavior, not a bug.
 
 ---
