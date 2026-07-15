@@ -10,7 +10,7 @@
  * Content-assertion only: readFileSync, no I/O beyond local file reads.
  */
 import { describe, expect, it } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 // plugins/shipwright/test/ → repo root
@@ -60,6 +60,62 @@ function readPathIgnorePatterns(): string[] {
     .filter((entry) => entry.length > 0);
 }
 
+// Minimal glob matcher for bunfig.toml's pathIgnorePatterns entries, all of
+// which are shaped like a leading globstar segment, a literal segment, then
+// a trailing globstar segment (e.g. site, metrics/e2e, or a *.suffix glob).
+// A leading globstar segment matches zero or more leading path segments
+// (including none); a trailing one matches zero or more trailing segments;
+// a bare asterisk within a segment matches any run of non-separator
+// characters. Scoped narrowly to verifying bunfig.toml's actual exclusion
+// behavior — not a general-purpose glob engine.
+function matchesGlob(path: string, pattern: string): boolean {
+  let core = pattern;
+  const hasLeadingGlobstar = core.startsWith("**/");
+  if (hasLeadingGlobstar) core = core.slice(3);
+  const hasTrailingGlobstar = core.endsWith("/**");
+  if (hasTrailingGlobstar) core = core.slice(0, -3);
+
+  const escaped = core
+    .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+    .replace(/\*/g, "[^/]*");
+  const prefixRe = hasLeadingGlobstar ? "(?:.*/)?" : "";
+  const suffixRe = hasTrailingGlobstar ? "(?:/.*)?" : "";
+  return new RegExp(`^${prefixRe}${escaped}${suffixRe}$`).test(path);
+}
+
+const SKIP_DIRS = new Set([
+  "node_modules",
+  ".git",
+  "dist",
+  "build",
+  "coverage",
+]);
+
+/** Recursively collect every *.test.ts / *.spec.ts / *.e2e.ts path, relative to repoRoot. */
+function collectTestFiles(dir: string, relDir = ""): string[] {
+  const results: string[] = [];
+  for (const entry of readdirSync(join(dir, relDir))) {
+    if (SKIP_DIRS.has(entry)) continue;
+    const relPath = relDir ? `${relDir}/${entry}` : entry;
+    const absPath = join(dir, relPath);
+    if (statSync(absPath).isDirectory()) {
+      results.push(...collectTestFiles(dir, relPath));
+    } else if (/\.(test\.ts|spec\.ts|e2e\.ts)$/.test(entry)) {
+      results.push(relPath);
+    }
+  }
+  return results;
+}
+
+/** Whether a relative test-file path is a reserved/runner-owned suffix that must never run under default `bun test`. */
+function isReservedOrRunnerOwned(relPath: string): boolean {
+  return (
+    relPath.endsWith(".spec.ts") ||
+    relPath.endsWith(".e2e.ts") ||
+    relPath.endsWith(".canary.test.ts")
+  );
+}
+
 describe("test naming-convention + runner-exclusion doc (T-001)", () => {
   it("docs/test-readiness/naming.md exists", () => {
     expect(existsSync(repoPath(NAMING_DOC_PATH))).toBe(true);
@@ -88,5 +144,20 @@ describe("test naming-convention + runner-exclusion doc (T-001)", () => {
     for (const required of REQUIRED_IGNORE_PATTERNS) {
       expect(patterns).toContain(required);
     }
+  });
+
+  it("bunfig.toml's pathIgnorePatterns exclude exactly the reserved/runner-owned files across the real repo tree — no unexpected file paths either way", () => {
+    const patterns = readPathIgnorePatterns();
+    const allTestFiles = collectTestFiles(repoRoot);
+
+    const mismatches = allTestFiles
+      .map((relPath) => {
+        const isExcluded = patterns.some((p) => matchesGlob(relPath, p));
+        const shouldBeExcluded = isReservedOrRunnerOwned(relPath);
+        return { relPath, isExcluded, shouldBeExcluded };
+      })
+      .filter((r) => r.isExcluded !== r.shouldBeExcluded);
+
+    expect(mismatches).toEqual([]);
   });
 });
