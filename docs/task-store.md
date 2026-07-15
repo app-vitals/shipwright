@@ -43,7 +43,7 @@ Query params:
 |-------|------|-------------|
 | `status` | string | Filter by exact status (e.g. `pending`, `in_progress`, `pr_open`) |
 | `state` | string | `open` (all non-terminal), `closed` (terminal), `in_progress`, `ready`, `blocked` |
-| `ready` | `true` | Alias for `state=ready` — returns only tasks with `status=pending`, no `hitl`, and all dependencies satisfied. Tasks are returned in ascending `createdAt` order (oldest first) to ensure deterministic selection regardless of insertion order. |
+| `ready` | `true` | Alias for `state=ready` — returns only tasks with `status=pending`, no `hitl`, and all dependencies satisfied. Tasks are always returned in ascending `createdAt` order (oldest first) to ensure deterministic selection regardless of insertion order. The `?sort` parameter is not supported with `?ready=true`. |
 | `session` | string | Filter by planning session slug |
 | `repo` | string | Filter by repo (`org/repo` format) |
 | `assignee` | string | Filter by assignee (admin tokens only; agent tokens see only their own tasks) |
