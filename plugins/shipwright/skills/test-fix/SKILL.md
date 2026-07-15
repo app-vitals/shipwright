@@ -443,7 +443,7 @@ Stop after printing — this is the sole final output for the regular flow.
   explicit rules in Step 5.2 (CI workflow secrets, branch protection, untested M5 deletion
   owner). No file-count, line-count, or milestone-number threshold ever forces the
   classification on its own.
-- **Repo-scoped task IDs** — every task ID carries the `{repo-slug}` suffix (Step 3 / B1) so
+- **Repo-scoped task IDs** — every task ID carries the `{repo-slug}` suffix (Step 3) so
   the same `T-NNN` scanned in two different repos never collides.
 - **`test-readiness-plan.md` is not modified here** — a queued task only means a fix is
   scheduled. The plan document is Phase 4's output and is not checked off, annotated, or
