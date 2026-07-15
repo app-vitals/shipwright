@@ -442,7 +442,7 @@ describe("getDeployCandidates", () => {
 
   // ─── age field sourcing ────────────────────────────────────────────────────
 
-  test("age is sourced from the linked task's addedAt when a task is linked", async () => {
+  test("age is sourced from the linked task's createdAt when a task is linked", async () => {
     const pr = makeGhPr({ reviewDecision: "APPROVED", createdAt: "2026-06-01T00:00:00.000Z" });
     const deps = makeDeps({
       prs: { "acme/example-repo": [pr] },
@@ -450,7 +450,7 @@ describe("getDeployCandidates", () => {
     });
     deps.queryTaskStatus = async () => ({
       status: "in_progress",
-      addedAt: "2026-05-01T00:00:00.000Z",
+      createdAt: "2026-05-01T00:00:00.000Z",
     });
     const result = await getDeployCandidates(deps);
     expect(result[0].age).toBe("2026-05-01T00:00:00.000Z");
@@ -475,7 +475,7 @@ describe("getDeployCandidates", () => {
     });
     deps.queryTaskStatus = async () => ({
       status: "in_progress",
-      addedAt: "2026-05-01T00:00:00.000Z",
+      createdAt: "2026-05-01T00:00:00.000Z",
     });
     deps.queryPrRecord = async () => ({
       readyForDeployAt: "2026-05-20T00:00:00.000Z",

@@ -237,7 +237,7 @@ export async function getDeployCandidates(
 
         candidates.push({
           id: candidateId(repo, pr.number),
-          age: linkedTask?.addedAt ?? pr.createdAt ?? "",
+          age: linkedTask?.createdAt ?? pr.createdAt ?? "",
           claimedBy: record?.claimedBy ?? null,
           phase: "deploy",
         });

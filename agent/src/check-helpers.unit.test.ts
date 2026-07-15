@@ -712,13 +712,13 @@ describe("createTaskStatusQuery", () => {
     }
   });
 
-  test("returns { status, addedAt } when a linked task is found with both fields present", async () => {
+  test("returns { status, createdAt } when a linked task is found with both fields present", async () => {
     const fakeFetch = (async () =>
       ({
         ok: true,
         json: async () => ({
           tasks: [
-            { id: "T-1", title: "Do the thing", status: "in_progress", addedAt: "2026-05-01T00:00:00.000Z" },
+            { id: "T-1", title: "Do the thing", status: "in_progress", createdAt: "2026-05-01T00:00:00.000Z" },
           ],
         }),
       }) as Response) as unknown as typeof fetch;
@@ -727,11 +727,11 @@ describe("createTaskStatusQuery", () => {
     const result = await query("acme/example-repo", 42);
     expect(result).toEqual({
       status: "in_progress",
-      addedAt: "2026-05-01T00:00:00.000Z",
+      createdAt: "2026-05-01T00:00:00.000Z",
     });
   });
 
-  test("returns { status, addedAt: undefined } when the matched task has no addedAt", async () => {
+  test("returns { status, createdAt: undefined } when the matched task has no createdAt", async () => {
     const fakeFetch = (async () =>
       ({
         ok: true,
@@ -742,7 +742,7 @@ describe("createTaskStatusQuery", () => {
 
     const query = createTaskStatusQuery({ fetchFn: fakeFetch });
     const result = await query("acme/example-repo", 42);
-    expect(result).toEqual({ status: "pending", addedAt: undefined });
+    expect(result).toEqual({ status: "pending", createdAt: undefined });
   });
 
   test("returns null when no linked task is found (empty tasks array)", async () => {
