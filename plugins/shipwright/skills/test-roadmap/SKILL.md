@@ -164,10 +164,6 @@ Anything the audit couldn't determine without a human call. Common entries:
 
 ## Process
 
-**Before starting:** check `references/pipeline-learnings.md` for known repo-specific
-gotchas from prior pipeline runs (stale doc-anchors, verification-command mismatches,
-sandbox quirks). Append a new dated entry there after this run if you hit one.
-
 1. Read all three prior artifacts. Abort if any missing.
 2. Extract metrics: layer counts, speed numbers, bucket counts.
 3. Compute the gap (section 3 math).
