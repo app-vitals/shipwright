@@ -133,7 +133,7 @@ type ConversationsRepliesFn = (
 
 export type TranscribeAudioFn = typeof transcribeAudio;
 export type SynthesizeSpeechFn = typeof synthesizeSpeech;
-type GetSessionFn = (key: string) => string | undefined;
+type GetSessionFn = (key: string) => Promise<string | undefined>;
 
 export type ClaudeRunner = (
   message: string,
@@ -359,7 +359,7 @@ export function createSlackApp(
   resolveUserFn: ResolveUserFn = async (userId) => userId,
   botUserId: string | undefined = undefined,
   conversationsRepliesFn: ConversationsRepliesFn = defaultConversationsRepliesFn,
-  getSessionFn: GetSessionFn = () => undefined,
+  getSessionFn: GetSessionFn = async () => undefined,
   blocksConverter: typeof markdownToBlocks = markdownToBlocks,
   chatTokenReporter: ChatTokenReporter = new NoopChatTokenReporter(),
 ): App {
@@ -395,7 +395,8 @@ export function createSlackApp(
 
     if (!isDM) {
       if (!msg.thread_ts) return;
-      if (!getSessionFn(getThreadKey(msg.channel, msg.thread_ts))) return;
+      if (!(await getSessionFn(getThreadKey(msg.channel, msg.thread_ts))))
+        return;
     }
 
     const sessionKey = getThreadKey(msg.channel, msg.thread_ts ?? msg.ts);
@@ -513,7 +514,7 @@ export function createSlackApp(
 
     // Drop @mention if bot is already participating in this thread —
     // the message handler covers it and would double-respond otherwise.
-    if (ev.thread_ts && getSessionFn(sessionKey)) {
+    if (ev.thread_ts && (await getSessionFn(sessionKey))) {
       return;
     }
 
@@ -539,7 +540,7 @@ export function createSlackApp(
       prompt = `[${name}]: ${prompt}`;
     }
 
-    if (event.thread_ts && !getSessionFn(sessionKey)) {
+    if (event.thread_ts && !(await getSessionFn(sessionKey))) {
       try {
         const repliesResult = await conversationsRepliesFn(
           client,
