@@ -4302,7 +4302,7 @@ describe("admin UI — session detail page", () => {
     cookie = await makeSessionCookie();
   });
 
-  it("GET /admin/sessions/:id renders stat cards + task table with a mix of open/closed tasks", async () => {
+  it("GET /admin/sessions/:id renders stat cards + task table grouped by ready/in_progress/blocked/closed", async () => {
     const mockTasks = [
       {
         id: "task-1",
@@ -4347,9 +4347,12 @@ describe("admin UI — session detail page", () => {
     const html = await res.text();
     expect(html).toContain("Build auth module");
     expect(html).toContain("Ship the feature");
-    // Open/closed grouping present
-    expect(html).toMatch(/1[^0-9]*open/i);
+    // Ready/in_progress/blocked/closed grouping present — task-1 is pending
+    // with no blockedBy entries (ready), task-2 is done (closed).
+    expect(html).toMatch(/1[^0-9]*ready/i);
     expect(html).toMatch(/1[^0-9]*closed/i);
+    expect(html).toContain("Ready (1)");
+    expect(html).toContain("Closed (1)");
     // Status column
     expect(html).toContain("Status");
   });
