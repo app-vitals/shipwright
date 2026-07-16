@@ -3795,6 +3795,23 @@ describe("admin UI — tasks page", () => {
     expect(capturedParams[0].has("status")).toBe(false);
   });
 
+  it("GET /admin/tasks requests sort=desc from the task store", async () => {
+    const capturedParams: URLSearchParams[] = [];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async (params) => {
+          capturedParams.push(params);
+          return { tasks: [], total: 0, limit: 50, offset: 0 };
+        },
+      }),
+    );
+    await app.request("/admin/tasks", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(capturedParams.length).toBe(1);
+    expect(capturedParams[0].get("sort")).toBe("desc");
+  });
+
   it("GET /admin/tasks renders tasks table with mock data", async () => {
     const mockTasks = [
       {
@@ -4376,6 +4393,24 @@ describe("admin UI — session detail page", () => {
     expect(html.toLowerCase()).toContain("no tasks");
   });
 
+  it("GET /admin/sessions/:id requests sort=desc from the task store", async () => {
+    const capturedParams: URLSearchParams[] = [];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async (params) => {
+          capturedParams.push(params);
+          return { tasks: [], total: 0, limit: 500, offset: 0 };
+        },
+      }),
+    );
+    const res = await app.request("/admin/sessions/session-abc", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    expect(capturedParams.length).toBe(1);
+    expect(capturedParams[0].get("sort")).toBe("desc");
+  });
+
   it("GET /admin/sessions/:id unauthenticated redirects to /admin/login", async () => {
     const app = createAdminUIApp(makeMockDeps());
     const res = await app.request("/admin/sessions/session-abc");
@@ -4593,6 +4628,24 @@ describe("admin UI — PRs page", () => {
     expect(html).toContain("#42");
   });
 
+  it("GET /admin/prs requests sort=desc from the task store", async () => {
+    const capturedParams: URLSearchParams[] = [];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStorePrs: async (params) => {
+          capturedParams.push(params);
+          return { prs: [MOCK_PR], total: 1, limit: 50, offset: 0 };
+        },
+      }),
+    );
+    const res = await app.request("/admin/prs", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    expect(capturedParams.length).toBe(1);
+    expect(capturedParams[0].get("sort")).toBe("desc");
+  });
+
   it("GET /admin/prs returns 200 with degraded warning banner when fetchTaskStorePrs is absent", async () => {
     const app = createAdminUIApp(
       makeMockDeps({
@@ -4700,6 +4753,22 @@ describe("admin UI — public task board", () => {
     await app.request("/public/tasks");
     expect(capturedParams.length).toBe(1);
     expect(capturedParams[0].get("repo")).toBe(PUBLIC_REPO);
+  });
+
+  it("GET /public/tasks requests sort=desc from the task store", async () => {
+    const capturedParams: URLSearchParams[] = [];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        publicRepo: PUBLIC_REPO,
+        fetchTaskStoreTasks: async (params) => {
+          capturedParams.push(params);
+          return { tasks: [], total: 0, limit: 50, offset: 0 };
+        },
+      }),
+    );
+    await app.request("/public/tasks");
+    expect(capturedParams.length).toBe(1);
+    expect(capturedParams[0].get("sort")).toBe("desc");
   });
 
   it("GET /public/tasks renders task rows but NO create/edit/release controls", async () => {
