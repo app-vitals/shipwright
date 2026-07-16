@@ -123,10 +123,15 @@ export interface ChatClient {
 // ─── Http implementation ──────────────────────────────────────────────────────
 
 export class HttpChatClient implements ChatClient {
+  private readonly fetchFn: typeof fetch;
+
   constructor(
     private readonly baseUrl: string,
     private readonly adminToken: string,
-  ) {}
+    opts?: { fetchFn?: typeof fetch },
+  ) {
+    this.fetchFn = opts?.fetchFn ?? fetch;
+  }
 
   private authHeaders(): Record<string, string> {
     return {
@@ -144,7 +149,7 @@ export class HttpChatClient implements ChatClient {
     if (opts?.limit !== undefined) params.set("limit", String(opts.limit));
     if (opts?.offset !== undefined) params.set("offset", String(opts.offset));
     const qs = params.size > 0 ? `?${params}` : "";
-    const res = await fetch(`${this.baseUrl}/threads${qs}`, {
+    const res = await this.fetchFn(`${this.baseUrl}/threads${qs}`, {
       headers: this.authHeaders(),
     });
     if (!res.ok) {
@@ -156,7 +161,7 @@ export class HttpChatClient implements ChatClient {
   }
 
   async getThread(id: string): Promise<ChatThread> {
-    const res = await fetch(`${this.baseUrl}/threads/${id}`, {
+    const res = await this.fetchFn(`${this.baseUrl}/threads/${id}`, {
       headers: this.authHeaders(),
     });
     if (!res.ok) {
@@ -171,7 +176,7 @@ export class HttpChatClient implements ChatClient {
     agentId: string,
     opts?: CreateThreadOptions,
   ): Promise<ChatThread> {
-    const res = await fetch(`${this.baseUrl}/threads`, {
+    const res = await this.fetchFn(`${this.baseUrl}/threads`, {
       method: "POST",
       headers: this.authHeaders(),
       body: JSON.stringify({
@@ -188,8 +193,11 @@ export class HttpChatClient implements ChatClient {
     return res.json() as Promise<ChatThread>;
   }
 
-  async updateThread(id: string, data: UpdateThreadOptions): Promise<ChatThread> {
-    const res = await fetch(`${this.baseUrl}/threads/${id}`, {
+  async updateThread(
+    id: string,
+    data: UpdateThreadOptions,
+  ): Promise<ChatThread> {
+    const res = await this.fetchFn(`${this.baseUrl}/threads/${id}`, {
       method: "PATCH",
       headers: this.authHeaders(),
       body: JSON.stringify(data),
@@ -203,7 +211,7 @@ export class HttpChatClient implements ChatClient {
   }
 
   async deleteThread(id: string): Promise<void> {
-    const res = await fetch(`${this.baseUrl}/threads/${id}`, {
+    const res = await this.fetchFn(`${this.baseUrl}/threads/${id}`, {
       method: "DELETE",
       headers: this.authHeaders(),
     });
@@ -222,9 +230,12 @@ export class HttpChatClient implements ChatClient {
     if (opts?.limit !== undefined) params.set("limit", String(opts.limit));
     if (opts?.offset !== undefined) params.set("offset", String(opts.offset));
     const qs = params.size > 0 ? `?${params}` : "";
-    const res = await fetch(`${this.baseUrl}/threads/${threadId}/messages${qs}`, {
-      headers: this.authHeaders(),
-    });
+    const res = await this.fetchFn(
+      `${this.baseUrl}/threads/${threadId}/messages${qs}`,
+      {
+        headers: this.authHeaders(),
+      },
+    );
     if (!res.ok) {
       throw new Error(
         `chat-service GET /threads/${threadId}/messages failed: ${res.status} ${res.statusText}`,
@@ -247,11 +258,14 @@ export class HttpChatClient implements ChatClient {
       payload.attachmentFilename = attachment.filename;
       payload.attachmentSize = attachment.size;
     }
-    const res = await fetch(`${this.baseUrl}/threads/${threadId}/messages`, {
-      method: "POST",
-      headers: this.authHeaders(),
-      body: JSON.stringify(payload),
-    });
+    const res = await this.fetchFn(
+      `${this.baseUrl}/threads/${threadId}/messages`,
+      {
+        method: "POST",
+        headers: this.authHeaders(),
+        body: JSON.stringify(payload),
+      },
+    );
     if (!res.ok) {
       throw new Error(
         `chat-service POST /threads/${threadId}/messages failed: ${res.status} ${res.statusText}`,
@@ -261,9 +275,12 @@ export class HttpChatClient implements ChatClient {
   }
 
   async getThreadStats(threadId: string): Promise<ThreadStats> {
-    const res = await fetch(`${this.baseUrl}/threads/${threadId}/stats`, {
-      headers: this.authHeaders(),
-    });
+    const res = await this.fetchFn(
+      `${this.baseUrl}/threads/${threadId}/stats`,
+      {
+        headers: this.authHeaders(),
+      },
+    );
     if (!res.ok) {
       throw new Error(
         `chat-service GET /threads/${threadId}/stats failed: ${res.status} ${res.statusText}`,
@@ -308,7 +325,10 @@ export class NoopChatClient implements ChatClient {
     };
   }
 
-  async updateThread(_id: string, data: UpdateThreadOptions): Promise<ChatThread> {
+  async updateThread(
+    _id: string,
+    data: UpdateThreadOptions,
+  ): Promise<ChatThread> {
     return {
       id: _id,
       agentId: "",

@@ -1,0 +1,212 @@
+{
+  "listThreads_success": {
+    "status": 200,
+    "body": {
+      "threads": [
+        {
+          "id": "thread_1",
+          "agentId": "agent-123",
+          "title": "First thread",
+          "memberId": "member-1",
+          "createdAt": "2026-01-01T00:00:00.000Z",
+          "updatedAt": "2026-01-01T00:00:00.000Z"
+        },
+        {
+          "id": "thread_2",
+          "agentId": "agent-123",
+          "title": null,
+          "memberId": null,
+          "createdAt": "2026-01-02T00:00:00.000Z",
+          "updatedAt": "2026-01-02T00:00:00.000Z"
+        }
+      ],
+      "total": 2,
+      "limit": 50,
+      "offset": 0
+    }
+  },
+  "listThreads_empty": {
+    "status": 200,
+    "body": {
+      "threads": [],
+      "total": 0,
+      "limit": 50,
+      "offset": 0
+    }
+  },
+  "listThreads_500": {
+    "status": 500,
+    "body": { "error": "internal server error" }
+  },
+  "getThread_success": {
+    "status": 200,
+    "body": {
+      "id": "thread_1",
+      "agentId": "agent-123",
+      "title": "First thread",
+      "memberId": "member-1",
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-01T00:00:00.000Z"
+    }
+  },
+  "getThread_404": {
+    "status": 404,
+    "body": { "error": "not found" }
+  },
+  "createThread_success": {
+    "status": 201,
+    "body": {
+      "id": "thread_new",
+      "agentId": "agent-123",
+      "title": "New thread",
+      "memberId": "member-9",
+      "createdAt": "2026-01-03T00:00:00.000Z",
+      "updatedAt": "2026-01-03T00:00:00.000Z"
+    }
+  },
+  "createThread_minimal_success": {
+    "status": 201,
+    "body": {
+      "id": "thread_minimal",
+      "agentId": "agent-123",
+      "title": null,
+      "memberId": null,
+      "createdAt": "2026-01-03T00:00:00.000Z",
+      "updatedAt": "2026-01-03T00:00:00.000Z"
+    }
+  },
+  "createThread_500": {
+    "status": 500,
+    "body": { "error": "internal server error" }
+  },
+  "updateThread_success": {
+    "status": 200,
+    "body": {
+      "id": "thread_1",
+      "agentId": "agent-123",
+      "title": "Updated title",
+      "memberId": "member-1",
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-04T00:00:00.000Z"
+    }
+  },
+  "updateThread_500": {
+    "status": 500,
+    "body": { "error": "internal server error" }
+  },
+  "deleteThread_success": {
+    "status": 204,
+    "body": {}
+  },
+  "deleteThread_500": {
+    "status": 500,
+    "body": { "error": "internal server error" }
+  },
+  "listMessages_success": {
+    "status": 200,
+    "body": {
+      "messages": [
+        {
+          "id": "msg_1",
+          "threadId": "thread_1",
+          "role": "user",
+          "body": "hello there",
+          "createdAt": "2026-01-01T00:00:00.000Z",
+          "claimedBy": null,
+          "repliedAt": null,
+          "tokens": null,
+          "costUsd": null,
+          "errorKind": null,
+          "attachmentFilename": null,
+          "attachmentSize": null
+        },
+        {
+          "id": "msg_2",
+          "threadId": "thread_1",
+          "role": "assistant",
+          "body": "hi! how can I help?",
+          "createdAt": "2026-01-01T00:01:00.000Z",
+          "claimedBy": "agent-123",
+          "repliedAt": "2026-01-01T00:01:05.000Z",
+          "tokens": {
+            "input_tokens": 12,
+            "output_tokens": 8,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0
+          },
+          "costUsd": 0.0012,
+          "errorKind": null,
+          "attachmentFilename": null,
+          "attachmentSize": null
+        }
+      ],
+      "total": 2,
+      "limit": 50,
+      "offset": 0
+    }
+  },
+  "listMessages_empty": {
+    "status": 200,
+    "body": {
+      "messages": [],
+      "total": 0,
+      "limit": 50,
+      "offset": 0
+    }
+  },
+  "listMessages_500": {
+    "status": 500,
+    "body": { "error": "internal server error" }
+  },
+  "createMessage_success": {
+    "status": 201,
+    "body": {
+      "id": "msg_new",
+      "threadId": "thread_1",
+      "role": "user",
+      "body": "a message without attachment",
+      "createdAt": "2026-01-05T00:00:00.000Z",
+      "claimedBy": null,
+      "repliedAt": null,
+      "tokens": null,
+      "costUsd": null,
+      "errorKind": null,
+      "attachmentFilename": null,
+      "attachmentSize": null
+    }
+  },
+  "createMessage_with_attachment_success": {
+    "status": 201,
+    "body": {
+      "id": "msg_new_attach",
+      "threadId": "thread_1",
+      "role": "user",
+      "body": "a message with an attachment",
+      "createdAt": "2026-01-05T00:01:00.000Z",
+      "claimedBy": null,
+      "repliedAt": null,
+      "tokens": null,
+      "costUsd": null,
+      "errorKind": null,
+      "attachmentFilename": "notes.txt",
+      "attachmentSize": 11
+    }
+  },
+  "createMessage_500": {
+    "status": 500,
+    "body": { "error": "internal server error" }
+  },
+  "getThreadStats_success": {
+    "status": 200,
+    "body": {
+      "messageCount": 2,
+      "totalInputTokens": 12,
+      "totalOutputTokens": 8,
+      "totalCostUsd": 0.0012
+    }
+  },
+  "getThreadStats_500": {
+    "status": 500,
+    "body": { "error": "internal server error" }
+  }
+}
