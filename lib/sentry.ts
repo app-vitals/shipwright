@@ -16,6 +16,7 @@ type SentryLog = NonNullable<BunOptions["beforeSendLog"]> extends (
 
 export interface InitSentryOptions {
   service: string;
+  agentId?: string;
 }
 
 /** Narrowed to the one method initSentry calls, so tests can inject a fake without mock.module(). */
@@ -138,6 +139,11 @@ export function buildSentryInitOptions(
   const dsn = process.env.SENTRY_DSN;
   if (!dsn) return undefined;
 
+  const tags: Record<string, string> = { service: opts.service };
+  if (opts.agentId) {
+    tags.agent_id = opts.agentId;
+  }
+
   return {
     dsn,
     enableLogs: true,
@@ -146,7 +152,7 @@ export function buildSentryInitOptions(
     ],
     environment:
       process.env.SENTRY_ENVIRONMENT ?? process.env.NODE_ENV ?? "production",
-    initialScope: { tags: { service: opts.service } },
+    initialScope: { tags },
     beforeSend: scrubEvent,
     beforeSendLog: scrubLog,
   };
