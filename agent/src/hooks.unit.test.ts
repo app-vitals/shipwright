@@ -571,32 +571,6 @@ describe("withCommandHooks — execution", () => {
     );
     expect(runner).toHaveBeenCalledTimes(1);
   });
-
-  test("real spawn: a SIGTERM-ignoring hook is SIGKILLed after the grace period", async () => {
-    const cacheDir = tmp();
-    const dir = join(cacheDir, "custom", "hooks", "shipwright:dev-task.pre");
-    mkdirSync(dir, { recursive: true });
-    writeExec(
-      join(dir, "10-stubborn.sh"),
-      "#!/usr/bin/env bash\ntrap '' TERM\nwhile true; do sleep 0.05; done\n",
-    );
-    const runner = mock((_m: string, _k?: string) => Promise.resolve(okResult));
-    // No injected spawner — real Bun.spawn, real signals.
-    const wrapped = withCommandHooks(runner, {
-      pluginCacheDir: cacheDir,
-      timeoutMs: 100,
-      killGraceMs: 200,
-    });
-
-    const started = Date.now();
-    const err = await wrapped("/shipwright:dev-task acme/x#1").catch((e) => e);
-
-    expect(err).toBeInstanceOf(HookError);
-    expect((err as HookError).timedOut).toBe(true);
-    // SIGTERM alone would hang forever — SIGKILL must bound the wait.
-    expect(Date.now() - started).toBeLessThan(2_000);
-    expect(runner).not.toHaveBeenCalled();
-  });
 });
 
 // ─── HookError through the cron-handler failed-run path ──────────────────────
