@@ -1,6 +1,10 @@
 import { expect, test } from "@playwright/test";
 import { BOOKING_URL } from "../src/consts";
-import { expectNoRuntimeJsBeyondAnalytics } from "./helpers";
+import {
+  expectBannedPhrasesAbsent,
+  expectNoDollarFigures,
+  expectNoRuntimeJsBeyondAnalytics,
+} from "./helpers";
 
 // Fulfill external font CDN requests immediately so the page's 'load' event
 // fires even when CI can't reach external networks (fonts.googleapis.com, fontshare.com).
@@ -20,11 +24,11 @@ test("home route responds 200", async ({ page }) => {
   expect(response?.status()).toBe(200);
 });
 
-test("hero heading renders the brand tagline", async ({ page }) => {
+test("hero heading renders the Devin-alternative H1", async ({ page }) => {
   await page.goto("/");
   const heading = page.locator("h1");
   await expect(heading).toBeVisible();
-  await expect(heading).toContainText(/own environment/i);
+  await expect(heading).toHaveText("The open source alternative to Devin.");
 });
 
 test("dark-premium navy base background is applied", async ({ page }) => {
@@ -118,6 +122,39 @@ test("hero features the intro video as its centerpiece", async ({ page }) => {
   await expect(
     hero.locator('video[src="/shipwright-intro.mp4"]'),
   ).toBeVisible();
+});
+
+// DVN-4.1: the "Own it" section links prominently to the two comparison
+// pages once they exist (avoids a dead-link window in production).
+test("'Own it' section links to /vs/devin and /self-hosted", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const section = page.locator("#own-it");
+  await expect(
+    section.getByRole("link", { name: /Shipwright vs Devin comparison/i }),
+  ).toHaveAttribute("href", "/vs/devin");
+  await expect(
+    section.getByRole("link", { name: /self-hosted.*actually means/i }),
+  ).toHaveAttribute("href", "/self-hosted");
+});
+
+// D10: nav and footer each carry a single "vs Devin" link to /vs/devin.
+test("primary nav includes a vs Devin link", async ({ page }) => {
+  await page.goto("/");
+  const nav = page.getByRole("navigation", { name: "Primary" });
+  await expect(nav.getByRole("link", { name: /vs Devin/i })).toHaveAttribute(
+    "href",
+    "/vs/devin",
+  );
+});
+
+test("footer includes a vs Devin link", async ({ page }) => {
+  await page.goto("/");
+  const footer = page.getByRole("navigation", { name: "Footer" });
+  await expect(
+    footer.getByRole("link", { name: /vs Devin/i }),
+  ).toHaveAttribute("href", "/vs/devin");
 });
 
 test("page does NOT contain the string 'Autonomous programming, installed'", async ({
@@ -324,18 +361,25 @@ test("differentiators feature 'Built on Claude Code' and free/open-source (MIT)"
   await expect(section.getByText(/MIT/).first()).toBeVisible();
 });
 
-test("differentiators name no competitors", async ({ page }) => {
+test("differentiators names no competitors except a single linked Devin mention", async ({
+  page,
+}) => {
   await page.goto("/");
-  const text =
-    (await page.locator("#differentiators").textContent())?.toLowerCase() ?? "";
-  for (const competitor of [
-    "devin",
-    "cursor",
-    "copilot",
-    "windsurf",
-    "github copilot",
-  ]) {
+  const section = page.locator("#differentiators");
+  const text = (await section.textContent())?.toLowerCase() ?? "";
+  // These competitors remain fully banned from the section.
+  for (const competitor of ["cursor", "copilot", "windsurf", "github copilot"]) {
     expect(text).not.toContain(competitor);
+  }
+  // "devin" gets a narrow exception: at most one mention, and only as part of
+  // a linked bridge sentence (e.g. to a future /vs/devin comparison page).
+  const devinCount = (text.match(/devin/g) ?? []).length;
+  expect(devinCount).toBeLessThanOrEqual(1);
+  if (devinCount === 1) {
+    const linkedText = (await section.locator("a").allTextContents())
+      .join(" ")
+      .toLowerCase();
+    expect(linkedText).toContain("devin");
   }
 });
 
@@ -479,12 +523,12 @@ test("the og:image asset is actually served (1280x640 PNG)", async ({
   expect(res.headers()["content-type"]).toContain("image/png");
 });
 
-test("default page title is the SEO-targeted claude code string", async ({
+test("default page title is the SEO-targeted open-source-alternative-to-Devin string", async ({
   page,
 }) => {
   await page.goto("/");
   expect(await page.title()).toBe(
-    "Shipwright -- autonomous delivery agent for Claude Code",
+    "Shipwright -- The open source alternative to Devin",
   );
 });
 
@@ -494,15 +538,13 @@ test("og:title meta content matches the default title", async ({ page }) => {
     page.locator('head meta[property="og:title"]'),
   ).toHaveAttribute(
     "content",
-    "Shipwright -- autonomous delivery agent for Claude Code",
+    "Shipwright -- The open source alternative to Devin",
   );
 });
 
 test("page markets no pricing anywhere", async ({ page }) => {
   await page.goto("/");
-  const text = (await page.locator("body").textContent()) ?? "";
-  const lower = text.toLowerCase();
-  for (const term of [
+  await expectBannedPhrasesAbsent(page, [
     "pricing",
     "per month",
     "per seat",
@@ -512,10 +554,6 @@ test("page markets no pricing anywhere", async ({ page }) => {
     "subscription",
     "free trial",
     "billed annually",
-  ]) {
-    expect(lower).not.toContain(term);
-  }
-  // No dollar-amount price tags. The demo transcript uses "$ " shell prompts
-  // (dollar + space), never "$<digit>", so this only catches real prices.
-  expect(text).not.toMatch(/\$\d/);
+  ]);
+  await expectNoDollarFigures(page);
 });

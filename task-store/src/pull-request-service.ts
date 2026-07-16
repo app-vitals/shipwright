@@ -40,6 +40,14 @@ export interface PullRequestListFilters {
    * duplicate that logic, it just reads the current claimedBy column.
    */
   ready?: boolean;
+  /**
+   * Order results by createdAt. Defaults to "asc", preserving current
+   * behavior for every existing caller. Unrelated to claimNext()'s own
+   * deterministic SQL ORDER BY (COALESCE(readyForReviewAt, ...) ASC) used
+   * for phase-ready claiming — claimNext() does not call list() and does not
+   * accept this filter.
+   */
+  sort?: "asc" | "desc";
 }
 
 /** Paginated list result from PullRequestService.list. */
@@ -102,7 +110,7 @@ export class PullRequestService implements PullRequestServiceLike {
     const [prs, total] = await this.prisma.$transaction([
       this.prisma.pullRequest.findMany({
         where,
-        orderBy: { createdAt: "asc" },
+        orderBy: { createdAt: filters.sort ?? "asc" },
         take: limit,
         skip: offset,
       }),
@@ -143,7 +151,11 @@ export class PullRequestService implements PullRequestServiceLike {
       // always-release behavior. Defense-in-depth: claimNext()'s WHERE clause
       // already excludes state:'merged' records, so this is currently
       // harmless if omitted, but keeps claim state consistent regardless.
-      if (data.state === "merged") {
+      // 'closed' gets the same treatment (CHU-2.1's PR state reconciler PATCHes
+      // both merged and closed records and relies on this to clear claim
+      // fields without having to send them explicitly, since claimedBy/
+      // claimedAt/heartbeatAt are not in the PATCH allowlist in routes/prs.ts).
+      if (data.state === "merged" || data.state === "closed") {
         updateData.claimedBy = null;
         updateData.claimedAt = null;
         updateData.heartbeatAt = null;

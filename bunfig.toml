@@ -6,8 +6,15 @@
 # them with the Bun runner. Exclude site/ from the root `bun test` scan so the
 # Astro site stays fully isolated from the monorepo test suite.
 #
-# metrics/e2e/ contains Playwright *.e2e.ts tests that must be run via
-# `bunx playwright test` — not via bun test. Exclude them so Bun does not
-# try to execute Playwright test files with the Bun runner.
+# metrics/e2e/ and admin/e2e/ contain Playwright *.e2e.ts tests that must be
+# run via `bunx playwright test` — not via bun test. Exclude them so Bun does
+# not try to execute Playwright test files with the Bun runner.
+#
+# *.canary.test.ts is a reserved suffix (no files use it yet) for the future
+# canary suite defined by the canary-execution skill contract
+# (plugins/shipwright/skills/canary-execution/SKILL.md). Canary tests run via
+# a dedicated entry point, never via default `bun test` — same rationale as
+# the e2e exclusions above, added proactively to prevent a future collision.
+# See docs/test-readiness/naming.md for the full naming + exclusion reference.
 [test]
-pathIgnorePatterns = ["**/site/**", "**/metrics/e2e/**", "**/admin/e2e/**"]
+pathIgnorePatterns = ["**/site/**", "**/metrics/e2e/**", "**/admin/e2e/**", "**/*.canary.test.ts"]

@@ -43,7 +43,7 @@ Query params:
 |-------|------|-------------|
 | `status` | string | Filter by exact status (e.g. `pending`, `in_progress`, `pr_open`) |
 | `state` | string | `open` (all non-terminal), `closed` (terminal), `in_progress`, `ready`, `blocked` |
-| `ready` | `true` | Alias for `state=ready` — returns only tasks with `status=pending`, no `hitl`, and all dependencies satisfied. Tasks are returned in ascending `createdAt` order (oldest first) to ensure deterministic selection regardless of insertion order. |
+| `ready` | `true` | Alias for `state=ready` — returns only tasks with `status=pending`, no `hitl`, and all dependencies satisfied. Tasks are always returned in ascending `createdAt` order (oldest first) to ensure deterministic selection regardless of insertion order. The `?sort` parameter is not supported with `?ready=true`. |
 | `session` | string | Filter by planning session slug |
 | `repo` | string | Filter by repo (`org/repo` format) |
 | `assignee` | string | Filter by assignee (admin tokens only; agent tokens see only their own tasks) |
@@ -52,6 +52,7 @@ Query params:
 | `branch` | string | Filter by branch name |
 | `limit` | number | Page size |
 | `offset` | number | Page offset |
+| `sort` | string | `asc` (default) or `desc` — orders results by `createdAt`. Default preserves existing ascending order for all callers. |
 
 Returns `{ tasks: Task[], total: number }`.
 
@@ -165,9 +166,11 @@ The `/prs` surface tracks GitHub PRs through the review → patch → deploy pip
 GET /prs
 ```
 
-Query params: `repo`, `prNumber`, `taskId`, `state`, `reviewState`, `staged`, `limit`, `offset`, `ready`.
+Query params: `repo`, `prNumber`, `taskId`, `state`, `reviewState`, `staged`, `limit`, `offset`, `ready`, `sort`.
 
 `ready=true` returns only unclaimed PRs (`claimedBy IS NULL`) — mirrors `/tasks?ready=true`'s semantics for tasks. It composes with the other filters (e.g. `?ready=true&repo=org/repo`) rather than hardcoding `claim-next`'s `state=open AND reviewState IN (pending, posted, approved)` eligibility rules; claim staleness itself is handled entirely by the `StaleClaimReaper` background job, not by this filter.
+
+`sort` orders results by `createdAt`: `asc` (default, oldest first — current behavior for every existing caller) or `desc` (newest first). Unrelated to `claim-next`'s own deterministic ordering, which is a separate, non-configurable `ORDER BY` used for phase-ready claiming.
 
 Returns `{ prs: PullRequest[], total: number, limit: number, offset: number }`.
 
@@ -234,7 +237,7 @@ PATCH /prs/:id
 
 Writable fields: `staged`, `commitSha`, `taskId`, `agentId`, `state`, `mergedAt`, `reviewState`, `phase`, `readyForReviewAt`, `readyForPatchAt`, `readyForDeployAt`. All other fields are managed by lifecycle endpoints. Returns `400` if no writable fields are provided.
 
-**Side effect:** When `state` is set to `merged`, the claim fields (`claimedBy`, `claimedAt`, `heartbeatAt`, `phase`) are automatically cleared. This ensures that merged PRs are no longer held by an agent claim.
+**Side effect:** When `state` is set to `merged` or `closed`, the claim fields (`claimedBy`, `claimedAt`, `heartbeatAt`, `phase`) are automatically cleared. This ensures that merged or closed PRs are no longer held by an agent claim.
 
 #### PR lifecycle endpoints
 
