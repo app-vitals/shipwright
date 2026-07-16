@@ -1269,19 +1269,18 @@ no prior `test-t-*-{repo}` tasks still starts at `T-001`.
 **Steps:** No automated test covers this — Milestone 3 gating is prompt-only generation
 logic (the `deploy_model` read-with-fallback and the Process step 5 conditional are
 followed by the LLM at run time, not code). Verify via two dry runs: (a) run
-`/test-roadmap` against a repo whose CLAUDE.md declares `## Deploy model: direct` (e.g.
-shipwright itself) — or has no `## Deploy model` declaration at all. (b) run
-`/test-roadmap` against a repo whose CLAUDE.md declares `## Deploy model: staged` (e.g.
-vitals-os).
+`/test-roadmap` against a repo whose CLAUDE.md declares `## Deploy model: direct` — or
+has no `## Deploy model` declaration at all. (b) run `/test-roadmap` against a repo
+whose CLAUDE.md declares `## Deploy model: staged`.
 **Expected:** (a) `test-readiness-plan.md`'s section 4 Milestone 3 content is replaced
 with a single note line — `canary not applicable -- deploy_model=direct` (or
 `deploy_model=undeclared` when the section is absent) — no DOD text; section 5's task
 list contains **zero** Milestone 3 tasks. (b) Behavior is unchanged from before this
 gate was added: section 4 Milestone 3 keeps its normal DOD text, and section 5 emits
-canary-plumbing tasks for all canary-eligible items as before — no regression to
-vitals-os's active canary track. This is the fix for the 2026-07-14 incident where
-shipwright's own repo (`deploy_model: direct`) had 8 Milestone-3 canary-plumbing tasks
-generated and had to have them manually cancelled.
+canary-plumbing tasks for all canary-eligible items as before — no regression to a
+repo's active canary track. This is the fix for the 2026-07-14 incident where a repo
+declaring `deploy_model: direct` had 8 Milestone-3 canary-plumbing tasks generated and
+had to have them manually cancelled.
 
 ---
 
