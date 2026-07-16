@@ -13,16 +13,25 @@
  * globally-oldest ready item.
  *
  * Does NOT read state/reviews.json — all data comes from GitHub directly. The
- * task-store /prs record is consulted both for the age (readyForPatchAt)
- * field and for qualification — a record with claimedBy set means another
- * agent currently holds the claim on this PR and it is excluded (see the
- * explicit claimedBy check below, mirroring check-review.ts).
+ * task-store /prs record is consulted for qualification — a record with
+ * claimedBy set means another agent currently holds the claim on this PR and
+ * it is excluded (see the explicit claimedBy check below, mirroring
+ * check-review.ts). age is populated from the linked task's createdAt (via
+ * queryTaskStatus, LPF-3.2), falling back to the PR's GitHub createdAt when
+ * no task is linked or the lookup fails — readyForPatchAt is a necessarily-
+ * recent phase-readiness stamp, not the work item's true origination age,
+ * and is no longer used for age sourcing (it remains in PrRecord solely for
+ * queryPrRecord's other historical callers). Unlike check-deploy.ts's
+ * queryTaskStatus usage, a lookup failure here is NOT gating — it is only
+ * ever consumed for its createdAt field, so a thrown error just falls back
+ * to pr.createdAt rather than disqualifying the PR.
  */
 
-import type { CommitInfo } from "./check-helpers.ts";
+import type { CommitInfo, LinkedTaskInfo } from "./check-helpers.ts";
 import {
   candidateId,
   createPrRecordQuery,
+  createTaskStatusQuery,
   isCleanApproveBody,
   isMergeOnlyUpdate,
   mapReposTolerant,
@@ -114,6 +123,15 @@ export interface CheckPatchDeps {
    * which would collapse both cases into the same empty result.
    */
   queryPrRecord?: (repo: string, prNumber: number) => Promise<PrRecord | null>;
+  // Task status lookup for the linked task (if any), used PURELY to source
+  // the age field via its createdAt — unlike check-deploy.ts, this is never
+  // used as a gating/disqualifying check here. A thrown error is treated the
+  // same as "no linked task" (age falls back to pr.createdAt); it must not
+  // disqualify an otherwise-eligible PR from patch candidacy.
+  queryTaskStatus?: (
+    repo: string,
+    prNumber: number,
+  ) => Promise<LinkedTaskInfo | null>;
 }
 
 // ─── CI status (dedup stale reruns — CPC-1.1) ─────────────────────────────────
@@ -381,9 +399,22 @@ export async function getPatchCandidates(
       if (record?.claimedBy != null) continue;
     }
 
+    // Task-store task lookup, used purely to source the age field from the
+    // linked task's createdAt (LPF-3.2) — not a gating check. A thrown error
+    // is treated as "no linked task" so it never disqualifies an otherwise-
+    // eligible PR from patch candidacy.
+    let linkedTask: LinkedTaskInfo | null = null;
+    if (deps.queryTaskStatus) {
+      try {
+        linkedTask = await deps.queryTaskStatus(pr.repo, pr.number);
+      } catch {
+        linkedTask = null;
+      }
+    }
+
     candidates.push({
       id: candidateId(pr.repo, pr.number),
-      age: record?.readyForPatchAt ?? pr.createdAt ?? "",
+      age: linkedTask?.createdAt ?? pr.createdAt ?? "",
       phase: "patch",
     });
   }
@@ -540,5 +571,6 @@ export async function buildProductionDeps(opts: {
     },
     getCurrentUser: getUser,
     queryPrRecord: createPrRecordQuery<PrRecord>({ fetchFn: opts.fetchFn }),
+    queryTaskStatus: createTaskStatusQuery({ fetchFn: opts.fetchFn }),
   };
 }
