@@ -204,13 +204,15 @@ Anything the audit couldn't determine without a human call. Common entries:
    - Milestone 4: all `high` tier items (net-new + rebuild + promote)
    - Milestone 5: all `delete (redundant)` items + remaining `rebuild` cleanup + plugin feedback collector
 6. **Apply the pairing rule** from `${CLAUDE_PLUGIN_ROOT}/skills/repo-config/SKILL.md`: every task that creates or modifies a CI workflow file MUST emit a paired branch-protection task that `depends_on` the workflow task. Without this, the audit ships as advisory rather than enforced. The pairing rule is non-negotiable; skipping it is the failure mode the user will catch and the plugin will be blamed for.
-7. Load `${CLAUDE_PLUGIN_ROOT}/assets/templates/test-readiness-plan.md.tmpl`. Fill. Write to `docs/test-readiness/test-readiness-plan.md`.
+7. **Apply the E2E classification guardrail** (non-negotiable): Before emitting any task with `layer: e2e`, verify against test-system.md's "Classifying a new test" step that the proposed test journey actually exercises a real browser (step 4: "Does it test a multi-step browser flow? → e2e (Playwright)"). If the journey is a backend orchestration flow, an API contract test, or any other non-browser interaction, downgrade the task to `layer: integration` or `layer: smoke` with a one-line note explaining why (e.g., "backend orchestration flow — moved to smoke"). This guardrail prevents shipping e2e tasks that violate the test classification rules, ensuring the e2e layer contains only true multi-step browser-driven flows.
+8. Load `${CLAUDE_PLUGIN_ROOT}/assets/templates/test-readiness-plan.md.tmpl`. Fill. Write to `docs/test-readiness/test-readiness-plan.md`.
 
 ## Failure modes to avoid
 
 - **Don't sequence Milestone 5 (cleanup) before Milestone 2 (critical-path).** Deleting a "redundant" test before its canonical owner exists creates a coverage hole. Always build before deleting.
 - **Don't skip the speed delta.** It's the most actionable single number for "are we converging."
 - **Don't write a roadmap that's a copy of the migration table.** The roadmap is sequenced and milestone-gated; the migration is unsorted bucketing. The synthesis is the value.
+- **The plugin feedback collector task must not create a per-repo log inside the plugin.** `plugins/shipwright/` is repo-agnostic and ships publicly (see root `CLAUDE.md`) — a file that names the target repo and accumulates dated, repo-specific entries (e.g. `references/pipeline-learnings.md`) bakes private/internal repo names into the OSS package as soon as a second repo runs the pipeline. Route real feedback through `learning-capture`'s existing mechanism instead: a generalized, repo-agnostic instruction edited directly into the relevant skill/doc, or — for autonomous agents, which don't use `learning-capture` interactively — a `# Harness TODO` entry for the dream job to fold in per its normal routing. Never a new narrative file under the plugin's own `references/`.
 - **Don't restart T-NNN numbering at T-001 on a repo with a prior cycle.** Always run the
   step 4 task-store query first. Skipping it silently collides with `test-fix`'s
   `test-t-{nnn}-{repo-slug}` IDs from an earlier cycle and produces a roadmap that

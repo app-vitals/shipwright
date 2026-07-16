@@ -2466,7 +2466,12 @@ export function renderCronLogsPage(opts: {
   function row(r: CronRunItem): string {
     const outcomeLabel = cronRunOutcomeLabel(r);
     const badgeStyle = cronOutcomeStyle(outcomeLabel);
-    const badgeTitle = r.skipped && r.skipReason ? r.skipReason : outcomeLabel;
+    const badgeTitle =
+      r.skipped && r.skipReason
+        ? r.skipReason
+        : !r.skipped && r.error
+          ? r.error
+          : outcomeLabel;
     const outcomeCell = `<span class="badge" style="${badgeStyle}" title="${escapeHtml(badgeTitle)}">${escapeHtml(outcomeLabel)}</span>`;
 
     const cronLabel = r.cron ? (r.cron.name ?? r.cron.schedule) : "—";

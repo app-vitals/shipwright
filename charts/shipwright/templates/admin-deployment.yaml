@@ -37,6 +37,8 @@ spec:
               containerPort: 3001
               protocol: TCP
           livenessProbe:
+            # DB-independent — a transient DB blip must never trigger a
+            # liveness-driven restart of an otherwise-healthy process.
             httpGet:
               path: /health
               port: 3001
@@ -45,8 +47,10 @@ spec:
             timeoutSeconds: 3
             failureThreshold: 3
           readinessProbe:
+            # DB-aware — keeps the pod out of Service rotation until the Cloud
+            # SQL proxy sidecar has finished connecting to Postgres.
             httpGet:
-              path: /health
+              path: /health/ready
               port: 3001
             initialDelaySeconds: 5
             periodSeconds: 10

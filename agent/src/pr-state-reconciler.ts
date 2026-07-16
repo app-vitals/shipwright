@@ -25,7 +25,7 @@
  * with a 30-60 minute interval — see agent/src/index.ts.
  */
 
-import { resolveAllRepos, resolveWorkspacePath } from "./check-helpers.ts";
+import { createPrRecordQuery, resolveAllRepos, resolveWorkspacePath } from "./check-helpers.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -35,12 +35,22 @@ export interface PrStateRecord {
   repo: string;
   prNumber: number;
   state: string;
+  /** Present when this record was fetched for the taskId-backfill lookup; absent/undefined elsewhere. */
+  taskId?: string | null;
 }
 
 /** Result of `gh pr view <n> --json state,mergedAt`. */
 export interface GhPrView {
   state: "OPEN" | "MERGED" | "CLOSED";
   mergedAt: string | null;
+}
+
+/** Minimal shape of a task-store Task this reconciler needs for the pr_open pass (DSR-1.1). */
+export interface PrOpenTaskRecord {
+  id: string;
+  repo?: string;
+  pr?: number;
+  branch?: string;
 }
 
 export interface PrStateReconcilerDeps {
@@ -57,6 +67,22 @@ export interface PrStateReconcilerDeps {
   patchPrRecord: (id: string, fields: Record<string, unknown>) => Promise<void>;
   /** Fetch live GitHub state for a single PR. Throws on lookup failure. */
   ghViewPr: (repo: string, prNumber: number) => Promise<GhPrView>;
+  /** List every task-store Task with status "pr_open" (DSR-1.1). */
+  listPrOpenTasks: () => Promise<PrOpenTaskRecord[]>;
+  /** PATCH a task-store Task's fields (DSR-1.1). */
+  updateTaskStatus: (id: string, fields: Record<string, unknown>) => Promise<void>;
+  /** Branch-fallback PR lookup (`gh pr list --head <branch> --state merged`) for tasks with no `pr` number set (DSR-1.1). */
+  ghListMergedPrsForBranch: (
+    repo: string,
+    branch: string,
+  ) => Promise<Array<{ number: number }>>;
+  /** Look up a task-store PullRequest record by repo+prNumber, for the taskId backfill (DSR-1.1). */
+  findPrRecordByRepoAndPrNumber: (
+    repo: string,
+    prNumber: number,
+  ) => Promise<PrStateRecord | null>;
+  /** Injected clock — mergedAt fallback when GitHub doesn't report one (DSR-1.1). */
+  now: () => string;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -126,6 +152,107 @@ async function reconcileRecord(
   await deps.patchPrRecord(record.id, fields);
 }
 
+/**
+ * Resolve the repo to check a pr_open task against, mirroring the legacy
+ * check-deploy.ts reconcileStalePrOpenTasks fallback: a task's own `repo`
+ * field wins when it's already "org/repo" shaped, otherwise fall back to
+ * the first configured repo. Returns undefined when neither is available
+ * (bare repo name + no configured repos) — callers must skip defensively
+ * rather than guess.
+ */
+function resolveTaskRepo(deps: PrStateReconcilerDeps, task: PrOpenTaskRecord): string | undefined {
+  if (task.repo?.includes("/")) return task.repo;
+  return deps.repos[0];
+}
+
+/**
+ * Reconcile one pr_open task against live GitHub state (DSR-1.1 —
+ * ports check-deploy.ts's reconcileStalePrOpenTasks two-path logic into the
+ * ongoing background sweep instead of a one-shot precheck script).
+ *
+ * Direct path (task.pr set): reuse the same ghViewPr dep the PR-record pass
+ * above already calls, so a real GitHub mergedAt is used when available
+ * (falling back to the injected clock only when GitHub didn't report one —
+ * unlike the legacy script, which always used `now`).
+ *
+ * Branch-fallback path (no task.pr, task.branch set): `gh pr list --head
+ * <branch> --state merged` only returns the PR number, never a mergedAt, so
+ * this path always uses the injected clock — matching the legacy script.
+ *
+ * Either path, once a merge is confirmed, also backfills the task-store
+ * PullRequest record's taskId when that record exists and its taskId is
+ * still null — closing the gap where only review.md ever wrote it.
+ */
+async function reconcilePrOpenTask(
+  deps: PrStateReconcilerDeps,
+  task: PrOpenTaskRecord,
+): Promise<void> {
+  const taskRepo = resolveTaskRepo(deps, task);
+  if (!taskRepo) return; // no repo to resolve against — skip defensively
+
+  let prNumber: number;
+  let mergedAt: string;
+  let backfillPr: number | undefined; // only set on the branch path, matching the legacy PATCH shape
+
+  if (task.pr) {
+    const ghState = await deps.ghViewPr(taskRepo, task.pr);
+    if (ghState.state !== "MERGED") return; // still open/closed on GitHub — no-op
+    prNumber = task.pr;
+    mergedAt = ghState.mergedAt ?? deps.now();
+  } else if (task.branch) {
+    const merged = await deps.ghListMergedPrsForBranch(taskRepo, task.branch);
+    const first = merged[0];
+    if (!first) return; // no merged PR found for this branch yet
+    prNumber = first.number;
+    backfillPr = first.number;
+    mergedAt = deps.now();
+  } else {
+    return; // neither path resolvable — nothing to do
+  }
+
+  await deps.updateTaskStatus(task.id, {
+    status: "merged",
+    ...(backfillPr !== undefined ? { pr: backfillPr } : {}),
+    mergedAt,
+  });
+
+  const prRecord = await deps.findPrRecordByRepoAndPrNumber(taskRepo, prNumber);
+  if (prRecord && !prRecord.taskId) {
+    await deps.patchPrRecord(prRecord.id, { taskId: task.id });
+  }
+}
+
+/**
+ * Scan every pr_open task, resolve its linked PR (directly via task.pr, or
+ * via the branch fallback), and PATCH the task to merged when GitHub
+ * confirms the PR is actually merged. A single per-task failure is logged
+ * and does not abort reconciliation of the rest of the batch — mirrors
+ * reconcilePrState's own per-record error isolation above.
+ */
+export async function reconcilePrOpenTasks(deps: PrStateReconcilerDeps): Promise<void> {
+  let tasks: PrOpenTaskRecord[];
+  try {
+    tasks = await deps.listPrOpenTasks();
+  } catch (err) {
+    console.error(
+      "[pr-state-reconciler] failed to list pr_open tasks:",
+      err instanceof Error ? err.message : String(err),
+    );
+    return;
+  }
+
+  for (const task of tasks) {
+    try {
+      await reconcilePrOpenTask(deps, task);
+    } catch (err) {
+      console.error(
+        `[pr-state-reconciler] failed to reconcile pr_open task ${task.id}:`,
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
+}
+
 // ─── Core logic ───────────────────────────────────────────────────────────────
 
 /**
@@ -133,7 +260,8 @@ async function reconcileRecord(
  * GitHub state, and PATCH only the ones that disagree (GitHub shows
  * MERGED/CLOSED but the record still says "open"). A single per-PR gh
  * lookup failure is logged and does not abort reconciliation of the rest
- * of the batch.
+ * of the batch. Then runs the pr_open-task reconciliation pass (DSR-1.1) so
+ * agent/src/index.ts's single call site doesn't need to change.
  */
 export async function reconcilePrState(deps: PrStateReconcilerDeps): Promise<void> {
   for (const repo of deps.repos) {
@@ -159,6 +287,8 @@ export async function reconcilePrState(deps: PrStateReconcilerDeps): Promise<voi
       }
     }
   }
+
+  await reconcilePrOpenTasks(deps);
 }
 
 // ─── Production deps ──────────────────────────────────────────────────────────
@@ -168,6 +298,11 @@ interface PrListResponseJson {
   total: number;
   limit: number;
   offset: number;
+}
+
+/** GET /tasks response shape — mirrors createTaskStoreClient's own legacy-bare-array tolerance. */
+interface TaskListResponseJson {
+  tasks: PrOpenTaskRecord[];
 }
 
 export function buildProductionDeps(opts: {
@@ -224,5 +359,49 @@ export function buildProductionDeps(opts: {
         "state,mergedAt",
       ]);
     },
+    listPrOpenTasks: async () => {
+      const params = new URLSearchParams({ status: "pr_open" });
+      const res = await doFetch(`${baseUrl}/tasks?${params}`, { headers });
+      if (!res.ok) {
+        throw new Error(`task-store GET /tasks?${params} → ${res.status}`);
+      }
+      const data = (await res.json()) as unknown;
+      // Same legacy-bare-array tolerance as createTaskStoreClient's query().
+      if (Array.isArray(data)) return data as PrOpenTaskRecord[];
+      return (data as TaskListResponseJson).tasks;
+    },
+    updateTaskStatus: async (id: string, fields: Record<string, unknown>) => {
+      const res = await doFetch(`${baseUrl}/tasks/${id}`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify(fields),
+      });
+      if (!res.ok) {
+        throw new Error(`task-store PATCH /tasks/${id} → ${res.status}`);
+      }
+    },
+    ghListMergedPrsForBranch: async (repo: string, branch: string) => {
+      return ghJson<Array<{ number: number }>>([
+        "pr",
+        "list",
+        "--head",
+        branch,
+        "--state",
+        "merged",
+        "--repo",
+        repo,
+        "--json",
+        "number",
+      ]);
+    },
+    // createPrRecordQuery (check-helpers.ts) already implements exactly this
+    // repo+prNumber lookup and, unlike this file's own listOpenPrRecords/
+    // patchPrRecord, never throws — it resolves to null on missing config or
+    // any fetch error, which matches the "a PR record may simply not exist
+    // yet" semantics the taskId backfill needs.
+    findPrRecordByRepoAndPrNumber: createPrRecordQuery<PrStateRecord>({
+      fetchFn: opts.fetchFn,
+    }),
+    now: () => new Date().toISOString(),
   };
 }

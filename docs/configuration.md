@@ -81,7 +81,7 @@ Provide either the GitHub App vars (recommended) or `GH_TOKEN` (PAT). App auth i
 | `SHIPWRIGHT_API_URL` | `string` | — | Base URL of the Shipwright admin service, used by the agent entrypoint to fetch config at startup. |
 | `SHIPWRIGHT_AGENT_ID` | `string` | — | The agent's ID in the Shipwright platform. Also settable via `--agent-id` CLI flag. |
 | `SHIPWRIGHT_AGENT_API_KEY` | `string` | — | Bearer token for the config fetch at startup (`/agents/:id/config` and `/agents/:id/crons`). Also settable via `--api-key`. |
-| `SHIPWRIGHT_PR_STATE_RECONCILER_INTERVAL_MS` | `number` | `2700000` (45 min) | Interval in milliseconds for the PR state reconciler (`agent/src/pr-state-reconciler.ts`), started in `agent/src/index.ts` alongside the config-sync and cron-sync intervals. On each tick it lists every task-store PR record still `state:"open"` per repo, checks each against live GitHub state via `gh pr view`, and PATCHes the record's `state`/`mergedAt` (plus defensively clearing claim fields) when GitHub reports the PR as merged or closed — a crash backstop for the *business state* fields, distinct from `SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS`'s *claim* fields. Deliberately a longer interval than the 60s config/cron syncs since it only needs to run every 30-60 minutes. Only started when `runtimeClient` and `SHIPWRIGHT_AGENT_ID` are configured. |
+| `SHIPWRIGHT_PR_STATE_RECONCILER_INTERVAL_MS` | `number` | `2700000` (45 min) | Interval in milliseconds for the PR state reconciler (`agent/src/pr-state-reconciler.ts`), started in `agent/src/index.ts` alongside the config-sync and cron-sync intervals. On each tick it runs two passes: (1) lists every task-store PR record still `state:"open"` per repo, checks each against live GitHub state via `gh pr view`, and PATCHes the record's `state`/`mergedAt` (plus defensively clearing claim fields) when GitHub reports the PR as merged or closed — a crash backstop for the *business state* fields, distinct from `SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS`'s *claim* fields; (2) scans every task-store Task with `status:"pr_open"`, resolves its linked PR (directly via task.pr or via branch fallback via `gh pr list --head`), checks GitHub for merge, and PATCHes the task to merged, also backfilling the linked PullRequest record's taskId when needed (DSR-1.1). Deliberately a longer interval than the 60s config/cron syncs since it only needs to run every 30-60 minutes. Only started when `runtimeClient` and `SHIPWRIGHT_AGENT_ID` are configured. |
 
 ### Server
 
@@ -200,8 +200,8 @@ Agent behavior is controlled by `state/agent-policy.md`. This is a Markdown file
 |---|---|---|---|
 | `auto_post_reviews` | `bool` | `false` | Post review comments to GitHub automatically without manual approval. |
 | `allowed_events` | `string[]` | `["COMMENT", "APPROVE"]` | GitHub review event types the agent may emit. |
-| `review_external_prs` | `bool` | `true` | Review PRs opened by users other than the agent. |
-| `allow_self_review` | `bool` | `true` | Allow the agent to review its own PRs. Set to `false` to require a human reviewer on agent-authored PRs. |
+| `review_external_prs` | `bool` | `true` | Currently unused — `/shipwright:review` always targets a single explicit PR (no repo-wide scan to filter), and no other command reads this field. |
+| `allow_self_review` | `bool` | `true` | Read by `check-review.ts` (the `shipwright-review`/`shipwright-loop` cron precheck) to decide whether the agent's own open PRs are review candidates. Set to `false` to require a human reviewer on agent-authored PRs. |
 | `min_confidence` | `number` | `75` | Minimum confidence score (0–100) for a finding to be included in a review. |
 | `max_findings` | `number` | `5` | Maximum number of findings to include in a single review. |
 | `cleanup_merged_worktrees` | `bool` | `true` | Automatically remove worktrees for merged branches. |
@@ -213,7 +213,6 @@ Agent behavior is controlled by `state/agent-policy.md`. This is a Markdown file
 ---
 auto_post_reviews: false
 allowed_events: [COMMENT, APPROVE]
-review_external_prs: true
 allow_self_review: true
 min_confidence: 75
 max_findings: 5
@@ -221,6 +220,8 @@ cleanup_merged_worktrees: true
 cleanup_after_days: 14
 ---
 ```
+
+(`review_external_prs` is omitted above — see the table row: currently unused.)
 
 ---
 
