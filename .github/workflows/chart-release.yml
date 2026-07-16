@@ -13,8 +13,10 @@ name: Chart Release
 #     off `Chart.yaml`'s `version`: a re-run with an unchanged version repackages
 #     an identical `.tgz` (same digest) and produces no committable diff, so the
 #     effective trigger is "a chart version bump landed on main". Consumption is
-#     PULL-based: downstream consumers (e.g. Renovate) detect the new version on
-#     gh-pages on their own schedule — this workflow sends no push notification.
+#     PULL-based: a downstream consumer's own node-cron poller watches this
+#     gh-pages index for new chart versions and triggers a workflow_dispatch-only
+#     bump workflow on its side — this workflow sends no push notification and has
+#     no knowledge of downstream consumers.
 #
 #   dry-run (pull_request) — validates that the chart packages and the index
 #     merges, WITHOUT publishing anything. This is the PR-time test for the
