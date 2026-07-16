@@ -20,6 +20,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  createPrRecordQuery,
   createTaskStatusQuery,
   createTaskStoreClient,
   getCurrentUser,
@@ -781,6 +782,88 @@ describe("createTaskStatusQuery", () => {
     await expect(query("acme/example-repo", 42)).rejects.toThrow(
       "SHIPWRIGHT_TASK_STORE_URL/SHIPWRIGHT_TASK_STORE_TOKEN not configured",
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createPrRecordQuery
+// ---------------------------------------------------------------------------
+
+describe("createPrRecordQuery", () => {
+  let savedEnv: { url?: string; token?: string };
+
+  beforeEach(() => {
+    savedEnv = {
+      url: process.env.SHIPWRIGHT_TASK_STORE_URL,
+      token: process.env.SHIPWRIGHT_TASK_STORE_TOKEN,
+    };
+    process.env.SHIPWRIGHT_TASK_STORE_URL = "https://task-store.example.com";
+    process.env.SHIPWRIGHT_TASK_STORE_TOKEN = "test-token";
+  });
+
+  afterEach(() => {
+    if (savedEnv.url !== undefined) {
+      process.env.SHIPWRIGHT_TASK_STORE_URL = savedEnv.url;
+    } else {
+      // biome-ignore lint/performance/noDelete: intentional env cleanup
+      delete process.env.SHIPWRIGHT_TASK_STORE_URL;
+    }
+    if (savedEnv.token !== undefined) {
+      process.env.SHIPWRIGHT_TASK_STORE_TOKEN = savedEnv.token;
+    } else {
+      // biome-ignore lint/performance/noDelete: intentional env cleanup
+      delete process.env.SHIPWRIGHT_TASK_STORE_TOKEN;
+    }
+  });
+
+  test("does not append ready to the request params by default", async () => {
+    let capturedUrl: string | undefined;
+    const fakeFetch = (async (url: RequestInfo | URL) => {
+      capturedUrl = String(url);
+      return {
+        ok: true,
+        json: async () => ({ prs: [] }),
+      } as Response;
+    }) as unknown as typeof fetch;
+
+    const query = createPrRecordQuery({ fetchFn: fakeFetch });
+    await query("acme/example-repo", 42);
+
+    expect(capturedUrl).toBeDefined();
+    expect(new URL(capturedUrl as string).searchParams.get("ready")).toBeNull();
+  });
+
+  test("appends ready=true to the request params when ready: true is passed", async () => {
+    let capturedUrl: string | undefined;
+    const fakeFetch = (async (url: RequestInfo | URL) => {
+      capturedUrl = String(url);
+      return {
+        ok: true,
+        json: async () => ({ prs: [] }),
+      } as Response;
+    }) as unknown as typeof fetch;
+
+    const query = createPrRecordQuery({ fetchFn: fakeFetch, ready: true });
+    await query("acme/example-repo", 42);
+
+    expect(capturedUrl).toBeDefined();
+    expect(new URL(capturedUrl as string).searchParams.get("ready")).toBe(
+      "true",
+    );
+  });
+
+  test("returns the record when ready: true is passed and a match is found", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: true,
+        json: async () => ({
+          prs: [{ commitSha: "sha1", reviewState: "posted" }],
+        }),
+      }) as Response) as unknown as typeof fetch;
+
+    const query = createPrRecordQuery({ fetchFn: fakeFetch, ready: true });
+    const result = await query("acme/example-repo", 42);
+    expect(result).toEqual({ commitSha: "sha1", reviewState: "posted" });
   });
 });
 

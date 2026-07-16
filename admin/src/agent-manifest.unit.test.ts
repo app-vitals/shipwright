@@ -160,10 +160,10 @@ describe("buildAgentDeploymentManifest", () => {
     expect(AGENT_HEALTH_PORT).toBe(3459);
     expect(c.livenessProbe?.httpGet?.port).toBe(3459);
     expect(c.livenessProbe?.failureThreshold).toBe(3);
-    expect(c.livenessProbe?.timeoutSeconds).toBe(5);
+    expect(c.livenessProbe?.timeoutSeconds).toBe(15);
     expect(c.readinessProbe?.httpGet?.port).toBe(3459);
     expect(c.readinessProbe?.failureThreshold).toBe(3);
-    expect(c.readinessProbe?.timeoutSeconds).toBe(5);
+    expect(c.readinessProbe?.timeoutSeconds).toBe(15);
   });
 
   it("gates liveness/readiness with a startupProbe granting ~180s for a slow mise startup", () => {

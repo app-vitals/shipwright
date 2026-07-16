@@ -39,6 +39,8 @@ export interface TaskListFilters {
   branch?: string;
   limit?: number;
   offset?: number;
+  /** Order results by createdAt. Defaults to "asc" (existing behavior). */
+  sort?: "asc" | "desc";
   /**
    * Repo-scoped visibility for agent tokens.
    * When set, replaces the simple `assignee` filter with an OR clause:
@@ -128,7 +130,7 @@ export class TaskService implements TaskServiceLike {
     const [pageTasks, total, allTasks] = await this.prisma.$transaction([
       this.prisma.task.findMany({
         where,
-        orderBy: { createdAt: "asc" },
+        orderBy: { createdAt: filters.sort ?? "asc" },
         take: limit,
         skip: offset,
       }),

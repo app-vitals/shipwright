@@ -1,0 +1,190 @@
+---
+// Self-hosted AI coding agent comparison page (DVN-3.1). Targets the broader
+// "self-hosted AI coding agent" query — the fully-in-your-cloud vs hybrid
+// architecture split is the sorting criterion. Every competitor claim below
+// is sourced from goals/drafts/devin-alternative-positioning-research.md's
+// safe-to-print register (2026-07-14) and cited inline. Re-verify before any
+// future edit — see brand/MESSAGING.md D10 for the surface-scoped
+// competitor-naming policy this page operates under. OpenCode is
+// deliberately not named (unverified — never-print list).
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { BOOKING_URL } from "../consts";
+
+const repoUrl = "https://github.com/app-vitals/shipwright";
+const installCmd = "/plugin install shipwright@app-vitals/shipwright";
+const verifiedDate = "July 14, 2026";
+
+// Sources (Appendix, devin-alternative-positioning-research.md).
+const src = {
+  cursor: "https://cursor.com/blog/self-hosted-cloud-agents",
+  openhandsPricing: "https://openhands.dev/pricing",
+  openhandsLicense: "https://github.com/OpenHands/OpenHands/blob/main/LICENSE",
+  coder: "https://coder.com/docs",
+  devinDeployment: "https://docs.devin.ai/enterprise/deployment/overview",
+};
+
+const architectureRows = [
+  {
+    tool: "Shipwright",
+    license: "MIT",
+    architecture: "Fully in your own cloud — control plane included.",
+    detail:
+      "The admin, metrics, and agent runtime all deploy to infrastructure you own (Docker or your own Kubernetes cluster). No managed service sits between your repository and the agent.",
+    citation: null,
+    self: true,
+  },
+  {
+    tool: "Cursor (self-hosted cloud agents)",
+    license: "Proprietary",
+    architecture: "Hybrid — inference and orchestration stay in Cursor's cloud.",
+    detail:
+      "Only tool execution and artifacts run on your infrastructure. No spec phase, no deploy stage.",
+    citation: src.cursor,
+    self: false,
+  },
+  {
+    tool: "OpenHands",
+    license: "MIT root, time-limited PolyForm carve-out on enterprise/",
+    architecture: "Productized VPC self-host is Enterprise-gated.",
+    detail:
+      "The MIT license applies to the local tier; VPC self-hosting for the delivery-pipeline features is sold, not shipped free — the vendor's own site states \"Talk to sales\" for it.",
+    citation: src.openhandsPricing,
+    self: false,
+  },
+  {
+    tool: "Coder Agents",
+    license: "Governance platform, not an OSS agent",
+    architecture: "No built-in cloud runtime to compare — it wraps agents you run.",
+    detail:
+      "Scope stops at code, tests, and PRs. No spec phase, no deploy stage, no built-in cron.",
+    citation: src.coder,
+    self: false,
+  },
+  {
+    tool: "Devin",
+    license: "Proprietary",
+    architecture: "Cognition-hosted at every tier.",
+    detail:
+      "Even the dedicated single-tenant VPC option is a Cognition-managed environment — never inside your own infrastructure. Full breakdown at /vs/devin.",
+    citation: src.devinDeployment,
+    self: false,
+  },
+];
+---
+
+<BaseLayout
+  title="Self-hosted AI coding agent — Shipwright Harness"
+  description="Shipwright is a self-hosted AI coding agent that runs entirely in your own cloud, control plane included — not a hybrid architecture with inference in someone else's cloud."
+  pagefindIgnore={true}
+>
+  <!-- Page header -->
+  <section class="relative z-10 pt-16 pb-8">
+    <p class="sw-label">Comparison</p>
+    <h1 class="sw-h1 mt-4 max-w-3xl">
+      A <span class="sw-gradient-text">self-hosted</span> AI coding agent —
+      entirely in your cloud.
+    </h1>
+    <p class="mt-5 max-w-2xl text-lg">
+      "Self-hosted" gets used loosely. The real question is architectural:
+      does the whole system — control plane included — run on infrastructure
+      you own, or does part of it always phone home to someone else's cloud?
+      Here is the honest, sourced breakdown.
+    </p>
+    <p class="mt-4 text-sm" style="color: var(--sw-color-text-muted);">
+      Facts verified as of {verifiedDate}, from each vendor's own primary
+      sources (linked below). Re-checked immediately before this page ships —
+      vendor terms and tiers change.
+    </p>
+  </section>
+
+  <!-- Architecture comparison table -->
+  <section class="relative z-10 pb-16" style="border-top: 1px solid var(--sw-color-border-subtle); padding-top: 3rem;">
+    <h2>Fully in your cloud, or hybrid?</h2>
+    <p class="mt-3 max-w-2xl">
+      Shipwright's control plane, agent runtime, and your code all run on
+      infrastructure you own, at every tier — no managed-service layer in
+      between. The rest of the field is either hybrid (part of the system
+      stays in the vendor's cloud) or gates full self-hosting behind an
+      Enterprise sales conversation.
+    </p>
+    <div class="mt-6 overflow-x-auto">
+      <table style="width:100%; border-collapse:collapse;">
+        <thead>
+          <tr style="border-bottom: 1px solid var(--sw-color-border-muted);">
+            <th style="text-align:left; padding:0.6rem 1rem 0.6rem 0; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted); white-space:nowrap;">
+              Tool
+            </th>
+            <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted); white-space:nowrap;">
+              License
+            </th>
+            <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted); white-space:nowrap;">
+              Architecture
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {
+            architectureRows.map((row) => (
+              <tr style={`border-bottom: 1px solid var(--sw-color-border-subtle);${row.self ? " background: var(--sw-color-brand-soft);" : ""}`}>
+                <td style="padding:0.9rem 1rem 0.9rem 0; vertical-align:top;">
+                  <span
+                    style={`font-family:var(--sw-font-display); font-weight:600; color:${row.self ? "var(--sw-color-brand-default)" : "var(--sw-color-text-heading)"};`}
+                  >
+                    {row.tool}
+                  </span>
+                </td>
+                <td style="padding:0.9rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">
+                  {row.license}
+                </td>
+                <td style="padding:0.9rem 1rem 0.9rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">
+                  <strong>{row.architecture}</strong>
+                  <span> {row.detail}</span>
+                  {row.citation && (
+                    <>
+                      {" "}
+                      <a href={row.citation} class="text-sm">
+                        [source]
+                      </a>
+                    </>
+                  )}
+                </td>
+              </tr>
+            ))
+          }
+        </tbody>
+      </table>
+    </div>
+    <p class="mt-6 max-w-2xl sw-editorial">
+      "Self-hosted" is table-stakes marketing language across the field now —
+      the architecture underneath it is what actually differs. Full head to
+      head on Devin specifically: <a href="/vs/devin">/vs/devin →</a>.
+    </p>
+  </section>
+
+  <!-- Economics — price-free framing (D5). -->
+  <section class="relative z-10 pb-16" style="border-top: 1px solid var(--sw-color-border-subtle); padding-top: 3rem;">
+    <h2>Economics</h2>
+    <p class="mt-3 max-w-2xl">
+      Shipwright: free, MIT, no tiers or seats — the whole pipeline, not a
+      gated tier of it. Everyone else in the table above: see each vendor's
+      own site for current terms, which change over time.
+    </p>
+  </section>
+
+  <!-- CTA -->
+  <section id="cta" class="relative z-10 py-20 pb-24" style="border-top: 1px solid var(--sw-color-border-subtle);">
+    <h2>Try it</h2>
+    <p class="mt-3 max-w-2xl">
+      Install the plugin into Claude Code and run a task end to end. Free,
+      MIT, runs on your own infra.
+    </p>
+    <pre class="sw-code mt-4 w-fit"><code>{installCmd}</code></pre>
+    <div class="mt-6 flex flex-wrap items-center gap-4">
+      <a href={repoUrl} class="sw-btn">View on GitHub ↗</a>
+      <a href={BOOKING_URL} class="sw-btn sw-btn-secondary">Book a discovery call</a>
+    </div>
+    <p class="mt-8 max-w-2xl">
+      <a href="/compare">See how Shipwright compares to the rest of the field →</a>
+    </p>
+  </section>
+</BaseLayout>

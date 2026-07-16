@@ -1,6 +1,10 @@
 import { expect, test } from "@playwright/test";
 import { BOOKING_URL } from "../src/consts";
-import { expectNoRuntimeJsBeyondAnalytics } from "./helpers";
+import {
+  expectBannedPhrasesAbsent,
+  expectNoDollarFigures,
+  expectNoRuntimeJsBeyondAnalytics,
+} from "./helpers";
 
 // Fulfill external font CDN requests immediately so the page's 'load' event
 // fires even when CI can't reach external networks.
@@ -181,9 +185,7 @@ test("CTA repeats the install command and links GitHub + discovery call", async 
 
 test("compare page markets no pricing", async ({ page }) => {
   await page.goto("/compare");
-  const text = (await page.locator("body").textContent()) ?? "";
-  const lower = text.toLowerCase();
-  for (const term of [
+  await expectBannedPhrasesAbsent(page, [
     "pricing",
     "per month",
     "per seat",
@@ -191,10 +193,8 @@ test("compare page markets no pricing", async ({ page }) => {
     "/mo",
     "subscription",
     "free trial",
-  ]) {
-    expect(lower).not.toContain(term);
-  }
-  expect(text).not.toMatch(/\$\d/);
+  ]);
+  await expectNoDollarFigures(page);
 });
 
 test("footer nav links to /compare", async ({ page }) => {

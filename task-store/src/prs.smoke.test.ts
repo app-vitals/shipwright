@@ -770,6 +770,83 @@ describe("/prs routes (smoke)", () => {
     expect(capturedFilters?.ready).toBeUndefined();
   });
 
+  it("GET /prs?sort=desc wires the sort filter through to the service", async () => {
+    let capturedFilters: PullRequestListFilters | undefined;
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1" }));
+    const baseFake = fakePrService({ store });
+    const prServiceWithCapture: PullRequestServiceLike = {
+      ...baseFake,
+      async list(filters?: PullRequestListFilters): Promise<PullRequestListResult> {
+        capturedFilters = filters;
+        return baseFake.list(filters);
+      },
+    };
+    const app = makeApp({ prService: prServiceWithCapture });
+
+    const res = await app.request("/prs?sort=desc", {
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(200);
+    expect(capturedFilters?.sort).toBe("desc");
+  });
+
+  it("GET /prs without sort leaves the sort filter undefined (default asc)", async () => {
+    let capturedFilters: PullRequestListFilters | undefined;
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1" }));
+    const baseFake = fakePrService({ store });
+    const prServiceWithCapture: PullRequestServiceLike = {
+      ...baseFake,
+      async list(filters?: PullRequestListFilters): Promise<PullRequestListResult> {
+        capturedFilters = filters;
+        return baseFake.list(filters);
+      },
+    };
+    const app = makeApp({ prService: prServiceWithCapture });
+
+    const res = await app.request("/prs", { headers: adminAuth() });
+    expect(res.status).toBe(200);
+    expect(capturedFilters?.sort).toBeUndefined();
+  });
+
+  it("GET /prs?sort=desc round-trips descending order through the route", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set(
+      "pr-1",
+      makePr({ id: "pr-1", prNumber: 1, createdAt: new Date("2026-01-01T00:00:00.000Z") }),
+    );
+    store.set(
+      "pr-2",
+      makePr({ id: "pr-2", prNumber: 2, createdAt: new Date("2026-01-03T00:00:00.000Z") }),
+    );
+    store.set(
+      "pr-3",
+      makePr({ id: "pr-3", prNumber: 3, createdAt: new Date("2026-01-02T00:00:00.000Z") }),
+    );
+    // fakePrService's list() doesn't itself sort — apply the route's sort
+    // filter here to model what the real Prisma-backed service does, so this
+    // test exercises the query-param → filter → response round trip.
+    const baseFake = fakePrService({ store });
+    const prServiceWithSort: PullRequestServiceLike = {
+      ...baseFake,
+      async list(filters?: PullRequestListFilters): Promise<PullRequestListResult> {
+        const result = await baseFake.list(filters);
+        const sorted = [...result.prs].sort((a, b) => {
+          const diff = a.createdAt.getTime() - b.createdAt.getTime();
+          return filters?.sort === "desc" ? -diff : diff;
+        });
+        return { ...result, prs: sorted };
+      },
+    };
+    const app = makeApp({ prService: prServiceWithSort });
+
+    const res = await app.request("/prs?sort=desc", { headers: adminAuth() });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PullRequestListResult;
+    expect(body.prs.map((p) => p.prNumber)).toEqual([2, 3, 1]);
+  });
+
   it("GET /prs?staged=false returns unstaged records only", async () => {
     const store = new Map<string, PullRequest>();
     store.set("pr-1", makePr({ id: "pr-1", staged: true }));
