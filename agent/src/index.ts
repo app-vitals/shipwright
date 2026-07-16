@@ -45,6 +45,7 @@ import {
   markSlackDisconnected,
   startHealthServer,
 } from "./health.ts";
+import { withCommandHooks } from "./hooks.ts";
 import { HttpChatServiceClient } from "./http-chat-service-client.ts";
 import { buildLogPrefix } from "./log-prefix.ts";
 import { classifyCronJobsForScheduling } from "./loop-cron-classifier.ts";
@@ -101,7 +102,7 @@ const analytics = createAnalyticsStore(join(config.paths.home, "analytics"));
 analytics.track({ type: "session_start" });
 
 const slack = new WebClient(config.slack.botToken ?? "");
-const runner = createRunClaude(
+const baseRunner = createRunClaude(
   Bun.spawn,
   sessions,
   undefined,
@@ -112,6 +113,13 @@ const runner = createRunClaude(
   undefined,
   config.claude.timeoutMs,
 );
+// Wrap the shared runner once with command hooks. Off by default: with no hook
+// dirs installed anywhere, this is a byte-identical passthrough. A pre-hook
+// failure throws HookError, which the loop and cron dispatch paths already
+// catch and record as a failed run.
+const runner = withCommandHooks(baseRunner, {
+  workspace: config.paths.workspace,
+});
 
 const cronRunReporter =
   config.shipwright.apiUrl &&
@@ -403,16 +411,21 @@ if (runtimeClient && agentId) {
 
 if (config.chat.serviceUrl && config.chat.serviceToken) {
   const chatSessions = createFileSessionStore(config.paths.chatSessions);
-  const chatRunner = createRunClaude(
-    Bun.spawn,
-    chatSessions,
-    undefined,
-    config.paths.workspace,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    config.claude.timeoutMs,
+  // Command hooks wrap this runner too — the chat poll loop dispatches
+  // through its own runner, not the shared one wrapped above.
+  const chatRunner = withCommandHooks(
+    createRunClaude(
+      Bun.spawn,
+      chatSessions,
+      undefined,
+      config.paths.workspace,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      config.claude.timeoutMs,
+    ),
+    { workspace: config.paths.workspace },
   );
   const chatClient = new HttpChatServiceClient({
     baseUrl: config.chat.serviceUrl,

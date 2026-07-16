@@ -49,6 +49,7 @@ Configuration for the Shipwright agent runtime (`agent/` and `admin/`). All opti
 | `SHIPWRIGHT_CLAUDE_TIMEOUT_MS` | `number` | `1800000` | Hard timeout in milliseconds for a single `claude -p` session spawned by the agent runner (`agent/src/claude.ts`). When a session exceeds it the process is killed and a `ClaudeTimeoutError` is raised. Defaults to 1 800 000 ms (30 min) — the `claude -p` hard-timeout figure that `SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS` (35 min = 30 min + 5 min buffer) is derived from. Falls back to the default when unset or not a positive integer. Raise it for long sessions that keep polling CI after implementing so the worker can mark its task complete instead of being SIGKILLed mid-poll. **When raising this, raise `SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS` in step** (keep the ~5 min buffer above this value); otherwise the stale-claim reaper abandons the claim and re-dispatches a duplicate run before the longer session finishes. |
 | `ANTHROPIC_API_KEY` | `string` | — | Anthropic API key. Env-var-only (secret). |
 | `CLAUDE_CODE_OAUTH_TOKEN` | `string` | — | Claude Code OAuth token (alternative to `ANTHROPIC_API_KEY`). Env-var-only (secret). |
+| `SHIPWRIGHT_HOOK_TIMEOUT_MS` | `number` | `120000` | Per-hook timeout in milliseconds for command pre-run hooks (`agent/src/hooks.ts`). A hook exceeding it is sent SIGTERM (then SIGKILL after a short grace) and the session is suppressed with a `HookError`. Falls back to the default when unset or not a positive integer. |
 
 ### Slack
 
