@@ -73,20 +73,27 @@ Patch sub-agent ran: {N} time(s). Review sub-agent ran: {M} time(s).
 
 ### Step 3b: Run check-patch — spawn /shipwright:patch if triggered
 
-Run the precheck:
+Run the precheck and capture its stdout:
 
 ```bash
-bun "$CHECK_SCRIPTS/check-patch.ts"
+PATCH_TARGET=$(bun "$CHECK_SCRIPTS/check-patch.ts")
+PATCH_EXIT=$?
 ```
 
-If this exits 0, spawn `/shipwright:patch` as a sub-agent via the Agent tool:
+If `PATCH_EXIT` is 0, `PATCH_TARGET` holds a literal, directly-invocable invocation string
+of the form `/shipwright:patch {org}/{repo}#{number}`, naming the specific PR that
+triggered. Spawn `/shipwright:patch` as a sub-agent via the Agent tool, passing that exact
+target through:
 
 ```
-Spawn sub-agent: /shipwright:patch
+Spawn sub-agent: {PATCH_TARGET}
 ```
 
-Use the Agent tool to dispatch `shipwright:patch` as a fresh sub-agent session. Pass no
-additional arguments — the patch skill discovers its own inputs from GitHub.
+Use the Agent tool to dispatch `shipwright:patch` as a fresh sub-agent session, passing
+`PATCH_TARGET` as the prompt. patch.md now requires an explicit `org/repo#number` target
+argument and no longer discovers its own inputs by scanning all open PRs — the sub-agent
+must receive the captured target string (e.g. `/shipwright:patch app-vitals/shipwright#1558`),
+not a bare `/shipwright:patch`.
 
 ### Step 3c: Run check-review — spawn /shipwright:review if triggered
 
@@ -150,5 +157,12 @@ Elapsed:              {ELAPSED}s
 **Backward compatibility**: The cron invocation format is unchanged — `/shipwright:review-patch` works the same as before. No cron prompt updates are needed.
 
 **Scope expansion**: The new orchestrator delegates to `/shipwright:patch` (Lists C/D — merge conflicts, failing CI) and `/shipwright:review`, expanding scope beyond the old List A–only behavior. A single review-patch cron now covers all PR health checks.
+
+**Explicit-target dispatch**: `patch.md` now requires an explicit `org/repo#number` target
+and no longer scans all own open PRs on its own — see patch.md's Step 0. `check-patch.ts`'s
+stdout is now that literal `/shipwright:patch {org}/{repo}#{number}` invocation string
+(naming the specific PR that triggered), and Step 3b passes it straight through to the
+sub-agent dispatch. This is handled internally by review-patch.md — no cron or caller
+changes are needed.
 
 **Cron overlap**: Agents running all three crons (review, patch, review-patch) on separate schedules risk concurrent sessions working the same PRs. Recommended configuration: use review-patch as the sole cron (replacing separate review and patch crons), since it now subsumes both. If all three must run, ensure non-overlapping schedules.

@@ -10,7 +10,14 @@
  *
  * Does NOT read state/reviews.json — all data comes from GitHub directly.
  *
- * Exit 0 + one-line prompt → at least one PR needs patch attention
+ * Returns as soon as the FIRST qualifying PR is found (single-PR-at-a-time) —
+ * patch.md now requires an explicit `org/repo#number` target and only handles
+ * one PR per invocation, so the output below names that specific PR.
+ *
+ * Exit 0 + one-line prompt → at least one PR needs patch attention. The
+ *                             prompt is a literal, directly-invocable
+ *                             `/shipwright:patch {org}/{repo}#{number}`
+ *                             command targeting that PR.
  * Exit 1 + no output       → nothing to do
  *
  * Usage:
@@ -304,7 +311,7 @@ export async function run(deps: Deps): Promise<RunResult> {
     if (mergeStatus.isDirty) {
       return {
         exit: 0,
-        output: "Fix merge conflicts on own open PRs via /shipwright:patch",
+        output: `/shipwright:patch ${org}/${repo}#${pr.number}`,
       };
     }
 
@@ -312,8 +319,7 @@ export async function run(deps: Deps): Promise<RunResult> {
     if (hasUnaddressedFindings(reviewData, currentUser)) {
       return {
         exit: 0,
-        output:
-          "Fix unaddressed review findings on own open PRs via /shipwright:patch",
+        output: `/shipwright:patch ${org}/${repo}#${pr.number}`,
       };
     }
 
@@ -330,8 +336,7 @@ export async function run(deps: Deps): Promise<RunResult> {
     ) {
       return {
         exit: 0,
-        output:
-          "Fix unaddressed review findings on own open PRs via /shipwright:patch",
+        output: `/shipwright:patch ${org}/${repo}#${pr.number}`,
       };
     }
 
@@ -344,7 +349,7 @@ export async function run(deps: Deps): Promise<RunResult> {
     if (ciStatus.hasFailing) {
       return {
         exit: 0,
-        output: "Fix failing CI on own open PRs via /shipwright:patch",
+        output: `/shipwright:patch ${org}/${repo}#${pr.number}`,
       };
     }
   }

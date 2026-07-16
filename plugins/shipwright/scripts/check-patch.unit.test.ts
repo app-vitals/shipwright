@@ -192,6 +192,9 @@ describe("check-patch", () => {
     );
     expect(result.exit).toBe(0);
     expect(result.output).toContain("patch");
+    // The output is a literal, directly-invocable explicit-target command
+    // naming the specific PR that triggered — not generic prose.
+    expect(result.output).toBe("/shipwright:patch acme/example-repo#10");
   });
 
   test("exits 0 when own PR has CHANGES_REQUESTED review with non-empty body at current HEAD", async () => {
@@ -343,6 +346,8 @@ describe("check-patch", () => {
     );
     expect(result.exit).toBe(0);
     expect(result.output).toContain("patch");
+    // The explicit target names PR 11 (the qualifying PR), not PR 10.
+    expect(result.output).toBe("/shipwright:patch acme/example-repo#11");
   });
 
   test("exits 0 when multiple PRs and one has unaddressed findings AND another is merely behind main (not dirty)", async () => {
@@ -438,6 +443,7 @@ describe("check-patch", () => {
     );
     expect(result.exit).toBe(0);
     expect(result.output).toContain("patch");
+    expect(result.output).toBe("/shipwright:patch acme/example-repo#10");
   });
 
   test("exits 1 when PR is merely behind main (not dirty) with no other issues", async () => {
@@ -479,6 +485,7 @@ describe("check-patch", () => {
     );
     expect(result.exit).toBe(0);
     expect(result.output.toLowerCase()).toContain("patch");
+    expect(result.output).toBe("/shipwright:patch acme/example-repo#10");
   });
 
   // ─── Merge-only stale findings ────────────────────────────────────────────

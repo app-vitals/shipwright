@@ -83,3 +83,42 @@ describe("review-patch.md — plugin script depth resolution", () => {
     expect(content).toContain("maxdepth 5");
   });
 });
+
+describe("review-patch.md — explicit-target patch dispatch (WLS-3.3 follow-up)", () => {
+  it("Step 3b captures check-patch's stdout instead of discarding it", () => {
+    const step3bIdx = content.indexOf(
+      "### Step 3b: Run check-patch — spawn /shipwright:patch if triggered",
+    );
+    const step3cIdx = content.indexOf(
+      "### Step 3c: Run check-review — spawn /shipwright:review if triggered",
+    );
+    expect(step3bIdx).toBeGreaterThan(-1);
+    expect(step3cIdx).toBeGreaterThan(-1);
+    const step3bSection = content.slice(step3bIdx, step3cIdx);
+    expect(step3bSection).toContain(
+      'PATCH_TARGET=$(bun "$CHECK_SCRIPTS/check-patch.ts")',
+    );
+  });
+
+  it("Step 3b dispatches the sub-agent with the captured explicit target, not a bare /shipwright:patch", () => {
+    const step3bIdx = content.indexOf(
+      "### Step 3b: Run check-patch — spawn /shipwright:patch if triggered",
+    );
+    const step3cIdx = content.indexOf(
+      "### Step 3c: Run check-review — spawn /shipwright:review if triggered",
+    );
+    const step3bSection = content.slice(step3bIdx, step3cIdx);
+    expect(step3bSection).toContain("PATCH_TARGET");
+    expect(step3bSection).not.toContain(
+      "Pass no additional arguments — the patch skill discovers its own inputs from GitHub.",
+    );
+  });
+
+  it("Migration Notes documents the explicit-target dispatch behavior", () => {
+    const migrationIdx = content.indexOf("## Migration Notes");
+    expect(migrationIdx).toBeGreaterThan(-1);
+    const migrationSection = content.slice(migrationIdx);
+    expect(migrationSection).toContain("Explicit-target dispatch");
+    expect(migrationSection).toContain("org/repo#number");
+  });
+});
