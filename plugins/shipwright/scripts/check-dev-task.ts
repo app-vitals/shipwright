@@ -4,7 +4,12 @@
  *
  * Pre-check for the dev-task cron.
  *
- * Queries the task store for ready tasks and prints a prompt if any exist.
+ * Queries the task store for ready tasks and prints a prompt naming the
+ * oldest ready task's id if any exist — dev-task.md is explicit-target-only
+ * (WLS-3.1), so the prompt must supply an id; a bare `/shipwright:dev-task`
+ * with no argument now silently no-ops. Selection mirrors the FIFO ordering
+ * agent/src/work-selector.ts's selectNextWorkItem() uses for the
+ * loop-orchestrator path: oldest `addedAt` first.
  * Before checking ready tasks, guards against stale in_progress tasks:
  *   - Tasks with startedAt older than 45 minutes are reset to pending.
  *   - Tasks with no startedAt are stamped with the current time so they age
@@ -75,10 +80,18 @@ export async function run(deps: Deps): Promise<RunResult> {
   const readyTasks = await deps.getReadyTasks();
 
   if (readyTasks.length > 0) {
+    // dev-task.md is explicit-target-only (WLS-3.1) — a bare `/shipwright:dev-task`
+    // with no task id now silently no-ops. Select the oldest ready task by
+    // `addedAt` (same FIFO ordering as work-selector.ts's selectNextWorkItem,
+    // the loop-orchestrator's equivalent selection) and pass its id explicitly,
+    // mirroring how agent/src/loop-orchestrator.ts dispatches
+    // `/shipwright:dev-task {itemId}`.
+    const nextTask = readyTasks.reduce((oldest, task) =>
+      (task.addedAt ?? "") < (oldest.addedAt ?? "") ? task : oldest,
+    );
     return {
       exit: 0,
-      output:
-        "Pick the next ready task from the task store and execute via /shipwright:dev-task",
+      output: `Execute /shipwright:dev-task ${nextTask.id} — the next ready task from the task store.`,
     };
   }
 

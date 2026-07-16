@@ -20,6 +20,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  createPrRecordQuery,
   createTaskStatusQuery,
   createTaskStoreClient,
   getCurrentUser,
@@ -712,13 +713,13 @@ describe("createTaskStatusQuery", () => {
     }
   });
 
-  test("returns { status, addedAt } when a linked task is found with both fields present", async () => {
+  test("returns { status, createdAt } when a linked task is found with both fields present", async () => {
     const fakeFetch = (async () =>
       ({
         ok: true,
         json: async () => ({
           tasks: [
-            { id: "T-1", title: "Do the thing", status: "in_progress", addedAt: "2026-05-01T00:00:00.000Z" },
+            { id: "T-1", title: "Do the thing", status: "in_progress", createdAt: "2026-05-01T00:00:00.000Z" },
           ],
         }),
       }) as Response) as unknown as typeof fetch;
@@ -727,11 +728,11 @@ describe("createTaskStatusQuery", () => {
     const result = await query("acme/example-repo", 42);
     expect(result).toEqual({
       status: "in_progress",
-      addedAt: "2026-05-01T00:00:00.000Z",
+      createdAt: "2026-05-01T00:00:00.000Z",
     });
   });
 
-  test("returns { status, addedAt: undefined } when the matched task has no addedAt", async () => {
+  test("returns { status, createdAt: undefined } when the matched task has no createdAt", async () => {
     const fakeFetch = (async () =>
       ({
         ok: true,
@@ -742,7 +743,7 @@ describe("createTaskStatusQuery", () => {
 
     const query = createTaskStatusQuery({ fetchFn: fakeFetch });
     const result = await query("acme/example-repo", 42);
-    expect(result).toEqual({ status: "pending", addedAt: undefined });
+    expect(result).toEqual({ status: "pending", createdAt: undefined });
   });
 
   test("returns null when no linked task is found (empty tasks array)", async () => {
@@ -781,6 +782,88 @@ describe("createTaskStatusQuery", () => {
     await expect(query("acme/example-repo", 42)).rejects.toThrow(
       "SHIPWRIGHT_TASK_STORE_URL/SHIPWRIGHT_TASK_STORE_TOKEN not configured",
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createPrRecordQuery
+// ---------------------------------------------------------------------------
+
+describe("createPrRecordQuery", () => {
+  let savedEnv: { url?: string; token?: string };
+
+  beforeEach(() => {
+    savedEnv = {
+      url: process.env.SHIPWRIGHT_TASK_STORE_URL,
+      token: process.env.SHIPWRIGHT_TASK_STORE_TOKEN,
+    };
+    process.env.SHIPWRIGHT_TASK_STORE_URL = "https://task-store.example.com";
+    process.env.SHIPWRIGHT_TASK_STORE_TOKEN = "test-token";
+  });
+
+  afterEach(() => {
+    if (savedEnv.url !== undefined) {
+      process.env.SHIPWRIGHT_TASK_STORE_URL = savedEnv.url;
+    } else {
+      // biome-ignore lint/performance/noDelete: intentional env cleanup
+      delete process.env.SHIPWRIGHT_TASK_STORE_URL;
+    }
+    if (savedEnv.token !== undefined) {
+      process.env.SHIPWRIGHT_TASK_STORE_TOKEN = savedEnv.token;
+    } else {
+      // biome-ignore lint/performance/noDelete: intentional env cleanup
+      delete process.env.SHIPWRIGHT_TASK_STORE_TOKEN;
+    }
+  });
+
+  test("does not append ready to the request params by default", async () => {
+    let capturedUrl: string | undefined;
+    const fakeFetch = (async (url: RequestInfo | URL) => {
+      capturedUrl = String(url);
+      return {
+        ok: true,
+        json: async () => ({ prs: [] }),
+      } as Response;
+    }) as unknown as typeof fetch;
+
+    const query = createPrRecordQuery({ fetchFn: fakeFetch });
+    await query("acme/example-repo", 42);
+
+    expect(capturedUrl).toBeDefined();
+    expect(new URL(capturedUrl as string).searchParams.get("ready")).toBeNull();
+  });
+
+  test("appends ready=true to the request params when ready: true is passed", async () => {
+    let capturedUrl: string | undefined;
+    const fakeFetch = (async (url: RequestInfo | URL) => {
+      capturedUrl = String(url);
+      return {
+        ok: true,
+        json: async () => ({ prs: [] }),
+      } as Response;
+    }) as unknown as typeof fetch;
+
+    const query = createPrRecordQuery({ fetchFn: fakeFetch, ready: true });
+    await query("acme/example-repo", 42);
+
+    expect(capturedUrl).toBeDefined();
+    expect(new URL(capturedUrl as string).searchParams.get("ready")).toBe(
+      "true",
+    );
+  });
+
+  test("returns the record when ready: true is passed and a match is found", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: true,
+        json: async () => ({
+          prs: [{ commitSha: "sha1", reviewState: "posted" }],
+        }),
+      }) as Response) as unknown as typeof fetch;
+
+    const query = createPrRecordQuery({ fetchFn: fakeFetch, ready: true });
+    const result = await query("acme/example-repo", 42);
+    expect(result).toEqual({ commitSha: "sha1", reviewState: "posted" });
   });
 });
 
