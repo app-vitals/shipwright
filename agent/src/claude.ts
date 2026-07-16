@@ -293,6 +293,7 @@ export function createRunClaude(
           _saveSession(sessionKey, output);
           return { ...output, recoveredFromError: true };
         } catch {
+          sentryClient?.captureException(err);
           throw err;
         }
       }
