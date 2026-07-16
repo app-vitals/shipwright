@@ -285,7 +285,10 @@ if (runtimeClient && agentId) {
 
   async function runPrStateReconciler() {
     try {
-      reconcilerDeps ??= buildPrStateReconcilerDeps({ ghJson });
+      reconcilerDeps ??= buildPrStateReconcilerDeps({
+        ghJson,
+        getScopedRepos: agentReposRef.get,
+      });
       await reconcilePrState(reconcilerDeps);
     } catch (err) {
       console.error(

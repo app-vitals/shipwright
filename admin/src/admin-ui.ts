@@ -1955,6 +1955,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       // when an agent filter is active to avoid under-counting across pages.
       params.set("limit", agentFilterIds !== null ? "500" : String(limit));
       params.set("offset", agentFilterIds !== null ? "0" : String(offset));
+      params.set("sort", "desc");
       try {
         const [result, distinct] = await Promise.all([
           fetchTaskStoreTasks(params),
@@ -2108,6 +2109,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       // a handful of tasks, well under this ceiling.
       params.set("limit", "500");
       params.set("offset", "0");
+      params.set("sort", "desc");
       try {
         const result = await fetchTaskStoreTasks(params);
         tasks = result.tasks;
@@ -2149,6 +2151,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       if (taskId) params.set("taskId", taskId);
       params.set("limit", String(limit));
       params.set("offset", String(offset));
+      params.set("sort", "desc");
       try {
         const result = await fetchTaskStorePrs(params);
         prs = result.prs;
@@ -2743,6 +2746,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       params.set("repo", publicRepo);
       params.set("limit", "50");
       params.set("offset", "0");
+      params.set("sort", "desc");
       try {
         const result = await fetchTaskStoreTasks(params);
         tasks = result.tasks;
