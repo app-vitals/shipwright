@@ -91,11 +91,17 @@ export async function getReviewCandidates(
       candidates.push({
         id: candidateId(pr.repo ?? "unknown", pr.number),
         age: pr.createdAt ?? "",
-        claimedBy: null,
         phase: "review",
       });
       continue;
     }
+
+    // A record with claimedBy set means another agent is currently mid-review
+    // on this PR (POST /prs/claim already called) — never re-add as a
+    // candidate, regardless of what the commitSha/reviewState check below
+    // would otherwise say (this is NOT queried with ready=true, since a
+    // missing record here must stay distinguishable from "no record yet").
+    if (record.claimedBy != null) continue;
 
     // commitSha matches and reviewState is not pending → already reviewed at this HEAD, skip
     if (record.commitSha === pr.headRefOid && record.reviewState !== "pending") {
@@ -106,7 +112,6 @@ export async function getReviewCandidates(
     candidates.push({
       id: candidateId(pr.repo ?? "unknown", pr.number),
       age: record.readyForReviewAt ?? pr.createdAt ?? "",
-      claimedBy: record.claimedBy ?? null,
       phase: "review",
     });
   }

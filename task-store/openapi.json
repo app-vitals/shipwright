@@ -128,6 +128,19 @@
             "required": false,
             "name": "ready",
             "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "example": "asc"
+            },
+            "required": false,
+            "name": "sort",
+            "in": "query"
           }
         ],
         "responses": {
@@ -1137,6 +1150,20 @@
             },
             "required": false,
             "name": "ready",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "description": "Order results by createdAt. Default is ascending (asc), preserving current behavior for existing callers. Unrelated to claim-next's own deterministic ordering.",
+              "example": "asc"
+            },
+            "required": false,
+            "name": "sort",
             "in": "query"
           }
         ],
