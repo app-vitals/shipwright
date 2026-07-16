@@ -109,13 +109,28 @@ export interface AccountsClient {
 
 // ─── HTTP implementation ──────────────────────────────────────────────────────
 
+/** Minimal `fetch` shape — injectable so the client is testable without
+ * overriding any global (Bun shares the test process). Defaults to the
+ * platform `fetch`. Mirrors admin-metrics-client.ts's `FetchLike`. */
+export type FetchLike = (
+  input: string,
+  init?: { headers?: Record<string, string> },
+) => Promise<{
+  ok: boolean;
+  status: number;
+  text(): Promise<string>;
+  json(): Promise<unknown>;
+}>;
+
 export class HttpAccountsClient implements AccountsClient {
   private readonly baseUrl: string;
   private readonly apiKey: string;
+  private readonly fetchImpl: FetchLike;
 
-  constructor(baseUrl: string, apiKey: string) {
+  constructor(baseUrl: string, apiKey: string, fetchImpl?: FetchLike) {
     this.baseUrl = baseUrl.replace(/\/$/, "");
     this.apiKey = apiKey;
+    this.fetchImpl = fetchImpl ?? (globalThis.fetch as unknown as FetchLike);
   }
 
   private headers(): Record<string, string> {
@@ -126,7 +141,7 @@ export class HttpAccountsClient implements AccountsClient {
   }
 
   private async fetch<T>(path: string): Promise<T> {
-    const res = await globalThis.fetch(`${this.baseUrl}${path}`, {
+    const res = await this.fetchImpl(`${this.baseUrl}${path}`, {
       headers: this.headers(),
     });
     if (!res.ok) {

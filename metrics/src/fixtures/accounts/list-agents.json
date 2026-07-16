@@ -1,0 +1,13 @@
+{
+  "listAgents_success": {
+    "status": 200,
+    "body": [
+      { "id": "agent-1", "name": "Warchild" },
+      { "id": "agent-2", "name": "Scribe" }
+    ]
+  },
+  "listAgents_unauthorized": {
+    "status": 401,
+    "body": "invalid or expired token"
+  }
+}
