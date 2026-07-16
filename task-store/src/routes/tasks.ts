@@ -501,6 +501,7 @@ export function createTasksRoutes(
         offsetRaw !== undefined
           ? Number.parseInt(offsetRaw, 10) || undefined
           : undefined,
+      sort: c.req.query("sort") === "desc" ? "desc" : undefined,
       // Use agentScope for repo-scoped agent tokens; otherwise use assignee filter.
       // Under agentScope, an explicit caller-supplied ?assignee= further narrows
       // the already-visible OR set (assigned-to-me OR in-my-repo-pool) — safe,
