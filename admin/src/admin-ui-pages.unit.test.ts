@@ -4043,12 +4043,13 @@ describe("renderSessionDetailPage dependency graph", () => {
     return html.slice(idx);
   }
 
-  test("chains tasks into topological waves and annotates what each needs", () => {
+  test("a pending task with no unresolved blockers lands in Ready, and annotates what it needs", () => {
     const a: TaskItem = {
       id: "TASK-A",
       title: "Root",
       status: "pending",
       session: SESSION_ID,
+      blockedBy: [],
     };
     const b: TaskItem = {
       id: "TASK-B",
@@ -4056,28 +4057,110 @@ describe("renderSessionDetailPage dependency graph", () => {
       status: "pending",
       session: SESSION_ID,
       dependencies: ["TASK-A"],
+      blockedBy: [{ type: "dependency", id: "TASK-A", status: "pending" }],
     };
     const html = renderSessionDetailPage(SESSION_ID, [a, b], USER_NAME);
     const section = graphSection(html);
-    expect(section).toContain("Wave 1");
-    expect(section).toContain("Wave 2");
+    expect(section).toContain("Ready (1)");
+    expect(section).toContain("Blocked (1)");
     expect(section).toContain("TASK-A");
-    expect(section).toContain("needs TASK-A");
+    expect(section).toContain("needs");
+    expect(section).toContain('href="/admin/tasks/TASK-A"');
   });
 
-  test("a task outside the session (unknown id) renders without a link or status, marked outside session", () => {
+  test("groups tasks by the ready/in_progress/blocked/closed taxonomy, matching the Tasks page", () => {
+    const ready: TaskItem = {
+      id: "TASK-READY",
+      title: "Ready root",
+      status: "pending",
+      session: SESSION_ID,
+      blockedBy: [],
+    };
+    const inProgress: TaskItem = {
+      id: "TASK-INPROG",
+      title: "Being worked",
+      status: "pr_open",
+      session: SESSION_ID,
+      dependencies: ["TASK-READY"],
+      blockedBy: [],
+    };
+    const explicitlyBlocked: TaskItem = {
+      id: "TASK-BLOCKED",
+      title: "Explicitly blocked",
+      status: "blocked",
+      session: SESSION_ID,
+      dependencies: ["TASK-READY"],
+    };
+    const depBlocked: TaskItem = {
+      id: "TASK-DEPBLOCKED",
+      title: "Pending with unresolved dep",
+      status: "pending",
+      session: SESSION_ID,
+      dependencies: ["TASK-INPROG"],
+      blockedBy: [{ type: "dependency", id: "TASK-INPROG", status: "pr_open" }],
+    };
+    const closed: TaskItem = {
+      id: "TASK-CLOSED",
+      title: "Done",
+      status: "done",
+      session: SESSION_ID,
+      dependencies: ["TASK-READY"],
+    };
+    const html = renderSessionDetailPage(
+      SESSION_ID,
+      [ready, inProgress, explicitlyBlocked, depBlocked, closed],
+      USER_NAME,
+    );
+    const section = graphSection(html);
+    // Groups render in this fixed order regardless of input order.
+    const readyIdx = section.indexOf("Ready (1)");
+    const inProgressIdx = section.indexOf("In Progress (1)");
+    const blockedIdx = section.indexOf("Blocked (2)");
+    const closedIdx = section.indexOf("Closed (1)");
+    expect(readyIdx).toBeGreaterThan(-1);
+    expect(inProgressIdx).toBeGreaterThan(readyIdx);
+    expect(blockedIdx).toBeGreaterThan(inProgressIdx);
+    expect(closedIdx).toBeGreaterThan(blockedIdx);
+  });
+
+  test("a dependency id outside the session renders as plain unlinked text in the needs line", () => {
     const c: TaskItem = {
       id: "TASK-C",
       title: "Needs an external dep",
       status: "pending",
       session: SESSION_ID,
       dependencies: ["EXTERNAL-1"],
+      blockedBy: [{ type: "dependency", id: "EXTERNAL-1", status: "unknown" }],
     };
     const html = renderSessionDetailPage(SESSION_ID, [c], USER_NAME);
     const section = graphSection(html);
     expect(section).toContain("EXTERNAL-1");
     expect(section).not.toContain('href="/admin/tasks/EXTERNAL-1"');
-    expect(section).toContain("outside session");
+  });
+
+  test("a dependency id inside the session links to that task's detail page", () => {
+    const root: TaskItem = {
+      id: "TASK-ROOT",
+      title: "Root",
+      status: "pending",
+      session: SESSION_ID,
+      blockedBy: [],
+    };
+    const dependent: TaskItem = {
+      id: "TASK-DEP",
+      title: "Depends on root",
+      status: "pending",
+      session: SESSION_ID,
+      dependencies: ["TASK-ROOT"],
+      blockedBy: [{ type: "dependency", id: "TASK-ROOT", status: "pending" }],
+    };
+    const html = renderSessionDetailPage(
+      SESSION_ID,
+      [root, dependent],
+      USER_NAME,
+    );
+    const section = graphSection(html);
+    expect(section).toContain('href="/admin/tasks/TASK-ROOT"');
   });
 
   test("tasks with no dependency relationship at all are excluded from the graph", () => {
@@ -4086,6 +4169,7 @@ describe("renderSessionDetailPage dependency graph", () => {
       title: "No relationships",
       status: "pending",
       session: SESSION_ID,
+      blockedBy: [],
     };
     const dependent: TaskItem = {
       id: "TASK-DEP",
@@ -4093,12 +4177,14 @@ describe("renderSessionDetailPage dependency graph", () => {
       status: "pending",
       session: SESSION_ID,
       dependencies: ["TASK-ROOT"],
+      blockedBy: [{ type: "dependency", id: "TASK-ROOT", status: "pending" }],
     };
     const root: TaskItem = {
       id: "TASK-ROOT",
       title: "Root",
       status: "pending",
       session: SESSION_ID,
+      blockedBy: [],
     };
     const html = renderSessionDetailPage(
       SESSION_ID,
@@ -4111,18 +4197,19 @@ describe("renderSessionDetailPage dependency graph", () => {
     expect(section).not.toContain("TASK-LONER");
   });
 
-  test("same-branch tasks get a matching branch color even across different waves (bundle)", () => {
+  test("same-branch tasks get a matching branch color even across different state groups (bundle)", () => {
     const first: TaskItem = {
       id: "TASK-1",
       title: "models + migration",
       status: "pending",
       session: SESSION_ID,
       branch: "feat/bundle",
+      blockedBy: [],
     };
     const second: TaskItem = {
       id: "TASK-2",
       title: "admin endpoint",
-      status: "pending",
+      status: "in_progress",
       session: SESSION_ID,
       branch: "feat/bundle",
       dependencies: ["TASK-1"],
@@ -4146,18 +4233,42 @@ describe("renderSessionDetailPage dependency graph", () => {
       title: "Independent",
       status: "pending",
       session: SESSION_ID,
+      blockedBy: [],
     };
     const html = renderSessionDetailPage(SESSION_ID, [solo], USER_NAME);
     expect(html).not.toContain("Dependency graph");
   });
 
-  test("a dependency cycle doesn't hang rendering — remaining nodes dump into a final wave", () => {
+  test("empty state groups (e.g. no in-progress or closed tasks) are omitted", () => {
+    const a: TaskItem = {
+      id: "TASK-A",
+      title: "Root",
+      status: "pending",
+      session: SESSION_ID,
+      blockedBy: [],
+    };
+    const b: TaskItem = {
+      id: "TASK-B",
+      title: "Depends on A",
+      status: "pending",
+      session: SESSION_ID,
+      dependencies: ["TASK-A"],
+      blockedBy: [{ type: "dependency", id: "TASK-A", status: "pending" }],
+    };
+    const html = renderSessionDetailPage(SESSION_ID, [a, b], USER_NAME);
+    const section = graphSection(html);
+    expect(section).not.toContain("In Progress (");
+    expect(section).not.toContain("Closed (");
+  });
+
+  test("a mutual dependency cycle doesn't hang rendering — each task is classified independently", () => {
     const x: TaskItem = {
       id: "TASK-X",
       title: "X",
       status: "pending",
       session: SESSION_ID,
       dependencies: ["TASK-Y"],
+      blockedBy: [{ type: "dependency", id: "TASK-Y", status: "pending" }],
     };
     const y: TaskItem = {
       id: "TASK-Y",
@@ -4165,11 +4276,13 @@ describe("renderSessionDetailPage dependency graph", () => {
       status: "pending",
       session: SESSION_ID,
       dependencies: ["TASK-X"],
+      blockedBy: [{ type: "dependency", id: "TASK-X", status: "pending" }],
     };
     const html = renderSessionDetailPage(SESSION_ID, [x, y], USER_NAME);
     const section = graphSection(html);
     expect(section).toContain("TASK-X");
     expect(section).toContain("TASK-Y");
+    expect(section).toContain("Blocked (2)");
   });
 
   test("escapes task ids, titles, and branch names in the graph to avoid XSS", () => {
@@ -4180,6 +4293,7 @@ describe("renderSessionDetailPage dependency graph", () => {
       session: SESSION_ID,
       branch: "<script>evil()</script>",
       dependencies: ["<b>dep</b>"],
+      blockedBy: [{ type: "dependency", id: "<b>dep</b>", status: "unknown" }],
     };
     const html = renderSessionDetailPage(SESSION_ID, [xss], USER_NAME);
     const section = graphSection(html);

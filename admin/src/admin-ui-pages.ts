@@ -1985,98 +1985,93 @@ const SESSION_CLOSED_STATUSES = new Set([
   "cancelled",
 ]);
 
-/**
- * A node in the session's dependency graph. `title`/`status`/`branch` are
- * null for a dependency id that isn't one of this session's own tasks (an
- * "external" prerequisite from another session) — we only know its id.
+/** Mirrors the ready/in_progress/blocked/closed taxonomy used by the Tasks
+ * page's state tabs — see task-store's TaskService.listReady/listBlocked:
+ * closed = terminal status; in_progress = {in_progress, pr_open, approved};
+ * blocked = explicit status "blocked", or "pending" with unresolved
+ * dependencies; ready = "pending" with none. `blockedBy` is computed
+ * server-side by the task-store's computeBlockedBy and passed through as-is
+ * on each TaskItem — this only classifies, it doesn't resolve dependencies
+ * itself.
  */
+type DependencyState = "ready" | "in_progress" | "blocked" | "closed";
+
+function classifyDependencyState(t: TaskItem): DependencyState {
+  if (SESSION_CLOSED_STATUSES.has(t.status)) return "closed";
+  if (
+    t.status === "in_progress" ||
+    t.status === "pr_open" ||
+    t.status === "approved"
+  ) {
+    return "in_progress";
+  }
+  if (t.status === "blocked") return "blocked";
+  return (t.blockedBy?.length ?? 0) > 0 ? "blocked" : "ready";
+}
+
+const DEPENDENCY_STATE_GROUPS: { key: DependencyState; label: string }[] = [
+  { key: "ready", label: "Ready" },
+  { key: "in_progress", label: "In Progress" },
+  { key: "blocked", label: "Blocked" },
+  { key: "closed", label: "Closed" },
+];
+
 interface DependencyNode {
   id: string;
-  title: string | null;
-  status: string | null;
+  title: string;
+  status: string;
   branch: string | null;
   dependsOn: string[];
+  state: DependencyState;
 }
 
 /**
- * Groups a session's tasks into topological "waves": wave N contains every
- * node whose dependencies are all satisfied by nodes in waves < N. Only
- * tasks that participate in a dependency edge are included (either they
- * declare a dependency, or another task in the session declares them as
- * one) — tasks with no relationships are noise here and stay in the plain
- * task table above.
- *
- * Layering uses round-based Kahn's algorithm: each round admits every node
- * whose deps already have an assigned wave, so a node's wave number equals
- * 1 + max(dep wave) without an explicit longest-path pass. A dependency
- * cycle (shouldn't happen, but the field is free-text) would stall the
- * algorithm forever, so any nodes still unresolved after all rounds are
- * dumped into one final wave rather than looping.
+ * Selects the session's tasks that participate in a dependency edge —
+ * either they declare a dependency, or another task in the session declares
+ * them as one — and buckets them by the same ready/in_progress/blocked/
+ * closed states shown on the Tasks page, so the card answers "what can I
+ * work on now" rather than an abstract structural order. Tasks with no
+ * relationship are noise here and stay visible in the plain task table
+ * above. Dependency ids outside the session (unknown to this task list)
+ * aren't session tasks and have no status to classify by, so they never get
+ * their own node — they still show up in a participating task's `dependsOn`
+ * list, just unlinked (see `renderDependencyGraph`).
  */
-function computeDependencyWaves(tasks: TaskItem[]): DependencyNode[][] {
-  const byId = new Map(tasks.map((t) => [t.id, t]));
+function computeDependencyGroups(
+  tasks: TaskItem[],
+): Map<DependencyState, DependencyNode[]> {
+  const referencedIds = new Set<string>();
+  for (const t of tasks) {
+    for (const dep of t.dependencies ?? []) referencedIds.add(dep);
+  }
 
-  const relevant = new Set<string>();
-  const stack = tasks
-    .filter((t) => (t.dependencies?.length ?? 0) > 0)
-    .map((t) => t.id);
-  for (const id of stack) relevant.add(id);
-  while (stack.length > 0) {
-    const id = stack.pop();
-    if (id === undefined) continue;
-    for (const dep of byId.get(id)?.dependencies ?? []) {
-      if (!relevant.has(dep)) {
-        relevant.add(dep);
-        stack.push(dep);
-      }
+  const groups = new Map<DependencyState, DependencyNode[]>();
+  for (const t of tasks) {
+    if ((t.dependencies?.length ?? 0) === 0 && !referencedIds.has(t.id)) {
+      continue;
     }
+    const node: DependencyNode = {
+      id: t.id,
+      title: t.title,
+      status: t.status,
+      branch: t.branch ?? null,
+      dependsOn: t.dependencies ?? [],
+      state: classifyDependencyState(t),
+    };
+    const bucket = groups.get(node.state);
+    if (bucket) bucket.push(node);
+    else groups.set(node.state, [node]);
   }
-
-  const nodes = new Map<string, DependencyNode>();
-  for (const id of relevant) {
-    const t = byId.get(id);
-    nodes.set(id, {
-      id,
-      title: t?.title ?? null,
-      status: t?.status ?? null,
-      branch: t?.branch ?? null,
-      dependsOn: (t?.dependencies ?? []).filter((d) => relevant.has(d)),
-    });
+  for (const bucket of groups.values()) {
+    bucket.sort((a, b) => a.id.localeCompare(b.id));
   }
-
-  const waveOf = new Map<string, number>();
-  const remaining = new Set(nodes.keys());
-  let wave = 0;
-  while (remaining.size > 0) {
-    const ready = [...remaining].filter((id) =>
-      nodes.get(id)?.dependsOn.every((d) => waveOf.has(d)),
-    );
-    if (ready.length === 0) {
-      for (const id of remaining) waveOf.set(id, wave);
-      break;
-    }
-    for (const id of ready) {
-      waveOf.set(id, wave);
-      remaining.delete(id);
-    }
-    wave++;
-  }
-
-  const waves: DependencyNode[][] = [];
-  for (const [id, w] of waveOf) {
-    const node = nodes.get(id);
-    if (!node) continue;
-    if (!waves[w]) waves[w] = [];
-    waves[w].push(node);
-  }
-  for (const w of waves) w.sort((a, b) => a.id.localeCompare(b.id));
-  return waves;
+  return groups;
 }
 
 // Fixed palette for branch chips — a stable hash picks a color per branch
 // name so tasks bundled onto the same branch/PR are visually correlated
-// even when they land in different waves (a task and its dependent are
-// often shipped together on one branch, e.g. AGY-1.1 + AGY-1.2).
+// even when they land in different state groups (a task and its dependent
+// are often shipped together on one branch, e.g. AGY-1.1 + AGY-1.2).
 const BRANCH_COLORS = [
   "#6366f1",
   "#059669",
@@ -2095,28 +2090,31 @@ function branchColor(branch: string): string {
 }
 
 /**
- * Renders the topological waves as stacked rows of cards. Each card gets a
- * color-coded left border/chip when its task has a branch, so tasks bundled
- * onto the same branch (shipped in one PR) are visually correlated across
- * waves without needing to co-locate them spatially.
+ * Renders the Ready/In Progress/Blocked/Closed groups as stacked rows of
+ * cards, skipping empty groups. Each card gets a color-coded left
+ * border/chip when its task has a branch (bundle), and its `dependsOn`
+ * list links to sibling session tasks while leaving ids outside the
+ * session as plain unlinked text.
  */
-function renderDependencyGraph(waves: DependencyNode[][]): string {
+function renderDependencyGraph(
+  tasks: TaskItem[],
+  groups: Map<DependencyState, DependencyNode[]>,
+): string {
+  const byId = new Map(tasks.map((t) => [t.id, t]));
+
   const nodeCard = (n: DependencyNode): string => {
-    const idHtml =
-      n.title === null
-        ? `<span class="mono" style="font-size:12px;color:#6b7280">${escapeHtml(n.id)}</span>`
-        : `<a href="/admin/tasks/${escapeHtml(n.id)}" class="mono" style="font-size:12px;color:#6366f1;text-decoration:none;font-weight:600">${escapeHtml(n.id)}</a>`;
-    const statusHtml =
-      n.status !== null
-        ? `<span class="badge ${statusBadgeClass(n.status)}" style="margin-left:6px;font-size:10px">${escapeHtml(n.status)}</span>`
-        : `<span style="margin-left:6px;font-size:10px;color:#9ca3af">outside session</span>`;
-    const titleHtml =
-      n.title !== null
-        ? `<div style="font-size:12px;color:#374151;margin-top:2px">${escapeHtml(n.title)}</div>`
-        : "";
+    const idHtml = `<a href="/admin/tasks/${escapeHtml(n.id)}" class="mono" style="font-size:12px;color:#6366f1;text-decoration:none;font-weight:600">${escapeHtml(n.id)}</a>`;
+    const statusHtml = `<span class="badge ${statusBadgeClass(n.status)}" style="margin-left:6px;font-size:10px">${escapeHtml(n.status)}</span>`;
+    const titleHtml = `<div style="font-size:12px;color:#374151;margin-top:2px">${escapeHtml(n.title)}</div>`;
     const dependsOnHtml =
       n.dependsOn.length > 0
-        ? `<div style="font-size:11px;color:#9ca3af;margin-top:4px">needs ${n.dependsOn.map((d) => escapeHtml(d)).join(", ")}</div>`
+        ? `<div style="font-size:11px;color:#9ca3af;margin-top:4px">needs ${n.dependsOn
+            .map((d) =>
+              byId.has(d)
+                ? `<a href="/admin/tasks/${escapeHtml(d)}" style="color:inherit;text-decoration:underline">${escapeHtml(d)}</a>`
+                : escapeHtml(d),
+            )
+            .join(", ")}</div>`
         : "";
     const branchHtml =
       n.branch !== null
@@ -2134,16 +2132,16 @@ function renderDependencyGraph(waves: DependencyNode[][]): string {
       </div>`;
   };
 
-  const waveHtml = waves.map(
-    (nodesInWave, i) => `<div>
-      <div style="font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Wave ${i + 1}</div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap">${nodesInWave.map(nodeCard).join("")}</div>
-    </div>`,
-  );
-
-  return waveHtml.join(
-    `<div style="text-align:center;color:#d1d5db;font-size:16px;margin:2px 0">↓</div>`,
-  );
+  return DEPENDENCY_STATE_GROUPS.map(({ key, label }) => {
+    const nodes = groups.get(key);
+    if (!nodes || nodes.length === 0) return "";
+    return `<div style="margin-bottom:14px">
+      <div style="font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">${label} (${nodes.length})</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">${nodes.map(nodeCard).join("")}</div>
+    </div>`;
+  })
+    .filter(Boolean)
+    .join("");
 }
 
 /**
@@ -2173,7 +2171,7 @@ export function renderSessionDetailPage(
     SESSION_CLOSED_STATUSES.has(t.status),
   );
 
-  const dependencyWaves = computeDependencyWaves(tasks);
+  const dependencyGroups = computeDependencyGroups(tasks);
 
   function taskRow(t: TaskItem): string {
     return `<tr>
@@ -2201,10 +2199,10 @@ export function renderSessionDetailPage(
           .join("\n");
 
   const depsSection =
-    dependencyWaves.length > 0
+    dependencyGroups.size > 0
       ? `<div class="card" style="margin-bottom:16px">
       <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em">Dependency graph</div>
-      ${renderDependencyGraph(dependencyWaves)}
+      ${renderDependencyGraph(tasks, dependencyGroups)}
     </div>`
       : "";
 
