@@ -43,9 +43,13 @@ curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
 ```
 
 - **404**: the task doesn't exist. Print `⚠ Task {task-id} not found.` and stop.
-- **Found, `status == "in_progress"`**: a prior session left this task in progress — proceed
-  straight to Step 2's Orphan Check with this task (which cleans up any stale branch/PR
-  before restarting). Record `task_started_at` (current ISO timestamp) for metrics.
+- **Found, `status == "in_progress"`**: a prior session left this task in progress (or a
+  human is manually re-running dev-task against it) — the task is already claimed, so skip
+  Step 2's claim and proceed directly to Step 3. Step 4's Branch/PR Reality Check (below)
+  runs unconditionally before worktree creation regardless of this status, so any stale
+  branch/PR left behind by the prior session is discovered and handled there — no separate
+  orphan-recovery path is needed here. Record `task_started_at` (current ISO timestamp) for
+  metrics.
 - **Found, `status == "pending"`**: check dependency satisfaction before claiming (see
   "Dependency Check" below). If satisfied, proceed to Step 2's Mark In-Progress with this
   task.
@@ -134,30 +138,15 @@ Refer to `references/toolchain-patterns.md` for the full detection lookup table.
 
 ## Step 2: Mark In-Progress
 
-### Orphan Check (prior session recovery)
-
-If the task's current status is already `in_progress`:
-
-1. Check for an orphaned branch: `git ls-remote --heads origin {branch}`
-2. Check for an orphaned PR: `gh pr list --head {branch} --state open --json number,title`
-3. If an orphaned PR exists, close it: `gh pr close {number} --comment "Shipwright cleanup — resuming task from prior session"`
-4. If a remote branch exists, delete it: `git push origin --delete {branch}`
-5. Print:
-   ```
-   ↩ Recovered orphaned session for {id}
-   {If PR closed: "Closed PR #{number}"}
-   {If branch deleted: "Deleted branch {branch}"}
-   Starting fresh.
-   ```
-
 ### Mark In-Progress
 
-This path is for the fresh-pending-task fetched in Step 1 (the resume/orphan path above
-already owns an `in_progress` task and does not need to claim it). Claim the task
-atomically instead of a plain PATCH — a plain read-modify-write PATCH here would race
-against any other concurrent run targeting the same task id. The claim is a single
-conditional `UPDATE ... WHERE status='pending'`; it also sets `claimedAt`, `heartbeatAt`,
-and `startedAt` atomically, so no separate PATCH of `startedAt` is needed afterward:
+This path is for the fresh-pending-task fetched in Step 1 (an already-`in_progress` task
+fetched in Step 1 already owns its claim and does not need to claim it again — skip
+straight to Step 3). Claim the task atomically instead of a plain PATCH — a plain
+read-modify-write PATCH here would race against any other concurrent run targeting the same
+task id. The claim is a single conditional `UPDATE ... WHERE status='pending'`; it also sets
+`claimedAt`, `heartbeatAt`, and `startedAt` atomically, so no separate PATCH of `startedAt`
+is needed afterward:
 
 ```bash
 CLAIM_CODE=$(curl -s -o /tmp/task_claim.json -w '%{http_code}' -X POST \
@@ -208,14 +197,112 @@ architecture to implementation. Auto-fix all quality issues.
 
 All work happens in a worktree — see workspace `CLAUDE.md` for the convention. Branch slug = branch name with `/` replaced by `-`.
 
-First, pull and check whether the branch already exists on the remote (indicates a bundled task joining an existing PR):
+### Branch/PR Reality Check (prior-session recovery)
+
+Before creating (or reusing) a worktree, check live git/GitHub state for the task's own
+`{branch}` directly — **regardless of what task-store status says**. This replaces the old
+status-gated Step 1/Step 2 orphan-recovery logic: per the plugin's Design Constitution
+(§4, "manual human actions do not break automation"), a task's recorded status is not
+trustworthy — a crashed session can leave a complete, unpushed local branch, or a complete,
+CI-green open PR, with the task still showing `in_progress` (or even reset back to
+`pending`). Checking live state unconditionally means both the cron-driven path (which only
+ever sees `pending`) and a manual re-run against an `in_progress` task get the same
+correctness guarantee.
+
+Reuse the exact `--repo` derivation already used later in this step for the stale-bundle-
+branch check, since CWD is the workspace, not the target repo:
 
 ```bash
-git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} pull
-git ls-remote --heads origin {branch}
+GH_REPO=$(git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} remote get-url origin | sed 's|.*github.com[:/]||;s|\.git$||')
 ```
 
-**If the branch does NOT exist on remote** (new task, standard flow):
+Check all three signals:
+
+```bash
+# Local branch (pull first so remote-tracking state is current)
+git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} pull
+git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} branch --list {branch}
+
+# Remote branch
+git ls-remote --heads origin {branch}
+
+# Open PR (mergeable/mergeStateStatus feed the completeness assessment below;
+# CI status is checked separately once a PR number is known)
+gh pr list --head {branch} --state open --json number,state,mergeable,mergeStateStatus --repo "$GH_REPO"
+```
+
+**If none of the three exist** (no local branch, no remote branch, no open PR): nothing to
+recover — proceed to the standard branch-existence check below.
+
+**If any of the three exist**, assess whether the existing work is complete and correct
+against the task's acceptance criteria before deciding how to proceed:
+
+1. Inspect the existing work: `git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} log {branch} --oneline -20`
+   and `git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} diff main...{branch}` (fetch first if
+   the branch is remote-only: `git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} fetch origin {branch}`).
+2. Compare the diff/log against the task's `acceptanceCriteria` (same MET/PARTIAL/NOT MET
+   evaluation used in Step 7) — every criterion should show clear evidence in the diff.
+3. **If a PR exists**, additionally check its CI status before treating it as complete —
+   reuse the Step 9b Actions-API pattern (`gh api "repos/$GH_REPO/actions/runs?head_sha=..."`)
+   against the PR's head SHA. A PR with failing or still-running CI is not "complete and
+   correct" — treat it the same as the incomplete/stale case below.
+
+**Complete and correct** (diff satisfies every acceptance criterion, and CI is green if a PR
+exists): skip destructive recovery — do not close the PR or delete the branch. Both shortcuts
+below bypass Step 4's `worktree add` block, so each must bind `{worktree-path}` itself
+(reuse an on-disk worktree if the prior session left one, else create it) before handing off.
+- **Local-only** (branch exists, no PR, remote branch present): rebase is enough — no PATCH
+  needed; still refresh `heartbeatAt` (Step 5b). Continue to the "branch DOES exist on
+  remote" flow below, which binds `{worktree-path}` via the tracking-branch `worktree add`.
+  - **Never pushed** (no remote branch): reuse the on-disk worktree, or
+    `worktree add {worktree-path} {branch}` (no `-b`/`origin/main` — branch exists locally).
+    Bind `{worktree-path}`, go straight to Step 5.
+- **PR case**: resume from the existing PR. PATCH the task store to match reality:
+  ```bash
+  curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}" \
+    -d "{\"status\": \"pr_open\", \"pr\": {existing-pr-number}}" | jq .
+  ```
+  Reuse the on-disk worktree, or fetch + tracking-add one for the PR branch (same pair as
+  "branch DOES exist on remote" below). Bind `{worktree-path}` — Step 6's diff/Edit work
+  runs from it. Skip Step 5, continue from Step 6 on the PR's branch — or go straight to
+  Step 10 if Step 6+ was already done (CI green). Print:
+  ```
+  ↩ {branch} already has complete, correct work ({If PR: "PR #{number}, CI green" | "local branch, no PR yet"}).
+  Resuming from existing state — skipping destructive recovery.
+  ```
+
+**Incomplete, stale, or the diff doesn't match the brief** (missing acceptance criteria,
+diff unrelated to the task, or CI red with no clear fix path): treat exactly like an orphan
+from a crashed session — clean up before starting fresh.
+1. If an open PR exists, close it: `gh pr close {number} --repo "$GH_REPO" --comment "Shipwright cleanup — prior attempt incomplete/stale, restarting"`
+2. If a remote branch exists, delete it: `git push origin --delete {branch}`
+3. If a worktree for `{branch}` already exists (a crashed session — exactly the scenario this
+   reality check recovers from — can leave one checked out on disk), remove it first: git
+   refuses to force-delete a branch checked out in any worktree, so this must happen before
+   step 4's `branch -D`.
+   ```bash
+   git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} worktree remove ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} --force
+   ```
+4. If a local branch exists, delete it: `git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} branch -D {branch}`
+5. Print:
+   ```
+   ⚠ {branch} had incomplete/stale prior work — cleaned up (PR closed, branch deleted). Starting fresh.
+   ```
+6. Fall through to the standard fresh-start flow below (branch now absent on remote).
+
+---
+
+The reality check above already ran `git pull` and `git ls-remote --heads origin {branch}`
+for the local/remote signals — reuse that same remote-branch result here (indicates a
+bundled task joining an existing PR) rather than re-querying:
+
+**If the branch does NOT exist on remote** (new task, standard flow): by this point the
+reality check above has already resolved any local branch named `{branch}` — either it
+never existed, it was routed through the "complete and correct" local-only shortcut, or it
+was deleted during the incomplete/stale cleanup — so a local branch is guaranteed absent
+here. Standard flow:
 ```bash
 git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} worktree add ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} origin/main -b {branch}
 ```
