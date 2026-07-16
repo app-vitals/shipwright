@@ -1402,7 +1402,6 @@ describe("POST /cron HTTP endpoint", () => {
   ): Server<any> {
     const s = startHealthServer(
       port,
-      undefined,
       deps,
       undefined,
       undefined,

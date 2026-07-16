@@ -1,8 +1,3 @@
-import type { AnalyticsEvent } from "./analytics.ts";
-
-type Tracker = (event: Omit<AnalyticsEvent, "timestamp">) => void;
-const noopTracker: Tracker = () => {};
-
 export interface LiveClaudeConfig {
   model: string;
   fallbackModel?: string;
@@ -124,7 +119,6 @@ export function createRunClaude(
   sessions: ClaudeSessionStore = { get: () => undefined, set: () => {} },
   model: string | undefined = undefined,
   workspace: string = process.cwd(),
-  tracker: Tracker = noopTracker,
   extraAllowedTools: string[] | undefined = undefined,
   fallbackModel: string | undefined = undefined,
   effortLevel: string | undefined = undefined,
@@ -275,10 +269,6 @@ export function createRunClaude(
   ): Promise<ClaudeRunResult> {
     const existingSessionId = sessionKey ? sessions.get(sessionKey) : undefined;
 
-    if (sessionKey && !existingSessionId) {
-      tracker({ type: "session_start", sessionKey });
-    }
-
     const args = _buildArgs(message, existingSessionId);
 
     try {
@@ -295,14 +285,8 @@ export function createRunClaude(
       // an error (even a burst of them) is never treated as proof the
       // session itself is corrupt.
       if (existingSessionId && !(err instanceof ClaudeTimeoutError)) {
-        const retryStart = Date.now();
         try {
           const output = await _spawn(args);
-          tracker({
-            type: "session_fallback",
-            sessionKey,
-            durationMs: Date.now() - retryStart,
-          });
           _saveSession(sessionKey, output);
           return { ...output, recoveredFromError: true };
         } catch {

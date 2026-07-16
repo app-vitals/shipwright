@@ -13,13 +13,11 @@
  *  8. Graceful SIGTERM/SIGINT shutdown
  */
 
-import { join } from "node:path";
 import * as Sentry from "@sentry/bun";
 import { initSentry } from "@shipwright/lib/sentry";
 import { WebClient } from "@slack/web-api";
 import nodeCron from "node-cron";
 import { createAgentReposRef } from "./agent-repos-ref.ts";
-import { createAnalyticsStore } from "./analytics.ts";
 import { ghJson } from "./check-helpers.ts";
 import { createChatPoller } from "./chat-poller.ts";
 import {
@@ -98,8 +96,6 @@ console.log(`[agent] agent home initialized: ${config.paths.home}`);
 
 const slackClock = SystemClock();
 const sessions = createFileSessionStore(config.paths.sessions);
-const analytics = createAnalyticsStore(join(config.paths.home, "analytics"));
-analytics.track({ type: "session_start" });
 
 const slack = new WebClient(config.slack.botToken ?? "");
 const runner = createRunClaude(
@@ -107,7 +103,6 @@ const runner = createRunClaude(
   sessions,
   undefined,
   config.paths.workspace,
-  analytics.track,
   undefined,
   undefined,
   undefined,
@@ -156,7 +151,6 @@ const healthPort = Number(
 );
 startHealthServer(
   healthPort,
-  analytics.summarize,
   cronDeps,
   slackClock,
   undefined,
@@ -419,7 +413,6 @@ if (config.chat.serviceUrl && config.chat.serviceToken) {
     undefined,
     undefined,
     undefined,
-    undefined,
     config.claude.timeoutMs,
   );
   const chatClient = new HttpChatServiceClient({
@@ -458,7 +451,6 @@ if (hasSlackCredentials(slackAppConfig)) {
     threadKey,
     undefined, // appFactory — default Bolt App
     slackAppConfig,
-    analytics.track,
     undefined, // fileDownloaderFn — default
     config.voice,
     undefined, // transcribeAudioFn — default

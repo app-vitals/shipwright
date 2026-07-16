@@ -106,8 +106,6 @@ class MockApp {
   }
 }
 
-const mockTracker = mock((_event: unknown) => {});
-
 // Wrap with test deps so all tests call createSlackApp() with no args
 function createSlackApp(
   overrides: {
@@ -132,7 +130,6 @@ function createSlackApp(
     chatTokenReporter?: ChatTokenReporter;
   } = {},
 ) {
-  mockTracker.mockClear();
   return _createSlackApp(
     mockRunClaude,
     mockMarkdownToSlack,
@@ -140,7 +137,6 @@ function createSlackApp(
     // biome-ignore lint/suspicious/noExplicitAny: mock factory for tests
     (cfg) => new MockApp(cfg as Record<string, unknown>) as any,
     mockSlackConfig,
-    mockTracker,
     overrides.fileDownloaderFn ?? (async () => null),
     overrides.voiceConfig ?? {},
     overrides.transcribeAudioFn ?? (async () => null),
@@ -465,23 +461,6 @@ describe("message handler — DM routing", () => {
     ).resolves.toBeUndefined();
   });
 
-  test("tracks message event on success", async () => {
-    await invokeDM({ channel: "D1", ts: "1.1", text: "hello" });
-    expect(mockTracker).toHaveBeenCalledTimes(1);
-    const event = mockTracker.mock.calls[0][0] as Record<string, unknown>;
-    expect(event.type).toBe("message");
-    expect(event.sessionKey).toBe("D1:1.1");
-    expect(typeof event.durationMs).toBe("number");
-  });
-
-  test("tracks error event when runClaude throws", async () => {
-    mockRunClaude.mockRejectedValueOnce(new Error("boom"));
-    await invokeDM({ channel: "D1", ts: "1.1" });
-    expect(mockTracker).toHaveBeenCalledTimes(1);
-    const event = mockTracker.mock.calls[0][0] as Record<string, unknown>;
-    expect(event.type).toBe("error");
-    expect(event.error).toBe("boom");
-  });
 });
 
 // ─── message handler tests — thread routing ───────────────────────────────────
@@ -945,23 +924,6 @@ describe("app_mention handler", () => {
     ).resolves.toBeUndefined();
   });
 
-  test("tracks mention event on success", async () => {
-    await invokeMention({ channel: "C1", ts: "2.2", text: "@bot help" });
-    expect(mockTracker).toHaveBeenCalledTimes(1);
-    const event = mockTracker.mock.calls[0][0] as Record<string, unknown>;
-    expect(event.type).toBe("mention");
-    expect(typeof event.durationMs).toBe("number");
-  });
-
-  test("tracks error event when mention handler throws", async () => {
-    mockRunClaude.mockRejectedValueOnce(new Error("oops"));
-    await invokeMention({ channel: "C1", ts: "2.2" });
-    expect(mockTracker).toHaveBeenCalledTimes(1);
-    const event = mockTracker.mock.calls[0][0] as Record<string, unknown>;
-    expect(event.type).toBe("error");
-    expect(event.error).toBe("oops");
-  });
-
   test("app_mention in active thread: runClaude not called when session exists", async () => {
     // The fix: when thread_ts is set and getSessionFn returns a session, the
     // app_mention handler returns early — the message handler already covers it
@@ -1178,13 +1140,6 @@ describe("marker dispatch — DM message handler", () => {
       thread_ts: "1.1",
       status: "",
     });
-  });
-
-  test("[silent] — still tracks analytics event", async () => {
-    await invokeDMWithResult("[silent]");
-    expect(mockTracker).toHaveBeenCalledTimes(1);
-    const event = mockTracker.mock.calls[0][0] as Record<string, unknown>;
-    expect(event.type).toBe("message");
   });
 
   test("[silent] with content — DM ignores silent and posts anyway", async () => {

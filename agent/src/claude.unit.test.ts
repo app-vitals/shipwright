@@ -30,8 +30,6 @@ const testSessions = {
   clear: mockClearSession,
 };
 
-const mockTracker = mock((_event: unknown): void => {});
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function bodyStream(content: string): ReadableStream<Uint8Array> {
@@ -94,7 +92,6 @@ describe("runClaude", () => {
     mockGetSession.mockClear();
     mockSetSession.mockClear();
     mockClearSession.mockClear();
-    mockTracker.mockClear();
     mockSpawn = mock(
       () =>
         fakeProc(jsonOutput("Hello from Claude")) as ReturnType<
@@ -106,7 +103,6 @@ describe("runClaude", () => {
       testSessions,
       MODEL,
       WORKSPACE,
-      mockTracker,
     );
   });
 
@@ -157,7 +153,6 @@ describe("runClaude", () => {
       testSessions,
       MODEL,
       WORKSPACE,
-      mockTracker,
       [],
       undefined,
       "xhigh",
@@ -175,7 +170,6 @@ describe("runClaude", () => {
       testSessions,
       MODEL,
       WORKSPACE,
-      mockTracker,
       [],
       "claude-sonnet-4-6",
     );
@@ -280,28 +274,6 @@ describe("runClaude", () => {
     expect(mockSetSession).toHaveBeenCalledWith("chan:ts", "sess-abc");
   });
 
-  test("tracks session_start when sessionKey provided and no existing session", async () => {
-    mockGetSession.mockReturnValueOnce(undefined);
-    await runClaude("hello", "chan:ts");
-    expect(mockTracker).toHaveBeenCalledWith({
-      type: "session_start",
-      sessionKey: "chan:ts",
-    });
-  });
-
-  test("does not track session_start when resuming an existing session", async () => {
-    mockGetSession.mockReturnValueOnce("existing-sid");
-    await runClaude("hello", "chan:ts");
-    expect(mockTracker).not.toHaveBeenCalledWith(
-      expect.objectContaining({ type: "session_start" }),
-    );
-  });
-
-  test("does not track session_start when no sessionKey provided", async () => {
-    await runClaude("hello");
-    expect(mockTracker).not.toHaveBeenCalled();
-  });
-
   test("throws on non-zero exit code", async () => {
     mockSpawn.mockReturnValue(
       fakeProc("", "claude: command not found", 127) as ReturnType<
@@ -356,7 +328,6 @@ describe("runClaude", () => {
       testSessions,
       MODEL,
       WORKSPACE,
-      mockTracker,
       undefined,
       undefined,
       undefined,
@@ -386,7 +357,6 @@ describe("runClaude", () => {
       testSessions,
       MODEL,
       WORKSPACE,
-      mockTracker,
       undefined,
       undefined,
       undefined,
@@ -446,7 +416,6 @@ describe("resume retry", () => {
     mockGetSession.mockClear();
     mockSetSession.mockClear();
     mockClearSession.mockClear();
-    mockTracker.mockClear();
     mockGetSession.mockReturnValue("stale-sess-id");
 
     const runClaude = createRunClaude(
@@ -454,7 +423,6 @@ describe("resume retry", () => {
       testSessions,
       MODEL,
       WORKSPACE,
-      mockTracker,
     );
 
     const result = await runClaude("hello", "chan:ts");
@@ -637,7 +605,6 @@ describe("extraAllowedTools", () => {
     mockGetSession.mockClear();
     mockSetSession.mockClear();
     mockClearSession.mockClear();
-    mockTracker.mockClear();
     mockSpawn = mock(
       () =>
         fakeProc(jsonOutput("Hello from Claude")) as ReturnType<
@@ -652,14 +619,12 @@ describe("extraAllowedTools", () => {
       testSessions,
       MODEL,
       WORKSPACE,
-      mockTracker,
     );
     const runClaudeEmpty = createRunClaude(
       mockSpawn as typeof Bun.spawn,
       testSessions,
       MODEL,
       WORKSPACE,
-      mockTracker,
       [],
     );
 
@@ -680,7 +645,6 @@ describe("extraAllowedTools", () => {
       testSessions,
       MODEL,
       WORKSPACE,
-      mockTracker,
       ["mcp__my_server__my_tool", "mcp__other__tool"],
     );
 
@@ -707,7 +671,6 @@ describe("extraAllowedTools", () => {
       testSessions,
       MODEL,
       WORKSPACE,
-      mockTracker,
       ["mcp__extra__tool"],
     );
 
@@ -734,7 +697,6 @@ describe("runClaude — totalCostUsd and modelUsage", () => {
     mockGetSession.mockClear();
     mockSetSession.mockClear();
     mockClearSession.mockClear();
-    mockTracker.mockClear();
     mockSpawn = mock(
       () =>
         fakeProc(jsonOutput("Hello from Claude")) as ReturnType<
@@ -746,7 +708,6 @@ describe("runClaude — totalCostUsd and modelUsage", () => {
       testSessions,
       MODEL,
       WORKSPACE,
-      mockTracker,
     );
   });
 
@@ -865,7 +826,6 @@ describe("liveClaudeConfig", () => {
     mockGetSession.mockClear();
     mockSetSession.mockClear();
     mockClearSession.mockClear();
-    mockTracker.mockClear();
     mockSpawn = mock(
       () =>
         fakeProc(jsonOutput("Hello from Claude")) as ReturnType<
@@ -883,7 +843,6 @@ describe("liveClaudeConfig", () => {
       testSessions,
       undefined,
       WORKSPACE,
-      mockTracker,
     );
 
     await runClaudeDefault("test");
@@ -902,7 +861,6 @@ describe("liveClaudeConfig", () => {
       testSessions,
       "claude-opus-4-6",
       WORKSPACE,
-      mockTracker,
     );
 
     await runClaudeExplicit("test");
@@ -920,7 +878,6 @@ describe("liveClaudeConfig", () => {
       testSessions,
       undefined,
       WORKSPACE,
-      mockTracker,
     );
 
     await runClaudeDefault("test");
