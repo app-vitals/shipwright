@@ -520,7 +520,7 @@ describe("getCurrentUser", () => {
   test("throws when gh exits non-zero", async () => {
     writeFailingGhBinary(tmpDir, 1, "not authenticated");
     process.env.PATH = `${tmpDir}:${savedPath}`;
-    expect(getCurrentUser()).rejects.toThrow("gh api graphql failed");
+    await expect(getCurrentUser()).rejects.toThrow("gh api graphql failed");
   });
 });
 
