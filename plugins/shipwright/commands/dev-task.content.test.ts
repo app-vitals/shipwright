@@ -10,21 +10,56 @@ beforeAll(() => {
   content = readFileSync(DEV_TASK_MD_PATH, "utf-8");
 });
 
-describe("dev-task.md Step 1 — in_progress resume safeguard", () => {
-  it("checks for in_progress tasks before ready=true query", () => {
-    const inProgressIdx = content.indexOf("status=in_progress");
-    const readyIdx = content.indexOf("ready=true");
-    expect(inProgressIdx).toBeGreaterThan(-1);
-    expect(readyIdx).toBeGreaterThan(-1);
-    expect(inProgressIdx).toBeLessThan(readyIdx);
+describe("dev-task.md — explicit-target-only argument contract", () => {
+  it("frontmatter declares argument-hint as required (angle brackets, not optional brackets)", () => {
+    const frontmatterEnd = content.indexOf("---", 3);
+    const frontmatter = content.slice(0, frontmatterEnd);
+    expect(frontmatter).toContain('argument-hint: "<task-id>"');
+    expect(frontmatter).not.toContain('argument-hint: "[task-id]"');
   });
 
-  it("prints a resume message when an in_progress task is found", () => {
-    expect(content).toContain("Resuming interrupted task");
+  it("states the task-id argument is required in prose", () => {
+    expect(content).toMatch(/task-id.{0,40}required|required.{0,40}task-id/is);
   });
 
-  it("routes in_progress tasks through the Step 2 orphan check", () => {
-    expect(content).toContain("orphan check");
+  it("no-argument invocation responds [silent] and stops with no task-store queries", () => {
+    // The "no arguments -> resume interrupted task / scan ready=true" fallback must be gone.
+    expect(content).not.toContain("resume an interrupted task if one exists");
+    expect(content).not.toMatch(/no arguments.{0,80}resume/is);
+    expect(content).not.toContain("Otherwise (no arguments)");
+    expect(content).not.toContain("pick the next ready pending task");
+  });
+
+  it("removes the ready-queue scan (GET /tasks?ready=true request) from Step 1 entirely", () => {
+    expect(content).not.toContain('"$SHIPWRIGHT_TASK_STORE_URL/tasks?ready=true"');
+    expect(content).not.toContain("ready-queue scan");
+  });
+
+  it("removes the in_progress resume-check query from Step 1", () => {
+    expect(content).not.toContain("status=in_progress");
+    expect(content).not.toContain("Resuming interrupted task");
+  });
+
+  it("routes an explicit task-id's in_progress status through the Step 2 orphan check", () => {
+    expect(content).toMatch(/orphan check/i);
+  });
+});
+
+describe("dev-task.md Step 1 — explicit task-id fetch, validate, claim", () => {
+  it("fetches the task directly via GET /tasks/{task-id} instead of scanning", () => {
+    expect(content).toContain("$SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}");
+  });
+
+  it("stops with not-found messaging on 404", () => {
+    expect(content).toContain("not found");
+  });
+
+  it("stops with a status message when status is not pending or in_progress", () => {
+    expect(content).toMatch(/status.{0,40}not.{0,10}workable|nothing to do/is);
+  });
+
+  it("validates dependency satisfaction for a pending task before claiming", () => {
+    expect(content).toMatch(/dependenc(y|ies).{0,120}satisf/is);
   });
 });
 
@@ -54,12 +89,14 @@ describe("dev-task.md Step 2 — atomic claim", () => {
     expect(block).not.toContain("-d '{\"claimedBy\"");
   });
 
-  it("handles 409 by instructing to loop back to Step 1 and pick the next ready task", () => {
+  it("handles 409 by responding [silent] and stopping — no retry against a different task", () => {
     const claimIdx = content.indexOf("/tasks/{id}/claim");
     expect(claimIdx).toBeGreaterThan(-1);
     const after = content.slice(claimIdx, claimIdx + 1500);
     expect(after).toContain("409");
-    expect(after).toMatch(/Step 1/);
+    expect(after).toContain("[silent]");
+    expect(after).not.toMatch(/loop back to Step 1/i);
+    expect(after).not.toMatch(/pick(ing)? (the )?next ready task/i);
   });
 
   it("captures the HTTP status code of the claim call (mirrors review.md's claim pattern)", () => {

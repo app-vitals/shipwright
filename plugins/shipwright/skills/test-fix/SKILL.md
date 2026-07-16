@@ -1,14 +1,14 @@
 ---
 name: test-fix
-description: Read docs/test-readiness/test-readiness-plan.md and queue its flat T-NNN task list as task-store tasks, one task per row, with dependency edges (predecessor/fan-out) and per-task HITL classification. Requires test-roadmap to have run first. Replaces the former GitHub-issue publish skill's dashboard with a task-store queue. Includes a one-time --backfill-from-github mode that migrates already-published GitHub issues into task-store tasks and closes them.
+description: Read docs/test-readiness/test-readiness-plan.md and queue its flat T-NNN task list as task-store tasks, one task per row, with dependency edges (predecessor/fan-out) and per-task HITL classification. Requires test-roadmap to have run first. Replaces the former GitHub-issue publish skill's dashboard with a task-store queue.
 ---
 
 # Test Fix
 
 Read the latest `docs/test-readiness/test-readiness-plan.md` and queue its flat task list as
-task-store tasks — one task per `T-NNN` row. Dependency edges (predecessor links, `P-NNN`
-fan-out parents) are written as task-store `dependencies` arrays, so task-store's own
-`ready:true` query computes readiness directly. Findings are never turned into direct PRs;
+task-store tasks — one task per `T-NNN` row. Dependency edges (predecessor links) are written
+as task-store `dependencies` arrays, so task-store's own `ready:true` query computes readiness
+directly. Findings are never turned into direct PRs;
 they always become task-store tasks that `dev-task` (or a human, for HITL tasks) picks up
 later.
 
@@ -28,8 +28,6 @@ Before starting, check for flags:
 
 - `--dry-run` — print what would be queued (including hitl classification) without querying
   the task store for dedup and without writing anything.
-- `--backfill-from-github [--repo owner/name]` — a separate, one-time migration mode. See the
-  dedicated **Backfill Mode** section below. It does not run the regular flow (Steps 1–7).
 
 > **Note:** Queueing is the only mode for the regular flow. There is no PR mode and no
 > `--queue` flag — every regular run queues tasks. `--dry-run` shows a preview and stops
@@ -53,19 +51,14 @@ Before starting, check for flags:
 
 1. Parse the `## 5. Task list` section's flat rows, format `T-NNN | M# | files | layer |
    bucket | outcome | verify` (per `test-roadmap/SKILL.md` section 5).
-2. Parse `P-NNN` parent / `T-NNNa`..`T-NNNf`-style child fan-out groups per the same section's
-   fan-out rule. A parent row carries no verification command of its own — record it anyway
-   (it becomes a dependency target for its children) but note it closes only when every child
-   closes.
-3. Parse any **audit-decision-row** tables (`## 5. Task list` → "Audit task decision rows",
+2. Parse any **audit-decision-row** tables (`## 5. Task list` → "Audit task decision rows",
    also rendered per-task in `issue.md.tmpl`'s "Audit decisions" section) attached to tasks
    marked `[audit: N items]` in the expected-outcome column. Keep each table's rows verbatim —
    they're needed for Step 5's description field and for the M5 HITL rule (rule c below).
-4. Parse `depends_on` / predecessor links: a child's `depends_on: P-NNN` per the fan-out
-   convention, and any other explicit predecessor references in a row's outcome or the
-   Repo Configuration tasks' pairing (`depends_on` the paired workflow task, per
+3. Parse `depends_on` / predecessor links: any explicit `depends_on:` annotation on a row, and
+   the Repo Configuration tasks' pairing (`depends_on` the paired workflow task, per
    `repo-config/SKILL.md`'s pairing rule).
-5. If the task list is empty or malformed (rows don't match the `T-NNN | M# | ...` shape),
+4. If the task list is empty or malformed (rows don't match the `T-NNN | M# | ...` shape),
    print:
    ```
    No parseable T-NNN task rows found in test-readiness-plan.md. Nothing to queue.
@@ -117,6 +110,77 @@ of "already active" T-NNN IDs.
 For each row from Step 2: if its `T-NNN` is in the "already active" set, skip it. Print:
 `Skipping {T-NNN} — task already active`.
 
+### 4.1 Fuzzy Near-Duplicate Check
+
+The exact-ID check above only catches literal `T-NNN` reuse, scoped to `source ==
+"shipwright"` tasks whose title starts with `"Test readiness:"`. It cannot catch a
+differently-numbered task that semantically duplicates existing active work — e.g. a
+finding that gets re-scoped and re-queued under a new `T-NNN` after the original active task
+was created by a different source or with a different title convention. That gap is exactly
+what let one duplicate issue slip past dedup once the original had no task-store footprint
+matching the narrow `source`/prefix filter.
+
+To close it, run a second, wider comparison — no new API calls, no `--repo=`-scope change:
+reuse the **same combined `.tasks` array** already fetched above (the `status=pending` and
+`status=in_progress` results, both `&repo=`-scoped), but this time **do not** filter by
+`source == "shipwright"` or by the `"Test readiness:"` title prefix. Consider literally every
+active (pending + in_progress) task title for the repo, regardless of source or naming
+convention.
+
+For each row surviving the exact-ID check (i.e. not already skipped), compute its would-be
+title exactly as Step 5 will build it — `"Test readiness: {outcome} (T-NNN)"` — and compare it
+against every title in that unfiltered active-task set using **normalized word-overlap
+(Jaccard similarity)**:
+
+1. Lowercase both titles and strip punctuation.
+2. Split each into a set of words (tokens).
+3. `similarity = |intersection| / |union|` of the two word sets.
+
+Flag any pair where `similarity >= 0.6`. This threshold is a deliberate middle ground:
+
+- **Too strict (e.g. 0.9)** would miss genuine rewordings — the entire point of this check is
+  to catch titles that got re-scoped or rephrased under a different `T-NNN`, which by
+  definition won't be a near-exact string match.
+- **Too loose (e.g. 0.3)** would flag unrelated tasks that merely share generic vocabulary
+  ("test", "fix", "add"), producing enough noise that humans learn to ignore the flag.
+- **0.6** is biased toward not missing a real duplicate, which is the safer failure mode —
+  consistent with the "flag, don't skip" philosophy below.
+
+**Worked example.** Suppose an existing active task (any source) is titled:
+
+```
+Test readiness: add integration coverage for auth middleware (T-041)
+```
+
+And a new candidate row from Step 2 would build the title:
+
+```
+Test readiness: add integration coverage for the auth middleware (T-058)
+```
+
+Lowercase, strip punctuation, and tokenize (dropping the parenthetical `T-NNN`, which is
+excluded from the token comparison since it's expected to differ):
+
+- Title A words: `{test, readiness, add, integration, coverage, for, auth, middleware}` (8)
+- Title B words: `{test, readiness, add, integration, coverage, for, the, auth, middleware}` (9)
+- Intersection: `{test, readiness, add, integration, coverage, for, auth, middleware}` (8)
+- Union: `{test, readiness, add, integration, coverage, for, the, auth, middleware}` (9)
+- `similarity = 8 / 9 ≈ 0.89`
+
+`0.89 >= 0.6`, so this pair is flagged — even though `T-041` and `T-058` are different IDs and
+the exact-ID check alone would have missed this duplicate entirely.
+
+**This never causes a skip.** A fuzzy match is not removed from the Step 5 build list and is
+never excluded from the Step 7.1 bulk POST — it still gets created. Fuzzy-match false
+positives are common (shared vocabulary, generic verbs like "fix"/"add"/"update"), and
+silently dropping genuinely new work because of a coincidental title overlap is a worse
+failure mode than one extra line a human has to glance at. This mirrors the same philosophy
+already applied to the `hitl` field (Step 5.2): no auto-decision on a fuzzy or judgment-based
+signal where the cost of a wrong auto-decision is asymmetric — surface it for a human instead.
+
+For each flagged pair, print:
+`Flagging {T-NNN} — {similarity}% title-similar to active task {other-id}: "{other-title}" — not skipped, review after queueing`
+
 ---
 
 ## Step 5: Build Task JSON
@@ -140,7 +204,6 @@ and `repo-slug` values detected in Step 3 — do not re-derive them:
   "status": "pending",
   "hitl": <true | false — computed per 5.2>,
   "dependencies": ["test-{predecessor-t-nnn}-{repo-slug}", "..."],
-  "addedAt": "<current ISO timestamp>",
   "acceptanceCriteria": ["...", "Verification command `{verify}` passes"],
   "description": "<see 5.3>"
 }
@@ -244,8 +307,8 @@ line rather than guessing a broken link.
 ### 5.4 Compute `dependencies`
 
 `dependencies` is an array of task-store IDs (`test-{t-nnn}-{repo-slug}` form) — one entry
-per predecessor `T-NNN` this row's `depends_on` / fan-out-parent / pairing-rule reference
-names (parsed in Step 2.4). Map each predecessor `T-NNN` to its task-store ID using the same
+per predecessor `T-NNN` this row's `depends_on` / pairing-rule reference names (parsed in
+Step 2.3). Map each predecessor `T-NNN` to its task-store ID using the same
 `{t-nnn}-{repo-slug}` derivation used for this task's own `id`.
 
 This is what makes task-store's own `ready:true` query correctly compute readiness for these
@@ -261,7 +324,12 @@ If a row has no predecessors, `dependencies` is an empty array.
 ## Step 6: Dry-Run Output (if --dry-run)
 
 If `--dry-run` was passed, run Steps 1–3 and 2's parsing as normal, but skip Step 4 (dedup)
-entirely — do not query the task store. For each parsed row, compute `priority` (5.1), `hitl`
+entirely — do not query the task store. This includes the Step 4.1 fuzzy near-duplicate
+check: it reuses Step 4's same two task-store queries, and `--dry-run`'s whole contract is
+"no task-store queries made" (see Setup: Parse Arguments). Extending the fuzzy check into
+dry-run would require querying the task store, which would break that contract — so dry-run
+previews never surface fuzzy-duplicate flags; they only appear on a real (non-dry-run) run's
+Step 4/7.2 output. For each parsed row, compute `priority` (5.1), `hitl`
 (5.2), and `dependencies` (5.4) in-memory, then print a preview:
 
 ```
@@ -315,6 +383,7 @@ TEST FIX — QUEUED
 
   QUEUED    {N} tasks   ({A} autonomous, {H} HITL)
   SKIPPED   {K} tasks (already active)
+  FLAGGED   {F} tasks (possible near-duplicate, not skipped)
 
 Tasks queued:
   test-{t-nnn}-{repo-slug} — {outcome}  [layer: {test-layer}, priority: {priority}, hitl: {true|false}]
@@ -324,29 +393,16 @@ Tasks queued:
 Skipped (already active):
   {T-NNN} — task already in queue or in progress
 
+{If any flagged:}
+Flagged for review (possible near-duplicate, not skipped):
+  {T-NNN} — {similarity}% title-similar to active task {other-id}: "{other-title}"
+
 Run /shipwright:dev-task to execute autonomous tasks. HITL tasks are picked up via
 /shipwright:hitl.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
 Stop after printing — this is the sole final output for the regular flow.
-
----
-
-## Backfill Mode (`--backfill-from-github [--repo owner/name]`)
-
-A genuinely separate, one-time migration path — it does not run Steps 1–7 above (the regular
-plan-parsing flow). It operates purely off existing GitHub issue state, since a fresh
-`test-readiness-plan.md` may not exist in the target repo, or may have since diverged from
-what was originally published by the former GitHub-issue publish skill.
-
-Use this once, per repo, to migrate issues the former GitHub-issue publish skill already
-created into task-store tasks, then retire the GitHub side of those specific issues (closing
-them with a link back to the task store). Ordinary tasks going forward come from the regular
-flow (Steps 1–7) against a current `test-readiness-plan.md`.
-
-Full procedure (repo detection, issue parsing, predecessor-ordering, task creation, closing,
-and the summary block): see `references/backfill-from-github.md`.
 
 ---
 
@@ -360,9 +416,6 @@ and the summary block): see `references/backfill-from-github.md`.
 - **Bulk append fails** (`/tasks/bulk` non-2xx, Step 7.1): log the response body and
   stop. Do not retry blindly; re-running the regular flow is idempotent because the dedup
   check (Step 4) skips already-queued rows.
-- **Backfill-specific failures** (auth, unreachable repo, missing task-id marker, partial
-  bulk-append reruns): see `references/backfill-from-github.md`'s "Error Handling
-  (Backfill-Specific)" section.
 
 ---
 
@@ -377,21 +430,19 @@ and the summary block): see `references/backfill-from-github.md`.
   skill's `--refresh` flag did; that mechanism is fully replaced, not duplicated.
 - **Dedup before queueing** — never skip Step 4 in the regular flow (outside `--dry-run`,
   which explicitly skips it by design and queues nothing for real).
+- **Fuzzy near-duplicate check (Step 4.1) never skips** — it only ever flags for human review
+  (printed in Step 4's output and again in Step 7.2's summary). Only the exact-ID check can
+  remove a row from the Step 5 build list; a fuzzy title match is never, on its own, a reason
+  to withhold a task from the bulk POST.
 - **No numeric/count backstop on `hitl`** — the only paths to `hitl: true` are the three
   explicit rules in Step 5.2 (CI workflow secrets, branch protection, untested M5 deletion
   owner). No file-count, line-count, or milestone-number threshold ever forces the
   classification on its own.
-- **Backfill is one-time and separate** — `--backfill-from-github` never runs the regular
-  Steps 1–7, and the regular flow never reads GitHub issue state. The two modes do not share
-  logic beyond the field-mapping conventions of Step 5 (which backfill explicitly reuses,
-  per B5).
-- **Repo-scoped task IDs** — every task ID carries the `{repo-slug}` suffix (Step 3 / B1) so
+- **Repo-scoped task IDs** — every task ID carries the `{repo-slug}` suffix (Step 3) so
   the same `T-NNN` scanned in two different repos never collides.
 - **`test-readiness-plan.md` is not modified here** — a queued task only means a fix is
   scheduled. The plan document is Phase 4's output and is not checked off, annotated, or
   rewritten by this skill.
 - **No interactive confirmation** — matches entropy-fix/error-fix: queue-only skills don't
   gate on user confirmation for regular-flow task-store writes, since they're internal and
-  correctable. Backfill mode's `gh issue close` calls are the one externally-visible action
-  in this skill, and they only happen after the corresponding task-store task already exists
-  (B5 before B6) — never the reverse.
+  correctable.

@@ -49,10 +49,12 @@ prior setup. The skills discover the PR from GitHub and treat it identically to 
 created. No skill requires the PR to have been opened by `dev-task` or any other Shipwright
 command.
 
-**Scope note:** `review` operates across all open PRs in the repo — it is not limited to
-PRs authored by the authenticated user. `patch` and `deploy` are scoped to the
-authenticated user's own open PRs (matching by PR author), because they take write actions
-(pushing fixes, merging) that should only be performed on PRs the agent owns.
+**Scope note:** `review` is explicit-target-only — the caller (loop orchestrator or a human)
+always names a specific PR (`org/repo#number`); there is no self-scan/queue-building mode.
+Any PR is serviceable when named this way, regardless of author — it is not limited to PRs
+authored by the authenticated user. `patch` and `deploy` are scoped to the authenticated
+user's own open PRs (matching by PR author), because they take write actions (pushing fixes,
+merging) that should only be performed on PRs the agent owns.
 
 Applies to: **review**, **patch**, **deploy**
 
@@ -124,7 +126,7 @@ favors permissive: false positives are visible and self-correcting; false negati
 | `check-review.ts` | `review` cron | Open PRs with unreviewed commits (by headRefOid dedup against task store `/prs` records); respects `allow_self_review` policy |
 | `check-deploy.ts` | `deploy` cron | Open PRs with `APPROVED` review decision and green CI; respects `allow_self_review` for self-authored PRs; skips a repo with an active Deploy workflow run, scoped per repo — a busy repo does not block ready PRs in other configured repos |
 | `check-dev-task.ts` | `dev-task` cron | Pending tasks with all dependencies satisfied (task store `ready: true` query) |
-| `check-patch.ts` | `patch` cron | Signals patch skill for unaddressed review findings, merge conflicts (DIRTY), and failing CI; queries GitHub directly — does NOT read `state/reviews.json`. Branches merely BEHIND main (no conflict) are not patch-worthy — main is only merged into a branch to resolve a conflict. |
+| `check-patch.ts` | `patch` cron | Signals patch skill for unaddressed review findings, merge conflicts (DIRTY), and failing CI; queries GitHub directly — does NOT read `state/reviews.json`. Branches merely BEHIND main (no conflict) are not patch-worthy — main is only merged into a branch to resolve a conflict. Returns on the FIRST qualifying PR found (single-PR-at-a-time); its stdout is a literal, directly-invocable `/shipwright:patch {org}/{repo}#{number}` command naming that PR — required since `patch.md` now takes an explicit target instead of self-scanning. |
 | `check-review-patch.ts` | `review-patch` cron | Delegates to `check-patch.ts` + `check-review.ts`; exits 0 if either exits 0, covering the full scope of the review-patch orchestrator (unaddressed findings, failing CI, merge conflicts, and unreviewed commits) |
 
 ---

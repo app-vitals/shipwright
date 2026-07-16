@@ -986,6 +986,50 @@ describeOrSkip("PullRequestService.list() and get() (integration)", () => {
     expect(readyResult.prs.some((p) => p.id === claimed.id)).toBe(false);
   });
 
+  it("list({ sort: 'desc' }) orders by createdAt descending; default/asc preserves current order", async () => {
+    // Explicit, well-separated createdAt values so ordering is deterministic
+    // even when rows are created within the same DB timestamp tick.
+    const base = new Date("2026-01-01T00:00:00.000Z").getTime();
+    const first = await prisma.pullRequest.create({
+      data: {
+        repo: "app-vitals/shipwright",
+        prNumber: 1060,
+        createdAt: new Date(base),
+      },
+    });
+    const second = await prisma.pullRequest.create({
+      data: {
+        repo: "app-vitals/shipwright",
+        prNumber: 1061,
+        createdAt: new Date(base + 1000),
+      },
+    });
+    const third = await prisma.pullRequest.create({
+      data: {
+        repo: "app-vitals/shipwright",
+        prNumber: 1062,
+        createdAt: new Date(base + 2000),
+      },
+    });
+
+    const ascDefault = await service.list();
+    expect(ascDefault.prs.map((p) => p.id)).toEqual([
+      first.id,
+      second.id,
+      third.id,
+    ]);
+
+    const ascExplicit = await service.list({ sort: "asc" });
+    expect(ascExplicit.prs.map((p) => p.id)).toEqual([
+      first.id,
+      second.id,
+      third.id,
+    ]);
+
+    const desc = await service.list({ sort: "desc" });
+    expect(desc.prs.map((p) => p.id)).toEqual([third.id, second.id, first.id]);
+  });
+
   it("list() without ready returns both claimed and unclaimed PRs (backward compatible)", async () => {
     await prisma.pullRequest.create({
       data: {

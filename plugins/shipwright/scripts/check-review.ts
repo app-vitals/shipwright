@@ -10,8 +10,12 @@
  *
  * Skips own PRs when allow_self_review is false (read from policy at startup).
  *
- * Exit 0 + one-line prompt → at least one PR needs review
- * Exit 1 + no output       → nothing to do
+ * `/shipwright:review` is explicit-target-only (no self-scan mode), so the emitted
+ * prompt must name the specific eligible PR in `org/repo#number` form — that string
+ * becomes the literal Claude prompt for the cron invocation.
+ *
+ * Exit 0 + one-line prompt naming the eligible PR → at least one PR needs review
+ * Exit 1 + no output                              → nothing to do
  *
  * Usage:
  *   bun plugins/shipwright/scripts/check-review.ts
@@ -85,7 +89,7 @@ export async function run(deps: Deps): Promise<RunResult> {
     if (!record) {
       return {
         exit: 0,
-        output: "Review open PRs and post findings via /shipwright:review",
+        output: `Review ${pr.repo}#${pr.number} and post findings via /shipwright:review ${pr.repo}#${pr.number}`,
       };
     }
 
@@ -97,7 +101,7 @@ export async function run(deps: Deps): Promise<RunResult> {
     // Different SHA or pending → eligible
     return {
       exit: 0,
-      output: "Review open PRs and post findings via /shipwright:review",
+      output: `Review ${pr.repo}#${pr.number} and post findings via /shipwright:review ${pr.repo}#${pr.number}`,
     };
   }
 

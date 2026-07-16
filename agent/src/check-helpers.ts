@@ -54,6 +54,7 @@ export interface Task {
   pr?: number;
   hours?: number;
   addedAt?: string;
+  createdAt?: string;
   startedAt?: string;
   prCreatedAt?: string;
   mergedAt?: string;
@@ -368,9 +369,17 @@ export function splitOrgRepo(repo: string): [string, string] {
  *
  * Accepts an optional `fetchFn` for dependency injection in tests, matching
  * createTaskStoreClient's pattern.
+ *
+ * Accepts an optional `ready: true` to request only unclaimed PR records via
+ * LPF-2.1's `?ready=true` filter (mirrors `/tasks?ready=true`). When set,
+ * a `null` result becomes ambiguous between "no record exists yet" and
+ * "a record exists but is currently claimed" — callers that need to
+ * distinguish those two cases (e.g. check-review.ts) must NOT pass `ready`
+ * and should check `record.claimedBy` themselves instead.
  */
 export function createPrRecordQuery<T>(opts?: {
   fetchFn?: FetchFn;
+  ready?: boolean;
 }): (repo: string, prNumber: number) => Promise<T | null> {
   const taskStoreUrl = (process.env.SHIPWRIGHT_TASK_STORE_URL ?? "").trim();
   const taskStoreToken = (process.env.SHIPWRIGHT_TASK_STORE_TOKEN ?? "").trim();
@@ -381,6 +390,7 @@ export function createPrRecordQuery<T>(opts?: {
     try {
       const baseUrl = taskStoreUrl.replace(/\/$/, "");
       const params = new URLSearchParams({ repo, prNumber: String(prNumber) });
+      if (opts?.ready) params.set("ready", "true");
       const res = await doFetch(`${baseUrl}/prs?${params}`, {
         headers: {
           Authorization: `Bearer ${taskStoreToken}`,
@@ -407,16 +417,17 @@ export function createPrRecordQuery<T>(opts?: {
 }
 
 /**
- * Status + addedAt for the task linked to a PR, as returned by
- * createTaskStatusQuery. `addedAt` is included alongside `status` so callers
- * can source a cross-phase age comparison from the SAME clock dev-task's
- * backlog candidates already use (task.addedAt), instead of a phase-recent
- * timestamp. It may be undefined if the matched task record doesn't carry
- * one.
+ * Status + createdAt for the task linked to a PR, as returned by
+ * createTaskStatusQuery. `createdAt` is included alongside `status` so
+ * callers can source a cross-phase age comparison from the SAME
+ * task-store-assigned timestamp dev-task's backlog candidates already use
+ * (task.createdAt), instead of a phase-recent timestamp. Unlike addedAt,
+ * createdAt is always set by the task-store on every record, so it may only
+ * be undefined here if the matched task record's shape is unexpected.
  */
 export interface LinkedTaskInfo {
   status: TaskStatus;
-  addedAt?: string;
+  createdAt?: string;
 }
 
 /**
@@ -473,7 +484,7 @@ export function createTaskStatusQuery(opts?: {
     }
     const task = tasks[0];
     if (!task) return null;
-    return { status: task.status, addedAt: task.addedAt };
+    return { status: task.status, createdAt: task.createdAt };
   };
 }
 
