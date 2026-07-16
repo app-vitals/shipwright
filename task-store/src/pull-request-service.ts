@@ -181,6 +181,20 @@ export class PullRequestService implements PullRequestServiceLike {
         }
       }
 
+      // When a review session transitions reviewState to 'posted' or
+      // 'approved' it is done with the record, so release its claim in the same
+      // write — mirroring the state:'merged' block below. Review skills
+      // historically left claimedBy/claimedAt/heartbeatAt/phase set and relied
+      // on a follow-up release call that agents often skipped; a claim left
+      // dangling past the reaper TTL then got reaped and its reviewState
+      // regressed, re-dispatching a duplicate review (app-vitals/shipwright#1016).
+      if (data.reviewState === "posted" || data.reviewState === "approved") {
+        updateData.claimedBy = null;
+        updateData.claimedAt = null;
+        updateData.heartbeatAt = null;
+        updateData.phase = null;
+      }
+
       // deploy.md's merge-completion PATCH transitions state to 'merged' —
       // explicitly release the claim in the same call, mirroring patch()'s
       // always-release behavior. Defense-in-depth: claimNext()'s WHERE clause
@@ -352,7 +366,7 @@ export class PullRequestService implements PullRequestServiceLike {
     }
   }
 
-  /** Mark a PR review as posted. Increments reviewCycles, sets reviewState=posted, reviewedAt, and readyForPatchAt. */
+  /** Mark a PR review as posted. Increments reviewCycles, sets reviewState=posted, reviewedAt, and readyForPatchAt, and releases the claim. */
   async complete(id: string): Promise<PullRequest> {
     const now = this.clock.now().toISOString();
     try {
@@ -363,6 +377,16 @@ export class PullRequestService implements PullRequestServiceLike {
           reviewState: "posted",
           reviewedAt: now,
           readyForPatchAt: now,
+          // The review session is done with the record, so release its claim in
+          // the same write — mirroring update()'s posted/approved release. This
+          // is the path the review flow actually uses (POST /prs/:id/complete),
+          // so without the clear the claim lingers until the reaper TTL and the
+          // stale-claim reap re-dispatches a duplicate review
+          // (app-vitals/shipwright#1016).
+          claimedBy: null,
+          claimedAt: null,
+          heartbeatAt: null,
+          phase: null,
         },
       });
     } catch (err: unknown) {

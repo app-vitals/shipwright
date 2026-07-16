@@ -359,3 +359,152 @@ describe("PullRequestService.update() merge completion", () => {
     expect("phase" in data).toBe(false);
   });
 });
+
+describe("PullRequestService.update() claim release on review post", () => {
+  const NOW = new Date("2026-07-10T12:00:00.000Z");
+  const clock = FixedClock(NOW);
+
+  test("reviewState:posted clears claimedBy/claimedAt/heartbeatAt/phase in the same write", async () => {
+    const prisma = makePrismaDouble({
+      id: "pr-1",
+      claimedBy: "agent-a",
+    } as Partial<PullRequest>);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.update("pr-1", { reviewState: "posted" });
+
+    expect(prisma._updateCalls).toHaveLength(1);
+    const { data } = prisma._updateCalls[0];
+    expect(data.reviewState).toBe("posted");
+    expect(data.claimedBy).toBeNull();
+    expect(data.claimedAt).toBeNull();
+    expect(data.heartbeatAt).toBeNull();
+    expect(data.phase).toBeNull();
+  });
+
+  test("reviewState:approved clears claim fields AND stamps readyForDeployAt", async () => {
+    const prisma = makePrismaDouble({
+      id: "pr-1",
+      claimedBy: "agent-a",
+      readyForDeployAt: null,
+    } as Partial<PullRequest>);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.update("pr-1", { reviewState: "approved" });
+
+    expect(prisma._updateCalls).toHaveLength(1);
+    const { data } = prisma._updateCalls[0];
+    expect(data.reviewState).toBe("approved");
+    expect(data.readyForDeployAt).toBe(NOW.toISOString());
+    expect(data.claimedBy).toBeNull();
+    expect(data.claimedAt).toBeNull();
+    expect(data.heartbeatAt).toBeNull();
+    expect(data.phase).toBeNull();
+  });
+
+  test("auto-release wins over claim fields set in the same posted PATCH body", async () => {
+    // The release is unconditional, mirroring the state:'merged' block, so any
+    // claim field supplied in the same posted/approved PATCH is overwritten with
+    // null. (In practice the route allowlist already drops claimedBy/claimedAt/
+    // heartbeatAt; only phase is writable and it too gets nulled here.)
+    const prisma = makePrismaDouble({
+      id: "pr-1",
+      claimedBy: "agent-a",
+    } as Partial<PullRequest>);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.update("pr-1", {
+      reviewState: "posted",
+      claimedBy: "agent-b",
+      phase: "patch",
+    });
+
+    expect(prisma._updateCalls).toHaveLength(1);
+    const { data } = prisma._updateCalls[0];
+    expect(data.reviewState).toBe("posted");
+    expect(data.claimedBy).toBeNull();
+    expect(data.claimedAt).toBeNull();
+    expect(data.heartbeatAt).toBeNull();
+    expect(data.phase).toBeNull();
+  });
+
+  test("update that does not touch reviewState leaves claim fields alone", async () => {
+    const prisma = makePrismaDouble({
+      id: "pr-1",
+      claimedBy: "agent-a",
+    } as Partial<PullRequest>);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.update("pr-1", { staged: true });
+
+    expect(prisma._updateCalls).toHaveLength(1);
+    const { data } = prisma._updateCalls[0];
+    expect("claimedBy" in data).toBe(false);
+    expect("claimedAt" in data).toBe(false);
+    expect("heartbeatAt" in data).toBe(false);
+    expect("phase" in data).toBe(false);
+  });
+
+  test("re-asserting an already-posted reviewState still (idempotently) clears claim fields", async () => {
+    // Behavior choice: the release keys off the incoming reviewState value, not
+    // a state transition, so a redundant PATCH to 'posted' also clears the claim
+    // fields. This is harmless — an already-released claim is written null→null —
+    // and keeps the rule simple: "posted/approved ⇒ no claim".
+    const prisma = makePrismaDouble({
+      id: "pr-1",
+      reviewState: "posted",
+      claimedBy: null,
+    } as Partial<PullRequest>);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.update("pr-1", { reviewState: "posted" });
+
+    expect(prisma._updateCalls).toHaveLength(1);
+    const { data } = prisma._updateCalls[0];
+    expect(data.reviewState).toBe("posted");
+    expect(data.claimedBy).toBeNull();
+    expect(data.claimedAt).toBeNull();
+    expect(data.heartbeatAt).toBeNull();
+    expect(data.phase).toBeNull();
+  });
+});
+
+describe("PullRequestService.complete() claim release", () => {
+  const NOW = new Date("2026-07-10T12:00:00.000Z");
+  const clock = FixedClock(NOW);
+
+  test("complete() clears claimedBy/claimedAt/heartbeatAt/phase in the same write", async () => {
+    // complete() is the path the review flow actually uses
+    // (POST /prs/:id/complete); it must release the claim in the same write, not
+    // leave it for the reaper.
+    const prisma = makePrismaDouble({
+      id: "pr-1",
+      claimedBy: "agent-a",
+      phase: "review",
+    } as Partial<PullRequest>);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.complete("pr-1");
+
+    expect(prisma._updateCalls).toHaveLength(1);
+    const { data } = prisma._updateCalls[0];
+    expect(data.claimedBy).toBeNull();
+    expect(data.claimedAt).toBeNull();
+    expect(data.heartbeatAt).toBeNull();
+    expect(data.phase).toBeNull();
+  });
+
+  test("complete() preserves existing posted-review behavior (reviewCycles/reviewState/reviewedAt/readyForPatchAt)", async () => {
+    const prisma = makePrismaDouble({ id: "pr-1" } as Partial<PullRequest>);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.complete("pr-1");
+
+    expect(prisma._updateCalls).toHaveLength(1);
+    const { data } = prisma._updateCalls[0];
+    expect(data.reviewCycles).toEqual({ increment: 1 });
+    expect(data.reviewState).toBe("posted");
+    expect(data.reviewedAt).toBe(NOW.toISOString());
+    expect(data.readyForPatchAt).toBe(NOW.toISOString());
+  });
+});

@@ -9,9 +9,12 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { PrismaClient } from "../prisma/client/index.js";
+import { createTaskStoreApp } from "./app.ts";
 import { FixedClock } from "./clock.ts";
 import { ConflictError, NotFoundError } from "./errors.ts";
 import { PullRequestService } from "./pull-request-service.ts";
+import { TaskService } from "./task-service.ts";
+import { TaskTokenService } from "./token-service.ts";
 
 const TEST_DB = process.env.DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST;
 
@@ -1326,6 +1329,125 @@ describeOrSkip(
         caught = err;
       }
       expect(caught).toBeInstanceOf(NotFoundError);
+    });
+  },
+);
+
+// ─── review-completion claim release via the HTTP route layer ─────────────────
+// Drives the exact endpoints a review session uses — POST /prs/:id/complete
+// (the posted path, verified in production as the real review flow) and
+// PATCH /prs/:id (the approved path) — through the Hono app with a real
+// PullRequestService, and reads the row back to prove the claim was released in
+// the same write rather than left for the reaper.
+
+describeOrSkip(
+  "PR review-completion claim release (integration, route layer)",
+  () => {
+    let prisma: PrismaClient;
+    let app: ReturnType<typeof createTaskStoreApp>;
+    let rawToken: string;
+
+    beforeEach(async () => {
+      prisma = makePrisma();
+      await prisma.taskToken.deleteMany();
+      await prisma.pullRequest.deleteMany();
+
+      const tokenService = new TaskTokenService(prisma);
+      rawToken = (await tokenService.create("integration")).rawToken;
+
+      app = createTaskStoreApp({
+        taskService: new TaskService(prisma),
+        tokenService,
+        pullRequestService: new PullRequestService(prisma),
+      });
+    });
+
+    afterEach(async () => {
+      await prisma.$disconnect();
+    });
+
+    function auth(): Record<string, string> {
+      return {
+        Authorization: `Bearer ${rawToken}`,
+        "content-type": "application/json",
+      };
+    }
+
+    async function seedClaimedReviewPr(prNumber: number): Promise<string> {
+      const now = new Date().toISOString();
+      const pr = await prisma.pullRequest.create({
+        data: {
+          repo: "app-vitals/shipwright",
+          prNumber,
+          commitSha: "sha-review",
+          reviewState: "in_progress",
+          phase: "review",
+          claimedBy: "agent-reviewer",
+          claimedAt: now,
+          heartbeatAt: now,
+        },
+      });
+      return pr.id;
+    }
+
+    it("POST /prs/:id/complete posts the review and releases the claim in the same write", async () => {
+      const id = await seedClaimedReviewPr(3100);
+
+      const res = await app.request(`/prs/${id}/complete`, {
+        method: "POST",
+        headers: auth(),
+      });
+      expect(res.status).toBe(200);
+
+      const body = (await res.json()) as {
+        reviewState: string;
+        reviewCycles: number;
+        reviewedAt: string | null;
+        readyForPatchAt: string | null;
+        claimedBy: string | null;
+        claimedAt: string | null;
+        heartbeatAt: string | null;
+        phase: string | null;
+      };
+      expect(body.reviewState).toBe("posted");
+      expect(body.reviewCycles).toBe(1);
+      expect(body.reviewedAt).not.toBeNull();
+      expect(body.readyForPatchAt).not.toBeNull();
+      expect(body.claimedBy).toBeNull();
+      expect(body.claimedAt).toBeNull();
+      expect(body.heartbeatAt).toBeNull();
+      expect(body.phase).toBeNull();
+
+      // Read the row back to confirm the release is persisted, not just serialized.
+      const row = await prisma.pullRequest.findUnique({ where: { id } });
+      expect(row).not.toBeNull();
+      if (!row) return;
+      expect(row.reviewState).toBe("posted");
+      expect(row.claimedBy).toBeNull();
+      expect(row.claimedAt).toBeNull();
+      expect(row.heartbeatAt).toBeNull();
+      expect(row.phase).toBeNull();
+    });
+
+    it("PATCH /prs/:id to approved releases the claim and stamps readyForDeployAt", async () => {
+      const id = await seedClaimedReviewPr(3101);
+
+      const res = await app.request(`/prs/${id}`, {
+        method: "PATCH",
+        headers: auth(),
+        body: JSON.stringify({ reviewState: "approved" }),
+      });
+      expect(res.status).toBe(200);
+
+      const row = await prisma.pullRequest.findUnique({ where: { id } });
+      expect(row).not.toBeNull();
+      if (!row) return;
+      expect(row.reviewState).toBe("approved");
+      expect(row.readyForDeployAt).not.toBeNull();
+      expect(row.claimedBy).toBeNull();
+      expect(row.claimedAt).toBeNull();
+      expect(row.heartbeatAt).toBeNull();
+      expect(row.phase).toBeNull();
     });
   },
 );

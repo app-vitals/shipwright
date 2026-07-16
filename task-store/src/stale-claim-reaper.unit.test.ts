@@ -275,8 +275,11 @@ describe("StaleClaimReaper", () => {
     const prSql = prisma._calls[1].strings.join("?");
     // Should filter by claimedBy IS NOT NULL, not reviewState = 'in_progress'
     expect(prSql).toContain('"claimedBy" IS NOT NULL');
-    // Should NOT use reviewState = 'in_progress' as the primary filter anymore
-    expect(prSql).not.toContain("'in_progress'");
+    // The WHERE clause must not gate on reviewState — every stale claim is
+    // released regardless of its reviewState (reviewState only governs whether
+    // the reset-to-pending happens, via the SET CASE, not whether we act).
+    const whereClause = prSql.slice(prSql.indexOf("WHERE"));
+    expect(whereClause).not.toContain('"reviewState"');
   });
 
   test("PR reap resets phase=null and clears claim fields", async () => {
@@ -292,18 +295,39 @@ describe("StaleClaimReaper", () => {
     expect(prSql).toContain('"phase" = NULL');
   });
 
-  test("PR reap does not blindly reset reviewState to pending — uses CASE based on phase", async () => {
+  test("PR reap does not blindly reset reviewState to pending — uses CASE based on reviewState", async () => {
     const prisma = makePrismaDouble([0, 1]);
     const reaper = new StaleClaimReaper(prisma as never, clock);
 
     await reaper.reap();
 
     const prSql = prisma._calls[1].strings.join("?");
-    // Should use a CASE expression that only resets to pending when phase was 'review'
-    // and preserves 'posted'/'approved' for patch/deploy items
+    // Should use a CASE expression that only resets to pending when reviewState
+    // is still 'pending'/'in_progress' and preserves 'posted'/'approved'.
     expect(prSql).toContain("CASE");
-    expect(prSql).toContain("'review'");
+    expect(prSql).toContain('"reviewState" IN');
+    expect(prSql).toContain("'in_progress'");
     expect(prSql).toContain("'pending'");
+    expect(prSql).toContain('ELSE "reviewState"');
+  });
+
+  test("PR reap preserves posted/approved reviewState but still clears claim fields", async () => {
+    const prisma = makePrismaDouble([0, 1]);
+    const reaper = new StaleClaimReaper(prisma as never, clock);
+
+    await reaper.reap();
+
+    const prSql = prisma._calls[1].strings.join("?");
+    // reviewState regresses to pending only for pending/in_progress; posted and
+    // approved fall through the ELSE branch and keep their value (no duplicate
+    // review re-dispatch).
+    expect(prSql).toContain('WHEN "reviewState" IN');
+    expect(prSql).toContain('ELSE "reviewState"');
+    // Claim fields are released for every stale claim regardless of reviewState.
+    expect(prSql).toContain('"claimedBy" = NULL');
+    expect(prSql).toContain('"claimedAt" = NULL');
+    expect(prSql).toContain('"heartbeatAt" = NULL');
+    expect(prSql).toContain('"phase" = NULL');
   });
 
   // ─── 2_100_000ms unified default TTL boundary ──────────────────────────────
@@ -350,10 +374,11 @@ describe("StaleClaimReaper", () => {
       true,
     );
 
-    // The reaper resets reviewState to 'pending' for phase='review' claims via CASE.
+    // The reaper resets reviewState to 'pending' for pending/in_progress claims via CASE.
     const prSql = prisma._calls[1].strings.join("?");
     expect(prSql).toContain("CASE");
-    expect(prSql).toContain("'review'");
+    expect(prSql).toContain('"reviewState" IN');
+    expect(prSql).toContain("'in_progress'");
     expect(prSql).toContain("'pending'");
   });
 
