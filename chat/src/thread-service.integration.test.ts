@@ -156,11 +156,24 @@ describeOrSkip("ThreadService (integration)", () => {
     });
 
     it("caps limit at 200 and defaults to 50 when unspecified", async () => {
-      const { threads: withDefault } = await service.list();
-      expect(withDefault.length).toBeLessThanOrEqual(50);
+      for (let i = 0; i < 205; i++) {
+        await prisma.thread.create({
+          data: {
+            agentId: "agent-1",
+            updatedAt: new Date(2026, 0, 1, 0, 0, i),
+          },
+        });
+      }
 
-      const { threads: withHugeLimit } = await service.list({ limit: 10000 });
-      expect(withHugeLimit.length).toBeLessThanOrEqual(200);
+      const { threads: withDefault, total: totalWithDefault } =
+        await service.list();
+      expect(withDefault.length).toBe(50);
+      expect(totalWithDefault).toBe(205);
+
+      const { threads: withHugeLimit, total: totalWithHugeLimit } =
+        await service.list({ limit: 10000 });
+      expect(withHugeLimit.length).toBe(200);
+      expect(totalWithHugeLimit).toBe(205);
     });
   });
 
