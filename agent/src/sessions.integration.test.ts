@@ -9,6 +9,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { FixedClock } from "./clock.ts";
 import { createFileSessionStore, threadKey } from "./sessions.ts";
 
 // ─── Shared store backed by a process-scoped tmp file ─────────────────────────
@@ -200,13 +201,20 @@ describe("createFileSessionStore — TTL and prune", () => {
       tmpdir(),
       `sessions-ttl-${process.pid}-${Date.now()}.json`,
     );
-    const shortStore = createFileSessionStore(shortTtlFile, 1); // 1ms TTL
-    await shortStore.set("k", "session-xyz");
-    expect(await shortStore.get("k")).toBe("session-xyz");
-    // Busy-wait 50ms — well above the 1ms TTL, guarantees expiry
-    const start = Date.now();
-    while (Date.now() - start < 50) {}
-    expect(await shortStore.get("k")).toBeUndefined();
+    const t0 = new Date("2024-01-01T00:00:00.000Z");
+    // Fixed clock at t0 for the write — with real async file I/O, comparing
+    // against real wall-clock time (via a busy-wait) races the I/O latency
+    // itself. A second store on the same file with a clock fixed well past
+    // the TTL gives a deterministic "later" read with no timing dependency.
+    const earlyStore = createFileSessionStore(shortTtlFile, 1000, FixedClock(t0));
+    await earlyStore.set("k", "session-xyz");
+    expect(await earlyStore.get("k")).toBe("session-xyz");
+    const lateStore = createFileSessionStore(
+      shortTtlFile,
+      1000,
+      FixedClock(new Date(t0.getTime() + 5000)),
+    );
+    expect(await lateStore.get("k")).toBeUndefined();
     try {
       rmSync(shortTtlFile, { force: true });
     } catch {}
@@ -217,15 +225,18 @@ describe("createFileSessionStore — TTL and prune", () => {
       tmpdir(),
       `sessions-prune-${process.pid}-${Date.now()}.json`,
     );
-    const pruneStore = createFileSessionStore(pruneFile, 1); // 1ms TTL
-    await pruneStore.set("k1", "s1");
-    await pruneStore.set("k2", "s2");
-    // Busy-wait 50ms — well above the 1ms TTL, guarantees all entries expired
-    const start = Date.now();
-    while (Date.now() - start < 50) {}
-    const pruned = await pruneStore.prune();
+    const t0 = new Date("2024-01-01T00:00:00.000Z");
+    const earlyStore = createFileSessionStore(pruneFile, 1000, FixedClock(t0));
+    await earlyStore.set("k1", "s1");
+    await earlyStore.set("k2", "s2");
+    const lateStore = createFileSessionStore(
+      pruneFile,
+      1000,
+      FixedClock(new Date(t0.getTime() + 5000)),
+    );
+    const pruned = await lateStore.prune();
     expect(pruned).toBe(2);
-    expect(await pruneStore.size()).toBe(0);
+    expect(await lateStore.size()).toBe(0);
     try {
       rmSync(pruneFile, { force: true });
     } catch {}
