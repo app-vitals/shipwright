@@ -29,7 +29,6 @@ function expandMinuteField(schedule: string): number[] {
 const PIPELINE_CRON_NAMES = [
   "shipwright-dev-task",
   "shipwright-patch",
-  "shipwright-review-patch",
   "shipwright-review",
   "shipwright-deploy",
 ] as const;
@@ -70,7 +69,6 @@ describe("SYSTEM_CRONS pipeline schedule staggering", () => {
     const expected: Record<(typeof PIPELINE_CRON_NAMES)[number], string> = {
       "shipwright-dev-task": "0,30 * * * *",
       "shipwright-patch": "5,35 * * * *",
-      "shipwright-review-patch": "10,40 * * * *",
       "shipwright-review": "15,45 * * * *",
       "shipwright-deploy": "20,50 * * * *",
     };
@@ -98,15 +96,14 @@ describe("SYSTEM_CRONS pipeline schedule staggering", () => {
 });
 
 describe("SYSTEM_CRONS", () => {
-  test("exports exactly twelve crons", () => {
-    expect(SYSTEM_CRONS).toHaveLength(12);
+  test("exports exactly eleven crons", () => {
+    expect(SYSTEM_CRONS).toHaveLength(11);
   });
 
-  test("cron names are the twelve expected crons", () => {
+  test("cron names are the eleven expected crons", () => {
     const names = SYSTEM_CRONS.map((c) => c.name);
     expect(names).toContain("shipwright-dev-task");
     expect(names).toContain("shipwright-patch");
-    expect(names).toContain("shipwright-review-patch");
     expect(names).toContain("shipwright-review");
     expect(names).toContain("shipwright-deploy");
     expect(names).toContain("shipwright-test-readiness");
@@ -141,9 +138,9 @@ describe("SYSTEM_CRONS", () => {
     expect(cron?.prompt).toContain("/shipwright:dev-task");
   });
 
-  test("shipwright-patch has enabled: false", () => {
+  test("shipwright-patch has enabled: true", () => {
     const cron = SYSTEM_CRONS.find((c) => c.name === "shipwright-patch");
-    expect(cron?.enabled).toBe(false);
+    expect(cron?.enabled).toBe(true);
   });
 
   test("shipwright-patch has correct preCheck", () => {
@@ -156,24 +153,9 @@ describe("SYSTEM_CRONS", () => {
     expect(cron?.prompt).toContain("/shipwright:patch");
   });
 
-  test("shipwright-review-patch has enabled: true", () => {
-    const cron = SYSTEM_CRONS.find((c) => c.name === "shipwright-review-patch");
-    expect(cron?.enabled).toBe(true);
-  });
-
-  test("shipwright-review-patch has correct preCheck", () => {
-    const cron = SYSTEM_CRONS.find((c) => c.name === "shipwright-review-patch");
-    expect(cron?.preCheck).toBe("shipwright:check-review-patch.ts");
-  });
-
-  test("shipwright-review-patch prompt includes /shipwright:review-patch skill invocation", () => {
-    const cron = SYSTEM_CRONS.find((c) => c.name === "shipwright-review-patch");
-    expect(cron?.prompt).toContain("/shipwright:review-patch");
-  });
-
-  test("shipwright-review has enabled: false", () => {
+  test("shipwright-review has enabled: true", () => {
     const cron = SYSTEM_CRONS.find((c) => c.name === "shipwright-review");
-    expect(cron?.enabled).toBe(false);
+    expect(cron?.enabled).toBe(true);
   });
 
   test("shipwright-review has correct preCheck", () => {

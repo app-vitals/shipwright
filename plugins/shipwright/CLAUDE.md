@@ -127,7 +127,6 @@ favors permissive: false positives are visible and self-correcting; false negati
 | `check-deploy.ts` | `deploy` cron | Open PRs with `APPROVED` review decision and green CI; respects `allow_self_review` for self-authored PRs; skips a repo with an active Deploy workflow run, scoped per repo — a busy repo does not block ready PRs in other configured repos |
 | `check-dev-task.ts` | `dev-task` cron | Pending tasks with all dependencies satisfied (task store `ready: true` query) |
 | `check-patch.ts` | `patch` cron | Signals patch skill for unaddressed review findings, merge conflicts (DIRTY), and failing CI; queries GitHub directly — does NOT read `state/reviews.json`. Branches merely BEHIND main (no conflict) are not patch-worthy — main is only merged into a branch to resolve a conflict. Returns on the FIRST qualifying PR found (single-PR-at-a-time); its stdout is a literal, directly-invocable `/shipwright:patch {org}/{repo}#{number}` command naming that PR — required since `patch.md` now takes an explicit target instead of self-scanning. |
-| `check-review-patch.ts` | `review-patch` cron | Delegates to `check-patch.ts` + `check-review.ts`; exits 0 if either exits 0, covering the full scope of the review-patch orchestrator (unaddressed findings, failing CI, merge conflicts, and unreviewed commits) |
 
 ---
 
@@ -141,7 +140,7 @@ System crons are the crons defined in `SYSTEM_CRONS` — they cover both the cor
 
 **New system crons always ship disabled.** Any cron added to `SYSTEM_CRONS` must have `enabled: false`. Enable it per-agent when ready. This avoids new crons firing unexpectedly on agents that haven't opted in. The exception is crons explicitly replacing a prior cron — but even then, add disabled, verify, then enable and disable the old one.
 
-**review and patch are opt-in.** `shipwright-review-patch` is the default combined workflow and ships `enabled: true`. `shipwright-review` and `shipwright-patch` ship `enabled: false` — they exist for agents that want to run the two phases independently. To switch: disable `review-patch`, enable whichever individual crons you want.
+**review and patch run as independent phases.** There is no combined `shipwright-review-patch` cron — `shipwright-review` and `shipwright-patch` each ship `enabled: true` by default and run their own phase directly.
 
 ---
 
