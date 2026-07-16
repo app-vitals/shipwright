@@ -107,6 +107,7 @@ model Task {
   @@index([session])
   @@index([assignee])
   @@index([claimedBy])
+  @@index([updatedAt])
 }
 
 // ─── Pull Request State ───────────────────────────────────────────────────────
@@ -176,6 +177,7 @@ model PullRequest {
   @@index([taskId])
   @@index([state])
   @@index([reviewState])
+  @@index([updatedAt])
 }
 
 // ─── Task Token ───────────────────────────────────────────────────────────────
