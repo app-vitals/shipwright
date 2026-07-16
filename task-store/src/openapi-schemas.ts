@@ -74,11 +74,6 @@ export const TaskSchema = z
       .openapi({ example: ["task-1", "task-2"] }),
     pr: z.number().int().nullable().optional().openapi({ example: 42 }),
     hours: z.number().nullable().optional().openapi({ example: 5.5 }),
-    addedAt: z
-      .string()
-      .nullable()
-      .optional()
-      .openapi({ example: "2026-01-01T00:00:00.000Z" }),
     startedAt: z
       .string()
       .nullable()

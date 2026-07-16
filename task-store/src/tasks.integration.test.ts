@@ -52,7 +52,6 @@ describeOrSkip("Task store schema (integration)", () => {
         dependencies: ["TSS-0", "TSS-0b"],
         pr: 42,
         hours: 3.5,
-        addedAt: "2026-06-22T10:00:00.000Z",
         startedAt: "2026-06-22T11:00:00.000Z",
         prCreatedAt: "2026-06-22T12:00:00.000Z",
         mergedAt: "2026-06-22T13:00:00.000Z",
@@ -112,7 +111,6 @@ describeOrSkip("Task store schema (integration)", () => {
     expect(read.dependencies).toEqual(["TSS-0", "TSS-0b"]);
     expect(read.pr).toBe(42);
     expect(read.hours).toBe(3.5);
-    expect(read.addedAt).toBe("2026-06-22T10:00:00.000Z");
     expect(read.startedAt).toBe("2026-06-22T11:00:00.000Z");
     expect(read.prCreatedAt).toBe("2026-06-22T12:00:00.000Z");
     expect(read.mergedAt).toBe("2026-06-22T13:00:00.000Z");

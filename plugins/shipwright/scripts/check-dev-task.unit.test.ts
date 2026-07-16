@@ -120,14 +120,14 @@ describe("check-dev-task", () => {
     expect(result.output).toContain("/shipwright:dev-task SWC-9.1");
   });
 
-  test("prompt selects the oldest ready task by addedAt when multiple exist", async () => {
+  test("prompt selects the oldest ready task by createdAt when multiple exist", async () => {
     const newer = makeTask({
       id: "SWC-9.2",
-      addedAt: "2026-06-01T00:00:00Z",
+      createdAt: "2026-06-01T00:00:00Z",
     });
     const older = makeTask({
       id: "SWC-9.3",
-      addedAt: "2026-05-01T00:00:00Z",
+      createdAt: "2026-05-01T00:00:00Z",
     });
 
     const result = await run(makeDeps([newer, older]));
