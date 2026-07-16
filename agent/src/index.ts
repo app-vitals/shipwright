@@ -29,6 +29,7 @@ import {
 import { createRunClaude, setLiveClaudeConfig } from "./claude.ts";
 import { SystemClock } from "./clock.ts";
 import { createConfig } from "./config.ts";
+import { reportCronFailure } from "./cron-failure-reporter.ts";
 import { handleCronRequest } from "./cron-handler.ts";
 import type { CronHandlerDeps } from "./cron-handler.ts";
 import {
@@ -409,10 +410,11 @@ if (runtimeClient && agentId) {
               );
             }
           } catch (err) {
-            console.error(
-              `[cron] job ${id} failed:`,
-              err instanceof Error ? err.message : String(err),
-            );
+            await reportCronFailure(id, err, {
+              cronRunReporter: cronRunReporter ?? new NoopCronRunReporter(),
+              sentryClient: process.env.SENTRY_DSN ? Sentry : undefined,
+              clock: SystemClock(),
+            });
           }
         });
         cronTasks.set(id, task);
