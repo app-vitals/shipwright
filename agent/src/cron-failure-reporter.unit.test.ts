@@ -9,7 +9,10 @@
 
 import { describe, expect, it } from "bun:test";
 import { FixedClock } from "./clock.ts";
-import { reportCronFailure } from "./cron-failure-reporter.ts";
+import {
+  markCronRunFailureReported,
+  reportCronFailure,
+} from "./cron-failure-reporter.ts";
 import type {
   CronRunReporter,
   ModelBreakdownEntry,
@@ -141,5 +144,57 @@ describe("reportCronFailure", () => {
         clock,
       }),
     ).resolves.toBeUndefined();
+  });
+
+  it("still creates/completes a run for an error that was not marked as already-reported", async () => {
+    const { reporter, createRunCalls, completeRunCalls } =
+      createFakeCronRunReporter();
+    const clock = FixedClock(FIXED_TIME);
+    const err = new Error("unmarked failure");
+
+    await reportCronFailure("my-cron-id", err, {
+      cronRunReporter: reporter,
+      clock,
+    });
+
+    expect(createRunCalls).toHaveLength(1);
+    expect(completeRunCalls).toHaveLength(1);
+  });
+
+  it("skips createRun/completeRun but still logs and captures to Sentry when the error was already reported", async () => {
+    const { reporter, createRunCalls, completeRunCalls } =
+      createFakeCronRunReporter();
+    const { client, capturedErrors } = createFakeErrorCapturingClient();
+    const clock = FixedClock(FIXED_TIME);
+    const err = new Error("already reported by inner catch");
+    markCronRunFailureReported(err);
+
+    await reportCronFailure("my-cron-id", err, {
+      cronRunReporter: reporter,
+      sentryClient: client,
+      clock,
+    });
+
+    expect(createRunCalls).toHaveLength(0);
+    expect(completeRunCalls).toHaveLength(0);
+    expect(capturedErrors).toHaveLength(1);
+    expect(capturedErrors[0]).toBe(err);
+  });
+
+  it("does not mark non-object thrown values (e.g. strings) but still reports normally", async () => {
+    const { reporter, createRunCalls, completeRunCalls } =
+      createFakeCronRunReporter();
+
+    // markCronRunFailureReported on a primitive is a no-op; should not throw.
+    expect(() => markCronRunFailureReported("just a string")).not.toThrow();
+
+    const clock = FixedClock(FIXED_TIME);
+    await reportCronFailure("my-cron-id", "just a string", {
+      cronRunReporter: reporter,
+      clock,
+    });
+
+    expect(createRunCalls).toHaveLength(1);
+    expect(completeRunCalls).toHaveLength(1);
   });
 });

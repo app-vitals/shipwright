@@ -61,6 +61,7 @@ import {
 import type { ClaudeRunResult } from "./claude.ts";
 import { type Clock, SystemClock } from "./clock.ts";
 import { buildTokenPayload, formatCronMessage } from "./cron-handler.ts";
+import { markCronRunFailureReported } from "./cron-failure-reporter.ts";
 import type { CronRunReporter } from "./cron-run-reporter.ts";
 import {
   type CronJobLike,
@@ -165,6 +166,7 @@ export function createLoopOrchestrator(
         { error: err instanceof Error ? err.message : String(err) },
         phase,
       );
+      markCronRunFailureReported(err);
       throw err;
     }
 

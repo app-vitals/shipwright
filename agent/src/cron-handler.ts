@@ -13,6 +13,7 @@ import type { WebClient } from "@slack/web-api";
 import type { ClaudeRunResult, ModelUsage, TokenUsage } from "./claude.ts";
 import type { ModelBreakdownEntry } from "./cron-run-reporter.ts";
 import { type Clock, SystemClock } from "./clock.ts";
+import { markCronRunFailureReported } from "./cron-failure-reporter.ts";
 import type { CronRunReporter } from "./cron-run-reporter.ts";
 import { markdownToSlack } from "./format.ts";
 import { parseMarkers } from "./markers.ts";
@@ -306,6 +307,7 @@ export async function handleCronRequest(
     await cronRunReporter?.completeRun(jobId, runId, clock.now(), "failed", {
       error: err instanceof Error ? err.message : String(err),
     });
+    markCronRunFailureReported(err);
     throw err;
   }
 
