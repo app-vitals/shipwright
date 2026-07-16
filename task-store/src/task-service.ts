@@ -42,6 +42,13 @@ export interface TaskListFilters {
   /** Order results by createdAt. Defaults to "asc" (existing behavior). */
   sort?: "asc" | "desc";
   /**
+   * ISO timestamp. Only return tasks with updatedAt >= this value. A
+   * conservative pre-filter (not a precise sync anchor) — see
+   * planning/task-store-date-filtering/PLAN.md for the root-cause/design
+   * rationale. Omitting it preserves current (unfiltered) behavior.
+   */
+  updatedSince?: string;
+  /**
    * Repo-scoped visibility for agent tokens.
    * When set, replaces the simple `assignee` filter with an OR clause:
    *   - tasks explicitly assigned to this agent, OR
@@ -106,6 +113,9 @@ export class TaskService implements TaskServiceLike {
     if (filters.claimedBy) where.claimedBy = filters.claimedBy;
     if (filters.pr !== undefined) where.pr = filters.pr;
     if (filters.branch !== undefined) where.branch = filters.branch;
+    if (filters.updatedSince) {
+      where.updatedAt = { gte: new Date(filters.updatedSince) };
+    }
 
     if (filters.agentScope) {
       // Repo-scoped visibility: include tasks explicitly assigned to the agent,

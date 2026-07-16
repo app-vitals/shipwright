@@ -320,7 +320,14 @@ describeOrSkip("PullRequestService.claim() phase support (integration)", () => {
     });
 
     // Claim with phase=patch — should NOT reset reviewState to pending/in_progress
-    const result = await service.claim(repo, prNumber, commitSha, "agent-b", undefined, "patch");
+    const result = await service.claim(
+      repo,
+      prNumber,
+      commitSha,
+      "agent-b",
+      undefined,
+      "patch",
+    );
     expect(result.record.reviewState).toBe("posted");
     expect(result.record.phase).toBe("patch");
     expect(result.record.claimedBy).toBe("agent-b");
@@ -348,7 +355,14 @@ describeOrSkip("PullRequestService.claim() phase support (integration)", () => {
         },
       });
 
-      const result = await service.claim(repo, prNumber, commitSha, "agent-b", undefined, "patch");
+      const result = await service.claim(
+        repo,
+        prNumber,
+        commitSha,
+        "agent-b",
+        undefined,
+        "patch",
+      );
       expect(result.record.reviewState).toBe(priorReviewState);
       expect(result.record.phase).toBe("patch");
     },
@@ -371,7 +385,14 @@ describeOrSkip("PullRequestService.claim() phase support (integration)", () => {
       },
     });
 
-    const result = await service.claim(repo, prNumber, commitSha, "agent-c", undefined, "deploy");
+    const result = await service.claim(
+      repo,
+      prNumber,
+      commitSha,
+      "agent-c",
+      undefined,
+      "deploy",
+    );
     expect(result.record.phase).toBe("deploy");
     expect(result.record.reviewState).toBe("approved");
     expect(result.record.readyForDeployAt).not.toBeNull();
@@ -382,7 +403,14 @@ describeOrSkip("PullRequestService.claim() phase support (integration)", () => {
     const prNumber = 702;
     const commitSha = "sha-review";
 
-    const result = await service.claim(repo, prNumber, commitSha, "agent-a", undefined, "review");
+    const result = await service.claim(
+      repo,
+      prNumber,
+      commitSha,
+      "agent-a",
+      undefined,
+      "review",
+    );
     expect(result.status).toBe(201);
     expect(result.record.phase).toBe("review");
     expect(result.record.reviewState).toBe("in_progress");
@@ -397,7 +425,14 @@ describeOrSkip("PullRequestService.claim() phase support (integration)", () => {
     const prNumber = 704;
     const commitSha = "sha-review-created";
 
-    const result = await svc.claim(repo, prNumber, commitSha, "agent-a", undefined, "review");
+    const result = await svc.claim(
+      repo,
+      prNumber,
+      commitSha,
+      "agent-a",
+      undefined,
+      "review",
+    );
     expect(result.status).toBe(201);
     expect(result.record.readyForReviewAt).toBe(now.toISOString());
   });
@@ -407,7 +442,14 @@ describeOrSkip("PullRequestService.claim() phase support (integration)", () => {
     const prNumber = 705;
     const commitSha = "sha-patch-created";
 
-    const result = await service.claim(repo, prNumber, commitSha, "agent-a", undefined, "patch");
+    const result = await service.claim(
+      repo,
+      prNumber,
+      commitSha,
+      "agent-a",
+      undefined,
+      "patch",
+    );
     expect(result.status).toBe(201);
     expect(result.record.readyForReviewAt).toBeNull();
   });
@@ -434,7 +476,14 @@ describeOrSkip("PullRequestService.claim() phase support (integration)", () => {
 
     let threw = false;
     try {
-      await service.claim(repo, prNumber, commitSha, "agent-y", undefined, "patch");
+      await service.claim(
+        repo,
+        prNumber,
+        commitSha,
+        "agent-y",
+        undefined,
+        "patch",
+      );
     } catch (err) {
       threw = true;
       expect(err).toBeInstanceOf(ConflictError);
@@ -445,186 +494,192 @@ describeOrSkip("PullRequestService.claim() phase support (integration)", () => {
 
 // ─── claim() prCreatedAt wiring ────────────────────────────────────────────────
 
-describeOrSkip("PullRequestService.claim() prCreatedAt wiring (integration)", () => {
-  let prisma: PrismaClient;
-  let service: PullRequestService;
+describeOrSkip(
+  "PullRequestService.claim() prCreatedAt wiring (integration)",
+  () => {
+    let prisma: PrismaClient;
+    let service: PullRequestService;
 
-  beforeEach(async () => {
-    prisma = makePrisma();
-    service = new PullRequestService(prisma);
-    await prisma.pullRequest.deleteMany();
-  });
-
-  afterEach(async () => {
-    await prisma.$disconnect();
-  });
-
-  it("claim() sets prCreatedAt on first claim (record creation) when provided", async () => {
-    const repo = "app-vitals/shipwright";
-    const prNumber = 800;
-    const prCreatedAt = "2026-01-01T00:00:00.000Z";
-
-    const result = await service.claim(
-      repo,
-      prNumber,
-      "sha-1",
-      "agent-a",
-      undefined,
-      "review",
-      prCreatedAt,
-    );
-
-    expect(result.status).toBe(201);
-    expect(result.record.prCreatedAt).toBe(prCreatedAt);
-  });
-
-  it("claim() leaves prCreatedAt null on record creation when not provided", async () => {
-    const repo = "app-vitals/shipwright";
-    const prNumber = 801;
-
-    const result = await service.claim(repo, prNumber, "sha-1", "agent-a");
-
-    expect(result.status).toBe(201);
-    expect(result.record.prCreatedAt).toBeNull();
-  });
-
-  it("claim() never overwrites an existing prCreatedAt on subsequent claims (immutable)", async () => {
-    const repo = "app-vitals/shipwright";
-    const prNumber = 802;
-    const originalPrCreatedAt = "2026-01-01T00:00:00.000Z";
-
-    // First claim sets prCreatedAt.
-    await service.claim(
-      repo,
-      prNumber,
-      "sha-1",
-      "agent-a",
-      undefined,
-      "review",
-      originalPrCreatedAt,
-    );
-
-    // Release so a new claim can proceed, then claim again with a different
-    // sha and a different (bogus) prCreatedAt — it must not be applied since
-    // the field is read-only once set.
-    const releaseTarget = await prisma.pullRequest.findUnique({
-      where: { repo_prNumber: { repo, prNumber } },
+    beforeEach(async () => {
+      prisma = makePrisma();
+      service = new PullRequestService(prisma);
+      await prisma.pullRequest.deleteMany();
     });
-    if (!releaseTarget) throw new Error("expected record to exist");
-    await service.release(releaseTarget.id);
 
-    const second = await service.claim(
-      repo,
-      prNumber,
-      "sha-2",
-      "agent-b",
-      undefined,
-      "review",
-      "2026-12-31T00:00:00.000Z",
-    );
+    afterEach(async () => {
+      await prisma.$disconnect();
+    });
 
-    expect(second.status).toBe(200);
-    expect(second.record.prCreatedAt).toBe(originalPrCreatedAt);
-  });
-});
+    it("claim() sets prCreatedAt on first claim (record creation) when provided", async () => {
+      const repo = "app-vitals/shipwright";
+      const prNumber = 800;
+      const prCreatedAt = "2026-01-01T00:00:00.000Z";
+
+      const result = await service.claim(
+        repo,
+        prNumber,
+        "sha-1",
+        "agent-a",
+        undefined,
+        "review",
+        prCreatedAt,
+      );
+
+      expect(result.status).toBe(201);
+      expect(result.record.prCreatedAt).toBe(prCreatedAt);
+    });
+
+    it("claim() leaves prCreatedAt null on record creation when not provided", async () => {
+      const repo = "app-vitals/shipwright";
+      const prNumber = 801;
+
+      const result = await service.claim(repo, prNumber, "sha-1", "agent-a");
+
+      expect(result.status).toBe(201);
+      expect(result.record.prCreatedAt).toBeNull();
+    });
+
+    it("claim() never overwrites an existing prCreatedAt on subsequent claims (immutable)", async () => {
+      const repo = "app-vitals/shipwright";
+      const prNumber = 802;
+      const originalPrCreatedAt = "2026-01-01T00:00:00.000Z";
+
+      // First claim sets prCreatedAt.
+      await service.claim(
+        repo,
+        prNumber,
+        "sha-1",
+        "agent-a",
+        undefined,
+        "review",
+        originalPrCreatedAt,
+      );
+
+      // Release so a new claim can proceed, then claim again with a different
+      // sha and a different (bogus) prCreatedAt — it must not be applied since
+      // the field is read-only once set.
+      const releaseTarget = await prisma.pullRequest.findUnique({
+        where: { repo_prNumber: { repo, prNumber } },
+      });
+      if (!releaseTarget) throw new Error("expected record to exist");
+      await service.release(releaseTarget.id);
+
+      const second = await service.claim(
+        repo,
+        prNumber,
+        "sha-2",
+        "agent-b",
+        undefined,
+        "review",
+        "2026-12-31T00:00:00.000Z",
+      );
+
+      expect(second.status).toBe(200);
+      expect(second.record.prCreatedAt).toBe(originalPrCreatedAt);
+    });
+  },
+);
 
 // ─── complete() sets readyForPatchAt ──────────────────────────────────────────
 
-describeOrSkip("PullRequestService.complete() readyForPatchAt (integration)", () => {
-  let prisma: PrismaClient;
-  let service: PullRequestService;
+describeOrSkip(
+  "PullRequestService.complete() readyForPatchAt (integration)",
+  () => {
+    let prisma: PrismaClient;
+    let service: PullRequestService;
 
-  beforeEach(async () => {
-    prisma = makePrisma();
-    service = new PullRequestService(prisma);
-    await prisma.pullRequest.deleteMany();
-  });
-
-  afterEach(async () => {
-    await prisma.$disconnect();
-  });
-
-  it("complete() sets readyForPatchAt=now alongside reviewState=posted", async () => {
-    const now = new Date("2026-07-01T10:00:00.000Z");
-    const clock = FixedClock(now);
-    const svc = new PullRequestService(prisma, clock);
-
-    const { record: created } = await svc.claim(
-      "app-vitals/shipwright",
-      800,
-      "sha-complete",
-      "agent-a",
-    );
-
-    const completed = await svc.complete(created.id);
-    expect(completed.reviewState).toBe("posted");
-    expect(completed.reviewedAt).toBe(now.toISOString());
-    expect(completed.readyForPatchAt).toBe(now.toISOString());
-  });
-
-  it("update() sets readyForDeployAt=now when reviewState transitions to approved and it is unset", async () => {
-    const now = new Date("2026-07-01T11:00:00.000Z");
-    const clock = FixedClock(now);
-    const svc = new PullRequestService(prisma, clock);
-
-    const { record: created } = await svc.claim(
-      "app-vitals/shipwright",
-      801,
-      "sha-approve",
-      "agent-a",
-    );
-    expect(created.readyForDeployAt).toBeNull();
-
-    const updated = await svc.update(created.id, { reviewState: "approved" });
-    expect(updated.reviewState).toBe("approved");
-    expect(updated.readyForDeployAt).toBe(now.toISOString());
-  });
-
-  it("update() does not overwrite readyForDeployAt if already set when approving", async () => {
-    const now = new Date("2026-07-01T12:00:00.000Z");
-    const clock = FixedClock(now);
-    const svc = new PullRequestService(prisma, clock);
-
-    const { record: created } = await svc.claim(
-      "app-vitals/shipwright",
-      802,
-      "sha-approve-2",
-      "agent-a",
-      undefined,
-      "deploy",
-    );
-    expect(created.readyForDeployAt).toBe(now.toISOString());
-
-    const later = new Date("2026-07-01T13:00:00.000Z");
-    const laterClock = FixedClock(later);
-    const svcLater = new PullRequestService(prisma, laterClock);
-    const updated = await svcLater.update(created.id, {
-      reviewState: "approved",
+    beforeEach(async () => {
+      prisma = makePrisma();
+      service = new PullRequestService(prisma);
+      await prisma.pullRequest.deleteMany();
     });
-    expect(updated.readyForDeployAt).toBe(now.toISOString());
-  });
 
-  it("update() respects an explicitly provided readyForDeployAt when approving", async () => {
-    const now = new Date("2026-07-01T14:00:00.000Z");
-    const clock = FixedClock(now);
-    const svc = new PullRequestService(prisma, clock);
-
-    const { record: created } = await svc.claim(
-      "app-vitals/shipwright",
-      803,
-      "sha-approve-3",
-      "agent-a",
-    );
-    expect(created.readyForDeployAt).toBeNull();
-
-    const explicit = "2026-06-30T00:00:00.000Z";
-    const updated = await svc.update(created.id, {
-      reviewState: "approved",
-      readyForDeployAt: explicit,
+    afterEach(async () => {
+      await prisma.$disconnect();
     });
-    expect(updated.readyForDeployAt).toBe(explicit);
-  });
-});
+
+    it("complete() sets readyForPatchAt=now alongside reviewState=posted", async () => {
+      const now = new Date("2026-07-01T10:00:00.000Z");
+      const clock = FixedClock(now);
+      const svc = new PullRequestService(prisma, clock);
+
+      const { record: created } = await svc.claim(
+        "app-vitals/shipwright",
+        800,
+        "sha-complete",
+        "agent-a",
+      );
+
+      const completed = await svc.complete(created.id);
+      expect(completed.reviewState).toBe("posted");
+      expect(completed.reviewedAt).toBe(now.toISOString());
+      expect(completed.readyForPatchAt).toBe(now.toISOString());
+    });
+
+    it("update() sets readyForDeployAt=now when reviewState transitions to approved and it is unset", async () => {
+      const now = new Date("2026-07-01T11:00:00.000Z");
+      const clock = FixedClock(now);
+      const svc = new PullRequestService(prisma, clock);
+
+      const { record: created } = await svc.claim(
+        "app-vitals/shipwright",
+        801,
+        "sha-approve",
+        "agent-a",
+      );
+      expect(created.readyForDeployAt).toBeNull();
+
+      const updated = await svc.update(created.id, { reviewState: "approved" });
+      expect(updated.reviewState).toBe("approved");
+      expect(updated.readyForDeployAt).toBe(now.toISOString());
+    });
+
+    it("update() does not overwrite readyForDeployAt if already set when approving", async () => {
+      const now = new Date("2026-07-01T12:00:00.000Z");
+      const clock = FixedClock(now);
+      const svc = new PullRequestService(prisma, clock);
+
+      const { record: created } = await svc.claim(
+        "app-vitals/shipwright",
+        802,
+        "sha-approve-2",
+        "agent-a",
+        undefined,
+        "deploy",
+      );
+      expect(created.readyForDeployAt).toBe(now.toISOString());
+
+      const later = new Date("2026-07-01T13:00:00.000Z");
+      const laterClock = FixedClock(later);
+      const svcLater = new PullRequestService(prisma, laterClock);
+      const updated = await svcLater.update(created.id, {
+        reviewState: "approved",
+      });
+      expect(updated.readyForDeployAt).toBe(now.toISOString());
+    });
+
+    it("update() respects an explicitly provided readyForDeployAt when approving", async () => {
+      const now = new Date("2026-07-01T14:00:00.000Z");
+      const clock = FixedClock(now);
+      const svc = new PullRequestService(prisma, clock);
+
+      const { record: created } = await svc.claim(
+        "app-vitals/shipwright",
+        803,
+        "sha-approve-3",
+        "agent-a",
+      );
+      expect(created.readyForDeployAt).toBeNull();
+
+      const explicit = "2026-06-30T00:00:00.000Z";
+      const updated = await svc.update(created.id, {
+        reviewState: "approved",
+        readyForDeployAt: explicit,
+      });
+      expect(updated.readyForDeployAt).toBe(explicit);
+    });
+  },
+);
 
 // ─── claimNext() integration tests ───────────────────────────────────────────
 
@@ -1052,122 +1107,203 @@ describeOrSkip("PullRequestService.list() and get() (integration)", () => {
     expect(result.total).toBe(2);
     expect(result.prs).toHaveLength(2);
   });
+
+  // ─── PullRequestService.list() updatedSince filter ─────────────────────────
+
+  it("list({ updatedSince }) excludes PRs whose updatedAt is before the cutoff", async () => {
+    const oldPr = await prisma.pullRequest.create({
+      data: {
+        repo: "app-vitals/shipwright",
+        prNumber: 1060,
+        updatedAt: new Date("2026-01-01T00:00:00Z"),
+      },
+    });
+    const newPr = await prisma.pullRequest.create({
+      data: {
+        repo: "app-vitals/shipwright",
+        prNumber: 1061,
+        updatedAt: new Date("2026-06-01T00:00:00Z"),
+      },
+    });
+
+    const result = await service.list({
+      updatedSince: "2026-03-01T00:00:00.000Z",
+    });
+
+    expect(result.prs.map((p) => p.id)).toEqual([newPr.id]);
+    expect(result.prs.map((p) => p.id)).not.toContain(oldPr.id);
+  });
+
+  it("list() without updatedSince returns PRs regardless of updatedAt (preserves current unfiltered behavior)", async () => {
+    await prisma.pullRequest.create({
+      data: {
+        repo: "app-vitals/shipwright",
+        prNumber: 1070,
+        updatedAt: new Date("2026-01-01T00:00:00Z"),
+      },
+    });
+    await prisma.pullRequest.create({
+      data: {
+        repo: "app-vitals/shipwright",
+        prNumber: 1071,
+        updatedAt: new Date("2026-06-01T00:00:00Z"),
+      },
+    });
+
+    const result = await service.list({});
+
+    expect(result.total).toBe(2);
+  });
+
+  it("list({ updatedSince, repo }) applies both filters together", async () => {
+    await prisma.pullRequest.create({
+      data: {
+        repo: "app-vitals/shipwright",
+        prNumber: 1080,
+        updatedAt: new Date("2026-01-01T00:00:00Z"),
+      },
+    });
+    const newMatchingPr = await prisma.pullRequest.create({
+      data: {
+        repo: "app-vitals/shipwright",
+        prNumber: 1081,
+        updatedAt: new Date("2026-06-01T00:00:00Z"),
+      },
+    });
+    await prisma.pullRequest.create({
+      data: {
+        repo: "app-vitals/other-repo",
+        prNumber: 1082,
+        updatedAt: new Date("2026-06-01T00:00:00Z"),
+      },
+    });
+
+    const result = await service.list({
+      updatedSince: "2026-03-01T00:00:00.000Z",
+      repo: "app-vitals/shipwright",
+    });
+
+    expect(result.prs.map((p) => p.id)).toEqual([newMatchingPr.id]);
+  });
 });
 
 // ─── heartbeat() / release() / patch() (liveness + lifecycle) ────────────────
 
-describeOrSkip("PullRequestService.heartbeat/release/patch (integration)", () => {
-  let prisma: PrismaClient;
-  let service: PullRequestService;
+describeOrSkip(
+  "PullRequestService.heartbeat/release/patch (integration)",
+  () => {
+    let prisma: PrismaClient;
+    let service: PullRequestService;
 
-  beforeEach(async () => {
-    prisma = makePrisma();
-    service = new PullRequestService(prisma);
-    await prisma.pullRequest.deleteMany();
-  });
-
-  afterEach(async () => {
-    await prisma.$disconnect();
-  });
-
-  it("heartbeat() updates heartbeatAt for an existing PR", async () => {
-    const now = new Date("2026-07-02T09:00:00.000Z");
-    const clock = FixedClock(now);
-    const svc = new PullRequestService(prisma, clock);
-
-    const created = await prisma.pullRequest.create({
-      data: { repo: "app-vitals/shipwright", prNumber: 1100 },
+    beforeEach(async () => {
+      prisma = makePrisma();
+      service = new PullRequestService(prisma);
+      await prisma.pullRequest.deleteMany();
     });
 
-    const updated = await svc.heartbeat(created.id);
-    expect(updated.heartbeatAt).toBe(now.toISOString());
-  });
-
-  it("heartbeat() throws NotFoundError when the PR does not exist", async () => {
-    let caught: unknown;
-    try {
-      await service.heartbeat("00000000-0000-0000-0000-000000000000");
-    } catch (err) {
-      caught = err;
-    }
-    expect(caught).toBeInstanceOf(NotFoundError);
-  });
-
-  it("release() resets claim fields and reviewState to pending for an existing PR", async () => {
-    const { record: created } = await service.claim(
-      "app-vitals/shipwright",
-      1110,
-      "sha-release",
-      "agent-a",
-    );
-    expect(created.claimedBy).toBe("agent-a");
-
-    const released = await service.release(created.id);
-    expect(released.reviewState).toBe("pending");
-    expect(released.claimedBy).toBeNull();
-    expect(released.claimedAt).toBeNull();
-    expect(released.heartbeatAt).toBeNull();
-  });
-
-  it("release() throws NotFoundError when the PR does not exist", async () => {
-    let caught: unknown;
-    try {
-      await service.release("00000000-0000-0000-0000-000000000000");
-    } catch (err) {
-      caught = err;
-    }
-    expect(caught).toBeInstanceOf(NotFoundError);
-  });
-
-  it("patch() increments patchCycles, sets patchedAt, and resets reviewState to pending", async () => {
-    const now = new Date("2026-07-02T10:00:00.000Z");
-    const clock = FixedClock(now);
-    const svc = new PullRequestService(prisma, clock);
-
-    const created = await prisma.pullRequest.create({
-      data: {
-        repo: "app-vitals/shipwright",
-        prNumber: 1120,
-        reviewState: "posted",
-        patchCycles: 1,
-      },
+    afterEach(async () => {
+      await prisma.$disconnect();
     });
 
-    const patched = await svc.patch(created.id);
-    expect(patched.patchCycles).toBe(2);
-    expect(patched.patchedAt).toBe(now.toISOString());
-    expect(patched.reviewState).toBe("pending");
-  });
+    it("heartbeat() updates heartbeatAt for an existing PR", async () => {
+      const now = new Date("2026-07-02T09:00:00.000Z");
+      const clock = FixedClock(now);
+      const svc = new PullRequestService(prisma, clock);
 
-  it("patch() throws NotFoundError when the PR does not exist", async () => {
-    let caught: unknown;
-    try {
-      await service.patch("00000000-0000-0000-0000-000000000000");
-    } catch (err) {
-      caught = err;
-    }
-    expect(caught).toBeInstanceOf(NotFoundError);
-  });
-
-  it("update() throws NotFoundError when the PR does not exist", async () => {
-    let caught: unknown;
-    try {
-      await service.update("00000000-0000-0000-0000-000000000000", {
-        state: "closed",
+      const created = await prisma.pullRequest.create({
+        data: { repo: "app-vitals/shipwright", prNumber: 1100 },
       });
-    } catch (err) {
-      caught = err;
-    }
-    expect(caught).toBeInstanceOf(NotFoundError);
-  });
 
-  it("complete() throws NotFoundError when the PR does not exist", async () => {
-    let caught: unknown;
-    try {
-      await service.complete("00000000-0000-0000-0000-000000000000");
-    } catch (err) {
-      caught = err;
-    }
-    expect(caught).toBeInstanceOf(NotFoundError);
-  });
-});
+      const updated = await svc.heartbeat(created.id);
+      expect(updated.heartbeatAt).toBe(now.toISOString());
+    });
+
+    it("heartbeat() throws NotFoundError when the PR does not exist", async () => {
+      let caught: unknown;
+      try {
+        await service.heartbeat("00000000-0000-0000-0000-000000000000");
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(NotFoundError);
+    });
+
+    it("release() resets claim fields and reviewState to pending for an existing PR", async () => {
+      const { record: created } = await service.claim(
+        "app-vitals/shipwright",
+        1110,
+        "sha-release",
+        "agent-a",
+      );
+      expect(created.claimedBy).toBe("agent-a");
+
+      const released = await service.release(created.id);
+      expect(released.reviewState).toBe("pending");
+      expect(released.claimedBy).toBeNull();
+      expect(released.claimedAt).toBeNull();
+      expect(released.heartbeatAt).toBeNull();
+    });
+
+    it("release() throws NotFoundError when the PR does not exist", async () => {
+      let caught: unknown;
+      try {
+        await service.release("00000000-0000-0000-0000-000000000000");
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(NotFoundError);
+    });
+
+    it("patch() increments patchCycles, sets patchedAt, and resets reviewState to pending", async () => {
+      const now = new Date("2026-07-02T10:00:00.000Z");
+      const clock = FixedClock(now);
+      const svc = new PullRequestService(prisma, clock);
+
+      const created = await prisma.pullRequest.create({
+        data: {
+          repo: "app-vitals/shipwright",
+          prNumber: 1120,
+          reviewState: "posted",
+          patchCycles: 1,
+        },
+      });
+
+      const patched = await svc.patch(created.id);
+      expect(patched.patchCycles).toBe(2);
+      expect(patched.patchedAt).toBe(now.toISOString());
+      expect(patched.reviewState).toBe("pending");
+    });
+
+    it("patch() throws NotFoundError when the PR does not exist", async () => {
+      let caught: unknown;
+      try {
+        await service.patch("00000000-0000-0000-0000-000000000000");
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(NotFoundError);
+    });
+
+    it("update() throws NotFoundError when the PR does not exist", async () => {
+      let caught: unknown;
+      try {
+        await service.update("00000000-0000-0000-0000-000000000000", {
+          state: "closed",
+        });
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(NotFoundError);
+    });
+
+    it("complete() throws NotFoundError when the PR does not exist", async () => {
+      let caught: unknown;
+      try {
+        await service.complete("00000000-0000-0000-0000-000000000000");
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(NotFoundError);
+    });
+  },
+);

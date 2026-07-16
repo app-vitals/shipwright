@@ -246,6 +246,47 @@ describe("createTasksRoutes — OpenAPIHono migration (TSM-1.2)", () => {
     expect((receivedFilters as { sort?: string }).sort).toBeUndefined();
   });
 
+  it("GET /?updatedSince=<iso> passes updatedSince through to taskService.list()", async () => {
+    const task = makeTask({ id: "t-1" });
+    let receivedFilters: unknown;
+    const app = createTasksRoutes(
+      fakeTaskService({
+        tasks: [task],
+        onList: (filters) => {
+          receivedFilters = filters;
+        },
+      }),
+    );
+    const parent = makeAdminParent(app);
+
+    const updatedSince = "2026-07-01T00:00:00.000Z";
+    const res = await parent.request(`/?updatedSince=${updatedSince}`);
+    expect(res.status).toBe(200);
+    expect((receivedFilters as { updatedSince?: string }).updatedSince).toBe(
+      updatedSince,
+    );
+  });
+
+  it("GET / with no updatedSince param passes updatedSince: undefined through to taskService.list() (existing behavior)", async () => {
+    const task = makeTask({ id: "t-1" });
+    let receivedFilters: unknown;
+    const app = createTasksRoutes(
+      fakeTaskService({
+        tasks: [task],
+        onList: (filters) => {
+          receivedFilters = filters;
+        },
+      }),
+    );
+    const parent = makeAdminParent(app);
+
+    const res = await parent.request("/");
+    expect(res.status).toBe(200);
+    expect(
+      (receivedFilters as { updatedSince?: string }).updatedSince,
+    ).toBeUndefined();
+  });
+
   it("GET /distinct returns 200 with { sessions, repos } shape", async () => {
     const app = createTasksRoutes(fakeTaskService());
     const parent = makeAdminParent(app);

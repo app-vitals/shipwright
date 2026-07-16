@@ -15,7 +15,12 @@
 
 import { type Clock, SystemClock } from "./clock.ts";
 import { ConflictError, NotFoundError } from "./errors.ts";
-import { Prisma, type PrismaClient, type PrPhase, type PullRequest } from "./index.ts";
+import {
+  Prisma,
+  type PrismaClient,
+  type PrPhase,
+  type PullRequest,
+} from "./index.ts";
 
 /** Filters accepted by PullRequestService.list. */
 export interface PullRequestListFilters {
@@ -48,6 +53,13 @@ export interface PullRequestListFilters {
    * accept this filter.
    */
   sort?: "asc" | "desc";
+  /**
+   * ISO timestamp. Only return PRs with updatedAt >= this value. A
+   * conservative pre-filter (not a precise sync anchor) — see
+   * planning/task-store-date-filtering/PLAN.md for the root-cause/design
+   * rationale. Omitting it preserves current (unfiltered) behavior.
+   */
+  updatedSince?: string;
 }
 
 /** Paginated list result from PullRequestService.list. */
@@ -103,6 +115,9 @@ export class PullRequestService implements PullRequestServiceLike {
       where.reviewState = filters.reviewState as PullRequest["reviewState"];
     if (filters.staged !== undefined) where.staged = filters.staged;
     if (filters.ready) where.claimedBy = null;
+    if (filters.updatedSince) {
+      where.updatedAt = { gte: new Date(filters.updatedSince) };
+    }
 
     const limit = filters.limit ?? 50;
     const offset = filters.offset ?? 0;
@@ -136,7 +151,10 @@ export class PullRequestService implements PullRequestServiceLike {
       // COALESCE(...) NULLS LAST ordering tolerates an unset value, but setting
       // it at the actual approval moment keeps the deploy-readiness ordering
       // accurate for PRs that sit approved-but-unclaimed for a while.
-      if (data.reviewState === "approved" && data.readyForDeployAt === undefined) {
+      if (
+        data.reviewState === "approved" &&
+        data.readyForDeployAt === undefined
+      ) {
         const existing = await this.prisma.pullRequest.findUnique({
           where: { id },
           select: { readyForDeployAt: true },
@@ -371,7 +389,9 @@ export class PullRequestService implements PullRequestServiceLike {
       updateData.reviewState = "pending";
     } else {
       // Not a Prisma error — thrown directly, must bypass translateNotFound.
-      const existing = await this.prisma.pullRequest.findUnique({ where: { id } });
+      const existing = await this.prisma.pullRequest.findUnique({
+        where: { id },
+      });
       if (!existing) {
         throw new NotFoundError("pr not found");
       }
@@ -458,7 +478,9 @@ export class PullRequestService implements PullRequestServiceLike {
       const targetId = rows[0].id;
 
       // Step 3: Fetch full record to determine phase
-      const target = await tx.pullRequest.findUnique({ where: { id: targetId } });
+      const target = await tx.pullRequest.findUnique({
+        where: { id: targetId },
+      });
       if (!target) return null; // concurrent claim took it
 
       // Determine phase from reviewState
