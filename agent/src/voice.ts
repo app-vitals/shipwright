@@ -1,5 +1,6 @@
 import { type SpawnOptions, spawn } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
+import { readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -142,7 +143,7 @@ export async function transcribeAudio(
 ): Promise<string | null> {
   let fileBuffer: Buffer;
   try {
-    fileBuffer = readFileSync(audioPath);
+    fileBuffer = await readFile(audioPath);
   } catch (err) {
     console.warn("[voice] could not read audio file:", err);
     return null;
@@ -244,7 +245,7 @@ async function synthesizeElevenLabs(
   }
 
   const outPath = join(VOICE_DIR, `${Date.now()}-response.mp3`);
-  writeFileSync(outPath, Buffer.from(await resp.arrayBuffer()));
+  await writeFile(outPath, Buffer.from(await resp.arrayBuffer()));
   return outPath;
 }
 

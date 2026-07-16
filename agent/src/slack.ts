@@ -6,7 +6,8 @@
  * createRunClaude() and your injected config values.
  */
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
+import { readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
@@ -78,7 +79,7 @@ export async function downloadFile(
 
   const buffer = Buffer.from(await resp.arrayBuffer());
   const tmpPath = join(tmpdir(), `shipwright-agent-${Date.now()}-${file.name}`);
-  writeFileSync(tmpPath, buffer);
+  await writeFile(tmpPath, buffer);
   return tmpPath;
 }
 
@@ -190,7 +191,7 @@ export async function dispatchMarkers(
           .uploadV2({
             channel_id: channel,
             thread_ts: threadTs,
-            file: readFileSync(absPath),
+            file: await readFile(absPath),
             filename: absPath.split("/").pop() ?? "file",
           })
           .catch((err: unknown) =>
@@ -220,7 +221,7 @@ export async function dispatchMarkers(
             .uploadV2({
               channel_id: channel,
               thread_ts: threadTs,
-              file: readFileSync(audioPath),
+              file: await readFile(audioPath),
               filename: audioPath.split("/").pop() ?? "response.mp3",
             })
             .catch((err: unknown) =>
