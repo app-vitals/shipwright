@@ -666,20 +666,22 @@ describe("check-deploy — candidate field (--json mode)", () => {
 });
 
 describe("check-deploy — non-json mode backwards compat", () => {
-  test("output string contains 'deploy' when candidate found", async () => {
+  test("output string embeds the resolved org/repo#pr candidate", async () => {
     const pr = makeGhPr({
+      number: 42,
       author: { login: "bodhi-agent" },
       reviewDecision: "APPROVED",
     });
     const result = await run(
       makeDeps({
         currentUser: "bodhi-agent",
+        repos: ["acme/example-repo"],
         prs: { "acme/example-repo": [pr] },
         ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
       }),
     );
     expect(result.exit).toBe(0);
-    expect(result.output).toBe("Deploy ready PRs via /shipwright:deploy");
+    expect(result.output).toBe("/shipwright:deploy acme/example-repo#42");
     expect(result.output.toLowerCase()).toContain("deploy");
   });
 
