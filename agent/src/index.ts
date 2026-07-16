@@ -432,7 +432,7 @@ if (config.chat.serviceUrl && config.chat.serviceToken) {
     chatSessions,
     undefined,
     config.paths.workspace,
-    undefined,
+    process.env.SENTRY_DSN ? Sentry : undefined,
     undefined,
     undefined,
     undefined,
