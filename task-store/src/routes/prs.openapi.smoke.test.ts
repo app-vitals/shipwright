@@ -54,12 +54,16 @@ function fakePrService(
   opts: {
     store?: Map<string, PullRequest>;
     claimResult?: { status: 200 | 201; record: PullRequest } | Error;
+    onList?: (filters: PullRequestListFilters | undefined) => void;
   } = {},
 ): PullRequestServiceLike {
   const store = opts.store ?? new Map<string, PullRequest>();
 
   return {
-    async list(filters?: PullRequestListFilters): Promise<PullRequestListResult> {
+    async list(
+      filters?: PullRequestListFilters,
+    ): Promise<PullRequestListResult> {
+      opts.onList?.(filters);
       const prs = Array.from(store.values());
       return { prs, total: prs.length, limit: 50, offset: 0 };
     },
@@ -71,7 +75,11 @@ function fakePrService(
     async update(id: string, data: Partial<PullRequest>): Promise<PullRequest> {
       const existing = store.get(id);
       if (!existing) throw new NotFoundError("pr not found");
-      const updated = { ...existing, ...data, updatedAt: new Date() } as PullRequest;
+      const updated = {
+        ...existing,
+        ...data,
+        updatedAt: new Date(),
+      } as PullRequest;
       store.set(id, updated);
       return updated;
     },
@@ -87,14 +95,24 @@ function fakePrService(
         if (opts.claimResult instanceof Error) throw opts.claimResult;
         return opts.claimResult;
       }
-      const record = makePr({ id: `pr-${repo}-${prNumber}`, repo, prNumber, commitSha, claimedBy });
+      const record = makePr({
+        id: `pr-${repo}-${prNumber}`,
+        repo,
+        prNumber,
+        commitSha,
+        claimedBy,
+      });
       store.set(record.id, record);
       return { status: 201, record };
     },
 
     async heartbeat(id: string): Promise<PullRequest> {
       const pr = store.get(id) ?? makePr({ id });
-      const updated = { ...pr, heartbeatAt: new Date().toISOString(), updatedAt: new Date() } as PullRequest;
+      const updated = {
+        ...pr,
+        heartbeatAt: new Date().toISOString(),
+        updatedAt: new Date(),
+      } as PullRequest;
       store.set(id, updated);
       return updated;
     },
@@ -102,7 +120,12 @@ function fakePrService(
     async complete(id: string): Promise<PullRequest> {
       const existing = store.get(id);
       if (!existing) throw new NotFoundError("pr not found");
-      const updated = { ...existing, reviewState: "posted" as const, reviewedAt: new Date().toISOString(), updatedAt: new Date() } as PullRequest;
+      const updated = {
+        ...existing,
+        reviewState: "posted" as const,
+        reviewedAt: new Date().toISOString(),
+        updatedAt: new Date(),
+      } as PullRequest;
       store.set(id, updated);
       return updated;
     },
@@ -110,7 +133,12 @@ function fakePrService(
     async patch(id: string): Promise<PullRequest> {
       const existing = store.get(id);
       if (!existing) throw new NotFoundError("pr not found");
-      const updated = { ...existing, patchCycles: existing.patchCycles + 1, reviewState: "pending" as const, updatedAt: new Date() } as PullRequest;
+      const updated = {
+        ...existing,
+        patchCycles: existing.patchCycles + 1,
+        reviewState: "pending" as const,
+        updatedAt: new Date(),
+      } as PullRequest;
       store.set(id, updated);
       return updated;
     },
@@ -118,7 +146,14 @@ function fakePrService(
     async release(id: string): Promise<PullRequest> {
       const existing = store.get(id);
       if (!existing) throw new NotFoundError("pr not found");
-      const updated = { ...existing, reviewState: "pending" as const, claimedBy: null, claimedAt: null, heartbeatAt: null, updatedAt: new Date() } as PullRequest;
+      const updated = {
+        ...existing,
+        reviewState: "pending" as const,
+        claimedBy: null,
+        claimedAt: null,
+        heartbeatAt: null,
+        updatedAt: new Date(),
+      } as PullRequest;
       store.set(id, updated);
       return updated;
     },
@@ -127,7 +162,10 @@ function fakePrService(
       _agentId: string,
       _maxConcurrent: number,
       _repos?: string[],
-    ): Promise<{ pr: PullRequest; phase: "review" | "patch" | "deploy" } | null> {
+    ): Promise<{
+      pr: PullRequest;
+      phase: "review" | "patch" | "deploy";
+    } | null> {
       return null;
     },
   };
@@ -159,12 +197,54 @@ describe("createPrsRoutes — OpenAPIHono migration (TSM-1.3)", () => {
     expect([200, 401]).toContain(res.status);
   });
 
+  it("GET /?updatedSince=<iso> passes updatedSince through to prService.list()", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1" }));
+    let receivedFilters: PullRequestListFilters | undefined;
+    const app = createPrsRoutes(
+      fakePrService({
+        store,
+        onList: (filters) => {
+          receivedFilters = filters;
+        },
+      }),
+    );
+
+    const updatedSince = "2026-07-01T00:00:00.000Z";
+    const res = await app.request(`/?updatedSince=${updatedSince}`);
+    expect(res.status).toBe(200);
+    expect(receivedFilters?.updatedSince).toBe(updatedSince);
+  });
+
+  it("GET / with no updatedSince param passes updatedSince: undefined through to prService.list() (existing behavior)", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1" }));
+    let receivedFilters: PullRequestListFilters | undefined;
+    const app = createPrsRoutes(
+      fakePrService({
+        store,
+        onList: (filters) => {
+          receivedFilters = filters;
+        },
+      }),
+    );
+
+    const res = await app.request("/");
+    expect(res.status).toBe(200);
+    expect(receivedFilters?.updatedSince).toBeUndefined();
+  });
+
   it("POST /claim route is registered", async () => {
     const app = createPrsRoutes(fakePrService());
     const res = await app.request("/claim", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ repo: "org/repo", prNumber: 1, commitSha: "abc", claimedBy: "agent-1" }),
+      body: JSON.stringify({
+        repo: "org/repo",
+        prNumber: 1,
+        commitSha: "abc",
+        claimedBy: "agent-1",
+      }),
     });
     // Not 404 — route exists
     expect(res.status).not.toBe(404);

@@ -25,7 +25,7 @@ List pull requests
 - **Method:** GET
 - **Path:** `/prs`
 - **Has body:** No
-- **Parameters:** `repo` (query), `prNumber` (query), `taskId` (query), `state` (query), `reviewState` (query), `staged` (query), `limit` (query), `offset` (query), `ready` (query), `sort` (query)
+- **Parameters:** `repo` (query), `prNumber` (query), `taskId` (query), `state` (query), `reviewState` (query), `staged` (query), `limit` (query), `offset` (query), `ready` (query), `sort` (query), `updatedSince` (query)
 
 ## `prs_update`
 
@@ -79,7 +79,7 @@ List tasks
 - **Method:** GET
 - **Path:** `/tasks`
 - **Has body:** No
-- **Parameters:** `status` (query), `state` (query), `session` (query), `repo` (query), `assignee` (query), `claimedBy` (query), `branch` (query), `pr` (query), `limit` (query), `offset` (query), `ready` (query), `sort` (query)
+- **Parameters:** `status` (query), `state` (query), `session` (query), `repo` (query), `assignee` (query), `claimedBy` (query), `branch` (query), `pr` (query), `limit` (query), `offset` (query), `ready` (query), `sort` (query), `updatedSince` (query)
 
 ## `tasks_update`
 

@@ -1,7 +1,6 @@
 import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import type { Server } from "bun";
 import { Hono } from "hono";
-import type { AnalyticsSummary } from "./analytics.ts";
 import { type Clock, SystemClock } from "./clock.ts";
 import {
   type CronHandlerDeps,
@@ -73,7 +72,6 @@ export function createHealthApp(): Hono {
  * GET  /health → 200 { ok: true, slack: "connected" | "disconnected" }
  *              → 500 { ok: false, slack: "disconnected" } when the socket has
  *                been down longer than `graceMs` (sustained wedge)
- * GET  /stats  → 200 { ...AnalyticsSummary } (optional, returns 404 if no summarize fn)
  * GET  /cron   → 405 Method Not Allowed
  * POST /cron   → run a cron prompt through Claude and post result to Slack
  *               503 if cronDeps not configured
@@ -96,7 +94,6 @@ export function createHealthApp(): Hono {
  */
 export function startHealthServer(
   port: number,
-  summarize?: (date?: string) => AnalyticsSummary,
   cronDeps?: CronHandlerDeps,
   clock: Clock = SystemClock(),
   graceMs: number = SLACK_DOWN_GRACE_MS,
@@ -122,11 +119,6 @@ export function startHealthServer(
           ok: true,
           slack: slackState.connected ? "connected" : "disconnected",
         });
-      }
-
-      if (url.pathname === "/stats" && req.method === "GET" && summarize) {
-        const date = url.searchParams.get("date") ?? undefined;
-        return Response.json(summarize(date));
       }
 
       if (url.pathname === "/cron" && req.method === "GET") {
