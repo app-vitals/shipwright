@@ -452,6 +452,11 @@ export function createTasksRoutes(
     const repos = c.get("repos");
     const stateRaw = c.req.query("state");
 
+    // Note: ?updatedSince is intentionally NOT threaded into listReady()/
+    // listBlocked() below. Both are convenience endpoints computed over the
+    // *entire* task graph (dependency resolution needs every task, not a
+    // recency-windowed subset) and the acceptance criteria for this filter
+    // only cover the plain GET /tasks list path, not these two branches.
     // ?ready=true is the legacy spelling; ?state=ready is the new form.
     if (c.req.query("ready") === "true" || stateRaw === "ready") {
       // Pass repos to listReady for repo-scoped agent tokens.
@@ -502,6 +507,7 @@ export function createTasksRoutes(
           ? Number.parseInt(offsetRaw, 10) || undefined
           : undefined,
       sort: c.req.query("sort") === "desc" ? "desc" : undefined,
+      updatedSince: c.req.query("updatedSince"),
       // Use agentScope for repo-scoped agent tokens; otherwise use assignee filter.
       // Under agentScope, an explicit caller-supplied ?assignee= further narrows
       // the already-visible OR set (assigned-to-me OR in-my-repo-pool) — safe,
@@ -629,7 +635,11 @@ export function createTasksRoutes(
     // to a different agent and we should not silently steal it.
     const ownedByAssignee = task.assignee === agentId;
     const ownedByClaim = task.claimedBy === agentId;
-    if (agentId !== null && task.assignee !== null && (ownedByAssignee || ownedByClaim)) {
+    if (
+      agentId !== null &&
+      task.assignee !== null &&
+      (ownedByAssignee || ownedByClaim)
+    ) {
       body.assignee = agentId;
     }
     const updated = await taskService.update(

@@ -11,6 +11,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import type { LinkedTaskInfo } from "./check-helpers.ts";
 import {
   type CheckReviewDeps,
   type PrInfo,
@@ -42,12 +43,17 @@ function makeDeps(
   ) => Promise<PrRecord | null> = async () => null,
   currentUser = "bodhi-agent",
   isSelfReviewAllowed = false,
+  queryTaskStatus: (
+    repo: string,
+    prNumber: number,
+  ) => Promise<LinkedTaskInfo | null> = async () => null,
 ): CheckReviewDeps {
   return {
     listOpenPrs: async (_repo: string) => prs,
     queryPrRecord: queryPrRecordFn,
     getCurrentUser: async () => currentUser,
     isSelfReviewAllowed,
+    queryTaskStatus,
   };
 }
 
@@ -288,7 +294,28 @@ describe("getReviewCandidates", () => {
 
   // ─── age field sourcing ──────────────────────────────────────────────────
 
-  test("age is sourced from readyForReviewAt when a task-store record exists", async () => {
+  test("age is sourced from the linked task's createdAt when a task is linked, even when a task-store PR record exists", async () => {
+    const pr = makePr({ headRefOid: "newsha", createdAt: "2026-06-01T00:00:00.000Z" });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => ({
+          commitSha: "oldsha",
+          reviewState: "posted",
+          readyForReviewAt: "2026-05-15T00:00:00.000Z",
+        }),
+        "bodhi-agent",
+        false,
+        async () => ({
+          status: "in_progress",
+          createdAt: "2026-05-01T00:00:00.000Z",
+        }),
+      ),
+    );
+    expect(result[0].age).toBe("2026-05-01T00:00:00.000Z");
+  });
+
+  test("age falls back to PR createdAt when no task is linked (queryTaskStatus resolves null), even when a task-store record exists", async () => {
     const pr = makePr({ headRefOid: "newsha", createdAt: "2026-06-01T00:00:00.000Z" });
     const result = await getReviewCandidates(
       makeDeps([pr], async () => ({
@@ -297,13 +324,52 @@ describe("getReviewCandidates", () => {
         readyForReviewAt: "2026-05-15T00:00:00.000Z",
       })),
     );
-    expect(result[0].age).toBe("2026-05-15T00:00:00.000Z");
+    expect(result[0].age).toBe("2026-06-01T00:00:00.000Z");
   });
 
-  test("age falls back to PR createdAt when no task-store record exists", async () => {
+  test("age falls back to PR createdAt when no task-store record exists and no task is linked", async () => {
     const pr = makePr({ createdAt: "2026-06-01T00:00:00.000Z" });
     const result = await getReviewCandidates(makeDeps([pr], async () => null));
     expect(result[0].age).toBe("2026-06-01T00:00:00.000Z");
+  });
+
+  test("age falls back to PR createdAt when queryTaskStatus throws (lookup failure does not disqualify or block age fallback)", async () => {
+    const pr = makePr({ createdAt: "2026-06-01T00:00:00.000Z" });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => null,
+        "bodhi-agent",
+        false,
+        async () => {
+          throw new Error("task-store unreachable");
+        },
+      ),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].age).toBe("2026-06-01T00:00:00.000Z");
+  });
+
+  test("readyForReviewAt is never used for age sourcing when a task is linked", async () => {
+    const pr = makePr({ headRefOid: "newsha", createdAt: "2026-06-01T00:00:00.000Z" });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => ({
+          commitSha: "oldsha",
+          reviewState: "posted",
+          readyForReviewAt: "2026-05-20T00:00:00.000Z",
+        }),
+        "bodhi-agent",
+        false,
+        async () => ({
+          status: "in_progress",
+          createdAt: "2026-05-01T00:00:00.000Z",
+        }),
+      ),
+    );
+    expect(result[0].age).not.toBe("2026-05-20T00:00:00.000Z");
+    expect(result[0].age).toBe("2026-05-01T00:00:00.000Z");
   });
 
   // ─── claim gating (LPF-2.2) ───────────────────────────────────────────────

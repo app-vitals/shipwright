@@ -55,7 +55,6 @@ model Task {
   dependencies       String[]
   pr                 Int?
   hours              Float?
-  addedAt            String?
   startedAt          String?
   prCreatedAt        String?
   mergedAt           String?
@@ -107,6 +106,7 @@ model Task {
   @@index([session])
   @@index([assignee])
   @@index([claimedBy])
+  @@index([updatedAt])
 }
 
 // ─── Pull Request State ───────────────────────────────────────────────────────
@@ -176,6 +176,7 @@ model PullRequest {
   @@index([taskId])
   @@index([state])
   @@index([reviewState])
+  @@index([updatedAt])
 }
 
 // ─── Task Token ───────────────────────────────────────────────────────────────

@@ -9,9 +9,9 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import type { App } from "@slack/bolt";
 import type { WebAPIPlatformError } from "@slack/web-api";
-import type { AnalyticsEvent } from "./analytics.ts";
 import {
   type ChatTokenReporter,
   NoopChatTokenReporter,
@@ -114,8 +114,9 @@ type AppFactory = (cfg: {
 const defaultAppFactory: AppFactory = (cfg) =>
   new (require("@slack/bolt").App)(cfg);
 
-export type Tracker = (event: Omit<AnalyticsEvent, "timestamp">) => void;
-const noopTracker: Tracker = () => {};
+const noopSentryClient: ErrorCapturingClient = {
+  captureException: () => {},
+};
 
 type FileDownloaderFn = (
   file: SlackFile,
@@ -349,7 +350,7 @@ export function createSlackApp(
   getThreadKey: typeof defaultThreadKey = defaultThreadKey,
   appFactory: AppFactory = defaultAppFactory,
   slackConfig: SlackConfig = { botToken: "", appToken: "", signingSecret: "" },
-  tracker: Tracker = noopTracker,
+  sentryClient: ErrorCapturingClient = noopSentryClient,
   fileDownloaderFn: FileDownloaderFn = downloadFile,
   voiceConfig: VoiceConfig = {},
   transcribeAudioFn: TranscribeAudioFn = transcribeAudio,
@@ -428,10 +429,8 @@ export function createSlackApp(
       prompt = `[Thread message — respond normally, or use [silent] if no response is needed]\n${prompt}`;
     }
 
-    const startedAt = new Date();
     try {
       const { result, usage, totalCostUsd, modelUsage } = await runner(prompt, sessionKey);
-      const endedAt = new Date();
       await chatTokenReporter.recordSession(usage, totalCostUsd, modelUsage);
       const { cleaned, markers } = parseMarkers(result);
 
@@ -486,19 +485,9 @@ export function createSlackApp(
         synthesizeSpeechFn,
         voiceConfig,
       });
-      tracker({
-        type: "message",
-        sessionKey,
-        durationMs: endedAt.getTime() - startedAt.getTime(),
-      });
     } catch (err) {
       console.error("[slack] error:", err);
-      tracker({
-        type: "error",
-        sessionKey,
-        durationMs: Date.now() - startedAt.getTime(),
-        error: err instanceof Error ? err.message : String(err),
-      });
+      sentryClient.captureException(err);
       await say({
         text: formatRunErrorForSlack(err),
         thread_ts: msg.thread_ts ?? msg.ts,
@@ -580,10 +569,8 @@ export function createSlackApp(
       }
     }
 
-    const startedAt = new Date();
     try {
       const { result, usage, totalCostUsd, modelUsage } = await runner(prompt, sessionKey);
-      const endedAt = new Date();
       await chatTokenReporter.recordSession(usage, totalCostUsd, modelUsage);
       const { cleaned, markers } = parseMarkers(result);
 
@@ -632,19 +619,9 @@ export function createSlackApp(
         synthesizeSpeechFn,
         voiceConfig,
       });
-      tracker({
-        type: "mention",
-        sessionKey,
-        durationMs: endedAt.getTime() - startedAt.getTime(),
-      });
     } catch (err) {
       console.error("[slack] error:", err);
-      tracker({
-        type: "error",
-        sessionKey,
-        durationMs: Date.now() - startedAt.getTime(),
-        error: err instanceof Error ? err.message : String(err),
-      });
+      sentryClient.captureException(err);
       await say({ text: formatRunErrorForSlack(err), thread_ts: replyTs });
     } finally {
       await setStatus("");

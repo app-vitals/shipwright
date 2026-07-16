@@ -72,6 +72,27 @@ entry point (canary):
 Unit, integration, smoke, and content suffixes have **no** `pathIgnorePatterns` entry —
 they are exactly the suffixes the root `bun test` scan is meant to discover and run.
 
+## One-time cross-runner isolation check (T-048)
+
+Confirmed once, ahead of the M1 rename tasks, that each runner discovers only its own
+layer's files — the doc/config sync above only covers the `bun test` side; this closes
+the loop on the Playwright side too:
+
+- `bun test`'s default file listing (respecting `pathIgnorePatterns`) contains zero
+  `*.spec.ts`, `*.e2e.ts`, or `*.canary.test.ts` files, despite 15 such files existing on
+  disk (`site/tests/*.spec.ts`, `metrics/e2e/*.e2e.ts`, `admin/e2e/*.e2e.ts`).
+- `metrics/playwright.config.ts` and `admin/playwright.config.ts` scope `testDir: "./e2e"`
+  with `testMatch: "**/*.e2e.ts"` — each `e2e/` directory contains only its own
+  `*.e2e.ts` files (plus non-test helpers), so Playwright cannot pick up a
+  unit/integration/smoke/content file.
+- `site/playwright.config.ts` scopes `testDir: "./tests"`, which contains only
+  `*.spec.ts` files (plus a `helpers.ts` non-test file) — no bare `*.test.ts` file to
+  collide with Bun's default runner.
+
+No cross-runner discovery gaps found. This is a point-in-time confirmation, not an
+enforced regression test — the automated guard against doc/config drift is
+`plugins/shipwright/test/test-naming-convention.content.test.ts`, described above.
+
 ## Collision rules
 
 1. **One suffix per file.** A test file must match exactly one row in the suffix table.
