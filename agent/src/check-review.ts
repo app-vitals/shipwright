@@ -25,6 +25,7 @@ import {
   candidateId,
   createPrRecordQuery,
   getCurrentUser,
+  mapReposTolerant,
   readAllowSelfReview,
   resolveAllRepos,
   resolveWorkspacePath,
@@ -133,8 +134,7 @@ export async function buildProductionDeps(opts: {
     getCurrentUser,
     isSelfReviewAllowed: readAllowSelfReview(workspacePath),
     listOpenPrs: async (_repo: string) => {
-      const allPrs: PrInfo[] = [];
-      for (const repo of allRepos) {
+      return mapReposTolerant(allRepos, "check-review", async (repo) => {
         const repoPrs = ghJsonFn<PrInfo[]>([
           "pr",
           "list",
@@ -145,9 +145,8 @@ export async function buildProductionDeps(opts: {
           "--json",
           "number,title,author,headRefName,headRefOid,isDraft,labels,createdAt",
         ]);
-        allPrs.push(...repoPrs.map((pr) => ({ ...pr, repo })));
-      }
-      return allPrs;
+        return repoPrs.map((pr) => ({ ...pr, repo }));
+      });
     },
     queryPrRecord: createPrRecordQuery<PrRecord>({ fetchFn: opts.fetchFn }),
   };
