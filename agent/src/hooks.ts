@@ -162,6 +162,10 @@ function listPluginRoots(config: CommandHooksConfig, fs: HookFs): PluginRoot[] {
     config.pluginManifestPath ??
     join(homedir(), ".claude", "plugins", "installed_plugins.json");
 
+  // An absent manifest means no plugins are installed — the no-hooks
+  // passthrough case, not an error.
+  if (!fs.existsSync(manifestPath)) return roots;
+
   try {
     const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8")) as {
       version: number;
@@ -175,9 +179,9 @@ function listPluginRoots(config: CommandHooksConfig, fs: HookFs): PluginRoot[] {
       }
     }
   } catch (err) {
-    console.warn(
-      `[agent:hooks] failed to read installed_plugins.json: ${String(err)}`,
-    );
+    // Fail closed: a manifest that exists but cannot be read/parsed makes
+    // hook resolution unknowable — the session must not run ungated.
+    throw new HookError(manifestPath, undefined, String(err));
   }
   return roots;
 }

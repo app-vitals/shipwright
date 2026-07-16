@@ -356,6 +356,38 @@ describe("resolveHookScripts — resolution order", () => {
       ),
     ).toThrow(HookError);
   });
+
+  test("an absent plugin manifest is the no-hooks passthrough case", async () => {
+    const runner = mock((_m: string, _k?: string) => Promise.resolve(okResult));
+    const { spawner, calls } = recordingSpawner([]);
+    const wrapped = withCommandHooks(runner, {
+      pluginManifestPath: join(tmp(), "installed_plugins.json"), // never written
+      spawner,
+    });
+
+    const out = await wrapped("/shipwright:dev-task acme/x#1");
+
+    expect(out).toBe(okResult);
+    expect(runner).toHaveBeenCalledTimes(1);
+    expect(calls).toHaveLength(0);
+  });
+
+  test("a corrupt plugin manifest throws HookError and blocks the session (fail closed)", async () => {
+    const manifestPath = join(tmp(), "installed_plugins.json");
+    writeFileSync(manifestPath, "not json {{");
+    const runner = mock((_m: string, _k?: string) => Promise.resolve(okResult));
+    const { spawner } = recordingSpawner([]);
+    const wrapped = withCommandHooks(runner, {
+      pluginManifestPath: manifestPath,
+      spawner,
+    });
+
+    const err = await wrapped("/shipwright:dev-task acme/x#1").catch((e) => e);
+
+    expect(err).toBeInstanceOf(HookError);
+    expect((err as HookError).hookName).toBe(manifestPath);
+    expect(runner).not.toHaveBeenCalled();
+  });
 });
 
 // ─── withCommandHooks — passthrough ──────────────────────────────────────────
