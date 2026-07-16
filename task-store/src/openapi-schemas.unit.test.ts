@@ -35,7 +35,6 @@ const validTask = {
   dependencies: ["task-1", "task-2"],
   pr: 42,
   hours: 5.5,
-  addedAt: yesterday,
   startedAt: yesterday,
   prCreatedAt: yesterday,
   mergedAt: null,
