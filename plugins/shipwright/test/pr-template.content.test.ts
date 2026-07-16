@@ -1,11 +1,10 @@
 /**
  * PR template — Closing Checklist verification requirement — T-050
  *
- * Verifies .github/pull_request_template.md exists and its body requires
+ * Verifies .github/PULL_REQUEST_TEMPLATE.md exists and its body requires
  * the PR author to paste verification-command output or a CI run link
- * before merge. This is the NEW lowercase template file — distinct from
- * the existing .github/PULL_REQUEST_TEMPLATE.md (uppercase), which is
- * left untouched by this task.
+ * before merge. Consolidated into the single existing uppercase template
+ * file — no lowercase duplicate.
  *
  * Content-assertion only: readFileSync, no I/O beyond a local file read.
  */
@@ -15,10 +14,10 @@ import { resolve } from "node:path";
 
 // plugins/shipwright/test/ → repo root
 const repoRoot = resolve(import.meta.dir, "..", "..", "..");
-const templatePath = resolve(repoRoot, ".github/pull_request_template.md");
+const templatePath = resolve(repoRoot, ".github/PULL_REQUEST_TEMPLATE.md");
 
 describe("PR template — Closing Checklist verification requirement", () => {
-  it("exists at .github/pull_request_template.md", () => {
+  it("exists at .github/PULL_REQUEST_TEMPLATE.md", () => {
     expect(existsSync(templatePath)).toBe(true);
   });
 
