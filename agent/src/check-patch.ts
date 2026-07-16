@@ -13,16 +13,26 @@
  * globally-oldest ready item.
  *
  * Does NOT read state/reviews.json — all data comes from GitHub directly. The
- * task-store /prs record is consulted both for the age (readyForPatchAt)
- * field and for qualification — a record with claimedBy set means another
- * agent currently holds the claim on this PR and it is excluded (see the
- * explicit claimedBy check below, mirroring check-review.ts).
+ * task-store /prs record is consulted for qualification — a record with
+ * claimedBy set means another agent currently holds the claim on this PR and
+ * it is excluded (see the explicit claimedBy check below, mirroring
+ * check-review.ts). age is populated from the linked task's createdAt (via
+ * queryTaskStatus, LPF-3.2), falling back to the PR's GitHub createdAt when
+ * no task is linked or the lookup fails — readyForPatchAt is a necessarily-
+ * recent phase-readiness stamp, not the work item's true origination age,
+ * and is no longer used for age sourcing (it remains in PrRecord solely for
+ * queryPrRecord's other historical callers). Unlike check-deploy.ts's
+ * queryTaskStatus usage, a lookup failure here is NOT gating — it is only
+ * ever consumed for its createdAt field, so a thrown error just falls back
+ * to pr.createdAt rather than disqualifying the PR.
  */
 
-import type { CommitInfo } from "./check-helpers.ts";
+import { agentReposRef } from "./agent-repos-ref.ts";
+import type { CommitInfo, LinkedTaskInfo } from "./check-helpers.ts";
 import {
   candidateId,
   createPrRecordQuery,
+  createTaskStatusQuery,
   isCleanApproveBody,
   isMergeOnlyUpdate,
   mapReposTolerant,
@@ -114,6 +124,33 @@ export interface CheckPatchDeps {
    * which would collapse both cases into the same empty result.
    */
   queryPrRecord?: (repo: string, prNumber: number) => Promise<PrRecord | null>;
+  /**
+   * Returns the agent's currently configured repo scope (org/repo strings).
+   * Called at the top of every getPatchCandidates() invocation — not once at
+   * deps-build time — so a repo present in the local clone list (and
+   * therefore returned by listOwnOpenPrs) but absent from this call's result
+   * is excluded from candidates, and a later scope change is picked up on the
+   * very next call.
+   */
+  getScopedRepos: () => string[];
+  /**
+   * True once the agent's repo scope has been successfully synced at least
+   * once. When false (e.g. a persistent 404 on the agent's config bundle —
+   * see index.ts's syncConfig), getPatchCandidates() fails open and does not
+   * filter by scope at all, matching pre-scoping behavior — otherwise a
+   * config-sync outage would silently exclude every repo from patch
+   * candidacy, indistinguishable from "no work found".
+   */
+  hasScopeSynced: () => boolean;
+  // Task status lookup for the linked task (if any), used PURELY to source
+  // the age field via its createdAt — unlike check-deploy.ts, this is never
+  // used as a gating/disqualifying check here. A thrown error is treated the
+  // same as "no linked task" (age falls back to pr.createdAt); it must not
+  // disqualify an otherwise-eligible PR from patch candidacy.
+  queryTaskStatus?: (
+    repo: string,
+    prNumber: number,
+  ) => Promise<LinkedTaskInfo | null>;
 }
 
 // ─── CI status (dedup stale reruns — CPC-1.1) ─────────────────────────────────
@@ -313,7 +350,15 @@ export async function getPatchCandidates(
 ): Promise<WorkPrCandidate[]> {
   const currentUser = await deps.getCurrentUser();
 
-  const prs = await deps.listOwnOpenPrs("default");
+  // Fail open when scope has never synced (e.g. a persistent config-bundle
+  // 404) — filtering by an unpopulated scope would silently drop every repo
+  // from candidacy, a failure mode that didn't exist before scoping.
+  const scopeSynced = deps.hasScopeSynced();
+  const scopedRepos = new Set(deps.getScopedRepos());
+  const allOwnPrs = await deps.listOwnOpenPrs("default");
+  const prs = scopeSynced
+    ? allOwnPrs.filter((pr) => scopedRepos.has(pr.repo))
+    : allOwnPrs;
   if (prs.length === 0) return [];
 
   const candidates: WorkPrCandidate[] = [];
@@ -381,9 +426,22 @@ export async function getPatchCandidates(
       if (record?.claimedBy != null) continue;
     }
 
+    // Task-store task lookup, used purely to source the age field from the
+    // linked task's createdAt (LPF-3.2) — not a gating check. A thrown error
+    // is treated as "no linked task" so it never disqualifies an otherwise-
+    // eligible PR from patch candidacy.
+    let linkedTask: LinkedTaskInfo | null = null;
+    if (deps.queryTaskStatus) {
+      try {
+        linkedTask = await deps.queryTaskStatus(pr.repo, pr.number);
+      } catch {
+        linkedTask = null;
+      }
+    }
+
     candidates.push({
       id: candidateId(pr.repo, pr.number),
-      age: record?.readyForPatchAt ?? pr.createdAt ?? "",
+      age: linkedTask?.createdAt ?? pr.createdAt ?? "",
       phase: "patch",
     });
   }
@@ -419,12 +477,16 @@ export async function buildProductionDeps(opts: {
   ghGraphql: <T>(query: string) => T;
   getCurrentUser: () => string;
   fetchFn?: typeof fetch;
+  getScopedRepos?: () => string[];
+  hasScopeSynced?: () => boolean;
 }): Promise<CheckPatchDeps> {
   const workspacePath = resolveWorkspacePath();
   const allRepos = resolveAllRepos(workspacePath);
   const { ghJson, ghGraphql, getCurrentUser: getUser } = opts;
 
   return {
+    getScopedRepos: opts.getScopedRepos ?? agentReposRef.get,
+    hasScopeSynced: opts.hasScopeSynced ?? agentReposRef.hasSynced,
     listOwnOpenPrs: async (_repo: string) => {
       const user = await getUser();
       return mapReposTolerant(allRepos, "check-patch", async (repo) => {
@@ -540,5 +602,6 @@ export async function buildProductionDeps(opts: {
     },
     getCurrentUser: getUser,
     queryPrRecord: createPrRecordQuery<PrRecord>({ fetchFn: opts.fetchFn }),
+    queryTaskStatus: createTaskStatusQuery({ fetchFn: opts.fetchFn }),
   };
 }

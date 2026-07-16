@@ -1400,14 +1400,7 @@ describe("POST /cron HTTP endpoint", () => {
     sentryClient?: ErrorCapturingClient,
     // biome-ignore lint/suspicious/noExplicitAny: Server type param varies by bun version
   ): Server<any> {
-    const s = startHealthServer(
-      port,
-      undefined,
-      deps,
-      undefined,
-      undefined,
-      sentryClient,
-    );
+    const s = startHealthServer(port, deps, undefined, undefined, sentryClient);
     servers.push(s);
     return s;
   }

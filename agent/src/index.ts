@@ -13,13 +13,11 @@
  *  8. Graceful SIGTERM/SIGINT shutdown
  */
 
-import { join } from "node:path";
 import * as Sentry from "@sentry/bun";
 import { initSentry } from "@shipwright/lib/sentry";
 import { WebClient } from "@slack/web-api";
 import nodeCron from "node-cron";
-import { createAgentReposRef } from "./agent-repos-ref.ts";
-import { createAnalyticsStore } from "./analytics.ts";
+import { agentReposRef } from "./agent-repos-ref.ts";
 import { ghGraphql, ghJson } from "./check-helpers.ts";
 import { createChatPoller } from "./chat-poller.ts";
 import {
@@ -87,7 +85,7 @@ for (const level of ["log", "warn", "error"] as const) {
 // wraps on top of it — this captures clean log args in Sentry while local
 // output keeps its timestamp prefix.
 
-initSentry({ service: "agent" });
+initSentry({ service: "agent", agentId });
 
 // ─── Step 1: Agent home ───────────────────────────────────────────────────────
 
@@ -100,8 +98,6 @@ console.log(`[agent] agent home initialized: ${config.paths.home}`);
 
 const slackClock = SystemClock();
 const sessions = createFileSessionStore(config.paths.sessions);
-const analytics = createAnalyticsStore(join(config.paths.home, "analytics"));
-analytics.track({ type: "session_start" });
 
 const slack = new WebClient(config.slack.botToken ?? "");
 const runner = createRunClaude(
@@ -109,7 +105,7 @@ const runner = createRunClaude(
   sessions,
   undefined,
   config.paths.workspace,
-  analytics.track,
+  process.env.SENTRY_DSN ? Sentry : undefined,
   undefined,
   undefined,
   undefined,
@@ -158,7 +154,6 @@ const healthPort = Number(
 );
 startHealthServer(
   healthPort,
-  analytics.summarize,
   cronDeps,
   slackClock,
   undefined,
@@ -183,10 +178,6 @@ const runtimeClient =
         apiKey: config.shipwright.apiKey,
       })
     : null;
-
-// Live view of the agent's scoped repos, populated from every config sync
-// tick's bundle.repos. See agent-repos-ref.ts.
-const agentReposRef = createAgentReposRef();
 
 // ─── Step 4: Config sync ──────────────────────────────────────────────────────
 
@@ -480,7 +471,7 @@ if (hasSlackCredentials(slackAppConfig)) {
     threadKey,
     undefined, // appFactory — default Bolt App
     slackAppConfig,
-    analytics.track,
+    process.env.SENTRY_DSN ? Sentry : undefined,
     undefined, // fileDownloaderFn — default
     config.voice,
     undefined, // transcribeAudioFn — default

@@ -1,7 +1,4 @@
-import type { AnalyticsEvent } from "./analytics.ts";
-
-type Tracker = (event: Omit<AnalyticsEvent, "timestamp">) => void;
-const noopTracker: Tracker = () => {};
+import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 
 export interface LiveClaudeConfig {
   model: string;
@@ -124,7 +121,7 @@ export function createRunClaude(
   sessions: ClaudeSessionStore = { get: () => undefined, set: () => {} },
   model: string | undefined = undefined,
   workspace: string = process.cwd(),
-  tracker: Tracker = noopTracker,
+  sentryClient?: ErrorCapturingClient,
   extraAllowedTools: string[] | undefined = undefined,
   fallbackModel: string | undefined = undefined,
   effortLevel: string | undefined = undefined,
@@ -271,10 +268,6 @@ export function createRunClaude(
       ? await sessions.get(sessionKey)
       : undefined;
 
-    if (sessionKey && !existingSessionId) {
-      tracker({ type: "session_start", sessionKey });
-    }
-
     const args = _buildArgs(message, existingSessionId);
 
     try {
@@ -290,17 +283,14 @@ export function createRunClaude(
       // we should surface the error rather than silently spawning a second
       // process that would also hang.
       if (existingSessionId && !(err instanceof ClaudeTimeoutError)) {
-        const fallbackStart = Date.now();
         if (sessionKey && sessions.clear) {
           await sessions.clear(sessionKey);
         }
         const freshArgs = _buildArgs(message, undefined);
         const output = await _spawn(freshArgs);
-        tracker({
-          type: "session_fallback",
-          sessionKey,
-          durationMs: Date.now() - fallbackStart,
-        });
+        sentryClient?.captureMessage?.(
+          `Stale Claude session resumed fresh for session ${sessionKey}`,
+        );
         if (sessionKey && output.sessionId) {
           await sessions.set(sessionKey, output.sessionId);
         }

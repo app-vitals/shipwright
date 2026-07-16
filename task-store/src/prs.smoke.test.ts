@@ -20,7 +20,7 @@
 
 import { describe, expect, it } from "bun:test";
 import { createTaskStoreApp } from "./app.ts";
-import { ConflictError, NotFoundError } from "./errors.ts";
+import { BadRequestError, ConflictError, NotFoundError } from "./errors.ts";
 import type { PullRequest } from "./index.ts";
 import type {
   PullRequestListFilters,
@@ -155,7 +155,10 @@ function fakePrService(
     claimResult?: { status: 200 | 201; record: PullRequest } | Error;
     getResult?: PullRequest | null;
     listResult?: PullRequest[];
-    claimNextResult?: { pr: PullRequest; phase: "review" | "patch" | "deploy" } | null;
+    claimNextResult?: {
+      pr: PullRequest;
+      phase: "review" | "patch" | "deploy";
+    } | null;
     claimCalls?: CapturedClaimCall[];
   } = {},
 ): PullRequestServiceLike {
@@ -296,7 +299,10 @@ function fakePrService(
       _agentId: string,
       _maxConcurrent: number,
       _repos?: string[],
-    ): Promise<{ pr: PullRequest; phase: "review" | "patch" | "deploy" } | null> {
+    ): Promise<{
+      pr: PullRequest;
+      phase: "review" | "patch" | "deploy";
+    } | null> {
       if ("claimNextResult" in opts) return opts.claimNextResult ?? null;
       return null;
     },
@@ -737,7 +743,9 @@ describe("/prs routes (smoke)", () => {
     const baseFake = fakePrService({ store });
     const prServiceWithCapture: PullRequestServiceLike = {
       ...baseFake,
-      async list(filters?: PullRequestListFilters): Promise<PullRequestListResult> {
+      async list(
+        filters?: PullRequestListFilters,
+      ): Promise<PullRequestListResult> {
         capturedFilters = filters;
         return baseFake.list(filters);
       },
@@ -758,7 +766,9 @@ describe("/prs routes (smoke)", () => {
     const baseFake = fakePrService({ store });
     const prServiceWithCapture: PullRequestServiceLike = {
       ...baseFake,
-      async list(filters?: PullRequestListFilters): Promise<PullRequestListResult> {
+      async list(
+        filters?: PullRequestListFilters,
+      ): Promise<PullRequestListResult> {
         capturedFilters = filters;
         return baseFake.list(filters);
       },
@@ -777,7 +787,9 @@ describe("/prs routes (smoke)", () => {
     const baseFake = fakePrService({ store });
     const prServiceWithCapture: PullRequestServiceLike = {
       ...baseFake,
-      async list(filters?: PullRequestListFilters): Promise<PullRequestListResult> {
+      async list(
+        filters?: PullRequestListFilters,
+      ): Promise<PullRequestListResult> {
         capturedFilters = filters;
         return baseFake.list(filters);
       },
@@ -798,7 +810,9 @@ describe("/prs routes (smoke)", () => {
     const baseFake = fakePrService({ store });
     const prServiceWithCapture: PullRequestServiceLike = {
       ...baseFake,
-      async list(filters?: PullRequestListFilters): Promise<PullRequestListResult> {
+      async list(
+        filters?: PullRequestListFilters,
+      ): Promise<PullRequestListResult> {
         capturedFilters = filters;
         return baseFake.list(filters);
       },
@@ -810,19 +824,62 @@ describe("/prs routes (smoke)", () => {
     expect(capturedFilters?.sort).toBeUndefined();
   });
 
+  it("GET /prs?updatedSince=not-a-date surfaces the service's BadRequestError as a 400 (not a 500)", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1" }));
+    const baseFake = fakePrService({ store });
+    // Mirrors PullRequestService.list()'s real validation: an unparseable
+    // updatedSince throws BadRequestError rather than handing Prisma an
+    // Invalid Date.
+    const prServiceWithValidation: PullRequestServiceLike = {
+      ...baseFake,
+      async list(
+        filters?: PullRequestListFilters,
+      ): Promise<PullRequestListResult> {
+        if (
+          filters?.updatedSince &&
+          Number.isNaN(Date.parse(filters.updatedSince))
+        ) {
+          throw new BadRequestError(
+            `updatedSince '${filters.updatedSince}' is not a valid ISO timestamp`,
+          );
+        }
+        return baseFake.list(filters);
+      },
+    };
+    const app = makeApp({ prService: prServiceWithValidation });
+
+    const res = await app.request("/prs?updatedSince=not-a-date", {
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(400);
+  });
+
   it("GET /prs?sort=desc round-trips descending order through the route", async () => {
     const store = new Map<string, PullRequest>();
     store.set(
       "pr-1",
-      makePr({ id: "pr-1", prNumber: 1, createdAt: new Date("2026-01-01T00:00:00.000Z") }),
+      makePr({
+        id: "pr-1",
+        prNumber: 1,
+        createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      }),
     );
     store.set(
       "pr-2",
-      makePr({ id: "pr-2", prNumber: 2, createdAt: new Date("2026-01-03T00:00:00.000Z") }),
+      makePr({
+        id: "pr-2",
+        prNumber: 2,
+        createdAt: new Date("2026-01-03T00:00:00.000Z"),
+      }),
     );
     store.set(
       "pr-3",
-      makePr({ id: "pr-3", prNumber: 3, createdAt: new Date("2026-01-02T00:00:00.000Z") }),
+      makePr({
+        id: "pr-3",
+        prNumber: 3,
+        createdAt: new Date("2026-01-02T00:00:00.000Z"),
+      }),
     );
     // fakePrService's list() doesn't itself sort — apply the route's sort
     // filter here to model what the real Prisma-backed service does, so this
@@ -830,7 +887,9 @@ describe("/prs routes (smoke)", () => {
     const baseFake = fakePrService({ store });
     const prServiceWithSort: PullRequestServiceLike = {
       ...baseFake,
-      async list(filters?: PullRequestListFilters): Promise<PullRequestListResult> {
+      async list(
+        filters?: PullRequestListFilters,
+      ): Promise<PullRequestListResult> {
         const result = await baseFake.list(filters);
         const sorted = [...result.prs].sort((a, b) => {
           const diff = a.createdAt.getTime() - b.createdAt.getTime();
@@ -1172,7 +1231,11 @@ describe("/prs routes (smoke)", () => {
 
   it("POST /prs/claim-next passes repos scope to service for agent tokens", async () => {
     let capturedRepos: string[] | undefined;
-    const pr = makePr({ id: "pr-8", reviewState: "pending", repo: SCOPED_REPO });
+    const pr = makePr({
+      id: "pr-8",
+      reviewState: "pending",
+      repo: SCOPED_REPO,
+    });
 
     const prServiceWithCapture: PullRequestServiceLike = {
       ...fakePrService({ claimNextResult: { pr, phase: "review" } }),

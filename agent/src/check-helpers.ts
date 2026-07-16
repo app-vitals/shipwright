@@ -53,7 +53,6 @@ export interface Task {
   dependencies?: string[];
   pr?: number;
   hours?: number;
-  addedAt?: string;
   createdAt?: string;
   startedAt?: string;
   prCreatedAt?: string;

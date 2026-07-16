@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { computeBlockedBy } from "./blocked-by.ts";
+import { BadRequestError } from "./errors.ts";
 import type { PrismaClient } from "./index.ts";
 import type { ReadyTaskLike } from "./ready.ts";
 import { CLOSED_STATUSES, OPEN_STATUSES } from "./statuses.ts";
@@ -330,5 +331,88 @@ describe("TaskService.bulk (unit)", () => {
     expect(result.inserted).toBe(1);
     expect(result.skipped).toEqual(["dup-task"]);
     expect(created).toEqual(["new-task"]);
+  });
+});
+
+// ─── TaskService.list() updatedSince/repo where clause ─────────────────────
+
+describe("TaskService.list() updatedSince/repo where clause", () => {
+  /**
+   * Prisma double for list(): captures the findMany args (in particular
+   * where) passed by the service, mirroring the
+   * $transaction([findMany, count, findMany]) shape list() actually issues
+   * (the second findMany loads the full task graph for computeBlockedBy).
+   */
+  function makeListPrismaDouble() {
+    const findManyCalls: Array<{ where?: unknown }> = [];
+
+    const prisma = {
+      task: {
+        findMany(args: { where?: unknown } = {}) {
+          findManyCalls.push(args);
+          return Promise.resolve([]);
+        },
+        count() {
+          return Promise.resolve(0);
+        },
+      },
+      $transaction(ops: Promise<unknown>[]) {
+        return Promise.all(ops);
+      },
+      _findManyCalls: findManyCalls,
+    };
+
+    return prisma as unknown as PrismaClient & {
+      _findManyCalls: Array<{ where?: unknown }>;
+    };
+  }
+
+  it("list({ updatedSince }) sets where.updatedAt = { gte: new Date(updatedSince) }", async () => {
+    const prisma = makeListPrismaDouble();
+    const service = new TaskService(prisma);
+    const updatedSince = "2026-07-01T00:00:00.000Z";
+
+    await service.list({ updatedSince });
+
+    // First findMany call is the paginated query with the where clause.
+    const where = prisma._findManyCalls[0].where as
+      | { updatedAt?: { gte: Date } }
+      | undefined;
+    expect(where?.updatedAt).toEqual({ gte: new Date(updatedSince) });
+  });
+
+  it("list({}) omits where.updatedAt entirely (preserves current unfiltered behavior)", async () => {
+    const prisma = makeListPrismaDouble();
+    const service = new TaskService(prisma);
+
+    await service.list({});
+
+    const where = prisma._findManyCalls[0].where as
+      | { updatedAt?: unknown }
+      | undefined;
+    expect(where?.updatedAt).toBeUndefined();
+  });
+
+  it("list({ repo, updatedSince }) applies both filters together in where", async () => {
+    const prisma = makeListPrismaDouble();
+    const service = new TaskService(prisma);
+    const updatedSince = "2026-07-01T00:00:00.000Z";
+
+    await service.list({ repo: "org/repo", updatedSince });
+
+    const where = prisma._findManyCalls[0].where as
+      | { repo?: string; updatedAt?: { gte: Date } }
+      | undefined;
+    expect(where?.repo).toBe("org/repo");
+    expect(where?.updatedAt).toEqual({ gte: new Date(updatedSince) });
+  });
+
+  it("list({ updatedSince: 'not-a-date' }) throws BadRequestError instead of passing Invalid Date to Prisma", async () => {
+    const prisma = makeListPrismaDouble();
+    const service = new TaskService(prisma);
+
+    await expect(service.list({ updatedSince: "not-a-date" })).rejects.toThrow(
+      BadRequestError,
+    );
   });
 });

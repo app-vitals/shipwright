@@ -18,6 +18,7 @@ When `SENTRY_DSN` is set, a service reports:
 - **`console.log` / `console.warn` / `console.error` calls**, forwarded as structured Sentry Logs via `consoleLoggingIntegration`.
 - **Request path and method** for errors that occur inside an HTTP handler (via `@sentry/hono`'s `sentry()` middleware, or the app's own `onError` hook).
 - **Caller identity** (admin or agent token) in error logs from admin, metrics, and task-store, for tracing which token triggered an unhandled error.
+- **Tags** — structured key-value metadata attached to every event: `service` (the reporting service name, always present), and `agent_id` (when initializing Sentry for an agent runner with an `agentId`).
 
 ## What is never collected
 

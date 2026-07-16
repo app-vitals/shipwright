@@ -12,7 +12,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { CommitInfo } from "./check-helpers.ts";
+import type { CommitInfo, LinkedTaskInfo } from "./check-helpers.ts";
 import {
   type CheckPatchDeps,
   type CiCheckStatus,
@@ -54,6 +54,12 @@ interface MakeDepsOptions {
   mergeStatusByPr?: Record<number, MergeStatusInfo>;
   listPrCommits?: (_prNumber: number) => Promise<CommitInfo[]>;
   getCurrentUser?: () => string;
+  getScopedRepos?: () => string[];
+  hasScopeSynced?: () => boolean;
+  queryTaskStatus?: (
+    repo: string,
+    prNumber: number,
+  ) => Promise<LinkedTaskInfo | null>;
 }
 
 function makeDeps({
@@ -63,9 +69,14 @@ function makeDeps({
   mergeStatusByPr = {},
   listPrCommits = async () => [],
   getCurrentUser = () => "the-agent",
+  getScopedRepos = () => [...new Set(ownPrs.map((pr) => pr.repo))],
+  hasScopeSynced = () => true,
+  queryTaskStatus = async () => null,
 }: MakeDepsOptions): CheckPatchDeps {
   return {
     listOwnOpenPrs: async (_repo: string) => ownPrs,
+    getScopedRepos,
+    hasScopeSynced,
     fetchPrReviews: async (
       _org: string,
       _repo: string,
@@ -92,6 +103,7 @@ function makeDeps({
     },
     listPrCommits,
     getCurrentUser,
+    queryTaskStatus,
   };
 }
 
@@ -1240,7 +1252,26 @@ describe("getPatchCandidates", () => {
 
   // ─── age field sourcing ────────────────────────────────────────────────────
 
-  test("age is sourced from queryPrRecord's readyForPatchAt when available", async () => {
+  test("age is sourced from the linked task's createdAt when a task is linked, even when queryPrRecord's readyForPatchAt is available", async () => {
+    const pr = makeOwnPr({ number: 10, createdAt: "2026-06-01T00:00:00.000Z" });
+    const deps = makeDeps({
+      ownPrs: [pr],
+      reviewDataByPr: {},
+      ciStatusByPr: { 10: { hasFailing: true } },
+    });
+    deps.queryPrRecord = async () => ({
+      readyForPatchAt: "2026-05-20T00:00:00.000Z",
+    });
+    deps.queryTaskStatus = async () => ({
+      status: "in_progress",
+      createdAt: "2026-05-01T00:00:00.000Z",
+    });
+    const result = await getPatchCandidates(deps);
+    expect(result[0].age).toBe("2026-05-01T00:00:00.000Z");
+    expect(result[0].age).not.toBe("2026-05-20T00:00:00.000Z");
+  });
+
+  test("age falls back to PR createdAt when no task is linked (queryTaskStatus resolves null), even when queryPrRecord's readyForPatchAt is available", async () => {
     const pr = makeOwnPr({ number: 10, createdAt: "2026-06-01T00:00:00.000Z" });
     const deps = makeDeps({
       ownPrs: [pr],
@@ -1251,10 +1282,10 @@ describe("getPatchCandidates", () => {
       readyForPatchAt: "2026-05-20T00:00:00.000Z",
     });
     const result = await getPatchCandidates(deps);
-    expect(result[0].age).toBe("2026-05-20T00:00:00.000Z");
+    expect(result[0].age).toBe("2026-06-01T00:00:00.000Z");
   });
 
-  test("age falls back to PR createdAt when queryPrRecord is not provided", async () => {
+  test("age falls back to PR createdAt when queryPrRecord is not provided and no task is linked", async () => {
     const pr = makeOwnPr({ number: 10, createdAt: "2026-06-01T00:00:00.000Z" });
     const result = await getPatchCandidates(
       makeDeps({
@@ -1263,6 +1294,21 @@ describe("getPatchCandidates", () => {
         ciStatusByPr: { 10: { hasFailing: true } },
       }),
     );
+    expect(result[0].age).toBe("2026-06-01T00:00:00.000Z");
+  });
+
+  test("age falls back to PR createdAt when queryTaskStatus throws (lookup failure does not disqualify or block age fallback)", async () => {
+    const pr = makeOwnPr({ number: 10, createdAt: "2026-06-01T00:00:00.000Z" });
+    const deps = makeDeps({
+      ownPrs: [pr],
+      reviewDataByPr: {},
+      ciStatusByPr: { 10: { hasFailing: true } },
+    });
+    deps.queryTaskStatus = async () => {
+      throw new Error("task-store unreachable");
+    };
+    const result = await getPatchCandidates(deps);
+    expect(result).toHaveLength(1);
     expect(result[0].age).toBe("2026-06-01T00:00:00.000Z");
   });
 
@@ -1307,6 +1353,77 @@ describe("getPatchCandidates", () => {
     };
     const result = await getPatchCandidates(deps);
     expect(result).toHaveLength(1);
+  });
+
+  // ─── agent-scope filtering (WL-4.3) ──────────────────────────────────────
+
+  test("excludes a PR from a repo returned by the local-clone scan but absent from getScopedRepos()", async () => {
+    const inScope = makeOwnPr({
+      number: 10,
+      repo: "example-org/in-scope",
+    });
+    const outOfScope = makeOwnPr({
+      number: 20,
+      repo: "example-org/out-of-scope",
+    });
+    const result = await getPatchCandidates(
+      makeDeps({
+        ownPrs: [inScope, outOfScope],
+        reviewDataByPr: {},
+        ciStatusByPr: { 10: { hasFailing: true }, 20: { hasFailing: true } },
+        getScopedRepos: () => ["example-org/in-scope"],
+      }),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("example-org/in-scope#10");
+  });
+
+  test("re-evaluates getScopedRepos() on every call — a scope change between two calls changes the result on the second call", async () => {
+    const pr = makeOwnPr({ number: 10, repo: "example-org/newly-added" });
+    let scope: string[] = [];
+    const deps = makeDeps({
+      ownPrs: [pr],
+      reviewDataByPr: {},
+      ciStatusByPr: { 10: { hasFailing: true } },
+      getScopedRepos: () => scope,
+    });
+
+    const first = await getPatchCandidates(deps);
+    expect(first).toEqual([]);
+
+    scope = ["example-org/newly-added"];
+    const second = await getPatchCandidates(deps);
+    expect(second).toHaveLength(1);
+    expect(second[0].id).toBe("example-org/newly-added#10");
+  });
+
+  test("fails open (does not filter) when hasScopeSynced() is false, even if getScopedRepos() would otherwise exclude everything", async () => {
+    const pr = makeOwnPr({ number: 10, repo: "example-org/never-synced" });
+    const result = await getPatchCandidates(
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: {},
+        ciStatusByPr: { 10: { hasFailing: true } },
+        getScopedRepos: () => [],
+        hasScopeSynced: () => false,
+      }),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("example-org/never-synced#10");
+  });
+
+  test("filters normally when hasScopeSynced() is true, even if the synced scope is a deliberately empty list", async () => {
+    const pr = makeOwnPr({ number: 10, repo: "example-org/some-repo" });
+    const result = await getPatchCandidates(
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: {},
+        ciStatusByPr: { 10: { hasFailing: true } },
+        getScopedRepos: () => [],
+        hasScopeSynced: () => true,
+      }),
+    );
+    expect(result).toEqual([]);
   });
 });
 
