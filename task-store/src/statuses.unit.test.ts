@@ -29,7 +29,7 @@ const ALL_KNOWN_STATUSES = [
 
 describe("CLOSED_STATUSES", () => {
   it("contains exactly the terminal statuses (order-independent)", () => {
-    expect([...CLOSED_STATUSES].sort()).toEqual(
+    expect(Array.from<string>(CLOSED_STATUSES).sort()).toEqual(
       ["merged", "done", "deploying", "deployed", "cancelled"].sort(),
     );
   });
@@ -45,7 +45,7 @@ describe("CLOSED_STATUSES", () => {
 
 describe("OPEN_STATUSES", () => {
   it("contains exactly the open statuses (order-independent)", () => {
-    expect([...OPEN_STATUSES].sort()).toEqual(
+    expect(Array.from<string>(OPEN_STATUSES).sort()).toEqual(
       ["pending", "in_progress", "pr_open", "approved", "blocked"].sort(),
     );
   });
@@ -94,14 +94,14 @@ describe("CLOSED_STATUSES / OPEN_STATUSES contract", () => {
 
 describe("readonly / const shape", () => {
   it("mutating a copy of CLOSED_STATUSES does not affect the exported array", () => {
-    const copy = [...CLOSED_STATUSES];
+    const copy: string[] = [...CLOSED_STATUSES];
     copy.push("something-else");
     expect(CLOSED_STATUSES.length).toBe(5);
     expect(CLOSED_STATUSES).not.toContain("something-else");
   });
 
   it("mutating a copy of OPEN_STATUSES does not affect the exported array", () => {
-    const copy = [...OPEN_STATUSES];
+    const copy: string[] = [...OPEN_STATUSES];
     copy.push("something-else");
     expect(OPEN_STATUSES.length).toBe(5);
     expect(OPEN_STATUSES).not.toContain("something-else");
