@@ -6,11 +6,12 @@
 
 **Note on sourcing:** the task that filed this measurement referenced
 `test-inventory.md#t-002`, `test-migration.md#net-new`, and
-`test-readiness-plan.md#5-task-list`. As of this measurement, only
-`test-inventory.md` and `test-system.md` exist on `main` — `test-migration.md` and
-`test-readiness-plan.md` (and their "Section 3 speed-delta table") do not. This doc
-stands alone rather than filling in a table that doesn't exist yet; once
-`test-readiness-plan.md` lands, its Section 3 can point here or copy these numbers in.
+`test-readiness-plan.md#5-task-list`. As of this measurement, only `naming.md` and
+`test-system.md` exist under `docs/test-readiness/` on `main` — `test-inventory.md`,
+`test-migration.md`, and `test-readiness-plan.md` (and the latter's "Section 3
+speed-delta table") do not. This doc stands alone rather than filling in a table that
+doesn't exist yet; once `test-readiness-plan.md` lands, its Section 3 can point here
+or copy these numbers in.
 
 ## Methodology
 
@@ -48,7 +49,7 @@ stands alone rather than filling in a table that doesn't exist yet; once
 | unit | `bun test --coverage <8 *.unit.test.ts files>` | 1.05s (195 tests / 8 files) | <15s | ✅ within budget |
 | integration | `bun test --coverage <5 *.integration.test.ts files>` | 4.93s (72 tests / 5 files) | <30s | ✅ within budget |
 | smoke | `bun test --coverage <5 *.smoke.test.ts files>` | 4.62s (45 tests / 5 files) | <30s | ✅ within budget |
-| e2e | CI job "e2e (metrics dashboard)", step "Run e2e tests" | 23s | not yet budgeted | — |
+| e2e | CI job "e2e (metrics dashboard)", step "Run e2e tests" | 23s | <5 min (E2E suite target, `test-system.md`) | ✅ within budget |
 
 ### Shipwright agent (`@shipwright/agent`)
 
@@ -68,13 +69,13 @@ here for completeness since it carries real unit/integration/smoke/e2e layers to
 | unit | `bun test --coverage <19 *.unit.test.ts files>` | 2.50s (705 tests / 19 files) | <15s | ✅ within budget |
 | integration | `bun test --coverage <17 *.integration.test.ts files>` | 1.50s (111 pass, 158 skip — DB-gated, no Postgres in sandbox) | <30s | ✅ within budget |
 | smoke | `bun test --coverage <12 *.smoke.test.ts files>` | 3.24s (349 tests / 12 files) | <30s | ✅ within budget |
-| e2e | CI job "e2e (admin UI)", step "Run e2e tests" | 4s | not yet budgeted | — |
+| e2e | CI job "e2e (admin UI)", step "Run e2e tests" | 4s | <5 min (E2E suite target, `test-system.md`) | ✅ within budget |
 
 ### Site (`site/`)
 
 | Layer | Command | Measured | Suite target | Status |
 |---|---|---|---|---|
-| e2e (Playwright smoke) | CI job "site build / brand-lint / smoke", step "Playwright smoke" | 40s | not yet budgeted | — |
+| e2e (Playwright smoke) | CI job "site build / brand-lint / smoke", step "Playwright smoke" | 40s | <5 min (E2E suite target, `test-system.md`) | ✅ within budget |
 
 ## Full suite
 
@@ -96,8 +97,11 @@ tests noted above — expected in a sandbox with no Postgres, not a regression.
 
 ## Summary
 
-Every measured layer across plugin, metrics, agent, and admin is comfortably within
-the speed budgets `test-system.md` already defines for it. The only rows without a
-target are e2e (no documented per-layer budget yet, since e2e was added after
-`test-system.md`'s Phase B commitment) and site (not yet covered by the per-component
-table at all) — both are real numbers now, ready to seed a budget once one is proposed.
+Every measured layer across plugin, metrics, agent, admin, and site — including e2e —
+is comfortably within the speed budgets `test-system.md` already defines. `test-system.md`'s
+consolidated "Speed budgets" table documents an E2E budget (<30s per-test 95p, <90s hard
+cap, <5 min suite target); all measured e2e rows above (metrics, admin, and site) fall
+well within it. The one gap is per-component granularity: e2e and site aren't yet broken
+out in `test-system.md`'s per-component tables the way plugin/metrics/agent/admin are, so
+these numbers are checked against the consolidated E2E budget rather than a
+component-specific one — worth formalizing once those tables are extended.
