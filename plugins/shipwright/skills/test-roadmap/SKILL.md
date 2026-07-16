@@ -233,7 +233,18 @@ Anything the audit couldn't determine without a human call. Common entries:
    - Milestone 5: all `delete (redundant)` items + remaining `rebuild` cleanup + plugin feedback collector
 6. **Apply the pairing rule** from `${CLAUDE_PLUGIN_ROOT}/skills/repo-config/SKILL.md`: every task that creates or modifies a CI workflow file MUST emit a paired branch-protection task that `depends_on` the workflow task. Without this, the audit ships as advisory rather than enforced. The pairing rule is non-negotiable; skipping it is the failure mode the user will catch and the plugin will be blamed for.
 7. **Apply the E2E classification guardrail** (non-negotiable): Before emitting any task with `layer: e2e`, verify against test-system.md's "Classifying a new test" step that the proposed test journey actually exercises a real browser (step 4: "Does it test a multi-step browser flow? → e2e (Playwright)"). If the journey is a backend orchestration flow, an API contract test, or any other non-browser interaction, downgrade the task to `layer: integration` or `layer: smoke` with a one-line note explaining why (e.g., "backend orchestration flow — moved to smoke"). This guardrail prevents shipping e2e tasks that violate the test classification rules, ensuring the e2e layer contains only true multi-step browser-driven flows.
-8. Load `${CLAUDE_PLUGIN_ROOT}/assets/templates/test-readiness-plan.md.tmpl`. Fill. Write to `docs/test-readiness/test-readiness-plan.md`.
+8. Load `${CLAUDE_PLUGIN_ROOT}/assets/templates/test-readiness-plan.md.tmpl`. Fill.
+   Write to `docs/test-readiness/test-readiness-plan.md`.
+   - **`{{M3_HEADING_AND_DOD}}` is gated on `deploy_model`** (Process step 1) — the
+     template has no static text for this milestone precisely because it must reflect
+     the gate:
+     - When `deploy_model == 'staged'`: fill with
+       `### Milestone 3 — Canary suite live\n**DOD:** Smoke + E2E canary-eligible tests run green against the deployed env in <60s wall time.`
+     - When `deploy_model != 'staged'` (declared `direct`, declared `none`, or
+       undeclared): fill with the single note line —
+       `### Milestone 3 — Canary suite live\n**DOD:** canary not applicable -- deploy_model={value}`
+       (no task list, no DOD beyond the note) — where `{value}` is `direct`, `none`, or
+       `undeclared`.
 
 ## Failure modes to avoid
 
