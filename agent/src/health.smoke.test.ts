@@ -10,7 +10,6 @@
 
 import { afterEach, describe, expect, it } from "bun:test";
 import type { Server } from "bun";
-import type { AnalyticsSummary } from "./analytics.ts";
 import { FixedClock } from "./clock.ts";
 import {
   SLACK_DOWN_GRACE_MS,
@@ -30,11 +29,8 @@ describe("startHealthServer", () => {
     slackState.downSince = null;
   });
 
-  function serve(
-    port: number,
-    summarize?: (date?: string) => AnalyticsSummary,
-  ): Server<undefined> {
-    const s = startHealthServer(port, summarize);
+  function serve(port: number): Server<undefined> {
+    const s = startHealthServer(port);
     servers.push(s);
     return s;
   }
@@ -89,43 +85,6 @@ describe("startHealthServer", () => {
     expect(res.status).toBe(404);
   });
 
-  it("GET /stats returns analytics summary when summarize is provided", async () => {
-    const mockSummary = {
-      date: "2026-04-02",
-      totalEvents: 5,
-      messages: 3,
-      mentions: 1,
-      cronJobs: 1,
-      errors: 0,
-      sessionStarts: 0,
-      sessionFallbacks: 0,
-      avgResponseMs: 250,
-      p95ResponseMs: 400,
-      uniqueSessions: 2,
-    };
-    serve(19906, () => mockSummary);
-    const res = await fetch("http://localhost:19906/stats");
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body).toEqual(mockSummary);
-  });
-
-  it("GET /stats passes date query param to summarize", async () => {
-    let receivedDate: string | undefined;
-    serve(19907, (date) => {
-      receivedDate = date;
-      return { date: date ?? "today", totalEvents: 0 } as AnalyticsSummary;
-    });
-    await fetch("http://localhost:19907/stats?date=2026-03-30");
-    expect(receivedDate).toBe("2026-03-30");
-  });
-
-  it("GET /stats returns 404 when no summarize function provided", async () => {
-    serve(19908);
-    const res = await fetch("http://localhost:19908/stats");
-    expect(res.status).toBe(404);
-  });
-
   // ─── Self-heal grace-window behavior ──────────────────────────────────────
 
   // A1: Healthy → 200 connected
@@ -133,7 +92,7 @@ describe("startHealthServer", () => {
     const clock = FixedClock(new Date("2026-06-06T00:00:00.000Z"));
     slackState.connected = true;
     slackState.downSince = null;
-    const s = startHealthServer(19910, undefined, undefined, clock);
+    const s = startHealthServer(19910, undefined, clock);
     servers.push(s);
     const res = await fetch("http://localhost:19910/health");
     expect(res.status).toBe(200);
@@ -147,7 +106,7 @@ describe("startHealthServer", () => {
     const clock = FixedClock(new Date("2026-06-06T00:00:30.000Z"));
     slackState.connected = false;
     slackState.downSince = downAt;
-    const s = startHealthServer(19911, undefined, undefined, clock);
+    const s = startHealthServer(19911, undefined, clock);
     servers.push(s);
     const res = await fetch("http://localhost:19911/health");
     expect(res.status).toBe(200);
@@ -161,7 +120,7 @@ describe("startHealthServer", () => {
     const clock = FixedClock(new Date(downAt + SLACK_DOWN_GRACE_MS + 1_000));
     slackState.connected = false;
     slackState.downSince = downAt;
-    const s = startHealthServer(19912, undefined, undefined, clock);
+    const s = startHealthServer(19912, undefined, clock);
     servers.push(s);
     const res = await fetch("http://localhost:19912/health");
     expect(res.status).toBe(500);
@@ -174,7 +133,7 @@ describe("startHealthServer", () => {
     const clock = FixedClock(new Date(downAt + SLACK_DOWN_GRACE_MS + 1_000));
     slackState.connected = false;
     slackState.downSince = downAt;
-    const s = startHealthServer(19913, undefined, undefined, clock);
+    const s = startHealthServer(19913, undefined, clock);
     servers.push(s);
 
     const wedged = await fetch("http://localhost:19913/health");
@@ -194,7 +153,7 @@ describe("startHealthServer", () => {
     const clock = FixedClock(new Date("2026-06-06T05:00:00.000Z"));
     slackState.connected = false;
     slackState.downSince = null;
-    const s = startHealthServer(19914, undefined, undefined, clock);
+    const s = startHealthServer(19914, undefined, clock);
     servers.push(s);
     const res = await fetch("http://localhost:19914/health");
     expect(res.status).toBe(200);
