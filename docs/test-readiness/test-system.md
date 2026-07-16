@@ -13,8 +13,8 @@ boundary determines which dependencies are permitted in that test.
 |---|---|---|---|
 | **unit** | Pure logic — no I/O of any kind. No filesystem reads, no network calls, no process spawning. | `bun test` | Functions, parsers, validators, data-transformation utilities, any code whose only inputs/outputs are in-memory values. |
 | **integration** | Real dependency behavior via recorded fixtures or injected doubles. Exercises the integration seam without a live external service. | `bun test` + recorded-fixture clients injected via DI | Service classes, client wrappers, anything that reads/writes to an external system — tested via recorded fixture doubles (`RecordedXClient`) instead of the real service. |
-| **smoke** | Hono endpoints exercised via in-process `app.request()`. No real socket, no port allocation. | `bun test` + Hono `app.request()` | HTTP route contracts: status codes, response shapes, auth checks, error handling. Full middleware + routing pipeline without spinning up a server. |
-| **e2e** | Full browser-driven flows against a real running server. | `@playwright/test` | Multi-step user journeys through the metrics dashboard UI: navigation, rendering, data display, interaction flows. Phase B only. |
+| **smoke** | HTTP route contracts for a real server process. Prefer in-process `app.request()` for Hono apps (no real socket, no port allocation); a real `Bun.serve()` boot with live `fetch()` to `localhost` is permitted for non-Hono servers (e.g. the agent's bare-`Bun.serve()` health endpoint) where no app-factory seam exists. | `bun test` + Hono `app.request()`, or `Bun.serve()` + `fetch()` | HTTP route contracts: status codes, response shapes, auth checks, error handling. Full middleware + routing pipeline, in-process where possible; a real socket only when the server under test has no in-process request seam. |
+| **e2e** | Full browser-driven flows against a real running server. | `@playwright/test` | Multi-step user journeys through the metrics dashboard and admin UIs: navigation, rendering, data display, interaction flows. Phase B+. |
 | **content** | Markdown/prompt-content-assertion tests — no real I/O boundary, just asserting on static content (e.g. `existsSync`/`readFileSync` against a command's or skill's Markdown body). | `bun test` | Verifying a command's, skill's, or reference doc's Markdown body contains expected sections/instructions/wording, or that plugin directory structure matches an expected layout. Distinct from unit: the assertion target is prose/structure, not executable logic. |
 
 ### Boundary violations
@@ -22,7 +22,7 @@ boundary determines which dependencies are permitted in that test.
 These patterns indicate a test is in the wrong layer:
 
 - A unit test that reads a file, opens a socket, or spawns a subprocess → move to integration, or to content if the file read is a static Markdown/prompt-content assertion with no logic under test.
-- An integration test that boots a real HTTP server → move to smoke.
+- An integration test that boots a real HTTP server to exercise route contracts → move to smoke (real-socket `Bun.serve()` boot is acceptable in smoke only when there's no in-process request seam, e.g. a bare-`Bun.serve()` server with no Hono app factory).
 - A smoke test that opens a real browser → move to e2e.
 - A unit test that takes >200 ms → likely a hidden integration test; investigate.
 - A smoke test that takes >15 s → likely an e2e test in smoke's clothing; rebuild.
@@ -70,7 +70,7 @@ The metrics service is a stateless Hono app backed by task-store/fixture provide
 
 ### Shipwright agent (`@shipwright/agent`) — Phase C
 
-The agent is a thin runner with a Prisma-backed PostgreSQL database and a Hono HTTP surface for health and admin endpoints. Integration tests cover the task-pick, PR-ship, and DB seams; smoke tests cover the Hono route contracts.
+The agent is a thin runner with a Prisma-backed PostgreSQL database and a Hono HTTP surface for admin endpoints plus a standalone `Bun.serve()` health server. Integration tests cover the task-pick, PR-ship, and DB seams; smoke tests cover the Hono route contracts and the health server's route contracts.
 
 | Layer | Local run command | Per-test 95p | Per-test hard cap | Suite target |
 |---|---|---|---|---|
@@ -81,7 +81,7 @@ The agent is a thin runner with a Prisma-backed PostgreSQL database and a Hono H
 **Notes:**
 - Integration tests inject `RecordedGithubClient` for issue/PR operations and a `RecordedMetricsClient` for forwarding calls.
 - **DB integration tests** (added in SHE-1.2) run against real Postgres databases: `DATABASE_URL_ADMIN_TEST="postgresql://user:password@localhost:5432/shipwright_admin_test"` for admin service tests and `DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST="postgresql://user:password@localhost:5432/shipwright_task_store_test"` for task-store tests. Each test suite provisions the schema via `prisma migrate deploy` and tears down after. No Prisma mocking — service classes own all DB queries.
-- **Smoke tests** drive the Hono app via `app.request()` — no real socket, no port allocation. Import the app factory and call `app.request(new Request(...))` directly. Covers health endpoints, agent CRUD routes, and auth checks.
+- **Smoke tests** drive the Hono app via `app.request()` — no real socket, no port allocation — for agent CRUD routes and auth checks. Import the app factory and call `app.request(new Request(...))` directly. Exception: `startHealthServer()` (`agent/src/health.ts`) is a bare `Bun.serve()` handler with no Hono app factory, so `health.smoke.test.ts` boots a real server on a local port and drives it via live `fetch()` — permitted per the real-socket exception in the layer table above.
 - The agent's execution loop must accept a `Clock` injection for deterministic scheduling tests.
 - `DATABASE_URL_ADMIN_TEST` must be set to a Postgres connection string (e.g. `postgresql://user:password@localhost:5432/shipwright_admin_test`) for admin DB integration tests to run; `DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST` for task-store DB integration tests. Suites skip automatically when the respective var is absent.
 
@@ -123,10 +123,10 @@ The agent is a thin runner with a Prisma-backed PostgreSQL database and a Hono H
          │                     │
          └──────────┬──────────┘
                     │
-              ┌─────▼─────┐
-              │   E2E     │  Playwright; Phase B+ only
-              │(dashboard)│  <5 min
-              └─────┬─────┘
+              ┌─────▼─────────┐
+              │   E2E         │  Playwright; Phase B+ only
+              │(metrics+admin)│  <5 min
+              └─────┬─────────┘
                     │
               merge → main
 ```

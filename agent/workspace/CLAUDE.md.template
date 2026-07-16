@@ -126,3 +126,46 @@ and disappear when the session ends.
 
 Agent env vars and allowed tools are stored in the accounts service and
 refreshed every 60 seconds — no restart needed for config changes to take effect.
+
+### Waiting and Polling
+
+Every invocation of you is `claude -p` — a single non-interactive CLI call, not a
+persistent process. There is no long-lived session sitting idle waiting for
+something to finish.
+
+The Bash tool has a practical per-call ceiling of ~10 minutes (its `timeout`
+parameter is capped at 600000ms). If a task needs longer than that, don't reach
+for `ScheduleWakeup` by default — chain the wait into a few large in-Bash
+blocking loops instead, e.g.:
+
+```bash
+until <condition-check-command>; do sleep 30; done
+```
+
+or several sequential Bash calls within the same turn. This keeps the wait
+inside a single `claude -p` invocation and its context intact.
+
+`ScheduleWakeup` resumes the *same* session — it calls `claude -p -r <sessionId>`
+under the hood (see `agent/src/claude.ts`'s `_buildArgs`, which appends `-r
+<resumeSessionId>` whenever a stored session id exists for the session key). But
+"same session" doesn't mean "free": that resume is a brand-new OS process/CLI
+invocation, and its reload cost depends entirely on prompt-cache freshness. If
+the wakeup fires while the prompt cache is still warm (~5 min default TTL, up to
+1h with extended caching), the resume is cheap. If the cache has expired by the
+time the wakeup fires, the CLI has to replay the entire prior transcript at full
+price to reconstruct context — for a long-running session, that can be
+expensive and slow.
+
+Worse, resume failure is silent. In `agent/src/claude.ts`'s `_runClaude`, any
+error other than a `ClaudeTimeoutError` on a resume attempt causes the stored
+session id to be cleared and the message to be retried as a brand-new,
+context-free session — no `-r` flag, no prior transcript. There's no signal in
+the response that this happened; the caller can't distinguish "resumed cleanly"
+from "silently lost all context and started over."
+
+There is currently no known legitimate use case for `ScheduleWakeup` in this
+repo's own skills or commands — `plugins/shipwright/` has zero references to
+it. Default to blocking, in-Bash waits for anything that needs to wait on a
+timescale below the Bash ceiling; only consider `ScheduleWakeup` for waits that
+genuinely exceed ~10 minutes, and go in with eyes open about the cache-freshness
+and silent-fallback tradeoffs above.

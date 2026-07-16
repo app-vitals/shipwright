@@ -128,6 +128,19 @@
             "required": false,
             "name": "ready",
             "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "example": "asc"
+            },
+            "required": false,
+            "name": "sort",
+            "in": "query"
           }
         ],
         "responses": {
@@ -1124,6 +1137,34 @@
             "required": false,
             "name": "offset",
             "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "description": "When true, return only unclaimed PRs (claimedBy IS NULL) — mirrors /tasks?ready=true. Composable with other filters (repo, state, reviewState); does not itself apply state/reviewState eligibility rules the way claim-next does.",
+              "example": "true"
+            },
+            "required": false,
+            "name": "ready",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "description": "Order results by createdAt. Default is ascending (asc), preserving current behavior for existing callers. Unrelated to claim-next's own deterministic ordering.",
+              "example": "asc"
+            },
+            "required": false,
+            "name": "sort",
+            "in": "query"
           }
         ],
         "responses": {
@@ -2024,11 +2065,22 @@
           "updated": {
             "type": "integer",
             "example": 1
+          },
+          "skipped": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "IDs of tasks skipped because they already exist (Prisma P2002 unique constraint collision).",
+            "example": [
+              "entropy-dead_exports-other-repo-2026-W29"
+            ]
           }
         },
         "required": [
           "inserted",
-          "updated"
+          "updated",
+          "skipped"
         ]
       },
       "BulkInsertBody": {
