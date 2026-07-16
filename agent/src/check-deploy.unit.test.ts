@@ -328,19 +328,20 @@ describe("getDeployCandidates", () => {
     expect(result[0].id).toBe("acme/other-repo#20");
   });
 
-  test("logs to stderr and continues to next repo when gh query throws for a repo", async () => {
+  test("logs via console.warn and continues to next repo when gh query throws for a repo", async () => {
+    // LPF-5.1: repo-tolerant collection now goes through mapReposTolerant,
+    // which logs the per-repo failure via console.warn (a handled/swallowed
+    // condition) rather than process.stderr.write.
     const pr = makeGhPr({
       number: 50,
       headRefOid: "sha50",
       reviewDecision: "APPROVED",
     });
 
-    const stderrLines: string[] = [];
-    const origStderr = process.stderr.write.bind(process.stderr);
-    // biome-ignore lint/suspicious/noExplicitAny: patching write for test capture
-    process.stderr.write = (chunk: any, ...rest: any[]) => {
-      stderrLines.push(String(chunk));
-      return origStderr(chunk, ...rest);
+    const warnCalls: unknown[][] = [];
+    const origWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      warnCalls.push(args);
     };
 
     const deps: CheckDeployDeps = {
@@ -366,12 +367,14 @@ describe("getDeployCandidates", () => {
     };
 
     const result = await getDeployCandidates(deps);
-    process.stderr.write = origStderr;
+    console.warn = origWarn;
 
     expect(result).toHaveLength(1);
-    expect(stderrLines.some((l) => l.includes("acme/failing-repo"))).toBe(
-      true,
-    );
+    expect(
+      warnCalls.some(([message]) =>
+        String(message).includes("acme/failing-repo"),
+      ),
+    ).toBe(true);
   });
 
   // ─── collect-all behavior (WL-2.2 architectural difference) ──────────────

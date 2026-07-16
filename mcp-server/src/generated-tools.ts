@@ -89,6 +89,12 @@ export const generatedTools: GeneratedTool[] = [
           enum: ["asc", "desc"],
           example: "asc",
         },
+        updatedSince: {
+          type: "string",
+          description:
+            "Only return tasks with updatedAt >= this ISO timestamp. A conservative pre-filter, not a precise sync anchor.",
+          example: "2026-01-01T00:00:00.000Z",
+        },
       },
       required: [],
       additionalProperties: false,
@@ -108,6 +114,7 @@ export const generatedTools: GeneratedTool[] = [
       "offset",
       "ready",
       "sort",
+      "updatedSince",
     ],
     pathParams: [],
     hasBody: false,
@@ -557,6 +564,12 @@ export const generatedTools: GeneratedTool[] = [
             "Order results by createdAt. Default is ascending (asc), preserving current behavior for existing callers. Unrelated to claim-next's own deterministic ordering.",
           example: "asc",
         },
+        updatedSince: {
+          type: "string",
+          description:
+            "Only return PRs with updatedAt >= this ISO timestamp. A conservative pre-filter, not a precise sync anchor.",
+          example: "2026-01-01T00:00:00.000Z",
+        },
       },
       required: [],
       additionalProperties: false,
@@ -574,6 +587,7 @@ export const generatedTools: GeneratedTool[] = [
       "offset",
       "ready",
       "sort",
+      "updatedSince",
     ],
     pathParams: [],
     hasBody: false,
