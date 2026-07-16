@@ -54,6 +54,7 @@ interface MakeDepsOptions {
   mergeStatusByPr?: Record<number, MergeStatusInfo>;
   listPrCommits?: (_prNumber: number) => Promise<CommitInfo[]>;
   getCurrentUser?: () => string;
+  getScopedRepos?: () => string[];
 }
 
 function makeDeps({
@@ -63,9 +64,11 @@ function makeDeps({
   mergeStatusByPr = {},
   listPrCommits = async () => [],
   getCurrentUser = () => "the-agent",
+  getScopedRepos = () => [...new Set(ownPrs.map((pr) => pr.repo))],
 }: MakeDepsOptions): CheckPatchDeps {
   return {
     listOwnOpenPrs: async (_repo: string) => ownPrs,
+    getScopedRepos,
     fetchPrReviews: async (
       _org: string,
       _repo: string,
@@ -1307,6 +1310,48 @@ describe("getPatchCandidates", () => {
     };
     const result = await getPatchCandidates(deps);
     expect(result).toHaveLength(1);
+  });
+
+  // ─── agent-scope filtering (WL-4.3) ──────────────────────────────────────
+
+  test("excludes a PR from a repo returned by the local-clone scan but absent from getScopedRepos()", async () => {
+    const inScope = makeOwnPr({
+      number: 10,
+      repo: "example-org/in-scope",
+    });
+    const outOfScope = makeOwnPr({
+      number: 20,
+      repo: "example-org/out-of-scope",
+    });
+    const result = await getPatchCandidates(
+      makeDeps({
+        ownPrs: [inScope, outOfScope],
+        reviewDataByPr: {},
+        ciStatusByPr: { 10: { hasFailing: true }, 20: { hasFailing: true } },
+        getScopedRepos: () => ["example-org/in-scope"],
+      }),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("example-org/in-scope#10");
+  });
+
+  test("re-evaluates getScopedRepos() on every call — a scope change between two calls changes the result on the second call", async () => {
+    const pr = makeOwnPr({ number: 10, repo: "example-org/newly-added" });
+    let scope: string[] = [];
+    const deps = makeDeps({
+      ownPrs: [pr],
+      reviewDataByPr: {},
+      ciStatusByPr: { 10: { hasFailing: true } },
+      getScopedRepos: () => scope,
+    });
+
+    const first = await getPatchCandidates(deps);
+    expect(first).toEqual([]);
+
+    scope = ["example-org/newly-added"];
+    const second = await getPatchCandidates(deps);
+    expect(second).toHaveLength(1);
+    expect(second[0].id).toBe("example-org/newly-added#10");
   });
 });
 

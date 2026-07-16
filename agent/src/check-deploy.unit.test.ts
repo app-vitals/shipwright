@@ -41,6 +41,7 @@ interface MakeDepsOptions {
   currentUser?: string;
   isSelfReviewAllowed?: boolean;
   taskStatus?: Record<string, LinkedTaskInfo | null>;
+  getScopedRepos?: () => string[];
 }
 
 function makeDeps({
@@ -51,11 +52,13 @@ function makeDeps({
   currentUser = "bodhi-agent",
   isSelfReviewAllowed = true,
   taskStatus = {},
+  getScopedRepos = () => repos,
 }: MakeDepsOptions = {}): CheckDeployDeps {
   return {
     getCurrentUser: () => currentUser,
     isSelfReviewAllowed,
     repos,
+    getScopedRepos,
     fetchActiveDeployRuns: async () => [],
     listOpenPrs: async (repo: string) => prs[repo] ?? [],
     fetchCiRuns: async (
@@ -344,6 +347,7 @@ describe("getDeployCandidates", () => {
       getCurrentUser: () => "bodhi-agent",
       isSelfReviewAllowed: true,
       repos: ["acme/failing-repo", "acme/example-repo"],
+      getScopedRepos: () => ["acme/failing-repo", "acme/example-repo"],
       fetchActiveDeployRuns: async () => [],
       listOpenPrs: async (repo: string): Promise<GhPr[]> => {
         if (repo === "acme/failing-repo") throw new Error("rate limited");
@@ -428,6 +432,7 @@ describe("getDeployCandidates", () => {
       getCurrentUser: () => "bodhi-agent",
       isSelfReviewAllowed: true,
       repos: ["acme/busy-repo", "acme/free-repo"],
+      getScopedRepos: () => ["acme/busy-repo", "acme/free-repo"],
       fetchActiveDeployRuns: async (_org, repo) =>
         repo === "busy-repo" ? [{ name: "Deploy", status: "in_progress" }] : [],
       listOpenPrs: async (repo: string) =>
@@ -603,5 +608,59 @@ describe("getDeployCandidates", () => {
           l.includes("task-store unreachable"),
       ),
     ).toBe(true);
+  });
+
+  // ─── agent-scope filtering (WL-4.3) ──────────────────────────────────────
+
+  test("excludes a repo returned by the local-clone scan (deps.repos) but absent from getScopedRepos()", async () => {
+    const inScopePr = makeGhPr({
+      number: 50,
+      reviewDecision: "APPROVED",
+      mergeStateStatus: "CLEAN",
+    });
+    const outOfScopePr = makeGhPr({
+      number: 60,
+      headRefOid: "sha60",
+      reviewDecision: "APPROVED",
+      mergeStateStatus: "CLEAN",
+    });
+    const result = await getDeployCandidates(
+      makeDeps({
+        repos: ["acme/in-scope", "acme/out-of-scope"],
+        prs: {
+          "acme/in-scope": [inScopePr],
+          "acme/out-of-scope": [outOfScopePr],
+        },
+        ciRuns: {
+          sha50: [{ status: "completed", conclusion: "success" }],
+          sha60: [{ status: "completed", conclusion: "success" }],
+        },
+        getScopedRepos: () => ["acme/in-scope"],
+      }),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("acme/in-scope#50");
+  });
+
+  test("re-evaluates getScopedRepos() on every call — a scope change between two calls changes the result on the second call", async () => {
+    const pr = makeGhPr({
+      reviewDecision: "APPROVED",
+      mergeStateStatus: "CLEAN",
+    });
+    let scope: string[] = [];
+    const deps = makeDeps({
+      repos: ["acme/newly-added"],
+      prs: { "acme/newly-added": [pr] },
+      ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
+      getScopedRepos: () => scope,
+    });
+
+    const first = await getDeployCandidates(deps);
+    expect(first).toEqual([]);
+
+    scope = ["acme/newly-added"];
+    const second = await getDeployCandidates(deps);
+    expect(second).toHaveLength(1);
+    expect(second[0].id).toBe("acme/newly-added#50");
   });
 });

@@ -21,6 +21,7 @@
  * yet — a missing record must not throw.
  */
 
+import { agentReposRef } from "./agent-repos-ref.ts";
 import {
   candidateId,
   createPrRecordQuery,
@@ -57,6 +58,15 @@ export interface CheckReviewDeps {
   isSelfReviewAllowed: boolean;
   listOpenPrs: (repo: string) => Promise<PrInfo[]>;
   queryPrRecord: (repo: string, prNumber: number) => Promise<PrRecord | null>;
+  /**
+   * Returns the agent's currently configured repo scope (org/repo strings).
+   * Called at the top of every getReviewCandidates() invocation — not once at
+   * deps-build time — so a repo present in the local clone list (and
+   * therefore returned by listOpenPrs) but absent from this call's result is
+   * excluded from candidates, and a later scope change is picked up on the
+   * very next call.
+   */
+  getScopedRepos: () => string[];
 }
 
 // ─── Core logic ───────────────────────────────────────────────────────────────
@@ -70,7 +80,10 @@ export async function getReviewCandidates(
 ): Promise<WorkPrCandidate[]> {
   const currentUser = await deps.getCurrentUser();
 
-  const prs = await deps.listOpenPrs("default");
+  const scopedRepos = new Set(deps.getScopedRepos());
+  const prs = (await deps.listOpenPrs("default")).filter((pr) =>
+    scopedRepos.has(pr.repo ?? ""),
+  );
   const candidates: WorkPrCandidate[] = [];
 
   for (const pr of prs) {
@@ -124,6 +137,7 @@ export async function getReviewCandidates(
 export async function buildProductionDeps(opts: {
   ghJson: <T>(args: string[]) => T;
   fetchFn?: typeof fetch;
+  getScopedRepos?: () => string[];
 }): Promise<CheckReviewDeps> {
   const workspacePath = resolveWorkspacePath();
   const allRepos = resolveAllRepos(workspacePath);
@@ -132,6 +146,7 @@ export async function buildProductionDeps(opts: {
   return {
     getCurrentUser,
     isSelfReviewAllowed: readAllowSelfReview(workspacePath),
+    getScopedRepos: opts.getScopedRepos ?? agentReposRef.get,
     listOpenPrs: async (_repo: string) => {
       const allPrs: PrInfo[] = [];
       for (const repo of allRepos) {

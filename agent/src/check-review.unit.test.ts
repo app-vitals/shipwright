@@ -42,12 +42,15 @@ function makeDeps(
   ) => Promise<PrRecord | null> = async () => null,
   currentUser = "bodhi-agent",
   isSelfReviewAllowed = false,
+  getScopedRepos: () => string[] = () =>
+    [...new Set(prs.map((pr) => pr.repo ?? ""))],
 ): CheckReviewDeps {
   return {
     listOpenPrs: async (_repo: string) => prs,
     queryPrRecord: queryPrRecordFn,
     getCurrentUser: () => currentUser,
     isSelfReviewAllowed,
+    getScopedRepos,
   };
 }
 
@@ -206,6 +209,7 @@ describe("getReviewCandidates", () => {
       },
       getCurrentUser: () => "bodhi-agent",
       isSelfReviewAllowed: false,
+      getScopedRepos: () => [pr.repo ?? ""],
     };
     const result = await getReviewCandidates(deps);
     expect(result).toHaveLength(1);
@@ -322,5 +326,43 @@ describe("getReviewCandidates", () => {
       })),
     );
     expect(result).toEqual([]);
+  });
+
+  // ─── agent-scope filtering (WL-4.3) ──────────────────────────────────────
+
+  test("excludes a PR from a repo returned by the local-clone scan but absent from getScopedRepos()", async () => {
+    const inScope = makePr({ number: 1, repo: "example-org/in-scope" });
+    const outOfScope = makePr({ number: 2, repo: "example-org/out-of-scope" });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [inScope, outOfScope],
+        async () => null,
+        "bodhi-agent",
+        false,
+        () => ["example-org/in-scope"],
+      ),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("example-org/in-scope#1");
+  });
+
+  test("re-evaluates getScopedRepos() on every call — a scope change between two calls changes the result on the second call", async () => {
+    const pr = makePr({ number: 1, repo: "example-org/newly-added" });
+    let scope: string[] = [];
+    const deps = makeDeps(
+      [pr],
+      async () => null,
+      "bodhi-agent",
+      false,
+      () => scope,
+    );
+
+    const first = await getReviewCandidates(deps);
+    expect(first).toEqual([]);
+
+    scope = ["example-org/newly-added"];
+    const second = await getReviewCandidates(deps);
+    expect(second).toHaveLength(1);
+    expect(second[0].id).toBe("example-org/newly-added#1");
   });
 });

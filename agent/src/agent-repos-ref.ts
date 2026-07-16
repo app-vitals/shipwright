@@ -28,3 +28,14 @@ export function createAgentReposRef(): AgentReposRef {
     },
   };
 }
+
+/**
+ * The process-wide agent repos ref. index.ts's syncConfig() calls
+ * `.set(bundle.repos)` on every successful config sync tick; check-review.ts,
+ * check-patch.ts, and check-deploy.ts's buildProductionDeps default their
+ * getScopedRepos dependency to `.get` from this same instance, so scope
+ * changes take effect on their very next candidate-collection call without
+ * requiring loop-orchestrator.ts (which builds those deps once and reuses
+ * them for the orchestrator's lifetime) to be touched at all.
+ */
+export const agentReposRef: AgentReposRef = createAgentReposRef();

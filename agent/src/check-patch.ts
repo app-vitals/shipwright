@@ -19,6 +19,7 @@
  * explicit claimedBy check below, mirroring check-review.ts).
  */
 
+import { agentReposRef } from "./agent-repos-ref.ts";
 import type { CommitInfo } from "./check-helpers.ts";
 import {
   candidateId,
@@ -113,6 +114,15 @@ export interface CheckPatchDeps {
    * which would collapse both cases into the same empty result.
    */
   queryPrRecord?: (repo: string, prNumber: number) => Promise<PrRecord | null>;
+  /**
+   * Returns the agent's currently configured repo scope (org/repo strings).
+   * Called at the top of every getPatchCandidates() invocation — not once at
+   * deps-build time — so a repo present in the local clone list (and
+   * therefore returned by listOwnOpenPrs) but absent from this call's result
+   * is excluded from candidates, and a later scope change is picked up on the
+   * very next call.
+   */
+  getScopedRepos: () => string[];
 }
 
 // ─── CI status (dedup stale reruns — CPC-1.1) ─────────────────────────────────
@@ -312,7 +322,10 @@ export async function getPatchCandidates(
 ): Promise<WorkPrCandidate[]> {
   const currentUser = await deps.getCurrentUser();
 
-  const prs = await deps.listOwnOpenPrs("default");
+  const scopedRepos = new Set(deps.getScopedRepos());
+  const prs = (await deps.listOwnOpenPrs("default")).filter((pr) =>
+    scopedRepos.has(pr.repo),
+  );
   if (prs.length === 0) return [];
 
   const candidates: WorkPrCandidate[] = [];
@@ -418,12 +431,14 @@ export async function buildProductionDeps(opts: {
   ghGraphql: <T>(query: string) => T;
   getCurrentUser: () => string;
   fetchFn?: typeof fetch;
+  getScopedRepos?: () => string[];
 }): Promise<CheckPatchDeps> {
   const workspacePath = resolveWorkspacePath();
   const allRepos = resolveAllRepos(workspacePath);
   const { ghJson, ghGraphql, getCurrentUser: getUser } = opts;
 
   return {
+    getScopedRepos: opts.getScopedRepos ?? agentReposRef.get,
     listOwnOpenPrs: async (_repo: string) => {
       const user = await getUser();
       const allPrs: (GhPrListItem & { repo: string })[] = [];

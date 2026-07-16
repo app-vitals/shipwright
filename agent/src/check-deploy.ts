@@ -20,6 +20,7 @@
  * before calling this function if needed.
  */
 
+import { agentReposRef } from "./agent-repos-ref.ts";
 import {
   candidateId,
   createPrRecordQuery,
@@ -108,6 +109,14 @@ export interface CheckDeployDeps {
     repo: string,
     prNumber: number,
   ) => Promise<LinkedTaskInfo | null>;
+  /**
+   * Returns the agent's currently configured repo scope (org/repo strings).
+   * Called at the top of every getDeployCandidates() invocation — not once at
+   * deps-build time — so a repo present in `repos` (the local clone list) but
+   * absent from this call's result is excluded from candidates, and a later
+   * scope change is picked up on the very next call.
+   */
+  getScopedRepos: () => string[];
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -151,8 +160,11 @@ export async function getDeployCandidates(
   // that must not block PRs in other, independent repos. Queued runs older
   // than 1 hour are treated as stuck/ghost and ignored.
   const now = deps.clock ? deps.clock() : new Date().toISOString();
+  const scopedRepos = new Set(deps.getScopedRepos());
+  const repos = deps.repos.filter((repo) => scopedRepos.has(repo));
+
   const busyRepos = new Set<string>();
-  for (const repo of deps.repos) {
+  for (const repo of repos) {
     const [org, repoName] = splitOrgRepo(repo);
     try {
       const activeRuns = await deps.fetchActiveDeployRuns(org, repoName);
@@ -170,7 +182,7 @@ export async function getDeployCandidates(
   const currentUser = await deps.getCurrentUser();
   const candidates: WorkPrCandidate[] = [];
 
-  for (const repo of deps.repos) {
+  for (const repo of repos) {
     if (busyRepos.has(repo)) continue;
 
     const [org, repoName] = splitOrgRepo(repo);
@@ -302,6 +314,7 @@ interface GhWorkflowRunsJson {
 export async function buildProductionDeps(opts: {
   ghJson: <T>(args: string[]) => T;
   fetchFn?: typeof fetch;
+  getScopedRepos?: () => string[];
 }): Promise<CheckDeployDeps> {
   const workspacePath = resolveWorkspacePath();
   const allRepos = resolveAllRepos(workspacePath);
@@ -312,6 +325,7 @@ export async function buildProductionDeps(opts: {
     getCurrentUser,
     isSelfReviewAllowed: readAllowSelfReview(workspacePath),
     repos: allRepos,
+    getScopedRepos: opts.getScopedRepos ?? agentReposRef.get,
     clock,
     fetchActiveDeployRuns: async (org: string, repo: string) => {
       const inProgress = ghJson<GhWorkflowRunsJson>([
