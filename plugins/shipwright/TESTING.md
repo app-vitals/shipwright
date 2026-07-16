@@ -1207,16 +1207,16 @@ Imported from the former `test-readiness` plugin. These exercise the six `/test-
 **Expected:** The second run's dedup check (Step 4) finds the already-active `T-NNN` tasks (matched by `source == "shipwright"` and title starting with "Test readiness:"), skips them ("Skipping {T-NNN} — task already active"), and no duplicate tasks are created in the task store.
 
 ### TR-13 — Phase 5 dependencies-array / ready computation
-**Steps:** Queue a task graph with predecessor edges via `/test-fix` (e.g. a fan-out `P-NNN` parent with `T-NNNa`/`T-NNNb` children), then mark/complete a predecessor task in the task store.
+**Steps:** Queue a task graph with predecessor edges via `/test-fix` (e.g. two independent flat tasks, `T-042a` and `T-042b`, where `T-042b` genuinely depends on `T-042a`'s output via an explicit `depends_on: T-042a` annotation — unrelated to any service-count splitting), then mark/complete the predecessor task (`T-042a`) in the task store.
 **Expected:** Task-store's own `ready:true` query correctly reflects the completed predecessor's dependents becoming ready — there is no separate ready/blocked label toggle or `--refresh` flag; `dependencies` (task-store's own field) is the sole readiness mechanism.
 
 ### TR-14 — Idempotency (Phases 1–4)
 **Steps:** Run all four phases, capture artifact hashes, re-run without source changes, compare.
 **Expected:** Outputs stable (differ only in minor metadata like timestamps). Deterministic given the same source.
 
-### TR-15 — Sizing fan-out rule
+### TR-15 — N-service refactor sizing
 **Steps:** In a repo where Phase 3 yields a task touching 3+ services, run `/test-roadmap`.
-**Expected:** No single task touches all service files; instead one parent task (P-NNN, no verify) and one child task per service (T-NNN a/b/c…) each with its own verify. Open-risks lists no "oversized task" entries for split tasks.
+**Expected:** No single task touches all service files; instead N independently-titled flat tasks are emitted, one per service (T-NNN a/b/c…), each with its own verify command — no parent/P-NNN row. `dependencies` is populated only where genuine technical ordering exists between two services' tasks; otherwise it's an empty array. Open-risks lists no "oversized task" entries for split tasks.
 
 ### TR-16 — Audit decision rows
 **Steps:** Run `/test-roadmap` where Phase 3 has a bucket with 5+ `delete (redundant)`/`rebuild` tests, then `/test-fix --dry-run`.
@@ -1242,7 +1242,11 @@ Imported from the former `test-readiness` plugin. These exercise the six `/test-
 **Steps:** In a repo with git history referencing task IDs (`T-001`, `fix(T-042)`) across ≥2 milestones, run `/test-debt`.
 **Expected:** `docs/test-readiness/test-debt.md` created with a per-milestone table (Milestone, Total commits, Corrective, Ratio, Flag); ratio > 0.25 flagged red; milestones with <5 commits reported but not flagged; planning-debt notes present for red-flag milestones.
 
-### TR-22 — T-NNN numbering continues across cycles
+### TR-22 — N-service refactor emitted as flat tasks end-to-end
+**Steps:** In a repo where Phase 3 yields a 6-service auth-middleware migration touching `services/{payments,users,notifications,billing,catalog,search}/src/middleware/auth.ts` (the former P-042 example), run `/test-roadmap` then `/test-fix`.
+**Expected:** `/test-roadmap` emits 6 independently-titled flat tasks (`T-042a`..`T-042f`, one per service) in the task list — no parent/P-042 row — each with its own files and its own verify command (e.g. `bun test --filter payments/auth`); `T-042b` (users) carries a `dependencies` entry pointing at `T-042a` (payments) because it genuinely imports the shared `validateToken()` helper payments introduces, while the remaining four tasks carry empty `dependencies`. `/test-fix` then queues all 6 as task-store tasks (`test-t-042a-{repo-slug}`..`test-t-042f-{repo-slug}`), with `test-t-042b-{repo-slug}`'s `dependencies` array containing `test-t-042a-{repo-slug}` and the other four tasks' `dependencies` arrays empty — task-store's `ready:true` query reflects `T-042b` as blocked only until `T-042a` completes.
+
+### TR-23 — T-NNN numbering continues across cycles
 **Steps:** No automated test covers this — the ID-offset logic is prompt-only generation
 logic (a task-store query and arithmetic performed by the skill at run time, not code).
 Verify via dry run: seed task-store with an existing task `test-t-047-shipwright` for the
@@ -1254,9 +1258,13 @@ no prior `test-t-*-{repo}` tasks still starts at `T-001`.
 
 **Known gap (carried over):** Phase 3 speed measurement is inspection-based unless the runner is installed/configured; a "speed not measured" flag in the artifact is documented behavior, not a bug.
 
-### TR-22 — Phase 5 fuzzy near-duplicate flag (not skip)
+### TR-24 — Phase 5 fuzzy near-duplicate flag (not skip)
 **Steps:** Seed the task store with an active (pending or in_progress) task for the target repo from a source/naming convention the exact-ID check's filter would miss — e.g. `source` not `"shipwright"`, or a title not starting with `"Test readiness:"` — such as a manually-filed task titled "Add integration coverage for auth middleware (T-041)". Then produce a `test-readiness-plan.md` (via Phases 1–4, or a hand-authored one) whose task list has been deliberately re-scoped/renumbered so a row builds a semantically-duplicate title under a different `T-NNN`, e.g. "Test readiness: add integration coverage for the auth middleware (T-058)". Run `/test-fix` (not `--dry-run` — the fuzzy check reuses Step 4's task-store queries, and `--dry-run`'s contract is that it makes no task-store queries at all, so the fuzzy check is documented as not running under `--dry-run`; see Step 6's note in `SKILL.md`).
 **Expected:** T-058's exact-ID check (Step 4) does not match (different ID, and/or the existing task fails the `source`/prefix filter) — it is not skipped. The Step 4.1 fuzzy check (Jaccard word-overlap over the two titles, ignoring the parenthetical `T-NNN`) scores ≥ 0.6 similarity against the seeded task and prints `Flagging T-058 — {similarity}% title-similar to active task {other-id}: "Add integration coverage for auth middleware (T-041)" — not skipped, review after queueing`. T-058 is still built in Step 5 and included in the Step 7.1 bulk POST (it is created, not withheld); Step 7.2's summary includes a "Flagged for review (possible near-duplicate, not skipped)" line for T-058 distinct from the "Skipped (already active)" block. No automated test covers this — it's prompt-only logic (fuzzy title comparison is an LLM-following-the-prompt computation, not code); this dry-run walkthrough (and the worked Jaccard-similarity example in `SKILL.md`'s Step 4.1) is the verification method.
+
+### TR-25 — Deploy model gates canary eligibility
+**Steps:** (a) Run `/test-inventory` against a repo with no `## Deploy model` declaration in CLAUDE.md. (b) Run `/test-inventory` against a repo whose CLAUDE.md declares `## Deploy model: staged`.
+**Expected:** (a) Generated inventory artifact's Notes section contains the message "deploy_model undeclared — canary eligibility skipped; declare ## Deploy model in CLAUDE.md to enable." and zero items are tagged as canary-eligible, regardless of layer/criticality. (b) Generated inventory artifact follows the existing canary-eligibility logic (tags smoke/E2E critical/high items as canary-eligible per the `canary-execution` contract).
 
 ---
 

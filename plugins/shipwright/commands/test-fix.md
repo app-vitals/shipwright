@@ -7,7 +7,7 @@ allowed-tools: [Read, Glob, Grep, Bash, Write, Skill]
 # /test-fix
 
 Read `docs/test-readiness/test-readiness-plan.md`, parse its flat `T-NNN` task list
-(milestones, layers, buckets, criticality, audit-decision rows, and predecessor/fan-out
+(milestones, layers, buckets, criticality, audit-decision rows, and predecessor
 dependency links), and queue each row as a task-store task via `/tasks/bulk` — with
 `dependencies` set from the plan's own dependency edges so task-store's `ready:true` query
 computes readiness directly. This is the Phase 5 task-store based replacement for the former
