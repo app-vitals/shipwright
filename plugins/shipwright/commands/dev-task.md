@@ -277,12 +277,19 @@ diff unrelated to the task, or CI red with no clear fix path): treat exactly lik
 from a crashed session — clean up before starting fresh.
 1. If an open PR exists, close it: `gh pr close {number} --repo "$GH_REPO" --comment "Shipwright cleanup — prior attempt incomplete/stale, restarting"`
 2. If a remote branch exists, delete it: `git push origin --delete {branch}`
-3. If a local branch exists, delete it: `git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} branch -D {branch}`
-4. Print:
+3. If a worktree for `{branch}` already exists (a crashed session — exactly the scenario this
+   reality check recovers from — can leave one checked out on disk), remove it first: git
+   refuses to force-delete a branch checked out in any worktree, so this must happen before
+   step 4's `branch -D`.
+   ```bash
+   git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} worktree remove ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} --force
+   ```
+4. If a local branch exists, delete it: `git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} branch -D {branch}`
+5. Print:
    ```
    ⚠ {branch} had incomplete/stale prior work — cleaned up (PR closed, branch deleted). Starting fresh.
    ```
-5. Fall through to the standard fresh-start flow below (branch now absent on remote).
+6. Fall through to the standard fresh-start flow below (branch now absent on remote).
 
 ---
 

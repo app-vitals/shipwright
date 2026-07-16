@@ -212,11 +212,27 @@ describe("Step 4 — unconditional branch/PR reality check (DOH-1.1)", () => {
   it("incomplete/stale path closes the PR (if any) and deletes the branch (remote + local) before falling through to fresh worktree creation", () => {
     const realityCheckIdx = content.indexOf("### Branch/PR Reality Check");
     expect(realityCheckIdx).toBeGreaterThan(-1);
-    const section = content.slice(realityCheckIdx, realityCheckIdx + 5000);
+    const section = content.slice(realityCheckIdx, realityCheckIdx + 5500);
     expect(section).toMatch(/incomplete|stale/i);
     expect(section).toContain("gh pr close");
     expect(section).toContain("git push origin --delete {branch}");
     expect(section).toMatch(/git -C .*branch -D \{branch\}/);
+  });
+
+  it("incomplete/stale path removes any existing worktree for {branch} before force-deleting the local branch (DOH-1.1 follow-up)", () => {
+    // git refuses to force-delete a branch checked out in any worktree — a crashed session
+    // can leave `{branch}` checked out in a worktree, so the worktree must be removed first.
+    const realityCheckIdx = content.indexOf("### Branch/PR Reality Check");
+    expect(realityCheckIdx).toBeGreaterThan(-1);
+    const section = content.slice(realityCheckIdx, realityCheckIdx + 5500);
+    const staleSectionIdx = section.search(/\*\*Incomplete, stale/i);
+    expect(staleSectionIdx).toBeGreaterThan(-1);
+    const staleSection = section.slice(staleSectionIdx);
+    const worktreeRemoveIdx = staleSection.search(/worktree remove/);
+    const branchDeleteIdx = staleSection.search(/git -C .*branch -D \{branch\}/);
+    expect(worktreeRemoveIdx).toBeGreaterThan(-1);
+    expect(branchDeleteIdx).toBeGreaterThan(-1);
+    expect(worktreeRemoveIdx).toBeLessThan(branchDeleteIdx);
   });
 
   it("resume-from-PR path checks CI status before treating an existing PR as complete", () => {
