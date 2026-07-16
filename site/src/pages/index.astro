@@ -47,7 +47,7 @@ const pillars = [
     body: "Deploy the same system to your cloud as an agent you reach in Slack — DM it, @mention it in a thread, drop a voice note. It runs on a pool of scheduled jobs, picking up ready work and shipping PRs on its own — coding while you're away, at the same review and test bar.",
     points: [
       "Slack-native — DMs, mentions, voice notes, reactions",
-      "Cron-driven — two jobs on by default, ten in the pool",
+      "Cron-driven — three jobs on by default, eleven in the pool",
       "Deploys on Docker and Kubernetes",
     ],
   },
@@ -63,21 +63,15 @@ const crons = [
     desc: "Picks the next ready task, builds it with tests, opens a PR.",
   },
   {
-    name: "review-patch",
-    cadence: "every 30 min",
-    on: true,
-    desc: "Reviews open PRs and patches the ones failing CI or review.",
-  },
-  {
     name: "review",
     cadence: "every 30 min",
-    on: false,
+    on: true,
     desc: "Review-only pass over open PRs.",
   },
   {
     name: "patch",
     cadence: "every 30 min",
-    on: false,
+    on: true,
     desc: "Fixes failing CI and unresolved review findings.",
   },
   {
@@ -566,11 +560,11 @@ const differentiators = [
       <div id="crons" class="sw-panel sw-panel--crons">
     <p class="sw-label">Ships on a schedule</p>
     <h2 class="sw-h1 mt-3 max-w-2xl">
-      Ten cron jobs, ready out of the box.
+      Eleven cron jobs, ready out of the box.
     </h2>
     <p class="mt-5 max-w-2xl text-lg">
-      Every cloud agent is seeded with ten scheduled jobs. Two run from day
-      one; the rest are a single toggle away. Each guards itself with a
+      Every cloud agent is seeded with eleven scheduled jobs. Three run from
+      day one; the rest are a single toggle away. Each guards itself with a
       pre-check, so it only spends a turn when there's real work to do.
     </p>
 

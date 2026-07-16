@@ -86,7 +86,8 @@ curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
 ```
 
 The `shipwright-dev-task` cron picks up the next pending item every 30 minutes. The
-`shipwright-review-patch` cron addresses findings from own PR reviews automatically.
+`shipwright-review` and `shipwright-patch` crons run as independent phases — review posts
+findings, patch addresses them — both enabled by default.
 
 ### Policy
 

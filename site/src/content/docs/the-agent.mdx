@@ -87,15 +87,14 @@ unset, secrets are stored in plain text with a logged warning.
 
 ## Default system crons
 
-Every new agent is seeded with ten system crons. Two are enabled by default; the rest are opt-in
+Every new agent is seeded with eleven system crons. Three are enabled by default; the rest are opt-in
 and can be toggled in the admin UI or via `PATCH /agents/:id/crons/:cronId`.
 
 | Cron | Schedule | Default | What it does |
 |------|----------|---------|--------------|
 | `shipwright-dev-task` | every 30 min | **on** | Pick next ready task, build with tests, open PR |
-| `shipwright-review-patch` | every 30 min | **on** | Review open PRs and patch those failing CI or review |
-| `shipwright-review` | every 30 min | off | Review-only pass over open PRs |
-| `shipwright-patch` | every 30 min | off | Fix failing CI and unresolved review findings |
+| `shipwright-review` | every 30 min | **on** | Review-only pass over open PRs |
+| `shipwright-patch` | every 30 min | **on** | Fix failing CI and unresolved review findings |
 | `shipwright-deploy` | every 30 min | off | Merge approved PRs and deploy |
 | `shipwright-test-readiness` | daily 06:00 | off | Full test-readiness audit |
 | `shipwright-docs-freshness` | daily 07:00 | off | Refresh docs that drifted from the code |
