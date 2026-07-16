@@ -231,9 +231,16 @@ export async function reconcilePrState(
  * OUT-OF-BAND reviewer, so ANY author's clean-approve-shaped COMMENTED
  * review counts, not just self-authored ones.
  *
+ * Genuine findings are checked FIRST, independent of whether an approve also
+ * exists at head — an approve from one reviewer must never mask an unresolved
+ * thread or non-empty finding body left by a different reviewer's
+ * COMMENTED/CHANGES_REQUESTED review at the same head commit (mirrors
+ * `hasUnaddressedFindings`'s filtering order in check-patch.ts).
+ *
  * Returns:
  *   - "approved" — a real APPROVED review, or a clean-approve-shaped
- *     COMMENTED review, at the current head commit.
+ *     COMMENTED review, at the current head commit, AND no genuine
+ *     unaddressed finding from any other review at the same head commit.
  *   - "posted" — a terminal (no unresolved threads, no qualifying non-empty
  *     finding body) non-approve review at the current head commit.
  *   - null — no review at all at the current head commit, OR a genuine
@@ -247,27 +254,30 @@ function classifyReviewState(data: PrReviewData): "approved" | "posted" | null {
   );
   if (reviewsAtHead.length === 0) return null; // nothing at head — untouched
 
+  const qualifyingReviews = reviewsAtHead.filter(
+    (r) =>
+      (r.state === "COMMENTED" || r.state === "CHANGES_REQUESTED") &&
+      !isCleanApproveBody(r.body),
+  );
+
+  if (qualifyingReviews.length > 0) {
+    const unresolvedThreads = reviewThreads.nodes.filter(
+      (t) => !t.isResolved,
+    );
+    if (unresolvedThreads.length > 0) return null; // genuine finding — untouched
+
+    const hasFindingBody = qualifyingReviews.some(
+      (r) => r.body.trim().length > 0,
+    );
+    if (hasFindingBody) return null; // genuine finding — untouched
+  }
+
   const hasApprove = reviewsAtHead.some(
     (r) =>
       r.state === "APPROVED" ||
       (r.state === "COMMENTED" && isCleanApproveBody(r.body)),
   );
   if (hasApprove) return "approved";
-
-  const qualifyingReviews = reviewsAtHead.filter(
-    (r) =>
-      (r.state === "COMMENTED" || r.state === "CHANGES_REQUESTED") &&
-      !isCleanApproveBody(r.body),
-  );
-  if (qualifyingReviews.length === 0) return "posted"; // terminal, non-finding
-
-  const unresolvedThreads = reviewThreads.nodes.filter((t) => !t.isResolved);
-  if (unresolvedThreads.length > 0) return null; // genuine finding — untouched
-
-  const hasFindingBody = qualifyingReviews.some(
-    (r) => r.body.trim().length > 0,
-  );
-  if (hasFindingBody) return null; // genuine finding — untouched
 
   return "posted"; // terminal, non-approve, no finding
 }
@@ -490,6 +500,9 @@ export function buildReviewStateProductionDeps(opts: {
   return {
     repos,
     clock: opts.clock ?? SystemClock(),
+    claimTtlMs: Number(
+      process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS ?? DEFAULT_CLAIM_TTL_MS,
+    ),
     listPendingReviewRecords: async (
       repo: string,
       limit: number,

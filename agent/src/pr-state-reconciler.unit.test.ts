@@ -13,10 +13,11 @@
  * real network/gh calls, per this repo's unit-test isolation contract.
  */
 
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { PrReviewData, ReviewNode, ReviewThread } from "./check-patch.ts";
 import { type Clock, FixedClock } from "./clock.ts";
 import {
+  buildReviewStateProductionDeps,
   type GhPrView,
   type PrReviewStateRecord,
   type PrReviewStateReconcilerDeps,
@@ -525,6 +526,44 @@ describe("reconcileReviewState", () => {
     expect(patchCalls).toHaveLength(0);
   });
 
+  test("approve from one reviewer + independent unresolved finding from another reviewer at head — left untouched, no PATCH", async () => {
+    const record = makeReviewStateRecord({
+      id: "pr-approve-plus-finding",
+      prNumber: 30,
+    });
+    const reviewData = makeReviewData({
+      headRefOid: "head-sha",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            author: { login: "reviewer-a" },
+            state: "CHANGES_REQUESTED",
+            commit: { oid: "head-sha" },
+            body: "This breaks the auth flow, please fix.",
+          }),
+          makeReviewNode({
+            author: { login: "reviewer-b" },
+            state: "APPROVED",
+            commit: { oid: "head-sha" },
+            body: "LGTM",
+          }),
+        ],
+      },
+      reviewThreads: { nodes: [makeReviewThread({ isResolved: false })] },
+    });
+    const { deps, patchCalls } = makeReviewStateDeps({
+      pendingRecords: { "acme/example-repo": [record] },
+      reviewResults: { "acme/example-repo#30": reviewData },
+    });
+
+    await reconcileReviewState(deps);
+
+    // GitHub's own aggregate reviewDecision would still be CHANGES_REQUESTED
+    // here — an unrelated APPROVED from a second reviewer must never mask
+    // reviewer-a's genuine unresolved finding.
+    expect(patchCalls).toHaveLength(0);
+  });
+
   test("review only at a stale/prior commit — left untouched, no PATCH", async () => {
     const record = makeReviewStateRecord({
       id: "pr-stale-commit",
@@ -794,5 +833,58 @@ describe("reconcileReviewState", () => {
 
     expect(listCalls).toHaveLength(0);
     expect(patchCalls).toHaveLength(0);
+  });
+});
+
+// ─── buildReviewStateProductionDeps ─────────────────────────────────────────────
+
+describe("buildReviewStateProductionDeps", () => {
+  const savedEnv = {
+    WORKSPACE_PATH: process.env.WORKSPACE_PATH,
+    SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS:
+      process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS,
+  };
+
+  beforeEach(() => {
+    // A nonexistent workspace path is fine — resolveAllRepos() just returns
+    // [] when workspace/repos/ doesn't exist, and this suite only cares
+    // about the claimTtlMs field.
+    process.env.WORKSPACE_PATH = "/nonexistent/workspace-for-unit-test";
+    // biome-ignore lint/performance/noDelete: env var must be fully removed, not set to "undefined" string
+    delete process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS;
+  });
+
+  afterEach(() => {
+    if (savedEnv.WORKSPACE_PATH === undefined) {
+      // biome-ignore lint/performance/noDelete: restore to fully-unset state
+      delete process.env.WORKSPACE_PATH;
+    } else {
+      process.env.WORKSPACE_PATH = savedEnv.WORKSPACE_PATH;
+    }
+    if (savedEnv.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS === undefined) {
+      // biome-ignore lint/performance/noDelete: restore to fully-unset state
+      delete process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS;
+    } else {
+      process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS =
+        savedEnv.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS;
+    }
+  });
+
+  test("claimTtlMs falls back to the default when the env var is unset", () => {
+    const deps = buildReviewStateProductionDeps({
+      ghGraphql: <T>() => ({}) as T,
+    });
+
+    expect(deps.claimTtlMs).toBe(2_100_000);
+  });
+
+  test("claimTtlMs reads SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS when set, matching stale-claim-reaper.ts", () => {
+    process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS = "60000";
+
+    const deps = buildReviewStateProductionDeps({
+      ghGraphql: <T>() => ({}) as T,
+    });
+
+    expect(deps.claimTtlMs).toBe(60_000);
   });
 });
