@@ -1,11 +1,19 @@
 <!DOCTYPE html><html lang="en" data-astro-cid-37fxchfa> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="Astro v5.18.2"><title>Architecture — Shipwright Harness</title><meta name="description" content="How autonomous engineering work gets planned, executed, reviewed, and shipped. Two input sources feed a coordination layer that drives a per-agent execution loop."><link rel="canonical" href="https://shipwrightharness.com/architecture/"><!-- Favicon: scalable SVG mark with a PNG fallback (both in site/public/). --><link rel="icon" type="image/svg+xml" href="/shipwright-icon.svg"><link rel="icon" type="image/png" href="/shipwright-icon.png"><link rel="apple-touch-icon" href="/shipwright-icon.png"><!-- Open Graph --><meta property="og:type" content="website"><meta property="og:url" content="https://shipwrightharness.com/architecture/"><meta property="og:title" content="Architecture — Shipwright Harness"><meta property="og:description" content="How autonomous engineering work gets planned, executed, reviewed, and shipped. Two input sources feed a coordination layer that drives a per-agent execution loop."><meta property="og:site_name" content="Shipwright Harness"><meta property="og:image" content="https://shipwrightharness.com/og-default-1280x640.png"><meta property="og:image:width" content="1280"><meta property="og:image:height" content="640"><meta property="og:image:alt" content="Shipwright Harness — the open-source autonomous delivery agent for Claude Code."><!-- Twitter --><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Architecture — Shipwright Harness"><meta name="twitter:description" content="How autonomous engineering work gets planned, executed, reviewed, and shipped. Two input sources feed a coordination layer that drives a per-agent execution loop."><meta name="twitter:image" content="https://shipwrightharness.com/og-default-1280x640.png"><meta name="twitter:image:alt" content="Shipwright Harness — the open-source autonomous delivery agent for Claude Code."><!-- Structured data (JSON-LD) — inert data block, not runtime JS. --><script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"Organization","@id":"https://shipwrightharness.com/#organization","name":"Shipwright Harness","url":"https://shipwrightharness.com/","logo":"https://shipwrightharness.com/shipwright-icon.png","sameAs":["https://github.com/app-vitals/shipwright"]},{"@type":"WebSite","@id":"https://shipwrightharness.com/#website","url":"https://shipwrightharness.com/","name":"Shipwright Harness","description":"The open-source autonomous delivery agent for Claude Code.","publisher":{"@id":"https://shipwrightharness.com/#organization"}},{"@type":"SoftwareApplication","name":"Shipwright Harness","applicationCategory":"DeveloperApplication","operatingSystem":"Cross-platform","url":"https://shipwrightharness.com/","description":"The open-source autonomous delivery agent for Claude Code — plan, build, review, and ship, on your own infrastructure.","license":"https://opensource.org/licenses/MIT","isAccessibleForFree":true,"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"sameAs":["https://github.com/app-vitals/shipwright"]}]}</script><!-- Google Analytics 4 (the only first-party runtime JS). --><!-- Google tag (gtag.js) — GA4 --><script async src="https://www.googletagmanager.com/gtag/js?id=G-WS5TVR713J"></script> <script>(function(){const GA_MEASUREMENT_ID = "G-WS5TVR713J";
 
-  window.dataLayer = window.dataLayer || [];
-  function gtag() {
-    dataLayer.push(arguments);
+  // Skip analytics on localhost / dev to avoid polluting production data.
+  if (
+    window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1"
+  ) {
+    // no-op: do not initialize GA4
+  } else {
+    window.dataLayer = window.dataLayer || [];
+    function gtag() {
+      dataLayer.push(arguments);
+    }
+    gtag("js", new Date());
+    gtag("config", GA_MEASUREMENT_ID);
   }
-  gtag("js", new Date());
-  gtag("config", GA_MEASUREMENT_ID);
 })();</script><!--
       Fonts (no runtime JS): Space Grotesk + JetBrains Mono from Google Fonts,
       General Sans from Fontshare. Plain stylesheet links only.
