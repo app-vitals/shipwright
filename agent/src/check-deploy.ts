@@ -89,7 +89,7 @@ export interface CheckDeployDeps {
   // with claimedBy set means another agent currently holds the claim on this
   // PR — see the explicit claimedBy check below, mirroring check-review.ts)
   // and to source the age field, though `age` below is actually sourced from
-  // queryTaskStatus's linkedTask.addedAt instead — readyForDeployAt is not
+  // queryTaskStatus's linkedTask.createdAt instead — readyForDeployAt is not
   // used for age ordering. Queried WITHOUT `ready=true` so a `null` result
   // unambiguously means "no record exists yet" (e.g. review skipped claim()
   // for a self-authored PR under allow_self_review: false) rather than
@@ -256,7 +256,7 @@ export async function getDeployCandidates(
 
         candidates.push({
           id: candidateId(repo, pr.number),
-          age: linkedTask?.addedAt ?? pr.createdAt ?? "",
+          age: linkedTask?.createdAt ?? pr.createdAt ?? "",
           phase: "deploy",
         });
       } catch (err) {

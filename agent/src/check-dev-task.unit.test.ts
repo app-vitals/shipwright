@@ -31,7 +31,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     status: "pending",
     repo: "acme/example-repo",
     assignee: MY_AGENT_ID,
-    addedAt: "2026-05-01T00:00:00.000Z",
+    createdAt: "2026-05-01T00:00:00.000Z",
     ...overrides,
   };
 }
