@@ -119,6 +119,56 @@ describe("SKILL.md — Step 6 subsection placement", () => {
   });
 });
 
+describe("SKILL.md — Failure modes: Phase 2 recommendations are estimates, not verified coverage facts", () => {
+  it("has a failure-mode bullet placed right after the 'Don't look at existing tests' bullet", () => {
+    const failureModesIdx = content.indexOf("## Failure modes to avoid");
+    expect(failureModesIdx).toBeGreaterThan(-1);
+    const dontLookIdx = content.indexOf(
+      "Don't look at existing tests.",
+      failureModesIdx,
+    );
+    expect(dontLookIdx).toBeGreaterThan(-1);
+    const nextBulletIdx = content.indexOf("\n- **", dontLookIdx);
+    expect(nextBulletIdx).toBeGreaterThan(-1);
+    const bulletSection = content.slice(dontLookIdx, nextBulletIdx);
+    expect(bulletSection.length).toBeGreaterThan(0);
+  });
+
+  it("warns that recommendations describe target state, not verified existing coverage, since this phase never reads existing tests", () => {
+    const failureModesIdx = content.indexOf("## Failure modes to avoid");
+    const section = content.slice(failureModesIdx);
+    const hasEstimateFramingLanguage =
+      /\brecommend(ation)?s?\b/i.test(section) &&
+      (/\bestimate\b/i.test(section) || /\btarget state\b/i.test(section)) &&
+      /\bnot\b.*\b(a )?(verified|confirmed) fact\b/i.test(section);
+    expect(hasEstimateFramingLanguage).toBe(true);
+  });
+
+  it("instructs downstream consumers to verify actual coverage against the working tree before trusting it", () => {
+    const failureModesIdx = content.indexOf("## Failure modes to avoid");
+    const section = content.slice(failureModesIdx);
+    const hasVerifyAgainstWorkingTree =
+      /\bverify\b/i.test(section) && /\bworking tree\b/i.test(section);
+    expect(hasVerifyAgainstWorkingTree).toBe(true);
+  });
+
+  it("names at least one downstream consumer phase/actor (Phase 3, Phase 4, or a task implementer) that must do the verification", () => {
+    const failureModesIdx = content.indexOf("## Failure modes to avoid");
+    const section = content.slice(failureModesIdx);
+    const namesDownstreamConsumer =
+      /Phase 3/.test(section) ||
+      /Phase 4/.test(section) ||
+      /implement(ing|er)?/i.test(section);
+    expect(namesDownstreamConsumer).toBe(true);
+  });
+
+  it("does not name a specific repo or use dated/cycle-specific framing", () => {
+    const failureModesIdx = content.indexOf("## Failure modes to avoid");
+    const section = content.slice(failureModesIdx);
+    expect(/this cycle/i.test(section)).toBe(false);
+  });
+});
+
 describe("speed-budgets/SKILL.md — cross-references test-design Step 6 rule instead of duplicating it", () => {
   it("references test-design/SKILL.md", () => {
     expect(speedBudgetsContent).toContain("test-design");
