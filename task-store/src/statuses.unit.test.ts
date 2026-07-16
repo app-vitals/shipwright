@@ -92,7 +92,7 @@ describe("CLOSED_STATUSES / OPEN_STATUSES contract", () => {
   });
 });
 
-describe("readonly / const shape", () => {
+describe("array independence", () => {
   it("mutating a copy of CLOSED_STATUSES does not affect the exported array", () => {
     const copy: string[] = [...CLOSED_STATUSES];
     copy.push("something-else");
@@ -105,13 +105,5 @@ describe("readonly / const shape", () => {
     copy.push("something-else");
     expect(OPEN_STATUSES.length).toBe(5);
     expect(OPEN_STATUSES).not.toContain("something-else");
-  });
-
-  it("attempting to push directly onto CLOSED_STATUSES at the type level is rejected (compile-time)", () => {
-    // CLOSED_STATUSES is `as const`, so TypeScript types it as a readonly
-    // tuple. The following would be a type error if uncommented:
-    //   CLOSED_STATUSES.push("done"); // Property 'push' does not exist on type 'readonly [...]'
-    // We assert the runtime array type here as a proxy for the readonly intent.
-    expect(Array.isArray(CLOSED_STATUSES)).toBe(true);
   });
 });
