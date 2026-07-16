@@ -46,6 +46,7 @@ Configuration for the Shipwright agent runtime (`agent/` and `admin/`). All opti
 | `ANTHROPIC_MODEL` | `string` | `claude-sonnet-4-6` | Claude model used for each agent invocation. |
 | `ANTHROPIC_FALLBACK_MODEL` | `string` | — | Fallback model if the primary is unavailable. |
 | `ANTHROPIC_EFFORT_LEVEL` | `string` | — | Effort/thinking level passed to Claude (e.g. `extended`, `auto`, `none`). |
+| `SHIPWRIGHT_CLAUDE_TIMEOUT_MS` | `number` | `1800000` | Hard timeout in milliseconds for a single `claude -p` session spawned by the agent runner (`agent/src/claude.ts`). When a session exceeds it the process is killed and a `ClaudeTimeoutError` is raised. Defaults to 1 800 000 ms (30 min) — the `claude -p` hard-timeout figure that `SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS` (35 min = 30 min + 5 min buffer) is derived from. Falls back to the default when unset or not a positive integer. Raise it for long sessions that keep polling CI after implementing so the worker can mark its task complete instead of being SIGKILLed mid-poll. **When raising this, raise `SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS` in step** (keep the ~5 min buffer above this value); otherwise the stale-claim reaper abandons the claim and re-dispatches a duplicate run before the longer session finishes. |
 | `ANTHROPIC_API_KEY` | `string` | — | Anthropic API key. Env-var-only (secret). |
 | `CLAUDE_CODE_OAUTH_TOKEN` | `string` | — | Claude Code OAuth token (alternative to `ANTHROPIC_API_KEY`). Env-var-only (secret). |
 
@@ -199,8 +200,8 @@ Agent behavior is controlled by `state/agent-policy.md`. This is a Markdown file
 |---|---|---|---|
 | `auto_post_reviews` | `bool` | `false` | Post review comments to GitHub automatically without manual approval. |
 | `allowed_events` | `string[]` | `["COMMENT", "APPROVE"]` | GitHub review event types the agent may emit. |
-| `review_external_prs` | `bool` | `true` | Review PRs opened by users other than the agent. |
-| `allow_self_review` | `bool` | `true` | Allow the agent to review its own PRs. Set to `false` to require a human reviewer on agent-authored PRs. |
+| `review_external_prs` | `bool` | `true` | Currently unused — `/shipwright:review` always targets a single explicit PR (no repo-wide scan to filter), and no other command reads this field. |
+| `allow_self_review` | `bool` | `true` | Read by `check-review.ts` (the `shipwright-review`/`shipwright-loop` cron precheck) to decide whether the agent's own open PRs are review candidates. Set to `false` to require a human reviewer on agent-authored PRs. |
 | `min_confidence` | `number` | `75` | Minimum confidence score (0–100) for a finding to be included in a review. |
 | `max_findings` | `number` | `5` | Maximum number of findings to include in a single review. |
 | `cleanup_merged_worktrees` | `bool` | `true` | Automatically remove worktrees for merged branches. |
@@ -212,7 +213,6 @@ Agent behavior is controlled by `state/agent-policy.md`. This is a Markdown file
 ---
 auto_post_reviews: false
 allowed_events: [COMMENT, APPROVE]
-review_external_prs: true
 allow_self_review: true
 min_confidence: 75
 max_findings: 5
@@ -220,6 +220,8 @@ cleanup_merged_worktrees: true
 cleanup_after_days: 14
 ---
 ```
+
+(`review_external_prs` is omitted above — see the table row: currently unused.)
 
 ---
 

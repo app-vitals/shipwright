@@ -83,6 +83,43 @@ describe("config.claude", () => {
     expect(cfg.claude.model).toBe("claude-sonnet-4-6");
     process.env.ANTHROPIC_MODEL = saved;
   });
+
+  test("timeoutMs defaults to 30m when SHIPWRIGHT_CLAUDE_TIMEOUT_MS not set", () => {
+    expect(config.claude.timeoutMs).toBe(30 * 60 * 1000);
+  });
+
+  test("timeoutMs from SHIPWRIGHT_CLAUDE_TIMEOUT_MS env var", () => {
+    process.env.SHIPWRIGHT_CLAUDE_TIMEOUT_MS = "5400000";
+    const { config: cfg } = createConfig(AGENT_HOME);
+    expect(cfg.claude.timeoutMs).toBe(5_400_000);
+    process.env.SHIPWRIGHT_CLAUDE_TIMEOUT_MS = undefined;
+  });
+
+  test("timeoutMs falls back to default when non-numeric", () => {
+    process.env.SHIPWRIGHT_CLAUDE_TIMEOUT_MS = "not-a-number";
+    const { config: cfg } = createConfig(AGENT_HOME);
+    expect(cfg.claude.timeoutMs).toBe(30 * 60 * 1000);
+    process.env.SHIPWRIGHT_CLAUDE_TIMEOUT_MS = undefined;
+  });
+
+  test("timeoutMs falls back to default when zero or negative", () => {
+    process.env.SHIPWRIGHT_CLAUDE_TIMEOUT_MS = "0";
+    expect(createConfig(AGENT_HOME).config.claude.timeoutMs).toBe(
+      30 * 60 * 1000,
+    );
+    process.env.SHIPWRIGHT_CLAUDE_TIMEOUT_MS = "-1000";
+    expect(createConfig(AGENT_HOME).config.claude.timeoutMs).toBe(
+      30 * 60 * 1000,
+    );
+    process.env.SHIPWRIGHT_CLAUDE_TIMEOUT_MS = undefined;
+  });
+
+  test("timeoutMs falls back to default when non-integer", () => {
+    process.env.SHIPWRIGHT_CLAUDE_TIMEOUT_MS = "1500.5";
+    const { config: cfg } = createConfig(AGENT_HOME);
+    expect(cfg.claude.timeoutMs).toBe(30 * 60 * 1000);
+    process.env.SHIPWRIGHT_CLAUDE_TIMEOUT_MS = undefined;
+  });
 });
 
 // ─── config.shipwright ────────────────────────────────────────────────────────

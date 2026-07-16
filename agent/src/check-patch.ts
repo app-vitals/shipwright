@@ -12,9 +12,11 @@
  * the first match — the selector needs the whole candidate set to pick the
  * globally-oldest ready item.
  *
- * Does NOT read state/reviews.json — all data comes from GitHub directly, and
- * the task-store /prs record is only consulted for the age (readyForPatchAt)
- * field, not for qualification.
+ * Does NOT read state/reviews.json — all data comes from GitHub directly. The
+ * task-store /prs record is consulted both for the age (readyForPatchAt)
+ * field and for qualification — a record with claimedBy set means another
+ * agent currently holds the claim on this PR and it is excluded (see the
+ * explicit claimedBy check below, mirroring check-review.ts).
  */
 
 import type { CommitInfo } from "./check-helpers.ts";
@@ -53,10 +55,17 @@ export interface ReviewThread {
   comments: { nodes: Array<{ author: { login: string }; body: string }> };
 }
 
+export interface IssueCommentNode {
+  author: { login: string };
+  body: string;
+  createdAt: string;
+}
+
 export interface PrReviewData {
   headRefOid: string;
   reviews: { nodes: ReviewNode[] };
   reviewThreads: { nodes: ReviewThread[] };
+  comments: { nodes: IssueCommentNode[] };
 }
 
 export interface CiCheckStatus {
@@ -92,7 +101,17 @@ export interface CheckPatchDeps {
   ) => Promise<MergeStatusInfo>;
   listPrCommits: (prNumber: number, repo?: string) => Promise<CommitInfo[]>;
   getCurrentUser: () => string;
-  /** Task-store PR record lookup, used only to source the age field. */
+  /**
+   * Task-store PR record lookup, used both to gate qualification (a record
+   * with claimedBy set means another agent currently holds the claim on this
+   * PR — see the explicit claimedBy check below, mirroring check-review.ts)
+   * and to source the age field (readyForPatchAt) when present. Queried
+   * WITHOUT `ready=true` so a `null` result unambiguously means "no record
+   * exists yet" (e.g. review skipped claim() for a self-authored PR under
+   * allow_self_review: false) rather than conflating it with "claimed" — the
+   * task-store's `ready=true` filter maps to `claimedBy IS NULL` server-side,
+   * which would collapse both cases into the same empty result.
+   */
   queryPrRecord?: (repo: string, prNumber: number) => Promise<PrRecord | null>;
 }
 
@@ -155,6 +174,33 @@ function isSelfCleanApprove(
 }
 
 /**
+ * Returns true when a review's non-empty body has been addressed by a
+ * subsequent PR-author reply (CPF-2.3).
+ *
+ * The self-review "Verdict: APPROVE" rewrite workaround (CPF-2.1, CPF-2.2)
+ * relies on `updatePullRequestReview`, which only permits editing a review's
+ * OWN author's body. For a third-party review (e.g. posted by a distinct
+ * GitHub identity), the PR author cannot rewrite the review body to signal
+ * the finding was addressed or rejected — the review text stays exactly as
+ * the third party wrote it forever. A subsequent PR-author reply (a
+ * top-level PR comment posted after the review) is the only available
+ * signal in that case, so we treat it as evidence the finding was addressed
+ * (fixed or rebutted) even though the review body itself never changes.
+ */
+function isAddressedByAuthorReply(
+  review: Pick<ReviewNode, "submittedAt">,
+  comments: IssueCommentNode[],
+  currentUser: string,
+): boolean {
+  const reviewedAt = new Date(review.submittedAt).getTime();
+  return comments.some(
+    (c) =>
+      c.author.login === currentUser &&
+      new Date(c.createdAt).getTime() > reviewedAt,
+  );
+}
+
+/**
  * Returns true if the PR has unaddressed findings:
  * - At least one COMMENTED or CHANGES_REQUESTED review posted at the current HEAD
  * - AND (has a non-empty review body OR has at least one unresolved inline thread)
@@ -162,12 +208,18 @@ function isSelfCleanApprove(
  * A self-authored review is excluded only when it is a clean APPROVE verdict
  * (see isSelfCleanApprove) — a self-review with a real (non-APPROVE) verdict
  * still counts as an unaddressed finding, same as any other reviewer's.
+ *
+ * A review's non-empty body is also excluded when there are no unresolved
+ * threads AND the PR author has replied after the review (see
+ * isAddressedByAuthorReply, CPF-2.3) — the only way to mark a third-party
+ * review's finding as addressed, since only the review's own author can edit
+ * its body.
  */
 function hasUnaddressedFindings(
   data: PrReviewData,
   currentUser: string,
 ): boolean {
-  const { headRefOid, reviews, reviewThreads } = data;
+  const { headRefOid, reviews, reviewThreads, comments } = data;
 
   // Find qualifying reviews: state COMMENTED or CHANGES_REQUESTED at current HEAD,
   // excluding self-authored clean-APPROVE reviews.
@@ -185,8 +237,13 @@ function hasUnaddressedFindings(
 
   if (unresolvedThreads.length > 0) return true;
 
-  // No unresolved threads — check if any qualifying review has a non-empty body
-  return qualifyingReviews.some((r) => r.body.trim().length > 0);
+  // No unresolved threads — check if any qualifying review has a non-empty
+  // body that hasn't been addressed by a subsequent author reply.
+  return qualifyingReviews.some(
+    (r) =>
+      r.body.trim().length > 0 &&
+      !isAddressedByAuthorReply(r, comments.nodes, currentUser),
+  );
 }
 
 // ─── Merge-only stale findings ────────────────────────────────────────────────
@@ -200,6 +257,10 @@ function hasUnaddressedFindings(
  * A self-authored review is excluded only when it is a clean APPROVE verdict
  * (see isSelfCleanApprove) — a self-review with a real (non-APPROVE) verdict
  * still counts as a stale finding.
+ *
+ * A stale review's non-empty body is also excluded when there are no
+ * unresolved threads AND the PR author has replied after the review (see
+ * isAddressedByAuthorReply, CPF-2.3).
  */
 async function hasMergeOnlyStaleFindings(
   prNumber: number,
@@ -208,7 +269,7 @@ async function hasMergeOnlyStaleFindings(
   repo: string | undefined,
   currentUser: string,
 ): Promise<boolean> {
-  const { headRefOid, reviews, reviewThreads } = data;
+  const { headRefOid, reviews, reviewThreads, comments } = data;
 
   const staleReviews = reviews.nodes.filter(
     (r) =>
@@ -222,7 +283,11 @@ async function hasMergeOnlyStaleFindings(
   const unresolvedThreads = reviewThreads.nodes.filter((t) => !t.isResolved);
   const hasFindings =
     unresolvedThreads.length > 0 ||
-    staleReviews.some((r) => r.body.trim().length > 0);
+    staleReviews.some(
+      (r) =>
+        r.body.trim().length > 0 &&
+        !isAddressedByAuthorReply(r, comments.nodes, currentUser),
+    );
 
   if (!hasFindings) return false;
 
@@ -302,14 +367,22 @@ export async function getPatchCandidates(
       try {
         record = await deps.queryPrRecord(pr.repo, pr.number);
       } catch {
-        // Query failed → fall back to PR createdAt below.
+        // Query failed → fall back to PR createdAt below (fail open — a
+        // transient task-store error must not silently exclude an
+        // otherwise-qualifying PR from patch candidacy).
       }
+      // A record with claimedBy set means another agent currently holds the
+      // claim on this PR — skip. A null record (no record was ever created,
+      // e.g. review skipped claim() for a self-authored PR under
+      // allow_self_review: false, or the query failed above) must NOT be
+      // treated as claimed — only an explicit claimedBy gates candidacy,
+      // mirroring check-review.ts.
+      if (record?.claimedBy != null) continue;
     }
 
     candidates.push({
       id: candidateId(pr.repo, pr.number),
       age: record?.readyForPatchAt ?? pr.createdAt ?? "",
-      claimedBy: record?.claimedBy ?? null,
       phase: "patch",
     });
   }
@@ -334,6 +407,7 @@ interface GraphqlResponse {
         headRefOid: string;
         reviews: { nodes: ReviewNode[] };
         reviewThreads: { nodes: ReviewThread[] };
+        comments: { nodes: IssueCommentNode[] };
       };
     };
   };
@@ -393,6 +467,13 @@ export async function buildProductionDeps(opts: {
               body
             }
           }
+        }
+      }
+      comments(last: 50) {
+        nodes {
+          author { login }
+          body
+          createdAt
         }
       }
     }

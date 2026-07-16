@@ -107,6 +107,10 @@ Driven by Shipwright's own commands: `/shipwright:dev-task` → `/shipwright:rev
 
 **Task-store connection** is env-var-only: both `SHIPWRIGHT_TASK_STORE_URL` and `SHIPWRIGHT_TASK_STORE_TOKEN` must be set for task operations to function. There is no GitHub fallback and no file-based config — the provisioner injects these two vars into managed GKE agents, and local installs must set them explicitly. If task operations seem to no-op, check `SHIPWRIGHT_TASK_STORE_URL` first.
 
+## Deploy model
+
+`direct` — ships via Helm chart + GHCR-pinned image tags, with no staging/production GitHub Environments and no deploy-staging→canary→promote-to-production pipeline.
+
 ## Test conventions
 
 Tests land **with** the code, at the correct layer — same PR, no "add tests later" tasks. Layer is encoded in the filename:
@@ -115,7 +119,7 @@ Tests land **with** the code, at the correct layer — same PR, no "add tests la
 |---|---|---|
 | `*.unit.test.ts` | unit | pure logic, no I/O |
 | `*.integration.test.ts` | integration | real dependency behavior via recorded fixtures / injected doubles |
-| `*.smoke.test.ts` | smoke | Hono endpoints via in-process `app.request()` (no real socket) |
+| `*.smoke.test.ts` | smoke | HTTP route contracts — Hono endpoints via in-process `app.request()` (no real socket); a real `Bun.serve()` boot is permitted only when there's no in-process request seam (e.g. a bare-`Bun.serve()` server with no Hono app factory) |
 | `*.spec.ts` (in `site/`) | e2e | the site in a real browser via Playwright |
 | `*.content.test.ts` | content | markdown/prompt-content-assertion tests — e.g. checking that a command's or skill's Markdown body contains expected sections/instructions/wording. Distinct from unit/integration/smoke: no real I/O boundary, just asserting on static content. |
 
@@ -173,5 +177,6 @@ To load additional context into a session, add `@docs/filename.md` entries here 
 - **docs/helm-repo.md** — installing the published `shipwright` Helm chart, how chart publishing and version bumps are automated
 - **docs/quickstart.md** — local onboarding: metrics-only quickstart and the full dev stack (`task stack`)
 - **docs/test-readiness/test-system.md** — the authoritative test blueprint: layer matrix, boundary rules, per-component budgets, CI pipeline shape, and the full isolation contract
+- **docs/test-readiness/naming.md** — file-suffix → layer naming convention and the `bunfig.toml` runner-exclusion config (e2e + reserved canary suffix), gating M1 rename tasks
 - **docs/migration.md** — breaking changes and migration steps across versions (e.g. `AgentProvisioner.reconcile()` interface change)
 - **docs/observability.md** — Sentry error/log reporting: what's collected, what's scrubbed, how to disable, and self-hosted Sentry support
