@@ -47,12 +47,17 @@ function makeDeps(
     repo: string,
     prNumber: number,
   ) => Promise<LinkedTaskInfo | null> = async () => null,
+  getScopedRepos: () => string[] = () =>
+    [...new Set(prs.map((pr) => pr.repo ?? ""))],
+  hasScopeSynced: () => boolean = () => true,
 ): CheckReviewDeps {
   return {
     listOpenPrs: async (_repo: string) => prs,
     queryPrRecord: queryPrRecordFn,
     getCurrentUser: () => currentUser,
     isSelfReviewAllowed,
+    getScopedRepos,
+    hasScopeSynced,
     queryTaskStatus,
   };
 }
@@ -212,6 +217,8 @@ describe("getReviewCandidates", () => {
       },
       getCurrentUser: () => "bodhi-agent",
       isSelfReviewAllowed: false,
+      getScopedRepos: () => [pr.repo ?? ""],
+      hasScopeSynced: () => true,
     };
     const result = await getReviewCandidates(deps);
     expect(result).toHaveLength(1);
@@ -386,6 +393,79 @@ describe("getReviewCandidates", () => {
         reviewState: "pending",
         claimedBy: "agent-other",
       })),
+    );
+    expect(result).toEqual([]);
+  });
+
+  // ─── agent-scope filtering (WL-4.3) ──────────────────────────────────────
+
+  test("excludes a PR from a repo returned by the local-clone scan but absent from getScopedRepos()", async () => {
+    const inScope = makePr({ number: 1, repo: "example-org/in-scope" });
+    const outOfScope = makePr({ number: 2, repo: "example-org/out-of-scope" });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [inScope, outOfScope],
+        async () => null,
+        "bodhi-agent",
+        false,
+        undefined,
+        () => ["example-org/in-scope"],
+      ),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("example-org/in-scope#1");
+  });
+
+  test("re-evaluates getScopedRepos() on every call — a scope change between two calls changes the result on the second call", async () => {
+    const pr = makePr({ number: 1, repo: "example-org/newly-added" });
+    let scope: string[] = [];
+    const deps = makeDeps(
+      [pr],
+      async () => null,
+      "bodhi-agent",
+      false,
+      undefined,
+      () => scope,
+    );
+
+    const first = await getReviewCandidates(deps);
+    expect(first).toEqual([]);
+
+    scope = ["example-org/newly-added"];
+    const second = await getReviewCandidates(deps);
+    expect(second).toHaveLength(1);
+    expect(second[0].id).toBe("example-org/newly-added#1");
+  });
+
+  test("fails open (does not filter) when hasScopeSynced() is false, even if getScopedRepos() would otherwise exclude everything", async () => {
+    const pr = makePr({ number: 1, repo: "example-org/never-synced" });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => null,
+        "bodhi-agent",
+        false,
+        undefined,
+        () => [],
+        () => false,
+      ),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("example-org/never-synced#1");
+  });
+
+  test("filters normally when hasScopeSynced() is true, even if the synced scope is a deliberately empty list", async () => {
+    const pr = makePr({ number: 1, repo: "example-org/some-repo" });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => null,
+        "bodhi-agent",
+        false,
+        undefined,
+        () => [],
+        () => true,
+      ),
     );
     expect(result).toEqual([]);
   });
