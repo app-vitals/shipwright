@@ -106,8 +106,9 @@ export class ClaudeTimeoutError extends Error {
 }
 
 interface ClaudeSessionStore {
-  get: (key: string) => string | undefined;
-  set: (key: string, id: string) => void;
+  get: (key: string) => Promise<string | undefined> | string | undefined;
+  set: (key: string, id: string) => Promise<void> | void;
+  clear?: (key: string) => Promise<void> | void;
 }
 
 /**
@@ -266,7 +267,9 @@ export function createRunClaude(
     message: string,
     sessionKey: string | undefined,
   ): Promise<ClaudeRunResult> {
-    const existingSessionId = sessionKey ? sessions.get(sessionKey) : undefined;
+    const existingSessionId = sessionKey
+      ? await sessions.get(sessionKey)
+      : undefined;
 
     if (sessionKey && !existingSessionId) {
       tracker({ type: "session_start", sessionKey });
@@ -277,7 +280,7 @@ export function createRunClaude(
     try {
       const output = await _spawn(args);
       if (sessionKey && output.sessionId) {
-        sessions.set(sessionKey, output.sessionId);
+        await sessions.set(sessionKey, output.sessionId);
       }
       return output;
     } catch (err) {
@@ -288,8 +291,8 @@ export function createRunClaude(
       // process that would also hang.
       if (existingSessionId && !(err instanceof ClaudeTimeoutError)) {
         const fallbackStart = Date.now();
-        if (sessionKey && "clear" in sessions) {
-          (sessions as { clear: (key: string) => void }).clear(sessionKey);
+        if (sessionKey && sessions.clear) {
+          await sessions.clear(sessionKey);
         }
         const freshArgs = _buildArgs(message, undefined);
         const output = await _spawn(freshArgs);
@@ -299,7 +302,7 @@ export function createRunClaude(
           durationMs: Date.now() - fallbackStart,
         });
         if (sessionKey && output.sessionId) {
-          sessions.set(sessionKey, output.sessionId);
+          await sessions.set(sessionKey, output.sessionId);
         }
         return output;
       }

@@ -71,7 +71,9 @@ class MockApp {
 
 // Wrap with test deps — mirrors the createSlackApp() wrapper in
 // slack.integration.test.ts, but only exposes the params this suite needs.
-function createSlackApp(getSessionFn: (key: string) => string | undefined) {
+function createSlackApp(
+  getSessionFn: (key: string) => Promise<string | undefined>,
+) {
   return _createSlackApp(
     mockRunClaude,
     identityFormatter,
@@ -117,7 +119,7 @@ describe("Slack chat conversation journey — DM multi-turn continuity", () => {
 
   test("turn 1 (no prior session) then turn 2 (established session) both reach Claude and both post replies, threaded on the same sessionKey", async () => {
     // Turn 1: brand-new DM — no session established yet.
-    const noSession = mock((_key: string) => undefined);
+    const noSession = mock(async (_key: string) => undefined);
     createSlackApp(noSession);
 
     const client1 = makeMockClient();
@@ -156,7 +158,7 @@ describe("Slack chat conversation journey — DM multi-turn continuity", () => {
     // fixed session id for this thread's key, proving continuity is driven by
     // the injected session lookup, not implicit in-process state.
     const establishedKey = threadKey("D100", "1000.001");
-    const establishedSession = mock((key: string) =>
+    const establishedSession = mock(async (key: string) =>
       key === establishedKey ? "sess-established-1" : undefined,
     );
     createSlackApp(establishedSession);
@@ -209,7 +211,7 @@ describe("Slack chat conversation journey — channel app_mention thread continu
 
   test("initial @mention (no session) then a plain follow-up message in the same thread (established session) both reach Claude on the mention's threadKey", async () => {
     // Turn 1: an @mention in a channel starts a new thread — no session yet.
-    const noSession = mock((_key: string) => undefined);
+    const noSession = mock(async (_key: string) => undefined);
     createSlackApp(noSession);
 
     const client1 = makeMockClient();
@@ -245,7 +247,7 @@ describe("Slack chat conversation journey — channel app_mention thread continu
     // The channel message handler only routes thread replies when a session
     // is already established for that thread — simulate turn 1 having
     // established it, via getSessionFn now resolving the mention's threadKey.
-    const establishedSession = mock((key: string) =>
+    const establishedSession = mock(async (key: string) =>
       key === mentionKey ? "sess-thread-77" : undefined,
     );
     createSlackApp(establishedSession);
@@ -291,7 +293,7 @@ describe("Slack chat conversation journey — channel app_mention thread continu
     // Once a thread has a session, a redundant @mention on a later message in
     // that same thread must NOT also trigger a second Claude call/reply —
     // the message handler already covers thread continuity.
-    const establishedSession = mock((_key: string) => "sess-thread-77");
+    const establishedSession = mock(async (_key: string) => "sess-thread-77");
     createSlackApp(establishedSession);
 
     const client = makeMockClient();
