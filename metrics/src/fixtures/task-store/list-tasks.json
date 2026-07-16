@@ -1,0 +1,46 @@
+{
+  "listTasks_success": {
+    "status": 200,
+    "body": {
+      "tasks": [
+        {
+          "id": "T-001",
+          "status": "merged",
+          "session": "session-1",
+          "layer": "unit",
+          "repo": "org/alpha",
+          "hours": 2.5,
+          "complexity": 3,
+          "startedAt": "2026-06-01T00:00:00.000Z",
+          "completedAt": "2026-06-01T04:00:00.000Z",
+          "mergedAt": "2026-06-01T05:00:00.000Z",
+          "createdAt": "2026-05-31T23:00:00.000Z",
+          "model": "sonnet",
+          "effortLevel": "medium"
+        },
+        {
+          "id": "T-002",
+          "status": "in_progress",
+          "session": null,
+          "layer": "integration",
+          "repo": "org/beta",
+          "hours": null,
+          "complexity": null,
+          "startedAt": "2026-06-02T00:00:00.000Z",
+          "completedAt": null,
+          "mergedAt": null,
+          "createdAt": "2026-06-01T22:00:00.000Z",
+          "model": "opus",
+          "effortLevel": "high"
+        }
+      ],
+      "total": 2,
+      "limit": 200,
+      "offset": 0
+    }
+  },
+  "listTasks_server_error": {
+    "status": 503,
+    "body": "task store unavailable"
+  }
+}
