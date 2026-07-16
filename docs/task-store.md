@@ -156,6 +156,18 @@ pending → in_progress → pr_open → approved → merged → deploying → de
 Terminal statuses (closed): `merged`, `done`, `deploying`, `deployed`, `cancelled`.
 Paused status: `blocked` (returned to `pending` on retry).
 
+### Dependency satisfaction rules
+
+When `GET /tasks?ready=true` evaluates whether a task is eligible to run, it checks whether all of the task's dependencies are "satisfied." A task's dependencies are specified in its `dependencies` array (a list of task IDs). A single dependency is satisfied when its task meets one of these conditions:
+
+1. **Terminal status** — the dependency's `status` is `merged`, `done`, `deploying`, `deployed`, or `cancelled`. These statuses indicate the dependency is complete and no longer blocking.
+
+2. **Same-branch bundled** — the dependency has `status = pr_open` or `status = approved` AND its `branch` field equals the requesting task's `branch`. This indicates both tasks are part of the same feature branch and their PRs are bundled together in the queue (reviewed/approved as a unit).
+
+3. **Cross-branch merged PR** — the dependency has `status = pr_open` AND its `pr` field is set (not null) AND the referenced GitHub PR number is merged in the repository. This indicates a dependency from another branch whose work has landed.
+
+4. **Any other status is not satisfied.** If a dependency does not match one of the three rules above (e.g., it has `status = pending`, `status = blocked`, or is `pr_open` on a different branch with no PR link), the task cannot run — the dependency is unsatisfied and the task is excluded from `?ready=true` results.
+
 ### PR tracking
 
 The `/prs` surface tracks GitHub PRs through the review → patch → deploy pipeline. One record per `(repo, prNumber)`.
@@ -330,7 +342,7 @@ If `GET /tasks?ready=true` returns `{ tasks: [], total: 0 }` even though tasks e
 
 2. **HITL flag set** — query `?status=pending` to check whether tasks have `"hitl": true`. Clear the flag once the human action is complete.
 
-3. **Dependencies not satisfied** — query `?status=pending` to find pending tasks, then check each task's `dependencies` array against the satisfaction rules above (terminal status, same-branch `pr_open`/`approved`, or a merged cross-branch PR).
+3. **Dependencies not satisfied** — query `?status=pending` to find pending tasks, then check each task's `dependencies` array against the [dependency satisfaction rules](#dependency-satisfaction-rules) (terminal status, same-branch `pr_open`/`approved`, or a merged cross-branch PR).
 
 4. **Queue empty** — no pending tasks exist at all. Confirm with `?status=pending`.
 
