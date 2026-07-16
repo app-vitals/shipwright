@@ -111,8 +111,9 @@ export interface PrStateReconcilerDeps {
    * on the very next tick. `repos` above is the local-clone filesystem scan
    * (built once); this filter is intersected with it at call time so a repo
    * cloned locally for reference but absent from this list never gets
-   * reconciled (see WL-4.4, mirrors WL-4.3's same pattern in
-   * check-deploy.ts/check-review.ts/check-patch.ts).
+   * reconciled (see WL-4.4). This scope-filtering is new as of WL-4.4 —
+   * check-deploy.ts/check-review.ts/check-patch.ts do not yet apply
+   * equivalent filtering and still call resolveAllRepos() unscoped.
    */
   getScopedRepos: () => string[];
 }
