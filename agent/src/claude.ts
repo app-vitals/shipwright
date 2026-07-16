@@ -1,3 +1,5 @@
+import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
+
 export interface LiveClaudeConfig {
   model: string;
   fallbackModel?: string;
@@ -119,6 +121,7 @@ export function createRunClaude(
   sessions: ClaudeSessionStore = { get: () => undefined, set: () => {} },
   model: string | undefined = undefined,
   workspace: string = process.cwd(),
+  sentryClient?: ErrorCapturingClient,
   extraAllowedTools: string[] | undefined = undefined,
   fallbackModel: string | undefined = undefined,
   effortLevel: string | undefined = undefined,

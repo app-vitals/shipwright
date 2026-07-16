@@ -737,4 +737,116 @@ describeOrSkip("Task store schema (integration)", () => {
     expect(result.tasks.map((t) => t.title)).toEqual(["Own task"]);
     expect(result.total).toBe(1);
   });
+
+  // ─── TaskService.list() updatedSince filter ─────────────────────────────────
+
+  it("list({ updatedSince }) excludes tasks whose updatedAt is before the cutoff", async () => {
+    const taskService = new TaskService(prisma);
+
+    const oldTask = await prisma.task.create({
+      data: {
+        title: "Old task",
+        status: "pending",
+        updatedAt: new Date("2026-01-01T00:00:00Z"),
+      },
+    });
+    const newTask = await prisma.task.create({
+      data: {
+        title: "New task",
+        status: "pending",
+        updatedAt: new Date("2026-06-01T00:00:00Z"),
+      },
+    });
+
+    const result = await taskService.list({
+      updatedSince: "2026-03-01T00:00:00.000Z",
+    });
+
+    expect(result.tasks.map((t) => t.id)).toEqual([newTask.id]);
+    expect(result.tasks.map((t) => t.id)).not.toContain(oldTask.id);
+  });
+
+  it("list() without updatedSince returns tasks regardless of updatedAt (preserves current unfiltered behavior)", async () => {
+    const taskService = new TaskService(prisma);
+
+    await prisma.task.create({
+      data: {
+        title: "Old task",
+        status: "pending",
+        updatedAt: new Date("2026-01-01T00:00:00Z"),
+      },
+    });
+    await prisma.task.create({
+      data: {
+        title: "New task",
+        status: "pending",
+        updatedAt: new Date("2026-06-01T00:00:00Z"),
+      },
+    });
+
+    const result = await taskService.list({});
+
+    expect(result.total).toBe(2);
+  });
+
+  it("list({ updatedSince, repo }) applies both filters together", async () => {
+    const taskService = new TaskService(prisma);
+
+    await prisma.task.create({
+      data: {
+        title: "Old task, matching repo",
+        status: "pending",
+        repo: "acme-inc/backend-api",
+        updatedAt: new Date("2026-01-01T00:00:00Z"),
+      },
+    });
+    const newMatchingTask = await prisma.task.create({
+      data: {
+        title: "New task, matching repo",
+        status: "pending",
+        repo: "acme-inc/backend-api",
+        updatedAt: new Date("2026-06-01T00:00:00Z"),
+      },
+    });
+    await prisma.task.create({
+      data: {
+        title: "New task, other repo",
+        status: "pending",
+        repo: "acme-inc/other-repo",
+        updatedAt: new Date("2026-06-01T00:00:00Z"),
+      },
+    });
+
+    const result = await taskService.list({
+      updatedSince: "2026-03-01T00:00:00.000Z",
+      repo: "acme-inc/backend-api",
+    });
+
+    expect(result.tasks.map((t) => t.id)).toEqual([newMatchingTask.id]);
+  });
+
+  it("list({ updatedSince }) includes a task whose updatedAt exactly equals the cutoff (gte inclusivity)", async () => {
+    const taskService = new TaskService(prisma);
+    const cutoff = "2026-03-01T00:00:00.000Z";
+
+    const boundaryTask = await prisma.task.create({
+      data: {
+        title: "Boundary task",
+        status: "pending",
+        updatedAt: new Date(cutoff),
+      },
+    });
+
+    const result = await taskService.list({ updatedSince: cutoff });
+
+    expect(result.tasks.map((t) => t.id)).toContain(boundaryTask.id);
+  });
+
+  it("list({ updatedSince: 'not-a-date' }) throws instead of silently matching or 500ing", async () => {
+    const taskService = new TaskService(prisma);
+
+    await expect(
+      taskService.list({ updatedSince: "not-a-date" }),
+    ).rejects.toThrow();
+  });
 });

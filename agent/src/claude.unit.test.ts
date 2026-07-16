@@ -9,6 +9,7 @@
 import "./test-env.ts";
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
+import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import { TEST_AGENT_HOME } from "./test-env.ts";
 
 const MODEL = "claude-opus-4-6";
@@ -28,6 +29,14 @@ const testSessions = {
   get: mockGetSession,
   set: mockSetSession,
   clear: mockClearSession,
+};
+
+let capturedMessages: string[] = [];
+const fakeSentryClient: ErrorCapturingClient = {
+  captureException: () => {},
+  captureMessage: (message: string) => {
+    capturedMessages.push(message);
+  },
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -92,6 +101,7 @@ describe("runClaude", () => {
     mockGetSession.mockClear();
     mockSetSession.mockClear();
     mockClearSession.mockClear();
+    capturedMessages = [];
     mockSpawn = mock(
       () =>
         fakeProc(jsonOutput("Hello from Claude")) as ReturnType<
@@ -103,6 +113,7 @@ describe("runClaude", () => {
       testSessions,
       MODEL,
       WORKSPACE,
+      fakeSentryClient,
     );
   });
 
@@ -153,6 +164,7 @@ describe("runClaude", () => {
       testSessions,
       MODEL,
       WORKSPACE,
+      fakeSentryClient,
       [],
       undefined,
       "xhigh",
@@ -170,6 +182,7 @@ describe("runClaude", () => {
       testSessions,
       MODEL,
       WORKSPACE,
+      fakeSentryClient,
       [],
       "claude-sonnet-4-6",
     );
@@ -328,6 +341,7 @@ describe("runClaude", () => {
       testSessions,
       MODEL,
       WORKSPACE,
+      fakeSentryClient,
       undefined,
       undefined,
       undefined,
@@ -357,6 +371,7 @@ describe("runClaude", () => {
       testSessions,
       MODEL,
       WORKSPACE,
+      fakeSentryClient,
       undefined,
       undefined,
       undefined,
@@ -394,7 +409,7 @@ describe("runClaude", () => {
   });
 });
 
-// ─── Resume retry tests ────────────────────────────────────────────────────
+// ─── Stale session fallback tests ─────────────────────────────────────────────
 
 describe("resume retry", () => {
   test("retries the same resumed session once when it fails, then succeeds", async () => {
@@ -416,6 +431,7 @@ describe("resume retry", () => {
     mockGetSession.mockClear();
     mockSetSession.mockClear();
     mockClearSession.mockClear();
+    capturedMessages = [];
     mockGetSession.mockReturnValue("stale-sess-id");
 
     const runClaude = createRunClaude(
@@ -423,6 +439,7 @@ describe("resume retry", () => {
       testSessions,
       MODEL,
       WORKSPACE,
+      fakeSentryClient,
     );
 
     const result = await runClaude("hello", "chan:ts");
@@ -605,6 +622,7 @@ describe("extraAllowedTools", () => {
     mockGetSession.mockClear();
     mockSetSession.mockClear();
     mockClearSession.mockClear();
+    capturedMessages = [];
     mockSpawn = mock(
       () =>
         fakeProc(jsonOutput("Hello from Claude")) as ReturnType<
@@ -619,12 +637,14 @@ describe("extraAllowedTools", () => {
       testSessions,
       MODEL,
       WORKSPACE,
+      fakeSentryClient,
     );
     const runClaudeEmpty = createRunClaude(
       mockSpawn as typeof Bun.spawn,
       testSessions,
       MODEL,
       WORKSPACE,
+      fakeSentryClient,
       [],
     );
 
@@ -645,6 +665,7 @@ describe("extraAllowedTools", () => {
       testSessions,
       MODEL,
       WORKSPACE,
+      fakeSentryClient,
       ["mcp__my_server__my_tool", "mcp__other__tool"],
     );
 
@@ -671,6 +692,7 @@ describe("extraAllowedTools", () => {
       testSessions,
       MODEL,
       WORKSPACE,
+      fakeSentryClient,
       ["mcp__extra__tool"],
     );
 
@@ -697,6 +719,7 @@ describe("runClaude — totalCostUsd and modelUsage", () => {
     mockGetSession.mockClear();
     mockSetSession.mockClear();
     mockClearSession.mockClear();
+    capturedMessages = [];
     mockSpawn = mock(
       () =>
         fakeProc(jsonOutput("Hello from Claude")) as ReturnType<
@@ -708,6 +731,7 @@ describe("runClaude — totalCostUsd and modelUsage", () => {
       testSessions,
       MODEL,
       WORKSPACE,
+      fakeSentryClient,
     );
   });
 
@@ -826,6 +850,7 @@ describe("liveClaudeConfig", () => {
     mockGetSession.mockClear();
     mockSetSession.mockClear();
     mockClearSession.mockClear();
+    capturedMessages = [];
     mockSpawn = mock(
       () =>
         fakeProc(jsonOutput("Hello from Claude")) as ReturnType<
@@ -843,6 +868,7 @@ describe("liveClaudeConfig", () => {
       testSessions,
       undefined,
       WORKSPACE,
+      fakeSentryClient,
     );
 
     await runClaudeDefault("test");
@@ -861,6 +887,7 @@ describe("liveClaudeConfig", () => {
       testSessions,
       "claude-opus-4-6",
       WORKSPACE,
+      fakeSentryClient,
     );
 
     await runClaudeExplicit("test");
@@ -878,6 +905,7 @@ describe("liveClaudeConfig", () => {
       testSessions,
       undefined,
       WORKSPACE,
+      fakeSentryClient,
     );
 
     await runClaudeDefault("test");

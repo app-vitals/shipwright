@@ -15,6 +15,7 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import {
   type ChatTokenReporter,
   NoopChatTokenReporter,
@@ -106,6 +107,15 @@ class MockApp {
   }
 }
 
+// ─── Fake sentry client — captures errors instead of asserting on a tracker ──
+
+let capturedErrors: unknown[] = [];
+const fakeSentryClient: ErrorCapturingClient = {
+  captureException: (err: unknown) => {
+    capturedErrors.push(err);
+  },
+};
+
 // Wrap with test deps so all tests call createSlackApp() with no args
 function createSlackApp(
   overrides: {
@@ -128,8 +138,10 @@ function createSlackApp(
     getSessionFn?: (key: string) => string | undefined;
     blocksConverter?: typeof markdownToBlocks;
     chatTokenReporter?: ChatTokenReporter;
+    sentryClient?: ErrorCapturingClient;
   } = {},
 ) {
+  capturedErrors = [];
   return _createSlackApp(
     mockRunClaude,
     mockMarkdownToSlack,
@@ -137,6 +149,7 @@ function createSlackApp(
     // biome-ignore lint/suspicious/noExplicitAny: mock factory for tests
     (cfg) => new MockApp(cfg as Record<string, unknown>) as any,
     mockSlackConfig,
+    overrides.sentryClient ?? fakeSentryClient,
     overrides.fileDownloaderFn ?? (async () => null),
     overrides.voiceConfig ?? {},
     overrides.transcribeAudioFn ?? (async () => null),
@@ -461,6 +474,17 @@ describe("message handler — DM routing", () => {
     ).resolves.toBeUndefined();
   });
 
+  test("does not call sentryClient.captureException on success", async () => {
+    await invokeDM({ channel: "D1", ts: "1.1", text: "hello" });
+    expect(capturedErrors.length).toBe(0);
+  });
+
+  test("calls sentryClient.captureException when runClaude throws", async () => {
+    mockRunClaude.mockRejectedValueOnce(new Error("boom"));
+    await invokeDM({ channel: "D1", ts: "1.1" });
+    expect(capturedErrors.length).toBe(1);
+    expect((capturedErrors[0] as Error).message).toBe("boom");
+  });
 });
 
 // ─── message handler tests — thread routing ───────────────────────────────────
@@ -922,6 +946,18 @@ describe("app_mention handler", () => {
         client,
       }),
     ).resolves.toBeUndefined();
+  });
+
+  test("does not call sentryClient.captureException on mention success", async () => {
+    await invokeMention({ channel: "C1", ts: "2.2", text: "@bot help" });
+    expect(capturedErrors.length).toBe(0);
+  });
+
+  test("calls sentryClient.captureException when mention handler throws", async () => {
+    mockRunClaude.mockRejectedValueOnce(new Error("oops"));
+    await invokeMention({ channel: "C1", ts: "2.2" });
+    expect(capturedErrors.length).toBe(1);
+    expect((capturedErrors[0] as Error).message).toBe("oops");
   });
 
   test("app_mention in active thread: runClaude not called when session exists", async () => {

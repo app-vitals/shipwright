@@ -79,6 +79,7 @@ function createSlackApp(getSessionFn: (key: string) => string | undefined) {
     // biome-ignore lint/suspicious/noExplicitAny: mock factory for tests
     (cfg) => new MockApp(cfg as Record<string, unknown>) as any,
     mockSlackConfig,
+    undefined, // sentryClient
     async () => null, // fileDownloaderFn
     {}, // voiceConfig
     async () => null, // transcribeAudioFn

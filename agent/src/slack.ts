@@ -9,6 +9,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import type { App } from "@slack/bolt";
 import type { WebAPIPlatformError } from "@slack/web-api";
 import {
@@ -112,6 +113,10 @@ type AppFactory = (cfg: {
 
 const defaultAppFactory: AppFactory = (cfg) =>
   new (require("@slack/bolt").App)(cfg);
+
+const noopSentryClient: ErrorCapturingClient = {
+  captureException: () => {},
+};
 
 type FileDownloaderFn = (
   file: SlackFile,
@@ -345,6 +350,7 @@ export function createSlackApp(
   getThreadKey: typeof defaultThreadKey = defaultThreadKey,
   appFactory: AppFactory = defaultAppFactory,
   slackConfig: SlackConfig = { botToken: "", appToken: "", signingSecret: "" },
+  sentryClient: ErrorCapturingClient = noopSentryClient,
   fileDownloaderFn: FileDownloaderFn = downloadFile,
   voiceConfig: VoiceConfig = {},
   transcribeAudioFn: TranscribeAudioFn = transcribeAudio,
@@ -481,6 +487,7 @@ export function createSlackApp(
       });
     } catch (err) {
       console.error("[slack] error:", err);
+      sentryClient.captureException(err);
       await say({
         text: formatRunErrorForSlack(err),
         thread_ts: msg.thread_ts ?? msg.ts,
@@ -614,6 +621,7 @@ export function createSlackApp(
       });
     } catch (err) {
       console.error("[slack] error:", err);
+      sentryClient.captureException(err);
       await say({ text: formatRunErrorForSlack(err), thread_ts: replyTs });
     } finally {
       await setStatus("");

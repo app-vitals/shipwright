@@ -85,7 +85,7 @@ for (const level of ["log", "warn", "error"] as const) {
 // wraps on top of it — this captures clean log args in Sentry while local
 // output keeps its timestamp prefix.
 
-initSentry({ service: "agent" });
+initSentry({ service: "agent", agentId });
 
 // ─── Step 1: Agent home ───────────────────────────────────────────────────────
 
@@ -105,6 +105,7 @@ const runner = createRunClaude(
   sessions,
   undefined,
   config.paths.workspace,
+  process.env.SENTRY_DSN ? Sentry : undefined,
   undefined,
   undefined,
   undefined,
@@ -473,6 +474,7 @@ if (hasSlackCredentials(slackAppConfig)) {
     threadKey,
     undefined, // appFactory — default Bolt App
     slackAppConfig,
+    process.env.SENTRY_DSN ? Sentry : undefined,
     undefined, // fileDownloaderFn — default
     config.voice,
     undefined, // transcribeAudioFn — default

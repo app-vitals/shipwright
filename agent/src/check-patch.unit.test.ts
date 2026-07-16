@@ -12,7 +12,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { CommitInfo } from "./check-helpers.ts";
+import type { CommitInfo, LinkedTaskInfo } from "./check-helpers.ts";
 import {
   type CheckPatchDeps,
   type CiCheckStatus,
@@ -54,6 +54,10 @@ interface MakeDepsOptions {
   mergeStatusByPr?: Record<number, MergeStatusInfo>;
   listPrCommits?: (_prNumber: number) => Promise<CommitInfo[]>;
   getCurrentUser?: () => string;
+  queryTaskStatus?: (
+    repo: string,
+    prNumber: number,
+  ) => Promise<LinkedTaskInfo | null>;
 }
 
 function makeDeps({
@@ -63,6 +67,7 @@ function makeDeps({
   mergeStatusByPr = {},
   listPrCommits = async () => [],
   getCurrentUser = () => "the-agent",
+  queryTaskStatus = async () => null,
 }: MakeDepsOptions): CheckPatchDeps {
   return {
     listOwnOpenPrs: async (_repo: string) => ownPrs,
@@ -92,6 +97,7 @@ function makeDeps({
     },
     listPrCommits,
     getCurrentUser,
+    queryTaskStatus,
   };
 }
 
@@ -1240,7 +1246,26 @@ describe("getPatchCandidates", () => {
 
   // ─── age field sourcing ────────────────────────────────────────────────────
 
-  test("age is sourced from queryPrRecord's readyForPatchAt when available", async () => {
+  test("age is sourced from the linked task's createdAt when a task is linked, even when queryPrRecord's readyForPatchAt is available", async () => {
+    const pr = makeOwnPr({ number: 10, createdAt: "2026-06-01T00:00:00.000Z" });
+    const deps = makeDeps({
+      ownPrs: [pr],
+      reviewDataByPr: {},
+      ciStatusByPr: { 10: { hasFailing: true } },
+    });
+    deps.queryPrRecord = async () => ({
+      readyForPatchAt: "2026-05-20T00:00:00.000Z",
+    });
+    deps.queryTaskStatus = async () => ({
+      status: "in_progress",
+      createdAt: "2026-05-01T00:00:00.000Z",
+    });
+    const result = await getPatchCandidates(deps);
+    expect(result[0].age).toBe("2026-05-01T00:00:00.000Z");
+    expect(result[0].age).not.toBe("2026-05-20T00:00:00.000Z");
+  });
+
+  test("age falls back to PR createdAt when no task is linked (queryTaskStatus resolves null), even when queryPrRecord's readyForPatchAt is available", async () => {
     const pr = makeOwnPr({ number: 10, createdAt: "2026-06-01T00:00:00.000Z" });
     const deps = makeDeps({
       ownPrs: [pr],
@@ -1251,10 +1276,10 @@ describe("getPatchCandidates", () => {
       readyForPatchAt: "2026-05-20T00:00:00.000Z",
     });
     const result = await getPatchCandidates(deps);
-    expect(result[0].age).toBe("2026-05-20T00:00:00.000Z");
+    expect(result[0].age).toBe("2026-06-01T00:00:00.000Z");
   });
 
-  test("age falls back to PR createdAt when queryPrRecord is not provided", async () => {
+  test("age falls back to PR createdAt when queryPrRecord is not provided and no task is linked", async () => {
     const pr = makeOwnPr({ number: 10, createdAt: "2026-06-01T00:00:00.000Z" });
     const result = await getPatchCandidates(
       makeDeps({
@@ -1263,6 +1288,21 @@ describe("getPatchCandidates", () => {
         ciStatusByPr: { 10: { hasFailing: true } },
       }),
     );
+    expect(result[0].age).toBe("2026-06-01T00:00:00.000Z");
+  });
+
+  test("age falls back to PR createdAt when queryTaskStatus throws (lookup failure does not disqualify or block age fallback)", async () => {
+    const pr = makeOwnPr({ number: 10, createdAt: "2026-06-01T00:00:00.000Z" });
+    const deps = makeDeps({
+      ownPrs: [pr],
+      reviewDataByPr: {},
+      ciStatusByPr: { 10: { hasFailing: true } },
+    });
+    deps.queryTaskStatus = async () => {
+      throw new Error("task-store unreachable");
+    };
+    const result = await getPatchCandidates(deps);
+    expect(result).toHaveLength(1);
     expect(result[0].age).toBe("2026-06-01T00:00:00.000Z");
   });
 
