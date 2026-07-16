@@ -135,7 +135,7 @@ function createSlackApp(
     ) => Promise<{
       messages?: { user?: string; text?: string; ts?: string }[];
     }>;
-    getSessionFn?: (key: string) => string | undefined;
+    getSessionFn?: (key: string) => Promise<string | undefined>;
     blocksConverter?: typeof markdownToBlocks;
     chatTokenReporter?: ChatTokenReporter;
     sentryClient?: ErrorCapturingClient;
@@ -157,7 +157,7 @@ function createSlackApp(
     overrides.resolveUserFn ?? mockResolveUserFn,
     "botUserId" in overrides ? overrides.botUserId : "UBOT123",
     overrides.conversationsRepliesFn ?? (async () => ({ messages: [] })),
-    overrides.getSessionFn ?? (() => undefined),
+    overrides.getSessionFn ?? (async () => undefined),
     overrides.blocksConverter,
     overrides.chatTokenReporter ?? new NoopChatTokenReporter(),
   );
@@ -531,7 +531,7 @@ describe("message handler — channel thread routing", () => {
   });
 
   test("routes channel thread message when session exists", async () => {
-    createSlackApp({ getSessionFn: mock(() => "sess-abc") });
+    createSlackApp({ getSessionFn: mock(async () => "sess-abc") });
     const client = makeMockClient();
     const say = makeSay();
     const message = {
@@ -552,7 +552,7 @@ describe("message handler — channel thread routing", () => {
   test("routes when session exists (session-based routing)", async () => {
     // Routing is exclusively via getSessionFn — no activeThreads lookup
     createSlackApp({
-      getSessionFn: mock(() => "sess-xyz"),
+      getSessionFn: mock(async () => "sess-xyz"),
     });
     const client = makeMockClient();
     const say = makeSay();
@@ -574,7 +574,7 @@ describe("message handler — channel thread routing", () => {
   test("routes cron-started thread on first human reply (session exists, no @mention)", async () => {
     // Cron posts to a channel thread → onSession sets session → human replies → should route
     // Simulated by: getSessionFn returns the session the cron registered
-    createSlackApp({ getSessionFn: mock(() => "sess-cron-001") });
+    createSlackApp({ getSessionFn: mock(async () => "sess-cron-001") });
     const client = makeMockClient();
     const say = makeSay();
     const message = {
@@ -611,7 +611,7 @@ describe("message handler — channel thread routing", () => {
   test("ignores channel message with text-only whitespace", async () => {
     const { say } = await invokeChannelMessage(
       { text: "   ", thread_ts: "1.0" },
-      { getSessionFn: () => "sess-abc" },
+      { getSessionFn: async () => "sess-abc" },
     );
     expect(mockRunClaude).not.toHaveBeenCalled();
     expect(say).not.toHaveBeenCalled();
@@ -620,7 +620,7 @@ describe("message handler — channel thread routing", () => {
   test("routes with session, ignores without", async () => {
     // With session: routes
     mockRunClaude.mockClear();
-    createSlackApp({ getSessionFn: () => "sess-abc" });
+    createSlackApp({ getSessionFn: async () => "sess-abc" });
     const client1 = makeMockClient();
     const say1 = makeSay();
     await capturedMessageHandler?.({
@@ -638,7 +638,7 @@ describe("message handler — channel thread routing", () => {
 
     // Without session: ignores
     mockRunClaude.mockClear();
-    createSlackApp({ getSessionFn: () => undefined });
+    createSlackApp({ getSessionFn: async () => undefined });
     const client2 = makeMockClient();
     const say2 = makeSay();
     await capturedMessageHandler?.({
@@ -656,7 +656,7 @@ describe("message handler — channel thread routing", () => {
   });
 
   test("prepends thread hint for channel thread messages", async () => {
-    createSlackApp({ getSessionFn: () => "sess-abc" });
+    createSlackApp({ getSessionFn: async () => "sess-abc" });
     const client = makeMockClient();
     const say = makeSay();
     await capturedMessageHandler?.({
@@ -702,7 +702,7 @@ describe("message handler — channel thread routing", () => {
       result: "text [silent]",
       sessionId: "s1",
     });
-    createSlackApp({ getSessionFn: mock(() => "sess-xyz") });
+    createSlackApp({ getSessionFn: mock(async () => "sess-xyz") });
     const client = makeMockClient();
     const say = makeSay();
     await capturedMessageHandler?.({
@@ -964,7 +964,7 @@ describe("app_mention handler", () => {
     // The fix: when thread_ts is set and getSessionFn returns a session, the
     // app_mention handler returns early — the message handler already covers it
     // and would double-respond otherwise.
-    createSlackApp({ getSessionFn: () => "sess-existing" });
+    createSlackApp({ getSessionFn: async () => "sess-existing" });
     const client = makeMockClient();
     const say = makeSay();
     await capturedMentionHandler?.({
@@ -2391,7 +2391,7 @@ describe("app_mention handler — thread history on first mention", () => {
     // Provide a getSessionFn that returns a session — bot already knows the thread
     createSlackApp({
       conversationsRepliesFn: mockRepliesFn,
-      getSessionFn: mock(() => "sess-123"),
+      getSessionFn: mock(async () => "sess-123"),
     });
 
     const client = makeMockClient();

@@ -139,8 +139,8 @@ const cronDeps: CronHandlerDeps = {
   slack,
   runner,
   formatter: markdownToSlack,
-  onSession: (channel: string, ts: string, sessionId: string) => {
-    sessions.set(threadKey(channel, ts), sessionId);
+  onSession: async (channel: string, ts: string, sessionId: string) => {
+    await sessions.set(threadKey(channel, ts), sessionId);
   },
   synthesizeSpeechFn: synthesizeSpeech,
   voiceConfig: config.voice,
@@ -434,7 +434,7 @@ if (config.chat.serviceUrl && config.chat.serviceToken) {
     chatSessions,
     undefined,
     config.paths.workspace,
-    undefined,
+    process.env.SENTRY_DSN ? Sentry : undefined,
     undefined,
     undefined,
     undefined,

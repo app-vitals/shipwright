@@ -104,11 +104,12 @@ export interface TaskStoreClient {
 
 // ─── Window filtering ─────────────────────────────────────────────────────────
 //
-// The live task store ignores `from`/`to` query params (the `/tasks` and `/prs`
-// routes read only `limit`/`offset`), so the client must window-filter the rows
-// it fetches. These helpers are the single source of truth for that filtering —
-// the recorded test double imports them so the cassette path and the live HTTP
-// path apply byte-identical windowing.
+// The live task store accepts `updatedSince` (mapped from `from`) as a coarse,
+// inclusive-only pre-filter — it has no window-end (`to`) equivalent and is not
+// a precise sync anchor. The client must still window-filter the rows it
+// fetches to apply the exact [from, to] boundary. These helpers are the single
+// source of truth for that filtering — the recorded test double imports them
+// so the cassette path and the live HTTP path apply byte-identical windowing.
 
 /** Pick the timestamp a task is "anchored" to for window filtering. */
 export function taskAnchor(t: TaskRecord): string | null {
@@ -271,10 +272,15 @@ export class HttpTaskStoreClient implements TaskStoreClient {
     status?: string;
     repo?: string;
   }): Promise<TaskRecord[]> {
-    // `from`/`to`/`repo` are ignored by the live route — only `status` narrows
-    // server side; the date window and repo scope are applied client-side below.
+    // `updatedSince`/`repo` narrow server-side to cut down what's fetched over
+    // the wire, but `updatedSince` is a conservative pre-filter (inclusive-only,
+    // no window-end) rather than a precise sync anchor — the client-side
+    // taskAnchor/inWindow/matchesRepo filtering below still runs as the precise
+    // final filter, since `to` has no server-side equivalent.
     const tasks = await this.fetchAllPages<TaskRecord>("/tasks", "tasks", {
       status: params.status,
+      updatedSince: params.from,
+      repo: params.repo,
     });
     return tasks.filter(
       (t) =>
@@ -288,8 +294,12 @@ export class HttpTaskStoreClient implements TaskStoreClient {
     reviewState?: string;
     repo?: string;
   }): Promise<PrRecord[]> {
+    // Same server-side pre-filter / client-side precise-filter split as
+    // listTasks() above.
     const prs = await this.fetchAllPages<PrRecord>("/prs", "prs", {
       reviewState: params.reviewState,
+      updatedSince: params.from,
+      repo: params.repo,
     });
     return prs.filter(
       (p) => matchesRepo(p.repo, params.repo) && inWindow(prAnchor(p), params),

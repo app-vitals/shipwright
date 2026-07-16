@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFile, writeFile } from "node:fs/promises";
 import { type Clock, SystemClock } from "./clock.ts";
 
 interface SessionEntry {
@@ -18,6 +18,32 @@ export function threadKey(channel: string, threadTs: string): string {
 }
 
 /**
+ * Per-file write queue: serializes async operations against the same file
+ * path so overlapping load-modify-save sequences (get/set/clear/prune) apply
+ * in enqueued order instead of racing. Without this, two concurrent set()
+ * calls can each load() the same pre-write map, then save() over one
+ * another — the second save() to land wins and the first write is silently
+ * lost even though both callers believe their write succeeded.
+ *
+ * Keyed by file path (module-level) so every createFileSessionStore() call
+ * targeting the same path shares one queue, matching the file-level
+ * contention this is meant to serialize.
+ */
+const writeQueues = new Map<string, Promise<unknown>>();
+
+function enqueue<T>(file: string, fn: () => Promise<T>): Promise<T> {
+  const prev = writeQueues.get(file) ?? Promise.resolve();
+  const next = prev.then(fn, fn);
+  // Swallow so a failed op doesn't poison the chain for subsequent callers —
+  // the caller of enqueue() still observes the original rejection via `next`.
+  writeQueues.set(
+    file,
+    next.catch(() => {}),
+  );
+  return next;
+}
+
+/**
  * Create a file-backed session store at a specific path.
  *
  * Module-level default store removed — callers must wire their own store
@@ -30,21 +56,21 @@ export function createFileSessionStore(
   ttlMs: number = DEFAULT_TTL_MS,
   clock: Clock = SystemClock(),
 ): {
-  get: (key: string) => string | undefined;
-  set: (key: string, id: string) => void;
-  clear: (key: string) => void;
-  prune: () => number;
-  size: () => number;
+  get: (key: string) => Promise<string | undefined>;
+  set: (key: string, id: string) => Promise<void>;
+  clear: (key: string) => Promise<void>;
+  prune: () => Promise<number>;
+  size: () => Promise<number>;
 } {
-  function load(): SessionMap {
+  async function load(): Promise<SessionMap> {
     try {
-      return JSON.parse(readFileSync(file, "utf8")) as SessionMap;
+      return JSON.parse(await readFile(file, "utf8")) as SessionMap;
     } catch {
       return {};
     }
   }
-  function save(map: SessionMap): void {
-    writeFileSync(file, JSON.stringify(map, null, 2));
+  async function save(map: SessionMap): Promise<void> {
+    await writeFile(file, JSON.stringify(map, null, 2));
   }
 
   /** Extract sessionId from either legacy string or SessionEntry format. */
@@ -59,42 +85,47 @@ export function createFileSessionStore(
   }
 
   return {
-    get: (key) => {
-      const map = load();
-      const entry = map[key];
-      if (!entry) return undefined;
-      if (isExpired(entry, clock.now().getTime())) {
-        // Lazy prune: remove expired entry on access
-        delete map[key];
-        save(map);
-        return undefined;
-      }
-      return resolveId(entry);
-    },
-    set: (key, id) => {
-      const map = load();
-      map[key] = { sessionId: id, updatedAt: clock.now().getTime() };
-      save(map);
-    },
-    clear: (key) => {
-      const map = load();
-      delete map[key];
-      save(map);
-    },
-    /** Remove all expired sessions. Returns count of pruned entries. */
-    prune: () => {
-      const map = load();
-      const now = clock.now().getTime();
-      let pruned = 0;
-      for (const key of Object.keys(map)) {
-        if (isExpired(map[key], now)) {
+    get: (key) =>
+      enqueue(file, async () => {
+        const map = await load();
+        const entry = map[key];
+        if (!entry) return undefined;
+        if (isExpired(entry, clock.now().getTime())) {
+          // Lazy prune: remove expired entry on access
           delete map[key];
-          pruned++;
+          await save(map);
+          return undefined;
         }
-      }
-      if (pruned > 0) save(map);
-      return pruned;
-    },
-    size: () => Object.keys(load()).length,
+        return resolveId(entry);
+      }),
+    set: (key, id) =>
+      enqueue(file, async () => {
+        const map = await load();
+        map[key] = { sessionId: id, updatedAt: clock.now().getTime() };
+        await save(map);
+      }),
+    clear: (key) =>
+      enqueue(file, async () => {
+        const map = await load();
+        delete map[key];
+        await save(map);
+      }),
+    /** Remove all expired sessions. Returns count of pruned entries. */
+    prune: () =>
+      enqueue(file, async () => {
+        const map = await load();
+        const now = clock.now().getTime();
+        let pruned = 0;
+        for (const key of Object.keys(map)) {
+          if (isExpired(map[key], now)) {
+            delete map[key];
+            pruned++;
+          }
+        }
+        if (pruned > 0) await save(map);
+        return pruned;
+      }),
+    size: () =>
+      enqueue(file, async () => Object.keys(await load()).length),
   };
 }
