@@ -79,7 +79,14 @@ Write or rebuild every `critical` tier test across all layers.
 
 #### Milestone 3: Canary suite live
 Smoke + E2E canary-eligible tests run green against a freshly deployed environment.
-- DOD: CI job runs the canary suite against a staging URL post-deploy. Suite completes in <60s. All canary tests pass.
+Gated on `deploy_model` (determined in Process step 1): this milestone only applies
+when `deploy_model == 'staged'`.
+- DOD (when `deploy_model == 'staged'`): CI job runs the canary suite against a staging URL post-deploy. Suite completes in <60s. All canary tests pass.
+- When `deploy_model != 'staged'` (i.e. declared `direct`, declared `none`, or
+  undeclared): there is no staging/canary pipeline to gate on. Replace this milestone's
+  entire content with a single note line — `canary not applicable -- deploy_model={value}`,
+  where `{value}` is `direct`, `none`, or `undeclared` — and skip the milestone entirely:
+  no DOD, no tasks. Do not fabricate canary-plumbing work for a pipeline that doesn't exist.
 
 #### Milestone 4: High-tier coverage
 Fill `high` tier gaps.
@@ -175,7 +182,12 @@ Anything the audit couldn't determine without a human call. Common entries:
 
 ## Process
 
-1. Read all three prior artifacts. Abort if any missing.
+1. Read all three prior artifacts. Abort if any missing. Also determine `deploy_model`
+   using the same read-with-fallback mechanism `skills/test-inventory/SKILL.md` Step 1
+   uses ("CLAUDE.md deploy-model declaration"): check the target repo's root `CLAUDE.md`
+   for a `## Deploy model` section with value `staged`, `direct`, or `none`; if the
+   section is absent, treat it as **undeclared** and default to NOT staged. Store this
+   value — Step 5 gates Milestone 3 canary-task generation on it.
 2. Extract metrics: layer counts, speed numbers, bucket counts.
 3. Compute the gap (section 3 math).
 4. **Determine the starting T-NNN offset (task-store query — run before any ID is
@@ -211,7 +223,12 @@ Anything the audit couldn't determine without a human call. Common entries:
    restarting at `T-001`:
    - Milestone 1: all `infra` items + **paired repo-config tasks** (see pairing rule below)
    - Milestone 2: all `critical` tier items (net-new + rebuild + promote)
-   - Milestone 3: all canary-eligible items needing canary plumbing
+   - Milestone 3: **only when `deploy_model == 'staged'`** (Process step 1) — all
+     canary-eligible items needing canary plumbing. When `deploy_model != 'staged'`
+     (declared `direct`, declared `none`, or undeclared), emit **zero** Milestone 3 tasks
+     here — the section 4 note (`canary not applicable -- deploy_model={value}`) is the
+     only artifact of this milestone; do not generate canary-plumbing tasks for a
+     pipeline that doesn't exist.
    - Milestone 4: all `high` tier items (net-new + rebuild + promote)
    - Milestone 5: all `delete (redundant)` items + remaining `rebuild` cleanup + plugin feedback collector
 6. **Apply the pairing rule** from `${CLAUDE_PLUGIN_ROOT}/skills/repo-config/SKILL.md`: every task that creates or modifies a CI workflow file MUST emit a paired branch-protection task that `depends_on` the workflow task. Without this, the audit ships as advisory rather than enforced. The pairing rule is non-negotiable; skipping it is the failure mode the user will catch and the plugin will be blamed for.
@@ -228,3 +245,10 @@ Anything the audit couldn't determine without a human call. Common entries:
   step 4 task-store query first. Skipping it silently collides with `test-fix`'s
   `test-t-{nnn}-{repo-slug}` IDs from an earlier cycle and produces a roadmap that
   duplicates already-shipped work under fresh numbering.
+- **Don't generate Milestone 3 canary-plumbing tasks when `deploy_model != 'staged'`.**
+  Check the value determined in Process step 1 before emitting any Milestone 3 task.
+  Getting this wrong is not hypothetical: on 2026-07-14 this happened to shipwright's own
+  repo (`deploy_model: direct` — no staging environment) and produced a pile of
+  canary-plumbing tasks for a pipeline that doesn't exist, requiring 8 tasks to be
+  manually cancelled. When not staged, emit the `canary not applicable -- deploy_model={value}`
+  note in section 4 and skip the milestone — zero tasks, not a smaller pile of tasks.

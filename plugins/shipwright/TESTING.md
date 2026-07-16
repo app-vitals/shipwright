@@ -1265,6 +1265,24 @@ no prior `test-t-*-{repo}` tasks still starts at `T-001`.
 **Steps:** (a) Run `/test-inventory` against a repo with no `## Deploy model` declaration in CLAUDE.md. (b) Run `/test-inventory` against a repo whose CLAUDE.md declares `## Deploy model: staged`.
 **Expected:** (a) Generated inventory artifact's Notes section contains the message "deploy_model undeclared — canary eligibility skipped; declare ## Deploy model in CLAUDE.md to enable." and zero items are tagged as canary-eligible, regardless of layer/criticality. (b) Generated inventory artifact follows the existing canary-eligibility logic (tags smoke/E2E critical/high items as canary-eligible per the `canary-execution` contract).
 
+### TR-26 — Deploy model gates Milestone 3 canary generation in test-roadmap
+**Steps:** No automated test covers this — Milestone 3 gating is prompt-only generation
+logic (the `deploy_model` read-with-fallback and the Process step 5 conditional are
+followed by the LLM at run time, not code). Verify via two dry runs: (a) run
+`/test-roadmap` against a repo whose CLAUDE.md declares `## Deploy model: direct` (e.g.
+shipwright itself) — or has no `## Deploy model` declaration at all. (b) run
+`/test-roadmap` against a repo whose CLAUDE.md declares `## Deploy model: staged` (e.g.
+vitals-os).
+**Expected:** (a) `test-readiness-plan.md`'s section 4 Milestone 3 content is replaced
+with a single note line — `canary not applicable -- deploy_model=direct` (or
+`deploy_model=undeclared` when the section is absent) — no DOD text; section 5's task
+list contains **zero** Milestone 3 tasks. (b) Behavior is unchanged from before this
+gate was added: section 4 Milestone 3 keeps its normal DOD text, and section 5 emits
+canary-plumbing tasks for all canary-eligible items as before — no regression to
+vitals-os's active canary track. This is the fix for the 2026-07-14 incident where
+shipwright's own repo (`deploy_model: direct`) had 8 Milestone-3 canary-plumbing tasks
+generated and had to have them manually cancelled.
+
 ---
 
 ## Versioning Checklist (for every PR to this repo)
