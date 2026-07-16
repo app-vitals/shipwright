@@ -37,8 +37,12 @@ helm install my-release https://app-vitals.github.io/shipwright/shipwright-1.0.0
 
 This chart follows [Semantic Versioning](https://semver.org). The chart
 `version` in `Chart.yaml` is bumped on **every** chart change, independent of
-`appVersion` (which tracks the Shipwright application release the chart deploys
-by default).
+`appVersion`. `appVersion` is a static marker and is **not** used to resolve
+any image — each service's `image.tag` (`admin`, `metrics`, `agent`,
+`taskStore`, `chat`) is pinned independently to its own released tag by the
+[`auto-bump-chart.yml`](../../.github/workflows/auto-bump-chart.yml) workflow,
+so a default install always runs the exact per-service tags pinned at that
+chart version with no overrides required.
 
 **On any change under `charts/shipwright/**`:**
 

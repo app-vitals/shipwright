@@ -67,6 +67,18 @@ so the batch stays fully traceable even though it's collapsed into a single
 version bump. The PR body lists exactly which `values.yaml` path(s) were
 pinned and to which tag(s).
 
+## How downstream consumers pick up new versions
+
+Consumption is **pull-based**, not push. `chart-release.yml` does not notify
+anyone when it publishes — it only packages the chart and updates
+`gh-pages/index.yaml`. A downstream consumer is expected to run its own
+node-cron poller that watches this published `index.yaml` for new chart
+versions and, when it finds one, triggers a `workflow_dispatch`-only
+chart-bump workflow on its own side. There is no Renovate integration and no
+repository-to-repository dispatch from this repo — the consumer is solely
+responsible for noticing and acting on new versions, on its own poll
+schedule.
+
 ## First-time setup (one-time)
 
 Before the **first** chart release, the `gh-pages` branch must exist and GitHub

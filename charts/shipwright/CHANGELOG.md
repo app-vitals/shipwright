@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.6.406] - 2026-07-16
+
+### Changed
+
+- README: clarify `appVersion` is not used for image resolution — each service's `image.tag` is pinned independently
+
 ## [1.6.405] - 2026-07-16
 
 ### Changed
