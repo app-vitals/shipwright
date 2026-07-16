@@ -424,9 +424,9 @@ describe("runClaude", () => {
   });
 });
 
-// ─── Stale session fallback tests ─────────────────────────────────────────────
+// ─── Resume retry tests ────────────────────────────────────────────────────
 
-describe("stale session fallback", () => {
+describe("resume retry", () => {
   test("retries the same resumed session once when it fails, then succeeds", async () => {
     let callCount = 0;
     const mockSpawn = mock(() => {

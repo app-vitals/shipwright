@@ -263,6 +263,12 @@ export function createRunClaude(
     };
   }
 
+  function _saveSession(sessionKey: string | undefined, output: ClaudeRunResult) {
+    if (sessionKey && output.sessionId) {
+      sessions.set(sessionKey, output.sessionId);
+    }
+  }
+
   async function _runClaude(
     message: string,
     sessionKey: string | undefined,
@@ -277,9 +283,7 @@ export function createRunClaude(
 
     try {
       const output = await _spawn(args);
-      if (sessionKey && output.sessionId) {
-        sessions.set(sessionKey, output.sessionId);
-      }
+      _saveSession(sessionKey, output);
       return output;
     } catch (err) {
       // Retry the same resumed session once: transient blips (e.g. a socket
@@ -299,9 +303,7 @@ export function createRunClaude(
             sessionKey,
             durationMs: Date.now() - retryStart,
           });
-          if (sessionKey && output.sessionId) {
-            sessions.set(sessionKey, output.sessionId);
-          }
+          _saveSession(sessionKey, output);
           return { ...output, recoveredFromError: true };
         } catch {
           throw err;
