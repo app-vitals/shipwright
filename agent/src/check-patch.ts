@@ -25,6 +25,7 @@ import {
   createPrRecordQuery,
   isCleanApproveBody,
   isMergeOnlyUpdate,
+  mapReposTolerant,
   resolveAllRepos,
   resolveWorkspacePath,
   splitOrgRepo,
@@ -426,8 +427,7 @@ export async function buildProductionDeps(opts: {
   return {
     listOwnOpenPrs: async (_repo: string) => {
       const user = await getUser();
-      const allPrs: (GhPrListItem & { repo: string })[] = [];
-      for (const repo of allRepos) {
+      return mapReposTolerant(allRepos, "check-patch", async (repo) => {
         const items = ghJson<GhPrListItem[]>([
           "pr",
           "list",
@@ -440,9 +440,8 @@ export async function buildProductionDeps(opts: {
           "--json",
           "number,title,headRefName,headRefOid,createdAt",
         ]);
-        allPrs.push(...items.map((item) => ({ ...item, repo })));
-      }
-      return allPrs;
+        return items.map((item) => ({ ...item, repo }));
+      });
     },
     fetchPrReviews: async (org: string, repo: string, pr: number) => {
       const query = `{
