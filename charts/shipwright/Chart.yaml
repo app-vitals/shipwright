@@ -8,7 +8,7 @@ type: application
 # Chart version (SemVer). Bump on every chart change, independent of appVersion.
 # See CHANGELOG.md and the README "Versioning" section — CI enforces this bump
 # via `ct lint --check-version-increment`.
-version: 1.6.412
+version: 1.6.414
 # Version of the Shipwright application this chart deploys by default.
 appVersion: "0.1.0"
 home: https://shipwrightharness.com
@@ -29,13 +29,33 @@ annotations:
   # entry in CHANGELOG.md (keep the two in sync on every bump).
   artifacthub.io/changes: |
     - kind: changed
-      description: "auto-bump to chart v1.6.412 triggered by release tag admin-v0.208.0"
+      description: "auto-bump to chart v1.6.414 triggered by release tag admin-v0.209.0"
     - kind: changed
-      description: "auto-bump to chart v1.6.412 triggered by release tag chat-v0.50.0"
+      description: "auto-bump to chart v1.6.414 triggered by release tag admin-v0.210.0"
     - kind: changed
-      description: "auto-bump to chart v1.6.412 triggered by release tag metrics-v0.164.0"
+      description: "auto-bump to chart v1.6.414 triggered by release tag admin-v0.211.0"
     - kind: changed
-      description: "auto-bump to chart v1.6.412 triggered by release tag task-store-v0.105.0"
+      description: "auto-bump to chart v1.6.414 triggered by release tag agent-v0.203.0"
+    - kind: changed
+      description: "auto-bump to chart v1.6.414 triggered by release tag agent-v0.204.0"
+    - kind: changed
+      description: "auto-bump to chart v1.6.414 triggered by release tag agent-v0.205.0"
+    - kind: changed
+      description: "auto-bump to chart v1.6.414 triggered by release tag agent-v0.206.0"
+    - kind: changed
+      description: "auto-bump to chart v1.6.414 triggered by release tag agent-v0.206.1"
+    - kind: changed
+      description: "auto-bump to chart v1.6.414 triggered by release tag chat-v0.51.0"
+    - kind: changed
+      description: "auto-bump to chart v1.6.414 triggered by release tag chat-v0.52.0"
+    - kind: changed
+      description: "auto-bump to chart v1.6.414 triggered by release tag metrics-v0.165.0"
+    - kind: changed
+      description: "auto-bump to chart v1.6.414 triggered by release tag metrics-v0.166.0"
+    - kind: changed
+      description: "auto-bump to chart v1.6.414 triggered by release tag task-store-v0.106.0"
+    - kind: changed
+      description: "auto-bump to chart v1.6.414 triggered by release tag task-store-v0.107.0"
 dependencies:
   # Bitnami PostgreSQL subchart. Pinned to a chart version whose default image tag
   # is concrete (NOT `latest`), because Bitnami's 2025 catalog change moved newer

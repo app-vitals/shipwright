@@ -27,6 +27,7 @@
  * pr.createdAt rather than disqualifying the PR.
  */
 
+import { agentReposRef } from "./agent-repos-ref.ts";
 import {
   candidateId,
   createPrRecordQuery,
@@ -66,6 +67,24 @@ export interface CheckReviewDeps {
   isSelfReviewAllowed: boolean;
   listOpenPrs: (repo: string) => Promise<PrInfo[]>;
   queryPrRecord: (repo: string, prNumber: number) => Promise<PrRecord | null>;
+  /**
+   * Returns the agent's currently configured repo scope (org/repo strings).
+   * Called at the top of every getReviewCandidates() invocation — not once at
+   * deps-build time — so a repo present in the local clone list (and
+   * therefore returned by listOpenPrs) but absent from this call's result is
+   * excluded from candidates, and a later scope change is picked up on the
+   * very next call.
+   */
+  getScopedRepos: () => string[];
+  /**
+   * True once the agent's repo scope has been successfully synced at least
+   * once. When false (e.g. a persistent 404 on the agent's config bundle —
+   * see index.ts's syncConfig), getReviewCandidates() fails open and does
+   * not filter by scope at all, matching pre-scoping behavior — otherwise a
+   * config-sync outage would silently exclude every repo from review
+   * candidacy, indistinguishable from "no work found".
+   */
+  hasScopeSynced: () => boolean;
   // Task status lookup for the linked task (if any), used PURELY to source
   // the age field via its createdAt — unlike check-deploy.ts, this is never
   // used as a gating/disqualifying check here. A thrown error is treated the
@@ -88,7 +107,15 @@ export async function getReviewCandidates(
 ): Promise<WorkPrCandidate[]> {
   const currentUser = await deps.getCurrentUser();
 
-  const prs = await deps.listOpenPrs("default");
+  // Fail open when scope has never synced (e.g. a persistent config-bundle
+  // 404) — filtering by an unpopulated scope would silently drop every repo
+  // from candidacy, a failure mode that didn't exist before scoping.
+  const scopeSynced = deps.hasScopeSynced();
+  const scopedRepos = new Set(deps.getScopedRepos());
+  const allPrs = await deps.listOpenPrs("default");
+  const prs = scopeSynced
+    ? allPrs.filter((pr) => scopedRepos.has(pr.repo ?? ""))
+    : allPrs;
   const candidates: WorkPrCandidate[] = [];
 
   for (const pr of prs) {
@@ -156,6 +183,8 @@ export async function getReviewCandidates(
 export async function buildProductionDeps(opts: {
   ghJson: <T>(args: string[]) => Promise<T>;
   fetchFn?: typeof fetch;
+  getScopedRepos?: () => string[];
+  hasScopeSynced?: () => boolean;
 }): Promise<CheckReviewDeps> {
   const workspacePath = resolveWorkspacePath();
   const allRepos = resolveAllRepos(workspacePath);
@@ -164,6 +193,8 @@ export async function buildProductionDeps(opts: {
   return {
     getCurrentUser,
     isSelfReviewAllowed: readAllowSelfReview(workspacePath),
+    getScopedRepos: opts.getScopedRepos ?? agentReposRef.get,
+    hasScopeSynced: opts.hasScopeSynced ?? agentReposRef.hasSynced,
     listOpenPrs: async (_repo: string) => {
       return mapReposTolerant(allRepos, "check-review", async (repo) => {
         const repoPrs = await ghJsonFn<PrInfo[]>([

@@ -54,6 +54,8 @@ interface MakeDepsOptions {
   mergeStatusByPr?: Record<number, MergeStatusInfo>;
   listPrCommits?: (_prNumber: number) => Promise<CommitInfo[]>;
   getCurrentUser?: () => Promise<string>;
+  getScopedRepos?: () => string[];
+  hasScopeSynced?: () => boolean;
   queryTaskStatus?: (
     repo: string,
     prNumber: number,
@@ -67,10 +69,14 @@ function makeDeps({
   mergeStatusByPr = {},
   listPrCommits = async () => [],
   getCurrentUser = async () => "the-agent",
+  getScopedRepos = () => [...new Set(ownPrs.map((pr) => pr.repo))],
+  hasScopeSynced = () => true,
   queryTaskStatus = async () => null,
 }: MakeDepsOptions): CheckPatchDeps {
   return {
     listOwnOpenPrs: async (_repo: string) => ownPrs,
+    getScopedRepos,
+    hasScopeSynced,
     fetchPrReviews: async (
       _org: string,
       _repo: string,
@@ -1347,6 +1353,77 @@ describe("getPatchCandidates", () => {
     };
     const result = await getPatchCandidates(deps);
     expect(result).toHaveLength(1);
+  });
+
+  // ─── agent-scope filtering (WL-4.3) ──────────────────────────────────────
+
+  test("excludes a PR from a repo returned by the local-clone scan but absent from getScopedRepos()", async () => {
+    const inScope = makeOwnPr({
+      number: 10,
+      repo: "example-org/in-scope",
+    });
+    const outOfScope = makeOwnPr({
+      number: 20,
+      repo: "example-org/out-of-scope",
+    });
+    const result = await getPatchCandidates(
+      makeDeps({
+        ownPrs: [inScope, outOfScope],
+        reviewDataByPr: {},
+        ciStatusByPr: { 10: { hasFailing: true }, 20: { hasFailing: true } },
+        getScopedRepos: () => ["example-org/in-scope"],
+      }),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("example-org/in-scope#10");
+  });
+
+  test("re-evaluates getScopedRepos() on every call — a scope change between two calls changes the result on the second call", async () => {
+    const pr = makeOwnPr({ number: 10, repo: "example-org/newly-added" });
+    let scope: string[] = [];
+    const deps = makeDeps({
+      ownPrs: [pr],
+      reviewDataByPr: {},
+      ciStatusByPr: { 10: { hasFailing: true } },
+      getScopedRepos: () => scope,
+    });
+
+    const first = await getPatchCandidates(deps);
+    expect(first).toEqual([]);
+
+    scope = ["example-org/newly-added"];
+    const second = await getPatchCandidates(deps);
+    expect(second).toHaveLength(1);
+    expect(second[0].id).toBe("example-org/newly-added#10");
+  });
+
+  test("fails open (does not filter) when hasScopeSynced() is false, even if getScopedRepos() would otherwise exclude everything", async () => {
+    const pr = makeOwnPr({ number: 10, repo: "example-org/never-synced" });
+    const result = await getPatchCandidates(
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: {},
+        ciStatusByPr: { 10: { hasFailing: true } },
+        getScopedRepos: () => [],
+        hasScopeSynced: () => false,
+      }),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("example-org/never-synced#10");
+  });
+
+  test("filters normally when hasScopeSynced() is true, even if the synced scope is a deliberately empty list", async () => {
+    const pr = makeOwnPr({ number: 10, repo: "example-org/some-repo" });
+    const result = await getPatchCandidates(
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: {},
+        ciStatusByPr: { 10: { hasFailing: true } },
+        getScopedRepos: () => [],
+        hasScopeSynced: () => true,
+      }),
+    );
+    expect(result).toEqual([]);
   });
 });
 

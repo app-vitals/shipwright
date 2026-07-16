@@ -59,6 +59,8 @@ interface MakeDepsOptions {
   /** "repo#prNumber" -> existing task-store PullRequest record, for the taskId backfill lookup. */
   prRecords?: Record<string, PrStateRecord>;
   now?: () => string;
+  /** Defaults to `() => repos` so every existing test keeps passing unchanged. */
+  getScopedRepos?: () => string[];
 }
 
 function makeDeps({
@@ -70,6 +72,7 @@ function makeDeps({
   branchResults = {},
   prRecords = {},
   now = () => FAKE_NOW,
+  getScopedRepos = () => repos,
 }: MakeDepsOptions = {}): {
   deps: PrStateReconcilerDeps;
   listCalls: ListPrsCall[];
@@ -82,6 +85,7 @@ function makeDeps({
 
   const deps: PrStateReconcilerDeps = {
     repos,
+    getScopedRepos,
     pageLimit,
     listOpenPrRecords: async (repo: string, limit: number, offset: number) => {
       listCalls.push({ repo, state: "open", limit, offset });
@@ -300,6 +304,91 @@ describe("reconcilePrState", () => {
 
     await reconcilePrState(deps);
 
+    expect(patchCalls).toHaveLength(0);
+  });
+
+  // ─── scope filtering (WL-4.4) ─────────────────────────────────────────────
+
+  test("a repo present locally but absent from getScopedRepos() is excluded from the reconciled set", async () => {
+    const recordInScope = makeRecord({
+      id: "pr-repoA",
+      repo: "acme/repo-a",
+      prNumber: 1,
+    });
+    const recordOutOfScope = makeRecord({
+      id: "pr-repoB",
+      repo: "acme/repo-b",
+      prNumber: 1,
+    });
+    const { deps, patchCalls, listCalls } = makeDeps({
+      repos: ["acme/repo-a", "acme/repo-b"],
+      openRecords: {
+        "acme/repo-a": [recordInScope],
+        "acme/repo-b": [recordOutOfScope],
+      },
+      ghResults: {
+        "acme/repo-a#1": {
+          state: "MERGED",
+          mergedAt: "2026-07-14T00:00:00.000Z",
+        },
+        "acme/repo-b#1": {
+          state: "MERGED",
+          mergedAt: "2026-07-14T00:00:00.000Z",
+        },
+      },
+      getScopedRepos: () => ["acme/repo-a"],
+    });
+
+    await reconcilePrState(deps);
+
+    expect(listCalls.map((c) => c.repo)).toEqual(["acme/repo-a"]);
+    expect(patchCalls).toHaveLength(1);
+    expect(patchCalls[0].id).toBe("pr-repoA");
+  });
+
+  test("re-evaluates getScopedRepos() on every call — a repo added to scope between two calls appears on the second call", async () => {
+    const recordB = makeRecord({
+      id: "pr-repoB",
+      repo: "acme/repo-b",
+      prNumber: 1,
+    });
+    let scope: string[] = [];
+    const { deps, patchCalls, listCalls } = makeDeps({
+      repos: ["acme/repo-a", "acme/repo-b"],
+      openRecords: {
+        "acme/repo-b": [recordB],
+      },
+      ghResults: {
+        "acme/repo-b#1": {
+          state: "MERGED",
+          mergedAt: "2026-07-14T00:00:00.000Z",
+        },
+      },
+      getScopedRepos: () => scope,
+    });
+
+    await reconcilePrState(deps);
+    expect(listCalls).toHaveLength(0);
+    expect(patchCalls).toHaveLength(0);
+
+    scope = ["acme/repo-b"];
+    await reconcilePrState(deps);
+    expect(listCalls.map((c) => c.repo)).toEqual(["acme/repo-b"]);
+    expect(patchCalls).toHaveLength(1);
+    expect(patchCalls[0].id).toBe("pr-repoB");
+  });
+
+  test("getScopedRepos() returning an empty array filters out all repos — no-op, no crash", async () => {
+    const record = makeRecord({ id: "pr-1", prNumber: 1 });
+    const { deps, patchCalls, listCalls } = makeDeps({
+      repos: ["acme/example-repo"],
+      openRecords: { "acme/example-repo": [record] },
+      getScopedRepos: () => [],
+    });
+
+    await reconcilePrState(deps);
+
+    expect(listCalls).toHaveLength(0);
     expect(patchCalls).toHaveLength(0);
   });
 });
