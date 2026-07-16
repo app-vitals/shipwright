@@ -104,6 +104,17 @@ export interface PrStateReconcilerDeps {
   ) => Promise<PrStateRecord | null>;
   /** Injected clock — mergedAt fallback when GitHub doesn't report one (DSR-1.1). */
   now: () => string;
+  /**
+   * Returns the agent's currently-configured repo scope (WL-4.2's live
+   * agent-repos-ref.ts), read fresh on every reconcilePrState() call — not
+   * closed over at buildProductionDeps time — so a scope change takes effect
+   * on the very next tick. `repos` above is the local-clone filesystem scan
+   * (built once); this filter is intersected with it at call time so a repo
+   * cloned locally for reference but absent from this list never gets
+   * reconciled (see WL-4.4, mirrors WL-4.3's same pattern in
+   * check-deploy.ts/check-review.ts/check-patch.ts).
+   */
+  getScopedRepos: () => string[];
 }
 
 /** Minimal shape of a task-store PullRequest record reviewState reconciliation needs. */
@@ -324,7 +335,10 @@ export async function reconcilePrOpenTasks(deps: PrStateReconcilerDeps): Promise
 export async function reconcilePrState(
   deps: PrStateReconcilerDeps,
 ): Promise<void> {
-  for (const repo of deps.repos) {
+  const scopedReposSet = new Set(deps.getScopedRepos());
+  const scopedRepos = deps.repos.filter((repo) => scopedReposSet.has(repo));
+
+  for (const repo of scopedRepos) {
     let records: PrStateRecord[];
     try {
       records = await listAllOpenRecords(deps, repo);
@@ -564,6 +578,7 @@ interface TaskListResponseJson {
 export function buildProductionDeps(opts: {
   ghJson: <T>(args: string[]) => T;
   fetchFn?: (url: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+  getScopedRepos: () => string[];
 }): PrStateReconcilerDeps {
   const workspacePath = resolveWorkspacePath();
   const repos = resolveAllRepos(workspacePath);
@@ -580,6 +595,7 @@ export function buildProductionDeps(opts: {
 
   return {
     repos,
+    getScopedRepos: opts.getScopedRepos,
     listOpenPrRecords: async (repo: string, limit: number, offset: number) => {
       const params = new URLSearchParams({
         repo,
