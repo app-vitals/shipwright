@@ -298,25 +298,14 @@ The reality check above already ran `git pull` and `git ls-remote --heads origin
 for the local/remote signals — reuse that same remote-branch result here (indicates a
 bundled task joining an existing PR) rather than re-querying:
 
-**If the branch does NOT exist on remote** (new task, standard flow) — but first check
-whether a local branch `{branch}` already exists (from the reality check's `branch --list`
-result above). This happens when the branch was pushed then deleted externally between
-sessions (a remote-absent edge case, distinct from the never-pushed local-only case already
-handled above under "Complete and correct"):
-- **Local branch exists, remote does not** (pushed-then-deleted): do not run `origin/main -b
-  {branch}` — it fails because the local branch already exists. Treat this as a fresh start
-  from the local branch's current state: delete the stale local branch first, then create
-  fresh from `origin/main`:
-  ```bash
-  git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} branch -D {branch}
-  git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} worktree add ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} origin/main -b {branch}
-  ```
-  (If a worktree for `{branch}` already exists on disk, remove it first per the same
-  worktree-before-branch-delete ordering used in the incomplete/stale cleanup above.)
-- **Local branch does not exist either** (genuinely new): standard flow.
-  ```bash
-  git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} worktree add ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} origin/main -b {branch}
-  ```
+**If the branch does NOT exist on remote** (new task, standard flow): by this point the
+reality check above has already resolved any local branch named `{branch}` — either it
+never existed, it was routed through the "complete and correct" local-only shortcut, or it
+was deleted during the incomplete/stale cleanup — so a local branch is guaranteed absent
+here. Standard flow:
+```bash
+git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} worktree add ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} origin/main -b {branch}
+```
 
 **If the branch DOES exist on remote** (bundled task — joining an existing branch/PR):
 
