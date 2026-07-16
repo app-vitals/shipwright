@@ -55,6 +55,7 @@ interface MakeDepsOptions {
   listPrCommits?: (_prNumber: number) => Promise<CommitInfo[]>;
   getCurrentUser?: () => string;
   getScopedRepos?: () => string[];
+  hasScopeSynced?: () => boolean;
   queryTaskStatus?: (
     repo: string,
     prNumber: number,
@@ -69,11 +70,13 @@ function makeDeps({
   listPrCommits = async () => [],
   getCurrentUser = () => "the-agent",
   getScopedRepos = () => [...new Set(ownPrs.map((pr) => pr.repo))],
+  hasScopeSynced = () => true,
   queryTaskStatus = async () => null,
 }: MakeDepsOptions): CheckPatchDeps {
   return {
     listOwnOpenPrs: async (_repo: string) => ownPrs,
     getScopedRepos,
+    hasScopeSynced,
     fetchPrReviews: async (
       _org: string,
       _repo: string,
@@ -1392,6 +1395,35 @@ describe("getPatchCandidates", () => {
     const second = await getPatchCandidates(deps);
     expect(second).toHaveLength(1);
     expect(second[0].id).toBe("example-org/newly-added#10");
+  });
+
+  test("fails open (does not filter) when hasScopeSynced() is false, even if getScopedRepos() would otherwise exclude everything", async () => {
+    const pr = makeOwnPr({ number: 10, repo: "example-org/never-synced" });
+    const result = await getPatchCandidates(
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: {},
+        ciStatusByPr: { 10: { hasFailing: true } },
+        getScopedRepos: () => [],
+        hasScopeSynced: () => false,
+      }),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("example-org/never-synced#10");
+  });
+
+  test("filters normally when hasScopeSynced() is true, even if the synced scope is a deliberately empty list", async () => {
+    const pr = makeOwnPr({ number: 10, repo: "example-org/some-repo" });
+    const result = await getPatchCandidates(
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: {},
+        ciStatusByPr: { 10: { hasFailing: true } },
+        getScopedRepos: () => [],
+        hasScopeSynced: () => true,
+      }),
+    );
+    expect(result).toEqual([]);
   });
 });
 

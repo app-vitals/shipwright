@@ -118,6 +118,15 @@ export interface CheckDeployDeps {
    * scope change is picked up on the very next call.
    */
   getScopedRepos: () => string[];
+  /**
+   * True once the agent's repo scope has been successfully synced at least
+   * once. When false (e.g. a persistent 404 on the agent's config bundle —
+   * see index.ts's syncConfig), getDeployCandidates() fails open and does
+   * not filter by scope at all, matching pre-scoping behavior — otherwise a
+   * config-sync outage would silently exclude every repo from deploy
+   * candidacy, indistinguishable from "no work found".
+   */
+  hasScopeSynced: () => boolean;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -161,8 +170,14 @@ export async function getDeployCandidates(
   // that must not block PRs in other, independent repos. Queued runs older
   // than 1 hour are treated as stuck/ghost and ignored.
   const now = deps.clock ? deps.clock() : new Date().toISOString();
+  // Fail open when scope has never synced (e.g. a persistent config-bundle
+  // 404) — filtering by an unpopulated scope would silently drop every repo
+  // from candidacy, a failure mode that didn't exist before scoping.
+  const scopeSynced = deps.hasScopeSynced();
   const scopedRepos = new Set(deps.getScopedRepos());
-  const repos = deps.repos.filter((repo) => scopedRepos.has(repo));
+  const repos = scopeSynced
+    ? deps.repos.filter((repo) => scopedRepos.has(repo))
+    : deps.repos;
 
   const busyRepos = new Set(
     await mapReposTolerant(repos, "check-deploy", async (repo) => {
@@ -302,6 +317,7 @@ export async function buildProductionDeps(opts: {
   ghJson: <T>(args: string[]) => T;
   fetchFn?: typeof fetch;
   getScopedRepos?: () => string[];
+  hasScopeSynced?: () => boolean;
 }): Promise<CheckDeployDeps> {
   const workspacePath = resolveWorkspacePath();
   const allRepos = resolveAllRepos(workspacePath);
@@ -313,6 +329,7 @@ export async function buildProductionDeps(opts: {
     isSelfReviewAllowed: readAllowSelfReview(workspacePath),
     repos: allRepos,
     getScopedRepos: opts.getScopedRepos ?? agentReposRef.get,
+    hasScopeSynced: opts.hasScopeSynced ?? agentReposRef.hasSynced,
     clock,
     fetchActiveDeployRuns: async (org: string, repo: string) => {
       const inProgress = ghJson<GhWorkflowRunsJson>([

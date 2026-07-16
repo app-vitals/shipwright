@@ -133,6 +133,15 @@ export interface CheckPatchDeps {
    * very next call.
    */
   getScopedRepos: () => string[];
+  /**
+   * True once the agent's repo scope has been successfully synced at least
+   * once. When false (e.g. a persistent 404 on the agent's config bundle —
+   * see index.ts's syncConfig), getPatchCandidates() fails open and does not
+   * filter by scope at all, matching pre-scoping behavior — otherwise a
+   * config-sync outage would silently exclude every repo from patch
+   * candidacy, indistinguishable from "no work found".
+   */
+  hasScopeSynced: () => boolean;
   // Task status lookup for the linked task (if any), used PURELY to source
   // the age field via its createdAt — unlike check-deploy.ts, this is never
   // used as a gating/disqualifying check here. A thrown error is treated the
@@ -341,10 +350,15 @@ export async function getPatchCandidates(
 ): Promise<WorkPrCandidate[]> {
   const currentUser = await deps.getCurrentUser();
 
+  // Fail open when scope has never synced (e.g. a persistent config-bundle
+  // 404) — filtering by an unpopulated scope would silently drop every repo
+  // from candidacy, a failure mode that didn't exist before scoping.
+  const scopeSynced = deps.hasScopeSynced();
   const scopedRepos = new Set(deps.getScopedRepos());
-  const prs = (await deps.listOwnOpenPrs("default")).filter((pr) =>
-    scopedRepos.has(pr.repo),
-  );
+  const allOwnPrs = await deps.listOwnOpenPrs("default");
+  const prs = scopeSynced
+    ? allOwnPrs.filter((pr) => scopedRepos.has(pr.repo))
+    : allOwnPrs;
   if (prs.length === 0) return [];
 
   const candidates: WorkPrCandidate[] = [];
@@ -464,6 +478,7 @@ export async function buildProductionDeps(opts: {
   getCurrentUser: () => string;
   fetchFn?: typeof fetch;
   getScopedRepos?: () => string[];
+  hasScopeSynced?: () => boolean;
 }): Promise<CheckPatchDeps> {
   const workspacePath = resolveWorkspacePath();
   const allRepos = resolveAllRepos(workspacePath);
@@ -471,6 +486,7 @@ export async function buildProductionDeps(opts: {
 
   return {
     getScopedRepos: opts.getScopedRepos ?? agentReposRef.get,
+    hasScopeSynced: opts.hasScopeSynced ?? agentReposRef.hasSynced,
     listOwnOpenPrs: async (_repo: string) => {
       const user = await getUser();
       return mapReposTolerant(allRepos, "check-patch", async (repo) => {
