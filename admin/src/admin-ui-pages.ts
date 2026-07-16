@@ -238,7 +238,6 @@ export interface TaskItem {
   complexity?: number | null;
   hitl?: boolean | null;
   hours?: number | null;
-  addedAt?: string | null;
   startedAt?: string | null;
   completedAt?: string | null;
   blockedAt?: string | null;
@@ -1900,7 +1899,7 @@ export function renderTaskDetailPage(
     .join("\n");
 
   const datesRows = [
-    dateField("Added", task.addedAt),
+    dateField("Added", task.createdAt),
     dateField("Started", task.startedAt),
     dateField("Claimed", task.claimedAt),
     dateField("Last Heartbeat", task.heartbeatAt),
