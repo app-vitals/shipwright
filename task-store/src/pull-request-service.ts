@@ -14,13 +14,30 @@
  */
 
 import { type Clock, SystemClock } from "./clock.ts";
-import { ConflictError, NotFoundError } from "./errors.ts";
+import { BadRequestError, ConflictError, NotFoundError } from "./errors.ts";
 import {
   Prisma,
   type PrismaClient,
   type PrPhase,
   type PullRequest,
 } from "./index.ts";
+
+/**
+ * Parses an `updatedSince` filter value into a Date, matching the
+ * BadRequestError(400) pattern used for `repo`/`prNumber` validation
+ * elsewhere in the request stack rather than letting an unparseable value
+ * surface as an Invalid Date that Prisma throws on (caught only by the
+ * generic 500 handler).
+ */
+function parseUpdatedSince(value: string): Date {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    throw new BadRequestError(
+      `updatedSince '${value}' is not a valid ISO timestamp`,
+    );
+  }
+  return date;
+}
 
 /** Filters accepted by PullRequestService.list. */
 export interface PullRequestListFilters {
@@ -116,7 +133,7 @@ export class PullRequestService implements PullRequestServiceLike {
     if (filters.staged !== undefined) where.staged = filters.staged;
     if (filters.ready) where.claimedBy = null;
     if (filters.updatedSince) {
-      where.updatedAt = { gte: new Date(filters.updatedSince) };
+      where.updatedAt = { gte: parseUpdatedSince(filters.updatedSince) };
     }
 
     const limit = filters.limit ?? 50;

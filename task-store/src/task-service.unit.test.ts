@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { computeBlockedBy } from "./blocked-by.ts";
+import { BadRequestError } from "./errors.ts";
 import type { PrismaClient } from "./index.ts";
 import type { ReadyTaskLike } from "./ready.ts";
 import { CLOSED_STATUSES, OPEN_STATUSES } from "./statuses.ts";
@@ -404,5 +405,14 @@ describe("TaskService.list() updatedSince/repo where clause", () => {
       | undefined;
     expect(where?.repo).toBe("org/repo");
     expect(where?.updatedAt).toEqual({ gte: new Date(updatedSince) });
+  });
+
+  it("list({ updatedSince: 'not-a-date' }) throws BadRequestError instead of passing Invalid Date to Prisma", async () => {
+    const prisma = makeListPrismaDouble();
+    const service = new TaskService(prisma);
+
+    await expect(service.list({ updatedSince: "not-a-date" })).rejects.toThrow(
+      BadRequestError,
+    );
   });
 });

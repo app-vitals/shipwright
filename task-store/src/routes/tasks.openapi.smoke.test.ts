@@ -10,7 +10,7 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { describe, expect, it } from "bun:test";
 import type { TaskStoreAuthEnv } from "../auth.ts";
-import { ApiError } from "../errors.ts";
+import { ApiError, BadRequestError } from "../errors.ts";
 import type { Task } from "../index.ts";
 import type { TaskServiceLike } from "../task-service.ts";
 import { createTasksRoutes } from "./tasks.ts";
@@ -285,6 +285,22 @@ describe("createTasksRoutes — OpenAPIHono migration (TSM-1.2)", () => {
     expect(
       (receivedFilters as { updatedSince?: string }).updatedSince,
     ).toBeUndefined();
+  });
+
+  it("GET /?updatedSince=not-a-date surfaces the service's BadRequestError as a 400 (not a 500)", async () => {
+    const app = createTasksRoutes(
+      fakeTaskService({
+        onList: () => {
+          throw new BadRequestError(
+            "updatedSince 'not-a-date' is not a valid ISO timestamp",
+          );
+        },
+      }),
+    );
+    const parent = makeAdminParent(app);
+
+    const res = await parent.request("/?updatedSince=not-a-date");
+    expect(res.status).toBe(400);
   });
 
   it("GET /distinct returns 200 with { sessions, repos } shape", async () => {

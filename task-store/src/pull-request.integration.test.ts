@@ -1185,6 +1185,28 @@ describeOrSkip("PullRequestService.list() and get() (integration)", () => {
 
     expect(result.prs.map((p) => p.id)).toEqual([newMatchingPr.id]);
   });
+
+  it("list({ updatedSince }) includes a PR whose updatedAt exactly equals the cutoff (gte inclusivity)", async () => {
+    const cutoff = "2026-03-01T00:00:00.000Z";
+
+    const boundaryPr = await prisma.pullRequest.create({
+      data: {
+        repo: "app-vitals/shipwright",
+        prNumber: 1090,
+        updatedAt: new Date(cutoff),
+      },
+    });
+
+    const result = await service.list({ updatedSince: cutoff });
+
+    expect(result.prs.map((p) => p.id)).toContain(boundaryPr.id);
+  });
+
+  it("list({ updatedSince: 'not-a-date' }) throws instead of silently matching or 500ing", async () => {
+    await expect(
+      service.list({ updatedSince: "not-a-date" }),
+    ).rejects.toThrow();
+  });
 });
 
 // ─── heartbeat() / release() / patch() (liveness + lifecycle) ────────────────

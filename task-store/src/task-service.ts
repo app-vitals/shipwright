@@ -14,7 +14,7 @@
 
 import { type BlockedByEntry, computeBlockedBy } from "./blocked-by.ts";
 import { type Clock, SystemClock } from "./clock.ts";
-import { ConflictError, NotFoundError } from "./errors.ts";
+import { BadRequestError, ConflictError, NotFoundError } from "./errors.ts";
 import type { Prisma, PrismaClient, Task } from "./index.ts";
 import { resolveReadyTasks } from "./ready.ts";
 import { CLOSED_STATUSES, OPEN_STATUSES } from "./statuses.ts";
@@ -22,6 +22,23 @@ import { CLOSED_STATUSES, OPEN_STATUSES } from "./statuses.ts";
 // Re-export so callers can import from task-service without reaching into blocked-by.
 export type { BlockedByEntry };
 export { CLOSED_STATUSES, OPEN_STATUSES };
+
+/**
+ * Parses an `updatedSince` filter value into a Date, matching the
+ * BadRequestError(400) pattern used for `repo`/`prNumber` validation
+ * elsewhere in the request stack rather than letting an unparseable value
+ * surface as an Invalid Date that Prisma throws on (caught only by the
+ * generic 500 handler).
+ */
+function parseUpdatedSince(value: string): Date {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    throw new BadRequestError(
+      `updatedSince '${value}' is not a valid ISO timestamp`,
+    );
+  }
+  return date;
+}
 
 /** A Task augmented with a computed blockedBy array. */
 export type TaskWithBlockedBy = Task & { blockedBy: BlockedByEntry[] };
@@ -114,7 +131,7 @@ export class TaskService implements TaskServiceLike {
     if (filters.pr !== undefined) where.pr = filters.pr;
     if (filters.branch !== undefined) where.branch = filters.branch;
     if (filters.updatedSince) {
-      where.updatedAt = { gte: new Date(filters.updatedSince) };
+      where.updatedAt = { gte: parseUpdatedSince(filters.updatedSince) };
     }
 
     if (filters.agentScope) {

@@ -824,4 +824,29 @@ describeOrSkip("Task store schema (integration)", () => {
 
     expect(result.tasks.map((t) => t.id)).toEqual([newMatchingTask.id]);
   });
+
+  it("list({ updatedSince }) includes a task whose updatedAt exactly equals the cutoff (gte inclusivity)", async () => {
+    const taskService = new TaskService(prisma);
+    const cutoff = "2026-03-01T00:00:00.000Z";
+
+    const boundaryTask = await prisma.task.create({
+      data: {
+        title: "Boundary task",
+        status: "pending",
+        updatedAt: new Date(cutoff),
+      },
+    });
+
+    const result = await taskService.list({ updatedSince: cutoff });
+
+    expect(result.tasks.map((t) => t.id)).toContain(boundaryTask.id);
+  });
+
+  it("list({ updatedSince: 'not-a-date' }) throws instead of silently matching or 500ing", async () => {
+    const taskService = new TaskService(prisma);
+
+    await expect(
+      taskService.list({ updatedSince: "not-a-date" }),
+    ).rejects.toThrow();
+  });
 });

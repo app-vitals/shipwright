@@ -9,7 +9,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { FixedClock } from "./clock.ts";
-import { NotFoundError } from "./errors.ts";
+import { BadRequestError, NotFoundError } from "./errors.ts";
 import type { PullRequest } from "./index.ts";
 import { PullRequestService } from "./pull-request-service.ts";
 
@@ -287,6 +287,15 @@ describe("PullRequestService.list() updatedSince/repo where clause", () => {
     };
     expect(where.repo).toBe("org/repo");
     expect(where.updatedAt).toEqual({ gte: new Date(updatedSince) });
+  });
+
+  test("list({ updatedSince: 'not-a-date' }) throws BadRequestError instead of passing Invalid Date to Prisma", async () => {
+    const prisma = makeListPrismaDouble();
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await expect(svc.list({ updatedSince: "not-a-date" })).rejects.toThrow(
+      BadRequestError,
+    );
   });
 });
 
