@@ -3901,7 +3901,7 @@ describe("renderChatThreadPage", () => {
 describe("renderSessionDetailPage", () => {
   const SESSION_ID = "session-abc";
 
-  const OPEN_TASK_1: TaskItem = {
+  const READY_TASK: TaskItem = {
     id: "TASK-1",
     title: "Build the thing",
     status: "pending",
@@ -3912,7 +3912,7 @@ describe("renderSessionDetailPage", () => {
     dependencies: ["TASK-0"],
   };
 
-  const OPEN_TASK_2: TaskItem = {
+  const IN_PROGRESS_TASK: TaskItem = {
     id: "TASK-2",
     title: "Wire up the UI",
     status: "in_progress",
@@ -3942,7 +3942,12 @@ describe("renderSessionDetailPage", () => {
     hours: 0.5,
   };
 
-  const MIXED_TASKS = [OPEN_TASK_1, OPEN_TASK_2, CLOSED_TASK_1, CLOSED_TASK_2];
+  const MIXED_TASKS = [
+    READY_TASK,
+    IN_PROGRESS_TASK,
+    CLOSED_TASK_1,
+    CLOSED_TASK_2,
+  ];
 
   test("stat cards: total tasks, est. hours sum, distinct layers", () => {
     const html = renderSessionDetailPage(SESSION_ID, MIXED_TASKS, USER_NAME);
@@ -3967,31 +3972,53 @@ describe("renderSessionDetailPage", () => {
     expect(html).toContain("merged");
   });
 
-  test("distinguishes open vs. closed tasks — 'X open / Y closed' summary", () => {
+  test("summarizes and groups the task table by ready/in_progress/blocked/closed — matching the Tasks page taxonomy", () => {
     const html = renderSessionDetailPage(SESSION_ID, MIXED_TASKS, USER_NAME);
-    // 2 open (pending, in_progress), 2 closed (done, merged)
-    expect(html).toMatch(/2[^0-9]*open/i);
+    // READY_TASK (pending, no blockedBy) -> ready; IN_PROGRESS_TASK (in_progress) -> in_progress;
+    // CLOSED_TASK_1/2 (done, merged) -> closed; none blocked.
+    expect(html).toMatch(/1[^0-9]*ready/i);
+    expect(html).toMatch(/1[^0-9]*in progress/i);
+    expect(html).toMatch(/0[^0-9]*blocked/i);
     expect(html).toMatch(/2[^0-9]*closed/i);
+    expect(html).toContain("Ready (1)");
+    expect(html).toContain("In Progress (1)");
+    expect(html).toContain("Closed (2)");
+    expect(html).not.toContain("Blocked (");
   });
 
-  test("all-open session: 4 open / 0 closed", () => {
+  test("all-ready-or-in-progress session: no Closed group rendered", () => {
     const html = renderSessionDetailPage(
       SESSION_ID,
-      [OPEN_TASK_1, OPEN_TASK_2],
+      [READY_TASK, IN_PROGRESS_TASK],
       USER_NAME,
     );
-    expect(html).toMatch(/2[^0-9]*open/i);
-    expect(html).toMatch(/0[^0-9]*closed/i);
+    expect(html).toContain("Ready (1)");
+    expect(html).toContain("In Progress (1)");
+    expect(html).not.toContain("Closed (");
   });
 
-  test("all-closed session: 0 open / 2 closed", () => {
+  test("all-closed session: single Closed group, no Ready/In Progress/Blocked", () => {
     const html = renderSessionDetailPage(
       SESSION_ID,
       [CLOSED_TASK_1, CLOSED_TASK_2],
       USER_NAME,
     );
-    expect(html).toMatch(/0[^0-9]*open/i);
-    expect(html).toMatch(/2[^0-9]*closed/i);
+    expect(html).toContain("Closed (2)");
+    expect(html).not.toContain("Ready (");
+    expect(html).not.toContain("In Progress (");
+    expect(html).not.toContain("Blocked (");
+  });
+
+  test("a pending task with unresolved blockers groups under Blocked in the task table", () => {
+    const blocked: TaskItem = {
+      id: "TASK-5",
+      title: "Blocked on something",
+      status: "pending",
+      session: SESSION_ID,
+      blockedBy: [{ type: "dependency", id: "TASK-1", status: "pending" }],
+    };
+    const html = renderSessionDetailPage(SESSION_ID, [blocked], USER_NAME);
+    expect(html).toContain("Blocked (1)");
   });
 
   test("dependency list rendering: distinct dependency ids collected across tasks", () => {
