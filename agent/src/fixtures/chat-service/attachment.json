@@ -1,0 +1,15 @@
+{
+  "getAttachment_success": {
+    "status": 200,
+    "bodyEncoding": "base64",
+    "body": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+  },
+  "getAttachment_404": {
+    "status": 404,
+    "body": { "error": "no attachment" }
+  },
+  "getAttachment_500": {
+    "status": 500,
+    "body": { "error": "internal server error" }
+  }
+}

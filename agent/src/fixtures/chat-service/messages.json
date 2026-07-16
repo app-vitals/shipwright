@@ -1,0 +1,64 @@
+{
+  "claimMessage_success": {
+    "status": 200,
+    "body": {
+      "id": "msg-xyz",
+      "threadId": "thread-abc",
+      "role": "user",
+      "body": "Hello, can you help me?",
+      "claimedBy": "agent-1",
+      "claimedAt": "2026-01-01T00:10:00.000Z",
+      "repliedAt": null,
+      "tokens": null,
+      "costUsd": null,
+      "attachmentFilename": null,
+      "createdAt": "2026-01-01T00:09:00.000Z",
+      "updatedAt": "2026-01-01T00:10:00.000Z"
+    }
+  },
+  "claimMessage_404": {
+    "status": 404,
+    "body": { "error": "no unclaimed messages in thread" }
+  },
+  "claimMessage_500": {
+    "status": 500,
+    "body": { "error": "internal server error" }
+  },
+  "replyToMessage_success": {
+    "status": 201,
+    "body": {
+      "userMessage": {
+        "id": "msg-xyz",
+        "threadId": "thread-abc",
+        "role": "user",
+        "body": "Hello, can you help me?",
+        "claimedBy": "agent-1",
+        "claimedAt": "2026-01-01T00:10:00.000Z",
+        "repliedAt": "2026-01-01T00:11:00.000Z",
+        "tokens": null,
+        "costUsd": null,
+        "attachmentFilename": null,
+        "createdAt": "2026-01-01T00:09:00.000Z",
+        "updatedAt": "2026-01-01T00:11:00.000Z"
+      },
+      "assistantMessage": {
+        "id": "msg-assist-1",
+        "threadId": "thread-abc",
+        "role": "assistant",
+        "body": "Sure, here's how...",
+        "claimedBy": null,
+        "claimedAt": null,
+        "repliedAt": null,
+        "tokens": { "input_tokens": 120, "output_tokens": 42 },
+        "costUsd": 0.0021,
+        "attachmentFilename": null,
+        "createdAt": "2026-01-01T00:11:00.000Z",
+        "updatedAt": "2026-01-01T00:11:00.000Z"
+      }
+    }
+  },
+  "replyToMessage_400": {
+    "status": 400,
+    "body": { "error": "body is required" }
+  }
+}
