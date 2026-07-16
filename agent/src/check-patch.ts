@@ -111,7 +111,7 @@ export interface CheckPatchDeps {
     pr: number,
   ) => Promise<MergeStatusInfo>;
   listPrCommits: (prNumber: number, repo?: string) => Promise<CommitInfo[]>;
-  getCurrentUser: () => string;
+  getCurrentUser: () => Promise<string>;
   /**
    * Task-store PR record lookup, used both to gate qualification (a record
    * with claimedBy set means another agent currently holds the claim on this
@@ -473,9 +473,9 @@ interface GraphqlResponse {
 }
 
 export async function buildProductionDeps(opts: {
-  ghJson: <T>(args: string[]) => T;
-  ghGraphql: <T>(query: string) => T;
-  getCurrentUser: () => string;
+  ghJson: <T>(args: string[]) => Promise<T>;
+  ghGraphql: <T>(query: string) => Promise<T>;
+  getCurrentUser: () => Promise<string>;
   fetchFn?: typeof fetch;
   getScopedRepos?: () => string[];
   hasScopeSynced?: () => boolean;
@@ -490,7 +490,7 @@ export async function buildProductionDeps(opts: {
     listOwnOpenPrs: async (_repo: string) => {
       const user = await getUser();
       return mapReposTolerant(allRepos, "check-patch", async (repo) => {
-        const items = ghJson<GhPrListItem[]>([
+        const items = await ghJson<GhPrListItem[]>([
           "pr",
           "list",
           "--state",
@@ -540,7 +540,7 @@ export async function buildProductionDeps(opts: {
     }
   }
 }`;
-      const response = ghGraphql<GraphqlResponse>(query);
+      const response = await ghGraphql<GraphqlResponse>(query);
       return response.data.repository.pullRequest;
     },
     fetchCiStatus: async (
@@ -558,7 +558,7 @@ export async function buildProductionDeps(opts: {
         }[];
       };
       try {
-        const data = ghJson<ApiResponse>([
+        const data = await ghJson<ApiResponse>([
           "api",
           `repos/${org}/${repo}/actions/runs?head_sha=${sha}`,
         ]);
@@ -573,7 +573,7 @@ export async function buildProductionDeps(opts: {
     },
     fetchMergeStatus: async (org: string, repo: string, pr: number) => {
       try {
-        const data = ghJson<{ mergeStateStatus: string }>([
+        const data = await ghJson<{ mergeStateStatus: string }>([
           "pr",
           "view",
           String(pr),
@@ -594,7 +594,7 @@ export async function buildProductionDeps(opts: {
     },
     listPrCommits: async (prNumber: number, repo?: string) => {
       const targetRepo = repo ?? allRepos[0];
-      return ghJson<CommitInfo[]>([
+      return await ghJson<CommitInfo[]>([
         "api",
         `repos/${targetRepo}/pulls/${prNumber}/commits`,
         "--paginate",

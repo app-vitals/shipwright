@@ -63,7 +63,7 @@ export interface PrRecord {
 }
 
 export interface CheckReviewDeps {
-  getCurrentUser: () => string;
+  getCurrentUser: () => Promise<string>;
   isSelfReviewAllowed: boolean;
   listOpenPrs: (repo: string) => Promise<PrInfo[]>;
   queryPrRecord: (repo: string, prNumber: number) => Promise<PrRecord | null>;
@@ -181,7 +181,7 @@ export async function getReviewCandidates(
 // ─── Production deps ──────────────────────────────────────────────────────────
 
 export async function buildProductionDeps(opts: {
-  ghJson: <T>(args: string[]) => T;
+  ghJson: <T>(args: string[]) => Promise<T>;
   fetchFn?: typeof fetch;
   getScopedRepos?: () => string[];
   hasScopeSynced?: () => boolean;
@@ -197,7 +197,7 @@ export async function buildProductionDeps(opts: {
     hasScopeSynced: opts.hasScopeSynced ?? agentReposRef.hasSynced,
     listOpenPrs: async (_repo: string) => {
       return mapReposTolerant(allRepos, "check-review", async (repo) => {
-        const repoPrs = ghJsonFn<PrInfo[]>([
+        const repoPrs = await ghJsonFn<PrInfo[]>([
           "pr",
           "list",
           "--state",

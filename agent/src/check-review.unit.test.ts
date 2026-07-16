@@ -54,7 +54,7 @@ function makeDeps(
   return {
     listOpenPrs: async (_repo: string) => prs,
     queryPrRecord: queryPrRecordFn,
-    getCurrentUser: () => currentUser,
+    getCurrentUser: async () => currentUser,
     isSelfReviewAllowed,
     getScopedRepos,
     hasScopeSynced,
@@ -215,7 +215,7 @@ describe("getReviewCandidates", () => {
       ): Promise<PrRecord | null> => {
         throw new Error("Network error");
       },
-      getCurrentUser: () => "bodhi-agent",
+      getCurrentUser: async () => "bodhi-agent",
       isSelfReviewAllowed: false,
       getScopedRepos: () => [pr.repo ?? ""],
       hasScopeSynced: () => true,
