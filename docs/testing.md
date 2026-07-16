@@ -40,7 +40,7 @@ The marketing site is **not** part of the root `bun test` scan — run its Playw
 cd site && npm test                  # playwright (*.spec.ts)
 ```
 
-> `bunfig.toml` excludes `site/**`, `metrics/e2e/**`, and `admin/e2e/**` from the root runner. Keep site tests as `*.spec.ts` and E2E tests as `*.e2e.ts` to stay isolated — Bun would otherwise try to execute Playwright specs and crash.
+> `bunfig.toml` excludes `site/**`, `metrics/e2e/**`, `admin/e2e/**`, and `**/*.canary.test.ts` from the root runner. Keep site tests as `*.spec.ts` and E2E tests as `*.e2e.ts` to stay isolated — Bun would otherwise try to execute Playwright specs and crash. Canary tests are reserved for the canary-execution skill and run via their own entry point.
 
 ### Per-component layers
 

@@ -49,10 +49,12 @@ prior setup. The skills discover the PR from GitHub and treat it identically to 
 created. No skill requires the PR to have been opened by `dev-task` or any other Shipwright
 command.
 
-**Scope note:** `review` operates across all open PRs in the repo — it is not limited to
-PRs authored by the authenticated user. `patch` and `deploy` are scoped to the
-authenticated user's own open PRs (matching by PR author), because they take write actions
-(pushing fixes, merging) that should only be performed on PRs the agent owns.
+**Scope note:** `review` is explicit-target-only — the caller (loop orchestrator or a human)
+always names a specific PR (`org/repo#number`); there is no self-scan/queue-building mode.
+Any PR is serviceable when named this way, regardless of author — it is not limited to PRs
+authored by the authenticated user. `patch` and `deploy` are scoped to the authenticated
+user's own open PRs (matching by PR author), because they take write actions (pushing fixes,
+merging) that should only be performed on PRs the agent owns.
 
 Applies to: **review**, **patch**, **deploy**
 
