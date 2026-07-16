@@ -53,7 +53,6 @@ export interface Task {
   dependencies?: string[];
   pr?: number;
   hours?: number;
-  addedAt?: string;
   createdAt?: string;
   startedAt?: string;
   prCreatedAt?: string;
@@ -486,6 +485,40 @@ export function createTaskStatusQuery(opts?: {
     if (!task) return null;
     return { status: task.status, createdAt: task.createdAt };
   };
+}
+
+// ─── Repo-tolerant candidate collection ───────────────────────────────────────
+
+/**
+ * Call `fn(repo)` for every repo in `repos`, flattening and returning all
+ * successful results. A repo whose `fn()` call throws is skipped — logged via
+ * console.warn (not console.error, since this is a handled/swallowed
+ * condition: the loop continues with reduced repo coverage rather than
+ * failing outright) — and iteration continues with the remaining repos.
+ *
+ * Shared by check-review.ts's listOpenPrs, check-patch.ts's listOwnOpenPrs,
+ * and check-deploy.ts's listOpenPrs collection so a single inaccessible repo
+ * in the agent's configured repos list can't abort candidate collection for
+ * every phase and every other repo that tick (see runLoopTick's unguarded
+ * await chain over getReviewCandidates / getPatchCandidates /
+ * getDeployCandidates).
+ */
+export async function mapReposTolerant<T>(
+  repos: string[],
+  label: string,
+  fn: (repo: string) => Promise<T[]>,
+): Promise<T[]> {
+  const results: T[] = [];
+  for (const repo of repos) {
+    try {
+      results.push(...(await fn(repo)));
+    } catch (err) {
+      console.warn(
+        `[${label}] skipping repo ${repo} — request failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+  return results;
 }
 
 // ─── gh CLI helper ────────────────────────────────────────────────────────────

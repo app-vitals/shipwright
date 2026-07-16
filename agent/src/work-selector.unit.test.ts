@@ -113,4 +113,28 @@ describe("selectNextWorkItem", () => {
     expect(result).toEqual({ type: "pr", pr: older });
     expect(result?.type === "pr" && result.pr.phase).toBeUndefined();
   });
+
+  it("regression: an older dev-task candidate beats a newer PR candidate now that both share one age clock (createdAt) — LPF-3.2 cross-phase fairness fix", () => {
+    // Prior to LPF-3.2, check-review.ts/check-patch.ts sourced `age` from
+    // readyForReviewAt/readyForPatchAt — a necessarily-recent phase-readiness
+    // stamp, not the work item's true origination age. That let a review/
+    // patch candidate's freshly-minted readyForXAt timestamp always look
+    // "younger" than an old backlog dev-task, starving the dev-task
+    // indefinitely even though it was filed first. Post-fix, review/patch
+    // candidates source `age` from linkedTask.createdAt ?? pr.createdAt — the
+    // same clock dev-task's `task.createdAt` already uses — so true
+    // origination age governs selection regardless of which phase most
+    // recently touched the item.
+    const oldDevTask = makeTask({
+      id: "old-backlog-task",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    const newerPr = makePr({
+      id: "pr-newer",
+      age: "2026-01-10T00:00:00.000Z",
+      phase: "review",
+    });
+    const result = selectNextWorkItem([oldDevTask], [newerPr]);
+    expect(result).toEqual({ type: "task", task: oldDevTask });
+  });
 });

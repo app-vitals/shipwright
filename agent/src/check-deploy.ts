@@ -20,12 +20,14 @@
  * before calling this function if needed.
  */
 
+import { agentReposRef } from "./agent-repos-ref.ts";
 import {
   candidateId,
   createPrRecordQuery,
   createTaskStatusQuery,
   getCurrentUser,
   isCleanApproveBody,
+  mapReposTolerant,
   readAllowSelfReview,
   resolveAllRepos,
   resolveWorkspacePath,
@@ -108,6 +110,23 @@ export interface CheckDeployDeps {
     repo: string,
     prNumber: number,
   ) => Promise<LinkedTaskInfo | null>;
+  /**
+   * Returns the agent's currently configured repo scope (org/repo strings).
+   * Called at the top of every getDeployCandidates() invocation — not once at
+   * deps-build time — so a repo present in `repos` (the local clone list) but
+   * absent from this call's result is excluded from candidates, and a later
+   * scope change is picked up on the very next call.
+   */
+  getScopedRepos: () => string[];
+  /**
+   * True once the agent's repo scope has been successfully synced at least
+   * once. When false (e.g. a persistent 404 on the agent's config bundle —
+   * see index.ts's syncConfig), getDeployCandidates() fails open and does
+   * not filter by scope at all, matching pre-scoping behavior — otherwise a
+   * config-sync outage would silently exclude every repo from deploy
+   * candidacy, indistinguishable from "no work found".
+   */
+  hasScopeSynced: () => boolean;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -151,119 +170,114 @@ export async function getDeployCandidates(
   // that must not block PRs in other, independent repos. Queued runs older
   // than 1 hour are treated as stuck/ghost and ignored.
   const now = deps.clock ? deps.clock() : new Date().toISOString();
-  const busyRepos = new Set<string>();
-  for (const repo of deps.repos) {
-    const [org, repoName] = splitOrgRepo(repo);
-    try {
+  // Fail open when scope has never synced (e.g. a persistent config-bundle
+  // 404) — filtering by an unpopulated scope would silently drop every repo
+  // from candidacy, a failure mode that didn't exist before scoping.
+  const scopeSynced = deps.hasScopeSynced();
+  const scopedRepos = new Set(deps.getScopedRepos());
+  const repos = scopeSynced
+    ? deps.repos.filter((repo) => scopedRepos.has(repo))
+    : deps.repos;
+
+  const busyRepos = new Set(
+    await mapReposTolerant(repos, "check-deploy", async (repo) => {
+      const [org, repoName] = splitOrgRepo(repo);
       const activeRuns = await deps.fetchActiveDeployRuns(org, repoName);
-      if (activeRuns.some((r) => isActiveRun(r, now))) {
-        busyRepos.add(repo);
-      }
-    } catch (err) {
-      process.stderr.write(
-        `[check-deploy] deploying guard check failed for ${repo}: ${err instanceof Error ? err.message : String(err)}\n`,
-      );
-      // proceed rather than block deploys
-    }
-  }
+      return activeRuns.some((r) => isActiveRun(r, now)) ? [repo] : [];
+    }),
+  );
 
   const currentUser = await deps.getCurrentUser();
   const candidates: WorkPrCandidate[] = [];
 
-  for (const repo of deps.repos) {
-    if (busyRepos.has(repo)) continue;
+  const openRepos = repos.filter((repo) => !busyRepos.has(repo));
+  const openPrs = await mapReposTolerant<GhPr & { repo: string }>(
+    openRepos,
+    "check-deploy",
+    async (repo) => {
+      const prs = await deps.listOpenPrs(repo);
+      return prs.map((pr) => ({ ...pr, repo }));
+    },
+  );
 
+  for (const pr of openPrs) {
+    const repo = pr.repo;
     const [org, repoName] = splitOrgRepo(repo);
 
-    let openPrs: GhPr[];
     try {
-      openPrs = await deps.listOpenPrs(repo);
+      let approved = false;
+
+      if (pr.reviewDecision === "APPROVED") {
+        approved = true;
+      } else if (deps.isSelfReviewAllowed && pr.author.login === currentUser) {
+        const reviews = await deps.fetchPrReviews(org, repoName, pr.number);
+        if (hasSelfApproveReview(reviews, currentUser)) {
+          approved = true;
+        }
+      }
+
+      if (!approved) continue;
+
+      // Hard authorship filter: only deploy PRs authored by the current user
+      if (pr.author.login !== currentUser) continue;
+
+      const ciRuns = await deps.fetchCiRuns(org, repoName, pr.headRefOid);
+      if (!isCiGreen(ciRuns)) continue;
+
+      // Skip DIRTY (merge-conflicted, unmergeable) PRs
+      if (pr.mergeStateStatus === "DIRTY") continue;
+
+      // Skip PRs whose linked task is blocked. A confirmed empty result (no
+      // linked task) is not disqualifying, but a lookup FAILURE fails
+      // CLOSED — deploy is consequential enough that "unknown" must not be
+      // treated as "confirmed ready".
+      let linkedTask: LinkedTaskInfo | null = null;
+      if (deps.queryTaskStatus) {
+        try {
+          linkedTask = await deps.queryTaskStatus(repo, pr.number);
+        } catch (err) {
+          process.stderr.write(
+            `check-deploy: task-status lookup failed for PR ${pr.number}: ${err instanceof Error ? err.message : String(err)}\n`,
+          );
+          continue;
+        }
+        if (linkedTask?.status === "blocked") continue;
+      }
+
+      if (deps.isBundleComplete) {
+        const bundleComplete = await deps
+          .isBundleComplete(pr.headRefName)
+          .catch(() => true);
+        if (!bundleComplete) continue;
+      }
+
+      let record: PrRecord | null = null;
+      if (deps.queryPrRecord) {
+        try {
+          record = await deps.queryPrRecord(repo, pr.number);
+        } catch {
+          // Query failed → fall back to PR createdAt below (fail open — a
+          // transient task-store error must not silently exclude an
+          // otherwise-qualifying PR from deploy candidacy).
+        }
+        // A record with claimedBy set means another agent currently holds
+        // the claim on this PR — skip. A null record (no record was ever
+        // created, e.g. review skipped claim() for a self-authored PR
+        // under allow_self_review: false, or the query failed above) must
+        // NOT be treated as claimed — only an explicit claimedBy gates
+        // candidacy, mirroring check-review.ts.
+        if (record?.claimedBy != null) continue;
+      }
+
+      candidates.push({
+        id: candidateId(repo, pr.number),
+        age: linkedTask?.createdAt ?? pr.createdAt ?? "",
+        phase: "deploy",
+      });
     } catch (err) {
       process.stderr.write(
-        `check-deploy: gh query failed for repo ${repo}: ${String(err)}\n`,
+        `check-deploy: gh query failed for PR ${pr.number}: ${String(err)}\n`,
       );
-      continue;
-    }
-
-    for (const pr of openPrs) {
-      try {
-        let approved = false;
-
-        if (pr.reviewDecision === "APPROVED") {
-          approved = true;
-        } else if (
-          deps.isSelfReviewAllowed &&
-          pr.author.login === currentUser
-        ) {
-          const reviews = await deps.fetchPrReviews(org, repoName, pr.number);
-          if (hasSelfApproveReview(reviews, currentUser)) {
-            approved = true;
-          }
-        }
-
-        if (!approved) continue;
-
-        // Hard authorship filter: only deploy PRs authored by the current user
-        if (pr.author.login !== currentUser) continue;
-
-        const ciRuns = await deps.fetchCiRuns(org, repoName, pr.headRefOid);
-        if (!isCiGreen(ciRuns)) continue;
-
-        // Skip DIRTY (merge-conflicted, unmergeable) PRs
-        if (pr.mergeStateStatus === "DIRTY") continue;
-
-        // Skip PRs whose linked task is blocked. A confirmed empty result (no
-        // linked task) is not disqualifying, but a lookup FAILURE fails
-        // CLOSED — deploy is consequential enough that "unknown" must not be
-        // treated as "confirmed ready".
-        let linkedTask: LinkedTaskInfo | null = null;
-        if (deps.queryTaskStatus) {
-          try {
-            linkedTask = await deps.queryTaskStatus(repo, pr.number);
-          } catch (err) {
-            process.stderr.write(
-              `check-deploy: task-status lookup failed for PR ${pr.number}: ${err instanceof Error ? err.message : String(err)}\n`,
-            );
-            continue;
-          }
-          if (linkedTask?.status === "blocked") continue;
-        }
-
-        if (deps.isBundleComplete) {
-          const bundleComplete = await deps
-            .isBundleComplete(pr.headRefName)
-            .catch(() => true);
-          if (!bundleComplete) continue;
-        }
-
-        let record: PrRecord | null = null;
-        if (deps.queryPrRecord) {
-          try {
-            record = await deps.queryPrRecord(repo, pr.number);
-          } catch {
-            // Query failed → fall back to PR createdAt below (fail open — a
-            // transient task-store error must not silently exclude an
-            // otherwise-qualifying PR from deploy candidacy).
-          }
-          // A record with claimedBy set means another agent currently holds
-          // the claim on this PR — skip. A null record (no record was ever
-          // created, e.g. review skipped claim() for a self-authored PR
-          // under allow_self_review: false, or the query failed above) must
-          // NOT be treated as claimed — only an explicit claimedBy gates
-          // candidacy, mirroring check-review.ts.
-          if (record?.claimedBy != null) continue;
-        }
-
-        candidates.push({
-          id: candidateId(repo, pr.number),
-          age: linkedTask?.createdAt ?? pr.createdAt ?? "",
-          phase: "deploy",
-        });
-      } catch (err) {
-        process.stderr.write(
-          `check-deploy: gh query failed for PR ${pr.number}: ${String(err)}\n`,
-        );
-      }
     }
   }
 
@@ -302,6 +316,8 @@ interface GhWorkflowRunsJson {
 export async function buildProductionDeps(opts: {
   ghJson: <T>(args: string[]) => T;
   fetchFn?: typeof fetch;
+  getScopedRepos?: () => string[];
+  hasScopeSynced?: () => boolean;
 }): Promise<CheckDeployDeps> {
   const workspacePath = resolveWorkspacePath();
   const allRepos = resolveAllRepos(workspacePath);
@@ -312,6 +328,8 @@ export async function buildProductionDeps(opts: {
     getCurrentUser,
     isSelfReviewAllowed: readAllowSelfReview(workspacePath),
     repos: allRepos,
+    getScopedRepos: opts.getScopedRepos ?? agentReposRef.get,
+    hasScopeSynced: opts.hasScopeSynced ?? agentReposRef.hasSynced,
     clock,
     fetchActiveDeployRuns: async (org: string, repo: string) => {
       const inProgress = ghJson<GhWorkflowRunsJson>([

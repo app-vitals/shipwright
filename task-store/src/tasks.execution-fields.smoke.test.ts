@@ -62,7 +62,6 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     dependencies: [],
     pr: null,
     hours: null,
-    addedAt: null,
     startedAt: null,
     prCreatedAt: null,
     mergedAt: null,

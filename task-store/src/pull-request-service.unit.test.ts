@@ -9,7 +9,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { FixedClock } from "./clock.ts";
-import { NotFoundError } from "./errors.ts";
+import { BadRequestError, NotFoundError } from "./errors.ts";
 import type { PullRequest } from "./index.ts";
 import { PullRequestService } from "./pull-request-service.ts";
 
@@ -24,7 +24,9 @@ interface UpdateCall {
  * makePrismaDouble — configurable findUnique return value, records update()
  * calls so tests can assert on the exact data payload passed to Prisma.
  */
-function makePrismaDouble(findUniqueResult: Partial<PullRequest> | null = null) {
+function makePrismaDouble(
+  findUniqueResult: Partial<PullRequest> | null = null,
+) {
   const updateCalls: UpdateCall[] = [];
 
   const prisma = {
@@ -141,15 +143,15 @@ describe("PullRequestService.list() sort", () => {
 
   /**
    * Prisma double for list(): captures the findMany args (in particular
-   * orderBy) passed by the service, mirroring the $transaction([findMany,
-   * count]) shape list() actually issues.
+   * orderBy and where) passed by the service, mirroring the
+   * $transaction([findMany, count]) shape list() actually issues.
    */
   function makeListPrismaDouble() {
-    const findManyCalls: Array<{ orderBy?: unknown }> = [];
+    const findManyCalls: Array<{ orderBy?: unknown; where?: unknown }> = [];
 
     const prisma = {
       pullRequest: {
-        findMany(args: { orderBy?: unknown }) {
+        findMany(args: { orderBy?: unknown; where?: unknown }) {
           findManyCalls.push(args);
           return Promise.resolve([]);
         },
@@ -165,11 +167,14 @@ describe("PullRequestService.list() sort", () => {
 
     return prisma as unknown as {
       pullRequest: {
-        findMany: (args: { orderBy?: unknown }) => Promise<unknown[]>;
+        findMany: (args: {
+          orderBy?: unknown;
+          where?: unknown;
+        }) => Promise<unknown[]>;
         count: () => Promise<number>;
       };
       $transaction: (ops: Promise<unknown>[]) => Promise<unknown[]>;
-      _findManyCalls: Array<{ orderBy?: unknown }>;
+      _findManyCalls: Array<{ orderBy?: unknown; where?: unknown }>;
     };
   }
 
@@ -201,6 +206,96 @@ describe("PullRequestService.list() sort", () => {
 
     expect(prisma._findManyCalls).toHaveLength(1);
     expect(prisma._findManyCalls[0].orderBy).toEqual({ createdAt: "asc" });
+  });
+});
+
+describe("PullRequestService.list() updatedSince/repo where clause", () => {
+  const NOW = new Date("2026-07-10T12:00:00.000Z");
+  const clock = FixedClock(NOW);
+
+  /**
+   * Prisma double for list(): captures the findMany args (in particular
+   * where) passed by the service, mirroring the $transaction([findMany,
+   * count]) shape list() actually issues.
+   */
+  function makeListPrismaDouble() {
+    const findManyCalls: Array<{ where?: unknown }> = [];
+
+    const prisma = {
+      pullRequest: {
+        findMany(args: { where?: unknown }) {
+          findManyCalls.push(args);
+          return Promise.resolve([]);
+        },
+        count() {
+          return Promise.resolve(0);
+        },
+      },
+      $transaction(ops: Promise<unknown>[]) {
+        return Promise.all(ops);
+      },
+      _findManyCalls: findManyCalls,
+    };
+
+    return prisma as unknown as {
+      pullRequest: {
+        findMany: (args: { where?: unknown }) => Promise<unknown[]>;
+        count: () => Promise<number>;
+      };
+      $transaction: (ops: Promise<unknown>[]) => Promise<unknown[]>;
+      _findManyCalls: Array<{ where?: unknown }>;
+    };
+  }
+
+  test("list({ updatedSince }) sets where.updatedAt = { gte: new Date(updatedSince) }", async () => {
+    const prisma = makeListPrismaDouble();
+    const svc = new PullRequestService(prisma as never, clock);
+    const updatedSince = "2026-07-01T00:00:00.000Z";
+
+    await svc.list({ updatedSince });
+
+    expect(prisma._findManyCalls).toHaveLength(1);
+    expect(
+      (prisma._findManyCalls[0].where as { updatedAt?: { gte: Date } })
+        .updatedAt,
+    ).toEqual({ gte: new Date(updatedSince) });
+  });
+
+  test("list({}) omits where.updatedAt entirely (preserves current unfiltered behavior)", async () => {
+    const prisma = makeListPrismaDouble();
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.list({});
+
+    expect(prisma._findManyCalls).toHaveLength(1);
+    expect(
+      (prisma._findManyCalls[0].where as { updatedAt?: unknown }).updatedAt,
+    ).toBeUndefined();
+  });
+
+  test("list({ repo, updatedSince }) applies both filters together in where", async () => {
+    const prisma = makeListPrismaDouble();
+    const svc = new PullRequestService(prisma as never, clock);
+    const updatedSince = "2026-07-01T00:00:00.000Z";
+
+    await svc.list({ repo: "org/repo", updatedSince });
+
+    expect(prisma._findManyCalls).toHaveLength(1);
+    const where = prisma._findManyCalls[0].where as {
+      repo?: string;
+      updatedAt?: { gte: Date };
+    };
+    expect(where.repo).toBe("org/repo");
+    expect(where.updatedAt).toEqual({ gte: new Date(updatedSince) });
+  });
+
+  test("list({ updatedSince: 'not-a-date' }) throws BadRequestError instead of passing Invalid Date to Prisma", async () => {
+    const prisma = makeListPrismaDouble();
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await expect(svc.list({ updatedSince: "not-a-date" })).rejects.toThrow(
+      BadRequestError,
+    );
   });
 });
 

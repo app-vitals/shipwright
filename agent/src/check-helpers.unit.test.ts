@@ -969,3 +969,105 @@ describe("isCleanApproveBody", () => {
     expect(isCleanApproveBody("Verdict: DISAPPROVE")).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// mapReposTolerant
+// ---------------------------------------------------------------------------
+
+describe("mapReposTolerant", () => {
+  let savedWarn: typeof console.warn;
+  let warnCalls: unknown[][];
+
+  beforeEach(() => {
+    savedWarn = console.warn;
+    warnCalls = [];
+    console.warn = (...args: unknown[]) => {
+      warnCalls.push(args);
+    };
+  });
+
+  afterEach(() => {
+    console.warn = savedWarn;
+  });
+
+  test("flattens results across all repos when every call succeeds", async () => {
+    const result = await checkHelpers.mapReposTolerant(
+      ["org/repo-a", "org/repo-b"],
+      "test-label",
+      async (repo: string) => [`${repo}-item1`, `${repo}-item2`],
+    );
+    expect(result).toEqual([
+      "org/repo-a-item1",
+      "org/repo-a-item2",
+      "org/repo-b-item1",
+      "org/repo-b-item2",
+    ]);
+    expect(warnCalls).toHaveLength(0);
+  });
+
+  test("one repo throws mid-list — other repos' results are still returned and no exception propagates", async () => {
+    const result = await checkHelpers.mapReposTolerant(
+      ["org/repo-a", "org/inaccessible-repo", "org/repo-b"],
+      "test-label",
+      async (repo: string) => {
+        if (repo === "org/inaccessible-repo") {
+          throw new Error("access denied");
+        }
+        return [`${repo}-item`];
+      },
+    );
+    expect(result).toEqual(["org/repo-a-item", "org/repo-b-item"]);
+  });
+
+  test("logs the failure via console.warn (not console.error) with label and repo info", async () => {
+    const savedError = console.error;
+    const errorCalls: unknown[][] = [];
+    console.error = (...args: unknown[]) => {
+      errorCalls.push(args);
+    };
+
+    try {
+      await checkHelpers.mapReposTolerant(
+        ["org/inaccessible-repo"],
+        "check-review",
+        async () => {
+          throw new Error("access denied");
+        },
+      );
+    } finally {
+      console.error = savedError;
+    }
+
+    expect(errorCalls).toHaveLength(0);
+    expect(warnCalls).toHaveLength(1);
+    const [message] = warnCalls[0];
+    expect(String(message)).toContain("check-review");
+    expect(String(message)).toContain("org/inaccessible-repo");
+  });
+
+  test("returns an empty array when every repo fails", async () => {
+    const result = await checkHelpers.mapReposTolerant(
+      ["org/repo-a", "org/repo-b"],
+      "test-label",
+      async () => {
+        throw new Error("boom");
+      },
+    );
+    expect(result).toEqual([]);
+    expect(warnCalls).toHaveLength(2);
+  });
+
+  test("returns an empty array for an empty repo list without calling fn", async () => {
+    let called = false;
+    const result = await checkHelpers.mapReposTolerant(
+      [],
+      "test-label",
+      async () => {
+        called = true;
+        return ["x"];
+      },
+    );
+    expect(result).toEqual([]);
+    expect(called).toBe(false);
+  });
+});

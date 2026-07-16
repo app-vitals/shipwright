@@ -10,7 +10,7 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { describe, expect, it } from "bun:test";
 import type { TaskStoreAuthEnv } from "../auth.ts";
-import { ApiError } from "../errors.ts";
+import { ApiError, BadRequestError } from "../errors.ts";
 import type { Task } from "../index.ts";
 import type { TaskServiceLike } from "../task-service.ts";
 import { createTasksRoutes } from "./tasks.ts";
@@ -30,7 +30,6 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     dependencies: [],
     pr: null,
     hours: null,
-    addedAt: null,
     startedAt: null,
     prCreatedAt: null,
     mergedAt: null,
@@ -244,6 +243,63 @@ describe("createTasksRoutes — OpenAPIHono migration (TSM-1.2)", () => {
     const res = await parent.request("/?sort=asc");
     expect(res.status).toBe(200);
     expect((receivedFilters as { sort?: string }).sort).toBeUndefined();
+  });
+
+  it("GET /?updatedSince=<iso> passes updatedSince through to taskService.list()", async () => {
+    const task = makeTask({ id: "t-1" });
+    let receivedFilters: unknown;
+    const app = createTasksRoutes(
+      fakeTaskService({
+        tasks: [task],
+        onList: (filters) => {
+          receivedFilters = filters;
+        },
+      }),
+    );
+    const parent = makeAdminParent(app);
+
+    const updatedSince = "2026-07-01T00:00:00.000Z";
+    const res = await parent.request(`/?updatedSince=${updatedSince}`);
+    expect(res.status).toBe(200);
+    expect((receivedFilters as { updatedSince?: string }).updatedSince).toBe(
+      updatedSince,
+    );
+  });
+
+  it("GET / with no updatedSince param passes updatedSince: undefined through to taskService.list() (existing behavior)", async () => {
+    const task = makeTask({ id: "t-1" });
+    let receivedFilters: unknown;
+    const app = createTasksRoutes(
+      fakeTaskService({
+        tasks: [task],
+        onList: (filters) => {
+          receivedFilters = filters;
+        },
+      }),
+    );
+    const parent = makeAdminParent(app);
+
+    const res = await parent.request("/");
+    expect(res.status).toBe(200);
+    expect(
+      (receivedFilters as { updatedSince?: string }).updatedSince,
+    ).toBeUndefined();
+  });
+
+  it("GET /?updatedSince=not-a-date surfaces the service's BadRequestError as a 400 (not a 500)", async () => {
+    const app = createTasksRoutes(
+      fakeTaskService({
+        onList: () => {
+          throw new BadRequestError(
+            "updatedSince 'not-a-date' is not a valid ISO timestamp",
+          );
+        },
+      }),
+    );
+    const parent = makeAdminParent(app);
+
+    const res = await parent.request("/?updatedSince=not-a-date");
+    expect(res.status).toBe(400);
   });
 
   it("GET /distinct returns 200 with { sessions, repos } shape", async () => {

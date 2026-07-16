@@ -14,9 +14,7 @@
   "paths": {
     "/tasks": {
       "get": {
-        "tags": [
-          "tasks"
-        ],
+        "tags": ["tasks"],
         "summary": "List tasks",
         "parameters": [
           {
@@ -31,13 +29,7 @@
           {
             "schema": {
               "type": "string",
-              "enum": [
-                "open",
-                "closed",
-                "in_progress",
-                "ready",
-                "blocked"
-              ],
+              "enum": ["open", "closed", "in_progress", "ready", "blocked"],
               "example": "open"
             },
             "required": false,
@@ -119,10 +111,7 @@
           {
             "schema": {
               "type": "string",
-              "enum": [
-                "true",
-                "false"
-              ],
+              "enum": ["true", "false"],
               "example": "true"
             },
             "required": false,
@@ -132,14 +121,21 @@
           {
             "schema": {
               "type": "string",
-              "enum": [
-                "asc",
-                "desc"
-              ],
+              "enum": ["asc", "desc"],
               "example": "asc"
             },
             "required": false,
             "name": "sort",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Only return tasks with updatedAt >= this ISO timestamp. A conservative pre-filter, not a precise sync anchor.",
+              "example": "2026-01-01T00:00:00.000Z"
+            },
+            "required": false,
+            "name": "updatedSince",
             "in": "query"
           }
         ],
@@ -167,9 +163,7 @@
         }
       },
       "post": {
-        "tags": [
-          "tasks"
-        ],
+        "tags": ["tasks"],
         "summary": "Create a task",
         "requestBody": {
           "content": {
@@ -216,9 +210,7 @@
     },
     "/tasks/bulk": {
       "post": {
-        "tags": [
-          "tasks"
-        ],
+        "tags": ["tasks"],
         "summary": "Bulk insert tasks",
         "requestBody": {
           "content": {
@@ -265,9 +257,7 @@
     },
     "/tasks/distinct": {
       "get": {
-        "tags": [
-          "tasks"
-        ],
+        "tags": ["tasks"],
         "summary": "Get distinct session and repo values",
         "responses": {
           "200": {
@@ -295,9 +285,7 @@
     },
     "/tasks/{id}": {
       "get": {
-        "tags": [
-          "tasks"
-        ],
+        "tags": ["tasks"],
         "summary": "Get a task by ID",
         "parameters": [
           {
@@ -354,9 +342,7 @@
         }
       },
       "patch": {
-        "tags": [
-          "tasks"
-        ],
+        "tags": ["tasks"],
         "summary": "Update a task",
         "parameters": [
           {
@@ -432,9 +418,7 @@
         }
       },
       "delete": {
-        "tags": [
-          "tasks"
-        ],
+        "tags": ["tasks"],
         "summary": "Delete a task",
         "parameters": [
           {
@@ -486,9 +470,7 @@
     },
     "/tasks/{id}/claim": {
       "post": {
-        "tags": [
-          "tasks"
-        ],
+        "tags": ["tasks"],
         "summary": "Atomically claim a task",
         "parameters": [
           {
@@ -577,9 +559,7 @@
     },
     "/tasks/{id}/heartbeat": {
       "post": {
-        "tags": [
-          "tasks"
-        ],
+        "tags": ["tasks"],
         "summary": "Touch heartbeatAt on a claimed task",
         "parameters": [
           {
@@ -638,9 +618,7 @@
     },
     "/tasks/{id}/complete": {
       "post": {
-        "tags": [
-          "tasks"
-        ],
+        "tags": ["tasks"],
         "summary": "Mark a task as done",
         "parameters": [
           {
@@ -699,9 +677,7 @@
     },
     "/tasks/{id}/fail": {
       "post": {
-        "tags": [
-          "tasks"
-        ],
+        "tags": ["tasks"],
         "summary": "Mark a task as blocked",
         "parameters": [
           {
@@ -770,9 +746,7 @@
     },
     "/tasks/{id}/release": {
       "post": {
-        "tags": [
-          "tasks"
-        ],
+        "tags": ["tasks"],
         "summary": "Release a task back to pending",
         "parameters": [
           {
@@ -831,9 +805,7 @@
     },
     "/tokens": {
       "get": {
-        "tags": [
-          "tokens"
-        ],
+        "tags": ["tokens"],
         "summary": "List all tokens",
         "security": [
           {
@@ -867,9 +839,7 @@
         }
       },
       "post": {
-        "tags": [
-          "tokens"
-        ],
+        "tags": ["tokens"],
         "summary": "Create a new token — raw value returned exactly once",
         "security": [
           {
@@ -912,9 +882,7 @@
     },
     "/tokens/{id}": {
       "patch": {
-        "tags": [
-          "tokens"
-        ],
+        "tags": ["tokens"],
         "summary": "Update token label and/or agentId",
         "security": [
           {
@@ -986,9 +954,7 @@
         }
       },
       "delete": {
-        "tags": [
-          "tokens"
-        ],
+        "tags": ["tokens"],
         "summary": "Revoke a token",
         "security": [
           {
@@ -1042,9 +1008,7 @@
     },
     "/prs": {
       "get": {
-        "tags": [
-          "PRs"
-        ],
+        "tags": ["PRs"],
         "summary": "List pull requests",
         "parameters": [
           {
@@ -1078,11 +1042,7 @@
           {
             "schema": {
               "type": "string",
-              "enum": [
-                "open",
-                "merged",
-                "closed"
-              ],
+              "enum": ["open", "merged", "closed"],
               "example": "open"
             },
             "required": false,
@@ -1092,12 +1052,7 @@
           {
             "schema": {
               "type": "string",
-              "enum": [
-                "pending",
-                "in_progress",
-                "posted",
-                "approved"
-              ],
+              "enum": ["pending", "in_progress", "posted", "approved"],
               "example": "pending"
             },
             "required": false,
@@ -1107,10 +1062,7 @@
           {
             "schema": {
               "type": "string",
-              "enum": [
-                "true",
-                "false"
-              ],
+              "enum": ["true", "false"],
               "description": "Filter by staged flag",
               "example": "false"
             },
@@ -1141,10 +1093,7 @@
           {
             "schema": {
               "type": "string",
-              "enum": [
-                "true",
-                "false"
-              ],
+              "enum": ["true", "false"],
               "description": "When true, return only unclaimed PRs (claimedBy IS NULL) — mirrors /tasks?ready=true. Composable with other filters (repo, state, reviewState); does not itself apply state/reviewState eligibility rules the way claim-next does.",
               "example": "true"
             },
@@ -1155,15 +1104,22 @@
           {
             "schema": {
               "type": "string",
-              "enum": [
-                "asc",
-                "desc"
-              ],
+              "enum": ["asc", "desc"],
               "description": "Order results by createdAt. Default is ascending (asc), preserving current behavior for existing callers. Unrelated to claim-next's own deterministic ordering.",
               "example": "asc"
             },
             "required": false,
             "name": "sort",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Only return PRs with updatedAt >= this ISO timestamp. A conservative pre-filter, not a precise sync anchor.",
+              "example": "2026-01-01T00:00:00.000Z"
+            },
+            "required": false,
+            "name": "updatedSince",
             "in": "query"
           }
         ],
@@ -1183,9 +1139,7 @@
     },
     "/prs/claim": {
       "post": {
-        "tags": [
-          "PRs"
-        ],
+        "tags": ["PRs"],
         "summary": "Claim a pull request (atomic)",
         "requestBody": {
           "required": true,
@@ -1243,9 +1197,7 @@
     },
     "/prs/claim-next": {
       "post": {
-        "tags": [
-          "PRs"
-        ],
+        "tags": ["PRs"],
         "summary": "Atomic find-and-claim of oldest eligible PR",
         "requestBody": {
           "required": false,
@@ -1286,9 +1238,7 @@
     },
     "/prs/{id}": {
       "get": {
-        "tags": [
-          "PRs"
-        ],
+        "tags": ["PRs"],
         "summary": "Fetch a single pull request",
         "parameters": [
           {
@@ -1325,9 +1275,7 @@
         }
       },
       "patch": {
-        "tags": [
-          "PRs"
-        ],
+        "tags": ["PRs"],
         "summary": "Update pull request fields",
         "parameters": [
           {
@@ -1386,9 +1334,7 @@
     },
     "/prs/{id}/heartbeat": {
       "post": {
-        "tags": [
-          "PRs"
-        ],
+        "tags": ["PRs"],
         "summary": "Touch heartbeatAt for a claimed PR",
         "parameters": [
           {
@@ -1417,9 +1363,7 @@
     },
     "/prs/{id}/complete": {
       "post": {
-        "tags": [
-          "PRs"
-        ],
+        "tags": ["PRs"],
         "summary": "Mark PR review as complete (reviewState=posted)",
         "parameters": [
           {
@@ -1458,9 +1402,7 @@
     },
     "/prs/{id}/patch": {
       "post": {
-        "tags": [
-          "PRs"
-        ],
+        "tags": ["PRs"],
         "summary": "Increment patchCycles and conditionally reset reviewState=pending",
         "parameters": [
           {
@@ -1509,9 +1451,7 @@
     },
     "/prs/{id}/release": {
       "post": {
-        "tags": [
-          "PRs"
-        ],
+        "tags": ["PRs"],
         "summary": "Release a claim (reviewState=pending, claimedBy cleared)",
         "parameters": [
           {
@@ -1579,31 +1519,19 @@
             "example": "pending"
           },
           "source": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": "manual"
           },
           "session": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": "session-123"
           },
           "repo": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": "org/repo"
           },
           "description": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": "Task description"
           },
           "acceptanceCriteria": {
@@ -1611,23 +1539,14 @@
             "items": {
               "type": "string"
             },
-            "example": [
-              "Criterion 1",
-              "Criterion 2"
-            ]
+            "example": ["Criterion 1", "Criterion 2"]
           },
           "layer": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": "feature"
           },
           "branch": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": "feat/feature-x"
           },
           "dependencies": {
@@ -1635,303 +1554,170 @@
             "items": {
               "type": "string"
             },
-            "example": [
-              "task-1",
-              "task-2"
-            ]
+            "example": ["task-1", "task-2"]
           },
           "pr": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "example": 42
           },
           "hours": {
-            "type": [
-              "number",
-              "null"
-            ],
+            "type": ["number", "null"],
             "example": 5.5
           },
-          "addedAt": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": "2026-01-01T00:00:00.000Z"
-          },
           "startedAt": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": "2026-01-02T00:00:00.000Z"
           },
           "prCreatedAt": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": "2026-01-03T00:00:00.000Z"
           },
           "mergedAt": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": "2026-01-04T00:00:00.000Z"
           },
           "blockedAt": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": null
           },
           "blockedReason": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": "Waiting on dependency"
           },
           "note": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": "Some notes"
           },
           "type": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": "feature"
           },
           "priority": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": "high"
           },
           "cancelledAt": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": null
           },
           "completedAt": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": "2026-01-05T00:00:00.000Z"
           },
           "deployingAt": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": null
           },
           "deployedAt": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": "2026-01-06T00:00:00.000Z"
           },
           "ciFixAttempts": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "example": 2
           },
           "mergeCommit": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": "abc123def456"
           },
           "prUrl": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": "https://github.com/org/repo/pull/42"
           },
           "assignee": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": "user@example.com"
           },
           "issue": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": "GH-123"
           },
           "model": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": "sonnet"
           },
           "complexity": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "example": 7
           },
           "hitl": {
-            "type": [
-              "boolean",
-              "null"
-            ],
+            "type": ["boolean", "null"],
             "example": true
           },
           "hitlNotifiedAt": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": "2026-01-02T00:00:00.000Z"
           },
           "claimedBy": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": "agent-id-123"
           },
           "agentHint": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": "prefer-sonnet"
           },
           "claimedAt": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": "2026-01-02T00:00:00.000Z"
           },
           "heartbeatAt": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": "2026-01-06T12:00:00.000Z"
           },
           "simplifyTotal": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "example": 10
           },
           "simplifyDry": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "example": 2
           },
           "simplifyDeadCode": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "example": 3
           },
           "simplifyNaming": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "example": 1
           },
           "simplifyComplexity": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "example": 2
           },
           "simplifyConsistency": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "example": 2
           },
           "coverageDelta": {
-            "type": [
-              "number",
-              "null"
-            ],
+            "type": ["number", "null"],
             "example": 5.5
           },
           "effortLevel": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": "medium"
           },
           "inputTokens": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "example": 1000
           },
           "outputTokens": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "example": 500
           },
           "cacheReadTokens": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "example": 100
           },
           "cacheCreationTokens": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "example": 50
           },
           "costUsd": {
-            "type": [
-              "number",
-              "null"
-            ],
+            "type": ["number", "null"],
             "example": 0.02
           },
           "metadata": {
-            "type": [
-              "object",
-              "null"
-            ],
+            "type": ["object", "null"],
             "additionalProperties": {},
             "example": {
               "customKey": "customValue"
@@ -1948,13 +1734,7 @@
             "example": "2026-01-06T12:00:00.000Z"
           }
         },
-        "required": [
-          "id",
-          "title",
-          "status",
-          "createdAt",
-          "updatedAt"
-        ]
+        "required": ["id", "title", "status", "createdAt", "updatedAt"]
       },
       "TaskListResponse": {
         "type": "object",
@@ -1970,10 +1750,7 @@
             "example": 10
           }
         },
-        "required": [
-          "tasks",
-          "total"
-        ]
+        "required": ["tasks", "total"]
       },
       "Error": {
         "type": "object",
@@ -1983,9 +1760,7 @@
             "example": "not found"
           }
         },
-        "required": [
-          "error"
-        ]
+        "required": ["error"]
       },
       "CreateTaskBody": {
         "type": "object",
@@ -2001,10 +1776,7 @@
             "example": "pending"
           },
           "repo": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": "org/repo"
           },
           "session": {
@@ -2072,16 +1844,10 @@
               "type": "string"
             },
             "description": "IDs of tasks skipped because they already exist (Prisma P2002 unique constraint collision).",
-            "example": [
-              "entropy-dead_exports-other-repo-2026-W29"
-            ]
+            "example": ["entropy-dead_exports-other-repo-2026-W29"]
           }
         },
-        "required": [
-          "inserted",
-          "updated",
-          "skipped"
-        ]
+        "required": ["inserted", "updated", "skipped"]
       },
       "BulkInsertBody": {
         "type": "array",
@@ -2099,10 +1865,7 @@
               "example": "pending"
             },
             "repo": {
-              "type": [
-                "string",
-                "null"
-              ],
+              "type": ["string", "null"],
               "example": "org/repo"
             }
           }
@@ -2116,24 +1879,17 @@
             "items": {
               "type": "string"
             },
-            "example": [
-              "session-1"
-            ]
+            "example": ["session-1"]
           },
           "repos": {
             "type": "array",
             "items": {
               "type": "string"
             },
-            "example": [
-              "org/repo"
-            ]
+            "example": ["org/repo"]
           }
         },
-        "required": [
-          "sessions",
-          "repos"
-        ]
+        "required": ["sessions", "repos"]
       },
       "UpdateTaskBody": {
         "type": "object",
@@ -2165,17 +1921,11 @@
             "example": "clxtoken123456"
           },
           "label": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": "ci-runner"
           },
           "agentId": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": "agent-id-123"
           },
           "createdAt": {
@@ -2184,18 +1934,12 @@
             "example": "2026-01-01T00:00:00.000Z"
           },
           "revokedAt": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "date-time",
             "example": null
           }
         },
-        "required": [
-          "id",
-          "createdAt"
-        ]
+        "required": ["id", "createdAt"]
       },
       "TaskTokenWithRaw": {
         "allOf": [
@@ -2210,9 +1954,7 @@
                 "example": "raw-token-value-shown-once"
               }
             },
-            "required": [
-              "rawToken"
-            ]
+            "required": ["rawToken"]
           }
         ]
       },
@@ -2245,10 +1987,7 @@
             "example": 42
           },
           "taskId": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": "clx1234567890"
           },
           "staged": {
@@ -2258,30 +1997,18 @@
           },
           "state": {
             "type": "string",
-            "enum": [
-              "open",
-              "merged",
-              "closed"
-            ],
+            "enum": ["open", "merged", "closed"],
             "default": "open",
             "example": "open"
           },
           "reviewState": {
             "type": "string",
-            "enum": [
-              "pending",
-              "in_progress",
-              "posted",
-              "approved"
-            ],
+            "enum": ["pending", "in_progress", "posted", "approved"],
             "default": "pending",
             "example": "pending"
           },
           "commitSha": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": "abc123def456"
           },
           "patchCycles": {
@@ -2295,93 +2022,53 @@
             "example": 0
           },
           "agentId": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": "agent-id-123"
           },
           "reviewedAt": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": "2026-01-03T00:00:00.000Z"
           },
           "patchedAt": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": null
           },
           "mergedAt": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": null
           },
           "prCreatedAt": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "ISO timestamp of the GitHub PR's actual creation time. Set once via POST /prs/claim (first claim only); read-only thereafter.",
             "example": "2026-01-01T00:00:00.000Z"
           },
           "claimedBy": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": "agent-id-123"
           },
           "claimedAt": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": "2026-01-02T00:00:00.000Z"
           },
           "heartbeatAt": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": "2026-01-06T12:00:00.000Z"
           },
           "phase": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "enum": [
-              "review",
-              "patch",
-              "deploy"
-            ],
+            "type": ["string", "null"],
+            "enum": ["review", "patch", "deploy"],
             "example": "review"
           },
           "readyForReviewAt": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": "2026-01-02T00:00:00.000Z"
           },
           "readyForPatchAt": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": null
           },
           "readyForDeployAt": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "example": null
           },
           "createdAt": {
@@ -2395,13 +2082,7 @@
             "example": "2026-01-06T12:00:00.000Z"
           }
         },
-        "required": [
-          "id",
-          "repo",
-          "prNumber",
-          "createdAt",
-          "updatedAt"
-        ]
+        "required": ["id", "repo", "prNumber", "createdAt", "updatedAt"]
       },
       "PrListResponse": {
         "type": "object",
@@ -2426,12 +2107,7 @@
             "example": 0
           }
         },
-        "required": [
-          "prs",
-          "total",
-          "limit",
-          "offset"
-        ]
+        "required": ["prs", "total", "limit", "offset"]
       },
       "ClaimPrBody": {
         "type": "object",
@@ -2463,11 +2139,7 @@
           },
           "phase": {
             "type": "string",
-            "enum": [
-              "review",
-              "patch",
-              "deploy"
-            ],
+            "enum": ["review", "patch", "deploy"],
             "description": "Pipeline phase this claim is for (defaults to 'review' when omitted)",
             "example": "patch"
           },
@@ -2477,11 +2149,7 @@
             "example": "2026-01-01T00:00:00.000Z"
           }
         },
-        "required": [
-          "repo",
-          "prNumber",
-          "commitSha"
-        ]
+        "required": ["repo", "prNumber", "commitSha"]
       },
       "ClaimNextResponse": {
         "type": "object",
@@ -2491,18 +2159,11 @@
           },
           "phase": {
             "type": "string",
-            "enum": [
-              "review",
-              "patch",
-              "deploy"
-            ],
+            "enum": ["review", "patch", "deploy"],
             "example": "review"
           }
         },
-        "required": [
-          "pr",
-          "phase"
-        ]
+        "required": ["pr", "phase"]
       },
       "ClaimNextBody": {
         "type": "object",

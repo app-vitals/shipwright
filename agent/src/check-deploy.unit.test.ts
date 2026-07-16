@@ -41,6 +41,8 @@ interface MakeDepsOptions {
   currentUser?: string;
   isSelfReviewAllowed?: boolean;
   taskStatus?: Record<string, LinkedTaskInfo | null>;
+  getScopedRepos?: () => string[];
+  hasScopeSynced?: () => boolean;
 }
 
 function makeDeps({
@@ -51,11 +53,15 @@ function makeDeps({
   currentUser = "bodhi-agent",
   isSelfReviewAllowed = true,
   taskStatus = {},
+  getScopedRepos = () => repos,
+  hasScopeSynced = () => true,
 }: MakeDepsOptions = {}): CheckDeployDeps {
   return {
     getCurrentUser: () => currentUser,
     isSelfReviewAllowed,
     repos,
+    getScopedRepos,
+    hasScopeSynced,
     fetchActiveDeployRuns: async () => [],
     listOpenPrs: async (repo: string) => prs[repo] ?? [],
     fetchCiRuns: async (
@@ -325,25 +331,28 @@ describe("getDeployCandidates", () => {
     expect(result[0].id).toBe("acme/other-repo#20");
   });
 
-  test("logs to stderr and continues to next repo when gh query throws for a repo", async () => {
+  test("logs via console.warn and continues to next repo when gh query throws for a repo", async () => {
+    // LPF-5.1: repo-tolerant collection now goes through mapReposTolerant,
+    // which logs the per-repo failure via console.warn (a handled/swallowed
+    // condition) rather than process.stderr.write.
     const pr = makeGhPr({
       number: 50,
       headRefOid: "sha50",
       reviewDecision: "APPROVED",
     });
 
-    const stderrLines: string[] = [];
-    const origStderr = process.stderr.write.bind(process.stderr);
-    // biome-ignore lint/suspicious/noExplicitAny: patching write for test capture
-    process.stderr.write = (chunk: any, ...rest: any[]) => {
-      stderrLines.push(String(chunk));
-      return origStderr(chunk, ...rest);
+    const warnCalls: unknown[][] = [];
+    const origWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      warnCalls.push(args);
     };
 
     const deps: CheckDeployDeps = {
       getCurrentUser: () => "bodhi-agent",
       isSelfReviewAllowed: true,
       repos: ["acme/failing-repo", "acme/example-repo"],
+      getScopedRepos: () => ["acme/failing-repo", "acme/example-repo"],
+      hasScopeSynced: () => true,
       fetchActiveDeployRuns: async () => [],
       listOpenPrs: async (repo: string): Promise<GhPr[]> => {
         if (repo === "acme/failing-repo") throw new Error("rate limited");
@@ -362,12 +371,14 @@ describe("getDeployCandidates", () => {
     };
 
     const result = await getDeployCandidates(deps);
-    process.stderr.write = origStderr;
+    console.warn = origWarn;
 
     expect(result).toHaveLength(1);
-    expect(stderrLines.some((l) => l.includes("acme/failing-repo"))).toBe(
-      true,
-    );
+    expect(
+      warnCalls.some(([message]) =>
+        String(message).includes("acme/failing-repo"),
+      ),
+    ).toBe(true);
   });
 
   // ─── collect-all behavior (WL-2.2 architectural difference) ──────────────
@@ -428,6 +439,8 @@ describe("getDeployCandidates", () => {
       getCurrentUser: () => "bodhi-agent",
       isSelfReviewAllowed: true,
       repos: ["acme/busy-repo", "acme/free-repo"],
+      getScopedRepos: () => ["acme/busy-repo", "acme/free-repo"],
+      hasScopeSynced: () => true,
       fetchActiveDeployRuns: async (_org, repo) =>
         repo === "busy-repo" ? [{ name: "Deploy", status: "in_progress" }] : [],
       listOpenPrs: async (repo: string) =>
@@ -603,5 +616,94 @@ describe("getDeployCandidates", () => {
           l.includes("task-store unreachable"),
       ),
     ).toBe(true);
+  });
+
+  // ─── agent-scope filtering (WL-4.3) ──────────────────────────────────────
+
+  test("excludes a repo returned by the local-clone scan (deps.repos) but absent from getScopedRepos()", async () => {
+    const inScopePr = makeGhPr({
+      number: 50,
+      reviewDecision: "APPROVED",
+      mergeStateStatus: "CLEAN",
+    });
+    const outOfScopePr = makeGhPr({
+      number: 60,
+      headRefOid: "sha60",
+      reviewDecision: "APPROVED",
+      mergeStateStatus: "CLEAN",
+    });
+    const result = await getDeployCandidates(
+      makeDeps({
+        repos: ["acme/in-scope", "acme/out-of-scope"],
+        prs: {
+          "acme/in-scope": [inScopePr],
+          "acme/out-of-scope": [outOfScopePr],
+        },
+        ciRuns: {
+          sha50: [{ status: "completed", conclusion: "success" }],
+          sha60: [{ status: "completed", conclusion: "success" }],
+        },
+        getScopedRepos: () => ["acme/in-scope"],
+      }),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("acme/in-scope#50");
+  });
+
+  test("re-evaluates getScopedRepos() on every call — a scope change between two calls changes the result on the second call", async () => {
+    const pr = makeGhPr({
+      reviewDecision: "APPROVED",
+      mergeStateStatus: "CLEAN",
+    });
+    let scope: string[] = [];
+    const deps = makeDeps({
+      repos: ["acme/newly-added"],
+      prs: { "acme/newly-added": [pr] },
+      ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
+      getScopedRepos: () => scope,
+    });
+
+    const first = await getDeployCandidates(deps);
+    expect(first).toEqual([]);
+
+    scope = ["acme/newly-added"];
+    const second = await getDeployCandidates(deps);
+    expect(second).toHaveLength(1);
+    expect(second[0].id).toBe("acme/newly-added#50");
+  });
+
+  test("fails open (does not filter) when hasScopeSynced() is false, even if getScopedRepos() would otherwise exclude everything", async () => {
+    const pr = makeGhPr({
+      reviewDecision: "APPROVED",
+      mergeStateStatus: "CLEAN",
+    });
+    const result = await getDeployCandidates(
+      makeDeps({
+        repos: ["acme/never-synced"],
+        prs: { "acme/never-synced": [pr] },
+        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
+        getScopedRepos: () => [],
+        hasScopeSynced: () => false,
+      }),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("acme/never-synced#50");
+  });
+
+  test("filters normally when hasScopeSynced() is true, even if the synced scope is a deliberately empty list", async () => {
+    const pr = makeGhPr({
+      reviewDecision: "APPROVED",
+      mergeStateStatus: "CLEAN",
+    });
+    const result = await getDeployCandidates(
+      makeDeps({
+        repos: ["acme/some-repo"],
+        prs: { "acme/some-repo": [pr] },
+        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
+        getScopedRepos: () => [],
+        hasScopeSynced: () => true,
+      }),
+    );
+    expect(result).toEqual([]);
   });
 });

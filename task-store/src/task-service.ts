@@ -14,7 +14,7 @@
 
 import { type BlockedByEntry, computeBlockedBy } from "./blocked-by.ts";
 import { type Clock, SystemClock } from "./clock.ts";
-import { ConflictError, NotFoundError } from "./errors.ts";
+import { BadRequestError, ConflictError, NotFoundError } from "./errors.ts";
 import type { Prisma, PrismaClient, Task } from "./index.ts";
 import { resolveReadyTasks } from "./ready.ts";
 import { CLOSED_STATUSES, OPEN_STATUSES } from "./statuses.ts";
@@ -22,6 +22,23 @@ import { CLOSED_STATUSES, OPEN_STATUSES } from "./statuses.ts";
 // Re-export so callers can import from task-service without reaching into blocked-by.
 export type { BlockedByEntry };
 export { CLOSED_STATUSES, OPEN_STATUSES };
+
+/**
+ * Parses an `updatedSince` filter value into a Date, matching the
+ * BadRequestError(400) pattern used for `repo`/`prNumber` validation
+ * elsewhere in the request stack rather than letting an unparseable value
+ * surface as an Invalid Date that Prisma throws on (caught only by the
+ * generic 500 handler).
+ */
+function parseUpdatedSince(value: string): Date {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    throw new BadRequestError(
+      `updatedSince '${value}' is not a valid ISO timestamp`,
+    );
+  }
+  return date;
+}
 
 /** A Task augmented with a computed blockedBy array. */
 export type TaskWithBlockedBy = Task & { blockedBy: BlockedByEntry[] };
@@ -41,6 +58,13 @@ export interface TaskListFilters {
   offset?: number;
   /** Order results by createdAt. Defaults to "asc" (existing behavior). */
   sort?: "asc" | "desc";
+  /**
+   * ISO timestamp. Only return tasks with updatedAt >= this value. A
+   * conservative pre-filter (not a precise sync anchor) — see
+   * planning/task-store-date-filtering/PLAN.md for the root-cause/design
+   * rationale. Omitting it preserves current (unfiltered) behavior.
+   */
+  updatedSince?: string;
   /**
    * Repo-scoped visibility for agent tokens.
    * When set, replaces the simple `assignee` filter with an OR clause:
@@ -106,6 +130,9 @@ export class TaskService implements TaskServiceLike {
     if (filters.claimedBy) where.claimedBy = filters.claimedBy;
     if (filters.pr !== undefined) where.pr = filters.pr;
     if (filters.branch !== undefined) where.branch = filters.branch;
+    if (filters.updatedSince) {
+      where.updatedAt = { gte: parseUpdatedSince(filters.updatedSince) };
+    }
 
     if (filters.agentScope) {
       // Repo-scoped visibility: include tasks explicitly assigned to the agent,
@@ -126,8 +153,16 @@ export class TaskService implements TaskServiceLike {
     const limit = filters.limit ?? 50;
     const offset = filters.offset ?? 0;
 
-    // Load all tasks for dependency resolution (computeBlockedBy needs the full graph).
-    const [pageTasks, total, allTasks] = await this.prisma.$transaction([
+    // pageTasks + total are the only two queries that share the `where`
+    // filter, so batching them in a transaction is what actually mattered
+    // here — the old third whole-table findMany() depended on nothing else
+    // in the array and gained no consistency guarantee from sharing a
+    // transaction with it (Postgres already gives each individual query its
+    // own consistent snapshot). Splitting it out lets us compute depIds from
+    // the real pageTasks result first, then scope the dependency lookup by
+    // id — mirroring get()'s `where: { id: { in: task.dependencies } }`
+    // pattern — instead of always pulling every row in the table.
+    const [pageTasks, total] = await this.prisma.$transaction([
       this.prisma.task.findMany({
         where,
         orderBy: { createdAt: filters.sort ?? "asc" },
@@ -135,8 +170,14 @@ export class TaskService implements TaskServiceLike {
         skip: offset,
       }),
       this.prisma.task.count({ where }),
-      this.prisma.task.findMany(),
     ]);
+
+    const depIds = [
+      ...new Set(pageTasks.flatMap((t: Task) => t.dependencies ?? [])),
+    ];
+    const allTasks = depIds.length
+      ? await this.prisma.task.findMany({ where: { id: { in: depIds } } })
+      : [];
 
     const tasks: TaskWithBlockedBy[] = pageTasks.map((t: Task) => ({
       ...t,
