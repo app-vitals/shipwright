@@ -213,7 +213,12 @@ export async function run(deps: Deps): Promise<RunResult> {
 
         return {
           exit: 0,
-          output: "Deploy ready PRs via /shipwright:deploy",
+          // Embed the resolved candidate directly: cron-handler.ts uses this
+          // string verbatim as the dispatched prompt (prompt = output), and
+          // deploy.md's Scan Mode was removed — $ARGUMENTS is now required,
+          // so the prompt must already contain a resolvable org/repo#pr or a
+          // no-argument invocation would hit deploy.md's `[silent]` stop.
+          output: `/shipwright:deploy ${org}/${repoName}#${pr.number}`,
           candidate: { pr: pr.number, org, repo: repoName },
         };
       } catch (err) {

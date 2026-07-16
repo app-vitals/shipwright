@@ -117,19 +117,6 @@ describe("deploy.md — PR upsert on merge (PRI-2.4)", () => {
 });
 
 describe("deploy.md — self-approve bold-markdown strip (PCK-1.4)", () => {
-  it("Step 1a's jq check strips leading ** before startswith(\"APPROVE\")", () => {
-    // Must apply a jq sub() (or equivalent) that strips leading markdown bold
-    // markers from the review body before the startswith("APPROVE") check —
-    // mirroring check-deploy.ts's hasSelfApproveReview strip.
-    const step1aMatch = content.match(
-      /1a\. Find Qualifying PRs[\s\S]*?(?=###|## Step 2)/,
-    );
-    expect(step1aMatch).not.toBeNull();
-    const step1aSection = step1aMatch?.[0] ?? "";
-    expect(step1aSection).toContain('sub("^\\\\*+";"")');
-    expect(step1aSection).toContain('startswith("APPROVE")');
-  });
-
   it("Step 3a's AGENT_LOGIN self-approval check strips leading ** before the comparison", () => {
     const step3aMatch = content.match(
       /### 3a\. Verify PR Approval[\s\S]*?(?=### 3b)/,
@@ -146,6 +133,26 @@ describe("deploy.md — self-approve bold-markdown strip (PCK-1.4)", () => {
     );
     const step3aSection = step3aMatch?.[0] ?? "";
     expect(step3aSection).toContain('startsWith("APPROVE")');
+  });
+});
+
+describe("deploy.md — scan mode removed (WLS-3.4)", () => {
+  it("does not contain a Step 1 Scan Mode section", () => {
+    expect(content).not.toContain("Scan Mode");
+    expect(content).not.toContain("## Step 1");
+  });
+
+  it("does not reference CANDIDATE_LIST or scan-mode candidate fallback", () => {
+    expect(content).not.toContain("CANDIDATE_LIST");
+    expect(content.toLowerCase()).not.toContain("scan mode");
+  });
+
+  it("states $ARGUMENTS is required and no-argument invocation responds [silent]", () => {
+    const argsMatch = content.match(/## Arguments[\s\S]*?(?=---)/);
+    expect(argsMatch).not.toBeNull();
+    const argsSection = argsMatch?.[0] ?? "";
+    expect(argsSection).toContain("required");
+    expect(argsSection).toContain("[silent]");
   });
 });
 
@@ -170,11 +177,6 @@ describe("deploy.md — pre-merge PR claim lock (CLM-2.2)", () => {
       content.includes("do NOT merge") || content.includes("skipping");
     expect(hasConflictHandling).toBe(true);
     expect(hasSkipLanguage).toBe(true);
-  });
-
-  it("on 409 in scan mode, moves to the next candidate; ends the run if none remain", () => {
-    expect(content).toContain("CANDIDATE_LIST");
-    expect(content).toContain("next candidate");
   });
 
   it("post-merge upsert reuses PR_RECORD_ID from the pre-merge claim (plain PATCH, no redundant claim)", () => {
