@@ -44,7 +44,7 @@
     },
     "agent": {
       "name": "@shipwright/agent",
-      "version": "0.194.0",
+      "version": "0.195.0",
       "dependencies": {
         "@octokit/auth-app": "^8.2.0",
         "@sentry/bun": "^10.63.0",
@@ -98,7 +98,7 @@
     },
     "metrics": {
       "name": "@shipwright/metrics",
-      "version": "0.194.0",
+      "version": "0.195.0",
       "dependencies": {
         "@hono/zod-openapi": "^0.18.3",
         "@sentry/bun": "^10.63.0",
@@ -116,7 +116,7 @@
     },
     "plugins/shipwright": {
       "name": "@shipwright/plugin",
-      "version": "0.194.0",
+      "version": "0.195.0",
       "devDependencies": {
         "bun-types": "*",
         "typescript": "*",
@@ -1177,6 +1177,8 @@
     "execa/get-stream": ["get-stream@9.0.1", "", { "dependencies": { "@sec-ant/readable-stream": "^0.4.1", "is-stream": "^4.0.1" } }, "sha512-kVCxPF3vQM/N0B1PmoqVUqgHP+EeVjmZSQn+1oCRPxd2P21P2F19lIgbR3HBosbB1PUhOAoctJnfEn2GbN2eZA=="],
 
     "execa/is-stream": ["is-stream@4.0.1", "", {}, "sha512-Dnz92NInDqYckGEUJv689RbRiTSEHCQ7wOVeALbkOz999YpqT46yMRIGtSNl2iCL1waAZSx40+h59NV/EwzV/A=="],
+
+    "fdir/picomatch": ["picomatch@4.0.5", "", {}, "sha512-RvwwcruNjI1ncT5xRakeyS9Lf8lcItv34KD+aif+VH9kduAyfYBipGh12274xtenIPZ119/R9BdTBa8gAwSh0A=="],
 
     "form-data/mime-types": ["mime-types@2.1.35", "", { "dependencies": { "mime-db": "1.52.0" } }, "sha512-ZDY+bPm5zTTF+YpCrAU9nK0UgICYPT0QtT1NZWFv4s++TNkcgVaT0g6+4R2uI4MjQjzysHB1zxuWL50hzaeXiw=="],
 

@@ -1202,10 +1202,6 @@ Imported from the former `test-readiness` plugin. These exercise the six `/test-
 **Steps:** After Phases 1–4 produce artifacts, run `/test-fix --dry-run`.
 **Expected:** Prints a preview listing each task-store ID (`test-{t-nnn}-{repo-slug}`), outcome, layer, priority, computed dependencies, and hitl classification — no task-store queries made (no dedup check), nothing written.
 
-### TR-11 — Phase 5 backfill from GitHub (one-time migration)
-**Steps:** In a sandbox repo with existing `test-readiness`-labeled GitHub issues from the old publish flow, run `/test-fix --backfill-from-github [--repo o/n]`.
-**Expected:** Each open issue becomes an equivalent task-store task preserving dependency edges, then each migrated issue is closed with a comment linking to its new task-store ID; does not run the regular plan-parsing flow (Steps 1-7 of the skill).
-
 ### TR-12 — Phase 5 dedup-on-rerun
 **Steps:** Run `/test-fix` twice without changing the roadmap.
 **Expected:** The second run's dedup check (Step 4) finds the already-active `T-NNN` tasks (matched by `source == "shipwright"` and title starting with "Test readiness:"), skips them ("Skipping {T-NNN} — task already active"), and no duplicate tasks are created in the task store.
